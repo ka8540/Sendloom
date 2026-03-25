@@ -1,0 +1,297 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ImportStatus {
+  UPLOADING
+  PROCESSED
+  FAILED
+}
+
+enum CampaignStatus {
+  DRAFT
+  VALIDATED
+  SCHEDULED
+  RUNNING
+  PAUSED
+  COMPLETED
+  CANCELLED
+  FAILED
+}
+
+enum RunStatus {
+  QUEUED
+  RUNNING
+  PAUSED
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum RecipientJobStatus {
+  PENDING
+  SENT
+  FAILED
+  RETRYING
+  SUPPRESSED
+  INVALID
+  CLICKED
+  OPENED
+  BOUNCED
+  COMPLAINED
+}
+
+enum SuppressionReason {
+  UNSUBSCRIBED
+  HARD_BOUNCE
+  COMPLAINT
+  INVALID_EMAIL
+  MANUAL_BLOCK
+}
+
+enum ProviderEventType {
+  ACCEPTED
+  DELIVERED
+  BOUNCED
+  COMPLAINED
+  OPENED
+  CLICKED
+}
+
+model User {
+  id             String   @id @default(cuid())
+  email          String   @unique
+  passwordHash   String?
+  magicLinkToken String?
+  magicLinkExpiry DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  senderProfiles SenderProfile[]
+  imports        Import[]
+  mappings       Mapping[]
+  templates      Template[]
+  campaigns      Campaign[]
+  suppressions   Suppression[]
+}
+
+model SenderProfile {
+  id          String   @id @default(cuid())
+  userId      String?
+  name        String
+  fromEmail   String   @unique
+  provider    String
+  providerRef String?
+  oauthRefreshToken String?
+  oauthScope  String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  campaigns   Campaign[]
+
+  @@index([userId])
+}
+
+model Import {
+  id            String         @id @default(cuid())
+  userId        String?
+  fileName      String
+  fileType      String
+  storagePath   String
+  status        ImportStatus   @default(UPLOADING)
+  rowCount      Int            @default(0)
+  errorMessage  String?
+  sampleRows    Json?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  user          User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  columns       ImportColumn[]
+  rows          ImportRow[]
+  mappings      Mapping[]
+  campaigns     Campaign[]
+
+  @@index([userId])
+}
+
+model ImportColumn {
+  id          String   @id @default(cuid())
+  importId    String
+  sourceName  String
+  normalized  String
+  sampleType  String
+  sampleValue String?
+  createdAt   DateTime @default(now())
+  import      Import    @relation(fields: [importId], references: [id], onDelete: Cascade)
+}
+
+model ImportRow {
+  id          String   @id @default(cuid())
+  importId    String
+  rowIndex    Int
+  email       String?
+  payload     Json
+  normalized  Json
+  createdAt   DateTime @default(now())
+  import      Import    @relation(fields: [importId], references: [id], onDelete: Cascade)
+
+  @@index([importId, rowIndex])
+  @@index([importId, email])
+}
+
+model Mapping {
+  id                 String   @id @default(cuid())
+  userId             String?
+  importId           String
+  reservedFieldMap   Json
+  variableMap        Json
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  user               User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  import             Import    @relation(fields: [importId], references: [id], onDelete: Cascade)
+  campaigns          Campaign[]
+
+  @@index([userId])
+}
+
+model Template {
+  id               String   @id @default(cuid())
+  userId           String?
+  name             String
+  subject          String
+  htmlBody         String
+  variableManifest Json
+  previewPayload   Json?
+  version          Int      @default(1)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  user             User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  campaigns        Campaign[]
+
+  @@index([userId])
+}
+
+model Campaign {
+  id                 String         @id @default(cuid())
+  userId             String?
+  name               String
+  status             CampaignStatus @default(DRAFT)
+  importId           String
+  mappingId          String
+  templateId         String
+  senderProfileId    String
+  scheduleType       String?
+  scheduleConfig     Json?
+  lastValidatedAt    DateTime?
+  validationSnapshot Json?
+  templateSnapshot   Json
+  mappingSnapshot    Json
+  senderSnapshot     Json
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  user               User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  import             Import         @relation(fields: [importId], references: [id])
+  mapping            Mapping        @relation(fields: [mappingId], references: [id])
+  template           Template       @relation(fields: [templateId], references: [id])
+  senderProfile      SenderProfile  @relation(fields: [senderProfileId], references: [id])
+  runs               CampaignRun[]
+
+  @@index([userId])
+}
+
+model CampaignRun {
+  id                  String      @id @default(cuid())
+  campaignId          String
+  status              RunStatus   @default(QUEUED)
+  launchType          String
+  scheduledFor        DateTime?
+  startedAt           DateTime?
+  completedAt         DateTime?
+  progressSnapshot    Json?
+  totalRecipients     Int         @default(0)
+  sentCount           Int         @default(0)
+  failedCount         Int         @default(0)
+  suppressedCount     Int         @default(0)
+  invalidCount        Int         @default(0)
+  openedCount         Int         @default(0)
+  clickedCount        Int         @default(0)
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+  campaign            Campaign    @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  recipientJobs       RecipientJob[]
+
+  @@index([campaignId, status])
+}
+
+model RecipientJob {
+  id                String             @id @default(cuid())
+  campaignRunId     String
+  importRowId       String
+  recipientEmail    String
+  recipientName     String?
+  subject           String
+  htmlBody          String
+  dedupeKey         String             @unique
+  status            RecipientJobStatus @default(PENDING)
+  retryCount        Int                @default(0)
+  nextRetryAt       DateTime?
+  providerMessageId String?
+  lastError         String?
+  metadata          Json?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  campaignRun       CampaignRun        @relation(fields: [campaignRunId], references: [id], onDelete: Cascade)
+
+  @@index([campaignRunId, status])
+  @@index([recipientEmail])
+}
+
+model ProviderEvent {
+  id                String            @id @default(cuid())
+  provider          String
+  providerMessageId String
+  eventType         ProviderEventType
+  payload           Json
+  createdAt         DateTime          @default(now())
+
+  @@unique([provider, providerMessageId, eventType])
+}
+
+model Suppression {
+  id          String            @id @default(cuid())
+  userId      String?
+  email       String
+  reason      SuppressionReason
+  source      String
+  notes       String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  user        User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, email])
+  @@index([userId])
+}
+
+model RateLimitWindow {
+  id           String   @id @default(cuid())
+  windowKey    String   @unique
+  sentCount    Int      @default(0)
+  windowStart  DateTime
+  windowEnd    DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorEmail String
+  action     String
+  entityType String
+  entityId   String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+}

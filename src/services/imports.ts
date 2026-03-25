@@ -1,0 +1,202 @@
+import type { Prisma } from "@prisma/client";
+
+import { prisma } from "@/lib/db";
+import { storeUpload } from "@/lib/storage";
+import { inferSampleType, parseSpreadsheet } from "@/lib/uploads";
+import { normalizeHeader } from "@/lib/utils";
+
+const MAX_TEMPLATE_COLUMNS = 10;
+
+function detectColumn(columns: string[], patterns: string[]) {
+  return columns.find((column) => patterns.some((pattern) => column.includes(pattern))) ?? "";
+}
+
+function createVariableMap(columns: string[], reservedFieldMap: Record<string, string>) {
+  const prioritizedColumns = Array.from(
+    new Set([
+      reservedFieldMap.email,
+      reservedFieldMap.name,
+      reservedFieldMap.company,
+      ...columns
+    ].filter(Boolean))
+  ).slice(0, MAX_TEMPLATE_COLUMNS);
+
+  return Object.fromEntries(prioritizedColumns.map((column) => [column, column]));
+}
+
+async function getOwnedImport(importId: string, userId: string) {
+  return prisma.import.findFirstOrThrow({
+    where: {
+      id: importId,
+      userId
+    }
+  });
+}
+
+export async function createImport(fileName: string, fileType: string, content: Buffer, userId: string) {
+  const storagePath = await storeUpload(fileName, content);
+  const parsed = parseSpreadsheet(fileName, content);
+  const normalizedColumns = parsed.columns.map((column) => normalizeHeader(column));
+
+  const createdImport = await prisma.import.create({
+    data: {
+      userId,
+      fileName,
+      fileType,
+      storagePath,
+      status: "PROCESSED",
+      rowCount: parsed.rows.length,
+      sampleRows: parsed.sampleRows as Prisma.InputJsonValue,
+      columns: {
+        create: parsed.columns.map((column) => ({
+          sourceName: column,
+          normalized: normalizeHeader(column),
+          sampleType: inferSampleType(parsed.rows.find((row) => row[column] !== undefined)?.[column]),
+          sampleValue: String(parsed.rows.find((row) => row[column] !== undefined)?.[column] ?? "")
+        }))
+      },
+      rows: {
+        create: parsed.rows.map((row, index) => {
+          const normalized = Object.fromEntries(
+            Object.entries(row).map(([key, value]) => [normalizeHeader(key), value])
+          );
+          const emailCandidate = Object.entries(normalized).find(([key]) => key.includes("email"))?.[1];
+          return {
+            rowIndex: index + 1,
+            email: typeof emailCandidate === "string" ? emailCandidate.toLowerCase() : null,
+            payload: row as Prisma.InputJsonValue,
+            normalized: normalized as Prisma.InputJsonValue
+          };
+        })
+      }
+    },
+    include: {
+      columns: true
+    }
+  });
+
+  const reservedFieldMap = {
+    email: detectColumn(normalizedColumns, ["email", "mail"]),
+    name: detectColumn(normalizedColumns, ["name", "full_name", "fullname"]),
+    company: detectColumn(normalizedColumns, ["company", "organization", "org"])
+  };
+
+  const variableMap = createVariableMap(normalizedColumns, reservedFieldMap);
+
+  await prisma.mapping.create({
+    data: {
+      userId,
+      importId: createdImport.id,
+      reservedFieldMap,
+      variableMap
+    }
+  });
+
+  return createdImport;
+}
+
+export async function getImportColumns(importId: string, userId: string) {
+  return prisma.import.findFirstOrThrow({
+    where: {
+      id: importId,
+      userId
+    },
+    include: {
+      columns: true,
+      rows: {
+        take: 5,
+        orderBy: { rowIndex: "asc" }
+      }
+    }
+  });
+}
+
+export async function saveMapping(
+  importId: string,
+  userId: string,
+  reservedFieldMap: Record<string, string>,
+  variableMap: Record<string, string>
+) {
+  await getOwnedImport(importId, userId);
+
+  const existing = await prisma.mapping.findFirst({
+    where: {
+      importId,
+      userId
+    },
+    orderBy: { updatedAt: "desc" }
+  });
+
+  if (existing) {
+    return prisma.mapping.update({
+      where: { id: existing.id },
+      data: {
+        reservedFieldMap,
+        variableMap
+      }
+    });
+  }
+
+  return prisma.mapping.create({
+    data: {
+      userId,
+      importId,
+      reservedFieldMap,
+      variableMap
+    }
+  });
+}
+
+export async function updateImportName(importId: string, userId: string, fileName: string) {
+  await getOwnedImport(importId, userId);
+
+  return prisma.import.update({
+    where: { id: importId },
+    data: { fileName }
+  });
+}
+
+export async function saveTemplateFields(importId: string, userId: string, selectedColumns: string[]) {
+  const importRecord = await prisma.import.findFirstOrThrow({
+    where: {
+      id: importId,
+      userId
+    },
+    include: {
+      columns: true
+    }
+  });
+
+  const normalizedColumns = importRecord.columns.map((column) => column.normalized);
+
+  if (selectedColumns.length === 0) {
+    throw new Error("Choose at least one column for templates.");
+  }
+
+  if (selectedColumns.length > MAX_TEMPLATE_COLUMNS) {
+    throw new Error(`Choose up to ${MAX_TEMPLATE_COLUMNS} columns for templates.`);
+  }
+
+  const hasUnknownColumn = selectedColumns.some((column) => !normalizedColumns.includes(column));
+  if (hasUnknownColumn) {
+    throw new Error("One or more selected columns do not exist in this import.");
+  }
+
+  const existingMapping = await prisma.mapping.findFirst({
+    where: {
+      importId,
+      userId
+    },
+    orderBy: { updatedAt: "desc" }
+  });
+
+  const reservedFieldMap =
+    (existingMapping?.reservedFieldMap as Record<string, string> | null) ?? {
+      email: detectColumn(normalizedColumns, ["email", "mail"]),
+      name: detectColumn(normalizedColumns, ["name", "full_name", "fullname"]),
+      company: detectColumn(normalizedColumns, ["company", "organization", "org"])
+    };
+  const variableMap = Object.fromEntries(Array.from(new Set(selectedColumns)).map((column) => [column, column]));
+
+  return saveMapping(importId, userId, reservedFieldMap, variableMap);
+}
