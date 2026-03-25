@@ -365,6 +365,16 @@ textarea {
   justify-items: center;
 }
 
+.sidebar-theme {
+  display: flex;
+  justify-content: flex-end;
+  padding-bottom: 0.25rem;
+}
+
+.sidebar.is-collapsed .sidebar-theme {
+  justify-content: center;
+}
+
 .content {
   padding: 2rem 2.5rem;
   height: 100vh;
@@ -373,26 +383,6 @@ textarea {
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
-}
-
-.app-toolbar {
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  padding: 0 0 1rem;
-  margin-bottom: 0.25rem;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--bg-start) 92%, transparent), transparent);
-  backdrop-filter: blur(10px);
-}
-
-.app-page {
-  display: grid;
-  gap: 0;
-  min-width: 0;
-  align-content: start;
 }
 
 .hero,
@@ -911,12 +901,6 @@ textarea {
   .sidebar {
     border-right: 0;
     border-bottom: 1px solid var(--line);
-  }
-
-  .app-toolbar {
-    position: static;
-    padding-top: 0.25rem;
-    backdrop-filter: none;
   }
 }
 

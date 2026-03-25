@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { FileSpreadsheet, FileText, House, PanelLeftClose, PanelLeftOpen, SendHorizontal, ShieldAlert } from "lucide-react";
 import { SendloomLogo } from "@/components/sendloom-logo";
 import { SessionControls } from "@/components/session-controls";
+import { ThemeSwitcher } from "@/components/theme-switcher";
 
 export function AppNav() {
   const pathname = usePathname();
@@ -39,6 +40,9 @@ export function AppNav() {
         >
           {collapsed ? <PanelLeftOpen aria-hidden="true" /> : <PanelLeftClose aria-hidden="true" />}
         </button>
+      </div>
+      <div className="sidebar-theme">
+        <ThemeSwitcher />
       </div>
       <nav className="nav">
         {items.map((item) => {
