@@ -3,7 +3,6 @@
 import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
-import { ThemeSwitcher } from "@/components/theme-switcher";
 
 export function SessionControls({ collapsed = false }: { collapsed?: boolean }) {
   const router = useRouter();
@@ -30,7 +29,6 @@ export function SessionControls({ collapsed = false }: { collapsed?: boolean }) 
 
   return (
     <div className="nav-footer">
-      <ThemeSwitcher />
       <button
         className="nav-item nav-item-button"
         type="button"
