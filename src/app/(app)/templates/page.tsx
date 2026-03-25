@@ -1,4 +1,4 @@
-import { TemplateForm } from "@/components/forms";
+import { TemplatesWorkspace } from "@/components/templates-workspace";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 
@@ -10,27 +10,14 @@ export default async function TemplatesPage() {
   });
 
   return (
-    <div className="split">
-      <section className="card">
-        <h1 style={{ marginTop: 0 }}>Create template</h1>
-        <p className="muted">Write the subject and email body used in your sequences.</p>
-        <TemplateForm />
-      </section>
-
-      <section className="card">
-        <h2>Saved templates</h2>
-        <div className="stack">
-          {templates.map((template) => (
-            <article key={template.id} className="pre">
-              <strong>{template.name}</strong>
-              <p className="muted" style={{ marginTop: "0.4rem" }}>
-                {template.subject}
-              </p>
-              <p className="muted">Variables: {(template.variableManifest as string[]).join(", ") || "None detected"}</p>
-            </article>
-          ))}
-        </div>
-      </section>
-    </div>
+    <TemplatesWorkspace
+      templates={templates.map((template) => ({
+        id: template.id,
+        name: template.name,
+        subject: template.subject,
+        htmlBody: template.htmlBody,
+        variableManifest: Array.isArray(template.variableManifest) ? (template.variableManifest as string[]) : []
+      }))}
+    />
   );
 }

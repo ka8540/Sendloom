@@ -1,11 +1,21 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
 type ActionState = {
   pending: boolean;
   error?: string;
+};
+
+const DEFAULT_TEMPLATE_HTML = `<p>Hi {{name}},</p>\n<p>I noticed {{company}} and wanted to reach out.</p>`;
+
+export type EditableTemplate = {
+  id: string;
+  name: string;
+  subject: string;
+  htmlBody: string;
+  variableManifest: string[];
 };
 
 export function LoginForm() {
@@ -91,22 +101,41 @@ export function UploadImportForm() {
   );
 }
 
-export function TemplateForm() {
+type TemplateFormProps = {
+  initialTemplate?: EditableTemplate | null;
+  onSaved?: (template: EditableTemplate) => void;
+  onCancel?: () => void;
+};
+
+function getTemplateFields(template?: EditableTemplate | null) {
+  return {
+    name: template?.name ?? "",
+    subject: template?.subject ?? "",
+    htmlBody: template?.htmlBody ?? DEFAULT_TEMPLATE_HTML
+  };
+}
+
+export function TemplateForm({ initialTemplate = null, onSaved, onCancel }: TemplateFormProps) {
   const router = useRouter();
   const [state, setState] = useState<ActionState>({ pending: false });
+  const [fields, setFields] = useState(getTemplateFields(initialTemplate));
+
+  useEffect(() => {
+    setFields(getTemplateFields(initialTemplate));
+    setState({ pending: false });
+  }, [initialTemplate?.id]);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = event.currentTarget;
     setState({ pending: true });
-    const formData = new FormData(form);
     const response = await fetch("/api/templates", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        name: formData.get("name"),
-        subject: formData.get("subject"),
-        htmlBody: formData.get("htmlBody")
+        id: initialTemplate?.id,
+        name: fields.name,
+        subject: fields.subject,
+        htmlBody: fields.htmlBody
       })
     });
 
@@ -116,33 +145,73 @@ export function TemplateForm() {
       return;
     }
 
-    form.reset();
-    router.refresh();
+    const savedTemplate = (await response.json()) as EditableTemplate;
+
+    if (onSaved) {
+      onSaved(savedTemplate);
+    } else {
+      router.refresh();
+    }
+
+    if (initialTemplate) {
+      setFields(getTemplateFields(savedTemplate));
+    } else {
+      setFields(getTemplateFields(null));
+    }
+
     setState({ pending: false });
   }
+
+  const isEditing = Boolean(initialTemplate);
 
   return (
     <form className="form" onSubmit={onSubmit}>
       <div className="field">
         <label htmlFor="name">Template name</label>
-        <input id="name" name="name" required />
+        <input
+          id="name"
+          name="name"
+          value={fields.name}
+          onChange={(event) => setFields((current) => ({ ...current, name: event.target.value }))}
+          required
+        />
       </div>
       <div className="field">
         <label htmlFor="subject">Subject</label>
-        <input id="subject" name="subject" placeholder="Hi {{name}}, quick question" required />
+        <input
+          id="subject"
+          name="subject"
+          value={fields.subject}
+          onChange={(event) => setFields((current) => ({ ...current, subject: event.target.value }))}
+          placeholder="Hi {{name}}, quick question"
+          required
+        />
       </div>
       <div className="field">
         <label htmlFor="htmlBody">HTML body</label>
         <textarea
           id="htmlBody"
           name="htmlBody"
-          defaultValue={`<p>Hi {{name}},</p>\n<p>I noticed {{company}} and wanted to reach out.</p>`}
+          value={fields.htmlBody}
+          onChange={(event) => setFields((current) => ({ ...current, htmlBody: event.target.value }))}
           required
         />
       </div>
-      <button className="button" type="submit" disabled={state.pending}>
-        {state.pending ? "Saving..." : "Save template"}
-      </button>
+      <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+        <button className="button" type="submit" disabled={state.pending}>
+          {state.pending ? "Saving..." : isEditing ? "Save changes" : "Save template"}
+        </button>
+        {isEditing ? (
+          <button
+            className="button secondary"
+            type="button"
+            onClick={() => onCancel?.()}
+            disabled={state.pending}
+          >
+            Cancel
+          </button>
+        ) : null}
+      </div>
       {state.error ? <p className="muted">{state.error}</p> : null}
     </form>
   );
