@@ -28,14 +28,16 @@ export function LandingScene() {
     const root = new THREE.Group();
     scene.add(root);
 
-    const ambientLight = new THREE.AmbientLight(0xf5f0e8, 0.9);
-    const hemisphereLight = new THREE.HemisphereLight(0xfff5de, 0x0b1920, 1.35);
-    const keyLight = new THREE.DirectionalLight(0xe5fff1, 2.6);
+    const ambientLight = new THREE.AmbientLight(0xf5fbff, 0.9);
+    const hemisphereLight = new THREE.HemisphereLight(0xeef7ff, 0x0b1920, 1.35);
+    const keyLight = new THREE.DirectionalLight(0xffffff, 2.8);
     keyLight.position.set(4.5, 5.5, 5);
-    const rimLight = new THREE.PointLight(0xffa24b, 28, 18, 2);
+    const rimLight = new THREE.PointLight(0x7cd9ff, 28, 18, 2);
     rimLight.position.set(-3.4, -1.8, 4.8);
+    const fillLight = new THREE.PointLight(0x52c59c, 16, 14, 2);
+    fillLight.position.set(2.8, 2.2, 3.8);
 
-    scene.add(ambientLight, hemisphereLight, keyLight, rimLight);
+    scene.add(ambientLight, hemisphereLight, keyLight, rimLight, fillLight);
 
     const coreMaterial = new THREE.MeshPhysicalMaterial({
       color: 0x1b8b69,
@@ -52,18 +54,18 @@ export function LandingScene() {
     root.add(core);
 
     const haloMaterial = new THREE.MeshBasicMaterial({
-      color: 0xffcb7e,
+      color: 0xf8fdff,
       transparent: true,
-      opacity: 0.14,
+      opacity: 0.18,
       wireframe: true
     });
     const halo = new THREE.Mesh(new THREE.IcosahedronGeometry(2.5, 1), haloMaterial);
     root.add(halo);
 
     const orbitMaterial = new THREE.MeshBasicMaterial({
-      color: 0xdafbe5,
+      color: 0xf2fbff,
       transparent: true,
-      opacity: 0.2
+      opacity: 0.28
     });
     const orbitA = new THREE.Mesh(new THREE.TorusGeometry(2.65, 0.03, 16, 160), orbitMaterial);
     orbitA.rotation.x = Math.PI / 2.4;
@@ -78,20 +80,20 @@ export function LandingScene() {
 
     const packetGeometry = new THREE.BoxGeometry(0.62, 0.34, 0.11);
     const packetMaterial = new THREE.MeshPhysicalMaterial({
-      color: 0xf7f2e8,
-      roughness: 0.18,
-      metalness: 0.08,
-      clearcoat: 0.82,
-      clearcoatRoughness: 0.15,
-      emissive: 0x1a312a,
-      emissiveIntensity: 0.08
+      color: 0xffffff,
+      roughness: 0.16,
+      metalness: 0.14,
+      clearcoat: 0.92,
+      clearcoatRoughness: 0.1,
+      emissive: 0x10261f,
+      emissiveIntensity: 0.1
     });
     const packetCount = 18;
     const packets = new THREE.InstancedMesh(packetGeometry, packetMaterial, packetCount);
     root.add(packets);
 
     const streakGeometry = new THREE.BufferGeometry();
-    const streakCount = 180;
+    const streakCount = 320;
     const positions = new Float32Array(streakCount * 3);
     for (let index = 0; index < streakCount; index += 1) {
       const radius = 4 + Math.random() * 4.2;
@@ -105,13 +107,34 @@ export function LandingScene() {
     const streaks = new THREE.Points(
       streakGeometry,
       new THREE.PointsMaterial({
-        color: 0xf6e7bf,
-        size: 0.06,
+        color: 0xf7fbff,
+        size: 0.05,
         transparent: true,
-        opacity: 0.85
+        opacity: 0.9
       })
     );
     root.add(streaks);
+
+    const dustGeometry = new THREE.BufferGeometry();
+    const dustCount = 560;
+    const dustPositions = new Float32Array(dustCount * 3);
+    for (let index = 0; index < dustCount; index += 1) {
+      const radius = 5.4 + Math.random() * 6.4;
+      const theta = Math.random() * Math.PI * 2;
+      const y = (Math.random() - 0.5) * 5.4;
+      dustPositions[index * 3] = Math.cos(theta) * radius;
+      dustPositions[index * 3 + 1] = y;
+      dustPositions[index * 3 + 2] = Math.sin(theta) * radius;
+    }
+    dustGeometry.setAttribute("position", new THREE.BufferAttribute(dustPositions, 3));
+    const dustMaterial = new THREE.PointsMaterial({
+      color: 0xbde9ff,
+      size: 0.028,
+      transparent: true,
+      opacity: 0.45
+    });
+    const dust = new THREE.Points(dustGeometry, dustMaterial);
+    root.add(dust);
 
     const glow = new THREE.Sprite(
       new THREE.SpriteMaterial({
@@ -127,6 +150,24 @@ export function LandingScene() {
     const targetRotation = new THREE.Vector2(0, 0);
     const dummy = new THREE.Object3D();
     const clock = new THREE.Clock();
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+
+    const applyTheme = (isDark: boolean) => {
+      ambientLight.color.setHex(isDark ? 0xe4f1ff : 0xf7fbff);
+      hemisphereLight.color.setHex(isDark ? 0xdaf1ff : 0xeef7ff);
+      hemisphereLight.groundColor.setHex(isDark ? 0x0a121a : 0x0b1920);
+      keyLight.color.setHex(isDark ? 0xf3fbff : 0xffffff);
+      rimLight.color.setHex(isDark ? 0x5ea3ff : 0x7cd9ff);
+      fillLight.color.setHex(isDark ? 0x42d5a0 : 0x52c59c);
+      coreMaterial.emissive.setHex(isDark ? 0x0a3327 : 0x06271f);
+      haloMaterial.color.setHex(isDark ? 0xc8ddff : 0xf8fdff);
+      orbitMaterial.color.setHex(isDark ? 0xdbeaff : 0xf2fbff);
+      packetMaterial.color.setHex(isDark ? 0xeaf5ff : 0xffffff);
+      packetMaterial.emissive.setHex(isDark ? 0x18322a : 0x10261f);
+      (streaks.material as THREE.PointsMaterial).color.setHex(isDark ? 0xcde4ff : 0xf7fbff);
+      dustMaterial.color.setHex(isDark ? 0x7acbff : 0xbde9ff);
+      (glow.material as THREE.SpriteMaterial).color.setHex(isDark ? 0x38c48d : 0x2ec28c);
+    };
 
     const resize = () => {
       const width = mount.clientWidth;
@@ -146,10 +187,16 @@ export function LandingScene() {
       pointer.set(0, 0);
     };
 
+    const handleThemeChange = (event: MediaQueryListEvent) => {
+      applyTheme(event.matches);
+    };
+
     const resizeObserver = new ResizeObserver(resize);
     resizeObserver.observe(mount);
     mount.addEventListener("pointermove", handlePointerMove);
     mount.addEventListener("pointerleave", handlePointerLeave);
+    applyTheme(mediaQuery.matches);
+    mediaQuery.addEventListener("change", handleThemeChange);
     resize();
 
     renderer.setAnimationLoop(() => {
@@ -167,6 +214,8 @@ export function LandingScene() {
       halo.rotation.y = -elapsed * 0.1;
       streaks.rotation.y = elapsed * 0.06;
       streaks.rotation.x = Math.sin(elapsed * 0.15) * 0.08;
+      dust.rotation.y = -elapsed * 0.03;
+      dust.rotation.x = Math.sin(elapsed * 0.08) * 0.04;
 
       for (let index = 0; index < packetCount; index += 1) {
         const lane = index % 3;
@@ -194,6 +243,7 @@ export function LandingScene() {
       resizeObserver.disconnect();
       mount.removeEventListener("pointermove", handlePointerMove);
       mount.removeEventListener("pointerleave", handlePointerLeave);
+      mediaQuery.removeEventListener("change", handleThemeChange);
       renderer.setAnimationLoop(null);
       renderer.dispose();
       packetGeometry.dispose();
@@ -205,7 +255,9 @@ export function LandingScene() {
       orbitA.geometry.dispose();
       orbitMaterial.dispose();
       streakGeometry.dispose();
+      dustGeometry.dispose();
       (streaks.material as THREE.Material).dispose();
+      dustMaterial.dispose();
       (glow.material as THREE.Material).dispose();
       mount.removeChild(renderer.domElement);
     };
