@@ -229,9 +229,9 @@ export default function LandingPage() {
               <Link className={styles.primaryButton} href="/login">
                 Try it
               </Link>
-              <Link className={styles.ghostButton} href="/setup">
-                Review setup
-              </Link>
+              <a className={styles.ghostButton} href="#workflow">
+                See workflow
+              </a>
             </div>
           </article>
         </section>

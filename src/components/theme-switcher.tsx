@@ -112,12 +112,9 @@ export function ThemeSwitcher({ className = "" }: { className?: string }) {
         aria-expanded={open}
         aria-controls={menuId}
         onClick={() => setOpen((current) => !current)}
-        title="Change color theme"
+        aria-label={`Theme: ${activeOption.label}. Open theme menu`}
+        title={`Theme: ${activeOption.label}`}
       >
-        <span className="theme-menu__triggerCopy">
-          <span className="theme-menu__triggerLabel">Theme</span>
-          <span className="theme-menu__triggerValue">{activeOption.label}</span>
-        </span>
         <ActiveIcon aria-hidden="true" />
       </button>
 

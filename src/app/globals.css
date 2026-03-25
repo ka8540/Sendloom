@@ -527,10 +527,10 @@ textarea {
 .theme-menu__trigger {
   display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.85rem;
-  min-height: 3rem;
-  padding: 0.72rem 0.95rem;
+  justify-content: center;
+  width: 3.2rem;
+  height: 3.2rem;
+  padding: 0;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--surface-ghost);
@@ -552,25 +552,6 @@ textarea {
 .theme-menu__trigger:active,
 .theme-menu__trigger.is-open {
   transform: translateY(1px) scale(0.99);
-}
-
-.theme-menu__triggerCopy {
-  display: grid;
-  gap: 0.08rem;
-  text-align: left;
-}
-
-.theme-menu__triggerLabel {
-  font-size: 0.72rem;
-  line-height: 1;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.theme-menu__triggerValue {
-  font-size: 1rem;
-  line-height: 1.1;
 }
 
 .theme-menu__trigger svg,
@@ -633,11 +614,11 @@ textarea {
 }
 
 .nav-footer .theme-menu {
-  width: 100%;
+  justify-self: start;
 }
 
 .nav-footer .theme-menu__trigger {
-  width: 100%;
+  width: 3.2rem;
 }
 
 .sidebar.is-collapsed .theme-menu {
@@ -645,13 +626,8 @@ textarea {
 }
 
 .sidebar.is-collapsed .theme-menu__trigger {
-  width: 3.35rem;
-  padding-inline: 0;
-  justify-content: center;
-}
-
-.sidebar.is-collapsed .theme-menu__triggerCopy {
-  display: none;
+  width: 3.2rem;
+  height: 3.2rem;
 }
 
 .sidebar.is-collapsed .theme-menu__panel {
@@ -927,10 +903,12 @@ textarea {
 }
 
 @media (max-width: 700px) {
-  .button,
-  .theme-menu,
-  .theme-menu__trigger {
+  .button {
     width: 100%;
+  }
+
+  .theme-menu__trigger {
+    width: 3.2rem;
   }
 
   .theme-menu__panel {
