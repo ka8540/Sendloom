@@ -15,30 +15,30 @@ export default function SetupPage() {
 
         <section className="card" style={{ width: "min(820px, 100%)" }}>
           <h1 style={{ marginTop: 0 }}>Sendloom configuration</h1>
-          <p className="muted">Use this page to verify your local environment values and redirect URLs.</p>
+          <p className="muted">Use this page to verify the keys you need and the redirect URLs your environment should expose.</p>
 
           <div className="pre">
-            <code>DATABASE_URL=postgresql://ka8540@localhost:5432/sendloom</code>
+            <code>DATABASE_URL=&lt;postgres connection string&gt;</code>
             <br />
-            <code>REDIS_URL=redis://localhost:6379</code>
+            <code>REDIS_URL=&lt;redis connection string&gt;</code>
             <br />
             <br />
-            <code>SESSION_SECRET=supersecret123</code>
+            <code>SESSION_SECRET=&lt;32+ character secret&gt;</code>
             <br />
             <br />
             <code>MAIL_PROVIDER=gmail</code>
             <br />
-            <code>GOOGLE_CLIENT_ID=your-google-oauth-client-id</code>
+            <code>GOOGLE_CLIENT_ID=&lt;google oauth client id&gt;</code>
             <br />
-            <code>GOOGLE_CLIENT_SECRET=your-google-oauth-client-secret</code>
-            <br />
-            <br />
-            <code>APP_BASE_URL=http://localhost:3000</code>
+            <code>GOOGLE_CLIENT_SECRET=&lt;google oauth client secret&gt;</code>
             <br />
             <br />
-            <code>ADMIN_EMAIL=optional-bootstrap@example.com</code>
+            <code>APP_BASE_URL=&lt;app base url&gt;</code>
             <br />
-            <code>ADMIN_PASSWORD=optional-bootstrap-password</code>
+            <br />
+            <code>ADMIN_EMAIL=&lt;optional bootstrap admin email&gt;</code>
+            <br />
+            <code>ADMIN_PASSWORD=&lt;optional bootstrap admin password&gt;</code>
           </div>
 
           <div className="pre" style={{ marginTop: "1rem" }}>
