@@ -151,6 +151,19 @@ export function LandingScene() {
     const dummy = new THREE.Object3D();
     const clock = new THREE.Clock();
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const resolveDarkTheme = () => {
+      const explicitTheme = document.documentElement.dataset.theme;
+
+      if (explicitTheme === "dark") {
+        return true;
+      }
+
+      if (explicitTheme === "light") {
+        return false;
+      }
+
+      return mediaQuery.matches;
+    };
 
     const applyTheme = (isDark: boolean) => {
       ambientLight.color.setHex(isDark ? 0xe4f1ff : 0xf7fbff);
@@ -187,16 +200,21 @@ export function LandingScene() {
       pointer.set(0, 0);
     };
 
-    const handleThemeChange = (event: MediaQueryListEvent) => {
-      applyTheme(event.matches);
+    const syncTheme = () => {
+      applyTheme(resolveDarkTheme());
     };
 
     const resizeObserver = new ResizeObserver(resize);
+    const themeObserver = new MutationObserver(syncTheme);
     resizeObserver.observe(mount);
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"]
+    });
     mount.addEventListener("pointermove", handlePointerMove);
     mount.addEventListener("pointerleave", handlePointerLeave);
-    applyTheme(mediaQuery.matches);
-    mediaQuery.addEventListener("change", handleThemeChange);
+    syncTheme();
+    mediaQuery.addEventListener("change", syncTheme);
     resize();
 
     renderer.setAnimationLoop(() => {
@@ -241,9 +259,10 @@ export function LandingScene() {
 
     return () => {
       resizeObserver.disconnect();
+      themeObserver.disconnect();
       mount.removeEventListener("pointermove", handlePointerMove);
       mount.removeEventListener("pointerleave", handlePointerLeave);
-      mediaQuery.removeEventListener("change", handleThemeChange);
+      mediaQuery.removeEventListener("change", syncTheme);
       renderer.setAnimationLoop(null);
       renderer.dispose();
       packetGeometry.dispose();

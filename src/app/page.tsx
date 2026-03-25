@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { LandingSceneShell } from "@/components/landing-scene-shell";
 import { SendloomLogo } from "@/components/sendloom-logo";
+import { ThemeSwitcher } from "@/components/theme-switcher";
 
 import styles from "@/app/landing.module.css";
 
@@ -51,10 +52,6 @@ const workflowSteps = [
 export default function LandingPage() {
   return (
     <main className={styles.page}>
-      <Link className={styles.sideCta} href="/login">
-        Try it
-      </Link>
-
       <div className={styles.frame}>
         <header className={styles.nav}>
           <div className={styles.brand}>
@@ -69,6 +66,7 @@ export default function LandingPage() {
             <a className={styles.navLink} href="#workflow">
               Workflow
             </a>
+            <ThemeSwitcher />
             <Link className={styles.ghostButton} href="/login">
               Login
             </Link>
