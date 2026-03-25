@@ -1,6 +1,11 @@
+import { after } from "next/server";
+
+import { ActiveRunRefresher } from "@/components/active-run-refresher";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { launchCampaign, validateCampaign } from "@/services/campaigns";
+import { launchCampaign, processPendingCampaignWork, validateCampaign } from "@/services/campaigns";
+
+export const maxDuration = 60;
 
 type CampaignTemplateSnapshot = {
   attachments?: Array<{
@@ -12,7 +17,13 @@ async function launch(campaignId: string) {
   "use server";
 
   const user = await requireUser();
-  await launchCampaign(campaignId, user.id);
+  const run = await launchCampaign(campaignId, user.id);
+  after(async () => {
+    await processPendingCampaignWork({
+      runId: run.id,
+      maxDurationMs: 55_000
+    });
+  });
 }
 
 async function validate(campaignId: string) {
@@ -44,12 +55,23 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
   });
 
   const latestRun = campaign.runs[0];
+  const isActiveRun = latestRun ? ["QUEUED", "RUNNING"].includes(latestRun.status) : false;
   const attachments = ((campaign.templateSnapshot as CampaignTemplateSnapshot).attachments ?? []).filter(
     (attachment) => attachment.fileName
   );
 
+  if (isActiveRun) {
+    after(async () => {
+      await processPendingCampaignWork({
+        campaignId: campaign.id,
+        maxDurationMs: 25_000
+      });
+    });
+  }
+
   return (
     <div className="stack">
+      <ActiveRunRefresher active={isActiveRun} />
       <section className="hero">
         <h1 style={{ marginTop: 0 }}>{campaign.name}</h1>
         <p className="muted">Status, delivery results, and recent recipient jobs.</p>

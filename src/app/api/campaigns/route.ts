@@ -1,10 +1,13 @@
+import { after } from "next/server";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { storeUpload } from "@/lib/storage";
-import { createCampaignDraft, launchCampaign, validateCampaign } from "@/services/campaigns";
+import { createCampaignDraft, launchCampaign, processPendingCampaignWork, validateCampaign } from "@/services/campaigns";
+
+export const maxDuration = 60;
 
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
@@ -93,6 +96,12 @@ export async function POST(request: Request) {
   if (payload.autoLaunch && payload.scheduleRule.type === "immediate") {
     await validateCampaign(campaign.id, user.id);
     const run = await launchCampaign(campaign.id, user.id);
+    after(async () => {
+      await processPendingCampaignWork({
+        runId: run.id,
+        maxDurationMs: 55_000
+      });
+    });
     return NextResponse.json({ campaignId: campaign.id, runId: run.id, autoLaunched: true });
   }
 

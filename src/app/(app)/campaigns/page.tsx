@@ -1,8 +1,10 @@
 import Link from "next/link";
+import { after } from "next/server";
 
 import { CampaignBuilder } from "@/components/campaign-builder";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { processPendingCampaignWork } from "@/services/campaigns";
 
 export default async function CampaignsPage() {
   const user = await requireUser();
@@ -26,6 +28,20 @@ export default async function CampaignsPage() {
     if (!latestMappings.has(mapping.importId)) {
       latestMappings.set(mapping.importId, mapping);
     }
+  }
+
+  if (
+    campaigns.some(
+      (campaign) =>
+        campaign.status === "RUNNING" ||
+        campaign.runs.some((run) => ["QUEUED", "RUNNING"].includes(run.status))
+    )
+  ) {
+    after(async () => {
+      await processPendingCampaignWork({
+        maxDurationMs: 20_000
+      });
+    });
   }
 
   return (
