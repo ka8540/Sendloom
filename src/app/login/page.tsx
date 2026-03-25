@@ -8,7 +8,7 @@ export default async function LoginPage(props: { searchParams?: Promise<{ error?
   const searchParams = await props.searchParams;
 
   if (session) {
-    redirect("/");
+    redirect("/workspace");
   }
 
   return (

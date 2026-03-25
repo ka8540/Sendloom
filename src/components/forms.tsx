@@ -32,7 +32,7 @@ export function LoginForm() {
       return;
     }
 
-    router.replace("/");
+    router.replace("/workspace");
     router.refresh();
   }
 

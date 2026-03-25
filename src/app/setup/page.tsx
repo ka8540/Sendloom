@@ -57,7 +57,7 @@ export default function SetupPage() {
         </div>
 
         <div style={{ marginTop: "1rem", display: "flex", gap: "0.75rem" }}>
-          <Link className="button" href="/">
+          <Link className="button" href="/workspace">
             Open app
           </Link>
           <Link className="button secondary" href="/login">

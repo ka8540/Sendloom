@@ -38,7 +38,7 @@ export async function GET(request: Request) {
     });
 
     await setSession(profile.email);
-    return NextResponse.redirect(new URL("/", request.url));
+    return NextResponse.redirect(new URL("/workspace", request.url));
   } catch (loginError) {
     const message = loginError instanceof Error ? loginError.message : "google_login_failed";
     return NextResponse.redirect(new URL(`/login?error=${encodeURIComponent(message)}`, request.url));

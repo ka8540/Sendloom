@@ -11,7 +11,7 @@ export function AppNav() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const items = [
-    { href: "/", label: "Overview", icon: House },
+    { href: "/workspace", label: "Overview", icon: House },
     { href: "/imports", label: "Imports", icon: FileSpreadsheet },
     { href: "/templates", label: "Templates", icon: FileText },
     { href: "/campaigns", label: "Sequences", icon: SendHorizontal },
@@ -42,7 +42,7 @@ export function AppNav() {
       </div>
       <nav className="nav">
         {items.map((item) => {
-          const active = item.href === "/" ? pathname === "/" : pathname === item.href || pathname.startsWith(`${item.href}/`);
+          const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
           const Icon = item.icon;
 
           return (
