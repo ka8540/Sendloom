@@ -2,7 +2,6 @@ import Link from "next/link";
 
 import { LandingSceneShell } from "@/components/landing-scene-shell";
 import { SendloomLogo } from "@/components/sendloom-logo";
-import { ThemeSwitcher } from "@/components/theme-switcher";
 
 import styles from "@/app/landing.module.css";
 
@@ -66,7 +65,6 @@ export default function LandingPage() {
             <a className={styles.navLink} href="#workflow">
               Workflow
             </a>
-            <ThemeSwitcher />
             <Link className={styles.ghostButton} href="/login">
               Login
             </Link>

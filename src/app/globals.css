@@ -307,6 +307,11 @@ textarea {
   padding-top: 0.5rem;
 }
 
+.nav-footer-theme {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .nav-item-button {
   cursor: pointer;
   text-align: left;
@@ -365,13 +370,7 @@ textarea {
   justify-items: center;
 }
 
-.sidebar-theme {
-  display: flex;
-  justify-content: flex-end;
-  padding-bottom: 0.25rem;
-}
-
-.sidebar.is-collapsed .sidebar-theme {
+.sidebar.is-collapsed .nav-footer-theme {
   justify-content: center;
 }
 
@@ -587,6 +586,12 @@ textarea {
   backdrop-filter: blur(22px);
 }
 
+.theme-menu--footer .theme-menu__panel {
+  top: auto;
+  bottom: calc(100% + 0.65rem);
+  right: 0;
+}
+
 .theme-menu__option {
   display: inline-flex;
   align-items: center;
@@ -637,6 +642,12 @@ textarea {
   bottom: 0;
   left: calc(100% + 0.75rem);
   right: auto;
+}
+
+.sidebar.is-collapsed .theme-menu--footer .theme-menu__panel {
+  bottom: calc(100% + 0.65rem);
+  left: auto;
+  right: 0;
 }
 
 .table {
