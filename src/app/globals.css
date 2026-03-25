@@ -309,7 +309,7 @@ textarea {
 
 .nav-footer-theme {
   display: flex;
-  justify-content: flex-end;
+  justify-content: flex-start;
 }
 
 .nav-item-button {
@@ -589,7 +589,8 @@ textarea {
 .theme-menu--footer .theme-menu__panel {
   top: auto;
   bottom: calc(100% + 0.65rem);
-  right: 0;
+  left: 0;
+  right: auto;
 }
 
 .theme-menu__option {
@@ -646,8 +647,8 @@ textarea {
 
 .sidebar.is-collapsed .theme-menu--footer .theme-menu__panel {
   bottom: calc(100% + 0.65rem);
-  left: auto;
-  right: 0;
+  left: 0;
+  right: auto;
 }
 
 .table {
