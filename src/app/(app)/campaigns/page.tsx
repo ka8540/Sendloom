@@ -48,8 +48,8 @@ export default async function CampaignsPage() {
     <div className="stack">
       <section className="split">
         <article className="card">
-          <h1 style={{ marginTop: 0 }}>Create a sending sequence</h1>
-          <p className="muted">Choose an audience, template, sender, and delivery schedule.</p>
+          <h1 style={{ marginTop: 0 }}>Create a sequence</h1>
+          <p className="muted">Pick a contact list, email template, sender, and send timing.</p>
           <CampaignBuilder
             imports={imports.map((entry) => ({ id: entry.id, label: entry.fileName }))}
             mappings={imports.flatMap((entry) => {
@@ -72,8 +72,8 @@ export default async function CampaignsPage() {
         </article>
 
         <article className="card">
-          <h2 style={{ marginTop: 0 }}>Connected mailbox</h2>
-          <p className="muted">Sequences send from the Gmail accounts connected here.</p>
+          <h2 style={{ marginTop: 0 }}>Send from Gmail</h2>
+          <p className="muted">Choose one of these connected accounts when you create a sequence.</p>
           <div className="stack">
             {senders.length ? (
               senders.map((sender) => (
