@@ -1,10 +1,11 @@
 import { addMinutes } from "date-fns";
 
-import { redis } from "@/lib/redis";
+import { getRedis } from "@/lib/redis";
 
 export const SENDS_PER_MINUTE = 120;
 
 export async function consumeSendWindow(key = "global-send-window") {
+  const redis = getRedis();
   const now = new Date();
   const window = `${key}:${now.toISOString().slice(0, 16)}`;
   const count = await redis.incr(window);

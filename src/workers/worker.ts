@@ -4,10 +4,10 @@ import { prisma } from "@/lib/db";
 import { sendEmail, type EmailAttachment } from "@/lib/provider";
 import { queues } from "@/lib/queue";
 import { consumeSendWindow } from "@/lib/rate-limit";
-import { redis } from "@/lib/redis";
+import { getRedis } from "@/lib/redis";
 import { enqueueRecipientJobs, markRecipientAttempt } from "@/services/campaigns";
 
-const connection = redis as unknown as ConnectionOptions;
+const connection = getRedis() as unknown as ConnectionOptions;
 
 function isRetriableError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
