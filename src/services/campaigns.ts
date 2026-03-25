@@ -337,7 +337,7 @@ export async function launchCampaign(campaignId: string, userId?: string) {
   const run = await prisma.campaignRun.create({
     data: {
       campaignId,
-      status: rule.type === "immediate" ? "QUEUED" : "QUEUED",
+      status: "QUEUED",
       launchType: rule.type,
       scheduledFor,
       totalRecipients
@@ -823,7 +823,7 @@ export async function queueRecurringRuns() {
       continue;
     }
 
-    const run = await prisma.campaignRun.create({
+    await prisma.campaignRun.create({
       data: {
         campaignId: campaign.id,
         status: "QUEUED",
