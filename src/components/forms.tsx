@@ -10,6 +10,12 @@ type ActionState = {
 
 const DEFAULT_TEMPLATE_HTML = `<p>Hi {{name}},</p>\n<p>I noticed {{company}} and wanted to reach out.</p>`;
 
+export type TemplateDraft = {
+  name: string;
+  subject: string;
+  htmlBody: string;
+};
+
 export type EditableTemplate = {
   id: string;
   name: string;
@@ -103,11 +109,13 @@ export function UploadImportForm() {
 
 type TemplateFormProps = {
   initialTemplate?: EditableTemplate | null;
+  value?: TemplateDraft;
+  onChange?: (fields: TemplateDraft) => void;
   onSaved?: (template: EditableTemplate) => void;
   onCancel?: () => void;
 };
 
-function getTemplateFields(template?: EditableTemplate | null) {
+function getTemplateFields(template?: EditableTemplate | null): TemplateDraft {
   return {
     name: template?.name ?? "",
     subject: template?.subject ?? "",
@@ -115,15 +123,30 @@ function getTemplateFields(template?: EditableTemplate | null) {
   };
 }
 
-export function TemplateForm({ initialTemplate = null, onSaved, onCancel }: TemplateFormProps) {
+export function TemplateForm({ initialTemplate = null, value, onChange, onSaved, onCancel }: TemplateFormProps) {
   const router = useRouter();
   const [state, setState] = useState<ActionState>({ pending: false });
-  const [fields, setFields] = useState(getTemplateFields(initialTemplate));
+  const [localFields, setLocalFields] = useState(getTemplateFields(initialTemplate));
+  const controlled = Boolean(value && onChange);
+  const fields = value ?? localFields;
+
+  const updateFields = (updater: (current: TemplateDraft) => TemplateDraft) => {
+    if (controlled && onChange) {
+      onChange(updater(fields));
+      return;
+    }
+
+    setLocalFields(updater);
+  };
 
   useEffect(() => {
-    setFields(getTemplateFields(initialTemplate));
+    if (controlled) {
+      return;
+    }
+
+    setLocalFields(getTemplateFields(initialTemplate));
     setState({ pending: false });
-  }, [initialTemplate?.id]);
+  }, [controlled, initialTemplate?.id]);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -153,10 +176,12 @@ export function TemplateForm({ initialTemplate = null, onSaved, onCancel }: Temp
       router.refresh();
     }
 
-    if (initialTemplate) {
-      setFields(getTemplateFields(savedTemplate));
-    } else {
-      setFields(getTemplateFields(null));
+    if (!controlled) {
+      if (initialTemplate) {
+        updateFields(() => getTemplateFields(savedTemplate));
+      } else {
+        updateFields(() => getTemplateFields(null));
+      }
     }
 
     setState({ pending: false });
@@ -172,7 +197,7 @@ export function TemplateForm({ initialTemplate = null, onSaved, onCancel }: Temp
           id="name"
           name="name"
           value={fields.name}
-          onChange={(event) => setFields((current) => ({ ...current, name: event.target.value }))}
+          onChange={(event) => updateFields((current) => ({ ...current, name: event.target.value }))}
           required
         />
       </div>
@@ -182,7 +207,7 @@ export function TemplateForm({ initialTemplate = null, onSaved, onCancel }: Temp
           id="subject"
           name="subject"
           value={fields.subject}
-          onChange={(event) => setFields((current) => ({ ...current, subject: event.target.value }))}
+          onChange={(event) => updateFields((current) => ({ ...current, subject: event.target.value }))}
           placeholder="Hi {{name}}, quick question"
           required
         />
@@ -193,7 +218,7 @@ export function TemplateForm({ initialTemplate = null, onSaved, onCancel }: Temp
           id="htmlBody"
           name="htmlBody"
           value={fields.htmlBody}
-          onChange={(event) => setFields((current) => ({ ...current, htmlBody: event.target.value }))}
+          onChange={(event) => updateFields((current) => ({ ...current, htmlBody: event.target.value }))}
           required
         />
       </div>
