@@ -56,7 +56,8 @@ export async function POST(request: Request) {
   let attachments:
     | {
         fileName: string;
-        storagePath: string;
+        storagePath?: string;
+        contentBase64?: string;
         contentType?: string | null;
       }[]
     | undefined;
@@ -67,13 +68,18 @@ export async function POST(request: Request) {
     }
 
     const buffer = Buffer.from(await attachment.arrayBuffer());
-    const storagePath = await storeUpload(attachment.name, buffer, "attachments");
     attachments = [
-      {
-        fileName: attachment.name,
-        storagePath,
-        contentType: attachment.type || null
-      }
+      process.env.VERCEL
+        ? {
+            fileName: attachment.name,
+            contentBase64: buffer.toString("base64"),
+            contentType: attachment.type || null
+          }
+        : {
+            fileName: attachment.name,
+            storagePath: await storeUpload(attachment.name, buffer, "attachments"),
+            contentType: attachment.type || null
+          }
     ];
   }
 

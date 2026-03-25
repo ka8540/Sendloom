@@ -9,7 +9,8 @@ type SenderAuth = {
 
 export type EmailAttachment = {
   fileName: string;
-  storagePath: string;
+  storagePath?: string;
+  contentBase64?: string;
   contentType?: string | null;
 };
 
@@ -54,11 +55,25 @@ export async function sendEmail(args: SendArgs) {
     to: args.to,
     subject: args.subject,
     html: args.html,
-    attachments: args.attachments?.map((attachment) => ({
-      filename: attachment.fileName,
-      path: attachment.storagePath,
-      contentType: attachment.contentType ?? undefined
-    }))
+    attachments: args.attachments?.map((attachment) => {
+      if (attachment.contentBase64) {
+        return {
+          filename: attachment.fileName,
+          content: Buffer.from(attachment.contentBase64, "base64"),
+          contentType: attachment.contentType ?? undefined
+        };
+      }
+
+      if (!attachment.storagePath) {
+        throw new Error(`Attachment ${attachment.fileName} is missing storage information.`);
+      }
+
+      return {
+        filename: attachment.fileName,
+        path: attachment.storagePath,
+        contentType: attachment.contentType ?? undefined
+      };
+    })
   });
 
   return {

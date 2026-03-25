@@ -33,7 +33,7 @@ const launchWorker = new Worker(
 const sendWorker = new Worker(
   "send",
   async (job) => {
-    const { jobId, attachments = [] } = job.data as { jobId: string; attachments?: EmailAttachment[] };
+    const { jobId } = job.data as { jobId: string };
     const recipientJob = await prisma.recipientJob.findUniqueOrThrow({
       where: { id: jobId },
       include: {
@@ -76,12 +76,15 @@ const sendWorker = new Worker(
         fromEmail: string;
         name: string;
       };
+      const templateSnapshot = recipientJob.campaignRun.campaign.templateSnapshot as {
+        attachments?: EmailAttachment[];
+      };
       const response = await sendEmail({
         from: `${sender.name} <${sender.fromEmail}>`,
         to: recipientJob.recipientEmail,
         subject: recipientJob.subject,
         html: recipientJob.htmlBody,
-        attachments,
+        attachments: templateSnapshot.attachments ?? [],
         sender: {
           fromEmail: recipientJob.campaignRun.campaign.senderProfile.fromEmail,
           oauthRefreshToken: recipientJob.campaignRun.campaign.senderProfile.oauthRefreshToken

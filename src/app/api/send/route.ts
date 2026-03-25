@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
-import { renderToStaticMarkup } from "react-dom/server";
 import { z } from "zod";
 
-import { EmailTemplate } from "@/components/email-template";
+import { renderEmailTemplate } from "@/components/email-template";
 import { requireUser } from "@/lib/auth";
 import { env } from "@/lib/env";
 import { sendEmail } from "@/lib/provider";
@@ -32,7 +31,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const html = renderToStaticMarkup(EmailTemplate({ firstName: payload?.firstName ?? "John" }));
+    const html = renderEmailTemplate({ firstName: payload?.firstName ?? "John" });
     const result = await sendEmail({
       from: `${sender.name || env.DEFAULT_FROM_NAME || sender.fromEmail} <${sender.fromEmail}>`,
       to: payload?.to ?? user.email,

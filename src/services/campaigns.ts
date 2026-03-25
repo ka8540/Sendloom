@@ -216,7 +216,6 @@ export async function enqueueRecipientJobs(campaignId: string, runId: string) {
   const templateSnapshot = campaign.templateSnapshot as CampaignTemplateSnapshot;
   const subjectTemplate = templateSnapshot.subject;
   const htmlTemplate = templateSnapshot.htmlBody;
-  const attachments = templateSnapshot.attachments ?? [];
   const mappingSnapshot = campaign.mappingSnapshot as {
     reservedFieldMap?: Record<string, string>;
     variableMap?: Record<string, string>;
@@ -286,8 +285,7 @@ export async function enqueueRecipientJobs(campaignId: string, runId: string) {
     await queues.send.add(
       "send-recipient",
       {
-        jobId: jobRecord.id,
-        attachments
+        jobId: jobRecord.id
       },
       {
         jobId: jobRecord.dedupeKey,
