@@ -354,6 +354,67 @@ export async function launchCampaign(campaignId: string, userId?: string) {
   return run;
 }
 
+export async function queueScheduledRuns() {
+  const scheduledCampaigns = await prisma.campaign.findMany({
+    where: {
+      scheduleType: {
+        in: ["once", "recurring"]
+      },
+      status: {
+        in: ["DRAFT", "VALIDATED", "SCHEDULED", "COMPLETED"]
+      }
+    }
+  });
+
+  for (const campaign of scheduledCampaigns) {
+    const rule = campaign.scheduleConfig as ScheduleRule | null;
+
+    if (!rule || (rule.type !== "once" && rule.type !== "recurring")) {
+      continue;
+    }
+
+    const nextRunDate = getNextRunDate(rule);
+    const existingRun = await prisma.campaignRun.findFirst({
+      where:
+        rule.type === "once"
+          ? {
+              campaignId: campaign.id
+            }
+          : {
+              campaignId: campaign.id,
+              scheduledFor: nextRunDate
+            }
+    });
+
+    if (existingRun) {
+      continue;
+    }
+
+    await prisma.campaignRun.create({
+      data: {
+        campaignId: campaign.id,
+        status: "QUEUED",
+        launchType: rule.type,
+        scheduledFor: nextRunDate,
+        totalRecipients: await prisma.importRow.count({
+          where: {
+            importId: campaign.importId
+          }
+        })
+      }
+    });
+
+    await prisma.campaign.update({
+      where: { id: campaign.id },
+      data: {
+        status: "SCHEDULED"
+      }
+    });
+  }
+}
+
+export const queueRecurringRuns = queueScheduledRuns;
+
 async function ensureRecipientJobs(campaignId: string, runId: string) {
   const campaign = await prisma.campaign.findUniqueOrThrow({
     where: { id: campaignId },
@@ -799,48 +860,8 @@ export async function processProviderEvent(args: {
   return recipientJob;
 }
 
-export async function queueRecurringRuns() {
-  const scheduledCampaigns = await prisma.campaign.findMany({
-    where: {
-      scheduleType: "recurring",
-      status: {
-        in: ["SCHEDULED", "COMPLETED"]
-      }
-    }
-  });
-
-  for (const campaign of scheduledCampaigns) {
-    const rule = campaign.scheduleConfig as ScheduleRule;
-    const nextRunDate = getNextRunDate(rule);
-    const existingRun = await prisma.campaignRun.findFirst({
-      where: {
-        campaignId: campaign.id,
-        scheduledFor: nextRunDate
-      }
-    });
-
-    if (existingRun) {
-      continue;
-    }
-
-    await prisma.campaignRun.create({
-      data: {
-        campaignId: campaign.id,
-        status: "QUEUED",
-        launchType: "recurring",
-        scheduledFor: nextRunDate,
-        totalRecipients: await prisma.importRow.count({
-          where: {
-            importId: campaign.importId
-          }
-        })
-      }
-    });
-  }
-}
-
 export async function processPendingCampaignWork(args: ProcessCampaignWorkArgs = {}) {
-  await queueRecurringRuns();
+  await queueScheduledRuns();
 
   const deadline = getDeadline(args.maxDurationMs);
   const maxRuns = args.maxRuns ?? DEFAULT_MAX_RUNS;

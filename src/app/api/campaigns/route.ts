@@ -98,6 +98,7 @@ export async function POST(request: Request) {
     },
     user.id
   );
+
   if (payload.autoLaunch && payload.scheduleRule.type === "immediate") {
     await validateCampaign(campaign.id, user.id);
     const run = await launchCampaign(campaign.id, user.id);
@@ -110,5 +111,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ campaignId: campaign.id, runId: run.id, autoLaunched: true });
   }
 
-  return NextResponse.json({ campaignId: campaign.id, autoLaunched: false });
+  if (payload.scheduleRule.type === "once" || payload.scheduleRule.type === "recurring") {
+    const run = await launchCampaign(campaign.id, user.id);
+    return NextResponse.json({
+      campaignId: campaign.id,
+      runId: run.id,
+      autoLaunched: false,
+      autoScheduled: true
+    });
+  }
+
+  return NextResponse.json({ campaignId: campaign.id, autoLaunched: false, autoScheduled: false });
 }
