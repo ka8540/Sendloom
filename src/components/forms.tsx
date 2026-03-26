@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
 type ActionState = {
   pending: boolean;
   error?: string;
 };
+
+type EnhanceField = "subject" | "body";
 
 const DEFAULT_TEMPLATE_HTML = `<p>Hi {{name}},</p>\n<p>I noticed {{company}} and wanted to reach out.</p>`;
 
@@ -194,6 +196,10 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
   const router = useRouter();
   const [state, setState] = useState<ActionState>({ pending: false });
   const [localFields, setLocalFields] = useState(getTemplateFields(initialTemplate));
+  const [enhancingField, setEnhancingField] = useState<EnhanceField | null>(null);
+  const [enhanceError, setEnhanceError] = useState<Partial<Record<EnhanceField, string>>>({});
+  const [highlightedField, setHighlightedField] = useState<EnhanceField | null>(null);
+  const highlightTimeoutRef = useRef<number | null>(null);
   const controlled = Boolean(value && onChange);
   const fields = value ?? localFields;
 
@@ -213,7 +219,74 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
 
     setLocalFields(getTemplateFields(initialTemplate));
     setState({ pending: false });
+    setEnhanceError({});
   }, [controlled, initialTemplate?.id]);
+
+  useEffect(() => {
+    return () => {
+      if (highlightTimeoutRef.current) {
+        window.clearTimeout(highlightTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  async function enhanceText(fieldType: EnhanceField, currentText: string) {
+    const trimmedText = currentText.trim();
+    if (!trimmedText) {
+      setEnhanceError((current) => ({
+        ...current,
+        [fieldType]: `Add some ${fieldType === "subject" ? "subject" : "body"} text before using AI.`
+      }));
+      return;
+    }
+
+    setEnhanceError((current) => ({
+      ...current,
+      [fieldType]: undefined
+    }));
+    setEnhancingField(fieldType);
+
+    try {
+      const response = await fetch("/api/templates/enhance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fieldType,
+          currentText: trimmedText
+        })
+      });
+
+      const payload = (await response.json()) as { enhancedText?: string; error?: string };
+      if (!response.ok || !payload.enhancedText) {
+        setEnhanceError((current) => ({
+          ...current,
+          [fieldType]: payload.error ?? "AI enhancement failed."
+        }));
+        return;
+      }
+
+      updateFields((current) => ({
+        ...current,
+        ...(fieldType === "subject" ? { subject: payload.enhancedText! } : { htmlBody: payload.enhancedText! })
+      }));
+      setHighlightedField(fieldType);
+
+      if (highlightTimeoutRef.current) {
+        window.clearTimeout(highlightTimeoutRef.current);
+      }
+
+      highlightTimeoutRef.current = window.setTimeout(() => {
+        setHighlightedField(null);
+      }, 1600);
+    } catch {
+      setEnhanceError((current) => ({
+        ...current,
+        [fieldType]: "AI enhancement failed."
+      }));
+    } finally {
+      setEnhancingField(null);
+    }
+  }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -269,25 +342,69 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
         />
       </div>
       <div className="field">
-        <label htmlFor="subject">Subject</label>
+        <div className="field-label-row">
+          <label htmlFor="subject">Subject</label>
+          <button
+            className="field-enhance-button"
+            type="button"
+            onClick={() => enhanceText("subject", fields.subject)}
+            disabled={state.pending || enhancingField !== null}
+          >
+            {enhancingField === "subject" ? (
+              <>
+                <span className="button-spinner" aria-hidden="true" />
+                Enhancing...
+              </>
+            ) : (
+              "✨ Enhance with AI"
+            )}
+          </button>
+        </div>
         <input
           id="subject"
           name="subject"
           value={fields.subject}
-          onChange={(event) => updateFields((current) => ({ ...current, subject: event.target.value }))}
+          onChange={(event) => {
+            setEnhanceError((current) => ({ ...current, subject: undefined }));
+            updateFields((current) => ({ ...current, subject: event.target.value }));
+          }}
           placeholder="Hi {{name}}, quick question"
+          className={highlightedField === "subject" ? "field-enhanced" : undefined}
           required
         />
+        {enhanceError.subject ? <p className="field-inline-note">{enhanceError.subject}</p> : null}
       </div>
       <div className="field">
-        <label htmlFor="htmlBody">HTML body</label>
+        <div className="field-label-row">
+          <label htmlFor="htmlBody">HTML body</label>
+          <button
+            className="field-enhance-button"
+            type="button"
+            onClick={() => enhanceText("body", fields.htmlBody)}
+            disabled={state.pending || enhancingField !== null}
+          >
+            {enhancingField === "body" ? (
+              <>
+                <span className="button-spinner" aria-hidden="true" />
+                Enhancing...
+              </>
+            ) : (
+              "✨ Enhance with AI"
+            )}
+          </button>
+        </div>
         <textarea
           id="htmlBody"
           name="htmlBody"
           value={fields.htmlBody}
-          onChange={(event) => updateFields((current) => ({ ...current, htmlBody: event.target.value }))}
+          onChange={(event) => {
+            setEnhanceError((current) => ({ ...current, body: undefined }));
+            updateFields((current) => ({ ...current, htmlBody: event.target.value }));
+          }}
+          className={highlightedField === "body" ? "field-enhanced" : undefined}
           required
         />
+        {enhanceError.body ? <p className="field-inline-note">{enhanceError.body}</p> : null}
       </div>
       <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
         <button className="button" type="submit" disabled={state.pending}>
