@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { FileSpreadsheet, FileText, House, PanelLeftClose, PanelLeftOpen, SendHorizontal, ShieldAlert } from "lucide-react";
+import { FileSpreadsheet, House, PanelLeftClose, PanelLeftOpen, ScrollText, SendHorizontal, ShieldAlert } from "lucide-react";
 import { SendloomLogo } from "@/components/sendloom-logo";
 import { SessionControls } from "@/components/session-controls";
 
@@ -13,7 +13,7 @@ export function AppNav() {
   const items = [
     { href: "/workspace", label: "Overview", icon: House },
     { href: "/imports", label: "Imports", icon: FileSpreadsheet },
-    { href: "/templates", label: "Templates", icon: FileText },
+    { href: "/templates", label: "Templates", icon: ScrollText },
     { href: "/campaigns", label: "Sequences", icon: SendHorizontal },
     { href: "/suppressions", label: "Suppressions", icon: ShieldAlert }
   ] as const;

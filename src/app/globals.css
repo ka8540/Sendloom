@@ -310,6 +310,7 @@ textarea {
 .nav-footer-theme {
   display: flex;
   justify-content: flex-start;
+  padding-left: 0.35rem;
 }
 
 .nav-item-button {
@@ -372,6 +373,7 @@ textarea {
 
 .sidebar.is-collapsed .nav-footer-theme {
   justify-content: center;
+  padding-left: 0;
 }
 
 .content {
