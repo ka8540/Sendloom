@@ -57,11 +57,25 @@
 }
 
 .nav {
+  position: sticky;
+  top: 1rem;
+  z-index: 25;
+  padding: 0 0 1.5rem;
+}
+
+.navInner {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 0.75rem 0 1.5rem;
+  padding: 0.95rem 1rem 0.95rem 1.1rem;
+  border-radius: 30px;
+  border: 1px solid color-mix(in srgb, var(--landing-line) 88%, white 12%);
+  background: color-mix(in srgb, var(--landing-panel-strong) 82%, transparent);
+  box-shadow:
+    0 20px 44px rgba(28, 42, 70, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.26);
+  backdrop-filter: blur(24px) saturate(1.1);
 }
 
 .brand {
@@ -114,22 +128,25 @@
 }
 
 .navLink {
-  padding: 0.78rem 1rem;
+  padding: 0.82rem 1rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
   color: var(--landing-ink);
   font-weight: 600;
 }
 
 .ghostButton {
-  padding: 0.95rem 1.2rem;
+  padding: 0.92rem 1.18rem;
   border: 1px solid var(--landing-line);
-  background: var(--landing-panel);
+  background: color-mix(in srgb, var(--landing-panel-strong) 78%, transparent);
   color: var(--landing-ink);
   font-weight: 650;
-  backdrop-filter: blur(18px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(18px) saturate(1.05);
 }
 
 .primaryButton {
-  padding: 1rem 1.3rem;
+  padding: 0.98rem 1.35rem;
   background: linear-gradient(135deg, var(--landing-emerald) 0%, #1f8b71 100%);
   color: white;
   font-weight: 750;
@@ -143,6 +160,7 @@
 .ghostButton:focus-visible,
 .primaryButton:focus-visible {
   transform: translateY(-2px);
+  box-shadow: 0 14px 24px rgba(28, 42, 70, 0.12);
   outline: none;
 }
 
@@ -593,16 +611,98 @@
 }
 
 .footer {
+  display: grid;
+  gap: 1.4rem;
+  margin-top: 3rem;
+  padding: 1.5rem;
+  border-radius: 30px;
+  border: 1px solid var(--landing-line);
+  background: color-mix(in srgb, var(--landing-panel-strong) 84%, transparent);
+  box-shadow: 0 24px 50px rgba(28, 42, 70, 0.08);
+  backdrop-filter: blur(22px);
+}
+
+.footerTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 2rem;
+}
+
+.footerBrandBlock {
+  display: grid;
+  gap: 0.9rem;
+  max-width: 28rem;
+}
+
+.footerBrand {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.footerBrandMark {
+  width: 2.8rem;
+  height: 2.8rem;
+  border-radius: 18px;
+  box-shadow: 0 16px 34px rgba(15, 77, 63, 0.16);
+}
+
+.footerBrand strong,
+.footerHeading {
+  display: block;
+}
+
+.footerBrand span {
+  display: block;
+  margin-top: 0.15rem;
+  color: var(--landing-muted);
+}
+
+.footerColumns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.4rem;
+  min-width: min(34rem, 100%);
+}
+
+.footerColumn {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.footerHeading {
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--landing-emerald);
+}
+
+.footerColumn a {
+  color: var(--landing-ink);
+  font-weight: 650;
+}
+
+.footerColumn a:hover,
+.footerColumn a:focus-visible {
+  color: var(--landing-emerald);
+  outline: none;
+}
+
+.footerBottom {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 1.4rem 0 0.4rem;
+  padding-top: 1.2rem;
+  border-top: 1px solid var(--landing-line);
 }
 
 .footerCopy {
   margin: 0;
   color: var(--landing-muted);
+  line-height: 1.7;
 }
 
 .footerLinks {
@@ -712,6 +812,15 @@
   .workflow {
     grid-template-columns: 1fr;
   }
+
+  .footerTop,
+  .footerBottom {
+    display: grid;
+  }
+
+  .footerColumns {
+    min-width: 0;
+  }
 }
 
 @media (max-width: 720px) {
@@ -721,14 +830,31 @@
   }
 
   .nav {
-    align-items: flex-start;
+    top: 0.6rem;
+  }
+
+  .navInner,
+  .navActions,
+  .heroCopy,
+  .sectionHeader,
+  .footer,
+  .footerTop,
+  .footerBottom,
+  .footerBrandBlock {
+    justify-items: center;
+    text-align: center;
+  }
+
+  .navInner {
+    align-items: center;
     flex-direction: column;
+    padding-inline: 0.9rem;
   }
 
   .navActions,
   .ctaRow,
   .ctaActions,
-  .footer {
+  .footerBottom {
     width: 100%;
   }
 
@@ -738,9 +864,26 @@
     flex: 1;
   }
 
-  .footer {
-    display: grid;
-    justify-items: start;
+  .navActions {
+    justify-content: center;
+  }
+
+  .navLink,
+  .ghostButton,
+  .primaryButton {
+    width: 100%;
+  }
+
+  .navActions :global(.theme-menu) {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+  }
+
+  .brand,
+  .footerBrand {
+    justify-content: center;
+    text-align: left;
   }
 
   .statRow {
@@ -757,5 +900,14 @@
   .floatingCardLower {
     width: 11.5rem;
     padding: 0.85rem 0.9rem;
+  }
+
+  .footerColumns {
+    grid-template-columns: 1fr;
+    justify-items: center;
+  }
+
+  .footerColumn {
+    justify-items: center;
   }
 }

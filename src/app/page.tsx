@@ -54,25 +54,27 @@ export default function LandingPage() {
     <main className={styles.page}>
       <div className={styles.frame}>
         <header className={styles.nav}>
-          <div className={styles.brand}>
-            <SendloomLogo className={styles.brandMark} />
-            <div className={styles.brandText}>
-              <strong>Sendloom</strong>
-              <span>Sequence operations with real sending discipline.</span>
+          <div className={styles.navInner}>
+            <div className={styles.brand}>
+              <SendloomLogo className={styles.brandMark} />
+              <div className={styles.brandText}>
+                <strong>Sendloom</strong>
+                <span>Sequence operations with real sending discipline.</span>
+              </div>
             </div>
-          </div>
 
-          <div className={styles.navActions}>
-            <a className={styles.navLink} href="#workflow">
-              Workflow
-            </a>
-            <ThemeSwitcher />
-            <Link className={styles.ghostButton} href="/login">
-              Login
-            </Link>
-            <Link className={styles.primaryButton} href="/signup">
-              Try it
-            </Link>
+            <div className={styles.navActions}>
+              <a className={styles.navLink} href="#workflow">
+                Workflow
+              </a>
+              <ThemeSwitcher />
+              <Link className={styles.ghostButton} href="/login">
+                Login
+              </Link>
+              <Link className={styles.primaryButton} href="/signup">
+                Try it
+              </Link>
+            </div>
           </div>
         </header>
 
@@ -237,11 +239,49 @@ export default function LandingPage() {
         </section>
 
         <footer className={styles.footer}>
-          <p className={styles.footerCopy}>Sendloom helps teams run outreach from one clean control surface.</p>
-          <div className={styles.footerLinks}>
-            <Link href="/privacy">Privacy</Link>
-            <Link href="/terms">Terms</Link>
-            <Link href="/login">Login</Link>
+          <div className={styles.footerTop}>
+            <div className={styles.footerBrandBlock}>
+              <div className={styles.footerBrand}>
+                <SendloomLogo className={styles.footerBrandMark} />
+                <div>
+                  <strong>Sendloom</strong>
+                  <span>Outreach operations with one source of truth.</span>
+                </div>
+              </div>
+              <p className={styles.footerCopy}>
+                Built for small teams who want imports, templates, sender setup, launch, and run visibility in one calm system.
+              </p>
+            </div>
+
+            <div className={styles.footerColumns}>
+              <div className={styles.footerColumn}>
+                <span className={styles.footerHeading}>Product</span>
+                <a href="#workflow">Workflow</a>
+                <a href="#proof">Why it works</a>
+                <Link href="/signup">Try Sendloom</Link>
+              </div>
+              <div className={styles.footerColumn}>
+                <span className={styles.footerHeading}>Access</span>
+                <Link href="/login">Login</Link>
+                <Link href="/signup">Create account</Link>
+                <Link href="/workspace">Dashboard</Link>
+              </div>
+              <div className={styles.footerColumn}>
+                <span className={styles.footerHeading}>Legal</span>
+                <Link href="/privacy">Privacy</Link>
+                <Link href="/terms">Terms</Link>
+                <a href="mailto:hello@sendloom.net">Contact</a>
+              </div>
+            </div>
+          </div>
+
+          <div className={styles.footerBottom}>
+            <span>Sendloom.net</span>
+            <div className={styles.footerLinks}>
+              <Link href="/privacy">Privacy</Link>
+              <Link href="/terms">Terms</Link>
+              <Link href="/login">Login</Link>
+            </div>
           </div>
         </footer>
       </div>
