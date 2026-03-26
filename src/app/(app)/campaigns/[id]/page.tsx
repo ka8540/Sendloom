@@ -11,7 +11,9 @@ import {
 } from "lucide-react";
 
 import { ActiveRunRefresher } from "@/components/active-run-refresher";
+import { AttachmentPreview } from "@/components/attachment-preview";
 import { requireUser } from "@/lib/auth";
+import { getAttachmentPreviewKind } from "@/lib/attachments";
 import { prisma } from "@/lib/db";
 import { launchCampaign, processPendingCampaignWork, validateCampaign } from "@/services/campaigns";
 import styles from "./page.module.css";
@@ -21,6 +23,7 @@ export const maxDuration = 60;
 type CampaignTemplateSnapshot = {
   attachments?: Array<{
     fileName: string;
+    contentType?: string | null;
   }>;
 };
 
@@ -135,6 +138,13 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
   const attachments = ((campaign.templateSnapshot as CampaignTemplateSnapshot).attachments ?? []).filter(
     (attachment) => attachment.fileName
   );
+  const attachmentPreviewItems = attachments.map((attachment, index) => ({
+    contentType: attachment.contentType ?? null,
+    downloadUrl: `/api/campaigns/${campaign.id}/attachments/${index}?download=1`,
+    fileName: attachment.fileName,
+    previewKind: getAttachmentPreviewKind(attachment.fileName, attachment.contentType),
+    previewUrl: `/api/campaigns/${campaign.id}/attachments/${index}`
+  }));
   const issueCount =
     (latestRun?.failedCount ?? 0) + (latestRun?.suppressedCount ?? 0) + (latestRun?.invalidCount ?? 0);
   const launchButtonLabel = isActiveRun ? "Run is processing" : latestRun ? "Launch again" : "Launch sequence";
@@ -294,18 +304,8 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
               <h3>Attachments</h3>
               <span>{attachments.length ? `${attachments.length} file${attachments.length > 1 ? "s" : ""}` : "No attachments"}</span>
             </div>
-            {attachments.length ? (
-              <div className={styles.attachmentList}>
-                {attachments.map((attachment) => (
-                  <div key={attachment.fileName} className={styles.attachmentCard}>
-                    <FileStack aria-hidden="true" />
-                    <div>
-                      <strong>{attachment.fileName}</strong>
-                      <span>Sent with this sequence</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
+            {attachmentPreviewItems.length ? (
+              <AttachmentPreview attachments={attachmentPreviewItems} />
             ) : (
               <div className={styles.emptyState}>No attachment is included with this sequence right now.</div>
             )}

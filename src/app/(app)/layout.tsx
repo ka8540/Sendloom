@@ -1,4 +1,5 @@
 import { AppNav } from "@/components/nav";
+import { BackButton } from "@/components/back-button";
 import { requireSession } from "@/lib/auth";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -7,7 +8,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <div className="shell">
       <AppNav />
-      <main className="content">{children}</main>
+      <main className="content">
+        <div className="content-toolbar">
+          <BackButton />
+        </div>
+        {children}
+      </main>
     </div>
   );
 }
