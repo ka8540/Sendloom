@@ -75,14 +75,14 @@
   gap: 1rem;
   padding: 0.95rem 1rem 0.95rem 1.1rem;
   border-radius: 30px;
-  border: 1px solid color-mix(in srgb, var(--landing-line) 88%, white 12%);
+  border: 1px solid color-mix(in srgb, var(--landing-line) 72%, white 10%);
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--landing-panel-strong) 74%, transparent), color-mix(in srgb, var(--landing-panel) 66%, transparent)),
-    linear-gradient(110deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.08) 38%, rgba(255, 255, 255, 0.18) 100%);
+    linear-gradient(180deg, color-mix(in srgb, var(--landing-panel-strong) 58%, transparent), color-mix(in srgb, var(--landing-panel) 46%, transparent)),
+    linear-gradient(110deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.03) 40%, rgba(255, 255, 255, 0.08) 100%);
   box-shadow:
-    0 24px 55px rgba(28, 42, 70, 0.14),
-    0 10px 28px rgba(22, 107, 86, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.38);
+    0 18px 42px rgba(28, 42, 70, 0.12),
+    0 8px 24px rgba(22, 107, 86, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
   backdrop-filter: blur(30px) saturate(1.35);
   -webkit-backdrop-filter: blur(30px) saturate(1.35);
 }
@@ -96,8 +96,8 @@
 
 .navInner::before {
   inset: 0;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.32), transparent 34%);
-  opacity: 0.95;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), transparent 34%);
+  opacity: 0.75;
 }
 
 .navInner::after {
@@ -105,10 +105,10 @@
   right: 8%;
   width: 14rem;
   height: 320%;
-  background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.18), transparent);
+  background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.1), transparent);
   transform: rotate(18deg);
   filter: blur(8px);
-  opacity: 0.75;
+  opacity: 0.42;
 }
 
 .brand {
@@ -145,6 +145,44 @@
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 0.8rem;
+}
+
+.themeMenu :global(.theme-menu__trigger) {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 22px;
+  border-color: color-mix(in srgb, var(--landing-line) 76%, white 10%);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--landing-panel-strong) 48%, transparent), color-mix(in srgb, var(--landing-panel) 38%, transparent)),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.04));
+  box-shadow:
+    0 10px 22px rgba(28, 42, 70, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(24px) saturate(1.2);
+  -webkit-backdrop-filter: blur(24px) saturate(1.2);
+}
+
+.themeMenu :global(.theme-menu__trigger:hover),
+.themeMenu :global(.theme-menu__trigger:focus-visible) {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--landing-panel-strong) 58%, transparent), color-mix(in srgb, var(--landing-panel) 46%, transparent)),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.06));
+  box-shadow:
+    0 14px 28px rgba(28, 42, 70, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+.themeMenu :global(.theme-menu__panel) {
+  min-width: 13rem;
+  border-color: color-mix(in srgb, var(--landing-line) 76%, white 10%);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--landing-panel-strong) 76%, transparent), color-mix(in srgb, var(--landing-panel) 68%, transparent)),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03));
+  box-shadow:
+    0 18px 40px rgba(28, 42, 70, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(26px) saturate(1.22);
+  -webkit-backdrop-filter: blur(26px) saturate(1.22);
 }
 
 .navLink,

@@ -67,7 +67,7 @@ export default function LandingPage() {
               <a className={styles.navLink} href="#workflow">
                 Workflow
               </a>
-              <ThemeSwitcher />
+              <ThemeSwitcher className={styles.themeMenu} />
               <Link className={styles.ghostButton} href="/login">
                 Login
               </Link>
