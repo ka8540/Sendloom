@@ -1,7 +1,8 @@
 "use client";
 
 import { LaptopMinimal, MoonStar, SunMedium } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { THEME_STORAGE_KEY, type ThemePreference } from "@/lib/theme";
 
@@ -37,8 +38,12 @@ function applyThemePreference(theme: ThemePreference) {
 export function ThemeSwitcher({ className = "" }: { className?: string }) {
   const [theme, setTheme] = useState<ThemePreference>("system");
   const [open, setOpen] = useState(false);
+  const [menuStyle, setMenuStyle] = useState<CSSProperties | undefined>();
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
   const menuId = useId();
+  const isFooterMenu = className.includes("theme-menu--footer");
 
   useEffect(() => {
     const savedTheme = readThemePreference();
@@ -67,8 +72,41 @@ export function ThemeSwitcher({ className = "" }: { className?: string }) {
       return;
     }
 
+    const updatePosition = () => {
+      const trigger = triggerRef.current;
+
+      if (!trigger || !isFooterMenu) {
+        setMenuStyle(undefined);
+        return;
+      }
+
+      const rect = trigger.getBoundingClientRect();
+      const inCollapsedSidebar = Boolean(trigger.closest(".sidebar.is-collapsed"));
+
+      if (inCollapsedSidebar) {
+        setMenuStyle({
+          left: rect.right + 12,
+          position: "fixed",
+          top: Math.max(12, rect.bottom - 214),
+          zIndex: 80
+        });
+        return;
+      }
+
+      setMenuStyle({
+        left: rect.left,
+        position: "fixed",
+        top: Math.max(12, rect.top - 214 - 12),
+        zIndex: 80
+      });
+    };
+
+    updatePosition();
+
     const handlePointerDown = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node;
+
+      if (!rootRef.current?.contains(target) && !panelRef.current?.contains(target)) {
         setOpen(false);
       }
     };
@@ -81,12 +119,16 @@ export function ThemeSwitcher({ className = "" }: { className?: string }) {
 
     document.addEventListener("pointerdown", handlePointerDown);
     document.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
 
     return () => {
       document.removeEventListener("pointerdown", handlePointerDown);
       document.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
     };
-  }, [open]);
+  }, [isFooterMenu, open]);
 
   const updateTheme = (nextTheme: ThemePreference) => {
     try {
@@ -102,10 +144,41 @@ export function ThemeSwitcher({ className = "" }: { className?: string }) {
 
   const activeOption = options.find((option) => option.value === theme) ?? options[2];
   const ActiveIcon = activeOption.icon;
+  const menu = (
+    <div
+      id={menuId}
+      ref={panelRef}
+      className={`theme-menu__panel${isFooterMenu ? " theme-menu__panel--floating" : ""}`}
+      style={menuStyle}
+      role="menu"
+      aria-label="Color theme options"
+    >
+      {options.map((option) => {
+        const Icon = option.icon;
+        const active = theme === option.value;
+
+        return (
+          <button
+            key={option.value}
+            className={`theme-menu__option${active ? " is-active" : ""}`}
+            type="button"
+            role="menuitemradio"
+            aria-checked={active}
+            onClick={() => updateTheme(option.value)}
+            title={`Use ${option.label.toLowerCase()} theme`}
+          >
+            <Icon aria-hidden="true" />
+            <span>{option.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
 
   return (
     <div ref={rootRef} className={`theme-menu${className ? ` ${className}` : ""}`}>
       <button
+        ref={triggerRef}
         className={`theme-menu__trigger${open ? " is-open" : ""}`}
         type="button"
         aria-haspopup="menu"
@@ -118,29 +191,7 @@ export function ThemeSwitcher({ className = "" }: { className?: string }) {
         <ActiveIcon aria-hidden="true" />
       </button>
 
-      {open ? (
-        <div id={menuId} className="theme-menu__panel" role="menu" aria-label="Color theme options">
-          {options.map((option) => {
-            const Icon = option.icon;
-            const active = theme === option.value;
-
-            return (
-              <button
-                key={option.value}
-                className={`theme-menu__option${active ? " is-active" : ""}`}
-                type="button"
-                role="menuitemradio"
-                aria-checked={active}
-                onClick={() => updateTheme(option.value)}
-                title={`Use ${option.label.toLowerCase()} theme`}
-              >
-                <Icon aria-hidden="true" />
-                <span>{option.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
+      {open ? (isFooterMenu ? createPortal(menu, document.body) : menu) : null}
     </div>
   );
 }
