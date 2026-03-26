@@ -18,10 +18,10 @@ Sendloom is a production-oriented sequence sending platform built with Next.js, 
 3. Run `npm run prisma:generate`.
 4. Create the database and apply migrations with `npm run prisma:migrate`.
 5. Start the app with `npm run dev`.
-6. Launch campaigns from the app. Immediate sends are processed in-app, and scheduled/retry work is processed automatically on Vercel through the built-in cron job targeting `/api/cron/campaigns`.
+6. Launch campaigns from the app. Immediate sends are processed in-app, and scheduled/retry work can be processed by calling `/api/cron/campaigns` from an external scheduler.
 
 ## Notes
 
 - The workspace started empty, so this scaffold focuses on a strong architectural foundation and first-pass feature implementation.
 - File uploads default to local disk storage through `LOCAL_UPLOAD_DIR`; swap the storage adapter for S3 or Vercel Blob in production.
-- Set `CRON_SECRET` in Vercel so the built-in cron can authenticate its calls to `/api/cron/campaigns`.
+- Set `CRON_SECRET` in Vercel so your external scheduler can authenticate its calls to `/api/cron/campaigns`.
