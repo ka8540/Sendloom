@@ -16,7 +16,7 @@
   color: var(--landing-ink);
   background: var(--landing-noise);
   min-height: 100vh;
-  overflow: hidden;
+  overflow-x: clip;
 }
 
 .page::before {
@@ -53,17 +53,22 @@
 .frame {
   width: min(1200px, calc(100% - 3rem));
   margin: 0 auto;
-  padding: 1.5rem 0 4rem;
+  padding: 6.9rem 0 4rem;
 }
 
 .nav {
-  position: sticky;
+  position: fixed;
   top: 1rem;
-  z-index: 25;
-  padding: 0 0 1.5rem;
+  left: 50%;
+  z-index: 40;
+  width: min(1200px, calc(100vw - 3rem));
+  transform: translateX(-50%);
+  padding: 0;
 }
 
 .navInner {
+  position: relative;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -71,11 +76,39 @@
   padding: 0.95rem 1rem 0.95rem 1.1rem;
   border-radius: 30px;
   border: 1px solid color-mix(in srgb, var(--landing-line) 88%, white 12%);
-  background: color-mix(in srgb, var(--landing-panel-strong) 82%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--landing-panel-strong) 74%, transparent), color-mix(in srgb, var(--landing-panel) 66%, transparent)),
+    linear-gradient(110deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.08) 38%, rgba(255, 255, 255, 0.18) 100%);
   box-shadow:
-    0 20px 44px rgba(28, 42, 70, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.26);
-  backdrop-filter: blur(24px) saturate(1.1);
+    0 24px 55px rgba(28, 42, 70, 0.14),
+    0 10px 28px rgba(22, 107, 86, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.38);
+  backdrop-filter: blur(30px) saturate(1.35);
+  -webkit-backdrop-filter: blur(30px) saturate(1.35);
+}
+
+.navInner::before,
+.navInner::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+}
+
+.navInner::before {
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.32), transparent 34%);
+  opacity: 0.95;
+}
+
+.navInner::after {
+  top: -140%;
+  right: 8%;
+  width: 14rem;
+  height: 320%;
+  background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.18), transparent);
+  transform: rotate(18deg);
+  filter: blur(8px);
+  opacity: 0.75;
 }
 
 .brand {
@@ -175,7 +208,7 @@
   grid-template-columns: minmax(0, 1.02fr) minmax(420px, 0.98fr);
   gap: 2rem;
   align-items: center;
-  min-height: calc(100vh - 6rem);
+  min-height: calc(100vh - 8rem);
   padding-bottom: 3rem;
 }
 
@@ -826,11 +859,12 @@
 @media (max-width: 720px) {
   .frame {
     width: min(100%, calc(100% - 1.5rem));
-    padding-top: 1rem;
+    padding-top: 9.5rem;
   }
 
   .nav {
-    top: 0.6rem;
+    top: 0.75rem;
+    width: calc(100vw - 1.5rem);
   }
 
   .navInner,
@@ -875,9 +909,18 @@
   }
 
   .navActions :global(.theme-menu) {
-    width: 100%;
+    width: auto;
     display: flex;
     justify-content: center;
+    flex: 0 0 auto;
+  }
+
+  .navActions :global(.theme-menu__panel) {
+    left: 50%;
+    right: auto;
+    min-width: 12rem;
+    max-width: calc(100vw - 2rem);
+    transform: translateX(-50%);
   }
 
   .brand,
