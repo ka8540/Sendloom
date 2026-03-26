@@ -1103,6 +1103,84 @@ textarea {
   filter: drop-shadow(0 26px 34px rgba(22, 124, 90, 0.16));
 }
 
+.legal-shell {
+  min-height: 100vh;
+  padding: 2rem;
+  background:
+    radial-gradient(circle at top left, var(--bg-glow-green), transparent 18rem),
+    radial-gradient(circle at right top, var(--bg-glow-blue), transparent 22rem),
+    linear-gradient(180deg, var(--bg-start) 0%, var(--bg-end) 100%);
+}
+
+.legal-card {
+  width: min(900px, 100%);
+  margin: 0 auto;
+  display: grid;
+  gap: 1.5rem;
+}
+
+.legal-header {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.legal-header h1 {
+  margin: 0;
+  font-size: clamp(2.4rem, 6vw, 4rem);
+  letter-spacing: -0.05em;
+}
+
+.legal-header p {
+  margin: 0;
+}
+
+.legal-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: fit-content;
+  padding: 0.42rem 0.7rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.legal-section {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.legal-section h2 {
+  margin: 0;
+  font-size: 1.35rem;
+  letter-spacing: -0.03em;
+}
+
+.legal-section p,
+.legal-section li {
+  color: var(--muted);
+  line-height: 1.75;
+}
+
+.legal-section p,
+.legal-section ul {
+  margin: 0;
+}
+
+.legal-section ul {
+  padding-left: 1.2rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.legal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem;
+}
+
 @media (max-width: 960px) {
   .shell,
   .templates-layout,

@@ -235,6 +235,15 @@ export default function LandingPage() {
             </div>
           </article>
         </section>
+
+        <footer className={styles.footer}>
+          <p className={styles.footerCopy}>Sendloom helps teams run outreach from one clean control surface.</p>
+          <div className={styles.footerLinks}>
+            <Link href="/privacy">Privacy</Link>
+            <Link href="/terms">Terms</Link>
+            <Link href="/login">Login</Link>
+          </div>
+        </footer>
       </div>
     </main>
   );

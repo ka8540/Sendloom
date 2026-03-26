@@ -592,6 +592,36 @@
   margin-top: 1.4rem;
 }
 
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.4rem 0 0.4rem;
+}
+
+.footerCopy {
+  margin: 0;
+  color: var(--landing-muted);
+}
+
+.footerLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.footerLinks a {
+  color: var(--landing-ink);
+  font-weight: 650;
+}
+
+.footerLinks a:hover,
+.footerLinks a:focus-visible {
+  color: var(--landing-emerald);
+  outline: none;
+}
+
 :global(:root[data-theme="dark"]) .page {
   --landing-bg: #0d141d;
   --landing-panel: rgba(18, 27, 40, 0.76);
@@ -697,7 +727,8 @@
 
   .navActions,
   .ctaRow,
-  .ctaActions {
+  .ctaActions,
+  .footer {
     width: 100%;
   }
 
@@ -705,6 +736,11 @@
   .ctaRow a,
   .ctaActions a {
     flex: 1;
+  }
+
+  .footer {
+    display: grid;
+    justify-items: start;
   }
 
   .statRow {
