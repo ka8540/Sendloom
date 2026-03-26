@@ -212,6 +212,8 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
   const [enhanceError, setEnhanceError] = useState<Partial<Record<EnhanceField, string>>>({});
   const [analyzingField, setAnalyzingField] = useState<SpamField | null>(null);
   const [spamResults, setSpamResults] = useState<Partial<Record<SpamField, SpamResult>>>({});
+  const [fixingSpam, setFixingSpam] = useState(false);
+  const [spamFixError, setSpamFixError] = useState<string | undefined>();
   const [highlightedField, setHighlightedField] = useState<EnhanceField | null>(null);
   const highlightTimeoutRef = useRef<number | null>(null);
   const controlled = Boolean(value && onChange);
@@ -235,6 +237,7 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
     setState({ pending: false });
     setEnhanceError({});
     setSpamResults({});
+    setSpamFixError(undefined);
   }, [controlled, initialTemplate?.id]);
 
   useEffect(() => {
@@ -284,6 +287,8 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
         ...current,
         ...(fieldType === "subject" ? { subject: payload.enhancedText! } : { htmlBody: payload.enhancedText! })
       }));
+      setSpamResults({});
+      setSpamFixError(undefined);
       setHighlightedField(fieldType);
 
       if (highlightTimeoutRef.current) {
@@ -303,32 +308,104 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
     }
   }
 
-  async function checkSpam(fieldType: SpamField, currentText: string) {
+  async function buildSpamResults(subjectText: string, bodyText: string) {
+    const nextResults = await Promise.all([
+      (async (): Promise<SpamResult> => {
+        const trimmedText = subjectText.trim();
+        if (!trimmedText) {
+          return {
+            kind: "empty",
+            message: "Nothing to analyze"
+          };
+        }
+
+        return {
+          kind: "analysis",
+          data: await analyzeSpam("subject", trimmedText)
+        };
+      })(),
+      (async (): Promise<SpamResult> => {
+        const trimmedText = bodyText.trim();
+        if (!trimmedText) {
+          return {
+            kind: "empty",
+            message: "Nothing to analyze"
+          };
+        }
+
+        return {
+          kind: "analysis",
+          data: await analyzeSpam("body", trimmedText)
+        };
+      })()
+    ]);
+
+    return {
+      subject: nextResults[0],
+      body: nextResults[1]
+    } satisfies Partial<Record<SpamField, SpamResult>>;
+  }
+
+  async function checkSpam(fieldType: SpamField) {
+    setAnalyzingField(fieldType);
+    setSpamFixError(undefined);
+
+    try {
+      const nextResults = await buildSpamResults(fields.subject, fields.htmlBody);
+      setSpamResults(nextResults);
+    } finally {
+      setAnalyzingField(null);
+    }
+  }
+
+  async function fixSpamContent(currentText: string) {
     const trimmedText = currentText.trim();
     if (!trimmedText) {
-      setSpamResults((current) => ({
-        ...current,
-        [fieldType]: {
-          kind: "empty",
-          message: "Nothing to analyze"
-        }
-      }));
+      setSpamFixError("Nothing to fix");
       return;
     }
 
-    setAnalyzingField(fieldType);
+    setSpamFixError(undefined);
+    setFixingSpam(true);
 
     try {
-      const result = await analyzeSpam(fieldType, trimmedText);
-      setSpamResults((current) => ({
-        ...current,
-        [fieldType]: {
-          kind: "analysis",
-          data: result
-        }
-      }));
+      const response = await fetch("/api/templates/enhance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "fix-spam",
+          currentText: trimmedText
+        })
+      });
+
+      const payload = (await response.json()) as { enhancedText?: string; error?: string };
+      if (!response.ok || !payload.enhancedText) {
+        setSpamFixError(payload.error ?? "AI spam fix failed.");
+        return;
+      }
+
+      const nextFields = {
+        ...fields,
+        htmlBody: payload.enhancedText
+      };
+
+      updateFields(() => nextFields);
+      setHighlightedField("body");
+
+      if (highlightTimeoutRef.current) {
+        window.clearTimeout(highlightTimeoutRef.current);
+      }
+
+      highlightTimeoutRef.current = window.setTimeout(() => {
+        setHighlightedField(null);
+      }, 1600);
+
+      const nextResults = await buildSpamResults(nextFields.subject, nextFields.htmlBody);
+      setSpamResults(nextResults);
+    } catch {
+      setSpamFixError("AI spam fix failed.");
     } finally {
-      setAnalyzingField(null);
+      setFixingSpam(false);
     }
   }
 
@@ -372,6 +449,27 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
   }
 
   const isEditing = Boolean(initialTemplate);
+  const bodyScore = spamResults.body?.kind === "analysis" ? spamResults.body.data.score : 0;
+  const showSpamFixButton = bodyScore >= 40;
+  const spamFixDisabled =
+    state.pending || fixingSpam || enhancingField !== null || analyzingField !== null || !fields.htmlBody.trim();
+
+  function renderSpamResult(result?: SpamResult) {
+    if (!result) {
+      return null;
+    }
+
+    if (result.kind === "empty") {
+      return <p className="field-inline-note">{result.message}</p>;
+    }
+
+    return (
+      <div className={`spam-inline-result spam-inline-result--${result.data.risk.toLowerCase()}`}>
+        <span className="spam-inline-result__line">Spam Score: {result.data.score}%</span>
+        <span className="spam-inline-result__line">Risk Level: {result.data.risk}</span>
+      </div>
+    );
+  }
 
   return (
     <form className="form" onSubmit={onSubmit}>
@@ -393,7 +491,7 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
               className="field-enhance-button"
               type="button"
               onClick={() => enhanceText("subject", fields.subject)}
-              disabled={state.pending || enhancingField !== null || analyzingField !== null}
+              disabled={state.pending || enhancingField !== null || analyzingField !== null || fixingSpam}
             >
               {enhancingField === "subject" ? (
                 <>
@@ -407,8 +505,8 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
             <button
               className="field-spam-button"
               type="button"
-              onClick={() => checkSpam("subject", fields.subject)}
-              disabled={state.pending || analyzingField !== null || enhancingField !== null}
+              onClick={() => checkSpam("subject")}
+              disabled={state.pending || analyzingField !== null || enhancingField !== null || fixingSpam}
             >
               {analyzingField === "subject" ? (
                 <>
@@ -427,7 +525,8 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
           value={fields.subject}
           onChange={(event) => {
             setEnhanceError((current) => ({ ...current, subject: undefined }));
-            setSpamResults((current) => ({ ...current, subject: undefined }));
+            setSpamResults({});
+            setSpamFixError(undefined);
             updateFields((current) => ({ ...current, subject: event.target.value }));
           }}
           placeholder="Hi {{name}}, quick question"
@@ -435,35 +534,7 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
           required
         />
         {enhanceError.subject ? <p className="field-inline-note">{enhanceError.subject}</p> : null}
-        {spamResults.subject ? (
-          spamResults.subject.kind === "empty" ? (
-            <p className="field-inline-note">{spamResults.subject.message}</p>
-          ) : (
-            <div className={`spam-analysis spam-analysis--${spamResults.subject.data.risk.toLowerCase()}`}>
-              <div className="spam-analysis__header">
-                <span className="spam-analysis__label">Spam Risk</span>
-                <span className="spam-analysis__score">{spamResults.subject.data.risk}</span>
-              </div>
-              <p className="spam-analysis__summary">{spamResults.subject.data.explanation}</p>
-              <div className="spam-analysis__block">
-                <span className="spam-analysis__heading">Issues</span>
-                <ul>
-                  {spamResults.subject.data.issues.map((issue) => (
-                    <li key={issue}>{issue}</li>
-                  ))}
-                </ul>
-              </div>
-              <div className="spam-analysis__block">
-                <span className="spam-analysis__heading">Suggestions</span>
-                <ul>
-                  {spamResults.subject.data.suggestions.map((suggestion) => (
-                    <li key={suggestion}>{suggestion}</li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-          )
-        ) : null}
+        {renderSpamResult(spamResults.subject)}
       </div>
       <div className="field">
         <div className="field-label-row">
@@ -473,7 +544,7 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
               className="field-enhance-button"
               type="button"
               onClick={() => enhanceText("body", fields.htmlBody)}
-              disabled={state.pending || enhancingField !== null || analyzingField !== null}
+              disabled={state.pending || enhancingField !== null || analyzingField !== null || fixingSpam}
             >
               {enhancingField === "body" ? (
                 <>
@@ -487,8 +558,8 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
             <button
               className="field-spam-button"
               type="button"
-              onClick={() => checkSpam("body", fields.htmlBody)}
-              disabled={state.pending || analyzingField !== null || enhancingField !== null}
+              onClick={() => checkSpam("body")}
+              disabled={state.pending || analyzingField !== null || enhancingField !== null || fixingSpam}
             >
               {analyzingField === "body" ? (
                 <>
@@ -507,42 +578,33 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
           value={fields.htmlBody}
           onChange={(event) => {
             setEnhanceError((current) => ({ ...current, body: undefined }));
-            setSpamResults((current) => ({ ...current, body: undefined }));
+            setSpamResults({});
+            setSpamFixError(undefined);
             updateFields((current) => ({ ...current, htmlBody: event.target.value }));
           }}
           className={highlightedField === "body" ? "field-enhanced" : undefined}
           required
         />
         {enhanceError.body ? <p className="field-inline-note">{enhanceError.body}</p> : null}
-        {spamResults.body ? (
-          spamResults.body.kind === "empty" ? (
-            <p className="field-inline-note">{spamResults.body.message}</p>
-          ) : (
-            <div className={`spam-analysis spam-analysis--${spamResults.body.data.risk.toLowerCase()}`}>
-              <div className="spam-analysis__header">
-                <span className="spam-analysis__label">Spam Risk</span>
-                <span className="spam-analysis__score">{spamResults.body.data.risk}</span>
-              </div>
-              <p className="spam-analysis__summary">{spamResults.body.data.explanation}</p>
-              <div className="spam-analysis__block">
-                <span className="spam-analysis__heading">Issues</span>
-                <ul>
-                  {spamResults.body.data.issues.map((issue) => (
-                    <li key={issue}>{issue}</li>
-                  ))}
-                </ul>
-              </div>
-              <div className="spam-analysis__block">
-                <span className="spam-analysis__heading">Suggestions</span>
-                <ul>
-                  {spamResults.body.data.suggestions.map((suggestion) => (
-                    <li key={suggestion}>{suggestion}</li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-          )
+        {renderSpamResult(spamResults.body)}
+        {showSpamFixButton ? (
+          <button
+            className="field-fix-button"
+            type="button"
+            onClick={() => fixSpamContent(fields.htmlBody)}
+            disabled={spamFixDisabled}
+          >
+            {fixingSpam ? (
+              <>
+                <span className="button-spinner" aria-hidden="true" />
+                Fixing...
+              </>
+            ) : (
+              "✨ Fix with AI"
+            )}
+          </button>
         ) : null}
+        {spamFixError ? <p className="field-inline-note">{spamFixError}</p> : null}
       </div>
       <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
         <button className="button" type="submit" disabled={state.pending}>

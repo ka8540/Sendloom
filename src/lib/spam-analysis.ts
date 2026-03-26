@@ -3,10 +3,8 @@ type SpamFieldType = "subject" | "body";
 export type SpamRisk = "Low" | "Medium" | "High";
 
 export type SpamAnalysis = {
+  score: number;
   risk: SpamRisk;
-  explanation: string;
-  issues: string[];
-  suggestions: string[];
 };
 
 function countMatches(value: string, pattern: RegExp) {
@@ -47,18 +45,12 @@ function getRepeatedPhraseCount(value: string) {
   return repeated;
 }
 
-function pluralize(value: number, singular: string, plural = `${singular}s`) {
-  return value === 1 ? singular : plural;
-}
-
 export async function analyzeSpam(fieldType: SpamFieldType, text: string): Promise<SpamAnalysis> {
-  await new Promise((resolve) => setTimeout(resolve, 450));
+  await new Promise((resolve) => setTimeout(resolve, 380));
 
   const rawText = text.trim();
   const normalizedText = fieldType === "body" ? stripHtml(rawText) : rawText;
   const lower = normalizedText.toLowerCase();
-  const issues: string[] = [];
-  const suggestions: string[] = [];
   let score = 0;
 
   const triggerWords = [
@@ -76,39 +68,29 @@ export async function analyzeSpam(fieldType: SpamFieldType, text: string): Promi
 
   const foundTriggers = triggerWords.filter((word) => lower.includes(word));
   if (foundTriggers.length) {
-    score += Math.min(4, foundTriggers.length * 2);
-    issues.push(`Contains spam trigger ${pluralize(foundTriggers.length, "term")}: ${foundTriggers.map((word) => `"${word}"`).join(", ")}`);
-    suggestions.push("Swap promotional trigger words for calmer, specific language.");
+    score += Math.min(45, foundTriggers.length * 14);
   }
 
   const linkCount = countMatches(rawText, /(https?:\/\/|www\.|href=)/gi);
   if (linkCount >= 2) {
-    score += linkCount >= 4 ? 4 : 2;
-    issues.push(`Includes ${linkCount} links, which can look promotional.`);
-    suggestions.push("Keep links to the minimum needed for credibility.");
+    score += linkCount >= 4 ? 22 : 12;
   }
 
   const exclamationCount = countMatches(normalizedText, /!/g);
   if (exclamationCount >= 3) {
-    score += 2;
-    issues.push(`Uses ${exclamationCount} exclamation marks.`);
-    suggestions.push("Reduce aggressive punctuation and let the copy do the work.");
+    score += 12;
   }
 
   const allCapsWords = normalizedText.match(/\b[A-Z]{4,}\b/g) ?? [];
   const lettersOnly = normalizedText.replace(/[^A-Za-z]/g, "");
   const uppercaseRatio = lettersOnly ? (lettersOnly.match(/[A-Z]/g)?.length ?? 0) / lettersOnly.length : 0;
   if (allCapsWords.length || uppercaseRatio > 0.34) {
-    score += allCapsWords.length >= 2 || uppercaseRatio > 0.5 ? 3 : 1;
-    issues.push("Uses excessive capitalization, which can feel spammy.");
-    suggestions.push("Use sentence case and reserve emphasis for one clear point.");
+    score += allCapsWords.length >= 2 || uppercaseRatio > 0.5 ? 18 : 8;
   }
 
   const repeatedPhraseCount = getRepeatedPhraseCount(normalizedText);
   if (repeatedPhraseCount > 0) {
-    score += 2;
-    issues.push("Repeats the same phrase pattern multiple times.");
-    suggestions.push("Tighten repeated claims so the message reads more naturally.");
+    score += 12;
   }
 
   const salesySignals = countMatches(
@@ -116,47 +98,26 @@ export async function analyzeSpam(fieldType: SpamFieldType, text: string): Promi
     /\b(best deal|exclusive offer|once in a lifetime|click here|don't miss|special promotion|instant access)\b/g
   );
   if (salesySignals > 0) {
-    score += 2;
-    issues.push("The tone reads overly promotional in places.");
-    suggestions.push("Lead with relevance and context instead of pressure-heavy claims.");
+    score += 16;
   }
 
   if (fieldType === "subject") {
     const subjectWordCount = normalizedText.split(/\s+/).filter(Boolean).length;
     if (subjectWordCount > 10) {
-      score += 1;
-      issues.push("The subject is a bit long for a cold outreach line.");
-      suggestions.push("Shorten the subject to one clear idea.");
+      score += 6;
     }
   } else {
     const paragraphCount = countMatches(rawText, /<p\b/gi);
     if (!paragraphCount && normalizedText.length > 420) {
-      score += 1;
-      issues.push("The body is dense and may feel hard to scan.");
-      suggestions.push("Break the body into short paragraphs for easier reading.");
+      score += 6;
     }
   }
 
-  const risk: SpamRisk = score >= 7 ? "High" : score >= 4 ? "Medium" : "Low";
-  const explanation =
-    risk === "High"
-      ? "This copy has several signals that mailbox filters and readers may treat as promotional."
-      : risk === "Medium"
-        ? "The message is workable, but a few patterns could make delivery or trust weaker."
-        : "This reads fairly safe, with only light cleanup needed before sending.";
-
-  if (!issues.length) {
-    issues.push("No major spam signals were detected.");
-  }
-
-  if (!suggestions.length) {
-    suggestions.push("Keep the wording specific, restrained, and relevant to the reader.");
-  }
+  const normalizedScore = Math.max(0, Math.min(100, score));
+  const risk: SpamRisk = normalizedScore >= 70 ? "High" : normalizedScore >= 40 ? "Medium" : "Low";
 
   return {
-    risk,
-    explanation,
-    issues: issues.slice(0, 3),
-    suggestions: suggestions.slice(0, 3)
+    score: normalizedScore,
+    risk
   };
 }

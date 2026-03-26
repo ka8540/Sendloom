@@ -7,7 +7,7 @@ describe("analyzeSpam", () => {
     const result = await analyzeSpam("subject", "FREE LIMITED TIME GUARANTEE!!! Click here now");
 
     expect(result.risk).toBe("High");
-    expect(result.issues.length).toBeGreaterThan(0);
+    expect(result.score).toBeGreaterThanOrEqual(70);
   });
 
   it("keeps relevant, restrained copy in the low-risk range", async () => {
@@ -17,6 +17,6 @@ describe("analyzeSpam", () => {
     );
 
     expect(result.risk).toBe("Low");
-    expect(result.suggestions.length).toBeGreaterThan(0);
+    expect(result.score).toBeLessThan(40);
   });
 });
