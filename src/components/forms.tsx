@@ -239,6 +239,18 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
     };
   }, []);
 
+  function resetTemplateAssistState() {
+    setEnhanceError({});
+    setSpamAnalysis(null);
+    setSpamFixError(undefined);
+    setHighlightedField(null);
+
+    if (highlightTimeoutRef.current) {
+      window.clearTimeout(highlightTimeoutRef.current);
+      highlightTimeoutRef.current = null;
+    }
+  }
+
   async function enhanceText(fieldType: EnhanceField, currentText: string) {
     const trimmedText = currentText.trim();
     if (!trimmedText) {
@@ -384,6 +396,7 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
     }
 
     const savedTemplate = (await response.json()) as EditableTemplate;
+    resetTemplateAssistState();
 
     if (onSaved) {
       onSaved(savedTemplate);
@@ -543,7 +556,10 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
           <button
             className="button secondary"
             type="button"
-            onClick={() => onCancel?.()}
+            onClick={() => {
+              resetTemplateAssistState();
+              onCancel?.();
+            }}
             disabled={state.pending}
           >
             Cancel
