@@ -34,17 +34,19 @@ type ScheduleConfig =
   | {
       type: "once";
       scheduledFor?: string;
+      timeZone?: string;
     }
   | {
       type: "recurring";
       frequency?: "daily" | "weekly";
       time?: string;
       dayOfWeek?: number;
+      timeZone?: string;
     };
 
 const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
 
-function formatDateTime(value?: Date | string | null) {
+function formatDateTime(value?: Date | string | null, timeZone?: string) {
   if (!value) {
     return "Not available";
   }
@@ -55,7 +57,8 @@ function formatDateTime(value?: Date | string | null) {
     day: "numeric",
     year: "numeric",
     hour: "numeric",
-    minute: "2-digit"
+    minute: "2-digit",
+    ...(timeZone ? { timeZone, timeZoneName: "short" as const } : {})
   }).format(date);
 }
 
@@ -73,7 +76,8 @@ function humanize(value?: string | null) {
 
 function formatScheduleLabel(scheduleType?: string | null, scheduleConfig?: ScheduleConfig | null) {
   if (scheduleType === "once") {
-    return `Scheduled for ${formatDateTime(scheduleConfig && "scheduledFor" in scheduleConfig ? scheduleConfig.scheduledFor : null)}`;
+    const onceConfig = scheduleConfig && "scheduledFor" in scheduleConfig ? scheduleConfig : null;
+    return `Scheduled for ${formatDateTime(onceConfig?.scheduledFor, onceConfig?.timeZone)}`;
   }
 
   if (scheduleType === "recurring") {

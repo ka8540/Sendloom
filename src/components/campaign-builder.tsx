@@ -46,6 +46,7 @@ export function CampaignBuilder(props: {
 
   const selectedImport = props.imports.find((entry) => entry.id === selectedImportId) ?? null;
   const activeMapping = mappingOptions.find((mapping) => mapping.id === selectedMappingId) ?? mappingOptions[0] ?? null;
+  const minimumScheduledFor = new Date(Date.now() - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -53,18 +54,21 @@ export function CampaignBuilder(props: {
     setState({ pending: true });
     const formData = new FormData(form);
     const scheduleType = String(formData.get("scheduleType"));
+    const browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     const scheduleRule =
       scheduleType === "recurring"
         ? {
             type: "recurring",
             frequency: formData.get("frequency"),
             time: formData.get("time"),
+            timeZone: browserTimeZone,
             ...(formData.get("frequency") === "weekly" ? { dayOfWeek: Number(formData.get("dayOfWeek")) } : {})
           }
         : scheduleType === "once"
           ? {
               type: "once",
-              scheduledFor: formData.get("scheduledFor")
+              scheduledFor: new Date(String(formData.get("scheduledFor") ?? "")).toISOString(),
+              timeZone: browserTimeZone
             }
         : {
             type: "immediate"
@@ -171,7 +175,7 @@ export function CampaignBuilder(props: {
       {scheduleType === "once" ? (
         <div className="field">
           <label htmlFor="scheduledFor">Send on</label>
-          <input id="scheduledFor" name="scheduledFor" type="datetime-local" required />
+          <input id="scheduledFor" name="scheduledFor" type="datetime-local" min={minimumScheduledFor} required />
         </div>
       ) : null}
       {scheduleType === "recurring" ? (

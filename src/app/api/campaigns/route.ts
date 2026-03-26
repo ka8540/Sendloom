@@ -14,12 +14,17 @@ const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
 const scheduleRuleSchema = z.union([
   z.object({ type: z.literal("immediate") }),
-  z.object({ type: z.literal("once"), scheduledFor: z.string() }),
+  z.object({
+    type: z.literal("once"),
+    scheduledFor: z.string(),
+    timeZone: z.string().optional()
+  }),
   z.object({
     type: z.literal("recurring"),
     frequency: z.enum(["daily", "weekly"]),
     time: z.string(),
-    dayOfWeek: z.number().optional()
+    dayOfWeek: z.number().optional(),
+    timeZone: z.string().optional()
   })
 ]);
 
@@ -50,6 +55,11 @@ export async function POST(request: Request) {
     scheduleRule: JSON.parse(String(formData.get("scheduleRule") ?? "{}")),
     autoLaunch: formData.get("autoLaunch") === "true"
   });
+
+  if (payload.scheduleRule.type === "once" && new Date(payload.scheduleRule.scheduledFor) <= new Date()) {
+    return NextResponse.json({ error: "Choose a future time for a one-time scheduled send." }, { status: 400 });
+  }
+
   const sender = await prisma.senderProfile.findFirst({
     where: {
       id: payload.senderProfileId,

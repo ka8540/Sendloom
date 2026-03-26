@@ -36,12 +36,14 @@ export type ScheduleRule =
   | {
       type: "once";
       scheduledFor: string;
+      timeZone?: string;
     }
   | {
       type: "recurring";
       frequency: "daily" | "weekly";
       time: string;
       dayOfWeek?: number;
+      timeZone?: string;
     };
 
 export type QueueJobName = "validate-campaign" | "launch-run" | "send-recipient" | "process-webhook";
