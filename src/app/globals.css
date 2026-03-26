@@ -384,6 +384,12 @@ textarea {
   overscroll-behavior: contain;
 }
 
+.content-toolbar {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 1rem;
+}
+
 .hero,
 .card {
   background: var(--surface);
@@ -526,6 +532,41 @@ textarea {
 .button:disabled {
   opacity: 0.65;
   cursor: not-allowed;
+}
+
+.back-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.58rem;
+  padding: 0.78rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-ghost);
+  color: var(--text);
+  cursor: pointer;
+  font-weight: 700;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(18px);
+  transition: transform 140ms ease, box-shadow 140ms ease, background-color 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+.back-button svg {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+}
+
+.back-button:hover,
+.back-button:focus-visible {
+  outline: none;
+  transform: translateY(-1px);
+  background: var(--surface);
+  border-color: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.back-button:active {
+  transform: translateY(1px) scale(0.985);
+  box-shadow: 0 10px 18px rgba(28, 42, 70, 0.14);
 }
 
 .theme-menu {
@@ -1015,8 +1056,19 @@ textarea {
   background: var(--bg);
 }
 
+.auth-shell__frame {
+  width: min(640px, 100%);
+  display: grid;
+  gap: 1rem;
+}
+
+.auth-toolbar {
+  display: flex;
+  justify-content: flex-start;
+}
+
 .auth-card {
-  width: min(560px, 100%);
+  width: 100%;
   display: grid;
   gap: 1.1rem;
 }
@@ -1217,6 +1269,11 @@ textarea {
 @media (max-width: 700px) {
   .button {
     width: 100%;
+  }
+
+  .back-button {
+    width: 100%;
+    justify-content: center;
   }
 
   .not-found-actions {
