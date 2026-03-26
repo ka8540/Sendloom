@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
+import { convertScheduledLocalInputToUtc, fallbackTimeZones } from "@/lib/schedule";
+
 type Option = {
   id: string;
   label: string;
@@ -23,11 +25,37 @@ export function CampaignBuilder(props: {
   const [selectedImportId, setSelectedImportId] = useState(props.imports[0]?.id ?? "");
   const [scheduleType, setScheduleType] = useState("immediate");
   const [frequency, setFrequency] = useState("weekly");
-  const browserTimeZone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "Local time", []);
+  const browserTimeZone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "America/New_York", []);
+  const [selectedTimeZone, setSelectedTimeZone] = useState(browserTimeZone);
   const [selectedMappingId, setSelectedMappingId] = useState(() => {
     const firstImportId = props.imports[0]?.id;
     return props.mappings.find((mapping) => mapping.importId === firstImportId)?.id ?? "";
   });
+  const timeZoneOptions = useMemo(() => {
+    const labels = new Map<string, string>([
+      ["America/New_York", "Eastern Time (America/New_York)"],
+      ["America/Chicago", "Central Time (America/Chicago)"],
+      ["America/Denver", "Mountain Time (America/Denver)"],
+      ["America/Los_Angeles", "Pacific Time (America/Los_Angeles)"],
+      ["America/Phoenix", "Arizona Time (America/Phoenix)"],
+      ["America/Toronto", "Toronto (America/Toronto)"],
+      ["America/Vancouver", "Vancouver (America/Vancouver)"],
+      ["Europe/London", "London (Europe/London)"],
+      ["Europe/Berlin", "Berlin (Europe/Berlin)"],
+      ["Europe/Paris", "Paris (Europe/Paris)"],
+      ["Asia/Dubai", "Dubai (Asia/Dubai)"],
+      ["Asia/Kolkata", "India (Asia/Kolkata)"],
+      ["Asia/Singapore", "Singapore (Asia/Singapore)"],
+      ["Asia/Tokyo", "Tokyo (Asia/Tokyo)"],
+      ["Australia/Sydney", "Sydney (Australia/Sydney)"],
+      ["Pacific/Auckland", "Auckland (Pacific/Auckland)"]
+    ]);
+
+    return Array.from(new Set([browserTimeZone, ...fallbackTimeZones])).map((timeZone) => ({
+      value: timeZone,
+      label: labels.get(timeZone) ?? timeZone
+    }));
+  }, [browserTimeZone]);
 
   const mappingOptions = useMemo(
     () => props.mappings.filter((mapping) => mapping.importId === selectedImportId),
@@ -47,7 +75,6 @@ export function CampaignBuilder(props: {
 
   const selectedImport = props.imports.find((entry) => entry.id === selectedImportId) ?? null;
   const activeMapping = mappingOptions.find((mapping) => mapping.id === selectedMappingId) ?? mappingOptions[0] ?? null;
-  const minimumScheduledFor = new Date(Date.now() - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -55,28 +82,63 @@ export function CampaignBuilder(props: {
     setState({ pending: true });
     const formData = new FormData(form);
     const scheduleType = String(formData.get("scheduleType"));
-    const scheduleRule =
-      scheduleType === "recurring"
-        ? {
-            type: "recurring",
-            frequency: formData.get("frequency"),
-            time: formData.get("time"),
-            timeZone: browserTimeZone,
-            ...(formData.get("frequency") === "weekly" ? { dayOfWeek: Number(formData.get("dayOfWeek")) } : {})
-          }
-        : scheduleType === "once"
-          ? {
-              type: "once",
-              scheduledFor: new Date(String(formData.get("scheduledFor") ?? "")).toISOString(),
-              timeZone: browserTimeZone
-            }
-        : {
-            type: "immediate"
-          };
+    const scheduleTimeZone = String(formData.get("scheduleTimeZone") || browserTimeZone);
     const autoLaunch = scheduleType === "immediate";
+    let scheduleRule:
+      | {
+          type: "recurring";
+          frequency: FormDataEntryValue | null;
+          time: FormDataEntryValue | null;
+          timeZone: string;
+          dayOfWeek?: number;
+        }
+      | {
+          type: "once";
+          scheduledFor: string;
+          timeZone: string;
+        }
+      | {
+          type: "immediate";
+        };
 
-    formData.set("scheduleRule", JSON.stringify(scheduleRule));
-    formData.set("autoLaunch", String(autoLaunch));
+    try {
+      scheduleRule =
+        scheduleType === "recurring"
+          ? {
+              type: "recurring",
+              frequency: formData.get("frequency"),
+              time: formData.get("time"),
+              timeZone: scheduleTimeZone,
+              ...(formData.get("frequency") === "weekly" ? { dayOfWeek: Number(formData.get("dayOfWeek")) } : {})
+            }
+          : scheduleType === "once"
+            ? (() => {
+                const scheduledForInput = String(formData.get("scheduledFor") ?? "");
+                const scheduledFor = convertScheduledLocalInputToUtc(scheduledForInput, scheduleTimeZone);
+
+                if (Number.isNaN(scheduledFor.getTime()) || scheduledFor <= new Date()) {
+                  throw new Error("Choose a future date and time in the selected timezone.");
+                }
+
+                return {
+                  type: "once" as const,
+                  scheduledFor: scheduledFor.toISOString(),
+                  timeZone: scheduleTimeZone
+                };
+              })()
+            : {
+                type: "immediate" as const
+              };
+
+      formData.set("scheduleRule", JSON.stringify(scheduleRule));
+      formData.set("autoLaunch", String(autoLaunch));
+    } catch (error) {
+      setState({
+        pending: false,
+        error: error instanceof Error ? error.message : "Choose a valid future send time."
+      });
+      return;
+    }
 
     const response = await fetch("/api/campaigns", {
       method: "POST",
@@ -95,6 +157,7 @@ export function CampaignBuilder(props: {
     setSelectedMappingId(props.mappings.find((mapping) => mapping.importId === firstImportId)?.id ?? "");
     setScheduleType("immediate");
     setFrequency("weekly");
+    setSelectedTimeZone(browserTimeZone);
     router.refresh();
     setState({ pending: false });
   }
@@ -175,7 +238,24 @@ export function CampaignBuilder(props: {
       {scheduleType === "once" ? (
         <div className="field">
           <label htmlFor="scheduledFor">Send on</label>
-          <input id="scheduledFor" name="scheduledFor" type="datetime-local" min={minimumScheduledFor} required />
+          <input id="scheduledFor" name="scheduledFor" type="datetime-local" required />
+        </div>
+      ) : null}
+      {scheduleType !== "immediate" ? (
+        <div className="field">
+          <label htmlFor="scheduleTimeZone">Send in timezone</label>
+          <select
+            id="scheduleTimeZone"
+            name="scheduleTimeZone"
+            value={selectedTimeZone}
+            onChange={(event) => setSelectedTimeZone(event.target.value)}
+          >
+            {timeZoneOptions.map((timeZone) => (
+              <option key={timeZone.value} value={timeZone.value}>
+                {timeZone.label}
+              </option>
+            ))}
+          </select>
         </div>
       ) : null}
       {scheduleType === "recurring" ? (
@@ -219,7 +299,7 @@ export function CampaignBuilder(props: {
       ) : null}
       {scheduleType !== "immediate" ? (
         <p className="muted" style={{ marginTop: scheduleType === "recurring" ? "0.35rem" : "-0.35rem", marginBottom: 0 }}>
-          Timezone: {browserTimeZone}
+          This schedule will run in {selectedTimeZone}.
         </p>
       ) : null}
       <button className="button" type="submit" disabled={state.pending || !canCreateSequence}>

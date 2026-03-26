@@ -2,6 +2,25 @@ import { addDays } from "date-fns";
 
 import type { ScheduleRule } from "@/lib/types";
 
+export const fallbackTimeZones = [
+  "America/New_York",
+  "America/Chicago",
+  "America/Denver",
+  "America/Los_Angeles",
+  "America/Phoenix",
+  "America/Toronto",
+  "America/Vancouver",
+  "Europe/London",
+  "Europe/Berlin",
+  "Europe/Paris",
+  "Asia/Dubai",
+  "Asia/Kolkata",
+  "Asia/Singapore",
+  "Asia/Tokyo",
+  "Australia/Sydney",
+  "Pacific/Auckland"
+] as const;
+
 const weekdayMap: Record<string, number> = {
   Sun: 0,
   Mon: 1,
@@ -98,17 +117,21 @@ function parseLocalDateTime(value: string) {
   };
 }
 
+export function convertScheduledLocalInputToUtc(value: string, timeZone: string) {
+  if (hasExplicitOffset(value)) {
+    return new Date(value);
+  }
+
+  const localDateTime = parseLocalDateTime(value);
+  if (!localDateTime) {
+    return new Date(value);
+  }
+
+  return localDateTimeToUtc(localDateTime, timeZone);
+}
+
 function getOnceRunDate(rule: Extract<ScheduleRule, { type: "once" }>) {
-  if (hasExplicitOffset(rule.scheduledFor)) {
-    return new Date(rule.scheduledFor);
-  }
-
-  const localDateTime = parseLocalDateTime(rule.scheduledFor);
-  if (!localDateTime || !rule.timeZone) {
-    return new Date(rule.scheduledFor);
-  }
-
-  return localDateTimeToUtc(localDateTime, rule.timeZone);
+  return convertScheduledLocalInputToUtc(rule.scheduledFor, rule.timeZone ?? "UTC");
 }
 
 export function getNextRunDate(rule: ScheduleRule, now = new Date()) {

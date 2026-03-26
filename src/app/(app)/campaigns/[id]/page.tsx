@@ -86,8 +86,9 @@ function formatScheduleLabel(scheduleType?: string | null, scheduleConfig?: Sche
     const timeLabel = recurringConfig?.time ?? "09:00";
     const dayLabel =
       recurringConfig?.frequency === "weekly" ? ` on ${dayNames[recurringConfig?.dayOfWeek ?? 1]}` : "";
+    const zoneLabel = recurringConfig?.timeZone ? ` (${recurringConfig.timeZone})` : "";
 
-    return `${frequencyLabel}${dayLabel} at ${timeLabel}`;
+    return `${frequencyLabel}${dayLabel} at ${timeLabel}${zoneLabel}`;
   }
 
   return "Sends immediately when launched";

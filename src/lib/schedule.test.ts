@@ -1,8 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { getNextRunDate } from "@/lib/schedule";
+import { convertScheduledLocalInputToUtc, getNextRunDate } from "@/lib/schedule";
 
 describe("getNextRunDate", () => {
+  it("converts a selected local datetime using the chosen timezone", () => {
+    const scheduledFor = convertScheduledLocalInputToUtc("2026-03-26T08:00", "America/Los_Angeles");
+
+    expect(scheduledFor.toISOString()).toBe("2026-03-26T15:00:00.000Z");
+  });
+
   it("keeps one-time schedules as the browser-selected UTC instant", () => {
     const nextRun = getNextRunDate({
       type: "once",
