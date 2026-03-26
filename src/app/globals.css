@@ -690,8 +690,8 @@ textarea {
 }
 
 .sidebar.is-collapsed .theme-menu--footer .theme-menu__panel {
-  bottom: calc(100% + 0.65rem);
-  left: 0;
+  bottom: 0;
+  left: calc(100% + 0.75rem);
   right: auto;
 }
 
