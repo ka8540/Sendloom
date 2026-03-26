@@ -1,8 +1,8 @@
 import Link from "next/link";
 
 import { LandingSceneShell } from "@/components/landing-scene-shell";
+import { LandingNav } from "@/components/landing-nav";
 import { SendloomLogo } from "@/components/sendloom-logo";
-import { ThemeSwitcher } from "@/components/theme-switcher";
 
 import styles from "@/app/landing.module.css";
 
@@ -51,32 +51,9 @@ const workflowSteps = [
 
 export default function LandingPage() {
   return (
-    <main className={styles.page}>
+    <main id="top" className={styles.page}>
       <div className={styles.frame}>
-        <header className={styles.nav}>
-          <div className={styles.navInner}>
-            <div className={styles.brand}>
-              <SendloomLogo className={styles.brandMark} />
-              <div className={styles.brandText}>
-                <strong>Sendloom</strong>
-                <span>Sequence operations with real sending discipline.</span>
-              </div>
-            </div>
-
-            <div className={styles.navActions}>
-              <a className={styles.navLink} href="#workflow">
-                Workflow
-              </a>
-              <ThemeSwitcher className={styles.themeMenu} />
-              <Link className={styles.ghostButton} href="/login">
-                Login
-              </Link>
-              <Link className={styles.primaryButton} href="/signup">
-                Try it
-              </Link>
-            </div>
-          </div>
-        </header>
+        <LandingNav />
 
         <section className={styles.hero}>
           <div className={styles.heroCopy}>
