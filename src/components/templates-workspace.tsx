@@ -94,8 +94,14 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
   return (
     <div className="templates-layout">
       <section className="card templates-editor-card">
-        <h1 style={{ marginTop: 0 }}>{heading}</h1>
-        <p className="muted">{subheading}</p>
+        <div className="templates-editor-card__header">
+          <div>
+            <p className="templates-editor-card__eyebrow">{editingTemplate ? "Template editor" : "Create template"}</p>
+            <h1 style={{ marginTop: 0 }}>{heading}</h1>
+            <p className="muted">{subheading}</p>
+          </div>
+          <span className={`badge${editingTemplate ? "" : " warning"}`}>{editingTemplate ? "Editing" : "Draft"}</span>
+        </div>
         <TemplateForm
           initialTemplate={editingTemplate}
           value={draft}
@@ -114,16 +120,18 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
                 What you type on the left updates here instantly.
               </p>
             </div>
-            <span className="badge">{editingTemplate ? "Editing" : "Draft"}</span>
+            <span className="template-preview-card__hint">Real email surface</span>
           </div>
 
-          <div className="template-preview-subject">
-            <span className="muted">Subject</span>
-            <strong>{draft.subject || "Add a subject to preview it here."}</strong>
-          </div>
+          <div className="template-preview-mail">
+            <div className="template-preview-mail__subject">
+              <span className="template-preview-mail__label">Subject</span>
+              <strong>{draft.subject || "Add a subject to preview it here."}</strong>
+            </div>
 
-          <div className="template-preview-body">
-            <div dangerouslySetInnerHTML={{ __html: draft.htmlBody || "<p>Add body content to preview it here.</p>" }} />
+            <div className="template-preview-mail__body">
+              <div dangerouslySetInnerHTML={{ __html: draft.htmlBody || "<p>Add body content to preview it here.</p>" }} />
+            </div>
           </div>
 
           <div className="template-preview-variables">

@@ -1,8 +1,15 @@
-type SpamFieldType = "subject" | "body";
-
 export type SpamRisk = "Low" | "Medium" | "High";
 
 export type SpamAnalysis = {
+  subjectScore: number;
+  subjectRisk: SpamRisk;
+  bodyScore: number;
+  bodyRisk: SpamRisk;
+};
+
+type SpamFieldType = "subject" | "body";
+
+type SpamFieldScore = {
   score: number;
   risk: SpamRisk;
 };
@@ -45,10 +52,15 @@ function getRepeatedPhraseCount(value: string) {
   return repeated;
 }
 
-export async function analyzeSpam(fieldType: SpamFieldType, text: string): Promise<SpamAnalysis> {
-  await new Promise((resolve) => setTimeout(resolve, 380));
-
+function scoreField(fieldType: SpamFieldType, text: string): SpamFieldScore {
   const rawText = text.trim();
+  if (!rawText) {
+    return {
+      score: 0,
+      risk: "Low"
+    };
+  }
+
   const normalizedText = fieldType === "body" ? stripHtml(rawText) : rawText;
   const lower = normalizedText.toLowerCase();
   let score = 0;
@@ -119,5 +131,19 @@ export async function analyzeSpam(fieldType: SpamFieldType, text: string): Promi
   return {
     score: normalizedScore,
     risk
+  };
+}
+
+export async function analyzeSpam(subject: string, body: string): Promise<SpamAnalysis> {
+  await new Promise((resolve) => setTimeout(resolve, 380));
+
+  const subjectResult = scoreField("subject", subject);
+  const bodyResult = scoreField("body", body);
+
+  return {
+    subjectScore: subjectResult.score,
+    subjectRisk: subjectResult.risk,
+    bodyScore: bodyResult.score,
+    bodyRisk: bodyResult.risk
   };
 }
