@@ -28,6 +28,15 @@ export function LoginForm() {
   const router = useRouter();
   const [state, setState] = useState<ActionState>({ pending: false });
 
+  async function readError(response: Response, fallback: string) {
+    try {
+      const payload = (await response.json()) as { error?: string };
+      return payload.error ?? fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
@@ -43,8 +52,7 @@ export function LoginForm() {
     });
 
     if (!response.ok) {
-      const payload = await response.json();
-      setState({ pending: false, error: payload.error });
+      setState({ pending: false, error: await readError(response, "Sign-in failed.") });
       return;
     }
 
@@ -65,6 +73,65 @@ export function LoginForm() {
       {state.error ? <p className="muted">{state.error}</p> : null}
       <button className="button" type="submit" disabled={state.pending}>
         {state.pending ? "Signing in..." : "Sign in"}
+      </button>
+    </form>
+  );
+}
+
+export function SignupForm() {
+  const router = useRouter();
+  const [state, setState] = useState<ActionState>({ pending: false });
+
+  async function readError(response: Response, fallback: string) {
+    try {
+      const payload = (await response.json()) as { error?: string };
+      return payload.error ?? fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    setState({ pending: true });
+    const formData = new FormData(form);
+    const response = await fetch("/api/auth/signup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: formData.get("email"),
+        password: formData.get("password"),
+        confirmPassword: formData.get("confirmPassword")
+      })
+    });
+
+    if (!response.ok) {
+      setState({ pending: false, error: await readError(response, "Could not create your account.") });
+      return;
+    }
+
+    router.replace("/workspace");
+    router.refresh();
+  }
+
+  return (
+    <form className="form" onSubmit={onSubmit}>
+      <div className="field">
+        <label htmlFor="signup-email">Email</label>
+        <input id="signup-email" name="email" type="email" required />
+      </div>
+      <div className="field">
+        <label htmlFor="signup-password">Password</label>
+        <input id="signup-password" name="password" type="password" minLength={8} required />
+      </div>
+      <div className="field">
+        <label htmlFor="signup-confirm-password">Confirm password</label>
+        <input id="signup-confirm-password" name="confirmPassword" type="password" minLength={8} required />
+      </div>
+      {state.error ? <p className="muted">{state.error}</p> : null}
+      <button className="button" type="submit" disabled={state.pending}>
+        {state.pending ? "Creating account..." : "Create account"}
       </button>
     </form>
   );

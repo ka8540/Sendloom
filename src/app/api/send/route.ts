@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { renderEmailTemplate } from "@/components/email-template";
-import { requireUser } from "@/lib/auth";
+import { getSessionUser } from "@/lib/auth";
+import { createUnauthorizedApiResponse } from "@/lib/api-auth";
 import { env } from "@/lib/env";
 import { sendEmail } from "@/lib/provider";
 import { getDefaultUserSender } from "@/services/senders";
@@ -15,7 +16,10 @@ const schema = z
   .optional();
 
 export async function POST(request: Request) {
-  const user = await requireUser();
+  const user = await getSessionUser();
+  if (!user) {
+    return createUnauthorizedApiResponse();
+  }
 
   try {
     const body = request.headers.get("content-length") === "0" ? undefined : await request.json().catch(() => undefined);

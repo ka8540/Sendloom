@@ -22,7 +22,7 @@ vi.mock("@/lib/env", () => ({
   }
 }));
 
-import { SESSION_DURATION_SECONDS, createSessionToken, verifySessionToken } from "@/lib/auth";
+import { SESSION_DURATION_SECONDS, createSessionToken, normalizeUserEmail, verifySessionToken } from "@/lib/auth";
 
 describe("auth session tokens", () => {
   beforeEach(() => {
@@ -42,5 +42,9 @@ describe("auth session tokens", () => {
 
   it("rejects malformed tokens", () => {
     expect(verifySessionToken("not-a-real-token")).toBeNull();
+  });
+
+  it("normalizes mixed-case emails before storing them in session state", () => {
+    expect(normalizeUserEmail("  Owner@Example.COM ")).toBe("owner@example.com");
   });
 });

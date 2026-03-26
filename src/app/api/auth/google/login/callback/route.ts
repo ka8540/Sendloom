@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
-import { setSession } from "@/lib/auth";
+import { normalizeUserEmail, setSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { exchangeGoogleCode, fetchGoogleUserInfo, getGoogleLoginRedirectUri } from "@/lib/google";
 
@@ -28,16 +28,17 @@ export async function GET(request: Request) {
   try {
     const tokens = await exchangeGoogleCode(code, getGoogleLoginRedirectUri());
     const profile = await fetchGoogleUserInfo(tokens.access_token);
+    const email = normalizeUserEmail(profile.email);
 
     await prisma.user.upsert({
-      where: { email: profile.email },
+      where: { email },
       update: {},
       create: {
-        email: profile.email
+        email
       }
     });
 
-    await setSession(profile.email);
+    await setSession(email);
     return NextResponse.redirect(new URL("/workspace", request.url));
   } catch (loginError) {
     const message = loginError instanceof Error ? loginError.message : "google_login_failed";

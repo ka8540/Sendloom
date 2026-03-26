@@ -2,7 +2,8 @@ import { after } from "next/server";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { requireUser } from "@/lib/auth";
+import { getSessionUser } from "@/lib/auth";
+import { createUnauthorizedApiResponse } from "@/lib/api-auth";
 import { prisma } from "@/lib/db";
 import { storeUpload } from "@/lib/storage";
 import { createCampaignDraft, launchCampaign, processPendingCampaignWork, validateCampaign } from "@/services/campaigns";
@@ -33,7 +34,11 @@ const schema = z.object({
 });
 
 export async function POST(request: Request) {
-  const user = await requireUser();
+  const user = await getSessionUser();
+  if (!user) {
+    return createUnauthorizedApiResponse();
+  }
+
   const formData = await request.formData();
   const attachment = formData.get("attachment");
   const payload = schema.parse({

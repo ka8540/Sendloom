@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { setSession, verifyPassword } from "@/lib/auth";
+import { normalizeUserEmail, setSession, verifyPassword } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { ensureBootstrapData } from "@/services/seed";
 
@@ -13,9 +13,14 @@ const schema = z.object({
 export async function POST(request: Request) {
   await ensureBootstrapData();
   const payload = schema.parse(await request.json());
+  const email = normalizeUserEmail(payload.email);
   const user = await prisma.user.findUnique({
-    where: { email: payload.email }
+    where: { email }
   });
+
+  if (user && !user.passwordHash) {
+    return NextResponse.json({ error: "This account uses Google sign-in. Continue with Google instead." }, { status: 401 });
+  }
 
   if (!user?.passwordHash) {
     return NextResponse.json({ error: "Invalid credentials." }, { status: 401 });
@@ -26,6 +31,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid credentials." }, { status: 401 });
   }
 
-  await setSession(user.email);
+  await setSession(email);
   return NextResponse.json({ success: true });
 }

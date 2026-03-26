@@ -70,7 +70,7 @@ export default function LandingPage() {
             <Link className={styles.ghostButton} href="/login">
               Login
             </Link>
-            <Link className={styles.primaryButton} href="/login">
+            <Link className={styles.primaryButton} href="/signup">
               Try it
             </Link>
           </div>
@@ -88,7 +88,7 @@ export default function LandingPage() {
             </p>
 
             <div className={styles.ctaRow}>
-              <Link className={styles.primaryButton} href="/login">
+              <Link className={styles.primaryButton} href="/signup">
                 Try it now
               </Link>
               <a className={styles.ghostButton} href="#proof">
@@ -226,7 +226,7 @@ export default function LandingPage() {
             </p>
 
             <div className={styles.ctaActions}>
-              <Link className={styles.primaryButton} href="/login">
+              <Link className={styles.primaryButton} href="/signup">
                 Try it
               </Link>
               <a className={styles.ghostButton} href="#workflow">
