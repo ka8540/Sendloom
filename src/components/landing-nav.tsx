@@ -17,6 +17,7 @@ const navItems = [
 
 export function LandingNav() {
   const [open, setOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -30,10 +31,23 @@ export function LandingNav() {
     };
   }, [open]);
 
+  useEffect(() => {
+    const updateScrolled = () => {
+      setScrolled(window.scrollY > 16);
+    };
+
+    updateScrolled();
+    window.addEventListener("scroll", updateScrolled, { passive: true });
+
+    return () => {
+      window.removeEventListener("scroll", updateScrolled);
+    };
+  }, []);
+
   const closeMenu = () => setOpen(false);
 
   return (
-    <header className={`${styles.nav}${open ? ` ${styles.navOpen}` : ""}`}>
+    <header className={`${styles.nav}${open ? ` ${styles.navOpen}` : ""}${scrolled ? ` ${styles.navScrolled}` : ""}`}>
       <div className={styles.navInner}>
         <div className={styles.brand}>
           <SendloomLogo className={styles.brandMark} />
