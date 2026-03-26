@@ -49,7 +49,7 @@ function canGoBack(pathname: string) {
   }
 }
 
-export function BackButton({ className, fallbackHref, label = "Back" }: BackButtonProps) {
+export function BackButton({ className, fallbackHref, label = "Go back" }: BackButtonProps) {
   const router = useRouter();
   const pathname = usePathname();
 
@@ -63,9 +63,14 @@ export function BackButton({ className, fallbackHref, label = "Back" }: BackButt
   }, [fallbackHref, pathname, router]);
 
   return (
-    <button className={`back-button${className ? ` ${className}` : ""}`} type="button" onClick={handleClick}>
+    <button
+      aria-label={label}
+      className={`back-button${className ? ` ${className}` : ""}`}
+      title={label}
+      type="button"
+      onClick={handleClick}
+    >
       <ArrowLeft aria-hidden="true" />
-      <span>{label}</span>
     </button>
   );
 }
