@@ -12,6 +12,10 @@ const options = [
   { value: "system", label: "System", icon: LaptopMinimal }
 ] as const;
 
+const FLOATING_PANEL_WIDTH = 236;
+const FLOATING_PANEL_HEIGHT = 214;
+const VIEWPORT_GUTTER = 12;
+
 function readThemePreference(): ThemePreference {
   try {
     const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
@@ -84,19 +88,32 @@ export function ThemeSwitcher({ className = "" }: { className?: string }) {
       const inCollapsedSidebar = Boolean(trigger.closest(".sidebar.is-collapsed"));
 
       if (inCollapsedSidebar) {
+        const left = Math.min(rect.right + 12, window.innerWidth - FLOATING_PANEL_WIDTH - VIEWPORT_GUTTER);
+        const top = Math.min(
+          Math.max(VIEWPORT_GUTTER, rect.bottom - FLOATING_PANEL_HEIGHT),
+          window.innerHeight - FLOATING_PANEL_HEIGHT - VIEWPORT_GUTTER
+        );
+
         setMenuStyle({
-          left: rect.right + 12,
+          left,
           position: "fixed",
-          top: Math.max(12, rect.bottom - 214),
+          right: "auto",
+          top,
+          width: FLOATING_PANEL_WIDTH,
           zIndex: 80
         });
         return;
       }
 
+      const left = Math.min(rect.left, window.innerWidth - FLOATING_PANEL_WIDTH - VIEWPORT_GUTTER);
+      const top = Math.max(VIEWPORT_GUTTER, rect.top - FLOATING_PANEL_HEIGHT - 12);
+
       setMenuStyle({
-        left: rect.left,
+        left,
         position: "fixed",
-        top: Math.max(12, rect.top - 214 - 12),
+        right: "auto",
+        top,
+        width: FLOATING_PANEL_WIDTH,
         zIndex: 80
       });
     };
