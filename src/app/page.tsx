@@ -9,10 +9,10 @@ import styles from "@/app/landing.module.css";
 const featureCards = [
   {
     index: "01",
-    title: "Map once. Personalize everywhere.",
+    title: "Write faster with inline AI help.",
     body:
-      "Bring in CSV or XLSX data, lock your field mapping, and turn raw rows into polished subject lines, body copy, and attachments without touching the template again.",
-    pills: ["CSV + XLSX", "Field mapping", "Template snapshots"]
+      "Refine subject lines and HTML email copy directly inside the template editor. The AI rewrite stays inline, keeps merge variables intact, and sharpens tone without breaking your workflow.",
+    pills: ["Inline rewrite", "Merge-safe", "Professional tone"]
   },
   {
     index: "02",
@@ -37,7 +37,7 @@ const workflowSteps = [
   },
   {
     title: "Choose the message system",
-    body: "Pair the list with a template, sender, and attachment strategy that feels intentional instead of one-size-fits-all."
+    body: "Pair the list with a template, sender, and attachment strategy, then tighten the subject or body inline with AI before you save."
   },
   {
     title: "Launch and watch the run",
@@ -63,7 +63,8 @@ export default function LandingPage() {
             </h1>
             <p className={styles.lede}>
               Sendloom turns your spreadsheet, template, and connected Gmail sender into one clean launch surface. Import lists,
-              map fields, add attachments, track runs, and keep suppressions in the same place the sequence actually lives.
+              map fields, enhance subject lines and email copy with AI, add attachments, track runs, and keep suppressions in the
+              same place the sequence actually lives.
             </p>
 
             <div className={styles.ctaRow}>
@@ -85,8 +86,8 @@ export default function LandingPage() {
                 <span className={styles.statLabel}>Connected sender profiles instead of throwaway relays</span>
               </article>
               <article className={styles.statCard}>
-                <span className={styles.statValue}>Tracked</span>
-                <span className={styles.statLabel}>Opens, clicks, suppressions, and run status in one view</span>
+                <span className={styles.statValue}>AI inline</span>
+                <span className={styles.statLabel}>Rewrite subject lines and HTML body copy directly inside the template form</span>
               </article>
             </div>
           </div>
@@ -98,9 +99,9 @@ export default function LandingPage() {
               </div>
 
               <div className={styles.floatingCard}>
-                <span className={styles.floatingLabel}>Sequence posture</span>
-                <strong className={styles.floatingValue}>High-signal sending</strong>
-                <span className={styles.floatingMeta}>Mapped audience, connected sender, attachment-ready template.</span>
+                <span className={styles.floatingLabel}>Template polish</span>
+                <strong className={styles.floatingValue}>Inline AI rewrite</strong>
+                <span className={styles.floatingMeta}>Improve the subject or HTML body in place without spawning extra editors.</span>
               </div>
 
               <div className={styles.floatingCardAlt}>
@@ -125,7 +126,7 @@ export default function LandingPage() {
           </article>
           <article className={styles.beltCard}>
             <strong>Template intelligence</strong>
-            <span>Keep merge variables, attachment snapshots, and subject lines aligned to the same campaign record.</span>
+            <span>Keep merge variables, AI-polished copy, attachment snapshots, and subject lines aligned to the same template record.</span>
           </article>
           <article className={styles.beltCard}>
             <strong>Respectful sending</strong>
