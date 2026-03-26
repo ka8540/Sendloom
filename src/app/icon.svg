@@ -1,0 +1,38 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="sendloom-bg" x1="76" y1="48" x2="452" y2="468" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#29C08A" />
+      <stop offset="1" stop-color="#167C5A" />
+    </linearGradient>
+    <radialGradient id="sendloom-glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(178 148) rotate(34) scale(228 228)">
+      <stop stop-color="white" stop-opacity="0.32" />
+      <stop offset="1" stop-color="white" stop-opacity="0" />
+    </radialGradient>
+    <filter id="shadow" x="12" y="20" width="488" height="488" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+      <feOffset dy="18"/>
+      <feGaussianBlur stdDeviation="18"/>
+      <feComposite in2="hardAlpha" operator="out"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 0.0392157 0 0 0 0 0.211765 0 0 0 0 0.164706 0 0 0 0.24 0"/>
+      <feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_0_1"/>
+      <feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_0_1" result="shape"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#shadow)">
+    <rect x="48" y="32" width="416" height="416" rx="136" fill="url(#sendloom-bg)" />
+    <rect x="48" y="32" width="416" height="416" rx="136" fill="url(#sendloom-glow)" />
+
+    <path d="M172 112V334" stroke="white" stroke-opacity="0.22" stroke-width="18" stroke-linecap="round" />
+    <path d="M256 98V348" stroke="white" stroke-opacity="0.32" stroke-width="22" stroke-linecap="round" />
+    <path d="M340 112V334" stroke="white" stroke-opacity="0.22" stroke-width="18" stroke-linecap="round" />
+
+    <rect x="136" y="144" width="240" height="200" rx="56" fill="white" fill-opacity="0.12" stroke="white" stroke-opacity="0.92" stroke-width="20" />
+    <path d="M162 182L256 248L350 182" stroke="white" stroke-width="20" stroke-linecap="round" stroke-linejoin="round" />
+
+    <path d="M300 144L390 106L348 198" stroke="white" stroke-width="18" stroke-linecap="round" stroke-linejoin="round" />
+    <circle cx="388" cy="108" r="10" fill="white" fill-opacity="0.94" />
+    <circle cx="420" cy="92" r="6" fill="white" fill-opacity="0.68" />
+  </g>
+</svg>
