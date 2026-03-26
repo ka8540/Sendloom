@@ -23,6 +23,7 @@ export function CampaignBuilder(props: {
   const [selectedImportId, setSelectedImportId] = useState(props.imports[0]?.id ?? "");
   const [scheduleType, setScheduleType] = useState("immediate");
   const [frequency, setFrequency] = useState("weekly");
+  const browserTimeZone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "Local time", []);
   const [selectedMappingId, setSelectedMappingId] = useState(() => {
     const firstImportId = props.imports[0]?.id;
     return props.mappings.find((mapping) => mapping.importId === firstImportId)?.id ?? "";
@@ -54,7 +55,6 @@ export function CampaignBuilder(props: {
     setState({ pending: true });
     const formData = new FormData(form);
     const scheduleType = String(formData.get("scheduleType"));
-    const browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     const scheduleRule =
       scheduleType === "recurring"
         ? {
@@ -216,6 +216,11 @@ export function CampaignBuilder(props: {
             We’ll keep using this list, template, and sender each time the sequence runs.
           </p>
         </>
+      ) : null}
+      {scheduleType !== "immediate" ? (
+        <p className="muted" style={{ marginTop: scheduleType === "recurring" ? "0.35rem" : "-0.35rem", marginBottom: 0 }}>
+          Timezone: {browserTimeZone}
+        </p>
       ) : null}
       <button className="button" type="submit" disabled={state.pending || !canCreateSequence}>
         {state.pending ? "Preparing sequence..." : "Create sequence"}
