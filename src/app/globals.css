@@ -150,6 +150,7 @@ textarea {
 .sidebar {
   position: sticky;
   top: 0;
+  z-index: 20;
   height: 100vh;
   overflow-x: visible;
   overflow-y: auto;
@@ -305,6 +306,8 @@ textarea {
   gap: 0.75rem;
   margin-top: auto;
   padding-top: 0.5rem;
+  position: relative;
+  z-index: 2;
 }
 
 .nav-footer-theme {
@@ -575,6 +578,7 @@ textarea {
 .theme-menu {
   position: relative;
   display: inline-flex;
+  z-index: 3;
 }
 
 .theme-menu__trigger {
@@ -690,7 +694,7 @@ textarea {
 }
 
 .sidebar.is-collapsed .theme-menu--footer .theme-menu__panel {
-  bottom: 0;
+  bottom: calc(100% - 0.2rem);
   left: calc(100% + 0.75rem);
   right: auto;
 }
