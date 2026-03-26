@@ -1007,6 +1007,180 @@ textarea {
   text-decoration: underline;
 }
 
+.auth-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+  background: var(--bg);
+}
+
+.auth-card {
+  width: min(560px, 100%);
+  display: grid;
+  gap: 1.1rem;
+}
+
+.auth-header {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.auth-header h1 {
+  margin: 0;
+}
+
+.auth-provider {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.auth-switch {
+  margin: 0;
+  color: var(--muted);
+}
+
+.auth-switch a {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.not-found-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+  background:
+    radial-gradient(circle at top left, var(--bg-glow-green), transparent 18rem),
+    radial-gradient(circle at right top, var(--bg-glow-blue), transparent 22rem),
+    linear-gradient(180deg, var(--bg-start) 0%, var(--bg-end) 100%);
+}
+
+.not-found-card {
+  width: min(760px, 100%);
+  text-align: center;
+  display: grid;
+  gap: 1.4rem;
+}
+
+.not-found-hero {
+  display: grid;
+  gap: 1rem;
+  justify-items: center;
+}
+
+.not-found-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.75rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-weight: 700;
+}
+
+.not-found-card h1 {
+  margin: 0;
+  font-size: clamp(3rem, 8vw, 5.5rem);
+  letter-spacing: -0.06em;
+}
+
+.not-found-card p {
+  margin: 0;
+}
+
+.not-found-actions {
+  display: flex;
+  justify-content: center;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+}
+
+.dog-illustration {
+  width: min(320px, 100%);
+  height: auto;
+  filter: drop-shadow(0 26px 34px rgba(22, 124, 90, 0.16));
+}
+
+.legal-shell {
+  min-height: 100vh;
+  padding: 2rem;
+  background:
+    radial-gradient(circle at top left, var(--bg-glow-green), transparent 18rem),
+    radial-gradient(circle at right top, var(--bg-glow-blue), transparent 22rem),
+    linear-gradient(180deg, var(--bg-start) 0%, var(--bg-end) 100%);
+}
+
+.legal-card {
+  width: min(900px, 100%);
+  margin: 0 auto;
+  display: grid;
+  gap: 1.5rem;
+}
+
+.legal-header {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.legal-header h1 {
+  margin: 0;
+  font-size: clamp(2.4rem, 6vw, 4rem);
+  letter-spacing: -0.05em;
+}
+
+.legal-header p {
+  margin: 0;
+}
+
+.legal-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: fit-content;
+  padding: 0.42rem 0.7rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.legal-section {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.legal-section h2 {
+  margin: 0;
+  font-size: 1.35rem;
+  letter-spacing: -0.03em;
+}
+
+.legal-section p,
+.legal-section li {
+  color: var(--muted);
+  line-height: 1.75;
+}
+
+.legal-section p,
+.legal-section ul {
+  margin: 0;
+}
+
+.legal-section ul {
+  padding-left: 1.2rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.legal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem;
+}
+
 @media (max-width: 960px) {
   .shell,
   .templates-layout,
@@ -1043,6 +1217,10 @@ textarea {
 @media (max-width: 700px) {
   .button {
     width: 100%;
+  }
+
+  .not-found-actions {
+    display: grid;
   }
 
   .template-list-item__header,

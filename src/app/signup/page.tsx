@@ -1,12 +1,11 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { LoginForm } from "@/components/forms";
 
+import { SignupForm } from "@/components/forms";
 import { getSession } from "@/lib/auth";
 
-export default async function LoginPage(props: { searchParams?: Promise<{ error?: string }> }) {
+export default async function SignupPage() {
   const session = await getSession();
-  const searchParams = await props.searchParams;
 
   if (session) {
     redirect("/workspace");
@@ -16,18 +15,17 @@ export default async function LoginPage(props: { searchParams?: Promise<{ error?
     <main className="auth-shell">
       <section className="card auth-card">
         <div className="auth-header">
-          <h1>Sign in to Sendloom</h1>
-          <p className="muted">Continue with Google or sign in with your email and password.</p>
+          <h1>Create your account</h1>
+          <p className="muted">Sign up with Google or create an email/password account and jump straight into the dashboard.</p>
         </div>
         <div className="auth-provider">
           <a className="button" href="/api/auth/google/login">
             Continue with Google
           </a>
         </div>
-        {searchParams?.error ? <p className="muted">Google sign-in failed: {searchParams.error}</p> : null}
-        <LoginForm />
+        <SignupForm />
         <p className="auth-switch">
-          New to Sendloom? <Link href="/signup">Create an account</Link>
+          Already have an account? <Link href="/login">Sign in</Link>
         </p>
       </section>
     </main>

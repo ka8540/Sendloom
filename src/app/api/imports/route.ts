@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
 
-import { requireUser } from "@/lib/auth";
+import { getSessionUser } from "@/lib/auth";
+import { createUnauthorizedApiResponse } from "@/lib/api-auth";
 import { createImport } from "@/services/imports";
 
 export async function POST(request: Request) {
-  const user = await requireUser();
+  const user = await getSessionUser();
+  if (!user) {
+    return createUnauthorizedApiResponse();
+  }
+
   const formData = await request.formData();
   const file = formData.get("file");
 

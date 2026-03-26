@@ -8,10 +8,15 @@ import { env } from "@/lib/env";
 
 const SESSION_COOKIE = "mergepilot_session";
 export const SESSION_DURATION_SECONDS = 60 * 60 * 24 * 30;
+export const SESSION_ERROR_MESSAGE = "Your session has expired. Sign in again to keep working.";
 
 type SessionClaims = JwtPayload & {
   email: string;
 };
+
+export function normalizeUserEmail(email: string) {
+  return email.trim().toLowerCase();
+}
 
 export async function createPasswordHash(password: string) {
   return bcrypt.hash(password, 12);
@@ -22,7 +27,7 @@ export async function verifyPassword(password: string, hash: string) {
 }
 
 export function createSessionToken(email: string) {
-  return jwt.sign({ email }, env.SESSION_SECRET, { expiresIn: SESSION_DURATION_SECONDS });
+  return jwt.sign({ email: normalizeUserEmail(email) }, env.SESSION_SECRET, { expiresIn: SESSION_DURATION_SECONDS });
 }
 
 export function verifySessionToken(token: string): SessionClaims | null {

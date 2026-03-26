@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { requireUser } from "@/lib/auth";
+import { getSessionUser } from "@/lib/auth";
+import { createUnauthorizedApiResponse } from "@/lib/api-auth";
 import { listTemplates, upsertTemplate } from "@/services/templates";
 
 const schema = z.object({
@@ -13,12 +14,20 @@ const schema = z.object({
 });
 
 export async function GET() {
-  const user = await requireUser();
+  const user = await getSessionUser();
+  if (!user) {
+    return createUnauthorizedApiResponse();
+  }
+
   return NextResponse.json(await listTemplates(user.id));
 }
 
 export async function POST(request: Request) {
-  const user = await requireUser();
+  const user = await getSessionUser();
+  if (!user) {
+    return createUnauthorizedApiResponse();
+  }
+
   const payload = schema.parse(await request.json());
   const template = await upsertTemplate(payload, user.id);
   return NextResponse.json(template);

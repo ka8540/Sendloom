@@ -1,14 +1,19 @@
 import { after } from "next/server";
 import { NextResponse } from "next/server";
 
-import { requireUser } from "@/lib/auth";
+import { getSessionUser } from "@/lib/auth";
+import { createUnauthorizedApiResponse } from "@/lib/api-auth";
 import { writeAuditLog } from "@/lib/audit";
 import { launchCampaign, processPendingCampaignWork } from "@/services/campaigns";
 
 export const maxDuration = 60;
 
 export async function POST(_: Request, context: { params: Promise<{ id: string }> }) {
-  const user = await requireUser();
+  const user = await getSessionUser();
+  if (!user) {
+    return createUnauthorizedApiResponse();
+  }
+
   const { id } = await context.params;
   const run = await launchCampaign(id, user.id);
   after(async () => {

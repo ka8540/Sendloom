@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { requireUser } from "@/lib/auth";
+import { getSessionUser } from "@/lib/auth";
+import { createUnauthorizedApiResponse } from "@/lib/api-auth";
 import { listSuppressions, suppressEmail } from "@/services/suppressions";
 
 const schema = z.object({
@@ -11,12 +12,20 @@ const schema = z.object({
 });
 
 export async function GET() {
-  const user = await requireUser();
+  const user = await getSessionUser();
+  if (!user) {
+    return createUnauthorizedApiResponse();
+  }
+
   return NextResponse.json(await listSuppressions(user.id));
 }
 
 export async function POST(request: Request) {
-  const user = await requireUser();
+  const user = await getSessionUser();
+  if (!user) {
+    return createUnauthorizedApiResponse();
+  }
+
   const payload = schema.parse(await request.json());
   return NextResponse.json(await suppressEmail(user.id, payload.email, payload.reason, "manual", payload.notes));
 }
