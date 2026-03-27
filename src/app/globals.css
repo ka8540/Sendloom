@@ -1138,6 +1138,60 @@ textarea {
   gap: 1rem;
 }
 
+.templates-pagination {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 0.5rem;
+}
+
+.templates-pagination__controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.35rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface-muted);
+}
+
+.templates-pagination__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.35rem;
+  height: 2.35rem;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  transition: transform 140ms ease, border-color 160ms ease, background-color 160ms ease, box-shadow 180ms ease;
+}
+
+.templates-pagination__button svg {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+.templates-pagination__button:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent) 18%, var(--line));
+  background: var(--surface-muted);
+  box-shadow: 0 12px 24px rgba(28, 42, 70, 0.08);
+}
+
+.templates-pagination__button:disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.templates-pagination__page {
+  min-width: 3rem;
+  text-align: center;
+  color: var(--muted);
+  font-weight: 700;
+}
+
 .template-list-item {
   display: grid;
   gap: 0.5rem;

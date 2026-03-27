@@ -1,5 +1,6 @@
 "use client";
 
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { TemplateForm, type EditableTemplate, type TemplateDraft } from "@/components/forms";
@@ -9,6 +10,7 @@ const DEFAULT_TEMPLATE_DRAFT: TemplateDraft = {
   subject: "",
   htmlBody: `<p>Hi {{name}},</p>\n<p>I noticed {{company}} and wanted to reach out.</p>`
 };
+const TEMPLATE_PAGE_SIZE = 5;
 
 function normalizeTemplate(template: EditableTemplate): EditableTemplate {
   return {
@@ -55,6 +57,7 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
   const [templates, setTemplates] = useState(initialTemplates.map(normalizeTemplate));
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
   const [hoveredTemplateId, setHoveredTemplateId] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
   const [draft, setDraft] = useState<TemplateDraft>(createDraft(null));
   const hoverIntentTimeoutRef = useRef<number | null>(null);
   const hoverLeaveTimeoutRef = useRef<number | null>(null);
@@ -62,6 +65,11 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
   useEffect(() => {
     setTemplates(initialTemplates.map(normalizeTemplate));
   }, [initialTemplates]);
+
+  useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil(templates.length / TEMPLATE_PAGE_SIZE));
+    setCurrentPage((page) => Math.min(page, totalPages));
+  }, [templates.length]);
 
   useEffect(() => {
     return () => {
@@ -77,6 +85,11 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
 
   const editingTemplate = templates.find((template) => template.id === editingTemplateId) ?? null;
   const previewVariables = extractVariables(draft.subject, draft.htmlBody);
+  const totalPages = Math.max(1, Math.ceil(templates.length / TEMPLATE_PAGE_SIZE));
+  const pagedTemplates = templates.slice(
+    (currentPage - 1) * TEMPLATE_PAGE_SIZE,
+    currentPage * TEMPLATE_PAGE_SIZE
+  );
 
   const handleSaved = (savedTemplate: EditableTemplate) => {
     const normalized = normalizeTemplate(savedTemplate);
@@ -85,6 +98,7 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
       const nextTemplates = currentTemplates.filter((template) => template.id !== normalized.id);
       return [normalized, ...nextTemplates];
     });
+    setCurrentPage(1);
     setEditingTemplateId(null);
     setDraft(createDraft(null));
   };
@@ -196,7 +210,7 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
         <section className="card">
           <h2 style={{ marginTop: 0 }}>Saved templates</h2>
           <div className="templates-list">
-          {templates.map((template) => {
+          {pagedTemplates.map((template) => {
             const isEditing = template.id === editingTemplateId;
             const isRevealed = hoveredTemplateId === template.id || isEditing;
 
@@ -255,6 +269,39 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
           })}
             {!templates.length ? <div className="surface-note">Create your first template to start using it in sequences.</div> : null}
           </div>
+          {templates.length > TEMPLATE_PAGE_SIZE ? (
+            <div className="templates-pagination" aria-label="Template pages">
+              <div className="templates-pagination__controls">
+                <button
+                  className="templates-pagination__button"
+                  type="button"
+                  aria-label="Previous template page"
+                  disabled={currentPage === 1}
+                  onClick={() => {
+                    handleTemplateMouseLeave();
+                    setCurrentPage((page) => Math.max(1, page - 1));
+                  }}
+                >
+                  <ChevronLeft aria-hidden="true" />
+                </button>
+                <span className="templates-pagination__page">
+                  {currentPage} / {totalPages}
+                </span>
+                <button
+                  className="templates-pagination__button"
+                  type="button"
+                  aria-label="Next template page"
+                  disabled={currentPage === totalPages}
+                  onClick={() => {
+                    handleTemplateMouseLeave();
+                    setCurrentPage((page) => Math.min(totalPages, page + 1));
+                  }}
+                >
+                  <ChevronRight aria-hidden="true" />
+                </button>
+              </div>
+            </div>
+          ) : null}
         </section>
       </div>
     </div>
