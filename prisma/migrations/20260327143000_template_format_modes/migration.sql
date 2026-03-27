@@ -1,0 +1,2 @@
+ALTER TABLE "public"."Template"
+ADD COLUMN "format" TEXT NOT NULL DEFAULT 'HTML';

@@ -7,7 +7,7 @@ import { sendEmail, type EmailAttachment } from "@/lib/provider";
 import { consumeSendWindow } from "@/lib/rate-limit";
 import { getRedis } from "@/lib/redis";
 import { getNextRunDate } from "@/lib/schedule";
-import { renderTemplate } from "@/lib/templates";
+import { renderTemplate, renderTemplateContent, type TemplateFormat } from "@/lib/templates";
 import { makeTrackingUrl, shaKey } from "@/lib/tracking";
 import type { CampaignValidationReport, ScheduleRule } from "@/lib/types";
 import { buildValidationReport } from "@/lib/validation";
@@ -28,6 +28,7 @@ type CampaignAttachmentSnapshot = EmailAttachment;
 
 type CampaignTemplateSnapshot = {
   subject: string;
+  format?: TemplateFormat;
   htmlBody: string;
   variableManifest: unknown;
   attachments?: CampaignAttachmentSnapshot[];
@@ -244,6 +245,7 @@ export async function createCampaignDraft(input: {
       scheduleConfig: input.scheduleRule,
       templateSnapshot: {
         subject: template.subject,
+        format: (template.format as TemplateFormat | null) ?? "HTML",
         htmlBody: template.htmlBody,
         variableManifest: template.variableManifest,
         attachments: input.attachments ?? []
@@ -435,6 +437,7 @@ async function ensureRecipientJobs(campaignId: string, runId: string) {
   const suppressedEmails = await getSuppressedEmailsForUser(campaign.userId);
   const templateSnapshot = campaign.templateSnapshot as CampaignTemplateSnapshot;
   const subjectTemplate = templateSnapshot.subject;
+  const templateFormat = templateSnapshot.format ?? "HTML";
   const htmlTemplate = templateSnapshot.htmlBody;
   const mappingSnapshot = campaign.mappingSnapshot as {
     reservedFieldMap?: Record<string, string>;
@@ -466,7 +469,7 @@ async function ensureRecipientJobs(campaignId: string, runId: string) {
           recipientEmail: email,
           recipientName: typeof payload.name === "string" ? payload.name : null,
           subject: renderTemplate(subjectTemplate, payload),
-          htmlBody: renderTemplate(htmlTemplate, payload),
+          htmlBody: renderTemplateContent(templateFormat, htmlTemplate, payload),
           dedupeKey: shaKey([runId, email]),
           status: "SUPPRESSED",
           metadata: metadata as Prisma.InputJsonValue
@@ -476,7 +479,7 @@ async function ensureRecipientJobs(campaignId: string, runId: string) {
     }
 
     const subject = renderTemplate(subjectTemplate, payload);
-    const renderedHtml = renderTemplate(htmlTemplate, payload);
+    const renderedHtml = renderTemplateContent(templateFormat, htmlTemplate, payload);
 
     const jobRecord = await prisma.recipientJob.create({
       data: {

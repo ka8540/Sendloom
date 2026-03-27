@@ -1,6 +1,7 @@
 import { TemplatesWorkspace } from "@/components/templates-workspace";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import type { TemplateFormat } from "@/lib/templates";
 
 export default async function TemplatesPage() {
   const user = await requireUser();
@@ -15,6 +16,7 @@ export default async function TemplatesPage() {
         id: template.id,
         name: template.name,
         subject: template.subject,
+        format: (template.format as TemplateFormat | null) ?? "HTML",
         htmlBody: template.htmlBody,
         variableManifest: Array.isArray(template.variableManifest) ? (template.variableManifest as string[]) : []
       }))}

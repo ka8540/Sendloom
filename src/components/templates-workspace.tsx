@@ -4,26 +4,37 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { TemplateForm, type EditableTemplate, type TemplateDraft } from "@/components/forms";
+import {
+  getDefaultTemplateBody,
+  getTemplateFormatLabel,
+  renderTemplatePreview,
+  templateContentToPlainText,
+  type TemplateFormat
+} from "@/lib/templates";
 
 const DEFAULT_TEMPLATE_DRAFT: TemplateDraft = {
   name: "",
   subject: "",
-  htmlBody: `<p>Hi {{name}},</p>\n<p>I noticed {{company}} and wanted to reach out.</p>`
+  format: "PLAIN_TEXT",
+  htmlBody: getDefaultTemplateBody("PLAIN_TEXT")
 };
 const TEMPLATE_PAGE_SIZE = 5;
 
 function normalizeTemplate(template: EditableTemplate): EditableTemplate {
   return {
     ...template,
+    format: (template.format ?? DEFAULT_TEMPLATE_DRAFT.format) as TemplateFormat,
     variableManifest: Array.isArray(template.variableManifest) ? template.variableManifest : []
   };
 }
 
 function createDraft(template?: EditableTemplate | null): TemplateDraft {
+  const format = (template?.format ?? DEFAULT_TEMPLATE_DRAFT.format) as TemplateFormat;
   return {
     name: template?.name ?? DEFAULT_TEMPLATE_DRAFT.name,
     subject: template?.subject ?? DEFAULT_TEMPLATE_DRAFT.subject,
-    htmlBody: template?.htmlBody ?? DEFAULT_TEMPLATE_DRAFT.htmlBody
+    format,
+    htmlBody: template?.htmlBody ?? getDefaultTemplateBody(format)
   };
 }
 
@@ -44,9 +55,8 @@ function extractVariables(...values: string[]) {
   return [...variables];
 }
 
-function toSnippet(htmlBody: string) {
-  const collapsed = htmlBody
-    .replace(/<[^>]+>/g, " ")
+function toSnippet(format: TemplateFormat, body: string) {
+  const collapsed = templateContentToPlainText(format, body)
     .replace(/\s+/g, " ")
     .trim();
 
@@ -177,7 +187,7 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
                 What you type on the left updates here instantly.
               </p>
             </div>
-            <span className="template-preview-card__hint">Real email surface</span>
+            <span className="template-preview-card__hint">{getTemplateFormatLabel(draft.format)} format</span>
           </div>
 
           <div className="template-preview-mail">
@@ -187,7 +197,11 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
             </div>
 
             <div className="template-preview-mail__body">
-              <div dangerouslySetInnerHTML={{ __html: draft.htmlBody || "<p>Add body content to preview it here.</p>" }} />
+              <div
+                dangerouslySetInnerHTML={{
+                  __html: renderTemplatePreview(draft.format, draft.htmlBody)
+                }}
+              />
             </div>
           </div>
 
@@ -241,6 +255,7 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
                 <div className="template-list-item__header">
                   <div className="template-list-item__copy">
                     <strong>{template.name}</strong>
+                    <span className="template-list-item__format">{getTemplateFormatLabel(template.format)}</span>
                   </div>
 
                   <button
@@ -254,7 +269,7 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
 
                 <div className="template-list-item__details">
                   <p className="muted">{template.subject}</p>
-                  <p className="template-list-item__snippet">{toSnippet(template.htmlBody)}</p>
+                  <p className="template-list-item__snippet">{toSnippet(template.format, template.htmlBody)}</p>
 
                   <div className="pill-row">
                     {(template.variableManifest.length ? template.variableManifest : ["None detected"]).map((variable) => (

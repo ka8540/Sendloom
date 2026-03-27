@@ -510,6 +510,10 @@ textarea {
   font-size: 0.9rem;
 }
 
+.field-inline-note + .field-inline-note {
+  margin-top: -0.15rem;
+}
+
 .template-form-toolbar {
   display: flex;
   justify-content: space-between;
@@ -1133,6 +1137,16 @@ textarea {
   margin: 0;
 }
 
+.template-preview-mail__body ul,
+.template-preview-mail__body ol {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.template-preview-mail__body li {
+  margin: 0.3rem 0;
+}
+
 .templates-list {
   display: grid;
   gap: 1rem;
@@ -1235,6 +1249,22 @@ textarea {
 .template-list-item__copy strong,
 .template-list-item__copy p {
   display: block;
+}
+
+.template-list-item__format {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  margin-top: 0.45rem;
+  padding: 0.28rem 0.62rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .template-list-item__button {

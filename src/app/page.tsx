@@ -9,10 +9,10 @@ import styles from "@/app/landing.module.css";
 const featureCards = [
   {
     index: "01",
-    title: "Write faster with inline AI help.",
+    title: "Write in the format your team actually wants.",
     body:
-      "Refine subject lines and HTML email copy directly inside the template editor. The AI rewrite stays inline, keeps merge variables intact, and sharpens tone without breaking your workflow.",
-    pills: ["Inline rewrite", "Merge-safe", "Professional tone"]
+      "Switch between plain text, HTML, and structured JSON inside the same template editor. Sendloom renders each one into a clean email preview while keeping merge variables and inline AI help intact.",
+    pills: ["Plain text", "HTML", "Structured JSON"]
   },
   {
     index: "02",
@@ -37,7 +37,7 @@ const workflowSteps = [
   },
   {
     title: "Choose the message system",
-    body: "Pair the list with a template, sender, and attachment strategy, then tighten the subject or body inline with AI before you save."
+    body: "Pair the list with a template, sender, and attachment strategy, then write in plain text, HTML, or JSON with inline AI help before you save."
   },
   {
     title: "Launch and watch the run",
@@ -63,8 +63,8 @@ export default function LandingPage() {
             </h1>
             <p className={styles.lede}>
               Sendloom turns your spreadsheet, template, and connected Gmail sender into one clean launch surface. Import lists,
-              map fields, enhance subject lines and email copy with AI, add attachments, track runs, and keep suppressions in the
-              same place the sequence actually lives.
+              map fields, choose plain text, HTML, or structured JSON templates, enhance subject lines and email copy with AI,
+              add attachments, track runs, and keep suppressions in the same place the sequence actually lives.
             </p>
 
             <div className={styles.ctaRow}>
@@ -86,8 +86,8 @@ export default function LandingPage() {
                 <span className={styles.statLabel}>Connected sender profiles instead of throwaway relays</span>
               </article>
               <article className={styles.statCard}>
-                <span className={styles.statValue}>AI inline</span>
-                <span className={styles.statLabel}>Rewrite subject lines and HTML body copy directly inside the template form</span>
+                <span className={styles.statValue}>3 formats</span>
+                <span className={styles.statLabel}>Write templates in plain text, HTML, or JSON and preview them as real email</span>
               </article>
             </div>
           </div>
@@ -100,8 +100,8 @@ export default function LandingPage() {
 
               <div className={styles.floatingCard}>
                 <span className={styles.floatingLabel}>Template polish</span>
-                <strong className={styles.floatingValue}>Inline AI rewrite</strong>
-                <span className={styles.floatingMeta}>Improve the subject or HTML body in place without spawning extra editors.</span>
+                <strong className={styles.floatingValue}>Plain text, HTML, or JSON</strong>
+                <span className={styles.floatingMeta}>Use the format that fits the workflow, then preview it like a real email instead of raw markup.</span>
               </div>
 
               <div className={styles.floatingCardAlt}>
@@ -126,7 +126,7 @@ export default function LandingPage() {
           </article>
           <article className={styles.beltCard}>
             <strong>Template intelligence</strong>
-            <span>Keep merge variables, AI-polished copy, attachment snapshots, and subject lines aligned to the same template record.</span>
+            <span>Keep merge variables, AI-polished copy, format choice, attachment snapshots, and subject lines aligned to the same template record.</span>
           </article>
           <article className={styles.beltCard}>
             <strong>Respectful sending</strong>

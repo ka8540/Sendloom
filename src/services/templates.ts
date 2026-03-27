@@ -1,16 +1,28 @@
 import type { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
-import { extractTemplateVariables, renderTemplate, sanitizeTemplatePreview } from "@/lib/templates";
+import {
+  extractTemplateVariables,
+  renderTemplate,
+  renderTemplatePreview,
+  type TemplateFormat,
+  validateTemplateBody
+} from "@/lib/templates";
 import type { MergeVariables } from "@/lib/types";
 
 export async function upsertTemplate(input: {
   id?: string;
   name: string;
   subject: string;
+  format: TemplateFormat;
   htmlBody: string;
   previewPayload?: Record<string, unknown>;
 }, userId: string) {
+  const bodyValidationError = validateTemplateBody(input.format, input.htmlBody);
+  if (bodyValidationError) {
+    throw new Error(bodyValidationError);
+  }
+
   const variableManifest = Array.from(
     new Set([...extractTemplateVariables(input.subject), ...extractTemplateVariables(input.htmlBody)])
   );
@@ -28,6 +40,7 @@ export async function upsertTemplate(input: {
       data: {
         name: input.name,
         subject: input.subject,
+        format: input.format,
         htmlBody: input.htmlBody,
         variableManifest,
         previewPayload: input.previewPayload as Prisma.InputJsonValue | undefined,
@@ -43,6 +56,7 @@ export async function upsertTemplate(input: {
       userId,
       name: input.name,
       subject: input.subject,
+      format: input.format,
       htmlBody: input.htmlBody,
       variableManifest,
       previewPayload: input.previewPayload as Prisma.InputJsonValue | undefined
@@ -67,6 +81,6 @@ export async function previewTemplate(templateId: string, userId: string, payloa
 
   return {
     subject: renderTemplate(template.subject, payload),
-    html: sanitizeTemplatePreview(renderTemplate(template.htmlBody, payload))
+    html: renderTemplatePreview(template.format as TemplateFormat, template.htmlBody, payload)
   };
 }

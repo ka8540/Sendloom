@@ -5,6 +5,17 @@ import { Sparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import { analyzeSpam, type SpamAnalysis } from "@/lib/spam-analysis";
+import {
+  convertTemplateBody,
+  getDefaultTemplateBody,
+  getTemplateBodyHint,
+  getTemplateBodyLabel,
+  getTemplateBodyPlaceholder,
+  getTemplateFormatLabel,
+  TEMPLATE_FORMATS,
+  type TemplateFormat,
+  validateTemplateBody
+} from "@/lib/templates";
 
 type ActionState = {
   pending: boolean;
@@ -12,12 +23,12 @@ type ActionState = {
 };
 
 type EnhanceField = "subject" | "body";
-
-const DEFAULT_TEMPLATE_HTML = `<p>Hi {{name}},</p>\n<p>I noticed {{company}} and wanted to reach out.</p>`;
+const DEFAULT_TEMPLATE_FORMAT: TemplateFormat = "PLAIN_TEXT";
 
 export type TemplateDraft = {
   name: string;
   subject: string;
+  format: TemplateFormat;
   htmlBody: string;
 };
 
@@ -25,6 +36,7 @@ export type EditableTemplate = {
   id: string;
   name: string;
   subject: string;
+  format: TemplateFormat;
   htmlBody: string;
   variableManifest: string[];
 };
@@ -190,10 +202,12 @@ type TemplateFormProps = {
 };
 
 function getTemplateFields(template?: EditableTemplate | null): TemplateDraft {
+  const format = template?.format ?? DEFAULT_TEMPLATE_FORMAT;
   return {
     name: template?.name ?? "",
     subject: template?.subject ?? "",
-    htmlBody: template?.htmlBody ?? DEFAULT_TEMPLATE_HTML
+    format,
+    htmlBody: template?.htmlBody ?? getDefaultTemplateBody(format)
   };
 }
 
@@ -211,6 +225,7 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
   const highlightTimeoutRef = useRef<number | null>(null);
   const controlled = Boolean(value && onChange);
   const fields = value ?? localFields;
+  const bodyValidationError = validateTemplateBody(fields.format, fields.htmlBody);
 
   const updateFields = (updater: (current: TemplateDraft) => TemplateDraft) => {
     if (controlled && onChange) {
@@ -275,7 +290,8 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           fieldType,
-          currentText: trimmedText
+          currentText: trimmedText,
+          templateFormat: fieldType === "body" ? fields.format : undefined
         })
       });
 
@@ -318,7 +334,7 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
     setSpamFixError(undefined);
 
     try {
-      const nextAnalysis = await analyzeSpam(fields.subject, fields.htmlBody);
+      const nextAnalysis = await analyzeSpam(fields.subject, fields.htmlBody, fields.format);
       setSpamAnalysis(nextAnalysis);
     } finally {
       setCheckingSpam(false);
@@ -341,7 +357,8 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "fix-spam",
-          currentText: trimmedText
+          currentText: trimmedText,
+          templateFormat: fields.format
         })
       });
 
@@ -368,7 +385,7 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
         setHighlightedField(null);
       }, 1600);
 
-      const nextAnalysis = await analyzeSpam(nextFields.subject, nextFields.htmlBody);
+      const nextAnalysis = await analyzeSpam(nextFields.subject, nextFields.htmlBody, nextFields.format);
       setSpamAnalysis(nextAnalysis);
     } catch {
       setSpamFixError("AI spam fix failed.");
@@ -387,6 +404,7 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
         id: initialTemplate?.id,
         name: fields.name,
         subject: fields.subject,
+        format: fields.format,
         htmlBody: fields.htmlBody
       })
     });
@@ -421,7 +439,12 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
   const showSpamFixButton =
     spamAnalysis !== null && (spamAnalysis.subjectScore >= 40 || spamAnalysis.bodyScore >= 40);
   const spamFixDisabled =
-    state.pending || fixingSpam || enhancingField !== null || checkingSpam || !fields.htmlBody.trim();
+    state.pending ||
+    fixingSpam ||
+    enhancingField !== null ||
+    checkingSpam ||
+    !fields.htmlBody.trim() ||
+    Boolean(bodyValidationError);
 
   function renderSpamBadge(score: number, risk: SpamAnalysis["subjectRisk"]) {
     if (!spamAnalysis) {
@@ -470,6 +493,33 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
         />
       </div>
       <div className="field">
+        <label htmlFor="format">Message format</label>
+        <select
+          id="format"
+          name="format"
+          value={fields.format}
+          onChange={(event) => {
+            const nextFormat = event.target.value as TemplateFormat;
+            setEnhanceError((current) => ({ ...current, body: undefined }));
+            setSpamAnalysis(null);
+            setSpamFixError(undefined);
+
+            updateFields((current) => ({
+              ...current,
+              format: nextFormat,
+              htmlBody: convertTemplateBody(current.htmlBody, current.format, nextFormat)
+            }));
+          }}
+        >
+          {TEMPLATE_FORMATS.map((format) => (
+            <option key={format} value={format}>
+              {getTemplateFormatLabel(format)}
+            </option>
+          ))}
+        </select>
+        <p className="field-inline-note">{getTemplateBodyHint(fields.format)}</p>
+      </div>
+      <div className="field">
         <div className="field-label-row">
           <label htmlFor="subject">Subject</label>
           <button
@@ -502,7 +552,7 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
       </div>
       <div className="field">
         <div className="field-label-row">
-          <label htmlFor="htmlBody">HTML body</label>
+          <label htmlFor="htmlBody">{getTemplateBodyLabel(fields.format)}</label>
           <button
             className="field-icon-button"
             type="button"
@@ -514,19 +564,22 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
             {enhancingField === "body" ? <span className="button-spinner" aria-hidden="true" /> : <Sparkles aria-hidden="true" />}
           </button>
         </div>
-        <textarea
-          id="htmlBody"
-          name="htmlBody"
-          value={fields.htmlBody}
-          onChange={(event) => {
-            setEnhanceError((current) => ({ ...current, body: undefined }));
-            setSpamAnalysis(null);
+          <textarea
+            id="htmlBody"
+            name="htmlBody"
+            value={fields.htmlBody}
+            placeholder={getTemplateBodyPlaceholder(fields.format)}
+            onChange={(event) => {
+              setEnhanceError((current) => ({ ...current, body: undefined }));
+              setSpamAnalysis(null);
             setSpamFixError(undefined);
             updateFields((current) => ({ ...current, htmlBody: event.target.value }));
           }}
           className={highlightedField === "body" ? "field-enhanced" : undefined}
           required
-        />
+          />
+        <p className="field-inline-note">{getTemplateBodyHint(fields.format)}</p>
+        {bodyValidationError ? <p className="field-inline-note">{bodyValidationError}</p> : null}
         {enhanceError.body ? <p className="field-inline-note">{enhanceError.body}</p> : null}
         <div className="field-meta-row">
           {renderSpamBadge(spamAnalysis?.bodyScore ?? 0, spamAnalysis?.bodyRisk ?? "Low")}
@@ -551,7 +604,7 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
         {spamFixError ? <p className="field-inline-note">{spamFixError}</p> : null}
       </div>
       <div className="template-form-actions">
-        <button className="button" type="submit" disabled={state.pending}>
+        <button className="button" type="submit" disabled={state.pending || Boolean(bodyValidationError)}>
           {state.pending ? "Saving..." : isEditing ? "Save changes" : "Save template"}
         </button>
         {isEditing ? (

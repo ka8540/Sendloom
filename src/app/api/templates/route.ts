@@ -3,12 +3,14 @@ import { z } from "zod";
 
 import { getSessionUser } from "@/lib/auth";
 import { createUnauthorizedApiResponse } from "@/lib/api-auth";
+import { TEMPLATE_FORMATS } from "@/lib/templates";
 import { listTemplates, upsertTemplate } from "@/services/templates";
 
 const schema = z.object({
   id: z.string().optional(),
   name: z.string().min(1),
   subject: z.string().min(1),
+  format: z.enum(TEMPLATE_FORMATS),
   htmlBody: z.string().min(1),
   previewPayload: z.record(z.unknown()).optional()
 });
@@ -29,6 +31,15 @@ export async function POST(request: Request) {
   }
 
   const payload = schema.parse(await request.json());
-  const template = await upsertTemplate(payload, user.id);
-  return NextResponse.json(template);
+  try {
+    const template = await upsertTemplate(payload, user.id);
+    return NextResponse.json(template);
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: error instanceof Error ? error.message : "Template save failed."
+      },
+      { status: 400 }
+    );
+  }
 }

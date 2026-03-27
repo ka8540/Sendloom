@@ -14,6 +14,8 @@ type SpamFieldScore = {
   risk: SpamRisk;
 };
 
+type TemplateFormat = "PLAIN_TEXT" | "HTML" | "JSON";
+
 function countMatches(value: string, pattern: RegExp) {
   return value.match(pattern)?.length ?? 0;
 }
@@ -26,6 +28,47 @@ function stripHtml(value: string) {
     .replace(/&nbsp;/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function flattenJson(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => flattenJson(item)).filter(Boolean).join(" ");
+  }
+
+  if (value && typeof value === "object") {
+    return Object.values(value)
+      .map((entry) => flattenJson(entry))
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  return "";
+}
+
+function normalizeBodyText(text: string, format: TemplateFormat) {
+  if (format === "PLAIN_TEXT") {
+    return text.replace(/\s+/g, " ").trim();
+  }
+
+  if (format === "JSON") {
+    try {
+      return flattenJson(JSON.parse(text))
+        .replace(/\s+/g, " ")
+        .trim();
+    } catch {
+      return text.replace(/\s+/g, " ").trim();
+    }
+  }
+
+  return stripHtml(text);
 }
 
 function getRepeatedPhraseCount(value: string) {
@@ -134,11 +177,11 @@ function scoreField(fieldType: SpamFieldType, text: string): SpamFieldScore {
   };
 }
 
-export async function analyzeSpam(subject: string, body: string): Promise<SpamAnalysis> {
+export async function analyzeSpam(subject: string, body: string, bodyFormat: TemplateFormat = "HTML"): Promise<SpamAnalysis> {
   await new Promise((resolve) => setTimeout(resolve, 380));
 
   const subjectResult = scoreField("subject", subject);
-  const bodyResult = scoreField("body", body);
+  const bodyResult = scoreField("body", normalizeBodyText(body, bodyFormat));
 
   return {
     subjectScore: subjectResult.score,

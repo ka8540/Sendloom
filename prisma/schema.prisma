@@ -164,6 +164,7 @@ model Template {
   userId           String?
   name             String
   subject          String
+  format           String   @default("HTML")
   htmlBody         String
   variableManifest Json
   previewPayload   Json?
