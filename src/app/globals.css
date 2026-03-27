@@ -1140,7 +1140,7 @@ textarea {
 
 .template-list-item {
   display: grid;
-  gap: 0.85rem;
+  gap: 0.5rem;
   padding: 1rem 1.05rem;
   border-radius: 18px;
   border: 1px solid var(--line);
@@ -1148,7 +1148,8 @@ textarea {
   transition: border-color 160ms ease, background-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
 }
 
-.template-list-item:hover {
+.template-list-item:hover,
+.template-list-item:focus-within {
   transform: translateY(-1px);
   border-color: color-mix(in srgb, var(--accent) 26%, transparent);
 }
@@ -1157,6 +1158,12 @@ textarea {
   background: var(--accent-soft);
   border-color: color-mix(in srgb, var(--accent) 30%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.template-list-item:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent) 34%, transparent);
+  box-shadow: 0 0 0 4px var(--accent-soft);
 }
 
 .template-list-item__header {
@@ -1176,13 +1183,32 @@ textarea {
   display: block;
 }
 
-.template-list-item__copy p {
-  margin: 0.35rem 0 0;
-}
-
 .template-list-item__button {
   min-width: 6rem;
   box-shadow: none;
+}
+
+.template-list-item__details {
+  display: grid;
+  gap: 0.85rem;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+  transition: max-height 220ms ease, opacity 180ms ease, padding-top 180ms ease;
+}
+
+.template-list-item__details > .muted {
+  margin: 0;
+}
+
+.template-list-item:hover .template-list-item__details,
+.template-list-item:focus-within .template-list-item__details,
+.template-list-item.is-active .template-list-item__details {
+  max-height: 16rem;
+  opacity: 1;
+  pointer-events: auto;
+  padding-top: 0.15rem;
 }
 
 .template-list-item__snippet {

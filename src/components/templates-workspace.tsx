@@ -157,11 +157,14 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
             const isEditing = template.id === editingTemplateId;
 
             return (
-              <article key={template.id} className={`template-list-item${isEditing ? " is-active" : ""}`}>
+              <article
+                key={template.id}
+                className={`template-list-item${isEditing ? " is-active" : ""}`}
+                tabIndex={0}
+              >
                 <div className="template-list-item__header">
                   <div className="template-list-item__copy">
                     <strong>{template.name}</strong>
-                    <p className="muted">{template.subject}</p>
                   </div>
 
                   <button
@@ -173,14 +176,17 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
                   </button>
                 </div>
 
-                <p className="template-list-item__snippet">{toSnippet(template.htmlBody)}</p>
+                <div className="template-list-item__details">
+                  <p className="muted">{template.subject}</p>
+                  <p className="template-list-item__snippet">{toSnippet(template.htmlBody)}</p>
 
-                <div className="pill-row">
-                  {(template.variableManifest.length ? template.variableManifest : ["None detected"]).map((variable) => (
-                    <span key={variable} className="pill">
-                      {variable}
-                    </span>
-                  ))}
+                  <div className="pill-row">
+                    {(template.variableManifest.length ? template.variableManifest : ["None detected"]).map((variable) => (
+                      <span key={variable} className="pill">
+                        {variable}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               </article>
             );
