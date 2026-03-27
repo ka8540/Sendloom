@@ -1145,10 +1145,10 @@ textarea {
   border-radius: 18px;
   border: 1px solid var(--line);
   background: var(--surface-muted);
-  transition: border-color 160ms ease, background-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+  transition: border-color 220ms ease, background-color 220ms ease, transform 220ms ease, box-shadow 240ms ease;
 }
 
-.template-list-item:hover,
+.template-list-item.is-revealed,
 .template-list-item:focus-within {
   transform: translateY(-1px);
   border-color: color-mix(in srgb, var(--accent) 26%, transparent);
@@ -1195,20 +1195,26 @@ textarea {
   opacity: 0;
   overflow: hidden;
   pointer-events: none;
-  transition: max-height 220ms ease, opacity 180ms ease, padding-top 180ms ease;
+  transform: translateY(-8px);
+  transition:
+    max-height 360ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 260ms ease,
+    padding-top 260ms ease,
+    transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .template-list-item__details > .muted {
   margin: 0;
 }
 
-.template-list-item:hover .template-list-item__details,
+.template-list-item.is-revealed .template-list-item__details,
 .template-list-item:focus-within .template-list-item__details,
 .template-list-item.is-active .template-list-item__details {
   max-height: 16rem;
   opacity: 1;
   pointer-events: auto;
   padding-top: 0.15rem;
+  transform: translateY(0);
 }
 
 .template-list-item__snippet {

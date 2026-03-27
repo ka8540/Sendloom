@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { TemplateForm, type EditableTemplate, type TemplateDraft } from "@/components/forms";
 
@@ -54,11 +54,21 @@ function toSnippet(htmlBody: string) {
 export function TemplatesWorkspace({ templates: initialTemplates }: { templates: EditableTemplate[] }) {
   const [templates, setTemplates] = useState(initialTemplates.map(normalizeTemplate));
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
+  const [hoveredTemplateId, setHoveredTemplateId] = useState<string | null>(null);
   const [draft, setDraft] = useState<TemplateDraft>(createDraft(null));
+  const hoverIntentTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     setTemplates(initialTemplates.map(normalizeTemplate));
   }, [initialTemplates]);
+
+  useEffect(() => {
+    return () => {
+      if (hoverIntentTimeoutRef.current) {
+        window.clearTimeout(hoverIntentTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const editingTemplate = templates.find((template) => template.id === editingTemplateId) ?? null;
   const previewVariables = extractVariables(draft.subject, draft.htmlBody);
@@ -84,6 +94,24 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
   const handleCancelEditing = () => {
     setEditingTemplateId(null);
     setDraft(createDraft(null));
+  };
+
+  const handleTemplateMouseEnter = (templateId: string) => {
+    if (hoverIntentTimeoutRef.current) {
+      window.clearTimeout(hoverIntentTimeoutRef.current);
+    }
+
+    hoverIntentTimeoutRef.current = window.setTimeout(() => {
+      setHoveredTemplateId(templateId);
+    }, 180);
+  };
+
+  const handleTemplateMouseLeave = () => {
+    if (hoverIntentTimeoutRef.current) {
+      window.clearTimeout(hoverIntentTimeoutRef.current);
+    }
+
+    setHoveredTemplateId(null);
   };
 
   const heading = editingTemplate ? "Edit template" : "Create template";
@@ -155,12 +183,21 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
           <div className="templates-list">
           {templates.map((template) => {
             const isEditing = template.id === editingTemplateId;
+            const isRevealed = hoveredTemplateId === template.id || isEditing;
 
             return (
               <article
                 key={template.id}
-                className={`template-list-item${isEditing ? " is-active" : ""}`}
+                className={`template-list-item${isEditing ? " is-active" : ""}${isRevealed ? " is-revealed" : ""}`}
                 tabIndex={0}
+                onMouseEnter={() => handleTemplateMouseEnter(template.id)}
+                onMouseLeave={handleTemplateMouseLeave}
+                onFocus={() => setHoveredTemplateId(template.id)}
+                onBlur={(event) => {
+                  if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                    handleTemplateMouseLeave();
+                  }
+                }}
               >
                 <div className="template-list-item__header">
                   <div className="template-list-item__copy">
