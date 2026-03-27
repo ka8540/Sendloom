@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 
 import { CampaignBuilder } from "@/components/campaign-builder";
+import { LocalDateTime } from "@/components/local-date-time";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { processPendingCampaignWork } from "@/services/campaigns";
@@ -279,6 +280,8 @@ export default async function CampaignsPage() {
               const latestRunSummary = latestRun
                 ? `${latestRun.sentCount}/${latestRun.totalRecipients} delivered`
                 : "No run started yet";
+              const latestRunValue = latestRun?.updatedAt?.toISOString() ?? null;
+              const validatedAtValue = campaign.lastValidatedAt?.toISOString() ?? null;
 
               return (
                 <article key={campaign.id} className={styles.sequenceRow}>
@@ -316,16 +319,20 @@ export default async function CampaignsPage() {
                     <div className={styles.signalCard}>
                       <span>Latest run</span>
                       <strong>{latestRun ? humanize(latestRun.status) : "Waiting to launch"}</strong>
-                      <p>{latestRun ? formatDateTime(latestRun.updatedAt) : "No delivery activity yet"}</p>
+                      <p>{latestRunValue ? <LocalDateTime value={latestRunValue} /> : "No delivery activity yet"}</p>
                     </div>
 
                     <div className={styles.signalCard}>
                       <span>Delivery health</span>
                       <strong>{latestRunSummary}</strong>
                       <p>
-                        {campaign.lastValidatedAt
-                          ? `Validated ${formatDateTime(campaign.lastValidatedAt)}`
-                          : "Needs validation before the next send"}
+                        {validatedAtValue ? (
+                          <>
+                            Validated <LocalDateTime value={validatedAtValue} />
+                          </>
+                        ) : (
+                          "Needs validation before the next send"
+                        )}
                       </p>
                     </div>
                   </div>

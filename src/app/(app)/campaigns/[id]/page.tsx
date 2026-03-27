@@ -12,6 +12,7 @@ import {
 
 import { ActiveRunRefresher } from "@/components/active-run-refresher";
 import { AttachmentPreview } from "@/components/attachment-preview";
+import { LocalDateTime } from "@/components/local-date-time";
 import { requireUser } from "@/lib/auth";
 import { getAttachmentPreviewKind } from "@/lib/attachments";
 import { prisma } from "@/lib/db";
@@ -155,7 +156,8 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
   const launchButtonLabel = isActiveRun ? "Run is processing" : latestRun ? "Launch again" : "Launch sequence";
   const validationButtonLabel = campaign.lastValidatedAt ? "Refresh validation" : "Validate sequence";
   const scheduleLabel = formatScheduleLabel(campaign.scheduleType, campaign.scheduleConfig as ScheduleConfig | null);
-  const latestRunLabel = latestRun ? formatDateTime(latestRun.updatedAt) : "Waiting to launch";
+  const latestRunValue = latestRun?.updatedAt?.toISOString() ?? null;
+  const validatedAtValue = campaign.lastValidatedAt?.toISOString() ?? null;
 
   if (isActiveRun) {
     after(async () => {
@@ -197,7 +199,15 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
           <div className={styles.statusWrap}>
             <span className="badge">{humanize(campaign.status)}</span>
             <span className={styles.statusNote}>
-              {isActiveRun ? "Auto-refreshing every 8 seconds while this run is active." : `Last updated ${latestRunLabel}.`}
+              {isActiveRun ? (
+                "Auto-refreshing every 8 seconds while this run is active."
+              ) : latestRunValue ? (
+                <>
+                  Last updated <LocalDateTime value={latestRunValue} />.
+                </>
+              ) : (
+                "Waiting to launch."
+              )}
             </span>
           </div>
 
@@ -213,7 +223,7 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
               <RefreshCcw aria-hidden="true" />
               <div>
                 <span>Validated</span>
-                <strong>{campaign.lastValidatedAt ? formatDateTime(campaign.lastValidatedAt) : "Not validated yet"}</strong>
+                <strong>{validatedAtValue ? <LocalDateTime value={validatedAtValue} /> : "Not validated yet"}</strong>
               </div>
             </div>
             <div className={styles.summaryItem}>
