@@ -57,6 +57,7 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
   const [hoveredTemplateId, setHoveredTemplateId] = useState<string | null>(null);
   const [draft, setDraft] = useState<TemplateDraft>(createDraft(null));
   const hoverIntentTimeoutRef = useRef<number | null>(null);
+  const hoverLeaveTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     setTemplates(initialTemplates.map(normalizeTemplate));
@@ -66,6 +67,10 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
     return () => {
       if (hoverIntentTimeoutRef.current) {
         window.clearTimeout(hoverIntentTimeoutRef.current);
+      }
+
+      if (hoverLeaveTimeoutRef.current) {
+        window.clearTimeout(hoverLeaveTimeoutRef.current);
       }
     };
   }, []);
@@ -101,9 +106,13 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
       window.clearTimeout(hoverIntentTimeoutRef.current);
     }
 
+    if (hoverLeaveTimeoutRef.current) {
+      window.clearTimeout(hoverLeaveTimeoutRef.current);
+    }
+
     hoverIntentTimeoutRef.current = window.setTimeout(() => {
       setHoveredTemplateId(templateId);
-    }, 180);
+    }, 340);
   };
 
   const handleTemplateMouseLeave = () => {
@@ -111,7 +120,13 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
       window.clearTimeout(hoverIntentTimeoutRef.current);
     }
 
-    setHoveredTemplateId(null);
+    if (hoverLeaveTimeoutRef.current) {
+      window.clearTimeout(hoverLeaveTimeoutRef.current);
+    }
+
+    hoverLeaveTimeoutRef.current = window.setTimeout(() => {
+      setHoveredTemplateId(null);
+    }, 160);
   };
 
   const heading = editingTemplate ? "Edit template" : "Create template";
@@ -192,7 +207,17 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
                 tabIndex={0}
                 onMouseEnter={() => handleTemplateMouseEnter(template.id)}
                 onMouseLeave={handleTemplateMouseLeave}
-                onFocus={() => setHoveredTemplateId(template.id)}
+                onFocus={() => {
+                  if (hoverIntentTimeoutRef.current) {
+                    window.clearTimeout(hoverIntentTimeoutRef.current);
+                  }
+
+                  if (hoverLeaveTimeoutRef.current) {
+                    window.clearTimeout(hoverLeaveTimeoutRef.current);
+                  }
+
+                  setHoveredTemplateId(template.id);
+                }}
                 onBlur={(event) => {
                   if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
                     handleTemplateMouseLeave();
