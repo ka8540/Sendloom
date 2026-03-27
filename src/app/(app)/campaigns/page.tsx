@@ -380,12 +380,10 @@ export default async function CampaignsPage({
                   {currentPage > 1 ? (
                     <Link className={styles.paginationButton} href={currentPage - 1 === 1 ? "/campaigns" : `/campaigns?page=${currentPage - 1}`}>
                       <ChevronLeft aria-hidden="true" />
-                      <span>Previous</span>
                     </Link>
                   ) : (
                     <span className={styles.paginationButton} aria-disabled="true">
                       <ChevronLeft aria-hidden="true" />
-                      <span>Previous</span>
                     </span>
                   )}
 
@@ -395,12 +393,10 @@ export default async function CampaignsPage({
 
                   {currentPage < totalPages ? (
                     <Link className={styles.paginationButton} href={`/campaigns?page=${currentPage + 1}`}>
-                      <span>Next</span>
                       <ChevronRight aria-hidden="true" />
                     </Link>
                   ) : (
                     <span className={styles.paginationButton} aria-disabled="true">
-                      <span>Next</span>
                       <ChevronRight aria-hidden="true" />
                     </span>
                   )}
