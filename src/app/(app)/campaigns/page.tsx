@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { after } from "next/server";
+import { redirect } from "next/navigation";
 import {
+  ChevronLeft,
+  ChevronRight,
   CalendarClock,
   CheckCircle2,
   Mail,
@@ -93,8 +96,20 @@ function formatDeliveryLabel(scheduleType?: string | null, scheduleConfig?: Sche
   };
 }
 
-export default async function CampaignsPage() {
+const PAGE_SIZE = 10;
+
+export default async function CampaignsPage({
+  searchParams
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const user = await requireUser();
+  const resolvedSearchParams = searchParams ? await searchParams : {};
+  const requestedPage = Array.isArray(resolvedSearchParams.page)
+    ? resolvedSearchParams.page[0]
+    : resolvedSearchParams.page;
+  const parsedPage = requestedPage ? Number.parseInt(requestedPage, 10) : 1;
+  const currentPage = Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1;
   const [imports, mappings, templates, senders, campaigns] = await Promise.all([
     prisma.import.findMany({ where: { userId: user.id }, orderBy: { createdAt: "desc" } }),
     prisma.mapping.findMany({ where: { userId: user.id }, orderBy: { createdAt: "desc" } }),
@@ -156,6 +171,16 @@ export default async function CampaignsPage() {
   ).length;
   const scheduledSequences = campaigns.filter((campaign) => campaign.scheduleType !== "immediate").length;
   const validatedSequences = campaigns.filter((campaign) => Boolean(campaign.lastValidatedAt)).length;
+  const totalPages = Math.max(1, Math.ceil(campaigns.length / PAGE_SIZE));
+
+  if (currentPage > totalPages) {
+    redirect(currentPage === 1 ? "/campaigns" : `/campaigns?page=${totalPages}`);
+  }
+
+  const startIndex = (currentPage - 1) * PAGE_SIZE;
+  const pagedCampaigns = campaigns.slice(startIndex, startIndex + PAGE_SIZE);
+  const showingFrom = campaigns.length ? startIndex + 1 : 0;
+  const showingTo = Math.min(startIndex + PAGE_SIZE, campaigns.length);
 
   return (
     <div className={styles.page}>
@@ -274,7 +299,7 @@ export default async function CampaignsPage() {
 
         {campaigns.length ? (
           <div className={styles.sequenceList}>
-            {campaigns.map((campaign) => {
+            {pagedCampaigns.map((campaign) => {
               const latestRun = campaign.runs[0];
               const delivery = formatDeliveryLabel(campaign.scheduleType, campaign.scheduleConfig as ScheduleConfig | null);
               const latestRunSummary = latestRun
@@ -345,6 +370,43 @@ export default async function CampaignsPage() {
                 </article>
               );
             })}
+
+            {totalPages > 1 ? (
+              <div className={styles.paginationBar}>
+                <span className={styles.paginationSummary}>
+                  Showing {showingFrom}-{showingTo} of {campaigns.length}
+                </span>
+                <div className={styles.paginationControls}>
+                  {currentPage > 1 ? (
+                    <Link className={styles.paginationButton} href={currentPage - 1 === 1 ? "/campaigns" : `/campaigns?page=${currentPage - 1}`}>
+                      <ChevronLeft aria-hidden="true" />
+                      <span>Previous</span>
+                    </Link>
+                  ) : (
+                    <span className={styles.paginationButton} aria-disabled="true">
+                      <ChevronLeft aria-hidden="true" />
+                      <span>Previous</span>
+                    </span>
+                  )}
+
+                  <span className={styles.paginationPage}>
+                    Page {currentPage} of {totalPages}
+                  </span>
+
+                  {currentPage < totalPages ? (
+                    <Link className={styles.paginationButton} href={`/campaigns?page=${currentPage + 1}`}>
+                      <span>Next</span>
+                      <ChevronRight aria-hidden="true" />
+                    </Link>
+                  ) : (
+                    <span className={styles.paginationButton} aria-disabled="true">
+                      <span>Next</span>
+                      <ChevronRight aria-hidden="true" />
+                    </span>
+                  )}
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : (
           <div className={styles.emptyState}>
