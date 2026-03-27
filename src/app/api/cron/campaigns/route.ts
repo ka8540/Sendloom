@@ -11,7 +11,9 @@ function isAuthorized(request: Request) {
   }
 
   const authHeader = request.headers.get("authorization");
-  return authHeader === `Bearer ${env.CRON_SECRET}`;
+  const secretHeader = request.headers.get("x-cron-secret");
+
+  return authHeader === `Bearer ${env.CRON_SECRET}` || secretHeader === env.CRON_SECRET;
 }
 
 async function handleCron(request: Request) {
