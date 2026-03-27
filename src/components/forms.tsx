@@ -162,6 +162,8 @@ export function UploadImportForm() {
       return;
     }
 
+    form.reset();
+    setState({ pending: false });
     router.refresh();
   }
 
