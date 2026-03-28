@@ -1,0 +1,80 @@
+.root {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.canvas {
+  position: absolute;
+  inset: 0;
+  opacity: 0.14;
+  will-change: transform, opacity;
+}
+
+.svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+  shape-rendering: geometricPrecision;
+  text-rendering: geometricPrecision;
+}
+
+.basePath,
+.activePath,
+.icon path,
+.icon rect {
+  fill: none;
+  stroke: #000;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.basePath {
+  stroke-width: 1.5;
+  opacity: 0.16;
+}
+
+.activePath {
+  stroke-width: 1.7;
+  opacity: 0.52;
+}
+
+.icon path,
+.icon rect {
+  stroke-width: 1.5;
+}
+
+.staticEnvelope {
+  opacity: 0.44;
+}
+
+.mover {
+  opacity: 0;
+  will-change: transform, opacity;
+}
+
+.plane {
+  opacity: 0.72;
+}
+
+.payloadEnvelope {
+  opacity: 0.92;
+}
+
+@media (max-width: 900px) {
+  .canvas {
+    opacity: 0.12;
+    transform: translateX(4%) scale(1.14);
+    transform-origin: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas {
+    opacity: 0.1;
+  }
+}

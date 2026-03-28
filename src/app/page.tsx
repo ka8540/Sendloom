@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { AnimatedEmailPath } from "@/components/AnimatedEmailPath";
 import { LandingSceneShell } from "@/components/landing-scene-shell";
 import { LandingNav } from "@/components/landing-nav";
 import { SendloomLogo } from "@/components/sendloom-logo";
@@ -52,6 +53,7 @@ const workflowSteps = [
 export default function LandingPage() {
   return (
     <main id="top" className={styles.page}>
+      <AnimatedEmailPath />
       <div className={styles.frame}>
         <LandingNav />
 

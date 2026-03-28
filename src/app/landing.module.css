@@ -8,52 +8,29 @@
   --landing-emerald: var(--accent);
   --landing-emerald-deep: var(--accent-strong);
   --landing-gold: #d6963f;
-  --landing-noise:
-    radial-gradient(circle at 8% 10%, rgba(22, 124, 90, 0.12), transparent 0 18rem),
-    radial-gradient(circle at 88% 12%, rgba(33, 83, 194, 0.1), transparent 0 22rem),
-    radial-gradient(circle at 54% 78%, rgba(22, 124, 90, 0.08), transparent 0 26rem),
-    linear-gradient(180deg, #ffffff 0%, #f4f7fb 100%);
+  --landing-noise: linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, #f4f7fb 100%);
   color: var(--landing-ink);
   background: var(--landing-noise);
   min-height: 100vh;
   overflow-x: clip;
+  position: relative;
+  isolation: isolate;
 }
 
 .page::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  background-image:
-    linear-gradient(color-mix(in srgb, var(--landing-ink) 6%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--landing-ink) 6%, transparent) 1px, transparent 1px);
-  background-size: 120px 120px;
-  mask-image: radial-gradient(circle at center, black, transparent 78%);
+  content: none;
 }
 
 .page::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  background:
-    radial-gradient(circle at 12% 24%, rgba(22, 124, 90, 0.14) 0 0.16rem, transparent 0.2rem),
-    radial-gradient(circle at 18% 64%, rgba(22, 124, 90, 0.12) 0 0.14rem, transparent 0.18rem),
-    radial-gradient(circle at 28% 42%, rgba(33, 83, 194, 0.12) 0 0.13rem, transparent 0.18rem),
-    radial-gradient(circle at 36% 78%, rgba(33, 83, 194, 0.1) 0 0.15rem, transparent 0.2rem),
-    radial-gradient(circle at 48% 22%, rgba(22, 124, 90, 0.12) 0 0.12rem, transparent 0.17rem),
-    radial-gradient(circle at 56% 58%, rgba(218, 150, 63, 0.14) 0 0.14rem, transparent 0.19rem),
-    radial-gradient(circle at 64% 34%, rgba(22, 124, 90, 0.1) 0 0.12rem, transparent 0.17rem),
-    radial-gradient(circle at 72% 70%, rgba(33, 83, 194, 0.12) 0 0.15rem, transparent 0.19rem),
-    radial-gradient(circle at 82% 26%, rgba(22, 124, 90, 0.12) 0 0.13rem, transparent 0.18rem),
-    radial-gradient(circle at 90% 60%, rgba(218, 150, 63, 0.12) 0 0.16rem, transparent 0.22rem);
-  opacity: 0.9;
+  content: none;
 }
 
 .frame {
   width: min(1200px, calc(100% - 3rem));
   margin: 0 auto;
   padding: 7.4rem 0 4rem;
+  position: relative;
+  z-index: 1;
 }
 
 .nav {
