@@ -318,7 +318,7 @@ export function LoadScreen() {
     const knotMaterial = new THREE.MeshBasicMaterial({
       color: 0xfff8f0,
       transparent: true,
-      opacity: 0.22,
+      opacity: 0.14,
       wireframe: true
     });
     const knot = new THREE.Mesh(new THREE.TorusKnotGeometry(2.42, 0.08, 220, 28, 2, 3), knotMaterial);
@@ -327,7 +327,7 @@ export function LoadScreen() {
     const orbitMaterial = new THREE.MeshBasicMaterial({
       color: 0x9cfde0,
       transparent: true,
-      opacity: 0.48
+      opacity: 0.22
     });
     const orbitA = new THREE.Mesh(new THREE.TorusGeometry(3.18, 0.025, 16, 180), orbitMaterial);
     orbitA.rotation.x = Math.PI / 2.2;
@@ -335,7 +335,7 @@ export function LoadScreen() {
     const orbitB = orbitA.clone();
     orbitB.material = orbitMaterial.clone();
     (orbitB.material as THREE.MeshBasicMaterial).color.setHex(0xffefd9);
-    (orbitB.material as THREE.MeshBasicMaterial).opacity = 0.26;
+    (orbitB.material as THREE.MeshBasicMaterial).opacity = 0.12;
     orbitB.rotation.x = Math.PI / 1.78;
     orbitB.rotation.z = Math.PI / 3.8;
     root.add(orbitA, orbitB);
@@ -344,7 +344,7 @@ export function LoadScreen() {
       new THREE.SpriteMaterial({
         color: 0xfff5eb,
         transparent: true,
-        opacity: 0.14
+        opacity: 0.08
       })
     );
     glow.scale.set(7.6, 7.6, 1);
@@ -366,7 +366,7 @@ export function LoadScreen() {
       color: 0xfff7ef,
       size: 0.046,
       transparent: true,
-      opacity: 0.78
+      opacity: 0.56
     });
     const particles = new THREE.Points(particleGeometry, particleMaterial);
     root.add(particles);
@@ -387,7 +387,7 @@ export function LoadScreen() {
       new THREE.LineBasicMaterial({
         color: 0xffeddc,
         transparent: true,
-        opacity: 0.28
+        opacity: 0.12
       })
     );
     root.add(trails);
@@ -517,10 +517,7 @@ export function LoadScreen() {
         </p>
 
         <div ref={headlineRef} className={styles.headline} data-final={showFinalMessage ? "true" : "false"}>
-          <span className={styles.wordFill}>{headline}</span>
-          <span className={styles.wordStroke} aria-hidden="true">
-            {headline}
-          </span>
+          <span className={styles.word}>{headline}</span>
         </div>
 
         <p ref={captionRef} className={styles.caption} data-final={showFinalMessage ? "true" : "false"}>

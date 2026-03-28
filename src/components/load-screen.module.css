@@ -8,8 +8,7 @@
   isolation: isolate;
   background:
     radial-gradient(circle at 18% 16%, var(--loader-glow-primary), transparent 24rem),
-    radial-gradient(circle at 78% 24%, var(--loader-glow-secondary), transparent 22rem),
-    radial-gradient(circle at 54% 80%, var(--loader-glow-tertiary), transparent 28rem),
+    radial-gradient(circle at 70% 26%, var(--loader-glow-secondary), transparent 24rem),
     linear-gradient(135deg, var(--bg-start) 0%, var(--bg-end) 100%);
   color: var(--loader-copy);
 }
@@ -21,8 +20,8 @@
   background:
     linear-gradient(130deg, var(--loader-sheen), transparent 34%, transparent 66%, var(--loader-sheen)),
     radial-gradient(circle at center, var(--loader-sheen), transparent 50%);
-  mix-blend-mode: screen;
-  opacity: 0.6;
+  mix-blend-mode: soft-light;
+  opacity: 0.4;
 }
 
 .loader::after {
@@ -37,14 +36,14 @@
 .scene {
   position: absolute;
   inset: -8%;
-  opacity: 0.98;
+  opacity: 0.74;
 }
 
 .texture {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  opacity: 0.34;
+  opacity: 0.14;
   background:
     repeating-linear-gradient(
       90deg,
@@ -79,37 +78,27 @@
 
 .headline {
   position: relative;
-  display: grid;
-  place-items: center;
   min-height: clamp(7rem, 26vw, 18rem);
-  filter: drop-shadow(0 2rem 4rem var(--loader-shadow-color));
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.wordFill,
-.wordStroke {
-  grid-area: 1 / 1;
+.word {
   margin: 0;
   font-family: var(--font-loader-display), "Bebas Neue", sans-serif;
   font-size: clamp(5.8rem, 24vw, 15rem);
   line-height: 0.86;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.03em;
   text-transform: uppercase;
   white-space: nowrap;
-}
-
-.wordFill {
   color: var(--loader-fill);
-  transform: translateX(-0.06em);
+  text-shadow:
+    0 1.5rem 3rem color-mix(in srgb, var(--loader-shadow-color) 85%, transparent),
+    0 0 1.25rem color-mix(in srgb, var(--loader-stroke) 22%, transparent);
 }
 
-.wordStroke {
-  color: transparent;
-  -webkit-text-stroke: 2px var(--loader-stroke);
-  transform: translateX(0.09em);
-}
-
-.headline[data-final="true"] .wordFill,
-.headline[data-final="true"] .wordStroke {
+.headline[data-final="true"] .word {
   font-size: clamp(4.6rem, 17vw, 10.2rem);
   letter-spacing: 0.05em;
 }
@@ -127,8 +116,8 @@
 .caption[data-final="true"] {
   font-family: var(--font-loader-display), "Bebas Neue", sans-serif;
   font-size: clamp(1.35rem, 4vw, 3rem);
-  letter-spacing: 0.28em;
-  color: var(--loader-stroke);
+  letter-spacing: 0.18em;
+  color: var(--loader-copy);
 }
 
 .footer {
@@ -155,8 +144,8 @@
   border-radius: inherit;
   transform: scaleX(0.18);
   transform-origin: left center;
-  background: linear-gradient(90deg, var(--loader-meter-start), var(--loader-meter-mid) 54%, var(--loader-meter-end));
-  box-shadow: 0 0 2rem color-mix(in srgb, var(--loader-meter-mid) 60%, transparent);
+  background: var(--loader-meter-start);
+  box-shadow: 0 0 1.4rem color-mix(in srgb, var(--loader-meter-start) 35%, transparent);
 }
 
 .percent {
@@ -177,10 +166,6 @@
   .content {
     width: min(94vw, 42rem);
     gap: 1rem;
-  }
-
-  .wordStroke {
-    -webkit-text-stroke-width: 1.5px;
   }
 
   .caption {
