@@ -1395,6 +1395,152 @@ textarea {
   min-width: 0;
 }
 
+.imports-library {
+  display: grid;
+  gap: 1rem;
+}
+
+.import-card {
+  display: grid;
+  gap: 1rem;
+  padding: 1.2rem;
+  border-radius: 22px;
+  border: 1px solid var(--line);
+  background: var(--surface-muted);
+  min-width: 0;
+}
+
+.import-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.import-card__primary {
+  display: grid;
+  gap: 0.7rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.import-card__title {
+  font-size: 1.4rem;
+  letter-spacing: -0.04em;
+  line-height: 1.15;
+}
+
+.import-card__name-input {
+  width: min(100%, 28rem);
+  padding: 0.88rem 1rem;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line));
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  outline: none;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    background-color 160ms ease;
+}
+
+.import-card__name-input:focus {
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--line));
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.import-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.import-card__meta-text {
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.4;
+}
+
+.import-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.import-card__content {
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+  gap: 1rem;
+}
+
+.import-card__section {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.import-card__section-label {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.imports-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.7rem;
+}
+
+.imports-pagination__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.85rem;
+  height: 2.85rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease,
+    color 160ms ease;
+}
+
+.imports-pagination__button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--line));
+  background: var(--surface-ghost);
+  color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.imports-pagination__button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.imports-pagination__button svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.imports-pagination__count {
+  min-width: 3.6rem;
+  text-align: center;
+  color: var(--muted);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
 .selection-summary {
   display: grid;
   gap: 0.25rem;
@@ -1706,6 +1852,11 @@ textarea {
   }
 
   .mapping-card__header {
+    display: grid;
+  }
+
+  .import-card__header,
+  .import-card__content {
     display: grid;
   }
 

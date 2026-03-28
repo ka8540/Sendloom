@@ -1,3 +1,4 @@
+import { unlink } from "node:fs/promises";
 import type { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
@@ -154,6 +155,34 @@ export async function updateImportName(importId: string, userId: string, fileNam
     where: { id: importId },
     data: { fileName }
   });
+}
+
+export async function deleteImport(importId: string, userId: string) {
+  const importRecord = await getOwnedImport(importId, userId);
+
+  await prisma.$transaction(async (tx) => {
+    await tx.campaign.deleteMany({
+      where: {
+        importId: importRecord.id
+      }
+    });
+
+    await tx.mapping.deleteMany({
+      where: {
+        importId: importRecord.id
+      }
+    });
+
+    await tx.import.delete({
+      where: { id: importRecord.id }
+    });
+  });
+
+  if (!process.env.VERCEL && importRecord.storagePath) {
+    await unlink(importRecord.storagePath).catch(() => {});
+  }
+
+  return { id: importRecord.id, deleted: true };
 }
 
 export async function saveTemplateFields(importId: string, userId: string, selectedColumns: string[]) {
