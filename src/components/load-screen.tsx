@@ -290,107 +290,54 @@ export function LoadScreen() {
     const root = new THREE.Group();
     scene.add(root);
 
-    const ambientLight = new THREE.AmbientLight(0xfff4ea, 1.18);
-    const coralLight = new THREE.PointLight(0xff7c67, 26, 18, 2);
-    coralLight.position.set(3.8, 2.1, 4.6);
-    const mintLight = new THREE.PointLight(0x88ffd8, 20, 18, 2);
-    mintLight.position.set(-3.5, -1.7, 4.9);
-    const blueLight = new THREE.PointLight(0x63d6ff, 18, 18, 2);
-    blueLight.position.set(-2.3, 2.8, 5.4);
-    scene.add(ambientLight, coralLight, mintLight, blueLight);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1);
+    scene.add(ambientLight);
 
-    const coreMaterial = new THREE.MeshPhysicalMaterial({
-      color: 0xfff0e5,
-      roughness: 0.16,
-      metalness: 0.18,
-      transmission: 0.28,
-      thickness: 1.1,
-      clearcoat: 1,
-      clearcoatRoughness: 0.1,
-      emissive: 0xff7859,
-      emissiveIntensity: 0.2,
-      transparent: true,
-      opacity: 0.9
-    });
-    const core = new THREE.Mesh(new THREE.IcosahedronGeometry(1.62, 2), coreMaterial);
-    root.add(core);
-
-    const knotMaterial = new THREE.MeshBasicMaterial({
-      color: 0xfff8f0,
-      transparent: true,
-      opacity: 0.14,
-      wireframe: true
-    });
-    const knot = new THREE.Mesh(new THREE.TorusKnotGeometry(2.42, 0.08, 220, 28, 2, 3), knotMaterial);
-    root.add(knot);
-
-    const orbitMaterial = new THREE.MeshBasicMaterial({
+    const ringMaterial = new THREE.MeshBasicMaterial({
       color: 0x9cfde0,
       transparent: true,
-      opacity: 0.22
+      opacity: 0.16,
+      wireframe: true
     });
-    const orbitA = new THREE.Mesh(new THREE.TorusGeometry(3.18, 0.025, 16, 180), orbitMaterial);
-    orbitA.rotation.x = Math.PI / 2.2;
-    orbitA.rotation.y = Math.PI / 5;
-    const orbitB = orbitA.clone();
-    orbitB.material = orbitMaterial.clone();
-    (orbitB.material as THREE.MeshBasicMaterial).color.setHex(0xffefd9);
-    (orbitB.material as THREE.MeshBasicMaterial).opacity = 0.12;
-    orbitB.rotation.x = Math.PI / 1.78;
-    orbitB.rotation.z = Math.PI / 3.8;
-    root.add(orbitA, orbitB);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(3.12, 0.22, 18, 240), ringMaterial);
+    ring.rotation.x = Math.PI / 2.16;
+    ring.rotation.y = Math.PI / 5.6;
+    ring.position.x = -0.75;
+    root.add(ring);
 
-    const glow = new THREE.Sprite(
-      new THREE.SpriteMaterial({
-        color: 0xfff5eb,
-        transparent: true,
-        opacity: 0.08
-      })
-    );
-    glow.scale.set(7.6, 7.6, 1);
-    root.add(glow);
+    const arcCurve = new THREE.EllipseCurve(0, 0, 3.5, 2.2, Math.PI * 0.18, Math.PI * 1.12, false, 0);
+    const arcPoints = arcCurve.getPoints(220).map((point) => new THREE.Vector3(point.x, point.y * 0.82, -1.2));
+    const arcGeometry = new THREE.BufferGeometry().setFromPoints(arcPoints);
+    const arcMaterial = new THREE.LineBasicMaterial({
+      color: 0x8bdcb9,
+      transparent: true,
+      opacity: 0.18
+    });
+    const arc = new THREE.Line(arcGeometry, arcMaterial);
+    arc.rotation.z = -0.32;
+    arc.position.set(0.35, -0.4, 0);
+    root.add(arc);
 
     const particleGeometry = new THREE.BufferGeometry();
-    const particleCount = 760;
+    const particleCount = 420;
     const particlePositions = new Float32Array(particleCount * 3);
     for (let index = 0; index < particleCount; index += 1) {
-      const radius = 3.6 + Math.random() * 4.6;
+      const radius = 4.4 + Math.random() * 4.2;
       const theta = Math.random() * Math.PI * 2;
-      const y = (Math.random() - 0.5) * 5.4;
+      const y = (Math.random() - 0.5) * 5.6;
       particlePositions[index * 3] = Math.cos(theta) * radius;
       particlePositions[index * 3 + 1] = y;
-      particlePositions[index * 3 + 2] = Math.sin(theta) * radius * 0.78;
+      particlePositions[index * 3 + 2] = Math.sin(theta) * radius * 0.72;
     }
     particleGeometry.setAttribute("position", new THREE.BufferAttribute(particlePositions, 3));
     const particleMaterial = new THREE.PointsMaterial({
       color: 0xfff7ef,
-      size: 0.046,
+      size: 0.038,
       transparent: true,
-      opacity: 0.56
+      opacity: 0.52
     });
     const particles = new THREE.Points(particleGeometry, particleMaterial);
     root.add(particles);
-
-    const trailGeometry = new THREE.BufferGeometry();
-    const trailCount = 240;
-    const trailPositions = new Float32Array(trailCount * 3);
-    for (let index = 0; index < trailCount; index += 1) {
-      const angle = (index / trailCount) * Math.PI * 2;
-      const radius = 2.5 + Math.sin(index * 0.45) * 0.22;
-      trailPositions[index * 3] = Math.cos(angle) * radius;
-      trailPositions[index * 3 + 1] = Math.sin(index * 0.18) * 0.84;
-      trailPositions[index * 3 + 2] = Math.sin(angle) * radius * 0.62;
-    }
-    trailGeometry.setAttribute("position", new THREE.BufferAttribute(trailPositions, 3));
-    const trails = new THREE.LineLoop(
-      trailGeometry,
-      new THREE.LineBasicMaterial({
-        color: 0xffeddc,
-        transparent: true,
-        opacity: 0.12
-      })
-    );
-    root.add(trails);
 
     const pointer = new THREE.Vector2(0, 0);
     const targetRotation = new THREE.Vector2(0, 0);
@@ -420,17 +367,9 @@ export function LoadScreen() {
 
     function applyPalette() {
       ambientLight.color.copy(readThemeColor("--loader-scene-core", "#ffffff"));
-      coralLight.color.copy(readThemeColor("--loader-scene-emissive", "#167c5a"));
-      mintLight.color.copy(readThemeColor("--loader-scene-orbit", "#167c5a"));
-      blueLight.color.copy(readThemeColor("--loader-scene-ring", "#175cd3"));
-      coreMaterial.color.copy(readThemeColor("--loader-scene-core", "#ffffff"));
-      coreMaterial.emissive.copy(readThemeColor("--loader-scene-emissive", "#167c5a"));
-      knotMaterial.color.copy(readThemeColor("--loader-scene-trail", "#c4d4ee"));
-      (orbitA.material as THREE.MeshBasicMaterial).color.copy(readThemeColor("--loader-scene-orbit", "#167c5a"));
-      (orbitB.material as THREE.MeshBasicMaterial).color.copy(readThemeColor("--loader-scene-orbit-alt", "#dfe9f7"));
+      ringMaterial.color.copy(readThemeColor("--loader-scene-orbit", "#167c5a"));
+      arcMaterial.color.copy(readThemeColor("--loader-scene-trail", "#8bdcb9"));
       particleMaterial.color.copy(readThemeColor("--loader-scene-particles", "#8fb1eb"));
-      (trails.material as THREE.LineBasicMaterial).color.copy(readThemeColor("--loader-scene-trail", "#c4d4ee"));
-      (glow.material as THREE.SpriteMaterial).color.copy(readThemeColor("--loader-scene-glow", "#8bdcb9"));
     }
 
     resizeObserver.observe(mount);
@@ -452,16 +391,11 @@ export function LoadScreen() {
 
       root.rotation.x = targetRotation.x + Math.sin(elapsed * 0.34) * 0.08;
       root.rotation.y = targetRotation.y + elapsed * 0.12;
-      core.rotation.x = elapsed * 0.14;
-      core.rotation.y = elapsed * 0.2;
-      knot.rotation.x = elapsed * 0.09;
-      knot.rotation.y = -elapsed * 0.13;
-      orbitA.rotation.z = elapsed * 0.16;
-      orbitB.rotation.y = -elapsed * 0.12;
+      ring.rotation.z = elapsed * 0.16;
+      ring.rotation.y += Math.sin(elapsed * 0.18) * 0.0008;
+      arc.rotation.z = -0.32 + Math.sin(elapsed * 0.34) * 0.06;
       particles.rotation.y = -elapsed * 0.035;
       particles.rotation.x = Math.sin(elapsed * 0.12) * 0.08;
-      trails.rotation.z = elapsed * 0.22;
-      glow.material.opacity = 0.12 + Math.sin(elapsed * 1.2) * 0.03;
 
       renderer.render(scene, camera);
     };
@@ -481,18 +415,12 @@ export function LoadScreen() {
       mount.removeEventListener("pointerleave", handlePointerLeave);
       mount.removeChild(renderer.domElement);
 
-      core.geometry.dispose();
-      coreMaterial.dispose();
-      knot.geometry.dispose();
-      knotMaterial.dispose();
-      orbitA.geometry.dispose();
-      (orbitA.material as THREE.Material).dispose();
-      (orbitB.material as THREE.Material).dispose();
-      (glow.material as THREE.Material).dispose();
+      ring.geometry.dispose();
+      ringMaterial.dispose();
+      arcGeometry.dispose();
+      arcMaterial.dispose();
       particleGeometry.dispose();
       particleMaterial.dispose();
-      trailGeometry.dispose();
-      (trails.material as THREE.Material).dispose();
       renderer.dispose();
     };
   }, [visible]);
@@ -517,7 +445,9 @@ export function LoadScreen() {
         </p>
 
         <div ref={headlineRef} className={styles.headline} data-final={showFinalMessage ? "true" : "false"}>
-          <span className={styles.word}>{headline}</span>
+          <span className={styles.word} data-text={headline}>
+            {headline}
+          </span>
         </div>
 
         <p ref={captionRef} className={styles.caption} data-final={showFinalMessage ? "true" : "false"}>
