@@ -1,6 +1,6 @@
 "use client";
 
-import { startTransition, useEffect, useEffectEvent, useRef, useState } from "react";
+import { startTransition, useEffect, useRef, useState } from "react";
 import { gsap } from "gsap";
 import * as THREE from "three";
 
@@ -29,105 +29,6 @@ export function LoadScreen() {
   const [showFinalMessage, setShowFinalMessage] = useState(false);
   const [visible, setVisible] = useState(true);
 
-  const swapBeat = useEffectEvent((index: number) => {
-    startTransition(() => {
-      setShowFinalMessage(false);
-      setBeatIndex(index);
-    });
-
-    requestAnimationFrame(() => {
-      if (!headlineRef.current || !captionRef.current || !eyebrowRef.current) {
-        return;
-      }
-
-      gsap.fromTo(
-        headlineRef.current,
-        { yPercent: 28, opacity: 0, scale: 0.92, filter: "blur(12px)" },
-        {
-          yPercent: 0,
-          opacity: 1,
-          scale: 1,
-          filter: "blur(0px)",
-          duration: 0.82,
-          ease: "expo.out",
-          overwrite: "auto"
-        }
-      );
-      gsap.fromTo(
-        captionRef.current,
-        { y: 24, opacity: 0, filter: "blur(10px)" },
-        {
-          y: 0,
-          opacity: 1,
-          filter: "blur(0px)",
-          duration: 0.64,
-          ease: "power3.out",
-          overwrite: "auto"
-        }
-      );
-      gsap.fromTo(
-        eyebrowRef.current,
-        { y: 14, opacity: 0 },
-        {
-          y: 0,
-          opacity: 1,
-          duration: 0.48,
-          ease: "power2.out",
-          overwrite: "auto"
-        }
-      );
-    });
-  });
-
-  const swapToFinalMessage = useEffectEvent(() => {
-    startTransition(() => {
-      setShowFinalMessage(true);
-    });
-
-    requestAnimationFrame(() => {
-      if (!headlineRef.current || !captionRef.current || !eyebrowRef.current) {
-        return;
-      }
-
-      gsap.fromTo(
-        headlineRef.current,
-        { yPercent: 16, opacity: 0, scale: 0.95, filter: "blur(14px)" },
-        {
-          yPercent: 0,
-          opacity: 1,
-          scale: 1,
-          filter: "blur(0px)",
-          duration: 0.9,
-          ease: "expo.out",
-          overwrite: "auto"
-        }
-      );
-      gsap.fromTo(
-        captionRef.current,
-        { y: 22, opacity: 0, letterSpacing: "0.4em" },
-        {
-          y: 0,
-          opacity: 1,
-          letterSpacing: "0.28em",
-          duration: 0.62,
-          ease: "power3.out",
-          overwrite: "auto"
-        }
-      );
-      gsap.fromTo(
-        eyebrowRef.current,
-        { y: 10, opacity: 0 },
-        {
-          y: 0,
-          opacity: 1,
-          duration: 0.42,
-          ease: "power2.out",
-          overwrite: "auto"
-        }
-      );
-    });
-  });
-
   useEffect(() => {
     if (!visible || !overlayRef.current || !headlineRef.current || !captionRef.current || !eyebrowRef.current) {
       return;
@@ -147,6 +48,105 @@ export function LoadScreen() {
       if (percent) {
         percent.textContent = formatPercent(progressState.value);
       }
+    };
+
+    const swapBeat = (index: number) => {
+      startTransition(() => {
+        setShowFinalMessage(false);
+        setBeatIndex(index);
+      });
+
+      requestAnimationFrame(() => {
+        if (!headlineRef.current || !captionRef.current || !eyebrowRef.current) {
+          return;
+        }
+
+        gsap.fromTo(
+          headlineRef.current,
+          { yPercent: 28, opacity: 0, scale: 0.92, filter: "blur(12px)" },
+          {
+            yPercent: 0,
+            opacity: 1,
+            scale: 1,
+            filter: "blur(0px)",
+            duration: 0.82,
+            ease: "expo.out",
+            overwrite: "auto"
+          }
+        );
+        gsap.fromTo(
+          captionRef.current,
+          { y: 24, opacity: 0, filter: "blur(10px)" },
+          {
+            y: 0,
+            opacity: 1,
+            filter: "blur(0px)",
+            duration: 0.64,
+            ease: "power3.out",
+            overwrite: "auto"
+          }
+        );
+        gsap.fromTo(
+          eyebrowRef.current,
+          { y: 14, opacity: 0 },
+          {
+            y: 0,
+            opacity: 1,
+            duration: 0.48,
+            ease: "power2.out",
+            overwrite: "auto"
+          }
+        );
+      });
+    };
+
+    const swapToFinalMessage = () => {
+      startTransition(() => {
+        setShowFinalMessage(true);
+      });
+
+      requestAnimationFrame(() => {
+        if (!headlineRef.current || !captionRef.current || !eyebrowRef.current) {
+          return;
+        }
+
+        gsap.fromTo(
+          headlineRef.current,
+          { yPercent: 16, opacity: 0, scale: 0.95, filter: "blur(14px)" },
+          {
+            yPercent: 0,
+            opacity: 1,
+            scale: 1,
+            filter: "blur(0px)",
+            duration: 0.9,
+            ease: "expo.out",
+            overwrite: "auto"
+          }
+        );
+        gsap.fromTo(
+          captionRef.current,
+          { y: 22, opacity: 0, letterSpacing: "0.4em" },
+          {
+            y: 0,
+            opacity: 1,
+            letterSpacing: "0.28em",
+            duration: 0.62,
+            ease: "power3.out",
+            overwrite: "auto"
+          }
+        );
+        gsap.fromTo(
+          eyebrowRef.current,
+          { y: 10, opacity: 0 },
+          {
+            y: 0,
+            opacity: 1,
+            duration: 0.42,
+            ease: "power2.out",
+            overwrite: "auto"
+          }
+        );
+      });
     };
 
     applyProgress();
@@ -259,7 +259,7 @@ export function LoadScreen() {
     return () => {
       timeline.kill();
     };
-  }, [swapBeat, swapToFinalMessage, visible]);
+  }, [visible]);
 
   useEffect(() => {
     const mount = sceneRef.current;
