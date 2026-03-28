@@ -46,13 +46,13 @@ export function CampaignDetailDeleteButton(props: { campaignId: string; campaign
     <div className="campaign-detail-delete">
       <button
         type="button"
-        className="field-icon-button field-icon-button--danger"
-        data-tooltip="Delete sequence"
+        className="button secondary campaign-detail-delete__button"
         onClick={() => void handleDelete()}
         disabled={pending}
         aria-label={`Delete ${props.campaignName}`}
       >
-        <Trash2 aria-hidden="true" />
+        {pending ? <span className="button-spinner" aria-hidden="true" /> : <Trash2 aria-hidden="true" />}
+        <span>{pending ? "Deleting..." : "Delete sequence"}</span>
       </button>
       {error ? <span className="campaign-detail-delete__error">{error}</span> : null}
     </div>
