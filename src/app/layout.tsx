@@ -1,8 +1,21 @@
 import type { Metadata } from "next";
+import { Bebas_Neue, Space_Grotesk } from "next/font/google";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 
 import "@/app/globals.css";
+import { LoadScreen } from "@/components/load-screen";
 import { themeInitScript } from "@/lib/theme";
+
+const loaderDisplayFont = Bebas_Neue({
+  weight: "400",
+  subsets: ["latin"],
+  variable: "--font-loader-display"
+});
+
+const loaderBodyFont = Space_Grotesk({
+  subsets: ["latin"],
+  variable: "--font-loader-body"
+});
 
 export const metadata: Metadata = {
   title: "Sendloom",
@@ -11,7 +24,11 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html
+      lang="en"
+      suppressHydrationWarning
+      className={`${loaderDisplayFont.variable} ${loaderBodyFont.variable}`}
+    >
       <head>
         <meta
           name="google-site-verification"
@@ -21,6 +38,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
         {children}
+        <LoadScreen />
         <SpeedInsights />
       </body>
     </html>
