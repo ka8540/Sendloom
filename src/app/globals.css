@@ -1546,10 +1546,10 @@ textarea {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 2rem;
-  height: 2rem;
-  padding: 0 0.55rem;
-  border-radius: 999px;
+  min-width: 2.2rem;
+  height: 1.9rem;
+  padding: 0 0.7rem;
+  border-radius: 12px;
   border: 1px solid color-mix(in srgb, var(--line) 92%, transparent);
   background: color-mix(in srgb, var(--surface-muted) 80%, transparent);
   color: var(--muted);
@@ -1565,32 +1565,50 @@ textarea {
   text-transform: uppercase;
 }
 
-.import-card__chip-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.6rem;
+.import-card__field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr));
+  gap: 0.8rem;
 }
 
-.import-card__chip {
-  display: inline-flex;
-  align-items: center;
-  min-height: 2rem;
-  max-width: 100%;
-  padding: 0.35rem 0.72rem;
-  border-radius: 999px;
+.import-card__field-tile {
+  display: grid;
+  align-content: start;
+  gap: 0.24rem;
+  min-height: 4.6rem;
+  padding: 0.95rem 1rem;
+  border-radius: 18px;
   border: 1px solid color-mix(in srgb, var(--line) 92%, transparent);
-  background: color-mix(in srgb, var(--surface-ghost) 76%, transparent);
-  color: var(--text);
-  font-size: 0.9rem;
-  font-weight: 650;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-ghost) 76%, transparent), color-mix(in srgb, var(--surface) 82%, transparent));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--surface-strong) 20%, transparent);
+  min-width: 0;
 }
 
-.import-card__chip--overflow {
-  color: var(--accent-strong);
+.import-card__field-tile strong {
+  font-size: 1rem;
+  font-weight: 750;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.import-card__field-tile span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  overflow-wrap: anywhere;
+}
+
+.import-card__field-tile--overflow {
   border-color: color-mix(in srgb, var(--accent) 22%, var(--line));
-  background: color-mix(in srgb, var(--accent-soft) 68%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 72%, transparent), color-mix(in srgb, var(--surface) 82%, transparent));
+}
+
+.import-card__field-tile--overflow strong {
+  color: var(--accent-strong);
 }
 
 .import-card__preview-list {

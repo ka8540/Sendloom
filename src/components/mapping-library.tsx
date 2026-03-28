@@ -392,18 +392,22 @@ export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
                   <span className="import-card__section-label">Detected fields</span>
                   <span className="import-card__section-count">{item.columns.length}</span>
                 </div>
-                <div className="import-card__chip-row">
+                <div className="import-card__field-grid">
                   {visibleColumns.map((column) => (
-                    <span
+                    <div
                       key={`${item.importId}-${column.normalized}`}
-                      className="import-card__chip"
+                      className="import-card__field-tile"
                       title={`Saved as ${column.normalized}`}
                     >
-                      {column.sourceName}
-                    </span>
+                      <strong>{column.sourceName}</strong>
+                      {column.sourceName !== column.normalized ? <span>{column.normalized}</span> : null}
+                    </div>
                   ))}
                   {hiddenColumnCount ? (
-                    <span className="import-card__chip import-card__chip--overflow">+{hiddenColumnCount} more</span>
+                    <div className="import-card__field-tile import-card__field-tile--overflow">
+                      <strong>+{hiddenColumnCount} more</strong>
+                      <span>Hidden fields</span>
+                    </div>
                   ) : null}
                 </div>
               </div>
