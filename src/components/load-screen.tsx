@@ -17,6 +17,12 @@ function formatPercent(value: number) {
   return String(Math.round(value)).padStart(3, "0");
 }
 
+function readThemeColor(variableName: string, fallback: string) {
+  const value = getComputedStyle(document.documentElement).getPropertyValue(variableName).trim();
+
+  return new THREE.Color(value || fallback);
+}
+
 export function LoadScreen() {
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<HTMLDivElement | null>(null);
@@ -409,9 +415,33 @@ export function LoadScreen() {
     };
 
     const resizeObserver = new ResizeObserver(resize);
+    const themeObserver = new MutationObserver(applyPalette);
+    const systemThemeQuery = window.matchMedia("(prefers-color-scheme: dark)");
+
+    function applyPalette() {
+      ambientLight.color.copy(readThemeColor("--loader-scene-core", "#ffffff"));
+      coralLight.color.copy(readThemeColor("--loader-scene-emissive", "#167c5a"));
+      mintLight.color.copy(readThemeColor("--loader-scene-orbit", "#167c5a"));
+      blueLight.color.copy(readThemeColor("--loader-scene-ring", "#175cd3"));
+      coreMaterial.color.copy(readThemeColor("--loader-scene-core", "#ffffff"));
+      coreMaterial.emissive.copy(readThemeColor("--loader-scene-emissive", "#167c5a"));
+      knotMaterial.color.copy(readThemeColor("--loader-scene-trail", "#c4d4ee"));
+      (orbitA.material as THREE.MeshBasicMaterial).color.copy(readThemeColor("--loader-scene-orbit", "#167c5a"));
+      (orbitB.material as THREE.MeshBasicMaterial).color.copy(readThemeColor("--loader-scene-orbit-alt", "#dfe9f7"));
+      particleMaterial.color.copy(readThemeColor("--loader-scene-particles", "#8fb1eb"));
+      (trails.material as THREE.LineBasicMaterial).color.copy(readThemeColor("--loader-scene-trail", "#c4d4ee"));
+      (glow.material as THREE.SpriteMaterial).color.copy(readThemeColor("--loader-scene-glow", "#8bdcb9"));
+    }
+
     resizeObserver.observe(mount);
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme", "style"]
+    });
+    systemThemeQuery.addEventListener("change", applyPalette);
     mount.addEventListener("pointermove", handlePointerMove);
     mount.addEventListener("pointerleave", handlePointerLeave);
+    applyPalette();
     resize();
 
     const renderFrame = () => {
@@ -445,6 +475,8 @@ export function LoadScreen() {
     return () => {
       renderer.setAnimationLoop(null);
       resizeObserver.disconnect();
+      themeObserver.disconnect();
+      systemThemeQuery.removeEventListener("change", applyPalette);
       mount.removeEventListener("pointermove", handlePointerMove);
       mount.removeEventListener("pointerleave", handlePointerLeave);
       mount.removeChild(renderer.domElement);

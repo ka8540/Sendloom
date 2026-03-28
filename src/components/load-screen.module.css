@@ -7,11 +7,11 @@
   overflow: hidden;
   isolation: isolate;
   background:
-    radial-gradient(circle at 18% 16%, rgba(255, 245, 230, 0.34), transparent 24rem),
-    radial-gradient(circle at 78% 24%, rgba(126, 255, 222, 0.18), transparent 22rem),
-    radial-gradient(circle at 54% 80%, rgba(125, 199, 255, 0.14), transparent 28rem),
-    linear-gradient(135deg, #ff5a49 0%, #ff624a 28%, #ff7455 64%, #ff815e 100%);
-  color: #fff8ef;
+    radial-gradient(circle at 18% 16%, var(--loader-glow-primary), transparent 24rem),
+    radial-gradient(circle at 78% 24%, var(--loader-glow-secondary), transparent 22rem),
+    radial-gradient(circle at 54% 80%, var(--loader-glow-tertiary), transparent 28rem),
+    linear-gradient(135deg, var(--bg-start) 0%, var(--bg-end) 100%);
+  color: var(--loader-copy);
 }
 
 .loader::before {
@@ -19,19 +19,19 @@
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(130deg, rgba(255, 255, 255, 0.08), transparent 34%, transparent 66%, rgba(255, 255, 255, 0.08)),
-    radial-gradient(circle at center, rgba(255, 255, 255, 0.08), transparent 50%);
+    linear-gradient(130deg, var(--loader-sheen), transparent 34%, transparent 66%, var(--loader-sheen)),
+    radial-gradient(circle at center, var(--loader-sheen), transparent 50%);
   mix-blend-mode: screen;
-  opacity: 0.88;
+  opacity: 0.6;
 }
 
 .loader::after {
   content: "";
   position: absolute;
   inset: clamp(1rem, 2vw, 1.75rem);
-  border: 1px solid rgba(255, 247, 238, 0.18);
+  border: 1px solid var(--loader-frame);
   border-radius: 2rem;
-  box-shadow: inset 0 0 0 1px rgba(255, 247, 238, 0.06);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--loader-frame) 55%, transparent);
 }
 
 .scene {
@@ -48,12 +48,12 @@
   background:
     repeating-linear-gradient(
       90deg,
-      rgba(255, 255, 255, 0.08) 0,
-      rgba(255, 255, 255, 0.08) 1px,
+      var(--loader-grid) 0,
+      var(--loader-grid) 1px,
       transparent 1px,
       transparent 5.5rem
     ),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 24%, transparent 76%, rgba(255, 255, 255, 0.08));
+    linear-gradient(180deg, var(--loader-grid), transparent 24%, transparent 76%, var(--loader-grid));
   mix-blend-mode: soft-light;
 }
 
@@ -70,8 +70,8 @@
 
 .eyebrow {
   margin: 0;
-  color: rgba(255, 248, 241, 0.8);
-  font-family: var(--font-loader-body), "Space Grotesk", sans-serif;
+  color: var(--loader-muted);
+  font-family: inherit;
   font-size: clamp(0.72rem, 1.2vw, 0.92rem);
   letter-spacing: 0.42em;
   text-transform: uppercase;
@@ -82,7 +82,7 @@
   display: grid;
   place-items: center;
   min-height: clamp(7rem, 26vw, 18rem);
-  filter: drop-shadow(0 2rem 4rem rgba(123, 18, 0, 0.24));
+  filter: drop-shadow(0 2rem 4rem var(--loader-shadow-color));
 }
 
 .wordFill,
@@ -98,13 +98,13 @@
 }
 
 .wordFill {
-  color: rgba(255, 241, 231, 0.92);
+  color: var(--loader-fill);
   transform: translateX(-0.06em);
 }
 
 .wordStroke {
   color: transparent;
-  -webkit-text-stroke: 2px rgba(255, 248, 241, 0.94);
+  -webkit-text-stroke: 2px var(--loader-stroke);
   transform: translateX(0.09em);
 }
 
@@ -116,8 +116,8 @@
 
 .caption {
   margin: 0;
-  color: rgba(255, 246, 238, 0.88);
-  font-family: var(--font-loader-body), "Space Grotesk", sans-serif;
+  color: var(--loader-copy);
+  font-family: inherit;
   font-size: clamp(1rem, 1.9vw, 1.5rem);
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -128,6 +128,7 @@
   font-family: var(--font-loader-display), "Bebas Neue", sans-serif;
   font-size: clamp(1.35rem, 4vw, 3rem);
   letter-spacing: 0.28em;
+  color: var(--loader-stroke);
 }
 
 .footer {
@@ -143,8 +144,8 @@
   overflow: hidden;
   height: 0.45rem;
   border-radius: 999px;
-  background: rgba(255, 244, 235, 0.15);
-  box-shadow: inset 0 0 0 1px rgba(255, 244, 235, 0.14);
+  background: var(--loader-meter-track);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--loader-frame) 60%, transparent);
 }
 
 .meterFill {
@@ -154,14 +155,14 @@
   border-radius: inherit;
   transform: scaleX(0.18);
   transform-origin: left center;
-  background: linear-gradient(90deg, rgba(126, 255, 222, 0.9), rgba(255, 250, 244, 1) 54%, rgba(255, 223, 194, 0.94));
-  box-shadow: 0 0 2rem rgba(255, 250, 244, 0.54);
+  background: linear-gradient(90deg, var(--loader-meter-start), var(--loader-meter-mid) 54%, var(--loader-meter-end));
+  box-shadow: 0 0 2rem color-mix(in srgb, var(--loader-meter-mid) 60%, transparent);
 }
 
 .percent {
   min-width: 3ch;
-  color: rgba(255, 247, 241, 0.9);
-  font-family: var(--font-loader-body), "Space Grotesk", sans-serif;
+  color: var(--loader-copy);
+  font-family: inherit;
   font-size: 0.95rem;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.28em;
