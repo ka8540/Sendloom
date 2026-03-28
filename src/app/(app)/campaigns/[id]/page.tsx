@@ -1,6 +1,8 @@
 import { after } from "next/server";
 import {
   CalendarClock,
+  ChevronLeft,
+  ChevronRight,
   Eye,
   FileStack,
   Mail,
@@ -20,6 +22,7 @@ import { launchCampaign, processPendingCampaignWork, validateCampaign } from "@/
 import styles from "./page.module.css";
 
 export const maxDuration = 60;
+const RECIPIENTS_PAGE_SIZE = 10;
 
 type CampaignTemplateSnapshot = {
   attachments?: Array<{
@@ -115,9 +118,44 @@ async function validate(campaignId: string) {
   await validateCampaign(campaignId, user.id);
 }
 
-export default async function CampaignDetailPage({ params }: { params: Promise<{ id: string }> }) {
+function buildRecipientPageHref(
+  campaignId: string,
+  searchParams: Record<string, string | string[] | undefined>,
+  page: number
+) {
+  const nextParams = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(searchParams)) {
+    if (key === "recipientsPage" || value == null) {
+      continue;
+    }
+
+    if (Array.isArray(value)) {
+      value.forEach((entry) => nextParams.append(key, entry));
+      continue;
+    }
+
+    nextParams.set(key, value);
+  }
+
+  if (page > 1) {
+    nextParams.set("recipientsPage", String(page));
+  }
+
+  const query = nextParams.toString();
+  return query ? `/campaigns/${campaignId}?${query}` : `/campaigns/${campaignId}`;
+}
+
+export default async function CampaignDetailPage({
+  params,
+  searchParams
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const user = await requireUser();
   const { id } = await params;
+  const resolvedSearchParams = await searchParams;
   const campaign = await prisma.campaign.findFirstOrThrow({
     where: {
       id,
@@ -158,6 +196,16 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
   const scheduleLabel = formatScheduleLabel(campaign.scheduleType, campaign.scheduleConfig as ScheduleConfig | null);
   const latestRunValue = latestRun?.updatedAt?.toISOString() ?? null;
   const validatedAtValue = campaign.lastValidatedAt?.toISOString() ?? null;
+  const recipientJobs = latestRun?.recipientJobs ?? [];
+  const totalRecipientPages = Math.max(1, Math.ceil(recipientJobs.length / RECIPIENTS_PAGE_SIZE));
+  const requestedRecipientPage = Number.parseInt(String(resolvedSearchParams.recipientsPage ?? "1"), 10);
+  const recipientPage = Number.isFinite(requestedRecipientPage)
+    ? Math.min(Math.max(requestedRecipientPage, 1), totalRecipientPages)
+    : 1;
+  const paginatedRecipientJobs = recipientJobs.slice(
+    (recipientPage - 1) * RECIPIENTS_PAGE_SIZE,
+    recipientPage * RECIPIENTS_PAGE_SIZE
+  );
 
   if (isActiveRun) {
     after(async () => {
@@ -335,9 +383,9 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
             </div>
           </div>
 
-          {latestRun?.recipientJobs.length ? (
+          {recipientJobs.length ? (
             <div className={styles.jobList}>
-              {latestRun.recipientJobs.map((job) => (
+              {paginatedRecipientJobs.map((job) => (
                 <div key={job.id} className={styles.jobRow}>
                   <div className={styles.jobIdentity}>
                     <strong>{job.recipientEmail}</strong>
@@ -353,6 +401,30 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
                   </div>
                 </div>
               ))}
+
+              {recipientJobs.length > RECIPIENTS_PAGE_SIZE ? (
+                <div className={styles.paginationRow}>
+                  <a
+                    href={buildRecipientPageHref(campaign.id, resolvedSearchParams, recipientPage - 1)}
+                    className={styles.paginationButton}
+                    aria-label="Previous recipient page"
+                    aria-disabled={recipientPage === 1}
+                  >
+                    <ChevronLeft aria-hidden="true" />
+                  </a>
+                  <span className={styles.paginationCount}>
+                    {recipientPage} / {totalRecipientPages}
+                  </span>
+                  <a
+                    href={buildRecipientPageHref(campaign.id, resolvedSearchParams, recipientPage + 1)}
+                    className={styles.paginationButton}
+                    aria-label="Next recipient page"
+                    aria-disabled={recipientPage === totalRecipientPages}
+                  >
+                    <ChevronRight aria-hidden="true" />
+                  </a>
+                </div>
+              ) : null}
             </div>
           ) : (
             <div className={styles.emptyState}>Launch the sequence to start seeing recipient activity here.</div>

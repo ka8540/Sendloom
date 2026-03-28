@@ -320,6 +320,56 @@
   gap: 0.75rem;
 }
 
+.paginationRow {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.7rem;
+  margin-top: 0.15rem;
+}
+
+.paginationButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.85rem;
+  height: 2.85rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease,
+    color 160ms ease;
+}
+
+.paginationButton:hover {
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--line));
+  background: var(--surface-muted);
+  color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.paginationButton[aria-disabled="true"] {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.paginationButton svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.paginationCount {
+  min-width: 3.6rem;
+  text-align: center;
+  color: var(--muted);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
 .jobRow {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) auto minmax(0, 0.8fr);
