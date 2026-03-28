@@ -467,13 +467,9 @@ export default async function CampaignDetailPage({
                     <strong>{job.recipientEmail}</strong>
                     <span>{job.recipientName || "Recipient name not available"}</span>
                   </div>
-
-                  <div className={styles.jobStatus}>
-                    <span className="badge">{humanize(job.status)}</span>
-                  </div>
-
                   <div className={styles.jobMeta}>
-                    <span>{job.lastError ?? "No error reported"}</span>
+                    <span className="badge">{humanize(job.status)}</span>
+                    <span className={styles.jobMetaText}>{job.lastError ?? "No error reported"}</span>
                   </div>
                 </div>
               ))}
