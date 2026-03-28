@@ -69,36 +69,36 @@ export function LoadScreen() {
 
         gsap.fromTo(
           headlineRef.current,
-          { yPercent: 28, opacity: 0, scale: 0.92, filter: "blur(12px)" },
+          { yPercent: 18, opacity: 0, scale: 0.96, filter: "blur(8px)" },
           {
             yPercent: 0,
             opacity: 1,
             scale: 1,
             filter: "blur(0px)",
-            duration: 0.82,
-            ease: "expo.out",
+            duration: 1.18,
+            ease: "power2.out",
             overwrite: "auto"
           }
         );
         gsap.fromTo(
           captionRef.current,
-          { y: 24, opacity: 0, filter: "blur(10px)" },
+          { y: 18, opacity: 0, filter: "blur(8px)" },
           {
             y: 0,
             opacity: 1,
             filter: "blur(0px)",
-            duration: 0.64,
-            ease: "power3.out",
+            duration: 0.9,
+            ease: "power2.out",
             overwrite: "auto"
           }
         );
         gsap.fromTo(
           eyebrowRef.current,
-          { y: 14, opacity: 0 },
+          { y: 10, opacity: 0 },
           {
             y: 0,
             opacity: 1,
-            duration: 0.48,
+            duration: 0.7,
             ease: "power2.out",
             overwrite: "auto"
           }
@@ -118,36 +118,36 @@ export function LoadScreen() {
 
         gsap.fromTo(
           headlineRef.current,
-          { yPercent: 16, opacity: 0, scale: 0.95, filter: "blur(14px)" },
+          { yPercent: 12, opacity: 0, scale: 0.97, filter: "blur(9px)" },
           {
             yPercent: 0,
             opacity: 1,
             scale: 1,
             filter: "blur(0px)",
-            duration: 0.9,
-            ease: "expo.out",
+            duration: 1.28,
+            ease: "power2.out",
             overwrite: "auto"
           }
         );
         gsap.fromTo(
           captionRef.current,
-          { y: 22, opacity: 0, letterSpacing: "0.4em" },
+          { y: 18, opacity: 0, letterSpacing: "0.28em" },
           {
             y: 0,
             opacity: 1,
-            letterSpacing: "0.28em",
-            duration: 0.62,
-            ease: "power3.out",
+            letterSpacing: "0.18em",
+            duration: 0.96,
+            ease: "power2.out",
             overwrite: "auto"
           }
         );
         gsap.fromTo(
           eyebrowRef.current,
-          { y: 10, opacity: 0 },
+          { y: 8, opacity: 0 },
           {
             y: 0,
             opacity: 1,
-            duration: 0.42,
+            duration: 0.72,
             ease: "power2.out",
             overwrite: "auto"
           }
@@ -170,14 +170,14 @@ export function LoadScreen() {
       reducedTimeline
         .to(progressState, {
           value: 100,
-          duration: 0.9,
+          duration: 1.25,
           onUpdate: applyProgress
         })
         .call(() => swapToFinalMessage())
-        .to({}, { duration: 0.8 })
+        .to({}, { duration: 1.1 })
         .to(overlay, {
           autoAlpha: 0,
-          duration: 0.55,
+          duration: 0.7,
           ease: "power2.inOut"
         })
         .call(() => setVisible(false));
@@ -198,64 +198,64 @@ export function LoadScreen() {
     timeline
       .to(progressState, {
         value: loaderBeats[0].progress,
-        duration: 0.52,
+        duration: 0.8,
         onUpdate: applyProgress
       })
-      .to({}, { duration: 0.28 })
+      .to({}, { duration: 0.56 })
       .call(() => swapBeat(1))
       .to(
         progressState,
         {
           value: loaderBeats[1].progress,
-          duration: 0.52,
+          duration: 0.84,
           onUpdate: applyProgress
         },
         "<"
       )
-      .to({}, { duration: 0.24 })
+      .to({}, { duration: 0.52 })
       .call(() => swapBeat(2))
       .to(
         progressState,
         {
           value: loaderBeats[2].progress,
-          duration: 0.58,
+          duration: 0.9,
           onUpdate: applyProgress
         },
         "<"
       )
-      .to({}, { duration: 0.22 })
+      .to({}, { duration: 0.5 })
       .call(() => swapBeat(3))
       .to(
         progressState,
         {
           value: loaderBeats[3].progress,
-          duration: 0.52,
+          duration: 0.84,
           onUpdate: applyProgress
         },
         "<"
       )
-      .to({}, { duration: 0.4 })
+      .to({}, { duration: 0.72 })
       .call(() => swapToFinalMessage())
       .to(
         progressState,
         {
           value: 100,
-          duration: 0.62,
+          duration: 0.96,
           onUpdate: applyProgress
         },
-        "<0.08"
+        "<0.16"
       )
-      .to({}, { duration: 1.05 })
+      .to({}, { duration: 1.45 })
       .to(overlay, {
         clipPath: "inset(0% 0% 100% 0%)",
-        duration: 1,
-        ease: "expo.inOut"
+        duration: 1.16,
+        ease: "power3.inOut"
       })
       .to(
         overlay,
         {
           autoAlpha: 0,
-          duration: 0.18,
+          duration: 0.28,
           ease: "power1.out"
         },
         "<0.74"
