@@ -306,6 +306,21 @@ export async function validateCampaign(campaignId: string, userId?: string): Pro
   return report;
 }
 
+export async function deleteCampaign(campaignId: string, userId?: string) {
+  const campaign = await prisma.campaign.findFirstOrThrow({
+    where: campaignOwnershipFilter(campaignId, userId),
+    select: {
+      id: true
+    }
+  });
+
+  await prisma.campaign.delete({
+    where: { id: campaign.id }
+  });
+
+  return { id: campaign.id, deleted: true };
+}
+
 export async function launchCampaign(campaignId: string, userId?: string) {
   const campaign = await prisma.campaign.findFirstOrThrow({
     where: campaignOwnershipFilter(campaignId, userId),

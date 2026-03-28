@@ -13,6 +13,7 @@ import {
   Users
 } from "lucide-react";
 
+import { CampaignCardActions } from "@/components/campaign-card-actions";
 import { CampaignBuilder } from "@/components/campaign-builder";
 import { LocalDateTime } from "@/components/local-date-time";
 import { requireUser } from "@/lib/auth";
@@ -363,9 +364,7 @@ export default async function CampaignsPage({
                   </div>
 
                   <div className={styles.sequenceActions}>
-                    <Link className="button secondary" href={`/campaigns/${campaign.id}`}>
-                      Open
-                    </Link>
+                    <CampaignCardActions campaignId={campaign.id} campaignName={campaign.name} />
                   </div>
                 </article>
               );

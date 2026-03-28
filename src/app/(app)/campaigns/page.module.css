@@ -336,6 +336,22 @@
   justify-content: flex-end;
 }
 
+.sequenceActions :global(.campaign-card-actions) {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.sequenceActions :global(.campaign-card-actions__error) {
+  width: 100%;
+  color: var(--warning);
+  font-size: 0.88rem;
+  font-weight: 600;
+  text-align: right;
+}
+
 @media (max-width: 1280px) {
   .sequenceRow {
     grid-template-columns: 1fr;
@@ -343,6 +359,12 @@
 
   .sequenceActions {
     justify-content: flex-start;
+  }
+
+  .sequenceActions :global(.campaign-card-actions),
+  .sequenceActions :global(.campaign-card-actions__error) {
+    justify-content: flex-start;
+    text-align: left;
   }
 }
 
