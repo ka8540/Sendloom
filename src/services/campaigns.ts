@@ -321,6 +321,42 @@ export async function deleteCampaign(campaignId: string, userId?: string) {
   return { id: campaign.id, deleted: true };
 }
 
+export async function updateCampaignAttachments(
+  campaignId: string,
+  attachments: CampaignAttachmentSnapshot[],
+  userId?: string
+) {
+  const campaign = await prisma.campaign.findFirstOrThrow({
+    where: campaignOwnershipFilter(campaignId, userId),
+    select: {
+      id: true,
+      templateSnapshot: true
+    }
+  });
+
+  const currentSnapshot =
+    campaign.templateSnapshot && typeof campaign.templateSnapshot === "object" && !Array.isArray(campaign.templateSnapshot)
+      ? (campaign.templateSnapshot as CampaignTemplateSnapshot)
+      : {
+          subject: "",
+          htmlBody: "",
+          variableManifest: [],
+          format: "HTML" as TemplateFormat
+        };
+
+  await prisma.campaign.update({
+    where: { id: campaign.id },
+    data: {
+      templateSnapshot: {
+        ...currentSnapshot,
+        attachments
+      } as Prisma.InputJsonValue
+    }
+  });
+
+  return { id: campaign.id, attachments };
+}
+
 export async function launchCampaign(campaignId: string, userId?: string) {
   const campaign = await prisma.campaign.findFirstOrThrow({
     where: campaignOwnershipFilter(campaignId, userId),

@@ -139,6 +139,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem;
+  align-items: center;
 }
 
 .actionRow form {
@@ -196,6 +197,13 @@
   color: var(--muted);
   line-height: 1.55;
   font-size: 0.93rem;
+}
+
+.metricsNote {
+  margin: -0.3rem 0 0;
+  color: var(--muted);
+  font-size: 0.94rem;
+  line-height: 1.6;
 }
 
 .detailGrid {
@@ -265,6 +273,67 @@
 .assetBlock {
   display: grid;
   gap: 0.8rem;
+}
+
+.attachmentTools {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.95rem 1rem;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: var(--surface-muted);
+}
+
+.attachmentUploadForm {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.attachmentPicker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.9rem;
+  min-width: min(100%, 24rem);
+  padding: 0.85rem 1rem;
+  border-radius: 16px;
+  border: 1px dashed color-mix(in srgb, var(--accent) 30%, var(--line));
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.attachmentPicker:hover {
+  border-color: color-mix(in srgb, var(--accent) 46%, var(--line));
+  color: var(--text);
+}
+
+.attachmentPicker span {
+  min-width: 0;
+}
+
+.attachmentPicker input {
+  max-width: 13rem;
+  color: var(--muted);
+}
+
+.attachmentPicker input::file-selector-button {
+  margin-right: 0.75rem;
+  padding: 0.58rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.attachmentHint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.55;
 }
 
 .assetHeader {
@@ -433,5 +502,13 @@
 
   .metaRow {
     display: grid;
+  }
+
+  .attachmentUploadForm {
+    display: grid;
+  }
+
+  .attachmentPicker {
+    min-width: 0;
   }
 }

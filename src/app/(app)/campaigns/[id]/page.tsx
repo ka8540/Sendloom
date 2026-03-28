@@ -1,3 +1,4 @@
+import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import {
   CalendarClock,
@@ -14,15 +15,18 @@ import {
 
 import { ActiveRunRefresher } from "@/components/active-run-refresher";
 import { AttachmentPreview } from "@/components/attachment-preview";
+import { CampaignDetailDeleteButton } from "@/components/campaign-detail-delete-button";
 import { LocalDateTime } from "@/components/local-date-time";
 import { requireUser } from "@/lib/auth";
 import { getAttachmentPreviewKind } from "@/lib/attachments";
 import { prisma } from "@/lib/db";
-import { launchCampaign, processPendingCampaignWork, validateCampaign } from "@/services/campaigns";
+import { storeUpload } from "@/lib/storage";
+import { launchCampaign, processPendingCampaignWork, updateCampaignAttachments, validateCampaign } from "@/services/campaigns";
 import styles from "./page.module.css";
 
 export const maxDuration = 60;
 const RECIPIENTS_PAGE_SIZE = 10;
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
 type CampaignTemplateSnapshot = {
   attachments?: Array<{
@@ -103,6 +107,8 @@ async function launch(campaignId: string) {
 
   const user = await requireUser();
   const run = await launchCampaign(campaignId, user.id);
+  revalidatePath(`/campaigns/${campaignId}`);
+  revalidatePath("/campaigns");
   after(async () => {
     await processPendingCampaignWork({
       runId: run.id,
@@ -116,6 +122,49 @@ async function validate(campaignId: string) {
 
   const user = await requireUser();
   await validateCampaign(campaignId, user.id);
+  revalidatePath(`/campaigns/${campaignId}`);
+  revalidatePath("/campaigns");
+}
+
+async function replaceAttachment(campaignId: string, formData: FormData) {
+  "use server";
+
+  const user = await requireUser();
+  const attachment = formData.get("attachment");
+
+  if (!(attachment instanceof File) || attachment.size <= 0) {
+    return;
+  }
+
+  if (attachment.size > MAX_ATTACHMENT_BYTES) {
+    throw new Error("Attachments must be 10 MB or smaller.");
+  }
+
+  const buffer = Buffer.from(await attachment.arrayBuffer());
+  const nextAttachment = process.env.VERCEL
+    ? {
+        fileName: attachment.name,
+        contentBase64: buffer.toString("base64"),
+        contentType: attachment.type || null
+      }
+    : {
+        fileName: attachment.name,
+        storagePath: await storeUpload(attachment.name, buffer, "attachments"),
+        contentType: attachment.type || null
+      };
+
+  await updateCampaignAttachments(campaignId, [nextAttachment], user.id);
+  revalidatePath(`/campaigns/${campaignId}`);
+  revalidatePath("/campaigns");
+}
+
+async function clearAttachments(campaignId: string) {
+  "use server";
+
+  const user = await requireUser();
+  await updateCampaignAttachments(campaignId, [], user.id);
+  revalidatePath(`/campaigns/${campaignId}`);
+  revalidatePath("/campaigns");
 }
 
 function buildRecipientPageHref(
@@ -191,11 +240,14 @@ export default async function CampaignDetailPage({
   }));
   const issueCount =
     (latestRun?.failedCount ?? 0) + (latestRun?.suppressedCount ?? 0) + (latestRun?.invalidCount ?? 0);
+  const trackedOpenCount = latestRun?.openedCount ?? 0;
+  const trackedClickCount = latestRun?.clickedCount ?? 0;
   const launchButtonLabel = isActiveRun ? "Run is processing" : latestRun ? "Launch again" : "Launch sequence";
   const validationButtonLabel = campaign.lastValidatedAt ? "Refresh validation" : "Validate sequence";
   const scheduleLabel = formatScheduleLabel(campaign.scheduleType, campaign.scheduleConfig as ScheduleConfig | null);
   const latestRunValue = latestRun?.updatedAt?.toISOString() ?? null;
   const validatedAtValue = campaign.lastValidatedAt?.toISOString() ?? null;
+  const attachmentActionLabel = attachments.length ? "Replace attachment" : "Add attachment";
   const recipientJobs = latestRun?.recipientJobs ?? [];
   const totalRecipientPages = Math.max(1, Math.ceil(recipientJobs.length / RECIPIENTS_PAGE_SIZE));
   const requestedRecipientPage = Number.parseInt(String(resolvedSearchParams.recipientsPage ?? "1"), 10);
@@ -294,6 +346,7 @@ export default async function CampaignDetailPage({
                 {launchButtonLabel}
               </button>
             </form>
+            <CampaignDetailDeleteButton campaignId={campaign.id} campaignName={campaign.name} />
           </div>
         </aside>
       </section>
@@ -319,9 +372,9 @@ export default async function CampaignDetailPage({
           <div className={styles.metricIcon}>
             <Eye aria-hidden="true" />
           </div>
-          <span className={styles.metricLabel}>Engagement</span>
-          <strong className={styles.metricValue}>{(latestRun?.openedCount ?? 0) + (latestRun?.clickedCount ?? 0)}</strong>
-          <span className={styles.metricMeta}>Opens and clicks captured so far.</span>
+          <span className={styles.metricLabel}>Tracked clicks</span>
+          <strong className={styles.metricValue}>{trackedClickCount}</strong>
+          <span className={styles.metricMeta}>Stronger than opens, but still treated as a tracking signal.</span>
         </article>
         <article className={styles.metricCard}>
           <div className={styles.metricIcon}>
@@ -332,6 +385,10 @@ export default async function CampaignDetailPage({
           <span className={styles.metricMeta}>Failures, suppressions, and invalid records.</span>
         </article>
       </section>
+      <p className={styles.metricsNote}>
+        Open tracking is kept out of the headline metrics because mailbox privacy tools and security scanners can trigger
+        opens automatically. This run has {trackedOpenCount} tracked open{trackedOpenCount === 1 ? "" : "s"}.
+      </p>
 
       <section className={styles.detailGrid}>
         <article className={styles.panel}>
@@ -366,6 +423,25 @@ export default async function CampaignDetailPage({
             <div className={styles.assetHeader}>
               <h3>Attachments</h3>
               <span>{attachments.length ? `${attachments.length} file${attachments.length > 1 ? "s" : ""}` : "No attachments"}</span>
+            </div>
+            <div className={styles.attachmentTools}>
+              <form action={replaceAttachment.bind(null, campaign.id)} className={styles.attachmentUploadForm}>
+                <label className={styles.attachmentPicker}>
+                  <span>{attachments.length ? "Choose a new resume or file" : "Choose a resume or file"}</span>
+                  <input type="file" name="attachment" />
+                </label>
+                <button className="button secondary" type="submit">
+                  {attachmentActionLabel}
+                </button>
+              </form>
+              {attachments.length ? (
+                <form action={clearAttachments.bind(null, campaign.id)}>
+                  <button className="button secondary" type="submit">
+                    Remove attachment
+                  </button>
+                </form>
+              ) : null}
+              <p className={styles.attachmentHint}>The next launch will use the attachment shown here.</p>
             </div>
             {attachmentPreviewItems.length ? (
               <AttachmentPreview attachments={attachmentPreviewItems} />

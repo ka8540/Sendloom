@@ -1698,6 +1698,17 @@ textarea {
   color: #ffb1b1;
 }
 
+.campaign-detail-delete {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.campaign-detail-delete__error {
+  color: #ffb1b1;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
 .selection-summary {
   display: grid;
   gap: 0.25rem;
