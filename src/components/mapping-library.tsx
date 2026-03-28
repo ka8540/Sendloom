@@ -278,40 +278,53 @@ export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
         const isEditing = editingImportId === item.importId;
         const isSaving = savingImportId === item.importId;
         const isDeleting = deletingImportId === item.importId;
+        const visibleColumns = item.columns.slice(0, 8);
+        const hiddenColumnCount = Math.max(0, item.columns.length - visibleColumns.length);
+        const visiblePreviewRows = item.previewRows.slice(0, 3);
+        const hiddenPreviewCount = Math.max(0, item.previewRows.length - visiblePreviewRows.length);
 
         return (
           <article className="import-card" key={item.importId}>
             <div className="import-card__header">
               <div className="import-card__primary">
-                {isEditing ? (
-                  <input
-                    className="import-card__name-input"
-                    value={draftNames[item.importId] ?? item.fileName}
-                    maxLength={120}
-                    onChange={(event) =>
-                      setDraftNames((current) => ({
-                        ...current,
-                        [item.importId]: event.target.value
-                      }))
-                    }
-                    onKeyDown={(event) => handleNameKeyDown(event, item.importId, item.fileName)}
-                    aria-label={`Rename ${item.fileName}`}
-                    autoFocus
-                  />
-                ) : (
-                  <strong className="import-card__title">{item.fileName}</strong>
-                )}
+                <div className="import-card__title-row">
+                  {isEditing ? (
+                    <input
+                      className="import-card__name-input"
+                      value={draftNames[item.importId] ?? item.fileName}
+                      maxLength={120}
+                      onChange={(event) =>
+                        setDraftNames((current) => ({
+                          ...current,
+                          [item.importId]: event.target.value
+                        }))
+                      }
+                      onKeyDown={(event) => handleNameKeyDown(event, item.importId, item.fileName)}
+                      aria-label={`Rename ${item.fileName}`}
+                      autoFocus
+                    />
+                  ) : (
+                    <strong className="import-card__title">{item.fileName}</strong>
+                  )}
 
-                <div className="import-card__meta">
-                  <span className="badge">{item.status}</span>
-                  <span className="pill">{item.rowCount} rows</span>
-                  {item.linkedCampaignCount ? (
-                    <span className="pill">
-                      {item.linkedCampaignCount} sequence{item.linkedCampaignCount === 1 ? "" : "s"}
+                  <div className="import-card__meta">
+                    <span className="badge">{item.status}</span>
+                    <span className="import-card__metric">
+                      {item.rowCount} {item.rowCount === 1 ? "contact" : "contacts"}
                     </span>
-                  ) : null}
-                  {item.updatedAt ? <span className="import-card__meta-text">Updated {item.updatedAt}</span> : null}
+                    {item.linkedCampaignCount ? (
+                      <span className="import-card__metric">
+                        {item.linkedCampaignCount} sequence{item.linkedCampaignCount === 1 ? "" : "s"}
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
+
+                {item.updatedAt ? (
+                  <div className="import-card__meta import-card__meta--secondary">
+                    <span className="import-card__meta-text">Updated {item.updatedAt}</span>
+                  </div>
+                ) : null}
               </div>
 
               <div className="import-card__actions">
@@ -363,7 +376,7 @@ export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
 
                 <button
                   type="button"
-                  className="field-icon-button"
+                  className="field-icon-button field-icon-button--danger"
                   data-tooltip="Delete import"
                   onClick={() => void deleteImportItem(item)}
                   disabled={isSaving || isDeleting}
@@ -374,23 +387,36 @@ export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
             </div>
 
             <div className="import-card__content">
-              <div className="import-card__section">
-                <span className="import-card__section-label">Detected columns</span>
-                <div className="pill-row">
-                  {item.columns.map((column) => (
-                    <span key={`${item.importId}-${column.normalized}`} className="pill" title={`Saved as ${column.normalized}`}>
+              <div className="import-card__section import-card__section--columns">
+                <div className="import-card__section-head">
+                  <span className="import-card__section-label">Detected fields</span>
+                  <span className="import-card__section-count">{item.columns.length}</span>
+                </div>
+                <div className="import-card__chip-row">
+                  {visibleColumns.map((column) => (
+                    <span
+                      key={`${item.importId}-${column.normalized}`}
+                      className="import-card__chip"
+                      title={`Saved as ${column.normalized}`}
+                    >
                       {column.sourceName}
                     </span>
                   ))}
+                  {hiddenColumnCount ? (
+                    <span className="import-card__chip import-card__chip--overflow">+{hiddenColumnCount} more</span>
+                  ) : null}
                 </div>
               </div>
 
-              <div className="import-card__section">
-                <span className="import-card__section-label">Preview</span>
+              <div className="import-card__section import-card__section--preview">
+                <div className="import-card__section-head">
+                  <span className="import-card__section-label">Sample contacts</span>
+                  <span className="import-card__section-count">{item.previewRows.length}</span>
+                </div>
                 {item.previewRows.length ? (
-                  <div className="recipient-preview">
-                    {item.previewRows.map((row) => (
-                      <div key={row.id}>
+                  <div className="import-card__preview-list">
+                    {visiblePreviewRows.map((row) => (
+                      <div key={row.id} className="import-card__preview-item">
                         <strong>{row.primary}</strong>
                         <span>{row.secondary}</span>
                         <span>{row.tertiary}</span>
@@ -400,6 +426,9 @@ export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
                 ) : (
                   <span className="muted">No preview available</span>
                 )}
+                {hiddenPreviewCount ? (
+                  <span className="import-card__preview-more">+{hiddenPreviewCount} more contacts in this import</span>
+                ) : null}
               </div>
             </div>
           </article>
