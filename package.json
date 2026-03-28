@@ -22,6 +22,7 @@
   "dependencies": {
     "@prisma/client": "^6.6.0",
     "@types/three": "^0.183.1",
+    "@vercel/speed-insights": "^2.0.0",
     "bcryptjs": "^3.0.2",
     "bullmq": "^5.47.0",
     "clsx": "^2.1.1",
