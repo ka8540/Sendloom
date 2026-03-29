@@ -15,6 +15,7 @@ export async function GET(request: Request) {
   }
 
   const url = new URL(request.url);
+  const origin = url.origin;
   const error = url.searchParams.get("error");
   const state = url.searchParams.get("state");
   const code = url.searchParams.get("code");
@@ -32,7 +33,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const tokens = await exchangeGoogleCode(code, getGoogleRedirectUri());
+    const tokens = await exchangeGoogleCode(code, getGoogleRedirectUri(origin));
     const profile = await fetchGoogleUserInfo(tokens.access_token);
 
     await upsertGoogleSender({

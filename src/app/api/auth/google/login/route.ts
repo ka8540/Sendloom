@@ -8,6 +8,7 @@ import { buildGoogleLoginUrl } from "@/lib/google";
 const GOOGLE_LOGIN_STATE_COOKIE = "sendloom_google_login_state";
 
 export async function GET(request: Request) {
+  const origin = new URL(request.url).origin;
   const state = crypto.randomBytes(32).toString("hex");
   const store = await cookies();
 
@@ -20,7 +21,12 @@ export async function GET(request: Request) {
   });
 
   try {
-    return NextResponse.redirect(buildGoogleLoginUrl({ state }));
+    return NextResponse.redirect(
+      buildGoogleLoginUrl({
+        state,
+        redirectUri: `${origin}/api/auth/google/login/callback`
+      })
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : "google_login_unavailable";
     return NextResponse.redirect(new URL(`/login?error=${encodeURIComponent(message)}`, request.url));

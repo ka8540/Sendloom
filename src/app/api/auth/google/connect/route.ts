@@ -9,6 +9,7 @@ import { buildGoogleConnectUrl } from "@/lib/google";
 const GOOGLE_STATE_COOKIE = "sendloom_google_oauth_state";
 
 export async function GET(request: Request) {
+  const origin = new URL(request.url).origin;
   const user = await getSessionUser();
 
   if (!user) {
@@ -29,7 +30,8 @@ export async function GET(request: Request) {
     return NextResponse.redirect(
       buildGoogleConnectUrl({
         state,
-        loginHint: user.email
+        loginHint: user.email,
+        redirectUri: `${origin}/api/auth/google/callback`
       })
     );
   } catch (error) {

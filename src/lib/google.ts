@@ -32,12 +32,12 @@ type GoogleUserInfo = {
   picture?: string;
 };
 
-export function getGoogleRedirectUri() {
-  return `${env.APP_BASE_URL}/api/auth/google/callback`;
+export function getGoogleRedirectUri(baseUrl = env.APP_BASE_URL) {
+  return `${baseUrl}/api/auth/google/callback`;
 }
 
-export function getGoogleLoginRedirectUri() {
-  return `${env.APP_BASE_URL}/api/auth/google/login/callback`;
+export function getGoogleLoginRedirectUri(baseUrl = env.APP_BASE_URL) {
+  return `${baseUrl}/api/auth/google/login/callback`;
 }
 
 export function assertGoogleOAuthConfigured() {
@@ -79,23 +79,23 @@ function buildGoogleUrl(args: {
   return url;
 }
 
-export function buildGoogleConnectUrl(args: { state: string; loginHint?: string }) {
+export function buildGoogleConnectUrl(args: { state: string; loginHint?: string; redirectUri?: string }) {
   return buildGoogleUrl({
     state: args.state,
     loginHint: args.loginHint,
     scopes: GOOGLE_OAUTH_SCOPES,
-    redirectUri: getGoogleRedirectUri(),
+    redirectUri: args.redirectUri ?? getGoogleRedirectUri(),
     accessType: "offline",
     prompt: "consent"
   });
 }
 
-export function buildGoogleLoginUrl(args: { state: string; loginHint?: string }) {
+export function buildGoogleLoginUrl(args: { state: string; loginHint?: string; redirectUri?: string }) {
   return buildGoogleUrl({
     state: args.state,
     loginHint: args.loginHint,
     scopes: GOOGLE_LOGIN_SCOPES,
-    redirectUri: getGoogleLoginRedirectUri(),
+    redirectUri: args.redirectUri ?? getGoogleLoginRedirectUri(),
     accessType: "online",
     prompt: "select_account"
   });
