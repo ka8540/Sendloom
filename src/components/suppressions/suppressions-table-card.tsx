@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import clsx from "clsx";
-import { CircleSlash, RotateCcw } from "lucide-react";
+import { ChevronLeft, ChevronRight, CircleSlash, RotateCcw } from "lucide-react";
 
 import { formatSuppressionSource, SUPPRESSION_REASON_LABELS } from "@/components/suppressions/suppression-badge";
 import { SuppressionLogHeader } from "@/components/suppressions/suppression-log-header";
@@ -23,17 +23,22 @@ type SuppressionsTableCardProps = {
   onUndoDelete: () => void;
 };
 
+const PAGE_SIZE = 10;
+
 export function SuppressionsTableCard(props: SuppressionsTableCardProps) {
   const [search, setSearch] = useState("");
   const [reasonFilter, setReasonFilter] = useState<"ALL" | SuppressionReason>("ALL");
   const [sourceFilter, setSourceFilter] = useState("ALL");
   const [sort, setSort] = useState<SuppressionSortOption>("updated-desc");
+  const [currentPage, setCurrentPage] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(props.preferredSelectionId);
 
   useEffect(() => {
-    if (props.preferredSelectionId) {
-      setSelectedId(props.preferredSelectionId);
+    if (!props.preferredSelectionId) {
+      return;
     }
+
+    setSelectedId(props.preferredSelectionId);
   }, [props.preferredSelectionId]);
 
   const sourceOptions = Array.from(new Set(props.suppressions.map((entry) => entry.source))).sort((left, right) =>
@@ -70,22 +75,50 @@ export function SuppressionsTableCard(props: SuppressionsTableCardProps) {
     }
   });
 
+  const totalPages = Math.max(1, Math.ceil(sortedRows.length / PAGE_SIZE));
+
   useEffect(() => {
-    if (!sortedRows.length) {
+    setCurrentPage(1);
+  }, [search, reasonFilter, sourceFilter, sort]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  useEffect(() => {
+    if (!props.preferredSelectionId) {
+      return;
+    }
+
+    const index = sortedRows.findIndex((entry) => entry.id === props.preferredSelectionId);
+
+    if (index !== -1) {
+      setCurrentPage(Math.floor(index / PAGE_SIZE) + 1);
+    }
+  }, [props.preferredSelectionId, sortedRows]);
+
+  const pageStart = (currentPage - 1) * PAGE_SIZE;
+  const pageEnd = pageStart + PAGE_SIZE;
+  const currentRows = sortedRows.slice(pageStart, pageEnd);
+
+  useEffect(() => {
+    if (!currentRows.length) {
       if (selectedId !== null) {
         setSelectedId(null);
       }
       return;
     }
 
-    if (selectedId && sortedRows.some((entry) => entry.id === selectedId)) {
+    if (selectedId && currentRows.some((entry) => entry.id === selectedId)) {
       return;
     }
 
-    setSelectedId(sortedRows[0].id);
-  }, [selectedId, sortedRows]);
+    setSelectedId(currentRows[0].id);
+  }, [currentRows, selectedId]);
 
-  const selectedSuppression = sortedRows.find((entry) => entry.id === selectedId) ?? null;
+  const selectedSuppression = currentRows.find((entry) => entry.id === selectedId) ?? null;
   const filtersActive = Boolean(search.trim()) || reasonFilter !== "ALL" || sourceFilter !== "ALL";
   const automatedCount = props.suppressions.filter((entry) => entry.source !== "manual").length;
   const lastUpdatedAt = props.suppressions[0]?.updatedAt ?? null;
@@ -142,8 +175,8 @@ export function SuppressionsTableCard(props: SuppressionsTableCardProps) {
           </div>
 
           <div className={styles.tableBody}>
-            {sortedRows.length ? (
-              sortedRows.map((entry) => (
+            {currentRows.length ? (
+              currentRows.map((entry) => (
                 <div
                   key={entry.id}
                   className={clsx(styles.tableRow, entry.id === selectedId ? styles.tableRowActive : undefined)}
@@ -173,6 +206,37 @@ export function SuppressionsTableCard(props: SuppressionsTableCardProps) {
               </div>
             )}
           </div>
+
+          {sortedRows.length > PAGE_SIZE ? (
+            <div className={styles.paginationBar}>
+              <span className={styles.paginationSummary}>
+                Showing {pageStart + 1}-{Math.min(pageEnd, sortedRows.length)} of {sortedRows.length}
+              </span>
+              <div className={styles.paginationControls}>
+                <button
+                  className={styles.paginationButton}
+                  type="button"
+                  onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                  aria-label="Previous suppression page"
+                  disabled={currentPage === 1}
+                >
+                  <ChevronLeft aria-hidden="true" />
+                </button>
+                <span className={styles.paginationCount}>
+                  {currentPage} / {totalPages}
+                </span>
+                <button
+                  className={styles.paginationButton}
+                  type="button"
+                  onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                  aria-label="Next suppression page"
+                  disabled={currentPage === totalPages}
+                >
+                  <ChevronRight aria-hidden="true" />
+                </button>
+              </div>
+            </div>
+          ) : null}
         </div>
 
         {selectedSuppression ? (
