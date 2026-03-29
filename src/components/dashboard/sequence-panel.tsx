@@ -1,18 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { Search } from "lucide-react";
-import { useMemo, useState } from "react";
+import { ChevronLeft, ChevronRight, Search } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
 import type { SequenceRowData } from "@/components/dashboard/types";
 import { SequenceRow } from "./sequence-row";
 import styles from "./overview-command-center.module.css";
+
+const PAGE_SIZE = 10;
 
 export function SequencePanel({ rows }: { rows: SequenceRowData[] }) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
   const [focus, setFocus] = useState("recent");
   const [sort, setSort] = useState("activity");
+  const [currentPage, setCurrentPage] = useState(1);
 
   const filteredRows = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -46,6 +49,25 @@ export function SequencePanel({ rows }: { rows: SequenceRowData[] }) {
 
     return nextRows;
   }, [focus, query, rows, sort, status]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
+  const clampedPage = Math.min(currentPage, totalPages);
+  const pagedRows = useMemo(
+    () => filteredRows.slice((clampedPage - 1) * PAGE_SIZE, clampedPage * PAGE_SIZE),
+    [clampedPage, filteredRows]
+  );
+  const showingFrom = filteredRows.length ? (clampedPage - 1) * PAGE_SIZE + 1 : 0;
+  const showingTo = Math.min(clampedPage * PAGE_SIZE, filteredRows.length);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [query, status, focus, sort]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   return (
     <>
@@ -94,11 +116,41 @@ export function SequencePanel({ rows }: { rows: SequenceRowData[] }) {
       </div>
 
       {filteredRows.length ? (
-        <div className={styles.sequenceList}>
-          {filteredRows.map((sequence) => (
-            <SequenceRow key={sequence.id} sequence={sequence} />
-          ))}
-        </div>
+        <>
+          <div className={styles.sequenceList}>
+            {pagedRows.map((sequence) => (
+              <SequenceRow key={sequence.id} sequence={sequence} />
+            ))}
+          </div>
+          <div className={styles.sequencePagination}>
+            <span className={styles.sequencePaginationSummary}>
+              Showing {showingFrom}-{showingTo} of {filteredRows.length}
+            </span>
+            <div className={styles.sequencePaginationControls}>
+              <button
+                type="button"
+                className={styles.sequencePaginationButton}
+                onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                disabled={clampedPage === 1}
+                aria-label="Show previous sequences"
+              >
+                <ChevronLeft aria-hidden="true" />
+              </button>
+              <span className={styles.sequencePaginationPage}>
+                {clampedPage} / {totalPages}
+              </span>
+              <button
+                type="button"
+                className={styles.sequencePaginationButton}
+                onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                disabled={clampedPage === totalPages}
+                aria-label="Show next sequences"
+              >
+                <ChevronRight aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+        </>
       ) : (
         <div className={styles.sequenceEmpty}>
           <Search aria-hidden="true" />

@@ -648,14 +648,24 @@
   align-items: center;
   justify-content: center;
   gap: 0.4rem;
-  min-height: 2.5rem;
-  padding: 0.62rem 0.88rem;
+  min-height: 2.75rem;
+  min-width: 2.75rem;
+  width: 2.75rem;
+  padding: 0.62rem;
   border-radius: 999px;
   border: 1px solid var(--field-border);
   background: var(--field-bg);
   color: var(--text);
   font-weight: 700;
-  transition: transform 160ms ease, border-color 180ms ease, background-color 180ms ease;
+  overflow: hidden;
+  white-space: nowrap;
+  transition:
+    width 180ms ease,
+    padding 180ms ease,
+    transform 160ms ease,
+    border-color 180ms ease,
+    background-color 180ms ease,
+    box-shadow 180ms ease;
 }
 
 .sequenceActionButton svg {
@@ -663,11 +673,42 @@
   height: 0.92rem;
 }
 
+.sequenceActionIconWrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+}
+
+.sequenceActionLabel {
+  max-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateX(-0.25rem);
+  transition: max-width 180ms ease, opacity 180ms ease, transform 180ms ease;
+}
+
+.sequenceActionButton:hover,
+.sequenceActionButton:focus-visible {
+  width: auto;
+  padding-inline: 0.88rem 1rem;
+}
+
+.sequenceActionButton:hover .sequenceActionLabel,
+.sequenceActionButton:focus-visible .sequenceActionLabel {
+  max-width: 6rem;
+  opacity: 1;
+  transform: translateX(0);
+}
+
 .sequenceActionButton:hover:not(:disabled),
 .sequenceActionButton:focus-visible {
   transform: translateY(-1px);
   border-color: color-mix(in srgb, var(--accent) 18%, var(--field-border));
   background: color-mix(in srgb, var(--field-bg) 74%, var(--accent-soft) 26%);
+  box-shadow: 0 12px 24px rgba(28, 42, 70, 0.14);
   outline: none;
 }
 
@@ -701,6 +742,63 @@
   width: 100%;
   color: #f0a29a;
   font-size: 0.85rem;
+}
+
+.sequencePagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-top: 0.2rem;
+}
+
+.sequencePaginationSummary,
+.sequencePaginationPage {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.sequencePaginationControls {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.sequencePaginationButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-soft) 92%, transparent);
+  color: var(--text);
+  transition: transform 160ms ease, border-color 180ms ease, background-color 180ms ease, box-shadow 180ms ease;
+}
+
+.sequencePaginationButton svg {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+.sequencePaginationButton:hover:not(:disabled),
+.sequencePaginationButton:focus-visible {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent) 18%, var(--line));
+  background: color-mix(in srgb, var(--surface-soft) 72%, var(--accent-soft) 28%);
+  box-shadow: 0 12px 24px rgba(28, 42, 70, 0.14);
+  outline: none;
+}
+
+.sequencePaginationButton:active:not(:disabled) {
+  transform: translateY(1px) scale(0.985);
+}
+
+.sequencePaginationButton:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
 }
 
 .sequenceArrow {
@@ -936,6 +1034,11 @@
     transform: none;
     justify-content: flex-start;
   }
+
+  .sequencePagination {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }
 
 @media (max-width: 760px) {
@@ -964,6 +1067,11 @@
   .heroButtonPrimary,
   .heroButtonSecondary,
   .sequenceActionButton {
+    width: 100%;
+  }
+
+  .sequenceActionButton:hover,
+  .sequenceActionButton:focus-visible {
     width: 100%;
   }
 

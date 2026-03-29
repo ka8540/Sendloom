@@ -7,8 +7,7 @@ import {
   SendHorizontal,
   ShieldAlert,
   Sparkles,
-  ScrollText,
-  Search
+  ScrollText
 } from "lucide-react";
 
 import { requireOperatorUser } from "@/lib/auth";
@@ -187,7 +186,6 @@ export default async function OverviewCommandCenter() {
       where: {
         userId: user.id
       },
-      take: 6,
       orderBy: {
         updatedAt: "desc"
       },

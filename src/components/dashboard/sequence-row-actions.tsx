@@ -1,8 +1,6 @@
-"use client";
-
 import type { Route } from "next";
 import Link from "next/link";
-import { LoaderCircle, Play, Trash2 } from "lucide-react";
+import { Eye, LoaderCircle, Play, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, type MouseEvent } from "react";
 
@@ -82,8 +80,11 @@ export function SequenceRowActions({
 
   return (
     <div className={styles.sequenceActionGroup} onClick={(event) => event.stopPropagation()}>
-      <Link href={href} className={`${styles.sequenceActionButton} ${styles.sequenceActionView}`}>
-        View
+      <Link href={href} className={`${styles.sequenceActionButton} ${styles.sequenceActionView}`} aria-label={`View ${campaignName}`}>
+        <span className={styles.sequenceActionIconWrap}>
+          <Eye aria-hidden="true" />
+        </span>
+        <span className={styles.sequenceActionLabel}>View</span>
       </Link>
       <button
         type="button"
@@ -91,18 +92,24 @@ export function SequenceRowActions({
         onClick={(event) => void handleRelaunch(event)}
         disabled={!canRelaunch || Boolean(pendingAction)}
         title={canRelaunch ? "Relaunch sequence" : "Launch becomes available after validation or when the current run finishes."}
+        aria-label={canRelaunch ? `Relaunch ${campaignName}` : `${campaignName} is busy`}
       >
-        {pendingAction === "launch" ? <LoaderCircle className={styles.spin} aria-hidden="true" /> : <Play aria-hidden="true" />}
-        <span>{canRelaunch ? "Relaunch" : "Busy"}</span>
+        <span className={styles.sequenceActionIconWrap}>
+          {pendingAction === "launch" ? <LoaderCircle className={styles.spin} aria-hidden="true" /> : <Play aria-hidden="true" />}
+        </span>
+        <span className={styles.sequenceActionLabel}>{canRelaunch ? "Relaunch" : "Busy"}</span>
       </button>
       <button
         type="button"
         className={`${styles.sequenceActionButton} ${styles.sequenceActionDanger}`}
         onClick={(event) => void handleDelete(event)}
         disabled={Boolean(pendingAction)}
+        aria-label={`Delete ${campaignName}`}
       >
-        {pendingAction === "delete" ? <LoaderCircle className={styles.spin} aria-hidden="true" /> : <Trash2 aria-hidden="true" />}
-        <span>Delete</span>
+        <span className={styles.sequenceActionIconWrap}>
+          {pendingAction === "delete" ? <LoaderCircle className={styles.spin} aria-hidden="true" /> : <Trash2 aria-hidden="true" />}
+        </span>
+        <span className={styles.sequenceActionLabel}>Delete</span>
       </button>
       {error ? <span className={styles.sequenceActionError}>{error}</span> : null}
     </div>
