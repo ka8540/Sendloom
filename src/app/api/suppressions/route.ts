@@ -7,7 +7,8 @@ import { listSuppressions, suppressEmail } from "@/services/suppressions";
 const schema = z.object({
   email: z.string().email(),
   reason: z.enum(["UNSUBSCRIBED", "HARD_BOUNCE", "COMPLAINT", "INVALID_EMAIL", "MANUAL_BLOCK"]),
-  notes: z.string().optional()
+  notes: z.string().optional(),
+  source: z.string().min(1).max(64).optional()
 });
 
 export async function GET() {
@@ -26,5 +27,7 @@ export async function POST(request: Request) {
   }
 
   const payload = schema.parse(await request.json());
-  return NextResponse.json(await suppressEmail(auth.user.id, payload.email, payload.reason, "manual", payload.notes));
+  return NextResponse.json(
+    await suppressEmail(auth.user.id, payload.email, payload.reason, payload.source?.trim() || "manual", payload.notes)
+  );
 }

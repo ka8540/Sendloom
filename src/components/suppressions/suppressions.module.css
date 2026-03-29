@@ -1,0 +1,810 @@
+.workspacePage {
+  padding: 0.5rem 0 2rem;
+}
+
+.workspaceGrid {
+  display: grid;
+  grid-template-columns: minmax(320px, 388px) minmax(0, 1fr);
+  gap: 1.5rem;
+  align-items: flex-start;
+}
+
+.leftColumn {
+  min-width: 0;
+}
+
+.rightColumn {
+  min-width: 0;
+}
+
+.formCard,
+.dataCard {
+  position: relative;
+  overflow: hidden;
+  border-radius: 28px;
+  border: 1px solid color-mix(in srgb, var(--line) 90%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-strong) 90%, transparent), color-mix(in srgb, var(--surface) 98%, transparent)),
+    radial-gradient(circle at top right, color-mix(in srgb, var(--accent-soft-strong) 70%, transparent), transparent 14rem);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 24px 70px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(18px);
+}
+
+.formCard {
+  display: grid;
+  gap: 1.25rem;
+  padding: 1.35rem;
+  position: sticky;
+  top: 1rem;
+}
+
+.dataCard {
+  display: grid;
+  gap: 1.25rem;
+  padding: 1.4rem;
+}
+
+.sectionEyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent-strong);
+}
+
+.formCardHeader {
+  display: grid;
+  gap: 1rem;
+}
+
+.formCardTitleWrap,
+.dataCardCopy {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.formTitle,
+.dataTitle {
+  margin: 0;
+  font-size: clamp(1.65rem, 2.2vw, 2.35rem);
+  letter-spacing: -0.06em;
+  line-height: 1.02;
+}
+
+.formSubtitle,
+.dataSubtitle {
+  margin: 0;
+  max-width: 44rem;
+  color: var(--muted);
+  font-size: 0.98rem;
+  line-height: 1.6;
+}
+
+.metricStack,
+.dataMetrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.metricPanel,
+.dataMetric {
+  padding: 0.9rem 0.95rem;
+  border-radius: 20px;
+  border: 1px solid color-mix(in srgb, var(--line) 85%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-soft) 98%, transparent), color-mix(in srgb, var(--surface-muted) 96%, transparent));
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.08);
+}
+
+.metricPanel span,
+.dataMetric span {
+  display: block;
+  margin-bottom: 0.35rem;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.metricPanel strong,
+.dataMetric strong {
+  display: block;
+  font-size: 1.2rem;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+}
+
+.formBody {
+  display: grid;
+  gap: 1rem;
+}
+
+.fieldGroup {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.inlineFields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.85rem;
+}
+
+.fieldLabel {
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.fieldHint,
+.characterCount {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.83rem;
+}
+
+.characterCount {
+  font-weight: 700;
+}
+
+.inputShell,
+.selectShell,
+.textareaShell,
+.searchShell,
+.controlShell {
+  position: relative;
+}
+
+.inputShell input,
+.selectShell select,
+.textareaShell textarea,
+.searchShell input,
+.controlShell select {
+  width: 100%;
+  border-radius: 18px;
+  border: 1px solid var(--field-border);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--field-bg) 90%, var(--surface-soft)), color-mix(in srgb, var(--surface-ghost) 84%, transparent));
+  color: var(--text);
+  transition:
+    border-color 180ms ease,
+    background-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+
+.inputShell input,
+.selectShell select,
+.searchShell input,
+.controlShell select {
+  min-height: 3.4rem;
+  padding: 0 1rem 0 3rem;
+}
+
+.textareaShell textarea {
+  min-height: 9.5rem;
+  resize: vertical;
+  padding: 0.95rem 1rem 1rem 3rem;
+}
+
+.inputShell input::placeholder,
+.textareaShell textarea::placeholder,
+.searchShell input::placeholder {
+  color: color-mix(in srgb, var(--muted) 82%, transparent);
+}
+
+.inputShell input:focus-visible,
+.selectShell select:focus-visible,
+.textareaShell textarea:focus-visible,
+.searchShell input:focus-visible,
+.controlShell select:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--field-focus) 92%, transparent);
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--accent-soft-strong) 65%, transparent),
+    0 18px 40px rgba(0, 0, 0, 0.12);
+}
+
+.inputShell input:hover,
+.selectShell select:hover,
+.textareaShell textarea:hover,
+.searchShell input:hover,
+.controlShell select:hover {
+  border-color: color-mix(in srgb, var(--field-focus) 42%, var(--field-border));
+}
+
+.inputIcon {
+  position: absolute;
+  top: 1.05rem;
+  left: 1rem;
+  width: 1rem;
+  height: 1rem;
+  color: color-mix(in srgb, var(--muted) 84%, transparent);
+  pointer-events: none;
+}
+
+.fieldError {
+  border-color: rgba(215, 79, 79, 0.52) !important;
+  box-shadow: 0 0 0 4px rgba(215, 79, 79, 0.1);
+}
+
+.fieldMetaRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.guidanceCard {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.8rem;
+  padding: 1rem 1rem 1.05rem;
+  border-radius: 20px;
+  border: 1px solid color-mix(in srgb, var(--line) 86%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 70%, transparent), color-mix(in srgb, var(--surface-muted) 96%, transparent));
+}
+
+.guidanceCard svg {
+  margin-top: 0.1rem;
+  width: 1rem;
+  height: 1rem;
+  color: var(--accent-strong);
+  flex-shrink: 0;
+}
+
+.guidanceCard strong {
+  display: block;
+  margin-bottom: 0.15rem;
+  font-size: 0.92rem;
+}
+
+.guidanceCard p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.formFooter {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.primaryButton,
+.secondaryButton,
+.ghostButton,
+.destructiveButton,
+.iconButton {
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    background-color 180ms ease,
+    box-shadow 180ms ease,
+    color 180ms ease,
+    opacity 180ms ease;
+}
+
+.primaryButton,
+.secondaryButton,
+.ghostButton,
+.destructiveButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+  min-height: 3.25rem;
+  border-radius: 16px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  cursor: pointer;
+}
+
+.primaryButton {
+  border: 1px solid color-mix(in srgb, var(--accent-strong) 40%, transparent);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 92%, transparent), color-mix(in srgb, var(--accent-strong) 82%, transparent));
+  color: #f7fff9;
+  box-shadow:
+    0 16px 34px color-mix(in srgb, var(--accent-soft-strong) 72%, transparent),
+    0 1px 0 rgba(255, 255, 255, 0.12) inset;
+}
+
+.primaryButton:hover:not(:disabled),
+.secondaryButton:hover:not(:disabled),
+.ghostButton:hover:not(:disabled),
+.destructiveButton:hover:not(:disabled),
+.iconButton:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.primaryButton:active:not(:disabled),
+.secondaryButton:active:not(:disabled),
+.ghostButton:active:not(:disabled),
+.destructiveButton:active:not(:disabled),
+.iconButton:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.secondaryButton,
+.ghostButton {
+  border: 1px solid color-mix(in srgb, var(--line) 92%, transparent);
+  background: color-mix(in srgb, var(--surface-muted) 94%, transparent);
+  color: var(--text);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.08);
+}
+
+.destructiveButton {
+  border: 1px solid rgba(190, 79, 67, 0.3);
+  background: linear-gradient(180deg, rgba(190, 79, 67, 0.16), rgba(190, 79, 67, 0.1));
+  color: #f1b4ac;
+  box-shadow: 0 12px 24px rgba(95, 24, 17, 0.16);
+}
+
+.secondaryButton:disabled,
+.ghostButton:disabled,
+.destructiveButton:disabled,
+.primaryButton:disabled,
+.iconButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+  transform: none;
+  box-shadow: none;
+}
+
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.7rem;
+  height: 2.7rem;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--line) 92%, transparent);
+  background: color-mix(in srgb, var(--surface-muted) 92%, transparent);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.iconButtonActive {
+  border-color: color-mix(in srgb, var(--accent-soft-strong) 72%, transparent);
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent-soft) 72%, transparent);
+}
+
+.iconButtonDanger {
+  color: #f0a79f;
+}
+
+.iconButtonDanger:hover:not(:disabled) {
+  border-color: rgba(190, 79, 67, 0.32);
+  background: rgba(190, 79, 67, 0.14);
+}
+
+.errorText,
+.successText {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.errorText {
+  color: #f0a79f;
+}
+
+.successText {
+  color: var(--success);
+}
+
+.dataCardHeader {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1rem;
+  align-items: end;
+}
+
+.feedbackBanner,
+.undoBanner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.95rem 1rem;
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--line) 85%, transparent);
+  background: color-mix(in srgb, var(--surface-muted) 96%, transparent);
+}
+
+.feedbackSuccess {
+  border-color: color-mix(in srgb, var(--accent-soft-strong) 58%, transparent);
+  background: color-mix(in srgb, var(--accent-soft) 74%, var(--surface-muted));
+}
+
+.feedbackError {
+  border-color: rgba(190, 79, 67, 0.25);
+  background: rgba(190, 79, 67, 0.1);
+}
+
+.undoCopy {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.undoCopy svg {
+  width: 1rem;
+  height: 1rem;
+  color: var(--accent-strong);
+  flex-shrink: 0;
+}
+
+.toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.85rem;
+  align-items: center;
+}
+
+.toolbarControls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.searchShell svg,
+.controlShell svg {
+  position: absolute;
+  top: 1rem;
+  left: 0.95rem;
+  width: 1rem;
+  height: 1rem;
+  color: color-mix(in srgb, var(--muted) 82%, transparent);
+  pointer-events: none;
+}
+
+.dataShell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+}
+
+.dataShellWithRail {
+  grid-template-columns: minmax(0, 1fr) 320px;
+}
+
+.tableSurface,
+.detailRail {
+  border-radius: 22px;
+  border: 1px solid color-mix(in srgb, var(--line) 85%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-soft) 98%, transparent), color-mix(in srgb, var(--surface-muted) 96%, transparent));
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.08);
+}
+
+.tableSurface {
+  overflow: hidden;
+}
+
+.tableHeader,
+.tableRow {
+  display: grid;
+  grid-template-columns: minmax(0, 2.2fr) minmax(0, 1.15fr) minmax(0, 1.1fr) minmax(0, 1fr) auto;
+  gap: 1rem;
+  align-items: center;
+}
+
+.tableHeader {
+  padding: 0.95rem 1.15rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 75%, transparent);
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.actionsHeader {
+  justify-self: end;
+}
+
+.tableBody {
+  display: grid;
+}
+
+.tableRow {
+  padding: 1rem 1.15rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 66%, transparent);
+  cursor: pointer;
+  transition:
+    background-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+
+.tableRow:last-child {
+  border-bottom: none;
+}
+
+.tableRow:hover {
+  background: color-mix(in srgb, var(--surface-hover) 76%, transparent);
+}
+
+.tableRowActive {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 84%, transparent), color-mix(in srgb, var(--surface-hover) 74%, transparent));
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--accent-soft-strong) 44%, transparent) inset;
+}
+
+.emailCell {
+  min-width: 0;
+}
+
+.emailValue,
+.updatedCell span {
+  display: block;
+  font-size: 0.98rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  word-break: break-word;
+}
+
+.emailMeta,
+.updatedCell small {
+  display: block;
+  margin-top: 0.28rem;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.reasonCell,
+.sourceCell,
+.updatedCell {
+  min-width: 0;
+}
+
+.rowActions {
+  display: inline-flex;
+  gap: 0.55rem;
+  justify-self: end;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2rem;
+  padding: 0.36rem 0.72rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  border: 1px solid transparent;
+}
+
+.badgeAmber {
+  color: #ffd28b;
+  background: rgba(173, 111, 23, 0.18);
+  border-color: rgba(173, 111, 23, 0.28);
+}
+
+.badgeRed {
+  color: #ffb2a8;
+  background: rgba(170, 67, 58, 0.18);
+  border-color: rgba(170, 67, 58, 0.28);
+}
+
+.badgeRose {
+  color: #ffc8d0;
+  background: rgba(158, 73, 108, 0.18);
+  border-color: rgba(158, 73, 108, 0.28);
+}
+
+.badgeBlue {
+  color: #b9d5ff;
+  background: rgba(55, 103, 194, 0.18);
+  border-color: rgba(55, 103, 194, 0.28);
+}
+
+.badgeNeutral,
+.sourceBadge {
+  color: var(--text);
+  background: color-mix(in srgb, var(--surface-hover) 82%, transparent);
+  border-color: color-mix(in srgb, var(--line) 78%, transparent);
+}
+
+.detailRail {
+  display: grid;
+  gap: 1rem;
+  padding: 1.15rem;
+  align-self: start;
+}
+
+.detailRailHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.detailRailHeader h3 {
+  margin: 0.35rem 0 0;
+  font-size: 1.16rem;
+  letter-spacing: -0.04em;
+  word-break: break-word;
+}
+
+.detailPills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.detailList {
+  display: grid;
+  gap: 0.8rem;
+  margin: 0;
+}
+
+.detailItem {
+  display: grid;
+  gap: 0.2rem;
+  padding-bottom: 0.8rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+}
+
+.detailItem:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.detailItem dt {
+  color: var(--muted);
+  font-size: 0.77rem;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.detailItem dd {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.notePanel {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.95rem;
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--line) 74%, transparent);
+  background: color-mix(in srgb, var(--surface-hover) 68%, transparent);
+}
+
+.notePanelLabel {
+  color: var(--muted);
+  font-size: 0.77rem;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.notePanel p {
+  margin: 0;
+  color: var(--text);
+  line-height: 1.6;
+}
+
+.detailActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+}
+
+.emptyState {
+  display: grid;
+  justify-items: center;
+  gap: 0.65rem;
+  padding: 3.5rem 1.5rem;
+  text-align: center;
+}
+
+.emptyState svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  color: var(--muted);
+}
+
+.emptyState strong {
+  font-size: 1rem;
+}
+
+.emptyState p {
+  margin: 0;
+  max-width: 28rem;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+@media (max-width: 1260px) {
+  .workspaceGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .formCard {
+    position: static;
+  }
+
+  .dataShellWithRail {
+    grid-template-columns: 1fr;
+  }
+
+  .dataCardHeader,
+  .toolbar {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 980px) {
+  .metricStack,
+  .dataMetrics,
+  .tableHeader,
+  .tableRow {
+    grid-template-columns: 1fr;
+  }
+
+  .tableHeader {
+    display: none;
+  }
+
+  .tableRow {
+    gap: 0.7rem;
+  }
+
+  .rowActions {
+    justify-self: start;
+  }
+
+  .actionsHeader {
+    justify-self: start;
+  }
+}
+
+@media (max-width: 720px) {
+  .workspacePage {
+    padding-bottom: 1rem;
+  }
+
+  .formCard,
+  .dataCard {
+    padding: 1rem;
+    border-radius: 22px;
+  }
+
+  .toolbarControls,
+  .detailActions,
+  .fieldMetaRow,
+  .undoBanner {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .feedbackBanner,
+  .undoBanner {
+    align-items: flex-start;
+  }
+}
