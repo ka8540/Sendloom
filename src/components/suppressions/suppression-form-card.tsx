@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition, type ChangeEvent, type FormEvent } from "react";
-import { AlertTriangle, AtSign, FileText, Plus, ShieldAlert, ShieldBan } from "lucide-react";
+import { AlertTriangle, AtSign, ChevronDown, FileText, Plus, ShieldBan } from "lucide-react";
 
 import { SUPPRESSION_REASON_LABELS } from "@/components/suppressions/suppression-badge";
 import type { SuppressionReason, SuppressionRecord } from "@/components/suppressions/types";
@@ -134,35 +134,37 @@ export function SuppressionFormCard(props: SuppressionFormCardProps) {
 
   return (
     <section className={styles.formCard}>
-      <div className={styles.formCardHeader}>
-        <div className={styles.formCardTitleWrap}>
-          <span className={styles.sectionEyebrow}>Suppression controls</span>
-          <h1 className={styles.formTitle}>Add suppression</h1>
-          <p className={styles.formSubtitle}>
-            Block a recipient instantly without leaving the sending workflow. Designed for speed when issues surface mid-campaign.
-          </p>
+      <div className={styles.formHero}>
+        <div className={styles.formHeroIcon}>
+          <ShieldBan aria-hidden="true" />
         </div>
 
-        <div className={styles.metricStack}>
-          <div className={styles.metricPanel}>
-            <span>Total</span>
-            <strong>{props.totalSuppressions}</strong>
-          </div>
-          <div className={styles.metricPanel}>
-            <span>Automated</span>
-            <strong>{props.automatedSuppressions}</strong>
-          </div>
-          <div className={styles.metricPanel}>
-            <span>Critical</span>
-            <strong>{props.criticalSuppressions}</strong>
-          </div>
+        <div className={styles.formCardTitleWrap}>
+          <span className={styles.sectionEyebrow}>New suppression</span>
+          <h1 className={styles.formTitle}>Block a recipient</h1>
+          <p className={styles.formSubtitle}>Skip future sends instantly and keep a clean audit trail for the team.</p>
+        </div>
+      </div>
+
+      <div className={styles.metricRail}>
+        <div className={styles.metricChip}>
+          <span className={styles.metricLabel}>Total</span>
+          <strong className={styles.metricValue}>{props.totalSuppressions}</strong>
+        </div>
+        <div className={styles.metricChip}>
+          <span className={styles.metricLabel}>Automated</span>
+          <strong className={styles.metricValue}>{props.automatedSuppressions}</strong>
+        </div>
+        <div className={styles.metricChip}>
+          <span className={styles.metricLabel}>Critical</span>
+          <strong className={styles.metricValue}>{props.criticalSuppressions}</strong>
         </div>
       </div>
 
       <form className={styles.formBody} onSubmit={onSubmit}>
         <div className={styles.fieldGroup}>
           <label className={styles.fieldLabel} htmlFor="suppression-email">
-            Recipient email
+            Email
           </label>
           <div className={styles.inputShell}>
             <AtSign className={styles.inputIcon} aria-hidden="true" />
@@ -177,39 +179,42 @@ export function SuppressionFormCard(props: SuppressionFormCardProps) {
               className={errors.email ? styles.fieldError : undefined}
             />
           </div>
-          {errors.email ? <p className={styles.errorText}>{errors.email}</p> : <p className={styles.fieldHint}>Normalized and applied instantly across future sends.</p>}
-        </div>
-
-        <div className={styles.inlineFields}>
-          <div className={styles.fieldGroup}>
-            <label className={styles.fieldLabel} htmlFor="suppression-reason">
-              Reason
-            </label>
-            <div className={styles.selectShell}>
-              <ShieldBan className={styles.inputIcon} aria-hidden="true" />
-              <select id="suppression-reason" name="reason" value={values.reason} onChange={onReasonChange}>
-                {REASON_OPTIONS.map((reason) => (
-                  <option key={reason} value={reason}>
-                    {SUPPRESSION_REASON_LABELS[reason]}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className={styles.guidanceCard}>
-            <ShieldAlert aria-hidden="true" />
-            <div>
-              <strong>Fastest route</strong>
-              <p>Use manual block for one-off operator decisions. Automated sources stay preserved in the activity table.</p>
-            </div>
-          </div>
+          {errors.email ? <p className={styles.errorText}>{errors.email}</p> : <p className={styles.fieldHint}>Normalized automatically and applied to future sends.</p>}
         </div>
 
         <div className={styles.fieldGroup}>
-          <label className={styles.fieldLabel} htmlFor="suppression-notes">
-            Context notes
-          </label>
+          <div className={styles.fieldHeader}>
+            <label className={styles.fieldLabel} htmlFor="suppression-reason">
+              Reason
+            </label>
+            <span className={styles.fieldHint}>Fastest for operators: manual block</span>
+          </div>
+
+          <div className={styles.selectShell}>
+            <select id="suppression-reason" name="reason" value={values.reason} onChange={onReasonChange}>
+              {REASON_OPTIONS.map((reason) => (
+                <option key={reason} value={reason}>
+                  {SUPPRESSION_REASON_LABELS[reason]}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className={styles.selectChevron} aria-hidden="true" />
+          </div>
+        </div>
+
+        <div className={styles.helperNote}>
+          <strong>Operator note</strong>
+          <span>Use this for manual triage. Webhook and unsubscribe sources stay visible in the table automatically.</span>
+        </div>
+
+        <div className={styles.fieldGroup}>
+          <div className={styles.fieldHeader}>
+            <label className={styles.fieldLabel} htmlFor="suppression-notes">
+              Notes
+            </label>
+            <span className={styles.characterCount}>{values.notes.trim().length}/240</span>
+          </div>
+
           <div className={styles.textareaShell}>
             <FileText className={styles.inputIcon} aria-hidden="true" />
             <textarea
@@ -219,13 +224,10 @@ export function SuppressionFormCard(props: SuppressionFormCardProps) {
               value={values.notes}
               onChange={onNotesChange}
               className={errors.notes ? styles.fieldError : undefined}
-              rows={5}
+              rows={4}
             />
           </div>
-          <div className={styles.fieldMetaRow}>
-            {errors.notes ? <p className={styles.errorText}>{errors.notes}</p> : <p className={styles.fieldHint}>Notes stay attached to the suppression for auditability.</p>}
-            <span className={styles.characterCount}>{values.notes.trim().length}/240</span>
-          </div>
+          {errors.notes ? <p className={styles.errorText}>{errors.notes}</p> : <p className={styles.fieldHint}>Attached to the suppression for future review.</p>}
         </div>
 
         <div className={styles.formFooter}>

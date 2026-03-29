@@ -3,13 +3,11 @@
 import { useEffect, useState } from "react";
 import clsx from "clsx";
 import {
-  ArrowDownUp,
+  ChevronDown,
+  CircleSlash,
   Eye,
-  Filter,
-  Mail,
   RotateCcw,
   Search,
-  ShieldBan,
   Trash2,
   X
 } from "lucide-react";
@@ -38,7 +36,7 @@ type SuppressionsTableCardProps = {
 const SORT_OPTIONS: Array<{ value: SuppressionSortOption; label: string }> = [
   { value: "updated-desc", label: "Newest first" },
   { value: "updated-asc", label: "Oldest first" },
-  { value: "email-asc", label: "Email A–Z" },
+  { value: "email-asc", label: "Email A-Z" },
   { value: "reason-asc", label: "Reason" },
   { value: "source-asc", label: "Source" }
 ];
@@ -96,11 +94,12 @@ export function SuppressionsTableCard(props: SuppressionsTableCardProps) {
   );
 
   const filteredRows = props.suppressions.filter((entry) => {
+    const query = search.trim().toLowerCase();
     const matchesSearch =
-      search.trim().length === 0 ||
-      entry.email.toLowerCase().includes(search.trim().toLowerCase()) ||
-      entry.source.toLowerCase().includes(search.trim().toLowerCase()) ||
-      entry.notes?.toLowerCase().includes(search.trim().toLowerCase());
+      query.length === 0 ||
+      entry.email.toLowerCase().includes(query) ||
+      entry.source.toLowerCase().includes(query) ||
+      entry.notes?.toLowerCase().includes(query);
 
     const matchesReason = reasonFilter === "ALL" || entry.reason === reasonFilter;
     const matchesSource = sourceFilter === "ALL" || entry.source === sourceFilter;
@@ -146,14 +145,11 @@ export function SuppressionsTableCard(props: SuppressionsTableCardProps) {
 
   return (
     <section className={styles.dataCard}>
-      <div className={styles.dataCardHeader}>
-        <div className={styles.dataCardCopy}>
+      <div className={styles.dataTopBar}>
+        <div className={styles.dataHeaderMain}>
           <span className={styles.sectionEyebrow}>Suppressed recipients</span>
-          <h2 className={styles.dataTitle}>Review, filter, and reverse suppressions without losing context.</h2>
-          <p className={styles.dataSubtitle}>
-            Built for fast triage. Search by email, isolate the source of suppressions, inspect notes, and undo mistakes without
-            leaving the page.
-          </p>
+          <h2 className={styles.dataTitle}>Suppressed recipients</h2>
+          <p className={styles.dataSubtitle}>Search, sort, inspect, and reverse blocks without leaving the workflow.</p>
         </div>
 
         <div className={styles.dataMetrics}>
@@ -183,7 +179,7 @@ export function SuppressionsTableCard(props: SuppressionsTableCardProps) {
           <div className={styles.undoCopy}>
             <RotateCcw aria-hidden="true" />
             <span>
-              Removed <strong>{props.pendingUndo.email}</strong>. Restore it if this was an operator mistake.
+              Removed <strong>{props.pendingUndo.email}</strong>. Restore it if this was a mistake.
             </span>
           </div>
           <button className={styles.secondaryButton} type="button" onClick={props.onUndoDelete} disabled={props.isUndoPending}>
@@ -199,45 +195,54 @@ export function SuppressionsTableCard(props: SuppressionsTableCardProps) {
             type="search"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search email, notes, or source"
+            placeholder="Search by email, note, or source"
             aria-label="Search suppressions"
           />
         </label>
 
         <div className={styles.toolbarControls}>
-          <label className={styles.controlShell}>
-            <Filter aria-hidden="true" />
-            <select value={reasonFilter} onChange={(event) => setReasonFilter(event.target.value as "ALL" | SuppressionReason)}>
-              <option value="ALL">All reasons</option>
-              {Object.entries(SUPPRESSION_REASON_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
+          <label className={styles.filterGroup}>
+            <span className={styles.filterLabel}>Reason</span>
+            <div className={styles.controlShell}>
+              <select value={reasonFilter} onChange={(event) => setReasonFilter(event.target.value as "ALL" | SuppressionReason)}>
+                <option value="ALL">All reasons</option>
+                {Object.entries(SUPPRESSION_REASON_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className={styles.selectChevron} aria-hidden="true" />
+            </div>
           </label>
 
-          <label className={styles.controlShell}>
-            <ShieldBan aria-hidden="true" />
-            <select value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)}>
-              <option value="ALL">All sources</option>
-              {sourceOptions.map((source) => (
-                <option key={source} value={source}>
-                  {formatSuppressionSource(source)}
-                </option>
-              ))}
-            </select>
+          <label className={styles.filterGroup}>
+            <span className={styles.filterLabel}>Source</span>
+            <div className={styles.controlShell}>
+              <select value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)}>
+                <option value="ALL">All sources</option>
+                {sourceOptions.map((source) => (
+                  <option key={source} value={source}>
+                    {formatSuppressionSource(source)}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className={styles.selectChevron} aria-hidden="true" />
+            </div>
           </label>
 
-          <label className={styles.controlShell}>
-            <ArrowDownUp aria-hidden="true" />
-            <select value={sort} onChange={(event) => setSort(event.target.value as SuppressionSortOption)}>
-              {SORT_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+          <label className={styles.filterGroup}>
+            <span className={styles.filterLabel}>Sort</span>
+            <div className={styles.controlShell}>
+              <select value={sort} onChange={(event) => setSort(event.target.value as SuppressionSortOption)}>
+                {SORT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className={styles.selectChevron} aria-hidden="true" />
+            </div>
           </label>
 
           {filtersActive ? (
@@ -285,7 +290,7 @@ export function SuppressionsTableCard(props: SuppressionsTableCardProps) {
                 >
                   <div className={styles.emailCell}>
                     <span className={styles.emailValue}>{entry.email}</span>
-                    <span className={styles.emailMeta}>{entry.notes?.trim() ? entry.notes : "No internal note attached."}</span>
+                    <span className={styles.emailMeta}>{entry.notes?.trim() ? entry.notes : "No note attached"}</span>
                   </div>
 
                   <div className={styles.reasonCell}>
@@ -324,9 +329,11 @@ export function SuppressionsTableCard(props: SuppressionsTableCardProps) {
               ))
             ) : (
               <div className={styles.emptyState}>
-                <Mail aria-hidden="true" />
-                <strong>No suppressions match this view.</strong>
-                <p>Adjust the search or filters, or add a new suppression from the left-hand control card.</p>
+                <div className={styles.emptyStateIcon}>
+                  <CircleSlash aria-hidden="true" />
+                </div>
+                <strong>No suppressed recipients yet</strong>
+                <p>Add a suppression from the left, or wait for unsubscribe and bounce events to populate this list.</p>
               </div>
             )}
           </div>
@@ -336,7 +343,7 @@ export function SuppressionsTableCard(props: SuppressionsTableCardProps) {
           <aside className={styles.detailRail}>
             <div className={styles.detailRailHeader}>
               <div>
-                <span className={styles.sectionEyebrow}>Inspection</span>
+                <span className={styles.sectionEyebrow}>Selected recipient</span>
                 <h3>{selectedSuppression.email}</h3>
               </div>
               <button className={styles.iconButton} type="button" onClick={() => setSelectedId(null)} aria-label="Close details">
@@ -355,12 +362,12 @@ export function SuppressionsTableCard(props: SuppressionsTableCardProps) {
                 <dd>{formatDateTime(selectedSuppression.createdAt)}</dd>
               </div>
               <div className={styles.detailItem}>
-                <dt>Last updated</dt>
+                <dt>Updated</dt>
                 <dd>{formatDateTime(selectedSuppression.updatedAt)}</dd>
               </div>
               <div className={styles.detailItem}>
-                <dt>Raw source</dt>
-                <dd>{selectedSuppression.source}</dd>
+                <dt>Source</dt>
+                <dd>{formatSuppressionSource(selectedSuppression.source)}</dd>
               </div>
               <div className={styles.detailItem}>
                 <dt>Reason</dt>
@@ -375,7 +382,7 @@ export function SuppressionsTableCard(props: SuppressionsTableCardProps) {
 
             <div className={styles.detailActions}>
               <button className={styles.secondaryButton} type="button" onClick={() => setSearch(selectedSuppression.email)}>
-                Find related
+                Filter to this email
               </button>
               <button
                 className={styles.destructiveButton}

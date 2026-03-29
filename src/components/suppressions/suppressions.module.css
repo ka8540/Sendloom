@@ -1,18 +1,17 @@
 .workspacePage {
-  padding: 0.5rem 0 2rem;
+  width: min(100%, 1620px);
+  margin: 0 auto;
+  padding: 0.75rem 0 2rem;
 }
 
 .workspaceGrid {
   display: grid;
-  grid-template-columns: minmax(320px, 388px) minmax(0, 1fr);
-  gap: 1.5rem;
+  grid-template-columns: minmax(304px, 360px) minmax(0, 1fr);
+  gap: 1.25rem;
   align-items: flex-start;
 }
 
-.leftColumn {
-  min-width: 0;
-}
-
+.leftColumn,
 .rightColumn {
   min-width: 0;
 }
@@ -21,11 +20,11 @@
 .dataCard {
   position: relative;
   overflow: hidden;
-  border-radius: 28px;
-  border: 1px solid color-mix(in srgb, var(--line) 90%, transparent);
+  border-radius: 26px;
+  border: 1px solid color-mix(in srgb, var(--line) 92%, transparent);
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-strong) 90%, transparent), color-mix(in srgb, var(--surface) 98%, transparent)),
-    radial-gradient(circle at top right, color-mix(in srgb, var(--accent-soft-strong) 70%, transparent), transparent 14rem);
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-strong) 94%, transparent), color-mix(in srgb, var(--surface) 98%, transparent)),
+    radial-gradient(circle at top right, color-mix(in srgb, var(--accent-soft-strong) 50%, transparent), transparent 16rem);
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.04) inset,
     0 24px 70px rgba(0, 0, 0, 0.18);
@@ -34,16 +33,16 @@
 
 .formCard {
   display: grid;
-  gap: 1.25rem;
-  padding: 1.35rem;
+  gap: 1rem;
+  padding: 1.25rem;
   position: sticky;
   top: 1rem;
 }
 
 .dataCard {
   display: grid;
-  gap: 1.25rem;
-  padding: 1.4rem;
+  gap: 1rem;
+  padding: 1.25rem;
 }
 
 .sectionEyebrow {
@@ -57,73 +56,99 @@
   color: var(--accent-strong);
 }
 
-.formCardHeader {
+.formHero {
   display: grid;
-  gap: 1rem;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.9rem;
+  align-items: start;
+}
+
+.formHeroIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.85rem;
+  height: 2.85rem;
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--accent-soft-strong) 60%, transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 92%, transparent), color-mix(in srgb, var(--surface-hover) 72%, transparent));
+  color: var(--accent-strong);
+  box-shadow: 0 14px 30px color-mix(in srgb, var(--accent-soft-strong) 30%, transparent);
+}
+
+.formHeroIcon svg {
+  width: 1rem;
+  height: 1rem;
 }
 
 .formCardTitleWrap,
-.dataCardCopy {
+.dataHeaderMain {
   display: grid;
-  gap: 0.5rem;
+  gap: 0.35rem;
 }
 
-.formTitle,
+.formTitle {
+  margin: 0;
+  font-size: clamp(1.55rem, 1.9vw, 2rem);
+  letter-spacing: -0.05em;
+  line-height: 1;
+}
+
 .dataTitle {
   margin: 0;
-  font-size: clamp(1.65rem, 2.2vw, 2.35rem);
-  letter-spacing: -0.06em;
+  font-size: clamp(1.5rem, 1.8vw, 1.9rem);
+  letter-spacing: -0.045em;
   line-height: 1.02;
 }
 
 .formSubtitle,
 .dataSubtitle {
   margin: 0;
-  max-width: 44rem;
   color: var(--muted);
-  font-size: 0.98rem;
-  line-height: 1.6;
+  font-size: 0.96rem;
+  line-height: 1.55;
 }
 
-.metricStack,
-.dataMetrics {
+.metricRail {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.75rem;
+  gap: 0.7rem;
 }
 
-.metricPanel,
+.metricChip,
 .dataMetric {
-  padding: 0.9rem 0.95rem;
-  border-radius: 20px;
-  border: 1px solid color-mix(in srgb, var(--line) 85%, transparent);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-soft) 98%, transparent), color-mix(in srgb, var(--surface-muted) 96%, transparent));
-  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.08);
+  display: grid;
+  gap: 0.28rem;
+  padding: 0.8rem 0.9rem;
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-soft) 98%, transparent), color-mix(in srgb, var(--surface-muted) 94%, transparent));
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.08);
 }
 
-.metricPanel span,
-.dataMetric span {
-  display: block;
-  margin-bottom: 0.35rem;
+.metricLabel,
+.dataMetric span,
+.fieldLabel,
+.filterLabel,
+.detailItem dt,
+.notePanelLabel {
   color: var(--muted);
-  font-size: 0.76rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.13em;
   text-transform: uppercase;
 }
 
-.metricPanel strong,
+.metricValue,
 .dataMetric strong {
-  display: block;
-  font-size: 1.2rem;
+  font-size: 1.1rem;
   font-weight: 800;
   letter-spacing: -0.04em;
 }
 
 .formBody {
   display: grid;
-  gap: 1rem;
+  gap: 0.95rem;
 }
 
 .fieldGroup {
@@ -131,25 +156,18 @@
   gap: 0.45rem;
 }
 
-.inlineFields {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 0.85rem;
-}
-
-.fieldLabel {
-  font-size: 0.82rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--muted);
+.fieldHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
 }
 
 .fieldHint,
 .characterCount {
   margin: 0;
   color: var(--muted);
-  font-size: 0.83rem;
+  font-size: 0.84rem;
 }
 
 .characterCount {
@@ -170,10 +188,9 @@
 .searchShell input,
 .controlShell select {
   width: 100%;
-  border-radius: 18px;
   border: 1px solid var(--field-border);
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--field-bg) 90%, var(--surface-soft)), color-mix(in srgb, var(--surface-ghost) 84%, transparent));
+    linear-gradient(180deg, color-mix(in srgb, var(--field-bg) 96%, transparent), color-mix(in srgb, var(--surface-ghost) 88%, transparent));
   color: var(--text);
   transition:
     border-color 180ms ease,
@@ -183,35 +200,31 @@
 }
 
 .inputShell input,
-.selectShell select,
-.searchShell input,
-.controlShell select {
-  min-height: 3.4rem;
+.searchShell input {
+  min-height: 3.35rem;
   padding: 0 1rem 0 3rem;
+  border-radius: 18px;
+}
+
+.selectShell select,
+.controlShell select {
+  appearance: none;
+  min-height: 3.15rem;
+  padding: 0 2.75rem 0 1rem;
+  border-radius: 16px;
 }
 
 .textareaShell textarea {
-  min-height: 9.5rem;
+  min-height: 8.8rem;
   resize: vertical;
   padding: 0.95rem 1rem 1rem 3rem;
+  border-radius: 18px;
 }
 
 .inputShell input::placeholder,
 .textareaShell textarea::placeholder,
 .searchShell input::placeholder {
-  color: color-mix(in srgb, var(--muted) 82%, transparent);
-}
-
-.inputShell input:focus-visible,
-.selectShell select:focus-visible,
-.textareaShell textarea:focus-visible,
-.searchShell input:focus-visible,
-.controlShell select:focus-visible {
-  outline: none;
-  border-color: color-mix(in srgb, var(--field-focus) 92%, transparent);
-  box-shadow:
-    0 0 0 4px color-mix(in srgb, var(--accent-soft-strong) 65%, transparent),
-    0 18px 40px rgba(0, 0, 0, 0.12);
+  color: color-mix(in srgb, var(--muted) 86%, transparent);
 }
 
 .inputShell input:hover,
@@ -222,55 +235,65 @@
   border-color: color-mix(in srgb, var(--field-focus) 42%, var(--field-border));
 }
 
+.inputShell input:focus-visible,
+.selectShell select:focus-visible,
+.textareaShell textarea:focus-visible,
+.searchShell input:focus-visible,
+.controlShell select:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--field-focus) 92%, transparent);
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--accent-soft-strong) 60%, transparent),
+    0 14px 36px rgba(0, 0, 0, 0.12);
+}
+
 .inputIcon {
   position: absolute;
-  top: 1.05rem;
+  top: 50%;
   left: 1rem;
   width: 1rem;
   height: 1rem;
-  color: color-mix(in srgb, var(--muted) 84%, transparent);
+  transform: translateY(-50%);
+  color: color-mix(in srgb, var(--muted) 82%, transparent);
+  pointer-events: none;
+}
+
+.textareaShell .inputIcon {
+  top: 1.05rem;
+  transform: none;
+}
+
+.selectChevron {
+  position: absolute;
+  top: 50%;
+  right: 0.95rem;
+  width: 0.95rem;
+  height: 0.95rem;
+  transform: translateY(-50%);
+  color: color-mix(in srgb, var(--muted) 82%, transparent);
   pointer-events: none;
 }
 
 .fieldError {
-  border-color: rgba(215, 79, 79, 0.52) !important;
+  border-color: rgba(215, 79, 79, 0.56) !important;
   box-shadow: 0 0 0 4px rgba(215, 79, 79, 0.1);
 }
 
-.fieldMetaRow {
-  display: flex;
-  justify-content: space-between;
-  gap: 0.75rem;
-  align-items: center;
+.helperNote {
+  display: grid;
+  gap: 0.18rem;
+  padding: 0.85rem 0.95rem;
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--accent-soft-strong) 44%, transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 72%, transparent), color-mix(in srgb, var(--surface-hover) 72%, transparent));
 }
 
-.guidanceCard {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.8rem;
-  padding: 1rem 1rem 1.05rem;
-  border-radius: 20px;
-  border: 1px solid color-mix(in srgb, var(--line) 86%, transparent);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 70%, transparent), color-mix(in srgb, var(--surface-muted) 96%, transparent));
+.helperNote strong {
+  font-size: 0.9rem;
+  letter-spacing: -0.02em;
 }
 
-.guidanceCard svg {
-  margin-top: 0.1rem;
-  width: 1rem;
-  height: 1rem;
-  color: var(--accent-strong);
-  flex-shrink: 0;
-}
-
-.guidanceCard strong {
-  display: block;
-  margin-bottom: 0.15rem;
-  font-size: 0.92rem;
-}
-
-.guidanceCard p {
-  margin: 0;
+.helperNote span {
   color: var(--muted);
   font-size: 0.88rem;
   line-height: 1.5;
@@ -278,7 +301,8 @@
 
 .formFooter {
   display: grid;
-  gap: 0.9rem;
+  gap: 0.75rem;
+  margin-top: 0.1rem;
 }
 
 .primaryButton,
@@ -302,8 +326,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.65rem;
-  min-height: 3.25rem;
+  gap: 0.6rem;
+  min-height: 3.15rem;
   border-radius: 16px;
   font-weight: 800;
   letter-spacing: -0.02em;
@@ -311,13 +335,27 @@
 }
 
 .primaryButton {
-  border: 1px solid color-mix(in srgb, var(--accent-strong) 40%, transparent);
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--accent) 92%, transparent), color-mix(in srgb, var(--accent-strong) 82%, transparent));
+  width: 100%;
+  border: 1px solid color-mix(in srgb, var(--accent-strong) 34%, transparent);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 90%, transparent), color-mix(in srgb, var(--accent-strong) 78%, transparent));
   color: #f7fff9;
   box-shadow:
-    0 16px 34px color-mix(in srgb, var(--accent-soft-strong) 72%, transparent),
-    0 1px 0 rgba(255, 255, 255, 0.12) inset;
+    0 16px 30px color-mix(in srgb, var(--accent-soft-strong) 62%, transparent),
+    0 1px 0 rgba(255, 255, 255, 0.14) inset;
+}
+
+.secondaryButton,
+.ghostButton {
+  border: 1px solid color-mix(in srgb, var(--line) 88%, transparent);
+  background: color-mix(in srgb, var(--surface-muted) 95%, transparent);
+  color: var(--text);
+}
+
+.destructiveButton {
+  border: 1px solid rgba(190, 79, 67, 0.26);
+  background: linear-gradient(180deg, rgba(190, 79, 67, 0.16), rgba(190, 79, 67, 0.08));
+  color: #f1b4ac;
+  box-shadow: 0 12px 24px rgba(95, 24, 17, 0.14);
 }
 
 .primaryButton:hover:not(:disabled),
@@ -336,25 +374,10 @@
   transform: translateY(0);
 }
 
-.secondaryButton,
-.ghostButton {
-  border: 1px solid color-mix(in srgb, var(--line) 92%, transparent);
-  background: color-mix(in srgb, var(--surface-muted) 94%, transparent);
-  color: var(--text);
-  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.08);
-}
-
-.destructiveButton {
-  border: 1px solid rgba(190, 79, 67, 0.3);
-  background: linear-gradient(180deg, rgba(190, 79, 67, 0.16), rgba(190, 79, 67, 0.1));
-  color: #f1b4ac;
-  box-shadow: 0 12px 24px rgba(95, 24, 17, 0.16);
-}
-
+.primaryButton:disabled,
 .secondaryButton:disabled,
 .ghostButton:disabled,
 .destructiveButton:disabled,
-.primaryButton:disabled,
 .iconButton:disabled {
   cursor: not-allowed;
   opacity: 0.58;
@@ -362,23 +385,29 @@
   box-shadow: none;
 }
 
+.ghostButton {
+  min-height: 2.85rem;
+  padding: 0 1rem;
+  border-radius: 14px;
+}
+
 .iconButton {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2.7rem;
-  height: 2.7rem;
+  width: 2.45rem;
+  height: 2.45rem;
   border-radius: 14px;
-  border: 1px solid color-mix(in srgb, var(--line) 92%, transparent);
-  background: color-mix(in srgb, var(--surface-muted) 92%, transparent);
+  border: 1px solid color-mix(in srgb, var(--line) 90%, transparent);
+  background: color-mix(in srgb, var(--surface-muted) 94%, transparent);
   color: var(--muted);
   cursor: pointer;
 }
 
 .iconButtonActive {
-  border-color: color-mix(in srgb, var(--accent-soft-strong) 72%, transparent);
+  border-color: color-mix(in srgb, var(--accent-soft-strong) 68%, transparent);
+  background: color-mix(in srgb, var(--accent-soft) 74%, transparent);
   color: var(--accent-strong);
-  background: color-mix(in srgb, var(--accent-soft) 72%, transparent);
 }
 
 .iconButtonDanger {
@@ -386,7 +415,7 @@
 }
 
 .iconButtonDanger:hover:not(:disabled) {
-  border-color: rgba(190, 79, 67, 0.32);
+  border-color: rgba(190, 79, 67, 0.3);
   background: rgba(190, 79, 67, 0.14);
 }
 
@@ -397,7 +426,7 @@
   align-items: center;
   gap: 0.45rem;
   font-size: 0.9rem;
-  line-height: 1.5;
+  line-height: 1.45;
 }
 
 .errorText {
@@ -408,11 +437,18 @@
   color: var(--success);
 }
 
-.dataCardHeader {
+.dataTopBar {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 1rem;
-  align-items: end;
+  align-items: start;
+}
+
+.dataMetrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+  justify-content: flex-end;
 }
 
 .feedbackBanner,
@@ -421,19 +457,19 @@
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 0.95rem 1rem;
+  padding: 0.9rem 1rem;
   border-radius: 18px;
-  border: 1px solid color-mix(in srgb, var(--line) 85%, transparent);
+  border: 1px solid color-mix(in srgb, var(--line) 84%, transparent);
   background: color-mix(in srgb, var(--surface-muted) 96%, transparent);
 }
 
 .feedbackSuccess {
-  border-color: color-mix(in srgb, var(--accent-soft-strong) 58%, transparent);
-  background: color-mix(in srgb, var(--accent-soft) 74%, var(--surface-muted));
+  border-color: color-mix(in srgb, var(--accent-soft-strong) 54%, transparent);
+  background: color-mix(in srgb, var(--accent-soft) 72%, var(--surface-muted));
 }
 
 .feedbackError {
-  border-color: rgba(190, 79, 67, 0.25);
+  border-color: rgba(190, 79, 67, 0.24);
   background: rgba(190, 79, 67, 0.1);
 }
 
@@ -453,26 +489,33 @@
 
 .toolbar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(280px, 1fr) auto;
   gap: 0.85rem;
-  align-items: center;
+  align-items: end;
+}
+
+.searchShell svg {
+  position: absolute;
+  top: 50%;
+  left: 1rem;
+  width: 1rem;
+  height: 1rem;
+  transform: translateY(-50%);
+  color: color-mix(in srgb, var(--muted) 82%, transparent);
+  pointer-events: none;
 }
 
 .toolbarControls {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
+  gap: 0.7rem;
+  justify-content: flex-end;
 }
 
-.searchShell svg,
-.controlShell svg {
-  position: absolute;
-  top: 1rem;
-  left: 0.95rem;
-  width: 1rem;
-  height: 1rem;
-  color: color-mix(in srgb, var(--muted) 82%, transparent);
-  pointer-events: none;
+.filterGroup {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 10rem;
 }
 
 .dataShell {
@@ -488,9 +531,8 @@
 .tableSurface,
 .detailRail {
   border-radius: 22px;
-  border: 1px solid color-mix(in srgb, var(--line) 85%, transparent);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-soft) 98%, transparent), color-mix(in srgb, var(--surface-muted) 96%, transparent));
+  border: 1px solid color-mix(in srgb, var(--line) 84%, transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-soft) 98%, transparent), color-mix(in srgb, var(--surface-muted) 96%, transparent));
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.08);
 }
 
@@ -501,18 +543,18 @@
 .tableHeader,
 .tableRow {
   display: grid;
-  grid-template-columns: minmax(0, 2.2fr) minmax(0, 1.15fr) minmax(0, 1.1fr) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 2.4fr) minmax(0, 1.1fr) minmax(0, 1.1fr) minmax(0, 0.9fr) auto;
   gap: 1rem;
   align-items: center;
 }
 
 .tableHeader {
   padding: 0.95rem 1.15rem;
-  border-bottom: 1px solid color-mix(in srgb, var(--line) 75%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
   color: var(--muted);
-  font-size: 0.74rem;
+  font-size: 0.73rem;
   font-weight: 800;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.15em;
   text-transform: uppercase;
 }
 
@@ -522,11 +564,13 @@
 
 .tableBody {
   display: grid;
+  max-height: min(68vh, 760px);
+  overflow: auto;
 }
 
 .tableRow {
-  padding: 1rem 1.15rem;
-  border-bottom: 1px solid color-mix(in srgb, var(--line) 66%, transparent);
+  padding: 0.95rem 1.15rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 62%, transparent);
   cursor: pointer;
   transition:
     background-color 180ms ease,
@@ -539,23 +583,25 @@
 }
 
 .tableRow:hover {
-  background: color-mix(in srgb, var(--surface-hover) 76%, transparent);
+  background: color-mix(in srgb, var(--surface-hover) 78%, transparent);
 }
 
 .tableRowActive {
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 84%, transparent), color-mix(in srgb, var(--surface-hover) 74%, transparent));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 80%, transparent), color-mix(in srgb, var(--surface-hover) 74%, transparent));
   box-shadow: 0 1px 0 color-mix(in srgb, var(--accent-soft-strong) 44%, transparent) inset;
 }
 
-.emailCell {
+.emailCell,
+.reasonCell,
+.sourceCell,
+.updatedCell {
   min-width: 0;
 }
 
 .emailValue,
 .updatedCell span {
   display: block;
-  font-size: 0.98rem;
+  font-size: 0.96rem;
   font-weight: 700;
   letter-spacing: -0.02em;
   word-break: break-word;
@@ -564,35 +610,36 @@
 .emailMeta,
 .updatedCell small {
   display: block;
-  margin-top: 0.28rem;
+  margin-top: 0.25rem;
   color: var(--muted);
   font-size: 0.84rem;
   line-height: 1.45;
 }
 
-.reasonCell,
-.sourceCell,
-.updatedCell {
-  min-width: 0;
-}
-
 .rowActions {
   display: inline-flex;
-  gap: 0.55rem;
+  gap: 0.5rem;
   justify-self: end;
+  opacity: 0.72;
+  transition: opacity 180ms ease;
+}
+
+.tableRow:hover .rowActions,
+.tableRowActive .rowActions {
+  opacity: 1;
 }
 
 .badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 2rem;
-  padding: 0.36rem 0.72rem;
+  min-height: 1.95rem;
+  padding: 0.34rem 0.72rem;
   border-radius: 999px;
+  border: 1px solid transparent;
   font-size: 0.78rem;
   font-weight: 800;
   letter-spacing: 0.04em;
-  border: 1px solid transparent;
 }
 
 .badgeAmber {
@@ -623,14 +670,14 @@
 .sourceBadge {
   color: var(--text);
   background: color-mix(in srgb, var(--surface-hover) 82%, transparent);
-  border-color: color-mix(in srgb, var(--line) 78%, transparent);
+  border-color: color-mix(in srgb, var(--line) 76%, transparent);
 }
 
 .detailRail {
   display: grid;
   gap: 1rem;
-  padding: 1.15rem;
-  align-self: start;
+  padding: 1.1rem;
+  align-self: flex-start;
 }
 
 .detailRailHeader {
@@ -642,7 +689,7 @@
 
 .detailRailHeader h3 {
   margin: 0.35rem 0 0;
-  font-size: 1.16rem;
+  font-size: 1.08rem;
   letter-spacing: -0.04em;
   word-break: break-word;
 }
@@ -655,15 +702,15 @@
 
 .detailList {
   display: grid;
-  gap: 0.8rem;
+  gap: 0.75rem;
   margin: 0;
 }
 
 .detailItem {
   display: grid;
-  gap: 0.2rem;
-  padding-bottom: 0.8rem;
-  border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+  gap: 0.22rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
 }
 
 .detailItem:last-child {
@@ -671,17 +718,9 @@
   border-bottom: none;
 }
 
-.detailItem dt {
-  color: var(--muted);
-  font-size: 0.77rem;
-  font-weight: 700;
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
-}
-
 .detailItem dd {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: 0.94rem;
   font-weight: 600;
   word-break: break-word;
 }
@@ -691,21 +730,12 @@
   gap: 0.45rem;
   padding: 0.95rem;
   border-radius: 18px;
-  border: 1px solid color-mix(in srgb, var(--line) 74%, transparent);
-  background: color-mix(in srgb, var(--surface-hover) 68%, transparent);
-}
-
-.notePanelLabel {
-  color: var(--muted);
-  font-size: 0.77rem;
-  font-weight: 700;
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
+  border: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+  background: color-mix(in srgb, var(--surface-hover) 70%, transparent);
 }
 
 .notePanel p {
   margin: 0;
-  color: var(--text);
   line-height: 1.6;
 }
 
@@ -718,29 +748,40 @@
 .emptyState {
   display: grid;
   justify-items: center;
-  gap: 0.65rem;
-  padding: 3.5rem 1.5rem;
+  gap: 0.7rem;
+  padding: 3rem 1.5rem 3.2rem;
   text-align: center;
 }
 
-.emptyState svg {
-  width: 1.25rem;
-  height: 1.25rem;
+.emptyStateIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--line) 74%, transparent);
+  background: color-mix(in srgb, var(--surface-hover) 74%, transparent);
+}
+
+.emptyStateIcon svg {
+  width: 1.15rem;
+  height: 1.15rem;
   color: var(--muted);
 }
 
 .emptyState strong {
-  font-size: 1rem;
+  font-size: 1.02rem;
 }
 
 .emptyState p {
   margin: 0;
-  max-width: 28rem;
+  max-width: 30rem;
   color: var(--muted);
   line-height: 1.6;
 }
 
-@media (max-width: 1260px) {
+@media (max-width: 1320px) {
   .workspaceGrid {
     grid-template-columns: 1fr;
   }
@@ -749,19 +790,20 @@
     position: static;
   }
 
-  .dataShellWithRail {
+  .dataShellWithRail,
+  .dataTopBar,
+  .toolbar {
     grid-template-columns: 1fr;
   }
 
-  .dataCardHeader,
-  .toolbar {
-    grid-template-columns: 1fr;
+  .dataMetrics,
+  .toolbarControls {
+    justify-content: flex-start;
   }
 }
 
 @media (max-width: 980px) {
-  .metricStack,
-  .dataMetrics,
+  .metricRail,
   .tableHeader,
   .tableRow {
     grid-template-columns: 1fr;
@@ -775,12 +817,13 @@
     gap: 0.7rem;
   }
 
-  .rowActions {
+  .rowActions,
+  .actionsHeader {
     justify-self: start;
   }
 
-  .actionsHeader {
-    justify-self: start;
+  .dataShellWithRail {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -795,16 +838,29 @@
     border-radius: 22px;
   }
 
-  .toolbarControls,
-  .detailActions,
-  .fieldMetaRow,
-  .undoBanner {
-    flex-direction: column;
-    align-items: stretch;
+  .formHero {
+    grid-template-columns: 1fr;
   }
 
+  .metricRail {
+    grid-template-columns: 1fr;
+  }
+
+  .fieldHeader,
   .feedbackBanner,
-  .undoBanner {
-    align-items: flex-start;
+  .undoBanner,
+  .detailActions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .filterGroup {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .toolbarControls {
+    display: grid;
+    grid-template-columns: 1fr;
   }
 }
