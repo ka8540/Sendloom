@@ -82,37 +82,37 @@ export function SequenceRowActions({
     <div className={styles.sequenceActionGroup} onClick={(event) => event.stopPropagation()}>
       <Link
         href={href}
-        className={`${styles.sequenceActionButton} ${styles.sequenceActionButtonView} ${styles.sequenceActionView}`}
+        className={`${styles.sequenceActionButton} ${styles.sequenceActionView}`}
         aria-label={`View ${campaignName}`}
+        data-label="View"
       >
         <span className={styles.sequenceActionIconWrap}>
           <Eye aria-hidden="true" />
         </span>
-        <span className={styles.sequenceActionLabel}>View</span>
       </Link>
       <button
         type="button"
-        className={`${styles.sequenceActionButton} ${styles.sequenceActionButtonLaunch}`}
+        className={styles.sequenceActionButton}
         onClick={(event) => void handleRelaunch(event)}
         disabled={!canRelaunch || Boolean(pendingAction)}
         aria-label={canRelaunch ? `Relaunch ${campaignName}` : `${campaignName} is busy`}
+        data-label={canRelaunch ? "Relaunch" : "Busy"}
       >
         <span className={styles.sequenceActionIconWrap}>
           {pendingAction === "launch" ? <LoaderCircle className={styles.spin} aria-hidden="true" /> : <Play aria-hidden="true" />}
         </span>
-        <span className={styles.sequenceActionLabel}>{canRelaunch ? "Relaunch" : "Busy"}</span>
       </button>
       <button
         type="button"
-        className={`${styles.sequenceActionButton} ${styles.sequenceActionButtonDelete} ${styles.sequenceActionDanger}`}
+        className={`${styles.sequenceActionButton} ${styles.sequenceActionDanger}`}
         onClick={(event) => void handleDelete(event)}
         disabled={Boolean(pendingAction)}
         aria-label={`Delete ${campaignName}`}
+        data-label="Delete"
       >
         <span className={styles.sequenceActionIconWrap}>
           {pendingAction === "delete" ? <LoaderCircle className={styles.spin} aria-hidden="true" /> : <Trash2 aria-hidden="true" />}
         </span>
-        <span className={styles.sequenceActionLabel}>Delete</span>
       </button>
       {error ? <span className={styles.sequenceActionError}>{error}</span> : null}
     </div>
