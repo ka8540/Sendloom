@@ -546,7 +546,7 @@
 .tableHeader,
 .tableRow {
   display: grid;
-  grid-template-columns: minmax(320px, 1fr) 220px;
+  grid-template-columns: minmax(0, 1fr);
   gap: 1rem;
   align-items: center;
 }
@@ -585,13 +585,11 @@
   box-shadow: inset 3px 0 0 color-mix(in srgb, var(--accent-strong) 72%, transparent);
 }
 
-.emailCell,
-.updatedCell {
+.emailCell {
   min-width: 0;
 }
 
-.emailValue,
-.updatedCell span {
+.emailValue {
   display: block;
   font-size: 0.96rem;
   font-weight: 700;
@@ -599,8 +597,7 @@
   word-break: break-word;
 }
 
-.emailMeta,
-.updatedCell small {
+.emailMeta {
   display: block;
   margin-top: 0.24rem;
   color: var(--muted);

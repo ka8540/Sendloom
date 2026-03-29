@@ -5,7 +5,6 @@ import clsx from "clsx";
 import { CircleSlash, RotateCcw } from "lucide-react";
 
 import { formatSuppressionSource, SUPPRESSION_REASON_LABELS } from "@/components/suppressions/suppression-badge";
-import { formatDateTime, formatRelativeDate } from "@/components/suppressions/formatters";
 import { SuppressionLogHeader } from "@/components/suppressions/suppression-log-header";
 import { SuppressionLogToolbar } from "@/components/suppressions/suppression-log-toolbar";
 import { SuppressionSidePanel } from "@/components/suppressions/suppression-side-panel";
@@ -140,7 +139,6 @@ export function SuppressionsTableCard(props: SuppressionsTableCardProps) {
         <div className={styles.tableCard}>
           <div className={styles.tableHeader}>
             <span>Recipient</span>
-            <span>Updated</span>
           </div>
 
           <div className={styles.tableBody}>
@@ -162,11 +160,6 @@ export function SuppressionsTableCard(props: SuppressionsTableCardProps) {
                   <div className={styles.emailCell}>
                     <span className={styles.emailValue}>{entry.email}</span>
                     <span className={styles.emailMeta}>{entry.notes?.trim() ? entry.notes : "No internal note attached."}</span>
-                  </div>
-
-                  <div className={styles.updatedCell}>
-                    <span>{formatRelativeDate(entry.updatedAt)}</span>
-                    <small>{formatDateTime(entry.updatedAt)}</small>
                   </div>
                 </div>
               ))
