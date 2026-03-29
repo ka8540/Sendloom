@@ -119,61 +119,72 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
+  align-items: center;
 }
 
-.formMetaRow span,
+.metaChip,
 .logMetric {
   display: inline-flex;
-  align-items: baseline;
-  gap: 0.45rem;
-  min-height: 2.2rem;
-  padding: 0 0.78rem;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--line) 74%, transparent);
-  background: color-mix(in srgb, var(--surface-muted) 92%, transparent);
+  align-items: center;
+  gap: 0.52rem;
+  min-height: 2.55rem;
+  padding: 0 0.9rem;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+  background: color-mix(in srgb, var(--surface-muted) 94%, transparent);
   color: var(--muted);
   font-size: 0.82rem;
+  line-height: 1;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.08);
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    background-color 180ms ease,
+    box-shadow 180ms ease,
+    color 180ms ease;
 }
 
-.logMetric small {
-  font-size: 0.68rem;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+.metaChip:hover,
+.logMetric:hover,
+.logTimestamp:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--field-focus) 40%, var(--line));
+  background: color-mix(in srgb, var(--surface-hover) 88%, transparent);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.12);
 }
 
-.logMetric strong {
+.metaChipValue,
+.logMetric strong,
+.logTimestamp strong {
   color: var(--text);
   font-size: 0.96rem;
   font-weight: 800;
   letter-spacing: -0.04em;
+  line-height: 1;
 }
 
-.logTimestamp {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 0.45rem;
-  min-height: 2.2rem;
-  padding: 0 0.78rem;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--line) 68%, transparent);
-  background: color-mix(in srgb, var(--surface-soft) 72%, transparent);
-  color: var(--muted);
-  font-size: 0.82rem;
-}
-
+.metaChipLabel,
+.logMetric small,
 .logTimestamp small {
   font-size: 0.68rem;
   font-weight: 800;
   letter-spacing: 0.14em;
   text-transform: uppercase;
+  line-height: 1;
 }
 
-.logTimestamp strong {
-  color: var(--text);
-  font-size: 0.92rem;
-  font-weight: 750;
-  letter-spacing: -0.03em;
+.logTimestamp {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.52rem;
+  min-height: 2.55rem;
+  padding: 0 0.9rem;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  background: color-mix(in srgb, var(--surface-soft) 76%, transparent);
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1;
 }
 
 .formBody {

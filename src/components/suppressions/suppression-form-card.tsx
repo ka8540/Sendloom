@@ -161,9 +161,18 @@ export function SuppressionFormCard(props: SuppressionFormCardProps) {
         </div>
 
         <div className={styles.formMetaRow}>
-          <span>{props.totalSuppressions} tracked</span>
-          <span>{props.automatedSuppressions} automated</span>
-          <span>{props.criticalSuppressions} critical</span>
+          <span className={styles.metaChip}>
+            <strong className={styles.metaChipValue}>{props.totalSuppressions}</strong>
+            <small className={styles.metaChipLabel}>Tracked</small>
+          </span>
+          <span className={styles.metaChip}>
+            <strong className={styles.metaChipValue}>{props.automatedSuppressions}</strong>
+            <small className={styles.metaChipLabel}>Automated</small>
+          </span>
+          <span className={styles.metaChip}>
+            <strong className={styles.metaChipValue}>{props.criticalSuppressions}</strong>
+            <small className={styles.metaChipLabel}>Critical</small>
+          </span>
         </div>
       </div>
 
