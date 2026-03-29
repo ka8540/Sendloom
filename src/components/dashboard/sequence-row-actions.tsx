@@ -80,7 +80,11 @@ export function SequenceRowActions({
 
   return (
     <div className={styles.sequenceActionGroup} onClick={(event) => event.stopPropagation()}>
-      <Link href={href} className={`${styles.sequenceActionButton} ${styles.sequenceActionView}`} aria-label={`View ${campaignName}`}>
+      <Link
+        href={href}
+        className={`${styles.sequenceActionButton} ${styles.sequenceActionButtonView} ${styles.sequenceActionView}`}
+        aria-label={`View ${campaignName}`}
+      >
         <span className={styles.sequenceActionIconWrap}>
           <Eye aria-hidden="true" />
         </span>
@@ -88,10 +92,9 @@ export function SequenceRowActions({
       </Link>
       <button
         type="button"
-        className={styles.sequenceActionButton}
+        className={`${styles.sequenceActionButton} ${styles.sequenceActionButtonLaunch}`}
         onClick={(event) => void handleRelaunch(event)}
         disabled={!canRelaunch || Boolean(pendingAction)}
-        title={canRelaunch ? "Relaunch sequence" : "Launch becomes available after validation or when the current run finishes."}
         aria-label={canRelaunch ? `Relaunch ${campaignName}` : `${campaignName} is busy`}
       >
         <span className={styles.sequenceActionIconWrap}>
@@ -101,7 +104,7 @@ export function SequenceRowActions({
       </button>
       <button
         type="button"
-        className={`${styles.sequenceActionButton} ${styles.sequenceActionDanger}`}
+        className={`${styles.sequenceActionButton} ${styles.sequenceActionButtonDelete} ${styles.sequenceActionDanger}`}
         onClick={(event) => void handleDelete(event)}
         disabled={Boolean(pendingAction)}
         aria-label={`Delete ${campaignName}`}

@@ -671,6 +671,8 @@
 }
 
 .sequenceActionButton {
+  --sequence-action-expanded-width: 8.1rem;
+  --sequence-action-label-width: 4.5rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -718,16 +720,31 @@
   transition: max-width 180ms ease, opacity 180ms ease, transform 180ms ease;
 }
 
+.sequenceActionButtonView {
+  --sequence-action-expanded-width: 6.2rem;
+  --sequence-action-label-width: 2.7rem;
+}
+
+.sequenceActionButtonLaunch {
+  --sequence-action-expanded-width: 8.45rem;
+  --sequence-action-label-width: 4.9rem;
+}
+
+.sequenceActionButtonDelete {
+  --sequence-action-expanded-width: 6.95rem;
+  --sequence-action-label-width: 3.4rem;
+}
+
 .sequenceActionButton:hover,
 .sequenceActionButton:focus-visible {
-  width: 8.1rem;
+  width: var(--sequence-action-expanded-width);
   padding-inline: 0.88rem 1rem;
   justify-content: flex-start;
 }
 
 .sequenceActionButton:hover .sequenceActionLabel,
 .sequenceActionButton:focus-visible .sequenceActionLabel {
-  max-width: 4.5rem;
+  max-width: var(--sequence-action-label-width);
   opacity: 1;
   transform: translateX(0);
 }
@@ -1070,7 +1087,7 @@
 
   .sequenceActionButton:hover,
   .sequenceActionButton:focus-visible {
-    width: 8.1rem;
+    width: var(--sequence-action-expanded-width);
   }
 
   .sequencePagination {
