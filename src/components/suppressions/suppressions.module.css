@@ -6,8 +6,8 @@
 
 .workspaceGrid {
   display: grid;
-  grid-template-columns: minmax(304px, 360px) minmax(0, 1fr);
-  gap: 1.25rem;
+  grid-template-columns: minmax(288px, 336px) minmax(0, 1fr);
+  gap: 1rem;
   align-items: flex-start;
 }
 
@@ -33,8 +33,8 @@
 
 .formCard {
   display: grid;
-  gap: 1rem;
-  padding: 1.25rem;
+  gap: 0.9rem;
+  padding: 1.05rem;
   position: sticky;
   top: 1rem;
 }
@@ -49,49 +49,56 @@
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   font-weight: 800;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--accent-strong);
+}
+
+.formHeader {
+  display: grid;
+  gap: 0.9rem;
+  padding-bottom: 0.9rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 62%, transparent);
 }
 
 .formHero {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 0.9rem;
-  align-items: start;
+  gap: 0.8rem;
+  align-items: center;
 }
 
 .formHeroIcon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2.85rem;
-  height: 2.85rem;
-  border-radius: 18px;
-  border: 1px solid color-mix(in srgb, var(--accent-soft-strong) 60%, transparent);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 92%, transparent), color-mix(in srgb, var(--surface-hover) 72%, transparent));
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--accent-soft-strong) 48%, transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 76%, transparent), color-mix(in srgb, var(--surface-hover) 68%, transparent));
   color: var(--accent-strong);
-  box-shadow: 0 14px 30px color-mix(in srgb, var(--accent-soft-strong) 30%, transparent);
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--accent-soft-strong) 20%, transparent);
 }
 
 .formHeroIcon svg {
-  width: 1rem;
-  height: 1rem;
+  width: 0.95rem;
+  height: 0.95rem;
 }
 
 .formCardTitleWrap,
 .dataHeaderMain {
   display: grid;
-  gap: 0.35rem;
+  gap: 0.28rem;
 }
 
 .formTitle {
   margin: 0;
-  font-size: clamp(1.55rem, 1.9vw, 2rem);
-  letter-spacing: -0.05em;
-  line-height: 1;
+  font-size: clamp(1.35rem, 1.7vw, 1.72rem);
+  letter-spacing: -0.045em;
+  line-height: 1.04;
 }
 
 .dataTitle {
@@ -105,25 +112,26 @@
 .dataSubtitle {
   margin: 0;
   color: var(--muted);
-  font-size: 0.96rem;
-  line-height: 1.55;
+  font-size: 0.9rem;
+  line-height: 1.5;
 }
 
 .metricRail {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.7rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
 }
 
 .metricChip,
 .dataMetric {
-  display: grid;
-  gap: 0.28rem;
-  padding: 0.8rem 0.9rem;
-  border-radius: 18px;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.58rem 0.72rem;
+  border-radius: 999px;
   border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
   background: linear-gradient(180deg, color-mix(in srgb, var(--surface-soft) 98%, transparent), color-mix(in srgb, var(--surface-muted) 94%, transparent));
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.06);
 }
 
 .metricLabel,
@@ -133,22 +141,22 @@
 .detailItem dt,
 .notePanelLabel {
   color: var(--muted);
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   font-weight: 800;
-  letter-spacing: 0.13em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
 }
 
 .metricValue,
 .dataMetric strong {
-  font-size: 1.1rem;
+  font-size: 0.98rem;
   font-weight: 800;
   letter-spacing: -0.04em;
 }
 
 .formBody {
   display: grid;
-  gap: 0.95rem;
+  gap: 0.85rem;
 }
 
 .fieldGroup {
@@ -167,7 +175,7 @@
 .characterCount {
   margin: 0;
   color: var(--muted);
-  font-size: 0.84rem;
+  font-size: 0.8rem;
 }
 
 .characterCount {
@@ -209,13 +217,13 @@
 .selectShell select,
 .controlShell select {
   appearance: none;
-  min-height: 3.15rem;
+  min-height: 2.95rem;
   padding: 0 2.75rem 0 1rem;
   border-radius: 16px;
 }
 
 .textareaShell textarea {
-  min-height: 8.8rem;
+  min-height: 6.8rem;
   resize: vertical;
   padding: 0.95rem 1rem 1rem 3rem;
   border-radius: 18px;
@@ -279,24 +287,73 @@
   box-shadow: 0 0 0 4px rgba(215, 79, 79, 0.1);
 }
 
-.helperNote {
+.reasonGrid {
   display: grid;
-  gap: 0.18rem;
-  padding: 0.85rem 0.95rem;
-  border-radius: 18px;
-  border: 1px solid color-mix(in srgb, var(--accent-soft-strong) 44%, transparent);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 72%, transparent), color-mix(in srgb, var(--surface-hover) 72%, transparent));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
 }
 
-.helperNote strong {
-  font-size: 0.9rem;
+.reasonOption {
+  display: grid;
+  gap: 0.14rem;
+  min-height: 4.2rem;
+  padding: 0.8rem 0.85rem;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--field-bg) 92%, transparent), color-mix(in srgb, var(--surface-ghost) 86%, transparent));
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    background-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.reasonOption:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--field-focus) 42%, var(--field-border));
+}
+
+.reasonOptionActive {
+  border-color: color-mix(in srgb, var(--accent-soft-strong) 72%, transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 72%, transparent), color-mix(in srgb, var(--surface-hover) 72%, transparent));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent-soft-strong) 35%, transparent) inset,
+    0 12px 30px color-mix(in srgb, var(--accent-soft-strong) 18%, transparent);
+}
+
+.reasonOptionTitle {
+  font-size: 0.91rem;
+  font-weight: 700;
   letter-spacing: -0.02em;
 }
 
-.helperNote span {
+.reasonOptionMeta {
   color: var(--muted);
-  font-size: 0.88rem;
-  line-height: 1.5;
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.inlineCallout {
+  display: grid;
+  gap: 0.16rem;
+  padding: 0.8rem 0.9rem;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  background: color-mix(in srgb, var(--surface-hover) 64%, transparent);
+}
+
+.inlineCallout strong {
+  font-size: 0.84rem;
+  letter-spacing: -0.015em;
+}
+
+.inlineCallout span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
 }
 
 .formFooter {

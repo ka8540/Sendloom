@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition, type ChangeEvent, type FormEvent } from "react";
-import { AlertTriangle, AtSign, ChevronDown, FileText, Plus, ShieldBan } from "lucide-react";
+import { AlertTriangle, AtSign, FileText, Plus, ShieldBan } from "lucide-react";
 
 import { SUPPRESSION_REASON_LABELS } from "@/components/suppressions/suppression-badge";
 import type { SuppressionReason, SuppressionRecord } from "@/components/suppressions/types";
@@ -33,6 +33,23 @@ const REASON_OPTIONS: SuppressionReason[] = ["MANUAL_BLOCK", "UNSUBSCRIBED", "IN
 
 function validateEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function getReasonHint(reason: SuppressionReason) {
+  switch (reason) {
+    case "MANUAL_BLOCK":
+      return "Operator decision";
+    case "UNSUBSCRIBED":
+      return "Recipient opted out";
+    case "INVALID_EMAIL":
+      return "Address is malformed";
+    case "COMPLAINT":
+      return "Spam or abuse signal";
+    case "HARD_BOUNCE":
+      return "Mailbox rejected";
+    default:
+      return "";
+  }
 }
 
 export function SuppressionFormCard(props: SuppressionFormCardProps) {
@@ -77,10 +94,6 @@ export function SuppressionFormCard(props: SuppressionFormCardProps) {
 
   function onEmailChange(event: ChangeEvent<HTMLInputElement>) {
     updateValue("email", event.target.value);
-  }
-
-  function onReasonChange(event: ChangeEvent<HTMLSelectElement>) {
-    updateValue("reason", event.target.value as SuppressionReason);
   }
 
   function onNotesChange(event: ChangeEvent<HTMLTextAreaElement>) {
@@ -134,38 +147,44 @@ export function SuppressionFormCard(props: SuppressionFormCardProps) {
 
   return (
     <section className={styles.formCard}>
-      <div className={styles.formHero}>
-        <div className={styles.formHeroIcon}>
-          <ShieldBan aria-hidden="true" />
+      <div className={styles.formHeader}>
+        <div className={styles.formHero}>
+          <div className={styles.formHeroIcon}>
+            <ShieldBan aria-hidden="true" />
+          </div>
+
+          <div className={styles.formCardTitleWrap}>
+            <span className={styles.sectionEyebrow}>New suppression</span>
+            <h1 className={styles.formTitle}>Block a recipient</h1>
+            <p className={styles.formSubtitle}>Fast manual control for addresses you never want to send again.</p>
+          </div>
         </div>
 
-        <div className={styles.formCardTitleWrap}>
-          <span className={styles.sectionEyebrow}>New suppression</span>
-          <h1 className={styles.formTitle}>Block a recipient</h1>
-          <p className={styles.formSubtitle}>Skip future sends instantly and keep a clean audit trail for the team.</p>
-        </div>
-      </div>
-
-      <div className={styles.metricRail}>
-        <div className={styles.metricChip}>
-          <span className={styles.metricLabel}>Total</span>
-          <strong className={styles.metricValue}>{props.totalSuppressions}</strong>
-        </div>
-        <div className={styles.metricChip}>
-          <span className={styles.metricLabel}>Automated</span>
-          <strong className={styles.metricValue}>{props.automatedSuppressions}</strong>
-        </div>
-        <div className={styles.metricChip}>
-          <span className={styles.metricLabel}>Critical</span>
-          <strong className={styles.metricValue}>{props.criticalSuppressions}</strong>
+        <div className={styles.metricRail}>
+          <div className={styles.metricChip}>
+            <span className={styles.metricLabel}>Total</span>
+            <strong className={styles.metricValue}>{props.totalSuppressions}</strong>
+          </div>
+          <div className={styles.metricChip}>
+            <span className={styles.metricLabel}>Automated</span>
+            <strong className={styles.metricValue}>{props.automatedSuppressions}</strong>
+          </div>
+          <div className={styles.metricChip}>
+            <span className={styles.metricLabel}>Critical</span>
+            <strong className={styles.metricValue}>{props.criticalSuppressions}</strong>
+          </div>
         </div>
       </div>
 
       <form className={styles.formBody} onSubmit={onSubmit}>
         <div className={styles.fieldGroup}>
-          <label className={styles.fieldLabel} htmlFor="suppression-email">
-            Email
-          </label>
+          <div className={styles.fieldHeader}>
+            <label className={styles.fieldLabel} htmlFor="suppression-email">
+              Email
+            </label>
+            <span className={styles.fieldHint}>Applied instantly</span>
+          </div>
+
           <div className={styles.inputShell}>
             <AtSign className={styles.inputIcon} aria-hidden="true" />
             <input
@@ -179,32 +198,43 @@ export function SuppressionFormCard(props: SuppressionFormCardProps) {
               className={errors.email ? styles.fieldError : undefined}
             />
           </div>
-          {errors.email ? <p className={styles.errorText}>{errors.email}</p> : <p className={styles.fieldHint}>Normalized automatically and applied to future sends.</p>}
+
+          {errors.email ? (
+            <p className={styles.errorText}>{errors.email}</p>
+          ) : (
+            <p className={styles.fieldHint}>We normalize the address and keep it out of all future sends.</p>
+          )}
         </div>
 
         <div className={styles.fieldGroup}>
           <div className={styles.fieldHeader}>
-            <label className={styles.fieldLabel} htmlFor="suppression-reason">
-              Reason
-            </label>
-            <span className={styles.fieldHint}>Fastest for operators: manual block</span>
+            <label className={styles.fieldLabel}>Reason</label>
+            <span className={styles.fieldHint}>Choose the closest match</span>
           </div>
 
-          <div className={styles.selectShell}>
-            <select id="suppression-reason" name="reason" value={values.reason} onChange={onReasonChange}>
-              {REASON_OPTIONS.map((reason) => (
-                <option key={reason} value={reason}>
-                  {SUPPRESSION_REASON_LABELS[reason]}
-                </option>
-              ))}
-            </select>
-            <ChevronDown className={styles.selectChevron} aria-hidden="true" />
+          <div className={styles.reasonGrid} role="radiogroup" aria-label="Suppression reason">
+            {REASON_OPTIONS.map((reason) => {
+              const selected = values.reason === reason;
+
+              return (
+                <button
+                  key={reason}
+                  type="button"
+                  className={selected ? `${styles.reasonOption} ${styles.reasonOptionActive}` : styles.reasonOption}
+                  onClick={() => updateValue("reason", reason)}
+                  aria-pressed={selected}
+                >
+                  <span className={styles.reasonOptionTitle}>{SUPPRESSION_REASON_LABELS[reason]}</span>
+                  <span className={styles.reasonOptionMeta}>{getReasonHint(reason)}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        <div className={styles.helperNote}>
-          <strong>Operator note</strong>
-          <span>Use this for manual triage. Webhook and unsubscribe sources stay visible in the table automatically.</span>
+        <div className={styles.inlineCallout}>
+          <strong>Best for manual triage</strong>
+          <span>Webhook and unsubscribe sources still appear automatically in the table on the right.</span>
         </div>
 
         <div className={styles.fieldGroup}>
@@ -220,14 +250,15 @@ export function SuppressionFormCard(props: SuppressionFormCardProps) {
             <textarea
               id="suppression-notes"
               name="notes"
-              placeholder="Optional context for teammates, deliverability review, or follow-up."
+              placeholder="Optional context for your team."
               value={values.notes}
               onChange={onNotesChange}
               className={errors.notes ? styles.fieldError : undefined}
-              rows={4}
+              rows={3}
             />
           </div>
-          {errors.notes ? <p className={styles.errorText}>{errors.notes}</p> : <p className={styles.fieldHint}>Attached to the suppression for future review.</p>}
+
+          {errors.notes ? <p className={styles.errorText}>{errors.notes}</p> : <p className={styles.fieldHint}>Useful for handoff, review, or reversing a mistake later.</p>}
         </div>
 
         <div className={styles.formFooter}>
