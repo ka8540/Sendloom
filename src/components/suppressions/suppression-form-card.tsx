@@ -44,7 +44,7 @@ function getReasonHint(reason: SuppressionReason) {
     case "INVALID_EMAIL":
       return "Address is malformed";
     case "COMPLAINT":
-      return "Spam or abuse signal";
+      return "Spam complaint";
     case "HARD_BOUNCE":
       return "Mailbox rejected";
     default:
@@ -154,25 +154,25 @@ export function SuppressionFormCard(props: SuppressionFormCardProps) {
           </div>
 
           <div className={styles.formCardTitleWrap}>
-            <span className={styles.sectionEyebrow}>New suppression</span>
-            <h1 className={styles.formTitle}>Block a recipient</h1>
-            <p className={styles.formSubtitle}>Fast manual control for addresses you never want to send again.</p>
+            <span className={styles.sectionEyebrow}>Manual blocklist</span>
+            <h1 className={styles.formTitle}>Add suppression</h1>
+            <p className={styles.formSubtitle}>Use this for one-off operator decisions. Everything else should flow in automatically.</p>
           </div>
         </div>
 
-        <div className={styles.metricRail}>
-          <div className={styles.metricChip}>
-            <span className={styles.metricLabel}>Total</span>
-            <strong className={styles.metricValue}>{props.totalSuppressions}</strong>
-          </div>
-          <div className={styles.metricChip}>
-            <span className={styles.metricLabel}>Automated</span>
-            <strong className={styles.metricValue}>{props.automatedSuppressions}</strong>
-          </div>
-          <div className={styles.metricChip}>
-            <span className={styles.metricLabel}>Critical</span>
-            <strong className={styles.metricValue}>{props.criticalSuppressions}</strong>
-          </div>
+        <div className={styles.statsInline}>
+          <span className={styles.statsInlineItem}>
+            <strong>{props.totalSuppressions}</strong>
+            <small>Total</small>
+          </span>
+          <span className={styles.statsInlineItem}>
+            <strong>{props.automatedSuppressions}</strong>
+            <small>Automated</small>
+          </span>
+          <span className={styles.statsInlineItem}>
+            <strong>{props.criticalSuppressions}</strong>
+            <small>Critical</small>
+          </span>
         </div>
       </div>
 
@@ -202,17 +202,17 @@ export function SuppressionFormCard(props: SuppressionFormCardProps) {
           {errors.email ? (
             <p className={styles.errorText}>{errors.email}</p>
           ) : (
-            <p className={styles.fieldHint}>We normalize the address and keep it out of all future sends.</p>
+            <p className={styles.fieldHint}>The normalized address is excluded from all future sends.</p>
           )}
         </div>
 
         <div className={styles.fieldGroup}>
           <div className={styles.fieldHeader}>
             <label className={styles.fieldLabel}>Reason</label>
-            <span className={styles.fieldHint}>Choose the closest match</span>
+            <span className={styles.fieldHint}>{getReasonHint(values.reason)}</span>
           </div>
 
-          <div className={styles.reasonGrid} role="radiogroup" aria-label="Suppression reason">
+          <div className={styles.reasonPills} role="radiogroup" aria-label="Suppression reason">
             {REASON_OPTIONS.map((reason) => {
               const selected = values.reason === reason;
 
@@ -220,21 +220,15 @@ export function SuppressionFormCard(props: SuppressionFormCardProps) {
                 <button
                   key={reason}
                   type="button"
-                  className={selected ? `${styles.reasonOption} ${styles.reasonOptionActive}` : styles.reasonOption}
+                  className={selected ? `${styles.reasonPill} ${styles.reasonPillActive}` : styles.reasonPill}
                   onClick={() => updateValue("reason", reason)}
                   aria-pressed={selected}
                 >
-                  <span className={styles.reasonOptionTitle}>{SUPPRESSION_REASON_LABELS[reason]}</span>
-                  <span className={styles.reasonOptionMeta}>{getReasonHint(reason)}</span>
+                  {SUPPRESSION_REASON_LABELS[reason]}
                 </button>
               );
             })}
           </div>
-        </div>
-
-        <div className={styles.inlineCallout}>
-          <strong>Best for manual triage</strong>
-          <span>Webhook and unsubscribe sources still appear automatically in the table on the right.</span>
         </div>
 
         <div className={styles.fieldGroup}>

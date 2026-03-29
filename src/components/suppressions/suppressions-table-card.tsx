@@ -2,15 +2,7 @@
 
 import { useEffect, useState } from "react";
 import clsx from "clsx";
-import {
-  ChevronDown,
-  CircleSlash,
-  Eye,
-  RotateCcw,
-  Search,
-  Trash2,
-  X
-} from "lucide-react";
+import { CircleSlash, Eye, RotateCcw, Search, Trash2, X } from "lucide-react";
 
 import {
   formatSuppressionSource,
@@ -148,8 +140,8 @@ export function SuppressionsTableCard(props: SuppressionsTableCardProps) {
       <div className={styles.dataTopBar}>
         <div className={styles.dataHeaderMain}>
           <span className={styles.sectionEyebrow}>Suppressed recipients</span>
-          <h2 className={styles.dataTitle}>Suppressed recipients</h2>
-          <p className={styles.dataSubtitle}>Search, sort, inspect, and reverse blocks without leaving the workflow.</p>
+          <h2 className={styles.dataTitle}>Suppression log</h2>
+          <p className={styles.dataSubtitle}>Search, filter, inspect, and reverse suppressions without leaving the workflow.</p>
         </div>
 
         <div className={styles.dataMetrics}>
@@ -203,46 +195,37 @@ export function SuppressionsTableCard(props: SuppressionsTableCardProps) {
         <div className={styles.toolbarControls}>
           <label className={styles.filterGroup}>
             <span className={styles.filterLabel}>Reason</span>
-            <div className={styles.controlShell}>
-              <select value={reasonFilter} onChange={(event) => setReasonFilter(event.target.value as "ALL" | SuppressionReason)}>
-                <option value="ALL">All reasons</option>
-                {Object.entries(SUPPRESSION_REASON_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className={styles.selectChevron} aria-hidden="true" />
-            </div>
+            <select value={reasonFilter} onChange={(event) => setReasonFilter(event.target.value as "ALL" | SuppressionReason)}>
+              <option value="ALL">All reasons</option>
+              {Object.entries(SUPPRESSION_REASON_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
           </label>
 
           <label className={styles.filterGroup}>
             <span className={styles.filterLabel}>Source</span>
-            <div className={styles.controlShell}>
-              <select value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)}>
-                <option value="ALL">All sources</option>
-                {sourceOptions.map((source) => (
-                  <option key={source} value={source}>
-                    {formatSuppressionSource(source)}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className={styles.selectChevron} aria-hidden="true" />
-            </div>
+            <select value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)}>
+              <option value="ALL">All sources</option>
+              {sourceOptions.map((source) => (
+                <option key={source} value={source}>
+                  {formatSuppressionSource(source)}
+                </option>
+              ))}
+            </select>
           </label>
 
           <label className={styles.filterGroup}>
             <span className={styles.filterLabel}>Sort</span>
-            <div className={styles.controlShell}>
-              <select value={sort} onChange={(event) => setSort(event.target.value as SuppressionSortOption)}>
-                {SORT_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className={styles.selectChevron} aria-hidden="true" />
-            </div>
+            <select value={sort} onChange={(event) => setSort(event.target.value as SuppressionSortOption)}>
+              {SORT_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </label>
 
           {filtersActive ? (
@@ -262,139 +245,121 @@ export function SuppressionsTableCard(props: SuppressionsTableCardProps) {
         </div>
       </div>
 
-      <div className={clsx(styles.dataShell, selectedSuppression ? styles.dataShellWithRail : undefined)}>
-        <div className={styles.tableSurface}>
-          <div className={styles.tableHeader}>
-            <span>Recipient</span>
-            <span>Reason</span>
-            <span>Source</span>
-            <span>Updated</span>
-            <span className={styles.actionsHeader}>Actions</span>
-          </div>
-
-          <div className={styles.tableBody}>
-            {sortedRows.length ? (
-              sortedRows.map((entry) => (
-                <div
-                  key={entry.id}
-                  className={clsx(styles.tableRow, entry.id === selectedId ? styles.tableRowActive : undefined)}
-                  onClick={() => setSelectedId(entry.id)}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      setSelectedId(entry.id);
-                    }
-                  }}
-                >
-                  <div className={styles.emailCell}>
-                    <span className={styles.emailValue}>{entry.email}</span>
-                    <span className={styles.emailMeta}>{entry.notes?.trim() ? entry.notes : "No note attached"}</span>
-                  </div>
-
-                  <div className={styles.reasonCell}>
-                    <SuppressionReasonBadge reason={entry.reason} />
-                  </div>
-
-                  <div className={styles.sourceCell}>
-                    <SuppressionSourceBadge source={entry.source} />
-                  </div>
-
-                  <div className={styles.updatedCell}>
-                    <span>{formatRelativeDate(entry.updatedAt)}</span>
-                    <small>{formatDateTime(entry.updatedAt)}</small>
-                  </div>
-
-                  <div className={styles.rowActions} onClick={(event) => event.stopPropagation()}>
-                    <button
-                      className={clsx(styles.iconButton, entry.id === selectedId ? styles.iconButtonActive : undefined)}
-                      type="button"
-                      onClick={() => setSelectedId(entry.id)}
-                      aria-label={`View ${entry.email}`}
-                    >
-                      <Eye aria-hidden="true" />
-                    </button>
-                    <button
-                      className={clsx(styles.iconButton, styles.iconButtonDanger)}
-                      type="button"
-                      onClick={() => props.onDeleteSuppression(entry)}
-                      aria-label={`Delete suppression for ${entry.email}`}
-                      disabled={props.deletingId === entry.id}
-                    >
-                      <Trash2 aria-hidden="true" />
-                    </button>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div className={styles.emptyState}>
-                <div className={styles.emptyStateIcon}>
-                  <CircleSlash aria-hidden="true" />
-                </div>
-                <strong>No suppressed recipients yet</strong>
-                <p>Add a suppression from the left, or wait for unsubscribe and bounce events to populate this list.</p>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {selectedSuppression ? (
-          <aside className={styles.detailRail}>
-            <div className={styles.detailRailHeader}>
-              <div>
-                <span className={styles.sectionEyebrow}>Selected recipient</span>
-                <h3>{selectedSuppression.email}</h3>
-              </div>
-              <button className={styles.iconButton} type="button" onClick={() => setSelectedId(null)} aria-label="Close details">
-                <X aria-hidden="true" />
-              </button>
-            </div>
-
-            <div className={styles.detailPills}>
+      {selectedSuppression ? (
+        <div className={styles.selectionPanel}>
+          <div className={styles.selectionMain}>
+            <span className={styles.sectionEyebrow}>Selected recipient</span>
+            <h3 className={styles.selectionTitle}>{selectedSuppression.email}</h3>
+            <div className={styles.selectionBadges}>
               <SuppressionReasonBadge reason={selectedSuppression.reason} />
               <SuppressionSourceBadge source={selectedSuppression.source} />
             </div>
+          </div>
 
-            <dl className={styles.detailList}>
-              <div className={styles.detailItem}>
-                <dt>Created</dt>
-                <dd>{formatDateTime(selectedSuppression.createdAt)}</dd>
-              </div>
-              <div className={styles.detailItem}>
-                <dt>Updated</dt>
-                <dd>{formatDateTime(selectedSuppression.updatedAt)}</dd>
-              </div>
-              <div className={styles.detailItem}>
-                <dt>Source</dt>
-                <dd>{formatSuppressionSource(selectedSuppression.source)}</dd>
-              </div>
-              <div className={styles.detailItem}>
-                <dt>Reason</dt>
-                <dd>{SUPPRESSION_REASON_LABELS[selectedSuppression.reason]}</dd>
-              </div>
-            </dl>
-
-            <div className={styles.notePanel}>
-              <span className={styles.notePanelLabel}>Internal note</span>
-              <p>{selectedSuppression.notes?.trim() || "No note provided for this suppression."}</p>
+          <dl className={styles.selectionMeta}>
+            <div>
+              <dt>Created</dt>
+              <dd>{formatDateTime(selectedSuppression.createdAt)}</dd>
             </div>
+            <div>
+              <dt>Updated</dt>
+              <dd>{formatDateTime(selectedSuppression.updatedAt)}</dd>
+            </div>
+            <div>
+              <dt>Note</dt>
+              <dd>{selectedSuppression.notes?.trim() || "No note provided."}</dd>
+            </div>
+          </dl>
 
-            <div className={styles.detailActions}>
-              <button className={styles.secondaryButton} type="button" onClick={() => setSearch(selectedSuppression.email)}>
-                Filter to this email
-              </button>
-              <button
-                className={styles.destructiveButton}
-                type="button"
-                onClick={() => props.onDeleteSuppression(selectedSuppression)}
-                disabled={props.deletingId === selectedSuppression.id}
+          <div className={styles.selectionActions}>
+            <button className={styles.secondaryButton} type="button" onClick={() => setSearch(selectedSuppression.email)}>
+              Filter to this email
+            </button>
+            <button
+              className={styles.destructiveButton}
+              type="button"
+              onClick={() => props.onDeleteSuppression(selectedSuppression)}
+              disabled={props.deletingId === selectedSuppression.id}
+            >
+              {props.deletingId === selectedSuppression.id ? "Removing..." : "Delete suppression"}
+            </button>
+            <button className={styles.iconButton} type="button" onClick={() => setSelectedId(null)} aria-label="Close selection">
+              <X aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      <div className={styles.tableSurface}>
+        <div className={styles.tableHeader}>
+          <span>Recipient</span>
+          <span>Signals</span>
+          <span>Updated</span>
+          <span className={styles.actionsHeader}>Actions</span>
+        </div>
+
+        <div className={styles.tableBody}>
+          {sortedRows.length ? (
+            sortedRows.map((entry) => (
+              <div
+                key={entry.id}
+                className={clsx(styles.tableRow, entry.id === selectedId ? styles.tableRowActive : undefined)}
+                onClick={() => setSelectedId(entry.id)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    setSelectedId(entry.id);
+                  }
+                }}
               >
-                {props.deletingId === selectedSuppression.id ? "Removing..." : "Delete suppression"}
-              </button>
+                <div className={styles.emailCell}>
+                  <span className={styles.emailValue}>{entry.email}</span>
+                  <span className={styles.emailMeta}>{entry.notes?.trim() ? entry.notes : "No internal note attached."}</span>
+                </div>
+
+                <div className={styles.signalsCell}>
+                  <SuppressionReasonBadge reason={entry.reason} />
+                  <SuppressionSourceBadge source={entry.source} />
+                </div>
+
+                <div className={styles.updatedCell}>
+                  <span>{formatRelativeDate(entry.updatedAt)}</span>
+                  <small>{formatDateTime(entry.updatedAt)}</small>
+                </div>
+
+                <div className={styles.rowActions} onClick={(event) => event.stopPropagation()}>
+                  <button
+                    className={clsx(styles.iconButton, entry.id === selectedId ? styles.iconButtonActive : undefined)}
+                    type="button"
+                    onClick={() => setSelectedId(entry.id)}
+                    aria-label={`Inspect ${entry.email}`}
+                  >
+                    <Eye aria-hidden="true" />
+                  </button>
+                  <button
+                    className={clsx(styles.iconButton, styles.iconButtonDanger)}
+                    type="button"
+                    onClick={() => props.onDeleteSuppression(entry)}
+                    aria-label={`Delete suppression for ${entry.email}`}
+                    disabled={props.deletingId === entry.id}
+                  >
+                    <Trash2 aria-hidden="true" />
+                  </button>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className={styles.emptyState}>
+              <div className={styles.emptyStateIcon}>
+                <CircleSlash aria-hidden="true" />
+              </div>
+              <strong>No suppressed recipients yet</strong>
+              <p>Add a suppression from the left, or wait for unsubscribe and bounce events to populate this list.</p>
             </div>
-          </aside>
-        ) : null}
+          )}
+        </div>
       </div>
     </section>
   );

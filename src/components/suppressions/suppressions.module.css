@@ -1,12 +1,12 @@
 .workspacePage {
-  width: min(100%, 1620px);
+  width: min(100%, 1560px);
   margin: 0 auto;
   padding: 0.75rem 0 2rem;
 }
 
 .workspaceGrid {
   display: grid;
-  grid-template-columns: minmax(288px, 336px) minmax(0, 1fr);
+  grid-template-columns: minmax(292px, 324px) minmax(0, 1fr);
   gap: 1rem;
   align-items: flex-start;
 }
@@ -20,21 +20,21 @@
 .dataCard {
   position: relative;
   overflow: hidden;
-  border-radius: 26px;
-  border: 1px solid color-mix(in srgb, var(--line) 92%, transparent);
+  border-radius: 24px;
+  border: 1px solid color-mix(in srgb, var(--line) 90%, transparent);
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-strong) 94%, transparent), color-mix(in srgb, var(--surface) 98%, transparent)),
-    radial-gradient(circle at top right, color-mix(in srgb, var(--accent-soft-strong) 50%, transparent), transparent 16rem);
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-strong) 94%, transparent), color-mix(in srgb, var(--surface) 99%, transparent)),
+    radial-gradient(circle at top right, color-mix(in srgb, var(--accent-soft-strong) 46%, transparent), transparent 18rem);
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.04) inset,
-    0 24px 70px rgba(0, 0, 0, 0.18);
+    0 24px 72px rgba(0, 0, 0, 0.18);
   backdrop-filter: blur(18px);
 }
 
 .formCard {
   display: grid;
-  gap: 0.9rem;
-  padding: 1.05rem;
+  gap: 1rem;
+  padding: 1rem;
   position: sticky;
   top: 1rem;
 }
@@ -42,45 +42,44 @@
 .dataCard {
   display: grid;
   gap: 1rem;
-  padding: 1.25rem;
+  padding: 1.15rem;
 }
 
 .sectionEyebrow {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  font-size: 0.68rem;
-  font-weight: 800;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
   color: var(--accent-strong);
+  font-size: 0.67rem;
+  font-weight: 800;
+  letter-spacing: 0.19em;
+  text-transform: uppercase;
 }
 
 .formHeader {
   display: grid;
-  gap: 0.9rem;
+  gap: 0.8rem;
   padding-bottom: 0.9rem;
-  border-bottom: 1px solid color-mix(in srgb, var(--line) 62%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 58%, transparent);
 }
 
 .formHero {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   gap: 0.8rem;
-  align-items: center;
+  align-items: flex-start;
 }
 
 .formHeroIcon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2.35rem;
-  height: 2.35rem;
+  width: 2.25rem;
+  height: 2.25rem;
   border-radius: 14px;
-  border: 1px solid color-mix(in srgb, var(--accent-soft-strong) 48%, transparent);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 76%, transparent), color-mix(in srgb, var(--surface-hover) 68%, transparent));
+  border: 1px solid color-mix(in srgb, var(--accent-soft-strong) 42%, transparent);
+  background: color-mix(in srgb, var(--accent-soft) 68%, transparent);
   color: var(--accent-strong);
-  box-shadow: 0 10px 24px color-mix(in srgb, var(--accent-soft-strong) 20%, transparent);
 }
 
 .formHeroIcon svg {
@@ -91,20 +90,20 @@
 .formCardTitleWrap,
 .dataHeaderMain {
   display: grid;
-  gap: 0.28rem;
+  gap: 0.25rem;
 }
 
 .formTitle {
   margin: 0;
-  font-size: clamp(1.35rem, 1.7vw, 1.72rem);
+  font-size: clamp(1.2rem, 1.5vw, 1.55rem);
   letter-spacing: -0.045em;
-  line-height: 1.04;
+  line-height: 1.02;
 }
 
 .dataTitle {
   margin: 0;
-  font-size: clamp(1.5rem, 1.8vw, 1.9rem);
-  letter-spacing: -0.045em;
+  font-size: clamp(1.35rem, 1.7vw, 1.8rem);
+  letter-spacing: -0.04em;
   line-height: 1.02;
 }
 
@@ -112,51 +111,51 @@
 .dataSubtitle {
   margin: 0;
   color: var(--muted);
-  font-size: 0.9rem;
-  line-height: 1.5;
+  font-size: 0.92rem;
+  line-height: 1.48;
 }
 
-.metricRail {
+.statsInline,
+.dataMetrics {
   display: flex;
   flex-wrap: wrap;
   gap: 0.55rem;
 }
 
-.metricChip,
+.statsInlineItem,
 .dataMetric {
   display: inline-flex;
   align-items: baseline;
-  gap: 0.5rem;
-  padding: 0.58rem 0.72rem;
+  gap: 0.45rem;
+  padding: 0.52rem 0.72rem;
   border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--surface-soft) 98%, transparent), color-mix(in srgb, var(--surface-muted) 94%, transparent));
+  border: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
+  background: color-mix(in srgb, var(--surface-muted) 94%, transparent);
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.06);
 }
 
-.metricLabel,
-.dataMetric span,
-.fieldLabel,
-.filterLabel,
-.detailItem dt,
-.notePanelLabel {
-  color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
-.metricValue,
+.statsInlineItem strong,
 .dataMetric strong {
   font-size: 0.98rem;
   font-weight: 800;
   letter-spacing: -0.04em;
 }
 
+.statsInlineItem small,
+.dataMetric span,
+.fieldLabel,
+.filterLabel,
+.actionsHeader {
+  color: var(--muted);
+  font-size: 0.71rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
 .formBody {
   display: grid;
-  gap: 0.85rem;
+  gap: 0.9rem;
 }
 
 .fieldGroup {
@@ -166,8 +165,8 @@
 
 .fieldHeader {
   display: flex;
-  align-items: center;
   justify-content: space-between;
+  align-items: center;
   gap: 0.75rem;
 }
 
@@ -183,23 +182,20 @@
 }
 
 .inputShell,
-.selectShell,
 .textareaShell,
-.searchShell,
-.controlShell {
+.searchShell {
   position: relative;
 }
 
 .inputShell input,
-.selectShell select,
 .textareaShell textarea,
 .searchShell input,
-.controlShell select {
+.filterGroup select {
   width: 100%;
   border: 1px solid var(--field-border);
+  color: var(--text);
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--field-bg) 96%, transparent), color-mix(in srgb, var(--surface-ghost) 88%, transparent));
-  color: var(--text);
   transition:
     border-color 180ms ease,
     background-color 180ms ease,
@@ -209,24 +205,23 @@
 
 .inputShell input,
 .searchShell input {
-  min-height: 3.35rem;
-  padding: 0 1rem 0 3rem;
+  min-height: 3.2rem;
+  padding: 0 0.95rem 0 2.85rem;
   border-radius: 18px;
-}
-
-.selectShell select,
-.controlShell select {
-  appearance: none;
-  min-height: 2.95rem;
-  padding: 0 2.75rem 0 1rem;
-  border-radius: 16px;
 }
 
 .textareaShell textarea {
-  min-height: 6.8rem;
+  min-height: 5.6rem;
   resize: vertical;
-  padding: 0.95rem 1rem 1rem 3rem;
+  padding: 0.95rem 1rem 1rem 2.85rem;
   border-radius: 18px;
+}
+
+.filterGroup select {
+  appearance: none;
+  min-height: 2.95rem;
+  padding: 0 2.4rem 0 0.95rem;
+  border-radius: 16px;
 }
 
 .inputShell input::placeholder,
@@ -236,45 +231,27 @@
 }
 
 .inputShell input:hover,
-.selectShell select:hover,
 .textareaShell textarea:hover,
 .searchShell input:hover,
-.controlShell select:hover {
+.filterGroup select:hover {
   border-color: color-mix(in srgb, var(--field-focus) 42%, var(--field-border));
 }
 
 .inputShell input:focus-visible,
-.selectShell select:focus-visible,
 .textareaShell textarea:focus-visible,
 .searchShell input:focus-visible,
-.controlShell select:focus-visible {
+.filterGroup select:focus-visible {
   outline: none;
-  border-color: color-mix(in srgb, var(--field-focus) 92%, transparent);
+  border-color: color-mix(in srgb, var(--field-focus) 88%, transparent);
   box-shadow:
-    0 0 0 4px color-mix(in srgb, var(--accent-soft-strong) 60%, transparent),
-    0 14px 36px rgba(0, 0, 0, 0.12);
+    0 0 0 4px color-mix(in srgb, var(--accent-soft-strong) 56%, transparent),
+    0 12px 32px rgba(0, 0, 0, 0.12);
 }
 
 .inputIcon {
   position: absolute;
   top: 50%;
-  left: 1rem;
-  width: 1rem;
-  height: 1rem;
-  transform: translateY(-50%);
-  color: color-mix(in srgb, var(--muted) 82%, transparent);
-  pointer-events: none;
-}
-
-.textareaShell .inputIcon {
-  top: 1.05rem;
-  transform: none;
-}
-
-.selectChevron {
-  position: absolute;
-  top: 50%;
-  right: 0.95rem;
+  left: 0.95rem;
   width: 0.95rem;
   height: 0.95rem;
   transform: translateY(-50%);
@@ -282,84 +259,59 @@
   pointer-events: none;
 }
 
+.textareaShell .inputIcon {
+  top: 1rem;
+  transform: none;
+}
+
 .fieldError {
   border-color: rgba(215, 79, 79, 0.56) !important;
   box-shadow: 0 0 0 4px rgba(215, 79, 79, 0.1);
 }
 
-.reasonGrid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.55rem;
+.reasonPills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 
-.reasonOption {
-  display: grid;
-  gap: 0.14rem;
-  min-height: 4.2rem;
-  padding: 0.8rem 0.85rem;
-  border-radius: 16px;
-  border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--field-bg) 92%, transparent), color-mix(in srgb, var(--surface-ghost) 86%, transparent));
-  color: var(--text);
-  text-align: left;
+.reasonPill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.45rem;
+  padding: 0 0.85rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
+  background: color-mix(in srgb, var(--surface-muted) 92%, transparent);
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
   cursor: pointer;
   transition:
     transform 180ms ease,
     border-color 180ms ease,
     background-color 180ms ease,
+    color 180ms ease,
     box-shadow 180ms ease;
 }
 
-.reasonOption:hover {
+.reasonPill:hover {
   transform: translateY(-1px);
   border-color: color-mix(in srgb, var(--field-focus) 42%, var(--field-border));
 }
 
-.reasonOptionActive {
-  border-color: color-mix(in srgb, var(--accent-soft-strong) 72%, transparent);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 72%, transparent), color-mix(in srgb, var(--surface-hover) 72%, transparent));
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--accent-soft-strong) 35%, transparent) inset,
-    0 12px 30px color-mix(in srgb, var(--accent-soft-strong) 18%, transparent);
-}
-
-.reasonOptionTitle {
-  font-size: 0.91rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-}
-
-.reasonOptionMeta {
-  color: var(--muted);
-  font-size: 0.76rem;
-  line-height: 1.35;
-}
-
-.inlineCallout {
-  display: grid;
-  gap: 0.16rem;
-  padding: 0.8rem 0.9rem;
-  border-radius: 16px;
-  border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
-  background: color-mix(in srgb, var(--surface-hover) 64%, transparent);
-}
-
-.inlineCallout strong {
-  font-size: 0.84rem;
-  letter-spacing: -0.015em;
-}
-
-.inlineCallout span {
-  color: var(--muted);
-  font-size: 0.82rem;
-  line-height: 1.45;
+.reasonPillActive {
+  border-color: color-mix(in srgb, var(--accent-soft-strong) 62%, transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 72%, transparent), color-mix(in srgb, var(--surface-hover) 68%, transparent));
+  color: var(--text);
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--accent-soft-strong) 16%, transparent);
 }
 
 .formFooter {
   display: grid;
-  gap: 0.75rem;
-  margin-top: 0.1rem;
+  gap: 0.72rem;
 }
 
 .primaryButton,
@@ -384,7 +336,7 @@
   align-items: center;
   justify-content: center;
   gap: 0.6rem;
-  min-height: 3.15rem;
+  min-height: 3.05rem;
   border-radius: 16px;
   font-weight: 800;
   letter-spacing: -0.02em;
@@ -393,26 +345,53 @@
 
 .primaryButton {
   width: 100%;
-  border: 1px solid color-mix(in srgb, var(--accent-strong) 34%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-strong) 36%, transparent);
   background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 90%, transparent), color-mix(in srgb, var(--accent-strong) 78%, transparent));
   color: #f7fff9;
   box-shadow:
-    0 16px 30px color-mix(in srgb, var(--accent-soft-strong) 62%, transparent),
+    0 16px 30px color-mix(in srgb, var(--accent-soft-strong) 58%, transparent),
     0 1px 0 rgba(255, 255, 255, 0.14) inset;
 }
 
 .secondaryButton,
 .ghostButton {
-  border: 1px solid color-mix(in srgb, var(--line) 88%, transparent);
-  background: color-mix(in srgb, var(--surface-muted) 95%, transparent);
+  border: 1px solid color-mix(in srgb, var(--line) 84%, transparent);
+  background: color-mix(in srgb, var(--surface-muted) 94%, transparent);
   color: var(--text);
 }
 
+.ghostButton {
+  min-height: 2.95rem;
+  padding: 0 1rem;
+}
+
 .destructiveButton {
-  border: 1px solid rgba(190, 79, 67, 0.26);
+  border: 1px solid rgba(190, 79, 67, 0.28);
   background: linear-gradient(180deg, rgba(190, 79, 67, 0.16), rgba(190, 79, 67, 0.08));
   color: #f1b4ac;
-  box-shadow: 0 12px 24px rgba(95, 24, 17, 0.14);
+}
+
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.45rem;
+  height: 2.45rem;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--line) 84%, transparent);
+  background: color-mix(in srgb, var(--surface-muted) 94%, transparent);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.iconButtonActive {
+  border-color: color-mix(in srgb, var(--accent-soft-strong) 62%, transparent);
+  background: color-mix(in srgb, var(--accent-soft) 72%, transparent);
+  color: var(--accent-strong);
+}
+
+.iconButtonDanger {
+  color: #f0a79f;
 }
 
 .primaryButton:hover:not(:disabled),
@@ -442,47 +421,13 @@
   box-shadow: none;
 }
 
-.ghostButton {
-  min-height: 2.85rem;
-  padding: 0 1rem;
-  border-radius: 14px;
-}
-
-.iconButton {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2.45rem;
-  height: 2.45rem;
-  border-radius: 14px;
-  border: 1px solid color-mix(in srgb, var(--line) 90%, transparent);
-  background: color-mix(in srgb, var(--surface-muted) 94%, transparent);
-  color: var(--muted);
-  cursor: pointer;
-}
-
-.iconButtonActive {
-  border-color: color-mix(in srgb, var(--accent-soft-strong) 68%, transparent);
-  background: color-mix(in srgb, var(--accent-soft) 74%, transparent);
-  color: var(--accent-strong);
-}
-
-.iconButtonDanger {
-  color: #f0a79f;
-}
-
-.iconButtonDanger:hover:not(:disabled) {
-  border-color: rgba(190, 79, 67, 0.3);
-  background: rgba(190, 79, 67, 0.14);
-}
-
 .errorText,
 .successText {
   margin: 0;
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   line-height: 1.45;
 }
 
@@ -498,14 +443,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 1rem;
-  align-items: start;
-}
-
-.dataMetrics {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.7rem;
-  justify-content: flex-end;
+  align-items: flex-start;
 }
 
 .feedbackBanner,
@@ -516,7 +454,7 @@
   gap: 1rem;
   padding: 0.9rem 1rem;
   border-radius: 18px;
-  border: 1px solid color-mix(in srgb, var(--line) 84%, transparent);
+  border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
   background: color-mix(in srgb, var(--surface-muted) 96%, transparent);
 }
 
@@ -546,72 +484,119 @@
 
 .toolbar {
   display: grid;
-  grid-template-columns: minmax(280px, 1fr) auto;
-  gap: 0.85rem;
+  grid-template-columns: minmax(260px, 1fr) auto;
+  gap: 0.8rem;
   align-items: end;
 }
 
 .searchShell svg {
   position: absolute;
   top: 50%;
-  left: 1rem;
-  width: 1rem;
-  height: 1rem;
+  left: 0.95rem;
+  width: 0.95rem;
+  height: 0.95rem;
   transform: translateY(-50%);
   color: color-mix(in srgb, var(--muted) 82%, transparent);
-  pointer-events: none;
 }
 
 .toolbarControls {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.7rem;
+  gap: 0.65rem;
   justify-content: flex-end;
 }
 
 .filterGroup {
   display: grid;
   gap: 0.35rem;
-  min-width: 10rem;
+  min-width: 9.5rem;
 }
 
-.dataShell {
+.selectionPanel {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.1fr) auto;
   gap: 1rem;
+  padding: 1rem;
+  border-radius: 22px;
+  border: 1px solid color-mix(in srgb, var(--accent-soft-strong) 32%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 56%, transparent), color-mix(in srgb, var(--surface-muted) 96%, transparent));
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.08);
 }
 
-.dataShellWithRail {
-  grid-template-columns: minmax(0, 1fr) 320px;
+.selectionMain {
+  display: grid;
+  gap: 0.45rem;
 }
 
-.tableSurface,
-.detailRail {
+.selectionTitle {
+  margin: 0;
+  font-size: 1.25rem;
+  letter-spacing: -0.04em;
+  word-break: break-word;
+}
+
+.selectionBadges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.selectionMeta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.selectionMeta dt {
+  margin-bottom: 0.2rem;
+  color: var(--muted);
+  font-size: 0.71rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.selectionMeta dd {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.9rem;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.selectionActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  justify-content: flex-end;
+  align-items: flex-start;
+}
+
+.tableSurface {
+  overflow: hidden;
   border-radius: 22px;
   border: 1px solid color-mix(in srgb, var(--line) 84%, transparent);
   background: linear-gradient(180deg, color-mix(in srgb, var(--surface-soft) 98%, transparent), color-mix(in srgb, var(--surface-muted) 96%, transparent));
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.08);
 }
 
-.tableSurface {
-  overflow: hidden;
-}
-
 .tableHeader,
 .tableRow {
   display: grid;
-  grid-template-columns: minmax(0, 2.4fr) minmax(0, 1.1fr) minmax(0, 1.1fr) minmax(0, 0.9fr) auto;
+  grid-template-columns: minmax(280px, 1.9fr) minmax(220px, 1.2fr) 170px 96px;
   gap: 1rem;
   align-items: center;
 }
 
 .tableHeader {
-  padding: 0.95rem 1.15rem;
+  padding: 0.95rem 1rem;
   border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
   color: var(--muted);
-  font-size: 0.73rem;
+  font-size: 0.71rem;
   font-weight: 800;
-  letter-spacing: 0.15em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
 }
 
@@ -626,8 +611,8 @@
 }
 
 .tableRow {
-  padding: 0.95rem 1.15rem;
-  border-bottom: 1px solid color-mix(in srgb, var(--line) 62%, transparent);
+  padding: 0.95rem 1rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
   cursor: pointer;
   transition:
     background-color 180ms ease,
@@ -644,13 +629,12 @@
 }
 
 .tableRowActive {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 80%, transparent), color-mix(in srgb, var(--surface-hover) 74%, transparent));
-  box-shadow: 0 1px 0 color-mix(in srgb, var(--accent-soft-strong) 44%, transparent) inset;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 64%, transparent), color-mix(in srgb, var(--surface-hover) 74%, transparent));
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--accent-soft-strong) 40%, transparent) inset;
 }
 
 .emailCell,
-.reasonCell,
-.sourceCell,
+.signalsCell,
 .updatedCell {
   min-width: 0;
 }
@@ -667,23 +651,22 @@
 .emailMeta,
 .updatedCell small {
   display: block;
-  margin-top: 0.25rem;
+  margin-top: 0.24rem;
   color: var(--muted);
   font-size: 0.84rem;
-  line-height: 1.45;
+  line-height: 1.42;
+}
+
+.signalsCell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 
 .rowActions {
   display: inline-flex;
   gap: 0.5rem;
   justify-self: end;
-  opacity: 0.72;
-  transition: opacity 180ms ease;
-}
-
-.tableRow:hover .rowActions,
-.tableRowActive .rowActions {
-  opacity: 1;
 }
 
 .badge {
@@ -691,10 +674,10 @@
   align-items: center;
   justify-content: center;
   min-height: 1.95rem;
-  padding: 0.34rem 0.72rem;
+  padding: 0.32rem 0.72rem;
   border-radius: 999px;
   border: 1px solid transparent;
-  font-size: 0.78rem;
+  font-size: 0.77rem;
   font-weight: 800;
   letter-spacing: 0.04em;
 }
@@ -730,78 +713,6 @@
   border-color: color-mix(in srgb, var(--line) 76%, transparent);
 }
 
-.detailRail {
-  display: grid;
-  gap: 1rem;
-  padding: 1.1rem;
-  align-self: flex-start;
-}
-
-.detailRailHeader {
-  display: flex;
-  justify-content: space-between;
-  gap: 0.75rem;
-  align-items: flex-start;
-}
-
-.detailRailHeader h3 {
-  margin: 0.35rem 0 0;
-  font-size: 1.08rem;
-  letter-spacing: -0.04em;
-  word-break: break-word;
-}
-
-.detailPills {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.55rem;
-}
-
-.detailList {
-  display: grid;
-  gap: 0.75rem;
-  margin: 0;
-}
-
-.detailItem {
-  display: grid;
-  gap: 0.22rem;
-  padding-bottom: 0.75rem;
-  border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
-}
-
-.detailItem:last-child {
-  padding-bottom: 0;
-  border-bottom: none;
-}
-
-.detailItem dd {
-  margin: 0;
-  font-size: 0.94rem;
-  font-weight: 600;
-  word-break: break-word;
-}
-
-.notePanel {
-  display: grid;
-  gap: 0.45rem;
-  padding: 0.95rem;
-  border-radius: 18px;
-  border: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
-  background: color-mix(in srgb, var(--surface-hover) 70%, transparent);
-}
-
-.notePanel p {
-  margin: 0;
-  line-height: 1.6;
-}
-
-.detailActions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.7rem;
-}
-
 .emptyState {
   display: grid;
   justify-items: center;
@@ -817,18 +728,18 @@
   width: 3rem;
   height: 3rem;
   border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--line) 74%, transparent);
+  border: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
   background: color-mix(in srgb, var(--surface-hover) 74%, transparent);
 }
 
 .emptyStateIcon svg {
-  width: 1.15rem;
-  height: 1.15rem;
+  width: 1.1rem;
+  height: 1.1rem;
   color: var(--muted);
 }
 
 .emptyState strong {
-  font-size: 1.02rem;
+  font-size: 1rem;
 }
 
 .emptyState p {
@@ -838,7 +749,7 @@
   line-height: 1.6;
 }
 
-@media (max-width: 1320px) {
+@media (max-width: 1340px) {
   .workspaceGrid {
     grid-template-columns: 1fr;
   }
@@ -847,20 +758,20 @@
     position: static;
   }
 
-  .dataShellWithRail,
   .dataTopBar,
-  .toolbar {
+  .toolbar,
+  .selectionPanel {
     grid-template-columns: 1fr;
   }
 
+  .toolbarControls,
   .dataMetrics,
-  .toolbarControls {
+  .selectionActions {
     justify-content: flex-start;
   }
 }
 
 @media (max-width: 980px) {
-  .metricRail,
   .tableHeader,
   .tableRow {
     grid-template-columns: 1fr;
@@ -870,16 +781,12 @@
     display: none;
   }
 
-  .tableRow {
-    gap: 0.7rem;
-  }
-
   .rowActions,
   .actionsHeader {
     justify-self: start;
   }
 
-  .dataShellWithRail {
+  .selectionMeta {
     grid-template-columns: 1fr;
   }
 }
@@ -895,29 +802,25 @@
     border-radius: 22px;
   }
 
-  .formHero {
-    grid-template-columns: 1fr;
-  }
-
-  .metricRail {
-    grid-template-columns: 1fr;
-  }
-
+  .formHero,
   .fieldHeader,
   .feedbackBanner,
-  .undoBanner,
-  .detailActions {
-    align-items: stretch;
+  .undoBanner {
+    grid-template-columns: 1fr;
     flex-direction: column;
-  }
-
-  .filterGroup {
-    min-width: 0;
-    width: 100%;
+    align-items: stretch;
   }
 
   .toolbarControls {
     display: grid;
     grid-template-columns: 1fr;
+  }
+
+  .filterGroup {
+    min-width: 0;
+  }
+
+  .selectionActions {
+    align-items: stretch;
   }
 }
