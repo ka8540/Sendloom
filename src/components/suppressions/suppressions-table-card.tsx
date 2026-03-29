@@ -8,7 +8,6 @@ import { formatSuppressionSource, SUPPRESSION_REASON_LABELS, SuppressionReasonBa
 import { formatDateTime, formatRelativeDate } from "@/components/suppressions/formatters";
 import { SuppressionLogHeader } from "@/components/suppressions/suppression-log-header";
 import { SuppressionLogToolbar } from "@/components/suppressions/suppression-log-toolbar";
-import { SuppressionRowActions } from "@/components/suppressions/suppression-row-actions";
 import { SuppressionSidePanel } from "@/components/suppressions/suppression-side-panel";
 import type { SuppressionReason, SuppressionRecord, SuppressionSortOption } from "@/components/suppressions/types";
 
@@ -143,7 +142,6 @@ export function SuppressionsTableCard(props: SuppressionsTableCardProps) {
             <span>Recipient</span>
             <span>Signals</span>
             <span>Updated</span>
-            <span className={styles.actionsHeader}>Actions</span>
           </div>
 
           <div className={styles.tableBody}>
@@ -175,19 +173,6 @@ export function SuppressionsTableCard(props: SuppressionsTableCardProps) {
                   <div className={styles.updatedCell}>
                     <span>{formatRelativeDate(entry.updatedAt)}</span>
                     <small>{formatDateTime(entry.updatedAt)}</small>
-                  </div>
-
-                  <div onClick={(event) => event.stopPropagation()}>
-                    <SuppressionRowActions
-                      isActive={entry.id === selectedId}
-                      isDeleting={props.deletingId === entry.id}
-                      onInspect={() => setSelectedId(entry.id)}
-                      onFilter={() => {
-                        setSearch(entry.email);
-                        setSelectedId(entry.id);
-                      }}
-                      onDelete={() => props.onDeleteSuppression(entry)}
-                    />
                   </div>
                 </div>
               ))
