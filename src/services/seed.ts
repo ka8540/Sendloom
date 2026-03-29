@@ -13,11 +13,13 @@ export async function ensureBootstrapData() {
   await prisma.user.upsert({
     where: { email },
     update: {
-      passwordHash
+      passwordHash,
+      isAdmin: true
     },
     create: {
       email,
-      passwordHash
+      passwordHash,
+      isAdmin: true
     }
   });
 }

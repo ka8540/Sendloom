@@ -37,7 +37,8 @@ export async function POST(request: Request) {
   const user = await prisma.user.create({
     data: {
       email,
-      passwordHash
+      passwordHash,
+      isAdmin: process.env.ADMIN_EMAIL?.trim().toLowerCase() === email
     }
   });
 

@@ -1,16 +1,15 @@
 import { NextResponse } from "next/server";
 
-import { getSessionUser } from "@/lib/auth";
-import { createUnauthorizedApiResponse } from "@/lib/api-auth";
+import { requireApiUser } from "@/lib/api-auth";
 import { getImportColumns } from "@/services/imports";
 
 export async function GET(_: Request, context: { params: Promise<{ id: string }> }) {
-  const user = await getSessionUser();
-  if (!user) {
-    return createUnauthorizedApiResponse();
+  const auth = await requireApiUser();
+  if ("response" in auth) {
+    return auth.response;
   }
 
   const { id } = await context.params;
-  const data = await getImportColumns(id, user.id);
+  const data = await getImportColumns(id, auth.user.id);
   return NextResponse.json(data);
 }

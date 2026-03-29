@@ -1,13 +1,13 @@
 import { AppNav } from "@/components/nav";
 import { BackButton } from "@/components/back-button";
-import { requireSession } from "@/lib/auth";
+import { isAdminUser, requireUser } from "@/lib/auth";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  await requireSession();
+  const user = await requireUser();
 
   return (
     <div className="shell">
-      <AppNav />
+      <AppNav isAdmin={isAdminUser(user)} />
       <main className="content">
         <div className="content-toolbar">
           <BackButton />

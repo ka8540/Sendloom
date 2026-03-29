@@ -1,21 +1,20 @@
 import { after } from "next/server";
 import { NextResponse } from "next/server";
 
-import { getSessionUser } from "@/lib/auth";
-import { createUnauthorizedApiResponse } from "@/lib/api-auth";
+import { requireApiUser } from "@/lib/api-auth";
 import { writeAuditLog } from "@/lib/audit";
 import { launchCampaign, processPendingCampaignWork } from "@/services/campaigns";
 
 export const maxDuration = 60;
 
 export async function POST(_: Request, context: { params: Promise<{ id: string }> }) {
-  const user = await getSessionUser();
-  if (!user) {
-    return createUnauthorizedApiResponse();
+  const auth = await requireApiUser("campaignLaunch");
+  if ("response" in auth) {
+    return auth.response;
   }
 
   const { id } = await context.params;
-  const run = await launchCampaign(id, user.id);
+  const run = await launchCampaign(id, auth.user.id);
   after(async () => {
     await processPendingCampaignWork({
       runId: run.id,
@@ -23,7 +22,7 @@ export async function POST(_: Request, context: { params: Promise<{ id: string }
     });
   });
   await writeAuditLog({
-    actorEmail: user.email,
+    actorEmail: auth.user.email,
     action: "campaign.launch",
     entityType: "campaign",
     entityId: id,

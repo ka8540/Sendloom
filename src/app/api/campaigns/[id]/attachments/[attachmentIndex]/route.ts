@@ -2,8 +2,7 @@ import { readFile } from "node:fs/promises";
 
 import { NextResponse } from "next/server";
 
-import { createUnauthorizedApiResponse } from "@/lib/api-auth";
-import { getSessionUser } from "@/lib/auth";
+import { requireApiUser } from "@/lib/api-auth";
 import { getAttachmentContentType } from "@/lib/attachments";
 import { prisma } from "@/lib/db";
 import type { EmailAttachment } from "@/lib/provider";
@@ -27,10 +26,9 @@ export async function GET(
   request: Request,
   context: { params: Promise<{ id: string; attachmentIndex: string }> }
 ) {
-  const user = await getSessionUser();
-
-  if (!user) {
-    return createUnauthorizedApiResponse();
+  const auth = await requireApiUser();
+  if ("response" in auth) {
+    return auth.response;
   }
 
   const { id, attachmentIndex } = await context.params;
@@ -43,7 +41,7 @@ export async function GET(
   const campaign = await prisma.campaign.findFirst({
     where: {
       id,
-      userId: user.id
+      userId: auth.user.id
     },
     select: {
       templateSnapshot: true

@@ -1,22 +1,28 @@
 "use client";
 
 import { useState } from "react";
+import type { Route } from "next";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { FileSpreadsheet, House, PanelLeftClose, PanelLeftOpen, ScrollText, SendHorizontal, ShieldAlert } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { FileSpreadsheet, House, PanelLeftClose, PanelLeftOpen, ScrollText, SendHorizontal, ShieldAlert, ShieldUser } from "lucide-react";
 import { SendloomLogo } from "@/components/sendloom-logo";
 import { SessionControls } from "@/components/session-controls";
 
-export function AppNav() {
+export function AppNav({ isAdmin = false }: { isAdmin?: boolean }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
-  const items = [
-    { href: "/workspace", label: "Overview", icon: House },
-    { href: "/imports", label: "Imports", icon: FileSpreadsheet },
-    { href: "/templates", label: "Templates", icon: ScrollText },
-    { href: "/campaigns", label: "Sequences", icon: SendHorizontal },
-    { href: "/suppressions", label: "Suppressions", icon: ShieldAlert }
-  ] as const;
+  const items: Array<{ href: Route; label: string; icon: LucideIcon }> = [
+    { href: "/workspace" as Route, label: "Overview", icon: House },
+    { href: "/imports" as Route, label: "Imports", icon: FileSpreadsheet },
+    { href: "/templates" as Route, label: "Templates", icon: ScrollText },
+    { href: "/campaigns" as Route, label: "Sequences", icon: SendHorizontal },
+    { href: "/suppressions" as Route, label: "Suppressions", icon: ShieldAlert }
+  ];
+
+  if (isAdmin) {
+    items.push({ href: "/admin" as Route, label: "Admin", icon: ShieldUser });
+  }
 
   return (
     <aside className={`sidebar${collapsed ? " is-collapsed" : ""}`}>

@@ -32,9 +32,12 @@ export async function GET(request: Request) {
 
     await prisma.user.upsert({
       where: { email },
-      update: {},
+      update: {
+        isAdmin: process.env.ADMIN_EMAIL?.trim().toLowerCase() === email ? true : undefined
+      },
       create: {
-        email
+        email,
+        isAdmin: process.env.ADMIN_EMAIL?.trim().toLowerCase() === email
       }
     });
 

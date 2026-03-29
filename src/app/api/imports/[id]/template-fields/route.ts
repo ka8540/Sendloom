@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { getSessionUser } from "@/lib/auth";
-import { createUnauthorizedApiResponse } from "@/lib/api-auth";
+import { requireApiUser } from "@/lib/api-auth";
 import { saveTemplateFields } from "@/services/imports";
 
 const schema = z.object({
@@ -10,16 +9,16 @@ const schema = z.object({
 });
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
-  const user = await getSessionUser();
-  if (!user) {
-    return createUnauthorizedApiResponse();
+  const auth = await requireApiUser("importsWrite");
+  if ("response" in auth) {
+    return auth.response;
   }
 
   const { id } = await context.params;
   const payload = schema.parse(await request.json());
 
   try {
-    const mapping = await saveTemplateFields(id, user.id, payload.selectedColumns);
+    const mapping = await saveTemplateFields(id, auth.user.id, payload.selectedColumns);
     return NextResponse.json(mapping);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not save template fields.";

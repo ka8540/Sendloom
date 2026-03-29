@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { createUnauthorizedApiResponse } from "@/lib/api-auth";
-import { getSessionUser } from "@/lib/auth";
+import { requireApiUser } from "@/lib/api-auth";
 import { env } from "@/lib/env";
 import { TEMPLATE_FORMATS, type TemplateFormat, validateTemplateBody } from "@/lib/templates";
 
@@ -248,9 +247,9 @@ async function fixSpamContent(currentText: string, templateFormat: TemplateForma
 
 export async function POST(request: Request) {
   try {
-    const user = await getSessionUser();
-    if (!user) {
-      return createUnauthorizedApiResponse();
+    const auth = await requireApiUser("aiEnhance");
+    if ("response" in auth) {
+      return auth.response;
     }
 
     const payload = requestSchema.parse(await request.json());

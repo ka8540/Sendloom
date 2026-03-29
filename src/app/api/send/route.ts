@@ -2,8 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { renderEmailTemplate } from "@/components/email-template";
-import { getSessionUser } from "@/lib/auth";
-import { createUnauthorizedApiResponse } from "@/lib/api-auth";
+import { requireApiUser } from "@/lib/api-auth";
 import { env } from "@/lib/env";
 import { sendEmail } from "@/lib/provider";
 import { getDefaultUserSender } from "@/services/senders";
@@ -16,15 +15,15 @@ const schema = z
   .optional();
 
 export async function POST(request: Request) {
-  const user = await getSessionUser();
-  if (!user) {
-    return createUnauthorizedApiResponse();
+  const auth = await requireApiUser();
+  if ("response" in auth) {
+    return auth.response;
   }
 
   try {
     const body = request.headers.get("content-length") === "0" ? undefined : await request.json().catch(() => undefined);
     const payload = schema.parse(body);
-    const sender = await getDefaultUserSender(user.id);
+    const sender = await getDefaultUserSender(auth.user.id);
 
     if (!sender) {
       return NextResponse.json(
@@ -38,7 +37,7 @@ export async function POST(request: Request) {
     const html = renderEmailTemplate({ firstName: payload?.firstName ?? "John" });
     const result = await sendEmail({
       from: `${sender.name || env.DEFAULT_FROM_NAME || sender.fromEmail} <${sender.fromEmail}>`,
-      to: payload?.to ?? user.email,
+      to: payload?.to ?? auth.user.email,
       subject: "Sendloom delivery test",
       html,
       sender: {

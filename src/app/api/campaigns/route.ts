@@ -2,8 +2,7 @@ import { after } from "next/server";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { getSessionUser } from "@/lib/auth";
-import { createUnauthorizedApiResponse } from "@/lib/api-auth";
+import { createForbiddenApiResponse, getApiRestrictionMessage, requireApiUser } from "@/lib/api-auth";
 import { prisma } from "@/lib/db";
 import { storeUpload } from "@/lib/storage";
 import { createCampaignDraft, launchCampaign, processPendingCampaignWork, validateCampaign } from "@/services/campaigns";
@@ -39,9 +38,9 @@ const schema = z.object({
 });
 
 export async function POST(request: Request) {
-  const user = await getSessionUser();
-  if (!user) {
-    return createUnauthorizedApiResponse();
+  const auth = await requireApiUser();
+  if ("response" in auth) {
+    return auth.response;
   }
 
   const formData = await request.formData();
@@ -60,10 +59,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Choose a future time for a one-time scheduled send." }, { status: 400 });
   }
 
+  const launchRestrictionMessage = getApiRestrictionMessage(auth.user, "campaignLaunch");
+  const wouldLaunchOrSchedule = payload.autoLaunch || payload.scheduleRule.type === "once" || payload.scheduleRule.type === "recurring";
+  if (launchRestrictionMessage && wouldLaunchOrSchedule) {
+    return createForbiddenApiResponse(launchRestrictionMessage);
+  }
+
   const sender = await prisma.senderProfile.findFirst({
     where: {
       id: payload.senderProfileId,
-      userId: user.id
+      userId: auth.user.id
     }
   });
 
@@ -106,12 +111,12 @@ export async function POST(request: Request) {
       ...payload,
       attachments
     },
-    user.id
+    auth.user.id
   );
 
   if (payload.autoLaunch && payload.scheduleRule.type === "immediate") {
-    await validateCampaign(campaign.id, user.id);
-    const run = await launchCampaign(campaign.id, user.id);
+    await validateCampaign(campaign.id, auth.user.id);
+    const run = await launchCampaign(campaign.id, auth.user.id);
     after(async () => {
       await processPendingCampaignWork({
         runId: run.id,
@@ -122,7 +127,7 @@ export async function POST(request: Request) {
   }
 
   if (payload.scheduleRule.type === "once" || payload.scheduleRule.type === "recurring") {
-    const run = await launchCampaign(campaign.id, user.id);
+    const run = await launchCampaign(campaign.id, auth.user.id);
     return NextResponse.json({
       campaignId: campaign.id,
       runId: run.id,

@@ -1,13 +1,12 @@
 import { NextResponse } from "next/server";
 
-import { getSessionUser } from "@/lib/auth";
-import { createUnauthorizedApiResponse } from "@/lib/api-auth";
+import { requireApiUser } from "@/lib/api-auth";
 import { createImport } from "@/services/imports";
 
 export async function POST(request: Request) {
-  const user = await getSessionUser();
-  if (!user) {
-    return createUnauthorizedApiResponse();
+  const auth = await requireApiUser("importsWrite");
+  if ("response" in auth) {
+    return auth.response;
   }
 
   const formData = await request.formData();
@@ -18,7 +17,7 @@ export async function POST(request: Request) {
   }
 
   const buffer = Buffer.from(await file.arrayBuffer());
-  const importRecord = await createImport(file.name, file.type, buffer, user.id);
+  const importRecord = await createImport(file.name, file.type, buffer, auth.user.id);
 
   return NextResponse.json(importRecord);
 }

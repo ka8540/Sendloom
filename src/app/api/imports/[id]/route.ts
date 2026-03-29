@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { getSessionUser } from "@/lib/auth";
-import { createUnauthorizedApiResponse } from "@/lib/api-auth";
+import { requireApiUser } from "@/lib/api-auth";
 import { deleteImport, updateImportName } from "@/services/imports";
 
 const schema = z.object({
@@ -10,24 +9,24 @@ const schema = z.object({
 });
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
-  const user = await getSessionUser();
-  if (!user) {
-    return createUnauthorizedApiResponse();
+  const auth = await requireApiUser("importsWrite");
+  if ("response" in auth) {
+    return auth.response;
   }
 
   const { id } = await context.params;
   const payload = schema.parse(await request.json());
-  const updatedImport = await updateImportName(id, user.id, payload.fileName);
+  const updatedImport = await updateImportName(id, auth.user.id, payload.fileName);
   return NextResponse.json(updatedImport);
 }
 
 export async function DELETE(_request: Request, context: { params: Promise<{ id: string }> }) {
-  const user = await getSessionUser();
-  if (!user) {
-    return createUnauthorizedApiResponse();
+  const auth = await requireApiUser("importsWrite");
+  if ("response" in auth) {
+    return auth.response;
   }
 
   const { id } = await context.params;
-  const result = await deleteImport(id, user.id);
+  const result = await deleteImport(id, auth.user.id);
   return NextResponse.json(result);
 }

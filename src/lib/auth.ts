@@ -14,8 +14,22 @@ type SessionClaims = JwtPayload & {
   email: string;
 };
 
+const SESSION_TOUCH_INTERVAL_MS = 5 * 60 * 1000;
+
 export function normalizeUserEmail(email: string) {
   return email.trim().toLowerCase();
+}
+
+export function isConfiguredAdminEmail(email: string) {
+  if (!env.ADMIN_EMAIL) {
+    return false;
+  }
+
+  return normalizeUserEmail(env.ADMIN_EMAIL) === normalizeUserEmail(email);
+}
+
+export function isAdminUser(user: { email: string; isAdmin?: boolean | null }) {
+  return Boolean(user.isAdmin) || isConfiguredAdminEmail(user.email);
 }
 
 export async function createPasswordHash(password: string) {
@@ -44,8 +58,23 @@ export function verifySessionToken(token: string): SessionClaims | null {
 }
 
 export async function setSession(email: string) {
+  const normalizedEmail = normalizeUserEmail(email);
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + SESSION_DURATION_SECONDS * 1000);
+
+  await prisma.user.update({
+    where: { email: normalizedEmail },
+    data: {
+      isAdmin: isConfiguredAdminEmail(normalizedEmail) ? true : undefined,
+      lastLoginAt: now,
+      lastSeenAt: now,
+      sessionIssuedAt: now,
+      sessionExpiresAt: expiresAt
+    }
+  });
+
   const store = await cookies();
-  store.set(SESSION_COOKIE, createSessionToken(email), {
+  store.set(SESSION_COOKIE, createSessionToken(normalizedEmail), {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
@@ -56,6 +85,18 @@ export async function setSession(email: string) {
 
 export async function clearSession() {
   const store = await cookies();
+  const token = store.get(SESSION_COOKIE)?.value;
+  const claims = token ? verifySessionToken(token) : null;
+  if (claims?.email) {
+    await prisma.user.updateMany({
+      where: { email: claims.email },
+      data: {
+        sessionIssuedAt: new Date(),
+        sessionExpiresAt: null
+      }
+    });
+  }
+
   store.set(SESSION_COOKIE, "", {
     httpOnly: true,
     sameSite: "lax",
@@ -73,13 +114,65 @@ export async function getSession() {
   }
 
   const claims = verifySessionToken(token);
-  if (!claims?.exp) {
+  if (!claims?.exp || !claims.email) {
     return null;
   }
 
+  const user = await prisma.user.findUnique({
+    where: { email: claims.email },
+    select: {
+      email: true,
+      sessionExpiresAt: true,
+      sessionIssuedAt: true,
+      lastSeenAt: true
+    }
+  });
+
+  if (!user) {
+    return null;
+  }
+
+  const tokenIssuedAt = typeof claims.iat === "number" ? new Date(claims.iat * 1000) : null;
+  const tokenExpiresAt = new Date(claims.exp * 1000);
+  const now = new Date();
+  let sessionExpiresAt = user.sessionExpiresAt;
+
+  if (!user.sessionIssuedAt && !user.sessionExpiresAt) {
+    await prisma.user.updateMany({
+      where: { email: user.email },
+      data: {
+        sessionIssuedAt: tokenIssuedAt ?? now,
+        sessionExpiresAt: tokenExpiresAt,
+        lastSeenAt: now
+      }
+    });
+    sessionExpiresAt = tokenExpiresAt;
+  }
+
+  if (user.sessionIssuedAt && !tokenIssuedAt) {
+    return null;
+  }
+
+  if (user.sessionIssuedAt && tokenIssuedAt && tokenIssuedAt < user.sessionIssuedAt) {
+    return null;
+  }
+
+  if (!sessionExpiresAt || sessionExpiresAt <= now || tokenExpiresAt <= now) {
+    return null;
+  }
+
+  if (!user.lastSeenAt || now.getTime() - user.lastSeenAt.getTime() >= SESSION_TOUCH_INTERVAL_MS) {
+    await prisma.user.updateMany({
+      where: { email: user.email },
+      data: {
+        lastSeenAt: now
+      }
+    });
+  }
+
   return {
-    email: claims.email,
-    expiresAt: new Date(claims.exp * 1000).toISOString()
+    email: user.email,
+    expiresAt: sessionExpiresAt.toISOString()
   };
 }
 
@@ -116,6 +209,16 @@ export async function requireUser() {
 
   if (!user) {
     redirect("/login");
+  }
+
+  return user;
+}
+
+export async function requireAdminUser() {
+  const user = await requireUser();
+
+  if (!isAdminUser(user)) {
+    redirect("/workspace");
   }
 
   return user;
