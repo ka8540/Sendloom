@@ -104,6 +104,12 @@
   background: color-mix(in srgb, var(--warning-soft) 65%, var(--surface-strong) 35%);
 }
 
+.statusPillInfo {
+  color: var(--muted);
+  border-color: color-mix(in srgb, var(--line) 70%, var(--surface-strong));
+  background: color-mix(in srgb, var(--surface-muted) 82%, var(--surface-strong) 18%);
+}
+
 .detailsGrid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -236,6 +242,12 @@
 
 .successText {
   color: var(--success);
+}
+
+.sessionNote {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
 }
 
 @media (max-width: 1180px) {

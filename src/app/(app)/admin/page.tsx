@@ -60,8 +60,20 @@ export default async function AdminDashboardPage() {
               <div className={styles.userIdentity}>
                 <h2>{user.email}</h2>
                 <div className={styles.userMeta}>
-                  <span className={`${styles.statusPill} ${user.isLoggedIn ? styles.statusPillActive : styles.statusPillMuted}`}>
-                    {user.isLoggedIn ? "Logged in" : "Signed out"}
+                  <span
+                    className={`${styles.statusPill} ${
+                      user.sessionStatus === "active"
+                        ? styles.statusPillActive
+                        : user.sessionStatus === "untracked"
+                          ? styles.statusPillInfo
+                          : styles.statusPillMuted
+                    }`}
+                  >
+                    {user.sessionStatus === "active"
+                      ? "Logged in"
+                      : user.sessionStatus === "untracked"
+                        ? "Session not tracked"
+                        : "Signed out"}
                   </span>
                   {user.isAdmin ? <span className={`${styles.statusPill} ${styles.statusPillWarning}`}>Admin</span> : null}
                   {user.apiAccessDisabled ? <span className={`${styles.statusPill} ${styles.statusPillWarning}`}>API disabled</span> : null}
@@ -119,6 +131,12 @@ export default async function AdminDashboardPage() {
                 aiEnhancementsDisabled: user.aiEnhancementsDisabled
               }}
             />
+
+            {user.sessionStatus === "untracked" ? (
+              <p className={styles.sessionNote}>
+                This account has not created a tracked session on the admin-enabled deployment yet, so it may still be active elsewhere.
+              </p>
+            ) : null}
           </article>
         ))}
       </section>

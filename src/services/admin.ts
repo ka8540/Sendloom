@@ -72,25 +72,31 @@ export async function listAdminUsers() {
     }
   });
 
-  return users.map((user) => ({
-    id: user.id,
-    email: user.email,
-    isAdmin: isAdminUser(user),
-    apiAccessDisabled: user.apiAccessDisabled,
-    importsWriteDisabled: user.importsWriteDisabled,
-    templatesWriteDisabled: user.templatesWriteDisabled,
-    launchesDisabled: user.launchesDisabled,
-    aiEnhancementsDisabled: user.aiEnhancementsDisabled,
-    hasPasswordLogin: Boolean(user.passwordHash),
-    authProvider: user.passwordHash ? "Password" : "Google",
-    lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
-    lastSeenAt: user.lastSeenAt?.toISOString() ?? null,
-    sessionExpiresAt: user.sessionExpiresAt?.toISOString() ?? null,
-    isLoggedIn: Boolean(user.sessionExpiresAt && user.sessionExpiresAt > now),
-    createdAt: user.createdAt.toISOString(),
-    updatedAt: user.updatedAt.toISOString(),
-    counts: user._count
-  }));
+  return users.map((user) => {
+    const hasTrackedSessionData = Boolean(user.lastLoginAt || user.lastSeenAt || user.sessionExpiresAt);
+    const isLoggedIn = Boolean(user.sessionExpiresAt && user.sessionExpiresAt > now);
+
+    return {
+      id: user.id,
+      email: user.email,
+      isAdmin: isAdminUser(user),
+      apiAccessDisabled: user.apiAccessDisabled,
+      importsWriteDisabled: user.importsWriteDisabled,
+      templatesWriteDisabled: user.templatesWriteDisabled,
+      launchesDisabled: user.launchesDisabled,
+      aiEnhancementsDisabled: user.aiEnhancementsDisabled,
+      hasPasswordLogin: Boolean(user.passwordHash),
+      authProvider: user.passwordHash ? "Password" : "Google",
+      lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
+      lastSeenAt: user.lastSeenAt?.toISOString() ?? null,
+      sessionExpiresAt: user.sessionExpiresAt?.toISOString() ?? null,
+      isLoggedIn,
+      sessionStatus: isLoggedIn ? "active" : hasTrackedSessionData ? "signed_out" : "untracked",
+      createdAt: user.createdAt.toISOString(),
+      updatedAt: user.updatedAt.toISOString(),
+      counts: user._count
+    };
+  });
 }
 
 export async function updateUserAdminControls(args: {
