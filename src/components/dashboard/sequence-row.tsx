@@ -54,24 +54,22 @@ export function SequenceRow({ sequence }: { sequence: SequenceRowData }) {
         </div>
       </div>
 
-      <div className={styles.sequenceAside}>
-        <div className={styles.sequenceActivity}>
-          <span>Last activity</span>
-          <strong>{sequence.lastActivityLabel}</strong>
-          <small>{sequence.lastActivityDetail}</small>
-        </div>
+      <div className={styles.sequenceActivity}>
+        <span>Last activity</span>
+        <strong>{sequence.lastActivityLabel}</strong>
+        <small>{sequence.lastActivityDetail}</small>
+      </div>
 
-        <div className={styles.sequenceInteractiveRail}>
-          <SequenceRowActions
-            href={sequence.href}
-            campaignId={sequence.id}
-            campaignName={sequence.name}
-            canRelaunch={sequence.canRelaunch}
-          />
-          <span className={styles.sequenceArrow}>
-            <ArrowUpRight aria-hidden="true" />
-          </span>
-        </div>
+      <div className={styles.sequenceInteractiveRail}>
+        <SequenceRowActions
+          href={sequence.href}
+          campaignId={sequence.id}
+          campaignName={sequence.name}
+          canRelaunch={sequence.canRelaunch}
+        />
+        <span className={styles.sequenceArrow}>
+          <ArrowUpRight aria-hidden="true" />
+        </span>
       </div>
     </article>
   );
