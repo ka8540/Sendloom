@@ -1,7 +1,7 @@
 import { X } from "lucide-react";
 
 import { formatDateTime } from "@/components/suppressions/formatters";
-import { SUPPRESSION_REASON_LABELS, SuppressionReasonBadge, SuppressionSourceBadge } from "@/components/suppressions/suppression-badge";
+import { formatSuppressionSource, SUPPRESSION_REASON_LABELS } from "@/components/suppressions/suppression-badge";
 import type { SuppressionRecord } from "@/components/suppressions/types";
 
 import styles from "./suppressions.module.css";
@@ -28,11 +28,6 @@ export function SuppressionSidePanel(props: SuppressionSidePanelProps) {
         </button>
       </div>
 
-      <div className={styles.sidePanelBadges}>
-        <SuppressionReasonBadge reason={props.suppression.reason} />
-        <SuppressionSourceBadge source={props.suppression.source} />
-      </div>
-
       <dl className={styles.sidePanelMeta}>
         <div>
           <dt>Created</dt>
@@ -45,6 +40,10 @@ export function SuppressionSidePanel(props: SuppressionSidePanelProps) {
         <div>
           <dt>Reason</dt>
           <dd>{SUPPRESSION_REASON_LABELS[props.suppression.reason]}</dd>
+        </div>
+        <div>
+          <dt>Source</dt>
+          <dd>{formatSuppressionSource(props.suppression.source)}</dd>
         </div>
       </dl>
 
