@@ -1,4 +1,4 @@
-import { Search } from "lucide-react";
+import { ChevronDown, Search, X } from "lucide-react";
 
 import { formatSuppressionSource, SUPPRESSION_REASON_LABELS } from "@/components/suppressions/suppression-badge";
 import type { SuppressionReason, SuppressionSortOption } from "@/components/suppressions/types";
@@ -36,15 +36,18 @@ export function SuppressionLogToolbar(props: SuppressionLogToolbarProps) {
           type="search"
           value={props.search}
           onChange={(event) => props.onSearchChange(event.target.value)}
-          placeholder="Search by email, note, or source"
+          placeholder="Search recipients"
           aria-label="Search suppressions"
         />
       </label>
 
-      <div className={styles.toolbarSelects}>
+      <div className={styles.toolbarControls}>
         <label className={styles.toolbarField}>
-          <span className={styles.toolbarLabel}>Reason</span>
-          <select value={props.reasonFilter} onChange={(event) => props.onReasonFilterChange(event.target.value as "ALL" | SuppressionReason)}>
+          <select
+            aria-label="Filter by reason"
+            value={props.reasonFilter}
+            onChange={(event) => props.onReasonFilterChange(event.target.value as "ALL" | SuppressionReason)}
+          >
             <option value="ALL">All reasons</option>
             {Object.entries(SUPPRESSION_REASON_LABELS).map(([value, label]) => (
               <option key={value} value={value}>
@@ -52,11 +55,11 @@ export function SuppressionLogToolbar(props: SuppressionLogToolbarProps) {
               </option>
             ))}
           </select>
+          <ChevronDown className={styles.toolbarChevron} aria-hidden="true" />
         </label>
 
         <label className={styles.toolbarField}>
-          <span className={styles.toolbarLabel}>Source</span>
-          <select value={props.sourceFilter} onChange={(event) => props.onSourceFilterChange(event.target.value)}>
+          <select aria-label="Filter by source" value={props.sourceFilter} onChange={(event) => props.onSourceFilterChange(event.target.value)}>
             <option value="ALL">All sources</option>
             {props.sourceOptions.map((source) => (
               <option key={source} value={source}>
@@ -64,25 +67,27 @@ export function SuppressionLogToolbar(props: SuppressionLogToolbarProps) {
               </option>
             ))}
           </select>
+          <ChevronDown className={styles.toolbarChevron} aria-hidden="true" />
         </label>
 
         <label className={styles.toolbarField}>
-          <span className={styles.toolbarLabel}>Sort</span>
-          <select value={props.sort} onChange={(event) => props.onSortChange(event.target.value as SuppressionSortOption)}>
+          <select aria-label="Sort suppressions" value={props.sort} onChange={(event) => props.onSortChange(event.target.value as SuppressionSortOption)}>
             {SORT_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>
             ))}
           </select>
+          <ChevronDown className={styles.toolbarChevron} aria-hidden="true" />
         </label>
-      </div>
 
-      {props.filtersActive ? (
-        <button className={styles.ghostButton} type="button" onClick={props.onClear}>
-          Clear
-        </button>
-      ) : null}
+        {props.filtersActive ? (
+          <button className={styles.toolbarClearButton} type="button" onClick={props.onClear}>
+            <X aria-hidden="true" />
+            <span>Clear</span>
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 }

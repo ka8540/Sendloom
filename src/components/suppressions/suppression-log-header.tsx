@@ -15,21 +15,21 @@ export function SuppressionLogHeader({ visibleCount, automatedCount, lastUpdated
         <span className={styles.sectionEyebrow}>Suppressed recipients</span>
         <h2 className={styles.logTitle}>Suppression log</h2>
         <p className={styles.logSubtitle}>Scan the list, narrow the view, and take action without breaking flow.</p>
-      </div>
 
-      <div className={styles.logMetrics}>
-        <span className={styles.logMetric}>
-          <small>Visible</small>
-          <strong>{visibleCount}</strong>
-        </span>
-        <span className={styles.logMetric}>
-          <small>Automated</small>
-          <strong>{automatedCount}</strong>
-        </span>
-        <span className={styles.logMetric}>
-          <small>Updated</small>
-          <strong>{lastUpdatedAt ? formatRelativeDate(lastUpdatedAt) : "No activity"}</strong>
-        </span>
+        <div className={styles.logHeaderMeta}>
+          <span className={styles.logMetric}>
+            <small>Visible</small>
+            <strong>{visibleCount}</strong>
+          </span>
+          <span className={styles.logMetric}>
+            <small>Automated</small>
+            <strong>{automatedCount}</strong>
+          </span>
+          <span className={styles.logTimestamp}>
+            <small>Updated</small>
+            <strong>{lastUpdatedAt ? formatRelativeDate(lastUpdatedAt) : "No activity"}</strong>
+          </span>
+        </div>
       </div>
     </div>
   );
