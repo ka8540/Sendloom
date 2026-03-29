@@ -1,16 +1,20 @@
 .root {
   position: fixed;
   inset: 0;
-  z-index: 0;
+  z-index: 1;
   pointer-events: none;
   overflow: hidden;
+  --email-path-base: color-mix(in srgb, var(--text) 12%, transparent);
+  --email-path-active: color-mix(in srgb, var(--text) 28%, transparent);
+  --email-path-icon: color-mix(in srgb, var(--text) 34%, transparent);
 }
 
 .canvas {
   position: absolute;
   inset: 0;
-  opacity: 0.24;
-  mix-blend-mode: multiply;
+  opacity: 1;
+  transform: translateX(-2%) scale(1.06);
+  transform-origin: center;
   will-change: transform, opacity;
 }
 
@@ -28,29 +32,31 @@
 .icon path,
 .icon rect {
   fill: none;
-  stroke: #000;
   stroke-linecap: round;
   stroke-linejoin: round;
   vector-effect: non-scaling-stroke;
 }
 
 .basePath {
+  stroke: var(--email-path-base);
   stroke-width: 1.5;
-  opacity: 0.24;
+  opacity: 1;
 }
 
 .activePath {
+  stroke: var(--email-path-active);
   stroke-width: 1.8;
-  opacity: 0.9;
+  opacity: 1;
 }
 
 .icon path,
 .icon rect {
+  stroke: var(--email-path-icon);
   stroke-width: 1.5;
 }
 
 .staticEnvelope {
-  opacity: 0.58;
+  opacity: 0.72;
 }
 
 .mover {
@@ -59,7 +65,7 @@
 }
 
 .plane {
-  opacity: 0.82;
+  opacity: 0.92;
 }
 
 .payloadEnvelope {
@@ -68,7 +74,6 @@
 
 @media (max-width: 900px) {
   .canvas {
-    opacity: 0.2;
     transform: translateX(4%) scale(1.14);
     transform-origin: center;
   }
@@ -76,6 +81,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .canvas {
-    opacity: 0.18;
+    transform: translateX(0) scale(1.02);
   }
 }
