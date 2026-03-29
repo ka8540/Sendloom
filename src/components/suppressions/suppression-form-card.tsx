@@ -42,7 +42,7 @@ function getReasonHint(reason: SuppressionReason) {
     case "UNSUBSCRIBED":
       return "Recipient opted out";
     case "INVALID_EMAIL":
-      return "Address is malformed";
+      return "Address malformed";
     case "COMPLAINT":
       return "Spam complaint";
     case "HARD_BOUNCE":
@@ -153,26 +153,17 @@ export function SuppressionFormCard(props: SuppressionFormCardProps) {
             <ShieldBan aria-hidden="true" />
           </div>
 
-          <div className={styles.formCardTitleWrap}>
+          <div className={styles.formTitleGroup}>
             <span className={styles.sectionEyebrow}>Manual blocklist</span>
             <h1 className={styles.formTitle}>Add suppression</h1>
-            <p className={styles.formSubtitle}>Use this for one-off operator decisions. Everything else should flow in automatically.</p>
+            <p className={styles.formSubtitle}>One-off manual exclusions for recipients you do not want to send to again.</p>
           </div>
         </div>
 
-        <div className={styles.statsInline}>
-          <span className={styles.statsInlineItem}>
-            <strong>{props.totalSuppressions}</strong>
-            <small>Total</small>
-          </span>
-          <span className={styles.statsInlineItem}>
-            <strong>{props.automatedSuppressions}</strong>
-            <small>Automated</small>
-          </span>
-          <span className={styles.statsInlineItem}>
-            <strong>{props.criticalSuppressions}</strong>
-            <small>Critical</small>
-          </span>
+        <div className={styles.formMetaRow}>
+          <span>{props.totalSuppressions} tracked</span>
+          <span>{props.automatedSuppressions} automated</span>
+          <span>{props.criticalSuppressions} critical</span>
         </div>
       </div>
 
@@ -182,7 +173,7 @@ export function SuppressionFormCard(props: SuppressionFormCardProps) {
             <label className={styles.fieldLabel} htmlFor="suppression-email">
               Email
             </label>
-            <span className={styles.fieldHint}>Applied instantly</span>
+            <span className={styles.fieldHint}>Applied immediately</span>
           </div>
 
           <div className={styles.inputShell}>
@@ -199,11 +190,7 @@ export function SuppressionFormCard(props: SuppressionFormCardProps) {
             />
           </div>
 
-          {errors.email ? (
-            <p className={styles.errorText}>{errors.email}</p>
-          ) : (
-            <p className={styles.fieldHint}>The normalized address is excluded from all future sends.</p>
-          )}
+          {errors.email ? <p className={styles.errorText}>{errors.email}</p> : <p className={styles.fieldHint}>The address is normalized and excluded from future sends.</p>}
         </div>
 
         <div className={styles.fieldGroup}>
@@ -252,7 +239,7 @@ export function SuppressionFormCard(props: SuppressionFormCardProps) {
             />
           </div>
 
-          {errors.notes ? <p className={styles.errorText}>{errors.notes}</p> : <p className={styles.fieldHint}>Useful for handoff, review, or reversing a mistake later.</p>}
+          {errors.notes ? <p className={styles.errorText}>{errors.notes}</p> : <p className={styles.fieldHint}>Use notes for handoff, review, or reversal context.</p>}
         </div>
 
         <div className={styles.formFooter}>

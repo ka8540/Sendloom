@@ -2,14 +2,14 @@
 
 import { useEffect, useState } from "react";
 import clsx from "clsx";
-import { CircleSlash, Eye, RotateCcw, Search, Trash2, X } from "lucide-react";
+import { CircleSlash, RotateCcw } from "lucide-react";
 
-import {
-  formatSuppressionSource,
-  SUPPRESSION_REASON_LABELS,
-  SuppressionReasonBadge,
-  SuppressionSourceBadge
-} from "@/components/suppressions/suppression-badge";
+import { formatSuppressionSource, SUPPRESSION_REASON_LABELS, SuppressionReasonBadge, SuppressionSourceBadge } from "@/components/suppressions/suppression-badge";
+import { formatDateTime, formatRelativeDate } from "@/components/suppressions/formatters";
+import { SuppressionLogHeader } from "@/components/suppressions/suppression-log-header";
+import { SuppressionLogToolbar } from "@/components/suppressions/suppression-log-toolbar";
+import { SuppressionRowActions } from "@/components/suppressions/suppression-row-actions";
+import { SuppressionSidePanel } from "@/components/suppressions/suppression-side-panel";
 import type { SuppressionReason, SuppressionRecord, SuppressionSortOption } from "@/components/suppressions/types";
 
 import styles from "./suppressions.module.css";
@@ -24,49 +24,6 @@ type SuppressionsTableCardProps = {
   onDeleteSuppression: (suppression: SuppressionRecord) => void;
   onUndoDelete: () => void;
 };
-
-const SORT_OPTIONS: Array<{ value: SuppressionSortOption; label: string }> = [
-  { value: "updated-desc", label: "Newest first" },
-  { value: "updated-asc", label: "Oldest first" },
-  { value: "email-asc", label: "Email A-Z" },
-  { value: "reason-asc", label: "Reason" },
-  { value: "source-asc", label: "Source" }
-];
-
-function formatDateTime(value: string) {
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit"
-  }).format(new Date(value));
-}
-
-function formatRelativeDate(value: string) {
-  const diffMs = Date.now() - new Date(value).getTime();
-  const minutes = Math.floor(diffMs / (1000 * 60));
-
-  if (minutes < 1) {
-    return "Just now";
-  }
-
-  if (minutes < 60) {
-    return `${minutes}m ago`;
-  }
-
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) {
-    return `${hours}h ago`;
-  }
-
-  const days = Math.floor(hours / 24);
-  if (days < 30) {
-    return `${days}d ago`;
-  }
-
-  return formatDateTime(value);
-}
 
 export function SuppressionsTableCard(props: SuppressionsTableCardProps) {
   const [search, setSearch] = useState("");
@@ -135,30 +92,16 @@ export function SuppressionsTableCard(props: SuppressionsTableCardProps) {
   const automatedCount = props.suppressions.filter((entry) => entry.source !== "manual").length;
   const lastUpdatedAt = props.suppressions[0]?.updatedAt ?? null;
 
+  function clearFilters() {
+    setSearch("");
+    setReasonFilter("ALL");
+    setSourceFilter("ALL");
+    setSort("updated-desc");
+  }
+
   return (
     <section className={styles.dataCard}>
-      <div className={styles.dataTopBar}>
-        <div className={styles.dataHeaderMain}>
-          <span className={styles.sectionEyebrow}>Suppressed recipients</span>
-          <h2 className={styles.dataTitle}>Suppression log</h2>
-          <p className={styles.dataSubtitle}>Search, filter, inspect, and reverse suppressions without leaving the workflow.</p>
-        </div>
-
-        <div className={styles.dataMetrics}>
-          <div className={styles.dataMetric}>
-            <span>Visible</span>
-            <strong>{sortedRows.length}</strong>
-          </div>
-          <div className={styles.dataMetric}>
-            <span>Automated</span>
-            <strong>{automatedCount}</strong>
-          </div>
-          <div className={styles.dataMetric}>
-            <span>Last update</span>
-            <strong>{lastUpdatedAt ? formatRelativeDate(lastUpdatedAt) : "No activity"}</strong>
-          </div>
-        </div>
-      </div>
+      <SuppressionLogHeader visibleCount={sortedRows.length} automatedCount={automatedCount} lastUpdatedAt={lastUpdatedAt} />
 
       {props.feedback ? (
         <div className={clsx(styles.feedbackBanner, props.feedback.tone === "error" ? styles.feedbackError : styles.feedbackSuccess)}>
@@ -180,186 +123,95 @@ export function SuppressionsTableCard(props: SuppressionsTableCardProps) {
         </div>
       ) : null}
 
-      <div className={styles.toolbar}>
-        <label className={styles.searchShell}>
-          <Search aria-hidden="true" />
-          <input
-            type="search"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search by email, note, or source"
-            aria-label="Search suppressions"
+      <SuppressionLogToolbar
+        search={search}
+        reasonFilter={reasonFilter}
+        sourceFilter={sourceFilter}
+        sort={sort}
+        sourceOptions={sourceOptions}
+        filtersActive={filtersActive}
+        onSearchChange={setSearch}
+        onReasonFilterChange={setReasonFilter}
+        onSourceFilterChange={setSourceFilter}
+        onSortChange={setSort}
+        onClear={clearFilters}
+      />
+
+      <div className={clsx(styles.logContent, selectedSuppression ? styles.logContentWithPanel : undefined)}>
+        <div className={styles.tableCard}>
+          <div className={styles.tableHeader}>
+            <span>Recipient</span>
+            <span>Signals</span>
+            <span>Updated</span>
+            <span className={styles.actionsHeader}>Actions</span>
+          </div>
+
+          <div className={styles.tableBody}>
+            {sortedRows.length ? (
+              sortedRows.map((entry) => (
+                <div
+                  key={entry.id}
+                  className={clsx(styles.tableRow, entry.id === selectedId ? styles.tableRowActive : undefined)}
+                  onClick={() => setSelectedId(entry.id)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      setSelectedId(entry.id);
+                    }
+                  }}
+                >
+                  <div className={styles.emailCell}>
+                    <span className={styles.emailValue}>{entry.email}</span>
+                    <span className={styles.emailMeta}>{entry.notes?.trim() ? entry.notes : "No internal note attached."}</span>
+                  </div>
+
+                  <div className={styles.signalsCell}>
+                    <SuppressionReasonBadge reason={entry.reason} />
+                    <SuppressionSourceBadge source={entry.source} />
+                  </div>
+
+                  <div className={styles.updatedCell}>
+                    <span>{formatRelativeDate(entry.updatedAt)}</span>
+                    <small>{formatDateTime(entry.updatedAt)}</small>
+                  </div>
+
+                  <div onClick={(event) => event.stopPropagation()}>
+                    <SuppressionRowActions
+                      isActive={entry.id === selectedId}
+                      isDeleting={props.deletingId === entry.id}
+                      onInspect={() => setSelectedId(entry.id)}
+                      onFilter={() => {
+                        setSearch(entry.email);
+                        setSelectedId(entry.id);
+                      }}
+                      onDelete={() => props.onDeleteSuppression(entry)}
+                    />
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className={styles.emptyState}>
+                <div className={styles.emptyStateIcon}>
+                  <CircleSlash aria-hidden="true" />
+                </div>
+                <strong>No suppressed recipients match this view.</strong>
+                <p>Adjust the search or filters, or add a new suppression from the left-hand control panel.</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {selectedSuppression ? (
+          <SuppressionSidePanel
+            suppression={selectedSuppression}
+            isDeleting={props.deletingId === selectedSuppression.id}
+            onFilterByEmail={() => setSearch(selectedSuppression.email)}
+            onDelete={() => props.onDeleteSuppression(selectedSuppression)}
+            onClose={() => setSelectedId(null)}
           />
-        </label>
-
-        <div className={styles.toolbarControls}>
-          <label className={styles.filterGroup}>
-            <span className={styles.filterLabel}>Reason</span>
-            <select value={reasonFilter} onChange={(event) => setReasonFilter(event.target.value as "ALL" | SuppressionReason)}>
-              <option value="ALL">All reasons</option>
-              {Object.entries(SUPPRESSION_REASON_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className={styles.filterGroup}>
-            <span className={styles.filterLabel}>Source</span>
-            <select value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)}>
-              <option value="ALL">All sources</option>
-              {sourceOptions.map((source) => (
-                <option key={source} value={source}>
-                  {formatSuppressionSource(source)}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className={styles.filterGroup}>
-            <span className={styles.filterLabel}>Sort</span>
-            <select value={sort} onChange={(event) => setSort(event.target.value as SuppressionSortOption)}>
-              {SORT_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          {filtersActive ? (
-            <button
-              className={styles.ghostButton}
-              type="button"
-              onClick={() => {
-                setSearch("");
-                setReasonFilter("ALL");
-                setSourceFilter("ALL");
-                setSort("updated-desc");
-              }}
-            >
-              Clear
-            </button>
-          ) : null}
-        </div>
-      </div>
-
-      {selectedSuppression ? (
-        <div className={styles.selectionPanel}>
-          <div className={styles.selectionMain}>
-            <span className={styles.sectionEyebrow}>Selected recipient</span>
-            <h3 className={styles.selectionTitle}>{selectedSuppression.email}</h3>
-            <div className={styles.selectionBadges}>
-              <SuppressionReasonBadge reason={selectedSuppression.reason} />
-              <SuppressionSourceBadge source={selectedSuppression.source} />
-            </div>
-          </div>
-
-          <dl className={styles.selectionMeta}>
-            <div>
-              <dt>Created</dt>
-              <dd>{formatDateTime(selectedSuppression.createdAt)}</dd>
-            </div>
-            <div>
-              <dt>Updated</dt>
-              <dd>{formatDateTime(selectedSuppression.updatedAt)}</dd>
-            </div>
-            <div>
-              <dt>Note</dt>
-              <dd>{selectedSuppression.notes?.trim() || "No note provided."}</dd>
-            </div>
-          </dl>
-
-          <div className={styles.selectionActions}>
-            <button className={styles.secondaryButton} type="button" onClick={() => setSearch(selectedSuppression.email)}>
-              Filter to this email
-            </button>
-            <button
-              className={styles.destructiveButton}
-              type="button"
-              onClick={() => props.onDeleteSuppression(selectedSuppression)}
-              disabled={props.deletingId === selectedSuppression.id}
-            >
-              {props.deletingId === selectedSuppression.id ? "Removing..." : "Delete suppression"}
-            </button>
-            <button className={styles.iconButton} type="button" onClick={() => setSelectedId(null)} aria-label="Close selection">
-              <X aria-hidden="true" />
-            </button>
-          </div>
-        </div>
-      ) : null}
-
-      <div className={styles.tableSurface}>
-        <div className={styles.tableHeader}>
-          <span>Recipient</span>
-          <span>Signals</span>
-          <span>Updated</span>
-          <span className={styles.actionsHeader}>Actions</span>
-        </div>
-
-        <div className={styles.tableBody}>
-          {sortedRows.length ? (
-            sortedRows.map((entry) => (
-              <div
-                key={entry.id}
-                className={clsx(styles.tableRow, entry.id === selectedId ? styles.tableRowActive : undefined)}
-                onClick={() => setSelectedId(entry.id)}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    setSelectedId(entry.id);
-                  }
-                }}
-              >
-                <div className={styles.emailCell}>
-                  <span className={styles.emailValue}>{entry.email}</span>
-                  <span className={styles.emailMeta}>{entry.notes?.trim() ? entry.notes : "No internal note attached."}</span>
-                </div>
-
-                <div className={styles.signalsCell}>
-                  <SuppressionReasonBadge reason={entry.reason} />
-                  <SuppressionSourceBadge source={entry.source} />
-                </div>
-
-                <div className={styles.updatedCell}>
-                  <span>{formatRelativeDate(entry.updatedAt)}</span>
-                  <small>{formatDateTime(entry.updatedAt)}</small>
-                </div>
-
-                <div className={styles.rowActions} onClick={(event) => event.stopPropagation()}>
-                  <button
-                    className={clsx(styles.iconButton, entry.id === selectedId ? styles.iconButtonActive : undefined)}
-                    type="button"
-                    onClick={() => setSelectedId(entry.id)}
-                    aria-label={`Inspect ${entry.email}`}
-                  >
-                    <Eye aria-hidden="true" />
-                  </button>
-                  <button
-                    className={clsx(styles.iconButton, styles.iconButtonDanger)}
-                    type="button"
-                    onClick={() => props.onDeleteSuppression(entry)}
-                    aria-label={`Delete suppression for ${entry.email}`}
-                    disabled={props.deletingId === entry.id}
-                  >
-                    <Trash2 aria-hidden="true" />
-                  </button>
-                </div>
-              </div>
-            ))
-          ) : (
-            <div className={styles.emptyState}>
-              <div className={styles.emptyStateIcon}>
-                <CircleSlash aria-hidden="true" />
-              </div>
-              <strong>No suppressed recipients yet</strong>
-              <p>Add a suppression from the left, or wait for unsubscribe and bounce events to populate this list.</p>
-            </div>
-          )}
-        </div>
+        ) : null}
       </div>
     </section>
   );
