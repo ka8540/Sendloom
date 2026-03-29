@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
 import { ChevronLeft, ChevronRight, CircleSlash, RotateCcw } from "lucide-react";
 
@@ -41,39 +41,47 @@ export function SuppressionsTableCard(props: SuppressionsTableCardProps) {
     setSelectedId(props.preferredSelectionId);
   }, [props.preferredSelectionId]);
 
-  const sourceOptions = Array.from(new Set(props.suppressions.map((entry) => entry.source))).sort((left, right) =>
-    formatSuppressionSource(left).localeCompare(formatSuppressionSource(right))
+  const sourceOptions = useMemo(
+    () =>
+      Array.from(new Set(props.suppressions.map((entry) => entry.source))).sort((left, right) =>
+        formatSuppressionSource(left).localeCompare(formatSuppressionSource(right))
+      ),
+    [props.suppressions]
   );
 
-  const filteredRows = props.suppressions.filter((entry) => {
-    const query = search.trim().toLowerCase();
-    const matchesSearch =
-      query.length === 0 ||
-      entry.email.toLowerCase().includes(query) ||
-      entry.source.toLowerCase().includes(query) ||
-      entry.notes?.toLowerCase().includes(query);
+  const filteredRows = useMemo(() => {
+    return props.suppressions.filter((entry) => {
+      const query = search.trim().toLowerCase();
+      const matchesSearch =
+        query.length === 0 ||
+        entry.email.toLowerCase().includes(query) ||
+        entry.source.toLowerCase().includes(query) ||
+        entry.notes?.toLowerCase().includes(query);
 
-    const matchesReason = reasonFilter === "ALL" || entry.reason === reasonFilter;
-    const matchesSource = sourceFilter === "ALL" || entry.source === sourceFilter;
+      const matchesReason = reasonFilter === "ALL" || entry.reason === reasonFilter;
+      const matchesSource = sourceFilter === "ALL" || entry.source === sourceFilter;
 
-    return matchesSearch && matchesReason && matchesSource;
-  });
+      return matchesSearch && matchesReason && matchesSource;
+    });
+  }, [props.suppressions, reasonFilter, search, sourceFilter]);
 
-  const sortedRows = [...filteredRows].sort((left, right) => {
-    switch (sort) {
-      case "updated-asc":
-        return new Date(left.updatedAt).getTime() - new Date(right.updatedAt).getTime();
-      case "email-asc":
-        return left.email.localeCompare(right.email);
-      case "reason-asc":
-        return SUPPRESSION_REASON_LABELS[left.reason].localeCompare(SUPPRESSION_REASON_LABELS[right.reason]);
-      case "source-asc":
-        return formatSuppressionSource(left.source).localeCompare(formatSuppressionSource(right.source));
-      case "updated-desc":
-      default:
-        return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
-    }
-  });
+  const sortedRows = useMemo(() => {
+    return [...filteredRows].sort((left, right) => {
+      switch (sort) {
+        case "updated-asc":
+          return new Date(left.updatedAt).getTime() - new Date(right.updatedAt).getTime();
+        case "email-asc":
+          return left.email.localeCompare(right.email);
+        case "reason-asc":
+          return SUPPRESSION_REASON_LABELS[left.reason].localeCompare(SUPPRESSION_REASON_LABELS[right.reason]);
+        case "source-asc":
+          return formatSuppressionSource(left.source).localeCompare(formatSuppressionSource(right.source));
+        case "updated-desc":
+        default:
+          return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
+      }
+    });
+  }, [filteredRows, sort]);
 
   const totalPages = Math.max(1, Math.ceil(sortedRows.length / PAGE_SIZE));
 
@@ -87,21 +95,25 @@ export function SuppressionsTableCard(props: SuppressionsTableCardProps) {
     }
   }, [currentPage, totalPages]);
 
-  useEffect(() => {
+  const preferredSelectionIndex = useMemo(() => {
     if (!props.preferredSelectionId) {
+      return -1;
+    }
+
+    return sortedRows.findIndex((entry) => entry.id === props.preferredSelectionId);
+  }, [props.preferredSelectionId, sortedRows]);
+
+  useEffect(() => {
+    if (preferredSelectionIndex === -1) {
       return;
     }
 
-    const index = sortedRows.findIndex((entry) => entry.id === props.preferredSelectionId);
-
-    if (index !== -1) {
-      setCurrentPage(Math.floor(index / PAGE_SIZE) + 1);
-    }
-  }, [props.preferredSelectionId, sortedRows]);
+    setCurrentPage(Math.floor(preferredSelectionIndex / PAGE_SIZE) + 1);
+  }, [preferredSelectionIndex]);
 
   const pageStart = (currentPage - 1) * PAGE_SIZE;
   const pageEnd = pageStart + PAGE_SIZE;
-  const currentRows = sortedRows.slice(pageStart, pageEnd);
+  const currentRows = useMemo(() => sortedRows.slice(pageStart, pageEnd), [pageEnd, pageStart, sortedRows]);
 
   useEffect(() => {
     if (!currentRows.length) {
