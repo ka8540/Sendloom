@@ -1,10 +1,10 @@
 import { UploadImportForm } from "@/components/forms";
 import { MappingLibrary, TemplateFieldPicker } from "@/components/mapping-library";
-import { requireUser } from "@/lib/auth";
+import { requireOperatorUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 
 export default async function ImportsPage() {
-  const user = await requireUser();
+  const user = await requireOperatorUser();
   const [imports, mappings] = await Promise.all([
     prisma.import.findMany({
       where: { userId: user.id },

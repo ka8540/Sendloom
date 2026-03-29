@@ -1,8 +1,8 @@
-import { requireUser } from "@/lib/auth";
+import { requireOperatorUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 
 export default async function WorkspaceOverviewPage() {
-  const user = await requireUser();
+  const user = await requireOperatorUser();
   const [importCount, campaignCount, templateCount, suppressionCount, recentCampaigns] = await Promise.all([
     prisma.import.count({ where: { userId: user.id } }),
     prisma.campaign.count({ where: { userId: user.id } }),

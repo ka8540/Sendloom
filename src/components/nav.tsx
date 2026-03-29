@@ -12,17 +12,15 @@ import { SessionControls } from "@/components/session-controls";
 export function AppNav({ isAdmin = false }: { isAdmin?: boolean }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
-  const items: Array<{ href: Route; label: string; icon: LucideIcon }> = [
-    { href: "/workspace" as Route, label: "Overview", icon: House },
-    { href: "/imports" as Route, label: "Imports", icon: FileSpreadsheet },
-    { href: "/templates" as Route, label: "Templates", icon: ScrollText },
-    { href: "/campaigns" as Route, label: "Sequences", icon: SendHorizontal },
-    { href: "/suppressions" as Route, label: "Suppressions", icon: ShieldAlert }
-  ];
-
-  if (isAdmin) {
-    items.push({ href: "/admin" as Route, label: "Admin", icon: ShieldUser });
-  }
+  const items: Array<{ href: Route; label: string; icon: LucideIcon }> = isAdmin
+    ? [{ href: "/admin" as Route, label: "Admin", icon: ShieldUser }]
+    : [
+        { href: "/workspace" as Route, label: "Overview", icon: House },
+        { href: "/imports" as Route, label: "Imports", icon: FileSpreadsheet },
+        { href: "/templates" as Route, label: "Templates", icon: ScrollText },
+        { href: "/campaigns" as Route, label: "Sequences", icon: SendHorizontal },
+        { href: "/suppressions" as Route, label: "Suppressions", icon: ShieldAlert }
+      ];
 
   return (
     <aside className={`sidebar${collapsed ? " is-collapsed" : ""}`}>
@@ -33,7 +31,7 @@ export function AppNav({ isAdmin = false }: { isAdmin?: boolean }) {
           </div>
           <div className="brand-copy">
             <h1>Sendloom</h1>
-            <p className="muted">Lists, templates, and sequences in one place.</p>
+            <p className="muted">{isAdmin ? "User accounts and controls in one place." : "Lists, templates, and sequences in one place."}</p>
           </div>
         </div>
         <button

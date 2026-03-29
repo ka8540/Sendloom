@@ -1,9 +1,9 @@
 import { SuppressionForm } from "@/components/forms";
-import { requireUser } from "@/lib/auth";
+import { requireOperatorUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 
 export default async function SuppressionsPage() {
-  const user = await requireUser();
+  const user = await requireOperatorUser();
   const suppressions = await prisma.suppression.findMany({
     where: { userId: user.id },
     orderBy: { updatedAt: "desc" }

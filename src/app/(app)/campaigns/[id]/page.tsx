@@ -17,7 +17,7 @@ import { ActiveRunRefresher } from "@/components/active-run-refresher";
 import { AttachmentPreview } from "@/components/attachment-preview";
 import { CampaignDetailDeleteButton } from "@/components/campaign-detail-delete-button";
 import { LocalDateTime } from "@/components/local-date-time";
-import { requireUser } from "@/lib/auth";
+import { requireOperatorUser } from "@/lib/auth";
 import { getAttachmentPreviewKind } from "@/lib/attachments";
 import { prisma } from "@/lib/db";
 import { storeUpload } from "@/lib/storage";
@@ -105,7 +105,7 @@ function formatScheduleLabel(scheduleType?: string | null, scheduleConfig?: Sche
 async function launch(campaignId: string) {
   "use server";
 
-  const user = await requireUser();
+  const user = await requireOperatorUser();
   const run = await launchCampaign(campaignId, user.id);
   revalidatePath(`/campaigns/${campaignId}`);
   revalidatePath("/campaigns");
@@ -120,7 +120,7 @@ async function launch(campaignId: string) {
 async function validate(campaignId: string) {
   "use server";
 
-  const user = await requireUser();
+  const user = await requireOperatorUser();
   await validateCampaign(campaignId, user.id);
   revalidatePath(`/campaigns/${campaignId}`);
   revalidatePath("/campaigns");
@@ -129,7 +129,7 @@ async function validate(campaignId: string) {
 async function replaceAttachment(campaignId: string, formData: FormData) {
   "use server";
 
-  const user = await requireUser();
+  const user = await requireOperatorUser();
   const attachment = formData.get("attachment");
 
   if (!(attachment instanceof File) || attachment.size <= 0) {
@@ -161,7 +161,7 @@ async function replaceAttachment(campaignId: string, formData: FormData) {
 async function clearAttachments(campaignId: string) {
   "use server";
 
-  const user = await requireUser();
+  const user = await requireOperatorUser();
   await updateCampaignAttachments(campaignId, [], user.id);
   revalidatePath(`/campaigns/${campaignId}`);
   revalidatePath("/campaigns");
@@ -202,7 +202,7 @@ export default async function CampaignDetailPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const user = await requireUser();
+  const user = await requireOperatorUser();
   const { id } = await params;
   const resolvedSearchParams = await searchParams;
   const campaign = await prisma.campaign.findFirstOrThrow({

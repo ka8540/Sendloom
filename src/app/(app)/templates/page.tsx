@@ -1,10 +1,10 @@
 import { TemplatesWorkspace } from "@/components/templates-workspace";
-import { requireUser } from "@/lib/auth";
+import { requireOperatorUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import type { TemplateFormat } from "@/lib/templates";
 
 export default async function TemplatesPage() {
-  const user = await requireUser();
+  const user = await requireOperatorUser();
   const templates = await prisma.template.findMany({
     where: { userId: user.id },
     orderBy: { updatedAt: "desc" }

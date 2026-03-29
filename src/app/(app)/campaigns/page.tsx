@@ -16,7 +16,7 @@ import {
 import { CampaignCardActions } from "@/components/campaign-card-actions";
 import { CampaignBuilder } from "@/components/campaign-builder";
 import { LocalDateTime } from "@/components/local-date-time";
-import { requireUser } from "@/lib/auth";
+import { requireOperatorUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { processPendingCampaignWork } from "@/services/campaigns";
 import styles from "./page.module.css";
@@ -104,7 +104,7 @@ export default async function CampaignsPage({
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const user = await requireUser();
+  const user = await requireOperatorUser();
   const resolvedSearchParams = searchParams ? await searchParams : {};
   const requestedPage = Array.isArray(resolvedSearchParams.page)
     ? resolvedSearchParams.page[0]

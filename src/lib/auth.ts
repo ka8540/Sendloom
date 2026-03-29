@@ -217,6 +217,16 @@ export async function requireUser() {
   return user;
 }
 
+export async function requireOperatorUser() {
+  const user = await requireUser();
+
+  if (isAdminUser(user)) {
+    redirect("/admin");
+  }
+
+  return user;
+}
+
 export async function requireAdminUser() {
   const user = await requireUser();
 
