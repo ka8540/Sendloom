@@ -466,9 +466,9 @@
 
 .sequenceRow {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(12rem, 14rem) minmax(15rem, 17rem);
-  gap: 1rem 1.15rem;
-  align-items: start;
+  grid-template-columns: minmax(0, 1fr) minmax(19rem, 21rem);
+  gap: 1.35rem;
+  align-items: stretch;
   padding: 1.1rem 1.15rem;
   border-radius: 26px;
   border: 1px solid var(--line);
@@ -490,6 +490,17 @@
   display: grid;
   gap: 0.85rem;
   min-width: 0;
+}
+
+.sequenceMain {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.sequenceTitleBlock {
+  display: grid;
+  gap: 0.45rem;
 }
 
 .sequenceTitleRow {
@@ -592,11 +603,23 @@
   background: linear-gradient(90deg, var(--accent) 0%, color-mix(in srgb, var(--accent) 60%, white) 100%);
 }
 
+.sequenceSidebar {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+  align-content: space-between;
+}
+
+.sequenceSidebarTop {
+  display: grid;
+  gap: 0.95rem;
+  justify-items: start;
+}
+
 .sequenceActivity {
   display: grid;
   gap: 0.2rem;
   justify-items: start;
-  align-self: center;
   min-width: 0;
 }
 
@@ -623,9 +646,9 @@
   align-items: center;
   justify-content: flex-end;
   gap: 0.7rem;
-  min-width: 15rem;
+  min-width: 0;
   width: 100%;
-  align-self: center;
+  align-self: end;
   justify-self: end;
 }
 
@@ -635,7 +658,7 @@
   align-items: center;
   justify-content: flex-end;
   gap: 0.55rem;
-  min-width: 11.9rem;
+  min-width: 0;
   opacity: 0;
   transform: translateY(4px);
   transition: opacity 180ms ease, transform 180ms ease;
@@ -697,14 +720,14 @@
 
 .sequenceActionButton:hover,
 .sequenceActionButton:focus-visible {
-  width: 6.85rem;
+  width: 8.1rem;
   padding-inline: 0.88rem 1rem;
   justify-content: flex-start;
 }
 
 .sequenceActionButton:hover .sequenceActionLabel,
 .sequenceActionButton:focus-visible .sequenceActionLabel {
-  max-width: 3.3rem;
+  max-width: 4.5rem;
   opacity: 1;
   transform: translateX(0);
 }
@@ -1026,6 +1049,10 @@
     grid-template-columns: 1fr;
   }
 
+  .sequenceSidebar {
+    align-content: start;
+  }
+
   .sequenceInteractiveRail {
     width: auto;
     min-width: 0;
@@ -1043,7 +1070,7 @@
 
   .sequenceActionButton:hover,
   .sequenceActionButton:focus-visible {
-    width: 8.35rem;
+    width: 8.1rem;
   }
 
   .sequencePagination {

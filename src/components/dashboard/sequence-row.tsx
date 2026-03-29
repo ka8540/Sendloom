@@ -31,15 +31,12 @@ export function SequenceRow({ sequence }: { sequence: SequenceRowData }) {
       onKeyDown={handleKeyDown}
       aria-label={`Open ${sequence.name}`}
     >
-      <div className={styles.sequenceIdentity}>
-        <div className={styles.sequenceTitleRow}>
-          <div>
+      <div className={styles.sequenceMain}>
+        <div className={styles.sequenceIdentity}>
+          <div className={styles.sequenceTitleBlock}>
             <h3 className={styles.sequenceName}>{sequence.name}</h3>
             <p className={styles.sequenceSummary}>{sequence.summary}</p>
           </div>
-          <span className={`${styles.sequenceStatus} ${styles[`sequenceStatus${capitalize(sequence.statusTone)}`]}`}>
-            {sequence.statusLabel}
-          </span>
         </div>
 
         <div className={styles.sequenceProgressGroup}>
@@ -54,22 +51,30 @@ export function SequenceRow({ sequence }: { sequence: SequenceRowData }) {
         </div>
       </div>
 
-      <div className={styles.sequenceActivity}>
-        <span>Last activity</span>
-        <strong>{sequence.lastActivityLabel}</strong>
-        <small>{sequence.lastActivityDetail}</small>
-      </div>
+      <div className={styles.sequenceSidebar}>
+        <div className={styles.sequenceSidebarTop}>
+          <span className={`${styles.sequenceStatus} ${styles[`sequenceStatus${capitalize(sequence.statusTone)}`]}`}>
+            {sequence.statusLabel}
+          </span>
 
-      <div className={styles.sequenceInteractiveRail}>
-        <SequenceRowActions
-          href={sequence.href}
-          campaignId={sequence.id}
-          campaignName={sequence.name}
-          canRelaunch={sequence.canRelaunch}
-        />
-        <span className={styles.sequenceArrow}>
-          <ArrowUpRight aria-hidden="true" />
-        </span>
+          <div className={styles.sequenceActivity}>
+            <span>Last activity</span>
+            <strong>{sequence.lastActivityLabel}</strong>
+            <small>{sequence.lastActivityDetail}</small>
+          </div>
+        </div>
+
+        <div className={styles.sequenceInteractiveRail}>
+          <SequenceRowActions
+            href={sequence.href}
+            campaignId={sequence.id}
+            campaignName={sequence.name}
+            canRelaunch={sequence.canRelaunch}
+          />
+          <span className={styles.sequenceArrow}>
+            <ArrowUpRight aria-hidden="true" />
+          </span>
+        </div>
       </div>
     </article>
   );
