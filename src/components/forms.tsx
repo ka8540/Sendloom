@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Sparkles } from "lucide-react";
+import type { Route } from "next";
 import { useRouter } from "next/navigation";
 
 import { analyzeSpam, type SpamAnalysis } from "@/lib/spam-analysis";
@@ -73,7 +74,8 @@ export function LoginForm() {
       return;
     }
 
-    router.replace("/workspace");
+    const payload = (await response.json().catch(() => ({}))) as { redirectTo?: "/admin" | "/workspace" };
+    router.replace((payload.redirectTo ?? "/workspace") as Route);
     router.refresh();
   }
 

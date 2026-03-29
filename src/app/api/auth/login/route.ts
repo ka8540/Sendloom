@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { normalizeUserEmail, setSession, verifyPassword } from "@/lib/auth";
+import { isAdminUser, normalizeUserEmail, setSession, verifyPassword } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { ensureBootstrapData } from "@/services/seed";
 
@@ -32,5 +32,8 @@ export async function POST(request: Request) {
   }
 
   await setSession(email);
-  return NextResponse.json({ success: true });
+  return NextResponse.json({
+    success: true,
+    redirectTo: isAdminUser(user) ? "/admin" : "/workspace"
+  });
 }

@@ -59,8 +59,11 @@ export function verifySessionToken(token: string): SessionClaims | null {
 
 export async function setSession(email: string) {
   const normalizedEmail = normalizeUserEmail(email);
+  const token = createSessionToken(normalizedEmail);
+  const claims = verifySessionToken(token);
   const now = new Date();
-  const expiresAt = new Date(now.getTime() + SESSION_DURATION_SECONDS * 1000);
+  const issuedAt = claims?.iat ? new Date(claims.iat * 1000) : new Date(Math.floor(now.getTime() / 1000) * 1000);
+  const expiresAt = claims?.exp ? new Date(claims.exp * 1000) : new Date(issuedAt.getTime() + SESSION_DURATION_SECONDS * 1000);
 
   await prisma.user.update({
     where: { email: normalizedEmail },
@@ -68,13 +71,13 @@ export async function setSession(email: string) {
       isAdmin: isConfiguredAdminEmail(normalizedEmail) ? true : undefined,
       lastLoginAt: now,
       lastSeenAt: now,
-      sessionIssuedAt: now,
+      sessionIssuedAt: issuedAt,
       sessionExpiresAt: expiresAt
     }
   });
 
   const store = await cookies();
-  store.set(SESSION_COOKIE, createSessionToken(normalizedEmail), {
+  store.set(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
