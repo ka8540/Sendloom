@@ -132,6 +132,36 @@ export async function exchangeGoogleCode(code: string, redirectUri: string) {
   return payload;
 }
 
+export async function refreshGoogleAccessToken(refreshToken: string) {
+  const clientId = env.GOOGLE_CLIENT_ID;
+  const clientSecret = env.GOOGLE_CLIENT_SECRET;
+  if (!clientId || !clientSecret) {
+    assertGoogleOAuthConfigured();
+    throw new Error("Missing Google OAuth credentials.");
+  }
+
+  const response = await fetch(GOOGLE_TOKEN_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
+      grant_type: "refresh_token"
+    })
+  });
+
+  const payload = (await response.json()) as GoogleTokenResponse & { error?: string; error_description?: string };
+
+  if (!response.ok || !payload.access_token) {
+    throw new Error(payload.error_description || payload.error || "Could not refresh Google access token.");
+  }
+
+  return payload;
+}
+
 export async function fetchGoogleUserInfo(accessToken: string) {
   const response = await fetch(GOOGLE_USERINFO_URL, {
     headers: {

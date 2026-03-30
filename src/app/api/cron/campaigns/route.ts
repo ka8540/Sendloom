@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { env } from "@/lib/env";
 import { processPendingCampaignWork } from "@/services/campaigns";
+import { syncConnectedSenderReplies } from "@/services/replies";
 
 export const maxDuration = 60;
 
@@ -25,7 +26,12 @@ async function handleCron(request: Request) {
     maxDurationMs: 55_000
   });
 
-  return NextResponse.json(result);
+  const replySync = await syncConnectedSenderReplies();
+
+  return NextResponse.json({
+    ...result,
+    replySync
+  });
 }
 
 export async function GET(request: Request) {

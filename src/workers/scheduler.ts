@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { queues } from "@/lib/queue";
 import { queueRecurringRuns } from "@/services/campaigns";
+import { syncConnectedSenderReplies } from "@/services/replies";
 
 async function processPendingRetries() {
   const pendingRetries = await prisma.recipientJob.findMany({
@@ -67,6 +68,7 @@ async function processCompletedRuns() {
 }
 
 async function tick() {
+  await syncConnectedSenderReplies();
   await queueRecurringRuns();
   await processPendingRetries();
   await processCompletedRuns();

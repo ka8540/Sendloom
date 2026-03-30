@@ -287,7 +287,7 @@ export default async function CampaignDetailPage({
   const issueCount =
     (latestRun?.failedCount ?? 0) + (latestRun?.suppressedCount ?? 0) + (latestRun?.invalidCount ?? 0);
   const trackedOpenCount = latestRun?.openedCount ?? 0;
-  const replyCount = 0;
+  const replyCount = latestRun?.repliedCount ?? 0;
   const launchButtonLabel = isActiveRun
     ? "Run is processing"
     : isPausedRun
@@ -434,7 +434,7 @@ export default async function CampaignDetailPage({
           </div>
           <span className={styles.metricLabel}>Replies</span>
           <strong className={styles.metricValue}>{replyCount}</strong>
-          <span className={styles.metricMeta}>Reply sync is not connected yet, so this stays at zero for now.</span>
+          <span className={styles.metricMeta}>Recipients with at least one reply matched from the connected inbox.</span>
         </article>
         <article className={styles.metricCard}>
           <div className={styles.metricIcon}>
@@ -528,8 +528,12 @@ export default async function CampaignDetailPage({
                     <span>{job.recipientName || "Recipient name not available"}</span>
                   </div>
                   <div className={styles.jobMeta}>
-                    <span className="badge">{humanize(job.status)}</span>
-                    <span className={styles.jobMetaText}>{job.lastError ?? "No error reported"}</span>
+                    <span className="badge">{job.replyCount > 0 ? "Replied" : humanize(job.status)}</span>
+                    <span className={styles.jobMetaText}>
+                      {job.replyCount > 0
+                        ? `${job.replyCount} repl${job.replyCount === 1 ? "y" : "ies"} matched in the inbox`
+                        : job.lastError ?? "No error reported"}
+                    </span>
                   </div>
                 </div>
               ))}

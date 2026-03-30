@@ -109,7 +109,7 @@ async function withRedisLock<T>(key: string, ttlSeconds: number, callback: () =>
   }
 }
 
-async function syncRunCounts(runId: string) {
+export async function syncRunCounts(runId: string) {
   const aggregate = await prisma.recipientJob.groupBy({
     by: ["status"],
     where: { campaignRunId: runId },
@@ -126,7 +126,15 @@ async function syncRunCounts(runId: string) {
       suppressedCount: counts.SUPPRESSED ?? 0,
       invalidCount: counts.INVALID ?? 0,
       openedCount: counts.OPENED ?? 0,
-      clickedCount: counts.CLICKED ?? 0
+      clickedCount: counts.CLICKED ?? 0,
+      repliedCount: await prisma.recipientJob.count({
+        where: {
+          campaignRunId: runId,
+          repliedAt: {
+            not: null
+          }
+        }
+      })
     }
   });
 
