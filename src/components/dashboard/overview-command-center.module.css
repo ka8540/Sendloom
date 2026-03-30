@@ -1,0 +1,974 @@
+.page {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(300px, 0.9fr);
+  gap: 1.5rem;
+  padding: 1.6rem;
+  border-radius: 30px;
+  border: 1px solid var(--line);
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--accent) 10%, transparent), transparent 24rem),
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 90%, transparent), var(--surface));
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.hero::after {
+  content: "";
+  position: absolute;
+  inset: auto -10% -55% 45%;
+  height: 18rem;
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 11%, transparent), transparent 65%);
+  pointer-events: none;
+}
+
+.heroContent,
+.heroActions {
+  position: relative;
+  z-index: 1;
+}
+
+.heroContent {
+  display: grid;
+  gap: 1rem;
+}
+
+.heroEyebrow {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.48rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+  background: color-mix(in srgb, var(--accent-soft) 78%, transparent);
+  color: var(--accent-strong);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.heroPulse {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 34%, transparent);
+  animation: dashboard-pulse 1.8s ease-out infinite;
+}
+
+.heroTitle {
+  margin: 0;
+  font-size: clamp(2.5rem, 5vw, 4rem);
+  line-height: 0.95;
+  letter-spacing: -0.07em;
+}
+
+.heroCopy {
+  max-width: 52rem;
+  margin: 0;
+  color: var(--muted);
+  font-size: 1.06rem;
+  line-height: 1.75;
+}
+
+.heroHighlights {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.heroHighlight {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 9.5rem;
+  padding: 0.9rem 1rem;
+  border-radius: 22px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-muted) 88%, transparent);
+  transition: transform 160ms ease, border-color 180ms ease, background-color 180ms ease;
+}
+
+.heroHighlight:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent) 18%, var(--line));
+  background: color-mix(in srgb, var(--surface-muted) 74%, var(--accent-soft) 26%);
+}
+
+.heroHighlightLabel {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.heroHighlightValue {
+  font-size: 1.65rem;
+  font-weight: 800;
+  letter-spacing: -0.05em;
+}
+
+.heroActions {
+  display: grid;
+  align-content: start;
+  justify-items: stretch;
+  gap: 1rem;
+}
+
+.heroActionCard {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1.15rem;
+  border-radius: 24px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-soft) 92%, transparent);
+  backdrop-filter: blur(10px);
+}
+
+.heroActionCard strong {
+  font-size: 1rem;
+  letter-spacing: -0.04em;
+}
+
+.heroActionCard p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.heroButtons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.heroButtonPrimary,
+.heroButtonSecondary {
+  min-width: 10.5rem;
+}
+
+.heroFootnote {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.heroFootnote strong {
+  color: var(--text);
+}
+
+.metricsGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.metricCard {
+  position: relative;
+  display: grid;
+  gap: 1rem;
+  padding: 1.2rem 1.25rem;
+  border-radius: 26px;
+  border: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 95%, transparent), var(--surface-muted));
+  box-shadow: var(--shadow);
+  transition: transform 160ms ease, border-color 180ms ease, box-shadow 180ms ease, background-color 180ms ease;
+  overflow: hidden;
+}
+
+.metricCard:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--accent) 18%, var(--line));
+  box-shadow: 0 22px 40px rgba(28, 42, 70, 0.14);
+}
+
+.metricCardPrimary {
+  grid-column: span 2;
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--accent) 12%, transparent), transparent 18rem),
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 95%, transparent), var(--surface-muted));
+}
+
+.metricCardTop,
+.metricCardBody {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.metricCardTop {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.metricIcon,
+.activityIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--accent-soft) 88%, transparent);
+  color: var(--accent);
+}
+
+.metricIcon svg,
+.metricTrend svg,
+.sequenceArrow svg,
+.activityIcon svg,
+.activityEmpty svg,
+.heroButtons svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.metricTrend {
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.72rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.metricTrendUp {
+  background: color-mix(in srgb, var(--accent-soft) 84%, transparent);
+  color: var(--accent-strong);
+}
+
+.metricTrendDown {
+  background: color-mix(in srgb, #d96952 12%, transparent);
+  color: #e98f82;
+}
+
+.metricTrendFlat {
+  background: color-mix(in srgb, var(--button-secondary-bg) 92%, transparent);
+  color: var(--muted);
+}
+
+.metricLabel {
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.metricValue {
+  font-size: clamp(2.05rem, 4vw, 3rem);
+  line-height: 1;
+  letter-spacing: -0.06em;
+}
+
+.metricDetail {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.metricArrow {
+  position: absolute;
+  right: 1.15rem;
+  bottom: 1.15rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  transition: transform 160ms ease, border-color 180ms ease, color 180ms ease;
+}
+
+.metricCard:hover .metricArrow {
+  transform: translate(2px, -2px);
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 18%, var(--line));
+}
+
+.mainGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.9fr);
+  gap: 1rem;
+}
+
+.sequenceSection,
+.activitySection {
+  display: grid;
+  gap: 1rem;
+  padding: 1.35rem;
+  border-radius: 30px;
+  border: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 94%, transparent), var(--surface-muted));
+  box-shadow: var(--shadow);
+}
+
+.sectionTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.sectionKicker {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  padding: 0.42rem 0.72rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent) 16%, transparent);
+  background: color-mix(in srgb, var(--accent-soft) 68%, transparent);
+  color: var(--accent-strong);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.sectionTitle {
+  margin: 0.65rem 0 0;
+  font-size: clamp(1.8rem, 4vw, 2.5rem);
+  line-height: 0.98;
+  letter-spacing: -0.06em;
+}
+
+.sectionCopy {
+  margin: 0.6rem 0 0;
+  max-width: 42rem;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.sectionTopMeta {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.sectionLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--muted);
+  font-weight: 700;
+  transition: color 160ms ease, transform 160ms ease;
+}
+
+.sectionLink:hover,
+.sectionLink:focus-visible {
+  color: var(--text);
+  transform: translateX(1px);
+  outline: none;
+}
+
+.toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) repeat(2, minmax(160px, 0.65fr)) minmax(150px, 0.55fr);
+  gap: 0.8rem;
+  align-items: end;
+  padding: 1rem;
+  border-radius: 24px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-muted) 86%, transparent);
+}
+
+.toolbarField {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.toolbarLabel {
+  color: var(--muted);
+  font-size: 0.77rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.toolbarSearch {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0 1rem;
+  border-radius: 20px;
+  border: 1px solid var(--field-border);
+  background: var(--field-bg);
+  transition: border-color 180ms ease, box-shadow 180ms ease, transform 160ms ease;
+}
+
+.toolbarSearch:focus-within {
+  border-color: var(--field-focus);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--field-focus) 18%, transparent);
+  transform: translateY(-1px);
+}
+
+.toolbarSearch svg {
+  width: 1.05rem;
+  height: 1.05rem;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.toolbarSearch input,
+.toolbarField select {
+  width: 100%;
+  min-height: 3.25rem;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  outline: none;
+}
+
+.toolbarSearch input::placeholder {
+  color: color-mix(in srgb, var(--muted) 84%, transparent);
+}
+
+.toolbarField select {
+  padding: 0 1rem;
+  border-radius: 20px;
+  border: 1px solid var(--field-border);
+  background: var(--field-bg);
+  transition: border-color 180ms ease, box-shadow 180ms ease, transform 160ms ease;
+}
+
+.toolbarField select:hover {
+  transform: translateY(-1px);
+}
+
+.toolbarField select:focus {
+  border-color: var(--field-focus);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--field-focus) 18%, transparent);
+}
+
+.sequenceList {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.sequenceRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(220px, 0.65fr);
+  gap: 1rem;
+  align-items: center;
+  padding: 1.1rem 1.15rem;
+  border-radius: 26px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-muted) 84%, transparent);
+  cursor: pointer;
+  transition: transform 160ms ease, border-color 180ms ease, background-color 180ms ease, box-shadow 180ms ease;
+}
+
+.sequenceRow:hover,
+.sequenceRow:focus-visible {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--accent) 20%, var(--line));
+  background: color-mix(in srgb, var(--surface-muted) 72%, var(--accent-soft) 28%);
+  box-shadow: 0 24px 40px rgba(28, 42, 70, 0.16);
+  outline: none;
+}
+
+.sequenceIdentity,
+.sequenceAside {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.sequenceTitleRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.sequenceName {
+  margin: 0;
+  font-size: 1.2rem;
+  line-height: 1.1;
+  letter-spacing: -0.04em;
+}
+
+.sequenceSummary,
+.sequenceDeliveryDetail {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.sequenceStatus {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.52rem 0.78rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.sequenceStatusRunning {
+  background: color-mix(in srgb, var(--accent-soft) 86%, transparent);
+  color: var(--accent-strong);
+  border-color: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.sequenceStatusCompleted {
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 16%, transparent);
+}
+
+.sequenceStatusFailed {
+  background: color-mix(in srgb, #d96952 14%, transparent);
+  color: #f2b2a8;
+  border-color: color-mix(in srgb, #d96952 18%, transparent);
+}
+
+.sequenceStatusScheduled,
+.sequenceStatusPaused {
+  background: color-mix(in srgb, var(--warning-soft) 92%, transparent);
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 18%, transparent);
+}
+
+.sequenceStatusDraft {
+  background: color-mix(in srgb, var(--button-secondary-bg) 92%, transparent);
+  color: var(--muted);
+  border-color: var(--line);
+}
+
+.sequenceProgressGroup {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.sequenceProgressMeta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: var(--muted);
+  font-weight: 650;
+}
+
+.sequenceProgressMeta strong {
+  color: var(--text);
+  font-size: 0.96rem;
+}
+
+.sequenceProgressTrack {
+  position: relative;
+  height: 0.55rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--button-secondary-bg) 88%, transparent);
+  overflow: hidden;
+}
+
+.sequenceProgressFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent) 0%, color-mix(in srgb, var(--accent) 60%, white) 100%);
+}
+
+.sequenceAside {
+  align-items: end;
+}
+
+.sequenceActivity {
+  display: grid;
+  gap: 0.2rem;
+  justify-items: start;
+}
+
+.sequenceActivity span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.sequenceActivity strong {
+  font-size: 1.25rem;
+  letter-spacing: -0.05em;
+}
+
+.sequenceActivity small {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.sequenceInteractiveRail {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.85rem;
+}
+
+.sequenceActionGroup {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.55rem;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.sequenceRow:hover .sequenceActionGroup,
+.sequenceRow:focus-visible .sequenceActionGroup {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.sequenceActionButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 2.5rem;
+  padding: 0.62rem 0.88rem;
+  border-radius: 999px;
+  border: 1px solid var(--field-border);
+  background: var(--field-bg);
+  color: var(--text);
+  font-weight: 700;
+  transition: transform 160ms ease, border-color 180ms ease, background-color 180ms ease;
+}
+
+.sequenceActionButton svg {
+  width: 0.92rem;
+  height: 0.92rem;
+}
+
+.sequenceActionButton:hover:not(:disabled),
+.sequenceActionButton:focus-visible {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent) 18%, var(--field-border));
+  background: color-mix(in srgb, var(--field-bg) 74%, var(--accent-soft) 26%);
+  outline: none;
+}
+
+.sequenceActionButton:active:not(:disabled) {
+  transform: translateY(1px) scale(0.985);
+}
+
+.sequenceActionButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sequenceActionView {
+  background: color-mix(in srgb, var(--accent-soft) 68%, transparent);
+  color: var(--accent-strong);
+  border-color: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.sequenceActionDanger {
+  color: #f0a29a;
+  border-color: color-mix(in srgb, #d96952 20%, var(--field-border));
+}
+
+.sequenceActionDanger:hover:not(:disabled),
+.sequenceActionDanger:focus-visible {
+  background: color-mix(in srgb, #d96952 12%, transparent);
+  border-color: color-mix(in srgb, #d96952 28%, var(--field-border));
+}
+
+.sequenceActionError {
+  width: 100%;
+  color: #f0a29a;
+  font-size: 0.85rem;
+}
+
+.sequenceArrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-soft) 92%, transparent);
+  color: var(--muted);
+  transition: transform 180ms ease, border-color 180ms ease, color 180ms ease, background-color 180ms ease;
+  flex-shrink: 0;
+}
+
+.sequenceRow:hover .sequenceArrow,
+.sequenceRow:focus-visible .sequenceArrow {
+  transform: translate(3px, -3px);
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 18%, var(--line));
+  background: color-mix(in srgb, var(--surface-soft) 72%, var(--accent-soft) 28%);
+}
+
+.sequenceEmpty {
+  display: grid;
+  place-items: center;
+  gap: 1rem;
+  min-height: 17rem;
+  padding: 2rem;
+  border-radius: 26px;
+  border: 1px dashed var(--line);
+  background: color-mix(in srgb, var(--surface-muted) 76%, transparent);
+  text-align: center;
+}
+
+.sequenceEmpty strong {
+  font-size: 1.2rem;
+  letter-spacing: -0.04em;
+}
+
+.sequenceEmpty p {
+  margin: 0;
+  max-width: 30rem;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.activitySection {
+  align-content: start;
+}
+
+.liveBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-muted) 92%, transparent);
+  color: var(--muted);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.liveDot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 32%, transparent);
+  animation: dashboard-pulse 1.8s ease-out infinite;
+}
+
+.activityList {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.activityItem {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 0.9rem;
+  padding: 1rem;
+  border-radius: 22px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-muted) 82%, transparent);
+  transition: transform 160ms ease, border-color 180ms ease, background-color 180ms ease, box-shadow 180ms ease;
+}
+
+.activityItem:hover,
+.activityItem:focus-visible {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent) 18%, var(--line));
+  background: color-mix(in srgb, var(--surface-muted) 70%, var(--accent-soft) 30%);
+  box-shadow: 0 16px 30px rgba(28, 42, 70, 0.12);
+  outline: none;
+}
+
+.activityIconAccent {
+  background: color-mix(in srgb, var(--accent-soft) 88%, transparent);
+  color: var(--accent);
+}
+
+.activityIconSuccess {
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+  color: var(--success);
+}
+
+.activityIconWarning {
+  background: color-mix(in srgb, var(--warning-soft) 92%, transparent);
+  color: var(--warning);
+}
+
+.activityIconMuted {
+  background: color-mix(in srgb, var(--button-secondary-bg) 92%, transparent);
+  color: var(--muted);
+}
+
+.activityContent {
+  display: grid;
+  gap: 0.28rem;
+}
+
+.activityHeading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.activityHeading strong {
+  font-size: 1rem;
+  letter-spacing: -0.04em;
+}
+
+.activityHeading span,
+.activityContent small {
+  color: var(--muted);
+}
+
+.activityContent p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.activityEmpty {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.85rem;
+  padding: 1.1rem;
+  border-radius: 22px;
+  border: 1px dashed var(--line);
+  background: color-mix(in srgb, var(--surface-muted) 76%, transparent);
+}
+
+.activityEmpty strong {
+  display: block;
+  margin-bottom: 0.3rem;
+}
+
+.activityEmpty p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.spin {
+  animation: dashboard-spin 0.8s linear infinite;
+}
+
+@keyframes dashboard-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 32%, transparent);
+  }
+
+  70% {
+    box-shadow: 0 0 0 10px transparent;
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+@keyframes dashboard-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 1200px) {
+  .hero,
+  .mainGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .metricsGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .metricCardPrimary {
+    grid-column: span 2;
+  }
+
+  .sectionTop {
+    flex-direction: column;
+  }
+
+  .toolbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .sequenceRow {
+    grid-template-columns: 1fr;
+  }
+
+  .sequenceAside {
+    align-items: stretch;
+  }
+
+  .sequenceInteractiveRail {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .sequenceActionGroup {
+    opacity: 1;
+    transform: none;
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 760px) {
+  .hero,
+  .sequenceSection,
+  .activitySection {
+    padding: 1.1rem;
+    border-radius: 24px;
+  }
+
+  .metricsGrid,
+  .toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .metricCardPrimary {
+    grid-column: span 1;
+  }
+
+  .heroButtons,
+  .heroHighlights,
+  .sectionTopMeta {
+    width: 100%;
+  }
+
+  .heroButtonPrimary,
+  .heroButtonSecondary,
+  .sequenceActionButton {
+    width: 100%;
+  }
+
+  .activityHeading {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

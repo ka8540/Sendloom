@@ -1,0 +1,82 @@
+"use client";
+
+import { ArrowUpRight } from "lucide-react";
+import { useRouter } from "next/navigation";
+import type { KeyboardEvent } from "react";
+
+import type { SequenceRowData } from "@/components/dashboard/types";
+import { SequenceRowActions } from "./sequence-row-actions";
+import styles from "./overview-command-center.module.css";
+
+export function SequenceRow({ sequence }: { sequence: SequenceRowData }) {
+  const router = useRouter();
+
+  function navigate() {
+    router.push(sequence.href);
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLElement>) {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      navigate();
+    }
+  }
+
+  return (
+    <article
+      className={styles.sequenceRow}
+      role="link"
+      tabIndex={0}
+      onClick={navigate}
+      onKeyDown={handleKeyDown}
+      aria-label={`Open ${sequence.name}`}
+    >
+      <div className={styles.sequenceIdentity}>
+        <div className={styles.sequenceTitleRow}>
+          <div>
+            <h3 className={styles.sequenceName}>{sequence.name}</h3>
+            <p className={styles.sequenceSummary}>{sequence.summary}</p>
+          </div>
+          <span className={`${styles.sequenceStatus} ${styles[`sequenceStatus${capitalize(sequence.statusTone)}`]}`}>
+            {sequence.statusLabel}
+          </span>
+        </div>
+
+        <div className={styles.sequenceProgressGroup}>
+          <div className={styles.sequenceProgressMeta}>
+            <span>{sequence.progressLabel}</span>
+            <strong>{sequence.deliveryLabel}</strong>
+          </div>
+          <div className={styles.sequenceProgressTrack} aria-hidden="true">
+            <span className={styles.sequenceProgressFill} style={{ width: `${sequence.progressPercent}%` }} />
+          </div>
+          <p className={styles.sequenceDeliveryDetail}>{sequence.deliveryDetail}</p>
+        </div>
+      </div>
+
+      <div className={styles.sequenceAside}>
+        <div className={styles.sequenceActivity}>
+          <span>Last activity</span>
+          <strong>{sequence.lastActivityLabel}</strong>
+          <small>{sequence.lastActivityDetail}</small>
+        </div>
+
+        <div className={styles.sequenceInteractiveRail}>
+          <SequenceRowActions
+            href={sequence.href}
+            campaignId={sequence.id}
+            campaignName={sequence.name}
+            canRelaunch={sequence.canRelaunch}
+          />
+          <span className={styles.sequenceArrow}>
+            <ArrowUpRight aria-hidden="true" />
+          </span>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function capitalize(value: string) {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
