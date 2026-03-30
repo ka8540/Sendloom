@@ -3,7 +3,7 @@ import { Bebas_Neue, Space_Grotesk } from "next/font/google";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 
 import "@/app/globals.css";
-import { LoadScreen } from "@/components/load-screen";
+import { PublicLoadScreen } from "@/components/public-load-screen";
 import { themeInitScript } from "@/lib/theme";
 
 const loaderDisplayFont = Bebas_Neue({
@@ -38,7 +38,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
         {children}
-        <LoadScreen />
+        <PublicLoadScreen />
         <SpeedInsights />
       </body>
     </html>
