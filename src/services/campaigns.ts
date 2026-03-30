@@ -3,7 +3,7 @@ import type { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
 import { buildMergePayload } from "@/lib/mapping";
-import { sendEmail, type EmailAttachment } from "@/lib/provider";
+import { isGmailDailyLimitError, sendEmail, type EmailAttachment } from "@/lib/provider";
 import { consumeSendWindow } from "@/lib/rate-limit";
 import { getRedis } from "@/lib/redis";
 import { getNextRunDate } from "@/lib/schedule";
@@ -68,6 +68,7 @@ const DEFAULT_MAX_DURATION_MS = 45_000;
 const DEFAULT_MAX_RUNS = 5;
 const DEFAULT_MAX_RECIPIENT_JOBS_PER_RUN = 25;
 const TERMINAL_RECIPIENT_STATUSES = new Set(["SENT", "SUPPRESSED", "INVALID", "OPENED", "CLICKED", "BOUNCED", "COMPLAINED"]);
+const GMAIL_DAILY_LIMIT_RETRY_DELAY_MS = 24 * 60 * 60 * 1000;
 
 function getDeadline(maxDurationMs = DEFAULT_MAX_DURATION_MS) {
   return Date.now() + maxDurationMs;
@@ -380,6 +381,25 @@ export async function launchCampaign(campaignId: string, userId?: string) {
   });
 
   if (activeRun) {
+    if (activeRun.status === "PAUSED") {
+      const resumedRun = await prisma.campaignRun.update({
+        where: { id: activeRun.id },
+        data: {
+          status: "QUEUED",
+          scheduledFor: new Date()
+        }
+      });
+
+      await prisma.campaign.update({
+        where: { id: campaignId },
+        data: {
+          status: "RUNNING"
+        }
+      });
+
+      return resumedRun;
+    }
+
     return activeRun;
   }
 
@@ -558,6 +578,80 @@ async function ensureRecipientJobs(campaignId: string, runId: string) {
 
 export const enqueueRecipientJobs = ensureRecipientJobs;
 
+export async function pauseCampaignRunForSenderLimit(args: {
+  runId: string;
+  jobId: string;
+  message: string;
+  retryAt?: Date;
+}) {
+  const retryAt = args.retryAt ?? new Date(Date.now() + GMAIL_DAILY_LIMIT_RETRY_DELAY_MS);
+  const pauseMessage = `Sender paused after Gmail daily sending limit was reached. Retry after ${retryAt.toLocaleString()}.`;
+
+  const run = await prisma.campaignRun.findUnique({
+    where: { id: args.runId },
+    select: {
+      id: true,
+      campaignId: true
+    }
+  });
+
+  if (!run) {
+    return null;
+  }
+
+  await prisma.$transaction([
+    prisma.recipientJob.update({
+      where: { id: args.jobId },
+      data: {
+        status: "RETRYING",
+        lastError: args.message,
+        retryCount: { increment: 1 },
+        nextRetryAt: retryAt
+      }
+    }),
+    prisma.recipientJob.updateMany({
+      where: {
+        campaignRunId: args.runId,
+        id: {
+          not: args.jobId
+        },
+        OR: [
+          {
+            status: "PENDING"
+          },
+          {
+            status: "RETRYING"
+          }
+        ]
+      },
+      data: {
+        status: "RETRYING",
+        lastError: pauseMessage,
+        nextRetryAt: retryAt
+      }
+    }),
+    prisma.campaignRun.update({
+      where: { id: args.runId },
+      data: {
+        status: "PAUSED"
+      }
+    }),
+    prisma.campaign.update({
+      where: { id: run.campaignId },
+      data: {
+        status: "PAUSED"
+      }
+    })
+  ]);
+
+  await syncRunCounts(args.runId);
+
+  return {
+    runId: args.runId,
+    retryAt
+  };
+}
+
 async function processRecipientJob(recipientJob: RecipientJobWithContext) {
   const outcome = await withRedisLock(`sendloom:recipient-job:${recipientJob.id}`, RECIPIENT_LOCK_TTL_SECONDS, async () => {
     const latestJob = await prisma.recipientJob.findUnique({
@@ -578,14 +672,24 @@ async function processRecipientJob(recipientJob: RecipientJobWithContext) {
     if (!latestJob || TERMINAL_RECIPIENT_STATUSES.has(latestJob.status)) {
       return {
         processed: false,
-        rateLimited: false
+        rateLimited: false,
+        senderLimited: false
       };
     }
 
     if (latestJob.status === "RETRYING" && latestJob.nextRetryAt && latestJob.nextRetryAt > new Date()) {
       return {
         processed: false,
-        rateLimited: false
+        rateLimited: false,
+        senderLimited: false
+      };
+    }
+
+    if (latestJob.campaignRun.status === "PAUSED" || latestJob.campaignRun.campaign.status === "PAUSED") {
+      return {
+        processed: false,
+        rateLimited: false,
+        senderLimited: false
       };
     }
 
@@ -600,7 +704,8 @@ async function processRecipientJob(recipientJob: RecipientJobWithContext) {
 
         return {
           processed: true,
-          rateLimited: true
+          rateLimited: true,
+          senderLimited: false
         };
       }
 
@@ -631,10 +736,25 @@ async function processRecipientJob(recipientJob: RecipientJobWithContext) {
 
       return {
         processed: true,
-        rateLimited: false
+        rateLimited: false,
+        senderLimited: false
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown provider error";
+
+      if (isGmailDailyLimitError(error)) {
+        await pauseCampaignRunForSenderLimit({
+          runId: latestJob.campaignRunId,
+          jobId: latestJob.id,
+          message
+        });
+
+        return {
+          processed: true,
+          rateLimited: true,
+          senderLimited: true
+        };
+      }
 
       if (latestJob.retryCount < 5 && isRetriableError(error)) {
         await markRecipientAttempt({
@@ -645,7 +765,8 @@ async function processRecipientJob(recipientJob: RecipientJobWithContext) {
 
         return {
           processed: true,
-          rateLimited: false
+          rateLimited: false,
+          senderLimited: false
         };
       }
 
@@ -657,14 +778,16 @@ async function processRecipientJob(recipientJob: RecipientJobWithContext) {
 
       return {
         processed: true,
-        rateLimited: false
+        rateLimited: false,
+        senderLimited: false
       };
     }
   });
 
   return outcome ?? {
     processed: false,
-    rateLimited: false
+    rateLimited: false,
+    senderLimited: false
   };
 }
 

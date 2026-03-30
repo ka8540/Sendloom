@@ -8,6 +8,11 @@ async function processPendingRetries() {
       status: "RETRYING",
       nextRetryAt: {
         lte: new Date()
+      },
+      campaignRun: {
+        status: {
+          in: ["QUEUED", "RUNNING"]
+        }
       }
     },
     take: 250

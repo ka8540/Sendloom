@@ -82,3 +82,8 @@ export async function sendEmail(args: SendArgs) {
     }
   };
 }
+
+export function isGmailDailyLimitError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /daily user sending limit exceeded|550-5\.4\.5|550 5\.4\.5/i.test(message);
+}

@@ -1,11 +1,11 @@
 import { Worker, type ConnectionOptions } from "bullmq";
 
 import { prisma } from "@/lib/db";
-import { sendEmail, type EmailAttachment } from "@/lib/provider";
+import { isGmailDailyLimitError, sendEmail, type EmailAttachment } from "@/lib/provider";
 import { queues } from "@/lib/queue";
 import { consumeSendWindow } from "@/lib/rate-limit";
 import { getRedis } from "@/lib/redis";
-import { enqueueRecipientJobs, markRecipientAttempt } from "@/services/campaigns";
+import { enqueueRecipientJobs, markRecipientAttempt, pauseCampaignRunForSenderLimit } from "@/services/campaigns";
 
 const connection = getRedis() as unknown as ConnectionOptions;
 
@@ -50,6 +50,14 @@ const sendWorker = new Worker(
     });
 
     if (["SENT", "SUPPRESSED", "INVALID"].includes(recipientJob.status)) {
+      return;
+    }
+
+    if (recipientJob.status === "RETRYING" && recipientJob.nextRetryAt && recipientJob.nextRetryAt > new Date()) {
+      return;
+    }
+
+    if (recipientJob.campaignRun.status === "PAUSED" || recipientJob.campaignRun.campaign.status === "PAUSED") {
       return;
     }
 
@@ -98,6 +106,15 @@ const sendWorker = new Worker(
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown provider error";
+      if (isGmailDailyLimitError(error)) {
+        await pauseCampaignRunForSenderLimit({
+          runId: recipientJob.campaignRunId,
+          jobId,
+          message
+        });
+        return;
+      }
+
       if (recipientJob.retryCount < 5 && isRetriableError(error)) {
         await markRecipientAttempt({
           jobId,
