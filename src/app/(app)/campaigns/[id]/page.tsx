@@ -7,6 +7,7 @@ import {
   Eye,
   FileStack,
   Mail,
+  MessageSquareReply,
   RefreshCcw,
   SendHorizontal,
   ShieldAlert,
@@ -21,7 +22,13 @@ import { requireOperatorUser } from "@/lib/auth";
 import { getAttachmentPreviewKind } from "@/lib/attachments";
 import { prisma } from "@/lib/db";
 import { storeUpload } from "@/lib/storage";
-import { launchCampaign, processPendingCampaignWork, updateCampaignAttachments, validateCampaign } from "@/services/campaigns";
+import {
+  launchCampaign,
+  pauseCampaign,
+  processPendingCampaignWork,
+  updateCampaignAttachments,
+  validateCampaign
+} from "@/services/campaigns";
 import styles from "./page.module.css";
 
 export const maxDuration = 60;
@@ -122,6 +129,44 @@ async function validate(campaignId: string) {
 
   const user = await requireOperatorUser();
   await validateCampaign(campaignId, user.id);
+  revalidatePath(`/campaigns/${campaignId}`);
+  revalidatePath("/campaigns");
+}
+
+async function togglePause(campaignId: string) {
+  "use server";
+
+  const user = await requireOperatorUser();
+  const campaign = await prisma.campaign.findFirstOrThrow({
+    where: {
+      id: campaignId,
+      userId: user.id
+    },
+    include: {
+      runs: {
+        orderBy: { createdAt: "desc" },
+        take: 1
+      }
+    }
+  });
+
+  const latestRun = campaign.runs[0] ?? null;
+  const isPaused = latestRun?.status === "PAUSED" || campaign.status === "PAUSED";
+
+  if (isPaused) {
+    const run = await launchCampaign(campaignId, user.id);
+    revalidatePath(`/campaigns/${campaignId}`);
+    revalidatePath("/campaigns");
+    after(async () => {
+      await processPendingCampaignWork({
+        runId: run.id,
+        maxDurationMs: 55_000
+      });
+    });
+    return;
+  }
+
+  await pauseCampaign(campaignId, user.id);
   revalidatePath(`/campaigns/${campaignId}`);
   revalidatePath("/campaigns");
 }
@@ -228,6 +273,7 @@ export default async function CampaignDetailPage({
 
   const latestRun = campaign.runs[0];
   const isActiveRun = latestRun ? ["QUEUED", "RUNNING"].includes(latestRun.status) : false;
+  const isPausedRun = latestRun?.status === "PAUSED" || campaign.status === "PAUSED";
   const attachments = ((campaign.templateSnapshot as CampaignTemplateSnapshot).attachments ?? []).filter(
     (attachment) => attachment.fileName
   );
@@ -241,9 +287,16 @@ export default async function CampaignDetailPage({
   const issueCount =
     (latestRun?.failedCount ?? 0) + (latestRun?.suppressedCount ?? 0) + (latestRun?.invalidCount ?? 0);
   const trackedOpenCount = latestRun?.openedCount ?? 0;
-  const trackedClickCount = latestRun?.clickedCount ?? 0;
-  const launchButtonLabel = isActiveRun ? "Run is processing" : latestRun ? "Launch again" : "Launch sequence";
+  const replyCount = 0;
+  const launchButtonLabel = isActiveRun
+    ? "Run is processing"
+    : isPausedRun
+      ? "Sequence paused"
+      : latestRun
+        ? "Launch again"
+        : "Launch sequence";
   const validationButtonLabel = campaign.lastValidatedAt ? "Refresh validation" : "Validate sequence";
+  const pauseButtonLabel = isPausedRun ? "Resume sequence" : "Pause sequence";
   const scheduleLabel = formatScheduleLabel(campaign.scheduleType, campaign.scheduleConfig as ScheduleConfig | null);
   const latestRunValue = latestRun?.updatedAt?.toISOString() ?? null;
   const validatedAtValue = campaign.lastValidatedAt?.toISOString() ?? null;
@@ -342,10 +395,17 @@ export default async function CampaignDetailPage({
               </button>
             </form>
             <form action={launch.bind(null, campaign.id)}>
-              <button className="button" type="submit" disabled={isActiveRun}>
+              <button className="button" type="submit" disabled={isActiveRun || isPausedRun}>
                 {launchButtonLabel}
               </button>
             </form>
+            {latestRun && (isActiveRun || isPausedRun) ? (
+              <form action={togglePause.bind(null, campaign.id)}>
+                <button className="button secondary" type="submit">
+                  {pauseButtonLabel}
+                </button>
+              </form>
+            ) : null}
             <CampaignDetailDeleteButton campaignId={campaign.id} campaignName={campaign.name} />
           </div>
         </aside>
@@ -370,11 +430,11 @@ export default async function CampaignDetailPage({
         </article>
         <article className={styles.metricCard}>
           <div className={styles.metricIcon}>
-            <Eye aria-hidden="true" />
+            <MessageSquareReply aria-hidden="true" />
           </div>
-          <span className={styles.metricLabel}>Tracked clicks</span>
-          <strong className={styles.metricValue}>{trackedClickCount}</strong>
-          <span className={styles.metricMeta}>Stronger than opens, but still treated as a tracking signal.</span>
+          <span className={styles.metricLabel}>Replies</span>
+          <strong className={styles.metricValue}>{replyCount}</strong>
+          <span className={styles.metricMeta}>Reply sync is not connected yet, so this stays at zero for now.</span>
         </article>
         <article className={styles.metricCard}>
           <div className={styles.metricIcon}>
@@ -386,8 +446,8 @@ export default async function CampaignDetailPage({
         </article>
       </section>
       <p className={styles.metricsNote}>
-        Open tracking is kept out of the headline metrics because mailbox privacy tools and security scanners can trigger
-        opens automatically. This run has {trackedOpenCount} tracked open{trackedOpenCount === 1 ? "" : "s"}.
+        This run has {trackedOpenCount} tracked open{trackedOpenCount === 1 ? "" : "s"} and uses opens only as a secondary
+        engagement signal.
       </p>
 
       <section className={styles.detailGrid}>

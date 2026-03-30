@@ -427,6 +427,45 @@ export async function launchCampaign(campaignId: string, userId?: string) {
   return run;
 }
 
+export async function pauseCampaign(campaignId: string, userId?: string) {
+  const campaign = await prisma.campaign.findFirstOrThrow({
+    where: campaignOwnershipFilter(campaignId, userId),
+    select: {
+      id: true
+    }
+  });
+
+  const activeRun = await prisma.campaignRun.findFirst({
+    where: {
+      campaignId: campaign.id,
+      status: {
+        in: ["QUEUED", "RUNNING"]
+      }
+    },
+    orderBy: { createdAt: "desc" }
+  });
+
+  if (!activeRun) {
+    return null;
+  }
+
+  const pausedRun = await prisma.campaignRun.update({
+    where: { id: activeRun.id },
+    data: {
+      status: "PAUSED"
+    }
+  });
+
+  await prisma.campaign.update({
+    where: { id: campaign.id },
+    data: {
+      status: "PAUSED"
+    }
+  });
+
+  return pausedRun;
+}
+
 export async function queueScheduledRuns() {
   const scheduledCampaigns = await prisma.campaign.findMany({
     where: {
