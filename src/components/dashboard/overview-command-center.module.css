@@ -695,9 +695,8 @@
 .sequenceActionButton::after {
   content: attr(data-label);
   position: absolute;
-  top: 50%;
-  right: calc(100% + 0.55rem);
-  translate: 0 -50%;
+  left: 50%;
+  bottom: calc(100% + 0.55rem);
   padding: 0.52rem 0.78rem;
   border-radius: 999px;
   border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--field-border));
@@ -708,7 +707,7 @@
   white-space: nowrap;
   pointer-events: none;
   opacity: 0;
-  transform: translateX(0.3rem);
+  transform: translate(-50%, 0.3rem);
   box-shadow: 0 16px 30px rgba(28, 42, 70, 0.18);
   transition: opacity 180ms ease, transform 180ms ease;
 }
@@ -744,7 +743,7 @@
 .sequenceActionButton:hover::after,
 .sequenceActionButton:focus-visible::after {
   opacity: 1;
-  transform: translateX(0);
+  transform: translate(-50%, 0);
 }
 
 .sequenceActionButton:active:not(:disabled) {
