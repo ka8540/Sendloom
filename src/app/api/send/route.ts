@@ -4,8 +4,8 @@ import { z } from "zod";
 import { renderEmailTemplate } from "@/components/email-template";
 import { requireApiUser } from "@/lib/api-auth";
 import { env } from "@/lib/env";
-import { sendEmail } from "@/lib/provider";
-import { getDefaultUserSender } from "@/services/senders";
+import { GMAIL_RECONNECT_ERROR, isGmailReconnectError, sendEmail } from "@/lib/provider";
+import { getDefaultUserSender, markSenderRequiresReconnect } from "@/services/senders";
 
 const schema = z
   .object({
@@ -48,6 +48,20 @@ export async function POST(request: Request) {
 
     return NextResponse.json(result.data);
   } catch (error) {
+    if (error instanceof Error && isGmailReconnectError(error)) {
+      const sender = await getDefaultUserSender(auth.user.id);
+      if (sender) {
+        await markSenderRequiresReconnect(sender.id);
+      }
+
+      return NextResponse.json(
+        {
+          error: GMAIL_RECONNECT_ERROR
+        },
+        { status: 400 }
+      );
+    }
+
     return NextResponse.json(
       {
         error: error instanceof Error ? error.message : "Unknown send error"

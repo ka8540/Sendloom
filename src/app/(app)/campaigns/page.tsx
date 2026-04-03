@@ -2,6 +2,7 @@ import Link from "next/link";
 import { after } from "next/server";
 import { redirect } from "next/navigation";
 import {
+  AlertCircle,
   ChevronLeft,
   ChevronRight,
   CalendarClock,
@@ -39,6 +40,14 @@ type ScheduleConfig =
     };
 
 const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
+
+function getSearchParam(
+  searchParams: Record<string, string | string[] | undefined>,
+  key: string
+) {
+  const value = searchParams[key];
+  return Array.isArray(value) ? value[0] : value;
+}
 
 function humanize(value?: string | null) {
   if (!value) {
@@ -106,6 +115,8 @@ export default async function CampaignsPage({
 }) {
   const user = await requireOperatorUser();
   const resolvedSearchParams = searchParams ? await searchParams : {};
+  const gmailStatus = getSearchParam(resolvedSearchParams, "gmail");
+  const gmailError = getSearchParam(resolvedSearchParams, "gmail_error");
   const requestedPage = Array.isArray(resolvedSearchParams.page)
     ? resolvedSearchParams.page[0]
     : resolvedSearchParams.page;
@@ -144,6 +155,8 @@ export default async function CampaignsPage({
     })
   ]);
   const latestMappings = new Map<string, (typeof mappings)[number]>();
+  const connectedSenders = senders.filter((sender) => Boolean(sender.oauthRefreshToken));
+  const disconnectedSenders = senders.filter((sender) => !sender.oauthRefreshToken);
 
   for (const mapping of mappings) {
     if (!latestMappings.has(mapping.importId)) {
@@ -186,6 +199,18 @@ export default async function CampaignsPage({
   return (
     <div className={styles.page}>
       <section className={styles.topGrid}>
+        {gmailStatus === "connected" ? (
+          <div className={styles.flashNotice}>
+            <CheckCircle2 aria-hidden="true" />
+            <span>Gmail reconnected. You can use that sender again.</span>
+          </div>
+        ) : null}
+        {gmailError ? (
+          <div className={`${styles.flashNotice} ${styles.flashNoticeError}`}>
+            <AlertCircle aria-hidden="true" />
+            <span>{gmailError}</span>
+          </div>
+        ) : null}
         <article className={styles.builderCard}>
           <div className={styles.panelHeading}>
             <span className={styles.kicker}>Build</span>
@@ -209,7 +234,13 @@ export default async function CampaignsPage({
               ];
             })}
             templates={templates.map((entry) => ({ id: entry.id, label: entry.name }))}
-            senders={senders.map((entry) => ({ id: entry.id, label: `${entry.name} <${entry.fromEmail}>` }))}
+            senders={connectedSenders.map((entry) => ({ id: entry.id, label: `${entry.name} <${entry.fromEmail}>` }))}
+            disconnectedSenderCount={disconnectedSenders.length}
+            reconnectHref={
+              disconnectedSenders[0]
+                ? `/api/auth/google/connect?email=${encodeURIComponent(disconnectedSenders[0].fromEmail)}&next=${encodeURIComponent("/campaigns")}`
+                : undefined
+            }
           />
         </article>
 
@@ -217,11 +248,13 @@ export default async function CampaignsPage({
           <div className={styles.panelHeading}>
             <span className={styles.kicker}>Senders</span>
             <h2>Send from Gmail</h2>
-            <p>Choose one of these connected accounts when you create a sequence.</p>
+            <p>
+              Connected senders can launch sequences right away. If Google revoked access, reconnect the account first.
+            </p>
           </div>
           <div className={styles.senderList}>
-            {senders.length ? (
-              senders.map((sender) => (
+            {connectedSenders.length ? (
+              connectedSenders.map((sender) => (
                 <div key={sender.id} className={styles.senderItem}>
                   <div className={styles.senderIcon}>
                     <Mail aria-hidden="true" />
@@ -233,10 +266,36 @@ export default async function CampaignsPage({
                 </div>
               ))
             ) : (
-              <div className={styles.emptyNote}>Connect a Gmail account to send emails.</div>
+              <div className={styles.emptyNote}>
+                {disconnectedSenders.length
+                  ? "Reconnect Gmail to keep sending from this workspace."
+                  : "Connect a Gmail account to send emails."}
+              </div>
             )}
+            {disconnectedSenders.length ? (
+              <div className={styles.senderSection}>
+                <div className={styles.senderSectionTitle}>Needs reconnect</div>
+                {disconnectedSenders.map((sender) => (
+                  <div key={sender.id} className={`${styles.senderItem} ${styles.senderItemWarning}`}>
+                    <div className={styles.senderIcon}>
+                      <RefreshCcw aria-hidden="true" />
+                    </div>
+                    <div>
+                      <strong>{sender.name}</strong>
+                      <div className="muted">{sender.fromEmail}</div>
+                    </div>
+                    <a
+                      className="button secondary"
+                      href={`/api/auth/google/connect?email=${encodeURIComponent(sender.fromEmail)}&next=${encodeURIComponent("/campaigns")}`}
+                    >
+                      Reconnect
+                    </a>
+                  </div>
+                ))}
+              </div>
+            ) : null}
             <a className="button" href="/api/auth/google/connect">
-              {senders.length ? "Connect another Gmail" : "Connect Gmail"}
+              {connectedSenders.length ? "Connect another Gmail" : "Connect Gmail"}
             </a>
           </div>
         </article>

@@ -2,6 +2,9 @@ import nodemailer from "nodemailer";
 
 import { env } from "@/lib/env";
 
+export const GMAIL_RECONNECT_ERROR =
+  "This Gmail sender needs to be reconnected. Google says its access expired or was revoked.";
+
 type SenderAuth = {
   fromEmail: string;
   oauthRefreshToken?: string | null;
@@ -23,13 +26,33 @@ type SendArgs = {
   attachments?: EmailAttachment[];
 };
 
+const GMAIL_RECONNECT_PATTERNS = [
+  "invalid_grant",
+  "token has been expired or revoked",
+  "token has been revoked",
+  "refresh token",
+  "invalid credentials"
+] as const;
+
+export function isGmailReconnectError(error: unknown) {
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === "string"
+        ? error
+        : JSON.stringify(error);
+
+  const normalized = message.toLowerCase();
+  return GMAIL_RECONNECT_PATTERNS.some((pattern) => normalized.includes(pattern));
+}
+
 function createGmailTransport(sender: SenderAuth) {
   if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET) {
     throw new Error("Missing Google OAuth credentials. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in your environment.");
   }
 
   if (!sender.oauthRefreshToken) {
-    throw new Error("This sender is not connected to Google. Reconnect the Gmail account and try again.");
+    throw new Error(GMAIL_RECONNECT_ERROR);
   }
 
   return nodemailer.createTransport({
@@ -50,37 +73,45 @@ export async function sendEmail(args: SendArgs) {
   }
 
   const transport = createGmailTransport(args.sender);
-  const response = await transport.sendMail({
-    from: args.from,
-    to: args.to,
-    subject: args.subject,
-    html: args.html,
-    attachments: args.attachments?.map((attachment) => {
-      if (attachment.contentBase64) {
+  try {
+    const response = await transport.sendMail({
+      from: args.from,
+      to: args.to,
+      subject: args.subject,
+      html: args.html,
+      attachments: args.attachments?.map((attachment) => {
+        if (attachment.contentBase64) {
+          return {
+            filename: attachment.fileName,
+            content: Buffer.from(attachment.contentBase64, "base64"),
+            contentType: attachment.contentType ?? undefined
+          };
+        }
+
+        if (!attachment.storagePath) {
+          throw new Error(`Attachment ${attachment.fileName} is missing storage information.`);
+        }
+
         return {
           filename: attachment.fileName,
-          content: Buffer.from(attachment.contentBase64, "base64"),
+          path: attachment.storagePath,
           contentType: attachment.contentType ?? undefined
         };
+      })
+    });
+
+    return {
+      data: {
+        id: response.messageId
       }
-
-      if (!attachment.storagePath) {
-        throw new Error(`Attachment ${attachment.fileName} is missing storage information.`);
-      }
-
-      return {
-        filename: attachment.fileName,
-        path: attachment.storagePath,
-        contentType: attachment.contentType ?? undefined
-      };
-    })
-  });
-
-  return {
-    data: {
-      id: response.messageId
+    };
+  } catch (error) {
+    if (isGmailReconnectError(error)) {
+      throw new Error(GMAIL_RECONNECT_ERROR);
     }
-  };
+
+    throw error;
+  }
 }
 
 export function isGmailDailyLimitError(error: unknown) {

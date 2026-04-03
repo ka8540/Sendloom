@@ -6,6 +6,17 @@ import { exchangeGoogleCode, fetchGoogleUserInfo, getGoogleRedirectUri } from "@
 import { upsertGoogleSender } from "@/services/senders";
 
 const GOOGLE_STATE_COOKIE = "sendloom_google_oauth_state";
+const GOOGLE_NEXT_COOKIE = "sendloom_google_oauth_next";
+
+function buildRedirectUrl(requestUrl: string, nextPath: string | undefined, params: Record<string, string>) {
+  const target = new URL(nextPath && nextPath.startsWith("/") ? nextPath : "/campaigns", requestUrl);
+
+  for (const [key, value] of Object.entries(params)) {
+    target.searchParams.set(key, value);
+  }
+
+  return target;
+}
 
 export async function GET(request: Request) {
   const user = await getSessionUser();
@@ -22,14 +33,16 @@ export async function GET(request: Request) {
 
   const store = await cookies();
   const expectedState = store.get(GOOGLE_STATE_COOKIE)?.value;
+  const nextPath = store.get(GOOGLE_NEXT_COOKIE)?.value;
   store.delete(GOOGLE_STATE_COOKIE);
+  store.delete(GOOGLE_NEXT_COOKIE);
 
   if (error) {
-    return NextResponse.redirect(new URL(`/campaigns?gmail_error=${encodeURIComponent(error)}`, request.url));
+    return NextResponse.redirect(buildRedirectUrl(request.url, nextPath, { gmail_error: error }));
   }
 
   if (!code || !state || !expectedState || state !== expectedState) {
-    return NextResponse.redirect(new URL("/campaigns?gmail_error=state_mismatch", request.url));
+    return NextResponse.redirect(buildRedirectUrl(request.url, nextPath, { gmail_error: "state_mismatch" }));
   }
 
   try {
@@ -46,9 +59,9 @@ export async function GET(request: Request) {
       scope: tokens.scope
     });
 
-    return NextResponse.redirect(new URL("/campaigns?gmail=connected", request.url));
+    return NextResponse.redirect(buildRedirectUrl(request.url, nextPath, { gmail: "connected" }));
   } catch (connectError) {
     const message = connectError instanceof Error ? connectError.message : "google_connect_failed";
-    return NextResponse.redirect(new URL(`/campaigns?gmail_error=${encodeURIComponent(message)}`, request.url));
+    return NextResponse.redirect(buildRedirectUrl(request.url, nextPath, { gmail_error: message }));
   }
 }

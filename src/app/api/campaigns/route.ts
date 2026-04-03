@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { createForbiddenApiResponse, getApiRestrictionMessage, requireApiUser } from "@/lib/api-auth";
 import { prisma } from "@/lib/db";
+import { GMAIL_RECONNECT_ERROR } from "@/lib/provider";
 import { storeUpload } from "@/lib/storage";
 import { createCampaignDraft, launchCampaign, processPendingCampaignWork, validateCampaign } from "@/services/campaigns";
 
@@ -74,6 +75,15 @@ export async function POST(request: Request) {
 
   if (!sender) {
     return NextResponse.json({ error: "Choose a Gmail sender connected to your account." }, { status: 403 });
+  }
+
+  if (!sender.oauthRefreshToken) {
+    return NextResponse.json(
+      {
+        error: GMAIL_RECONNECT_ERROR
+      },
+      { status: 400 }
+    );
   }
 
   let attachments:
