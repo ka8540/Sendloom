@@ -9,7 +9,6 @@ import {
   Eye,
   FileStack,
   Mail,
-  MessageSquareReply,
   RefreshCcw,
   SendHorizontal,
   ShieldAlert,
@@ -17,26 +16,18 @@ import {
 } from "lucide-react";
 
 import { ActiveRunRefresher } from "@/components/active-run-refresher";
-import { AttachmentPreview } from "@/components/attachment-preview";
+import { CampaignSetupEditor } from "@/components/campaign-setup-editor";
 import { CampaignDetailDeleteButton } from "@/components/campaign-detail-delete-button";
 import { LocalDateTime } from "@/components/local-date-time";
-import { requireOperatorUser } from "@/lib/auth";
 import { getAttachmentPreviewKind } from "@/lib/attachments";
+import { requireOperatorUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { GMAIL_RECONNECT_ERROR } from "@/lib/provider";
-import { storeUpload } from "@/lib/storage";
-import {
-  launchCampaign,
-  pauseCampaign,
-  processPendingCampaignWork,
-  updateCampaignAttachments,
-  validateCampaign
-} from "@/services/campaigns";
+import { launchCampaign, processPendingCampaignWork, validateCampaign } from "@/services/campaigns";
 import styles from "./page.module.css";
 
 export const maxDuration = 60;
 const RECIPIENTS_PAGE_SIZE = 10;
-const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
 type CampaignTemplateSnapshot = {
   attachments?: Array<{
@@ -163,85 +154,6 @@ async function validate(campaignId: string) {
   revalidatePath("/campaigns");
 }
 
-async function togglePause(campaignId: string) {
-  "use server";
-
-  const user = await requireOperatorUser();
-  const campaign = await prisma.campaign.findFirstOrThrow({
-    where: {
-      id: campaignId,
-      userId: user.id
-    },
-    include: {
-      runs: {
-        orderBy: { createdAt: "desc" },
-        take: 1
-      }
-    }
-  });
-
-  const latestRun = campaign.runs[0] ?? null;
-  const isPaused = latestRun?.status === "PAUSED" || campaign.status === "PAUSED";
-
-  if (isPaused) {
-    const run = await launchCampaign(campaignId, user.id);
-    revalidatePath(`/campaigns/${campaignId}`);
-    revalidatePath("/campaigns");
-    after(async () => {
-      await processPendingCampaignWork({
-        runId: run.id,
-        maxDurationMs: 55_000
-      });
-    });
-    return;
-  }
-
-  await pauseCampaign(campaignId, user.id);
-  revalidatePath(`/campaigns/${campaignId}`);
-  revalidatePath("/campaigns");
-}
-
-async function replaceAttachment(campaignId: string, formData: FormData) {
-  "use server";
-
-  const user = await requireOperatorUser();
-  const attachment = formData.get("attachment");
-
-  if (!(attachment instanceof File) || attachment.size <= 0) {
-    return;
-  }
-
-  if (attachment.size > MAX_ATTACHMENT_BYTES) {
-    throw new Error("Attachments must be 10 MB or smaller.");
-  }
-
-  const buffer = Buffer.from(await attachment.arrayBuffer());
-  const nextAttachment = process.env.VERCEL
-    ? {
-        fileName: attachment.name,
-        contentBase64: buffer.toString("base64"),
-        contentType: attachment.type || null
-      }
-    : {
-        fileName: attachment.name,
-        storagePath: await storeUpload(attachment.name, buffer, "attachments"),
-        contentType: attachment.type || null
-      };
-
-  await updateCampaignAttachments(campaignId, [nextAttachment], user.id);
-  revalidatePath(`/campaigns/${campaignId}`);
-  revalidatePath("/campaigns");
-}
-
-async function clearAttachments(campaignId: string) {
-  "use server";
-
-  const user = await requireOperatorUser();
-  await updateCampaignAttachments(campaignId, [], user.id);
-  revalidatePath(`/campaigns/${campaignId}`);
-  revalidatePath("/campaigns");
-}
-
 function buildRecipientPageHref(
   campaignId: string,
   searchParams: Record<string, string | string[] | undefined>,
@@ -311,38 +223,61 @@ export default async function CampaignDetailPage({
       }
     }
   });
+  const [imports, mappings, templates, senders] = await Promise.all([
+    prisma.import.findMany({
+      where: { userId: user.id },
+      orderBy: { updatedAt: "desc" },
+      select: {
+        id: true,
+        fileName: true,
+        rowCount: true
+      }
+    }),
+    prisma.mapping.findMany({
+      where: { userId: user.id },
+      orderBy: { updatedAt: "desc" },
+      select: {
+        importId: true,
+        variableMap: true,
+        reservedFieldMap: true
+      }
+    }),
+    prisma.template.findMany({
+      where: { userId: user.id },
+      orderBy: { updatedAt: "desc" },
+      select: {
+        id: true,
+        name: true,
+        format: true
+      }
+    }),
+    prisma.senderProfile.findMany({
+      where: { userId: user.id },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        name: true,
+        fromEmail: true,
+        oauthRefreshToken: true
+      }
+    })
+  ]);
 
   const latestRun = campaign.runs[0];
   const senderNeedsReconnect = !campaign.senderProfile.oauthRefreshToken;
   const isActiveRun = latestRun ? ["QUEUED", "RUNNING"].includes(latestRun.status) : false;
-  const isPausedRun = latestRun?.status === "PAUSED" || campaign.status === "PAUSED";
   const attachments = ((campaign.templateSnapshot as CampaignTemplateSnapshot).attachments ?? []).filter(
     (attachment) => attachment.fileName
   );
-  const attachmentPreviewItems = attachments.map((attachment, index) => ({
-    contentType: attachment.contentType ?? null,
-    downloadUrl: `/api/campaigns/${campaign.id}/attachments/${index}?download=1`,
-    fileName: attachment.fileName,
-    previewKind: getAttachmentPreviewKind(attachment.fileName, attachment.contentType),
-    previewUrl: `/api/campaigns/${campaign.id}/attachments/${index}`
-  }));
   const issueCount =
     (latestRun?.failedCount ?? 0) + (latestRun?.suppressedCount ?? 0) + (latestRun?.invalidCount ?? 0);
   const trackedOpenCount = latestRun?.openedCount ?? 0;
-  const replyCount = latestRun?.repliedCount ?? 0;
-  const launchButtonLabel = isActiveRun
-    ? "Run is processing"
-    : isPausedRun
-      ? "Sequence paused"
-      : latestRun
-        ? "Launch again"
-        : "Launch sequence";
+  const trackedClickCount = latestRun?.clickedCount ?? 0;
+  const launchButtonLabel = isActiveRun ? "Run is processing" : latestRun ? "Launch again" : "Launch sequence";
   const validationButtonLabel = campaign.lastValidatedAt ? "Refresh validation" : "Validate sequence";
-  const pauseButtonLabel = isPausedRun ? "Resume sequence" : "Pause sequence";
   const scheduleLabel = formatScheduleLabel(campaign.scheduleType, campaign.scheduleConfig as ScheduleConfig | null);
   const latestRunValue = latestRun?.updatedAt?.toISOString() ?? null;
   const validatedAtValue = campaign.lastValidatedAt?.toISOString() ?? null;
-  const attachmentActionLabel = attachments.length ? "Replace attachment" : "Add attachment";
   const reconnectHref = `/api/auth/google/connect?email=${encodeURIComponent(campaign.senderProfile.fromEmail)}&next=${encodeURIComponent(`/campaigns/${campaign.id}`)}`;
   const recipientJobs = latestRun?.recipientJobs ?? [];
   const totalRecipientPages = Math.max(1, Math.ceil(recipientJobs.length / RECIPIENTS_PAGE_SIZE));
@@ -354,6 +289,62 @@ export default async function CampaignDetailPage({
     (recipientPage - 1) * RECIPIENTS_PAGE_SIZE,
     recipientPage * RECIPIENTS_PAGE_SIZE
   );
+  const latestMappingsByImport = new Map<string, (typeof mappings)[number]>();
+
+  for (const mapping of mappings) {
+    if (!latestMappingsByImport.has(mapping.importId)) {
+      latestMappingsByImport.set(mapping.importId, mapping);
+    }
+  }
+
+  const importOptions = imports.map((entry) => {
+    const mapping = latestMappingsByImport.get(entry.id);
+    const variableMap =
+      mapping?.variableMap && typeof mapping.variableMap === "object" && !Array.isArray(mapping.variableMap)
+        ? (mapping.variableMap as Record<string, string>)
+        : {};
+    const fieldCount = Object.keys(variableMap).length;
+
+    return {
+      id: entry.id,
+      label: entry.fileName,
+      description: mapping
+        ? `${entry.rowCount} contacts • ${fieldCount} mapped field${fieldCount === 1 ? "" : "s"}`
+        : `${entry.rowCount} contacts • configure template fields first`,
+      disabled: !mapping
+    };
+  });
+
+  const templateOptions = templates.map((template) => ({
+    id: template.id,
+    label: template.name,
+    description: `${humanize(template.format)} template`
+  }));
+
+  const senderOptions = senders.map((sender) => ({
+    id: sender.id,
+    label: sender.name || sender.fromEmail,
+    description: sender.oauthRefreshToken
+      ? sender.fromEmail
+      : `${sender.fromEmail} • reconnect required`,
+    disabled: !sender.oauthRefreshToken
+  }));
+
+  const initialSetup = {
+    name: campaign.name,
+    importId: campaign.importId,
+    templateId: campaign.templateId,
+    senderProfileId: campaign.senderProfileId,
+    attachments: attachments.map((attachment, index) => ({
+      id: `existing-${index}`,
+      sourceIndex: index,
+      fileName: attachment.fileName,
+      contentType: attachment.contentType ?? null,
+      previewKind: getAttachmentPreviewKind(attachment.fileName, attachment.contentType ?? null),
+      previewUrl: `/api/campaigns/${campaign.id}/attachments/${index}`,
+      downloadUrl: `/api/campaigns/${campaign.id}/attachments/${index}?download=1`
+    }))
+  };
 
   if (isActiveRun) {
     after(async () => {
@@ -470,18 +461,11 @@ export default async function CampaignDetailPage({
               </a>
             ) : (
               <form action={launch.bind(null, campaign.id)}>
-                <button className="button" type="submit" disabled={isActiveRun || isPausedRun}>
+                <button className="button" type="submit" disabled={isActiveRun}>
                   {launchButtonLabel}
                 </button>
               </form>
             )}
-            {!senderNeedsReconnect && latestRun && (isActiveRun || isPausedRun) ? (
-              <form action={togglePause.bind(null, campaign.id)}>
-                <button className="button secondary" type="submit">
-                  {pauseButtonLabel}
-                </button>
-              </form>
-            ) : null}
             <CampaignDetailDeleteButton campaignId={campaign.id} campaignName={campaign.name} />
           </div>
         </aside>
@@ -506,11 +490,11 @@ export default async function CampaignDetailPage({
         </article>
         <article className={styles.metricCard}>
           <div className={styles.metricIcon}>
-            <MessageSquareReply aria-hidden="true" />
+            <Eye aria-hidden="true" />
           </div>
-          <span className={styles.metricLabel}>Replies</span>
-          <strong className={styles.metricValue}>{replyCount}</strong>
-          <span className={styles.metricMeta}>Recipients with at least one reply matched from the connected inbox.</span>
+          <span className={styles.metricLabel}>Tracked clicks</span>
+          <strong className={styles.metricValue}>{trackedClickCount}</strong>
+          <span className={styles.metricMeta}>Stronger than opens, but still treated as a tracking signal.</span>
         </article>
         <article className={styles.metricCard}>
           <div className={styles.metricIcon}>
@@ -522,70 +506,21 @@ export default async function CampaignDetailPage({
         </article>
       </section>
       <p className={styles.metricsNote}>
-        This run has {trackedOpenCount} tracked open{trackedOpenCount === 1 ? "" : "s"} and uses opens only as a secondary
-        engagement signal.
+        Open tracking is kept out of the headline metrics because mailbox privacy tools and security scanners can trigger
+        opens automatically. This run has {trackedOpenCount} tracked open{trackedOpenCount === 1 ? "" : "s"}.
       </p>
 
       <section className={styles.detailGrid}>
         <article className={styles.panel}>
-          <div className={styles.panelHeader}>
-            <div>
-              <h2>Sequence setup</h2>
-              <p>The core pieces tied to this run.</p>
-            </div>
-          </div>
-
-          <div className={styles.setupGrid}>
-            <div className={styles.setupItem}>
-              <span>Contact list</span>
-              <strong>{campaign.import.fileName}</strong>
-            </div>
-            <div className={styles.setupItem}>
-              <span>Email template</span>
-              <strong>{campaign.template.name}</strong>
-            </div>
-            <div className={styles.setupItem}>
-              <span>Sender</span>
-              <strong>{campaign.senderProfile.name || campaign.senderProfile.fromEmail}</strong>
-              <em>{campaign.senderProfile.fromEmail}</em>
-              {senderNeedsReconnect ? <small className={styles.setupWarning}>Reconnect required before the next send.</small> : null}
-            </div>
-            <div className={styles.setupItem}>
-              <span>Send timing</span>
-              <strong>{scheduleLabel}</strong>
-            </div>
-          </div>
-
-          <div className={styles.assetBlock}>
-            <div className={styles.assetHeader}>
-              <h3>Attachments</h3>
-              <span>{attachments.length ? `${attachments.length} file${attachments.length > 1 ? "s" : ""}` : "No attachments"}</span>
-            </div>
-            <div className={styles.attachmentTools}>
-              <form action={replaceAttachment.bind(null, campaign.id)} className={styles.attachmentUploadForm}>
-                <label className={styles.attachmentPicker}>
-                  <span>{attachments.length ? "Choose a new resume or file" : "Choose a resume or file"}</span>
-                  <input type="file" name="attachment" />
-                </label>
-                <button className="button secondary" type="submit">
-                  {attachmentActionLabel}
-                </button>
-              </form>
-              {attachments.length ? (
-                <form action={clearAttachments.bind(null, campaign.id)}>
-                  <button className="button secondary" type="submit">
-                    Remove attachment
-                  </button>
-                </form>
-              ) : null}
-              <p className={styles.attachmentHint}>The next launch will use the attachment shown here.</p>
-            </div>
-            {attachmentPreviewItems.length ? (
-              <AttachmentPreview attachments={attachmentPreviewItems} />
-            ) : (
-              <div className={styles.emptyState}>No attachment is included with this sequence right now.</div>
-            )}
-          </div>
+          <CampaignSetupEditor
+            campaignId={campaign.id}
+            currentSenderNeedsReconnect={senderNeedsReconnect}
+            importOptions={importOptions}
+            initialSetup={initialSetup}
+            senderOptions={senderOptions}
+            templateOptions={templateOptions}
+            scheduleLabel={scheduleLabel}
+          />
         </article>
 
         <article className={styles.panel}>
@@ -602,14 +537,12 @@ export default async function CampaignDetailPage({
                 <div key={job.id} className={styles.jobRow}>
                   <div className={styles.jobIdentity}>
                     <strong>{job.recipientEmail}</strong>
-                    <span>{job.recipientName || "Recipient name not available"}</span>
+                    <span>{job.recipientName || "Name unavailable"}</span>
                   </div>
-                  <div className={styles.jobMeta}>
-                    <span className="badge">{job.replyCount > 0 ? "Replied" : humanize(job.status)}</span>
-                    <span className={styles.jobMetaText}>
-                      {job.replyCount > 0
-                        ? `${job.replyCount} repl${job.replyCount === 1 ? "y" : "ies"} matched in the inbox`
-                        : job.lastError ?? "No error reported"}
+                  <div className={styles.jobTrail}>
+                    <span className={styles.jobStatusBadge}>{humanize(job.status)}</span>
+                    <span className={job.lastError ? styles.jobError : styles.jobErrorMuted}>
+                      {job.lastError ?? "No error reported"}
                     </span>
                   </div>
                 </div>

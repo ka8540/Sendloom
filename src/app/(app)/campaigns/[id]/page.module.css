@@ -257,10 +257,13 @@
   display: grid;
   grid-template-columns: minmax(320px, 0.86fr) minmax(0, 1.14fr);
   gap: 1rem;
+  align-items: start;
 }
 
 .panel {
   display: grid;
+  align-content: start;
+  align-self: start;
   gap: 1.2rem;
   padding: 1.35rem;
   border-radius: 24px;
@@ -440,7 +443,7 @@
 
 .jobList {
   display: grid;
-  gap: 0.75rem;
+  gap: 0.65rem;
   align-content: start;
   align-self: start;
 }
@@ -498,35 +501,63 @@
 .jobRow {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 0.9rem;
-  align-items: center;
-  padding: 0.9rem 1rem;
+  gap: 0.8rem;
+  align-items: start;
+  padding: 0.85rem 0.95rem;
   border-radius: 16px;
   border: 1px solid var(--line);
   background: var(--surface-muted);
 }
 
-.jobIdentity,
-.jobMeta {
+.jobIdentity {
   display: grid;
   gap: 0.2rem;
   min-width: 0;
 }
 
-.jobMeta {
+.jobIdentity strong {
+  letter-spacing: -0.02em;
+}
+
+.jobTrail {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: flex-end;
-  gap: 0.8rem;
+  gap: 0.7rem;
   flex-wrap: wrap;
   min-width: 0;
   text-align: right;
 }
 
-.jobMetaText {
-  max-width: 18rem;
+.jobStatusBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.9rem;
+  padding: 0.24rem 0.62rem;
+  border-radius: 999px;
+  background: var(--accent-soft-strong);
+  color: var(--success);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.jobError,
+.jobErrorMuted {
+  max-width: 18.5rem;
+  line-height: 1.45;
   overflow-wrap: anywhere;
   word-break: break-word;
+}
+
+.jobError {
+  color: var(--warning);
+}
+
+.jobErrorMuted {
+  color: var(--muted);
 }
 
 .emptyState {
@@ -559,7 +590,7 @@
     align-items: start;
   }
 
-  .jobMeta {
+  .jobTrail {
     justify-content: flex-start;
     text-align: left;
   }

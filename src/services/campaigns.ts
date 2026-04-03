@@ -1,15 +1,9 @@
 import { addMinutes } from "date-fns";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
 import { buildMergePayload } from "@/lib/mapping";
-import {
-  GMAIL_RECONNECT_ERROR,
-  isGmailDailyLimitError,
-  isGmailReconnectError,
-  sendEmail,
-  type EmailAttachment
-} from "@/lib/provider";
+import { GMAIL_RECONNECT_ERROR, isGmailReconnectError, sendEmail, type EmailAttachment } from "@/lib/provider";
 import { consumeSendWindow } from "@/lib/rate-limit";
 import { getRedis } from "@/lib/redis";
 import { getNextRunDate } from "@/lib/schedule";
@@ -75,7 +69,6 @@ const DEFAULT_MAX_DURATION_MS = 45_000;
 const DEFAULT_MAX_RUNS = 5;
 const DEFAULT_MAX_RECIPIENT_JOBS_PER_RUN = 25;
 const TERMINAL_RECIPIENT_STATUSES = new Set(["SENT", "SUPPRESSED", "INVALID", "OPENED", "CLICKED", "BOUNCED", "COMPLAINED"]);
-const GMAIL_DAILY_LIMIT_RETRY_DELAY_MS = 24 * 60 * 60 * 1000;
 
 function getDeadline(maxDurationMs = DEFAULT_MAX_DURATION_MS) {
   return Date.now() + maxDurationMs;
@@ -133,15 +126,7 @@ export async function syncRunCounts(runId: string) {
       suppressedCount: counts.SUPPRESSED ?? 0,
       invalidCount: counts.INVALID ?? 0,
       openedCount: counts.OPENED ?? 0,
-      clickedCount: counts.CLICKED ?? 0,
-      repliedCount: await prisma.recipientJob.count({
-        where: {
-          campaignRunId: runId,
-          repliedAt: {
-            not: null
-          }
-        }
-      })
+      clickedCount: counts.CLICKED ?? 0
     }
   });
 
@@ -373,6 +358,120 @@ export async function updateCampaignAttachments(
   return { id: campaign.id, attachments };
 }
 
+export async function updateCampaignSetup(
+  input: {
+    campaignId: string;
+    name: string;
+    importId: string;
+    templateId: string;
+    senderProfileId: string;
+    attachments: CampaignAttachmentSnapshot[];
+  },
+  userId?: string
+) {
+  const campaign = await prisma.campaign.findFirstOrThrow({
+    where: campaignOwnershipFilter(input.campaignId, userId),
+    select: {
+      id: true,
+      name: true,
+      status: true,
+      importId: true,
+      templateId: true,
+      senderProfileId: true,
+      templateSnapshot: true
+    }
+  });
+
+  const [importRecord, mapping, template, senderProfile] = await Promise.all([
+    prisma.import.findFirstOrThrow({
+      where: {
+        id: input.importId,
+        ...(userId ? { userId } : {})
+      }
+    }),
+    prisma.mapping.findFirst({
+      where: {
+        importId: input.importId,
+        ...(userId ? { userId } : {})
+      },
+      orderBy: { updatedAt: "desc" }
+    }),
+    prisma.template.findFirstOrThrow({
+      where: {
+        id: input.templateId,
+        ...(userId ? { userId } : {})
+      }
+    }),
+    prisma.senderProfile.findFirstOrThrow({
+      where: {
+        id: input.senderProfileId,
+        ...(userId ? { userId } : {})
+      }
+    })
+  ]);
+
+  if (!mapping) {
+    throw new Error("Choose a contact list with template fields configured before saving.");
+  }
+
+  if (!senderProfile.oauthRefreshToken) {
+    throw new Error(GMAIL_RECONNECT_ERROR);
+  }
+
+  const currentTemplateSnapshot =
+    campaign.templateSnapshot && typeof campaign.templateSnapshot === "object" && !Array.isArray(campaign.templateSnapshot)
+      ? (campaign.templateSnapshot as CampaignTemplateSnapshot)
+      : {
+          subject: "",
+          htmlBody: "",
+          variableManifest: [],
+          format: "HTML" as TemplateFormat,
+          attachments: []
+        };
+
+  const nextTemplateSnapshot: CampaignTemplateSnapshot = {
+    ...currentTemplateSnapshot,
+    subject: template.subject,
+    format: (template.format as TemplateFormat | null) ?? "HTML",
+    htmlBody: template.htmlBody,
+    variableManifest: template.variableManifest,
+    attachments: input.attachments
+  };
+
+  const structuralSetupChanged =
+    campaign.importId !== importRecord.id ||
+    campaign.templateId !== template.id ||
+    campaign.senderProfileId !== senderProfile.id ||
+    JSON.stringify(currentTemplateSnapshot.attachments ?? []) !== JSON.stringify(input.attachments);
+
+  return prisma.campaign.update({
+    where: { id: campaign.id },
+    data: {
+      name: input.name,
+      importId: importRecord.id,
+      mappingId: mapping.id,
+      templateId: template.id,
+      senderProfileId: senderProfile.id,
+      templateSnapshot: nextTemplateSnapshot as Prisma.InputJsonValue,
+      mappingSnapshot: {
+        reservedFieldMap: mapping.reservedFieldMap,
+        variableMap: mapping.variableMap
+      } as Prisma.InputJsonValue,
+      senderSnapshot: {
+        fromEmail: senderProfile.fromEmail,
+        name: senderProfile.name
+      } as Prisma.InputJsonValue,
+      ...(structuralSetupChanged
+        ? {
+            status: "DRAFT" as const,
+            lastValidatedAt: null,
+            validationSnapshot: Prisma.JsonNull
+          }
+        : {})
+    }
+  });
+}
+
 export async function launchCampaign(campaignId: string, userId?: string) {
   const campaign = await prisma.campaign.findFirstOrThrow({
     where: campaignOwnershipFilter(campaignId, userId),
@@ -396,25 +495,6 @@ export async function launchCampaign(campaignId: string, userId?: string) {
   });
 
   if (activeRun) {
-    if (activeRun.status === "PAUSED") {
-      const resumedRun = await prisma.campaignRun.update({
-        where: { id: activeRun.id },
-        data: {
-          status: "QUEUED",
-          scheduledFor: new Date()
-        }
-      });
-
-      await prisma.campaign.update({
-        where: { id: campaignId },
-        data: {
-          status: "RUNNING"
-        }
-      });
-
-      return resumedRun;
-    }
-
     return activeRun;
   }
 
@@ -440,45 +520,6 @@ export async function launchCampaign(campaignId: string, userId?: string) {
   });
 
   return run;
-}
-
-export async function pauseCampaign(campaignId: string, userId?: string) {
-  const campaign = await prisma.campaign.findFirstOrThrow({
-    where: campaignOwnershipFilter(campaignId, userId),
-    select: {
-      id: true
-    }
-  });
-
-  const activeRun = await prisma.campaignRun.findFirst({
-    where: {
-      campaignId: campaign.id,
-      status: {
-        in: ["QUEUED", "RUNNING"]
-      }
-    },
-    orderBy: { createdAt: "desc" }
-  });
-
-  if (!activeRun) {
-    return null;
-  }
-
-  const pausedRun = await prisma.campaignRun.update({
-    where: { id: activeRun.id },
-    data: {
-      status: "PAUSED"
-    }
-  });
-
-  await prisma.campaign.update({
-    where: { id: campaign.id },
-    data: {
-      status: "PAUSED"
-    }
-  });
-
-  return pausedRun;
 }
 
 export async function queueScheduledRuns() {
@@ -632,80 +673,6 @@ async function ensureRecipientJobs(campaignId: string, runId: string) {
 
 export const enqueueRecipientJobs = ensureRecipientJobs;
 
-export async function pauseCampaignRunForSenderLimit(args: {
-  runId: string;
-  jobId: string;
-  message: string;
-  retryAt?: Date;
-}) {
-  const retryAt = args.retryAt ?? new Date(Date.now() + GMAIL_DAILY_LIMIT_RETRY_DELAY_MS);
-  const pauseMessage = `Sender paused after Gmail daily sending limit was reached. Retry after ${retryAt.toLocaleString()}.`;
-
-  const run = await prisma.campaignRun.findUnique({
-    where: { id: args.runId },
-    select: {
-      id: true,
-      campaignId: true
-    }
-  });
-
-  if (!run) {
-    return null;
-  }
-
-  await prisma.$transaction([
-    prisma.recipientJob.update({
-      where: { id: args.jobId },
-      data: {
-        status: "RETRYING",
-        lastError: args.message,
-        retryCount: { increment: 1 },
-        nextRetryAt: retryAt
-      }
-    }),
-    prisma.recipientJob.updateMany({
-      where: {
-        campaignRunId: args.runId,
-        id: {
-          not: args.jobId
-        },
-        OR: [
-          {
-            status: "PENDING"
-          },
-          {
-            status: "RETRYING"
-          }
-        ]
-      },
-      data: {
-        status: "RETRYING",
-        lastError: pauseMessage,
-        nextRetryAt: retryAt
-      }
-    }),
-    prisma.campaignRun.update({
-      where: { id: args.runId },
-      data: {
-        status: "PAUSED"
-      }
-    }),
-    prisma.campaign.update({
-      where: { id: run.campaignId },
-      data: {
-        status: "PAUSED"
-      }
-    })
-  ]);
-
-  await syncRunCounts(args.runId);
-
-  return {
-    runId: args.runId,
-    retryAt
-  };
-}
-
 async function failQueuedRecipientJobs(runId: string, message: string, skipJobId?: string) {
   await prisma.recipientJob.updateMany({
     where: {
@@ -745,24 +712,14 @@ async function processRecipientJob(recipientJob: RecipientJobWithContext) {
     if (!latestJob || TERMINAL_RECIPIENT_STATUSES.has(latestJob.status)) {
       return {
         processed: false,
-        rateLimited: false,
-        senderLimited: false
+        rateLimited: false
       };
     }
 
     if (latestJob.status === "RETRYING" && latestJob.nextRetryAt && latestJob.nextRetryAt > new Date()) {
       return {
         processed: false,
-        rateLimited: false,
-        senderLimited: false
-      };
-    }
-
-    if (latestJob.campaignRun.status === "PAUSED" || latestJob.campaignRun.campaign.status === "PAUSED") {
-      return {
-        processed: false,
-        rateLimited: false,
-        senderLimited: false
+        rateLimited: false
       };
     }
 
@@ -777,8 +734,7 @@ async function processRecipientJob(recipientJob: RecipientJobWithContext) {
 
         return {
           processed: true,
-          rateLimited: true,
-          senderLimited: false
+          rateLimited: true
         };
       }
 
@@ -809,25 +765,10 @@ async function processRecipientJob(recipientJob: RecipientJobWithContext) {
 
       return {
         processed: true,
-        rateLimited: false,
-        senderLimited: false
+        rateLimited: false
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown provider error";
-
-      if (isGmailDailyLimitError(error)) {
-        await pauseCampaignRunForSenderLimit({
-          runId: latestJob.campaignRunId,
-          jobId: latestJob.id,
-          message
-        });
-
-        return {
-          processed: true,
-          rateLimited: true,
-          senderLimited: true
-        };
-      }
 
       if (isGmailReconnectError(error)) {
         await markSenderRequiresReconnect(latestJob.campaignRun.campaign.senderProfile.id);
@@ -842,8 +783,7 @@ async function processRecipientJob(recipientJob: RecipientJobWithContext) {
 
         return {
           processed: true,
-          rateLimited: false,
-          senderLimited: false
+          rateLimited: false
         };
       }
 
@@ -856,8 +796,7 @@ async function processRecipientJob(recipientJob: RecipientJobWithContext) {
 
         return {
           processed: true,
-          rateLimited: false,
-          senderLimited: false
+          rateLimited: false
         };
       }
 
@@ -869,16 +808,14 @@ async function processRecipientJob(recipientJob: RecipientJobWithContext) {
 
       return {
         processed: true,
-        rateLimited: false,
-        senderLimited: false
+        rateLimited: false
       };
     }
   });
 
   return outcome ?? {
     processed: false,
-    rateLimited: false,
-    senderLimited: false
+    rateLimited: false
   };
 }
 
@@ -1036,6 +973,44 @@ export async function markRecipientAttempt(args: {
   await syncRunCounts(updated.campaignRunId);
 
   return updated;
+}
+
+export async function pauseCampaignRunForSenderLimit(args: {
+  runId: string;
+  jobId?: string;
+  message: string;
+}) {
+  await prisma.$transaction(async (tx) => {
+    if (args.jobId) {
+      await tx.recipientJob.update({
+        where: { id: args.jobId },
+        data: {
+          status: "FAILED",
+          lastError: args.message,
+          nextRetryAt: null
+        }
+      });
+    }
+
+    const run = await tx.campaignRun.update({
+      where: { id: args.runId },
+      data: {
+        status: "PAUSED"
+      },
+      select: {
+        campaignId: true
+      }
+    });
+
+    await tx.campaign.update({
+      where: { id: run.campaignId },
+      data: {
+        status: "PAUSED"
+      }
+    });
+  });
+
+  await syncRunCounts(args.runId);
 }
 
 export async function getCampaignStatus(campaignId: string, userId?: string) {
