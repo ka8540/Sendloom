@@ -65,3 +65,12 @@ export async function getDefaultUserSender(userId: string) {
     orderBy: { updatedAt: "desc" }
   });
 }
+
+export async function markSenderRequiresReconnect(senderProfileId: string) {
+  return prisma.senderProfile.update({
+    where: { id: senderProfileId },
+    data: {
+      oauthRefreshToken: null
+    }
+  });
+}

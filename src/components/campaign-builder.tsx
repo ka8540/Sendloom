@@ -19,6 +19,8 @@ export function CampaignBuilder(props: {
   mappings: MappingOption[];
   templates: Option[];
   senders: Option[];
+  disconnectedSenderCount?: number;
+  reconnectHref?: string;
 }) {
   const router = useRouter();
   const [state, setState] = useState<{ pending: boolean; error?: string }>({ pending: false });
@@ -173,6 +175,7 @@ export function CampaignBuilder(props: {
   const hasTemplates = props.templates.length > 0;
   const hasImports = props.imports.length > 0;
   const canCreateSequence = hasSenders && hasTemplates && hasImports && Boolean(selectedMappingId);
+  const needsReconnect = !hasSenders && (props.disconnectedSenderCount ?? 0) > 0;
 
   return (
     <form className="form" onSubmit={onSubmit}>
@@ -214,10 +217,21 @@ export function CampaignBuilder(props: {
       <div className="field">
         <label htmlFor="senderProfileId">Send from</label>
         <select id="senderProfileId" name="senderProfileId" defaultValue={props.senders[0]?.id ?? ""} required disabled={!hasSenders}>
-          <option value="">{hasSenders ? "Choose the Gmail account to send from" : "Connect Gmail first"}</option>
+          <option value="">{hasSenders ? "Choose the Gmail account to send from" : needsReconnect ? "Reconnect Gmail first" : "Connect Gmail first"}</option>
           {renderOptions(props.senders)}
         </select>
       </div>
+      {needsReconnect ? (
+        <div className="surface-note">
+          A connected sender is required before this sequence can launch.
+          {props.reconnectHref ? (
+            <>
+              {" "}
+              <a href={props.reconnectHref}>Reconnect Gmail</a> to restore sending access.
+            </>
+          ) : null}
+        </div>
+      ) : null}
       <div className="field">
         <label htmlFor="attachment">Optional attachment</label>
         <input id="attachment" name="attachment" type="file" accept=".pdf,.doc,.docx,.txt,.rtf" />

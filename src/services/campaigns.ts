@@ -3,7 +3,7 @@ import type { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
 import { buildMergePayload } from "@/lib/mapping";
-import { sendEmail, type EmailAttachment } from "@/lib/provider";
+import { GMAIL_RECONNECT_ERROR, isGmailReconnectError, sendEmail, type EmailAttachment } from "@/lib/provider";
 import { consumeSendWindow } from "@/lib/rate-limit";
 import { getRedis } from "@/lib/redis";
 import { getNextRunDate } from "@/lib/schedule";
@@ -11,6 +11,7 @@ import { renderTemplate, renderTemplateContent, type TemplateFormat } from "@/li
 import { makeTrackingUrl, shaKey } from "@/lib/tracking";
 import type { CampaignValidationReport, ScheduleRule } from "@/lib/types";
 import { buildValidationReport } from "@/lib/validation";
+import { markSenderRequiresReconnect } from "@/services/senders";
 import { getSuppressedEmailSet, suppressEmail } from "@/services/suppressions";
 
 function campaignOwnershipFilter(campaignId: string, userId?: string) {
@@ -558,6 +559,25 @@ async function ensureRecipientJobs(campaignId: string, runId: string) {
 
 export const enqueueRecipientJobs = ensureRecipientJobs;
 
+async function failQueuedRecipientJobs(runId: string, message: string, skipJobId?: string) {
+  await prisma.recipientJob.updateMany({
+    where: {
+      campaignRunId: runId,
+      ...(skipJobId ? { id: { not: skipJobId } } : {}),
+      status: {
+        in: ["PENDING", "RETRYING"]
+      }
+    },
+    data: {
+      status: "FAILED",
+      lastError: message,
+      nextRetryAt: null
+    }
+  });
+
+  await syncRunCounts(runId);
+}
+
 async function processRecipientJob(recipientJob: RecipientJobWithContext) {
   const outcome = await withRedisLock(`sendloom:recipient-job:${recipientJob.id}`, RECIPIENT_LOCK_TTL_SECONDS, async () => {
     const latestJob = await prisma.recipientJob.findUnique({
@@ -635,6 +655,23 @@ async function processRecipientJob(recipientJob: RecipientJobWithContext) {
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown provider error";
+
+      if (isGmailReconnectError(error)) {
+        await markSenderRequiresReconnect(latestJob.campaignRun.campaign.senderProfile.id);
+
+        await markRecipientAttempt({
+          jobId: latestJob.id,
+          status: "FAILED",
+          lastError: GMAIL_RECONNECT_ERROR
+        });
+
+        await failQueuedRecipientJobs(latestJob.campaignRunId, GMAIL_RECONNECT_ERROR, latestJob.id);
+
+        return {
+          processed: true,
+          rateLimited: false
+        };
+      }
 
       if (latestJob.retryCount < 5 && isRetriableError(error)) {
         await markRecipientAttempt({

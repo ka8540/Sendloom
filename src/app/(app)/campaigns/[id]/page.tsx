@@ -1,6 +1,8 @@
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
+import { redirect } from "next/navigation";
 import {
+  AlertCircle,
   CalendarClock,
   ChevronLeft,
   ChevronRight,
@@ -20,6 +22,7 @@ import { LocalDateTime } from "@/components/local-date-time";
 import { requireOperatorUser } from "@/lib/auth";
 import { getAttachmentPreviewKind } from "@/lib/attachments";
 import { prisma } from "@/lib/db";
+import { GMAIL_RECONNECT_ERROR } from "@/lib/provider";
 import { storeUpload } from "@/lib/storage";
 import { launchCampaign, processPendingCampaignWork, updateCampaignAttachments, validateCampaign } from "@/services/campaigns";
 import styles from "./page.module.css";
@@ -106,6 +109,33 @@ async function launch(campaignId: string) {
   "use server";
 
   const user = await requireOperatorUser();
+  const campaign = await prisma.campaign.findFirst({
+    where: {
+      id: campaignId,
+      userId: user.id
+    },
+    select: {
+      senderProfile: {
+        select: {
+          fromEmail: true,
+          oauthRefreshToken: true
+        }
+      }
+    }
+  });
+
+  if (!campaign) {
+    redirect("/campaigns");
+  }
+
+  if (!campaign.senderProfile.oauthRefreshToken) {
+    const params = new URLSearchParams({
+      gmail_error: GMAIL_RECONNECT_ERROR,
+      gmail_sender: campaign.senderProfile.fromEmail
+    });
+    redirect(`/campaigns/${campaignId}?${params.toString()}`);
+  }
+
   const run = await launchCampaign(campaignId, user.id);
   revalidatePath(`/campaigns/${campaignId}`);
   revalidatePath("/campaigns");
@@ -195,6 +225,14 @@ function buildRecipientPageHref(
   return query ? `/campaigns/${campaignId}?${query}` : `/campaigns/${campaignId}`;
 }
 
+function getSearchParam(
+  searchParams: Record<string, string | string[] | undefined>,
+  key: string
+) {
+  const value = searchParams[key];
+  return Array.isArray(value) ? value[0] : value;
+}
+
 export default async function CampaignDetailPage({
   params,
   searchParams
@@ -205,6 +243,9 @@ export default async function CampaignDetailPage({
   const user = await requireOperatorUser();
   const { id } = await params;
   const resolvedSearchParams = await searchParams;
+  const gmailStatus = getSearchParam(resolvedSearchParams, "gmail");
+  const gmailError = getSearchParam(resolvedSearchParams, "gmail_error");
+  const gmailSender = getSearchParam(resolvedSearchParams, "gmail_sender");
   const campaign = await prisma.campaign.findFirstOrThrow({
     where: {
       id,
@@ -227,6 +268,7 @@ export default async function CampaignDetailPage({
   });
 
   const latestRun = campaign.runs[0];
+  const senderNeedsReconnect = !campaign.senderProfile.oauthRefreshToken;
   const isActiveRun = latestRun ? ["QUEUED", "RUNNING"].includes(latestRun.status) : false;
   const attachments = ((campaign.templateSnapshot as CampaignTemplateSnapshot).attachments ?? []).filter(
     (attachment) => attachment.fileName
@@ -248,6 +290,7 @@ export default async function CampaignDetailPage({
   const latestRunValue = latestRun?.updatedAt?.toISOString() ?? null;
   const validatedAtValue = campaign.lastValidatedAt?.toISOString() ?? null;
   const attachmentActionLabel = attachments.length ? "Replace attachment" : "Add attachment";
+  const reconnectHref = `/api/auth/google/connect?email=${encodeURIComponent(campaign.senderProfile.fromEmail)}&next=${encodeURIComponent(`/campaigns/${campaign.id}`)}`;
   const recipientJobs = latestRun?.recipientJobs ?? [];
   const totalRecipientPages = Math.max(1, Math.ceil(recipientJobs.length / RECIPIENTS_PAGE_SIZE));
   const requestedRecipientPage = Number.parseInt(String(resolvedSearchParams.recipientsPage ?? "1"), 10);
@@ -271,6 +314,21 @@ export default async function CampaignDetailPage({
   return (
     <div className={styles.page}>
       <ActiveRunRefresher active={isActiveRun} />
+      {gmailStatus === "connected" ? (
+        <div className={styles.flashNotice}>
+          <RefreshCcw aria-hidden="true" />
+          <span>Gmail reconnected. This sequence is ready to launch again.</span>
+        </div>
+      ) : null}
+      {gmailError ? (
+        <div className={`${styles.flashNotice} ${styles.flashNoticeError}`}>
+          <AlertCircle aria-hidden="true" />
+          <span>
+            {gmailError}
+            {gmailSender ? ` Reconnect ${gmailSender} before sending again.` : ""}
+          </span>
+        </div>
+      ) : null}
       <section className={styles.overview}>
         <div className={styles.overviewMain}>
           <div className={styles.kicker}>Sequence overview</div>
@@ -296,6 +354,18 @@ export default async function CampaignDetailPage({
         </div>
 
         <aside className={styles.overviewRail}>
+          {senderNeedsReconnect ? (
+            <div className={styles.reconnectNotice}>
+              <strong>Sender needs reconnect</strong>
+              <p>
+                Google revoked access for {campaign.senderProfile.fromEmail}. Reconnect it before you launch this
+                sequence again.
+              </p>
+              <a className="button secondary" href={reconnectHref}>
+                Reconnect Gmail
+              </a>
+            </div>
+          ) : null}
           <div className={styles.statusWrap}>
             <span className="badge">{humanize(campaign.status)}</span>
             <span className={styles.statusNote}>
@@ -341,11 +411,17 @@ export default async function CampaignDetailPage({
                 {validationButtonLabel}
               </button>
             </form>
-            <form action={launch.bind(null, campaign.id)}>
-              <button className="button" type="submit" disabled={isActiveRun}>
-                {launchButtonLabel}
-              </button>
-            </form>
+            {senderNeedsReconnect ? (
+              <a className="button" href={reconnectHref}>
+                Reconnect to launch
+              </a>
+            ) : (
+              <form action={launch.bind(null, campaign.id)}>
+                <button className="button" type="submit" disabled={isActiveRun}>
+                  {launchButtonLabel}
+                </button>
+              </form>
+            )}
             <CampaignDetailDeleteButton campaignId={campaign.id} campaignName={campaign.name} />
           </div>
         </aside>
@@ -412,6 +488,7 @@ export default async function CampaignDetailPage({
               <span>Sender</span>
               <strong>{campaign.senderProfile.name || campaign.senderProfile.fromEmail}</strong>
               <em>{campaign.senderProfile.fromEmail}</em>
+              {senderNeedsReconnect ? <small className={styles.setupWarning}>Reconnect required before the next send.</small> : null}
             </div>
             <div className={styles.setupItem}>
               <span>Send timing</span>
