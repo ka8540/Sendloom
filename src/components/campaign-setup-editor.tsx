@@ -273,13 +273,25 @@ export function CampaignSetupEditor(props: {
         <div className={styles.headerActions}>
           {editing ? (
             <>
-              <button type="button" className="button secondary" onClick={resetDraft} disabled={pending}>
+              <button
+                type="button"
+                className={`field-icon-button ${styles.headerIconAction}`}
+                data-tooltip="Cancel editing"
+                aria-label="Cancel editing"
+                onClick={resetDraft}
+                disabled={pending}
+              >
                 <X aria-hidden="true" />
-                Cancel
               </button>
-              <button type="button" className="button" onClick={() => void saveSetup()} disabled={pending}>
+              <button
+                type="button"
+                className={`field-icon-button ${styles.headerIconAction} ${styles.headerIconActionPrimary}`}
+                data-tooltip="Save changes"
+                aria-label="Save changes"
+                onClick={() => void saveSetup()}
+                disabled={pending}
+              >
                 {pending ? <Loader2 aria-hidden="true" className={styles.spin} /> : <Save aria-hidden="true" />}
-                Save changes
               </button>
             </>
           ) : (

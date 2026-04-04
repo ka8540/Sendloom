@@ -34,6 +34,19 @@
   flex-shrink: 0;
 }
 
+.headerIconActionPrimary {
+  border-color: color-mix(in srgb, var(--accent) 32%, transparent);
+  background: color-mix(in srgb, var(--accent-soft) 84%, var(--surface-strong) 16%);
+  color: var(--accent-strong);
+  box-shadow: 0 10px 22px rgba(28, 42, 70, 0.08);
+}
+
+.headerIconActionPrimary:hover:not(:disabled),
+.headerIconActionPrimary:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 48%, transparent);
+  background: color-mix(in srgb, var(--accent-soft-strong) 76%, var(--surface-strong) 24%);
+}
+
 .noticeError,
 .noticeSuccess {
   display: flex;
