@@ -347,72 +347,57 @@ export function HunterDashboard({ initialKeyStatus }: Props) {
               ) : null}
 
               {!pending && !error && results.length > 0 ? (
-                <>
-                  <div className={styles.tableWrap}>
-                    <table className={styles.resultsTable}>
-                      <thead>
-                        <tr>
-                          <th>Email</th>
-                          <th>Name</th>
-                          <th>Position</th>
-                          <th>Confidence</th>
-                          <th>Source</th>
-                          <th aria-label="Copy" />
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {results.map((row) => (
-                          <tr key={`${row.email}-${row.source}`}>
-                            <td data-label="Email">{row.email}</td>
-                            <td data-label="Name">{row.name}</td>
-                            <td data-label="Position">{row.position ?? "—"}</td>
-                            <td data-label="Confidence">{typeof row.confidence === "number" ? `${row.confidence}%` : "—"}</td>
-                            <td data-label="Source">{row.source}</td>
-                            <td className={styles.copyCell}>
-                              <button
-                                type="button"
-                                className={styles.copyButton}
-                                onClick={() => handleCopy(row.email)}
-                                aria-label={`Copy ${row.email}`}
-                              >
-                                {copiedEmail === row.email ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                <section className={styles.resultsShell} aria-label="Hunter results">
+                  <div className={styles.resultsSummary}>
+                    <div>
+                      <p className={styles.resultsEyebrow}>Returned matches</p>
+                      <strong>{results.length} result{results.length === 1 ? "" : "s"}</strong>
+                    </div>
+                    <p className="muted">
+                      {activeTab === "finder"
+                        ? "One verified profile view with full deliverability context."
+                        : "A scrollable roster of domain matches with stable alignment."}
+                    </p>
                   </div>
 
-                  <div className={styles.mobileList}>
-                    {results.map((row) => (
-                      <article key={`${row.email}-${row.source}-mobile`} className={styles.mobileCard}>
-                        <div>
-                          <strong>{row.email}</strong>
-                          <p>{row.name}</p>
-                        </div>
-                        <dl>
-                          <div>
-                            <dt>Position</dt>
-                            <dd>{row.position ?? "—"}</dd>
+                  <div className={styles.resultsViewport}>
+                    <div className={styles.resultsList}>
+                      {results.map((row) => (
+                        <article key={`${row.email}-${row.source}`} className={styles.resultCard}>
+                          <div className={styles.resultPrimary}>
+                            <strong className={styles.resultEmail}>{row.email}</strong>
+                            <span className={styles.resultName}>{row.name || "Unknown contact"}</span>
                           </div>
-                          <div>
-                            <dt>Confidence</dt>
-                            <dd>{typeof row.confidence === "number" ? `${row.confidence}%` : "—"}</dd>
-                          </div>
-                          <div>
-                            <dt>Source</dt>
-                            <dd>{row.source}</dd>
-                          </div>
-                        </dl>
-                        <button type="button" className={styles.copyButtonSecondary} onClick={() => handleCopy(row.email)}>
-                          {copiedEmail === row.email ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
-                          {copiedEmail === row.email ? "Copied" : "Copy email"}
-                        </button>
-                      </article>
-                    ))}
+
+                          <dl className={styles.resultMeta}>
+                            <div>
+                              <dt>Position</dt>
+                              <dd>{row.position ?? "—"}</dd>
+                            </div>
+                            <div>
+                              <dt>Confidence</dt>
+                              <dd>{typeof row.confidence === "number" ? `${row.confidence}%` : "—"}</dd>
+                            </div>
+                            <div>
+                              <dt>Source</dt>
+                              <dd>{row.source}</dd>
+                            </div>
+                          </dl>
+
+                          <button
+                            type="button"
+                            className={styles.copyButtonSecondary}
+                            onClick={() => handleCopy(row.email)}
+                            aria-label={`Copy ${row.email}`}
+                          >
+                            {copiedEmail === row.email ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
+                            {copiedEmail === row.email ? "Copied" : "Copy"}
+                          </button>
+                        </article>
+                      ))}
+                    </div>
                   </div>
-                </>
+                </section>
               ) : null}
             </article>
           </div>
