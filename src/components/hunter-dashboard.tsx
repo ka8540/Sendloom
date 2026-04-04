@@ -383,16 +383,24 @@ export function HunterDashboard({ initialKeyStatus }: Props) {
                           </div>
 
                           <dl className={styles.resultMeta}>
-                            <div>
+                            <div className={styles.resultMetaCard}>
+                              <dt>Name</dt>
+                              <dd>{row.name || "Unknown contact"}</dd>
+                            </div>
+                            <div className={styles.resultMetaCard}>
+                              <dt>Email</dt>
+                              <dd>{row.email}</dd>
+                            </div>
+                            <div className={styles.resultMetaCard}>
                               <dt>Position</dt>
                               <dd>{row.position ?? "—"}</dd>
                             </div>
-                            <div>
+                            <div className={styles.resultMetaCard}>
                               <dt>Confidence</dt>
                               <dd>{typeof row.confidence === "number" ? `${row.confidence}%` : "—"}</dd>
                             </div>
-                            <div>
-                              <dt>Source</dt>
+                            <div className={`${styles.resultMetaCard} ${styles.resultMetaWide}`}>
+                              <dt>Source domain</dt>
                               <dd>{row.source}</dd>
                             </div>
                           </dl>
