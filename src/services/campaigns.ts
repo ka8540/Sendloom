@@ -495,6 +495,25 @@ export async function launchCampaign(campaignId: string, userId?: string) {
   });
 
   if (activeRun) {
+    if (activeRun.status === "PAUSED") {
+      const resumedRun = await prisma.campaignRun.update({
+        where: { id: activeRun.id },
+        data: {
+          status: "QUEUED",
+          scheduledFor: new Date()
+        }
+      });
+
+      await prisma.campaign.update({
+        where: { id: campaignId },
+        data: {
+          status: "RUNNING"
+        }
+      });
+
+      return resumedRun;
+    }
+
     return activeRun;
   }
 
@@ -520,6 +539,45 @@ export async function launchCampaign(campaignId: string, userId?: string) {
   });
 
   return run;
+}
+
+export async function pauseCampaign(campaignId: string, userId?: string) {
+  const campaign = await prisma.campaign.findFirstOrThrow({
+    where: campaignOwnershipFilter(campaignId, userId),
+    select: {
+      id: true
+    }
+  });
+
+  const activeRun = await prisma.campaignRun.findFirst({
+    where: {
+      campaignId,
+      status: {
+        in: ["QUEUED", "RUNNING"]
+      }
+    },
+    orderBy: { createdAt: "desc" }
+  });
+
+  if (!activeRun) {
+    return null;
+  }
+
+  const pausedRun = await prisma.campaignRun.update({
+    where: { id: activeRun.id },
+    data: {
+      status: "PAUSED"
+    }
+  });
+
+  await prisma.campaign.update({
+    where: { id: campaign.id },
+    data: {
+      status: "PAUSED"
+    }
+  });
+
+  return pausedRun;
 }
 
 export async function queueScheduledRuns() {

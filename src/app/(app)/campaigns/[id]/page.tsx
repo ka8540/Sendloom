@@ -23,7 +23,7 @@ import { getAttachmentPreviewKind } from "@/lib/attachments";
 import { requireOperatorUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { GMAIL_RECONNECT_ERROR } from "@/lib/provider";
-import { launchCampaign, processPendingCampaignWork, validateCampaign } from "@/services/campaigns";
+import { launchCampaign, pauseCampaign, processPendingCampaignWork, validateCampaign } from "@/services/campaigns";
 import styles from "./page.module.css";
 
 export const maxDuration = 60;
@@ -154,6 +154,58 @@ async function validate(campaignId: string) {
   revalidatePath("/campaigns");
 }
 
+async function togglePause(campaignId: string) {
+  "use server";
+
+  const user = await requireOperatorUser();
+  const campaign = await prisma.campaign.findFirstOrThrow({
+    where: {
+      id: campaignId,
+      userId: user.id
+    },
+    include: {
+      runs: {
+        orderBy: { createdAt: "desc" },
+        take: 1
+      },
+      senderProfile: {
+        select: {
+          fromEmail: true,
+          oauthRefreshToken: true
+        }
+      }
+    }
+  });
+
+  const latestRun = campaign.runs[0] ?? null;
+  const isPaused = latestRun?.status === "PAUSED" || campaign.status === "PAUSED";
+
+  if (isPaused) {
+    if (!campaign.senderProfile.oauthRefreshToken) {
+      const params = new URLSearchParams({
+        gmail_error: GMAIL_RECONNECT_ERROR,
+        gmail_sender: campaign.senderProfile.fromEmail
+      });
+      redirect(`/campaigns/${campaignId}?${params.toString()}`);
+    }
+
+    const run = await launchCampaign(campaignId, user.id);
+    revalidatePath(`/campaigns/${campaignId}`);
+    revalidatePath("/campaigns");
+    after(async () => {
+      await processPendingCampaignWork({
+        runId: run.id,
+        maxDurationMs: 55_000
+      });
+    });
+    return;
+  }
+
+  await pauseCampaign(campaignId, user.id);
+  revalidatePath(`/campaigns/${campaignId}`);
+  revalidatePath("/campaigns");
+}
+
 function buildRecipientPageHref(
   campaignId: string,
   searchParams: Record<string, string | string[] | undefined>,
@@ -266,6 +318,7 @@ export default async function CampaignDetailPage({
   const latestRun = campaign.runs[0];
   const senderNeedsReconnect = !campaign.senderProfile.oauthRefreshToken;
   const isActiveRun = latestRun ? ["QUEUED", "RUNNING"].includes(latestRun.status) : false;
+  const isPausedRun = latestRun?.status === "PAUSED" || campaign.status === "PAUSED";
   const attachments = ((campaign.templateSnapshot as CampaignTemplateSnapshot).attachments ?? []).filter(
     (attachment) => attachment.fileName
   );
@@ -273,8 +326,15 @@ export default async function CampaignDetailPage({
     (latestRun?.failedCount ?? 0) + (latestRun?.suppressedCount ?? 0) + (latestRun?.invalidCount ?? 0);
   const trackedOpenCount = latestRun?.openedCount ?? 0;
   const trackedClickCount = latestRun?.clickedCount ?? 0;
-  const launchButtonLabel = isActiveRun ? "Run is processing" : latestRun ? "Launch again" : "Launch sequence";
+  const launchButtonLabel = isActiveRun
+    ? "Run is processing"
+    : isPausedRun
+      ? "Sequence paused"
+      : latestRun
+        ? "Launch again"
+        : "Launch sequence";
   const validationButtonLabel = campaign.lastValidatedAt ? "Refresh validation" : "Validate sequence";
+  const pauseButtonLabel = isPausedRun ? "Resume sequence" : "Pause sequence";
   const scheduleLabel = formatScheduleLabel(campaign.scheduleType, campaign.scheduleConfig as ScheduleConfig | null);
   const latestRunValue = latestRun?.updatedAt?.toISOString() ?? null;
   const validatedAtValue = campaign.lastValidatedAt?.toISOString() ?? null;
@@ -461,11 +521,18 @@ export default async function CampaignDetailPage({
               </a>
             ) : (
               <form action={launch.bind(null, campaign.id)}>
-                <button className="button" type="submit" disabled={isActiveRun}>
+                <button className="button" type="submit" disabled={isActiveRun || isPausedRun}>
                   {launchButtonLabel}
                 </button>
               </form>
             )}
+            {latestRun && (isActiveRun || isPausedRun) ? (
+              <form action={togglePause.bind(null, campaign.id)}>
+                <button className="button secondary" type="submit">
+                  {pauseButtonLabel}
+                </button>
+              </form>
+            ) : null}
             <CampaignDetailDeleteButton campaignId={campaign.id} campaignName={campaign.name} />
           </div>
         </aside>
