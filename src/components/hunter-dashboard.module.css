@@ -1,0 +1,412 @@
+.page {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.hero {
+  display: grid;
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.heroCopy {
+  display: grid;
+  gap: 0.75rem;
+  max-width: 44rem;
+}
+
+.heroCopy :global(h1) {
+  margin: 0;
+}
+
+.eyebrow {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.heroActions {
+  display: grid;
+  gap: 0.875rem;
+  justify-items: start;
+}
+
+.keyStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.8rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.3;
+}
+
+.keyDot {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 999px;
+  flex: none;
+  box-shadow: 0 0 0 0.28rem var(--accent-soft);
+}
+
+.keyDotReady {
+  background: var(--success);
+}
+
+.keyDotMissing {
+  background: var(--warning);
+}
+
+.workspace {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.tabRow {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.625rem;
+  padding: 0.4rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--surface-soft);
+  width: fit-content;
+}
+
+.tabButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.8rem 1rem;
+  border: 0;
+  border-radius: 0.8rem;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    color 140ms ease,
+    transform 140ms ease;
+}
+
+.tabButton:hover,
+.tabButton:focus-visible {
+  background: var(--surface-hover);
+  color: var(--text);
+  outline: none;
+}
+
+.tabButtonActive {
+  background: var(--surface-strong);
+  color: var(--text);
+  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.08);
+}
+
+.callout {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.1rem 1.2rem;
+  border: 1px solid var(--note-border);
+  border-radius: 1rem;
+  background: var(--note-bg);
+}
+
+.callout strong {
+  display: block;
+  margin-bottom: 0.3rem;
+}
+
+.panelGrid {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: minmax(0, 0.96fr) minmax(0, 1.04fr);
+  align-items: start;
+}
+
+.formPanel,
+.resultsPanel {
+  display: grid;
+  gap: 1.1rem;
+  min-width: 0;
+}
+
+.panelHeader {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.panelHeader :global(h2) {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.feedbackError,
+.feedbackEmpty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 1.05rem 1.1rem;
+  border-radius: 1rem;
+  border: 1px dashed var(--line);
+  background: var(--surface-soft);
+  color: var(--muted);
+  text-align: center;
+  min-height: 4.5rem;
+}
+
+.feedbackError {
+  border-style: solid;
+  border-color: rgba(194, 77, 77, 0.22);
+  color: #c24d4d;
+  background: rgba(194, 77, 77, 0.08);
+}
+
+.tableWrap {
+  border: 1px solid var(--line);
+  border-radius: 1.15rem;
+  overflow: hidden;
+  background: var(--surface-soft);
+}
+
+.resultsTable {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.resultsTable th,
+.resultsTable td {
+  padding: 0.95rem 1rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.resultsTable th {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--line);
+}
+
+.resultsTable tbody tr + tr td {
+  border-top: 1px solid var(--line);
+}
+
+.resultsTable td {
+  font-size: 0.96rem;
+}
+
+.copyCell {
+  width: 4rem;
+}
+
+.copyButton,
+.copyButtonSecondary,
+.modalClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 0.85rem;
+  background: var(--surface-strong);
+  color: var(--text);
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    transform 140ms ease;
+}
+
+.copyButton {
+  width: 2.65rem;
+  height: 2.65rem;
+}
+
+.copyButtonSecondary {
+  padding: 0.78rem 1rem;
+  font-weight: 600;
+}
+
+.copyButton:hover,
+.copyButton:focus-visible,
+.copyButtonSecondary:hover,
+.copyButtonSecondary:focus-visible,
+.modalClose:hover,
+.modalClose:focus-visible {
+  background: var(--surface-hover);
+  border-color: var(--field-focus);
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.mobileList {
+  display: none;
+}
+
+.mobileCard {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--surface-soft);
+}
+
+.mobileCard strong {
+  display: block;
+  margin-bottom: 0.35rem;
+}
+
+.mobileCard p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.mobileCard dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.85rem;
+  margin: 0;
+}
+
+.mobileCard dt {
+  margin: 0 0 0.2rem;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.mobileCard dd {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background: rgba(7, 12, 18, 0.52);
+  backdrop-filter: blur(10px);
+}
+
+.modalCard {
+  width: min(100%, 36rem);
+  display: grid;
+  gap: 1.25rem;
+  padding: 1.4rem;
+  border: 1px solid var(--line);
+  border-radius: 1.4rem;
+  background: var(--surface-strong);
+  box-shadow: var(--shadow);
+}
+
+.modalHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.modalHeader :global(h2) {
+  margin: 0.25rem 0 0;
+}
+
+.modalClose {
+  width: 2.6rem;
+  height: 2.6rem;
+  font-size: 1.4rem;
+  line-height: 1;
+}
+
+.modalError {
+  margin: 0;
+  color: #c24d4d;
+  font-weight: 600;
+}
+
+.modalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
+.spinner {
+  animation: hunter-spin 0.8s linear infinite;
+}
+
+@keyframes hunter-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 1080px) {
+  .panelGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 860px) {
+  .heroActions,
+  .callout {
+    justify-items: stretch;
+  }
+
+  .callout {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .tableWrap {
+    display: none;
+  }
+
+  .mobileList {
+    display: grid;
+    gap: 0.9rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .tabRow {
+    width: 100%;
+  }
+
+  .tabButton {
+    flex: 1 1 0;
+    justify-content: center;
+  }
+
+  .modalBackdrop {
+    padding: 1rem;
+  }
+
+  .modalCard {
+    padding: 1.1rem;
+  }
+
+  .modalActions {
+    flex-direction: column-reverse;
+  }
+
+  .mobileCard dl {
+    grid-template-columns: 1fr;
+  }
+}

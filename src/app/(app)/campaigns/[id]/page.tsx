@@ -205,7 +205,6 @@ async function togglePause(campaignId: string) {
   revalidatePath(`/campaigns/${campaignId}`);
   revalidatePath("/campaigns");
 }
-
 function buildRecipientPageHref(
   campaignId: string,
   searchParams: Record<string, string | string[] | undefined>,
