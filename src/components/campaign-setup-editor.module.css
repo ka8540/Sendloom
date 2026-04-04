@@ -30,6 +30,10 @@
   gap: 0.65rem;
 }
 
+.headerIconAction {
+  flex-shrink: 0;
+}
+
 .noticeError,
 .noticeSuccess {
   display: flex;

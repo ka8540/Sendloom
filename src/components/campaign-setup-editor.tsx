@@ -285,14 +285,15 @@ export function CampaignSetupEditor(props: {
           ) : (
             <button
               type="button"
-              className="button secondary"
+              className={`field-icon-button ${styles.headerIconAction}`}
+              data-tooltip="Edit setup"
+              aria-label="Edit setup"
               onClick={() => {
                 setSuccess(null);
                 setEditing(true);
               }}
             >
               <PencilLine aria-hidden="true" />
-              Edit setup
             </button>
           )}
         </div>
