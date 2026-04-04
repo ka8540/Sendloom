@@ -355,8 +355,8 @@ export function HunterDashboard({ initialKeyStatus }: Props) {
                     </div>
                     <p className="muted">
                       {activeTab === "finder"
-                        ? "One verified profile view with full deliverability context."
-                        : "A scrollable roster of domain matches with stable alignment."}
+                        ? "Each match is expanded as a readable contact card with full deliverability context."
+                        : "A scrollable roster of domain matches with full source, role, and confidence details."}
                     </p>
                   </div>
 
@@ -364,9 +364,22 @@ export function HunterDashboard({ initialKeyStatus }: Props) {
                     <div className={styles.resultsList}>
                       {results.map((row) => (
                         <article key={`${row.email}-${row.source}`} className={styles.resultCard}>
-                          <div className={styles.resultPrimary}>
-                            <strong className={styles.resultEmail}>{row.email}</strong>
-                            <span className={styles.resultName}>{row.name || "Unknown contact"}</span>
+                          <div className={styles.resultHeader}>
+                            <div className={styles.resultPrimary}>
+                              <span className={styles.resultLabel}>Contact</span>
+                              <strong className={styles.resultName}>{row.name || "Unknown contact"}</strong>
+                              <strong className={styles.resultEmail}>{row.email}</strong>
+                            </div>
+
+                            <button
+                              type="button"
+                              className={styles.copyButtonSecondary}
+                              onClick={() => handleCopy(row.email)}
+                              aria-label={`Copy ${row.email}`}
+                            >
+                              {copiedEmail === row.email ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
+                              {copiedEmail === row.email ? "Copied" : "Copy email"}
+                            </button>
                           </div>
 
                           <dl className={styles.resultMeta}>
@@ -383,16 +396,6 @@ export function HunterDashboard({ initialKeyStatus }: Props) {
                               <dd>{row.source}</dd>
                             </div>
                           </dl>
-
-                          <button
-                            type="button"
-                            className={styles.copyButtonSecondary}
-                            onClick={() => handleCopy(row.email)}
-                            aria-label={`Copy ${row.email}`}
-                          >
-                            {copiedEmail === row.email ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
-                            {copiedEmail === row.email ? "Copied" : "Copy"}
-                          </button>
                         </article>
                       ))}
                     </div>
