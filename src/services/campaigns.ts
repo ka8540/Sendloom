@@ -1,5 +1,5 @@
 import { addMinutes } from "date-fns";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
 import { buildMergePayload } from "@/lib/mapping";
@@ -356,6 +356,120 @@ export async function updateCampaignAttachments(
   });
 
   return { id: campaign.id, attachments };
+}
+
+export async function updateCampaignSetup(
+  input: {
+    campaignId: string;
+    name: string;
+    importId: string;
+    templateId: string;
+    senderProfileId: string;
+    attachments: CampaignAttachmentSnapshot[];
+  },
+  userId?: string
+) {
+  const campaign = await prisma.campaign.findFirstOrThrow({
+    where: campaignOwnershipFilter(input.campaignId, userId),
+    select: {
+      id: true,
+      name: true,
+      status: true,
+      importId: true,
+      templateId: true,
+      senderProfileId: true,
+      templateSnapshot: true
+    }
+  });
+
+  const [importRecord, mapping, template, senderProfile] = await Promise.all([
+    prisma.import.findFirstOrThrow({
+      where: {
+        id: input.importId,
+        ...(userId ? { userId } : {})
+      }
+    }),
+    prisma.mapping.findFirst({
+      where: {
+        importId: input.importId,
+        ...(userId ? { userId } : {})
+      },
+      orderBy: { updatedAt: "desc" }
+    }),
+    prisma.template.findFirstOrThrow({
+      where: {
+        id: input.templateId,
+        ...(userId ? { userId } : {})
+      }
+    }),
+    prisma.senderProfile.findFirstOrThrow({
+      where: {
+        id: input.senderProfileId,
+        ...(userId ? { userId } : {})
+      }
+    })
+  ]);
+
+  if (!mapping) {
+    throw new Error("Choose a contact list with template fields configured before saving.");
+  }
+
+  if (!senderProfile.oauthRefreshToken) {
+    throw new Error(GMAIL_RECONNECT_ERROR);
+  }
+
+  const currentTemplateSnapshot =
+    campaign.templateSnapshot && typeof campaign.templateSnapshot === "object" && !Array.isArray(campaign.templateSnapshot)
+      ? (campaign.templateSnapshot as CampaignTemplateSnapshot)
+      : {
+          subject: "",
+          htmlBody: "",
+          variableManifest: [],
+          format: "HTML" as TemplateFormat,
+          attachments: []
+        };
+
+  const nextTemplateSnapshot: CampaignTemplateSnapshot = {
+    ...currentTemplateSnapshot,
+    subject: template.subject,
+    format: (template.format as TemplateFormat | null) ?? "HTML",
+    htmlBody: template.htmlBody,
+    variableManifest: template.variableManifest,
+    attachments: input.attachments
+  };
+
+  const structuralSetupChanged =
+    campaign.importId !== importRecord.id ||
+    campaign.templateId !== template.id ||
+    campaign.senderProfileId !== senderProfile.id ||
+    JSON.stringify(currentTemplateSnapshot.attachments ?? []) !== JSON.stringify(input.attachments);
+
+  return prisma.campaign.update({
+    where: { id: campaign.id },
+    data: {
+      name: input.name,
+      importId: importRecord.id,
+      mappingId: mapping.id,
+      templateId: template.id,
+      senderProfileId: senderProfile.id,
+      templateSnapshot: nextTemplateSnapshot as Prisma.InputJsonValue,
+      mappingSnapshot: {
+        reservedFieldMap: mapping.reservedFieldMap,
+        variableMap: mapping.variableMap
+      } as Prisma.InputJsonValue,
+      senderSnapshot: {
+        fromEmail: senderProfile.fromEmail,
+        name: senderProfile.name
+      } as Prisma.InputJsonValue,
+      ...(structuralSetupChanged
+        ? {
+            status: "DRAFT" as const,
+            lastValidatedAt: null,
+            validationSnapshot: Prisma.JsonNull
+          }
+        : {})
+    }
+  });
 }
 
 export async function launchCampaign(campaignId: string, userId?: string) {

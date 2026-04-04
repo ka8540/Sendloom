@@ -5,7 +5,7 @@ import type { Route } from "next";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
-import { FileSpreadsheet, House, PanelLeftClose, PanelLeftOpen, ScrollText, SendHorizontal, ShieldAlert, ShieldUser } from "lucide-react";
+import { FileSpreadsheet, House, PanelLeftClose, PanelLeftOpen, ScrollText, Search, SendHorizontal, ShieldAlert, ShieldUser } from "lucide-react";
 import { SendloomLogo } from "@/components/sendloom-logo";
 import { SessionControls } from "@/components/session-controls";
 
@@ -18,6 +18,7 @@ export function AppNav({ isAdmin = false }: { isAdmin?: boolean }) {
         { href: "/workspace" as Route, label: "Overview", icon: House },
         { href: "/imports" as Route, label: "Imports", icon: FileSpreadsheet },
         { href: "/templates" as Route, label: "Templates", icon: ScrollText },
+        { href: "/finder" as Route, label: "Finder", icon: Search },
         { href: "/campaigns" as Route, label: "Sequences", icon: SendHorizontal },
         { href: "/suppressions" as Route, label: "Suppressions", icon: ShieldAlert }
       ];

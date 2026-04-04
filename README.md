@@ -9,6 +9,7 @@ Sendloom is a production-oriented sequence sending platform built with Next.js, 
 - Automatic field detection plus sequence creation, launch, and monitoring workflows
 - Redis-backed rate limiting plus app-driven launch and delivery processing
 - Suppression, unsubscribe, and tracking plumbing
+- Hunter-powered email finder and domain search through a secure backend proxy
 
 ## Quick start
 
@@ -44,3 +45,24 @@ You can also use:
 - `Authorization: Bearer <your CRON_SECRET>`
 
 If the scheduler is configured correctly, queued scheduled sends will continue processing on Vercel even when your personal computer is shut down.
+
+## Hunter Email Finder
+
+The app includes a Finder dashboard at `/finder` with:
+
+- `Find Email` for full name + company domain searches
+- `Domain Search` for company-wide email discovery
+- per-user Hunter API key storage encrypted on the server
+
+Setup:
+
+1. Set `HUNTER_KEY_ENCRYPTION_SECRET` in your environment.
+2. Run the existing Prisma migrations so the user key fields exist.
+3. Start the app and open `/finder`.
+4. Save your own Hunter API key from the in-app settings panel.
+
+Security notes:
+
+- The Hunter API is called only from backend routes.
+- API keys are never exposed to the frontend.
+- Keys are stored encrypted in the database and only decrypted server-side for outbound Hunter requests.
