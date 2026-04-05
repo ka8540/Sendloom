@@ -194,7 +194,7 @@
 .resultsSummary {
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 1rem;
 }
 
@@ -202,12 +202,6 @@
   display: block;
   margin-top: 0.25rem;
   font-size: 1.3rem;
-}
-
-.resultsSummary :global(.muted) {
-  max-width: 23rem;
-  margin: 0;
-  text-align: right;
 }
 
 .resultsEyebrow {
@@ -251,7 +245,7 @@
     border-color 140ms ease,
     background 140ms ease,
     color 140ms ease,
-    transform 140ms ease;
+    box-shadow 140ms ease;
 }
 
 .domainCategoryPill strong {
@@ -274,13 +268,14 @@
   color: var(--text);
   background: rgba(255, 255, 255, 0.04);
   outline: none;
-  transform: translateY(-1px);
+  box-shadow: inset 0 0 0 1px rgba(61, 196, 141, 0.1);
 }
 
 .domainCategoryPillActive {
   border-color: rgba(61, 196, 141, 0.42);
   background: rgba(61, 196, 141, 0.12);
   color: #1a7f5a;
+  box-shadow: inset 0 0 0 1px rgba(61, 196, 141, 0.08);
 }
 
 :global(html[data-theme="dark"]) .domainCategoryPillActive {

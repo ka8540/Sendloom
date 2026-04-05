@@ -434,7 +434,6 @@ export function HunterDashboard({ initialKeyStatus }: Props) {
               <div className={styles.panelHeader}>
                 <div>
                   <h2>Results</h2>
-                  <p className="muted">Emails, roles, and source domains returned by Hunter through the backend proxy.</p>
                 </div>
               </div>
 
@@ -473,11 +472,6 @@ export function HunterDashboard({ initialKeyStatus }: Props) {
                       <p className={styles.resultsEyebrow}>Returned matches</p>
                       <strong>{results.length} result{results.length === 1 ? "" : "s"}</strong>
                     </div>
-                    <p className="muted">
-                      {activeTab === "finder"
-                        ? "Each match is expanded as a readable contact card with full deliverability context."
-                        : "Domain matches are grouped by likely team so larger result sets stay readable without blowing up the panel."}
-                    </p>
                   </div>
 
                   <div className={styles.resultsViewport}>
