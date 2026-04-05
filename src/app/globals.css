@@ -1773,21 +1773,13 @@ textarea {
 .campaign-detail-delete {
   display: grid;
   gap: 0.45rem;
-  flex: 1 1 12rem;
-  align-self: stretch;
-}
-
-.campaign-detail-delete {
-  display: grid;
   align-content: start;
-  flex: 0 0 auto;
-  min-width: max-content;
-  margin-left: auto;
+  min-width: 0;
 }
 
 .campaign-detail-delete__button {
-  width: auto;
-  min-width: max-content;
+  width: 100%;
+  min-width: 0;
   min-height: 100%;
   padding-inline: 1.15rem;
   border: 1px solid color-mix(in srgb, #d96952 24%, var(--line));
