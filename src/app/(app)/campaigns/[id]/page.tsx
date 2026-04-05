@@ -91,6 +91,14 @@ function humanize(value?: string | null) {
     .join(" ");
 }
 
+function getDeliveredCount(run?: {
+  sentCount?: number | null;
+  openedCount?: number | null;
+  clickedCount?: number | null;
+} | null) {
+  return (run?.sentCount ?? 0) + (run?.openedCount ?? 0) + (run?.clickedCount ?? 0);
+}
+
 function formatScheduleLabel(scheduleType?: string | null, scheduleConfig?: ScheduleConfig | null) {
   if (scheduleType === "once") {
     const onceConfig = scheduleConfig && "scheduledFor" in scheduleConfig ? scheduleConfig : null;
@@ -374,6 +382,7 @@ export default async function CampaignDetailPage({
   const issueCount =
     (latestRun?.failedCount ?? 0) + (latestRun?.suppressedCount ?? 0) + (latestRun?.invalidCount ?? 0);
   const trackedClickCount = latestRun?.clickedCount ?? 0;
+  const deliveredCount = getDeliveredCount(latestRun);
   const launchButtonLabel = isActiveRun
     ? "Run is processing"
     : isPausedRun
@@ -600,8 +609,8 @@ export default async function CampaignDetailPage({
             <SendHorizontal aria-hidden="true" />
           </div>
           <span className={styles.metricLabel}>Delivered</span>
-          <strong className={styles.metricValue}>{latestRun?.sentCount ?? 0}</strong>
-          <span className={styles.metricMeta}>Messages confirmed as sent.</span>
+          <strong className={styles.metricValue}>{deliveredCount}</strong>
+          <span className={styles.metricMeta}>Messages that successfully reached recipients.</span>
         </article>
         <article className={styles.metricCard}>
           <div className={styles.metricIcon}>

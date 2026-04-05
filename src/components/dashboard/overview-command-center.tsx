@@ -23,6 +23,14 @@ import styles from "./overview-command-center.module.css";
 const ACTIVE_RUN_STATUSES: RunStatus[] = ["QUEUED", "RUNNING"];
 const FAILURE_RUN_STATUSES: RunStatus[] = ["FAILED"];
 
+function getDeliveredCount(run?: {
+  sentCount?: number | null;
+  openedCount?: number | null;
+  clickedCount?: number | null;
+} | null) {
+  return (run?.sentCount ?? 0) + (run?.openedCount ?? 0) + (run?.clickedCount ?? 0);
+}
+
 export default async function OverviewCommandCenter() {
   const user = await requireOperatorUser();
   const now = new Date();
@@ -221,6 +229,7 @@ export default async function OverviewCommandCenter() {
             suppressedCount: true,
             invalidCount: true,
             openedCount: true,
+            clickedCount: true,
             createdAt: true,
             updatedAt: true
           }
@@ -302,8 +311,9 @@ export default async function OverviewCommandCenter() {
   const sequenceRows: SequenceRowData[] = recentCampaigns.map((campaign) => {
     const latestRun = campaign.runs[0] ?? null;
     const status = deriveSequenceStatus(campaign.status, latestRun?.status);
+    const deliveredCount = getDeliveredCount(latestRun);
     const processedCount =
-      (latestRun?.sentCount ?? 0) +
+      deliveredCount +
       (latestRun?.failedCount ?? 0) +
       (latestRun?.suppressedCount ?? 0) +
       (latestRun?.invalidCount ?? 0);
@@ -325,7 +335,7 @@ export default async function OverviewCommandCenter() {
           ? `${humanizeEnum(latestRun.status)} run`
           : "Awaiting first launch";
     const deliveryLabel = latestRun
-      ? `${formatCompactNumber(latestRun.sentCount)} sent`
+      ? `${formatCompactNumber(deliveredCount)} delivered`
       : campaign.lastValidatedAt
         ? "Validated and ready"
         : "Needs validation";
