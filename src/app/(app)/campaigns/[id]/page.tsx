@@ -28,6 +28,7 @@ import styles from "./page.module.css";
 
 export const maxDuration = 60;
 const RECIPIENTS_PAGE_SIZE = 10;
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
 type CampaignTemplateSnapshot = {
   attachments?: Array<{
@@ -323,7 +324,6 @@ export default async function CampaignDetailPage({
   );
   const issueCount =
     (latestRun?.failedCount ?? 0) + (latestRun?.suppressedCount ?? 0) + (latestRun?.invalidCount ?? 0);
-  const trackedOpenCount = latestRun?.openedCount ?? 0;
   const trackedClickCount = latestRun?.clickedCount ?? 0;
   const launchButtonLabel = isActiveRun
     ? "Run is processing"
@@ -571,11 +571,6 @@ export default async function CampaignDetailPage({
           <span className={styles.metricMeta}>Failures, suppressions, and invalid records.</span>
         </article>
       </section>
-      <p className={styles.metricsNote}>
-        Open tracking is kept out of the headline metrics because mailbox privacy tools and security scanners can trigger
-        opens automatically. This run has {trackedOpenCount} tracked open{trackedOpenCount === 1 ? "" : "s"}.
-      </p>
-
       <section className={styles.detailGrid}>
         <article className={styles.panel}>
           <CampaignSetupEditor
