@@ -231,6 +231,66 @@
   gap: 1rem;
 }
 
+.domainCategoryRail {
+  display: flex;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+}
+
+.domainCategoryPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.7rem 0.95rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    color 140ms ease,
+    transform 140ms ease;
+}
+
+.domainCategoryPill strong {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.7rem;
+  height: 1.7rem;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font-size: 0.82rem;
+  line-height: 1;
+}
+
+.domainCategoryPill:hover,
+.domainCategoryPill:focus-visible {
+  border-color: var(--field-focus);
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.04);
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.domainCategoryPillActive {
+  border-color: rgba(61, 196, 141, 0.42);
+  background: rgba(61, 196, 141, 0.12);
+  color: #1a7f5a;
+}
+
+:global(html[data-theme="dark"]) .domainCategoryPillActive {
+  color: #7ae3ba;
+}
+
+.domainCategoryPillActive strong {
+  background: rgba(61, 196, 141, 0.16);
+}
+
 .domainGroup {
   display: grid;
   gap: 0.9rem;
@@ -540,6 +600,12 @@
   .domainGroupHeader {
     display: grid;
     gap: 0.75rem;
+  }
+
+  .domainCategoryRail {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    padding-bottom: 0.2rem;
   }
 
   .resultMeta {
