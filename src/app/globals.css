@@ -1777,13 +1777,24 @@ textarea {
   align-self: stretch;
 }
 
+.campaign-detail-delete {
+  display: grid;
+  align-content: start;
+  flex: 0 0 auto;
+  min-width: max-content;
+  margin-left: auto;
+}
+
 .campaign-detail-delete__button {
-  width: 100%;
+  width: auto;
+  min-width: max-content;
   min-height: 100%;
+  padding-inline: 1.15rem;
   border: 1px solid color-mix(in srgb, #d96952 24%, var(--line));
   background: color-mix(in srgb, #d96952 8%, var(--surface-strong));
   color: color-mix(in srgb, #d96952 72%, var(--text));
   box-shadow: none;
+  white-space: nowrap;
 }
 
 .campaign-detail-delete__button:hover:not(:disabled),
@@ -1795,6 +1806,10 @@ textarea {
 
 .campaign-detail-delete__button:active:not(:disabled) {
   box-shadow: 0 8px 14px rgba(217, 105, 82, 0.08);
+}
+
+.campaign-detail-delete__button span:last-child {
+  white-space: nowrap;
 }
 
 .campaign-detail-delete__error {
