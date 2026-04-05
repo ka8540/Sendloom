@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { HunterResultRow } from "@/lib/hunter";
 import {
   AlertCircle,
@@ -120,6 +120,7 @@ export function HunterDashboard({ initialKeyStatus }: Props) {
   const [hasSearched, setHasSearched] = useState(false);
   const [copiedEmail, setCopiedEmail] = useState<string | null>(null);
   const [domainPages, setDomainPages] = useState<Record<string, number>>({});
+  const [selectedDomainCategory, setSelectedDomainCategory] = useState<DomainCategory | null>(null);
 
   const statusCopy = useMemo(() => {
     if (!keyStatus.configured) {
@@ -174,6 +175,7 @@ export function HunterDashboard({ initialKeyStatus }: Props) {
     setHasSearched(true);
     setResults([]);
     setDomainPages({});
+    setSelectedDomainCategory(null);
 
     try {
       const response = await fetch(endpoint, {
@@ -272,6 +274,30 @@ export function HunterDashboard({ initialKeyStatus }: Props) {
       };
     }).filter((group) => group.rows.length > 0);
   }, [activeTab, domainPages, results]);
+
+  useEffect(() => {
+    if (activeTab !== "domain") {
+      return;
+    }
+
+    if (!groupedDomainResults.length) {
+      setSelectedDomainCategory(null);
+      return;
+    }
+
+    setSelectedDomainCategory((current) => {
+      if (current && groupedDomainResults.some((group) => group.category === current)) {
+        return current;
+      }
+
+      return groupedDomainResults[0]?.category ?? null;
+    });
+  }, [activeTab, groupedDomainResults]);
+
+  const activeDomainGroup =
+    activeTab === "domain"
+      ? groupedDomainResults.find((group) => group.category === selectedDomainCategory) ?? groupedDomainResults[0] ?? null
+      : null;
 
   const searchDisabled = pending || !keyStatus.configured;
 
@@ -456,101 +482,126 @@ export function HunterDashboard({ initialKeyStatus }: Props) {
 
                   <div className={styles.resultsViewport}>
                     {activeTab === "domain" ? (
-                      <div className={styles.domainGroups}>
-                        {groupedDomainResults.map((group) => (
-                          <section key={group.category} className={styles.domainGroup}>
-                            <div className={styles.domainGroupHeader}>
-                              <div className={styles.domainGroupMeta}>
-                                <strong>{group.category}</strong>
-                                <span>{group.rows.length} result{group.rows.length === 1 ? "" : "s"}</span>
-                              </div>
+                      groupedDomainResults.length ? (
+                        <div className={styles.domainGroups}>
+                          <div className={styles.domainCategoryRail} role="tablist" aria-label="Hunter result categories">
+                            {groupedDomainResults.map((group) => (
+                              <button
+                                key={group.category}
+                                type="button"
+                                role="tab"
+                                aria-selected={activeDomainGroup?.category === group.category}
+                                className={`${styles.domainCategoryPill} ${
+                                  activeDomainGroup?.category === group.category ? styles.domainCategoryPillActive : ""
+                                }`}
+                                onClick={() => setSelectedDomainCategory(group.category)}
+                              >
+                                <span>{group.category}</span>
+                                <strong>{group.rows.length}</strong>
+                              </button>
+                            ))}
+                          </div>
 
-                              {group.totalPages > 1 ? (
-                                <div className={styles.resultsPager} aria-label={`${group.category} pagination`}>
-                                  <button
-                                    type="button"
-                                    className={styles.resultsPagerButton}
-                                    onClick={() =>
-                                      setDomainPages((current) => ({
-                                        ...current,
-                                        [group.category]: Math.max(1, group.currentPage - 1)
-                                      }))
-                                    }
-                                    disabled={group.currentPage === 1}
-                                    aria-label={`Previous ${group.category} page`}
-                                  >
-                                    <ChevronLeft aria-hidden="true" />
-                                  </button>
-                                  <span className={styles.resultsPagerCount}>
-                                    {group.currentPage} / {group.totalPages}
+                          {activeDomainGroup ? (
+                            <section className={styles.domainGroup}>
+                              <div className={styles.domainGroupHeader}>
+                                <div className={styles.domainGroupMeta}>
+                                  <strong>{activeDomainGroup.category}</strong>
+                                  <span>
+                                    {activeDomainGroup.rows.length} result{activeDomainGroup.rows.length === 1 ? "" : "s"}
                                   </span>
-                                  <button
-                                    type="button"
-                                    className={styles.resultsPagerButton}
-                                    onClick={() =>
-                                      setDomainPages((current) => ({
-                                        ...current,
-                                        [group.category]: Math.min(group.totalPages, group.currentPage + 1)
-                                      }))
-                                    }
-                                    disabled={group.currentPage === group.totalPages}
-                                    aria-label={`Next ${group.category} page`}
-                                  >
-                                    <ChevronRight aria-hidden="true" />
-                                  </button>
                                 </div>
-                              ) : null}
-                            </div>
 
-                            <div className={styles.resultsList}>
-                              {group.visibleRows.map((row) => (
-                                <article key={`${group.category}-${row.email}-${row.source}`} className={styles.resultCard}>
-                                  <div className={styles.resultHeader}>
-                                    <div className={styles.resultPrimary}>
-                                      <span className={styles.resultLabel}>Contact</span>
-                                      <strong className={styles.resultName}>{row.name || "Unknown contact"}</strong>
-                                      <strong className={styles.resultEmail}>{row.email}</strong>
-                                    </div>
-
+                                {activeDomainGroup.totalPages > 1 ? (
+                                  <div className={styles.resultsPager} aria-label={`${activeDomainGroup.category} pagination`}>
                                     <button
                                       type="button"
-                                      className={styles.copyButtonSecondary}
-                                      onClick={() => handleCopy(row.email)}
-                                      aria-label={`Copy ${row.email}`}
+                                      className={styles.resultsPagerButton}
+                                      onClick={() =>
+                                        setDomainPages((current) => ({
+                                          ...current,
+                                          [activeDomainGroup.category]: Math.max(1, activeDomainGroup.currentPage - 1)
+                                        }))
+                                      }
+                                      disabled={activeDomainGroup.currentPage === 1}
+                                      aria-label={`Previous ${activeDomainGroup.category} page`}
                                     >
-                                      {copiedEmail === row.email ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
-                                      {copiedEmail === row.email ? "Copied" : "Copy email"}
+                                      <ChevronLeft aria-hidden="true" />
+                                    </button>
+                                    <span className={styles.resultsPagerCount}>
+                                      {activeDomainGroup.currentPage} / {activeDomainGroup.totalPages}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      className={styles.resultsPagerButton}
+                                      onClick={() =>
+                                        setDomainPages((current) => ({
+                                          ...current,
+                                          [activeDomainGroup.category]: Math.min(
+                                            activeDomainGroup.totalPages,
+                                            activeDomainGroup.currentPage + 1
+                                          )
+                                        }))
+                                      }
+                                      disabled={activeDomainGroup.currentPage === activeDomainGroup.totalPages}
+                                      aria-label={`Next ${activeDomainGroup.category} page`}
+                                    >
+                                      <ChevronRight aria-hidden="true" />
                                     </button>
                                   </div>
+                                ) : null}
+                              </div>
 
-                                  <dl className={styles.resultMeta}>
-                                    <div className={styles.resultMetaCard}>
-                                      <dt>Name</dt>
-                                      <dd>{row.name || "Unknown contact"}</dd>
+                              <div className={styles.resultsList}>
+                                {activeDomainGroup.visibleRows.map((row) => (
+                                  <article key={`${activeDomainGroup.category}-${row.email}-${row.source}`} className={styles.resultCard}>
+                                    <div className={styles.resultHeader}>
+                                      <div className={styles.resultPrimary}>
+                                        <span className={styles.resultLabel}>Contact</span>
+                                        <strong className={styles.resultName}>{row.name || "Unknown contact"}</strong>
+                                        <strong className={styles.resultEmail}>{row.email}</strong>
+                                      </div>
+
+                                      <button
+                                        type="button"
+                                        className={styles.copyButtonSecondary}
+                                        onClick={() => handleCopy(row.email)}
+                                        aria-label={`Copy ${row.email}`}
+                                      >
+                                        {copiedEmail === row.email ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
+                                        {copiedEmail === row.email ? "Copied" : "Copy email"}
+                                      </button>
                                     </div>
-                                    <div className={styles.resultMetaCard}>
-                                      <dt>Email</dt>
-                                      <dd>{row.email}</dd>
-                                    </div>
-                                    <div className={styles.resultMetaCard}>
-                                      <dt>Position</dt>
-                                      <dd>{row.position ?? "—"}</dd>
-                                    </div>
-                                    <div className={styles.resultMetaCard}>
-                                      <dt>Confidence</dt>
-                                      <dd>{typeof row.confidence === "number" ? `${row.confidence}%` : "—"}</dd>
-                                    </div>
-                                    <div className={`${styles.resultMetaCard} ${styles.resultMetaWide}`}>
-                                      <dt>Source domain</dt>
-                                      <dd>{row.source}</dd>
-                                    </div>
-                                  </dl>
-                                </article>
-                              ))}
-                            </div>
-                          </section>
-                        ))}
-                      </div>
+
+                                    <dl className={styles.resultMeta}>
+                                      <div className={styles.resultMetaCard}>
+                                        <dt>Name</dt>
+                                        <dd>{row.name || "Unknown contact"}</dd>
+                                      </div>
+                                      <div className={styles.resultMetaCard}>
+                                        <dt>Email</dt>
+                                        <dd>{row.email}</dd>
+                                      </div>
+                                      <div className={styles.resultMetaCard}>
+                                        <dt>Position</dt>
+                                        <dd>{row.position ?? "—"}</dd>
+                                      </div>
+                                      <div className={styles.resultMetaCard}>
+                                        <dt>Confidence</dt>
+                                        <dd>{typeof row.confidence === "number" ? `${row.confidence}%` : "—"}</dd>
+                                      </div>
+                                      <div className={`${styles.resultMetaCard} ${styles.resultMetaWide}`}>
+                                        <dt>Source domain</dt>
+                                        <dd>{row.source}</dd>
+                                      </div>
+                                    </dl>
+                                  </article>
+                                ))}
+                              </div>
+                            </section>
+                          ) : null}
+                        </div>
+                      ) : null
                     ) : (
                       <div className={styles.resultsList}>
                         {results.map((row) => (
