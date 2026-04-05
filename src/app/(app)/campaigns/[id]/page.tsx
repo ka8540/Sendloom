@@ -517,31 +517,36 @@ export default async function CampaignDetailPage({
             </div>
           </div>
 
-          <div className={styles.actionRow}>
-            <form action={validate.bind(null, campaign.id)}>
-              <button className="button secondary" type="submit">
-                {validationButtonLabel}
-              </button>
-            </form>
-            {senderNeedsReconnect ? (
-              <a className="button" href={reconnectHref}>
-                Reconnect to launch
-              </a>
-            ) : (
-              <form action={launch.bind(null, campaign.id)}>
-                <button className="button" type="submit" disabled={isActiveRun || isPausedRun}>
-                  {launchButtonLabel}
-                </button>
-              </form>
-            )}
-            {latestRun && (isActiveRun || isPausedRun) ? (
-              <form action={togglePause.bind(null, campaign.id)}>
+          <div className={styles.actionGroup}>
+            <div className={styles.actionSecondaryRow}>
+              <form action={validate.bind(null, campaign.id)} className={styles.actionSecondaryItem}>
                 <button className="button secondary" type="submit">
-                  {pauseButtonLabel}
+                  {validationButtonLabel}
                 </button>
               </form>
-            ) : null}
-            <CampaignDetailDeleteButton campaignId={campaign.id} campaignName={campaign.name} />
+              {latestRun && (isActiveRun || isPausedRun) ? (
+                <form action={togglePause.bind(null, campaign.id)} className={styles.actionSecondaryItem}>
+                  <button className="button secondary" type="submit">
+                    {pauseButtonLabel}
+                  </button>
+                </form>
+              ) : null}
+              <CampaignDetailDeleteButton campaignId={campaign.id} campaignName={campaign.name} />
+            </div>
+
+            <div className={styles.actionPrimaryRow}>
+              {senderNeedsReconnect ? (
+                <a className="button" href={reconnectHref}>
+                  Reconnect to launch
+                </a>
+              ) : (
+                <form action={launch.bind(null, campaign.id)}>
+                  <button className="button" type="submit" disabled={isActiveRun || isPausedRun}>
+                    {launchButtonLabel}
+                  </button>
+                </form>
+              )}
+            </div>
           </div>
         </aside>
       </section>

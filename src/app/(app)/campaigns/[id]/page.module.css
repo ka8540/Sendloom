@@ -182,18 +182,37 @@
   letter-spacing: -0.02em;
 }
 
-.actionRow {
+.actionGroup {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.actionSecondaryRow {
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem;
   align-items: stretch;
 }
 
-.actionRow form {
-  flex: 1 1 12rem;
+.actionSecondaryItem {
+  flex: 1 1 11rem;
 }
 
-.actionRow button {
+.actionSecondaryItem button {
+  width: 100%;
+}
+
+.actionPrimaryRow {
+  display: grid;
+}
+
+.actionPrimaryRow form,
+.actionPrimaryRow > a {
+  width: 100%;
+}
+
+.actionPrimaryRow button,
+.actionPrimaryRow > a {
   width: 100%;
 }
 
@@ -590,7 +609,8 @@
 
   .panelHeader,
   .assetHeader,
-  .actionRow {
+  .actionSecondaryRow,
+  .actionPrimaryRow {
     display: grid;
   }
 
