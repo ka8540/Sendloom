@@ -501,49 +501,162 @@
   display: grid;
   place-items: center;
   padding: 1.5rem;
-  background: rgba(7, 12, 18, 0.52);
-  backdrop-filter: blur(10px);
+  background: rgba(7, 12, 18, 0.6);
+  backdrop-filter: blur(14px);
 }
 
 .modalCard {
-  width: min(100%, 36rem);
+  width: min(100%, 38rem);
   display: grid;
-  gap: 1.25rem;
-  padding: 1.4rem;
-  border: 1px solid var(--line);
-  border-radius: 1.4rem;
-  background: var(--surface-strong);
-  box-shadow: var(--shadow);
+  gap: 1.4rem;
+  padding: 1.6rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 1.55rem;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.03)),
+    color-mix(in srgb, var(--surface-strong) 92%, white 8%);
+  box-shadow:
+    0 24px 60px rgba(4, 11, 23, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .modalHeader {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 1.25rem;
 }
 
 .modalHeader :global(h2) {
-  margin: 0.25rem 0 0;
+  margin: 0.35rem 0 0;
+  font-size: 2rem;
+  line-height: 1.05;
 }
 
 .modalClose {
-  width: 2.6rem;
-  height: 2.6rem;
-  font-size: 1.4rem;
-  line-height: 1;
+  width: 2.85rem;
+  height: 2.85rem;
+  padding: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.modalDescription {
+  margin: 0.65rem 0 0;
+  max-width: 32rem;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1.55;
+}
+
+.modalBody {
+  display: grid;
+  gap: 1rem;
+}
+
+.modalKeyStatusNote {
+  margin: 0.7rem 0 0;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+  width: fit-content;
+  padding: 0.55rem 0.8rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.35;
 }
 
 .modalError {
   margin: 0;
   color: #c24d4d;
   font-weight: 600;
+  padding: 0.9rem 1rem;
+  border: 1px solid rgba(194, 77, 77, 0.2);
+  border-radius: 1rem;
+  background: rgba(194, 77, 77, 0.08);
 }
 
 .modalActions {
   display: flex;
   justify-content: flex-end;
-  gap: 0.75rem;
+  gap: 0.85rem;
+  padding-top: 0.2rem;
+}
+
+.modalSecondaryButton,
+.modalPrimaryButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.7rem;
+  min-height: 3.2rem;
+  padding: 0.85rem 1.2rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 0.98rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    transform 150ms ease,
+    border-color 150ms ease,
+    background 150ms ease,
+    box-shadow 150ms ease,
+    color 150ms ease;
+}
+
+.modalSecondaryButton {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
+.modalPrimaryButton {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 92%, white 8%), var(--accent));
+  color: #f7fffb;
+  box-shadow:
+    0 18px 34px rgba(39, 201, 132, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
+.modalSecondaryButton:hover,
+.modalSecondaryButton:focus-visible,
+.modalPrimaryButton:hover,
+.modalPrimaryButton:focus-visible {
+  transform: translateY(-1px);
+  outline: none;
+}
+
+.modalSecondaryButton:hover,
+.modalSecondaryButton:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(120, 141, 175, 0.3);
+}
+
+.modalPrimaryButton:hover,
+.modalPrimaryButton:focus-visible {
+  box-shadow:
+    0 22px 38px rgba(39, 201, 132, 0.26),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.modalSecondaryButton:disabled,
+.modalPrimaryButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+  transform: none;
+}
+
+.modalButtonIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
 }
 
 .spinner {
@@ -627,11 +740,16 @@
   }
 
   .modalCard {
-    padding: 1.1rem;
+    padding: 1.15rem;
   }
 
   .modalActions {
     flex-direction: column-reverse;
+  }
+
+  .modalSecondaryButton,
+  .modalPrimaryButton {
+    width: 100%;
   }
 
   .resultMeta {
