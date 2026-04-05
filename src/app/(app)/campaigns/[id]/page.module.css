@@ -246,13 +246,6 @@
   font-size: 0.93rem;
 }
 
-.metricsNote {
-  margin: -0.3rem 0 0;
-  color: var(--muted);
-  font-size: 0.94rem;
-  line-height: 1.6;
-}
-
 .detailGrid {
   display: grid;
   grid-template-columns: minmax(320px, 0.86fr) minmax(0, 1.14fr);
