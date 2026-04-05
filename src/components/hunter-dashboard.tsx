@@ -2,7 +2,20 @@
 
 import { useMemo, useState } from "react";
 import type { HunterResultRow } from "@/lib/hunter";
-import { AlertCircle, Check, Copy, Globe, KeyRound, LoaderCircle, Mail, Search, Settings2, UserRound } from "lucide-react";
+import {
+  AlertCircle,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  Globe,
+  KeyRound,
+  LoaderCircle,
+  Mail,
+  Search,
+  Settings2,
+  UserRound
+} from "lucide-react";
 import styles from "@/components/hunter-dashboard.module.css";
 
 type HunterKeyStatus = {
@@ -16,6 +29,10 @@ type SearchTab = "finder" | "domain";
 type Props = {
   initialKeyStatus: HunterKeyStatus;
 };
+
+const RESULTS_PAGE_SIZE = 10;
+const DOMAIN_CATEGORY_ORDER = ["IT", "HR", "Sales", "Marketing", "Operations", "Finance", "Leadership", "Other"] as const;
+type DomainCategory = (typeof DOMAIN_CATEGORY_ORDER)[number];
 
 function splitFullName(fullName: string) {
   const parts = fullName
@@ -41,6 +58,50 @@ function formatUpdatedAt(updatedAt: string | null) {
   return new Date(updatedAt).toLocaleString();
 }
 
+function inferHunterCategory(position: string | null): DomainCategory {
+  const value = position?.toLowerCase().trim() ?? "";
+
+  if (!value) {
+    return "Other";
+  }
+
+  if (
+    /\b(hr|human resources|people|talent|recruit(er|ing)|sourcer|people ops)\b/.test(value)
+  ) {
+    return "HR";
+  }
+
+  if (
+    /\b(sales|account executive|account manager|business development|partnerships|revenue)\b/.test(value)
+  ) {
+    return "Sales";
+  }
+
+  if (/\b(marketing|growth|brand|communications|content|demand gen)\b/.test(value)) {
+    return "Marketing";
+  }
+
+  if (/\b(finance|accountant|controller|cfo|bookkeeper|procurement|payroll)\b/.test(value)) {
+    return "Finance";
+  }
+
+  if (/\b(operations|ops|customer success|support|program manager|project manager)\b/.test(value)) {
+    return "Operations";
+  }
+
+  if (/\b(chief|founder|ceo|cto|coo|president|vice president|vp\b|director|head of)\b/.test(value)) {
+    return "Leadership";
+  }
+
+  if (
+    /\b(engineer|engineering|developer|software|architect|data|devops|platform|security|technical|it\b|infrastructure)\b/.test(value)
+  ) {
+    return "IT";
+  }
+
+  return "Other";
+}
+
 export function HunterDashboard({ initialKeyStatus }: Props) {
   const [activeTab, setActiveTab] = useState<SearchTab>("finder");
   const [keyStatus, setKeyStatus] = useState(initialKeyStatus);
@@ -58,6 +119,7 @@ export function HunterDashboard({ initialKeyStatus }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
   const [copiedEmail, setCopiedEmail] = useState<string | null>(null);
+  const [domainPages, setDomainPages] = useState<Record<string, number>>({});
 
   const statusCopy = useMemo(() => {
     if (!keyStatus.configured) {
@@ -111,6 +173,7 @@ export function HunterDashboard({ initialKeyStatus }: Props) {
     setError(null);
     setHasSearched(true);
     setResults([]);
+    setDomainPages({});
 
     try {
       const response = await fetch(endpoint, {
@@ -178,6 +241,37 @@ export function HunterDashboard({ initialKeyStatus }: Props) {
       setError("Could not copy that email. Try again.");
     }
   }
+
+  const groupedDomainResults = useMemo(() => {
+    if (activeTab !== "domain") {
+      return [];
+    }
+
+    const grouped = new Map<DomainCategory, HunterResultRow[]>();
+    for (const category of DOMAIN_CATEGORY_ORDER) {
+      grouped.set(category, []);
+    }
+
+    for (const row of results) {
+      const category = inferHunterCategory(row.position);
+      grouped.get(category)?.push(row);
+    }
+
+    return DOMAIN_CATEGORY_ORDER.map((category) => {
+      const rows = grouped.get(category) ?? [];
+      const totalPages = Math.max(1, Math.ceil(rows.length / RESULTS_PAGE_SIZE));
+      const currentPage = Math.min(domainPages[category] ?? 1, totalPages);
+      const startIndex = (currentPage - 1) * RESULTS_PAGE_SIZE;
+
+      return {
+        category,
+        rows,
+        currentPage,
+        totalPages,
+        visibleRows: rows.slice(startIndex, startIndex + RESULTS_PAGE_SIZE)
+      };
+    }).filter((group) => group.rows.length > 0);
+  }, [activeTab, domainPages, results]);
 
   const searchDisabled = pending || !keyStatus.configured;
 
@@ -356,57 +450,155 @@ export function HunterDashboard({ initialKeyStatus }: Props) {
                     <p className="muted">
                       {activeTab === "finder"
                         ? "Each match is expanded as a readable contact card with full deliverability context."
-                        : "A scrollable roster of domain matches with full source, role, and confidence details."}
+                        : "Domain matches are grouped by likely team so larger result sets stay readable without blowing up the panel."}
                     </p>
                   </div>
 
                   <div className={styles.resultsViewport}>
-                    <div className={styles.resultsList}>
-                      {results.map((row) => (
-                        <article key={`${row.email}-${row.source}`} className={styles.resultCard}>
-                          <div className={styles.resultHeader}>
-                            <div className={styles.resultPrimary}>
-                              <span className={styles.resultLabel}>Contact</span>
-                              <strong className={styles.resultName}>{row.name || "Unknown contact"}</strong>
-                              <strong className={styles.resultEmail}>{row.email}</strong>
+                    {activeTab === "domain" ? (
+                      <div className={styles.domainGroups}>
+                        {groupedDomainResults.map((group) => (
+                          <section key={group.category} className={styles.domainGroup}>
+                            <div className={styles.domainGroupHeader}>
+                              <div className={styles.domainGroupMeta}>
+                                <strong>{group.category}</strong>
+                                <span>{group.rows.length} result{group.rows.length === 1 ? "" : "s"}</span>
+                              </div>
+
+                              {group.totalPages > 1 ? (
+                                <div className={styles.resultsPager} aria-label={`${group.category} pagination`}>
+                                  <button
+                                    type="button"
+                                    className={styles.resultsPagerButton}
+                                    onClick={() =>
+                                      setDomainPages((current) => ({
+                                        ...current,
+                                        [group.category]: Math.max(1, group.currentPage - 1)
+                                      }))
+                                    }
+                                    disabled={group.currentPage === 1}
+                                    aria-label={`Previous ${group.category} page`}
+                                  >
+                                    <ChevronLeft aria-hidden="true" />
+                                  </button>
+                                  <span className={styles.resultsPagerCount}>
+                                    {group.currentPage} / {group.totalPages}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className={styles.resultsPagerButton}
+                                    onClick={() =>
+                                      setDomainPages((current) => ({
+                                        ...current,
+                                        [group.category]: Math.min(group.totalPages, group.currentPage + 1)
+                                      }))
+                                    }
+                                    disabled={group.currentPage === group.totalPages}
+                                    aria-label={`Next ${group.category} page`}
+                                  >
+                                    <ChevronRight aria-hidden="true" />
+                                  </button>
+                                </div>
+                              ) : null}
                             </div>
 
-                            <button
-                              type="button"
-                              className={styles.copyButtonSecondary}
-                              onClick={() => handleCopy(row.email)}
-                              aria-label={`Copy ${row.email}`}
-                            >
-                              {copiedEmail === row.email ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
-                              {copiedEmail === row.email ? "Copied" : "Copy email"}
-                            </button>
-                          </div>
+                            <div className={styles.resultsList}>
+                              {group.visibleRows.map((row) => (
+                                <article key={`${group.category}-${row.email}-${row.source}`} className={styles.resultCard}>
+                                  <div className={styles.resultHeader}>
+                                    <div className={styles.resultPrimary}>
+                                      <span className={styles.resultLabel}>Contact</span>
+                                      <strong className={styles.resultName}>{row.name || "Unknown contact"}</strong>
+                                      <strong className={styles.resultEmail}>{row.email}</strong>
+                                    </div>
 
-                          <dl className={styles.resultMeta}>
-                            <div className={styles.resultMetaCard}>
-                              <dt>Name</dt>
-                              <dd>{row.name || "Unknown contact"}</dd>
+                                    <button
+                                      type="button"
+                                      className={styles.copyButtonSecondary}
+                                      onClick={() => handleCopy(row.email)}
+                                      aria-label={`Copy ${row.email}`}
+                                    >
+                                      {copiedEmail === row.email ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
+                                      {copiedEmail === row.email ? "Copied" : "Copy email"}
+                                    </button>
+                                  </div>
+
+                                  <dl className={styles.resultMeta}>
+                                    <div className={styles.resultMetaCard}>
+                                      <dt>Name</dt>
+                                      <dd>{row.name || "Unknown contact"}</dd>
+                                    </div>
+                                    <div className={styles.resultMetaCard}>
+                                      <dt>Email</dt>
+                                      <dd>{row.email}</dd>
+                                    </div>
+                                    <div className={styles.resultMetaCard}>
+                                      <dt>Position</dt>
+                                      <dd>{row.position ?? "—"}</dd>
+                                    </div>
+                                    <div className={styles.resultMetaCard}>
+                                      <dt>Confidence</dt>
+                                      <dd>{typeof row.confidence === "number" ? `${row.confidence}%` : "—"}</dd>
+                                    </div>
+                                    <div className={`${styles.resultMetaCard} ${styles.resultMetaWide}`}>
+                                      <dt>Source domain</dt>
+                                      <dd>{row.source}</dd>
+                                    </div>
+                                  </dl>
+                                </article>
+                              ))}
                             </div>
-                            <div className={styles.resultMetaCard}>
-                              <dt>Email</dt>
-                              <dd>{row.email}</dd>
+                          </section>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className={styles.resultsList}>
+                        {results.map((row) => (
+                          <article key={`${row.email}-${row.source}`} className={styles.resultCard}>
+                            <div className={styles.resultHeader}>
+                              <div className={styles.resultPrimary}>
+                                <span className={styles.resultLabel}>Contact</span>
+                                <strong className={styles.resultName}>{row.name || "Unknown contact"}</strong>
+                                <strong className={styles.resultEmail}>{row.email}</strong>
+                              </div>
+
+                              <button
+                                type="button"
+                                className={styles.copyButtonSecondary}
+                                onClick={() => handleCopy(row.email)}
+                                aria-label={`Copy ${row.email}`}
+                              >
+                                {copiedEmail === row.email ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
+                                {copiedEmail === row.email ? "Copied" : "Copy email"}
+                              </button>
                             </div>
-                            <div className={styles.resultMetaCard}>
-                              <dt>Position</dt>
-                              <dd>{row.position ?? "—"}</dd>
-                            </div>
-                            <div className={styles.resultMetaCard}>
-                              <dt>Confidence</dt>
-                              <dd>{typeof row.confidence === "number" ? `${row.confidence}%` : "—"}</dd>
-                            </div>
-                            <div className={`${styles.resultMetaCard} ${styles.resultMetaWide}`}>
-                              <dt>Source domain</dt>
-                              <dd>{row.source}</dd>
-                            </div>
-                          </dl>
-                        </article>
-                      ))}
-                    </div>
+
+                            <dl className={styles.resultMeta}>
+                              <div className={styles.resultMetaCard}>
+                                <dt>Name</dt>
+                                <dd>{row.name || "Unknown contact"}</dd>
+                              </div>
+                              <div className={styles.resultMetaCard}>
+                                <dt>Email</dt>
+                                <dd>{row.email}</dd>
+                              </div>
+                              <div className={styles.resultMetaCard}>
+                                <dt>Position</dt>
+                                <dd>{row.position ?? "—"}</dd>
+                              </div>
+                              <div className={styles.resultMetaCard}>
+                                <dt>Confidence</dt>
+                                <dd>{typeof row.confidence === "number" ? `${row.confidence}%` : "—"}</dd>
+                              </div>
+                              <div className={`${styles.resultMetaCard} ${styles.resultMetaWide}`}>
+                                <dt>Source domain</dt>
+                                <dd>{row.source}</dd>
+                              </div>
+                            </dl>
+                          </article>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </section>
               ) : null}

@@ -185,6 +185,7 @@ export async function searchHunterDomain(apiKey: string, domain: string) {
     "/domain-search",
     {
       domain: normalizedDomain,
+      limit: "100",
       api_key: apiKey
     },
     hunterDomainSearchSchema
