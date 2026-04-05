@@ -61,6 +61,14 @@ function humanize(value?: string | null) {
     .join(" ");
 }
 
+function getDeliveredCount(run?: {
+  sentCount?: number | null;
+  openedCount?: number | null;
+  clickedCount?: number | null;
+} | null) {
+  return (run?.sentCount ?? 0) + (run?.openedCount ?? 0) + (run?.clickedCount ?? 0);
+}
+
 function formatDateTime(value?: Date | string | null, timeZone?: string) {
   if (!value) {
     return "Not available";
@@ -361,9 +369,10 @@ export default async function CampaignsPage({
           <div className={styles.sequenceList}>
             {pagedCampaigns.map((campaign) => {
               const latestRun = campaign.runs[0];
+              const deliveredCount = getDeliveredCount(latestRun);
               const delivery = formatDeliveryLabel(campaign.scheduleType, campaign.scheduleConfig as ScheduleConfig | null);
               const latestRunSummary = latestRun
-                ? `${latestRun.sentCount}/${latestRun.totalRecipients} delivered`
+                ? `${deliveredCount}/${latestRun.totalRecipients} delivered`
                 : "No run started yet";
               const latestRunValue = latestRun?.updatedAt?.toISOString() ?? null;
               const validatedAtValue = campaign.lastValidatedAt?.toISOString() ?? null;
