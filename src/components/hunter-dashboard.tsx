@@ -14,6 +14,7 @@ import {
   Mail,
   Search,
   Settings2,
+  X,
   UserRound
 } from "lucide-react";
 import styles from "@/components/hunter-dashboard.module.css";
@@ -665,16 +666,21 @@ export function HunterDashboard({ initialKeyStatus }: Props) {
               <div>
                 <p className={styles.eyebrow}>Secure settings</p>
                 <h2 id="hunter-settings-title">Hunter API key</h2>
-                <p className="muted">
+                <p className={styles.modalDescription}>
                   Save your own Hunter key once. It is encrypted on the server and only attached inside backend requests.
                 </p>
               </div>
-              <button type="button" className={styles.modalClose} onClick={() => !settingsPending && setIsSettingsOpen(false)} aria-label="Close settings">
-                ×
+              <button
+                type="button"
+                className={styles.modalClose}
+                onClick={() => !settingsPending && setIsSettingsOpen(false)}
+                aria-label="Close settings"
+              >
+                <X aria-hidden="true" />
               </button>
             </div>
 
-            <div className="form">
+            <div className={`${styles.modalBody} form`}>
               <div className="field">
                 <label htmlFor="hunter-api-key">API key</label>
                 <input
@@ -685,9 +691,9 @@ export function HunterDashboard({ initialKeyStatus }: Props) {
                   onChange={(event) => setApiKey(event.target.value)}
                   autoComplete="off"
                 />
-                <p className="field-inline-note">
+                <p className={styles.modalKeyStatusNote}>
                   {keyStatus.configured
-                    ? `Current key ••••${keyStatus.last4 ?? "----"}${keyStatus.updatedAt ? ` saved ${formatUpdatedAt(keyStatus.updatedAt)}` : ""}`
+                    ? `Saved key ••••${keyStatus.last4 ?? "----"}${keyStatus.updatedAt ? ` · ${formatUpdatedAt(keyStatus.updatedAt)}` : ""}`
                     : "No Hunter key saved yet for this account."}
                 </p>
               </div>
@@ -695,12 +701,19 @@ export function HunterDashboard({ initialKeyStatus }: Props) {
               {settingsError ? <p className={styles.modalError}>{settingsError}</p> : null}
 
               <div className={styles.modalActions}>
-                <button type="button" className="button secondary" onClick={() => setIsSettingsOpen(false)} disabled={settingsPending}>
+                <button
+                  type="button"
+                  className={styles.modalSecondaryButton}
+                  onClick={() => setIsSettingsOpen(false)}
+                  disabled={settingsPending}
+                >
                   Cancel
                 </button>
-                <button type="button" className="button" onClick={handleSaveApiKey} disabled={settingsPending}>
-                  {settingsPending ? <LoaderCircle className={styles.spinner} aria-hidden="true" /> : <KeyRound aria-hidden="true" />}
-                  Save API key
+                <button type="button" className={styles.modalPrimaryButton} onClick={handleSaveApiKey} disabled={settingsPending}>
+                  <span className={styles.modalButtonIcon}>
+                    {settingsPending ? <LoaderCircle className={styles.spinner} aria-hidden="true" /> : <KeyRound aria-hidden="true" />}
+                  </span>
+                  Save key
                 </button>
               </div>
             </div>
