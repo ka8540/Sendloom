@@ -17,13 +17,20 @@ const featureCards = [
   },
   {
     index: "02",
+    title: "Find the right inbox before you launch.",
+    body:
+      "Run name-plus-domain lookups or domain-wide searches from the same dashboard, then plug your own API key from hunter.io into Sendloom so the finder stays inside your workflow instead of becoming another tab.",
+    pills: ["Find Email", "Domain Search", "Bring your own API key"]
+  },
+  {
+    index: "03",
     title: "Stay fast without acting reckless.",
     body:
       "Sendloom keeps suppressions, retries, tracking links, and send-window guardrails in the loop so campaigns feel deliberate even when the list is moving quickly.",
     pills: ["120/min guardrail", "Suppression aware", "Retries + tracking"]
   },
   {
-    index: "03",
+    index: "04",
     title: "Launch from a connected Gmail sender.",
     body:
       "Use the mailbox you already trust, connect Google in minutes, and move from upload to launch with a single operator dashboard instead of five disconnected tools.",
@@ -35,6 +42,10 @@ const workflowSteps = [
   {
     title: "Import your audience",
     body: "Upload a spreadsheet, detect columns instantly, and keep the row data structured for every downstream send."
+  },
+  {
+    title: "Find missing emails when the list is incomplete",
+    body: "Use name-plus-domain lookups or domain search with your own API key from hunter.io, then keep those results inside the same operator flow."
   },
   {
     title: "Choose the message system",
@@ -65,8 +76,9 @@ export default function LandingPage() {
             </h1>
             <p className={styles.lede}>
               Sendloom turns your spreadsheet, template, and connected Gmail sender into one clean launch surface. Import lists,
-              map fields, choose plain text, HTML, or structured JSON templates, enhance subject lines and email copy with AI,
-              add attachments, track runs, and keep suppressions in the same place the sequence actually lives.
+              map fields, find missing contact emails with your own API key from hunter.io, choose plain text, HTML, or structured
+              JSON templates, enhance subject lines and email copy with AI, add attachments, track runs, and keep suppressions in
+              the same place the sequence actually lives.
             </p>
 
             <div className={styles.ctaRow}>
@@ -84,8 +96,8 @@ export default function LandingPage() {
                 <span className={styles.statLabel}>Send window guardrail built into the flow</span>
               </article>
               <article className={styles.statCard}>
-                <span className={styles.statValue}>Google-native</span>
-                <span className={styles.statLabel}>Connected sender profiles instead of throwaway relays</span>
+                <span className={styles.statValue}>Finder-ready</span>
+                <span className={styles.statLabel}>Use your own hunter.io API key for name and domain lookups without leaving the dashboard</span>
               </article>
               <article className={styles.statCard}>
                 <span className={styles.statValue}>3 formats</span>
@@ -127,6 +139,10 @@ export default function LandingPage() {
             <span>Bring in CSV and XLSX files without rebuilding your workflow every time the list changes.</span>
           </article>
           <article className={styles.beltCard}>
+            <strong>Email finder</strong>
+            <span>Bring your own API key from hunter.io and run name or domain lookups inside the same workspace.</span>
+          </article>
+          <article className={styles.beltCard}>
             <strong>Template intelligence</strong>
             <span>Keep merge variables, AI-polished copy, format choice, attachment snapshots, and subject lines aligned to the same template record.</span>
           </article>
@@ -136,7 +152,7 @@ export default function LandingPage() {
           </article>
           <article className={styles.beltCard}>
             <strong>Operator clarity</strong>
-            <span>Recent runs, recipient statuses, and connected senders are visible from the same system that launches them.</span>
+            <span>Recent runs, recipient statuses, finder results, and connected senders are visible from the same system that launches them.</span>
           </article>
         </section>
 
