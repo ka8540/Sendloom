@@ -1,5 +1,6 @@
 "use client";
 
+import type { Route } from "next";
 import Link from "next/link";
 import { Menu, X } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -8,14 +9,23 @@ import styles from "@/app/landing.module.css";
 import { SendloomLogo } from "@/components/sendloom-logo";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 
-const navItems = [
+type LandingNavItem = {
+  href: string;
+  label: string;
+};
+
+const defaultNavItems = [
   { href: "#top", label: "Home" },
   { href: "#proof", label: "Why Sendloom" },
   { href: "#workflow", label: "Workflow" },
   { href: "mailto:hello@sendloom.net", label: "Contact" }
 ] as const;
 
-export function LandingNav() {
+function isInternalRoute(href: string) {
+  return href.startsWith("/");
+}
+
+export function LandingNav({ items = defaultNavItems }: { items?: readonly LandingNavItem[] }) {
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
 
@@ -58,11 +68,17 @@ export function LandingNav() {
         </div>
 
         <nav className={styles.desktopNav} aria-label="Primary">
-          {navItems.map((item) => (
-            <a key={item.label} className={styles.navLink} href={item.href}>
-              {item.label}
-            </a>
-          ))}
+          {items.map((item) =>
+            isInternalRoute(item.href) ? (
+              <Link key={item.label} className={styles.navLink} href={item.href as Route}>
+                {item.label}
+              </Link>
+            ) : (
+              <a key={item.label} className={styles.navLink} href={item.href}>
+                {item.label}
+              </a>
+            )
+          )}
         </nav>
 
         <div className={styles.desktopActions}>
@@ -90,11 +106,17 @@ export function LandingNav() {
       {open ? (
         <div id="landing-mobile-nav" className={styles.mobilePanel}>
           <nav className={styles.mobileNav} aria-label="Mobile primary">
-            {navItems.map((item) => (
-              <a key={item.label} className={styles.mobileNavLink} href={item.href} onClick={closeMenu}>
-                {item.label}
-              </a>
-            ))}
+            {items.map((item) =>
+              isInternalRoute(item.href) ? (
+                <Link key={item.label} className={styles.mobileNavLink} href={item.href as Route} onClick={closeMenu}>
+                  {item.label}
+                </Link>
+              ) : (
+                <a key={item.label} className={styles.mobileNavLink} href={item.href} onClick={closeMenu}>
+                  {item.label}
+                </a>
+              )
+            )}
           </nav>
 
           <div className={styles.mobileMetaRow}>
