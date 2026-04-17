@@ -52,7 +52,7 @@ function MobileDashboardBlock() {
               <Link className={styles.primaryAction} href="/">
                 Back to home
               </Link>
-              <a className={styles.secondaryAction} href="mailto:hello@sendloom.net">
+              <a className={styles.secondaryAction} href="mailto:ka8540@g.rit.edu">
                 Contact support
               </a>
             </div>
