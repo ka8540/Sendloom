@@ -1,0 +1,352 @@
+.page {
+  min-height: 100vh;
+  color: var(--text);
+  overflow-x: clip;
+  --landing-ink: var(--text);
+  --landing-muted: var(--muted);
+  --landing-line: var(--line);
+  --landing-panel: color-mix(in srgb, var(--surface) 80%, transparent);
+  --landing-panel-strong: color-mix(in srgb, var(--surface-strong) 90%, transparent);
+  --landing-emerald: var(--accent);
+  --landing-emerald-deep: var(--accent-strong);
+}
+
+.frame {
+  width: min(1120px, calc(100% - 3rem));
+  margin: 0 auto;
+  padding: 7.5rem 0 4rem;
+  display: grid;
+  gap: 2rem;
+}
+
+.hero {
+  display: grid;
+  gap: 1rem;
+  max-width: 44rem;
+}
+
+.eyebrow {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  padding: 0.48rem 0.8rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.title {
+  margin: 0;
+  max-width: 12ch;
+  font-size: clamp(3rem, 6vw, 4.8rem);
+  line-height: 0.97;
+  letter-spacing: -0.06em;
+}
+
+.description {
+  margin: 0;
+  max-width: 44rem;
+  color: var(--muted);
+  font-size: 1.05rem;
+  line-height: 1.75;
+}
+
+.heroActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 420px);
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.overview {
+  display: grid;
+  gap: 1rem;
+}
+
+.storyCard,
+.featureCard,
+.checklistCard,
+.panel {
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(18px);
+}
+
+.storyCard,
+.checklistCard,
+.panel {
+  background: var(--surface);
+}
+
+.storyCard,
+.checklistCard {
+  display: grid;
+  gap: 0.8rem;
+  padding: 1.35rem;
+  border-radius: 24px;
+}
+
+.storyCard h2,
+.checklistCard h2,
+.panelHeader h2 {
+  margin: 0;
+  font-size: 1.4rem;
+  letter-spacing: -0.04em;
+}
+
+.storyCard p,
+.checklistCard p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.features {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.featureCard {
+  display: grid;
+  gap: 0.4rem;
+  padding: 1.15rem;
+  border-radius: 20px;
+  background: var(--surface-ghost);
+}
+
+.featureCard:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+
+.featureCard strong {
+  font-size: 1rem;
+  letter-spacing: -0.02em;
+}
+
+.featureCard p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+  font-size: 0.94rem;
+}
+
+.checklist {
+  display: grid;
+  gap: 0.65rem;
+  margin: 0;
+  padding-left: 1.15rem;
+}
+
+.checklist li {
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.panel {
+  position: sticky;
+  top: 7rem;
+  display: grid;
+  gap: 1.1rem;
+  padding: 1.55rem;
+  border-radius: 28px;
+}
+
+.panelTop {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+}
+
+.panelLogo {
+  width: 3.4rem;
+  height: 3.4rem;
+  flex: 0 0 auto;
+  border-radius: 18px;
+  box-shadow: 0 16px 32px rgba(15, 77, 63, 0.18);
+}
+
+.panelBrand {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.panelBrand strong {
+  font-size: 1rem;
+  letter-spacing: -0.02em;
+}
+
+.panelBrand span {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.panelHeader {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.panelEyebrow {
+  color: var(--accent);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.panelHeader p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.providerButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  width: 100%;
+  min-height: 3.25rem;
+  padding: 0.9rem 1.1rem;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--surface-strong) 92%, transparent);
+  color: var(--text);
+  font-weight: 700;
+  transition:
+    transform 140ms ease,
+    border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.providerButton:hover,
+.providerButton:focus-visible {
+  outline: none;
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent) 28%, transparent);
+  background: color-mix(in srgb, var(--accent-soft) 36%, var(--surface-strong) 64%);
+  box-shadow: 0 14px 28px rgba(28, 42, 70, 0.1);
+}
+
+.providerButton:active {
+  transform: translateY(1px) scale(0.985);
+}
+
+.providerButton svg {
+  width: 1.05rem;
+  height: 1.05rem;
+  flex: 0 0 auto;
+}
+
+.error {
+  margin: 0;
+  padding: 0.8rem 0.95rem;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, #d96952 26%, var(--line));
+  background: color-mix(in srgb, rgba(217, 105, 82, 0.12) 86%, var(--surface-strong) 14%);
+  color: #c34d37;
+  line-height: 1.55;
+}
+
+.divider {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 0.85rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.divider::before,
+.divider::after {
+  content: "";
+  height: 1px;
+  background: var(--line);
+}
+
+.formWrap {
+  display: grid;
+  gap: 1rem;
+}
+
+.formWrap :global(.form) {
+  gap: 0.95rem;
+}
+
+.formWrap :global(.field input) {
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--surface-strong) 92%, transparent);
+}
+
+.formWrap :global(.form .button) {
+  width: 100%;
+  min-height: 3.15rem;
+  margin-top: 0.1rem;
+}
+
+.formWrap :global(.form > .muted) {
+  margin: 0;
+  color: #c34d37;
+  line-height: 1.55;
+}
+
+.switch {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.switch a,
+.legal a {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.legal {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.94rem;
+  line-height: 1.6;
+}
+
+@media (max-width: 940px) {
+  .frame {
+    width: min(100%, calc(100% - 2rem));
+    padding-top: 6.6rem;
+  }
+
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .panel {
+    position: static;
+    order: -1;
+  }
+}
+
+@media (max-width: 640px) {
+  .title {
+    font-size: clamp(2.55rem, 12vw, 3.4rem);
+  }
+
+  .features {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .featureCard:last-child:nth-child(odd) {
+    grid-column: auto;
+  }
+}
