@@ -45,13 +45,13 @@ function formatColumnLabel(column: MappingColumn) {
 export function TemplateFieldPicker(props: { imports: TemplateFieldItem[] }) {
   const router = useRouter();
   const [state, setState] = useState<{ pending: boolean; error?: string }>({ pending: false });
-  const [selectedImportId, setSelectedImportId] = useState(props.imports[0]?.importId ?? "");
+  const [selectedImportId, setSelectedImportId] = useState("");
   const [selectedByImport, setSelectedByImport] = useState<Record<string, string[]>>(() =>
     Object.fromEntries(props.imports.map((entry) => [entry.importId, entry.selectedColumns]))
   );
 
   const selectedImport = useMemo(
-    () => props.imports.find((entry) => entry.importId === selectedImportId) ?? props.imports[0],
+    () => (selectedImportId ? props.imports.find((entry) => entry.importId === selectedImportId) : undefined),
     [props.imports, selectedImportId]
   );
 
@@ -106,6 +106,7 @@ export function TemplateFieldPicker(props: { imports: TemplateFieldItem[] }) {
       return;
     }
 
+    setSelectedImportId("");
     router.refresh();
     setState({ pending: false });
   }
@@ -120,7 +121,7 @@ export function TemplateFieldPicker(props: { imports: TemplateFieldItem[] }) {
           value={selectedImportId}
           onChange={(event) => {
             setSelectedImportId(event.target.value);
-            setState({ pending: false });
+            setState({ pending: false, error: undefined });
           }}
           required
         >
