@@ -1,0 +1,326 @@
+.page {
+  min-height: 100vh;
+  position: relative;
+  isolation: isolate;
+  overflow-x: clip;
+  color: var(--text);
+  background:
+    radial-gradient(circle at 18% 14%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 18rem),
+    radial-gradient(circle at 82% 18%, color-mix(in srgb, #5b8dff 12%, transparent), transparent 20rem),
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-strong) 96%, #09111c), color-mix(in srgb, var(--surface) 96%, #0c1624));
+}
+
+.page::before,
+.page::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.page::before {
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--text) 6%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--text) 6%, transparent) 1px, transparent 1px);
+  background-size: 140px 140px;
+  mask-image: radial-gradient(circle at center, black, transparent 80%);
+  opacity: 0.46;
+}
+
+.page::after {
+  background:
+    radial-gradient(circle at 12% 22%, color-mix(in srgb, var(--accent) 28%, transparent) 0 0.14rem, transparent 0.18rem),
+    radial-gradient(circle at 20% 72%, color-mix(in srgb, var(--accent) 22%, transparent) 0 0.12rem, transparent 0.16rem),
+    radial-gradient(circle at 34% 34%, color-mix(in srgb, #5b8dff 18%, transparent) 0 0.14rem, transparent 0.18rem),
+    radial-gradient(circle at 52% 58%, color-mix(in srgb, var(--accent) 18%, transparent) 0 0.12rem, transparent 0.16rem),
+    radial-gradient(circle at 72% 30%, color-mix(in srgb, #5b8dff 16%, transparent) 0 0.14rem, transparent 0.18rem),
+    radial-gradient(circle at 88% 66%, color-mix(in srgb, var(--accent) 22%, transparent) 0 0.12rem, transparent 0.16rem);
+  opacity: 0.88;
+}
+
+.frame {
+  position: relative;
+  z-index: 2;
+  width: min(1100px, calc(100% - 2rem));
+  margin: 0 auto;
+  padding: clamp(5.5rem, 9vw, 7.4rem) 0 3rem;
+  min-height: 100vh;
+  display: grid;
+  align-content: center;
+  gap: 1.4rem;
+}
+
+.brandBar {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.95rem 1rem;
+  border-radius: 22px;
+  border: 1px solid color-mix(in srgb, var(--line) 86%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 92%, transparent), color-mix(in srgb, var(--surface-ghost) 96%, transparent));
+  box-shadow: 0 18px 36px rgba(7, 18, 33, 0.18);
+  backdrop-filter: blur(18px);
+}
+
+.brandMark {
+  width: 3rem;
+  height: 3rem;
+  flex: 0 0 auto;
+  border-radius: 18px;
+  box-shadow: 0 16px 32px rgba(15, 77, 63, 0.2);
+}
+
+.brandCopy {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.brandCopy strong {
+  font-size: 1rem;
+  letter-spacing: -0.02em;
+}
+
+.brandCopy span {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(18rem, 21rem);
+  gap: 1.2rem;
+  align-items: stretch;
+}
+
+.copyPanel,
+.devicePanel {
+  border-radius: 30px;
+  border: 1px solid color-mix(in srgb, var(--line) 88%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 92%, transparent), color-mix(in srgb, var(--surface-ghost) 96%, transparent));
+  box-shadow:
+    0 28px 54px rgba(6, 15, 28, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(18px);
+}
+
+.copyPanel {
+  padding: clamp(1.45rem, 3vw, 2rem);
+  display: grid;
+  gap: 1.35rem;
+}
+
+.kicker {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  padding: 0.45rem 0.72rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-soft) 76%, transparent);
+  color: var(--accent-strong);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.title {
+  margin: 0;
+  max-width: 12ch;
+  font-size: clamp(2.75rem, 6vw, 4.7rem);
+  line-height: 0.96;
+  letter-spacing: -0.06em;
+}
+
+.description {
+  margin: 0;
+  max-width: 36rem;
+  color: var(--muted);
+  font-size: 1.02rem;
+  line-height: 1.72;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+}
+
+.primaryAction,
+.secondaryAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 3.25rem;
+  padding: 0.9rem 1.25rem;
+  border-radius: 16px;
+  font-weight: 700;
+  transition:
+    transform 140ms ease,
+    box-shadow 160ms ease,
+    border-color 160ms ease,
+    background-color 160ms ease;
+}
+
+.primaryAction {
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  color: white;
+  box-shadow: 0 18px 30px rgba(15, 77, 63, 0.24);
+}
+
+.secondaryAction {
+  border: 1px solid color-mix(in srgb, var(--line) 86%, transparent);
+  background: color-mix(in srgb, var(--surface-strong) 94%, transparent);
+  color: var(--text);
+}
+
+.primaryAction:hover,
+.primaryAction:focus-visible,
+.secondaryAction:hover,
+.secondaryAction:focus-visible {
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.noteGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.noteCard {
+  display: grid;
+  gap: 0.45rem;
+  padding: 1rem;
+  border-radius: 22px;
+  border: 1px solid color-mix(in srgb, var(--line) 86%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-strong) 94%, transparent), color-mix(in srgb, var(--surface) 94%, transparent));
+}
+
+.noteLabel,
+.deviceEyebrow {
+  color: var(--accent);
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.noteCard strong {
+  font-size: 1rem;
+  line-height: 1.24;
+  letter-spacing: -0.03em;
+}
+
+.noteCard p,
+.deviceCopy p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.devicePanel {
+  padding: 1.35rem;
+  display: grid;
+  gap: 1.1rem;
+  align-content: start;
+}
+
+.deviceIcon {
+  width: 3.5rem;
+  height: 3.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--accent-soft) 72%, transparent);
+  color: var(--accent-strong);
+  box-shadow: 0 14px 28px rgba(15, 77, 63, 0.16);
+}
+
+.deviceIcon svg {
+  width: 1.65rem;
+  height: 1.65rem;
+}
+
+.deviceCopy {
+  display: grid;
+  gap: 0.38rem;
+}
+
+.deviceCopy h2 {
+  margin: 0;
+  font-size: 1.7rem;
+  line-height: 1.08;
+  letter-spacing: -0.04em;
+}
+
+.deviceChecklist {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.deviceItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  padding: 0.95rem 1rem;
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--line) 86%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-strong) 95%, transparent), color-mix(in srgb, var(--surface) 94%, transparent));
+  color: var(--text);
+}
+
+.deviceItem svg {
+  width: 1rem;
+  height: 1rem;
+  margin-top: 0.15rem;
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.deviceItem span {
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+@media (max-width: 960px) {
+  .hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .devicePanel {
+    order: -1;
+  }
+}
+
+@media (max-width: 700px) {
+  .frame {
+    width: min(100%, calc(100% - 1.25rem));
+    padding-top: 5rem;
+  }
+
+  .brandBar {
+    width: 100%;
+    padding: 0.9rem;
+  }
+
+  .noteGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .actions {
+    display: grid;
+  }
+
+  .primaryAction,
+  .secondaryAction {
+    width: 100%;
+  }
+}
