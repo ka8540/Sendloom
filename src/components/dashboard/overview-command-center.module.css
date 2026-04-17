@@ -323,10 +323,14 @@
 }
 
 .sectionTop {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: flex-start;
-  justify-content: space-between;
   gap: 1rem;
+}
+
+.sectionTop > :first-child {
+  min-width: 0;
 }
 
 .sectionKicker {
@@ -370,12 +374,13 @@
   display: inline-flex;
   align-items: center;
   gap: 0.55rem;
-  min-height: 3rem;
-  padding: 0.72rem 0.9rem 0.72rem 1rem;
+  min-height: 2.85rem;
+  padding: 0.68rem 0.85rem 0.68rem 0.95rem;
   border-radius: 18px;
   border: 1px solid var(--line);
   background: color-mix(in srgb, var(--surface-muted) 84%, transparent);
   color: var(--muted);
+  font-size: 0.95rem;
   font-weight: 700;
   white-space: nowrap;
   transition: color 160ms ease, transform 160ms ease, border-color 180ms ease, background-color 180ms ease;
@@ -392,7 +397,7 @@
 
 .toolbar {
   display: grid;
-  grid-template-columns: minmax(18rem, 1.55fr) repeat(3, minmax(13.5rem, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.8rem;
   align-items: end;
   padding: 1rem;
@@ -405,6 +410,10 @@
   display: grid;
   gap: 0.45rem;
   min-width: 0;
+}
+
+.toolbarFieldWide {
+  grid-column: 1 / -1;
 }
 
 .toolbarLabel {
@@ -1091,15 +1100,19 @@
   }
 
   .sectionTop {
-    flex-direction: column;
+    grid-template-columns: 1fr;
   }
 
-  .toolbar {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .sectionTopMeta {
+    justify-content: flex-start;
   }
 }
 
 @media (max-width: 900px) {
+  .toolbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .sequenceRow {
     grid-template-columns: 1fr;
   }

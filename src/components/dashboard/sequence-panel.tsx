@@ -72,7 +72,7 @@ export function SequencePanel({ rows }: { rows: SequenceRowData[] }) {
   return (
     <>
       <div className={styles.toolbar}>
-        <label className={styles.toolbarField}>
+        <label className={`${styles.toolbarField} ${styles.toolbarFieldWide}`}>
           <span className={styles.toolbarLabel}>Search</span>
           <div className={styles.toolbarSearch}>
             <Search aria-hidden="true" />
@@ -81,7 +81,7 @@ export function SequencePanel({ rows }: { rows: SequenceRowData[] }) {
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               aria-label="Search recent sequences"
-              placeholder="Search sequence, template, import, or sender"
+              placeholder="Search sequence, template, or sender"
             />
           </div>
         </label>
