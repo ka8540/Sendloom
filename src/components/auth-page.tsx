@@ -2,31 +2,30 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 
 import styles from "@/app/auth.module.css";
+import { AnimatedEmailPath } from "@/components/AnimatedEmailPath";
+import { AuthVideoPreview } from "@/components/auth-video-preview";
 import { LandingNav } from "@/components/landing-nav";
 import { SendloomLogo } from "@/components/sendloom-logo";
 
-type AuthFeature = {
-  body: string;
-  title: string;
-};
-
 type AuthPageProps = {
-  checklist: readonly string[];
   children: ReactNode;
   description: string;
   eyebrow: string;
-  features: readonly AuthFeature[];
   panelDescription: string;
-  panelEyebrow: string;
   panelTitle: string;
   providerError?: string;
-  storyBody: string;
-  storyTitle: string;
   switchHref: "/login" | "/signup";
   switchLabel: string;
   switchText: string;
   title: string;
 };
+
+const authNavItems = [
+  { href: "/", label: "Home" },
+  { href: "/#proof", label: "Why Sendloom" },
+  { href: "/#workflow", label: "Workflow" },
+  { href: "mailto:hello@sendloom.net", label: "Contact" }
+] as const;
 
 function GoogleIcon() {
   return (
@@ -52,17 +51,12 @@ function GoogleIcon() {
 }
 
 export function AuthPage({
-  checklist,
   children,
   description,
   eyebrow,
-  features,
   panelDescription,
-  panelEyebrow,
   panelTitle,
   providerError,
-  storyBody,
-  storyTitle,
   switchHref,
   switchLabel,
   switchText,
@@ -70,45 +64,40 @@ export function AuthPage({
 }: AuthPageProps) {
   return (
     <main id="top" className={styles.page}>
-      <LandingNav />
+      <AnimatedEmailPath />
+      <LandingNav items={authNavItems} />
 
       <div className={styles.frame}>
         <header className={styles.hero}>
           <span className={styles.eyebrow}>{eyebrow}</span>
           <h1 className={styles.title}>{title}</h1>
           <p className={styles.description}>{description}</p>
-
-          <div className={styles.heroActions}>
-            <Link className="button secondary" href="/">
-              Back to home
-            </Link>
-          </div>
         </header>
 
         <div className={styles.layout}>
-          <section className={styles.overview}>
-            <article className={styles.storyCard}>
-              <h2>{storyTitle}</h2>
-              <p>{storyBody}</p>
-            </article>
+          <section className={styles.visual} aria-label="Product preview">
+            <div className={styles.visualShell}>
+              {/* Layer order: shell accents, centered preview, then compact supporting cards. */}
+              <div className={styles.visualStage}>
+                <div className={styles.visualFrame}>
+                  <article className={`${styles.visualNote} ${styles.visualNoteLeft}`}>
+                    <span className={styles.visualNoteEyebrow}>Sequence ready</span>
+                    <strong>Map the send before you log in.</strong>
+                    <p>Timing, sender state, and templates stay in view.</p>
+                  </article>
 
-            <div className={styles.features}>
-              {features.map((feature) => (
-                <article key={feature.title} className={styles.featureCard}>
-                  <strong>{feature.title}</strong>
-                  <p>{feature.body}</p>
-                </article>
-              ))}
+                  <div className={styles.visualVideoWrap}>
+                    <AuthVideoPreview />
+                  </div>
+
+                  <article className={`${styles.visualNote} ${styles.visualNoteRight}`}>
+                    <span className={styles.visualNoteEyebrow}>Quick preview</span>
+                    <strong>See the workflow in one pass.</strong>
+                    <p>Imports, writing, and launch steps at a glance.</p>
+                  </article>
+                </div>
+              </div>
             </div>
-
-            <article className={styles.checklistCard}>
-              <h2>What happens next</h2>
-              <ul className={styles.checklist}>
-                {checklist.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </article>
           </section>
 
           <section className={styles.panel}>
@@ -121,7 +110,6 @@ export function AuthPage({
             </div>
 
             <div className={styles.panelHeader}>
-              <span className={styles.panelEyebrow}>{panelEyebrow}</span>
               <h2>{panelTitle}</h2>
               <p>{panelDescription}</p>
             </div>
