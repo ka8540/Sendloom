@@ -222,8 +222,6 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
   const [enhanceError, setEnhanceError] = useState<Partial<Record<EnhanceField, string>>>({});
   const [checkingSpam, setCheckingSpam] = useState(false);
   const [spamAnalysis, setSpamAnalysis] = useState<SpamAnalysis | null>(null);
-  const [fixingSpam, setFixingSpam] = useState(false);
-  const [spamFixError, setSpamFixError] = useState<string | undefined>();
   const [highlightedField, setHighlightedField] = useState<EnhanceField | null>(null);
   const highlightTimeoutRef = useRef<number | null>(null);
   const controlled = Boolean(value && onChange);
@@ -249,7 +247,6 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
     setState({ pending: false });
     setEnhanceError({});
     setSpamAnalysis(null);
-    setSpamFixError(undefined);
   }, [controlled, initialTemplate?.id]);
 
   useEffect(() => {
@@ -263,7 +260,6 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
   function resetTemplateAssistState() {
     setEnhanceError({});
     setSpamAnalysis(null);
-    setSpamFixError(undefined);
     setHighlightedField(null);
 
     if (highlightTimeoutRef.current) {
@@ -273,15 +269,6 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
   }
 
   async function enhanceText(fieldType: EnhanceField, currentText: string) {
-    const trimmedText = currentText.trim();
-    if (!trimmedText) {
-      setEnhanceError((current) => ({
-        ...current,
-        [fieldType]: `Add some ${fieldType === "subject" ? "subject" : "body"} text before using AI.`
-      }));
-      return;
-    }
-
     setEnhanceError((current) => ({
       ...current,
       [fieldType]: undefined
@@ -294,8 +281,12 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           fieldType,
-          currentText: trimmedText,
-          templateFormat: fieldType === "body" ? fields.format : undefined
+          currentText,
+          templateName: fields.name,
+          subjectContext: fieldType === "body" ? fields.subject : undefined,
+          bodyContext: fieldType === "subject" ? fields.htmlBody : undefined,
+          templateFormat: fieldType === "body" ? fields.format : undefined,
+          spamAnalysis
         })
       });
 
@@ -313,7 +304,6 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
         ...(fieldType === "subject" ? { subject: payload.enhancedText! } : { htmlBody: payload.enhancedText! })
       }));
       setSpamAnalysis(null);
-      setSpamFixError(undefined);
       setHighlightedField(fieldType);
 
       if (highlightTimeoutRef.current) {
@@ -335,7 +325,6 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
 
   async function checkSpam() {
     setCheckingSpam(true);
-    setSpamFixError(undefined);
 
     try {
       const nextAnalysis = await analyzeSpam(fields.subject, fields.htmlBody, fields.format);
@@ -345,57 +334,15 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
     }
   }
 
-  async function fixSpamContent(currentText: string) {
-    const trimmedText = currentText.trim();
-    if (!trimmedText) {
-      setSpamFixError("Nothing to fix");
-      return;
+  function getEnhanceTooltip(fieldType: EnhanceField) {
+    const hasCurrentText = (fieldType === "subject" ? fields.subject : fields.htmlBody).trim().length > 0;
+    const label = fieldType === "subject" ? "subject" : "body";
+
+    if (spamAnalysis) {
+      return hasCurrentText ? `Rewrite ${label} using the latest spam check` : `Draft ${label} using the latest spam check`;
     }
 
-    setSpamFixError(undefined);
-    setFixingSpam(true);
-
-    try {
-      const response = await fetch("/api/templates/enhance", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "fix-spam",
-          currentText: trimmedText,
-          templateFormat: fields.format
-        })
-      });
-
-      const payload = (await response.json()) as { enhancedText?: string; error?: string };
-      if (!response.ok || !payload.enhancedText) {
-        setSpamFixError(payload.error ?? "AI spam fix failed.");
-        return;
-      }
-
-      const nextFields = {
-        ...fields,
-        htmlBody: payload.enhancedText
-      };
-
-      updateFields(() => nextFields);
-      setSpamAnalysis(null);
-      setHighlightedField("body");
-
-      if (highlightTimeoutRef.current) {
-        window.clearTimeout(highlightTimeoutRef.current);
-      }
-
-      highlightTimeoutRef.current = window.setTimeout(() => {
-        setHighlightedField(null);
-      }, 1600);
-
-      const nextAnalysis = await analyzeSpam(nextFields.subject, nextFields.htmlBody, nextFields.format);
-      setSpamAnalysis(nextAnalysis);
-    } catch {
-      setSpamFixError("AI spam fix failed.");
-    } finally {
-      setFixingSpam(false);
-    }
+    return hasCurrentText ? `Enhance ${label} with AI` : `Draft ${label} with AI`;
   }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -440,50 +387,29 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
   }
 
   const isEditing = Boolean(initialTemplate);
-  const showSpamFixButton =
-    spamAnalysis !== null && (spamAnalysis.subjectScore >= 40 || spamAnalysis.bodyScore >= 40);
-  const spamFixDisabled =
-    state.pending ||
-    fixingSpam ||
-    enhancingField !== null ||
-    checkingSpam ||
-    !fields.htmlBody.trim() ||
-    Boolean(bodyValidationError);
-
-  function renderSpamBadge(score: number, risk: SpamAnalysis["subjectRisk"]) {
-    if (!spamAnalysis) {
-      return null;
-    }
-
-    return (
-      <span className={`spam-inline-badge spam-inline-badge--${risk.toLowerCase()}`}>
-        <span className="spam-inline-badge__dot" aria-hidden="true" />
-        {risk} risk ({score}%)
-      </span>
-    );
-  }
 
   return (
     <form className="form" onSubmit={onSubmit}>
       <div className="template-form-toolbar">
-        <div>
+        <div className="template-form-toolbar__content">
           <p className="template-form-toolbar__eyebrow">Delivery health</p>
-          <p className="template-form-toolbar__copy">Run one quick spam pass across the subject and email body.</p>
+          <p className="template-form-toolbar__copy">Run a quiet spam pass first, then let the AI rewrite with that scan in mind.</p>
         </div>
         <button
-          className="template-check-spam-button"
+          className={`template-check-spam-button${spamAnalysis ? " is-ready" : ""}`}
           type="button"
           onClick={checkSpam}
-          disabled={state.pending || checkingSpam || enhancingField !== null || fixingSpam}
+          disabled={state.pending || checkingSpam || enhancingField !== null}
         >
           {checkingSpam ? (
-            <>
-              <span className="button-spinner" aria-hidden="true" />
-              Checking...
-            </>
+            <span className="button-spinner" aria-hidden="true" />
           ) : (
-            "🚫 Check Spam"
+            <span className="template-check-spam-button__signal" aria-hidden="true" />
           )}
+          <span className="template-check-spam-button__copy">
+            <span className="template-check-spam-button__label">{checkingSpam ? "Checking spam" : "Check spam"}</span>
+            <span className="template-check-spam-button__hint">Quiet review for the AI rewrite</span>
+          </span>
         </button>
       </div>
       <div className="field">
@@ -506,7 +432,6 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
             const nextFormat = event.target.value as TemplateFormat;
             setEnhanceError((current) => ({ ...current, body: undefined }));
             setSpamAnalysis(null);
-            setSpamFixError(undefined);
 
             updateFields((current) => ({
               ...current,
@@ -530,9 +455,9 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
             className="field-icon-button"
             type="button"
             onClick={() => enhanceText("subject", fields.subject)}
-            disabled={state.pending || enhancingField !== null || checkingSpam || fixingSpam}
-            aria-label="Enhance subject with AI"
-            data-tooltip="Enhance subject"
+            disabled={state.pending || enhancingField !== null || checkingSpam}
+            aria-label={getEnhanceTooltip("subject")}
+            data-tooltip={getEnhanceTooltip("subject")}
           >
             {enhancingField === "subject" ? <span className="button-spinner" aria-hidden="true" /> : <Sparkles aria-hidden="true" />}
           </button>
@@ -544,7 +469,6 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
           onChange={(event) => {
             setEnhanceError((current) => ({ ...current, subject: undefined }));
             setSpamAnalysis(null);
-            setSpamFixError(undefined);
             updateFields((current) => ({ ...current, subject: event.target.value }));
           }}
           placeholder="Hi {{name}}, quick question"
@@ -552,7 +476,6 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
           required
         />
         {enhanceError.subject ? <p className="field-inline-note">{enhanceError.subject}</p> : null}
-        <div className="field-meta-row">{renderSpamBadge(spamAnalysis?.subjectScore ?? 0, spamAnalysis?.subjectRisk ?? "Low")}</div>
       </div>
       <div className="field">
         <div className="field-label-row">
@@ -561,51 +484,29 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
             className="field-icon-button"
             type="button"
             onClick={() => enhanceText("body", fields.htmlBody)}
-            disabled={state.pending || enhancingField !== null || checkingSpam || fixingSpam}
-            aria-label="Enhance HTML body with AI"
-            data-tooltip="Enhance body"
+            disabled={state.pending || enhancingField !== null || checkingSpam}
+            aria-label={getEnhanceTooltip("body")}
+            data-tooltip={getEnhanceTooltip("body")}
           >
             {enhancingField === "body" ? <span className="button-spinner" aria-hidden="true" /> : <Sparkles aria-hidden="true" />}
           </button>
         </div>
-          <textarea
-            id="htmlBody"
-            name="htmlBody"
-            value={fields.htmlBody}
-            placeholder={getTemplateBodyPlaceholder(fields.format)}
-            onChange={(event) => {
-              setEnhanceError((current) => ({ ...current, body: undefined }));
-              setSpamAnalysis(null);
-            setSpamFixError(undefined);
+        <textarea
+          id="htmlBody"
+          name="htmlBody"
+          value={fields.htmlBody}
+          placeholder={getTemplateBodyPlaceholder(fields.format)}
+          onChange={(event) => {
+            setEnhanceError((current) => ({ ...current, body: undefined }));
+            setSpamAnalysis(null);
             updateFields((current) => ({ ...current, htmlBody: event.target.value }));
           }}
           className={highlightedField === "body" ? "field-enhanced" : undefined}
           required
-          />
+        />
         <p className="field-inline-note">{getTemplateBodyHint(fields.format)}</p>
         {bodyValidationError ? <p className="field-inline-note">{bodyValidationError}</p> : null}
         {enhanceError.body ? <p className="field-inline-note">{enhanceError.body}</p> : null}
-        <div className="field-meta-row">
-          {renderSpamBadge(spamAnalysis?.bodyScore ?? 0, spamAnalysis?.bodyRisk ?? "Low")}
-          {showSpamFixButton ? (
-            <button
-              className="field-fix-button"
-              type="button"
-              onClick={() => fixSpamContent(fields.htmlBody)}
-              disabled={spamFixDisabled}
-            >
-              {fixingSpam ? (
-                <>
-                  <span className="button-spinner" aria-hidden="true" />
-                  Fixing...
-                </>
-              ) : (
-                "✨ Fix with AI"
-              )}
-            </button>
-          ) : null}
-        </div>
-        {spamFixError ? <p className="field-inline-note">{spamFixError}</p> : null}
       </div>
       <div className="template-form-actions">
         <button className="button" type="submit" disabled={state.pending || Boolean(bodyValidationError)}>

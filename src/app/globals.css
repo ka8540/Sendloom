@@ -702,9 +702,14 @@ textarea {
 .template-form-toolbar {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: stretch;
   gap: 1rem;
-  margin-bottom: 0.2rem;
+  margin-bottom: 0.35rem;
+}
+
+.template-form-toolbar__content {
+  display: grid;
+  gap: 0.28rem;
 }
 
 .template-form-toolbar__eyebrow {
@@ -718,38 +723,79 @@ textarea {
 
 .template-form-toolbar__copy {
   margin: 0;
-  max-width: 32rem;
+  max-width: 34rem;
   color: var(--muted);
-  line-height: 1.55;
+  line-height: 1.6;
 }
 
 .template-check-spam-button {
-  display: inline-flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  justify-content: center;
-  gap: 0.45rem;
+  gap: 0.8rem;
   flex: 0 0 auto;
-  align-self: flex-start;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--surface-strong) 88%, transparent);
+  align-self: stretch;
+  min-width: 15.25rem;
+  padding: 0.88rem 1rem;
+  border: 1px solid color-mix(in srgb, var(--line) 84%, transparent);
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 94%, transparent), color-mix(in srgb, var(--surface-muted) 90%, transparent));
   color: var(--text);
-  min-height: 2.75rem;
-  padding: 0.62rem 1.05rem;
-  font-size: 0.88rem;
-  font-weight: 700;
-  line-height: 1;
-  white-space: nowrap;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 16px 28px rgba(28, 42, 70, 0.08);
+  text-align: left;
   cursor: pointer;
   transition: transform 140ms ease, border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+}
+
+.template-check-spam-button__signal {
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, #d96952 78%, white 22%);
+  box-shadow: 0 0 0 0.36rem color-mix(in srgb, rgba(217, 105, 82, 0.14) 100%, transparent);
+}
+
+.template-check-spam-button__copy {
+  display: grid;
+  gap: 0.18rem;
+  min-width: 0;
+}
+
+.template-check-spam-button__label {
+  display: block;
+  font-size: 0.92rem;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.template-check-spam-button__hint {
+  display: block;
+  color: var(--muted);
+  font-size: 0.77rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.template-check-spam-button.is-ready {
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--line));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 34%, var(--surface) 66%), color-mix(in srgb, var(--surface-muted) 82%, transparent));
+}
+
+.template-check-spam-button.is-ready .template-check-spam-button__signal {
+  background: var(--accent);
+  box-shadow: 0 0 0 0.36rem color-mix(in srgb, var(--accent) 16%, transparent);
 }
 
 .template-check-spam-button:hover:not(:disabled),
 .template-check-spam-button:focus-visible {
   transform: translateY(-1px);
-  border-color: color-mix(in srgb, #d96952 26%, transparent);
-  background: color-mix(in srgb, rgba(217, 105, 82, 0.14) 76%, var(--surface-strong) 24%);
-  box-shadow: 0 10px 22px rgba(28, 42, 70, 0.08);
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--line));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 22%, var(--surface) 78%), color-mix(in srgb, var(--surface-muted) 88%, transparent));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 18px 30px rgba(28, 42, 70, 0.11);
   outline: none;
 }
 
@@ -824,81 +870,6 @@ textarea {
 .field-icon-button:disabled {
   opacity: 0.68;
   cursor: not-allowed;
-}
-
-.field-meta-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-  min-height: 1.75rem;
-}
-
-.field-fix-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.45rem;
-  width: fit-content;
-  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--line));
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--accent-soft) 72%, var(--surface-strong) 28%);
-  color: var(--text);
-  padding: 0.5rem 0.9rem;
-  font-size: 0.9rem;
-  font-weight: 700;
-  cursor: pointer;
-  transition: transform 140ms ease, border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
-}
-
-.field-fix-button:hover:not(:disabled),
-.field-fix-button:focus-visible {
-  transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--accent) 44%, transparent);
-  background: color-mix(in srgb, var(--accent-soft) 82%, var(--surface-strong) 18%);
-  box-shadow: 0 10px 22px rgba(28, 42, 70, 0.08);
-  outline: none;
-}
-
-.field-fix-button:active:not(:disabled) {
-  transform: translateY(1px) scale(0.985);
-}
-
-.field-fix-button:disabled {
-  opacity: 0.68;
-  cursor: not-allowed;
-}
-
-.spam-inline-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  min-height: 1.85rem;
-  padding: 0.2rem 0;
-  font-size: 0.92rem;
-  font-weight: 700;
-  color: var(--muted);
-}
-
-.spam-inline-badge__dot {
-  width: 0.55rem;
-  height: 0.55rem;
-  border-radius: 999px;
-  background: currentColor;
-  opacity: 0.9;
-}
-
-.spam-inline-badge--low {
-  color: var(--success);
-}
-
-.spam-inline-badge--medium {
-  color: var(--warning);
-}
-
-.spam-inline-badge--high {
-  color: #d96952;
 }
 
 .button-spinner {
@@ -2396,12 +2367,10 @@ textarea {
     width: 100%;
   }
 
-  .template-check-spam-button,
-  .field-fix-button {
+  .template-check-spam-button {
     width: 100%;
   }
 
-  .field-meta-row,
   .field-label-row {
     align-items: flex-start;
   }

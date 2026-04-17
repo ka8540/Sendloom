@@ -8,6 +8,7 @@ describe("analyzeSpam", () => {
 
     expect(result.subjectRisk).toBe("High");
     expect(result.subjectScore).toBeGreaterThanOrEqual(70);
+    expect(result.subjectSignals.length).toBeGreaterThan(0);
   });
 
   it("keeps relevant, restrained copy in the low-risk range", async () => {
@@ -19,5 +20,6 @@ describe("analyzeSpam", () => {
     expect(result.subjectRisk).toBe("Low");
     expect(result.bodyRisk).toBe("Low");
     expect(result.bodyScore).toBeLessThan(40);
+    expect(result.bodySignals).toHaveLength(0);
   });
 });

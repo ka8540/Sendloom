@@ -3,8 +3,10 @@ export type SpamRisk = "Low" | "Medium" | "High";
 export type SpamAnalysis = {
   subjectScore: number;
   subjectRisk: SpamRisk;
+  subjectSignals: string[];
   bodyScore: number;
   bodyRisk: SpamRisk;
+  bodySignals: string[];
 };
 
 type SpamFieldType = "subject" | "body";
@@ -12,6 +14,7 @@ type SpamFieldType = "subject" | "body";
 type SpamFieldScore = {
   score: number;
   risk: SpamRisk;
+  signals: string[];
 };
 
 type TemplateFormat = "PLAIN_TEXT" | "HTML" | "JSON";
@@ -100,13 +103,15 @@ function scoreField(fieldType: SpamFieldType, text: string): SpamFieldScore {
   if (!rawText) {
     return {
       score: 0,
-      risk: "Low"
+      risk: "Low",
+      signals: []
     };
   }
 
   const normalizedText = fieldType === "body" ? stripHtml(rawText) : rawText;
   const lower = normalizedText.toLowerCase();
   let score = 0;
+  const signals = new Set<string>();
 
   const triggerWords = [
     "free",
@@ -124,16 +129,19 @@ function scoreField(fieldType: SpamFieldType, text: string): SpamFieldScore {
   const foundTriggers = triggerWords.filter((word) => lower.includes(word));
   if (foundTriggers.length) {
     score += Math.min(45, foundTriggers.length * 14);
+    signals.add("Replace obvious trigger words and keep the tone calmer.");
   }
 
   const linkCount = countMatches(rawText, /(https?:\/\/|www\.|href=)/gi);
   if (linkCount >= 2) {
     score += linkCount >= 4 ? 22 : 12;
+    signals.add("Cut down link-heavy copy and keep calls to action light.");
   }
 
   const exclamationCount = countMatches(normalizedText, /!/g);
   if (exclamationCount >= 3) {
     score += 12;
+    signals.add("Remove stacked punctuation and let the copy stay conversational.");
   }
 
   const allCapsWords = normalizedText.match(/\b[A-Z]{4,}\b/g) ?? [];
@@ -141,11 +149,13 @@ function scoreField(fieldType: SpamFieldType, text: string): SpamFieldScore {
   const uppercaseRatio = lettersOnly ? (lettersOnly.match(/[A-Z]/g)?.length ?? 0) / lettersOnly.length : 0;
   if (allCapsWords.length || uppercaseRatio > 0.34) {
     score += allCapsWords.length >= 2 || uppercaseRatio > 0.5 ? 18 : 8;
+    signals.add("Tone down all-caps emphasis and keep casing natural.");
   }
 
   const repeatedPhraseCount = getRepeatedPhraseCount(normalizedText);
   if (repeatedPhraseCount > 0) {
     score += 12;
+    signals.add("Trim repeated phrases so the message feels more human.");
   }
 
   const salesySignals = countMatches(
@@ -154,17 +164,20 @@ function scoreField(fieldType: SpamFieldType, text: string): SpamFieldScore {
   );
   if (salesySignals > 0) {
     score += 16;
+    signals.add("Remove sales-heavy wording and avoid promotional phrasing.");
   }
 
   if (fieldType === "subject") {
     const subjectWordCount = normalizedText.split(/\s+/).filter(Boolean).length;
     if (subjectWordCount > 10) {
       score += 6;
+      signals.add("Shorten the subject so it lands faster.");
     }
   } else {
     const paragraphCount = countMatches(rawText, /<p\b/gi);
     if (!paragraphCount && normalizedText.length > 420) {
       score += 6;
+      signals.add("Break the body into shorter paragraphs and tighten the wording.");
     }
   }
 
@@ -173,7 +186,8 @@ function scoreField(fieldType: SpamFieldType, text: string): SpamFieldScore {
 
   return {
     score: normalizedScore,
-    risk
+    risk,
+    signals: Array.from(signals)
   };
 }
 
@@ -186,7 +200,9 @@ export async function analyzeSpam(subject: string, body: string, bodyFormat: Tem
   return {
     subjectScore: subjectResult.score,
     subjectRisk: subjectResult.risk,
+    subjectSignals: subjectResult.signals,
     bodyScore: bodyResult.score,
-    bodyRisk: bodyResult.risk
+    bodyRisk: bodyResult.risk,
+    bodySignals: bodyResult.signals
   };
 }
