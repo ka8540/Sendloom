@@ -57,6 +57,11 @@ export function TemplateFieldPicker(props: { imports: TemplateFieldItem[] }) {
 
   const selectedColumns = selectedImport ? selectedByImport[selectedImport.importId] ?? [] : [];
 
+  useEffect(() => {
+    setSelectedByImport(Object.fromEntries(props.imports.map((entry) => [entry.importId, entry.selectedColumns])));
+    setSelectedImportId((current) => (props.imports.some((entry) => entry.importId === current) ? current : ""));
+  }, [props.imports]);
+
   function toggleColumn(column: string) {
     if (!selectedImport) {
       return;
@@ -109,6 +114,10 @@ export function TemplateFieldPicker(props: { imports: TemplateFieldItem[] }) {
     setSelectedImportId("");
     router.refresh();
     setState({ pending: false });
+  }
+
+  if (props.imports.length === 0) {
+    return <p className="muted">No pending imports need template-field setup here. Edit existing imports below.</p>;
   }
 
   return (

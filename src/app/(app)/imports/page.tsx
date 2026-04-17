@@ -33,10 +33,15 @@ export default async function ImportsPage() {
     }
   }
 
-  const templateFieldItems = imports.map((entry) => {
+  const templateFieldItems = imports.flatMap((entry) => {
     const mapping = latestMappings.get(entry.id);
+    const hasBeenConfigured = mapping ? mapping.updatedAt.getTime() !== mapping.createdAt.getTime() : false;
 
-    return {
+    if (hasBeenConfigured) {
+      return [];
+    }
+
+    return [{
       importId: entry.id,
       fileName: entry.fileName,
       columns: entry.columns.map((column) => ({
@@ -44,7 +49,7 @@ export default async function ImportsPage() {
         normalized: column.normalized
       })),
       selectedColumns: Object.values((mapping?.variableMap ?? {}) as Record<string, string>).slice(0, 10)
-    };
+    }];
   });
 
   const mappingItems = imports.map((entry) => {
@@ -85,7 +90,7 @@ export default async function ImportsPage() {
         </article>
         <article className="card">
           <h2 style={{ marginTop: 0 }}>Template fields</h2>
-          <p className="muted">Choose which columns from each audience can be used in templates, or edit them inline below.</p>
+          <p className="muted">Choose fields for newly reviewed imports here. Anything already saved can be edited in the imports list below.</p>
           <TemplateFieldPicker imports={templateFieldItems} />
         </article>
       </section>
