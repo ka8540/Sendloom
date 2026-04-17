@@ -25,6 +25,7 @@ type MappingLibraryItem = {
   status: string;
   rowCount: number;
   linkedCampaignCount: number;
+  selectedTemplateColumns: string[];
   columns: MappingColumn[];
   previewRows: Array<{
     id: string;
@@ -179,9 +180,14 @@ export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
   const router = useRouter();
   const [savingImportId, setSavingImportId] = useState<string | null>(null);
   const [deletingImportId, setDeletingImportId] = useState<string | null>(null);
+  const [savingTemplateFieldsImportId, setSavingTemplateFieldsImportId] = useState<string | null>(null);
   const [editingImportId, setEditingImportId] = useState<string | null>(null);
+  const [editingTemplateFieldsImportId, setEditingTemplateFieldsImportId] = useState<string | null>(null);
   const [draftNames, setDraftNames] = useState<Record<string, string>>(() =>
     Object.fromEntries(props.items.map((item) => [item.importId, item.fileName]))
+  );
+  const [templateFieldDrafts, setTemplateFieldDrafts] = useState<Record<string, string[]>>(() =>
+    Object.fromEntries(props.items.map((item) => [item.importId, item.selectedTemplateColumns]))
   );
   const [page, setPage] = useState(1);
   const [error, setError] = useState<string | null>(null);
@@ -190,6 +196,10 @@ export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
 
   useEffect(() => {
     setDraftNames(Object.fromEntries(props.items.map((item) => [item.importId, item.fileName])));
+  }, [props.items]);
+
+  useEffect(() => {
+    setTemplateFieldDrafts(Object.fromEntries(props.items.map((item) => [item.importId, item.selectedTemplateColumns])));
   }, [props.items]);
 
   useEffect(() => {
@@ -256,6 +266,53 @@ export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
     setDeletingImportId(null);
   }
 
+  function toggleTemplateField(importId: string, column: string) {
+    setTemplateFieldDrafts((current) => {
+      const existing = current[importId] ?? [];
+      const next = existing.includes(column)
+        ? existing.filter((entry) => entry !== column)
+        : existing.length >= MAX_TEMPLATE_COLUMNS
+          ? existing
+          : [...existing, column];
+
+      return {
+        ...current,
+        [importId]: next
+      };
+    });
+  }
+
+  async function saveTemplateFields(importId: string) {
+    const selectedColumns = templateFieldDrafts[importId] ?? [];
+
+    if (selectedColumns.length === 0) {
+      setError("Choose at least one template field before saving.");
+      return;
+    }
+
+    setSavingTemplateFieldsImportId(importId);
+    setError(null);
+
+    const response = await fetch(`/api/imports/${importId}/template-fields`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        selectedColumns
+      })
+    });
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      setSavingTemplateFieldsImportId(null);
+      setError(payload.error ?? "Could not save template fields.");
+      return;
+    }
+
+    setEditingTemplateFieldsImportId(null);
+    router.refresh();
+    setSavingTemplateFieldsImportId(null);
+  }
+
   function handleNameKeyDown(event: KeyboardEvent<HTMLInputElement>, importId: string, originalName: string) {
     if (event.key === "Enter") {
       event.preventDefault();
@@ -278,10 +335,17 @@ export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
         const isEditing = editingImportId === item.importId;
         const isSaving = savingImportId === item.importId;
         const isDeleting = deletingImportId === item.importId;
-        const visibleColumns = item.columns.slice(0, 8);
-        const hiddenColumnCount = Math.max(0, item.columns.length - visibleColumns.length);
-        const visiblePreviewRows = item.previewRows.slice(0, 3);
-        const hiddenPreviewCount = Math.max(0, item.previewRows.length - visiblePreviewRows.length);
+        const isEditingTemplateFields = editingTemplateFieldsImportId === item.importId;
+        const isSavingTemplateFields = savingTemplateFieldsImportId === item.importId;
+        const activeTemplateFields = templateFieldDrafts[item.importId] ?? item.selectedTemplateColumns;
+        const selectedColumns = item.columns.filter((column) => activeTemplateFields.includes(column.normalized));
+        const detectedOnlyColumns = item.columns.filter((column) => !activeTemplateFields.includes(column.normalized));
+        const visibleSelectedColumns = selectedColumns.slice(0, 5);
+        const hiddenSelectedColumnCount = Math.max(0, selectedColumns.length - visibleSelectedColumns.length);
+        const visibleDetectedColumns = detectedOnlyColumns.slice(0, 4);
+        const hiddenDetectedColumnCount = Math.max(0, detectedOnlyColumns.length - visibleDetectedColumns.length);
+        const visiblePreviewRows = item.previewRows.slice(0, 2);
+        const hiddenPreviewCount = Math.max(0, item.rowCount - visiblePreviewRows.length);
 
         return (
           <article className="import-card" key={item.importId}>
@@ -389,33 +453,76 @@ export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
             <div className="import-card__content">
               <div className="import-card__section import-card__section--columns">
                 <div className="import-card__section-head">
-                  <span className="import-card__section-label">Detected fields</span>
-                  <span className="import-card__section-count">{item.columns.length}</span>
+                  <div className="import-card__section-heading">
+                    <span className="import-card__section-label">Template fields</span>
+                    <p className="import-card__section-copy">
+                      {activeTemplateFields.length} of {item.columns.length} detected columns are active in templates.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="button secondary import-card__section-button"
+                    onClick={() => {
+                      setTemplateFieldDrafts((current) => ({
+                        ...current,
+                        [item.importId]: item.selectedTemplateColumns
+                      }));
+                      setEditingTemplateFieldsImportId((current) => (current === item.importId ? null : item.importId));
+                      setError(null);
+                    }}
+                    disabled={isSaving || isDeleting || isSavingTemplateFields}
+                  >
+                    {isEditingTemplateFields ? "Close editor" : "Reselect fields"}
+                  </button>
                 </div>
-                <div className="import-card__field-grid">
-                  {visibleColumns.map((column) => (
-                    <div
-                      key={`${item.importId}-${column.normalized}`}
-                      className="import-card__field-tile"
-                      title={`Saved as ${column.normalized}`}
-                    >
-                      <strong>{column.sourceName}</strong>
-                      {column.sourceName !== column.normalized ? <span>{column.normalized}</span> : null}
+
+                {visibleSelectedColumns.length ? (
+                  <div className="import-card__field-pill-row">
+                    {visibleSelectedColumns.map((column) => (
+                      <span
+                        key={`${item.importId}-${column.normalized}`}
+                        className="import-card__field-pill import-card__field-pill--selected"
+                        title={`Saved as ${column.normalized}`}
+                      >
+                        {column.sourceName}
+                      </span>
+                    ))}
+                    {hiddenSelectedColumnCount ? (
+                      <span className="import-card__field-pill import-card__field-pill--overflow">+{hiddenSelectedColumnCount} more</span>
+                    ) : null}
+                  </div>
+                ) : (
+                  <span className="muted">No template fields are selected for this import yet.</span>
+                )}
+
+                {visibleDetectedColumns.length ? (
+                  <div className="import-card__detected-summary">
+                    <span className="import-card__detected-label">Other detected columns</span>
+                    <div className="import-card__field-pill-row import-card__field-pill-row--muted">
+                      {visibleDetectedColumns.map((column) => (
+                        <span
+                          key={`${item.importId}-${column.normalized}-detected`}
+                          className="import-card__field-pill import-card__field-pill--muted"
+                          title={`Detected as ${column.normalized}`}
+                        >
+                          {column.sourceName}
+                        </span>
+                      ))}
+                      {hiddenDetectedColumnCount ? (
+                        <span className="import-card__field-pill import-card__field-pill--overflow">+{hiddenDetectedColumnCount} more</span>
+                      ) : null}
                     </div>
-                  ))}
-                  {hiddenColumnCount ? (
-                    <div className="import-card__field-tile import-card__field-tile--overflow">
-                      <strong>+{hiddenColumnCount} more</strong>
-                      <span>Hidden fields</span>
-                    </div>
-                  ) : null}
-                </div>
+                  </div>
+                ) : null}
               </div>
 
               <div className="import-card__section import-card__section--preview">
                 <div className="import-card__section-head">
-                  <span className="import-card__section-label">Sample contacts</span>
-                  <span className="import-card__section-count">{item.previewRows.length}</span>
+                  <div className="import-card__section-heading">
+                    <span className="import-card__section-label">Sample contacts</span>
+                    <p className="import-card__section-copy">A quick peek at the people in this import.</p>
+                  </div>
+                  <span className="import-card__section-count">{Math.min(item.rowCount, visiblePreviewRows.length)}</span>
                 </div>
                 {item.previewRows.length ? (
                   <div className="import-card__preview-list">
@@ -435,6 +542,64 @@ export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
                 ) : null}
               </div>
             </div>
+
+            {isEditingTemplateFields ? (
+              <div className="import-card__editor">
+                <div className="selection-summary">
+                  <strong>
+                    {activeTemplateFields.length} / {MAX_TEMPLATE_COLUMNS} template fields selected
+                  </strong>
+                  <span className="muted">Choose the fields you want available when building templates from this import.</span>
+                </div>
+
+                <div className="checkbox-grid import-card__checkbox-grid">
+                  {item.columns.map((column) => {
+                    const checked = activeTemplateFields.includes(column.normalized);
+                    const disableUnchecked = !checked && activeTemplateFields.length >= MAX_TEMPLATE_COLUMNS;
+
+                    return (
+                      <label
+                        key={`${item.importId}-${column.normalized}-picker`}
+                        className={`checkbox-card${checked ? " is-selected" : ""}${disableUnchecked ? " is-disabled" : ""}`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={disableUnchecked || isSavingTemplateFields}
+                          onChange={() => toggleTemplateField(item.importId, column.normalized)}
+                        />
+                        <span>{formatColumnLabel(column)}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+
+                <div className="import-card__editor-actions">
+                  <button
+                    type="button"
+                    className="button"
+                    onClick={() => void saveTemplateFields(item.importId)}
+                    disabled={isSavingTemplateFields || isSaving || isDeleting}
+                  >
+                    {isSavingTemplateFields ? "Saving fields..." : "Save template fields"}
+                  </button>
+                  <button
+                    type="button"
+                    className="button secondary"
+                    onClick={() => {
+                      setTemplateFieldDrafts((current) => ({
+                        ...current,
+                        [item.importId]: item.selectedTemplateColumns
+                      }));
+                      setEditingTemplateFieldsImportId(null);
+                    }}
+                    disabled={isSavingTemplateFields}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </article>
         );
       })}

@@ -1474,9 +1474,9 @@ textarea {
 
 .import-card {
   display: grid;
-  gap: 1.1rem;
-  padding: 1.3rem;
-  border-radius: 24px;
+  gap: 1rem;
+  padding: 1.1rem;
+  border-radius: 22px;
   border: 1px solid var(--line);
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--surface-muted) 92%, transparent), color-mix(in srgb, var(--surface) 86%, transparent));
@@ -1585,33 +1585,53 @@ textarea {
   align-items: center;
   gap: 0.45rem;
   flex-wrap: wrap;
-  padding: 0.35rem;
-  border-radius: 18px;
+  padding: 0.3rem;
+  border-radius: 16px;
   border: 1px solid color-mix(in srgb, var(--line) 94%, transparent);
   background: color-mix(in srgb, var(--surface) 84%, transparent);
 }
 
 .import-card__content {
   display: grid;
-  grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
-  gap: 1rem;
+  grid-template-columns: minmax(0, 1.08fr) minmax(18rem, 0.92fr);
+  gap: 0.85rem;
 }
 
 .import-card__section {
   display: grid;
-  gap: 0.8rem;
+  gap: 0.75rem;
   min-width: 0;
-  padding: 1rem 1rem 1.05rem;
-  border-radius: 20px;
+  padding: 0.9rem 0.95rem;
+  border-radius: 18px;
   border: 1px solid color-mix(in srgb, var(--line) 94%, transparent);
   background: color-mix(in srgb, var(--surface) 82%, transparent);
 }
 
 .import-card__section-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.import-card__section-heading {
+  display: grid;
+  gap: 0.18rem;
+  min-width: 0;
+}
+
+.import-card__section-copy {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.import-card__section-button {
+  min-height: 2.35rem;
+  padding: 0.48rem 0.8rem;
+  font-size: 0.82rem;
 }
 
 .import-card__section-count {
@@ -1637,62 +1657,69 @@ textarea {
   text-transform: uppercase;
 }
 
-.import-card__field-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr));
-  gap: 0.8rem;
-}
-
-.import-card__field-tile {
-  display: grid;
-  align-content: start;
-  gap: 0.24rem;
-  min-height: 4.6rem;
-  padding: 0.95rem 1rem;
-  border-radius: 18px;
-  border: 1px solid color-mix(in srgb, var(--line) 92%, transparent);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-ghost) 76%, transparent), color-mix(in srgb, var(--surface) 82%, transparent));
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--surface-strong) 20%, transparent);
+.import-card__field-pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
   min-width: 0;
 }
 
-.import-card__field-tile strong {
-  font-size: 1rem;
-  font-weight: 750;
-  letter-spacing: -0.03em;
-  line-height: 1.15;
+.import-card__field-pill {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  min-height: 2rem;
+  padding: 0.38rem 0.72rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--line) 92%, transparent);
+  background: color-mix(in srgb, var(--surface-ghost) 72%, transparent);
+  color: var(--text);
+  font-size: 0.86rem;
+  font-weight: 650;
+  min-width: 0;
   overflow-wrap: anywhere;
 }
 
-.import-card__field-tile span {
-  color: var(--muted);
-  font-size: 0.82rem;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  overflow-wrap: anywhere;
-}
-
-.import-card__field-tile--overflow {
-  border-color: color-mix(in srgb, var(--accent) 22%, var(--line));
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 72%, transparent), color-mix(in srgb, var(--surface) 82%, transparent));
-}
-
-.import-card__field-tile--overflow strong {
+.import-card__field-pill--selected {
+  border-color: color-mix(in srgb, var(--accent) 24%, var(--line));
+  background: color-mix(in srgb, var(--accent-soft) 70%, transparent);
   color: var(--accent-strong);
+}
+
+.import-card__field-pill--muted {
+  color: var(--muted);
+  background: color-mix(in srgb, var(--surface) 76%, transparent);
+}
+
+.import-card__field-pill--overflow {
+  border-color: color-mix(in srgb, var(--accent) 18%, var(--line));
+  background: color-mix(in srgb, var(--surface) 82%, var(--accent-soft) 18%);
+}
+
+.import-card__detected-summary {
+  display: grid;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.import-card__detected-label {
+  color: var(--muted);
+  font-weight: 800;
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .import-card__preview-list {
   display: grid;
-  gap: 0.7rem;
+  gap: 0.55rem;
 }
 
 .import-card__preview-item {
   display: grid;
   gap: 0.12rem;
-  padding: 0.9rem 1rem;
-  border-radius: 18px;
+  padding: 0.75rem 0.85rem;
+  border-radius: 16px;
   border: 1px solid color-mix(in srgb, var(--line) 92%, transparent);
   background: color-mix(in srgb, var(--surface-ghost) 72%, transparent);
 }
@@ -1710,8 +1737,27 @@ textarea {
 
 .import-card__preview-more {
   color: var(--muted);
-  font-size: 0.9rem;
+  font-size: 0.86rem;
   font-weight: 600;
+}
+
+.import-card__editor {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem;
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line));
+  background: color-mix(in srgb, var(--surface-soft) 92%, transparent);
+}
+
+.import-card__checkbox-grid {
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+}
+
+.import-card__editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
 }
 
 .imports-pagination {

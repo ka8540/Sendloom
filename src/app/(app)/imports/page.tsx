@@ -48,6 +48,8 @@ export default async function ImportsPage() {
   });
 
   const mappingItems = imports.map((entry) => {
+    const mapping = latestMappings.get(entry.id);
+
     return {
       importId: entry.id,
       fileName: entry.fileName,
@@ -55,6 +57,7 @@ export default async function ImportsPage() {
       rowCount: entry.rowCount,
       linkedCampaignCount: entry._count.campaigns,
       updatedAt: entry.updatedAt.toLocaleString(),
+      selectedTemplateColumns: Object.values((mapping?.variableMap ?? {}) as Record<string, string>),
       columns: entry.columns.map((column) => ({
         sourceName: column.sourceName,
         normalized: column.normalized
@@ -82,14 +85,14 @@ export default async function ImportsPage() {
         </article>
         <article className="card">
           <h2 style={{ marginTop: 0 }}>Template fields</h2>
-          <p className="muted">Choose which columns from each audience can be used in templates.</p>
+          <p className="muted">Choose which columns from each audience can be used in templates, or edit them inline below.</p>
           <TemplateFieldPicker imports={templateFieldItems} />
         </article>
       </section>
 
       <section className="card">
         <h2>Imports</h2>
-        <p className="muted">Review, rename, page through, or delete imported audiences in one place.</p>
+        <p className="muted">Review, rename, reselect template fields, page through, or delete imported audiences in one place.</p>
         <MappingLibrary items={mappingItems} />
       </section>
     </div>
