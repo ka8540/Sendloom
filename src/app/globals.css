@@ -1629,9 +1629,18 @@ textarea {
 }
 
 .import-card__section-button {
-  min-height: 2.35rem;
-  padding: 0.48rem 0.8rem;
-  font-size: 0.82rem;
+  min-height: 2rem;
+  padding: 0.42rem 0.72rem;
+  border-radius: 8px;
+  font-size: 0.79rem;
+  font-weight: 700;
+  box-shadow: none;
+  align-self: flex-start;
+}
+
+.import-card__section-button:hover:not(:disabled),
+.import-card__section-button:focus-visible {
+  box-shadow: none;
 }
 
 .import-card__section-count {
@@ -1660,7 +1669,7 @@ textarea {
 .import-card__field-pill-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.55rem;
+  gap: 0.45rem;
   min-width: 0;
 }
 
@@ -1668,22 +1677,23 @@ textarea {
   display: inline-flex;
   align-items: center;
   max-width: 100%;
-  min-height: 2rem;
-  padding: 0.38rem 0.72rem;
-  border-radius: 999px;
+  min-height: 1.8rem;
+  padding: 0.28rem 0.56rem;
+  border-radius: 8px;
   border: 1px solid color-mix(in srgb, var(--line) 92%, transparent);
   background: color-mix(in srgb, var(--surface-ghost) 72%, transparent);
   color: var(--text);
-  font-size: 0.86rem;
-  font-weight: 650;
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1.2;
   min-width: 0;
   overflow-wrap: anywhere;
 }
 
 .import-card__field-pill--selected {
   border-color: color-mix(in srgb, var(--accent) 24%, var(--line));
-  background: color-mix(in srgb, var(--accent-soft) 70%, transparent);
-  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent-soft) 48%, transparent);
+  color: var(--text);
 }
 
 .import-card__field-pill--muted {
@@ -1693,7 +1703,7 @@ textarea {
 
 .import-card__field-pill--overflow {
   border-color: color-mix(in srgb, var(--accent) 18%, var(--line));
-  background: color-mix(in srgb, var(--surface) 82%, var(--accent-soft) 18%);
+  background: color-mix(in srgb, var(--surface) 82%, var(--accent-soft) 12%);
 }
 
 .import-card__detected-summary {

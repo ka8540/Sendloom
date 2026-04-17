@@ -472,7 +472,7 @@ export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
                     }}
                     disabled={isSaving || isDeleting || isSavingTemplateFields}
                   >
-                    {isEditingTemplateFields ? "Close editor" : "Reselect fields"}
+                    {isEditingTemplateFields ? "Close editor" : "Edit fields"}
                   </button>
                 </div>
 
