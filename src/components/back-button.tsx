@@ -5,6 +5,7 @@ import { ArrowLeft } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 
 type BackButtonProps = {
+  alwaysUseFallback?: boolean;
   className?: string;
   fallbackHref?: AppFallbackHref;
   label?: string;
@@ -49,18 +50,18 @@ function canGoBack(pathname: string) {
   }
 }
 
-export function BackButton({ className, fallbackHref, label = "Go back" }: BackButtonProps) {
+export function BackButton({ alwaysUseFallback = false, className, fallbackHref, label = "Go back" }: BackButtonProps) {
   const router = useRouter();
   const pathname = usePathname();
 
   const handleClick = useCallback(() => {
-    if (canGoBack(pathname)) {
+    if (!alwaysUseFallback && canGoBack(pathname)) {
       router.back();
       return;
     }
 
     router.push(fallbackHref ?? getDefaultFallback(pathname));
-  }, [fallbackHref, pathname, router]);
+  }, [alwaysUseFallback, fallbackHref, pathname, router]);
 
   return (
     <button

@@ -4,7 +4,7 @@ import Link from "next/link";
 import styles from "@/app/auth.module.css";
 import { AnimatedEmailPath } from "@/components/AnimatedEmailPath";
 import { AuthVideoPreview } from "@/components/auth-video-preview";
-import { LandingNav } from "@/components/landing-nav";
+import { BackButton } from "@/components/back-button";
 import { SendloomLogo } from "@/components/sendloom-logo";
 
 type AuthPageProps = {
@@ -19,13 +19,6 @@ type AuthPageProps = {
   switchText: string;
   title: string;
 };
-
-const authNavItems = [
-  { href: "/", label: "Home" },
-  { href: "/#proof", label: "Why Sendloom" },
-  { href: "/#workflow", label: "Workflow" },
-  { href: "mailto:hello@sendloom.net", label: "Contact" }
-] as const;
 
 function GoogleIcon() {
   return (
@@ -65,9 +58,12 @@ export function AuthPage({
   return (
     <main id="top" className={styles.page}>
       <AnimatedEmailPath />
-      <LandingNav items={authNavItems} />
 
       <div className={styles.frame}>
+        <div className={styles.topBar}>
+          <BackButton alwaysUseFallback className={styles.backButton} fallbackHref="/" label="Back to home" />
+        </div>
+
         <header className={styles.hero}>
           <span className={styles.eyebrow}>{eyebrow}</span>
           <h1 className={styles.title}>{title}</h1>
