@@ -299,11 +299,17 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
         return;
       }
 
+      const nextFields = {
+        ...fields,
+        ...(fieldType === "subject" ? { subject: payload.enhancedText! } : { htmlBody: payload.enhancedText! })
+      };
+
       updateFields((current) => ({
         ...current,
         ...(fieldType === "subject" ? { subject: payload.enhancedText! } : { htmlBody: payload.enhancedText! })
       }));
-      setSpamAnalysis(null);
+      const nextAnalysis = await analyzeSpam(nextFields.subject, nextFields.htmlBody, nextFields.format);
+      setSpamAnalysis(nextAnalysis);
       setHighlightedField(fieldType);
 
       if (highlightTimeoutRef.current) {
@@ -343,6 +349,10 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
     }
 
     return hasCurrentText ? `Enhance ${label} with AI` : `Draft ${label} with AI`;
+  }
+
+  function renderSpamScoreChip(score: number, risk: SpamAnalysis["subjectRisk"]) {
+    return <span className={`field-score-chip field-score-chip--${risk.toLowerCase()}`}>{score}% spam</span>;
   }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -393,7 +403,7 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
       <div className="template-form-toolbar">
         <div className="template-form-toolbar__content">
           <p className="template-form-toolbar__eyebrow">Delivery health</p>
-          <p className="template-form-toolbar__copy">Run a quiet spam pass first, then let the AI rewrite with that scan in mind.</p>
+          <p className="template-form-toolbar__copy">Run a spam pass whenever you want, then use AI to tighten the copy with that score in mind.</p>
         </div>
         <button
           className={`template-check-spam-button${spamAnalysis ? " is-ready" : ""}`}
@@ -406,10 +416,7 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
           ) : (
             <span className="template-check-spam-button__signal" aria-hidden="true" />
           )}
-          <span className="template-check-spam-button__copy">
-            <span className="template-check-spam-button__label">{checkingSpam ? "Checking spam" : "Check spam"}</span>
-            <span className="template-check-spam-button__hint">Quiet review for the AI rewrite</span>
-          </span>
+          <span className="template-check-spam-button__label">{checkingSpam ? "Checking spam" : "Check spam"}</span>
         </button>
       </div>
       <div className="field">
@@ -451,16 +458,19 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
       <div className="field">
         <div className="field-label-row">
           <label htmlFor="subject">Subject</label>
-          <button
-            className="field-icon-button"
-            type="button"
-            onClick={() => enhanceText("subject", fields.subject)}
-            disabled={state.pending || enhancingField !== null || checkingSpam}
-            aria-label={getEnhanceTooltip("subject")}
-            data-tooltip={getEnhanceTooltip("subject")}
-          >
-            {enhancingField === "subject" ? <span className="button-spinner" aria-hidden="true" /> : <Sparkles aria-hidden="true" />}
-          </button>
+          <div className="field-label-row__actions">
+            {spamAnalysis ? renderSpamScoreChip(spamAnalysis.subjectScore, spamAnalysis.subjectRisk) : null}
+            <button
+              className="field-icon-button"
+              type="button"
+              onClick={() => enhanceText("subject", fields.subject)}
+              disabled={state.pending || enhancingField !== null || checkingSpam}
+              aria-label={getEnhanceTooltip("subject")}
+              data-tooltip={getEnhanceTooltip("subject")}
+            >
+              {enhancingField === "subject" ? <span className="button-spinner" aria-hidden="true" /> : <Sparkles aria-hidden="true" />}
+            </button>
+          </div>
         </div>
         <input
           id="subject"
@@ -480,16 +490,19 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
       <div className="field">
         <div className="field-label-row">
           <label htmlFor="htmlBody">{getTemplateBodyLabel(fields.format)}</label>
-          <button
-            className="field-icon-button"
-            type="button"
-            onClick={() => enhanceText("body", fields.htmlBody)}
-            disabled={state.pending || enhancingField !== null || checkingSpam}
-            aria-label={getEnhanceTooltip("body")}
-            data-tooltip={getEnhanceTooltip("body")}
-          >
-            {enhancingField === "body" ? <span className="button-spinner" aria-hidden="true" /> : <Sparkles aria-hidden="true" />}
-          </button>
+          <div className="field-label-row__actions">
+            {spamAnalysis ? renderSpamScoreChip(spamAnalysis.bodyScore, spamAnalysis.bodyRisk) : null}
+            <button
+              className="field-icon-button"
+              type="button"
+              onClick={() => enhanceText("body", fields.htmlBody)}
+              disabled={state.pending || enhancingField !== null || checkingSpam}
+              aria-label={getEnhanceTooltip("body")}
+              data-tooltip={getEnhanceTooltip("body")}
+            >
+              {enhancingField === "body" ? <span className="button-spinner" aria-hidden="true" /> : <Sparkles aria-hidden="true" />}
+            </button>
+          </div>
         </div>
         <textarea
           id="htmlBody"
