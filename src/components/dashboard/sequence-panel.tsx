@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, Search } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import type { SequenceRowData } from "@/components/dashboard/types";
@@ -87,31 +87,40 @@ export function SequencePanel({ rows }: { rows: SequenceRowData[] }) {
         </label>
         <label className={styles.toolbarField}>
           <span className={styles.toolbarLabel}>Status</span>
-          <select aria-label="Filter recent sequences by status" value={status} onChange={(event) => setStatus(event.target.value)}>
-            <option value="all">All states</option>
-            <option value="running">Running</option>
-            <option value="completed">Completed</option>
-            <option value="failed">Needs attention</option>
-            <option value="scheduled">Scheduled</option>
-            <option value="draft">Draft</option>
-          </select>
+          <div className={styles.toolbarSelect}>
+            <select aria-label="Filter recent sequences by status" value={status} onChange={(event) => setStatus(event.target.value)}>
+              <option value="all">All states</option>
+              <option value="running">Running</option>
+              <option value="completed">Completed</option>
+              <option value="failed">Needs attention</option>
+              <option value="scheduled">Scheduled</option>
+              <option value="draft">Draft</option>
+            </select>
+            <ChevronDown aria-hidden="true" />
+          </div>
         </label>
         <label className={styles.toolbarField}>
           <span className={styles.toolbarLabel}>Focus</span>
-          <select aria-label="Filter recent sequences by focus" value={focus} onChange={(event) => setFocus(event.target.value)}>
-            <option value="recent">All recent</option>
-            <option value="running">Running now</option>
-            <option value="validated">Validated</option>
-            <option value="attention">Needs attention</option>
-          </select>
+          <div className={styles.toolbarSelect}>
+            <select aria-label="Filter recent sequences by focus" value={focus} onChange={(event) => setFocus(event.target.value)}>
+              <option value="recent">All recent</option>
+              <option value="running">Running now</option>
+              <option value="validated">Validated</option>
+              <option value="attention">Needs attention</option>
+            </select>
+            <ChevronDown aria-hidden="true" />
+          </div>
         </label>
         <label className={styles.toolbarField}>
           <span className={styles.toolbarLabel}>Sort</span>
-          <select aria-label="Sort recent sequences" value={sort} onChange={(event) => setSort(event.target.value)}>
-            <option value="activity">Latest activity</option>
-            <option value="progress">Progress</option>
-            <option value="name">Name</option>
-          </select>
+          <div className={styles.toolbarSelect}>
+            <select aria-label="Sort recent sequences" value={sort} onChange={(event) => setSort(event.target.value)}>
+              <option value="activity">Latest activity</option>
+              <option value="progress">Progress</option>
+              <option value="name">Name</option>
+            </select>
+            <ChevronDown aria-hidden="true" />
+          </div>
         </label>
       </div>
 
