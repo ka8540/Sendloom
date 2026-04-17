@@ -1595,6 +1595,7 @@ textarea {
   display: grid;
   grid-template-columns: minmax(0, 1.08fr) minmax(18rem, 0.92fr);
   gap: 0.85rem;
+  align-items: start;
 }
 
 .import-card__section {
@@ -1605,6 +1606,7 @@ textarea {
   border-radius: 18px;
   border: 1px solid color-mix(in srgb, var(--line) 94%, transparent);
   background: color-mix(in srgb, var(--surface) 82%, transparent);
+  align-content: start;
 }
 
 .import-card__section-head {
@@ -1629,18 +1631,33 @@ textarea {
 }
 
 .import-card__section-button {
-  min-height: 2rem;
-  padding: 0.42rem 0.72rem;
-  border-radius: 8px;
-  font-size: 0.79rem;
+  min-height: 2.1rem;
+  padding: 0.48rem 0.84rem;
+  border-radius: 14px;
+  border-color: color-mix(in srgb, var(--accent) 16%, var(--line));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--surface-muted) 92%, transparent),
+    color-mix(in srgb, var(--button-secondary-bg) 88%, transparent)
+  );
+  color: var(--text);
+  font-size: 0.8rem;
   font-weight: 700;
-  box-shadow: none;
+  letter-spacing: -0.01em;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 6%, transparent);
   align-self: flex-start;
 }
 
 .import-card__section-button:hover:not(:disabled),
 .import-card__section-button:focus-visible {
-  box-shadow: none;
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--line));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--surface-muted) 84%, transparent),
+    color-mix(in srgb, var(--accent-soft) 42%, var(--button-secondary-bg) 58%)
+  );
+  box-shadow: 0 10px 22px rgba(12, 18, 28, 0.1);
+  transform: translateY(-1px);
 }
 
 .import-card__section-count {
@@ -1671,39 +1688,80 @@ textarea {
   flex-wrap: wrap;
   gap: 0.45rem;
   min-width: 0;
+  align-items: flex-start;
 }
 
 .import-card__field-pill {
   display: inline-flex;
   align-items: center;
+  align-self: flex-start;
+  gap: 0.42rem;
   max-width: 100%;
-  min-height: 1.8rem;
-  padding: 0.28rem 0.56rem;
-  border-radius: 8px;
+  min-height: 2.05rem;
+  padding: 0.42rem 0.78rem;
+  border-radius: 14px;
   border: 1px solid color-mix(in srgb, var(--line) 92%, transparent);
-  background: color-mix(in srgb, var(--surface-ghost) 72%, transparent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--surface-ghost) 86%, transparent),
+    color-mix(in srgb, var(--surface) 82%, transparent)
+  );
   color: var(--text);
-  font-size: 0.8rem;
+  font-size: 0.82rem;
   font-weight: 700;
   line-height: 1.2;
   min-width: 0;
   overflow-wrap: anywhere;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 4%, transparent);
+}
+
+.import-card__field-pill::before {
+  content: "";
+  width: 0.38rem;
+  height: 0.38rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 58%, transparent);
+  flex: 0 0 auto;
 }
 
 .import-card__field-pill--selected {
   border-color: color-mix(in srgb, var(--accent) 24%, var(--line));
-  background: color-mix(in srgb, var(--accent-soft) 48%, transparent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent-soft) 48%, transparent),
+    color-mix(in srgb, var(--surface) 82%, transparent)
+  );
   color: var(--text);
+}
+
+.import-card__field-pill--selected::before {
+  background: var(--accent);
 }
 
 .import-card__field-pill--muted {
   color: var(--muted);
-  background: color-mix(in srgb, var(--surface) 76%, transparent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--surface) 76%, transparent),
+    color-mix(in srgb, var(--surface-ghost) 72%, transparent)
+  );
+}
+
+.import-card__field-pill--muted::before {
+  background: color-mix(in srgb, var(--muted) 62%, transparent);
 }
 
 .import-card__field-pill--overflow {
   border-color: color-mix(in srgb, var(--accent) 18%, var(--line));
-  background: color-mix(in srgb, var(--surface) 82%, var(--accent-soft) 12%);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--surface) 82%, var(--accent-soft) 12%),
+    color-mix(in srgb, var(--surface-ghost) 72%, transparent)
+  );
+}
+
+.import-card__field-pill--overflow::before {
+  display: none;
 }
 
 .import-card__detected-summary {
