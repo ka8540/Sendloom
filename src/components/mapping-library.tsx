@@ -4,6 +4,8 @@ import { Check, ChevronLeft, ChevronRight, PencilLine, Trash2, X } from "lucide-
 import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
 
+import { useErrorToastEffect } from "@/components/error-toast-provider";
+
 const MAX_TEMPLATE_COLUMNS = 10;
 const IMPORTS_PAGE_SIZE = 5;
 
@@ -54,6 +56,7 @@ export function TemplateFieldPicker(props: { imports: TemplateFieldItem[] }) {
     () => (selectedImportId ? props.imports.find((entry) => entry.importId === selectedImportId) : undefined),
     [props.imports, selectedImportId]
   );
+  useErrorToastEffect(state.error, "Template field save failed");
 
   const selectedColumns = selectedImport ? selectedByImport[selectedImport.importId] ?? [] : [];
 
@@ -181,7 +184,6 @@ export function TemplateFieldPicker(props: { imports: TemplateFieldItem[] }) {
       <button className="button" type="submit" disabled={state.pending || !selectedImport}>
         {state.pending ? "Saving fields..." : "Save template fields"}
       </button>
-      {state.error ? <p className="muted">{state.error}</p> : null}
     </form>
   );
 }
@@ -201,6 +203,7 @@ export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
   );
   const [page, setPage] = useState(1);
   const [error, setError] = useState<string | null>(null);
+  useErrorToastEffect(error, "Import update failed");
   const totalPages = Math.max(1, Math.ceil(props.items.length / IMPORTS_PAGE_SIZE));
   const visibleItems = props.items.slice((page - 1) * IMPORTS_PAGE_SIZE, page * IMPORTS_PAGE_SIZE);
 
@@ -640,7 +643,6 @@ export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
         </div>
       ) : null}
 
-      {error ? <p className="muted">{error}</p> : null}
     </div>
   );
 }

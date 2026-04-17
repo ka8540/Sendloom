@@ -5,6 +5,7 @@ import styles from "@/app/auth.module.css";
 import { AnimatedEmailPath } from "@/components/AnimatedEmailPath";
 import { AuthVideoPreview } from "@/components/auth-video-preview";
 import { BackButton } from "@/components/back-button";
+import { ErrorToastOnMount } from "@/components/error-toast-provider";
 import { SendloomLogo } from "@/components/sendloom-logo";
 
 type AuthPageProps = {
@@ -97,6 +98,8 @@ export function AuthPage({
           </section>
 
           <section className={styles.panel}>
+            {providerError ? <ErrorToastOnMount message={providerError} title="Google sign-in failed" /> : null}
+
             <div className={styles.panelTop}>
               <SendloomLogo className={styles.panelLogo} />
               <div className={styles.panelBrand}>
@@ -114,8 +117,6 @@ export function AuthPage({
               <GoogleIcon />
               Continue with Google
             </a>
-
-            {providerError ? <p className={styles.error}>Google sign-in failed: {providerError}</p> : null}
 
             <div className={styles.divider}>
               <span>or continue with email</span>

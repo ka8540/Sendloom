@@ -4,10 +4,13 @@ import { Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { useErrorToastEffect } from "@/components/error-toast-provider";
+
 export function CampaignDetailDeleteButton(props: { campaignId: string; campaignName: string }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  useErrorToastEffect(error, "Sequence delete failed");
 
   async function handleDelete() {
     if (pending) {
@@ -54,7 +57,6 @@ export function CampaignDetailDeleteButton(props: { campaignId: string; campaign
         {pending ? <span className="button-spinner" aria-hidden="true" /> : <Trash2 aria-hidden="true" />}
         <span>{pending ? "Deleting..." : "Delete sequence"}</span>
       </button>
-      {error ? <span className="campaign-detail-delete__error">{error}</span> : null}
     </div>
   );
 }

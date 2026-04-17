@@ -17,6 +17,7 @@ import {
   X,
   UserRound
 } from "lucide-react";
+import { useErrorToast, useErrorToastEffect } from "@/components/error-toast-provider";
 import styles from "@/components/hunter-dashboard.module.css";
 
 type HunterKeyStatus = {
@@ -104,6 +105,7 @@ function inferHunterCategory(position: string | null): DomainCategory {
 }
 
 export function HunterDashboard({ initialKeyStatus }: Props) {
+  const { showError } = useErrorToast();
   const [activeTab, setActiveTab] = useState<SearchTab>("finder");
   const [keyStatus, setKeyStatus] = useState(initialKeyStatus);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -122,6 +124,8 @@ export function HunterDashboard({ initialKeyStatus }: Props) {
   const [copiedEmail, setCopiedEmail] = useState<string | null>(null);
   const [domainPages, setDomainPages] = useState<Record<string, number>>({});
   const [selectedDomainCategory, setSelectedDomainCategory] = useState<DomainCategory | null>(null);
+  useErrorToastEffect(error, "Hunter search failed");
+  useErrorToastEffect(settingsError, "Hunter settings failed");
 
   const statusCopy = useMemo(() => {
     if (!keyStatus.configured) {
@@ -194,6 +198,7 @@ export function HunterDashboard({ initialKeyStatus }: Props) {
 
       setResults(data?.results ?? []);
     } catch (searchError) {
+      setHasSearched(false);
       setError(searchError instanceof Error ? searchError.message : "Hunter search failed.");
     } finally {
       setPending(false);
@@ -241,7 +246,7 @@ export function HunterDashboard({ initialKeyStatus }: Props) {
         setCopiedEmail((current) => (current === email ? null : current));
       }, 1400);
     } catch {
-      setError("Could not copy that email. Try again.");
+      showError("Could not copy that email. Try again.", { title: "Copy failed" });
     }
   }
 
@@ -438,13 +443,6 @@ export function HunterDashboard({ initialKeyStatus }: Props) {
                 </div>
               </div>
 
-              {error ? (
-                <div className={styles.feedbackError}>
-                  <AlertCircle aria-hidden="true" />
-                  <span>{error}</span>
-                </div>
-              ) : null}
-
               {pending ? (
                 <div className={styles.feedbackEmpty}>
                   <LoaderCircle className={styles.spinner} aria-hidden="true" />
@@ -452,21 +450,21 @@ export function HunterDashboard({ initialKeyStatus }: Props) {
                 </div>
               ) : null}
 
-              {!pending && !error && !hasSearched ? (
+              {!pending && !hasSearched ? (
                 <div className={styles.feedbackEmpty}>
                   <Search aria-hidden="true" />
                   <span>Run a search to see clean Hunter results here.</span>
                 </div>
               ) : null}
 
-              {!pending && !error && hasSearched && results.length === 0 ? (
+              {!pending && hasSearched && results.length === 0 ? (
                 <div className={styles.feedbackEmpty}>
                   <AlertCircle aria-hidden="true" />
                   <span>No results found for that query.</span>
                 </div>
               ) : null}
 
-              {!pending && !error && results.length > 0 ? (
+              {!pending && results.length > 0 ? (
                 <section className={styles.resultsShell} aria-label="Hunter results">
                   <div className={styles.resultsSummary}>
                     <div>
@@ -697,9 +695,6 @@ export function HunterDashboard({ initialKeyStatus }: Props) {
                     : "No Hunter key saved yet for this account."}
                 </p>
               </div>
-
-              {settingsError ? <p className={styles.modalError}>{settingsError}</p> : null}
-
               <div className={styles.modalActions}>
                 <button
                   type="button"

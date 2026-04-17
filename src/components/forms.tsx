@@ -5,6 +5,7 @@ import { Sparkles } from "lucide-react";
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
 
+import { useErrorToastEffect } from "@/components/error-toast-provider";
 import { analyzeSpam, type SpamAnalysis } from "@/lib/spam-analysis";
 import {
   convertTemplateBody,
@@ -45,6 +46,7 @@ export type EditableTemplate = {
 export function LoginForm() {
   const router = useRouter();
   const [state, setState] = useState<ActionState>({ pending: false });
+  useErrorToastEffect(state.error, "Sign in failed");
 
   async function readError(response: Response, fallback: string) {
     try {
@@ -89,7 +91,6 @@ export function LoginForm() {
         <label htmlFor="password">Password</label>
         <input id="password" name="password" type="password" required />
       </div>
-      {state.error ? <p className="muted">{state.error}</p> : null}
       <button className="button" type="submit" disabled={state.pending}>
         {state.pending ? "Signing in..." : "Sign in"}
       </button>
@@ -100,6 +101,7 @@ export function LoginForm() {
 export function SignupForm() {
   const router = useRouter();
   const [state, setState] = useState<ActionState>({ pending: false });
+  useErrorToastEffect(state.error, "Sign up failed");
 
   async function readError(response: Response, fallback: string) {
     try {
@@ -148,7 +150,6 @@ export function SignupForm() {
         <label htmlFor="signup-confirm-password">Confirm password</label>
         <input id="signup-confirm-password" name="confirmPassword" type="password" minLength={8} required />
       </div>
-      {state.error ? <p className="muted">{state.error}</p> : null}
       <button className="button" type="submit" disabled={state.pending}>
         {state.pending ? "Creating account..." : "Create account"}
       </button>
@@ -159,6 +160,7 @@ export function SignupForm() {
 export function UploadImportForm() {
   const router = useRouter();
   const [state, setState] = useState<ActionState>({ pending: false });
+  useErrorToastEffect(state.error, "Import upload failed");
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -187,7 +189,6 @@ export function UploadImportForm() {
         <label htmlFor="file">Spreadsheet</label>
         <input id="file" name="file" type="file" accept=".csv,.xls,.xlsx" required />
       </div>
-      {state.error ? <p className="muted">{state.error}</p> : null}
       <button className="button" type="submit" disabled={state.pending}>
         {state.pending ? "Processing..." : "Upload import"}
       </button>
@@ -228,6 +229,7 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
   const controlled = Boolean(value && onChange);
   const fields = value ?? localFields;
   const bodyValidationError = validateTemplateBody(fields.format, fields.htmlBody);
+  useErrorToastEffect(state.error, initialTemplate ? "Template update failed" : "Template save failed");
 
   const updateFields = (updater: (current: TemplateDraft) => TemplateDraft) => {
     if (controlled && onChange) {
@@ -623,7 +625,6 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
           </button>
         ) : null}
       </div>
-      {state.error ? <p className="muted">{state.error}</p> : null}
     </form>
   );
 }
@@ -631,6 +632,7 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
 export function SuppressionForm() {
   const router = useRouter();
   const [state, setState] = useState<ActionState>({ pending: false });
+  useErrorToastEffect(state.error, "Suppression save failed");
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -681,7 +683,6 @@ export function SuppressionForm() {
       <button className="button" type="submit" disabled={state.pending}>
         {state.pending ? "Saving..." : "Add suppression"}
       </button>
-      {state.error ? <p className="muted">{state.error}</p> : null}
     </form>
   );
 }

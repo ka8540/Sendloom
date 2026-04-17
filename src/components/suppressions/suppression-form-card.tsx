@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useTransition, type ChangeEvent, type FormEvent } from "react";
-import { AlertTriangle, AtSign, FileText, Plus, ShieldBan } from "lucide-react";
+import { AtSign, FileText, Plus, ShieldBan } from "lucide-react";
 
+import { useErrorToastEffect } from "@/components/error-toast-provider";
 import { SUPPRESSION_REASON_LABELS } from "@/components/suppressions/suppression-badge";
 import type { SuppressionReason, SuppressionRecord } from "@/components/suppressions/types";
 
@@ -58,6 +59,7 @@ export function SuppressionFormCard(props: SuppressionFormCardProps) {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [statusTone, setStatusTone] = useState<"success" | "error">("success");
   const [isPending, startTransition] = useTransition();
+  useErrorToastEffect(statusTone === "error" ? statusMessage : null, "Suppression issue");
 
   function updateValue<Key extends keyof FormValues>(key: Key, nextValue: FormValues[Key]) {
     setValues((current) => ({
@@ -257,9 +259,8 @@ export function SuppressionFormCard(props: SuppressionFormCardProps) {
             <span>{isPending ? "Saving suppression..." : "Add suppression"}</span>
           </button>
 
-          {statusMessage ? (
-            <p className={statusTone === "success" ? styles.successText : styles.errorText}>
-              {statusTone === "success" ? null : <AlertTriangle aria-hidden="true" />}
+          {statusMessage && statusTone === "success" ? (
+            <p className={styles.successText}>
               <span>{statusMessage}</span>
             </p>
           ) : null}

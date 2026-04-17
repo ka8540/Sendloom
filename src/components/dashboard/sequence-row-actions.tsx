@@ -4,6 +4,7 @@ import { Eye, LoaderCircle, Play, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, type MouseEvent } from "react";
 
+import { useErrorToastEffect } from "@/components/error-toast-provider";
 import styles from "./overview-command-center.module.css";
 
 export function SequenceRowActions({
@@ -20,6 +21,7 @@ export function SequenceRowActions({
   const router = useRouter();
   const [pendingAction, setPendingAction] = useState<"launch" | "delete" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  useErrorToastEffect(error, "Sequence action failed");
 
   async function handleRelaunch(event: MouseEvent<HTMLButtonElement>) {
     event.stopPropagation();
@@ -114,7 +116,6 @@ export function SequenceRowActions({
         </span>
         <span className={styles.sequenceActionLabel}>Delete</span>
       </button>
-      {error ? <span className={styles.sequenceActionError}>{error}</span> : null}
     </div>
   );
 }

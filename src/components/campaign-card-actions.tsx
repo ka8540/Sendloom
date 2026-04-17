@@ -5,10 +5,13 @@ import { Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { useErrorToastEffect } from "@/components/error-toast-provider";
+
 export function CampaignCardActions(props: { campaignId: string; campaignName: string }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  useErrorToastEffect(error, "Sequence delete failed");
 
   async function deleteCampaign() {
     if (pending) {
@@ -57,7 +60,6 @@ export function CampaignCardActions(props: { campaignId: string; campaignName: s
       >
         <Trash2 aria-hidden="true" />
       </button>
-      {error ? <span className="campaign-card-actions__error">{error}</span> : null}
     </div>
   );
 }

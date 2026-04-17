@@ -2,7 +2,6 @@ import Link from "next/link";
 import { after } from "next/server";
 import { redirect } from "next/navigation";
 import {
-  AlertCircle,
   ChevronLeft,
   ChevronRight,
   CalendarClock,
@@ -16,6 +15,7 @@ import {
 
 import { CampaignCardActions } from "@/components/campaign-card-actions";
 import { CampaignBuilder } from "@/components/campaign-builder";
+import { ErrorToastOnMount } from "@/components/error-toast-provider";
 import { LocalDateTime } from "@/components/local-date-time";
 import { requireOperatorUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
@@ -206,17 +206,12 @@ export default async function CampaignsPage({
 
   return (
     <div className={styles.page}>
+      {gmailError ? <ErrorToastOnMount message={gmailError} title="Gmail reconnect failed" /> : null}
       <section className={styles.topGrid}>
         {gmailStatus === "connected" ? (
           <div className={styles.flashNotice}>
             <CheckCircle2 aria-hidden="true" />
             <span>Gmail reconnected. You can use that sender again.</span>
-          </div>
-        ) : null}
-        {gmailError ? (
-          <div className={`${styles.flashNotice} ${styles.flashNoticeError}`}>
-            <AlertCircle aria-hidden="true" />
-            <span>{gmailError}</span>
           </div>
         ) : null}
         <article className={styles.builderCard}>

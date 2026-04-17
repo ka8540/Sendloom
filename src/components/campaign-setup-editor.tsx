@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, FilePlus2, Loader2, PencilLine, Save, Trash2, Upload, X } from "lucide-react";
+import { FilePlus2, Loader2, PencilLine, Save, Trash2, Upload, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import { AttachmentPreview } from "@/components/attachment-preview";
+import { useErrorToastEffect } from "@/components/error-toast-provider";
 import { getAttachmentPreviewKind, type AttachmentPreviewKind } from "@/lib/attachments";
 import styles from "./campaign-setup-editor.module.css";
 
@@ -88,6 +89,7 @@ export function CampaignSetupEditor(props: {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  useErrorToastEffect(error, "Sequence setup failed");
 
   useEffect(() => {
     return () => {
@@ -311,12 +313,6 @@ export function CampaignSetupEditor(props: {
         </div>
       </div>
 
-      {error ? (
-        <div className={styles.noticeError}>
-          <AlertCircle aria-hidden="true" />
-          <span>{error}</span>
-        </div>
-      ) : null}
       {success ? <div className={styles.noticeSuccess}>{success}</div> : null}
 
       <div className={styles.grid}>

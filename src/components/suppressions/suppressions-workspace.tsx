@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 
+import { useErrorToast } from "@/components/error-toast-provider";
 import { SuppressionFormCard } from "@/components/suppressions/suppression-form-card";
 import { SuppressionsTableCard } from "@/components/suppressions/suppressions-table-card";
 import type { SuppressionRecord } from "@/components/suppressions/types";
@@ -17,6 +18,7 @@ function upsertSuppression(current: SuppressionRecord[], nextSuppression: Suppre
 }
 
 export function SuppressionsWorkspace({ initialSuppressions }: SuppressionsWorkspaceProps) {
+  const { showError } = useErrorToast();
   const [suppressions, setSuppressions] = useState(initialSuppressions);
   const [preferredSelectionId, setPreferredSelectionId] = useState<string | null>(initialSuppressions[0]?.id ?? null);
   const [pendingUndo, setPendingUndo] = useState<SuppressionRecord | null>(null);
@@ -62,9 +64,8 @@ export function SuppressionsWorkspace({ initialSuppressions }: SuppressionsWorks
           message: `${suppression.email} was removed from the list.`
         });
       } catch (error) {
-        setFeedback({
-          tone: "error",
-          message: error instanceof Error ? error.message : "Could not delete suppression."
+        showError(error instanceof Error ? error.message : "Could not delete suppression.", {
+          title: "Suppression delete failed"
         });
       } finally {
         setDeletingId(null);
@@ -105,9 +106,8 @@ export function SuppressionsWorkspace({ initialSuppressions }: SuppressionsWorks
           message: `${payload.email} was restored.`
         });
       } catch (error) {
-        setFeedback({
-          tone: "error",
-          message: error instanceof Error ? error.message : "Could not restore suppression."
+        showError(error instanceof Error ? error.message : "Could not restore suppression.", {
+          title: "Suppression restore failed"
         });
       }
     });

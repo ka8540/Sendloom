@@ -598,6 +598,107 @@ textarea {
   margin-top: -0.15rem;
 }
 
+.error-toast-viewport {
+  position: fixed;
+  top: max(1rem, calc(env(safe-area-inset-top) + 1rem));
+  right: max(1rem, calc(env(safe-area-inset-right) + 1rem));
+  z-index: 160;
+  display: grid;
+  gap: 0.8rem;
+  width: min(24rem, calc(100vw - 2rem));
+  pointer-events: none;
+}
+
+.error-toast {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.85rem;
+  align-items: start;
+  padding: 0.95rem 1rem;
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, #ff8b73 24%, var(--line));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, rgba(20, 26, 38, 0.97) 88%, var(--surface)), color-mix(in srgb, rgba(12, 17, 28, 0.98) 92%, var(--surface-strong)));
+  box-shadow: 0 18px 36px rgba(10, 14, 24, 0.28);
+  backdrop-filter: blur(16px);
+  pointer-events: auto;
+  animation: error-toast-enter 180ms ease-out;
+}
+
+.error-toast__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, #ff8b73 16%, transparent);
+  color: #ffb8a8;
+}
+
+.error-toast__icon svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.error-toast__copy {
+  display: grid;
+  gap: 0.24rem;
+  min-width: 0;
+}
+
+.error-toast__title {
+  color: var(--text);
+  font-size: 0.96rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.error-toast__message {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.error-toast__dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+.error-toast__dismiss:hover,
+.error-toast__dismiss:focus-visible {
+  background: color-mix(in srgb, var(--surface-soft) 80%, transparent);
+  color: var(--text);
+}
+
+.error-toast__dismiss svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+@keyframes error-toast-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 .template-form-toolbar {
   display: flex;
   justify-content: space-between;

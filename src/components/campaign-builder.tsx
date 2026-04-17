@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
+import { useErrorToastEffect } from "@/components/error-toast-provider";
 import { convertScheduledLocalInputToUtc, fallbackTimeZones } from "@/lib/schedule";
 
 type Option = {
@@ -77,6 +78,7 @@ export function CampaignBuilder(props: {
 
   const selectedImport = props.imports.find((entry) => entry.id === selectedImportId) ?? null;
   const activeMapping = mappingOptions.find((mapping) => mapping.id === selectedMappingId) ?? mappingOptions[0] ?? null;
+  useErrorToastEffect(state.error, "Sequence creation failed");
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -322,7 +324,6 @@ export function CampaignBuilder(props: {
       {!selectedMappingId && selectedImport ? (
         <p className="muted">Finish the personalization fields for this list on the Imports page before creating the sequence.</p>
       ) : null}
-      {state.error ? <p className="muted">{state.error}</p> : null}
     </form>
   );
 }

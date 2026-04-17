@@ -2,7 +2,6 @@ import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { redirect } from "next/navigation";
 import {
-  AlertCircle,
   CalendarClock,
   ChevronLeft,
   ChevronRight,
@@ -18,6 +17,7 @@ import {
 import { ActiveRunRefresher } from "@/components/active-run-refresher";
 import { CampaignSetupEditor } from "@/components/campaign-setup-editor";
 import { CampaignDetailDeleteButton } from "@/components/campaign-detail-delete-button";
+import { ErrorToastOnMount } from "@/components/error-toast-provider";
 import { LocalDateTime } from "@/components/local-date-time";
 import { getAttachmentPreviewKind } from "@/lib/attachments";
 import { requireOperatorUser } from "@/lib/auth";
@@ -263,6 +263,7 @@ export default async function CampaignDetailPage({
   const gmailStatus = getSearchParam(resolvedSearchParams, "gmail");
   const gmailError = getSearchParam(resolvedSearchParams, "gmail_error");
   const gmailSender = getSearchParam(resolvedSearchParams, "gmail_sender");
+  const gmailErrorMessage = gmailError ? `${gmailError}${gmailSender ? ` Reconnect ${gmailSender} before sending again.` : ""}` : null;
   const campaign = await prisma.campaign.findFirstOrThrow({
     where: {
       id,
@@ -426,19 +427,11 @@ export default async function CampaignDetailPage({
   return (
     <div className={styles.page}>
       <ActiveRunRefresher active={isActiveRun} />
+      {gmailErrorMessage ? <ErrorToastOnMount message={gmailErrorMessage} title="Gmail reconnect failed" /> : null}
       {gmailStatus === "connected" ? (
         <div className={styles.flashNotice}>
           <RefreshCcw aria-hidden="true" />
           <span>Gmail reconnected. This sequence is ready to launch again.</span>
-        </div>
-      ) : null}
-      {gmailError ? (
-        <div className={`${styles.flashNotice} ${styles.flashNoticeError}`}>
-          <AlertCircle aria-hidden="true" />
-          <span>
-            {gmailError}
-            {gmailSender ? ` Reconnect ${gmailSender} before sending again.` : ""}
-          </span>
         </div>
       ) : null}
       <section className={styles.overview}>

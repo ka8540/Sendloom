@@ -146,8 +146,8 @@ export function SuppressionsTableCard(props: SuppressionsTableCardProps) {
     <section className={styles.dataCard}>
       <SuppressionLogHeader visibleCount={sortedRows.length} automatedCount={automatedCount} lastUpdatedAt={lastUpdatedAt} />
 
-      {props.feedback ? (
-        <div className={clsx(styles.feedbackBanner, props.feedback.tone === "error" ? styles.feedbackError : styles.feedbackSuccess)}>
+      {props.feedback?.tone === "success" ? (
+        <div className={clsx(styles.feedbackBanner, styles.feedbackSuccess)}>
           <span>{props.feedback.message}</span>
         </div>
       ) : null}

@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
+import { useErrorToastEffect } from "@/components/error-toast-provider";
 import styles from "@/app/(app)/admin/page.module.css";
 
 type AdminUserControlsProps = {
@@ -27,6 +28,7 @@ export function AdminUserControls(props: AdminUserControlsProps) {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [controls, setControls] = useState(props.initialControls);
+  useErrorToastEffect(error, "Admin action failed");
 
   const controlsLocked = props.isSelfProtected || props.isAdminProtected;
 
@@ -143,7 +145,6 @@ export function AdminUserControls(props: AdminUserControlsProps) {
         </div>
       )}
 
-      {error ? <p className={styles.errorText}>{error}</p> : null}
       {message ? <p className={styles.successText}>{message}</p> : null}
     </div>
   );
