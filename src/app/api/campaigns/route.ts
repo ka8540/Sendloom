@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { createForbiddenApiResponse, getApiRestrictionMessage, requireApiUser } from "@/lib/api-auth";
+import { getAttachmentFilesFromFormData } from "@/lib/campaign-attachments";
 import { prisma } from "@/lib/db";
 import { GMAIL_RECONNECT_ERROR } from "@/lib/provider";
 import { storeUpload } from "@/lib/storage";
@@ -45,7 +46,7 @@ export async function POST(request: Request) {
   }
 
   const formData = await request.formData();
-  const attachment = formData.get("attachment");
+  const attachmentFiles = getAttachmentFilesFromFormData(formData);
   const payload = schema.parse({
     name: formData.get("name"),
     importId: formData.get("importId"),
@@ -95,25 +96,29 @@ export async function POST(request: Request) {
       }[]
     | undefined;
 
-  if (attachment instanceof File && attachment.size > 0) {
-    if (attachment.size > MAX_ATTACHMENT_BYTES) {
-      return NextResponse.json({ error: "Attachments must be 10 MB or smaller." }, { status: 400 });
-    }
+  if (attachmentFiles.length) {
+    attachments = [];
 
-    const buffer = Buffer.from(await attachment.arrayBuffer());
-    attachments = [
-      process.env.VERCEL
-        ? {
-            fileName: attachment.name,
-            contentBase64: buffer.toString("base64"),
-            contentType: attachment.type || null
-          }
-        : {
-            fileName: attachment.name,
-            storagePath: await storeUpload(attachment.name, buffer, "attachments"),
-            contentType: attachment.type || null
-          }
-    ];
+    for (const attachment of attachmentFiles) {
+      if (attachment.size > MAX_ATTACHMENT_BYTES) {
+        return NextResponse.json({ error: "Attachments must be 10 MB or smaller." }, { status: 400 });
+      }
+
+      const buffer = Buffer.from(await attachment.arrayBuffer());
+      attachments.push(
+        process.env.VERCEL
+          ? {
+              fileName: attachment.name,
+              contentBase64: buffer.toString("base64"),
+              contentType: attachment.type || null
+            }
+          : {
+              fileName: attachment.name,
+              storagePath: await storeUpload(attachment.name, buffer, "attachments"),
+              contentType: attachment.type || null
+            }
+      );
+    }
   }
 
   const campaign = await createCampaignDraft(
