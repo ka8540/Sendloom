@@ -189,7 +189,7 @@ export function AuthVideoPreview() {
           aria-label={soundEnabled ? "Mute preview audio" : "Unmute preview audio"}
           onClick={handleSoundToggle}
         >
-          {soundEnabled ? <VolumeX aria-hidden="true" /> : <Volume2 aria-hidden="true" />}
+          {soundEnabled ? <Volume2 aria-hidden="true" /> : <VolumeX aria-hidden="true" />}
         </button>
       </div>
     </div>
