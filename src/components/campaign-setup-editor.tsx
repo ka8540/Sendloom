@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FilePlus2, Loader2, PencilLine, Save, Trash2, Upload, X } from "lucide-react";
+import { FilePlus2, Loader2, Lock, PencilLine, Save, Trash2, Upload, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import { AttachmentPreview } from "@/components/attachment-preview";
@@ -75,6 +75,7 @@ export function CampaignSetupEditor(props: {
   currentSenderNeedsReconnect: boolean;
   importOptions: SetupOption[];
   initialSetup: SetupState;
+  isLocked: boolean;
   senderOptions: SetupOption[];
   templateOptions: SetupOption[];
   scheduleLabel: string;
@@ -107,6 +108,23 @@ export function CampaignSetupEditor(props: {
     setError(null);
     setSuccess(null);
   }, [props.initialSetup]);
+
+  useEffect(() => {
+    if (!props.isLocked || !editing) {
+      return;
+    }
+
+    draftSetup.attachments.forEach((attachment) => {
+      if ("file" in attachment) {
+        revokeAttachmentPreview(attachment);
+      }
+    });
+
+    setDraftSetup(cloneSetupState(savedSetup));
+    setEditing(false);
+    setError("Wait for the current run to finish before editing this sequence.");
+    setSuccess(null);
+  }, [draftSetup.attachments, editing, props.isLocked, savedSetup]);
 
   function revokeAttachmentPreview(attachment: DraftAttachment) {
     if ("file" in attachment) {
@@ -183,6 +201,11 @@ export function CampaignSetupEditor(props: {
 
   async function saveSetup() {
     if (pending) {
+      return;
+    }
+
+    if (props.isLocked) {
+      setError("Wait for the current run to finish before editing this sequence.");
       return;
     }
 
@@ -297,22 +320,29 @@ export function CampaignSetupEditor(props: {
               </button>
             </>
           ) : (
-            <button
-              type="button"
-              className={`field-icon-button ${styles.headerIconAction}`}
-              data-tooltip="Edit setup"
-              aria-label="Edit setup"
-              onClick={() => {
-                setSuccess(null);
-                setEditing(true);
-              }}
-            >
-              <PencilLine aria-hidden="true" />
-            </button>
+              <button
+                type="button"
+                className={`field-icon-button ${styles.headerIconAction}`}
+                data-tooltip={props.isLocked ? "Editing locked while run is active" : "Edit setup"}
+                aria-label={props.isLocked ? "Editing locked while run is active" : "Edit setup"}
+                onClick={() => {
+                  setSuccess(null);
+                  setEditing(true);
+                }}
+                disabled={props.isLocked}
+              >
+                <PencilLine aria-hidden="true" />
+              </button>
           )}
         </div>
       </div>
 
+      {props.isLocked ? (
+        <div className={styles.noticeLocked}>
+          <Lock aria-hidden="true" />
+          <span>Sequence setup is locked while the current run is processing.</span>
+        </div>
+      ) : null}
       {success ? <div className={styles.noticeSuccess}>{success}</div> : null}
 
       <div className={styles.grid}>

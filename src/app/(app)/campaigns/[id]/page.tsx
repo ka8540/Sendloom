@@ -21,6 +21,7 @@ import { ErrorToastOnMount } from "@/components/error-toast-provider";
 import { LocalDateTime } from "@/components/local-date-time";
 import { getAttachmentPreviewKind } from "@/lib/attachments";
 import { requireOperatorUser } from "@/lib/auth";
+import { isCampaignSetupLocked } from "@/lib/campaign-setup-lock";
 import { prisma } from "@/lib/db";
 import { GMAIL_RECONNECT_ERROR } from "@/lib/provider";
 import { launchCampaign, pauseCampaign, processPendingCampaignWork, validateCampaign } from "@/services/campaigns";
@@ -328,6 +329,10 @@ export default async function CampaignDetailPage({
   const senderNeedsReconnect = !campaign.senderProfile.oauthRefreshToken;
   const isActiveRun = latestRun ? ["QUEUED", "RUNNING"].includes(latestRun.status) : false;
   const isPausedRun = latestRun?.status === "PAUSED" || campaign.status === "PAUSED";
+  const setupLocked = isCampaignSetupLocked({
+    campaignStatus: campaign.status,
+    latestRunStatus: latestRun?.status ?? null
+  });
   const attachments = ((campaign.templateSnapshot as CampaignTemplateSnapshot).attachments ?? []).filter(
     (attachment) => attachment.fileName
   );
@@ -585,6 +590,7 @@ export default async function CampaignDetailPage({
             currentSenderNeedsReconnect={senderNeedsReconnect}
             importOptions={importOptions}
             initialSetup={initialSetup}
+            isLocked={setupLocked}
             senderOptions={senderOptions}
             templateOptions={templateOptions}
             scheduleLabel={scheduleLabel}

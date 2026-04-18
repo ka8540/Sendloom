@@ -48,7 +48,8 @@
 }
 
 .noticeError,
-.noticeSuccess {
+.noticeSuccess,
+.noticeLocked {
   display: flex;
   align-items: center;
   gap: 0.7rem;
@@ -75,6 +76,19 @@
   color: var(--accent-strong);
   border-color: color-mix(in srgb, var(--accent) 18%, var(--line));
   background: color-mix(in srgb, var(--accent-soft) 52%, var(--surface));
+}
+
+.noticeLocked {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 18%, var(--line));
+  background: color-mix(in srgb, var(--accent-soft) 30%, var(--surface));
+}
+
+.noticeLocked svg {
+  width: 1rem;
+  height: 1rem;
+  color: var(--accent-strong);
+  flex-shrink: 0;
 }
 
 .grid {

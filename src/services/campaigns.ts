@@ -1,6 +1,7 @@
 import { addMinutes } from "date-fns";
 import { Prisma } from "@prisma/client";
 
+import { CAMPAIGN_SETUP_LOCKED_RUN_STATUSES, isCampaignSetupLocked } from "@/lib/campaign-setup-lock";
 import { prisma } from "@/lib/db";
 import { buildMergePayload } from "@/lib/mapping";
 import { GMAIL_RECONNECT_ERROR, isGmailReconnectError, sendEmail, type EmailAttachment } from "@/lib/provider";
@@ -378,9 +379,30 @@ export async function updateCampaignSetup(
       importId: true,
       templateId: true,
       senderProfileId: true,
-      templateSnapshot: true
+      templateSnapshot: true,
+      runs: {
+        where: {
+          status: {
+            in: [...CAMPAIGN_SETUP_LOCKED_RUN_STATUSES]
+          }
+        },
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        select: {
+          status: true
+        }
+      }
     }
   });
+
+  if (
+    isCampaignSetupLocked({
+      campaignStatus: campaign.status,
+      latestRunStatus: campaign.runs[0]?.status ?? null
+    })
+  ) {
+    throw new Error("Wait for the current run to finish before editing this sequence.");
+  }
 
   const [importRecord, mapping, template, senderProfile] = await Promise.all([
     prisma.import.findFirstOrThrow({
