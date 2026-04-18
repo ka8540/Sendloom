@@ -233,9 +233,12 @@ export function CampaignBuilder(props: {
         </div>
       ) : null}
       <div className="field">
-        <label htmlFor="attachment">Optional attachment</label>
-        <input id="attachment" name="attachment" type="file" accept=".pdf,.doc,.docx,.txt,.rtf" />
+        <label htmlFor="attachments">Optional attachments</label>
+        <input id="attachments" name="attachments" type="file" accept=".pdf,.doc,.docx,.txt,.rtf" multiple />
       </div>
+      <p className="muted" style={{ marginTop: "-0.35rem", marginBottom: 0 }}>
+        Choose one or more files to include with every email in this sequence.
+      </p>
       <div className="field">
         <label htmlFor="scheduleType">When should this send?</label>
         <select
