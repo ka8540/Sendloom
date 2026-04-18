@@ -10,9 +10,11 @@ export const GOOGLE_LOGIN_SCOPES = [
   "profile"
 ];
 
-export const GOOGLE_OAUTH_SCOPES = [
+export const GOOGLE_GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send";
+
+export const GOOGLE_CONNECT_SCOPES = [
   ...GOOGLE_LOGIN_SCOPES,
-  "https://mail.google.com/"
+  GOOGLE_GMAIL_SEND_SCOPE
 ];
 
 type GoogleTokenResponse = {
@@ -83,7 +85,7 @@ export function buildGoogleConnectUrl(args: { state: string; loginHint?: string;
   return buildGoogleUrl({
     state: args.state,
     loginHint: args.loginHint,
-    scopes: GOOGLE_OAUTH_SCOPES,
+    scopes: GOOGLE_CONNECT_SCOPES,
     redirectUri: args.redirectUri ?? getGoogleRedirectUri(),
     accessType: "offline",
     prompt: "consent"
@@ -127,6 +129,36 @@ export async function exchangeGoogleCode(code: string, redirectUri: string) {
 
   if (!response.ok || !payload.access_token) {
     throw new Error(payload.error_description || payload.error || "Could not exchange Google authorization code.");
+  }
+
+  return payload;
+}
+
+export async function exchangeGoogleRefreshToken(refreshToken: string) {
+  const clientId = env.GOOGLE_CLIENT_ID;
+  const clientSecret = env.GOOGLE_CLIENT_SECRET;
+  if (!clientId || !clientSecret) {
+    assertGoogleOAuthConfigured();
+    throw new Error("Missing Google OAuth credentials.");
+  }
+
+  const response = await fetch(GOOGLE_TOKEN_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
+      grant_type: "refresh_token"
+    })
+  });
+
+  const payload = (await response.json()) as GoogleTokenResponse & { error?: string; error_description?: string };
+
+  if (!response.ok || !payload.access_token) {
+    throw new Error(payload.error_description || payload.error || "Could not refresh Google access token.");
   }
 
   return payload;
