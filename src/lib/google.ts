@@ -10,9 +10,13 @@ export const GOOGLE_LOGIN_SCOPES = [
   "profile"
 ];
 
-export const GOOGLE_OAUTH_SCOPES = [
+export const GOOGLE_GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send";
+export const GOOGLE_GMAIL_REPLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
+
+export const GOOGLE_CONNECT_SCOPES = [
   ...GOOGLE_LOGIN_SCOPES,
-  "https://mail.google.com/"
+  GOOGLE_GMAIL_SEND_SCOPE,
+  GOOGLE_GMAIL_REPLY_SCOPE
 ];
 
 type GoogleTokenResponse = {
@@ -83,7 +87,7 @@ export function buildGoogleConnectUrl(args: { state: string; loginHint?: string;
   return buildGoogleUrl({
     state: args.state,
     loginHint: args.loginHint,
-    scopes: GOOGLE_OAUTH_SCOPES,
+    scopes: GOOGLE_CONNECT_SCOPES,
     redirectUri: args.redirectUri ?? getGoogleRedirectUri(),
     accessType: "offline",
     prompt: "consent"
