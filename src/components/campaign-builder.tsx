@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { FilePlus2, FileText, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
 import { useErrorToastEffect } from "@/components/error-toast-provider";
+import { mergeAttachmentFiles } from "@/lib/campaign-attachments";
 import { convertScheduledLocalInputToUtc, fallbackTimeZones } from "@/lib/schedule";
+import styles from "./campaign-builder.module.css";
 
 type Option = {
   id: string;
@@ -24,7 +27,9 @@ export function CampaignBuilder(props: {
   reconnectHref?: string;
 }) {
   const router = useRouter();
+  const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const [state, setState] = useState<{ pending: boolean; error?: string }>({ pending: false });
+  const [attachments, setAttachments] = useState<File[]>([]);
   const [selectedImportId, setSelectedImportId] = useState(props.imports[0]?.id ?? "");
   const [scheduleType, setScheduleType] = useState("immediate");
   const [frequency, setFrequency] = useState("weekly");
@@ -80,11 +85,33 @@ export function CampaignBuilder(props: {
   const activeMapping = mappingOptions.find((mapping) => mapping.id === selectedMappingId) ?? mappingOptions[0] ?? null;
   useErrorToastEffect(state.error, "Sequence creation failed");
 
+  function formatAttachmentSize(bytes: number) {
+    if (bytes >= 1024 * 1024) {
+      return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    }
+
+    if (bytes >= 1024) {
+      return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+    }
+
+    return `${bytes} B`;
+  }
+
+  function getAttachmentIdentity(file: File) {
+    return `${file.name}:${file.size}:${file.lastModified}`;
+  }
+
+  function getAttachmentTypeLabel(fileName: string) {
+    const extension = fileName.split(".").pop()?.trim().toUpperCase();
+    return extension && extension.length <= 5 ? extension : "FILE";
+  }
+
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
     setState({ pending: true });
     const formData = new FormData(form);
+    attachments.forEach((attachment) => formData.append("attachments", attachment));
     const scheduleType = String(formData.get("scheduleType"));
     const scheduleTimeZone = String(formData.get("scheduleTimeZone") || browserTimeZone);
     const autoLaunch = scheduleType === "immediate";
@@ -156,6 +183,10 @@ export function CampaignBuilder(props: {
     }
 
     form.reset();
+    if (attachmentInputRef.current) {
+      attachmentInputRef.current.value = "";
+    }
+    setAttachments([]);
     const firstImportId = props.imports[0]?.id ?? "";
     setSelectedImportId(firstImportId);
     setSelectedMappingId(props.mappings.find((mapping) => mapping.importId === firstImportId)?.id ?? "");
@@ -235,8 +266,82 @@ export function CampaignBuilder(props: {
         </div>
       ) : null}
       <div className="field">
-        <label htmlFor="attachment">Optional attachment</label>
-        <input id="attachment" name="attachment" type="file" accept=".pdf,.doc,.docx,.txt,.rtf" />
+        <label htmlFor="attachments">Optional attachments</label>
+        <input
+          ref={attachmentInputRef}
+          id="attachments"
+          type="file"
+          accept=".pdf,.doc,.docx,.txt,.rtf"
+          multiple
+          className={styles.hiddenInput}
+          onChange={(event) => {
+            const selectedFiles = Array.from(event.target.files ?? []);
+            if (selectedFiles.length) {
+              setAttachments((currentAttachments) => mergeAttachmentFiles(currentAttachments, selectedFiles));
+            }
+            event.currentTarget.value = "";
+          }}
+        />
+        <div className={styles.attachmentComposer}>
+          <div className={styles.attachmentHeader}>
+            <div className={styles.attachmentCopy}>
+              <span className={styles.attachmentCount}>
+                {attachments.length ? `${attachments.length} attachment${attachments.length === 1 ? "" : "s"} ready` : "No attachments yet"}
+              </span>
+              <p className={styles.attachmentHelp}>Include resumes, cover letters, or supporting documents with every email in this sequence.</p>
+            </div>
+            <button
+              type="button"
+              className={`button secondary ${styles.addButton}`}
+              onClick={() => attachmentInputRef.current?.click()}
+              disabled={state.pending}
+            >
+              <FilePlus2 aria-hidden="true" />
+              Add files
+            </button>
+          </div>
+
+          {attachments.length ? (
+            <div className={styles.attachmentList}>
+              {attachments.map((attachment) => (
+                <div key={getAttachmentIdentity(attachment)} className={styles.attachmentItem}>
+                  <span className={styles.attachmentIcon} aria-hidden="true">
+                    <FileText />
+                  </span>
+                  <div className={styles.attachmentMeta}>
+                    <strong className={styles.attachmentName} title={attachment.name}>
+                      {attachment.name}
+                    </strong>
+                    <div className={styles.attachmentDetails}>
+                      <span className={styles.attachmentBadge}>{getAttachmentTypeLabel(attachment.name)}</span>
+                      <span className={styles.attachmentSize}>{formatAttachmentSize(attachment.size)}</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className={styles.removeButton}
+                    aria-label={`Remove ${attachment.name}`}
+                    onClick={() =>
+                      setAttachments((currentAttachments) =>
+                        currentAttachments.filter((file) => getAttachmentIdentity(file) !== getAttachmentIdentity(attachment))
+                      )
+                    }
+                    disabled={state.pending}
+                  >
+                    <Trash2 aria-hidden="true" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className={styles.emptyState}>
+              <p className={styles.emptyTitle}>No files selected yet.</p>
+              <p className={styles.emptyCopy}>Pick files one at a time or select several together. Every new selection stays in the list until you remove it.</p>
+            </div>
+          )}
+
+          <p className={styles.attachmentFooter}>Supported files: PDF, DOC, DOCX, TXT, and RTF. Each file can be up to 10 MB.</p>
+        </div>
       </div>
       <div className="field">
         <label htmlFor="scheduleType">When should this send?</label>
