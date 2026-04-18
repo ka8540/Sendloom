@@ -590,69 +590,6 @@ textarea {
   resize: vertical;
 }
 
-.attachment-composer {
-  display: grid;
-  gap: 0.75rem;
-  padding: 0.9rem 1rem;
-  border: 1px solid var(--field-border);
-  border-radius: 16px;
-  background: color-mix(in srgb, var(--surface-muted) 88%, transparent);
-}
-
-.attachment-composer__summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-}
-
-.attachment-composer__count {
-  font-weight: 700;
-}
-
-.attachment-composer__list {
-  display: grid;
-  gap: 0.65rem;
-}
-
-.attachment-composer__item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  min-width: 0;
-  padding: 0.8rem 0.9rem;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--surface);
-}
-
-.attachment-composer__meta {
-  display: grid;
-  gap: 0.15rem;
-  min-width: 0;
-}
-
-.attachment-composer__name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.attachment-composer__size,
-.attachment-composer__empty {
-  color: var(--muted);
-  font-size: 0.9rem;
-}
-
-.attachment-composer__empty {
-  margin: 0;
-}
-
-.attachment-composer__add {
-  min-width: fit-content;
-}
-
 .field-enhanced {
   animation: field-enhance-flash 1.6s ease;
 }
