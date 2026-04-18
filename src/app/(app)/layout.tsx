@@ -9,6 +9,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const user = await requireUser();
   const requestHeaders = await headers();
   const userAgent = requestHeaders.get("user-agent") ?? "";
+  const defaultBackHref = isAdminUser(user) ? "/admin" : "/workspace";
 
   return (
     <AppMobileGate userAgent={userAgent}>
@@ -16,7 +17,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <AppNav isAdmin={isAdminUser(user)} />
         <main className="content">
           <div className="content-toolbar">
-            <BackButton />
+            <BackButton fallbackHref={defaultBackHref} />
           </div>
           {children}
         </main>
