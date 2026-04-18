@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { FilePlus2, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
 import { useErrorToastEffect } from "@/components/error-toast-provider";
+import { mergeAttachmentFiles } from "@/lib/campaign-attachments";
 import { convertScheduledLocalInputToUtc, fallbackTimeZones } from "@/lib/schedule";
 
 type Option = {
@@ -24,7 +26,9 @@ export function CampaignBuilder(props: {
   reconnectHref?: string;
 }) {
   const router = useRouter();
+  const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const [state, setState] = useState<{ pending: boolean; error?: string }>({ pending: false });
+  const [attachments, setAttachments] = useState<File[]>([]);
   const [selectedImportId, setSelectedImportId] = useState(props.imports[0]?.id ?? "");
   const [scheduleType, setScheduleType] = useState("immediate");
   const [frequency, setFrequency] = useState("weekly");
@@ -80,11 +84,28 @@ export function CampaignBuilder(props: {
   const activeMapping = mappingOptions.find((mapping) => mapping.id === selectedMappingId) ?? mappingOptions[0] ?? null;
   useErrorToastEffect(state.error, "Sequence creation failed");
 
+  function formatAttachmentSize(bytes: number) {
+    if (bytes >= 1024 * 1024) {
+      return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    }
+
+    if (bytes >= 1024) {
+      return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+    }
+
+    return `${bytes} B`;
+  }
+
+  function getAttachmentIdentity(file: File) {
+    return `${file.name}:${file.size}:${file.lastModified}`;
+  }
+
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
     setState({ pending: true });
     const formData = new FormData(form);
+    attachments.forEach((attachment) => formData.append("attachments", attachment));
     const scheduleType = String(formData.get("scheduleType"));
     const scheduleTimeZone = String(formData.get("scheduleTimeZone") || browserTimeZone);
     const autoLaunch = scheduleType === "immediate";
@@ -156,6 +177,10 @@ export function CampaignBuilder(props: {
     }
 
     form.reset();
+    if (attachmentInputRef.current) {
+      attachmentInputRef.current.value = "";
+    }
+    setAttachments([]);
     const firstImportId = props.imports[0]?.id ?? "";
     setSelectedImportId(firstImportId);
     setSelectedMappingId(props.mappings.find((mapping) => mapping.importId === firstImportId)?.id ?? "");
@@ -235,11 +260,72 @@ export function CampaignBuilder(props: {
         </div>
       ) : null}
       <div className="field">
-        <label htmlFor="attachments">Optional attachments</label>
-        <input id="attachments" name="attachments" type="file" accept=".pdf,.doc,.docx,.txt,.rtf" multiple />
+        <div className="field-label-row">
+          <label htmlFor="attachments">Optional attachments</label>
+          <button
+            type="button"
+            className="button secondary attachment-composer__add"
+            onClick={() => attachmentInputRef.current?.click()}
+            disabled={state.pending}
+          >
+            <FilePlus2 aria-hidden="true" />
+            Add files
+          </button>
+        </div>
+        <input
+          ref={attachmentInputRef}
+          id="attachments"
+          type="file"
+          accept=".pdf,.doc,.docx,.txt,.rtf"
+          multiple
+          style={{ display: "none" }}
+          onChange={(event) => {
+            const selectedFiles = Array.from(event.target.files ?? []);
+            if (selectedFiles.length) {
+              setAttachments((currentAttachments) => mergeAttachmentFiles(currentAttachments, selectedFiles));
+            }
+            event.currentTarget.value = "";
+          }}
+        />
+        <div className="attachment-composer">
+          <div className="attachment-composer__summary">
+            <span className="attachment-composer__count">
+              {attachments.length ? `${attachments.length} file${attachments.length === 1 ? "" : "s"} ready` : "No files added yet"}
+            </span>
+          </div>
+
+          {attachments.length ? (
+            <div className="attachment-composer__list">
+              {attachments.map((attachment) => (
+                <div key={getAttachmentIdentity(attachment)} className="attachment-composer__item">
+                  <div className="attachment-composer__meta">
+                    <strong className="attachment-composer__name">{attachment.name}</strong>
+                    <span className="attachment-composer__size">{formatAttachmentSize(attachment.size)}</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="field-icon-button field-icon-button--danger"
+                    aria-label={`Remove ${attachment.name}`}
+                    data-tooltip="Remove file"
+                    onClick={() =>
+                      setAttachments((currentAttachments) =>
+                        currentAttachments.filter((file) => getAttachmentIdentity(file) !== getAttachmentIdentity(attachment))
+                      )
+                    }
+                    disabled={state.pending}
+                  >
+                    <Trash2 aria-hidden="true" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="attachment-composer__empty">Add one file at a time or pick several together. Each new pick is kept in the list.</p>
+          )}
+        </div>
       </div>
       <p className="muted" style={{ marginTop: "-0.35rem", marginBottom: 0 }}>
-        Choose one or more files to include with every email in this sequence.
+        Choose one or more files to include with every email in this sequence. Each file can be up to 10 MB.
       </p>
       <div className="field">
         <label htmlFor="scheduleType">When should this send?</label>

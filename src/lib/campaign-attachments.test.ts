@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { getAttachmentFilesFromFormData } from "@/lib/campaign-attachments";
+import { getAttachmentFilesFromFormData, mergeAttachmentFiles } from "@/lib/campaign-attachments";
 
 describe("getAttachmentFilesFromFormData", () => {
   it("returns every selected attachment from the multi-file field", () => {
@@ -28,5 +28,26 @@ describe("getAttachmentFilesFromFormData", () => {
     formData.append("attachments", new File([], "empty.pdf", { type: "application/pdf" }));
 
     expect(getAttachmentFilesFromFormData(formData)).toEqual([]);
+  });
+});
+
+describe("mergeAttachmentFiles", () => {
+  it("appends newly selected files so the picker can be used more than once", () => {
+    const first = new File(["resume"], "resume.pdf", { type: "application/pdf", lastModified: 1 });
+    const second = new File(["portfolio"], "portfolio.pdf", { type: "application/pdf", lastModified: 2 });
+    const third = new File(["cover-letter"], "cover-letter.pdf", { type: "application/pdf", lastModified: 3 });
+
+    expect(mergeAttachmentFiles([first], [second, third]).map((file) => file.name)).toEqual([
+      "resume.pdf",
+      "portfolio.pdf",
+      "cover-letter.pdf"
+    ]);
+  });
+
+  it("skips duplicate files when the same file is picked again", () => {
+    const first = new File(["resume"], "resume.pdf", { type: "application/pdf", lastModified: 1 });
+    const duplicate = new File(["resume"], "resume.pdf", { type: "application/pdf", lastModified: 1 });
+
+    expect(mergeAttachmentFiles([first], [duplicate])).toHaveLength(1);
   });
 });
