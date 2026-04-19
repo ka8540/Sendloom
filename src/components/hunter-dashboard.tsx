@@ -27,13 +27,26 @@ type HunterKeyStatus = {
   updatedAt: string | null;
 };
 
+type HunterDomainSearchSummary = {
+  id: string;
+  domain: string;
+  resultCount: number;
+  updatedAt: string;
+};
+
+type HunterDomainSearchDetail = HunterDomainSearchSummary & {
+  results: HunterResultRow[];
+};
+
 type SearchTab = "finder" | "domain";
 
 type Props = {
   initialKeyStatus: HunterKeyStatus;
+  initialDomainSearchHistory: HunterDomainSearchSummary[];
 };
 
 const RESULTS_PAGE_SIZE = 10;
+const SAVED_DOMAIN_SEARCHES_PAGE_SIZE = 5;
 const DOMAIN_CATEGORY_ORDER = ["IT", "HR", "Sales", "Marketing", "Operations", "Finance", "Leadership", "Other"] as const;
 type DomainCategory = (typeof DOMAIN_CATEGORY_ORDER)[number];
 type DomainSearchResultRow = HunterResultRow & {
@@ -63,6 +76,13 @@ function formatUpdatedAt(updatedAt: string | null) {
   }
 
   return new Date(updatedAt).toLocaleString();
+}
+
+function formatSavedDomainSearchUpdatedAt(updatedAt: string) {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric"
+  }).format(new Date(updatedAt));
 }
 
 function inferHunterCategory(position: string | null): DomainCategory {
@@ -118,7 +138,7 @@ function escapeCsvValue(value: string | number | null | undefined) {
   return `"${normalized.replace(/"/g, "\"\"")}"`;
 }
 
-export function HunterDashboard({ initialKeyStatus }: Props) {
+export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }: Props) {
   const { showError } = useErrorToast();
   const [activeTab, setActiveTab] = useState<SearchTab>("finder");
   const [keyStatus, setKeyStatus] = useState(initialKeyStatus);
@@ -139,6 +159,10 @@ export function HunterDashboard({ initialKeyStatus }: Props) {
   const [domainPages, setDomainPages] = useState<Record<string, number>>({});
   const [selectedDomainCategory, setSelectedDomainCategory] = useState<DomainCategory | null>(null);
   const [selectedContactKeys, setSelectedContactKeys] = useState<Set<string>>(() => new Set());
+  const [savedDomainSearches, setSavedDomainSearches] = useState(initialDomainSearchHistory);
+  const [savedDomainSearchPage, setSavedDomainSearchPage] = useState(0);
+  const [activeSavedSearchId, setActiveSavedSearchId] = useState<string | null>(null);
+  const [savedSearchPendingId, setSavedSearchPendingId] = useState<string | null>(null);
   useErrorToastEffect(error, "Hunter search failed");
   useErrorToastEffect(settingsError, "Hunter settings failed");
 
@@ -150,6 +174,29 @@ export function HunterDashboard({ initialKeyStatus }: Props) {
     const updated = formatUpdatedAt(keyStatus.updatedAt);
     return updated ? `Saved key ••••${keyStatus.last4 ?? "----"} updated ${updated}` : `Saved key ••••${keyStatus.last4 ?? "----"}`;
   }, [keyStatus]);
+
+  const applyDomainSearchResults = useCallback(
+    (domain: string, nextResults: HunterResultRow[], savedSearchId?: string | null) => {
+      setSearchDomain(domain);
+      setResults(nextResults);
+      setHasSearched(true);
+      setError(null);
+      setDomainPages({});
+      setSelectedDomainCategory(null);
+      setSelectedContactKeys(new Set());
+      setActiveSavedSearchId(savedSearchId ?? null);
+    },
+    []
+  );
+
+  const upsertSavedDomainSearch = useCallback((savedSearch: HunterDomainSearchSummary) => {
+    setSavedDomainSearches((current) => [
+      savedSearch,
+      ...current.filter((entry) => entry.id !== savedSearch.id && entry.domain !== savedSearch.domain)
+    ]);
+    setSavedDomainSearchPage(0);
+    setActiveSavedSearchId(savedSearch.id);
+  }, []);
 
   async function handleSaveApiKey() {
     const trimmedKey = apiKey.trim();
@@ -197,6 +244,7 @@ export function HunterDashboard({ initialKeyStatus }: Props) {
     setDomainPages({});
     setSelectedDomainCategory(null);
     setSelectedContactKeys(new Set());
+    setActiveSavedSearchId(null);
 
     try {
       const response = await fetch(endpoint, {
@@ -249,9 +297,50 @@ export function HunterDashboard({ initialKeyStatus }: Props) {
       return;
     }
 
-    await runSearch("/api/domain-search", {
-      domain: searchDomain.trim()
-    });
+    setPending(true);
+    setError(null);
+    setHasSearched(true);
+    setResults([]);
+    setDomainPages({});
+    setSelectedDomainCategory(null);
+    setSelectedContactKeys(new Set());
+
+    try {
+      const response = await fetch("/api/domain-search", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          domain: searchDomain.trim()
+        })
+      });
+
+      const data = (await response.json().catch(() => null)) as
+        | {
+            error?: string;
+            results?: HunterResultRow[];
+            savedSearch?: HunterDomainSearchSummary;
+          }
+        | null;
+
+      if (!response.ok) {
+        throw new Error(data?.error ?? "Hunter search failed.");
+      }
+
+      const nextResults = data?.results ?? [];
+      applyDomainSearchResults(data?.savedSearch?.domain ?? searchDomain.trim(), nextResults, data?.savedSearch?.id ?? null);
+
+      if (data?.savedSearch) {
+        upsertSavedDomainSearch(data.savedSearch);
+      }
+    } catch (searchError) {
+      setHasSearched(false);
+      setActiveSavedSearchId(null);
+      setError(searchError instanceof Error ? searchError.message : "Hunter search failed.");
+    } finally {
+      setPending(false);
+    }
   }
 
   async function handleCopy(email: string) {
@@ -273,6 +362,13 @@ export function HunterDashboard({ initialKeyStatus }: Props) {
       selectionKey: getDomainSearchSelectionKey(row)
     }));
   }, [results]);
+
+  const savedDomainSearchTotalPages = Math.max(1, Math.ceil(savedDomainSearches.length / SAVED_DOMAIN_SEARCHES_PAGE_SIZE));
+
+  const pagedSavedDomainSearches = useMemo(() => {
+    const startIndex = savedDomainSearchPage * SAVED_DOMAIN_SEARCHES_PAGE_SIZE;
+    return savedDomainSearches.slice(startIndex, startIndex + SAVED_DOMAIN_SEARCHES_PAGE_SIZE);
+  }, [savedDomainSearchPage, savedDomainSearches]);
 
   const groupedDomainResults = useMemo(() => {
     if (activeTab !== "domain") {
@@ -322,6 +418,10 @@ export function HunterDashboard({ initialKeyStatus }: Props) {
       return groupedDomainResults[0]?.category ?? null;
     });
   }, [activeTab, groupedDomainResults]);
+
+  useEffect(() => {
+    setSavedDomainSearchPage((current) => Math.min(current, Math.max(0, savedDomainSearchTotalPages - 1)));
+  }, [savedDomainSearchTotalPages]);
 
   const activeDomainGroup =
     activeTab === "domain"
@@ -390,6 +490,35 @@ export function HunterDashboard({ initialKeyStatus }: Props) {
     link.remove();
     window.setTimeout(() => window.URL.revokeObjectURL(url), 0);
   }, [selectedContacts, showError]);
+
+  const loadSavedDomainSearch = useCallback(
+    async (savedSearch: HunterDomainSearchSummary) => {
+      setSavedSearchPendingId(savedSearch.id);
+      setError(null);
+
+      try {
+        const response = await fetch(`/api/domain-search/${encodeURIComponent(savedSearch.id)}`);
+        const payload = (await response.json().catch(() => null)) as
+          | ({
+              error?: string;
+            } & Partial<HunterDomainSearchDetail>)
+          | null;
+
+        if (!response.ok) {
+          throw new Error(payload?.error ?? "Could not load that saved domain search.");
+        }
+
+        applyDomainSearchResults(payload?.domain ?? savedSearch.domain, payload?.results ?? [], payload?.id ?? savedSearch.id);
+      } catch (loadError) {
+        showError(loadError instanceof Error ? loadError.message : "Could not load that saved domain search.", {
+          title: "Saved search failed"
+        });
+      } finally {
+        setSavedSearchPendingId(null);
+      }
+    },
+    [applyDomainSearchResults, showError]
+  );
 
   return (
     <>
@@ -516,6 +645,65 @@ export function HunterDashboard({ initialKeyStatus }: Props) {
                       Search
                     </button>
                   </div>
+
+                  {savedDomainSearches.length ? (
+                    <section className={styles.savedSearchSection} aria-label="Saved domain searches">
+                      <div className={styles.savedSearchHeader}>
+                        <div className={styles.savedSearchHeaderCopy}>
+                          <strong>Saved domain searches</strong>
+                          <p className="muted">Open a stored search any time and export contacts again.</p>
+                        </div>
+
+                        {savedDomainSearches.length > SAVED_DOMAIN_SEARCHES_PAGE_SIZE ? (
+                          <div className={styles.resultsPager} aria-label="Saved domain search pages">
+                            <button
+                              type="button"
+                              className={styles.resultsPagerButton}
+                              onClick={() => setSavedDomainSearchPage((current) => Math.max(0, current - 1))}
+                              disabled={savedDomainSearchPage === 0}
+                              aria-label="Previous saved domain searches"
+                            >
+                              <ChevronLeft aria-hidden="true" />
+                            </button>
+                            <span className={styles.resultsPagerCount}>
+                              {savedDomainSearchPage + 1} / {savedDomainSearchTotalPages}
+                            </span>
+                            <button
+                              type="button"
+                              className={styles.resultsPagerButton}
+                              onClick={() =>
+                                setSavedDomainSearchPage((current) => Math.min(savedDomainSearchTotalPages - 1, current + 1))
+                              }
+                              disabled={savedDomainSearchPage >= savedDomainSearchTotalPages - 1}
+                              aria-label="Next saved domain searches"
+                            >
+                              <ChevronRight aria-hidden="true" />
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+
+                      <div className={styles.savedSearchRail}>
+                        {pagedSavedDomainSearches.map((savedSearch) => (
+                          <button
+                            key={savedSearch.id}
+                            type="button"
+                            className={`${styles.savedSearchCard} ${
+                              activeSavedSearchId === savedSearch.id ? styles.savedSearchCardActive : ""
+                            }`}
+                            onClick={() => void loadSavedDomainSearch(savedSearch)}
+                            disabled={savedSearchPendingId === savedSearch.id}
+                          >
+                            <span className={styles.savedSearchDomain}>{savedSearch.domain}</span>
+                            <span className={styles.savedSearchMeta}>
+                              {savedSearch.resultCount} result{savedSearch.resultCount === 1 ? "" : "s"}
+                            </span>
+                            <span className={styles.savedSearchUpdated}>Updated {formatSavedDomainSearchUpdatedAt(savedSearch.updatedAt)}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </section>
+                  ) : null}
                 </>
               )}
             </article>

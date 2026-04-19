@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { requireApiUser } from "@/lib/api-auth";
 import { HunterApiError, searchHunterDomain } from "@/lib/hunter";
+import { saveHunterDomainSearchForUser } from "@/services/hunter-domain-searches";
 import { getDecryptedHunterKeyForUser } from "@/services/hunter-keys";
 
 const schema = z.object({
@@ -35,7 +36,8 @@ export async function POST(request: Request) {
 
   try {
     const results = await searchHunterDomain(apiKey, payload.domain);
-    return NextResponse.json({ results });
+    const savedSearch = await saveHunterDomainSearchForUser(auth.user.id, payload.domain, results);
+    return NextResponse.json({ results, savedSearch });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Domain search failed.";
     const status = error instanceof HunterApiError ? error.status : 400;
