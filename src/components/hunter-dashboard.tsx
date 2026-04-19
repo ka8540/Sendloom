@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { HunterResultRow } from "@/lib/hunter";
 import {
   AlertCircle,
@@ -8,6 +8,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Copy,
+  Download,
   Globe,
   KeyRound,
   LoaderCircle,
@@ -35,6 +36,10 @@ type Props = {
 const RESULTS_PAGE_SIZE = 10;
 const DOMAIN_CATEGORY_ORDER = ["IT", "HR", "Sales", "Marketing", "Operations", "Finance", "Leadership", "Other"] as const;
 type DomainCategory = (typeof DOMAIN_CATEGORY_ORDER)[number];
+type DomainSearchResultRow = HunterResultRow & {
+  department: DomainCategory;
+  selectionKey: string;
+};
 
 function splitFullName(fullName: string) {
   const parts = fullName
@@ -104,6 +109,15 @@ function inferHunterCategory(position: string | null): DomainCategory {
   return "Other";
 }
 
+function getDomainSearchSelectionKey(row: HunterResultRow) {
+  return `${row.email.trim().toLowerCase()}::${row.source.trim().toLowerCase()}`;
+}
+
+function escapeCsvValue(value: string | number | null | undefined) {
+  const normalized = value == null ? "" : String(value);
+  return `"${normalized.replace(/"/g, "\"\"")}"`;
+}
+
 export function HunterDashboard({ initialKeyStatus }: Props) {
   const { showError } = useErrorToast();
   const [activeTab, setActiveTab] = useState<SearchTab>("finder");
@@ -124,6 +138,7 @@ export function HunterDashboard({ initialKeyStatus }: Props) {
   const [copiedEmail, setCopiedEmail] = useState<string | null>(null);
   const [domainPages, setDomainPages] = useState<Record<string, number>>({});
   const [selectedDomainCategory, setSelectedDomainCategory] = useState<DomainCategory | null>(null);
+  const [selectedContactKeys, setSelectedContactKeys] = useState<Set<string>>(() => new Set());
   useErrorToastEffect(error, "Hunter search failed");
   useErrorToastEffect(settingsError, "Hunter settings failed");
 
@@ -181,6 +196,7 @@ export function HunterDashboard({ initialKeyStatus }: Props) {
     setResults([]);
     setDomainPages({});
     setSelectedDomainCategory(null);
+    setSelectedContactKeys(new Set());
 
     try {
       const response = await fetch(endpoint, {
@@ -250,19 +266,26 @@ export function HunterDashboard({ initialKeyStatus }: Props) {
     }
   }
 
+  const domainSearchRows = useMemo<DomainSearchResultRow[]>(() => {
+    return results.map((row) => ({
+      ...row,
+      department: inferHunterCategory(row.position),
+      selectionKey: getDomainSearchSelectionKey(row)
+    }));
+  }, [results]);
+
   const groupedDomainResults = useMemo(() => {
     if (activeTab !== "domain") {
       return [];
     }
 
-    const grouped = new Map<DomainCategory, HunterResultRow[]>();
+    const grouped = new Map<DomainCategory, DomainSearchResultRow[]>();
     for (const category of DOMAIN_CATEGORY_ORDER) {
       grouped.set(category, []);
     }
 
-    for (const row of results) {
-      const category = inferHunterCategory(row.position);
-      grouped.get(category)?.push(row);
+    for (const row of domainSearchRows) {
+      grouped.get(row.department)?.push(row);
     }
 
     return DOMAIN_CATEGORY_ORDER.map((category) => {
@@ -279,7 +302,7 @@ export function HunterDashboard({ initialKeyStatus }: Props) {
         visibleRows: rows.slice(startIndex, startIndex + RESULTS_PAGE_SIZE)
       };
     }).filter((group) => group.rows.length > 0);
-  }, [activeTab, domainPages, results]);
+  }, [activeTab, domainPages, domainSearchRows]);
 
   useEffect(() => {
     if (activeTab !== "domain") {
@@ -305,7 +328,68 @@ export function HunterDashboard({ initialKeyStatus }: Props) {
       ? groupedDomainResults.find((group) => group.category === selectedDomainCategory) ?? groupedDomainResults[0] ?? null
       : null;
 
+  const selectedContacts = useMemo(() => {
+    const selected = new Map<string, DomainSearchResultRow>();
+
+    for (const row of domainSearchRows) {
+      if (selectedContactKeys.has(row.selectionKey) && !selected.has(row.selectionKey)) {
+        selected.set(row.selectionKey, row);
+      }
+    }
+
+    return Array.from(selected.values());
+  }, [domainSearchRows, selectedContactKeys]);
+
+  const selectedCount = selectedContacts.length;
   const searchDisabled = pending || !keyStatus.configured;
+
+  const toggleContactSelection = useCallback((selectionKey: string) => {
+    setSelectedContactKeys((current) => {
+      const next = new Set(current);
+
+      if (next.has(selectionKey)) {
+        next.delete(selectionKey);
+      } else {
+        next.add(selectionKey);
+      }
+
+      return next;
+    });
+  }, []);
+
+  const handleExportSelectedContacts = useCallback(() => {
+    if (!selectedContacts.length) {
+      showError("No contacts selected", { title: "Export unavailable" });
+      return;
+    }
+
+    const csvLines = [
+      ["Name", "Email", "Position", "Department", "Confidence", "Source"].join(","),
+      ...selectedContacts.map((row) =>
+        [
+          escapeCsvValue(row.name || "Unknown contact"),
+          escapeCsvValue(row.email),
+          escapeCsvValue(row.position ?? ""),
+          escapeCsvValue(row.department),
+          escapeCsvValue(typeof row.confidence === "number" ? `${row.confidence}%` : ""),
+          escapeCsvValue(row.source)
+        ].join(",")
+      )
+    ];
+
+    const blob = new Blob([csvLines.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+
+    link.href = url;
+    link.download = `contacts_export_${timestamp}.csv`;
+    link.style.display = "none";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => window.URL.revokeObjectURL(url), 0);
+  }, [selectedContacts, showError]);
 
   return (
     <>
@@ -438,8 +522,25 @@ export function HunterDashboard({ initialKeyStatus }: Props) {
 
             <article className={styles.resultsPanel}>
               <div className={styles.panelHeader}>
-                <div>
-                  <h2>Results</h2>
+                <div className={styles.resultsPanelHeader}>
+                  <div>
+                    <h2>Results</h2>
+                  </div>
+
+                  {activeTab === "domain" ? (
+                    <div className={styles.resultsHeaderActions}>
+                      <span className={styles.resultsSelectionCount}>Selected: {selectedCount}</span>
+                      <button
+                        type="button"
+                        className="button secondary"
+                        onClick={handleExportSelectedContacts}
+                        disabled={selectedCount === 0}
+                      >
+                        <Download aria-hidden="true" />
+                        Export to CSV
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               </div>
 
@@ -549,10 +650,25 @@ export function HunterDashboard({ initialKeyStatus }: Props) {
                                 {activeDomainGroup.visibleRows.map((row) => (
                                   <article key={`${activeDomainGroup.category}-${row.email}-${row.source}`} className={styles.resultCard}>
                                     <div className={styles.resultHeader}>
-                                      <div className={styles.resultPrimary}>
-                                        <span className={styles.resultLabel}>Contact</span>
-                                        <strong className={styles.resultName}>{row.name || "Unknown contact"}</strong>
-                                        <strong className={styles.resultEmail}>{row.email}</strong>
+                                      <div className={styles.resultSelection}>
+                                        <label className={styles.resultCheckboxLabel}>
+                                          <input
+                                            type="checkbox"
+                                            className={styles.resultCheckboxInput}
+                                            checked={selectedContactKeys.has(row.selectionKey)}
+                                            onChange={() => toggleContactSelection(row.selectionKey)}
+                                            aria-label={`Select ${row.name || row.email}`}
+                                          />
+                                          <span className={styles.resultCheckboxControl} aria-hidden="true">
+                                            <Check aria-hidden="true" />
+                                          </span>
+                                        </label>
+
+                                        <div className={styles.resultPrimary}>
+                                          <span className={styles.resultLabel}>Contact</span>
+                                          <strong className={styles.resultName}>{row.name || "Unknown contact"}</strong>
+                                          <strong className={styles.resultEmail}>{row.email}</strong>
+                                        </div>
                                       </div>
 
                                       <button
