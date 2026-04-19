@@ -1,3 +1,5 @@
+import { normalizeGoogleApiErrorMessage } from "@/lib/google";
+
 const GMAIL_API_BASE_URL = "https://gmail.googleapis.com/gmail/v1/users/me";
 
 type GmailMessageRef = {
@@ -81,7 +83,7 @@ async function fetchGmailJson<T>(accessToken: string, input: URL | string) {
 
   if (!response.ok) {
     const payload = await response.text();
-    throw new Error(payload || "Gmail API request failed.");
+    throw new Error(normalizeGoogleApiErrorMessage(payload || "Gmail API request failed."));
   }
 
   return (await response.json()) as T;

@@ -9,11 +9,19 @@ vi.mock("@/lib/env", () => ({
 }));
 
 vi.mock("@/lib/google", () => ({
+  GMAIL_API_NOT_ENABLED_ERROR:
+    "Gmail API is disabled for this Google Cloud project. Enable gmail.googleapis.com for the project tied to GOOGLE_CLIENT_ID, wait a few minutes, and try again.",
+  normalizeGoogleApiErrorMessage: vi.fn((message: string) =>
+    message.includes("Gmail API has not been used in project")
+      ? "Gmail API is disabled for this Google Cloud project. Enable gmail.googleapis.com for the project tied to GOOGLE_CLIENT_ID, wait a few minutes, and try again."
+      : message
+  ),
   refreshGoogleAccessToken: vi.fn()
 }));
 
 import { refreshGoogleAccessToken } from "@/lib/google";
 import { GMAIL_RECONNECT_ERROR, sendEmail } from "@/lib/provider";
+import { GMAIL_API_NOT_ENABLED_ERROR } from "@/lib/google";
 
 const refreshGoogleAccessTokenMock = vi.mocked(refreshGoogleAccessToken);
 
@@ -139,6 +147,46 @@ describe("gmail provider", () => {
         }
       })
     ).rejects.toThrow(GMAIL_RECONNECT_ERROR);
+  });
+
+  it("surfaces a clear setup error when the Gmail API is disabled in Google Cloud", async () => {
+    refreshGoogleAccessTokenMock.mockResolvedValue({
+      access_token: "access-token",
+      expires_in: 3600,
+      token_type: "Bearer"
+    });
+
+    vi.mocked(global.fetch).mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: {
+            code: 403,
+            message:
+              "Gmail API has not been used in project 158000912786 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/gmail.googleapis.com/overview?project=158000912786 then retry.",
+            status: "PERMISSION_DENIED"
+          }
+        }),
+        {
+          status: 403,
+          headers: {
+            "Content-Type": "application/json"
+          }
+        }
+      )
+    );
+
+    await expect(
+      sendEmail({
+        from: "Sender Example <sender@example.com>",
+        to: "recipient@example.com",
+        subject: "Enable the API",
+        html: "<p>Hello</p>",
+        sender: {
+          fromEmail: "sender@example.com",
+          oauthRefreshToken: "refresh-token"
+        }
+      })
+    ).rejects.toThrow(GMAIL_API_NOT_ENABLED_ERROR);
   });
 
   afterEach(() => {

@@ -1,7 +1,7 @@
 import MailComposer from "nodemailer/lib/mail-composer";
 
 import { env } from "@/lib/env";
-import { refreshGoogleAccessToken } from "@/lib/google";
+import { normalizeGoogleApiErrorMessage, refreshGoogleAccessToken } from "@/lib/google";
 
 export const GMAIL_RECONNECT_ERROR =
   "This Gmail sender needs to be reconnected. Google says its access expired, was revoked, or is missing the required send permission.";
@@ -134,7 +134,7 @@ async function sendGmailMessage(raw: string, accessToken: string) {
   const payload = (await response.json().catch(() => ({}))) as GmailSendApiResponse;
 
   if (!response.ok || !payload.id) {
-    throw new Error(payload.error?.message || "Could not send Gmail message.");
+    throw new Error(normalizeGoogleApiErrorMessage(payload.error?.message || "Could not send Gmail message."));
   }
 
   return payload;

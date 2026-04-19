@@ -1,6 +1,6 @@
 # Sendloom
 
-Sendloom is a production-oriented sequence sending platform built with Next.js, Postgres, Redis, and Gmail SMTP.
+Sendloom is a production-oriented sequence sending platform built with Next.js, Postgres, Redis, and the Gmail API.
 
 ## Features
 
@@ -20,6 +20,23 @@ Sendloom is a production-oriented sequence sending platform built with Next.js, 
 4. Create the database and apply migrations with `npm run prisma:migrate`.
 5. Start the app with `npm run dev`.
 6. Launch campaigns from the app. Immediate sends are processed in-app, and scheduled/retry work can be processed by calling `/api/cron/campaigns` from an external scheduler.
+
+## Google Cloud setup
+
+For Google sign-in and Gmail sending to work, the Google Cloud project tied to `GOOGLE_CLIENT_ID` must have the Gmail API enabled.
+
+1. Open the Google Cloud project that owns your OAuth client.
+2. Enable `gmail.googleapis.com`.
+3. In the OAuth consent screen / Google Auth Platform data access settings, keep these scopes:
+   - `openid`
+   - `email`
+   - `profile`
+   - `https://www.googleapis.com/auth/gmail.send`
+   - `https://www.googleapis.com/auth/gmail.readonly`
+4. Add these redirect URIs to the OAuth client:
+   - `http://localhost:3000/api/auth/google/login/callback`
+   - `http://localhost:3000/api/auth/google/callback`
+5. If you changed scopes or just enabled the API, wait a few minutes and reconnect the Gmail sender.
 
 ## Notes
 

@@ -12,6 +12,8 @@ export const GOOGLE_LOGIN_SCOPES = [
 
 export const GOOGLE_GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send";
 export const GOOGLE_GMAIL_REPLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
+export const GMAIL_API_NOT_ENABLED_ERROR =
+  "Gmail API is disabled for this Google Cloud project. Enable gmail.googleapis.com for the project tied to GOOGLE_CLIENT_ID, wait a few minutes, and try again.";
 
 export const GOOGLE_CONNECT_SCOPES = [
   ...GOOGLE_LOGIN_SCOPES,
@@ -180,4 +182,25 @@ export async function fetchGoogleUserInfo(accessToken: string) {
   }
 
   return payload;
+}
+
+export function normalizeGoogleApiErrorMessage(message: string) {
+  const normalized = message.toLowerCase();
+
+  if (
+    (normalized.includes("gmail api has not been used in project") || normalized.includes("api has not been used in project")) &&
+    normalized.includes("gmail.googleapis.com")
+  ) {
+    return GMAIL_API_NOT_ENABLED_ERROR;
+  }
+
+  if (normalized.includes("gmail.googleapis.com") && normalized.includes("it is disabled")) {
+    return GMAIL_API_NOT_ENABLED_ERROR;
+  }
+
+  if (normalized.includes("access not configured") && normalized.includes("gmail")) {
+    return GMAIL_API_NOT_ENABLED_ERROR;
+  }
+
+  return message;
 }

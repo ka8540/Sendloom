@@ -9,12 +9,14 @@ vi.mock("@/lib/env", () => ({
 }));
 
 import {
+  GMAIL_API_NOT_ENABLED_ERROR,
   GOOGLE_CONNECT_SCOPES,
   GOOGLE_GMAIL_REPLY_SCOPE,
   GOOGLE_GMAIL_SEND_SCOPE,
   GOOGLE_LOGIN_SCOPES,
   buildGoogleConnectUrl,
-  buildGoogleLoginUrl
+  buildGoogleLoginUrl,
+  normalizeGoogleApiErrorMessage
 } from "@/lib/google";
 
 describe("google oauth scopes", () => {
@@ -58,5 +60,13 @@ describe("google oauth scopes", () => {
     expect(url.searchParams.get("access_type")).toBe("offline");
     expect(url.searchParams.get("prompt")).toBe("consent");
     expect(url.searchParams.get("login_hint")).toBe("sender@example.com");
+  });
+
+  it("normalizes the Google API disabled error into a setup instruction", () => {
+    expect(
+      normalizeGoogleApiErrorMessage(
+        "Gmail API has not been used in project 158000912786 before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/gmail.googleapis.com/overview?project=158000912786 then retry."
+      )
+    ).toBe(GMAIL_API_NOT_ENABLED_ERROR);
   });
 });
