@@ -1,4 +1,4 @@
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 
 import { prisma } from "@/lib/db";
@@ -30,6 +30,15 @@ function parseHunterDomainSearchResults(value: Prisma.JsonValue) {
   return parsed.success ? parsed.data : [];
 }
 
+function isMissingHunterDomainSearchTableError(error: unknown) {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === "P2021" &&
+    typeof error.meta?.table === "string" &&
+    error.meta.table.includes("HunterDomainSearch")
+  );
+}
+
 function toHunterDomainSearchSummary(entry: {
   id: string;
   domain: string;
@@ -58,69 +67,93 @@ function toHunterDomainSearchDetail(entry: {
 }
 
 export async function listHunterDomainSearchesForUser(userId: string, limit = 25) {
-  const searches = await prisma.hunterDomainSearch.findMany({
-    where: { userId },
-    orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
-    take: limit,
-    select: {
-      id: true,
-      domain: true,
-      resultCount: true,
-      updatedAt: true
-    }
-  });
+  try {
+    const searches = await prisma.hunterDomainSearch.findMany({
+      where: { userId },
+      orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+      take: limit,
+      select: {
+        id: true,
+        domain: true,
+        resultCount: true,
+        updatedAt: true
+      }
+    });
 
-  return searches.map(toHunterDomainSearchSummary);
+    return searches.map(toHunterDomainSearchSummary);
+  } catch (error) {
+    if (isMissingHunterDomainSearchTableError(error)) {
+      return [];
+    }
+
+    throw error;
+  }
 }
 
 export async function getHunterDomainSearchForUser(userId: string, searchId: string) {
-  const search = await prisma.hunterDomainSearch.findFirst({
-    where: {
-      id: searchId,
-      userId
-    },
-    select: {
-      id: true,
-      domain: true,
-      resultCount: true,
-      updatedAt: true,
-      results: true
+  try {
+    const search = await prisma.hunterDomainSearch.findFirst({
+      where: {
+        id: searchId,
+        userId
+      },
+      select: {
+        id: true,
+        domain: true,
+        resultCount: true,
+        updatedAt: true,
+        results: true
+      }
+    });
+
+    if (!search) {
+      return null;
     }
-  });
 
-  if (!search) {
-    return null;
+    return toHunterDomainSearchDetail(search);
+  } catch (error) {
+    if (isMissingHunterDomainSearchTableError(error)) {
+      return null;
+    }
+
+    throw error;
   }
-
-  return toHunterDomainSearchDetail(search);
 }
 
 export async function saveHunterDomainSearchForUser(userId: string, domain: string, results: HunterResultRow[]) {
   const normalizedDomain = normalizeHunterDomain(domain);
-  const savedSearch = await prisma.hunterDomainSearch.upsert({
-    where: {
-      userId_domain: {
+  try {
+    const savedSearch = await prisma.hunterDomainSearch.upsert({
+      where: {
+        userId_domain: {
+          userId,
+          domain: normalizedDomain
+        }
+      },
+      update: {
+        resultCount: results.length,
+        results: results as unknown as Prisma.InputJsonValue
+      },
+      create: {
         userId,
-        domain: normalizedDomain
+        domain: normalizedDomain,
+        resultCount: results.length,
+        results: results as unknown as Prisma.InputJsonValue
+      },
+      select: {
+        id: true,
+        domain: true,
+        resultCount: true,
+        updatedAt: true
       }
-    },
-    update: {
-      resultCount: results.length,
-      results: results as unknown as Prisma.InputJsonValue
-    },
-    create: {
-      userId,
-      domain: normalizedDomain,
-      resultCount: results.length,
-      results: results as unknown as Prisma.InputJsonValue
-    },
-    select: {
-      id: true,
-      domain: true,
-      resultCount: true,
-      updatedAt: true
-    }
-  });
+    });
 
-  return toHunterDomainSearchSummary(savedSearch);
+    return toHunterDomainSearchSummary(savedSearch);
+  } catch (error) {
+    if (isMissingHunterDomainSearchTableError(error)) {
+      return null;
+    }
+
+    throw error;
+  }
 }
