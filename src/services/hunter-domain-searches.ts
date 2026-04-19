@@ -31,12 +31,23 @@ function parseHunterDomainSearchResults(value: Prisma.JsonValue) {
 }
 
 function isMissingHunterDomainSearchTableError(error: unknown) {
-  return (
-    error instanceof Prisma.PrismaClientKnownRequestError &&
-    error.code === "P2021" &&
-    typeof error.meta?.table === "string" &&
-    error.meta.table.includes("HunterDomainSearch")
-  );
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2021") {
+    return false;
+  }
+
+  const table = typeof error.meta?.table === "string" ? error.meta.table : "";
+  const modelName = typeof error.meta?.modelName === "string" ? error.meta.modelName : "";
+  const message = error.message ?? "";
+
+  return [table, modelName, message].some((value) => value.includes("HunterDomainSearch"));
+}
+
+async function hasHunterDomainSearchTable() {
+  const result = await prisma.$queryRaw<Array<{ table_name: string | null }>>`
+    SELECT to_regclass('public."HunterDomainSearch"') AS table_name
+  `;
+
+  return Boolean(result[0]?.table_name);
 }
 
 function toHunterDomainSearchSummary(entry: {
@@ -67,6 +78,10 @@ function toHunterDomainSearchDetail(entry: {
 }
 
 export async function listHunterDomainSearchesForUser(userId: string, limit = 25) {
+  if (!(await hasHunterDomainSearchTable())) {
+    return [];
+  }
+
   try {
     const searches = await prisma.hunterDomainSearch.findMany({
       where: { userId },
@@ -91,6 +106,10 @@ export async function listHunterDomainSearchesForUser(userId: string, limit = 25
 }
 
 export async function getHunterDomainSearchForUser(userId: string, searchId: string) {
+  if (!(await hasHunterDomainSearchTable())) {
+    return null;
+  }
+
   try {
     const search = await prisma.hunterDomainSearch.findFirst({
       where: {
@@ -122,6 +141,10 @@ export async function getHunterDomainSearchForUser(userId: string, searchId: str
 
 export async function saveHunterDomainSearchForUser(userId: string, domain: string, results: HunterResultRow[]) {
   const normalizedDomain = normalizeHunterDomain(domain);
+  if (!(await hasHunterDomainSearchTable())) {
+    return null;
+  }
+
   try {
     const savedSearch = await prisma.hunterDomainSearch.upsert({
       where: {

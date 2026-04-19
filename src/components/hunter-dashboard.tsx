@@ -47,6 +47,7 @@ type Props = {
 
 const RESULTS_PAGE_SIZE = 10;
 const SAVED_DOMAIN_SEARCHES_PAGE_SIZE = 5;
+const LOCAL_STORAGE_SAVED_DOMAIN_SEARCHES_KEY = "sendloom_hunter_domain_searches";
 const DOMAIN_CATEGORY_ORDER = ["IT", "HR", "Sales", "Marketing", "Operations", "Finance", "Leadership", "Other"] as const;
 type DomainCategory = (typeof DOMAIN_CATEGORY_ORDER)[number];
 type DomainSearchResultRow = HunterResultRow & {
@@ -83,6 +84,98 @@ function formatSavedDomainSearchUpdatedAt(updatedAt: string) {
     month: "short",
     day: "numeric"
   }).format(new Date(updatedAt));
+}
+
+function getSavedDomainSearchDomainKey(domain: string) {
+  return domain.trim().toLowerCase();
+}
+
+function createLocalSavedDomainSearchId(domain: string) {
+  return `local:${getSavedDomainSearchDomainKey(domain)}`;
+}
+
+function isHunterResultRow(value: unknown): value is HunterResultRow {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      typeof (value as HunterResultRow).email === "string" &&
+      typeof (value as HunterResultRow).name === "string" &&
+      typeof (value as HunterResultRow).source === "string" &&
+      ((value as HunterResultRow).position === null || typeof (value as HunterResultRow).position === "string") &&
+      ((value as HunterResultRow).confidence === null || typeof (value as HunterResultRow).confidence === "number")
+  );
+}
+
+function isHunterDomainSearchDetail(value: unknown): value is HunterDomainSearchDetail {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      typeof (value as HunterDomainSearchDetail).id === "string" &&
+      typeof (value as HunterDomainSearchDetail).domain === "string" &&
+      typeof (value as HunterDomainSearchDetail).updatedAt === "string" &&
+      (typeof (value as HunterDomainSearchDetail).resultCount === "number" ||
+        typeof (value as Partial<HunterDomainSearchDetail>).resultCount === "undefined") &&
+      Array.isArray((value as HunterDomainSearchDetail).results) &&
+      (value as HunterDomainSearchDetail).results.every(isHunterResultRow)
+  );
+}
+
+function toHunterDomainSearchSummary(detail: HunterDomainSearchDetail): HunterDomainSearchSummary {
+  return {
+    id: detail.id,
+    domain: detail.domain,
+    resultCount: typeof detail.resultCount === "number" ? detail.resultCount : detail.results.length,
+    updatedAt: detail.updatedAt
+  };
+}
+
+function mergeHunterDomainSearchSummaries(...collections: HunterDomainSearchSummary[][]) {
+  const merged = new Map<string, HunterDomainSearchSummary>();
+
+  for (const collection of collections) {
+    for (const search of collection) {
+      const key = getSavedDomainSearchDomainKey(search.domain);
+      const existing = merged.get(key);
+
+      if (!existing || new Date(search.updatedAt).getTime() >= new Date(existing.updatedAt).getTime()) {
+        merged.set(key, search);
+      }
+    }
+  }
+
+  return Array.from(merged.values()).sort(
+    (left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
+  );
+}
+
+function readLocalSavedDomainSearches() {
+  if (typeof window === "undefined") {
+    return [] as HunterDomainSearchDetail[];
+  }
+
+  try {
+    const rawValue = window.localStorage.getItem(LOCAL_STORAGE_SAVED_DOMAIN_SEARCHES_KEY);
+    if (!rawValue) {
+      return [] as HunterDomainSearchDetail[];
+    }
+
+    const parsed = JSON.parse(rawValue);
+    if (!Array.isArray(parsed)) {
+      return [] as HunterDomainSearchDetail[];
+    }
+
+    return parsed.filter(isHunterDomainSearchDetail);
+  } catch {
+    return [] as HunterDomainSearchDetail[];
+  }
+}
+
+function writeLocalSavedDomainSearches(searches: HunterDomainSearchDetail[]) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.setItem(LOCAL_STORAGE_SAVED_DOMAIN_SEARCHES_KEY, JSON.stringify(searches));
 }
 
 function inferHunterCategory(position: string | null): DomainCategory {
@@ -163,6 +256,11 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
   const [savedDomainSearchPage, setSavedDomainSearchPage] = useState(0);
   const [activeSavedSearchId, setActiveSavedSearchId] = useState<string | null>(null);
   const [savedSearchPendingId, setSavedSearchPendingId] = useState<string | null>(null);
+  const [savedDomainSearchDetailsByDomain, setSavedDomainSearchDetailsByDomain] = useState<
+    Record<string, HunterDomainSearchDetail>
+  >({});
+  const [hasHydratedSavedDomainSearches, setHasHydratedSavedDomainSearches] = useState(false);
+  const [hasRestoredInitialSavedSearch, setHasRestoredInitialSavedSearch] = useState(false);
   useErrorToastEffect(error, "Hunter search failed");
   useErrorToastEffect(settingsError, "Hunter settings failed");
 
@@ -178,6 +276,7 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
   const applyDomainSearchResults = useCallback(
     (domain: string, nextResults: HunterResultRow[], savedSearchId?: string | null) => {
       setSearchDomain(domain);
+      setActiveTab("domain");
       setResults(nextResults);
       setHasSearched(true);
       setError(null);
@@ -189,13 +288,26 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
     []
   );
 
-  const upsertSavedDomainSearch = useCallback((savedSearch: HunterDomainSearchSummary) => {
-    setSavedDomainSearches((current) => [
-      savedSearch,
-      ...current.filter((entry) => entry.id !== savedSearch.id && entry.domain !== savedSearch.domain)
-    ]);
+  const cacheSavedDomainSearch = useCallback((savedSearch: HunterDomainSearchDetail) => {
+    const domainKey = getSavedDomainSearchDomainKey(savedSearch.domain);
+
+    setSavedDomainSearchDetailsByDomain((current) => ({
+      ...current,
+      [domainKey]: savedSearch
+    }));
+    setSavedDomainSearches((current) => mergeHunterDomainSearchSummaries(current, [toHunterDomainSearchSummary(savedSearch)]));
     setSavedDomainSearchPage(0);
     setActiveSavedSearchId(savedSearch.id);
+
+    const localSearches = readLocalSavedDomainSearches();
+    const nextLocalSearches = [
+      savedSearch,
+      ...localSearches.filter((entry) => getSavedDomainSearchDomainKey(entry.domain) !== domainKey)
+    ]
+      .sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime())
+      .slice(0, 25);
+
+    writeLocalSavedDomainSearches(nextLocalSearches);
   }, []);
 
   async function handleSaveApiKey() {
@@ -329,11 +441,16 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
       }
 
       const nextResults = data?.results ?? [];
-      applyDomainSearchResults(data?.savedSearch?.domain ?? searchDomain.trim(), nextResults, data?.savedSearch?.id ?? null);
+      const savedSearchDetail: HunterDomainSearchDetail = {
+        id: data?.savedSearch?.id ?? createLocalSavedDomainSearchId(data?.savedSearch?.domain ?? searchDomain.trim()),
+        domain: data?.savedSearch?.domain ?? searchDomain.trim(),
+        resultCount: nextResults.length,
+        updatedAt: data?.savedSearch?.updatedAt ?? new Date().toISOString(),
+        results: nextResults
+      };
 
-      if (data?.savedSearch) {
-        upsertSavedDomainSearch(data.savedSearch);
-      }
+      applyDomainSearchResults(savedSearchDetail.domain, nextResults, savedSearchDetail.id);
+      cacheSavedDomainSearch(savedSearchDetail);
     } catch (searchError) {
       setHasSearched(false);
       setActiveSavedSearchId(null);
@@ -423,6 +540,22 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
     setSavedDomainSearchPage((current) => Math.min(current, Math.max(0, savedDomainSearchTotalPages - 1)));
   }, [savedDomainSearchTotalPages]);
 
+  useEffect(() => {
+    const localSavedSearches = readLocalSavedDomainSearches();
+    const localDetailsByDomain = Object.fromEntries(
+      localSavedSearches.map((search) => [getSavedDomainSearchDomainKey(search.domain), search])
+    );
+
+    setSavedDomainSearches((current) =>
+      mergeHunterDomainSearchSummaries(
+        current,
+        localSavedSearches.map(toHunterDomainSearchSummary)
+      )
+    );
+    setSavedDomainSearchDetailsByDomain(localDetailsByDomain);
+    setHasHydratedSavedDomainSearches(true);
+  }, []);
+
   const activeDomainGroup =
     activeTab === "domain"
       ? groupedDomainResults.find((group) => group.category === selectedDomainCategory) ?? groupedDomainResults[0] ?? null
@@ -492,9 +625,16 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
   }, [selectedContacts, showError]);
 
   const loadSavedDomainSearch = useCallback(
-    async (savedSearch: HunterDomainSearchSummary) => {
+    async (savedSearch: HunterDomainSearchSummary, options?: { silent?: boolean }) => {
       setSavedSearchPendingId(savedSearch.id);
       setError(null);
+
+      const cachedDetail = savedDomainSearchDetailsByDomain[getSavedDomainSearchDomainKey(savedSearch.domain)];
+      if (cachedDetail) {
+        applyDomainSearchResults(cachedDetail.domain, cachedDetail.results, cachedDetail.id);
+        setSavedSearchPendingId(null);
+        return;
+      }
 
       try {
         const response = await fetch(`/api/domain-search/${encodeURIComponent(savedSearch.id)}`);
@@ -508,17 +648,50 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
           throw new Error(payload?.error ?? "Could not load that saved domain search.");
         }
 
-        applyDomainSearchResults(payload?.domain ?? savedSearch.domain, payload?.results ?? [], payload?.id ?? savedSearch.id);
+        const savedSearchDetail: HunterDomainSearchDetail = {
+          id: payload?.id ?? savedSearch.id,
+          domain: payload?.domain ?? savedSearch.domain,
+          resultCount: payload?.resultCount ?? (payload?.results?.length ?? savedSearch.resultCount),
+          updatedAt: payload?.updatedAt ?? savedSearch.updatedAt,
+          results: payload?.results ?? []
+        };
+
+        cacheSavedDomainSearch(savedSearchDetail);
+        applyDomainSearchResults(savedSearchDetail.domain, savedSearchDetail.results, savedSearchDetail.id);
       } catch (loadError) {
-        showError(loadError instanceof Error ? loadError.message : "Could not load that saved domain search.", {
-          title: "Saved search failed"
-        });
+        if (!options?.silent) {
+          showError(loadError instanceof Error ? loadError.message : "Could not load that saved domain search.", {
+            title: "Saved search failed"
+          });
+        }
       } finally {
         setSavedSearchPendingId(null);
       }
     },
-    [applyDomainSearchResults, showError]
+    [applyDomainSearchResults, cacheSavedDomainSearch, savedDomainSearchDetailsByDomain, showError]
   );
+
+  useEffect(() => {
+    if (
+      !hasHydratedSavedDomainSearches ||
+      hasRestoredInitialSavedSearch ||
+      hasSearched ||
+      results.length > 0 ||
+      !savedDomainSearches.length
+    ) {
+      return;
+    }
+
+    setHasRestoredInitialSavedSearch(true);
+    void loadSavedDomainSearch(savedDomainSearches[0], { silent: true });
+  }, [
+    hasHydratedSavedDomainSearches,
+    hasRestoredInitialSavedSearch,
+    hasSearched,
+    loadSavedDomainSearch,
+    results.length,
+    savedDomainSearches
+  ]);
 
   return (
     <>
@@ -645,67 +818,67 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
                       Search
                     </button>
                   </div>
-
-                  {savedDomainSearches.length ? (
-                    <section className={styles.savedSearchSection} aria-label="Saved domain searches">
-                      <div className={styles.savedSearchHeader}>
-                        <div className={styles.savedSearchHeaderCopy}>
-                          <strong>Saved domain searches</strong>
-                          <p className="muted">Open a stored search any time and export contacts again.</p>
-                        </div>
-
-                        {savedDomainSearches.length > SAVED_DOMAIN_SEARCHES_PAGE_SIZE ? (
-                          <div className={styles.resultsPager} aria-label="Saved domain search pages">
-                            <button
-                              type="button"
-                              className={styles.resultsPagerButton}
-                              onClick={() => setSavedDomainSearchPage((current) => Math.max(0, current - 1))}
-                              disabled={savedDomainSearchPage === 0}
-                              aria-label="Previous saved domain searches"
-                            >
-                              <ChevronLeft aria-hidden="true" />
-                            </button>
-                            <span className={styles.resultsPagerCount}>
-                              {savedDomainSearchPage + 1} / {savedDomainSearchTotalPages}
-                            </span>
-                            <button
-                              type="button"
-                              className={styles.resultsPagerButton}
-                              onClick={() =>
-                                setSavedDomainSearchPage((current) => Math.min(savedDomainSearchTotalPages - 1, current + 1))
-                              }
-                              disabled={savedDomainSearchPage >= savedDomainSearchTotalPages - 1}
-                              aria-label="Next saved domain searches"
-                            >
-                              <ChevronRight aria-hidden="true" />
-                            </button>
-                          </div>
-                        ) : null}
-                      </div>
-
-                      <div className={styles.savedSearchRail}>
-                        {pagedSavedDomainSearches.map((savedSearch) => (
-                          <button
-                            key={savedSearch.id}
-                            type="button"
-                            className={`${styles.savedSearchCard} ${
-                              activeSavedSearchId === savedSearch.id ? styles.savedSearchCardActive : ""
-                            }`}
-                            onClick={() => void loadSavedDomainSearch(savedSearch)}
-                            disabled={savedSearchPendingId === savedSearch.id}
-                          >
-                            <span className={styles.savedSearchDomain}>{savedSearch.domain}</span>
-                            <span className={styles.savedSearchMeta}>
-                              {savedSearch.resultCount} result{savedSearch.resultCount === 1 ? "" : "s"}
-                            </span>
-                            <span className={styles.savedSearchUpdated}>Updated {formatSavedDomainSearchUpdatedAt(savedSearch.updatedAt)}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </section>
-                  ) : null}
                 </>
               )}
+
+              {savedDomainSearches.length ? (
+                <section className={styles.savedSearchSection} aria-label="Saved domain searches">
+                  <div className={styles.savedSearchHeader}>
+                    <div className={styles.savedSearchHeaderCopy}>
+                      <strong>Saved domain searches</strong>
+                      <p className="muted">Open a stored search any time and export contacts again.</p>
+                    </div>
+
+                    {savedDomainSearches.length > SAVED_DOMAIN_SEARCHES_PAGE_SIZE ? (
+                      <div className={styles.resultsPager} aria-label="Saved domain search pages">
+                        <button
+                          type="button"
+                          className={styles.resultsPagerButton}
+                          onClick={() => setSavedDomainSearchPage((current) => Math.max(0, current - 1))}
+                          disabled={savedDomainSearchPage === 0}
+                          aria-label="Previous saved domain searches"
+                        >
+                          <ChevronLeft aria-hidden="true" />
+                        </button>
+                        <span className={styles.resultsPagerCount}>
+                          {savedDomainSearchPage + 1} / {savedDomainSearchTotalPages}
+                        </span>
+                        <button
+                          type="button"
+                          className={styles.resultsPagerButton}
+                          onClick={() =>
+                            setSavedDomainSearchPage((current) => Math.min(savedDomainSearchTotalPages - 1, current + 1))
+                          }
+                          disabled={savedDomainSearchPage >= savedDomainSearchTotalPages - 1}
+                          aria-label="Next saved domain searches"
+                        >
+                          <ChevronRight aria-hidden="true" />
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className={styles.savedSearchRail}>
+                    {pagedSavedDomainSearches.map((savedSearch) => (
+                      <button
+                        key={savedSearch.id}
+                        type="button"
+                        className={`${styles.savedSearchCard} ${
+                          activeSavedSearchId === savedSearch.id ? styles.savedSearchCardActive : ""
+                        }`}
+                        onClick={() => void loadSavedDomainSearch(savedSearch)}
+                        disabled={savedSearchPendingId === savedSearch.id}
+                      >
+                        <span className={styles.savedSearchDomain}>{savedSearch.domain}</span>
+                        <span className={styles.savedSearchMeta}>
+                          {savedSearch.resultCount} result{savedSearch.resultCount === 1 ? "" : "s"}
+                        </span>
+                        <span className={styles.savedSearchUpdated}>Updated {formatSavedDomainSearchUpdatedAt(savedSearch.updatedAt)}</span>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
             </article>
 
             <article className={styles.resultsPanel}>
