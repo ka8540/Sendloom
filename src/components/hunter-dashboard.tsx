@@ -529,15 +529,20 @@ export function HunterDashboard({ initialKeyStatus }: Props) {
 
                   {activeTab === "domain" ? (
                     <div className={styles.resultsHeaderActions}>
-                      <span className={styles.resultsSelectionCount}>Selected: {selectedCount}</span>
+                      <span className={styles.resultsSelectionCount}>
+                        <span>Selected</span>
+                        <strong>{selectedCount}</strong>
+                      </span>
                       <button
                         type="button"
-                        className="button secondary"
+                        className={styles.resultsExportButton}
                         onClick={handleExportSelectedContacts}
                         disabled={selectedCount === 0}
                       >
-                        <Download aria-hidden="true" />
-                        Export to CSV
+                        <span className={styles.resultsExportButtonIcon} aria-hidden="true">
+                          <Download aria-hidden="true" />
+                        </span>
+                        <span>Export to CSV</span>
                       </button>
                     </div>
                   ) : null}
