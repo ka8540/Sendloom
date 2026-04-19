@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 
 import { getSessionUser } from "@/lib/auth";
 import { buildGoogleConnectUrl } from "@/lib/google";
+import { getGmailConnectUserError } from "@/lib/user-facing-errors";
 
 const GOOGLE_STATE_COOKIE = "sendloom_google_oauth_state";
 const GOOGLE_NEXT_COOKIE = "sendloom_google_oauth_next";
@@ -51,7 +52,9 @@ export async function GET(request: Request) {
       })
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "google_connect_unavailable";
-    return NextResponse.redirect(new URL(`/campaigns?gmail_error=${encodeURIComponent(message)}`, request.url));
+    console.error("[google-connect] Could not start Gmail connection.", error);
+    return NextResponse.redirect(
+      new URL(`/campaigns?gmail_error=${encodeURIComponent(getGmailConnectUserError())}`, request.url)
+    );
   }
 }

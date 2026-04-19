@@ -4,7 +4,7 @@ import { z } from "zod";
 import { renderEmailTemplate } from "@/components/email-template";
 import { requireApiUser } from "@/lib/api-auth";
 import { env } from "@/lib/env";
-import { GMAIL_RECONNECT_ERROR, isGmailReconnectError, sendEmail } from "@/lib/provider";
+import { GMAIL_RECONNECT_ERROR, getUserSafeGmailSendError, isGmailReconnectError, sendEmail } from "@/lib/provider";
 import { getDefaultUserSender, markSenderRequiresReconnect } from "@/services/senders";
 
 const schema = z
@@ -62,9 +62,10 @@ export async function POST(request: Request) {
       );
     }
 
+    console.error("[send-email] Test email send failed.", error);
     return NextResponse.json(
       {
-        error: error instanceof Error ? error.message : "Unknown send error"
+        error: getUserSafeGmailSendError(error)
       },
       { status: 500 }
     );

@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { isAdminUser, normalizeUserEmail, setSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { exchangeGoogleCode, fetchGoogleUserInfo, getGoogleLoginRedirectUri } from "@/lib/google";
+import { getGoogleLoginUserError } from "@/lib/user-facing-errors";
 
 const GOOGLE_LOGIN_STATE_COOKIE = "sendloom_google_login_state";
 
@@ -19,11 +20,11 @@ export async function GET(request: Request) {
   store.delete(GOOGLE_LOGIN_STATE_COOKIE);
 
   if (error) {
-    return NextResponse.redirect(new URL(`/login?error=${encodeURIComponent(error)}`, request.url));
+    return NextResponse.redirect(new URL(`/login?error=${encodeURIComponent(getGoogleLoginUserError(error))}`, request.url));
   }
 
   if (!code || !state || !expectedState || state !== expectedState) {
-    return NextResponse.redirect(new URL("/login?error=state_mismatch", request.url));
+    return NextResponse.redirect(new URL(`/login?error=${encodeURIComponent(getGoogleLoginUserError("state_mismatch"))}`, request.url));
   }
 
   try {
@@ -45,7 +46,7 @@ export async function GET(request: Request) {
     await setSession(email);
     return NextResponse.redirect(new URL(isAdminUser(user) ? "/admin" : "/workspace", request.url));
   } catch (loginError) {
-    const message = loginError instanceof Error ? loginError.message : "google_login_failed";
-    return NextResponse.redirect(new URL(`/login?error=${encodeURIComponent(message)}`, request.url));
+    console.error("[google-login] Google sign-in callback failed.", loginError);
+    return NextResponse.redirect(new URL(`/login?error=${encodeURIComponent(getGoogleLoginUserError())}`, request.url));
   }
 }

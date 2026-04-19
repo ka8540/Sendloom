@@ -4,7 +4,7 @@ import { Prisma } from "@prisma/client";
 import { CAMPAIGN_SETUP_LOCKED_RUN_STATUSES, isCampaignSetupLocked } from "@/lib/campaign-setup-lock";
 import { prisma } from "@/lib/db";
 import { buildMergePayload } from "@/lib/mapping";
-import { GMAIL_RECONNECT_ERROR, isGmailReconnectError, sendEmail, type EmailAttachment } from "@/lib/provider";
+import { GMAIL_RECONNECT_ERROR, getUserSafeGmailSendError, isGmailReconnectError, sendEmail, type EmailAttachment } from "@/lib/provider";
 import { consumeSendWindow } from "@/lib/rate-limit";
 import { getRedis } from "@/lib/redis";
 import { getNextRunDate } from "@/lib/schedule";
@@ -848,7 +848,7 @@ async function processRecipientJob(recipientJob: RecipientJobWithContext) {
         rateLimited: false
       };
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown provider error";
+      const message = getUserSafeGmailSendError(error);
 
       if (isGmailReconnectError(error)) {
         await markSenderRequiresReconnect(latestJob.campaignRun.campaign.senderProfile.id);
@@ -866,6 +866,8 @@ async function processRecipientJob(recipientJob: RecipientJobWithContext) {
           rateLimited: false
         };
       }
+
+      console.error("[campaign-send] Delivery failed.", error);
 
       if (latestJob.retryCount < 5 && isRetriableError(error)) {
         await markRecipientAttempt({

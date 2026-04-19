@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { getSessionUser } from "@/lib/auth";
 import { exchangeGoogleCode, fetchGoogleUserInfo, getGoogleRedirectUri } from "@/lib/google";
+import { getGmailConnectUserError } from "@/lib/user-facing-errors";
 import { upsertGoogleSender } from "@/services/senders";
 
 const GOOGLE_STATE_COOKIE = "sendloom_google_oauth_state";
@@ -38,11 +39,13 @@ export async function GET(request: Request) {
   store.delete(GOOGLE_NEXT_COOKIE);
 
   if (error) {
-    return NextResponse.redirect(buildRedirectUrl(request.url, nextPath, { gmail_error: error }));
+    return NextResponse.redirect(buildRedirectUrl(request.url, nextPath, { gmail_error: getGmailConnectUserError(error) }));
   }
 
   if (!code || !state || !expectedState || state !== expectedState) {
-    return NextResponse.redirect(buildRedirectUrl(request.url, nextPath, { gmail_error: "state_mismatch" }));
+    return NextResponse.redirect(
+      buildRedirectUrl(request.url, nextPath, { gmail_error: getGmailConnectUserError("state_mismatch") })
+    );
   }
 
   try {
@@ -61,7 +64,7 @@ export async function GET(request: Request) {
 
     return NextResponse.redirect(buildRedirectUrl(request.url, nextPath, { gmail: "connected" }));
   } catch (connectError) {
-    const message = connectError instanceof Error ? connectError.message : "google_connect_failed";
-    return NextResponse.redirect(buildRedirectUrl(request.url, nextPath, { gmail_error: message }));
+    console.error("[google-connect] Gmail connection callback failed.", connectError);
+    return NextResponse.redirect(buildRedirectUrl(request.url, nextPath, { gmail_error: getGmailConnectUserError() }));
   }
 }

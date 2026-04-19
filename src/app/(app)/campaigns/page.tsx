@@ -206,7 +206,7 @@ export default async function CampaignsPage({
 
   return (
     <div className={styles.page}>
-      {gmailError ? <ErrorToastOnMount message={gmailError} title="Gmail reconnect failed" /> : null}
+      {gmailError ? <ErrorToastOnMount message={gmailError} title="Gmail connection failed" /> : null}
       <section className={styles.topGrid}>
         {gmailStatus === "connected" ? (
           <div className={styles.flashNotice}>

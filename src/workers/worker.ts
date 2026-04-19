@@ -1,7 +1,7 @@
 import { Worker, type ConnectionOptions } from "bullmq";
 
 import { prisma } from "@/lib/db";
-import { isGmailDailyLimitError, sendEmail, type EmailAttachment } from "@/lib/provider";
+import { getUserSafeGmailSendError, isGmailDailyLimitError, sendEmail, type EmailAttachment } from "@/lib/provider";
 import { queues } from "@/lib/queue";
 import { consumeSendWindow } from "@/lib/rate-limit";
 import { getRedis } from "@/lib/redis";
@@ -105,7 +105,8 @@ const sendWorker = new Worker(
         providerMessageId: response.data?.id
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown provider error";
+      const message = getUserSafeGmailSendError(error);
+      console.error("[worker-send] Delivery failed.", error);
       if (isGmailDailyLimitError(error)) {
         await pauseCampaignRunForSenderLimit({
           runId: recipientJob.campaignRunId,

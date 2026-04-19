@@ -5,6 +5,8 @@ import { normalizeGoogleApiErrorMessage, refreshGoogleAccessToken } from "@/lib/
 
 export const GMAIL_RECONNECT_ERROR =
   "This Gmail sender needs to be reconnected. Google says its access expired, was revoked, or is missing the required send permission.";
+export const GMAIL_SEND_USER_ERROR = "Couldn't send the email right now. Please try again.";
+export const GMAIL_SEND_LIMIT_USER_ERROR = "Gmail sending is temporarily unavailable. Please try again later.";
 
 const GOOGLE_GMAIL_SEND_URL = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send";
 
@@ -58,6 +60,18 @@ export function isGmailReconnectError(error: unknown) {
 
   const normalized = message.toLowerCase();
   return GMAIL_RECONNECT_PATTERNS.some((pattern) => normalized.includes(pattern));
+}
+
+export function getUserSafeGmailSendError(error: unknown) {
+  if (isGmailReconnectError(error)) {
+    return GMAIL_RECONNECT_ERROR;
+  }
+
+  if (isGmailDailyLimitError(error)) {
+    return GMAIL_SEND_LIMIT_USER_ERROR;
+  }
+
+  return GMAIL_SEND_USER_ERROR;
 }
 
 function getAttachmentPayload(attachment: EmailAttachment) {

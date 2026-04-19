@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 import { buildGoogleLoginUrl } from "@/lib/google";
+import { getGoogleLoginUserError } from "@/lib/user-facing-errors";
 
 const GOOGLE_LOGIN_STATE_COOKIE = "sendloom_google_login_state";
 
@@ -28,7 +29,7 @@ export async function GET(request: Request) {
       })
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "google_login_unavailable";
-    return NextResponse.redirect(new URL(`/login?error=${encodeURIComponent(message)}`, request.url));
+    console.error("[google-login] Could not start Google sign-in.", error);
+    return NextResponse.redirect(new URL(`/login?error=${encodeURIComponent(getGoogleLoginUserError())}`, request.url));
   }
 }

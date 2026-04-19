@@ -432,7 +432,7 @@ export default async function CampaignDetailPage({
   return (
     <div className={styles.page}>
       <ActiveRunRefresher active={isActiveRun} />
-      {gmailErrorMessage ? <ErrorToastOnMount message={gmailErrorMessage} title="Gmail reconnect failed" /> : null}
+      {gmailErrorMessage ? <ErrorToastOnMount message={gmailErrorMessage} title="Gmail connection failed" /> : null}
       {gmailStatus === "connected" ? (
         <div className={styles.flashNotice}>
           <RefreshCcw aria-hidden="true" />
