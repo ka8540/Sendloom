@@ -259,8 +259,6 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
   const [savedDomainSearchDetailsByDomain, setSavedDomainSearchDetailsByDomain] = useState<
     Record<string, HunterDomainSearchDetail>
   >({});
-  const [hasHydratedSavedDomainSearches, setHasHydratedSavedDomainSearches] = useState(false);
-  const [hasRestoredInitialSavedSearch, setHasRestoredInitialSavedSearch] = useState(false);
   useErrorToastEffect(error, "Hunter search failed");
   useErrorToastEffect(settingsError, "Hunter settings failed");
 
@@ -553,7 +551,6 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
       )
     );
     setSavedDomainSearchDetailsByDomain(localDetailsByDomain);
-    setHasHydratedSavedDomainSearches(true);
   }, []);
 
   const activeDomainGroup =
@@ -670,28 +667,6 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
     },
     [applyDomainSearchResults, cacheSavedDomainSearch, savedDomainSearchDetailsByDomain, showError]
   );
-
-  useEffect(() => {
-    if (
-      !hasHydratedSavedDomainSearches ||
-      hasRestoredInitialSavedSearch ||
-      hasSearched ||
-      results.length > 0 ||
-      !savedDomainSearches.length
-    ) {
-      return;
-    }
-
-    setHasRestoredInitialSavedSearch(true);
-    void loadSavedDomainSearch(savedDomainSearches[0], { silent: true });
-  }, [
-    hasHydratedSavedDomainSearches,
-    hasRestoredInitialSavedSearch,
-    hasSearched,
-    loadSavedDomainSearch,
-    results.length,
-    savedDomainSearches
-  ]);
 
   return (
     <>
