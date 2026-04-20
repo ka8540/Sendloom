@@ -1,40 +1,9 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
 
 import { requireApiUser } from "@/lib/api-auth";
 import { env } from "@/lib/env";
+import { enhanceTemplateRequestSchema, type SpamAnalysisPayload } from "@/lib/template-enhancement-request";
 import { getDefaultTemplateBody, TEMPLATE_FORMATS, type TemplateFormat, validateTemplateBody } from "@/lib/templates";
-
-const spamAnalysisSchema = z.object({
-  subjectScore: z.number().min(0).max(100),
-  subjectRisk: z.enum(["Low", "Medium", "High"]),
-  subjectSignals: z.array(z.string()).default([]),
-  bodyScore: z.number().min(0).max(100),
-  bodyRisk: z.enum(["Low", "Medium", "High"]),
-  bodySignals: z.array(z.string()).default([])
-});
-
-const requestSchema = z
-  .object({
-    action: z.enum(["enhance", "fix-spam"]).optional(),
-    fieldType: z.enum(["subject", "body"]).optional(),
-    templateFormat: z.enum(TEMPLATE_FORMATS).optional(),
-    currentText: z.string().optional().default(""),
-    templateName: z.string().trim().optional(),
-    subjectContext: z.string().optional(),
-    bodyContext: z.string().optional(),
-    spamAnalysis: spamAnalysisSchema.optional()
-  })
-  .superRefine((value, ctx) => {
-    const action = value.action ?? "enhance";
-    if (action === "enhance" && !value.fieldType) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["fieldType"],
-        message: "fieldType is required for AI enhancement."
-      });
-    }
-  });
 
 type OpenAIResponse = {
   output_text?: string;
@@ -49,8 +18,6 @@ type OpenAIResponse = {
     message?: string;
   };
 };
-
-type SpamAnalysisPayload = z.infer<typeof spamAnalysisSchema>;
 
 function getFormatLabel(templateFormat: TemplateFormat) {
   if (templateFormat === "PLAIN_TEXT") {
@@ -282,7 +249,7 @@ export async function POST(request: Request) {
       return auth.response;
     }
 
-    const payload = requestSchema.parse(await request.json());
+    const payload = enhanceTemplateRequestSchema.parse(await request.json());
     const action = payload.action ?? "enhance";
     const templateFormat = payload.templateFormat ?? "HTML";
     const fieldType = action === "fix-spam" ? (payload.fieldType ?? "body") : payload.fieldType!;

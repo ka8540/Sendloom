@@ -286,7 +286,7 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
           subjectContext: fieldType === "body" ? fields.subject : undefined,
           bodyContext: fieldType === "subject" ? fields.htmlBody : undefined,
           templateFormat: fieldType === "body" ? fields.format : undefined,
-          spamAnalysis
+          ...(spamAnalysis ? { spamAnalysis } : {})
         })
       });
 
