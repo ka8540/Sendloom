@@ -43,11 +43,16 @@ function isMissingHunterDomainSearchTableError(error: unknown) {
 }
 
 async function hasHunterDomainSearchTable() {
-  const result = await prisma.$queryRaw<Array<{ table_name: string | null }>>`
-    SELECT to_regclass('public."HunterDomainSearch"') AS table_name
+  const result = await prisma.$queryRaw<Array<{ exists: boolean }>>`
+    SELECT EXISTS (
+      SELECT 1
+      FROM information_schema.tables
+      WHERE table_schema = 'public'
+        AND table_name = 'HunterDomainSearch'
+    ) AS "exists"
   `;
 
-  return Boolean(result[0]?.table_name);
+  return Boolean(result[0]?.exists);
 }
 
 function toHunterDomainSearchSummary(entry: {
