@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { HunterResultRow } from "@/lib/hunter";
 import {
   AlertCircle,
@@ -259,6 +259,7 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
   const [savedDomainSearchDetailsByDomain, setSavedDomainSearchDetailsByDomain] = useState<
     Record<string, HunterDomainSearchDetail>
   >({});
+  const savedSearchLoadRequestId = useRef(0);
   useErrorToastEffect(error, "Hunter search failed");
   useErrorToastEffect(settingsError, "Hunter settings failed");
 
@@ -287,6 +288,7 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
   );
 
   const clearActiveSavedDomainSearch = useCallback(() => {
+    savedSearchLoadRequestId.current += 1;
     setResults([]);
     setHasSearched(false);
     setError(null);
@@ -294,6 +296,7 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
     setSelectedDomainCategory(null);
     setSelectedContactKeys(new Set());
     setActiveSavedSearchId(null);
+    setSavedSearchPendingId(null);
   }, []);
 
   const cacheSavedDomainSearch = useCallback((savedSearch: HunterDomainSearchDetail) => {
@@ -416,6 +419,7 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
       return;
     }
 
+    savedSearchLoadRequestId.current += 1;
     setPending(true);
     setError(null);
     setHasSearched(true);
@@ -423,6 +427,8 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
     setDomainPages({});
     setSelectedDomainCategory(null);
     setSelectedContactKeys(new Set());
+    setActiveSavedSearchId(null);
+    setSavedSearchPendingId(null);
 
     try {
       const response = await fetch("/api/domain-search", {
@@ -632,11 +638,16 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
 
   const loadSavedDomainSearch = useCallback(
     async (savedSearch: HunterDomainSearchSummary, options?: { silent?: boolean }) => {
+      const requestId = savedSearchLoadRequestId.current + 1;
+      savedSearchLoadRequestId.current = requestId;
       setSavedSearchPendingId(savedSearch.id);
       setError(null);
 
       const cachedDetail = savedDomainSearchDetailsByDomain[getSavedDomainSearchDomainKey(savedSearch.domain)];
       if (cachedDetail) {
+        if (savedSearchLoadRequestId.current !== requestId) {
+          return;
+        }
         applyDomainSearchResults(cachedDetail.domain, cachedDetail.results, cachedDetail.id);
         setSavedSearchPendingId(null);
         return;
@@ -654,6 +665,10 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
           throw new Error(payload?.error ?? "Could not load that saved domain search.");
         }
 
+        if (savedSearchLoadRequestId.current !== requestId) {
+          return;
+        }
+
         const savedSearchDetail: HunterDomainSearchDetail = {
           id: payload?.id ?? savedSearch.id,
           domain: payload?.domain ?? savedSearch.domain,
@@ -665,13 +680,19 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
         cacheSavedDomainSearch(savedSearchDetail);
         applyDomainSearchResults(savedSearchDetail.domain, savedSearchDetail.results, savedSearchDetail.id);
       } catch (loadError) {
+        if (savedSearchLoadRequestId.current !== requestId) {
+          return;
+        }
+
         if (!options?.silent) {
           showError(loadError instanceof Error ? loadError.message : "Could not load that saved domain search.", {
             title: "Saved search failed"
           });
         }
       } finally {
-        setSavedSearchPendingId(null);
+        if (savedSearchLoadRequestId.current === requestId) {
+          setSavedSearchPendingId(null);
+        }
       }
     },
     [applyDomainSearchResults, cacheSavedDomainSearch, savedDomainSearchDetailsByDomain, showError]
@@ -848,15 +869,15 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
                           activeSavedSearchId === savedSearch.id ? styles.savedSearchCardActive : ""
                         }`}
                         onClick={() => {
-                          if (activeSavedSearchId === savedSearch.id) {
+                          if (activeSavedSearchId === savedSearch.id || savedSearchPendingId === savedSearch.id) {
                             clearActiveSavedDomainSearch();
                             return;
                           }
 
                           void loadSavedDomainSearch(savedSearch);
                         }}
-                        disabled={savedSearchPendingId === savedSearch.id}
                         aria-pressed={activeSavedSearchId === savedSearch.id}
+                        aria-busy={savedSearchPendingId === savedSearch.id}
                       >
                         <span className={styles.savedSearchCardTopRow}>
                           <span className={styles.savedSearchDomain}>{savedSearch.domain}</span>
