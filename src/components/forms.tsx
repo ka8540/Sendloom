@@ -239,17 +239,6 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
   };
 
   useEffect(() => {
-    if (controlled) {
-      return;
-    }
-
-    setLocalFields(getTemplateFields(initialTemplate));
-    setState({ pending: false });
-    setEnhanceError({});
-    setSpamAnalysis(null);
-  }, [controlled, initialTemplate?.id]);
-
-  useEffect(() => {
     return () => {
       if (highlightTimeoutRef.current) {
         window.clearTimeout(highlightTimeoutRef.current);
@@ -267,6 +256,15 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
       highlightTimeoutRef.current = null;
     }
   }
+
+  useEffect(() => {
+    if (!controlled) {
+      setLocalFields(getTemplateFields(initialTemplate));
+    }
+
+    setState({ pending: false });
+    resetTemplateAssistState();
+  }, [controlled, initialTemplate?.id]);
 
   async function enhanceText(fieldType: EnhanceField, currentText: string) {
     setEnhanceError((current) => ({
