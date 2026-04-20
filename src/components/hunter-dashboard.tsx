@@ -286,6 +286,16 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
     []
   );
 
+  const clearActiveSavedDomainSearch = useCallback(() => {
+    setResults([]);
+    setHasSearched(false);
+    setError(null);
+    setDomainPages({});
+    setSelectedDomainCategory(null);
+    setSelectedContactKeys(new Set());
+    setActiveSavedSearchId(null);
+  }, []);
+
   const cacheSavedDomainSearch = useCallback((savedSearch: HunterDomainSearchDetail) => {
     const domainKey = getSavedDomainSearchDomainKey(savedSearch.domain);
 
@@ -295,7 +305,6 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
     }));
     setSavedDomainSearches((current) => mergeHunterDomainSearchSummaries(current, [toHunterDomainSearchSummary(savedSearch)]));
     setSavedDomainSearchPage(0);
-    setActiveSavedSearchId(savedSearch.id);
 
     const localSearches = readLocalSavedDomainSearches();
     const nextLocalSearches = [
@@ -447,7 +456,7 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
         results: nextResults
       };
 
-      applyDomainSearchResults(savedSearchDetail.domain, nextResults, savedSearchDetail.id);
+      applyDomainSearchResults(savedSearchDetail.domain, nextResults);
       cacheSavedDomainSearch(savedSearchDetail);
     } catch (searchError) {
       setHasSearched(false);
@@ -838,8 +847,16 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
                         className={`${styles.savedSearchCard} ${
                           activeSavedSearchId === savedSearch.id ? styles.savedSearchCardActive : ""
                         }`}
-                        onClick={() => void loadSavedDomainSearch(savedSearch)}
+                        onClick={() => {
+                          if (activeSavedSearchId === savedSearch.id) {
+                            clearActiveSavedDomainSearch();
+                            return;
+                          }
+
+                          void loadSavedDomainSearch(savedSearch);
+                        }}
                         disabled={savedSearchPendingId === savedSearch.id}
+                        aria-pressed={activeSavedSearchId === savedSearch.id}
                       >
                         <span className={styles.savedSearchCardTopRow}>
                           <span className={styles.savedSearchDomain}>{savedSearch.domain}</span>
