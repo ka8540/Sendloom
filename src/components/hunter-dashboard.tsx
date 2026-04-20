@@ -46,7 +46,7 @@ type Props = {
 };
 
 const RESULTS_PAGE_SIZE = 10;
-const SAVED_DOMAIN_SEARCHES_PAGE_SIZE = 5;
+const SAVED_DOMAIN_SEARCHES_PAGE_SIZE = 10;
 const LOCAL_STORAGE_SAVED_DOMAIN_SEARCHES_KEY = "sendloom_hunter_domain_searches";
 const DOMAIN_CATEGORY_ORDER = ["IT", "HR", "Sales", "Marketing", "Operations", "Finance", "Leadership", "Other"] as const;
 type DomainCategory = (typeof DOMAIN_CATEGORY_ORDER)[number];
@@ -840,9 +840,6 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
                         >
                           <ChevronLeft aria-hidden="true" />
                         </button>
-                        <span className={styles.resultsPagerCount}>
-                          {savedDomainSearchPage + 1} / {savedDomainSearchTotalPages}
-                        </span>
                         <button
                           type="button"
                           className={styles.resultsPagerButton}
@@ -869,11 +866,24 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
                         onClick={() => void loadSavedDomainSearch(savedSearch)}
                         disabled={savedSearchPendingId === savedSearch.id}
                       >
-                        <span className={styles.savedSearchDomain}>{savedSearch.domain}</span>
-                        <span className={styles.savedSearchMeta}>
-                          {savedSearch.resultCount} result{savedSearch.resultCount === 1 ? "" : "s"}
+                        <span className={styles.savedSearchCardTopRow}>
+                          <span className={styles.savedSearchDomain}>{savedSearch.domain}</span>
+                          <span className={styles.savedSearchCardIcon} aria-hidden="true">
+                            {savedSearchPendingId === savedSearch.id ? (
+                              <LoaderCircle className={styles.spinner} aria-hidden="true" />
+                            ) : (
+                              <Globe aria-hidden="true" />
+                            )}
+                          </span>
                         </span>
-                        <span className={styles.savedSearchUpdated}>Updated {formatSavedDomainSearchUpdatedAt(savedSearch.updatedAt)}</span>
+                        <span className={styles.savedSearchMetaRow}>
+                          <span className={styles.savedSearchMeta}>
+                            {savedSearch.resultCount} result{savedSearch.resultCount === 1 ? "" : "s"}
+                          </span>
+                          <span className={styles.savedSearchUpdated}>
+                            {formatSavedDomainSearchUpdatedAt(savedSearch.updatedAt)}
+                          </span>
+                        </span>
                       </button>
                     ))}
                   </div>
