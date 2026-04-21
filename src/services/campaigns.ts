@@ -5,7 +5,7 @@ import { CAMPAIGN_SETUP_LOCKED_RUN_STATUSES, isCampaignSetupLocked } from "@/lib
 import { prisma } from "@/lib/db";
 import { buildMergePayload } from "@/lib/mapping";
 import { GMAIL_RECONNECT_ERROR, getUserSafeGmailSendError, isGmailReconnectError, sendEmail, type EmailAttachment } from "@/lib/provider";
-import { consumeSendWindow } from "@/lib/rate-limit";
+import { consumeSendWindow, getSendWindowKey } from "@/lib/rate-limit";
 import { getRedis } from "@/lib/redis";
 import { getNextRunDate } from "@/lib/schedule";
 import { renderTemplate, renderTemplateContent, type TemplateFormat } from "@/lib/templates";
@@ -804,7 +804,12 @@ async function processRecipientJob(recipientJob: RecipientJobWithContext) {
     }
 
     try {
-      const rateWindow = await consumeSendWindow();
+      const rateWindow = await consumeSendWindow(
+        getSendWindowKey({
+          userId: latestJob.campaignRun.campaign.userId ?? latestJob.campaignRun.campaign.senderProfile.userId,
+          senderProfileId: latestJob.campaignRun.campaign.senderProfileId
+        })
+      );
       if (!rateWindow.allowed) {
         await markRecipientAttempt({
           jobId: latestJob.id,

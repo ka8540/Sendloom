@@ -3,7 +3,7 @@ import { Worker, type ConnectionOptions } from "bullmq";
 import { prisma } from "@/lib/db";
 import { getUserSafeGmailSendError, isGmailDailyLimitError, sendEmail, type EmailAttachment } from "@/lib/provider";
 import { queues } from "@/lib/queue";
-import { consumeSendWindow } from "@/lib/rate-limit";
+import { consumeSendWindow, getSendWindowKey } from "@/lib/rate-limit";
 import { getRedis } from "@/lib/redis";
 import { enqueueRecipientJobs, markRecipientAttempt, pauseCampaignRunForSenderLimit } from "@/services/campaigns";
 
@@ -62,7 +62,12 @@ const sendWorker = new Worker(
     }
 
     try {
-      const rateWindow = await consumeSendWindow();
+      const rateWindow = await consumeSendWindow(
+        getSendWindowKey({
+          userId: recipientJob.campaignRun.campaign.userId ?? recipientJob.campaignRun.campaign.senderProfile.userId,
+          senderProfileId: recipientJob.campaignRun.campaign.senderProfileId
+        })
+      );
       if (!rateWindow.allowed) {
         await markRecipientAttempt({
           jobId,
