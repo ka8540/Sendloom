@@ -27,7 +27,7 @@ const featureCards = [
     title: "Stay fast without acting reckless.",
     body:
       "Sendloom keeps suppressions, retries, tracking links, and send-window guardrails in the loop so campaigns feel deliberate even when the list is moving quickly.",
-    pills: ["120/min guardrail", "Suppression aware", "Retries + tracking"]
+    pills: ["120/min per user", "Suppression aware", "Retries + tracking"]
   },
   {
     index: "04",
@@ -92,8 +92,8 @@ export default function LandingPage() {
 
             <div className={styles.statRow}>
               <article className={styles.statCard}>
-                <span className={styles.statValue}>120/min</span>
-                <span className={styles.statLabel}>Send window guardrail built into the flow</span>
+                <span className={styles.statValue}>120/min/user</span>
+                <span className={styles.statLabel}>Per-user send window guardrail built into the flow</span>
               </article>
               <article className={styles.statCard}>
                 <span className={styles.statValue}>Finder-ready</span>
