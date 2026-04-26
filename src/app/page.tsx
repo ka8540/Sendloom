@@ -26,8 +26,8 @@ const featureCards = [
     index: "03",
     title: "Stay fast without acting reckless.",
     body:
-      "Sendloom keeps suppressions, retries, tracking links, and send-window guardrails in the loop so campaigns feel deliberate even when the list is moving quickly.",
-    pills: ["120/min per user", "Suppression aware", "Retries + tracking"]
+      "Sendloom keeps retries, tracking links, and send-window guardrails in the loop so campaigns feel deliberate even when the list is moving quickly.",
+    pills: ["120/min per user", "Delivery guardrails", "Retries + tracking"]
   },
   {
     index: "04",
@@ -57,7 +57,7 @@ const workflowSteps = [
   },
   {
     title: "Keep the sequence honest",
-    body: "Clicks, opens, suppressions, and retry states stay attached to the campaign so your next send starts smarter."
+    body: "Clicks, opens, and retry states stay attached to the campaign so your next send starts smarter."
   }
 ] as const;
 
@@ -77,8 +77,8 @@ export default function LandingPage() {
             <p className={styles.lede}>
               Sendloom turns your spreadsheet, template, and connected Gmail sender into one clean launch surface. Import lists,
               map fields, find missing contact emails with your own API key from hunter.io, choose plain text, HTML, or structured
-              JSON templates, enhance subject lines and email copy with AI, add attachments, track runs, and keep suppressions in
-              the same place the sequence actually lives.
+              JSON templates, enhance subject lines and email copy with AI, add attachments, track runs, and keep delivery history
+              in the same place the sequence actually lives.
             </p>
 
             <div className={styles.ctaRow}>
@@ -126,7 +126,7 @@ export default function LandingPage() {
 
               <div className={styles.floatingCardLower}>
                 <span className={styles.floatingLabel}>Run visibility</span>
-                <strong className={styles.floatingValue}>Suppression-aware</strong>
+                <strong className={styles.floatingValue}>Delivery-aware</strong>
                 <span className={styles.floatingMeta}>Status, retries, opens, and clicks stay attached to the campaign.</span>
               </div>
             </div>
@@ -148,7 +148,7 @@ export default function LandingPage() {
           </article>
           <article className={styles.beltCard}>
             <strong>Respectful sending</strong>
-            <span>Suppressions and retry states stay inside the delivery engine, not in a separate afterthought spreadsheet.</span>
+            <span>Retries and delivery state stay inside the sending engine, not in a separate afterthought spreadsheet.</span>
           </article>
           <article className={styles.beltCard}>
             <strong>Operator clarity</strong>
