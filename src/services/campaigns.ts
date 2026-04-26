@@ -79,13 +79,8 @@ function hasTimeRemaining(deadline: number) {
 }
 
 function appendTrackingMarkup(html: string, jobId: string, email: string) {
-  const unsubscribeUrl = makeTrackingUrl("unsubscribe", jobId, email);
   const openUrl = makeTrackingUrl("open", jobId, email);
-  return [
-    html,
-    `<img src="${openUrl}" alt="" width="1" height="1" style="display:none" />`,
-    `<p style="font-size:12px;color:#6b7280">You can <a href="${unsubscribeUrl}">unsubscribe</a> at any time.</p>`
-  ].join("");
+  return [html, `<img src="${openUrl}" alt="" width="1" height="1" style="display:none" />`].join("");
 }
 
 async function withRedisLock<T>(key: string, ttlSeconds: number, callback: () => Promise<T>) {

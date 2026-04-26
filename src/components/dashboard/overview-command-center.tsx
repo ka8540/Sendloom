@@ -1,15 +1,7 @@
 import type { Route } from "next";
 import Link from "next/link";
-import type { CampaignStatus, ImportStatus, RunStatus, SuppressionReason } from "@prisma/client";
-import {
-  ArrowRight,
-  FileSpreadsheet,
-  SendHorizontal,
-  ShieldAlert,
-  Sparkles,
-  ScrollText,
-  Search
-} from "lucide-react";
+import type { CampaignStatus, ImportStatus, RunStatus } from "@prisma/client";
+import { ArrowRight, FileSpreadsheet, SendHorizontal, Sparkles, ScrollText, Search } from "lucide-react";
 
 import { requireOperatorUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
@@ -49,9 +41,6 @@ export default async function OverviewCommandCenter() {
     templateCount,
     templateCountThisWeek,
     templateCountPreviousWeek,
-    suppressionCount,
-    suppressionCountThisWeek,
-    suppressionCountPreviousWeek,
     activeSequenceCount,
     validatedSequenceCount,
     needsAttentionCount,
@@ -60,8 +49,7 @@ export default async function OverviewCommandCenter() {
     recentCampaigns,
     recentRuns,
     recentImports,
-    recentTemplates,
-    recentSuppressions
+    recentTemplates
   ] = await Promise.all([
     prisma.import.count({
       where: {
@@ -125,28 +113,6 @@ export default async function OverviewCommandCenter() {
       where: {
         userId: user.id,
         updatedAt: {
-          gte: twoWeeksAgo,
-          lt: weekAgo
-        }
-      }
-    }),
-    prisma.suppression.count({
-      where: {
-        userId: user.id
-      }
-    }),
-    prisma.suppression.count({
-      where: {
-        userId: user.id,
-        createdAt: {
-          gte: weekAgo
-        }
-      }
-    }),
-    prisma.suppression.count({
-      where: {
-        userId: user.id,
-        createdAt: {
           gte: twoWeeksAgo,
           lt: weekAgo
         }
@@ -285,22 +251,6 @@ export default async function OverviewCommandCenter() {
         format: true,
         updatedAt: true
       }
-    }),
-    prisma.suppression.findMany({
-      where: {
-        userId: user.id
-      },
-      take: 4,
-      orderBy: {
-        updatedAt: "desc"
-      },
-      select: {
-        id: true,
-        email: true,
-        reason: true,
-        source: true,
-        updatedAt: true
-      }
     })
   ]);
 
@@ -370,8 +320,7 @@ export default async function OverviewCommandCenter() {
   const activityItems = buildActivityItems({
     recentRuns,
     recentImports,
-    recentTemplates,
-    recentSuppressions
+    recentTemplates
   });
 
   return (
@@ -384,8 +333,8 @@ export default async function OverviewCommandCenter() {
           </span>
           <h1 className={styles.heroTitle}>Overview</h1>
           <p className={styles.heroCopy}>
-            Move from signal to action in one surface. Launch new sequences, jump into live runs, and keep imports,
-            templates, and suppressions moving without hunting through tabs.
+            Move from signal to action in one surface. Launch new sequences, jump into live runs, and keep imports and
+            templates moving without hunting through tabs.
           </p>
           <div className={styles.heroHighlights}>
             <div className={styles.heroHighlight}>
@@ -450,14 +399,6 @@ export default async function OverviewCommandCenter() {
           detail="Playable email assets currently available across the workspace."
           trend={buildTrend(templateCountThisWeek, templateCountPreviousWeek, "week")}
           href="/templates"
-        />
-        <MetricCard
-          icon={ShieldAlert}
-          label="Suppression watchlist"
-          value={formatCompactNumber(suppressionCount)}
-          detail="Addresses already held out of future sends across active sequences."
-          trend={buildTrend(suppressionCountThisWeek, suppressionCountPreviousWeek, "week")}
-          href="/suppressions"
         />
       </section>
 
@@ -560,8 +501,7 @@ function deriveSequenceStatus(campaignStatus: CampaignStatus, runStatus?: RunSta
 function buildActivityItems({
   recentRuns,
   recentImports,
-  recentTemplates,
-  recentSuppressions
+  recentTemplates
 }: {
   recentRuns: Array<{
     id: string;
@@ -588,13 +528,6 @@ function buildActivityItems({
     id: string;
     name: string;
     format: string;
-    updatedAt: Date;
-  }>;
-  recentSuppressions: Array<{
-    id: string;
-    email: string;
-    reason: SuppressionReason;
-    source: string;
     updatedAt: Date;
   }>;
 }): ActivityItem[] {
@@ -645,22 +578,10 @@ function buildActivityItems({
     tone: "muted"
   }));
 
-  const suppressionItems: ActivityItem[] = recentSuppressions.map((entry) => ({
-    id: `suppression-${entry.id}`,
-    href: "/suppressions",
-    title: `${entry.email} suppressed`,
-    description: `${humanizeEnum(entry.reason)} via ${entry.source}.`,
-    timeLabel: formatRelativeTime(entry.updatedAt),
-    timeDetail: formatDateTime(entry.updatedAt),
-    kind: "suppression",
-    tone: "warning"
-  }));
-
   const sortableItems = [
     ...runItems.map((item, index) => ({ ...item, sortAt: recentRuns[index]?.updatedAt.getTime() ?? 0 })),
     ...importItems.map((item, index) => ({ ...item, sortAt: recentImports[index]?.updatedAt.getTime() ?? 0 })),
-    ...templateItems.map((item, index) => ({ ...item, sortAt: recentTemplates[index]?.updatedAt.getTime() ?? 0 })),
-    ...suppressionItems.map((item, index) => ({ ...item, sortAt: recentSuppressions[index]?.updatedAt.getTime() ?? 0 }))
+    ...templateItems.map((item, index) => ({ ...item, sortAt: recentTemplates[index]?.updatedAt.getTime() ?? 0 }))
   ];
 
   return sortableItems
