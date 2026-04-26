@@ -7,6 +7,7 @@ import { getRedis } from "@/lib/redis";
 import { syncRunCounts } from "@/services/campaigns";
 
 const REPLY_SYNC_MIN_INTERVAL_MS = 3 * 60_000;
+const REPLY_SYNC_FORCED_MIN_INTERVAL_MS = 30_000;
 const REPLY_SYNC_LOCK_TTL_SECONDS = 2 * 60;
 const REPLY_SYNC_OVERLAP_MS = 15 * 60_000;
 const INITIAL_LOOKBACK_MS = 7 * 24 * 60 * 60_000;
@@ -331,11 +332,10 @@ export async function syncRepliesForSenderProfile(
     return 0;
   }
 
-  if (!args.force) {
-    const cutoff = new Date(Date.now() - REPLY_SYNC_MIN_INTERVAL_MS);
-    if (sender.lastReplySyncAt && sender.lastReplySyncAt > cutoff) {
-      return 0;
-    }
+  const freshnessWindowMs = args.force ? REPLY_SYNC_FORCED_MIN_INTERVAL_MS : REPLY_SYNC_MIN_INTERVAL_MS;
+  const cutoff = new Date(Date.now() - freshnessWindowMs);
+  if (sender.lastReplySyncAt && sender.lastReplySyncAt > cutoff) {
+    return 0;
   }
 
   return syncSenderReplies(sender, args.maxMessages ?? DEFAULT_MAX_MESSAGES_PER_SENDER);

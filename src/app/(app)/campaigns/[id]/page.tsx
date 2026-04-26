@@ -299,6 +299,7 @@ export default async function CampaignDetailPage({
   if (latestRun && campaign.senderProfile.oauthRefreshToken) {
     try {
       await syncRepliesForSenderProfile(campaign.senderProfileId, {
+        force: true,
         maxMessages: 25
       });
     } catch (error) {
