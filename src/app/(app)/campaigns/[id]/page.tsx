@@ -25,6 +25,7 @@ import { isCampaignSetupLocked } from "@/lib/campaign-setup-lock";
 import { prisma } from "@/lib/db";
 import { GMAIL_RECONNECT_ERROR } from "@/lib/provider";
 import { launchCampaign, pauseCampaign, processPendingCampaignWork, validateCampaign } from "@/services/campaigns";
+import { syncRepliesForSenderProfile } from "@/services/replies";
 import styles from "./page.module.css";
 
 export const maxDuration = 60;
@@ -295,6 +296,13 @@ export default async function CampaignDetailPage({
     }
   });
   const latestRun = campaign.runs[0] ?? null;
+  if (latestRun && campaign.senderProfile.oauthRefreshToken) {
+    await syncRepliesForSenderProfile(campaign.senderProfileId, {
+      force: true,
+      maxMessages: 100
+    });
+  }
+
   const requestedRecipientPage = Number.parseInt(String(resolvedSearchParams.recipientsPage ?? "1"), 10);
   const [imports, mappings, templates, senders, recipientJobCount, replyCountAggregate] = await Promise.all([
     prisma.import.findMany({

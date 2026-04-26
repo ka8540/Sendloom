@@ -113,6 +113,23 @@ async function listSenderCandidates(maxSenders: number) {
   });
 }
 
+async function getSenderSyncCandidate(senderId: string) {
+  return prisma.senderProfile.findFirst({
+    where: {
+      id: senderId,
+      provider: "google_oauth",
+      oauthRefreshToken: {
+        not: null
+      }
+    },
+    select: {
+      id: true,
+      oauthRefreshToken: true,
+      lastReplySyncAt: true
+    }
+  });
+}
+
 async function listCandidateRecipientJobs(senderProfileId: string) {
   const earliestCreatedAt = new Date(Date.now() - RECIPIENT_LOOKBACK_MS);
 
@@ -303,4 +320,23 @@ export async function syncConnectedSenderReplies(args: { maxSenders?: number; ma
   }
 
   return result;
+}
+
+export async function syncRepliesForSenderProfile(
+  senderId: string,
+  args: { force?: boolean; maxMessages?: number } = {}
+) {
+  const sender = await getSenderSyncCandidate(senderId);
+  if (!sender) {
+    return 0;
+  }
+
+  if (!args.force) {
+    const cutoff = new Date(Date.now() - REPLY_SYNC_MIN_INTERVAL_MS);
+    if (sender.lastReplySyncAt && sender.lastReplySyncAt > cutoff) {
+      return 0;
+    }
+  }
+
+  return syncSenderReplies(sender, args.maxMessages ?? DEFAULT_MAX_MESSAGES_PER_SENDER);
 }
