@@ -296,7 +296,7 @@ export default async function CampaignDetailPage({
   });
   const latestRun = campaign.runs[0] ?? null;
   const requestedRecipientPage = Number.parseInt(String(resolvedSearchParams.recipientsPage ?? "1"), 10);
-  const [imports, mappings, templates, senders, recipientJobCount] = await Promise.all([
+  const [imports, mappings, templates, senders, recipientJobCount, replyCountAggregate] = await Promise.all([
     prisma.import.findMany({
       where: { userId: user.id },
       orderBy: { updatedAt: "desc" },
@@ -340,7 +340,21 @@ export default async function CampaignDetailPage({
             campaignRunId: latestRun.id
           }
         })
-      : Promise.resolve(0)
+      : Promise.resolve(0),
+    latestRun
+      ? prisma.recipientJob.aggregate({
+          where: {
+            campaignRunId: latestRun.id
+          },
+          _sum: {
+            replyCount: true
+          }
+        })
+      : Promise.resolve({
+          _sum: {
+            replyCount: 0
+          }
+        })
   ]);
 
   const senderNeedsReconnect = !campaign.senderProfile.oauthRefreshToken;
@@ -353,9 +367,8 @@ export default async function CampaignDetailPage({
   const attachments = ((campaign.templateSnapshot as CampaignTemplateSnapshot).attachments ?? []).filter(
     (attachment) => attachment.fileName
   );
-  const issueCount =
-    (latestRun?.failedCount ?? 0) + (latestRun?.suppressedCount ?? 0) + (latestRun?.invalidCount ?? 0);
-  const trackedClickCount = latestRun?.clickedCount ?? 0;
+  const issueCount = (latestRun?.failedCount ?? 0) + (latestRun?.invalidCount ?? 0);
+  const replyCount = replyCountAggregate._sum.replyCount ?? 0;
   const deliveredCount = getDeliveredCount(latestRun);
   const launchButtonLabel = isActiveRun
     ? "Run is processing"
@@ -589,11 +602,11 @@ export default async function CampaignDetailPage({
         </article>
         <article className={styles.metricCard}>
           <div className={styles.metricIcon}>
-            <Eye aria-hidden="true" />
+            <Mail aria-hidden="true" />
           </div>
-          <span className={styles.metricLabel}>Tracked clicks</span>
-          <strong className={styles.metricValue}>{trackedClickCount}</strong>
-          <span className={styles.metricMeta}>Stronger than opens, but still treated as a tracking signal.</span>
+          <span className={styles.metricLabel}>Replies</span>
+          <strong className={styles.metricValue}>{replyCount}</strong>
+          <span className={styles.metricMeta}>Replies matched back to emails sent from this run.</span>
         </article>
         <article className={styles.metricCard}>
           <div className={styles.metricIcon}>
@@ -601,7 +614,7 @@ export default async function CampaignDetailPage({
           </div>
           <span className={styles.metricLabel}>Needs attention</span>
           <strong className={styles.metricValue}>{issueCount}</strong>
-          <span className={styles.metricMeta}>Failures, suppressions, and invalid records.</span>
+          <span className={styles.metricMeta}>Failures and invalid records that still need review.</span>
         </article>
       </section>
       <section className={styles.detailGrid}>

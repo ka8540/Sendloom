@@ -106,11 +106,19 @@ async function withRedisLock<T>(key: string, ttlSeconds: number, callback: () =>
 }
 
 export async function syncRunCounts(runId: string) {
-  const aggregate = await prisma.recipientJob.groupBy({
-    by: ["status"],
-    where: { campaignRunId: runId },
-    _count: true
-  });
+  const [aggregate, replyAggregate] = await Promise.all([
+    prisma.recipientJob.groupBy({
+      by: ["status"],
+      where: { campaignRunId: runId },
+      _count: true
+    }),
+    prisma.recipientJob.aggregate({
+      where: { campaignRunId: runId },
+      _sum: {
+        replyCount: true
+      }
+    })
+  ]);
 
   const counts = Object.fromEntries(aggregate.map((entry) => [entry.status, entry._count]));
 
@@ -122,7 +130,8 @@ export async function syncRunCounts(runId: string) {
       suppressedCount: counts.SUPPRESSED ?? 0,
       invalidCount: counts.INVALID ?? 0,
       openedCount: counts.OPENED ?? 0,
-      clickedCount: counts.CLICKED ?? 0
+      clickedCount: counts.CLICKED ?? 0,
+      repliedCount: replyAggregate._sum.replyCount ?? 0
     }
   });
 
