@@ -297,10 +297,13 @@ export default async function CampaignDetailPage({
   });
   const latestRun = campaign.runs[0] ?? null;
   if (latestRun && campaign.senderProfile.oauthRefreshToken) {
-    await syncRepliesForSenderProfile(campaign.senderProfileId, {
-      force: true,
-      maxMessages: 100
-    });
+    try {
+      await syncRepliesForSenderProfile(campaign.senderProfileId, {
+        maxMessages: 25
+      });
+    } catch (error) {
+      console.error("[campaign-detail] Reply sync failed.", error);
+    }
   }
 
   const requestedRecipientPage = Number.parseInt(String(resolvedSearchParams.recipientsPage ?? "1"), 10);

@@ -1,6 +1,7 @@
 import { normalizeGoogleApiErrorMessage } from "@/lib/google";
 
 const GMAIL_API_BASE_URL = "https://gmail.googleapis.com/gmail/v1/users/me";
+const GMAIL_METADATA_CONCURRENCY = 5;
 
 type GmailMessageRef = {
   id: string;
@@ -123,6 +124,17 @@ async function fetchGmailMessageMetadata(accessToken: string, messageId: string)
   return fetchGmailJson<GmailMessageResponse>(accessToken, url);
 }
 
+async function fetchGmailMessageMetadataBatch(accessToken: string, messages: GmailMessageRef[]) {
+  const details: GmailMessageResponse[] = [];
+
+  for (let index = 0; index < messages.length; index += GMAIL_METADATA_CONCURRENCY) {
+    const batch = messages.slice(index, index + GMAIL_METADATA_CONCURRENCY);
+    details.push(...(await Promise.all(batch.map((message) => fetchGmailMessageMetadata(accessToken, message.id)))));
+  }
+
+  return details;
+}
+
 function mapReplyCandidate(message: GmailMessageResponse): GmailReplyCandidate | null {
   const headers = message.payload?.headers;
   const references = [
@@ -155,7 +167,7 @@ export async function listGmailReplyCandidates(args: { accessToken: string; afte
     maxResults: args.maxResults ?? 50
   });
 
-  const details = await Promise.all(messages.map((message) => fetchGmailMessageMetadata(args.accessToken, message.id)));
+  const details = await fetchGmailMessageMetadataBatch(args.accessToken, messages);
 
   return details
     .map((message) => mapReplyCandidate(message))
