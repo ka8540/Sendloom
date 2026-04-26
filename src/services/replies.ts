@@ -1,7 +1,7 @@
 import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
-import { listGmailReplyCandidates, normalizeMessageId } from "@/lib/gmail";
+import { listGmailReplyCandidates, listGmailThreadMessageIds, normalizeMessageId } from "@/lib/gmail";
 import { refreshGoogleAccessToken } from "@/lib/google";
 import { getRedis } from "@/lib/redis";
 import { syncRunCounts } from "@/services/campaigns";
@@ -189,6 +189,9 @@ async function syncSenderReplies(sender: SenderSyncCandidate, maxMessages: numbe
         after: getReplySyncStart(sender.lastReplySyncAt),
         maxResults: maxMessages
       });
+      const threadMessageIdsCache = new Map<string, string[]>();
+      let matchedReplyCount = 0;
+      let unmatchedReplyCount = 0;
 
       const messageIds = replies.map((reply) => reply.gmailMessageId);
       const existingReplies = messageIds.length
@@ -214,13 +217,31 @@ async function syncSenderReplies(sender: SenderSyncCandidate, maxMessages: numbe
           continue;
         }
 
-        const matchedJob = reply.referenceMessageIds
+        let matchedJob = reply.referenceMessageIds
           .map((messageId) => recipientJobsByMessageId.get(messageId))
           .find((entry): entry is CandidateRecipientJob => Boolean(entry));
 
+        if (!matchedJob && reply.gmailThreadId) {
+          let threadMessageIds = threadMessageIdsCache.get(reply.gmailThreadId);
+          if (!threadMessageIds) {
+            threadMessageIds = await listGmailThreadMessageIds({
+              accessToken: accessToken.access_token,
+              threadId: reply.gmailThreadId
+            });
+            threadMessageIdsCache.set(reply.gmailThreadId, threadMessageIds);
+          }
+
+          matchedJob = threadMessageIds
+            .map((messageId) => recipientJobsByMessageId.get(messageId))
+            .find((entry): entry is CandidateRecipientJob => Boolean(entry));
+        }
+
         if (!matchedJob) {
+          unmatchedReplyCount += 1;
           continue;
         }
+
+        matchedReplyCount += 1;
 
         try {
           await prisma.$transaction(async (tx) => {
@@ -268,6 +289,16 @@ async function syncSenderReplies(sender: SenderSyncCandidate, maxMessages: numbe
         touchedRunIds.add(matchedJob.campaignRunId);
         existingMessageIds.add(reply.gmailMessageId);
         repliesStored += 1;
+      }
+
+      if (replies.length || repliesStored || unmatchedReplyCount) {
+        console.info("[reply-sync] Processed Gmail replies.", {
+          senderId: sender.id,
+          repliesFetched: replies.length,
+          repliesMatched: matchedReplyCount,
+          repliesStored,
+          unmatchedReplies: unmatchedReplyCount
+        });
       }
 
       for (const runId of touchedRunIds) {

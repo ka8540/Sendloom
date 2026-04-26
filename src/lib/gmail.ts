@@ -13,6 +13,10 @@ type GmailListResponse = {
   nextPageToken?: string;
 };
 
+type GmailThreadResponse = {
+  messages?: GmailMessageRef[];
+};
+
 type GmailHeader = {
   name: string;
   value: string;
@@ -173,4 +177,14 @@ export async function listGmailReplyCandidates(args: { accessToken: string; afte
     .map((message) => mapReplyCandidate(message))
     .filter((message): message is GmailReplyCandidate => Boolean(message))
     .sort((left, right) => left.receivedAt.getTime() - right.receivedAt.getTime());
+}
+
+export async function listGmailThreadMessageIds(args: { accessToken: string; threadId: string }) {
+  const url = new URL(`${GMAIL_API_BASE_URL}/threads/${args.threadId}`);
+  url.searchParams.set("format", "minimal");
+
+  const payload = await fetchGmailJson<GmailThreadResponse>(args.accessToken, url);
+  return (payload.messages ?? [])
+    .map((message) => normalizeMessageId(message.id))
+    .filter((messageId): messageId is string => Boolean(messageId));
 }
