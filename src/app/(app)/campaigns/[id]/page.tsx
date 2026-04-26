@@ -278,16 +278,25 @@ export default async function CampaignDetailPage({
       senderProfile: true,
       runs: {
         orderBy: { createdAt: "desc" },
-        include: {
-          recipientJobs: {
-            take: 50,
-            orderBy: { updatedAt: "desc" }
-          }
+        take: 1,
+        select: {
+          id: true,
+          status: true,
+          totalRecipients: true,
+          sentCount: true,
+          failedCount: true,
+          suppressedCount: true,
+          invalidCount: true,
+          openedCount: true,
+          clickedCount: true,
+          updatedAt: true
         }
       }
     }
   });
-  const [imports, mappings, templates, senders] = await Promise.all([
+  const latestRun = campaign.runs[0] ?? null;
+  const requestedRecipientPage = Number.parseInt(String(resolvedSearchParams.recipientsPage ?? "1"), 10);
+  const [imports, mappings, templates, senders, recipientJobCount] = await Promise.all([
     prisma.import.findMany({
       where: { userId: user.id },
       orderBy: { updatedAt: "desc" },
@@ -324,10 +333,16 @@ export default async function CampaignDetailPage({
         fromEmail: true,
         oauthRefreshToken: true
       }
-    })
+    }),
+    latestRun
+      ? prisma.recipientJob.count({
+          where: {
+            campaignRunId: latestRun.id
+          }
+        })
+      : Promise.resolve(0)
   ]);
 
-  const latestRun = campaign.runs[0];
   const senderNeedsReconnect = !campaign.senderProfile.oauthRefreshToken;
   const isActiveRun = latestRun ? ["QUEUED", "RUNNING"].includes(latestRun.status) : false;
   const isPausedRun = latestRun?.status === "PAUSED" || campaign.status === "PAUSED";
@@ -355,16 +370,20 @@ export default async function CampaignDetailPage({
   const latestRunValue = latestRun?.updatedAt?.toISOString() ?? null;
   const validatedAtValue = campaign.lastValidatedAt?.toISOString() ?? null;
   const reconnectHref = `/api/auth/google/connect?email=${encodeURIComponent(campaign.senderProfile.fromEmail)}&next=${encodeURIComponent(`/campaigns/${campaign.id}`)}`;
-  const recipientJobs = latestRun?.recipientJobs ?? [];
-  const totalRecipientPages = Math.max(1, Math.ceil(recipientJobs.length / RECIPIENTS_PAGE_SIZE));
-  const requestedRecipientPage = Number.parseInt(String(resolvedSearchParams.recipientsPage ?? "1"), 10);
+  const totalRecipientPages = Math.max(1, Math.ceil(recipientJobCount / RECIPIENTS_PAGE_SIZE));
   const recipientPage = Number.isFinite(requestedRecipientPage)
     ? Math.min(Math.max(requestedRecipientPage, 1), totalRecipientPages)
     : 1;
-  const paginatedRecipientJobs = recipientJobs.slice(
-    (recipientPage - 1) * RECIPIENTS_PAGE_SIZE,
-    recipientPage * RECIPIENTS_PAGE_SIZE
-  );
+  const paginatedRecipientJobs = latestRun
+    ? await prisma.recipientJob.findMany({
+        where: {
+          campaignRunId: latestRun.id
+        },
+        orderBy: { updatedAt: "desc" },
+        skip: (recipientPage - 1) * RECIPIENTS_PAGE_SIZE,
+        take: RECIPIENTS_PAGE_SIZE
+      })
+    : [];
   const latestMappingsByImport = new Map<string, (typeof mappings)[number]>();
 
   for (const mapping of mappings) {
@@ -607,7 +626,7 @@ export default async function CampaignDetailPage({
             </div>
           </div>
 
-          {recipientJobs.length ? (
+          {recipientJobCount ? (
             <div className={styles.jobList}>
               {paginatedRecipientJobs.map((job) => (
                 (() => {
@@ -633,7 +652,7 @@ export default async function CampaignDetailPage({
                 })()
               ))}
 
-              {recipientJobs.length > RECIPIENTS_PAGE_SIZE ? (
+              {recipientJobCount > RECIPIENTS_PAGE_SIZE ? (
                 <div className={styles.paginationRow}>
                   <a
                     href={buildRecipientPageHref(campaign.id, resolvedSearchParams, recipientPage - 1)}
