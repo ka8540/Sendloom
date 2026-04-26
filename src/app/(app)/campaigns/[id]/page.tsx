@@ -30,6 +30,8 @@ import styles from "./page.module.css";
 export const maxDuration = 60;
 const RECIPIENTS_PAGE_SIZE = 10;
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+const RECIPIENT_ERROR_STATUSES = new Set(["FAILED", "RETRYING", "INVALID", "BOUNCED", "COMPLAINED"]);
+const RECIPIENT_SUCCESS_STATUSES = new Set(["SENT", "OPENED", "CLICKED"]);
 
 type CampaignTemplateSnapshot = {
   attachments?: Array<{
@@ -608,18 +610,27 @@ export default async function CampaignDetailPage({
           {recipientJobs.length ? (
             <div className={styles.jobList}>
               {paginatedRecipientJobs.map((job) => (
-                <div key={job.id} className={styles.jobRow}>
-                  <div className={styles.jobIdentity}>
-                    <strong>{job.recipientEmail}</strong>
-                    <span>{job.recipientName || "Name unavailable"}</span>
-                  </div>
-                  <div className={styles.jobTrail}>
-                    <span className={styles.jobStatusBadge}>{humanize(job.status)}</span>
-                    <span className={job.lastError ? styles.jobError : styles.jobErrorMuted}>
-                      {job.lastError ?? "No error reported"}
-                    </span>
-                  </div>
-                </div>
+                (() => {
+                  const showLastError = RECIPIENT_ERROR_STATUSES.has(job.status) && Boolean(job.lastError);
+                  const jobDetail = showLastError
+                    ? job.lastError
+                    : RECIPIENT_SUCCESS_STATUSES.has(job.status)
+                      ? "Delivered successfully"
+                      : "No error reported";
+
+                  return (
+                    <div key={job.id} className={styles.jobRow}>
+                      <div className={styles.jobIdentity}>
+                        <strong>{job.recipientEmail}</strong>
+                        <span>{job.recipientName || "Name unavailable"}</span>
+                      </div>
+                      <div className={styles.jobTrail}>
+                        <span className={styles.jobStatusBadge}>{humanize(job.status)}</span>
+                        <span className={showLastError ? styles.jobError : styles.jobErrorMuted}>{jobDetail}</span>
+                      </div>
+                    </div>
+                  );
+                })()
               ))}
 
               {recipientJobs.length > RECIPIENTS_PAGE_SIZE ? (

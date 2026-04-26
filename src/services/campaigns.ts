@@ -1046,7 +1046,7 @@ export async function markRecipientAttempt(args: {
     data: {
       status: args.status,
       providerMessageId: args.providerMessageId,
-      lastError: args.lastError,
+      lastError: args.status === "SENT" ? null : args.lastError ?? null,
       retryCount: args.status === "RETRYING" ? { increment: 1 } : undefined,
       nextRetryAt: args.status === "RETRYING" ? addMinutes(new Date(), 5) : null
     }
