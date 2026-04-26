@@ -16,9 +16,9 @@ export function AppNav({ isAdmin = false }: { isAdmin?: boolean }) {
     ? [{ href: "/admin" as Route, label: "Admin", icon: ShieldUser }]
     : [
         { href: "/workspace" as Route, label: "Overview", icon: House },
+        { href: "/finder" as Route, label: "Finder", icon: Search },
         { href: "/imports" as Route, label: "Imports", icon: FileSpreadsheet },
         { href: "/templates" as Route, label: "Templates", icon: ScrollText },
-        { href: "/finder" as Route, label: "Finder", icon: Search },
         { href: "/campaigns" as Route, label: "Sequences", icon: SendHorizontal }
       ];
 
