@@ -8,7 +8,7 @@ import type { SequenceRowData } from "@/components/dashboard/types";
 import { SequenceRowActions } from "./sequence-row-actions";
 import styles from "./overview-command-center.module.css";
 
-export function SequenceRow({ sequence }: { sequence: SequenceRowData }) {
+export function SequenceRow({ sequence, onRelaunch }: { sequence: SequenceRowData; onRelaunch: () => void }) {
   const router = useRouter();
 
   function navigate() {
@@ -70,6 +70,7 @@ export function SequenceRow({ sequence }: { sequence: SequenceRowData }) {
             campaignId={sequence.id}
             campaignName={sequence.name}
             canRelaunch={sequence.canRelaunch}
+            onRelaunch={onRelaunch}
           />
           <span className={styles.sequenceArrow}>
             <ArrowUpRight aria-hidden="true" />

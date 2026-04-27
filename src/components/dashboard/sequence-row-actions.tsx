@@ -11,12 +11,14 @@ export function SequenceRowActions({
   href,
   campaignId,
   campaignName,
-  canRelaunch
+  canRelaunch,
+  onRelaunch
 }: {
   href: Route;
   campaignId: string;
   campaignName: string;
   canRelaunch: boolean;
+  onRelaunch: () => void;
 }) {
   const router = useRouter();
   const [pendingAction, setPendingAction] = useState<"launch" | "delete" | null>(null);
@@ -41,6 +43,7 @@ export function SequenceRowActions({
         return;
       }
 
+      onRelaunch();
       router.refresh();
       setPendingAction(null);
     } catch {

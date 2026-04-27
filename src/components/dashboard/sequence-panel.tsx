@@ -3,19 +3,24 @@
 import Link from "next/link";
 import { ChevronDown, ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import type { SequenceRowData } from "@/components/dashboard/types";
 import { SequenceRow } from "./sequence-row";
 import styles from "./overview-command-center.module.css";
 
 const PAGE_SIZE = 10;
+const OVERVIEW_REFRESH_INTERVAL_MS = 8_000;
+const RELAUNCH_REFRESH_WINDOW_MS = 30_000;
 
 export function SequencePanel({ rows }: { rows: SequenceRowData[] }) {
+  const router = useRouter();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
   const [focus, setFocus] = useState("recent");
   const [sort, setSort] = useState("activity");
   const [currentPage, setCurrentPage] = useState(1);
+  const [refreshUntil, setRefreshUntil] = useState<number | null>(null);
 
   const filteredRows = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -68,6 +73,31 @@ export function SequencePanel({ rows }: { rows: SequenceRowData[] }) {
       setCurrentPage(totalPages);
     }
   }, [currentPage, totalPages]);
+
+  const hasActiveRuns = rows.some((row) => row.statusTone === "running");
+
+  useEffect(() => {
+    if (!hasActiveRuns && !refreshUntil) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      if (!hasActiveRuns && refreshUntil && Date.now() > refreshUntil) {
+        setRefreshUntil(null);
+        return;
+      }
+
+      router.refresh();
+    }, OVERVIEW_REFRESH_INTERVAL_MS);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [hasActiveRuns, refreshUntil, router]);
+
+  function startRefreshWindow() {
+    setRefreshUntil(Date.now() + RELAUNCH_REFRESH_WINDOW_MS);
+  }
 
   return (
     <>
@@ -128,7 +158,7 @@ export function SequencePanel({ rows }: { rows: SequenceRowData[] }) {
         <>
           <div className={styles.sequenceList}>
             {pagedRows.map((sequence) => (
-              <SequenceRow key={sequence.id} sequence={sequence} />
+              <SequenceRow key={sequence.id} sequence={sequence} onRelaunch={startRefreshWindow} />
             ))}
           </div>
           <div className={styles.sequencePagination}>
