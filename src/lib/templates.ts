@@ -7,6 +7,8 @@ export const TEMPLATE_FORMATS = ["PLAIN_TEXT", "HTML", "JSON"] as const;
 export type TemplateFormat = (typeof TEMPLATE_FORMATS)[number];
 
 const VARIABLE_PATTERN = /{{\s*([a-zA-Z0-9_]+)\s*}}/g;
+const UNORDERED_LIST_ITEM_PATTERN = /^(?:[-*]|\u2022)\s+(.+)$/;
+const ORDERED_LIST_ITEM_PATTERN = /^\d+(?:[.)]|-)\s+(.+)$/;
 const DEFAULT_JSON_TEMPLATE = {
   greeting: "Hi {{name}},",
   intro: "I noticed {{company}} and wanted to reach out.",
@@ -14,6 +16,16 @@ const DEFAULT_JSON_TEMPLATE = {
   cta: "Would it make sense to connect for a quick chat?",
   signoff: "Best,\n{{name}}"
 };
+
+type PlainTextBlock =
+  | {
+      type: "paragraph";
+      lines: string[];
+    }
+  | {
+      type: "ul" | "ol";
+      items: string[];
+    };
 
 function escapeHtml(input: string) {
   return input
@@ -47,6 +59,10 @@ function splitParagraphs(input: string) {
     .filter(Boolean);
 }
 
+function normalizeLineEndings(input: string) {
+  return input.replace(/\r\n?/g, "\n");
+}
+
 function parseJsonTemplate(input: string) {
   try {
     return JSON.parse(input) as unknown;
@@ -57,6 +73,113 @@ function parseJsonTemplate(input: string) {
 
 function renderPlainTextParagraph(paragraph: string) {
   return `<p>${escapeHtml(paragraph).replace(/\n/g, "<br />")}</p>`;
+}
+
+function renderPlainTextLines(lines: string[]) {
+  return escapeHtml(lines.join("\n")).replace(/\n/g, "<br />");
+}
+
+function parseListItem(line: string) {
+  const unorderedMatch = line.match(UNORDERED_LIST_ITEM_PATTERN);
+  if (unorderedMatch) {
+    return {
+      type: "ul" as const,
+      content: unorderedMatch[1].trim()
+    };
+  }
+
+  const orderedMatch = line.match(ORDERED_LIST_ITEM_PATTERN);
+  if (orderedMatch) {
+    return {
+      type: "ol" as const,
+      content: orderedMatch[1].trim()
+    };
+  }
+
+  return null;
+}
+
+function parsePlainTextBlocks(input: string): PlainTextBlock[] {
+  const blocks: PlainTextBlock[] = [];
+  const lines = normalizeLineEndings(input).split("\n");
+  let paragraphLines: string[] = [];
+  let listType: "ul" | "ol" | null = null;
+  let listItems: string[] = [];
+
+  function flushParagraph() {
+    const nextLines = paragraphLines.map((line) => line.trimEnd()).filter((line) => line.trim());
+    if (nextLines.length) {
+      blocks.push({
+        type: "paragraph",
+        lines: nextLines
+      });
+    }
+    paragraphLines = [];
+  }
+
+  function flushList() {
+    const nextItems = listItems.map((item) => item.trim()).filter(Boolean);
+    if (listType && nextItems.length) {
+      blocks.push({
+        type: listType,
+        items: nextItems
+      });
+    }
+    listType = null;
+    listItems = [];
+  }
+
+  for (const rawLine of lines) {
+    const line = rawLine.trimEnd();
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      flushParagraph();
+      flushList();
+      continue;
+    }
+
+    const listItem = parseListItem(trimmed);
+    if (listItem) {
+      flushParagraph();
+
+      if (listType && listType !== listItem.type) {
+        flushList();
+      }
+
+      listType = listItem.type;
+      listItems.push(listItem.content);
+      continue;
+    }
+
+    if (listType && listItems.length && /^\s+/.test(rawLine)) {
+      const nextItem = `${listItems[listItems.length - 1]}\n${trimmed}`;
+      listItems[listItems.length - 1] = nextItem;
+      continue;
+    }
+
+    flushList();
+    paragraphLines.push(trimmed);
+  }
+
+  flushParagraph();
+  flushList();
+
+  return blocks;
+}
+
+function renderPlainTextContent(input: string) {
+  return parsePlainTextBlocks(input)
+    .map((block) => {
+      if (block.type === "paragraph") {
+        return `<p>${renderPlainTextLines(block.lines)}</p>`;
+      }
+
+      const items = block.items.map((item) => `<li>${renderPlainTextLines(item.split("\n"))}</li>`).join("");
+      return items ? `<${block.type}>${items}</${block.type}>` : "";
+    })
+    .filter(Boolean)
+    .join("");
 }
 
 function collectJsonText(input: unknown, output: string[] = []) {
@@ -203,7 +326,7 @@ export function getTemplateBodyLabel(format: TemplateFormat) {
 
 export function getTemplateBodyHint(format: TemplateFormat) {
   if (format === "PLAIN_TEXT") {
-    return "Write it like a real email. Paragraph breaks and merge fields will carry through to the preview.";
+    return "Write it like a real email. Paragraph breaks, bullets, numbered lists, and merge fields will carry through to the preview.";
   }
 
   if (format === "JSON") {
@@ -279,9 +402,7 @@ export function convertTemplateBody(input: string, fromFormat: TemplateFormat, t
     return JSON.stringify(buildJsonTemplateFromText(plainText), null, 2);
   }
 
-  return splitParagraphs(plainText)
-    .map((paragraph) => renderPlainTextParagraph(paragraph))
-    .join("\n");
+  return renderPlainTextContent(plainText);
 }
 
 export function validateTemplateBody(format: TemplateFormat, input: string) {
@@ -303,7 +424,7 @@ export function renderTemplateContent(format: TemplateFormat, input: string, pay
 
   if (format === "PLAIN_TEXT") {
     const renderedText = renderTemplate(input, payload);
-    return splitParagraphs(renderedText).map((paragraph) => renderPlainTextParagraph(paragraph)).join("");
+    return renderPlainTextContent(renderedText);
   }
 
   if (format === "JSON") {
