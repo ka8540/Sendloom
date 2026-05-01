@@ -167,6 +167,213 @@
   color: var(--text);
 }
 
+.heroInsights {
+  display: grid;
+  gap: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.insightTitleRow,
+.healthHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.85rem;
+  min-width: 0;
+}
+
+.insightTitleRow span,
+.healthHeader span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.48rem;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.insightTitleRow svg,
+.healthHeader svg {
+  width: 0.95rem;
+  height: 0.95rem;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.insightTitleRow strong,
+.healthHeader strong {
+  color: var(--text);
+  font-size: 0.92rem;
+  white-space: nowrap;
+}
+
+.deliveryInsight {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.deliveryDonut {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 7.6rem;
+  aspect-ratio: 1;
+  border-radius: 999px;
+  background: var(--chart-background);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 78%, transparent);
+}
+
+.deliveryDonut::after {
+  content: "";
+  position: absolute;
+  inset: 0.78rem;
+  border-radius: inherit;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-soft) 96%, transparent);
+  box-shadow: inset 0 1px 12px rgba(28, 42, 70, 0.08);
+}
+
+.deliveryDonutText {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  gap: 0.05rem;
+  line-height: 1;
+}
+
+.deliveryDonutText strong {
+  font-size: 1.45rem;
+  letter-spacing: -0.06em;
+}
+
+.deliveryDonutText small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.deliveryLegend {
+  display: grid;
+  gap: 0.48rem;
+  min-width: 0;
+}
+
+.deliveryLegendItem {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.deliveryLegendItem strong {
+  color: var(--text);
+  font-size: 0.92rem;
+}
+
+.deliveryLegendSwatch {
+  width: 0.58rem;
+  height: 0.58rem;
+  border-radius: 999px;
+  background: var(--segment-color);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--segment-color) 14%, transparent);
+}
+
+.funnelChart {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.funnelRow {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.funnelMeta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 750;
+}
+
+.funnelMeta strong {
+  color: var(--text);
+}
+
+.funnelTrack {
+  position: relative;
+  height: 0.48rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--button-secondary-bg) 86%, transparent);
+  overflow: hidden;
+}
+
+.funnelFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--bar-value);
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--bar-color), color-mix(in srgb, var(--bar-color) 68%, white));
+}
+
+.healthChart {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.healthSegments {
+  display: flex;
+  width: 100%;
+  height: 0.62rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--button-secondary-bg) 86%, transparent);
+  overflow: hidden;
+}
+
+.healthSegment {
+  width: var(--segment-value);
+  min-width: 0;
+  background: var(--segment-color);
+}
+
+.healthLegend {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.healthLegend span {
+  display: grid;
+  gap: 0.12rem;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.healthLegend strong {
+  color: var(--text);
+  font-size: 0.96rem;
+  letter-spacing: -0.04em;
+}
+
 .metricsGrid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
