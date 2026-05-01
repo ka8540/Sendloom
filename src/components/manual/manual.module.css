@@ -1,0 +1,270 @@
+.helpButton {
+  position: fixed;
+  right: 1.15rem;
+  bottom: 1.15rem;
+  z-index: 72;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 3rem;
+  padding: 0.78rem 1rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line));
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-strong) 96%, transparent), color-mix(in srgb, var(--surface-muted) 92%, transparent));
+  color: var(--text);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  backdrop-filter: blur(22px) saturate(1.12);
+  -webkit-backdrop-filter: blur(22px) saturate(1.12);
+  transition: transform 160ms ease, border-color 180ms ease, background-color 180ms ease, box-shadow 180ms ease;
+}
+
+.helpButton svg {
+  width: 1rem;
+  height: 1rem;
+  color: var(--accent);
+}
+
+.helpButton:hover,
+.helpButton:focus-visible {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--line));
+  box-shadow: 0 22px 40px rgba(28, 42, 70, 0.16);
+  outline: none;
+}
+
+.ambientLayer {
+  position: fixed;
+  inset: 0;
+  z-index: 68;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at center, transparent 0 20%, color-mix(in srgb, var(--bg) 16%, transparent) 60%),
+    linear-gradient(180deg, transparent, color-mix(in srgb, var(--bg) 12%, transparent));
+  animation: manual-fade-in 180ms ease both;
+}
+
+.spotlight {
+  position: fixed;
+  z-index: 69;
+  border: 1px solid color-mix(in srgb, var(--accent) 46%, transparent);
+  border-radius: 24px;
+  box-shadow:
+    0 0 0 9999px rgba(7, 15, 26, 0.18),
+    0 0 0 7px color-mix(in srgb, var(--accent) 10%, transparent),
+    0 18px 44px rgba(7, 15, 26, 0.2);
+  pointer-events: none;
+  transition: top 220ms ease, left 220ms ease, width 220ms ease, height 220ms ease;
+}
+
+.popover {
+  position: fixed;
+  z-index: 73;
+  display: grid;
+  gap: 1rem;
+  width: min(21.75rem, calc(100vw - 2rem));
+  padding: 1rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 16%, var(--line));
+  border-radius: 24px;
+  background:
+    linear-gradient(145deg, color-mix(in srgb, white 8%, transparent), transparent),
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-strong) 98%, transparent), color-mix(in srgb, var(--surface-muted) 94%, transparent));
+  box-shadow:
+    0 28px 70px rgba(7, 15, 26, 0.24),
+    inset 0 1px 0 color-mix(in srgb, white 10%, transparent);
+  color: var(--text);
+  backdrop-filter: blur(28px) saturate(1.18);
+  -webkit-backdrop-filter: blur(28px) saturate(1.18);
+  animation: manual-pop 180ms ease both;
+}
+
+.popoverTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.popoverTop span {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  padding: 0.38rem 0.62rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 16%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-soft) 78%, transparent);
+  color: var(--accent-strong);
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.1em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.15rem;
+  height: 2.15rem;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-muted) 88%, transparent);
+  color: var(--muted);
+  cursor: pointer;
+  transition: transform 140ms ease, color 160ms ease, border-color 160ms ease, background-color 160ms ease;
+}
+
+.iconButton svg {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+.iconButton:hover,
+.iconButton:focus-visible {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent) 18%, var(--line));
+  color: var(--text);
+  outline: none;
+}
+
+.copy {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.copy h2 {
+  margin: 0;
+  font-size: 1.24rem;
+  line-height: 1.1;
+  letter-spacing: -0.045em;
+}
+
+.copy p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.96rem;
+  line-height: 1.62;
+}
+
+.progressRow {
+  display: flex;
+  align-items: center;
+  gap: 0.36rem;
+}
+
+.progressDot {
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 28%, transparent);
+  transition: width 180ms ease, background-color 180ms ease;
+}
+
+.progressDotActive {
+  width: 1.25rem;
+  background: var(--accent);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.skipButton,
+.nextButton {
+  display: inline-flex;
+  min-height: 2.65rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  border-radius: 999px;
+  cursor: pointer;
+  font-weight: 800;
+  transition: transform 140ms ease, border-color 160ms ease, background-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+
+.skipButton {
+  padding: 0.68rem 0.9rem;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-muted) 86%, transparent);
+  color: var(--muted);
+}
+
+.nextButton {
+  padding: 0.72rem 1rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+  background: var(--accent);
+  color: white;
+  box-shadow: 0 14px 26px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.nextButton svg,
+.skipButton svg {
+  width: 0.96rem;
+  height: 0.96rem;
+}
+
+.skipButton:hover,
+.skipButton:focus-visible,
+.nextButton:hover,
+.nextButton:focus-visible {
+  transform: translateY(-1px);
+  outline: none;
+}
+
+.skipButton:hover,
+.skipButton:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 16%, var(--line));
+  color: var(--text);
+}
+
+.nextButton:hover,
+.nextButton:focus-visible {
+  background: var(--accent-strong);
+}
+
+@keyframes manual-fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes manual-pop {
+  from {
+    opacity: 0;
+    scale: 0.98;
+  }
+
+  to {
+    opacity: 1;
+    scale: 1;
+  }
+}
+
+@media (max-width: 760px) {
+  .helpButton {
+    right: 0.8rem;
+    bottom: 0.8rem;
+  }
+
+  .popover {
+    left: 1rem !important;
+    right: 1rem;
+    bottom: 1rem;
+    top: auto !important;
+    transform: none !important;
+    width: auto;
+  }
+}

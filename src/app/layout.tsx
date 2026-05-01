@@ -4,6 +4,7 @@ import { SpeedInsights } from "@vercel/speed-insights/next";
 
 import "@/app/globals.css";
 import { ErrorToastProvider } from "@/components/error-toast-provider";
+import { ManualProvider } from "@/components/manual/ManualProvider";
 import { PublicLoadScreen } from "@/components/public-load-screen";
 import { themeInitScript } from "@/lib/theme";
 
@@ -43,9 +44,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
         <ErrorToastProvider>
-          {children}
-          <PublicLoadScreen />
-          <SpeedInsights />
+          <ManualProvider>
+            {children}
+            <PublicLoadScreen />
+            <SpeedInsights />
+          </ManualProvider>
         </ErrorToastProvider>
       </body>
     </html>
