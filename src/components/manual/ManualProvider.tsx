@@ -53,6 +53,15 @@ export function useManual() {
 }
 
 export function ManualProvider({ children }: { children: React.ReactNode }) {
+  return (
+    <>
+      {children}
+      <ManualRuntime />
+    </>
+  );
+}
+
+function ManualRuntime() {
   const pathname = usePathname();
   const manual = useMemo(() => getManualForPathname(pathname), [pathname]);
   const [isOpen, setIsOpen] = useState(false);
@@ -135,7 +144,6 @@ export function ManualProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <ManualContext.Provider value={value}>
-      {children}
       <ManualButton />
       <ManualOverlay />
     </ManualContext.Provider>

@@ -1,7 +1,7 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, Check, X } from "lucide-react";
 
 import type { ManualPlacement } from "@/components/manual/manualTypes";
@@ -22,10 +22,25 @@ type ViewportSize = {
   width: number;
 };
 
+type PopoverSize = {
+  height: number;
+  width: number;
+};
+
+type OverlayGeometry = {
+  popoverSize: PopoverSize;
+  targetRect: HighlightRect | null;
+  viewport: ViewportSize;
+};
+
 const SPOTLIGHT_PADDING = 8;
-const POPOVER_WIDTH = 348;
 const VIEWPORT_GUTTER = 18;
+const TARGET_GAP = 16;
 const TARGET_REFRESH_DELAY_MS = 90;
+const DEFAULT_POPOVER_SIZE: PopoverSize = {
+  height: 244,
+  width: 348
+};
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -58,93 +73,201 @@ function getElementRect(selector?: string): HighlightRect | null {
   };
 }
 
-function getPopoverStyle(rect: HighlightRect | null, placement: ManualPlacement | undefined, viewport: ViewportSize | null): CSSProperties {
-  if (!rect || !viewport || placement === "center") {
-    return {
-      left: "50%",
-      top: "50%",
-      transform: "translate(-50%, -50%)"
-    };
-  }
+function roundNumber(value: number) {
+  return Math.round(value * 10) / 10;
+}
 
-  const resolvedPlacement = placement ?? "bottom";
-  const maxLeft = viewport.width - POPOVER_WIDTH - VIEWPORT_GUTTER;
-  const centeredLeft = rect.left + rect.width / 2 - POPOVER_WIDTH / 2;
-  let left = clamp(centeredLeft, VIEWPORT_GUTTER, Math.max(VIEWPORT_GUTTER, maxLeft));
-  let top = rect.bottom + 16;
-  let transform: string | undefined;
-
-  if (resolvedPlacement === "top") {
-    top = rect.top - 16;
-    transform = "translateY(-100%)";
-  }
-
-  if (resolvedPlacement === "left") {
-    left = Math.max(VIEWPORT_GUTTER, rect.left - POPOVER_WIDTH - 16);
-    top = clamp(rect.top + rect.height / 2, VIEWPORT_GUTTER, viewport.height - VIEWPORT_GUTTER);
-    transform = "translateY(-50%)";
-  }
-
-  if (resolvedPlacement === "right") {
-    left = Math.min(rect.right + 16, maxLeft);
-    top = clamp(rect.top + rect.height / 2, VIEWPORT_GUTTER, viewport.height - VIEWPORT_GUTTER);
-    transform = "translateY(-50%)";
-  }
-
-  if (resolvedPlacement === "bottom" && top + 220 > viewport.height) {
-    top = rect.top - 16;
-    transform = "translateY(-100%)";
+function normalizeRect(rect: HighlightRect | null): HighlightRect | null {
+  if (!rect) {
+    return null;
   }
 
   return {
-    left,
-    top,
-    transform
+    bottom: roundNumber(rect.bottom),
+    height: roundNumber(rect.height),
+    left: roundNumber(rect.left),
+    right: roundNumber(rect.right),
+    top: roundNumber(rect.top),
+    width: roundNumber(rect.width)
+  };
+}
+
+function areRectsEqual(left: HighlightRect | null, right: HighlightRect | null) {
+  if (!left || !right) {
+    return left === right;
+  }
+
+  return (
+    left.bottom === right.bottom &&
+    left.height === right.height &&
+    left.left === right.left &&
+    left.right === right.right &&
+    left.top === right.top &&
+    left.width === right.width
+  );
+}
+
+function areGeometriesEqual(left: OverlayGeometry, right: OverlayGeometry) {
+  return (
+    areRectsEqual(left.targetRect, right.targetRect) &&
+    left.viewport.height === right.viewport.height &&
+    left.viewport.width === right.viewport.width &&
+    left.popoverSize.height === right.popoverSize.height &&
+    left.popoverSize.width === right.popoverSize.width
+  );
+}
+
+function getPlacementOrder(placement: ManualPlacement | undefined) {
+  const preferred = placement ?? "bottom";
+
+  if (preferred === "center") {
+    return ["center"] as const;
+  }
+
+  const fallbacks = {
+    bottom: ["bottom", "top", "right", "left"],
+    top: ["top", "bottom", "right", "left"],
+    right: ["right", "left", "bottom", "top"],
+    left: ["left", "right", "bottom", "top"]
+  } as const;
+
+  return fallbacks[preferred];
+}
+
+function hasRoom(rect: HighlightRect, placement: Exclude<ManualPlacement, "center">, viewport: ViewportSize, popoverSize: PopoverSize) {
+  if (placement === "bottom") {
+    return rect.bottom + TARGET_GAP + popoverSize.height <= viewport.height - VIEWPORT_GUTTER;
+  }
+
+  if (placement === "top") {
+    return rect.top - TARGET_GAP - popoverSize.height >= VIEWPORT_GUTTER;
+  }
+
+  if (placement === "right") {
+    return rect.right + TARGET_GAP + popoverSize.width <= viewport.width - VIEWPORT_GUTTER;
+  }
+
+  return rect.left - TARGET_GAP - popoverSize.width >= VIEWPORT_GUTTER;
+}
+
+function getPopoverStyle(
+  rect: HighlightRect | null,
+  placement: ManualPlacement | undefined,
+  viewport: ViewportSize,
+  popoverSize: PopoverSize
+): CSSProperties {
+  const maxLeft = Math.max(VIEWPORT_GUTTER, viewport.width - popoverSize.width - VIEWPORT_GUTTER);
+  const maxTop = Math.max(VIEWPORT_GUTTER, viewport.height - popoverSize.height - VIEWPORT_GUTTER);
+
+  if (!rect || placement === "center") {
+    return {
+      left: clamp((viewport.width - popoverSize.width) / 2, VIEWPORT_GUTTER, maxLeft),
+      top: clamp((viewport.height - popoverSize.height) / 2, VIEWPORT_GUTTER, maxTop)
+    };
+  }
+
+  const placementOrder = getPlacementOrder(placement);
+  const resolvedPlacement =
+    placementOrder.find((item): item is Exclude<ManualPlacement, "center"> => item !== "center" && hasRoom(rect, item, viewport, popoverSize)) ??
+    (placementOrder[0] === "center" ? "bottom" : placementOrder[0]);
+
+  let left = rect.left + rect.width / 2 - popoverSize.width / 2;
+  let top = rect.bottom + TARGET_GAP;
+
+  if (resolvedPlacement === "top") {
+    top = rect.top - popoverSize.height - TARGET_GAP;
+  } else if (resolvedPlacement === "right") {
+    left = rect.right + TARGET_GAP;
+    top = rect.top + rect.height / 2 - popoverSize.height / 2;
+  } else if (resolvedPlacement === "left") {
+    left = rect.left - popoverSize.width - TARGET_GAP;
+    top = rect.top + rect.height / 2 - popoverSize.height / 2;
+  }
+
+  return {
+    left: clamp(left, VIEWPORT_GUTTER, maxLeft),
+    top: clamp(top, VIEWPORT_GUTTER, maxTop)
   };
 }
 
 export function ManualOverlay() {
   const { currentStepIndex, finishManual, isOpen, manual, nextStep, skipManual } = useManual();
-  const [targetRect, setTargetRect] = useState<HighlightRect | null>(null);
-  const [viewport, setViewport] = useState<ViewportSize | null>(null);
+  const popoverRef = useRef<HTMLElement | null>(null);
+  const frameRef = useRef<number | null>(null);
+  const lastGeometryRef = useRef<OverlayGeometry | null>(null);
+  const [geometry, setGeometry] = useState<OverlayGeometry | null>(null);
 
   const step = manual?.steps[currentStepIndex] ?? null;
   const isFinalStep = Boolean(manual && currentStepIndex === manual.steps.length - 1);
 
-  useEffect(() => {
-    if (!isOpen || !step) {
-      setTargetRect(null);
+  const updateGeometry = useCallback(() => {
+    const popoverRect = popoverRef.current?.getBoundingClientRect();
+    const nextGeometry: OverlayGeometry = {
+      popoverSize: {
+        height: roundNumber(popoverRect?.height || DEFAULT_POPOVER_SIZE.height),
+        width: roundNumber(popoverRect?.width || DEFAULT_POPOVER_SIZE.width)
+      },
+      targetRect: normalizeRect(getElementRect(step?.selector)),
+      viewport: {
+        height: window.innerHeight,
+        width: window.innerWidth
+      }
+    };
+
+    const previousGeometry = lastGeometryRef.current;
+
+    if (previousGeometry && areGeometriesEqual(previousGeometry, nextGeometry)) {
       return;
     }
 
-    let frame = 0;
+    lastGeometryRef.current = nextGeometry;
+    setGeometry(nextGeometry);
+  }, [step?.selector]);
 
-    const updateTarget = () => {
-      window.cancelAnimationFrame(frame);
-      frame = window.requestAnimationFrame(() => {
-        setViewport({
-          height: window.innerHeight,
-          width: window.innerWidth
-        });
-        setTargetRect(getElementRect(step.selector));
-      });
-    };
+  const scheduleGeometryUpdate = useCallback(() => {
+    if (frameRef.current != null) {
+      return;
+    }
 
-    const timer = window.setTimeout(updateTarget, TARGET_REFRESH_DELAY_MS);
-    updateTarget();
+    frameRef.current = window.requestAnimationFrame(() => {
+      frameRef.current = null;
+      updateGeometry();
+    });
+  }, [updateGeometry]);
 
-    window.addEventListener("resize", updateTarget);
-    window.addEventListener("scroll", updateTarget, true);
+  useEffect(() => {
+    if (!isOpen || !step) {
+      lastGeometryRef.current = null;
+      setGeometry(null);
+      return;
+    }
+
+    const timer = window.setTimeout(scheduleGeometryUpdate, TARGET_REFRESH_DELAY_MS);
+    scheduleGeometryUpdate();
+
+    window.addEventListener("resize", scheduleGeometryUpdate, { passive: true });
+    window.addEventListener("scroll", scheduleGeometryUpdate, { capture: true, passive: true });
 
     return () => {
       window.clearTimeout(timer);
-      window.cancelAnimationFrame(frame);
-      window.removeEventListener("resize", updateTarget);
-      window.removeEventListener("scroll", updateTarget, true);
+      if (frameRef.current != null) {
+        window.cancelAnimationFrame(frameRef.current);
+        frameRef.current = null;
+      }
+      window.removeEventListener("resize", scheduleGeometryUpdate);
+      window.removeEventListener("scroll", scheduleGeometryUpdate, true);
     };
-  }, [isOpen, step]);
+  }, [isOpen, scheduleGeometryUpdate, step]);
+
+  useEffect(() => {
+    if (isOpen && step) {
+      scheduleGeometryUpdate();
+    }
+  }, [currentStepIndex, isOpen, scheduleGeometryUpdate, step]);
 
   const spotlightStyle = useMemo<CSSProperties | undefined>(() => {
+    const targetRect = geometry?.targetRect ?? null;
+
     if (!targetRect) {
       return undefined;
     }
@@ -155,12 +278,16 @@ export function ManualOverlay() {
       top: targetRect.top - SPOTLIGHT_PADDING,
       width: targetRect.width + SPOTLIGHT_PADDING * 2
     };
-  }, [targetRect]);
+  }, [geometry?.targetRect]);
 
-  const popoverStyle = useMemo(
-    () => getPopoverStyle(targetRect, step?.placement, viewport),
-    [step?.placement, targetRect, viewport]
-  );
+  const popoverStyle = useMemo(() => {
+    const viewport = geometry?.viewport ?? {
+      height: typeof window === "undefined" ? DEFAULT_POPOVER_SIZE.height : window.innerHeight,
+      width: typeof window === "undefined" ? DEFAULT_POPOVER_SIZE.width : window.innerWidth
+    };
+
+    return getPopoverStyle(geometry?.targetRect ?? null, step?.placement, viewport, geometry?.popoverSize ?? DEFAULT_POPOVER_SIZE);
+  }, [geometry, step?.placement]);
 
   if (!manual || !step || !isOpen) {
     return null;
@@ -171,6 +298,7 @@ export function ManualOverlay() {
       <div className={styles.ambientLayer} aria-hidden="true" />
       {spotlightStyle ? <div className={styles.spotlight} style={spotlightStyle} aria-hidden="true" /> : null}
       <section
+        ref={popoverRef}
         className={styles.popover}
         style={popoverStyle}
         role="dialog"

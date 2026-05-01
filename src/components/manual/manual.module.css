@@ -54,7 +54,6 @@
   border: 1px solid color-mix(in srgb, var(--accent) 46%, transparent);
   border-radius: 24px;
   box-shadow:
-    0 0 0 9999px rgba(7, 15, 26, 0.18),
     0 0 0 7px color-mix(in srgb, var(--accent) 10%, transparent),
     0 18px 44px rgba(7, 15, 26, 0.2);
   pointer-events: none;
@@ -67,6 +66,9 @@
   display: grid;
   gap: 1rem;
   width: min(21.75rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 2.25rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 1rem;
   border: 1px solid color-mix(in srgb, var(--accent) 16%, var(--line));
   border-radius: 24px;
@@ -80,6 +82,7 @@
   backdrop-filter: blur(28px) saturate(1.18);
   -webkit-backdrop-filter: blur(28px) saturate(1.18);
   animation: manual-pop 180ms ease both;
+  scrollbar-width: thin;
 }
 
 .popoverTop {
@@ -143,6 +146,7 @@
   font-size: 1.24rem;
   line-height: 1.1;
   letter-spacing: -0.045em;
+  overflow-wrap: anywhere;
 }
 
 .copy p {
@@ -150,6 +154,7 @@
   color: var(--muted);
   font-size: 0.96rem;
   line-height: 1.62;
+  overflow-wrap: anywhere;
 }
 
 .progressRow {
@@ -266,5 +271,6 @@
     top: auto !important;
     transform: none !important;
     width: auto;
+    max-height: min(28rem, calc(100vh - 2rem));
   }
 }
