@@ -227,13 +227,13 @@
   min-width: 13rem;
   border-color: color-mix(in srgb, var(--landing-line) 76%, white 10%);
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--landing-panel-strong) 90%, transparent), color-mix(in srgb, var(--landing-panel) 84%, transparent)),
-    linear-gradient(145deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.05));
+    linear-gradient(145deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.08)),
+    linear-gradient(180deg, color-mix(in srgb, var(--landing-bg) 88%, var(--landing-panel-strong) 12%), color-mix(in srgb, var(--landing-bg) 82%, var(--landing-panel) 18%));
   box-shadow:
-    0 22px 48px rgba(7, 18, 33, 0.24),
-    inset 0 1px 0 rgba(255, 255, 255, 0.16);
-  backdrop-filter: blur(38px) saturate(1.22);
-  -webkit-backdrop-filter: blur(38px) saturate(1.22);
+    0 22px 48px rgba(7, 18, 33, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(26px) saturate(1.12);
+  -webkit-backdrop-filter: blur(26px) saturate(1.12);
 }
 
 .navLink,
@@ -1148,13 +1148,13 @@
     max-width: calc(100vw - 3rem);
     border-color: color-mix(in srgb, var(--landing-line) 76%, white 10%);
     background:
-      linear-gradient(180deg, color-mix(in srgb, var(--landing-panel-strong) 90%, transparent), color-mix(in srgb, var(--landing-panel) 84%, transparent)),
-      linear-gradient(145deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.05));
+      linear-gradient(145deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.08)),
+      linear-gradient(180deg, color-mix(in srgb, var(--landing-bg) 88%, var(--landing-panel-strong) 12%), color-mix(in srgb, var(--landing-bg) 82%, var(--landing-panel) 18%));
     box-shadow:
-      0 22px 48px rgba(7, 18, 33, 0.24),
-      inset 0 1px 0 rgba(255, 255, 255, 0.16);
-    backdrop-filter: blur(38px) saturate(1.22);
-    -webkit-backdrop-filter: blur(38px) saturate(1.22);
+      0 22px 48px rgba(7, 18, 33, 0.22),
+      inset 0 1px 0 rgba(255, 255, 255, 0.18);
+    backdrop-filter: blur(26px) saturate(1.12);
+    -webkit-backdrop-filter: blur(26px) saturate(1.12);
   }
 
   .mobileCtaRow {
