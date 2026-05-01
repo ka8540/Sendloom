@@ -1,7 +1,16 @@
+import type { CSSProperties } from "react";
 import type { Route } from "next";
 import Link from "next/link";
 import type { CampaignStatus, ImportStatus, RunStatus } from "@prisma/client";
-import { ArrowRight, FileSpreadsheet, SendHorizontal, Sparkles, ScrollText } from "lucide-react";
+import {
+  ArrowRight,
+  BarChart3,
+  FileSpreadsheet,
+  PieChart,
+  SendHorizontal,
+  Sparkles,
+  ScrollText
+} from "lucide-react";
 
 import { requireOperatorUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
@@ -256,6 +265,36 @@ export default async function OverviewCommandCenter() {
   const sentLastDayCount = sentLastDay._sum.sentCount ?? 0;
   const sentPreviousDayCount = sentPreviousDay._sum.sentCount ?? 0;
   const sentTrend = buildTrend(sentLastDayCount, sentPreviousDayCount, "day");
+  const runTotals = recentCampaigns.reduce(
+    (totals, campaign) => {
+      const latestRun = campaign.runs[0];
+
+      if (!latestRun) {
+        return totals;
+      }
+
+      totals.sent += latestRun.sentCount;
+      totals.failed += latestRun.failedCount;
+      totals.suppressed += latestRun.suppressedCount;
+      totals.invalid += latestRun.invalidCount;
+      totals.opened += latestRun.openedCount;
+      totals.clicked += latestRun.clickedCount;
+      totals.recipients += latestRun.totalRecipients;
+
+      return totals;
+    },
+    {
+      sent: 0,
+      failed: 0,
+      suppressed: 0,
+      invalid: 0,
+      opened: 0,
+      clicked: 0,
+      recipients: 0
+    }
+  );
+  const deliveryMix = buildDeliveryMix(runTotals);
+  const engagementFunnel = buildEngagementFunnel(runTotals);
 
   const sequenceRows: SequenceRowData[] = recentCampaigns.map((campaign) => {
     const latestRun = campaign.runs[0] ?? null;
@@ -321,6 +360,7 @@ export default async function OverviewCommandCenter() {
     recentImports,
     recentTemplates
   });
+  const sequenceHealth = buildSequenceHealth(sequenceRows);
 
   return (
     <div className={styles.page}>
@@ -339,14 +379,17 @@ export default async function OverviewCommandCenter() {
             <div className={styles.heroHighlight}>
               <span className={styles.heroHighlightLabel}>Active now</span>
               <strong className={styles.heroHighlightValue}>{formatCompactNumber(activeSequenceCount)}</strong>
+              <span className={styles.heroHighlightMeta}>Running or queued</span>
             </div>
             <div className={styles.heroHighlight}>
               <span className={styles.heroHighlightLabel}>Sent last 24h</span>
               <strong className={styles.heroHighlightValue}>{formatCompactNumber(sentLastDayCount)}</strong>
+              <span className={styles.heroHighlightMeta}>{sentTrend.label}</span>
             </div>
             <div className={styles.heroHighlight}>
               <span className={styles.heroHighlightLabel}>Needs attention</span>
               <strong className={styles.heroHighlightValue}>{formatCompactNumber(needsAttentionCount)}</strong>
+              <span className={styles.heroHighlightMeta}>{needsAttentionCount ? "Review required" : "All clear"}</span>
             </div>
           </div>
         </div>
@@ -368,6 +411,95 @@ export default async function OverviewCommandCenter() {
             <div className={styles.heroFootnote}>
               <strong>{formatCompactNumber(validatedSequenceCount)} validated</strong>
               <span>{sentTrend.label}</span>
+            </div>
+            <div className={styles.heroInsights} aria-label="Workspace analytics summary">
+              <div className={styles.insightTitleRow}>
+                <span>
+                  <BarChart3 aria-hidden="true" />
+                  Analytics pulse
+                </span>
+                <strong>{formatCompactNumber(runTotals.recipients)} recipients</strong>
+              </div>
+
+              <div className={styles.deliveryInsight}>
+                <div
+                  className={styles.deliveryDonut}
+                  style={{ "--chart-background": deliveryMix.gradient } as CSSProperties}
+                  aria-label={`Delivery mix is ${deliveryMix.cleanRate} clean`}
+                  role="img"
+                >
+                  <span className={styles.deliveryDonutText}>
+                    <strong>{deliveryMix.cleanRate}</strong>
+                    <small>clean</small>
+                  </span>
+                </div>
+                <div className={styles.deliveryLegend}>
+                  {deliveryMix.segments.map((segment) => (
+                    <div key={segment.label} className={styles.deliveryLegendItem}>
+                      <span
+                        className={styles.deliveryLegendSwatch}
+                        style={{ "--segment-color": segment.color } as CSSProperties}
+                      />
+                      <span>{segment.label}</span>
+                      <strong>{formatCompactNumber(segment.value)}</strong>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className={styles.funnelChart}>
+                {engagementFunnel.map((item) => (
+                  <div key={item.label} className={styles.funnelRow}>
+                    <div className={styles.funnelMeta}>
+                      <span>{item.label}</span>
+                      <strong>{formatCompactNumber(item.value)}</strong>
+                    </div>
+                    <div className={styles.funnelTrack} aria-hidden="true">
+                      <span
+                        className={styles.funnelFill}
+                        style={
+                          {
+                            "--bar-value": `${item.percent}%`,
+                            "--bar-color": item.color
+                          } as CSSProperties
+                        }
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className={styles.healthChart}>
+                <div className={styles.healthHeader}>
+                  <span>
+                    <PieChart aria-hidden="true" />
+                    Sequence health
+                  </span>
+                  <strong>{formatCompactNumber(sequenceRows.length)}</strong>
+                </div>
+                <div className={styles.healthSegments} aria-hidden="true">
+                  {sequenceHealth.map((item) => (
+                    <span
+                      key={item.label}
+                      className={styles.healthSegment}
+                      style={
+                        {
+                          "--segment-value": `${item.percent}%`,
+                          "--segment-color": item.color
+                        } as CSSProperties
+                      }
+                    />
+                  ))}
+                </div>
+                <div className={styles.healthLegend}>
+                  {sequenceHealth.map((item) => (
+                    <span key={item.label}>
+                      {item.label}
+                      <strong>{formatCompactNumber(item.value)}</strong>
+                    </span>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -495,6 +627,98 @@ function deriveSequenceStatus(campaignStatus: CampaignStatus, runStatus?: RunSta
     label: humanizeEnum(campaignStatus),
     tone: "draft" as const
   };
+}
+
+function buildDeliveryMix(totals: {
+  sent: number;
+  failed: number;
+  suppressed: number;
+  invalid: number;
+}) {
+  const segments = [
+    { label: "Sent", value: totals.sent, color: "var(--accent)" },
+    { label: "Failed", value: totals.failed, color: "#d96952" },
+    { label: "Suppressed", value: totals.suppressed, color: "var(--warning)" },
+    { label: "Invalid", value: totals.invalid, color: "color-mix(in srgb, var(--muted) 72%, transparent)" }
+  ];
+  const total = segments.reduce((sum, segment) => sum + segment.value, 0);
+
+  return {
+    segments,
+    gradient: buildConicGradient(segments, total),
+    cleanRate: formatPercent(totals.sent, total)
+  };
+}
+
+function buildEngagementFunnel(totals: { sent: number; opened: number; clicked: number }) {
+  const base = Math.max(totals.sent, totals.opened, totals.clicked);
+
+  return [
+    { label: "Sent", value: totals.sent, percent: getPercent(totals.sent, base), color: "var(--accent)" },
+    { label: "Opened", value: totals.opened, percent: getPercent(totals.opened, base), color: "var(--success)" },
+    { label: "Clicked", value: totals.clicked, percent: getPercent(totals.clicked, base), color: "#6f8ff8" }
+  ];
+}
+
+function buildSequenceHealth(rows: SequenceRowData[]) {
+  const total = rows.length;
+  const values = [
+    {
+      label: "Running",
+      value: rows.filter((row) => row.statusTone === "running").length,
+      color: "var(--accent)"
+    },
+    {
+      label: "Done",
+      value: rows.filter((row) => row.statusTone === "completed").length,
+      color: "var(--success)"
+    },
+    {
+      label: "Review",
+      value: rows.filter((row) => row.needsAttention).length,
+      color: "#d96952"
+    },
+    {
+      label: "Ready",
+      value: rows.filter((row) => row.isValidated && row.statusTone !== "running" && row.statusTone !== "completed").length,
+      color: "var(--warning)"
+    }
+  ];
+
+  return values.map((item) => ({
+    ...item,
+    percent: item.value > 0 ? Math.max(4, getPercent(item.value, total)) : 0
+  }));
+}
+
+function buildConicGradient(segments: Array<{ value: number; color: string }>, total: number) {
+  if (total <= 0) {
+    return "conic-gradient(color-mix(in srgb, var(--button-secondary-bg) 88%, transparent) 0% 100%)";
+  }
+
+  let cursor = 0;
+  const stops = segments
+    .filter((segment) => segment.value > 0)
+    .map((segment) => {
+      const next = cursor + (segment.value / total) * 100;
+      const stop = `${segment.color} ${cursor.toFixed(2)}% ${next.toFixed(2)}%`;
+      cursor = next;
+      return stop;
+    });
+
+  return `conic-gradient(${stops.join(", ")})`;
+}
+
+function getPercent(value: number, total: number) {
+  if (total <= 0) {
+    return 0;
+  }
+
+  return Math.min(100, Math.round((value / total) * 100));
+}
+
+function formatPercent(value: number, total: number) {
+  return `${getPercent(value, total)}%`;
 }
 
 function buildActivityItems({
