@@ -13,8 +13,11 @@ export function ManualButton() {
   }
 
   return (
-    <button className={styles.helpButton} type="button" onClick={openManual} aria-label={`Open ${manual.routeLabel} manual`}>
+    <button className={styles.helpButton} type="button" onClick={openManual} aria-label="Help">
       <CircleHelp aria-hidden="true" />
+      <span className={styles.helpTooltip} role="tooltip">
+        Help
+      </span>
     </button>
   );
 }
