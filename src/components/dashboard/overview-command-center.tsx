@@ -379,14 +379,17 @@ export default async function OverviewCommandCenter() {
             <div className={styles.heroHighlight}>
               <span className={styles.heroHighlightLabel}>Active now</span>
               <strong className={styles.heroHighlightValue}>{formatCompactNumber(activeSequenceCount)}</strong>
+              <span className={styles.heroHighlightMeta}>Running or queued</span>
             </div>
             <div className={styles.heroHighlight}>
               <span className={styles.heroHighlightLabel}>Sent last 24h</span>
               <strong className={styles.heroHighlightValue}>{formatCompactNumber(sentLastDayCount)}</strong>
+              <span className={styles.heroHighlightMeta}>{sentTrend.label}</span>
             </div>
             <div className={styles.heroHighlight}>
               <span className={styles.heroHighlightLabel}>Needs attention</span>
               <strong className={styles.heroHighlightValue}>{formatCompactNumber(needsAttentionCount)}</strong>
+              <span className={styles.heroHighlightMeta}>{needsAttentionCount ? "Review required" : "All clear"}</span>
             </div>
           </div>
         </div>
