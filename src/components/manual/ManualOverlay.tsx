@@ -37,6 +37,9 @@ const SPOTLIGHT_PADDING = 8;
 const VIEWPORT_GUTTER = 18;
 const TARGET_GAP = 16;
 const TARGET_REFRESH_DELAY_MS = 90;
+const SCROLL_MIN_SETTLE_MS = 160;
+const SCROLL_SETTLE_TIMEOUT_MS = 950;
+const SCROLL_STABLE_FRAME_COUNT = 4;
 const DEFAULT_POPOVER_SIZE: PopoverSize = {
   height: 244,
   width: 348
@@ -46,7 +49,7 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
-function getElementRect(selector?: string): HighlightRect | null {
+function getTargetElement(selector?: string): HTMLElement | null {
   if (!selector) {
     return null;
   }
@@ -54,6 +57,16 @@ function getElementRect(selector?: string): HighlightRect | null {
   const target = document.querySelector(selector);
 
   if (!(target instanceof HTMLElement)) {
+    return null;
+  }
+
+  return target;
+}
+
+function getElementRect(selector?: string): HighlightRect | null {
+  const target = getTargetElement(selector);
+
+  if (!target) {
     return null;
   }
 
@@ -90,6 +103,22 @@ function normalizeRect(rect: HighlightRect | null): HighlightRect | null {
     top: roundNumber(rect.top),
     width: roundNumber(rect.width)
   };
+}
+
+function scrollTargetIntoView(selector?: string) {
+  const target = getTargetElement(selector);
+
+  if (!target) {
+    return false;
+  }
+
+  target.scrollIntoView({
+    behavior: "smooth",
+    block: "center",
+    inline: "nearest"
+  });
+
+  return true;
 }
 
 function areRectsEqual(left: HighlightRect | null, right: HighlightRect | null) {
@@ -194,6 +223,9 @@ export function ManualOverlay() {
   const { currentStepIndex, finishManual, isOpen, manual, nextStep, skipManual } = useManual();
   const popoverRef = useRef<HTMLElement | null>(null);
   const frameRef = useRef<number | null>(null);
+  const scrollSettleFrameRef = useRef<number | null>(null);
+  const scrollSettleTimeoutRef = useRef<number | null>(null);
+  const controlledScrollRef = useRef(false);
   const lastGeometryRef = useRef<OverlayGeometry | null>(null);
   const [geometry, setGeometry] = useState<OverlayGeometry | null>(null);
 
@@ -235,6 +267,71 @@ export function ManualOverlay() {
     });
   }, [updateGeometry]);
 
+  const cancelScrollSettle = useCallback(() => {
+    if (scrollSettleFrameRef.current != null) {
+      window.cancelAnimationFrame(scrollSettleFrameRef.current);
+      scrollSettleFrameRef.current = null;
+    }
+
+    if (scrollSettleTimeoutRef.current != null) {
+      window.clearTimeout(scrollSettleTimeoutRef.current);
+      scrollSettleTimeoutRef.current = null;
+    }
+  }, []);
+
+  const waitForTargetToSettle = useCallback(
+    (selector: string | undefined, onSettled: () => void) => {
+      cancelScrollSettle();
+
+      const startedAt = window.performance.now();
+      let lastRect = normalizeRect(getElementRect(selector));
+      let stableFrames = 0;
+      let settled = false;
+
+      const finish = () => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        cancelScrollSettle();
+        onSettled();
+      };
+
+      const tick = () => {
+        const nextRect = normalizeRect(getElementRect(selector));
+
+        if (areRectsEqual(lastRect, nextRect)) {
+          stableFrames += 1;
+        } else {
+          stableFrames = 0;
+          lastRect = nextRect;
+        }
+
+        const elapsed = window.performance.now() - startedAt;
+
+        if (
+          (stableFrames >= SCROLL_STABLE_FRAME_COUNT && elapsed >= SCROLL_MIN_SETTLE_MS) ||
+          elapsed >= SCROLL_SETTLE_TIMEOUT_MS
+        ) {
+          finish();
+          return;
+        }
+
+        scrollSettleFrameRef.current = window.requestAnimationFrame(tick);
+      };
+
+      scrollSettleFrameRef.current = window.requestAnimationFrame(tick);
+      scrollSettleTimeoutRef.current = window.setTimeout(finish, SCROLL_SETTLE_TIMEOUT_MS + TARGET_REFRESH_DELAY_MS);
+
+      return () => {
+        settled = true;
+        cancelScrollSettle();
+      };
+    },
+    [cancelScrollSettle]
+  );
+
   useEffect(() => {
     if (!isOpen || !step) {
       lastGeometryRef.current = null;
@@ -242,28 +339,54 @@ export function ManualOverlay() {
       return;
     }
 
-    const timer = window.setTimeout(scheduleGeometryUpdate, TARGET_REFRESH_DELAY_MS);
-    scheduleGeometryUpdate();
+    const handleScroll = () => {
+      if (!controlledScrollRef.current) {
+        scheduleGeometryUpdate();
+      }
+    };
 
     window.addEventListener("resize", scheduleGeometryUpdate, { passive: true });
-    window.addEventListener("scroll", scheduleGeometryUpdate, { capture: true, passive: true });
+    window.addEventListener("scroll", handleScroll, { capture: true, passive: true });
 
     return () => {
-      window.clearTimeout(timer);
       if (frameRef.current != null) {
         window.cancelAnimationFrame(frameRef.current);
         frameRef.current = null;
       }
       window.removeEventListener("resize", scheduleGeometryUpdate);
-      window.removeEventListener("scroll", scheduleGeometryUpdate, true);
+      window.removeEventListener("scroll", handleScroll, true);
     };
   }, [isOpen, scheduleGeometryUpdate, step]);
 
   useEffect(() => {
-    if (isOpen && step) {
-      scheduleGeometryUpdate();
+    if (!isOpen || !step) {
+      controlledScrollRef.current = false;
+      cancelScrollSettle();
+      return;
     }
-  }, [currentStepIndex, isOpen, scheduleGeometryUpdate, step]);
+
+    let delayedRefresh: number | null = null;
+
+    controlledScrollRef.current = true;
+    lastGeometryRef.current = null;
+    setGeometry(null);
+    scrollTargetIntoView(step.selector);
+
+    const stopWaiting = waitForTargetToSettle(step.selector, () => {
+      controlledScrollRef.current = false;
+      updateGeometry();
+      delayedRefresh = window.setTimeout(scheduleGeometryUpdate, TARGET_REFRESH_DELAY_MS);
+    });
+
+    return () => {
+      if (delayedRefresh != null) {
+        window.clearTimeout(delayedRefresh);
+      }
+
+      controlledScrollRef.current = false;
+      stopWaiting();
+    };
+  }, [cancelScrollSettle, currentStepIndex, isOpen, scheduleGeometryUpdate, step, updateGeometry, waitForTargetToSettle]);
 
   const spotlightStyle = useMemo<CSSProperties | undefined>(() => {
     const targetRect = geometry?.targetRect ?? null;
@@ -301,13 +424,20 @@ export function ManualOverlay() {
         ref={popoverRef}
         className={styles.popover}
         style={popoverStyle}
+        data-manual-popover="true"
         role="dialog"
         aria-live="polite"
         aria-label={`${manual.routeLabel} manual`}
       >
         <div className={styles.popoverTop}>
           <span>{manual.routeLabel}</span>
-          <button className={styles.iconButton} type="button" onClick={skipManual} aria-label="Skip manual">
+          <button
+            className={styles.iconButton}
+            type="button"
+            onClick={skipManual}
+            data-manual-control="true"
+            aria-label="Skip manual"
+          >
             <X aria-hidden="true" />
           </button>
         </div>
@@ -327,10 +457,15 @@ export function ManualOverlay() {
         </div>
 
         <div className={styles.actions}>
-          <button className={styles.skipButton} type="button" onClick={skipManual}>
+          <button className={styles.skipButton} type="button" onClick={skipManual} data-manual-control="true">
             Skip
           </button>
-          <button className={styles.nextButton} type="button" onClick={isFinalStep ? finishManual : nextStep}>
+          <button
+            className={styles.nextButton}
+            type="button"
+            onClick={isFinalStep ? finishManual : nextStep}
+            data-manual-control="true"
+          >
             {isFinalStep ? (
               <>
                 Finish

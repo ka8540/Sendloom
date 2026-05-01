@@ -21,6 +21,17 @@ type ManualContextValue = {
 const ManualContext = createContext<ManualContextValue | null>(null);
 const STORAGE_PREFIX = "sendloom.manual.completed.";
 const AUTO_OPEN_DELAY_MS = 650;
+const SCROLL_KEYS = new Set([
+  "ArrowDown",
+  "ArrowLeft",
+  "ArrowRight",
+  "ArrowUp",
+  "End",
+  "Home",
+  "PageDown",
+  "PageUp",
+  " "
+]);
 
 function getStorageKey(manualId: string) {
   return `${STORAGE_PREFIX}${manualId}`;
@@ -40,6 +51,24 @@ function markManualComplete(manualId: string) {
   } catch {
     // If storage is unavailable, keep the current session state only.
   }
+}
+
+function isManualActivationKey(event: KeyboardEvent) {
+  if (event.key !== " " && event.key !== "Enter") {
+    return false;
+  }
+
+  return event.target instanceof Element && Boolean(event.target.closest("[data-manual-control='true']"));
+}
+
+function canScrollInsideManual(target: EventTarget | null) {
+  if (!(target instanceof Element)) {
+    return false;
+  }
+
+  const popover = target.closest("[data-manual-popover='true']");
+
+  return popover instanceof HTMLElement && popover.scrollHeight > popover.clientHeight;
 }
 
 export function useManual() {
@@ -83,6 +112,58 @@ function ManualRuntime() {
 
     return () => window.clearTimeout(timer);
   }, [manual]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousBodyOverscrollBehavior = document.body.style.overscrollBehavior;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+    const previousHtmlOverscrollBehavior = document.documentElement.style.overscrollBehavior;
+
+    document.body.style.overflow = "hidden";
+    document.body.style.overscrollBehavior = "none";
+    document.documentElement.style.overflow = "hidden";
+    document.documentElement.style.overscrollBehavior = "none";
+
+    const preventWheel = (event: WheelEvent) => {
+      if (!canScrollInsideManual(event.target)) {
+        event.preventDefault();
+      }
+    };
+
+    const preventTouchMove = (event: TouchEvent) => {
+      if (!canScrollInsideManual(event.target)) {
+        event.preventDefault();
+      }
+    };
+
+    const preventKeyboardScroll = (event: KeyboardEvent) => {
+      if (
+        SCROLL_KEYS.has(event.key) &&
+        !isManualActivationKey(event) &&
+        !canScrollInsideManual(event.target)
+      ) {
+        event.preventDefault();
+      }
+    };
+
+    document.addEventListener("wheel", preventWheel, { capture: true, passive: false });
+    document.addEventListener("touchmove", preventTouchMove, { capture: true, passive: false });
+    document.addEventListener("keydown", preventKeyboardScroll, { capture: true });
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.body.style.overscrollBehavior = previousBodyOverscrollBehavior;
+      document.documentElement.style.overflow = previousHtmlOverflow;
+      document.documentElement.style.overscrollBehavior = previousHtmlOverscrollBehavior;
+      document.removeEventListener("wheel", preventWheel, true);
+      document.removeEventListener("touchmove", preventTouchMove, true);
+      document.removeEventListener("keydown", preventKeyboardScroll, true);
+    };
+  }, [isOpen]);
 
   const finishManual = useCallback(() => {
     if (manual) {
