@@ -15,7 +15,6 @@ export function ManualButton() {
   return (
     <button className={styles.helpButton} type="button" onClick={openManual} aria-label={`Open ${manual.routeLabel} manual`}>
       <CircleHelp aria-hidden="true" />
-      <span>Help</span>
     </button>
   );
 }
