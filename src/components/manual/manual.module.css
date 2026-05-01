@@ -1,4 +1,10 @@
 .helpButton {
+  --help-tooltip-background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-strong) 98%, transparent), color-mix(in srgb, var(--surface-muted) 95%, transparent));
+  --help-tooltip-border: color-mix(in srgb, var(--accent) 16%, var(--line));
+  --help-tooltip-shadow:
+    0 18px 34px rgba(7, 15, 26, 0.24),
+    inset 0 1px 0 color-mix(in srgb, white 8%, transparent);
   position: fixed;
   right: 1.15rem;
   bottom: 1.15rem;
@@ -26,30 +32,63 @@
 
 .helpTooltip {
   position: absolute;
-  right: 0;
-  bottom: calc(100% + 0.65rem);
+  left: 50%;
+  z-index: 1;
+  width: max-content;
   max-width: min(12rem, calc(100vw - 2rem));
-  padding: 0.48rem 0.68rem;
-  border: 1px solid color-mix(in srgb, var(--accent) 16%, var(--line));
-  border-radius: 999px;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-strong) 98%, transparent), color-mix(in srgb, var(--surface-muted) 95%, transparent));
+  padding: 0.56rem 0.76rem;
+  border: 1px solid var(--help-tooltip-border);
+  border-radius: 0.95rem;
+  background: var(--help-tooltip-background);
   color: var(--text);
-  box-shadow:
-    0 18px 34px rgba(7, 15, 26, 0.24),
-    inset 0 1px 0 color-mix(in srgb, white 8%, transparent);
-  font-size: 0.78rem;
+  box-shadow: var(--help-tooltip-shadow);
+  font-size: 0.8rem;
   font-weight: 850;
-  line-height: 1;
+  line-height: 1.1;
   opacity: 0;
   overflow: hidden;
   pointer-events: none;
   text-overflow: ellipsis;
-  transform: translateY(0.25rem) scale(0.96);
-  transform-origin: bottom right;
-  transition: opacity 150ms ease, transform 150ms ease, visibility 150ms ease;
+  transition: opacity 160ms ease, transform 160ms ease, visibility 160ms ease;
   visibility: hidden;
   white-space: nowrap;
+}
+
+.helpTooltip::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  width: 0.9rem;
+  height: 0.55rem;
+  background: var(--help-tooltip-background);
+  transform: translateX(-50%);
+}
+
+.helpTooltipAbove {
+  bottom: calc(100% + 0.65rem);
+  transform: translate(-50%, 0.25rem);
+}
+
+.helpTooltipAbove::after {
+  bottom: -0.52rem;
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+}
+
+.helpTooltipBelow {
+  top: calc(100% + 0.65rem);
+  transform: translate(-50%, -0.25rem);
+}
+
+.helpTooltipBelow::after {
+  top: -0.52rem;
+  clip-path: polygon(50% 0, 0 100%, 100% 100%);
+}
+
+.helpTooltipVisible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  transition-delay: 180ms;
+  visibility: visible;
 }
 
 .helpButton svg {
@@ -64,14 +103,6 @@
   border-color: color-mix(in srgb, var(--accent) 32%, var(--line));
   box-shadow: 0 22px 40px rgba(28, 42, 70, 0.16);
   outline: none;
-}
-
-.helpButton:hover .helpTooltip,
-.helpButton:focus-visible .helpTooltip {
-  opacity: 1;
-  transform: translateY(0) scale(1);
-  transition-delay: 180ms;
-  visibility: visible;
 }
 
 .ambientLayer {
