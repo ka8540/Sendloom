@@ -31,7 +31,8 @@
 
 .helpTooltip {
   position: absolute;
-  left: 50%;
+  top: 50%;
+  right: calc(100% + 0.7rem);
   z-index: 2;
   display: inline-flex;
   align-items: center;
@@ -52,6 +53,8 @@
   overflow: visible;
   pointer-events: none;
   text-align: center;
+  transform: translate(0.28rem, -50%) scale(0.96);
+  transform-origin: center right;
   transition: opacity 160ms ease, transform 160ms ease, visibility 160ms ease;
   visibility: hidden;
   white-space: nowrap;
@@ -62,54 +65,30 @@
 .helpTooltip::after {
   content: "";
   position: absolute;
-  left: 50%;
+  top: 50%;
   width: 0;
   height: 0;
-  transform: translateX(-50%);
+  transform: translateY(-50%);
   pointer-events: none;
 }
 
-.helpTooltipAbove {
-  bottom: calc(100% + 0.58rem);
-  transform: translate(-50%, 0.34rem) scale(0.96);
+.helpTooltip::before {
+  right: -0.62rem;
+  border-top: 0.55rem solid transparent;
+  border-bottom: 0.55rem solid transparent;
+  border-left: 0.62rem solid var(--help-tooltip-border);
 }
 
-.helpTooltipAbove::before {
-  bottom: -0.62rem;
-  border-left: 0.56rem solid transparent;
-  border-right: 0.56rem solid transparent;
-  border-top: 0.62rem solid var(--help-tooltip-border);
-}
-
-.helpTooltipAbove::after {
-  bottom: -0.5rem;
-  border-left: 0.46rem solid transparent;
-  border-right: 0.46rem solid transparent;
-  border-top: 0.52rem solid var(--help-tooltip-surface);
-}
-
-.helpTooltipBelow {
-  top: calc(100% + 0.58rem);
-  transform: translate(-50%, -0.34rem) scale(0.96);
-}
-
-.helpTooltipBelow::before {
-  top: -0.62rem;
-  border-left: 0.56rem solid transparent;
-  border-right: 0.56rem solid transparent;
-  border-bottom: 0.62rem solid var(--help-tooltip-border);
-}
-
-.helpTooltipBelow::after {
-  top: -0.5rem;
-  border-left: 0.46rem solid transparent;
-  border-right: 0.46rem solid transparent;
-  border-bottom: 0.52rem solid var(--help-tooltip-surface);
+.helpTooltip::after {
+  right: -0.49rem;
+  border-top: 0.45rem solid transparent;
+  border-bottom: 0.45rem solid transparent;
+  border-left: 0.52rem solid var(--help-tooltip-surface);
 }
 
 .helpTooltipVisible {
   opacity: 1;
-  transform: translate(-50%, 0) scale(1);
+  transform: translate(0, -50%) scale(1);
   visibility: visible;
 }
 
