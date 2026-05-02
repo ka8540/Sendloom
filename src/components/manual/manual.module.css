@@ -1,9 +1,8 @@
 .helpButton {
-  --help-tooltip-surface: color-mix(in srgb, var(--surface-strong) 92%, rgb(8 14 27));
-  --help-tooltip-border: color-mix(in srgb, var(--accent) 24%, var(--line));
+  --help-tooltip-surface: color-mix(in srgb, var(--surface-strong) 94%, rgb(8 14 27));
+  --help-tooltip-border: color-mix(in srgb, var(--accent) 22%, var(--line));
   --help-tooltip-shadow:
-    0 14px 26px rgba(7, 15, 26, 0.24),
-    0 0 0 1px var(--help-tooltip-border),
+    0 16px 30px rgba(7, 15, 26, 0.26),
     inset 0 1px 0 color-mix(in srgb, white 6%, transparent);
   position: fixed;
   right: 1.15rem;
@@ -40,9 +39,9 @@
   width: max-content;
   max-width: min(12rem, calc(100vw - 2rem));
   min-width: 4.35rem;
-  padding: 0.62rem 0.94rem;
-  border: 0;
-  border-radius: 1rem;
+  padding: 0.64rem 0.96rem;
+  border: 1px solid var(--help-tooltip-border);
+  border-radius: 0.92rem;
   background: var(--help-tooltip-surface);
   color: var(--text);
   box-shadow: var(--help-tooltip-shadow);
@@ -64,52 +63,48 @@
   content: "";
   position: absolute;
   left: 50%;
+  width: 0;
+  height: 0;
   transform: translateX(-50%);
   pointer-events: none;
 }
 
 .helpTooltipAbove {
-  bottom: calc(100% + 0.68rem);
+  bottom: calc(100% + 0.58rem);
   transform: translate(-50%, 0.34rem) scale(0.96);
 }
 
 .helpTooltipAbove::before {
-  bottom: -0.18rem;
-  width: 1.35rem;
-  height: 0.42rem;
-  background: var(--help-tooltip-surface);
+  bottom: -0.62rem;
+  border-left: 0.56rem solid transparent;
+  border-right: 0.56rem solid transparent;
+  border-top: 0.62rem solid var(--help-tooltip-border);
 }
 
 .helpTooltipAbove::after {
-  bottom: -0.72rem;
-  z-index: -1;
-  width: 1.28rem;
-  height: 0.78rem;
-  background: var(--help-tooltip-surface);
-  clip-path: polygon(12% 0, 88% 0, 50% 100%);
-  filter: drop-shadow(0 8px 8px rgba(7, 15, 26, 0.1));
+  bottom: -0.5rem;
+  border-left: 0.46rem solid transparent;
+  border-right: 0.46rem solid transparent;
+  border-top: 0.52rem solid var(--help-tooltip-surface);
 }
 
 .helpTooltipBelow {
-  top: calc(100% + 0.68rem);
+  top: calc(100% + 0.58rem);
   transform: translate(-50%, -0.34rem) scale(0.96);
 }
 
 .helpTooltipBelow::before {
-  top: -0.18rem;
-  width: 1.35rem;
-  height: 0.42rem;
-  background: var(--help-tooltip-surface);
+  top: -0.62rem;
+  border-left: 0.56rem solid transparent;
+  border-right: 0.56rem solid transparent;
+  border-bottom: 0.62rem solid var(--help-tooltip-border);
 }
 
 .helpTooltipBelow::after {
-  top: -0.72rem;
-  z-index: -1;
-  width: 1.28rem;
-  height: 0.78rem;
-  background: var(--help-tooltip-surface);
-  clip-path: polygon(50% 0, 12% 100%, 88% 100%);
-  filter: drop-shadow(0 -8px 8px rgba(7, 15, 26, 0.1));
+  top: -0.5rem;
+  border-left: 0.46rem solid transparent;
+  border-right: 0.46rem solid transparent;
+  border-bottom: 0.52rem solid var(--help-tooltip-surface);
 }
 
 .helpTooltipVisible {
