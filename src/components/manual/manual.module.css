@@ -1,9 +1,4 @@
 .helpButton {
-  --help-tooltip-surface: color-mix(in srgb, var(--surface-strong) 94%, rgb(8 14 27));
-  --help-tooltip-border: color-mix(in srgb, var(--accent) 22%, var(--line));
-  --help-tooltip-shadow:
-    0 16px 30px rgba(7, 15, 26, 0.26),
-    inset 0 1px 0 color-mix(in srgb, white 6%, transparent);
   position: fixed;
   right: 1.15rem;
   bottom: 1.15rem;
@@ -31,64 +26,28 @@
 
 .helpTooltip {
   position: absolute;
-  top: -0.45rem;
-  right: calc(100% + 0.58rem);
+  top: 50%;
+  right: calc(100% + 0.72rem);
   z-index: 2;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   width: max-content;
-  max-width: min(12rem, calc(100vw - 2rem));
-  min-width: 4.35rem;
-  padding: 0.64rem 0.96rem;
-  border: 1px solid var(--help-tooltip-border);
-  border-radius: 0.92rem;
-  background: var(--help-tooltip-surface);
-  color: var(--text);
-  box-shadow: var(--help-tooltip-shadow);
-  font-size: 0.8rem;
+  max-width: min(8rem, calc(100vw - 2rem));
+  color: color-mix(in srgb, var(--text) 88%, var(--muted));
+  font-size: 0.82rem;
   font-weight: 850;
   line-height: 1;
   opacity: 0;
-  overflow: visible;
   pointer-events: none;
-  text-align: center;
-  transform: translate(0.28rem, 0.18rem) scale(0.96);
-  transform-origin: right 72%;
+  transform: translate(0.25rem, -50%);
   transition: opacity 160ms ease, transform 160ms ease, visibility 160ms ease;
   visibility: hidden;
   white-space: nowrap;
-  isolation: isolate;
+  text-shadow: 0 1px 10px rgba(7, 15, 26, 0.32);
 }
 
-.helpTooltip::before,
-.helpTooltip::after {
-  content: "";
-  position: absolute;
-  top: 72%;
-  width: 0;
-  height: 0;
-  transform: translateY(-50%);
-  pointer-events: none;
-}
-
-.helpTooltip::before {
-  right: -0.62rem;
-  border-top: 0.55rem solid transparent;
-  border-bottom: 0.55rem solid transparent;
-  border-left: 0.62rem solid var(--help-tooltip-border);
-}
-
-.helpTooltip::after {
-  right: -0.49rem;
-  border-top: 0.45rem solid transparent;
-  border-bottom: 0.45rem solid transparent;
-  border-left: 0.52rem solid var(--help-tooltip-surface);
-}
-
-.helpTooltipVisible {
+.helpButton:hover .helpTooltip,
+.helpButton:focus-visible .helpTooltip {
   opacity: 1;
-  transform: translate(0, 0) scale(1);
+  transform: translate(0, -50%);
   visibility: visible;
 }
 
