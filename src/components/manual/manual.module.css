@@ -31,8 +31,8 @@
 
 .helpTooltip {
   position: absolute;
-  top: 50%;
-  right: calc(100% + 0.7rem);
+  top: -0.45rem;
+  right: calc(100% + 0.58rem);
   z-index: 2;
   display: inline-flex;
   align-items: center;
@@ -53,8 +53,8 @@
   overflow: visible;
   pointer-events: none;
   text-align: center;
-  transform: translate(0.28rem, -50%) scale(0.96);
-  transform-origin: center right;
+  transform: translate(0.28rem, 0.18rem) scale(0.96);
+  transform-origin: right 72%;
   transition: opacity 160ms ease, transform 160ms ease, visibility 160ms ease;
   visibility: hidden;
   white-space: nowrap;
@@ -65,7 +65,7 @@
 .helpTooltip::after {
   content: "";
   position: absolute;
-  top: 50%;
+  top: 72%;
   width: 0;
   height: 0;
   transform: translateY(-50%);
@@ -88,7 +88,7 @@
 
 .helpTooltipVisible {
   opacity: 1;
-  transform: translate(0, -50%) scale(1);
+  transform: translate(0, 0) scale(1);
   visibility: visible;
 }
 
