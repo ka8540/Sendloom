@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import { FileSpreadsheet, House, PanelLeftClose, PanelLeftOpen, ScrollText, Search, SendHorizontal, ShieldUser } from "lucide-react";
+import { BrandText } from "@/components/brand-text";
 import { SendloomLogo } from "@/components/sendloom-logo";
 import { SessionControls } from "@/components/session-controls";
 
@@ -30,7 +31,9 @@ export function AppNav({ isAdmin = false }: { isAdmin?: boolean }) {
             <SendloomLogo />
           </div>
           <div className="brand-copy">
-            <h1>Sendloom</h1>
+            <h1>
+              <BrandText>Sendloom</BrandText>
+            </h1>
             <p className="muted">{isAdmin ? "User accounts and controls in one place." : "Lists, templates, and sequences in one place."}</p>
           </div>
         </div>

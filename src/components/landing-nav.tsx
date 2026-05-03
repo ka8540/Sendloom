@@ -6,7 +6,7 @@ import { Menu, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import styles from "@/app/landing.module.css";
-import { renderBrandText } from "@/components/brand-text";
+import { BrandText } from "@/components/brand-text";
 import { SendloomLogo } from "@/components/sendloom-logo";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 
@@ -63,7 +63,9 @@ export function LandingNav({ items = defaultNavItems }: { items?: readonly Landi
         <div className={styles.brand}>
           <SendloomLogo className={styles.brandMark} />
           <div className={styles.brandText}>
-            <strong>Sendloom</strong>
+            <strong>
+              <BrandText>Sendloom</BrandText>
+            </strong>
             <span>Sequence operations with real sending discipline.</span>
           </div>
         </div>
@@ -72,11 +74,11 @@ export function LandingNav({ items = defaultNavItems }: { items?: readonly Landi
           {items.map((item) =>
             isInternalRoute(item.href) ? (
               <Link key={item.label} className={styles.navLink} href={item.href as Route}>
-                {renderBrandText(item.label)}
+                {item.label}
               </Link>
             ) : (
               <a key={item.label} className={styles.navLink} href={item.href}>
-                {renderBrandText(item.label)}
+                {item.label}
               </a>
             )
           )}
@@ -110,11 +112,11 @@ export function LandingNav({ items = defaultNavItems }: { items?: readonly Landi
             {items.map((item) =>
               isInternalRoute(item.href) ? (
                 <Link key={item.label} className={styles.mobileNavLink} href={item.href as Route} onClick={closeMenu}>
-                  {renderBrandText(item.label)}
+                  {item.label}
                 </Link>
               ) : (
                 <a key={item.label} className={styles.mobileNavLink} href={item.href} onClick={closeMenu}>
-                  {renderBrandText(item.label)}
+                  {item.label}
                 </a>
               )
             )}

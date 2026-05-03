@@ -221,6 +221,7 @@ export default function LandingPage() {
             <h2>Walk in with a spreadsheet. Walk out with a running sequence.</h2>
             <p>
               Connect Gmail, create the campaign, and start testing the full flow from a single login. The fastest way to understand
+              {" "}
               <BrandText>Sendloom</BrandText> is to put your own list through it.
             </p>
 
@@ -241,7 +242,9 @@ export default function LandingPage() {
               <div className={styles.footerBrand}>
                 <SendloomLogo className={styles.footerBrandMark} />
                 <div>
-                  <strong>Sendloom</strong>
+                  <strong>
+                    <BrandText>Sendloom</BrandText>
+                  </strong>
                   <span>Outreach operations with one source of truth.</span>
                 </div>
               </div>

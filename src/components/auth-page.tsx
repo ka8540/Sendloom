@@ -5,7 +5,7 @@ import styles from "@/app/auth.module.css";
 import { AnimatedEmailPath } from "@/components/AnimatedEmailPath";
 import { AuthVideoPreview } from "@/components/auth-video-preview";
 import { BackButton } from "@/components/back-button";
-import { renderBrandText } from "@/components/brand-text";
+import { BrandText, renderBrandText } from "@/components/brand-text";
 import { ErrorToastOnMount } from "@/components/error-toast-provider";
 import { SendloomLogo } from "@/components/sendloom-logo";
 
@@ -104,7 +104,9 @@ export function AuthPage({
             <div className={styles.panelTop}>
               <SendloomLogo className={styles.panelLogo} />
               <div className={styles.panelBrand}>
-                <strong>Sendloom</strong>
+                <strong>
+                  <BrandText>Sendloom</BrandText>
+                </strong>
                 <span>Sequence operations with real sending discipline.</span>
               </div>
             </div>
