@@ -4,6 +4,7 @@ import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, Check, X } from "lucide-react";
 
+import { renderBrandText } from "@/components/brand-text";
 import type { ManualPlacement } from "@/components/manual/manualTypes";
 import { useManual } from "@/components/manual/ManualProvider";
 import styles from "@/components/manual/manual.module.css";
@@ -443,8 +444,8 @@ export function ManualOverlay() {
         </div>
 
         <div className={styles.copy}>
-          <h2>{step.title}</h2>
-          <p>{step.body}</p>
+          <h2>{renderBrandText(step.title)}</h2>
+          <p>{renderBrandText(step.body)}</p>
         </div>
 
         <div className={styles.progressRow} aria-label={`Step ${currentStepIndex + 1} of ${manual.steps.length}`}>

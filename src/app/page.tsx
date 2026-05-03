@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { AnimatedEmailPath } from "@/components/AnimatedEmailPath";
+import { BrandText, renderBrandText } from "@/components/brand-text";
 import { LandingSceneShell } from "@/components/landing-scene-shell";
 import { LandingNav } from "@/components/landing-nav";
 import { SendloomLogo } from "@/components/sendloom-logo";
@@ -75,10 +76,10 @@ export default function LandingPage() {
               Cold outreach that feels <span className={styles.headlineAccent}>crafted</span>, not sprayed.
             </h1>
             <p className={styles.lede}>
-              Sendloom turns your spreadsheet, template, and connected Gmail sender into one clean launch surface. Import lists,
-              map fields, find missing contact emails with your own API key from hunter.io, choose plain text, HTML, or structured
-              JSON templates, enhance subject lines and email copy with AI, add attachments, track runs, and keep delivery history
-              in the same place the sequence actually lives.
+              <BrandText>Sendloom</BrandText> turns your spreadsheet, template, and connected Gmail sender into one clean launch
+              surface. Import lists, map fields, find missing contact emails with your own API key from hunter.io, choose plain text,
+              HTML, or structured JSON templates, enhance subject lines and email copy with AI, add attachments, track runs, and keep
+              delivery history in the same place the sequence actually lives.
             </p>
 
             <div className={styles.ctaRow}>
@@ -162,7 +163,7 @@ export default function LandingPage() {
             <h2 className={styles.sectionTitle}>A launch surface designed for signal, not volume theater.</h2>
             <p className={styles.sectionText}>
               Great outreach products don’t just blast faster. They help small teams stay precise while the audience, message, and
-              sender all change underneath them. Sendloom was shaped around that operator reality.
+              sender all change underneath them. <BrandText>Sendloom</BrandText> was shaped around that operator reality.
             </p>
           </div>
 
@@ -171,7 +172,7 @@ export default function LandingPage() {
               <article key={feature.index} className={styles.featureCard}>
                 <span className={styles.featureIndex}>{feature.index}</span>
                 <h3>{feature.title}</h3>
-                <p>{feature.body}</p>
+                <p>{renderBrandText(feature.body)}</p>
                 <div className={styles.featurePills}>
                   {feature.pills.map((pill) => (
                     <span key={pill}>{pill}</span>
@@ -220,7 +221,7 @@ export default function LandingPage() {
             <h2>Walk in with a spreadsheet. Walk out with a running sequence.</h2>
             <p>
               Connect Gmail, create the campaign, and start testing the full flow from a single login. The fastest way to understand
-              Sendloom is to put your own list through it.
+              <BrandText>Sendloom</BrandText> is to put your own list through it.
             </p>
 
             <div className={styles.ctaActions}>
@@ -240,7 +241,9 @@ export default function LandingPage() {
               <div className={styles.footerBrand}>
                 <SendloomLogo className={styles.footerBrandMark} />
                 <div>
-                  <strong>Sendloom</strong>
+                  <strong>
+                    <BrandText>Sendloom</BrandText>
+                  </strong>
                   <span>Outreach operations with one source of truth.</span>
                 </div>
               </div>
@@ -254,7 +257,9 @@ export default function LandingPage() {
                 <span className={styles.footerHeading}>Product</span>
                 <a href="#workflow">Workflow</a>
                 <a href="#proof">Why it works</a>
-                <Link href="/signup">Try Sendloom</Link>
+                <Link href="/signup">
+                  Try <BrandText>Sendloom</BrandText>
+                </Link>
               </div>
               <div className={styles.footerColumn}>
                 <span className={styles.footerHeading}>Access</span>
@@ -272,7 +277,9 @@ export default function LandingPage() {
           </div>
 
           <div className={styles.footerBottom}>
-            <span>Sendloom.net</span>
+            <span>
+              <BrandText>Sendloom</BrandText>.net
+            </span>
             <div className={styles.footerLinks}>
               <Link href="/privacy">Privacy</Link>
               <Link href="/terms">Terms</Link>

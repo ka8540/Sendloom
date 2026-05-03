@@ -5,6 +5,7 @@ import styles from "@/app/auth.module.css";
 import { AnimatedEmailPath } from "@/components/AnimatedEmailPath";
 import { AuthVideoPreview } from "@/components/auth-video-preview";
 import { BackButton } from "@/components/back-button";
+import { BrandText, renderBrandText } from "@/components/brand-text";
 import { ErrorToastOnMount } from "@/components/error-toast-provider";
 import { SendloomLogo } from "@/components/sendloom-logo";
 
@@ -67,8 +68,8 @@ export function AuthPage({
 
         <header className={styles.hero}>
           <span className={styles.eyebrow}>{eyebrow}</span>
-          <h1 className={styles.title}>{title}</h1>
-          <p className={styles.description}>{description}</p>
+          <h1 className={styles.title}>{renderBrandText(title)}</h1>
+          <p className={styles.description}>{renderBrandText(description)}</p>
         </header>
 
         <div className={styles.layout}>
@@ -103,14 +104,16 @@ export function AuthPage({
             <div className={styles.panelTop}>
               <SendloomLogo className={styles.panelLogo} />
               <div className={styles.panelBrand}>
-                <strong>Sendloom</strong>
+                <strong>
+                  <BrandText>Sendloom</BrandText>
+                </strong>
                 <span>Sequence operations with real sending discipline.</span>
               </div>
             </div>
 
             <div className={styles.panelHeader}>
-              <h2>{panelTitle}</h2>
-              <p>{panelDescription}</p>
+              <h2>{renderBrandText(panelTitle)}</h2>
+              <p>{renderBrandText(panelDescription)}</p>
             </div>
 
             <a className={styles.providerButton} href="/api/auth/google/login">
@@ -125,7 +128,7 @@ export function AuthPage({
             <div className={styles.formWrap}>{children}</div>
 
             <p className={styles.switch}>
-              {switchText} <Link href={switchHref}>{switchLabel}</Link>
+              {renderBrandText(switchText)} <Link href={switchHref}>{renderBrandText(switchLabel)}</Link>
             </p>
 
             <p className={styles.legal}>

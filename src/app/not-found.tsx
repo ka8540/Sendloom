@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { renderBrandText } from "@/components/brand-text";
 import { NotFoundDog } from "@/components/not-found-dog";
 
 export default function NotFoundPage() {
@@ -14,7 +15,7 @@ export default function NotFoundPage() {
         <div className="stack" style={{ gap: "0.55rem" }}>
           <h1>Page not found</h1>
           <p className="muted">
-            This page wandered off. The good news is the rest of Sendloom is still right where it should be.
+            {renderBrandText("This page wandered off. The good news is the rest of Sendloom is still right where it should be.")}
           </p>
         </div>
 

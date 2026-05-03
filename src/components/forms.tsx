@@ -5,6 +5,7 @@ import { Sparkles } from "lucide-react";
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
 
+import { renderBrandText } from "@/components/brand-text";
 import { useErrorToastEffect } from "@/components/error-toast-provider";
 import { analyzeSpam, type SpamAnalysis } from "@/lib/spam-analysis";
 import {
@@ -451,7 +452,7 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
             </option>
           ))}
         </select>
-        <p className="field-inline-note">{getTemplateBodyHint(fields.format)}</p>
+        <p className="field-inline-note">{renderBrandText(getTemplateBodyHint(fields.format))}</p>
       </div>
       <div className="field">
         <div className="field-label-row">
@@ -515,7 +516,7 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
           className={highlightedField === "body" ? "field-enhanced" : undefined}
           required
         />
-        <p className="field-inline-note">{getTemplateBodyHint(fields.format)}</p>
+        <p className="field-inline-note">{renderBrandText(getTemplateBodyHint(fields.format))}</p>
         {bodyValidationError ? <p className="field-inline-note">{bodyValidationError}</p> : null}
         {enhanceError.body ? <p className="field-inline-note">{enhanceError.body}</p> : null}
       </div>

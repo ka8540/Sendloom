@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import styles from "@/app/legal.module.css";
+import { renderBrandText } from "@/components/brand-text";
 import { LandingNav } from "@/components/landing-nav";
 
 type LegalHighlight = {
@@ -72,8 +73,8 @@ export function LegalPage({
         <header className={styles.hero}>
           <span className={styles.eyebrow}>{eyebrow}</span>
           <span className={styles.meta}>Last updated: {lastUpdated}</span>
-          <h1 className={styles.title}>{title}</h1>
-          <p className={styles.description}>{description}</p>
+          <h1 className={styles.title}>{renderBrandText(title)}</h1>
+          <p className={styles.description}>{renderBrandText(description)}</p>
 
           <div className={styles.heroActions}>
             <Link className="button" href="/">
@@ -88,7 +89,7 @@ export function LegalPage({
             {quickFacts.map((fact) => (
               <article key={fact.title} className={styles.quickFactCard}>
                 <strong>{fact.title}</strong>
-                <span>{fact.body}</span>
+                <span>{renderBrandText(fact.body)}</span>
               </article>
             ))}
           </div>
@@ -98,7 +99,7 @@ export function LegalPage({
           <aside className={styles.sidebar}>
             <section className={styles.sidebarCard}>
               <h2 className={styles.sidebarTitle}>{guideTitle}</h2>
-              <p className={styles.sidebarText}>{guideBody}</p>
+              <p className={styles.sidebarText}>{renderBrandText(guideBody)}</p>
             </section>
 
             <section className={styles.sidebarCard}>
@@ -106,7 +107,7 @@ export function LegalPage({
               <nav className={styles.contents} aria-label="Policy sections">
                 {sections.map((section) => (
                   <a key={section.id} href={`#${section.id}`}>
-                    {section.title}
+                    {renderBrandText(section.title)}
                   </a>
                 ))}
               </nav>
@@ -119,7 +120,7 @@ export function LegalPage({
                   <article key={highlight.label} className={styles.highlight}>
                     <span className={styles.highlightLabel}>{highlight.label}</span>
                     <strong className={styles.highlightValue}>{highlight.value}</strong>
-                    <p className={styles.highlightDetail}>{highlight.detail}</p>
+                    <p className={styles.highlightDetail}>{renderBrandText(highlight.detail)}</p>
                   </article>
                 ))}
               </div>
@@ -129,7 +130,7 @@ export function LegalPage({
               <h2 className={styles.sidebarTitle}>What this means</h2>
               <ul className={styles.commitments}>
                 {commitments.map((commitment) => (
-                  <li key={commitment}>{commitment}</li>
+                  <li key={commitment}>{renderBrandText(commitment)}</li>
                 ))}
               </ul>
             </section>
@@ -138,25 +139,25 @@ export function LegalPage({
           <article className={styles.article}>
             <header className={styles.articleHeader}>
               <p className={styles.articleEyebrow}>{sectionEyebrow}</p>
-              <h2 className={styles.articleTitle}>{sectionTitle}</h2>
-              <p className={styles.articleIntro}>{sectionBody}</p>
+              <h2 className={styles.articleTitle}>{renderBrandText(sectionTitle)}</h2>
+              <p className={styles.articleIntro}>{renderBrandText(sectionBody)}</p>
             </header>
 
             {sections.map((section) => (
               <section key={section.id} id={section.id} className={styles.section}>
-                <h3>{section.title}</h3>
+                <h3>{renderBrandText(section.title)}</h3>
 
-                {section.paragraphs?.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
+                {section.paragraphs?.map((paragraph) => <p key={paragraph}>{renderBrandText(paragraph)}</p>)}
 
                 {section.bullets ? (
                   <ul>
                     {section.bullets.map((bullet) => (
-                      <li key={bullet}>{bullet}</li>
+                      <li key={bullet}>{renderBrandText(bullet)}</li>
                     ))}
                   </ul>
                 ) : null}
 
-                {section.note ? <p className={styles.sectionNote}>{section.note}</p> : null}
+                {section.note ? <p className={styles.sectionNote}>{renderBrandText(section.note)}</p> : null}
               </section>
             ))}
 

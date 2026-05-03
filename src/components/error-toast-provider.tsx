@@ -12,6 +12,8 @@ import {
   type ReactNode
 } from "react";
 
+import { renderBrandText } from "@/components/brand-text";
+
 type ShowErrorOptions = {
   durationMs?: number;
   title?: string;
@@ -98,8 +100,8 @@ export function ErrorToastProvider({ children }: { children: ReactNode }) {
               <AlertCircle />
             </span>
             <div className="error-toast__copy">
-              <strong className="error-toast__title">{toast.title}</strong>
-              <p className="error-toast__message">{toast.message}</p>
+              <strong className="error-toast__title">{renderBrandText(toast.title)}</strong>
+              <p className="error-toast__message">{renderBrandText(toast.message)}</p>
             </div>
             <button
               type="button"

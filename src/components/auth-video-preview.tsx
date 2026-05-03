@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Volume2, VolumeX } from "lucide-react";
 
 import styles from "@/app/auth.module.css";
+import { BrandText } from "@/components/brand-text";
 import { SendloomLogo } from "@/components/sendloom-logo";
 
 type VideoPhase = "loading" | "intro" | "playing" | "outro";
@@ -159,7 +160,9 @@ export function AuthVideoPreview() {
 
         <div className={styles.previewBrand}>
           <SendloomLogo className={styles.previewBrandMark} />
-          <span>Sendloom</span>
+          <span>
+            <BrandText>Sendloom</BrandText>
+          </span>
         </div>
       </div>
 

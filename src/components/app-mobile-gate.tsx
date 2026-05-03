@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowUpRight, LaptopMinimal, TabletSmartphone } from "lucide-react";
 
 import { AnimatedEmailPath } from "@/components/AnimatedEmailPath";
+import { BrandText, renderBrandText } from "@/components/brand-text";
 import { SendloomLogo } from "@/components/sendloom-logo";
 
 import styles from "./app-mobile-gate.module.css";
@@ -34,7 +35,9 @@ function MobileDashboardBlock() {
         <header className={styles.brandBar}>
           <SendloomLogo className={styles.brandMark} />
           <div className={styles.brandCopy}>
-            <strong>Sendloom</strong>
+            <strong>
+              <BrandText>Sendloom</BrandText>
+            </strong>
             <span>Sequence operations with real sending discipline.</span>
           </div>
         </header>
@@ -44,8 +47,9 @@ function MobileDashboardBlock() {
             <span className={styles.kicker}>Desktop only for now</span>
             <h1 className={styles.title}>The workspace is currently paused on compact screens.</h1>
             <p className={styles.description}>
-              Sendloom&apos;s dashboard is tuned for larger layouts. To keep campaigns, imports, templates, and sender controls readable,
-              phone and smaller tablet views are blocked for now.
+              {renderBrandText(
+                "Sendloom's dashboard is tuned for larger layouts. To keep campaigns, imports, templates, and sender controls readable, phone and smaller tablet views are blocked for now."
+              )}
             </p>
 
             <div className={styles.actions}>
@@ -67,7 +71,7 @@ function MobileDashboardBlock() {
               <article className={styles.noteCard}>
                 <span className={styles.noteLabel}>Right now</span>
                 <strong>Small phone and tablet layouts are disabled.</strong>
-                <p>Open Sendloom on a wider screen to keep working inside the app.</p>
+                <p>{renderBrandText("Open Sendloom on a wider screen to keep working inside the app.")}</p>
               </article>
             </div>
           </div>

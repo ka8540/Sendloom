@@ -4,6 +4,7 @@ import { startTransition, useEffect, useRef, useState } from "react";
 import { gsap } from "gsap";
 import * as THREE from "three";
 
+import { renderBrandText } from "@/components/brand-text";
 import styles from "@/components/load-screen.module.css";
 
 const loaderBeats = [
@@ -441,7 +442,7 @@ export function LoadScreen() {
 
       <div className={styles.content} aria-live="polite">
         <p ref={eyebrowRef} className={styles.eyebrow}>
-          {eyebrow}
+          {renderBrandText(eyebrow)}
         </p>
 
         <div ref={headlineRef} className={styles.headline} data-final={showFinalMessage ? "true" : "false"}>
@@ -451,7 +452,7 @@ export function LoadScreen() {
         </div>
 
         <p ref={captionRef} className={styles.caption} data-final={showFinalMessage ? "true" : "false"}>
-          {caption}
+          {renderBrandText(caption)}
         </p>
 
         <div className={styles.footer}>
