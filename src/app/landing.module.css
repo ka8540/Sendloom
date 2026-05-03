@@ -176,7 +176,7 @@
   letter-spacing: -0.02em;
 }
 
-.brandText span {
+.brandText > span {
   font-size: 0.88rem;
   color: var(--landing-muted);
 }
