@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ArrowUpRight, LaptopMinimal, TabletSmartphone } from "lucide-react";
 
 import { AnimatedEmailPath } from "@/components/AnimatedEmailPath";
-import { BrandText, renderBrandText } from "@/components/brand-text";
+import { renderBrandText } from "@/components/brand-text";
 import { SendloomLogo } from "@/components/sendloom-logo";
 
 import styles from "./app-mobile-gate.module.css";
@@ -35,9 +35,7 @@ function MobileDashboardBlock() {
         <header className={styles.brandBar}>
           <SendloomLogo className={styles.brandMark} />
           <div className={styles.brandCopy}>
-            <strong>
-              <BrandText>Sendloom</BrandText>
-            </strong>
+            <strong>Sendloom</strong>
             <span>Sequence operations with real sending discipline.</span>
           </div>
         </header>

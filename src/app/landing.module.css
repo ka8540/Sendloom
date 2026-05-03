@@ -873,7 +873,7 @@
   display: block;
 }
 
-.footerBrand span {
+.footerBrand > div > span {
   display: block;
   margin-top: 0.15rem;
   color: var(--landing-muted);

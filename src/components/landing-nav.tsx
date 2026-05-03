@@ -6,7 +6,7 @@ import { Menu, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import styles from "@/app/landing.module.css";
-import { BrandText, renderBrandText } from "@/components/brand-text";
+import { renderBrandText } from "@/components/brand-text";
 import { SendloomLogo } from "@/components/sendloom-logo";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 
@@ -63,9 +63,7 @@ export function LandingNav({ items = defaultNavItems }: { items?: readonly Landi
         <div className={styles.brand}>
           <SendloomLogo className={styles.brandMark} />
           <div className={styles.brandText}>
-            <strong>
-              <BrandText>Sendloom</BrandText>
-            </strong>
+            <strong>Sendloom</strong>
             <span>Sequence operations with real sending discipline.</span>
           </div>
         </div>

@@ -241,9 +241,7 @@ export default function LandingPage() {
               <div className={styles.footerBrand}>
                 <SendloomLogo className={styles.footerBrandMark} />
                 <div>
-                  <strong>
-                    <BrandText>Sendloom</BrandText>
-                  </strong>
+                  <strong>Sendloom</strong>
                   <span>Outreach operations with one source of truth.</span>
                 </div>
               </div>

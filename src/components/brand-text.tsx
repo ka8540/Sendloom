@@ -7,7 +7,7 @@ const BRAND_PATTERN = /(Sendloom|SENDLOOM|sendloom)/g;
 
 function renderBrandWord(word: string, key: string) {
   return (
-    <span key={key}>
+    <span key={key} className={styles.word}>
       {word.slice(0, -4)}
       <span className={styles.loom}>{word.slice(-4)}</span>
     </span>
