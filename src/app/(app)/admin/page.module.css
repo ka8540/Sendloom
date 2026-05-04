@@ -243,6 +243,7 @@
 .detailPanel {
   position: static;
   align-content: start;
+  container: selectedUserPanel / inline-size;
 }
 
 .userMeta {
@@ -522,7 +523,7 @@
 }
 
 .detailPanel .detailsGrid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.6rem;
 }
 
@@ -547,11 +548,10 @@
 .detailValue {
   display: block;
   min-width: 0;
-  overflow: hidden;
   font-size: 0.88rem;
   font-weight: 700;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.35;
+  white-space: normal;
 }
 
 .countGrid {
@@ -733,6 +733,12 @@
 
 @container adminControls (min-width: 34rem) {
   .toggleList {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container selectedUserPanel (min-width: 44rem) {
+  .detailPanel .detailsGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
