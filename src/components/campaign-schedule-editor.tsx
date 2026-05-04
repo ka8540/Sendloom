@@ -260,17 +260,19 @@ export function CampaignScheduleEditor(props: {
   }
 
   return (
-    <div className={props.className}>
-      <button
-        aria-disabled={!props.canEdit}
-        className={`button secondary${!props.canEdit ? ` ${styles.blockedButton}` : ""}`}
-        type="button"
-        onClick={openEditor}
-        title={props.canEdit ? "Edit sequence timing" : props.disabledMessage}
-      >
-        <PencilLine aria-hidden="true" />
-        Edit sequence
-      </button>
+    <div className={styles.root}>
+      <div className={props.className}>
+        <button
+          aria-disabled={!props.canEdit}
+          className={`button secondary ${styles.scheduleButton}${!props.canEdit ? ` ${styles.blockedButton}` : ""}`}
+          type="button"
+          onClick={openEditor}
+          title={props.canEdit ? "Edit sequence timing" : props.disabledMessage}
+        >
+          <PencilLine aria-hidden="true" />
+          <span>Edit sequence</span>
+        </button>
+      </div>
 
       {isOpen ? (
         <div className={styles.modalBackdrop} role="presentation" onMouseDown={closeEditor}>
@@ -287,9 +289,8 @@ export function CampaignScheduleEditor(props: {
                 <p>Update when this sequence should send.</p>
               </div>
               <button
-                aria-label="Close edit sequence"
-                className="field-icon-button"
-                data-tooltip="Close"
+                aria-label="Close edit sequence dialog"
+                className={styles.modalClose}
                 disabled={pending}
                 onClick={closeEditor}
                 type="button"
@@ -298,136 +299,161 @@ export function CampaignScheduleEditor(props: {
               </button>
             </div>
 
-            <form className={`form ${styles.modalForm}`} onSubmit={onSubmit}>
-              <div className="field">
-                <label htmlFor="edit-sequence-schedule-type">When should this send?</label>
-                <select
-                  id="edit-sequence-schedule-type"
-                  value={draft.type}
-                  onChange={(event) => {
-                    const nextType = event.target.value as ScheduleDraft["type"];
-                    setDraft((current) => ({
-                      ...current,
-                      type: nextType,
-                      frequency: nextType === "recurring" && !current.frequency ? "weekly" : current.frequency,
-                      time: nextType === "recurring" && !current.time ? "09:00" : current.time
-                    }));
-                    setError(null);
-                  }}
-                >
-                  <option value="immediate">Right away</option>
-                  <option value="once">Schedule once</option>
-                  <option value="recurring">Repeat on a schedule</option>
-                </select>
-              </div>
-
-              {draft.type === "once" ? (
-                <div className="field">
-                  <label htmlFor="edit-sequence-scheduled-for">Send on</label>
-                  <input
-                    id="edit-sequence-scheduled-for"
-                    type="datetime-local"
-                    value={draft.scheduledFor}
-                    onChange={(event) => {
-                      setDraft((current) => ({ ...current, scheduledFor: event.target.value }));
-                      setError(null);
-                    }}
-                    required
-                  />
-                </div>
-              ) : null}
-
-              {draft.type !== "immediate" ? (
-                <div className="field">
-                  <label htmlFor="edit-sequence-time-zone">Send in timezone</label>
+            <form className={styles.modalForm} onSubmit={onSubmit}>
+              <div className={styles.modalBody}>
+                <div className={styles.field}>
+                  <label className={styles.fieldLabel} htmlFor="edit-sequence-schedule-type">
+                    Send timing
+                  </label>
                   <select
-                    id="edit-sequence-time-zone"
-                    value={draft.timeZone}
+                    className={styles.control}
+                    id="edit-sequence-schedule-type"
+                    value={draft.type}
                     onChange={(event) => {
-                      setDraft((current) => ({ ...current, timeZone: event.target.value }));
+                      const nextType = event.target.value as ScheduleDraft["type"];
+                      setDraft((current) => ({
+                        ...current,
+                        type: nextType,
+                        frequency: nextType === "recurring" && !current.frequency ? "weekly" : current.frequency,
+                        time: nextType === "recurring" && !current.time ? "09:00" : current.time
+                      }));
                       setError(null);
                     }}
                   >
-                    {timeZoneOptions.map((timeZone) => (
-                      <option key={timeZone.value} value={timeZone.value}>
-                        {timeZone.label}
-                      </option>
-                    ))}
+                    <option value="immediate">Right away</option>
+                    <option value="once">Schedule once</option>
+                    <option value="recurring">Repeat on a schedule</option>
                   </select>
                 </div>
-              ) : null}
 
-              {draft.type === "recurring" ? (
-                <div className={styles.recurringGrid}>
-                  <div className="field">
-                    <label htmlFor="edit-sequence-frequency">Repeat</label>
-                    <select
-                      id="edit-sequence-frequency"
-                      value={draft.frequency}
-                      onChange={(event) => {
-                        setDraft((current) => ({
-                          ...current,
-                          frequency: event.target.value as ScheduleDraft["frequency"]
-                        }));
-                        setError(null);
-                      }}
-                      required
-                    >
-                      <option value="" disabled>
-                        Choose repeat
-                      </option>
-                      <option value="daily">Every day</option>
-                      <option value="weekly">Every week</option>
-                    </select>
-                  </div>
-                  <div className="field">
-                    <label htmlFor="edit-sequence-time">Send at</label>
+                {draft.type === "once" ? (
+                  <div className={styles.field}>
+                    <label className={styles.fieldLabel} htmlFor="edit-sequence-scheduled-for">
+                      Send on
+                    </label>
                     <input
-                      id="edit-sequence-time"
-                      type="time"
-                      value={draft.time}
+                      className={styles.control}
+                      id="edit-sequence-scheduled-for"
+                      type="datetime-local"
+                      value={draft.scheduledFor}
                       onChange={(event) => {
-                        setDraft((current) => ({ ...current, time: event.target.value }));
+                        setDraft((current) => ({ ...current, scheduledFor: event.target.value }));
                         setError(null);
                       }}
                       required
                     />
                   </div>
-                  {draft.frequency === "weekly" ? (
-                    <div className="field">
-                      <label htmlFor="edit-sequence-day">Day</label>
+                ) : null}
+
+                {draft.type !== "immediate" ? (
+                  <div className={styles.field}>
+                    <label className={styles.fieldLabel} htmlFor="edit-sequence-time-zone">
+                      Send in timezone
+                    </label>
+                    <select
+                      className={styles.control}
+                      id="edit-sequence-time-zone"
+                      value={draft.timeZone}
+                      onChange={(event) => {
+                        setDraft((current) => ({ ...current, timeZone: event.target.value }));
+                        setError(null);
+                      }}
+                    >
+                      {timeZoneOptions.map((timeZone) => (
+                        <option key={timeZone.value} value={timeZone.value}>
+                          {timeZone.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : null}
+
+                {draft.type === "recurring" ? (
+                  <div className={styles.recurringGrid}>
+                    <div className={styles.field}>
+                      <label className={styles.fieldLabel} htmlFor="edit-sequence-frequency">
+                        Repeat
+                      </label>
                       <select
-                        id="edit-sequence-day"
-                        value={draft.dayOfWeek}
+                        className={styles.control}
+                        id="edit-sequence-frequency"
+                        value={draft.frequency}
                         onChange={(event) => {
-                          setDraft((current) => ({ ...current, dayOfWeek: event.target.value }));
+                          setDraft((current) => ({
+                            ...current,
+                            frequency: event.target.value as ScheduleDraft["frequency"]
+                          }));
                           setError(null);
                         }}
+                        required
                       >
-                        <option value="0">Sunday</option>
-                        <option value="1">Monday</option>
-                        <option value="2">Tuesday</option>
-                        <option value="3">Wednesday</option>
-                        <option value="4">Thursday</option>
-                        <option value="5">Friday</option>
-                        <option value="6">Saturday</option>
+                        <option value="" disabled>
+                          Choose repeat
+                        </option>
+                        <option value="daily">Every day</option>
+                        <option value="weekly">Every week</option>
                       </select>
                     </div>
-                  ) : null}
-                </div>
-              ) : null}
+                    <div className={styles.field}>
+                      <label className={styles.fieldLabel} htmlFor="edit-sequence-time">
+                        Send at
+                      </label>
+                      <input
+                        className={styles.control}
+                        id="edit-sequence-time"
+                        type="time"
+                        value={draft.time}
+                        onChange={(event) => {
+                          setDraft((current) => ({ ...current, time: event.target.value }));
+                          setError(null);
+                        }}
+                        required
+                      />
+                    </div>
+                    {draft.frequency === "weekly" ? (
+                      <div className={styles.field}>
+                        <label className={styles.fieldLabel} htmlFor="edit-sequence-day">
+                          Day
+                        </label>
+                        <select
+                          className={styles.control}
+                          id="edit-sequence-day"
+                          value={draft.dayOfWeek}
+                          onChange={(event) => {
+                            setDraft((current) => ({ ...current, dayOfWeek: event.target.value }));
+                            setError(null);
+                          }}
+                        >
+                          <option value="0">Sunday</option>
+                          <option value="1">Monday</option>
+                          <option value="2">Tuesday</option>
+                          <option value="3">Wednesday</option>
+                          <option value="4">Thursday</option>
+                          <option value="5">Friday</option>
+                          <option value="6">Saturday</option>
+                        </select>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
 
-              {draft.type !== "immediate" ? (
-                <p className={styles.timeZoneHint}>This schedule will run in {draft.timeZone}.</p>
-              ) : null}
+                {draft.type !== "immediate" ? (
+                  <p className={styles.timeZoneHint}>This schedule will run in {draft.timeZone}.</p>
+                ) : null}
 
-              {error ? <div className={styles.modalError}>{error}</div> : null}
+                {error ? <div className={styles.modalError}>{error}</div> : null}
+              </div>
 
               <div className={styles.modalActions}>
-                <button className="button secondary" type="button" onClick={closeEditor} disabled={pending}>
+                <button
+                  className={`button secondary ${styles.modalButton}`}
+                  type="button"
+                  onClick={closeEditor}
+                  disabled={pending}
+                >
                   Cancel
                 </button>
-                <button className="button" type="submit" disabled={pending}>
+                <button className={`button ${styles.modalButton}`} type="submit" disabled={pending}>
                   {pending ? (
                     <>
                       <Loader2 aria-hidden="true" className={styles.spin} />
