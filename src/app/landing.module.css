@@ -173,7 +173,7 @@
 
 .brandText strong {
   font-size: 1rem;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
 }
 
 .brandText > span {
@@ -434,10 +434,10 @@
 .headline {
   margin: 0;
   font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
-  font-size: clamp(3.2rem, 8vw, 6.2rem);
-  line-height: 0.94;
-  letter-spacing: -0.06em;
-  max-width: 11ch;
+  font-size: 5.6rem;
+  line-height: 0.98;
+  letter-spacing: 0;
+  max-width: 10.5ch;
 }
 
 .headlineAccent {
@@ -445,10 +445,10 @@
 }
 
 .lede {
-  max-width: 38rem;
+  max-width: 40rem;
   margin: 0;
   font-size: 1.13rem;
-  line-height: 1.72;
+  line-height: 1.62;
   color: var(--landing-muted);
 }
 
@@ -467,19 +467,20 @@
 }
 
 .statCard {
-  padding: 1rem 1rem 1.1rem;
-  border-radius: 24px;
+  min-height: 6.8rem;
+  padding: 1rem;
+  border-radius: 20px;
   background: var(--landing-panel);
   border: 1px solid var(--landing-line);
-  box-shadow: 0 24px 45px rgba(28, 42, 70, 0.08);
+  box-shadow: 0 20px 40px rgba(28, 42, 70, 0.07);
   backdrop-filter: blur(18px);
 }
 
 .statValue {
   display: block;
-  font-size: 1.55rem;
+  font-size: 0.98rem;
   font-weight: 800;
-  letter-spacing: -0.04em;
+  letter-spacing: 0;
 }
 
 .statLabel {
@@ -491,121 +492,193 @@
 
 .heroVisual {
   position: relative;
-  min-height: 42rem;
+  min-width: 0;
 }
 
-.sceneShell {
+.productMockup {
   position: relative;
-  height: 100%;
-  min-height: 42rem;
-  border-radius: 34px;
   overflow: hidden;
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+  border-radius: 32px;
   background:
-    radial-gradient(circle at top, rgba(22, 107, 86, 0.28), transparent 0 35%),
-    radial-gradient(circle at 30% 82%, rgba(255, 193, 102, 0.22), transparent 0 34%),
-    linear-gradient(180deg, #0f1618 0%, #182429 48%, #101c20 100%);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+    linear-gradient(145deg, rgba(20, 38, 50, 0.94), rgba(16, 27, 34, 0.96)),
+    radial-gradient(circle at 20% 0%, rgba(47, 196, 138, 0.28), transparent 32%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow:
-    0 30px 60px rgba(25, 19, 11, 0.22),
+    0 30px 70px rgba(17, 24, 29, 0.24),
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  color: white;
 }
 
-.sceneShell::before {
+.productMockup::before {
   content: "";
   position: absolute;
   inset: 0;
-  background:
-    linear-gradient(120deg, rgba(255, 255, 255, 0.06), transparent 35%),
-    linear-gradient(180deg, transparent 0%, rgba(255, 255, 255, 0.04) 100%);
   pointer-events: none;
+  background: linear-gradient(120deg, rgba(255, 255, 255, 0.1), transparent 38%);
 }
 
-.sceneCanvas {
-  position: absolute;
-  inset: 0;
+.mockHeader,
+.mockGrid {
+  position: relative;
+  z-index: 1;
 }
 
-.floatingCard,
-.floatingCardAlt,
-.floatingCardLower {
-  position: absolute;
+.mockHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.3rem 0.25rem 0.1rem;
+}
+
+.mockHeader > div {
   display: grid;
-  gap: 0.3rem;
-  width: clamp(12rem, 18vw, 14.5rem);
-  padding: 1rem 1.05rem;
-  border-radius: 22px;
-  background: var(--landing-panel-strong);
-  border: 1px solid rgba(255, 255, 255, 0.48);
-  box-shadow: 0 20px 44px rgba(4, 10, 13, 0.24);
-  backdrop-filter: blur(20px);
-  transform-style: preserve-3d;
+  gap: 0.25rem;
 }
 
-.floatingCard {
-  top: 1.4rem;
-  left: 1.2rem;
-  transform: rotate(-7deg) translateZ(0);
-}
-
-.floatingCardAlt {
-  top: 2.4rem;
-  right: 1rem;
-  transform: rotate(8deg) translateZ(0);
-}
-
-.floatingCardLower {
-  bottom: 1.35rem;
-  right: 1.6rem;
-  transform: rotate(-5deg) translateZ(0);
-}
-
-.floatingLabel {
-  font-size: 0.72rem;
+.mockKicker,
+.mockPanelHeader span {
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+}
+
+.mockKicker {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.mockHeader strong {
+  font-size: 1.25rem;
+  letter-spacing: 0;
+}
+
+.mockStatus {
+  white-space: nowrap;
+  padding: 0.45rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(47, 196, 138, 0.16);
+  border: 1px solid rgba(47, 196, 138, 0.32);
+  color: #b9f6d8;
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.mockGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.mockPanel {
+  display: grid;
+  gap: 0.9rem;
+  min-width: 0;
+  padding: 1rem;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--landing-ink);
+  box-shadow: 0 18px 40px rgba(4, 10, 13, 0.18);
+}
+
+.mockPanelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  min-width: 0;
+}
+
+.mockPanelHeader span {
   color: var(--landing-muted);
+}
+
+.mockPanelHeader strong {
+  color: var(--landing-emerald-deep);
+  font-size: 0.85rem;
+}
+
+.flowList,
+.controlList,
+.statusGrid {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.flowItem {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
   font-weight: 700;
 }
 
-.floatingValue {
-  font-size: 1.5rem;
-  font-weight: 800;
-  letter-spacing: -0.04em;
-  color: var(--landing-ink);
+.flowIndex {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.65rem;
+  height: 1.65rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--landing-emerald) 13%, transparent);
+  color: var(--landing-emerald-deep);
+  font-size: 0.78rem;
+  font-weight: 850;
 }
 
-.floatingMeta {
-  font-size: 0.93rem;
-  color: var(--landing-muted);
-  line-height: 1.5;
-}
-
-.belt {
+.templatePreview {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 1rem;
-  margin-top: -0.5rem;
+  gap: 0.75rem;
 }
 
-.beltCard {
-  padding: 1rem 1.1rem;
-  border-radius: 20px;
+.subjectLine {
+  display: block;
+  padding: 0.72rem 0.78rem;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--landing-panel) 72%, white 20%);
   border: 1px solid var(--landing-line);
-  background: var(--landing-panel);
-  backdrop-filter: blur(18px);
+  font-size: 0.9rem;
+  font-weight: 750;
 }
 
-.beltCard strong {
-  display: block;
-  font-size: 1.12rem;
-  letter-spacing: -0.03em;
-}
-
-.beltCard span {
-  display: block;
-  margin-top: 0.35rem;
+.templatePreview p {
+  margin: 0;
   color: var(--landing-muted);
-  line-height: 1.5;
+  line-height: 1.55;
+  font-size: 0.94rem;
+}
+
+.variableGrid,
+.statusGrid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.variableGrid {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.variableGrid span,
+.controlList span,
+.statusGrid span {
+  min-width: 0;
+  padding: 0.46rem 0.55rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--landing-panel) 76%, var(--landing-emerald) 10%);
+  border: 1px solid color-mix(in srgb, var(--landing-line) 82%, var(--landing-emerald) 18%);
+  color: var(--landing-ink);
+  font-size: 0.82rem;
+  font-weight: 750;
+  text-align: center;
+}
+
+.controlList {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .section {
@@ -630,8 +703,8 @@
 .sectionTitle {
   margin: 0;
   font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
-  font-size: clamp(2.3rem, 5vw, 3.9rem);
-  letter-spacing: -0.05em;
+  font-size: 3.35rem;
+  letter-spacing: 0;
   line-height: 1.03;
 }
 
@@ -644,7 +717,7 @@
 
 .featureGrid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 1rem;
   margin-top: 2rem;
 }
@@ -652,9 +725,9 @@
 .featureCard {
   position: relative;
   overflow: hidden;
-  min-height: 18rem;
+  min-height: 17rem;
   padding: 1.4rem;
-  border-radius: 28px;
+  border-radius: 22px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.94) 0%, rgba(245, 248, 252, 0.88) 100%);
   border: 1px solid var(--landing-line);
   box-shadow: 0 20px 50px rgba(28, 42, 70, 0.08);
@@ -691,7 +764,7 @@
 .featureCard h3 {
   margin: 1.2rem 0 0.6rem;
   font-size: 1.5rem;
-  letter-spacing: -0.04em;
+  letter-spacing: 0;
 }
 
 .featureCard p {
@@ -741,7 +814,7 @@
 .workflowPanel h3 {
   margin: 0;
   font-size: 1.7rem;
-  letter-spacing: -0.04em;
+  letter-spacing: 0;
 }
 
 .workflowPanel p {
@@ -791,6 +864,34 @@
   line-height: 1.65;
 }
 
+.trustGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
+.trustCard {
+  min-width: 0;
+  padding: 1.25rem;
+  border-radius: 22px;
+  border: 1px solid var(--landing-line);
+  background: var(--landing-panel-strong);
+  box-shadow: 0 20px 45px rgba(28, 42, 70, 0.08);
+}
+
+.trustCard strong {
+  display: block;
+  font-size: 1.08rem;
+  letter-spacing: 0;
+}
+
+.trustCard p {
+  margin: 0.55rem 0 0;
+  color: var(--landing-muted);
+  line-height: 1.62;
+}
+
 .ctaSection {
   padding: 5rem 0 1rem;
 }
@@ -810,11 +911,11 @@
 
 .ctaPanel h2 {
   margin: 0;
-  max-width: 12ch;
+  max-width: 18ch;
   font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
-  font-size: clamp(2.4rem, 5vw, 4.2rem);
-  letter-spacing: -0.05em;
-  line-height: 0.98;
+  font-size: 3.8rem;
+  letter-spacing: 0;
+  line-height: 1.02;
 }
 
 .ctaPanel p {
@@ -969,14 +1070,13 @@
   opacity: 0.85;
 }
 
-:global(:root[data-theme="dark"]) .sceneShell {
-  box-shadow:
-    0 30px 70px rgba(0, 0, 0, 0.36),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
-}
-
 :global(:root[data-theme="dark"]) .featureCard {
   background: linear-gradient(180deg, rgba(20, 30, 45, 0.94) 0%, rgba(17, 26, 40, 0.88) 100%);
+}
+
+:global(:root[data-theme="dark"]) .mockPanel,
+:global(:root[data-theme="dark"]) .trustCard {
+  background: rgba(18, 27, 40, 0.92);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -1007,14 +1107,13 @@
     opacity: 0.85;
   }
 
-  :global(:root:not([data-theme])) .sceneShell {
-    box-shadow:
-      0 30px 70px rgba(0, 0, 0, 0.36),
-      inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  }
-
   :global(:root:not([data-theme])) .featureCard {
     background: linear-gradient(180deg, rgba(20, 30, 45, 0.94) 0%, rgba(17, 26, 40, 0.88) 100%);
+  }
+
+  :global(:root:not([data-theme])) .mockPanel,
+  :global(:root:not([data-theme])) .trustCard {
+    background: rgba(18, 27, 40, 0.92);
   }
 }
 
@@ -1023,12 +1122,19 @@
     grid-template-columns: 1fr;
   }
 
-  .heroVisual {
-    min-height: 36rem;
+  .headline {
+    font-size: 4.75rem;
   }
 
-  .belt,
+  .heroVisual {
+    min-height: auto;
+  }
+
   .featureGrid,
+  .trustGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .workflow {
     grid-template-columns: 1fr;
   }
@@ -1100,7 +1206,7 @@
     color: var(--landing-ink);
     font-size: 1.45rem;
     font-weight: 650;
-    letter-spacing: -0.03em;
+    letter-spacing: 0;
   }
 
   .mobileNavLink:hover,
@@ -1270,16 +1376,40 @@
     grid-template-columns: 1fr;
   }
 
-  .heroVisual,
-  .sceneShell {
-    min-height: 30rem;
+  .headline {
+    font-size: 3.35rem;
+    max-width: 11ch;
   }
 
-  .floatingCard,
-  .floatingCardAlt,
-  .floatingCardLower {
-    width: 11.5rem;
-    padding: 0.85rem 0.9rem;
+  .sectionTitle {
+    font-size: 2.45rem;
+  }
+
+  .ctaPanel h2 {
+    font-size: 2.55rem;
+  }
+
+  .mockGrid,
+  .featureGrid,
+  .trustGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .productMockup {
+    padding: 0.8rem;
+    border-radius: 26px;
+  }
+
+  .mockHeader {
+    display: grid;
+    justify-items: start;
+    text-align: left;
+  }
+
+  .variableGrid,
+  .statusGrid,
+  .controlList {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .mobileCtaRow {

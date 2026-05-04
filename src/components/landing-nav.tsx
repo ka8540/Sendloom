@@ -17,8 +17,9 @@ type LandingNavItem = {
 
 const defaultNavItems = [
   { href: "#top", label: "Home" },
-  { href: "#proof", label: "Why Sendloom" },
+  { href: "#outcomes", label: "Outcomes" },
   { href: "#workflow", label: "Workflow" },
+  { href: "#proof", label: "Trust" },
   { href: "mailto:hello@sendloom.net", label: "Contact" }
 ] as const;
 
@@ -66,7 +67,7 @@ export function LandingNav({ items = defaultNavItems }: { items?: readonly Landi
             <strong>
               <BrandText>Sendloom</BrandText>
             </strong>
-            <span>Sequence operations with real sending discipline.</span>
+            <span>Personalized Gmail outreach from spreadsheets.</span>
           </div>
         </div>
 
@@ -90,7 +91,7 @@ export function LandingNav({ items = defaultNavItems }: { items?: readonly Landi
             Login
           </Link>
           <Link className={styles.navPrimaryButton} href="/signup">
-            Try it
+            Start your first campaign
           </Link>
         </div>
 
@@ -133,7 +134,7 @@ export function LandingNav({ items = defaultNavItems }: { items?: readonly Landi
                 Login
               </Link>
               <Link className={styles.mobilePrimaryButton} href="/signup" onClick={closeMenu}>
-                Try it
+                Start your first campaign
               </Link>
             </div>
           </div>
