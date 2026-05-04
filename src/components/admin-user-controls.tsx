@@ -105,7 +105,7 @@ export function AdminUserControls(props: AdminUserControlsProps) {
       <div className={styles.controlPanel}>
         <p className={styles.controlHint}>
           {props.isAdminProtected
-            ? "Admin accounts are protected and cannot be restricted from this dashboard."
+            ? "Admin accounts cannot be restricted from this panel."
             : "Your own account is locked from edits here."}
         </p>
         {message ? <p className={styles.successText}>{message}</p> : null}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight, PanelRightOpen, Search } from "lucide-react";
 
 import { AdminUserControls } from "@/components/admin-user-controls";
@@ -54,31 +54,32 @@ function getSessionLabel(user: AdminDashboardUser) {
   return user.isLoggedIn ? "Logged in" : "Offline";
 }
 
-function UserSearch({
+function UserToolbar({
   query,
-  resultCount,
-  totalCount,
-  onChange
+  rangeLabel,
+  onChange,
+  children
 }: {
   query: string;
-  resultCount: number;
-  totalCount: number;
+  rangeLabel: string;
   onChange: (value: string) => void;
+  children: ReactNode;
 }) {
   return (
-    <div className={styles.userSearch}>
-      <label className={styles.searchInputWrap}>
-        <Search aria-hidden="true" />
-        <input
-          type="search"
-          value={query}
-          placeholder="Search users by email"
-          onChange={(event) => onChange(event.target.value)}
-        />
-      </label>
-      <span className={styles.searchResultCount}>
-        {resultCount} of {totalCount} users
-      </span>
+    <div className={styles.tableToolbar}>
+      <div className={styles.userSearch}>
+        <label className={styles.searchInputWrap}>
+          <Search aria-hidden="true" />
+          <input
+            type="search"
+            value={query}
+            placeholder="Search users by email"
+            onChange={(event) => onChange(event.target.value)}
+          />
+        </label>
+        <span className={styles.searchResultCount}>{rangeLabel}</span>
+      </div>
+      {children}
     </div>
   );
 }
@@ -125,6 +126,15 @@ function UserTable({
   return (
     <div className={styles.userTableShell}>
       <table className={styles.userTable}>
+        <colgroup>
+          <col className={styles.emailColumn} />
+          <col className={styles.statusColumn} />
+          <col className={styles.roleColumn} />
+          <col className={styles.restrictedColumn} />
+          <col className={styles.sendersColumn} />
+          <col className={styles.lastSeenColumn} />
+          <col className={styles.actionColumn} />
+        </colgroup>
         <thead>
           <tr>
             <th>Email</th>
@@ -140,8 +150,8 @@ function UserTable({
           {users.length ? (
             users.map((user) => (
               <tr key={user.id} className={user.id === selectedUserId ? styles.selectedUserRow : undefined}>
-                <td>
-                  <button type="button" className={styles.userEmailButton} onClick={() => onSelect(user.id)}>
+                <td className={styles.emailCell}>
+                  <button type="button" className={styles.userEmailButton} onClick={() => onSelect(user.id)} title={user.email}>
                     {user.email}
                   </button>
                 </td>
@@ -164,11 +174,11 @@ function UserTable({
                     {isRestricted(user) ? "Restricted" : "Clear"}
                   </span>
                 </td>
-                <td>{user.counts.senderProfiles}</td>
-                <td>
-                  <LocalDateTime value={user.lastSeenAt} emptyLabel="Not tracked" />
+                <td className={styles.numericCell}>{user.counts.senderProfiles}</td>
+                <td className={styles.lastSeenCell}>
+                  <LocalDateTime value={user.lastSeenAt} emptyLabel="Not tracked" className={styles.tableDate} />
                 </td>
-                <td>
+                <td className={styles.actionCell}>
                   <button
                     type="button"
                     className={styles.rowActionButton}
@@ -207,7 +217,9 @@ function UserDetailPanel({ user, adminId }: { user: AdminDashboardUser | null; a
       <div className={styles.detailPanelHeader}>
         <div>
           <p className={styles.sectionKicker}>Selected user</p>
-          <h2>{user.email}</h2>
+          <h2 className={styles.detailEmail} title={user.email}>
+            {user.email}
+          </h2>
         </div>
         <div className={styles.userMeta}>
           <span className={`${styles.statusPill} ${user.isLoggedIn ? styles.statusPillActive : styles.statusPillMuted}`}>
@@ -256,7 +268,7 @@ function UserDetailPanel({ user, adminId }: { user: AdminDashboardUser | null; a
       </div>
 
       {user.isAdmin ? (
-        <p className={styles.protectedAdminNotice}>Admin accounts are protected and cannot be restricted from this dashboard.</p>
+        <p className={styles.protectedAdminNotice}>Admin accounts cannot be restricted from this panel.</p>
       ) : (
         <AdminUserControls
           userId={user.id}
@@ -300,6 +312,12 @@ export function AdminUserManagement({ users, adminId }: AdminUserManagementProps
   const pageCount = Math.max(Math.ceil(filteredUsers.length / PAGE_SIZE), 1);
   const currentPageUsers = filteredUsers.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const selectedUser = filteredUsers.find((user) => user.id === selectedUserId) ?? filteredUsers[0] ?? null;
+  const resultStart = filteredUsers.length ? (page - 1) * PAGE_SIZE + 1 : 0;
+  const resultEnd = Math.min(page * PAGE_SIZE, filteredUsers.length);
+  const rangeLabel =
+    filteredUsers.length > PAGE_SIZE
+      ? `Showing ${resultStart}-${resultEnd} of ${filteredUsers.length}`
+      : `${filteredUsers.length} user${filteredUsers.length === 1 ? "" : "s"}`;
 
   useEffect(() => {
     setPage(1);
@@ -327,24 +345,20 @@ export function AdminUserManagement({ users, adminId }: AdminUserManagementProps
           <p className={styles.sectionKicker}>User management</p>
           <h2 id="user-management-title">Search, page, and inspect accounts</h2>
         </div>
-        <PaginationControls
-          page={page}
-          pageCount={pageCount}
-          canGoPrevious={page > 1}
-          canGoNext={page < pageCount}
-          onPrevious={() => setPage((current) => Math.max(current - 1, 1))}
-          onNext={() => setPage((current) => Math.min(current + 1, pageCount))}
-        />
       </div>
 
       <div className={styles.managementGrid}>
         <div className={`${styles.userListCard} card`}>
-          <UserSearch
-            query={query}
-            resultCount={filteredUsers.length}
-            totalCount={users.length}
-            onChange={setQuery}
-          />
+          <UserToolbar query={query} rangeLabel={rangeLabel} onChange={setQuery}>
+            <PaginationControls
+              page={page}
+              pageCount={pageCount}
+              canGoPrevious={page > 1}
+              canGoNext={page < pageCount}
+              onPrevious={() => setPage((current) => Math.max(current - 1, 1))}
+              onNext={() => setPage((current) => Math.min(current + 1, pageCount))}
+            />
+          </UserToolbar>
           <UserTable users={currentPageUsers} selectedUserId={selectedUser?.id ?? null} onSelect={setSelectedUserId} />
         </div>
         <UserDetailPanel user={selectedUser} adminId={adminId} />
