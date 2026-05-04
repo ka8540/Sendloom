@@ -551,17 +551,23 @@ export async function updateCampaignSchedule(
     }
   }
 
+  const runToUpdate =
+    latestRun &&
+    ["QUEUED", "PAUSED"].includes(latestRun.status) &&
+    !latestRun.startedAt &&
+    latestRun._count.recipientJobs === 0
+      ? latestRun
+      : null;
   const nextScheduledFor = input.scheduleRule.type === "immediate" ? new Date() : getNextRunDate(input.scheduleRule);
-  const nextCampaignStatus =
-    latestRun && input.scheduleRule.type === "immediate"
-      ? "RUNNING"
-      : input.scheduleRule.type === "immediate"
-        ? campaign.status === "SCHEDULED"
-          ? campaign.lastValidatedAt
-            ? "VALIDATED"
-            : "DRAFT"
-          : campaign.status
-        : "SCHEDULED";
+  let nextCampaignStatus = campaign.status;
+
+  if (runToUpdate?.status === "QUEUED") {
+    nextCampaignStatus = input.scheduleRule.type === "immediate" ? "RUNNING" : "SCHEDULED";
+  } else if (input.scheduleRule.type === "immediate" && campaign.status === "SCHEDULED") {
+    nextCampaignStatus = campaign.lastValidatedAt ? "VALIDATED" : "DRAFT";
+  } else if (!latestRun && input.scheduleRule.type !== "immediate") {
+    nextCampaignStatus = "SCHEDULED";
+  }
 
   return prisma.$transaction(async (tx) => {
     const updatedCampaign = await tx.campaign.update({
@@ -573,9 +579,9 @@ export async function updateCampaignSchedule(
       }
     });
 
-    if (latestRun) {
+    if (runToUpdate) {
       const updatedRun = await tx.campaignRun.update({
-        where: { id: latestRun.id },
+        where: { id: runToUpdate.id },
         data: {
           launchType: input.scheduleRule.type,
           scheduledFor: nextScheduledFor
@@ -585,7 +591,7 @@ export async function updateCampaignSchedule(
       return { campaign: updatedCampaign, run: updatedRun };
     }
 
-    if (input.scheduleRule.type === "once" || input.scheduleRule.type === "recurring") {
+    if (!latestRun && (input.scheduleRule.type === "once" || input.scheduleRule.type === "recurring")) {
       const totalRecipients = await tx.importRow.count({
         where: {
           importId: campaign.importId

@@ -4,7 +4,7 @@ import { Loader2, PencilLine, X } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
-import { useErrorToastEffect } from "@/components/error-toast-provider";
+import { useErrorToast, useErrorToastEffect } from "@/components/error-toast-provider";
 import { convertScheduledLocalInputToUtc, fallbackTimeZones } from "@/lib/schedule";
 import type { ScheduleRule } from "@/lib/types";
 import styles from "./campaign-schedule-editor.module.css";
@@ -174,6 +174,7 @@ export function CampaignScheduleEditor(props: {
   const [draft, setDraft] = useState<ScheduleDraft>(() => createDraft(props.initialSchedule, browserTimeZone));
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { showError } = useErrorToast();
   useErrorToastEffect(error, "Schedule update failed");
 
   useEffect(() => {
@@ -200,6 +201,7 @@ export function CampaignScheduleEditor(props: {
 
   function openEditor() {
     if (!props.canEdit) {
+      showError(props.disabledMessage, { title: "Schedule update unavailable" });
       return;
     }
 
@@ -260,16 +262,15 @@ export function CampaignScheduleEditor(props: {
   return (
     <div className={props.className}>
       <button
-        className="button secondary"
+        aria-disabled={!props.canEdit}
+        className={`button secondary${!props.canEdit ? ` ${styles.blockedButton}` : ""}`}
         type="button"
         onClick={openEditor}
-        disabled={!props.canEdit}
         title={props.canEdit ? "Edit sequence timing" : props.disabledMessage}
       >
         <PencilLine aria-hidden="true" />
         Edit sequence
       </button>
-      {!props.canEdit ? <p className={styles.disabledHint}>{props.disabledMessage}</p> : null}
 
       {isOpen ? (
         <div className={styles.modalBackdrop} role="presentation" onMouseDown={closeEditor}>

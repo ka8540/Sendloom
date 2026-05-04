@@ -9,7 +9,17 @@ type CampaignScheduleEditState = {
   now?: Date;
 };
 
-export const SCHEDULE_EDIT_DISABLED_MESSAGE = "Schedule can only be edited before sending starts.";
+const editableCampaignStatuses = new Set<CampaignStatus>([
+  "DRAFT",
+  "VALIDATED",
+  "SCHEDULED",
+  "PAUSED",
+  "COMPLETED",
+  "FAILED"
+]);
+const terminalRunStatuses = new Set<RunStatus>(["COMPLETED", "FAILED", "CANCELLED"]);
+
+export const SCHEDULE_EDIT_DISABLED_MESSAGE = "Schedule can only be edited when the sequence is not actively sending.";
 
 export function canEditCampaignSchedule({
   campaignStatus,
@@ -19,12 +29,20 @@ export function canEditCampaignSchedule({
   latestRunStatus,
   now = new Date()
 }: CampaignScheduleEditState) {
-  if (!campaignStatus || !["DRAFT", "VALIDATED", "SCHEDULED"].includes(campaignStatus)) {
+  if (!campaignStatus || !editableCampaignStatuses.has(campaignStatus)) {
     return false;
   }
 
   if (!latestRunStatus) {
     return true;
+  }
+
+  if (terminalRunStatuses.has(latestRunStatus)) {
+    return true;
+  }
+
+  if (latestRunStatus === "PAUSED") {
+    return !latestRunStartedAt && (latestRunRecipientJobCount ?? 0) === 0;
   }
 
   if (latestRunStatus !== "QUEUED" || latestRunStartedAt || (latestRunRecipientJobCount ?? 0) > 0) {
