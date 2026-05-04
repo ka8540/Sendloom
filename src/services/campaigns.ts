@@ -2,6 +2,7 @@ import { addMinutes } from "date-fns";
 import { Prisma } from "@prisma/client";
 
 import { CAMPAIGN_SETUP_LOCKED_RUN_STATUSES, isCampaignSetupLocked } from "@/lib/campaign-setup-lock";
+import { SCHEDULE_EDIT_DISABLED_MESSAGE, canEditCampaignSchedule } from "@/lib/campaign-schedule-edit";
 import { prisma } from "@/lib/db";
 import { buildMergePayload } from "@/lib/mapping";
 import { GMAIL_RECONNECT_ERROR, getUserSafeGmailSendError, isGmailReconnectError, sendEmail, type EmailAttachment } from "@/lib/provider";
@@ -495,6 +496,115 @@ export async function updateCampaignSetup(
           }
         : {})
     }
+  });
+}
+
+export async function updateCampaignSchedule(
+  input: {
+    campaignId: string;
+    scheduleRule: ScheduleRule;
+  },
+  userId?: string
+) {
+  const campaign = await prisma.campaign.findFirstOrThrow({
+    where: campaignOwnershipFilter(input.campaignId, userId),
+    select: {
+      id: true,
+      importId: true,
+      lastValidatedAt: true,
+      status: true,
+      runs: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        select: {
+          id: true,
+          scheduledFor: true,
+          startedAt: true,
+          status: true,
+          _count: {
+            select: {
+              recipientJobs: true
+            }
+          }
+        }
+      }
+    }
+  });
+
+  const latestRun = campaign.runs[0] ?? null;
+  if (
+    !canEditCampaignSchedule({
+      campaignStatus: campaign.status,
+      latestRunRecipientJobCount: latestRun?._count.recipientJobs ?? 0,
+      latestRunScheduledFor: latestRun?.scheduledFor ?? null,
+      latestRunStartedAt: latestRun?.startedAt ?? null,
+      latestRunStatus: latestRun?.status ?? null
+    })
+  ) {
+    throw new Error(SCHEDULE_EDIT_DISABLED_MESSAGE);
+  }
+
+  if (input.scheduleRule.type === "once") {
+    const scheduledFor = getNextRunDate(input.scheduleRule);
+    if (Number.isNaN(scheduledFor.getTime()) || scheduledFor <= new Date()) {
+      throw new Error("Choose a future time for a one-time scheduled send.");
+    }
+  }
+
+  const nextScheduledFor = input.scheduleRule.type === "immediate" ? new Date() : getNextRunDate(input.scheduleRule);
+  const nextCampaignStatus =
+    latestRun && input.scheduleRule.type === "immediate"
+      ? "RUNNING"
+      : input.scheduleRule.type === "immediate"
+        ? campaign.status === "SCHEDULED"
+          ? campaign.lastValidatedAt
+            ? "VALIDATED"
+            : "DRAFT"
+          : campaign.status
+        : "SCHEDULED";
+
+  return prisma.$transaction(async (tx) => {
+    const updatedCampaign = await tx.campaign.update({
+      where: { id: campaign.id },
+      data: {
+        scheduleType: input.scheduleRule.type,
+        scheduleConfig: input.scheduleRule as Prisma.InputJsonValue,
+        status: nextCampaignStatus
+      }
+    });
+
+    if (latestRun) {
+      const updatedRun = await tx.campaignRun.update({
+        where: { id: latestRun.id },
+        data: {
+          launchType: input.scheduleRule.type,
+          scheduledFor: nextScheduledFor
+        }
+      });
+
+      return { campaign: updatedCampaign, run: updatedRun };
+    }
+
+    if (input.scheduleRule.type === "once" || input.scheduleRule.type === "recurring") {
+      const totalRecipients = await tx.importRow.count({
+        where: {
+          importId: campaign.importId
+        }
+      });
+      const run = await tx.campaignRun.create({
+        data: {
+          campaignId: campaign.id,
+          status: "QUEUED",
+          launchType: input.scheduleRule.type,
+          scheduledFor: nextScheduledFor,
+          totalRecipients
+        }
+      });
+
+      return { campaign: updatedCampaign, run };
+    }
+
+    return { campaign: updatedCampaign, run: null };
   });
 }
 

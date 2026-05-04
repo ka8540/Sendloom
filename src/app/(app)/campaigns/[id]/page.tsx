@@ -15,12 +15,14 @@ import {
 } from "lucide-react";
 
 import { ActiveRunRefresher } from "@/components/active-run-refresher";
+import { CampaignScheduleEditor } from "@/components/campaign-schedule-editor";
 import { CampaignSetupEditor } from "@/components/campaign-setup-editor";
 import { CampaignDetailDeleteButton } from "@/components/campaign-detail-delete-button";
 import { ErrorToastOnMount } from "@/components/error-toast-provider";
 import { LocalDateTime } from "@/components/local-date-time";
 import { getAttachmentPreviewKind } from "@/lib/attachments";
 import { requireOperatorUser } from "@/lib/auth";
+import { SCHEDULE_EDIT_DISABLED_MESSAGE, canEditCampaignSchedule } from "@/lib/campaign-schedule-edit";
 import { isCampaignSetupLocked } from "@/lib/campaign-setup-lock";
 import { prisma } from "@/lib/db";
 import { GMAIL_RECONNECT_ERROR } from "@/lib/provider";
@@ -114,6 +116,32 @@ function formatScheduleLabel(scheduleType?: string | null, scheduleConfig?: Sche
   }
 
   return "Sends immediately when launched";
+}
+
+function getScheduleConfig(scheduleType?: string | null, scheduleConfig?: ScheduleConfig | null): ScheduleConfig {
+  if (scheduleType === "once") {
+    const onceConfig = scheduleConfig && "scheduledFor" in scheduleConfig ? scheduleConfig : null;
+
+    return {
+      type: "once",
+      scheduledFor: onceConfig?.scheduledFor,
+      timeZone: onceConfig?.timeZone
+    };
+  }
+
+  if (scheduleType === "recurring") {
+    const recurringConfig = scheduleConfig && "frequency" in scheduleConfig ? scheduleConfig : null;
+
+    return {
+      type: "recurring",
+      frequency: recurringConfig?.frequency,
+      time: recurringConfig?.time,
+      dayOfWeek: recurringConfig?.dayOfWeek,
+      timeZone: recurringConfig?.timeZone
+    };
+  }
+
+  return { type: "immediate" };
 }
 
 async function launch(campaignId: string) {
@@ -290,6 +318,8 @@ export default async function CampaignDetailPage({
           invalidCount: true,
           openedCount: true,
           clickedCount: true,
+          scheduledFor: true,
+          startedAt: true,
           updatedAt: true
         }
       }
@@ -391,7 +421,8 @@ export default async function CampaignDetailPage({
         : "Launch sequence";
   const validationButtonLabel = campaign.lastValidatedAt ? "Refresh validation" : "Validate sequence";
   const pauseButtonLabel = isPausedRun ? "Resume sequence" : "Pause sequence";
-  const scheduleLabel = formatScheduleLabel(campaign.scheduleType, campaign.scheduleConfig as ScheduleConfig | null);
+  const scheduleConfig = getScheduleConfig(campaign.scheduleType, campaign.scheduleConfig as ScheduleConfig | null);
+  const scheduleLabel = formatScheduleLabel(campaign.scheduleType, scheduleConfig);
   const latestRunValue = latestRun?.updatedAt?.toISOString() ?? null;
   const validatedAtValue = campaign.lastValidatedAt?.toISOString() ?? null;
   const reconnectHref = `/api/auth/google/connect?email=${encodeURIComponent(campaign.senderProfile.fromEmail)}&next=${encodeURIComponent(`/campaigns/${campaign.id}`)}`;
@@ -409,6 +440,13 @@ export default async function CampaignDetailPage({
         take: RECIPIENTS_PAGE_SIZE
       })
     : [];
+  const canEditSchedule = canEditCampaignSchedule({
+    campaignStatus: campaign.status,
+    latestRunRecipientJobCount: recipientJobCount,
+    latestRunScheduledFor: latestRun?.scheduledFor ?? null,
+    latestRunStartedAt: latestRun?.startedAt ?? null,
+    latestRunStatus: latestRun?.status ?? null
+  });
   const latestMappingsByImport = new Map<string, (typeof mappings)[number]>();
 
   for (const mapping of mappings) {
@@ -575,6 +613,13 @@ export default async function CampaignDetailPage({
                   </button>
                 </form>
               ) : null}
+              <CampaignScheduleEditor
+                campaignId={campaign.id}
+                canEdit={canEditSchedule}
+                className={styles.actionSecondaryItem}
+                disabledMessage={SCHEDULE_EDIT_DISABLED_MESSAGE}
+                initialSchedule={scheduleConfig}
+              />
               <CampaignDetailDeleteButton campaignId={campaign.id} campaignName={campaign.name} />
             </div>
 

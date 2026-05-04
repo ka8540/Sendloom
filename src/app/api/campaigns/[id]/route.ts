@@ -1,14 +1,32 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
+import { createForbiddenApiResponse, getApiRestrictionMessage, requireApiUser } from "@/lib/api-auth";
 import type { EmailAttachment } from "@/lib/provider";
 import { GMAIL_RECONNECT_ERROR } from "@/lib/provider";
 import { storeUpload } from "@/lib/storage";
-import { requireApiUser } from "@/lib/api-auth";
 import { writeAuditLog } from "@/lib/audit";
 import { prisma } from "@/lib/db";
-import { deleteCampaign, updateCampaignSetup } from "@/services/campaigns";
+import type { ScheduleRule } from "@/lib/types";
+import { deleteCampaign, updateCampaignSchedule, updateCampaignSetup } from "@/services/campaigns";
 
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+
+const scheduleRuleSchema = z.union([
+  z.object({ type: z.literal("immediate") }),
+  z.object({
+    type: z.literal("once"),
+    scheduledFor: z.string().min(1),
+    timeZone: z.string().min(1).optional()
+  }),
+  z.object({
+    type: z.literal("recurring"),
+    frequency: z.enum(["daily", "weekly"]),
+    time: z.string().regex(/^\d{2}:\d{2}$/),
+    dayOfWeek: z.number().int().min(0).max(6).optional(),
+    timeZone: z.string().min(1).optional()
+  })
+]);
 
 type AttachmentPlanItem =
   | {
@@ -28,6 +46,56 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
 
   const { id } = await context.params;
   const formData = await request.formData();
+
+  if (formData.has("scheduleRule")) {
+    let rawScheduleRule: unknown;
+    try {
+      rawScheduleRule = JSON.parse(String(formData.get("scheduleRule") ?? "{}"));
+    } catch {
+      return NextResponse.json({ error: "Schedule data could not be read." }, { status: 400 });
+    }
+
+    const parsedScheduleRule = scheduleRuleSchema.safeParse(rawScheduleRule);
+    if (!parsedScheduleRule.success) {
+      return NextResponse.json({ error: "Choose a valid send schedule." }, { status: 400 });
+    }
+
+    const scheduleRule = parsedScheduleRule.data as ScheduleRule;
+    if (scheduleRule.type === "once" && new Date(scheduleRule.scheduledFor) <= new Date()) {
+      return NextResponse.json({ error: "Choose a future time for a one-time scheduled send." }, { status: 400 });
+    }
+
+    const launchRestrictionMessage = getApiRestrictionMessage(auth.user, "campaignLaunch");
+    if (launchRestrictionMessage) {
+      return createForbiddenApiResponse(launchRestrictionMessage);
+    }
+
+    try {
+      const updatedCampaign = await updateCampaignSchedule(
+        {
+          campaignId: id,
+          scheduleRule
+        },
+        auth.user.id
+      );
+
+      await writeAuditLog({
+        actorEmail: auth.user.email,
+        action: "campaign.schedule.update",
+        entityType: "campaign",
+        entityId: id
+      });
+
+      return NextResponse.json(updatedCampaign);
+    } catch (error) {
+      if (error instanceof Error) {
+        return NextResponse.json({ error: error.message }, { status: 400 });
+      }
+
+      return NextResponse.json({ error: "Could not save the sequence schedule." }, { status: 500 });
+    }
+  }
+
   const name = String(formData.get("name") ?? "").trim();
   const importId = String(formData.get("importId") ?? "").trim();
   const templateId = String(formData.get("templateId") ?? "").trim();
