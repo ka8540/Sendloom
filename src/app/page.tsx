@@ -1,116 +1,64 @@
-import type { Metadata } from "next";
 import Link from "next/link";
 
 import { AnimatedEmailPath } from "@/components/AnimatedEmailPath";
 import { BrandText, renderBrandText } from "@/components/brand-text";
+import { LandingSceneShell } from "@/components/landing-scene-shell";
 import { LandingNav } from "@/components/landing-nav";
 import { SendloomLogo } from "@/components/sendloom-logo";
 
 import styles from "@/app/landing.module.css";
 
-export const metadata: Metadata = {
-  title: "Sendloom - Personalized Gmail Outreach from Spreadsheets",
-  description:
-    "Launch personalized cold email campaigns from spreadsheets with Gmail sending, templates, AI copy polish, email finding, safe pacing, and campaign tracking."
-};
-
-const trustChips = [
-  {
-    title: "Gmail-connected sending",
-    body: "Your connected Gmail account stays the sender."
-  },
-  {
-    title: "Spreadsheet-to-campaign workflow",
-    body: "Import CSV/XLSX leads and map fields into templates."
-  },
-  {
-    title: "Built-in safe send pacing",
-    body: "Send pacing keeps campaigns controlled."
-  }
-] as const;
-
-const productFlow = [
-  "Import CSV/XLSX",
-  "Find emails",
-  "Connect Gmail",
-  "Map variables",
-  "AI subject/body",
-  "Launch safely",
-  "Track statuses"
-] as const;
-
-const statusItems = ["Sent", "Opened", "Clicked", "Replied", "Failed", "Suppressed"] as const;
-
-const outcomeCards = [
+const featureCards = [
   {
     index: "01",
-    title: "Stop switching tools",
+    title: "Write in the format your team actually wants.",
     body:
-      "Move from spreadsheet to Gmail launch without bouncing between Sheets, Gmail, Hunter.io, and a tracking spreadsheet.",
-    pills: ["CSV/XLSX imports", "Gmail sending", "Campaign tracking"]
+      "Switch between plain text, HTML, and structured JSON inside the same template editor. Sendloom renders each one into a clean email preview while keeping merge variables and inline AI help intact.",
+    pills: ["Plain text", "HTML", "Structured JSON"]
   },
   {
     index: "02",
-    title: "Personalize without looking mass-sent",
+    title: "Find the right inbox before you launch.",
     body:
-      "Map spreadsheet columns into template variables, preview each email, and use AI polish to tighten the subject and body before sending.",
-    pills: ["Variable mapping", "Email previews", "AI copy polish"]
+      "Run name-plus-domain lookups or domain-wide searches from the same dashboard, then plug your own API key from hunter.io into Sendloom so the finder stays inside your workflow instead of becoming another tab.",
+    pills: ["Find Email", "Domain Search", "Bring your own API key"]
   },
   {
     index: "03",
-    title: "Launch with safer controls",
+    title: "Stay fast without acting reckless.",
     body:
-      "Connect Gmail, review suppressions, keep retries visible, and use built-in send pacing to reduce reckless sending.",
-    pills: ["Gmail OAuth", "Suppressions", "Controlled pacing"]
+      "Sendloom keeps retries, tracking links, and send-window guardrails in the loop so campaigns feel deliberate even when the list is moving quickly.",
+    pills: ["120/min per user", "Delivery guardrails", "Retries + tracking"]
   },
   {
     index: "04",
-    title: "Know what happened",
+    title: "Launch from a connected Gmail sender.",
     body:
-      "See campaign run status for sent, failed, opened, clicked, replied, suppressed, and retry states from the same workspace.",
-    pills: ["Run status", "Open/click/reply", "Retry visibility"]
+      "Use the mailbox you already trust, connect Google in minutes, and move from upload to launch with a single operator dashboard instead of five disconnected tools.",
+    pills: ["Google OAuth", "Sender profiles", "Live run status"]
   }
 ] as const;
 
 const workflowSteps = [
   {
     title: "Import your audience",
-    body: "Upload CSV/XLSX and map spreadsheet columns to template variables."
+    body: "Upload a spreadsheet, detect columns instantly, and keep the row data structured for every downstream send."
   },
   {
-    title: "Find or enrich emails",
-    body: "Use your connected Hunter.io key to find professional email addresses when needed."
+    title: "Find missing emails when the list is incomplete",
+    body: "Use name-plus-domain lookups or domain search with your own API key from hunter.io, then keep those results inside the same operator flow."
   },
   {
-    title: "Write and polish your message",
-    body: "Create a template, preview each personalized email, and optionally use AI to improve the copy."
+    title: "Choose the message system",
+    body: "Pair the list with a template, sender, and attachment strategy, then write in plain text, HTML, or JSON with inline AI help before you save."
   },
   {
-    title: "Connect Gmail and launch safely",
-    body: "Send through your connected Gmail account with pacing, suppressions, and retry visibility."
+    title: "Launch and watch the run",
+    body: "Immediate sequences begin processing from the app itself, and status updates stay visible while the run moves."
   },
   {
-    title: "Track every campaign run",
-    body: "See delivery status, opens, clicks, replies, failures, and suppressed contacts."
-  }
-] as const;
-
-const trustCards = [
-  {
-    title: "Your Gmail stays the sender",
-    body: "Sendloom uses Gmail OAuth so campaigns send through the mailbox you connect."
-  },
-  {
-    title: "Preview before launch",
-    body: "Review mapped variables and personalized message previews before a campaign run starts."
-  },
-  {
-    title: "Suppression-aware sending",
-    body: "Suppressions and retries stay visible, so launches are easier to control."
-  },
-  {
-    title: "Bring your Hunter.io key",
-    body: "Email finding uses the Hunter.io API key you provide instead of hiding enrichment in another workflow."
+    title: "Keep the sequence honest",
+    body: "Clicks, opens, and retry states stay attached to the campaign so your next send starts smarter."
   }
 ] as const;
 
@@ -123,120 +71,104 @@ export default function LandingPage() {
 
         <section className={styles.hero}>
           <div className={styles.heroCopy}>
-            <div className={styles.eyebrow}>For founders, solo operators, and small GTM teams</div>
+            <div className={styles.eyebrow}>Built for founders, operators, and lean GTM teams</div>
             <h1 className={styles.headline}>
               Cold outreach that feels <span className={styles.headlineAccent}>crafted</span>, not sprayed.
             </h1>
             <p className={styles.lede}>
-              <BrandText>Sendloom</BrandText> helps founders and operators launch personalized Gmail outreach from a spreadsheet,
-              with templates, email finding, AI polish, safe send pacing, and live campaign tracking in one clean workflow.
+              <BrandText>Sendloom</BrandText> turns your spreadsheet, template, and connected Gmail sender into one clean launch
+              surface. Import lists, map fields, find missing contact emails with your own API key from hunter.io, choose plain text,
+              HTML, or structured JSON templates, enhance subject lines and email copy with AI, add attachments, track runs, and keep
+              delivery history in the same place the sequence actually lives.
             </p>
 
             <div className={styles.ctaRow}>
               <Link className={styles.primaryButton} href="/signup">
-                Start your first campaign
+                Try it now
               </Link>
-              <a className={styles.ghostButton} href="#workflow">
+              <a className={styles.ghostButton} href="#proof">
                 See how it works
               </a>
             </div>
 
             <div className={styles.statRow}>
-              {trustChips.map((chip) => (
-                <article key={chip.title} className={styles.statCard}>
-                  <span className={styles.statValue}>{chip.title}</span>
-                  <span className={styles.statLabel}>{chip.body}</span>
-                </article>
-              ))}
+              <article className={styles.statCard}>
+                <span className={styles.statValue}>120/min/user</span>
+                <span className={styles.statLabel}>Per-user send window guardrail built into the flow</span>
+              </article>
+              <article className={styles.statCard}>
+                <span className={styles.statValue}>Finder-ready</span>
+                <span className={styles.statLabel}>Use your own hunter.io API key for name and domain lookups without leaving the dashboard</span>
+              </article>
+              <article className={styles.statCard}>
+                <span className={styles.statValue}>3 formats</span>
+                <span className={styles.statLabel}>Write templates in plain text, HTML, or JSON and preview them as real email</span>
+              </article>
             </div>
           </div>
 
           <div className={styles.heroVisual}>
-            <article className={styles.productMockup} aria-label="Sendloom campaign workflow preview">
-              <div className={styles.mockHeader}>
-                <div>
-                  <span className={styles.mockKicker}>Campaign workspace</span>
-                  <strong>Personalized Gmail launch</strong>
-                </div>
-                <span className={styles.mockStatus}>Preview ready</span>
+            <div className={styles.sceneShell}>
+              <div className={styles.sceneCanvas}>
+                <LandingSceneShell />
               </div>
 
-              <div className={styles.mockGrid}>
-                <section className={styles.mockPanel}>
-                  <div className={styles.mockPanelHeader}>
-                    <span>Workflow</span>
-                    <strong>7 checks</strong>
-                  </div>
-                  <div className={styles.flowList}>
-                    {productFlow.map((item, index) => (
-                      <div key={item} className={styles.flowItem}>
-                        <span className={styles.flowIndex}>{index + 1}</span>
-                        <span>{item}</span>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-
-                <section className={styles.mockPanel}>
-                  <div className={styles.mockPanelHeader}>
-                    <span>Template preview</span>
-                    <strong>Variables mapped</strong>
-                  </div>
-                  <div className={styles.templatePreview}>
-                    <span className={styles.subjectLine}>Subject: quick idea for {"{{company}}"}</span>
-                    <p>
-                      Hi {"{{first_name}}"}, I noticed {"{{company}}"} is hiring for GTM roles. Here is a short,
-                      personalized note ready for review before launch.
-                    </p>
-                    <div className={styles.variableGrid}>
-                      <span>{"{{first_name}}"}</span>
-                      <span>{"{{company}}"}</span>
-                      <span>{"{{role}}"}</span>
-                    </div>
-                  </div>
-                </section>
-
-                <section className={styles.mockPanel}>
-                  <div className={styles.mockPanelHeader}>
-                    <span>Launch controls</span>
-                    <strong>Controlled send</strong>
-                  </div>
-                  <div className={styles.controlList}>
-                    <span>Gmail connected</span>
-                    <span>Safe pacing enabled</span>
-                    <span>Suppressions checked</span>
-                    <span>Retries visible</span>
-                  </div>
-                </section>
-
-                <section className={styles.mockPanel}>
-                  <div className={styles.mockPanelHeader}>
-                    <span>Run visibility</span>
-                    <strong>Live statuses</strong>
-                  </div>
-                  <div className={styles.statusGrid}>
-                    {statusItems.map((item) => (
-                      <span key={item}>{item}</span>
-                    ))}
-                  </div>
-                </section>
+              <div className={styles.floatingCard}>
+                <span className={styles.floatingLabel}>Template polish</span>
+                <strong className={styles.floatingValue}>Plain text, HTML, or JSON</strong>
+                <span className={styles.floatingMeta}>Use the format that fits the workflow, then preview it like a real email instead of raw markup.</span>
               </div>
-            </article>
+
+              <div className={styles.floatingCardAlt}>
+                <span className={styles.floatingLabel}>Live controls</span>
+                <strong className={styles.floatingValue}>Imports → templates → launch</strong>
+                <span className={styles.floatingMeta}>One operator surface instead of tabs stitched together by memory.</span>
+              </div>
+
+              <div className={styles.floatingCardLower}>
+                <span className={styles.floatingLabel}>Run visibility</span>
+                <strong className={styles.floatingValue}>Delivery-aware</strong>
+                <span className={styles.floatingMeta}>Status, retries, opens, and clicks stay attached to the campaign.</span>
+              </div>
+            </div>
           </div>
         </section>
 
-        <section className={styles.section} id="outcomes">
+        <section className={styles.belt} id="proof">
+          <article className={styles.beltCard}>
+            <strong>Audience imports</strong>
+            <span>Bring in CSV and XLSX files without rebuilding your workflow every time the list changes.</span>
+          </article>
+          <article className={styles.beltCard}>
+            <strong>Email finder</strong>
+            <span>Bring your own API key from hunter.io and run name or domain lookups inside the same workspace.</span>
+          </article>
+          <article className={styles.beltCard}>
+            <strong>Template intelligence</strong>
+            <span>Keep merge variables, AI-polished copy, format choice, attachment snapshots, and subject lines aligned to the same template record.</span>
+          </article>
+          <article className={styles.beltCard}>
+            <strong>Respectful sending</strong>
+            <span>Retries and delivery state stay inside the sending engine, not in a separate afterthought spreadsheet.</span>
+          </article>
+          <article className={styles.beltCard}>
+            <strong>Operator clarity</strong>
+            <span>Recent runs, recipient statuses, finder results, and connected senders are visible from the same system that launches them.</span>
+          </article>
+        </section>
+
+        <section className={styles.section}>
           <div className={styles.sectionHeader}>
-            <p className={styles.sectionEyebrow}>Outcomes</p>
-            <h2 className={styles.sectionTitle}>One workflow for the parts of outreach that usually drift apart.</h2>
+            <p className={styles.sectionEyebrow}>Why it feels different</p>
+            <h2 className={styles.sectionTitle}>A launch surface designed for signal, not volume theater.</h2>
             <p className={styles.sectionText}>
-              Sendloom keeps the list, message, sender, controls, and run history together so a small team can launch with more
-              confidence and less tool-switching.
+              Great outreach products don’t just blast faster. They help small teams stay precise while the audience, message, and
+              sender all change underneath them. <BrandText>Sendloom</BrandText> was shaped around that operator reality.
             </p>
           </div>
 
           <div className={styles.featureGrid}>
-            {outcomeCards.map((feature) => (
+            {featureCards.map((feature) => (
               <article key={feature.index} className={styles.featureCard}>
                 <span className={styles.featureIndex}>{feature.index}</span>
                 <h3>{feature.title}</h3>
@@ -253,19 +185,20 @@ export default function LandingPage() {
 
         <section className={styles.section} id="workflow">
           <div className={styles.sectionHeader}>
-            <p className={styles.sectionEyebrow}>How Sendloom works</p>
-            <h2 className={styles.sectionTitle}>From spreadsheet to tracked Gmail campaign in five steps.</h2>
+            <p className={styles.sectionEyebrow}>Workflow</p>
+            <h2 className={styles.sectionTitle}>From raw list to a live sequence, without the usual glue work.</h2>
           </div>
 
           <div className={styles.workflow}>
             <article className={styles.workflowPanel}>
-              <h3>Built for the person shipping the campaign.</h3>
+              <h3>Built for the person actually shipping the campaign.</h3>
               <p>
-                Import the audience, enrich missing emails, polish the message, connect Gmail, and launch with the controls in view.
+                If you’re the one importing leads, checking the sender, fixing the template, and watching the run at the same time,
+                the interface should help you think clearly. That’s the bar this product is trying to hit.
               </p>
               <p>
-                Send pacing keeps campaigns controlled and prevents reckless launches. If the exact per-user send window appears in
-                the app, it is there as a control mechanism, not a volume promise.
+                The page layout, delivery primitives, and tracking model are all there to reduce hesitation at launch time and make
+                the sequence easier to trust afterward.
               </p>
             </article>
 
@@ -283,39 +216,21 @@ export default function LandingPage() {
           </div>
         </section>
 
-        <section className={styles.section} id="proof">
-          <div className={styles.sectionHeader}>
-            <p className={styles.sectionEyebrow}>Trust</p>
-            <h2 className={styles.sectionTitle}>Built for real outreach workflows.</h2>
-            <p className={styles.sectionText}>
-              No fake logos, no inflated claims. Just practical controls for founders, solo operators, and small GTM teams that need
-              cleaner campaign operations.
-            </p>
-          </div>
-
-          <div className={styles.trustGrid}>
-            {trustCards.map((card) => (
-              <article key={card.title} className={styles.trustCard}>
-                <strong>{card.title}</strong>
-                <p>{card.body}</p>
-              </article>
-            ))}
-          </div>
-        </section>
-
         <section className={styles.ctaSection}>
           <article className={styles.ctaPanel}>
-            <h2>Launch cleaner outreach without duct-taping five tools together.</h2>
+            <h2>Walk in with a spreadsheet. Walk out with a running sequence.</h2>
             <p>
-              Import leads, personalize messages, send through Gmail, and track every campaign run from one workspace.
+              Connect Gmail, create the campaign, and start testing the full flow from a single login. The fastest way to understand
+              {" "}
+              <BrandText>Sendloom</BrandText> is to put your own list through it.
             </p>
 
             <div className={styles.ctaActions}>
               <Link className={styles.primaryButton} href="/signup">
-                Start your first campaign
+                Try it
               </Link>
               <a className={styles.ghostButton} href="#workflow">
-                See how it works
+                See workflow
               </a>
             </div>
           </article>
@@ -334,7 +249,7 @@ export default function LandingPage() {
                 </div>
               </div>
               <p className={styles.footerCopy}>
-                Built for small teams who want imports, templates, sender setup, launch controls, and run visibility in one workspace.
+                Built for small teams who want imports, templates, sender setup, launch, and run visibility in one calm system.
               </p>
             </div>
 
@@ -342,9 +257,9 @@ export default function LandingPage() {
               <div className={styles.footerColumn}>
                 <span className={styles.footerHeading}>Product</span>
                 <a href="#workflow">Workflow</a>
-                <a href="#outcomes">Outcomes</a>
+                <a href="#proof">Why it works</a>
                 <Link href="/signup">
-                  Start your first campaign
+                  Try <BrandText>Sendloom</BrandText>
                 </Link>
               </div>
               <div className={styles.footerColumn}>
