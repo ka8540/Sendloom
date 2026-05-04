@@ -1,11 +1,15 @@
 .page {
   display: grid;
-  gap: 1.5rem;
+  gap: 1.35rem;
 }
 
 .hero {
   display: grid;
   gap: 0.45rem;
+}
+
+.heroTitle {
+  margin: 0;
 }
 
 .hero p {
@@ -22,13 +26,15 @@
 .metricCard {
   display: grid;
   gap: 0.35rem;
+  min-height: 8.2rem;
+  align-content: center;
 }
 
 .metricValue {
   margin: 0;
   font-size: 2rem;
   font-weight: 800;
-  letter-spacing: -0.05em;
+  letter-spacing: 0;
 }
 
 .metricLabel {
@@ -42,39 +48,353 @@
   gap: 0.75rem;
 }
 
-.userGrid {
+.visualGrid {
   display: grid;
+  grid-template-columns: minmax(0, 0.86fr) minmax(0, 1.14fr);
   gap: 1rem;
 }
 
-.userCard {
+.visualCard {
   display: grid;
-  gap: 1rem;
+  gap: 1.1rem;
+  min-width: 0;
 }
 
-.userHeader {
+.visualHeader,
+.managementHeader,
+.detailPanelHeader {
   display: flex;
   justify-content: space-between;
   gap: 1rem;
   align-items: flex-start;
 }
 
-.userIdentity {
-  display: grid;
-  gap: 0.3rem;
+.visualHeader h2,
+.managementHeader h2,
+.detailPanelHeader h2 {
+  margin: 0.15rem 0 0;
+  font-size: 1.2rem;
 }
 
-.userIdentity h2 {
+.sectionKicker {
   margin: 0;
-  font-size: 1.1rem;
-  letter-spacing: -0.03em;
-  word-break: break-word;
+  color: var(--accent-strong);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.visualTotal {
+  white-space: nowrap;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  padding: 0.4rem 0.7rem;
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.donutLayout {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 1.25rem;
+  align-items: center;
+}
+
+.donutRing {
+  --logged-stop: 0%;
+  --offline-stop: 100%;
+  display: grid;
+  place-items: center;
+  inline-size: 8.5rem;
+  block-size: 8.5rem;
+  border-radius: 999px;
+  background: conic-gradient(
+    var(--success) 0 var(--logged-stop),
+    color-mix(in srgb, var(--muted) 72%, transparent) var(--logged-stop) var(--offline-stop),
+    var(--warning) var(--offline-stop) 100%
+  );
+  box-shadow: inset 0 0 0 1px var(--line);
+  position: relative;
+}
+
+.donutRing::after {
+  content: "";
+  position: absolute;
+  inset: 1.2rem;
+  border-radius: inherit;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+.donutRing span {
+  position: relative;
+  z-index: 1;
+  font-size: 2rem;
+  font-weight: 850;
+}
+
+.legendList {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.legendList span {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.legendList i {
+  inline-size: 0.65rem;
+  block-size: 0.65rem;
+  border-radius: 999px;
+}
+
+.legendActive {
+  background: var(--success);
+}
+
+.legendOffline {
+  background: color-mix(in srgb, var(--muted) 72%, transparent);
+}
+
+.legendRestricted {
+  background: var(--warning);
+}
+
+.barList {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.barItem {
+  display: grid;
+  gap: 0.42rem;
+}
+
+.barMeta {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.barMeta strong {
+  color: var(--text);
+}
+
+.barTrack {
+  overflow: hidden;
+  block-size: 0.58rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-muted) 82%, black 6%);
+  border: 1px solid var(--line);
+}
+
+.barTrack span {
+  display: block;
+  block-size: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent-strong) 68%, white 4%));
+}
+
+.managementSection {
+  display: grid;
+  gap: 1rem;
+}
+
+.managementGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(22rem, 0.75fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.userListCard,
+.detailPanel {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.detailPanel {
+  position: sticky;
+  top: 5.5rem;
 }
 
 .userMeta {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
+}
+
+.userSearch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.searchInputWrap {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-muted);
+  padding: 0.72rem 0.95rem;
+  color: var(--muted);
+}
+
+.searchInputWrap svg {
+  inline-size: 1rem;
+  block-size: 1rem;
+  flex: 0 0 auto;
+}
+
+.searchInputWrap input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+}
+
+.searchResultCount {
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.paginationControls {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.paginationControls button,
+.rowActionButton {
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  background: var(--surface-muted);
+  color: var(--text);
+  cursor: pointer;
+  transition: background-color 160ms ease, border-color 160ms ease, transform 140ms ease;
+}
+
+.paginationControls button {
+  inline-size: 2.35rem;
+  block-size: 2.35rem;
+  border-radius: 999px;
+}
+
+.paginationControls span {
+  min-width: 3.4rem;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.paginationControls svg,
+.rowActionButton svg {
+  inline-size: 1rem;
+  block-size: 1rem;
+}
+
+.paginationControls button:hover:not(:disabled),
+.paginationControls button:focus-visible,
+.rowActionButton:hover,
+.rowActionButton:focus-visible {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent) 26%, var(--line));
+  background: color-mix(in srgb, var(--accent-soft) 52%, var(--surface-muted) 48%);
+  outline: none;
+}
+
+.paginationControls button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.userTableShell {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--surface-muted) 72%, transparent);
+}
+
+.userTable {
+  width: 100%;
+  min-width: 52rem;
+  border-collapse: collapse;
+}
+
+.userTable th,
+.userTable td {
+  padding: 0.9rem 0.95rem;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+
+.userTable th {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.userTable tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.selectedUserRow {
+  background: color-mix(in srgb, var(--accent-soft) 64%, transparent);
+}
+
+.userEmailButton {
+  max-width: 18rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 800;
+  text-align: left;
+  word-break: break-word;
+}
+
+.userEmailButton:hover,
+.userEmailButton:focus-visible {
+  color: var(--accent-strong);
+  outline: none;
+}
+
+.rowActionButton {
+  inline-size: 2.15rem;
+  block-size: 2.15rem;
+  border-radius: 999px;
+}
+
+.emptyTableCell {
+  color: var(--muted);
+  font-weight: 800;
+  text-align: center;
 }
 
 .statusPill {
@@ -116,6 +436,10 @@
   gap: 0.85rem;
 }
 
+.detailPanel .detailsGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .detailCard {
   padding: 0.9rem 1rem;
   border-radius: 18px;
@@ -145,6 +469,10 @@
   gap: 0.75rem;
 }
 
+.detailPanel .countGrid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .countItem {
   padding: 0.9rem 1rem;
   border-radius: 18px;
@@ -155,7 +483,7 @@
 .countItem strong {
   display: block;
   font-size: 1.4rem;
-  letter-spacing: -0.04em;
+  letter-spacing: 0;
 }
 
 .countItem span {
@@ -236,6 +564,23 @@
   color: var(--muted);
 }
 
+.protectedAdminNotice,
+.emptyDetailText {
+  margin: 0;
+  padding: 0.9rem 1rem;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--warning) 22%, var(--line));
+  background: color-mix(in srgb, var(--warning-soft) 48%, var(--surface-muted) 52%);
+  color: var(--warning);
+  font-weight: 800;
+}
+
+.emptyDetailText {
+  border-color: var(--line);
+  background: var(--surface-muted);
+  color: var(--muted);
+}
+
 .errorText {
   color: #c53b2d;
 }
@@ -255,21 +600,40 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .visualGrid,
+  .managementGrid,
   .detailsGrid,
   .countGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .detailPanel {
+    position: static;
+  }
 }
 
 @media (max-width: 800px) {
-  .toggleList,
-  .detailsGrid,
-  .countGrid,
-  .metrics {
-    grid-template-columns: 1fr;
+  .visualHeader,
+  .managementHeader,
+  .detailPanelHeader,
+  .userSearch {
+    display: grid;
   }
 
-  .userHeader {
-    flex-direction: column;
+  .paginationControls,
+  .searchResultCount {
+    justify-self: start;
+  }
+
+  .donutLayout,
+  .managementGrid,
+  .toggleList,
+  .detailsGrid,
+  .detailPanel .detailsGrid,
+  .countGrid,
+  .detailPanel .countGrid,
+  .visualGrid,
+  .metrics {
+    grid-template-columns: 1fr;
   }
 }

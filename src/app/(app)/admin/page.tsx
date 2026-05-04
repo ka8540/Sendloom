@@ -1,9 +1,95 @@
-import { LocalDateTime } from "@/components/local-date-time";
-import { AdminUserControls } from "@/components/admin-user-controls";
+import type { CSSProperties } from "react";
+
+import { AdminUserManagement } from "@/components/admin-user-management";
 import { requireAdminUser } from "@/lib/auth";
 import { listAdminUsers } from "@/services/admin";
 
 import styles from "./page.module.css";
+
+type FootprintMetric = {
+  label: string;
+  value: number;
+};
+
+function AdminStatsCharts({
+  totalUsers,
+  loggedInUsers,
+  restrictedUsers,
+  footprint
+}: {
+  totalUsers: number;
+  loggedInUsers: number;
+  restrictedUsers: number;
+  footprint: FootprintMetric[];
+}) {
+  const offlineUsers = Math.max(totalUsers - loggedInUsers, 0);
+  const statusTotal = Math.max(loggedInUsers + offlineUsers + restrictedUsers, 1);
+  const loggedStop = (loggedInUsers / statusTotal) * 100;
+  const offlineStop = ((loggedInUsers + offlineUsers) / statusTotal) * 100;
+  const maxFootprint = Math.max(...footprint.map((item) => item.value), 1);
+
+  const donutStyle = {
+    "--logged-stop": `${loggedStop}%`,
+    "--offline-stop": `${offlineStop}%`
+  } as CSSProperties;
+
+  return (
+    <section className={styles.visualGrid} aria-label="Admin dashboard summary visuals">
+      <article className={`${styles.visualCard} card`}>
+        <div className={styles.visualHeader}>
+          <div>
+            <p className={styles.sectionKicker}>Account status</p>
+            <h2>User health mix</h2>
+          </div>
+          <span className={styles.visualTotal}>{totalUsers} total</span>
+        </div>
+
+        <div className={styles.donutLayout}>
+          <div className={styles.donutRing} style={donutStyle} aria-hidden="true">
+            <span>{totalUsers}</span>
+          </div>
+          <div className={styles.legendList}>
+            <span>
+              <i className={styles.legendActive} aria-hidden="true" />
+              {loggedInUsers} logged in
+            </span>
+            <span>
+              <i className={styles.legendOffline} aria-hidden="true" />
+              {offlineUsers} offline
+            </span>
+            <span>
+              <i className={styles.legendRestricted} aria-hidden="true" />
+              {restrictedUsers} restricted
+            </span>
+          </div>
+        </div>
+      </article>
+
+      <article className={`${styles.visualCard} card`}>
+        <div className={styles.visualHeader}>
+          <div>
+            <p className={styles.sectionKicker}>User footprint</p>
+            <h2>Workspace objects</h2>
+          </div>
+        </div>
+
+        <div className={styles.barList}>
+          {footprint.map((item) => (
+            <div key={item.label} className={styles.barItem}>
+              <div className={styles.barMeta}>
+                <span>{item.label}</span>
+                <strong>{item.value}</strong>
+              </div>
+              <div className={styles.barTrack} aria-hidden="true">
+                <span style={{ width: `${Math.max((item.value / maxFootprint) * 100, item.value > 0 ? 8 : 0)}%` }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </article>
+    </section>
+  );
+}
 
 export default async function AdminDashboardPage() {
   const admin = await requireAdminUser();
@@ -22,11 +108,19 @@ export default async function AdminDashboardPage() {
     ).length,
     connectedSenders: users.reduce((sum, user) => sum + user.counts.senderProfiles, 0)
   };
+  const footprint: FootprintMetric[] = [
+    { label: "Imports", value: users.reduce((sum, user) => sum + user.counts.imports, 0) },
+    { label: "Mappings", value: users.reduce((sum, user) => sum + user.counts.mappings, 0) },
+    { label: "Templates", value: users.reduce((sum, user) => sum + user.counts.templates, 0) },
+    { label: "Campaigns", value: users.reduce((sum, user) => sum + user.counts.campaigns, 0) },
+    { label: "Senders", value: metrics.connectedSenders },
+    { label: "Suppressions", value: users.reduce((sum, user) => sum + user.counts.suppressions, 0) }
+  ];
 
   return (
     <div className={styles.page}>
       <section className={`${styles.hero} card`}>
-        <h1 style={{ margin: 0 }}>Admin dashboard</h1>
+        <h1 className={styles.heroTitle}>Admin dashboard</h1>
         <p className="muted">
           Review active accounts, inspect user-level footprint, restrict API capabilities, end sessions, and wipe an account’s data
           from one protected control surface.
@@ -53,93 +147,14 @@ export default async function AdminDashboardPage() {
         <span className="badge">Signed in as {admin.email}</span>
       </section>
 
-      <section className={styles.userGrid}>
-        {users.map((user) => (
-          <article key={user.id} className={`${styles.userCard} card`}>
-            <div className={styles.userHeader}>
-              <div className={styles.userIdentity}>
-                <h2>{user.email}</h2>
-                <div className={styles.userMeta}>
-                  <span
-                    className={`${styles.statusPill} ${
-                      user.sessionStatus === "active"
-                        ? styles.statusPillActive
-                        : user.sessionStatus === "untracked"
-                          ? styles.statusPillInfo
-                          : styles.statusPillMuted
-                    }`}
-                  >
-                    {user.sessionStatus === "active"
-                      ? "Logged in"
-                      : user.sessionStatus === "untracked"
-                        ? "Session not tracked"
-                        : "Signed out"}
-                  </span>
-                  {user.isAdmin ? <span className={`${styles.statusPill} ${styles.statusPillWarning}`}>Admin</span> : null}
-                  {user.apiAccessDisabled ? <span className={`${styles.statusPill} ${styles.statusPillWarning}`}>API disabled</span> : null}
-                  <span className={styles.statusPill}>{user.authProvider}</span>
-                </div>
-              </div>
-            </div>
+      <AdminStatsCharts
+        totalUsers={metrics.totalUsers}
+        loggedInUsers={metrics.loggedInUsers}
+        restrictedUsers={metrics.restrictedUsers}
+        footprint={footprint}
+      />
 
-            <div className={styles.detailsGrid}>
-              <div className={styles.detailCard}>
-                <span className={styles.detailLabel}>Created</span>
-                <LocalDateTime value={user.createdAt} className={styles.detailValue} />
-              </div>
-              <div className={styles.detailCard}>
-                <span className={styles.detailLabel}>Last login</span>
-                <LocalDateTime value={user.lastLoginAt} className={styles.detailValue} emptyLabel="Never" />
-              </div>
-              <div className={styles.detailCard}>
-                <span className={styles.detailLabel}>Last seen</span>
-                <LocalDateTime value={user.lastSeenAt} className={styles.detailValue} emptyLabel="Not tracked yet" />
-              </div>
-              <div className={styles.detailCard}>
-                <span className={styles.detailLabel}>Session expiry</span>
-                <LocalDateTime value={user.sessionExpiresAt} className={styles.detailValue} emptyLabel="No active session" />
-              </div>
-            </div>
-
-            <div className={styles.countGrid}>
-              {[
-                ["Imports", user.counts.imports],
-                ["Mappings", user.counts.mappings],
-                ["Templates", user.counts.templates],
-                ["Campaigns", user.counts.campaigns],
-                ["Senders", user.counts.senderProfiles],
-                ["Suppressions", user.counts.suppressions]
-              ].map(([label, value]) => (
-                <div key={label} className={styles.countItem}>
-                  <strong>{value}</strong>
-                  <span>{label}</span>
-                </div>
-              ))}
-            </div>
-
-            <AdminUserControls
-              userId={user.id}
-              email={user.email}
-              isLoggedIn={user.isLoggedIn}
-              isSelfProtected={user.id === admin.id}
-              isAdminProtected={user.isAdmin}
-              initialControls={{
-                apiAccessDisabled: user.apiAccessDisabled,
-                importsWriteDisabled: user.importsWriteDisabled,
-                templatesWriteDisabled: user.templatesWriteDisabled,
-                launchesDisabled: user.launchesDisabled,
-                aiEnhancementsDisabled: user.aiEnhancementsDisabled
-              }}
-            />
-
-            {user.sessionStatus === "untracked" ? (
-              <p className={styles.sessionNote}>
-                This account has not created a tracked session on the admin-enabled deployment yet, so it may still be active elsewhere.
-              </p>
-            ) : null}
-          </article>
-        ))}
-      </section>
+      <AdminUserManagement users={users} adminId={admin.id} />
     </div>
   );
 }

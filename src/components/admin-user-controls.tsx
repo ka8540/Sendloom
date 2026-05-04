@@ -100,6 +100,20 @@ export function AdminUserControls(props: AdminUserControlsProps) {
     });
   }
 
+  if (controlsLocked) {
+    return (
+      <div className={styles.controlPanel}>
+        <p className={styles.controlHint}>
+          {props.isAdminProtected
+            ? "Admin accounts are protected and cannot be restricted from this dashboard."
+            : "Your own account is locked from edits here."}
+        </p>
+        {message ? <p className={styles.successText}>{message}</p> : null}
+        {error ? <p className={styles.errorText}>{error}</p> : null}
+      </div>
+    );
+  }
+
   return (
     <div className={styles.controlPanel}>
       <div className={styles.toggleList}>
@@ -115,37 +129,32 @@ export function AdminUserControls(props: AdminUserControlsProps) {
               type="checkbox"
               checked={controls[key as keyof typeof controls]}
               onChange={(event) => updateControl(key as keyof typeof controls, event.target.checked)}
-              disabled={controlsLocked || isSaving || isDeleting}
+              disabled={isSaving || isDeleting}
             />
             <span>{label}</span>
           </label>
         ))}
       </div>
 
-      {controlsLocked ? (
-        <p className={styles.controlHint}>
-          {props.isSelfProtected ? "Your own admin account is locked from edits here." : "Admin accounts are protected from edits here."}
-        </p>
-      ) : (
-        <div className={styles.controlActions}>
-          <button className="button secondary" type="button" onClick={() => saveControls(false)} disabled={isSaving || isDeleting}>
-            {isSaving ? "Saving..." : "Save controls"}
-          </button>
-          <button
-            className="button secondary"
-            type="button"
-            onClick={() => saveControls(true)}
-            disabled={!props.isLoggedIn || isSaving || isDeleting}
-          >
-            End session
-          </button>
-          <button className={styles.deleteButton} type="button" onClick={deleteUser} disabled={isSaving || isDeleting}>
-            {isDeleting ? "Deleting..." : "Delete all user data"}
-          </button>
-        </div>
-      )}
+      <div className={styles.controlActions}>
+        <button className="button secondary" type="button" onClick={() => saveControls(false)} disabled={isSaving || isDeleting}>
+          {isSaving ? "Saving..." : "Save controls"}
+        </button>
+        <button
+          className="button secondary"
+          type="button"
+          onClick={() => saveControls(true)}
+          disabled={!props.isLoggedIn || isSaving || isDeleting}
+        >
+          End session
+        </button>
+        <button className={styles.deleteButton} type="button" onClick={deleteUser} disabled={isSaving || isDeleting}>
+          {isDeleting ? "Deleting..." : "Delete all user data"}
+        </button>
+      </div>
 
       {message ? <p className={styles.successText}>{message}</p> : null}
+      {error ? <p className={styles.errorText}>{error}</p> : null}
     </div>
   );
 }
