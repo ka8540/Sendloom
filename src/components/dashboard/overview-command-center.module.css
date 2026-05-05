@@ -611,6 +611,27 @@
   line-height: 1.65;
 }
 
+.sequenceSection .sectionKicker {
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.08em;
+}
+
+.sequenceSection .sectionTitle {
+  font-size: clamp(1.65rem, 3vw, 2.2rem);
+  font-weight: 600;
+  line-height: 1.08;
+  letter-spacing: -0.035em;
+}
+
+.sequenceSection .sectionCopy {
+  font-size: 0.98rem;
+  font-weight: 400;
+  line-height: 1.6;
+  letter-spacing: 0;
+}
+
 .sectionTopMeta {
   display: flex;
   align-items: center;
@@ -630,8 +651,8 @@
   border: 1px solid var(--line);
   background: color-mix(in srgb, var(--surface-muted) 84%, transparent);
   color: var(--muted);
-  font-size: 0.95rem;
-  font-weight: 700;
+  font-size: 0.9rem;
+  font-weight: 600;
   white-space: nowrap;
   max-width: 100%;
   transition: color 160ms ease, transform 160ms ease, border-color 180ms ease, background-color 180ms ease;
@@ -669,9 +690,10 @@
 
 .toolbarLabel {
   color: var(--muted);
-  font-size: 0.77rem;
-  font-weight: 800;
-  letter-spacing: 0.12em;
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
@@ -707,12 +729,17 @@
   border: 0;
   background: transparent;
   color: var(--text);
+  font-size: 0.95rem;
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: 0;
   outline: none;
   min-width: 0;
 }
 
 .toolbarSearch input::placeholder {
   color: color-mix(in srgb, var(--muted) 84%, transparent);
+  font-weight: 400;
   text-overflow: ellipsis;
 }
 
@@ -807,16 +834,20 @@
 
 .sequenceName {
   margin: 0;
-  font-size: 1.2rem;
-  line-height: 1.1;
-  letter-spacing: -0.04em;
+  font-size: 1.1rem;
+  font-weight: 600;
+  line-height: 1.22;
+  letter-spacing: -0.025em;
 }
 
 .sequenceSummary,
 .sequenceDeliveryDetail {
   margin: 0;
   color: var(--muted);
-  line-height: 1.55;
+  font-size: 0.92rem;
+  font-weight: 400;
+  line-height: 1.5;
+  letter-spacing: 0;
 }
 
 .sequenceStatus {
@@ -826,9 +857,10 @@
   padding: 0.52rem 0.78rem;
   border-radius: 999px;
   border: 1px solid transparent;
-  font-size: 0.78rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.055em;
   text-transform: uppercase;
   white-space: nowrap;
 }
@@ -875,12 +907,15 @@
   justify-content: space-between;
   gap: 0.75rem;
   color: var(--muted);
-  font-weight: 650;
+  font-size: 0.9rem;
+  font-weight: 500;
+  line-height: 1.35;
 }
 
 .sequenceProgressMeta strong {
   color: var(--text);
-  font-size: 0.96rem;
+  font-size: 0.9rem;
+  font-weight: 600;
 }
 
 .sequenceProgressTrack {
@@ -920,20 +955,25 @@
 
 .sequenceActivity span {
   color: var(--muted);
-  font-size: 0.76rem;
-  font-weight: 800;
-  letter-spacing: 0.12em;
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .sequenceActivity strong {
-  font-size: 1.25rem;
-  letter-spacing: -0.05em;
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.025em;
 }
 
 .sequenceActivity small {
   color: var(--muted);
-  font-size: 0.92rem;
+  font-size: 0.86rem;
+  font-weight: 400;
+  line-height: 1.35;
 }
 
 .sequenceInteractiveRail {
@@ -983,7 +1023,9 @@
   border: 1px solid var(--field-border);
   background: var(--field-bg);
   color: var(--text);
-  font-weight: 700;
+  font-size: 0.88rem;
+  font-weight: 600;
+  line-height: 1;
   overflow: hidden;
   white-space: nowrap;
   transition:
@@ -1103,7 +1145,8 @@
 .sequencePaginationSummary,
 .sequencePaginationPage {
   color: var(--muted);
-  font-weight: 700;
+  font-size: 0.88rem;
+  font-weight: 500;
 }
 
 .sequencePaginationControls {
