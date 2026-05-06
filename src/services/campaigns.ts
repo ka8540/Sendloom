@@ -1,8 +1,12 @@
 import { addMinutes } from "date-fns";
-import { Prisma } from "@prisma/client";
+import { Prisma, type CampaignStatus } from "@prisma/client";
 
 import { CAMPAIGN_SETUP_LOCKED_RUN_STATUSES, isCampaignSetupLocked } from "@/lib/campaign-setup-lock";
 import { SCHEDULE_EDIT_DISABLED_MESSAGE, canEditCampaignSchedule } from "@/lib/campaign-schedule-edit";
+import {
+  planScheduledCampaignRun,
+  SCHEDULABLE_CAMPAIGN_STATUSES
+} from "@/lib/campaign-scheduling";
 import { prisma } from "@/lib/db";
 import { buildMergePayload } from "@/lib/mapping";
 import { GMAIL_RECONNECT_ERROR, getUserSafeGmailSendError, isGmailReconnectError, sendEmail, type EmailAttachment } from "@/lib/provider";
@@ -49,6 +53,21 @@ type ProcessCampaignRunResult = {
   processedJobs: number;
   hasRemainingWork: boolean;
   rateLimited: boolean;
+  locked?: boolean;
+};
+
+type CampaignProcessingError = {
+  scope: "scheduling" | "campaign-run";
+  id?: string;
+  message: string;
+};
+
+type QueueScheduledRunsResult = {
+  campaignsScanned: number;
+  runsCreated: number;
+  dueCampaignsFound: number;
+  lockSkipped: boolean;
+  errors: CampaignProcessingError[];
 };
 
 type RecipientJobWithContext = Prisma.RecipientJobGetPayload<{
@@ -71,6 +90,10 @@ const DEFAULT_MAX_DURATION_MS = 45_000;
 const DEFAULT_MAX_RUNS = 5;
 const DEFAULT_MAX_RECIPIENT_JOBS_PER_RUN = 25;
 const TERMINAL_RECIPIENT_STATUSES = new Set(["SENT", "SUPPRESSED", "INVALID", "OPENED", "CLICKED", "BOUNCED", "COMPLAINED"]);
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
 
 function getDeadline(maxDurationMs = DEFAULT_MAX_DURATION_MS) {
   return Date.now() + maxDurationMs;
@@ -104,6 +127,10 @@ async function withRedisLock<T>(key: string, ttlSeconds: number, callback: () =>
       token
     );
   }
+}
+
+function isUniqueConstraintError(error: unknown) {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
 }
 
 export async function syncRunCounts(runId: string) {
@@ -184,6 +211,8 @@ async function finalizeRunIfComplete(runId: string) {
       status: "COMPLETED"
     }
   });
+
+  await ensureNextRecurringRun(run.campaignId);
 
   return true;
 }
@@ -615,16 +644,78 @@ export async function updateCampaignSchedule(
 }
 
 export async function launchCampaign(campaignId: string, userId?: string) {
-  const campaign = await prisma.campaign.findFirstOrThrow({
-    where: campaignOwnershipFilter(campaignId, userId),
-    include: {
-      import: {
-        include: {
-          rows: true
+  const launchedRun = await withRedisLock(`sendloom:campaign-launch:${campaignId}`, RUN_LOCK_TTL_SECONDS, async () => {
+    const campaign = await prisma.campaign.findFirstOrThrow({
+      where: campaignOwnershipFilter(campaignId, userId),
+      include: {
+        import: {
+          include: {
+            rows: true
+          }
         }
       }
+    });
+
+    const activeRun = await prisma.campaignRun.findFirst({
+      where: {
+        campaignId,
+        status: {
+          in: ["QUEUED", "RUNNING", "PAUSED"]
+        }
+      },
+      orderBy: { createdAt: "desc" }
+    });
+
+    if (activeRun) {
+      if (activeRun.status === "PAUSED") {
+        const resumedRun = await prisma.campaignRun.update({
+          where: { id: activeRun.id },
+          data: {
+            status: "QUEUED",
+            scheduledFor: new Date()
+          }
+        });
+
+        await prisma.campaign.update({
+          where: { id: campaignId },
+          data: {
+            status: "RUNNING"
+          }
+        });
+
+        return resumedRun;
+      }
+
+      return activeRun;
     }
+
+    const rule = campaign.scheduleConfig as ScheduleRule;
+    const scheduledFor = getNextRunDate(rule);
+    const totalRecipients = campaign.import.rows.length;
+
+    const run = await prisma.campaignRun.create({
+      data: {
+        campaignId,
+        status: "QUEUED",
+        launchType: rule.type,
+        scheduledFor,
+        totalRecipients
+      }
+    });
+
+    await prisma.campaign.update({
+      where: { id: campaignId },
+      data: {
+        status: rule.type === "immediate" ? "RUNNING" : "SCHEDULED"
+      }
+    });
+
+    return run;
   });
+
+  if (launchedRun) {
+    return launchedRun;
+  }
 
   const activeRun = await prisma.campaignRun.findFirst({
     where: {
@@ -637,50 +728,10 @@ export async function launchCampaign(campaignId: string, userId?: string) {
   });
 
   if (activeRun) {
-    if (activeRun.status === "PAUSED") {
-      const resumedRun = await prisma.campaignRun.update({
-        where: { id: activeRun.id },
-        data: {
-          status: "QUEUED",
-          scheduledFor: new Date()
-        }
-      });
-
-      await prisma.campaign.update({
-        where: { id: campaignId },
-        data: {
-          status: "RUNNING"
-        }
-      });
-
-      return resumedRun;
-    }
-
     return activeRun;
   }
 
-  const rule = campaign.scheduleConfig as ScheduleRule;
-  const scheduledFor = getNextRunDate(rule);
-  const totalRecipients = campaign.import.rows.length;
-
-  const run = await prisma.campaignRun.create({
-    data: {
-      campaignId,
-      status: "QUEUED",
-      launchType: rule.type,
-      scheduledFor,
-      totalRecipients
-    }
-  });
-
-  await prisma.campaign.update({
-    where: { id: campaignId },
-    data: {
-      status: rule.type === "immediate" ? "RUNNING" : "SCHEDULED"
-    }
-  });
-
-  return run;
+  throw new Error("This sequence launch is already being prepared. Try again in a moment.");
 }
 
 export async function pauseCampaign(campaignId: string, userId?: string) {
@@ -723,65 +774,211 @@ export async function pauseCampaign(campaignId: string, userId?: string) {
 }
 
 export async function queueScheduledRuns() {
-  const scheduledCampaigns = await prisma.campaign.findMany({
-    where: {
-      scheduleType: {
-        in: ["once", "recurring"]
+  const summary: QueueScheduledRunsResult = {
+    campaignsScanned: 0,
+    runsCreated: 0,
+    dueCampaignsFound: 0,
+    lockSkipped: false,
+    errors: []
+  };
+
+  const lockResult = await withRedisLock("sendloom:scheduled-campaign-discovery", RUN_LOCK_TTL_SECONDS, async () => {
+    const now = new Date();
+    const scheduledCampaigns = await prisma.campaign.findMany({
+      where: {
+        scheduleType: {
+          in: ["once", "recurring"]
+        },
+        status: {
+          in: [...SCHEDULABLE_CAMPAIGN_STATUSES] as CampaignStatus[]
+        },
+        userId: {
+          not: null
+        },
+        import: {
+          status: "PROCESSED"
+        },
+        senderProfile: {
+          oauthRefreshToken: {
+            not: null
+          }
+        }
       },
-      status: {
-        in: ["DRAFT", "VALIDATED", "SCHEDULED", "COMPLETED"]
+      select: {
+        id: true,
+        status: true,
+        scheduleType: true,
+        scheduleConfig: true,
+        runs: {
+          orderBy: { createdAt: "desc" },
+          select: {
+            status: true,
+            scheduledFor: true
+          }
+        }
+      }
+    });
+
+    summary.campaignsScanned = scheduledCampaigns.length;
+
+    for (const campaign of scheduledCampaigns) {
+      const plan = planScheduledCampaignRun(
+        {
+          status: campaign.status,
+          scheduleType: campaign.scheduleType,
+          scheduleConfig: campaign.scheduleConfig as ScheduleRule | null,
+          runs: campaign.runs
+        },
+        now
+      );
+
+      if (plan.due) {
+        summary.dueCampaignsFound += 1;
+      }
+
+      if (plan.action !== "create-run") {
+        continue;
+      }
+
+      try {
+        const createdRun = await createScheduledRunIfNeeded(campaign.id, now);
+        if (createdRun) {
+          summary.runsCreated += 1;
+        }
+      } catch (error) {
+        console.error("[campaign-scheduler] Failed to schedule campaign run.", {
+          campaignId: campaign.id,
+          error
+        });
+        summary.errors.push({
+          scope: "scheduling",
+          id: campaign.id,
+          message: getErrorMessage(error)
+        });
       }
     }
+
+    return summary;
   });
 
-  for (const campaign of scheduledCampaigns) {
-    const rule = campaign.scheduleConfig as ScheduleRule | null;
-
-    if (!rule || (rule.type !== "once" && rule.type !== "recurring")) {
-      continue;
-    }
-
-    const nextRunDate = getNextRunDate(rule);
-    const existingRun = await prisma.campaignRun.findFirst({
-      where:
-        rule.type === "once"
-          ? {
-              campaignId: campaign.id
-            }
-          : {
-              campaignId: campaign.id,
-              scheduledFor: nextRunDate
-            }
-    });
-
-    if (existingRun) {
-      continue;
-    }
-
-    await prisma.campaignRun.create({
-      data: {
-        campaignId: campaign.id,
-        status: "QUEUED",
-        launchType: rule.type,
-        scheduledFor: nextRunDate,
-        totalRecipients: await prisma.importRow.count({
-          where: {
-            importId: campaign.importId
-          }
-        })
-      }
-    });
-
-    await prisma.campaign.update({
-      where: { id: campaign.id },
-      data: {
-        status: "SCHEDULED"
-      }
-    });
+  if (!lockResult) {
+    return {
+      ...summary,
+      lockSkipped: true
+    };
   }
+
+  return lockResult;
 }
 
 export const queueRecurringRuns = queueScheduledRuns;
+
+async function createScheduledRunIfNeeded(campaignId: string, now = new Date()) {
+  return withRedisLock(`sendloom:campaign-launch:${campaignId}`, RUN_LOCK_TTL_SECONDS, async () =>
+    prisma.$transaction(async (tx) => {
+      const campaign = await tx.campaign.findUnique({
+        where: { id: campaignId },
+        select: {
+          id: true,
+          userId: true,
+          status: true,
+          scheduleType: true,
+          scheduleConfig: true,
+          importId: true,
+          import: {
+            select: {
+              status: true
+            }
+          },
+          senderProfile: {
+            select: {
+              oauthRefreshToken: true
+            }
+          },
+          runs: {
+            orderBy: { createdAt: "desc" },
+            select: {
+              status: true,
+              scheduledFor: true
+            }
+          }
+        }
+      });
+
+      if (!campaign || !campaign.userId || campaign.import.status !== "PROCESSED" || !campaign.senderProfile.oauthRefreshToken) {
+        return null;
+      }
+
+      const plan = planScheduledCampaignRun(
+        {
+          status: campaign.status,
+          scheduleType: campaign.scheduleType,
+          scheduleConfig: campaign.scheduleConfig as ScheduleRule | null,
+          runs: campaign.runs
+        },
+        now
+      );
+
+      if (plan.action !== "create-run") {
+        return null;
+      }
+
+      const totalRecipients = await tx.importRow.count({
+        where: {
+          importId: campaign.importId
+        }
+      });
+
+      const run = await tx.campaignRun.create({
+        data: {
+          campaignId,
+          status: "QUEUED",
+          launchType: plan.launchType,
+          scheduledFor: plan.scheduledFor,
+          totalRecipients
+        }
+      });
+
+      await tx.campaign.update({
+        where: { id: campaignId },
+        data: {
+          status: "SCHEDULED"
+        }
+      });
+
+      return run;
+    })
+  );
+}
+
+async function ensureNextRecurringRun(campaignId: string) {
+  const campaign = await prisma.campaign.findUnique({
+    where: { id: campaignId },
+    select: {
+      scheduleType: true
+    }
+  });
+
+  if (campaign?.scheduleType !== "recurring") {
+    return null;
+  }
+
+  return createScheduledRunIfNeeded(campaignId);
+}
+
+async function createRecipientJobIgnoringDuplicate(data: Prisma.RecipientJobUncheckedCreateInput) {
+  try {
+    return await prisma.recipientJob.create({
+      data
+    });
+  } catch (error) {
+    if (isUniqueConstraintError(error)) {
+      return null;
+    }
+
+    throw error;
+  }
+}
 
 async function ensureRecipientJobs(campaignId: string, runId: string) {
   const campaign = await prisma.campaign.findUniqueOrThrow({
@@ -828,18 +1025,16 @@ async function ensureRecipientJobs(campaignId: string, runId: string) {
     };
 
     if (suppressedEmails.has(email)) {
-      await prisma.recipientJob.create({
-        data: {
-          campaignRunId: runId,
-          importRowId: row.id,
-          recipientEmail: email,
-          recipientName: typeof payload.name === "string" ? payload.name : null,
-          subject: renderTemplate(subjectTemplate, payload),
-          htmlBody: renderTemplateContent(templateFormat, htmlTemplate, payload),
-          dedupeKey: shaKey([runId, email]),
-          status: "SUPPRESSED",
-          metadata: metadata as Prisma.InputJsonValue
-        }
+      await createRecipientJobIgnoringDuplicate({
+        campaignRunId: runId,
+        importRowId: row.id,
+        recipientEmail: email,
+        recipientName: typeof payload.name === "string" ? payload.name : null,
+        subject: renderTemplate(subjectTemplate, payload),
+        htmlBody: renderTemplateContent(templateFormat, htmlTemplate, payload),
+        dedupeKey: shaKey([runId, email]),
+        status: "SUPPRESSED",
+        metadata: metadata as Prisma.InputJsonValue
       });
       continue;
     }
@@ -847,25 +1042,25 @@ async function ensureRecipientJobs(campaignId: string, runId: string) {
     const subject = renderTemplate(subjectTemplate, payload);
     const renderedHtml = renderTemplateContent(templateFormat, htmlTemplate, payload);
 
-    const jobRecord = await prisma.recipientJob.create({
-      data: {
-        campaignRunId: runId,
-        importRowId: row.id,
-        recipientEmail: email,
-        recipientName: typeof payload.name === "string" ? payload.name : null,
-        subject,
-        htmlBody: renderedHtml,
-        dedupeKey: shaKey([runId, email]),
-        metadata: metadata as Prisma.InputJsonValue
-      }
+    const jobRecord = await createRecipientJobIgnoringDuplicate({
+      campaignRunId: runId,
+      importRowId: row.id,
+      recipientEmail: email,
+      recipientName: typeof payload.name === "string" ? payload.name : null,
+      subject,
+      htmlBody: renderedHtml,
+      dedupeKey: shaKey([runId, email]),
+      metadata: metadata as Prisma.InputJsonValue
     });
 
-    await prisma.recipientJob.update({
-      where: { id: jobRecord.id },
-      data: {
-        htmlBody: appendTrackingMarkup(renderedHtml, jobRecord.id, email)
-      }
-    });
+    if (jobRecord) {
+      await prisma.recipientJob.update({
+        where: { id: jobRecord.id },
+        data: {
+          htmlBody: appendTrackingMarkup(renderedHtml, jobRecord.id, email)
+        }
+      });
+    }
   }
 
   await syncRunCounts(runId);
@@ -1130,17 +1325,9 @@ export async function processCampaignRun(
     const remainingJobs = await prisma.recipientJob.count({
       where: {
         campaignRunId: run.id,
-        OR: [
-          {
-            status: "PENDING"
-          },
-          {
-            status: "RETRYING",
-            nextRetryAt: {
-              lte: new Date()
-            }
-          }
-        ]
+        status: {
+          in: ["PENDING", "RETRYING"]
+        }
       }
     });
 
@@ -1155,7 +1342,8 @@ export async function processCampaignRun(
     lockResult ?? {
       processedJobs: 0,
       hasRemainingWork: true,
-      rateLimited: false
+      rateLimited: false,
+      locked: true
     }
   );
 }
@@ -1311,37 +1499,90 @@ export async function processProviderEvent(args: {
 }
 
 export async function processPendingCampaignWork(args: ProcessCampaignWorkArgs = {}) {
-  await queueScheduledRuns();
+  const scheduling: QueueScheduledRunsResult = {
+    campaignsScanned: 0,
+    runsCreated: 0,
+    dueCampaignsFound: 0,
+    lockSkipped: false,
+    errors: []
+  };
+
+  try {
+    Object.assign(scheduling, await queueScheduledRuns());
+  } catch (error) {
+    console.error("[campaign-cron] Scheduled campaign discovery failed.", error);
+    scheduling.errors.push({
+      scope: "scheduling",
+      message: getErrorMessage(error)
+    });
+  }
 
   const deadline = getDeadline(args.maxDurationMs);
   const maxRuns = args.maxRuns ?? DEFAULT_MAX_RUNS;
   const maxRecipientJobsPerRun = args.maxRecipientJobsPerRun ?? DEFAULT_MAX_RECIPIENT_JOBS_PER_RUN;
+  const errors: CampaignProcessingError[] = [...scheduling.errors];
+  const dueRunWhere: Prisma.CampaignRunWhereInput = {
+    ...(args.runId ? { id: args.runId } : {}),
+    ...(args.campaignId ? { campaignId: args.campaignId } : {}),
+    campaign: {
+      userId: {
+        not: null
+      },
+      status: {
+        notIn: ["PAUSED", "CANCELLED", "FAILED"]
+      },
+      import: {
+        status: "PROCESSED"
+      },
+      senderProfile: {
+        oauthRefreshToken: {
+          not: null
+        }
+      }
+    },
+    OR: [
+      {
+        status: "RUNNING"
+      },
+      {
+        status: "QUEUED",
+        scheduledFor: {
+          lte: new Date()
+        }
+      },
+      {
+        status: "QUEUED",
+        scheduledFor: null
+      }
+    ]
+  };
 
   let runsProcessed = 0;
   let recipientJobsProcessed = 0;
   let hasRemainingWork = false;
+  let dueCampaignsFound = scheduling.dueCampaignsFound;
+
+  try {
+    const dueCampaigns = await prisma.campaignRun.findMany({
+      where: dueRunWhere,
+      select: {
+        campaignId: true
+      },
+      distinct: ["campaignId"]
+    });
+
+    dueCampaignsFound = dueCampaigns.length;
+  } catch (error) {
+    console.error("[campaign-cron] Failed to count due campaigns.", error);
+    errors.push({
+      scope: "scheduling",
+      message: getErrorMessage(error)
+    });
+  }
 
   while (hasTimeRemaining(deadline) && runsProcessed < maxRuns) {
     const runs = await prisma.campaignRun.findMany({
-      where: {
-        ...(args.runId ? { id: args.runId } : {}),
-        ...(args.campaignId ? { campaignId: args.campaignId } : {}),
-        OR: [
-          {
-            status: "RUNNING"
-          },
-          {
-            status: "QUEUED",
-            scheduledFor: {
-              lte: new Date()
-            }
-          },
-          {
-            status: "QUEUED",
-            scheduledFor: null
-          }
-        ]
-      },
+      where: dueRunWhere,
       orderBy: [{ scheduledFor: "asc" }, { createdAt: "asc" }],
       take: maxRuns
     });
@@ -1357,19 +1598,34 @@ export async function processPendingCampaignWork(args: ProcessCampaignWorkArgs =
         break;
       }
 
-      const result = await processCampaignRun(run.id, {
-        maxDurationMs: Math.max(1_000, deadline - Date.now()),
-        maxRecipientJobs: maxRecipientJobsPerRun
-      });
+      try {
+        const result = await processCampaignRun(run.id, {
+          maxDurationMs: Math.max(1_000, deadline - Date.now()),
+          maxRecipientJobs: maxRecipientJobsPerRun
+        });
 
-      runsProcessed += 1;
-      recipientJobsProcessed += result.processedJobs;
-      hasRemainingWork = hasRemainingWork || result.hasRemainingWork;
-      progressedThisPass = progressedThisPass || result.processedJobs > 0;
+        if (!result.locked) {
+          runsProcessed += 1;
+        }
+        recipientJobsProcessed += result.processedJobs;
+        hasRemainingWork = hasRemainingWork || result.hasRemainingWork;
+        progressedThisPass =
+          progressedThisPass || result.processedJobs > 0 || (!result.locked && !result.hasRemainingWork);
 
-      if (result.rateLimited) {
-        hasRemainingWork = true;
-        break;
+        if (result.rateLimited) {
+          hasRemainingWork = true;
+          break;
+        }
+      } catch (error) {
+        console.error("[campaign-cron] Failed to process campaign run.", {
+          runId: run.id,
+          error
+        });
+        errors.push({
+          scope: "campaign-run",
+          id: run.id,
+          message: getErrorMessage(error)
+        });
       }
     }
 
@@ -1379,26 +1635,17 @@ export async function processPendingCampaignWork(args: ProcessCampaignWorkArgs =
   }
 
   const remainingRuns = await prisma.campaignRun.count({
-    where: {
-      ...(args.runId ? { id: args.runId } : {}),
-      ...(args.campaignId ? { campaignId: args.campaignId } : {}),
-      OR: [
-        {
-          status: "RUNNING"
-        },
-        {
-          status: "QUEUED",
-          scheduledFor: {
-            lte: new Date()
-          }
-        }
-      ]
-    }
+    where: dueRunWhere
   });
 
   return {
+    dueCampaignsFound,
+    runsCreated: scheduling.runsCreated,
+    scheduledCampaignsScanned: scheduling.campaignsScanned,
+    schedulingLockSkipped: scheduling.lockSkipped,
     runsProcessed,
     recipientJobsProcessed,
-    hasRemainingWork: hasRemainingWork || remainingRuns > 0
+    hasRemainingWork: hasRemainingWork || remainingRuns > 0,
+    errors
   };
 }

@@ -1,77 +1,44 @@
-import { prisma } from "@/lib/db";
-import { queues } from "@/lib/queue";
-import { queueRecurringRuns } from "@/services/campaigns";
+import { processPendingCampaignWork } from "@/services/campaigns";
 import { syncConnectedSenderReplies } from "@/services/replies";
 
-async function processPendingRetries() {
-  const pendingRetries = await prisma.recipientJob.findMany({
-    where: {
-      status: "RETRYING",
-      nextRetryAt: {
-        lte: new Date()
-      },
-      campaignRun: {
-        status: {
-          in: ["QUEUED", "RUNNING"]
-        }
-      }
-    },
-    take: 250
-  });
-
-  for (const retryJob of pendingRetries) {
-    await queues.send.add(
-      "send-recipient",
-      {
-        jobId: retryJob.id
-      },
-      {
-        jobId: retryJob.dedupeKey
-      }
-    );
-  }
-}
-
-async function processCompletedRuns() {
-  const activeRuns = await prisma.campaignRun.findMany({
-    where: {
-      status: "RUNNING"
-    },
-    include: {
-      recipientJobs: {
-        select: {
-          status: true
-        }
-      }
-    }
-  });
-
-  for (const run of activeRuns) {
-    const hasPending = run.recipientJobs.some((job) => ["PENDING", "RETRYING"].includes(job.status));
-    if (!hasPending) {
-      await prisma.campaignRun.update({
-        where: { id: run.id },
-        data: {
-          status: "COMPLETED",
-          completedAt: new Date()
-        }
-      });
-
-      await prisma.campaign.update({
-        where: { id: run.campaignId },
-        data: {
-          status: "COMPLETED"
-        }
-      });
-    }
-  }
-}
+let ticking = false;
 
 async function tick() {
-  await syncConnectedSenderReplies();
-  await queueRecurringRuns();
-  await processPendingRetries();
-  await processCompletedRuns();
+  if (ticking) {
+    return;
+  }
+
+  ticking = true;
+
+  try {
+    const result = await processPendingCampaignWork({
+      maxDurationMs: 55_000
+    });
+    const replySync = await syncConnectedSenderReplies();
+
+    if (
+      result.dueCampaignsFound > 0 ||
+      result.runsCreated > 0 ||
+      result.runsProcessed > 0 ||
+      result.recipientJobsProcessed > 0 ||
+      result.errors.length > 0 ||
+      replySync.repliesStored > 0 ||
+      replySync.sendersFailed > 0
+    ) {
+      console.log("[scheduler] Campaign tick complete.", {
+        dueCampaignsFound: result.dueCampaignsFound,
+        runsCreated: result.runsCreated,
+        runsProcessed: result.runsProcessed,
+        recipientJobsProcessed: result.recipientJobsProcessed,
+        repliesSynced: replySync.repliesStored,
+        errors: result.errors.length + replySync.sendersFailed
+      });
+    }
+  } catch (error) {
+    console.error("[scheduler] Campaign tick failed.", error);
+  } finally {
+    ticking = false;
+  }
 }
 
 async function loop() {
