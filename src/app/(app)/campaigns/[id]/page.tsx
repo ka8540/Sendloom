@@ -15,7 +15,6 @@ import {
 } from "lucide-react";
 
 import { ActiveRunRefresher } from "@/components/active-run-refresher";
-import { CampaignFollowUpEditor } from "@/components/campaign-follow-up-editor";
 import { CampaignScheduleEditor } from "@/components/campaign-schedule-editor";
 import { CampaignSetupEditor } from "@/components/campaign-setup-editor";
 import { CampaignDetailDeleteButton } from "@/components/campaign-detail-delete-button";
@@ -719,25 +718,13 @@ export default async function CampaignDetailPage({
                 <strong>{latestRun ? humanize(latestRun.status) : "Not launched yet"}</strong>
               </div>
             </div>
-            <div className={`${styles.summaryItem} ${styles.summaryItemWithAction}`}>
+            <div className={styles.summaryItem}>
               <Mail aria-hidden="true" />
               <div>
                 <span>Follow-ups</span>
                 <strong>{formatFollowUpSummary(campaign)}</strong>
                 {campaign.followUpEnabled && latestRun ? <em>{formatFollowUpCounts(followUpCounts)}</em> : null}
               </div>
-              <CampaignFollowUpEditor
-                campaignId={campaign.id}
-                canEdit={canEditFollowUps}
-                disabledMessage={FOLLOW_UP_EDIT_DISABLED_MESSAGE}
-                initialSettings={{
-                  enabled: campaign.followUpEnabled,
-                  templateId: campaign.followUpTemplateId ?? "",
-                  delayDays: campaign.followUpDelayDays ?? 3,
-                  sendMode: campaign.followUpSendMode ?? "SAME_THREAD"
-                }}
-                templateOptions={templateOptions}
-              />
             </div>
           </div>
 
@@ -820,7 +807,9 @@ export default async function CampaignDetailPage({
         <article className={styles.panel}>
           <CampaignSetupEditor
             campaignId={campaign.id}
+            canEditFollowUps={canEditFollowUps}
             currentSenderNeedsReconnect={senderNeedsReconnect}
+            followUpEditDisabledMessage={FOLLOW_UP_EDIT_DISABLED_MESSAGE}
             importOptions={importOptions}
             initialSetup={initialSetup}
             isLocked={setupLocked}

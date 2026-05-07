@@ -39,15 +39,18 @@ function createDraft(settings: {
 }
 
 export function CampaignFollowUpEditor(props: {
+  ariaLabel?: string;
   campaignId: string;
   canEdit: boolean;
   disabledMessage: string;
+  enableOnOpen?: boolean;
   initialSettings: {
     delayDays: number;
     enabled: boolean;
     sendMode: FollowUpSendMode;
     templateId: string;
   };
+  label?: string;
   templateOptions: TemplateOption[];
 }) {
   const router = useRouter();
@@ -102,7 +105,10 @@ export function CampaignFollowUpEditor(props: {
       return;
     }
 
-    setDraft(createDraft(props.initialSettings));
+    setDraft({
+      ...createDraft(props.initialSettings),
+      enabled: props.enableOnOpen ? true : props.initialSettings.enabled
+    });
     setError(null);
     setIsOpen(true);
   }
@@ -345,13 +351,14 @@ export function CampaignFollowUpEditor(props: {
     <>
       <button
         aria-disabled={!props.canEdit}
+        aria-label={props.ariaLabel ?? props.label ?? "Edit follow-up"}
         className={`${styles.trigger}${!props.canEdit ? ` ${styles.triggerBlocked}` : ""}`}
         onClick={openEditor}
-        title={props.canEdit ? "Edit follow-up" : props.disabledMessage}
+        title={props.canEdit ? props.ariaLabel ?? props.label ?? "Edit follow-up" : props.disabledMessage}
         type="button"
       >
         <PencilLine aria-hidden="true" className={styles.triggerIcon} />
-        Edit follow-up
+        {props.label ?? "Edit follow-up"}
       </button>
       {mounted && isOpen ? createPortal(modal, document.body) : null}
     </>
