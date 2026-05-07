@@ -134,6 +134,76 @@ function getOnceRunDate(rule: Extract<ScheduleRule, { type: "once" }>) {
   return convertScheduledLocalInputToUtc(rule.scheduledFor, rule.timeZone ?? "UTC");
 }
 
+export function normalizeWeeklyDays(rule: Extract<ScheduleRule, { type: "recurring" }>) {
+  const rawDays = Array.isArray(rule.daysOfWeek) ? rule.daysOfWeek : [rule.dayOfWeek ?? 1];
+  return Array.from(
+    new Set(
+      rawDays
+        .map((day) => Number(day))
+        .filter((day) => Number.isInteger(day) && day >= 0 && day <= 6)
+    )
+  ).sort((left, right) => left - right);
+}
+
+export function normalizeScheduleRule(rule: ScheduleRule): ScheduleRule {
+  if (rule.type !== "recurring" || rule.frequency !== "weekly") {
+    return rule;
+  }
+
+  const daysOfWeek = normalizeWeeklyDays(rule);
+  if (!daysOfWeek.length) {
+    throw new Error("Select at least one day.");
+  }
+
+  const rest = { ...rule };
+  delete rest.dayOfWeek;
+
+  return {
+    ...rest,
+    daysOfWeek
+  };
+}
+
+function getNextWeeklyRunDate(rule: Extract<ScheduleRule, { type: "recurring" }>, now: Date) {
+  const timeZone = rule.timeZone ?? "UTC";
+  const [hours, minutes] = rule.time.split(":").map(Number);
+  const zonedNow = getZonedParts(now, timeZone);
+  const selectedDays = normalizeWeeklyDays(rule);
+
+  if (!selectedDays.length) {
+    return new Date(Number.NaN);
+  }
+
+  const candidates = selectedDays.map((dayOfWeek) => {
+    const daysUntil = dayOfWeek - zonedNow.weekday >= 0 ? dayOfWeek - zonedNow.weekday : 7 - zonedNow.weekday + dayOfWeek;
+    const initialDate = addCalendarDays({ year: zonedNow.year, month: zonedNow.month, day: zonedNow.day }, daysUntil);
+    let candidate = localDateTimeToUtc(
+      {
+        ...initialDate,
+        hour: hours,
+        minute: minutes
+      },
+      timeZone
+    );
+
+    if (candidate <= now) {
+      const nextDate = addCalendarDays(initialDate, 7);
+      candidate = localDateTimeToUtc(
+        {
+          ...nextDate,
+          hour: hours,
+          minute: minutes
+        },
+        timeZone
+      );
+    }
+
+    return candidate;
+  });
+
+  return candidates.reduce((nearest, candidate) => (candidate < nearest ? candidate : nearest));
+}
+
 export function getNextRunDate(rule: ScheduleRule, now = new Date()) {
   if (rule.type === "immediate") {
     return now;
@@ -147,15 +217,12 @@ export function getNextRunDate(rule: ScheduleRule, now = new Date()) {
   const [hours, minutes] = rule.time.split(":").map(Number);
   const zonedNow = getZonedParts(now, timeZone);
 
+  if (rule.frequency === "weekly") {
+    return getNextWeeklyRunDate(rule, now);
+  }
+
   const initialDate =
-    rule.frequency === "daily"
-      ? { year: zonedNow.year, month: zonedNow.month, day: zonedNow.day }
-      : addCalendarDays(
-          { year: zonedNow.year, month: zonedNow.month, day: zonedNow.day },
-          (rule.dayOfWeek ?? 1) - zonedNow.weekday >= 0
-            ? (rule.dayOfWeek ?? 1) - zonedNow.weekday
-            : 7 - zonedNow.weekday + (rule.dayOfWeek ?? 1)
-        );
+    { year: zonedNow.year, month: zonedNow.month, day: zonedNow.day };
 
   let candidate = localDateTimeToUtc(
     {
@@ -167,7 +234,7 @@ export function getNextRunDate(rule: ScheduleRule, now = new Date()) {
   );
 
   if (candidate <= now) {
-    const nextDate = addCalendarDays(initialDate, rule.frequency === "daily" ? 1 : 7);
+    const nextDate = addCalendarDays(initialDate, 1);
     candidate = localDateTimeToUtc(
       {
         ...nextDate,

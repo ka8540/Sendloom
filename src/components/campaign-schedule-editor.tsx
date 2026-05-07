@@ -23,11 +23,12 @@ type ScheduleConfig =
       frequency?: "daily" | "weekly";
       time?: string;
       dayOfWeek?: number;
+      daysOfWeek?: number[];
       timeZone?: string;
     };
 
 type ScheduleDraft = {
-  dayOfWeek: string;
+  daysOfWeek: string[];
   frequency: "" | "daily" | "weekly";
   scheduledFor: string;
   time: string;
@@ -53,6 +54,23 @@ const timeZoneLabels = new Map<string, string>([
   ["Australia/Sydney", "Sydney (Australia/Sydney)"],
   ["Pacific/Auckland", "Auckland (Pacific/Auckland)"]
 ]);
+
+const weekdayOptions = [
+  { label: "Sun", value: "0" },
+  { label: "Mon", value: "1" },
+  { label: "Tue", value: "2" },
+  { label: "Wed", value: "3" },
+  { label: "Thu", value: "4" },
+  { label: "Fri", value: "5" },
+  { label: "Sat", value: "6" }
+] as const;
+
+function getDraftWeekdays(scheduleConfig: Extract<ScheduleConfig, { type: "recurring" }>) {
+  const days = scheduleConfig.daysOfWeek?.length ? scheduleConfig.daysOfWeek : [scheduleConfig.dayOfWeek ?? 1];
+  return Array.from(new Set(days.filter((day) => Number.isInteger(day) && day >= 0 && day <= 6)))
+    .sort((left, right) => left - right)
+    .map(String);
+}
 
 function formatDateTimeLocal(value: string | undefined, timeZone: string) {
   if (!value) {
@@ -84,7 +102,7 @@ function createDraft(scheduleConfig: ScheduleConfig, browserTimeZone: string): S
     const timeZone = scheduleConfig.timeZone ?? browserTimeZone;
 
     return {
-      dayOfWeek: "1",
+      daysOfWeek: ["1"],
       frequency: "",
       scheduledFor: formatDateTimeLocal(scheduleConfig.scheduledFor, timeZone),
       time: "",
@@ -95,7 +113,7 @@ function createDraft(scheduleConfig: ScheduleConfig, browserTimeZone: string): S
 
   if (scheduleConfig.type === "recurring") {
     return {
-      dayOfWeek: String(scheduleConfig.dayOfWeek ?? 1),
+      daysOfWeek: getDraftWeekdays(scheduleConfig),
       frequency: scheduleConfig.frequency ?? "",
       scheduledFor: "",
       time: scheduleConfig.time ?? "",
@@ -105,7 +123,7 @@ function createDraft(scheduleConfig: ScheduleConfig, browserTimeZone: string): S
   }
 
   return {
-    dayOfWeek: "1",
+    daysOfWeek: ["1"],
     frequency: "",
     scheduledFor: "",
     time: "",
@@ -144,12 +162,16 @@ function buildScheduleRule(draft: ScheduleDraft): ScheduleRule {
     throw new Error("Choose a valid recurring send time.");
   }
 
+  if (draft.frequency === "weekly" && draft.daysOfWeek.length === 0) {
+    throw new Error("Select at least one day.");
+  }
+
   return {
     type: "recurring",
     frequency: draft.frequency,
     time: draft.time,
     timeZone: draft.timeZone,
-    ...(draft.frequency === "weekly" ? { dayOfWeek: Number(draft.dayOfWeek) } : {})
+    ...(draft.frequency === "weekly" ? { daysOfWeek: draft.daysOfWeek.map(Number) } : {})
   };
 }
 
@@ -315,6 +337,7 @@ export function CampaignScheduleEditor(props: {
                         ...current,
                         type: nextType,
                         frequency: nextType === "recurring" && !current.frequency ? "weekly" : current.frequency,
+                        daysOfWeek: nextType === "recurring" && !current.daysOfWeek.length ? ["1"] : current.daysOfWeek,
                         time: nextType === "recurring" && !current.time ? "09:00" : current.time
                       }));
                       setError(null);
@@ -411,27 +434,37 @@ export function CampaignScheduleEditor(props: {
                       />
                     </div>
                     {draft.frequency === "weekly" ? (
-                      <div className={styles.field}>
-                        <label className={styles.fieldLabel} htmlFor="edit-sequence-day">
-                          Day
-                        </label>
-                        <select
-                          className={styles.control}
-                          id="edit-sequence-day"
-                          value={draft.dayOfWeek}
-                          onChange={(event) => {
-                            setDraft((current) => ({ ...current, dayOfWeek: event.target.value }));
-                            setError(null);
-                          }}
-                        >
-                          <option value="0">Sunday</option>
-                          <option value="1">Monday</option>
-                          <option value="2">Tuesday</option>
-                          <option value="3">Wednesday</option>
-                          <option value="4">Thursday</option>
-                          <option value="5">Friday</option>
-                          <option value="6">Saturday</option>
-                        </select>
+                      <div className={`${styles.field} ${styles.weekdayField}`}>
+                        <span className={styles.fieldLabel}>Days</span>
+                        <div className={styles.weekdayGroup} aria-label="Recurring weekdays">
+                          {weekdayOptions.map((day) => {
+                            const selected = draft.daysOfWeek.includes(day.value);
+                            return (
+                              <button
+                                key={day.value}
+                                type="button"
+                                className={`${styles.weekdayChip}${selected ? ` ${styles.weekdayChipSelected}` : ""}`}
+                                aria-pressed={selected}
+                                onClick={() => {
+                                  setDraft((current) => {
+                                    const isSelected = current.daysOfWeek.includes(day.value);
+                                    const nextDays = isSelected
+                                      ? current.daysOfWeek.filter((value) => value !== day.value)
+                                      : [...current.daysOfWeek, day.value].sort((left, right) => Number(left) - Number(right));
+
+                                    return {
+                                      ...current,
+                                      daysOfWeek: nextDays
+                                    };
+                                  });
+                                  setError(null);
+                                }}
+                              >
+                                {day.label}
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
                     ) : null}
                   </div>

@@ -12,6 +12,25 @@ import { deleteCampaign, updateCampaignSchedule, updateCampaignSetup } from "@/s
 
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
+const recurringScheduleRuleSchema = z
+  .object({
+    type: z.literal("recurring"),
+    frequency: z.enum(["daily", "weekly"]),
+    time: z.string().regex(/^\d{2}:\d{2}$/),
+    dayOfWeek: z.number().int().min(0).max(6).optional(),
+    daysOfWeek: z.array(z.number().int().min(0).max(6)).optional(),
+    timeZone: z.string().min(1).optional()
+  })
+  .superRefine((rule, context) => {
+    if (rule.frequency === "weekly" && !(rule.daysOfWeek?.length || rule.dayOfWeek !== undefined)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Select at least one day.",
+        path: ["daysOfWeek"]
+      });
+    }
+  });
+
 const scheduleRuleSchema = z.union([
   z.object({ type: z.literal("immediate") }),
   z.object({
@@ -19,13 +38,7 @@ const scheduleRuleSchema = z.union([
     scheduledFor: z.string().min(1),
     timeZone: z.string().min(1).optional()
   }),
-  z.object({
-    type: z.literal("recurring"),
-    frequency: z.enum(["daily", "weekly"]),
-    time: z.string().regex(/^\d{2}:\d{2}$/),
-    dayOfWeek: z.number().int().min(0).max(6).optional(),
-    timeZone: z.string().min(1).optional()
-  })
+  recurringScheduleRuleSchema
 ]);
 
 type AttachmentPlanItem =

@@ -43,6 +43,7 @@ export type ScheduleRule =
       frequency: "daily" | "weekly";
       time: string;
       dayOfWeek?: number;
+      daysOfWeek?: number[];
       timeZone?: string;
     };
 

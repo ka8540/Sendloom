@@ -12,7 +12,7 @@ import { buildMergePayload } from "@/lib/mapping";
 import { GMAIL_RECONNECT_ERROR, getUserSafeGmailSendError, isGmailReconnectError, sendEmail, type EmailAttachment } from "@/lib/provider";
 import { consumeSendWindow, getSendWindowKey } from "@/lib/rate-limit";
 import { getRedis } from "@/lib/redis";
-import { getNextRunDate } from "@/lib/schedule";
+import { getNextRunDate, normalizeScheduleRule } from "@/lib/schedule";
 import { renderTemplate, renderTemplateContent, type TemplateFormat } from "@/lib/templates";
 import { makeTrackingUrl, shaKey } from "@/lib/tracking";
 import type { CampaignValidationReport, ScheduleRule } from "@/lib/types";
@@ -241,6 +241,7 @@ export async function createCampaignDraft(input: {
   scheduleRule: ScheduleRule;
   attachments?: CampaignAttachmentSnapshot[];
 }, userId: string) {
+  const scheduleRule = normalizeScheduleRule(input.scheduleRule);
   const [importRecord, template, mapping, senderProfile] = await Promise.all([
     prisma.import.findFirstOrThrow({
       where: {
@@ -278,7 +279,7 @@ export async function createCampaignDraft(input: {
       templateId: input.templateId,
       senderProfileId: input.senderProfileId,
       scheduleType: input.scheduleRule.type,
-      scheduleConfig: input.scheduleRule,
+      scheduleConfig: scheduleRule,
       templateSnapshot: {
         subject: template.subject,
         format: (template.format as TemplateFormat | null) ?? "HTML",
@@ -535,6 +536,7 @@ export async function updateCampaignSchedule(
   },
   userId?: string
 ) {
+  const scheduleRule = normalizeScheduleRule(input.scheduleRule);
   const campaign = await prisma.campaign.findFirstOrThrow({
     where: campaignOwnershipFilter(input.campaignId, userId),
     select: {
@@ -573,8 +575,8 @@ export async function updateCampaignSchedule(
     throw new Error(SCHEDULE_EDIT_DISABLED_MESSAGE);
   }
 
-  if (input.scheduleRule.type === "once") {
-    const scheduledFor = getNextRunDate(input.scheduleRule);
+  if (scheduleRule.type === "once") {
+    const scheduledFor = getNextRunDate(scheduleRule);
     if (Number.isNaN(scheduledFor.getTime()) || scheduledFor <= new Date()) {
       throw new Error("Choose a future time for a one-time scheduled send.");
     }
@@ -587,14 +589,14 @@ export async function updateCampaignSchedule(
     latestRun._count.recipientJobs === 0
       ? latestRun
       : null;
-  const nextScheduledFor = input.scheduleRule.type === "immediate" ? new Date() : getNextRunDate(input.scheduleRule);
+  const nextScheduledFor = scheduleRule.type === "immediate" ? new Date() : getNextRunDate(scheduleRule);
   let nextCampaignStatus = campaign.status;
 
   if (runToUpdate?.status === "QUEUED") {
-    nextCampaignStatus = input.scheduleRule.type === "immediate" ? "RUNNING" : "SCHEDULED";
-  } else if (input.scheduleRule.type === "immediate" && campaign.status === "SCHEDULED") {
+    nextCampaignStatus = scheduleRule.type === "immediate" ? "RUNNING" : "SCHEDULED";
+  } else if (scheduleRule.type === "immediate" && campaign.status === "SCHEDULED") {
     nextCampaignStatus = campaign.lastValidatedAt ? "VALIDATED" : "DRAFT";
-  } else if (!latestRun && input.scheduleRule.type !== "immediate") {
+  } else if (!latestRun && scheduleRule.type !== "immediate") {
     nextCampaignStatus = "SCHEDULED";
   }
 
@@ -602,8 +604,8 @@ export async function updateCampaignSchedule(
     const updatedCampaign = await tx.campaign.update({
       where: { id: campaign.id },
       data: {
-        scheduleType: input.scheduleRule.type,
-        scheduleConfig: input.scheduleRule as Prisma.InputJsonValue,
+        scheduleType: scheduleRule.type,
+        scheduleConfig: scheduleRule as Prisma.InputJsonValue,
         status: nextCampaignStatus
       }
     });
@@ -612,7 +614,7 @@ export async function updateCampaignSchedule(
       const updatedRun = await tx.campaignRun.update({
         where: { id: runToUpdate.id },
         data: {
-          launchType: input.scheduleRule.type,
+          launchType: scheduleRule.type,
           scheduledFor: nextScheduledFor
         }
       });
@@ -620,7 +622,7 @@ export async function updateCampaignSchedule(
       return { campaign: updatedCampaign, run: updatedRun };
     }
 
-    if (!latestRun && (input.scheduleRule.type === "once" || input.scheduleRule.type === "recurring")) {
+    if (!latestRun && (scheduleRule.type === "once" || scheduleRule.type === "recurring")) {
       const totalRecipients = await tx.importRow.count({
         where: {
           importId: campaign.importId
@@ -630,7 +632,7 @@ export async function updateCampaignSchedule(
         data: {
           campaignId: campaign.id,
           status: "QUEUED",
-          launchType: input.scheduleRule.type,
+          launchType: scheduleRule.type,
           scheduledFor: nextScheduledFor,
           totalRecipients
         }

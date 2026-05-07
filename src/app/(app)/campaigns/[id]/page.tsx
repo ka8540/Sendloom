@@ -57,10 +57,27 @@ type ScheduleConfig =
       frequency?: "daily" | "weekly";
       time?: string;
       dayOfWeek?: number;
+      daysOfWeek?: number[];
       timeZone?: string;
     };
 
 const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
+const shortDayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+
+function getScheduleWeekdays(scheduleConfig?: ScheduleConfig | null) {
+  if (!scheduleConfig || !("frequency" in scheduleConfig)) {
+    return [1];
+  }
+
+  const days = scheduleConfig.daysOfWeek?.length ? scheduleConfig.daysOfWeek : [scheduleConfig.dayOfWeek ?? 1];
+  return Array.from(new Set(days.filter((day) => Number.isInteger(day) && day >= 0 && day <= 6))).sort((left, right) => left - right);
+}
+
+function formatWeeklyDayLabel(scheduleConfig?: ScheduleConfig | null, style: "long" | "short" = "long") {
+  const days = getScheduleWeekdays(scheduleConfig);
+  const labels = style === "long" ? dayNames : shortDayNames;
+  return days.length === 1 ? labels[days[0] ?? 1] : days.map((day) => shortDayNames[day]).join(", ");
+}
 
 function formatDateTime(value?: Date | string | null, timeZone?: string) {
   if (!value) {
@@ -109,7 +126,7 @@ function formatScheduleLabel(scheduleType?: string | null, scheduleConfig?: Sche
     const frequencyLabel = recurringConfig?.frequency === "daily" ? "Daily" : "Weekly";
     const timeLabel = recurringConfig?.time ?? "09:00";
     const dayLabel =
-      recurringConfig?.frequency === "weekly" ? ` on ${dayNames[recurringConfig?.dayOfWeek ?? 1]}` : "";
+      recurringConfig?.frequency === "weekly" ? ` on ${formatWeeklyDayLabel(recurringConfig)}` : "";
     const zoneLabel = recurringConfig?.timeZone ? ` (${recurringConfig.timeZone})` : "";
 
     return `${frequencyLabel}${dayLabel} at ${timeLabel}${zoneLabel}`;
@@ -137,6 +154,7 @@ function getScheduleConfig(scheduleType?: string | null, scheduleConfig?: Schedu
       frequency: recurringConfig?.frequency,
       time: recurringConfig?.time,
       dayOfWeek: recurringConfig?.dayOfWeek,
+      daysOfWeek: recurringConfig?.daysOfWeek,
       timeZone: recurringConfig?.timeZone
     };
   }

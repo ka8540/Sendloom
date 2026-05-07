@@ -18,6 +18,16 @@ type MappingOption = Option & {
   importId: string;
 };
 
+const weekdayOptions = [
+  { label: "Sun", value: 0 },
+  { label: "Mon", value: 1 },
+  { label: "Tue", value: 2 },
+  { label: "Wed", value: 3 },
+  { label: "Thu", value: 4 },
+  { label: "Fri", value: 5 },
+  { label: "Sat", value: 6 }
+] as const;
+
 export function CampaignBuilder(props: {
   imports: Option[];
   mappings: MappingOption[];
@@ -33,6 +43,7 @@ export function CampaignBuilder(props: {
   const [selectedImportId, setSelectedImportId] = useState(props.imports[0]?.id ?? "");
   const [scheduleType, setScheduleType] = useState("immediate");
   const [frequency, setFrequency] = useState("weekly");
+  const [selectedWeekdays, setSelectedWeekdays] = useState<number[]>([1]);
   const browserTimeZone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "America/New_York", []);
   const [selectedTimeZone, setSelectedTimeZone] = useState(browserTimeZone);
   const [selectedMappingId, setSelectedMappingId] = useState(() => {
@@ -121,7 +132,7 @@ export function CampaignBuilder(props: {
           frequency: FormDataEntryValue | null;
           time: FormDataEntryValue | null;
           timeZone: string;
-          dayOfWeek?: number;
+          daysOfWeek?: number[];
         }
       | {
           type: "once";
@@ -140,7 +151,7 @@ export function CampaignBuilder(props: {
               frequency: formData.get("frequency"),
               time: formData.get("time"),
               timeZone: scheduleTimeZone,
-              ...(formData.get("frequency") === "weekly" ? { dayOfWeek: Number(formData.get("dayOfWeek")) } : {})
+              ...(formData.get("frequency") === "weekly" ? { daysOfWeek: selectedWeekdays } : {})
             }
           : scheduleType === "once"
             ? (() => {
@@ -163,6 +174,10 @@ export function CampaignBuilder(props: {
 
       formData.set("scheduleRule", JSON.stringify(scheduleRule));
       formData.set("autoLaunch", String(autoLaunch));
+
+      if (scheduleRule.type === "recurring" && scheduleRule.frequency === "weekly" && !selectedWeekdays.length) {
+        throw new Error("Select at least one day.");
+      }
     } catch (error) {
       setState({
         pending: false,
@@ -192,6 +207,7 @@ export function CampaignBuilder(props: {
     setSelectedMappingId(props.mappings.find((mapping) => mapping.importId === firstImportId)?.id ?? "");
     setScheduleType("immediate");
     setFrequency("weekly");
+    setSelectedWeekdays([1]);
     setSelectedTimeZone(browserTimeZone);
     router.refresh();
     setState({ pending: false });
@@ -399,17 +415,31 @@ export function CampaignBuilder(props: {
               <input id="time" name="time" type="time" defaultValue="09:00" required />
             </div>
             {frequency === "weekly" ? (
-              <div className="field">
-                <label htmlFor="dayOfWeek">Day</label>
-                <select id="dayOfWeek" name="dayOfWeek" defaultValue="1">
-                  <option value="0">Sunday</option>
-                  <option value="1">Monday</option>
-                  <option value="2">Tuesday</option>
-                  <option value="3">Wednesday</option>
-                  <option value="4">Thursday</option>
-                  <option value="5">Friday</option>
-                  <option value="6">Saturday</option>
-                </select>
+              <div className={`field ${styles.weekdayField}`}>
+                <span className={styles.weekdayLabel}>Days</span>
+                <div className={styles.weekdayGroup} aria-label="Recurring weekdays">
+                  {weekdayOptions.map((day) => {
+                    const selected = selectedWeekdays.includes(day.value);
+                    return (
+                      <button
+                        key={day.value}
+                        type="button"
+                        className={`${styles.weekdayChip}${selected ? ` ${styles.weekdayChipSelected}` : ""}`}
+                        aria-pressed={selected}
+                        onClick={() => {
+                          setSelectedWeekdays((current) =>
+                            current.includes(day.value)
+                              ? current.filter((value) => value !== day.value)
+                              : [...current, day.value].sort((left, right) => left - right)
+                          );
+                          setState({ pending: false });
+                        }}
+                      >
+                        {day.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             ) : null}
           </div>

@@ -201,6 +201,58 @@
   padding-top: 0.8rem;
 }
 
+.weekdayField {
+  grid-column: 1 / -1;
+}
+
+.weekdayLabel {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.weekdayGroup {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.weekdayChip {
+  min-width: 0;
+  min-height: 2.45rem;
+  padding: 0.55rem 0.35rem;
+  border-radius: 8px;
+  border: 1px solid var(--field-border);
+  background: var(--field-bg);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 850;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.weekdayChip:hover,
+.weekdayChip:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 36%, var(--field-border));
+  color: var(--text);
+  outline: none;
+}
+
+.weekdayChipSelected {
+  border-color: color-mix(in srgb, var(--accent) 58%, var(--field-border));
+  background: color-mix(in srgb, var(--accent-soft) 66%, var(--field-bg));
+  color: var(--text);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
 @media (max-width: 640px) {
   .attachmentHeader {
     flex-direction: column;
@@ -219,5 +271,9 @@
   .removeButton {
     grid-column: 2;
     justify-self: end;
+  }
+
+  .weekdayGroup {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
