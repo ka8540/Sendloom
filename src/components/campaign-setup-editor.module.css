@@ -1,6 +1,6 @@
 .root {
   display: grid;
-  gap: 0.72rem;
+  gap: 0.8rem;
   align-content: start;
 }
 
@@ -13,17 +13,17 @@
 
 .header h2 {
   margin: 0;
-  font-size: 1.22rem;
-  font-weight: 760;
-  letter-spacing: -0.03em;
-  line-height: 1.18;
+  font-size: 1.38rem;
+  font-weight: 780;
+  letter-spacing: -0.035em;
+  line-height: 1.15;
 }
 
 .header p {
   max-width: 34rem;
-  margin: 0.22rem 0 0;
+  margin: 0.28rem 0 0;
   color: var(--muted);
-  font-size: 0.84rem;
+  font-size: 0.9rem;
   line-height: 1.5;
 }
 
@@ -31,68 +31,26 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  flex-wrap: nowrap;
-  gap: 0.46rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 
 .headerIconAction {
   flex-shrink: 0;
-  width: 2.15rem;
-  height: 2.15rem;
-  border-radius: 12px;
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 14px;
 }
 
-.headerActionButton {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.38rem;
-  min-height: 2.15rem;
-  padding: 0.48rem 0.72rem;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: color-mix(in srgb, var(--surface-strong) 78%, transparent);
-  color: var(--text);
-  font: inherit;
-  font-size: 0.8rem;
-  font-weight: 780;
-  line-height: 1;
-  white-space: nowrap;
-  cursor: pointer;
-  transition:
-    transform 140ms ease,
-    border-color 160ms ease,
-    background-color 160ms ease,
-    color 160ms ease;
-}
-
-.headerActionButton svg {
-  width: 0.92rem;
-  height: 0.92rem;
-}
-
-.headerActionButton:hover:not(:disabled),
-.headerActionButton:focus-visible {
-  transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--accent) 30%, var(--line));
-  background: color-mix(in srgb, var(--surface-strong) 92%, transparent);
-  outline: none;
-}
-
-.headerActionButton:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.headerActionButtonPrimary {
+.headerIconActionPrimary {
   border-color: color-mix(in srgb, var(--accent) 32%, transparent);
   background: color-mix(in srgb, var(--accent-soft) 84%, var(--surface-strong) 16%);
   color: var(--accent-strong);
   box-shadow: 0 10px 22px rgba(28, 42, 70, 0.08);
 }
 
-.headerActionButtonPrimary:hover:not(:disabled),
-.headerActionButtonPrimary:focus-visible {
+.headerIconActionPrimary:hover:not(:disabled),
+.headerIconActionPrimary:focus-visible {
   border-color: color-mix(in srgb, var(--accent) 48%, transparent);
   background: color-mix(in srgb, var(--accent-soft-strong) 76%, var(--surface-strong) 24%);
 }
@@ -144,45 +102,43 @@
 
 .grid {
   display: grid;
-  gap: 0.58rem;
+  gap: 0.65rem;
 }
 
 .fieldCard {
   display: grid;
-  gap: 0.28rem;
+  gap: 0.34rem;
   min-width: 0;
-  padding: 0.68rem 0.78rem;
-  border-radius: 13px;
+  padding: 0.78rem 0.86rem;
+  border-radius: 14px;
   border: 1px solid var(--line);
   background: color-mix(in srgb, var(--surface-muted) 92%, transparent);
 }
 
 .fieldLabel {
   color: var(--muted);
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
+  font-size: 0.72rem;
+  font-weight: 720;
+  letter-spacing: 0.055em;
   text-transform: uppercase;
 }
 
 .fieldValue {
   min-width: 0;
   color: var(--text);
-  display: block;
-  font-size: 0.9rem;
-  font-weight: 730;
+  font-size: 0.96rem;
+  font-weight: 760;
   line-height: 1.35;
-  letter-spacing: -0.015em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .fieldControl {
   width: 100%;
   min-width: 0;
-  min-height: 2.55rem;
-  padding: 0.58rem 0.7rem;
+  min-height: 2.85rem;
+  padding: 0.66rem 0.78rem;
   border-radius: 12px;
   border: 1px solid var(--field-border);
   background-color: var(--field-bg);
@@ -236,14 +192,22 @@ select.fieldControl option {
 
 .fieldHint {
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: 0.84rem;
   line-height: 1.45;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
 
+.fieldCardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
 .followUpCard {
-  gap: 0.42rem;
+  gap: 0.52rem;
 }
 
 .followUpSummary,
@@ -253,6 +217,13 @@ select.fieldControl option {
   min-width: 0;
 }
 
+.followUpSummary .fieldValue {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .followUpEmpty .fieldValue {
   color: var(--muted);
   font-weight: 720;
@@ -260,7 +231,7 @@ select.fieldControl option {
 
 .followUpEditor {
   display: grid;
-  gap: 0.62rem;
+  gap: 0.68rem;
   min-width: 0;
 }
 
@@ -272,8 +243,8 @@ select.fieldControl option {
   width: fit-content;
   max-width: 100%;
   color: var(--text);
-  font-size: 0.84rem;
-  font-weight: 760;
+  font-size: 0.86rem;
+  font-weight: 680;
   cursor: pointer;
 }
 
@@ -293,12 +264,12 @@ select.fieldControl option {
   position: relative;
   display: inline-flex;
   align-items: center;
-  width: 2.35rem;
-  height: 1.28rem;
-  padding: 0.14rem;
+  width: 2.24rem;
+  height: 1.18rem;
+  padding: 0.12rem;
   border-radius: 999px;
   border: 1px solid var(--field-border);
-  background: color-mix(in srgb, var(--field-bg) 94%, transparent);
+  background: color-mix(in srgb, var(--field-bg) 90%, transparent);
   flex-shrink: 0;
   transition:
     border-color 160ms ease,
@@ -307,10 +278,10 @@ select.fieldControl option {
 }
 
 .followUpToggleThumb {
-  width: 0.88rem;
-  height: 0.88rem;
+  width: 0.78rem;
+  height: 0.78rem;
   border-radius: 999px;
-  background: var(--muted);
+  background: color-mix(in srgb, var(--muted) 74%, white);
   transform: translateX(0);
   transition:
     transform 160ms ease,
@@ -318,13 +289,13 @@ select.fieldControl option {
 }
 
 .followUpToggle input:checked + .followUpToggleTrack {
-  border-color: color-mix(in srgb, var(--accent) 46%, var(--field-border));
-  background: color-mix(in srgb, var(--accent-soft) 74%, var(--field-bg));
+  border-color: color-mix(in srgb, var(--accent) 54%, var(--field-border));
+  background: color-mix(in srgb, var(--accent-soft) 58%, var(--field-bg));
 }
 
 .followUpToggle input:checked + .followUpToggleTrack .followUpToggleThumb {
   background: var(--accent);
-  transform: translateX(1.05rem);
+  transform: translateX(1.02rem);
 }
 
 .followUpToggle input:focus-visible + .followUpToggleTrack {
@@ -333,7 +304,8 @@ select.fieldControl option {
 
 .followUpFields {
   display: grid;
-  gap: 0.58rem;
+  grid-template-columns: minmax(0, 1fr) minmax(13rem, 0.52fr);
+  gap: 0.62rem 0.74rem;
   min-width: 0;
 }
 
@@ -345,18 +317,26 @@ select.fieldControl option {
 
 .subFieldLabel {
   color: var(--muted);
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  font-size: 0.69rem;
+  font-weight: 720;
+  letter-spacing: 0.045em;
   text-transform: uppercase;
+}
+
+.followUpSelect {
+  min-height: 2.64rem;
+  font-size: 0.92rem;
+  font-weight: 650;
 }
 
 .followUpDelayControl {
   display: flex;
   align-items: center;
-  gap: 0.58rem;
-  min-height: 2.55rem;
-  padding: 0.2rem 0.7rem 0.2rem 0.2rem;
+  gap: 0.52rem;
+  width: fit-content;
+  max-width: 100%;
+  min-height: 2.64rem;
+  padding: 0.22rem 0.7rem 0.22rem 0.22rem;
   border: 1px solid var(--field-border);
   border-radius: 12px;
   background: var(--field-bg);
@@ -371,16 +351,16 @@ select.fieldControl option {
 }
 
 .followUpDelayControl input {
-  width: 4.2rem;
-  min-height: 2.12rem;
-  padding: 0.42rem 0.58rem;
+  width: 3.6rem;
+  min-height: 2.08rem;
+  padding: 0.4rem 0.5rem;
   border: 0;
   border-radius: 10px;
   background: color-mix(in srgb, var(--surface) 86%, transparent);
   color: var(--text);
   font: inherit;
-  font-size: 0.9rem;
-  font-weight: 740;
+  font-size: 0.92rem;
+  font-weight: 700;
   text-align: center;
   outline: none;
 }
@@ -388,13 +368,14 @@ select.fieldControl option {
 .followUpDelayControl span {
   min-width: 0;
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: 0.82rem;
   line-height: 1.35;
 }
 
 .followUpModeField {
   display: grid;
   gap: 0.36rem;
+  grid-column: 1 / -1;
   min-width: 0;
   padding: 0;
   margin: 0;
@@ -404,46 +385,96 @@ select.fieldControl option {
 .followUpModeGroup {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.46rem;
+  gap: 0.52rem;
 }
 
 .followUpModeOption {
+  position: relative;
   display: inline-flex;
-  align-items: center;
-  gap: 0.42rem;
+  align-items: flex-start;
+  gap: 0.5rem;
   min-width: 0;
-  min-height: 2.35rem;
-  padding: 0.52rem 0.6rem;
-  border-radius: 11px;
+  min-height: 3.18rem;
+  padding: 0.62rem 0.72rem;
+  border-radius: 12px;
   border: 1px solid var(--field-border);
   background: var(--field-bg);
-  color: var(--muted);
-  font-size: 0.8rem;
-  font-weight: 760;
-  line-height: 1.25;
+  color: var(--text);
   cursor: pointer;
   transition:
     border-color 160ms ease,
     background-color 160ms ease,
-    color 160ms ease;
+    box-shadow 160ms ease;
 }
 
-.followUpModeOption input {
-  width: 0.9rem;
-  height: 0.9rem;
-  margin: 0;
-  accent-color: var(--accent);
+.followUpModeOption:focus-within {
+  outline: 2px solid color-mix(in srgb, var(--accent) 20%, transparent);
+  outline-offset: 2px;
+}
+
+.followUpModeInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.followUpModeIndicator {
+  width: 0.82rem;
+  height: 0.82rem;
+  margin-top: 0.14rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--muted) 54%, var(--field-border));
+  background: color-mix(in srgb, var(--field-bg) 86%, transparent);
   flex-shrink: 0;
 }
 
-.followUpModeOption span {
+.followUpModeText {
+  display: grid;
+  gap: 0.14rem;
   min-width: 0;
 }
 
-.followUpModeOptionSelected {
-  border-color: color-mix(in srgb, var(--accent) 48%, var(--field-border));
-  background: color-mix(in srgb, var(--accent-soft) 56%, var(--field-bg));
+.followUpModeTitle {
   color: var(--text);
+  font-size: 0.84rem;
+  font-weight: 700;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.followUpModeHint {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.followUpModeOptionSelected {
+  border-color: color-mix(in srgb, var(--accent) 46%, var(--field-border));
+  background: color-mix(in srgb, var(--accent-soft) 42%, var(--field-bg));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 4%, transparent);
+}
+
+.followUpModeOptionSelected .followUpModeIndicator {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: inset 0 0 0 3px color-mix(in srgb, var(--field-bg) 86%, var(--surface));
+}
+
+.followUpDisabledHint {
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .warningText {
@@ -579,6 +610,10 @@ select.fieldControl option {
     justify-content: flex-start;
   }
 
+  .followUpFields {
+    grid-template-columns: 1fr;
+  }
+
   .followUpModeGroup {
     grid-template-columns: 1fr;
   }
@@ -586,6 +621,7 @@ select.fieldControl option {
   .followUpDelayControl {
     align-items: flex-start;
     flex-direction: column;
+    width: 100%;
     padding: 0.58rem;
   }
 

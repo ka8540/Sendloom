@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FilePlus2, Loader2, Lock, PencilLine, Save, Trash2, Upload } from "lucide-react";
+import { FilePlus2, Loader2, Lock, PencilLine, Save, Trash2, Upload, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import { AttachmentPreview } from "@/components/attachment-preview";
@@ -338,31 +338,23 @@ export function CampaignSetupEditor(props: {
             <>
               <button
                 type="button"
-                className={`${styles.headerActionButton} ${styles.headerActionButtonSecondary}`}
+                className={`field-icon-button ${styles.headerIconAction}`}
+                data-tooltip="Cancel editing"
                 aria-label="Cancel editing"
                 onClick={resetDraft}
                 disabled={pending}
               >
-                Cancel
+                <X aria-hidden="true" />
               </button>
               <button
                 type="button"
-                className={`${styles.headerActionButton} ${styles.headerActionButtonPrimary}`}
+                className={`field-icon-button ${styles.headerIconAction} ${styles.headerIconActionPrimary}`}
+                data-tooltip="Save changes"
                 aria-label="Save changes"
                 onClick={() => void saveSetup()}
                 disabled={pending}
               >
-                {pending ? (
-                  <>
-                    <Loader2 aria-hidden="true" className={styles.spin} />
-                    Saving...
-                  </>
-                ) : (
-                  <>
-                    <Save aria-hidden="true" />
-                    Save
-                  </>
-                )}
+                {pending ? <Loader2 aria-hidden="true" className={styles.spin} /> : <Save aria-hidden="true" />}
               </button>
             </>
           ) : (
@@ -370,7 +362,7 @@ export function CampaignSetupEditor(props: {
                 type="button"
                 className={`field-icon-button ${styles.headerIconAction}`}
                 data-tooltip={props.isLocked ? "Editing locked while run is active" : "Edit setup"}
-                aria-label={props.isLocked ? "Editing locked while run is active" : "Edit sequence setup"}
+                aria-label={props.isLocked ? "Editing locked while run is active" : "Edit setup"}
                 onClick={() => {
                   setSuccess(null);
                   setEditing(true);
@@ -498,7 +490,7 @@ export function CampaignSetupEditor(props: {
                 <span className={styles.followUpToggleTrack} aria-hidden="true">
                   <span className={styles.followUpToggleThumb} />
                 </span>
-                <span>Add follow-up email</span>
+                <span>Enable follow-up email</span>
               </label>
 
               {draftSetup.followUpEnabled ? (
@@ -506,7 +498,7 @@ export function CampaignSetupEditor(props: {
                   <label className={styles.followUpField}>
                     <span className={styles.subFieldLabel}>Follow-up template</span>
                     <select
-                      className={styles.fieldControl}
+                      className={`${styles.fieldControl} ${styles.followUpSelect}`}
                       value={draftSetup.followUpTemplateId}
                       onChange={(event) => updateDraft("followUpTemplateId", event.target.value)}
                     >
@@ -539,21 +531,31 @@ export function CampaignSetupEditor(props: {
                     <div className={styles.followUpModeGroup}>
                       <label className={`${styles.followUpModeOption}${draftSetup.followUpSendMode === "SAME_THREAD" ? ` ${styles.followUpModeOptionSelected}` : ""}`}>
                         <input
+                          className={styles.followUpModeInput}
                           type="radio"
                           name="setupFollowUpSendMode"
                           checked={draftSetup.followUpSendMode === "SAME_THREAD"}
                           onChange={() => updateDraft("followUpSendMode", "SAME_THREAD")}
                         />
-                        <span>Same email thread</span>
+                        <span className={styles.followUpModeIndicator} aria-hidden="true" />
+                        <span className={styles.followUpModeText}>
+                          <span className={styles.followUpModeTitle}>Same email thread</span>
+                          <span className={styles.followUpModeHint}>Reply in original Gmail thread</span>
+                        </span>
                       </label>
                       <label className={`${styles.followUpModeOption}${draftSetup.followUpSendMode === "NEW_EMAIL" ? ` ${styles.followUpModeOptionSelected}` : ""}`}>
                         <input
+                          className={styles.followUpModeInput}
                           type="radio"
                           name="setupFollowUpSendMode"
                           checked={draftSetup.followUpSendMode === "NEW_EMAIL"}
                           onChange={() => updateDraft("followUpSendMode", "NEW_EMAIL")}
                         />
-                        <span>New email</span>
+                        <span className={styles.followUpModeIndicator} aria-hidden="true" />
+                        <span className={styles.followUpModeText}>
+                          <span className={styles.followUpModeTitle}>New email</span>
+                          <span className={styles.followUpModeHint}>Send as separate email</span>
+                        </span>
                       </label>
                     </div>
                   </fieldset>
@@ -561,7 +563,7 @@ export function CampaignSetupEditor(props: {
                   {draftFollowUpTemplateDescription ? <span className={styles.fieldHint}>{draftFollowUpTemplateDescription}</span> : null}
                 </div>
               ) : (
-                <span className={styles.fieldHint}>Follow-ups are off. Save this setup to keep future follow-ups disabled.</span>
+                <span className={styles.followUpDisabledHint}>No follow-up will be sent for this sequence.</span>
               )}
             </div>
           ) : savedSetup.followUpEnabled ? (
@@ -576,7 +578,7 @@ export function CampaignSetupEditor(props: {
           ) : (
             <div className={styles.followUpEmpty}>
               <strong className={styles.fieldValue}>No follow-up configured</strong>
-              <span className={styles.fieldHint}>Use Edit setup to add a follow-up email.</span>
+              <span className={styles.fieldHint}>Use Edit setup to add one.</span>
             </div>
           )}
         </div>
