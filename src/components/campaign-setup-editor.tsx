@@ -14,6 +14,7 @@ type SetupOption = {
   label: string;
   description?: string;
   disabled?: boolean;
+  subject?: string;
 };
 
 type ExistingAttachment = {
@@ -40,6 +41,10 @@ type DraftAttachment = ExistingAttachment | UploadAttachment;
 
 type SetupState = {
   attachments: DraftAttachment[];
+  followUpDelayDays: number;
+  followUpEnabled: boolean;
+  followUpSendMode: "SAME_THREAD" | "NEW_EMAIL";
+  followUpTemplateId: string;
   importId: string;
   name: string;
   senderProfileId: string;
@@ -214,6 +219,29 @@ export function CampaignSetupEditor(props: {
       return;
     }
 
+    if (draftSetup.followUpEnabled) {
+      const selectedFollowUpTemplate = props.templateOptions.find((option) => option.id === draftSetup.followUpTemplateId);
+      if (!draftSetup.followUpTemplateId) {
+        setError("Select a follow-up template.");
+        return;
+      }
+
+      if (!Number.isInteger(draftSetup.followUpDelayDays) || draftSetup.followUpDelayDays < 1) {
+        setError("Enter a delay of at least 1 day.");
+        return;
+      }
+
+      if (!draftSetup.followUpSendMode) {
+        setError("Choose how the follow-up should be sent.");
+        return;
+      }
+
+      if (draftSetup.followUpSendMode === "NEW_EMAIL" && !selectedFollowUpTemplate?.subject?.trim()) {
+        setError("New email follow-ups require a subject.");
+        return;
+      }
+    }
+
     const selectedSender = props.senderOptions.find((option) => option.id === draftSetup.senderProfileId);
     if (selectedSender?.disabled) {
       setError("Reconnect that Gmail sender or choose a connected sender before saving.");
@@ -229,6 +257,10 @@ export function CampaignSetupEditor(props: {
     formData.set("importId", draftSetup.importId);
     formData.set("templateId", draftSetup.templateId);
     formData.set("senderProfileId", draftSetup.senderProfileId);
+    formData.set("followUpEnabled", String(draftSetup.followUpEnabled));
+    formData.set("followUpTemplateId", draftSetup.followUpEnabled ? draftSetup.followUpTemplateId : "");
+    formData.set("followUpDelayDays", draftSetup.followUpEnabled ? String(draftSetup.followUpDelayDays) : "");
+    formData.set("followUpSendMode", draftSetup.followUpEnabled ? draftSetup.followUpSendMode : "");
 
     const attachmentsPlan = draftSetup.attachments.map((attachment, index) => {
       if ("file" in attachment) {
@@ -275,6 +307,7 @@ export function CampaignSetupEditor(props: {
   const currentImportDescription = props.importOptions.find((option) => option.id === draftSetup.importId)?.description;
   const currentTemplateDescription = props.templateOptions.find((option) => option.id === draftSetup.templateId)?.description;
   const currentSenderDescription = props.senderOptions.find((option) => option.id === draftSetup.senderProfileId)?.description;
+  const currentFollowUpTemplateDescription = props.templateOptions.find((option) => option.id === draftSetup.followUpTemplateId)?.description;
 
   const previewItems = useMemo(
     () =>
@@ -436,6 +469,82 @@ export function CampaignSetupEditor(props: {
           <span className={styles.fieldLabel}>Send timing</span>
           <strong className={styles.fieldValue}>{props.scheduleLabel}</strong>
           <span className={styles.fieldHint}>Timing stays unchanged here so you can adjust delivery safely later.</span>
+        </div>
+
+        <div className={styles.fieldCard}>
+          <span className={styles.fieldLabel}>Follow-up</span>
+          {editing ? (
+            <div className={styles.followUpEditor}>
+              <label className={styles.inlineToggle}>
+                <input
+                  type="checkbox"
+                  checked={draftSetup.followUpEnabled}
+                  onChange={(event) => updateDraft("followUpEnabled", event.target.checked)}
+                />
+                <span>Add follow-up email</span>
+              </label>
+              {draftSetup.followUpEnabled ? (
+                <>
+                  <select
+                    className={styles.fieldControl}
+                    value={draftSetup.followUpTemplateId}
+                    onChange={(event) => updateDraft("followUpTemplateId", event.target.value)}
+                  >
+                    <option value="">Choose the follow-up email</option>
+                    {props.templateOptions.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.label}
+                        {option.description ? ` — ${option.description}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                  <div className={styles.followUpDelayRow}>
+                    <input
+                      className={styles.fieldControl}
+                      type="number"
+                      min="1"
+                      max="60"
+                      value={draftSetup.followUpDelayDays}
+                      onChange={(event) => updateDraft("followUpDelayDays", Number.parseInt(event.target.value, 10) || 0)}
+                    />
+                    <span>days after first email</span>
+                  </div>
+                  <div className={styles.followUpModeRow}>
+                    <label>
+                      <input
+                        type="radio"
+                        checked={draftSetup.followUpSendMode === "SAME_THREAD"}
+                        onChange={() => updateDraft("followUpSendMode", "SAME_THREAD")}
+                      />
+                      <span>Same email thread</span>
+                    </label>
+                    <label>
+                      <input
+                        type="radio"
+                        checked={draftSetup.followUpSendMode === "NEW_EMAIL"}
+                        onChange={() => updateDraft("followUpSendMode", "NEW_EMAIL")}
+                      />
+                      <span>New email</span>
+                    </label>
+                  </div>
+                </>
+              ) : null}
+            </div>
+          ) : savedSetup.followUpEnabled ? (
+            <>
+              <strong className={styles.fieldValue}>{getOptionLabel(props.templateOptions, savedSetup.followUpTemplateId)}</strong>
+              <span className={styles.fieldHint}>
+                {savedSetup.followUpDelayDays} day{savedSetup.followUpDelayDays === 1 ? "" : "s"} after first email •{" "}
+                {savedSetup.followUpSendMode === "SAME_THREAD" ? "Same email thread" : "New email"}
+              </span>
+              {currentFollowUpTemplateDescription ? <span className={styles.fieldHint}>{currentFollowUpTemplateDescription}</span> : null}
+            </>
+          ) : (
+            <>
+              <strong className={styles.fieldValue}>Off</strong>
+              <span className={styles.fieldHint}>No follow-up email is attached to the next launch.</span>
+            </>
+          )}
         </div>
       </div>
 

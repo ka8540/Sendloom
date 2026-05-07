@@ -252,7 +252,7 @@ export default async function CampaignsPage({
                 }
               ];
             })}
-            templates={templates.map((entry) => ({ id: entry.id, label: entry.name }))}
+            templates={templates.map((entry) => ({ id: entry.id, label: entry.name, subject: entry.subject }))}
             senders={connectedSenders.map((entry) => ({ id: entry.id, label: `${entry.name} <${entry.fromEmail}>` }))}
             disconnectedSenderCount={disconnectedSenders.length}
             reconnectHref={

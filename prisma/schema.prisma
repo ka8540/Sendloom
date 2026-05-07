@@ -47,6 +47,21 @@ enum RecipientJobStatus {
   COMPLAINED
 }
 
+enum FollowUpSendMode {
+  SAME_THREAD
+  NEW_EMAIL
+}
+
+enum FollowUpJobStatus {
+  NONE
+  SCHEDULED
+  PROCESSING
+  SENT
+  SKIPPED
+  FAILED
+  RETRYING
+}
+
 enum SuppressionReason {
   UNSUBSCRIBED
   HARD_BOUNCE
@@ -193,6 +208,7 @@ model Template {
   updatedAt        DateTime @updatedAt
   user             User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
   campaigns        Campaign[]
+  followUpCampaigns Campaign[] @relation("CampaignFollowUpTemplate")
 
   @@index([userId])
 }
@@ -208,6 +224,11 @@ model Campaign {
   senderProfileId    String
   scheduleType       String?
   scheduleConfig     Json?
+  followUpEnabled    Boolean        @default(false)
+  followUpTemplateId String?
+  followUpDelayDays  Int?
+  followUpSendMode   FollowUpSendMode?
+  followUpTemplateSnapshot Json?
   lastValidatedAt    DateTime?
   validationSnapshot Json?
   templateSnapshot   Json
@@ -219,10 +240,12 @@ model Campaign {
   import             Import         @relation(fields: [importId], references: [id])
   mapping            Mapping        @relation(fields: [mappingId], references: [id])
   template           Template       @relation(fields: [templateId], references: [id])
+  followUpTemplate   Template?      @relation("CampaignFollowUpTemplate", fields: [followUpTemplateId], references: [id], onDelete: SetNull)
   senderProfile      SenderProfile  @relation(fields: [senderProfileId], references: [id])
   runs               CampaignRun[]
 
   @@index([userId])
+  @@index([followUpTemplateId])
 }
 
 model CampaignRun {
@@ -262,9 +285,24 @@ model RecipientJob {
   status            RecipientJobStatus @default(PENDING)
   retryCount        Int                @default(0)
   nextRetryAt       DateTime?
+  firstEmailSentAt  DateTime?
   providerMessageId String?
+  providerThreadId  String?
+  messageIdHeader   String?
+  referencesHeader  String?
   repliedAt         DateTime?
   replyCount        Int                @default(0)
+  followUpStatus    FollowUpJobStatus  @default(NONE)
+  followUpScheduledAt DateTime?
+  followUpSentAt    DateTime?
+  followUpRetryCount Int               @default(0)
+  followUpNextRetryAt DateTime?
+  followUpLastError String?
+  followUpSkippedReason String?
+  followUpProviderMessageId String?
+  followUpProviderThreadId String?
+  followUpMessageIdHeader String?
+  followUpReferencesHeader String?
   lastError         String?
   metadata          Json?
   createdAt         DateTime           @default(now())
@@ -273,6 +311,7 @@ model RecipientJob {
   inboundReplies    InboundReply[]
 
   @@index([campaignRunId, status])
+  @@index([campaignRunId, followUpStatus, followUpScheduledAt])
   @@index([recipientEmail])
 }
 

@@ -22,6 +22,20 @@ async function handleCron(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  let replySync = {
+    repliesStored: 0,
+    sendersChecked: 0,
+    sendersFailed: 0
+  };
+  let replySyncError: string | null = null;
+
+  try {
+    replySync = await syncConnectedSenderReplies();
+  } catch (error) {
+    console.error("[campaign-cron] Reply sync failed.", error);
+    replySyncError = error instanceof Error ? error.message : String(error);
+  }
+
   let result: Awaited<ReturnType<typeof processPendingCampaignWork>>;
 
   try {
@@ -37,7 +51,7 @@ async function handleCron(request: Request) {
         runsCreated: 0,
         runsProcessed: 0,
         recipientJobsProcessed: 0,
-        repliesSynced: 0,
+        repliesSynced: replySync.repliesStored,
         hasRemainingWork: false,
         errors: [
           {
@@ -50,20 +64,12 @@ async function handleCron(request: Request) {
     );
   }
 
-  let replySync = {
-    repliesStored: 0,
-    sendersChecked: 0,
-    sendersFailed: 0
-  };
   const errors: Array<{ scope: string; id?: string; message: string }> = [...result.errors];
 
-  try {
-    replySync = await syncConnectedSenderReplies();
-  } catch (error) {
-    console.error("[campaign-cron] Reply sync failed.", error);
+  if (replySyncError || replySync.sendersFailed > 0) {
     errors.push({
       scope: "reply-sync",
-      message: error instanceof Error ? error.message : String(error)
+      message: replySyncError ?? `${replySync.sendersFailed} sender reply sync${replySync.sendersFailed === 1 ? "" : "s"} failed.`
     });
   }
 

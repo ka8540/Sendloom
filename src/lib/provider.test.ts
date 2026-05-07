@@ -54,6 +54,7 @@ describe("gmail provider", () => {
       to: "recipient@example.com",
       subject: "Scope migration test",
       html: "<p>Hello from Sendloom</p>",
+      messageIdHeader: "<sendloom-test@example.com>",
       attachments: [
         {
           fileName: "hello.txt",
@@ -83,14 +84,13 @@ describe("gmail provider", () => {
 
     const mimeMessage = Buffer.from(payload.raw, "base64url").toString("utf8");
     expect(mimeMessage).toContain("Subject: Scope migration test");
+    expect(mimeMessage).toContain("Message-ID: <sendloom-test@example.com>");
     expect(mimeMessage).toContain("To: recipient@example.com");
     expect(mimeMessage).toContain("hello.txt");
 
-    expect(result).toEqual({
-      data: {
-        id: "gmail-message-id"
-      }
-    });
+    expect(result.data.id).toBe("gmail-message-id");
+    expect(result.data.messageIdHeader).toBe("<sendloom-test@example.com>");
+    expect(result.data.threadId).toBeUndefined();
   });
 
   it("surfaces reconnect guidance when the refresh token is no longer valid", async () => {

@@ -180,6 +180,54 @@ select.fieldControl option {
   line-height: 1.55;
 }
 
+.followUpEditor {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.inlineToggle,
+.followUpModeRow label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--text);
+  font-weight: 750;
+}
+
+.inlineToggle input,
+.followUpModeRow input {
+  accent-color: var(--accent);
+}
+
+.followUpDelayRow {
+  display: grid;
+  grid-template-columns: minmax(5rem, 0.35fr) minmax(0, 1fr);
+  gap: 0.65rem;
+  align-items: center;
+}
+
+.followUpDelayRow span {
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.followUpModeRow {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.followUpModeRow label {
+  min-height: 2.65rem;
+  padding: 0.62rem 0.72rem;
+  border-radius: 8px;
+  border: 1px solid var(--field-border);
+  background: var(--field-bg);
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 .warningText {
   color: var(--warning);
   font-size: 0.88rem;
@@ -307,5 +355,10 @@ select.fieldControl option {
   .attachmentToolbar,
   .attachmentRowActions {
     justify-content: flex-start;
+  }
+
+  .followUpDelayRow,
+  .followUpModeRow {
+    grid-template-columns: 1fr;
   }
 }

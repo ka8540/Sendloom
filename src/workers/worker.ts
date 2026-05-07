@@ -49,7 +49,7 @@ const sendWorker = new Worker(
       }
     });
 
-    if (["SENT", "SUPPRESSED", "INVALID"].includes(recipientJob.status)) {
+    if (["SENT", "SUPPRESSED", "INVALID", "OPENED", "CLICKED", "BOUNCED", "COMPLAINED"].includes(recipientJob.status)) {
       return;
     }
 
@@ -107,7 +107,9 @@ const sendWorker = new Worker(
       await markRecipientAttempt({
         jobId,
         status: "SENT",
-        providerMessageId: response.data?.id
+        providerMessageId: response.data?.id,
+        providerThreadId: response.data?.threadId,
+        messageIdHeader: response.data?.messageIdHeader
       });
     } catch (error) {
       const message = getUserSafeGmailSendError(error);

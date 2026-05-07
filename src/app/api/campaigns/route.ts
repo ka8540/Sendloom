@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { createForbiddenApiResponse, getApiRestrictionMessage, requireApiUser } from "@/lib/api-auth";
 import { getAttachmentFilesFromFormData } from "@/lib/campaign-attachments";
+import { validateFollowUpConfig } from "@/lib/campaign-followups";
 import { prisma } from "@/lib/db";
 import { GMAIL_RECONNECT_ERROR } from "@/lib/provider";
 import { storeUpload } from "@/lib/storage";
@@ -49,6 +50,10 @@ const schema = z.object({
   templateId: z.string(),
   senderProfileId: z.string(),
   scheduleRule: scheduleRuleSchema,
+  followUpEnabled: z.boolean().optional(),
+  followUpTemplateId: z.string().nullable().optional(),
+  followUpDelayDays: z.number().int().nullable().optional(),
+  followUpSendMode: z.string().nullable().optional(),
   autoLaunch: z.boolean().optional()
 });
 
@@ -60,6 +65,8 @@ export async function POST(request: Request) {
 
   const formData = await request.formData();
   const attachmentFiles = getAttachmentFilesFromFormData(formData);
+  const rawFollowUpDelayDays = String(formData.get("followUpDelayDays") ?? "").trim();
+  const followUpDelayDays = rawFollowUpDelayDays ? Number.parseInt(rawFollowUpDelayDays, 10) : null;
   const payload = schema.parse({
     name: formData.get("name"),
     importId: formData.get("importId"),
@@ -67,6 +74,10 @@ export async function POST(request: Request) {
     templateId: formData.get("templateId"),
     senderProfileId: formData.get("senderProfileId"),
     scheduleRule: JSON.parse(String(formData.get("scheduleRule") ?? "{}")),
+    followUpEnabled: formData.get("followUpEnabled") === "true",
+    followUpTemplateId: String(formData.get("followUpTemplateId") ?? "").trim() || null,
+    followUpDelayDays: Number.isFinite(followUpDelayDays) ? followUpDelayDays : null,
+    followUpSendMode: String(formData.get("followUpSendMode") ?? "").trim() || null,
     autoLaunch: formData.get("autoLaunch") === "true"
   });
 
@@ -98,6 +109,39 @@ export async function POST(request: Request) {
       },
       { status: 400 }
     );
+  }
+
+  const followUpTemplate = payload.followUpEnabled && payload.followUpTemplateId
+    ? await prisma.template.findFirst({
+        where: {
+          id: payload.followUpTemplateId,
+          userId: auth.user.id
+        },
+        select: {
+          subject: true
+        }
+      })
+    : null;
+
+  if (payload.followUpEnabled && payload.followUpTemplateId && !followUpTemplate) {
+    return NextResponse.json({ error: "Select a follow-up template." }, { status: 400 });
+  }
+
+  const followUpValidation = validateFollowUpConfig(
+    {
+      enabled: payload.followUpEnabled,
+      templateId: payload.followUpTemplateId,
+      delayDays: payload.followUpDelayDays,
+      sendMode: payload.followUpSendMode
+    },
+    {
+      followUpTemplateSubject: followUpTemplate?.subject ?? null,
+      validateTemplateSubject: true
+    }
+  );
+
+  if (!followUpValidation.ok) {
+    return NextResponse.json({ error: followUpValidation.error }, { status: 400 });
   }
 
   let attachments:
@@ -134,13 +178,22 @@ export async function POST(request: Request) {
     }
   }
 
-  const campaign = await createCampaignDraft(
-    {
-      ...payload,
-      attachments
-    },
-    auth.user.id
-  );
+  let campaign: Awaited<ReturnType<typeof createCampaignDraft>>;
+  try {
+    campaign = await createCampaignDraft(
+      {
+        ...payload,
+        followUp: followUpValidation.config,
+        attachments
+      },
+      auth.user.id
+    );
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Campaign creation failed." },
+      { status: 400 }
+    );
+  }
 
   if (payload.autoLaunch && payload.scheduleRule.type === "immediate") {
     await validateCampaign(campaign.id, auth.user.id);

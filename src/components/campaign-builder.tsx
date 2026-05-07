@@ -1,6 +1,6 @@
 "use client";
 
-import { FilePlus2, FileText, Trash2 } from "lucide-react";
+import { FilePlus2, FileText, MailPlus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
@@ -12,6 +12,10 @@ import styles from "./campaign-builder.module.css";
 type Option = {
   id: string;
   label: string;
+};
+
+type TemplateOption = Option & {
+  subject: string;
 };
 
 type MappingOption = Option & {
@@ -31,7 +35,7 @@ const weekdayOptions = [
 export function CampaignBuilder(props: {
   imports: Option[];
   mappings: MappingOption[];
-  templates: Option[];
+  templates: TemplateOption[];
   senders: Option[];
   disconnectedSenderCount?: number;
   reconnectHref?: string;
@@ -44,6 +48,16 @@ export function CampaignBuilder(props: {
   const [scheduleType, setScheduleType] = useState("immediate");
   const [frequency, setFrequency] = useState("weekly");
   const [selectedWeekdays, setSelectedWeekdays] = useState<number[]>([1]);
+  const [followUpEnabled, setFollowUpEnabled] = useState(false);
+  const [followUpTemplateId, setFollowUpTemplateId] = useState(props.templates[0]?.id ?? "");
+  const [followUpDelayDays, setFollowUpDelayDays] = useState("3");
+  const [followUpSendMode, setFollowUpSendMode] = useState<"SAME_THREAD" | "NEW_EMAIL">("SAME_THREAD");
+  const [fieldErrors, setFieldErrors] = useState<{
+    followUpTemplateId?: string;
+    followUpDelayDays?: string;
+    followUpSendMode?: string;
+    followUpSubject?: string;
+  }>({});
   const browserTimeZone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "America/New_York", []);
   const [selectedTimeZone, setSelectedTimeZone] = useState(browserTimeZone);
   const [selectedMappingId, setSelectedMappingId] = useState(() => {
@@ -126,6 +140,7 @@ export function CampaignBuilder(props: {
     const scheduleType = String(formData.get("scheduleType"));
     const scheduleTimeZone = String(formData.get("scheduleTimeZone") || browserTimeZone);
     const autoLaunch = scheduleType === "immediate";
+    const nextFieldErrors: typeof fieldErrors = {};
     let scheduleRule:
       | {
           type: "recurring";
@@ -174,10 +189,43 @@ export function CampaignBuilder(props: {
 
       formData.set("scheduleRule", JSON.stringify(scheduleRule));
       formData.set("autoLaunch", String(autoLaunch));
+      formData.set("followUpEnabled", String(followUpEnabled));
+      formData.set("followUpTemplateId", followUpEnabled ? followUpTemplateId : "");
+      formData.set("followUpDelayDays", followUpEnabled ? followUpDelayDays : "");
+      formData.set("followUpSendMode", followUpEnabled ? followUpSendMode : "");
 
       if (scheduleRule.type === "recurring" && scheduleRule.frequency === "weekly" && !selectedWeekdays.length) {
         throw new Error("Select at least one day.");
       }
+
+      if (followUpEnabled) {
+        const delayDays = Number.parseInt(followUpDelayDays, 10);
+        const selectedFollowUpTemplate = props.templates.find((template) => template.id === followUpTemplateId);
+
+        if (!followUpTemplateId) {
+          nextFieldErrors.followUpTemplateId = "Select a follow-up template.";
+        }
+
+        if (!Number.isInteger(delayDays) || delayDays < 1) {
+          nextFieldErrors.followUpDelayDays = "Enter a delay of at least 1 day.";
+        }
+
+        if (!followUpSendMode) {
+          nextFieldErrors.followUpSendMode = "Choose how the follow-up should be sent.";
+        }
+
+        if (followUpSendMode === "NEW_EMAIL" && !selectedFollowUpTemplate?.subject.trim()) {
+          nextFieldErrors.followUpSubject = "New email follow-ups require a subject.";
+        }
+
+        if (Object.keys(nextFieldErrors).length) {
+          setFieldErrors(nextFieldErrors);
+          setState({ pending: false });
+          return;
+        }
+      }
+
+      setFieldErrors({});
     } catch (error) {
       setState({
         pending: false,
@@ -209,6 +257,11 @@ export function CampaignBuilder(props: {
     setFrequency("weekly");
     setSelectedWeekdays([1]);
     setSelectedTimeZone(browserTimeZone);
+    setFollowUpEnabled(false);
+    setFollowUpTemplateId(props.templates[0]?.id ?? "");
+    setFollowUpDelayDays("3");
+    setFollowUpSendMode("SAME_THREAD");
+    setFieldErrors({});
     router.refresh();
     setState({ pending: false });
   }
@@ -281,6 +334,98 @@ export function CampaignBuilder(props: {
           ) : null}
         </div>
       ) : null}
+      <div className={styles.followUpComposer}>
+        <div className={styles.followUpHeader}>
+          <div className={styles.followUpTitle}>
+            <MailPlus aria-hidden="true" />
+            <label htmlFor="followUpEnabled">Add follow-up email</label>
+          </div>
+          <input
+            id="followUpEnabled"
+            name="followUpEnabled"
+            type="checkbox"
+            checked={followUpEnabled}
+            onChange={(event) => {
+              setFollowUpEnabled(event.target.checked);
+              setFieldErrors({});
+            }}
+          />
+        </div>
+        {followUpEnabled ? (
+          <div className={styles.followUpGrid}>
+            <div className="field">
+              <label htmlFor="followUpTemplateId">Follow-up template</label>
+              <select
+                id="followUpTemplateId"
+                name="followUpTemplateId"
+                value={followUpTemplateId}
+                onChange={(event) => {
+                  setFollowUpTemplateId(event.target.value);
+                  setFieldErrors((current) => ({ ...current, followUpTemplateId: undefined, followUpSubject: undefined }));
+                }}
+                aria-invalid={Boolean(fieldErrors.followUpTemplateId)}
+              >
+                <option value="">{hasTemplates ? "Choose the follow-up email" : "Create a template first"}</option>
+                {renderOptions(props.templates)}
+              </select>
+              {fieldErrors.followUpTemplateId ? <span className={styles.fieldError}>{fieldErrors.followUpTemplateId}</span> : null}
+            </div>
+            <div className="field">
+              <label htmlFor="followUpDelayDays">Send follow-up after</label>
+              <div className={styles.delayControl}>
+                <input
+                  id="followUpDelayDays"
+                  name="followUpDelayDays"
+                  type="number"
+                  min="1"
+                  max="60"
+                  value={followUpDelayDays}
+                  onChange={(event) => {
+                    setFollowUpDelayDays(event.target.value);
+                    setFieldErrors((current) => ({ ...current, followUpDelayDays: undefined }));
+                  }}
+                  aria-invalid={Boolean(fieldErrors.followUpDelayDays)}
+                />
+                <span>days after first email</span>
+              </div>
+              {fieldErrors.followUpDelayDays ? <span className={styles.fieldError}>{fieldErrors.followUpDelayDays}</span> : null}
+            </div>
+            <div className={`field ${styles.sendModeField}`}>
+              <span className={styles.sendModeLabel}>Send as</span>
+              <div className={styles.sendModeGroup}>
+                <label className={`${styles.sendModeOption}${followUpSendMode === "SAME_THREAD" ? ` ${styles.sendModeOptionSelected}` : ""}`}>
+                  <input
+                    type="radio"
+                    name="followUpSendMode"
+                    value="SAME_THREAD"
+                    checked={followUpSendMode === "SAME_THREAD"}
+                    onChange={() => {
+                      setFollowUpSendMode("SAME_THREAD");
+                      setFieldErrors((current) => ({ ...current, followUpSendMode: undefined, followUpSubject: undefined }));
+                    }}
+                  />
+                  <span>Same email thread</span>
+                </label>
+                <label className={`${styles.sendModeOption}${followUpSendMode === "NEW_EMAIL" ? ` ${styles.sendModeOptionSelected}` : ""}`}>
+                  <input
+                    type="radio"
+                    name="followUpSendMode"
+                    value="NEW_EMAIL"
+                    checked={followUpSendMode === "NEW_EMAIL"}
+                    onChange={() => {
+                      setFollowUpSendMode("NEW_EMAIL");
+                      setFieldErrors((current) => ({ ...current, followUpSendMode: undefined, followUpSubject: undefined }));
+                    }}
+                  />
+                  <span>New email</span>
+                </label>
+              </div>
+              {fieldErrors.followUpSendMode ? <span className={styles.fieldError}>{fieldErrors.followUpSendMode}</span> : null}
+              {fieldErrors.followUpSubject ? <span className={styles.fieldError}>{fieldErrors.followUpSubject}</span> : null}
+            </div>
+          </div>
+        ) : null}
+      </div>
       <div className="field">
         <label htmlFor="attachments">Optional attachments</label>
         <input

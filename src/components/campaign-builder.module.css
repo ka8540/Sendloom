@@ -196,6 +196,111 @@
   line-height: 1.5;
 }
 
+.followUpComposer {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1rem;
+  border: 1px solid var(--field-border);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface-muted) 86%, transparent);
+}
+
+.followUpHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.followUpTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.followUpTitle svg {
+  width: 1rem;
+  height: 1rem;
+  color: var(--accent);
+}
+
+.followUpHeader input[type="checkbox"] {
+  width: 1.15rem;
+  height: 1.15rem;
+  accent-color: var(--accent);
+}
+
+.followUpGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(11rem, 0.7fr);
+  gap: 0.85rem;
+}
+
+.delayControl {
+  display: grid;
+  grid-template-columns: minmax(5rem, 0.42fr) minmax(0, 1fr);
+  gap: 0.65rem;
+  align-items: center;
+}
+
+.delayControl span {
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.sendModeField {
+  grid-column: 1 / -1;
+}
+
+.sendModeLabel {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.sendModeGroup {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.sendModeOption {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 2.7rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--field-border);
+  border-radius: 8px;
+  background: var(--field-bg);
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.sendModeOption input {
+  accent-color: var(--accent);
+}
+
+.sendModeOptionSelected {
+  border-color: color-mix(in srgb, var(--accent) 58%, var(--field-border));
+  background: color-mix(in srgb, var(--accent-soft) 60%, var(--field-bg));
+  color: var(--text);
+}
+
+.fieldError {
+  color: var(--warning);
+  font-size: 0.86rem;
+  font-weight: 750;
+  line-height: 1.45;
+}
+
 .attachmentFooter {
   border-top: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
   padding-top: 0.8rem;
@@ -257,6 +362,12 @@
   .attachmentHeader {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .followUpGrid,
+  .sendModeGroup,
+  .delayControl {
+    grid-template-columns: 1fr;
   }
 
   .addButton {

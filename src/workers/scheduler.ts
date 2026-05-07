@@ -11,10 +11,10 @@ async function tick() {
   ticking = true;
 
   try {
+    const replySync = await syncConnectedSenderReplies();
     const result = await processPendingCampaignWork({
       maxDurationMs: 55_000
     });
-    const replySync = await syncConnectedSenderReplies();
 
     if (
       result.dueCampaignsFound > 0 ||

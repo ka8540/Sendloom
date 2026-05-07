@@ -1,3 +1,5 @@
+import crypto from "node:crypto";
+
 import MailComposer from "nodemailer/lib/mail-composer";
 
 import { env } from "@/lib/env";
@@ -29,6 +31,10 @@ type SendArgs = {
   html: string;
   sender: SenderAuth;
   attachments?: EmailAttachment[];
+  gmailThreadId?: string | null;
+  messageIdHeader?: string | null;
+  inReplyTo?: string | null;
+  references?: string | null;
 };
 
 const GMAIL_RECONNECT_PATTERNS = [
@@ -43,6 +49,7 @@ const GMAIL_RECONNECT_PATTERNS = [
 
 type GmailSendApiResponse = {
   id?: string;
+  threadId?: string;
   error?: {
     code?: number;
     message?: string;
@@ -94,12 +101,24 @@ function getAttachmentPayload(attachment: EmailAttachment) {
   };
 }
 
+function getSenderDomain(sender: SenderAuth) {
+  const domain = sender.fromEmail.split("@")[1]?.trim().toLowerCase();
+  return domain && /^[a-z0-9.-]+$/i.test(domain) ? domain : "sendloom.local";
+}
+
+export function createMessageIdHeader(sender: SenderAuth) {
+  return `<sendloom-${crypto.randomUUID()}@${getSenderDomain(sender)}>`;
+}
+
 async function buildRawGmailMessage(args: SendArgs) {
   const composer = new MailComposer({
     from: args.from,
     to: args.to,
     subject: args.subject,
     html: args.html,
+    messageId: args.messageIdHeader ?? undefined,
+    inReplyTo: args.inReplyTo ?? undefined,
+    references: args.references ?? undefined,
     attachments: args.attachments?.map(getAttachmentPayload)
   });
 
@@ -135,14 +154,17 @@ async function getGoogleAccessToken(sender: SenderAuth) {
   return tokens.access_token;
 }
 
-async function sendGmailMessage(raw: string, accessToken: string) {
+async function sendGmailMessage(raw: string, accessToken: string, gmailThreadId?: string | null) {
   const response = await fetch(GOOGLE_GMAIL_SEND_URL, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({ raw })
+    body: JSON.stringify({
+      raw,
+      ...(gmailThreadId ? { threadId: gmailThreadId } : {})
+    })
   });
 
   const payload = (await response.json().catch(() => ({}))) as GmailSendApiResponse;
@@ -161,12 +183,18 @@ export async function sendEmail(args: SendArgs) {
 
   try {
     const accessToken = await getGoogleAccessToken(args.sender);
-    const rawMessage = await buildRawGmailMessage(args);
-    const response = await sendGmailMessage(rawMessage, accessToken);
+    const messageIdHeader = args.messageIdHeader ?? createMessageIdHeader(args.sender);
+    const rawMessage = await buildRawGmailMessage({
+      ...args,
+      messageIdHeader
+    });
+    const response = await sendGmailMessage(rawMessage, accessToken, args.gmailThreadId);
 
     return {
       data: {
-        id: response.id
+        id: response.id,
+        threadId: response.threadId,
+        messageIdHeader
       }
     };
   } catch (error) {

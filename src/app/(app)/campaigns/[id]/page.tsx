@@ -43,6 +43,8 @@ type CampaignTemplateSnapshot = {
   }>;
 };
 
+type FollowUpStatusCounts = Partial<Record<string, number>>;
+
 type ScheduleConfig =
   | {
       type: "immediate";
@@ -133,6 +135,77 @@ function formatScheduleLabel(scheduleType?: string | null, scheduleConfig?: Sche
   }
 
   return "Sends immediately when launched";
+}
+
+function formatFollowUpMode(value?: string | null) {
+  return value === "NEW_EMAIL" ? "New email" : "Same email thread";
+}
+
+function formatFollowUpSummary(campaign: {
+  followUpEnabled: boolean;
+  followUpDelayDays: number | null;
+  followUpSendMode: string | null;
+  followUpTemplate?: { name: string } | null;
+}) {
+  if (!campaign.followUpEnabled) {
+    return "Off";
+  }
+
+  const delay = campaign.followUpDelayDays ?? 1;
+  return `${campaign.followUpTemplate?.name ?? "Follow-up template"} • ${delay} day${delay === 1 ? "" : "s"} • ${formatFollowUpMode(campaign.followUpSendMode)}`;
+}
+
+function formatFollowUpCounts(counts: FollowUpStatusCounts) {
+  const sent = counts.SENT ?? 0;
+  const scheduled = (counts.SCHEDULED ?? 0) + (counts.RETRYING ?? 0) + (counts.PROCESSING ?? 0);
+  const skipped = counts.SKIPPED ?? 0;
+  const failed = counts.FAILED ?? 0;
+
+  if (!sent && !scheduled && !skipped && !failed) {
+    return "No follow-ups scheduled yet.";
+  }
+
+  return `${sent} sent • ${scheduled} scheduled • ${skipped} skipped • ${failed} failed`;
+}
+
+function getFollowUpJobDetail(job: {
+  followUpStatus: string;
+  followUpScheduledAt: Date | null;
+  followUpSentAt: Date | null;
+  followUpSkippedReason: string | null;
+  followUpLastError: string | null;
+}) {
+  if (job.followUpStatus === "NONE") {
+    return null;
+  }
+
+  if (job.followUpStatus === "SENT") {
+    return `Follow-up sent${job.followUpSentAt ? ` ${formatDateTime(job.followUpSentAt)}` : ""}`;
+  }
+
+  if (job.followUpStatus === "SKIPPED") {
+    return job.followUpSkippedReason === "REPLIED"
+      ? "Follow-up skipped: replied"
+      : `Follow-up skipped: ${humanize(job.followUpSkippedReason)}`;
+  }
+
+  if (job.followUpStatus === "FAILED") {
+    return `Follow-up failed${job.followUpLastError ? `: ${job.followUpLastError}` : ""}`;
+  }
+
+  if (job.followUpStatus === "PROCESSING") {
+    return "Follow-up sending";
+  }
+
+  if (job.followUpStatus === "RETRYING") {
+    return `Follow-up retry scheduled${job.followUpScheduledAt ? ` after ${formatDateTime(job.followUpScheduledAt)}` : ""}`;
+  }
+
+  if (job.followUpScheduledAt && job.followUpScheduledAt <= new Date()) {
+    return "Follow-up due";
+  }
+
+  return `Follow-up scheduled${job.followUpScheduledAt ? ` ${formatDateTime(job.followUpScheduledAt)}` : ""}`;
 }
 
 function getScheduleConfig(scheduleType?: string | null, scheduleConfig?: ScheduleConfig | null): ScheduleConfig {
@@ -322,6 +395,11 @@ export default async function CampaignDetailPage({
     include: {
       import: true,
       template: true,
+      followUpTemplate: {
+        select: {
+          name: true
+        }
+      },
       senderProfile: true,
       runs: {
         orderBy: { createdAt: "desc" },
@@ -356,7 +434,7 @@ export default async function CampaignDetailPage({
   }
 
   const requestedRecipientPage = Number.parseInt(String(resolvedSearchParams.recipientsPage ?? "1"), 10);
-  const [imports, mappings, templates, senders, recipientJobCount, replyCountAggregate] = await Promise.all([
+  const [imports, mappings, templates, senders, recipientJobCount, replyCountAggregate, followUpStatusAggregate] = await Promise.all([
     prisma.import.findMany({
       where: { userId: user.id },
       orderBy: { updatedAt: "desc" },
@@ -381,7 +459,8 @@ export default async function CampaignDetailPage({
       select: {
         id: true,
         name: true,
-        format: true
+        format: true,
+        subject: true
       }
     }),
     prisma.senderProfile.findMany({
@@ -414,7 +493,16 @@ export default async function CampaignDetailPage({
           _sum: {
             replyCount: 0
           }
+        }),
+    latestRun
+      ? prisma.recipientJob.groupBy({
+          by: ["followUpStatus"],
+          where: {
+            campaignRunId: latestRun.id
+          },
+          _count: true
         })
+      : Promise.resolve([])
   ]);
 
   const senderNeedsReconnect = !campaign.senderProfile.oauthRefreshToken;
@@ -429,6 +517,9 @@ export default async function CampaignDetailPage({
   );
   const issueCount = (latestRun?.failedCount ?? 0) + (latestRun?.invalidCount ?? 0);
   const replyCount = replyCountAggregate._sum.replyCount ?? 0;
+  const followUpCounts: FollowUpStatusCounts = Object.fromEntries(
+    followUpStatusAggregate.map((entry) => [entry.followUpStatus, entry._count])
+  );
   const deliveredCount = getDeliveredCount(latestRun);
   const launchButtonLabel = isActiveRun
     ? "Run is processing"
@@ -494,7 +585,8 @@ export default async function CampaignDetailPage({
   const templateOptions = templates.map((template) => ({
     id: template.id,
     label: template.name,
-    description: `${humanize(template.format)} template`
+    description: `${humanize(template.format)} template`,
+    subject: template.subject
   }));
 
   const senderOptions = senders.map((sender) => ({
@@ -511,6 +603,10 @@ export default async function CampaignDetailPage({
     importId: campaign.importId,
     templateId: campaign.templateId,
     senderProfileId: campaign.senderProfileId,
+    followUpEnabled: campaign.followUpEnabled,
+    followUpTemplateId: campaign.followUpTemplateId ?? "",
+    followUpDelayDays: campaign.followUpDelayDays ?? 3,
+    followUpSendMode: campaign.followUpSendMode ?? "SAME_THREAD",
     attachments: attachments.map((attachment, index) => ({
       id: `existing-${index}`,
       sourceIndex: index,
@@ -613,6 +709,14 @@ export default async function CampaignDetailPage({
               <div>
                 <span>Current run</span>
                 <strong>{latestRun ? humanize(latestRun.status) : "Not launched yet"}</strong>
+              </div>
+            </div>
+            <div className={styles.summaryItem}>
+              <Mail aria-hidden="true" />
+              <div>
+                <span>Follow-ups</span>
+                <strong>{formatFollowUpSummary(campaign)}</strong>
+                {campaign.followUpEnabled && latestRun ? <em>{formatFollowUpCounts(followUpCounts)}</em> : null}
               </div>
             </div>
           </div>
@@ -724,12 +828,14 @@ export default async function CampaignDetailPage({
                     : RECIPIENT_SUCCESS_STATUSES.has(job.status)
                       ? "Delivered successfully"
                       : "No error reported";
+                  const followUpDetail = campaign.followUpEnabled ? getFollowUpJobDetail(job) : null;
 
                   return (
                     <div key={job.id} className={styles.jobRow}>
                       <div className={styles.jobIdentity}>
                         <strong>{job.recipientEmail}</strong>
                         <span>{job.recipientName || "Name unavailable"}</span>
+                        {followUpDetail ? <span className={styles.jobFollowUp}>{followUpDetail}</span> : null}
                       </div>
                       <div className={styles.jobTrail}>
                         <span className={styles.jobStatusBadge}>{humanize(job.status)}</span>

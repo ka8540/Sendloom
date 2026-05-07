@@ -6,6 +6,7 @@ type ValidationParams = {
   rows: Array<{ rowIndex: number; email: string | null; payload: Record<string, unknown> }>;
   templateSubject: string;
   templateHtml: string;
+  additionalTemplates?: Array<{ subject: string; html: string }>;
   suppressedEmails: Set<string>;
 };
 
@@ -14,7 +15,11 @@ export function buildValidationReport(params: ValidationParams): CampaignValidat
   const seen = new Set<string>();
   const requiredVariables = new Set([
     ...extractTemplateVariables(params.templateSubject),
-    ...extractTemplateVariables(params.templateHtml)
+    ...extractTemplateVariables(params.templateHtml),
+    ...(params.additionalTemplates ?? []).flatMap((template) => [
+      ...extractTemplateVariables(template.subject),
+      ...extractTemplateVariables(template.html)
+    ])
   ]);
 
   let validRecipients = 0;

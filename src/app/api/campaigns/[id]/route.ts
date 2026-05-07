@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { createForbiddenApiResponse, getApiRestrictionMessage, requireApiUser } from "@/lib/api-auth";
+import { validateFollowUpConfig } from "@/lib/campaign-followups";
 import type { EmailAttachment } from "@/lib/provider";
 import { GMAIL_RECONNECT_ERROR } from "@/lib/provider";
 import { storeUpload } from "@/lib/storage";
@@ -113,6 +114,12 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   const importId = String(formData.get("importId") ?? "").trim();
   const templateId = String(formData.get("templateId") ?? "").trim();
   const senderProfileId = String(formData.get("senderProfileId") ?? "").trim();
+  const followUpEnabled = formData.get("followUpEnabled") === "true";
+  const followUpTemplateId = String(formData.get("followUpTemplateId") ?? "").trim() || null;
+  const rawFollowUpDelayDays = String(formData.get("followUpDelayDays") ?? "").trim();
+  const parsedFollowUpDelayDays = rawFollowUpDelayDays ? Number.parseInt(rawFollowUpDelayDays, 10) : null;
+  const followUpDelayDays = Number.isFinite(parsedFollowUpDelayDays) ? parsedFollowUpDelayDays : null;
+  const followUpSendMode = String(formData.get("followUpSendMode") ?? "").trim() || null;
   const rawPlan = String(formData.get("attachmentsPlan") ?? "[]");
 
   if (!name || !importId || !templateId || !senderProfileId) {
@@ -136,6 +143,39 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     Array.isArray((campaign.templateSnapshot as { attachments?: unknown }).attachments)
       ? ((campaign.templateSnapshot as { attachments?: EmailAttachment[] }).attachments ?? [])
       : [];
+
+  const followUpTemplate = followUpEnabled && followUpTemplateId
+    ? await prisma.template.findFirst({
+        where: {
+          id: followUpTemplateId,
+          userId: auth.user.id
+        },
+        select: {
+          subject: true
+        }
+      })
+    : null;
+
+  if (followUpEnabled && followUpTemplateId && !followUpTemplate) {
+    return NextResponse.json({ error: "Select a follow-up template." }, { status: 400 });
+  }
+
+  const followUpValidation = validateFollowUpConfig(
+    {
+      enabled: followUpEnabled,
+      templateId: followUpTemplateId,
+      delayDays: followUpDelayDays,
+      sendMode: followUpSendMode
+    },
+    {
+      followUpTemplateSubject: followUpTemplate?.subject ?? null,
+      validateTemplateSubject: true
+    }
+  );
+
+  if (!followUpValidation.ok) {
+    return NextResponse.json({ error: followUpValidation.error }, { status: 400 });
+  }
 
   let plan: AttachmentPlanItem[] = [];
   try {
@@ -191,6 +231,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
         importId,
         templateId,
         senderProfileId,
+        followUp: followUpValidation.config,
         attachments
       },
       auth.user.id

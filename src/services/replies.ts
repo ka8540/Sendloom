@@ -31,6 +31,9 @@ type CandidateRecipientJob = {
   id: string;
   campaignRunId: string;
   providerMessageId: string | null;
+  messageIdHeader: string | null;
+  followUpProviderMessageId: string | null;
+  followUpMessageIdHeader: string | null;
   repliedAt: Date | null;
   replyCount: number;
 };
@@ -84,9 +87,18 @@ async function listSenderCandidates(maxSenders: number) {
             some: {
               recipientJobs: {
                 some: {
-                  providerMessageId: {
-                    not: null
-                  }
+                  OR: [
+                    {
+                      providerMessageId: {
+                        not: null
+                      }
+                    },
+                    {
+                      followUpProviderMessageId: {
+                        not: null
+                      }
+                    }
+                  ]
                 }
               }
             }
@@ -152,6 +164,9 @@ async function listCandidateRecipientJobs(senderProfileId: string) {
       id: true,
       campaignRunId: true,
       providerMessageId: true,
+      messageIdHeader: true,
+      followUpProviderMessageId: true,
+      followUpMessageIdHeader: true,
       repliedAt: true,
       replyCount: true
     },
@@ -163,12 +178,21 @@ async function listCandidateRecipientJobs(senderProfileId: string) {
 
   const jobsByMessageId = new Map<string, CandidateRecipientJob>();
   for (const job of jobs) {
-    const normalizedId = normalizeMessageId(job.providerMessageId);
-    if (!normalizedId || jobsByMessageId.has(normalizedId)) {
-      continue;
-    }
+    const messageIds = [
+      job.providerMessageId,
+      job.messageIdHeader,
+      job.followUpProviderMessageId,
+      job.followUpMessageIdHeader
+    ];
 
-    jobsByMessageId.set(normalizedId, job);
+    for (const messageId of messageIds) {
+      const normalizedId = normalizeMessageId(messageId);
+      if (!normalizedId || jobsByMessageId.has(normalizedId)) {
+        continue;
+      }
+
+      jobsByMessageId.set(normalizedId, job);
+    }
   }
 
   return jobsByMessageId;
