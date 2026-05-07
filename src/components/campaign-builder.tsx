@@ -278,6 +278,7 @@ export function CampaignBuilder(props: {
   const hasImports = props.imports.length > 0;
   const canCreateSequence = hasSenders && hasTemplates && hasImports && Boolean(selectedMappingId);
   const needsReconnect = !hasSenders && (props.disconnectedSenderCount ?? 0) > 0;
+  const followUpErrors = Array.from(new Set(Object.values(fieldErrors).filter((error): error is string => Boolean(error))));
 
   return (
     <form className="form" onSubmit={onSubmit}>
@@ -338,63 +339,78 @@ export function CampaignBuilder(props: {
         <div className={styles.followUpHeader}>
           <div className={styles.followUpTitle}>
             <MailPlus aria-hidden="true" />
-            <label htmlFor="followUpEnabled">Add follow-up email</label>
+            <span>Add follow-up email</span>
           </div>
-          <input
-            id="followUpEnabled"
-            name="followUpEnabled"
-            type="checkbox"
-            checked={followUpEnabled}
-            onChange={(event) => {
-              setFollowUpEnabled(event.target.checked);
-              setFieldErrors({});
-            }}
-          />
+          <label className={styles.followUpSwitch}>
+            <input
+              id="followUpEnabled"
+              name="followUpEnabled"
+              type="checkbox"
+              checked={followUpEnabled}
+              aria-label="Enable follow-up email"
+              onChange={(event) => {
+                setFollowUpEnabled(event.target.checked);
+                setFieldErrors({});
+              }}
+            />
+            <span className={styles.switchTrack} aria-hidden="true">
+              <span className={styles.switchThumb} />
+            </span>
+            <span className={styles.switchText}>{followUpEnabled ? "On" : "Off"}</span>
+          </label>
         </div>
         {followUpEnabled ? (
-          <div className={styles.followUpGrid}>
-            <div className="field">
-              <label htmlFor="followUpTemplateId">Follow-up template</label>
-              <select
-                id="followUpTemplateId"
-                name="followUpTemplateId"
-                value={followUpTemplateId}
-                onChange={(event) => {
-                  setFollowUpTemplateId(event.target.value);
-                  setFieldErrors((current) => ({ ...current, followUpTemplateId: undefined, followUpSubject: undefined }));
-                }}
-                aria-invalid={Boolean(fieldErrors.followUpTemplateId)}
-              >
-                <option value="">{hasTemplates ? "Choose the follow-up email" : "Create a template first"}</option>
-                {renderOptions(props.templates)}
-              </select>
-              {fieldErrors.followUpTemplateId ? <span className={styles.fieldError}>{fieldErrors.followUpTemplateId}</span> : null}
-            </div>
-            <div className="field">
-              <label htmlFor="followUpDelayDays">Send follow-up after</label>
-              <div className={styles.delayControl}>
-                <input
-                  id="followUpDelayDays"
-                  name="followUpDelayDays"
-                  type="number"
-                  min="1"
-                  max="60"
-                  value={followUpDelayDays}
-                  onChange={(event) => {
-                    setFollowUpDelayDays(event.target.value);
-                    setFieldErrors((current) => ({ ...current, followUpDelayDays: undefined }));
-                  }}
-                  aria-invalid={Boolean(fieldErrors.followUpDelayDays)}
-                />
-                <span>days after first email</span>
+          <div className={styles.followUpBody}>
+            {followUpErrors.length ? (
+              <div className={styles.followUpError} role="alert">
+                {followUpErrors.map((error) => (
+                  <span key={error}>{error}</span>
+                ))}
               </div>
-              {fieldErrors.followUpDelayDays ? <span className={styles.fieldError}>{fieldErrors.followUpDelayDays}</span> : null}
-            </div>
-            <div className={`field ${styles.sendModeField}`}>
-              <span className={styles.sendModeLabel}>Send as</span>
-              <div className={styles.sendModeGroup}>
-                <label className={`${styles.sendModeOption}${followUpSendMode === "SAME_THREAD" ? ` ${styles.sendModeOptionSelected}` : ""}`}>
+            ) : null}
+            <div className={styles.followUpGrid}>
+              <div className={`field ${styles.followUpTemplateField}`}>
+                <label htmlFor="followUpTemplateId">Follow-up template</label>
+                <select
+                  id="followUpTemplateId"
+                  name="followUpTemplateId"
+                  value={followUpTemplateId}
+                  onChange={(event) => {
+                    setFollowUpTemplateId(event.target.value);
+                    setFieldErrors((current) => ({ ...current, followUpTemplateId: undefined, followUpSubject: undefined }));
+                  }}
+                  aria-invalid={Boolean(fieldErrors.followUpTemplateId)}
+                >
+                  <option value="">{hasTemplates ? "Choose the follow-up email" : "Create a template first"}</option>
+                  {renderOptions(props.templates)}
+                </select>
+              </div>
+              <div className={`field ${styles.followUpDelayField}`}>
+                <label htmlFor="followUpDelayDays">Send follow-up after</label>
+                <div className={styles.delayControl}>
                   <input
+                    id="followUpDelayDays"
+                    name="followUpDelayDays"
+                    type="number"
+                    min="1"
+                    max="60"
+                    value={followUpDelayDays}
+                    onChange={(event) => {
+                      setFollowUpDelayDays(event.target.value);
+                      setFieldErrors((current) => ({ ...current, followUpDelayDays: undefined }));
+                    }}
+                    aria-invalid={Boolean(fieldErrors.followUpDelayDays)}
+                  />
+                  <span>days after first email</span>
+                </div>
+              </div>
+            </div>
+            <fieldset className={styles.sendModeField}>
+              <legend className={styles.sendModeLabel}>Send as</legend>
+              <div className={styles.sendModeGroup}>
+                <label className={`${styles.sendModeCard}${followUpSendMode === "SAME_THREAD" ? ` ${styles.sendModeCardSelected}` : ""}`}>
+                  <input
+                    className={styles.sendModeInput}
                     type="radio"
                     name="followUpSendMode"
                     value="SAME_THREAD"
@@ -404,10 +420,15 @@ export function CampaignBuilder(props: {
                       setFieldErrors((current) => ({ ...current, followUpSendMode: undefined, followUpSubject: undefined }));
                     }}
                   />
-                  <span>Same email thread</span>
+                  <span className={styles.sendModeIndicator} aria-hidden="true" />
+                  <span className={styles.sendModeCopy}>
+                    <span className={styles.sendModeTitle}>Same email thread</span>
+                    <span className={styles.sendModeHelp}>Send as a reply in the original Gmail thread.</span>
+                  </span>
                 </label>
-                <label className={`${styles.sendModeOption}${followUpSendMode === "NEW_EMAIL" ? ` ${styles.sendModeOptionSelected}` : ""}`}>
+                <label className={`${styles.sendModeCard}${followUpSendMode === "NEW_EMAIL" ? ` ${styles.sendModeCardSelected}` : ""}`}>
                   <input
+                    className={styles.sendModeInput}
                     type="radio"
                     name="followUpSendMode"
                     value="NEW_EMAIL"
@@ -417,12 +438,14 @@ export function CampaignBuilder(props: {
                       setFieldErrors((current) => ({ ...current, followUpSendMode: undefined, followUpSubject: undefined }));
                     }}
                   />
-                  <span>New email</span>
+                  <span className={styles.sendModeIndicator} aria-hidden="true" />
+                  <span className={styles.sendModeCopy}>
+                    <span className={styles.sendModeTitle}>New email</span>
+                    <span className={styles.sendModeHelp}>Send as a separate email with its own subject.</span>
+                  </span>
                 </label>
               </div>
-              {fieldErrors.followUpSendMode ? <span className={styles.fieldError}>{fieldErrors.followUpSendMode}</span> : null}
-              {fieldErrors.followUpSubject ? <span className={styles.fieldError}>{fieldErrors.followUpSubject}</span> : null}
-            </div>
+            </fieldset>
           </div>
         ) : null}
       </div>
