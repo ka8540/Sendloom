@@ -200,11 +200,14 @@ export function CampaignScheduleEditor(props: {
   useErrorToastEffect(error, "Schedule update failed");
 
   useEffect(() => {
+    if (isOpen) {
+      return;
+    }
+
     setDraft(createDraft(props.initialSchedule, browserTimeZone));
     setError(null);
     setPending(false);
-    setIsOpen(false);
-  }, [browserTimeZone, props.initialSchedule]);
+  }, [browserTimeZone, isOpen, props.initialSchedule]);
 
   useEffect(() => {
     if (!isOpen) {
