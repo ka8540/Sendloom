@@ -1,11 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FilePlus2, Loader2, Lock, PencilLine, Save, Trash2, Upload, X } from "lucide-react";
+import { FilePlus2, Loader2, Lock, PencilLine, Save, Trash2, Upload } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import { AttachmentPreview } from "@/components/attachment-preview";
-import { CampaignFollowUpEditor } from "@/components/campaign-follow-up-editor";
 import { useErrorToastEffect } from "@/components/error-toast-provider";
 import { getAttachmentPreviewKind, type AttachmentPreviewKind } from "@/lib/attachments";
 import styles from "./campaign-setup-editor.module.css";
@@ -82,9 +81,7 @@ function formatFollowUpMode(value: SetupState["followUpSendMode"]) {
 
 export function CampaignSetupEditor(props: {
   campaignId: string;
-  canEditFollowUps: boolean;
   currentSenderNeedsReconnect: boolean;
-  followUpEditDisabledMessage: string;
   importOptions: SetupOption[];
   initialSetup: SetupState;
   isLocked: boolean;
@@ -315,6 +312,7 @@ export function CampaignSetupEditor(props: {
   const currentTemplateDescription = props.templateOptions.find((option) => option.id === draftSetup.templateId)?.description;
   const currentSenderDescription = props.senderOptions.find((option) => option.id === draftSetup.senderProfileId)?.description;
   const currentFollowUpTemplateDescription = props.templateOptions.find((option) => option.id === savedSetup.followUpTemplateId)?.description;
+  const draftFollowUpTemplateDescription = props.templateOptions.find((option) => option.id === draftSetup.followUpTemplateId)?.description;
 
   const previewItems = useMemo(
     () =>
@@ -340,23 +338,31 @@ export function CampaignSetupEditor(props: {
             <>
               <button
                 type="button"
-                className={`field-icon-button ${styles.headerIconAction}`}
-                data-tooltip="Cancel editing"
+                className={`${styles.headerActionButton} ${styles.headerActionButtonSecondary}`}
                 aria-label="Cancel editing"
                 onClick={resetDraft}
                 disabled={pending}
               >
-                <X aria-hidden="true" />
+                Cancel
               </button>
               <button
                 type="button"
-                className={`field-icon-button ${styles.headerIconAction} ${styles.headerIconActionPrimary}`}
-                data-tooltip="Save changes"
+                className={`${styles.headerActionButton} ${styles.headerActionButtonPrimary}`}
                 aria-label="Save changes"
                 onClick={() => void saveSetup()}
                 disabled={pending}
               >
-                {pending ? <Loader2 aria-hidden="true" className={styles.spin} /> : <Save aria-hidden="true" />}
+                {pending ? (
+                  <>
+                    <Loader2 aria-hidden="true" className={styles.spin} />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save aria-hidden="true" />
+                    Save
+                  </>
+                )}
               </button>
             </>
           ) : (
@@ -364,7 +370,7 @@ export function CampaignSetupEditor(props: {
                 type="button"
                 className={`field-icon-button ${styles.headerIconAction}`}
                 data-tooltip={props.isLocked ? "Editing locked while run is active" : "Edit setup"}
-                aria-label={props.isLocked ? "Editing locked while run is active" : "Edit setup"}
+                aria-label={props.isLocked ? "Editing locked while run is active" : "Edit sequence setup"}
                 onClick={() => {
                   setSuccess(null);
                   setEditing(true);
@@ -479,25 +485,86 @@ export function CampaignSetupEditor(props: {
         </div>
 
         <div className={`${styles.fieldCard} ${styles.followUpCard}`}>
-          <div className={styles.fieldCardHeader}>
-            <span className={styles.fieldLabel}>Follow-up</span>
-            <CampaignFollowUpEditor
-              ariaLabel={savedSetup.followUpEnabled ? "Edit follow-up settings" : "Add follow-up email"}
-              campaignId={props.campaignId}
-              canEdit={props.canEditFollowUps}
-              disabledMessage={props.followUpEditDisabledMessage}
-              enableOnOpen={!savedSetup.followUpEnabled}
-              initialSettings={{
-                enabled: savedSetup.followUpEnabled,
-                templateId: savedSetup.followUpTemplateId,
-                delayDays: savedSetup.followUpDelayDays,
-                sendMode: savedSetup.followUpSendMode
-              }}
-              label={savedSetup.followUpEnabled ? "Edit" : "Add follow-up"}
-              templateOptions={props.templateOptions}
-            />
-          </div>
-          {savedSetup.followUpEnabled ? (
+          <span className={styles.fieldLabel}>Follow-up</span>
+          {editing ? (
+            <div className={styles.followUpEditor}>
+              <label className={styles.followUpToggle}>
+                <input
+                  aria-label="Enable follow-up email"
+                  type="checkbox"
+                  checked={draftSetup.followUpEnabled}
+                  onChange={(event) => updateDraft("followUpEnabled", event.target.checked)}
+                />
+                <span className={styles.followUpToggleTrack} aria-hidden="true">
+                  <span className={styles.followUpToggleThumb} />
+                </span>
+                <span>Add follow-up email</span>
+              </label>
+
+              {draftSetup.followUpEnabled ? (
+                <div className={styles.followUpFields}>
+                  <label className={styles.followUpField}>
+                    <span className={styles.subFieldLabel}>Follow-up template</span>
+                    <select
+                      className={styles.fieldControl}
+                      value={draftSetup.followUpTemplateId}
+                      onChange={(event) => updateDraft("followUpTemplateId", event.target.value)}
+                    >
+                      <option value="">Choose the follow-up email</option>
+                      {props.templateOptions.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.label}
+                          {option.description ? ` - ${option.description}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <div className={styles.followUpField}>
+                    <span className={styles.subFieldLabel}>Send follow-up after</span>
+                    <div className={styles.followUpDelayControl}>
+                      <input
+                        type="number"
+                        min="1"
+                        max="60"
+                        value={draftSetup.followUpDelayDays}
+                        onChange={(event) => updateDraft("followUpDelayDays", Number.parseInt(event.target.value, 10) || 0)}
+                      />
+                      <span>days after first email</span>
+                    </div>
+                  </div>
+
+                  <fieldset className={styles.followUpModeField}>
+                    <legend className={styles.subFieldLabel}>Send as</legend>
+                    <div className={styles.followUpModeGroup}>
+                      <label className={`${styles.followUpModeOption}${draftSetup.followUpSendMode === "SAME_THREAD" ? ` ${styles.followUpModeOptionSelected}` : ""}`}>
+                        <input
+                          type="radio"
+                          name="setupFollowUpSendMode"
+                          checked={draftSetup.followUpSendMode === "SAME_THREAD"}
+                          onChange={() => updateDraft("followUpSendMode", "SAME_THREAD")}
+                        />
+                        <span>Same email thread</span>
+                      </label>
+                      <label className={`${styles.followUpModeOption}${draftSetup.followUpSendMode === "NEW_EMAIL" ? ` ${styles.followUpModeOptionSelected}` : ""}`}>
+                        <input
+                          type="radio"
+                          name="setupFollowUpSendMode"
+                          checked={draftSetup.followUpSendMode === "NEW_EMAIL"}
+                          onChange={() => updateDraft("followUpSendMode", "NEW_EMAIL")}
+                        />
+                        <span>New email</span>
+                      </label>
+                    </div>
+                  </fieldset>
+
+                  {draftFollowUpTemplateDescription ? <span className={styles.fieldHint}>{draftFollowUpTemplateDescription}</span> : null}
+                </div>
+              ) : (
+                <span className={styles.fieldHint}>Follow-ups are off. Save this setup to keep future follow-ups disabled.</span>
+              )}
+            </div>
+          ) : savedSetup.followUpEnabled ? (
             <div className={styles.followUpSummary}>
               <strong className={styles.fieldValue}>{getOptionLabel(props.templateOptions, savedSetup.followUpTemplateId)}</strong>
               <span className={styles.fieldHint}>
@@ -508,8 +575,8 @@ export function CampaignSetupEditor(props: {
             </div>
           ) : (
             <div className={styles.followUpEmpty}>
-              <strong className={styles.fieldValue}>No follow-up email configured.</strong>
-              <span className={styles.fieldHint}>Add a follow-up email for future launches from this sequence.</span>
+              <strong className={styles.fieldValue}>No follow-up configured</strong>
+              <span className={styles.fieldHint}>Use Edit setup to add a follow-up email.</span>
             </div>
           )}
         </div>

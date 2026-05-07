@@ -22,7 +22,6 @@ import { ErrorToastOnMount } from "@/components/error-toast-provider";
 import { LocalDateTime } from "@/components/local-date-time";
 import { getAttachmentPreviewKind } from "@/lib/attachments";
 import { requireOperatorUser } from "@/lib/auth";
-import { FOLLOW_UP_EDIT_DISABLED_MESSAGE, canEditCampaignFollowUps } from "@/lib/campaign-followup-edit";
 import { SCHEDULE_EDIT_DISABLED_MESSAGE, canEditCampaignSchedule } from "@/lib/campaign-schedule-edit";
 import { isCampaignSetupLocked } from "@/lib/campaign-setup-lock";
 import { prisma } from "@/lib/db";
@@ -557,12 +556,6 @@ export default async function CampaignDetailPage({
     latestRunStartedAt: latestRun?.startedAt ?? null,
     latestRunStatus: latestRun?.status ?? null
   });
-  const canEditFollowUps = canEditCampaignFollowUps({
-    campaignStatus: campaign.status,
-    latestRunRecipientJobCount: recipientJobCount,
-    latestRunStartedAt: latestRun?.startedAt ?? null,
-    latestRunStatus: latestRun?.status ?? null
-  });
   const latestMappingsByImport = new Map<string, (typeof mappings)[number]>();
 
   for (const mapping of mappings) {
@@ -807,9 +800,7 @@ export default async function CampaignDetailPage({
         <article className={styles.panel}>
           <CampaignSetupEditor
             campaignId={campaign.id}
-            canEditFollowUps={canEditFollowUps}
             currentSenderNeedsReconnect={senderNeedsReconnect}
-            followUpEditDisabledMessage={FOLLOW_UP_EDIT_DISABLED_MESSAGE}
             importOptions={importOptions}
             initialSetup={initialSetup}
             isLocked={setupLocked}
