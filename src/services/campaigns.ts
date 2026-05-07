@@ -8,7 +8,8 @@ import {
   validateFollowUpConfig,
   type NormalizedFollowUpConfig
 } from "@/lib/campaign-followups";
-import { CAMPAIGN_SETUP_LOCKED_RUN_STATUSES, isCampaignSetupLocked } from "@/lib/campaign-setup-lock";
+import { FOLLOW_UP_EDIT_DISABLED_MESSAGE, canEditCampaignFollowUps } from "@/lib/campaign-followup-edit";
+import { isCampaignSetupLocked } from "@/lib/campaign-setup-lock";
 import { SCHEDULE_EDIT_DISABLED_MESSAGE, canEditCampaignSchedule } from "@/lib/campaign-schedule-edit";
 import {
   planScheduledCampaignRun,
@@ -105,6 +106,9 @@ const DEFAULT_MAX_RUNS = 5;
 const DEFAULT_MAX_RECIPIENT_JOBS_PER_RUN = 25;
 const TERMINAL_RECIPIENT_STATUSES = new Set(["SENT", "SUPPRESSED", "INVALID", "OPENED", "CLICKED", "BOUNCED", "COMPLAINED"]);
 const FOLLOW_UP_ACTIVE_STATUSES = new Set<FollowUpJobStatus>(["SCHEDULED", "PROCESSING", "RETRYING"]);
+const FOLLOW_UP_CANCELABLE_STATUSES = ["SCHEDULED", "RETRYING"] as const satisfies ReadonlyArray<FollowUpJobStatus>;
+const FOLLOW_UP_RESCHEDULABLE_STATUSES = ["NONE", "SCHEDULED", "RETRYING"] as const satisfies ReadonlyArray<FollowUpJobStatus>;
+const FOLLOW_UP_ORIGINAL_DELIVERED_STATUSES = ["SENT", "OPENED", "CLICKED"] as const;
 const FOLLOW_UP_RETRY_DELAY_MINUTES = 5;
 
 function getErrorMessage(error: unknown) {
@@ -503,6 +507,116 @@ export async function updateCampaignAttachments(
   return { id: campaign.id, attachments };
 }
 
+async function reconcileFutureFollowUpJobs(
+  tx: Prisma.TransactionClient,
+  campaignId: string,
+  followUp: NormalizedFollowUpConfig,
+  campaignRunId?: string | null
+) {
+  const campaignRunFilter = {
+    campaignId,
+    ...(campaignRunId ? { id: campaignRunId } : {})
+  };
+
+  if (!followUp.enabled) {
+    await tx.recipientJob.updateMany({
+      where: {
+        campaignRun: campaignRunFilter,
+        followUpSentAt: null,
+        followUpStatus: {
+          in: [...FOLLOW_UP_CANCELABLE_STATUSES]
+        }
+      },
+      data: {
+        followUpStatus: "NONE",
+        followUpScheduledAt: null,
+        followUpNextRetryAt: null,
+        followUpRetryCount: 0,
+        followUpLastError: null,
+        followUpSkippedReason: null
+      }
+    });
+    return;
+  }
+
+  await tx.recipientJob.updateMany({
+    where: {
+      campaignRun: campaignRunFilter,
+      followUpSentAt: null,
+      followUpStatus: {
+        in: [...FOLLOW_UP_CANCELABLE_STATUSES]
+      },
+      repliedAt: {
+        not: null
+      }
+    },
+    data: {
+      followUpStatus: "SKIPPED",
+      followUpScheduledAt: null,
+      followUpNextRetryAt: null,
+      followUpRetryCount: 0,
+      followUpLastError: null,
+      followUpSkippedReason: "REPLIED"
+    }
+  });
+
+  const jobsToSchedule = await tx.recipientJob.findMany({
+    where: {
+      campaignRun: campaignRunFilter,
+      status: {
+        in: [...FOLLOW_UP_ORIGINAL_DELIVERED_STATUSES]
+      },
+      firstEmailSentAt: {
+        not: null
+      },
+      followUpSentAt: null,
+      repliedAt: null,
+      followUpStatus: {
+        in: [...FOLLOW_UP_RESCHEDULABLE_STATUSES]
+      }
+    },
+    select: {
+      firstEmailSentAt: true,
+      id: true
+    }
+  });
+
+  for (const job of jobsToSchedule) {
+    if (!job.firstEmailSentAt) {
+      continue;
+    }
+
+    await tx.recipientJob.update({
+      where: { id: job.id },
+      data: {
+        followUpStatus: "SCHEDULED",
+        followUpScheduledAt: addFollowUpDelay(job.firstEmailSentAt, followUp.delayDays),
+        followUpNextRetryAt: null,
+        followUpRetryCount: 0,
+        followUpLastError: null,
+        followUpSkippedReason: null
+      }
+    });
+  }
+}
+
+function didFollowUpConfigChange(
+  campaign: {
+    followUpDelayDays: number | null;
+    followUpEnabled: boolean;
+    followUpSendMode: string | null;
+    followUpTemplateId: string | null;
+  },
+  followUp: NormalizedFollowUpConfig
+) {
+  return (
+    campaign.followUpEnabled !== followUp.enabled ||
+    campaign.followUpTemplateId !== (followUp.enabled ? followUp.templateId : null) ||
+    campaign.followUpDelayDays !== (followUp.enabled ? followUp.delayDays : null) ||
+    campaign.followUpSendMode !== (followUp.enabled ? followUp.sendMode : null)
+  );
+}
+
 export async function updateCampaignSetup(
   input: {
     campaignId: string;
@@ -530,14 +644,10 @@ export async function updateCampaignSetup(
       followUpSendMode: true,
       templateSnapshot: true,
       runs: {
-        where: {
-          status: {
-            in: [...CAMPAIGN_SETUP_LOCKED_RUN_STATUSES]
-          }
-        },
         orderBy: { createdAt: "desc" },
         take: 1,
         select: {
+          id: true,
           status: true
         }
       }
@@ -626,48 +736,140 @@ export async function updateCampaignSetup(
     attachments: input.attachments
   };
 
+  const followUpChanged = didFollowUpConfigChange(campaign, input.followUp);
   const structuralSetupChanged =
     campaign.importId !== importRecord.id ||
     campaign.templateId !== template.id ||
     campaign.senderProfileId !== senderProfile.id ||
-    campaign.followUpEnabled !== input.followUp.enabled ||
-    campaign.followUpTemplateId !== (input.followUp.enabled ? input.followUp.templateId : null) ||
-    campaign.followUpDelayDays !== (input.followUp.enabled ? input.followUp.delayDays : null) ||
-    campaign.followUpSendMode !== (input.followUp.enabled ? input.followUp.sendMode : null) ||
+    followUpChanged ||
     JSON.stringify(currentTemplateSnapshot.attachments ?? []) !== JSON.stringify(input.attachments);
 
-  return prisma.campaign.update({
-    where: { id: campaign.id },
-    data: {
-      name: input.name,
-      importId: importRecord.id,
-      mappingId: mapping.id,
-      templateId: template.id,
-      senderProfileId: senderProfile.id,
-      followUpEnabled: input.followUp.enabled,
-      followUpTemplateId: input.followUp.enabled ? input.followUp.templateId : null,
-      followUpDelayDays: input.followUp.enabled ? input.followUp.delayDays : null,
-      followUpSendMode: input.followUp.enabled ? input.followUp.sendMode : null,
-      followUpTemplateSnapshot: input.followUp.enabled && followUpTemplate
-        ? (snapshotTemplate(followUpTemplate) as Prisma.InputJsonValue)
-        : Prisma.JsonNull,
-      templateSnapshot: nextTemplateSnapshot as Prisma.InputJsonValue,
-      mappingSnapshot: {
-        reservedFieldMap: mapping.reservedFieldMap,
-        variableMap: mapping.variableMap
-      } as Prisma.InputJsonValue,
-      senderSnapshot: {
-        fromEmail: senderProfile.fromEmail,
-        name: senderProfile.name
-      } as Prisma.InputJsonValue,
-      ...(structuralSetupChanged
-        ? {
-            status: "DRAFT" as const,
-            lastValidatedAt: null,
-            validationSnapshot: Prisma.JsonNull
-          }
-        : {})
+  return prisma.$transaction(async (tx) => {
+    const updatedCampaign = await tx.campaign.update({
+      where: { id: campaign.id },
+      data: {
+        name: input.name,
+        importId: importRecord.id,
+        mappingId: mapping.id,
+        templateId: template.id,
+        senderProfileId: senderProfile.id,
+        followUpEnabled: input.followUp.enabled,
+        followUpTemplateId: input.followUp.enabled ? input.followUp.templateId : null,
+        followUpDelayDays: input.followUp.enabled ? input.followUp.delayDays : null,
+        followUpSendMode: input.followUp.enabled ? input.followUp.sendMode : null,
+        followUpTemplateSnapshot: input.followUp.enabled && followUpTemplate
+          ? (snapshotTemplate(followUpTemplate) as Prisma.InputJsonValue)
+          : Prisma.JsonNull,
+        templateSnapshot: nextTemplateSnapshot as Prisma.InputJsonValue,
+        mappingSnapshot: {
+          reservedFieldMap: mapping.reservedFieldMap,
+          variableMap: mapping.variableMap
+        } as Prisma.InputJsonValue,
+        senderSnapshot: {
+          fromEmail: senderProfile.fromEmail,
+          name: senderProfile.name
+        } as Prisma.InputJsonValue,
+        ...(structuralSetupChanged
+          ? {
+              status: "DRAFT" as const,
+              lastValidatedAt: null,
+              validationSnapshot: Prisma.JsonNull
+            }
+          : {})
+      }
+    });
+
+    if (followUpChanged) {
+      await reconcileFutureFollowUpJobs(tx, campaign.id, input.followUp, campaign.runs[0]?.id ?? null);
     }
+
+    return updatedCampaign;
+  });
+}
+
+export async function updateCampaignFollowUpSettings(
+  input: {
+    campaignId: string;
+    followUp: NormalizedFollowUpConfig;
+  },
+  userId?: string
+) {
+  const campaign = await prisma.campaign.findFirstOrThrow({
+    where: campaignOwnershipFilter(input.campaignId, userId),
+    select: {
+      followUpDelayDays: true,
+      followUpEnabled: true,
+      followUpSendMode: true,
+      followUpTemplateId: true,
+      id: true,
+      status: true,
+      runs: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        select: {
+          id: true,
+          startedAt: true,
+          status: true,
+          _count: {
+            select: {
+              recipientJobs: true
+            }
+          }
+        }
+      }
+    }
+  });
+  const latestRun = campaign.runs[0] ?? null;
+
+  if (
+    !canEditCampaignFollowUps({
+      campaignStatus: campaign.status,
+      latestRunRecipientJobCount: latestRun?._count.recipientJobs ?? 0,
+      latestRunStartedAt: latestRun?.startedAt ?? null,
+      latestRunStatus: latestRun?.status ?? null
+    })
+  ) {
+    throw new Error(FOLLOW_UP_EDIT_DISABLED_MESSAGE);
+  }
+
+  const followUpTemplate = input.followUp.enabled
+    ? await prisma.template.findFirst({
+        where: {
+          id: input.followUp.templateId,
+          ...(userId ? { userId } : {})
+        }
+      })
+    : null;
+
+  if (input.followUp.enabled && !followUpTemplate) {
+    throw new Error("Select a follow-up template.");
+  }
+
+  if (input.followUp.enabled && input.followUp.sendMode === "NEW_EMAIL" && !followUpTemplate?.subject.trim()) {
+    throw new Error("New email follow-ups require a subject.");
+  }
+
+  const followUpChanged = didFollowUpConfigChange(campaign, input.followUp);
+
+  return prisma.$transaction(async (tx) => {
+    const updatedCampaign = await tx.campaign.update({
+      where: { id: campaign.id },
+      data: {
+        followUpEnabled: input.followUp.enabled,
+        followUpTemplateId: input.followUp.enabled ? input.followUp.templateId : null,
+        followUpDelayDays: input.followUp.enabled ? input.followUp.delayDays : null,
+        followUpSendMode: input.followUp.enabled ? input.followUp.sendMode : null,
+        followUpTemplateSnapshot: input.followUp.enabled && followUpTemplate
+          ? (snapshotTemplate(followUpTemplate) as Prisma.InputJsonValue)
+          : Prisma.JsonNull
+      }
+    });
+
+    if (followUpChanged) {
+      await reconcileFutureFollowUpJobs(tx, campaign.id, input.followUp, latestRun?.id ?? null);
+    }
+
+    return updatedCampaign;
   });
 }
 

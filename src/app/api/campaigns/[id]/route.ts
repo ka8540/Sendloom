@@ -9,7 +9,7 @@ import { storeUpload } from "@/lib/storage";
 import { writeAuditLog } from "@/lib/audit";
 import { prisma } from "@/lib/db";
 import type { ScheduleRule } from "@/lib/types";
-import { deleteCampaign, updateCampaignSchedule, updateCampaignSetup } from "@/services/campaigns";
+import { deleteCampaign, updateCampaignFollowUpSettings, updateCampaignSchedule, updateCampaignSetup } from "@/services/campaigns";
 
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
@@ -107,6 +107,72 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       }
 
       return NextResponse.json({ error: "Could not save the sequence schedule." }, { status: 500 });
+    }
+  }
+
+  if (formData.has("followUpSettings")) {
+    const followUpEnabled = formData.get("followUpEnabled") === "true";
+    const followUpTemplateId = String(formData.get("followUpTemplateId") ?? "").trim() || null;
+    const rawFollowUpDelayDays = String(formData.get("followUpDelayDays") ?? "").trim();
+    const parsedFollowUpDelayDays = rawFollowUpDelayDays ? Number.parseInt(rawFollowUpDelayDays, 10) : null;
+    const followUpDelayDays = Number.isFinite(parsedFollowUpDelayDays) ? parsedFollowUpDelayDays : null;
+    const followUpSendMode = String(formData.get("followUpSendMode") ?? "").trim() || null;
+    const followUpTemplate = followUpEnabled && followUpTemplateId
+      ? await prisma.template.findFirst({
+          where: {
+            id: followUpTemplateId,
+            userId: auth.user.id
+          },
+          select: {
+            subject: true
+          }
+        })
+      : null;
+
+    if (followUpEnabled && followUpTemplateId && !followUpTemplate) {
+      return NextResponse.json({ error: "Select a follow-up template." }, { status: 400 });
+    }
+
+    const followUpValidation = validateFollowUpConfig(
+      {
+        enabled: followUpEnabled,
+        templateId: followUpTemplateId,
+        delayDays: followUpDelayDays,
+        sendMode: followUpSendMode
+      },
+      {
+        followUpTemplateSubject: followUpTemplate?.subject ?? null,
+        validateTemplateSubject: true
+      }
+    );
+
+    if (!followUpValidation.ok) {
+      return NextResponse.json({ error: followUpValidation.error }, { status: 400 });
+    }
+
+    try {
+      const updatedCampaign = await updateCampaignFollowUpSettings(
+        {
+          campaignId: id,
+          followUp: followUpValidation.config
+        },
+        auth.user.id
+      );
+
+      await writeAuditLog({
+        actorEmail: auth.user.email,
+        action: "campaign.follow_up.update",
+        entityType: "campaign",
+        entityId: id
+      });
+
+      return NextResponse.json({ campaign: updatedCampaign });
+    } catch (error) {
+      if (error instanceof Error) {
+        return NextResponse.json({ error: error.message }, { status: 400 });
+      }
+
+      return NextResponse.json({ error: "Could not save the follow-up settings." }, { status: 500 });
     }
   }
 

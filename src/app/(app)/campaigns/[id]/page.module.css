@@ -161,6 +161,15 @@
   background: var(--surface);
 }
 
+.summaryItemWithAction {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.summaryItemWithAction > button svg {
+  margin-top: 0;
+  color: currentColor;
+}
+
 .summaryItem svg {
   width: 1rem;
   height: 1rem;
@@ -618,6 +627,15 @@
 @media (max-width: 720px) {
   .metrics {
     grid-template-columns: 1fr;
+  }
+
+  .summaryItemWithAction {
+    grid-template-columns: auto 1fr;
+  }
+
+  .summaryItemWithAction > button {
+    grid-column: 2;
+    justify-self: start;
   }
 
   .jobRow {
