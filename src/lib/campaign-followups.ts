@@ -123,6 +123,23 @@ export function canProcessFollowUpsForRunStatus(status: string) {
   return FOLLOW_UP_PROCESSABLE_RUN_STATUSES.includes(status as (typeof FOLLOW_UP_PROCESSABLE_RUN_STATUSES)[number]);
 }
 
+export function getFollowUpSendSubject(args: {
+  sendMode: FollowUpSendMode;
+  originalSubject: string;
+  renderedFollowUpSubject: string;
+}) {
+  if (args.sendMode === "NEW_EMAIL") {
+    return args.renderedFollowUpSubject.trim();
+  }
+
+  const originalSubject = args.originalSubject.trim();
+  if (!originalSubject) {
+    return "";
+  }
+
+  return /^re:/i.test(originalSubject) ? originalSubject : `Re: ${originalSubject}`;
+}
+
 export function mergeReferencesHeader(currentReferences?: string | null, messageIdHeader?: string | null) {
   const references = [currentReferences, messageIdHeader]
     .flatMap((value) => (value ? value.split(/\s+/) : []))

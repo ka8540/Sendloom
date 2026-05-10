@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   addFollowUpDelay,
   canProcessFollowUpsForRunStatus,
+  getFollowUpSendSubject,
   mergeReferencesHeader,
   validateFollowUpConfig
 } from "@/lib/campaign-followups";
@@ -92,6 +93,33 @@ describe("campaign follow-up validation", () => {
     expect(canProcessFollowUpsForRunStatus("COMPLETED")).toBe(true);
     expect(canProcessFollowUpsForRunStatus("RUNNING")).toBe(true);
     expect(canProcessFollowUpsForRunStatus("CANCELLED")).toBe(false);
+  });
+
+  it("keeps same-thread follow-ups on the original subject", () => {
+    expect(
+      getFollowUpSendSubject({
+        sendMode: "SAME_THREAD",
+        originalSubject: "Original outreach",
+        renderedFollowUpSubject: "Different follow-up subject"
+      })
+    ).toBe("Re: Original outreach");
+    expect(
+      getFollowUpSendSubject({
+        sendMode: "SAME_THREAD",
+        originalSubject: " ",
+        renderedFollowUpSubject: "Different follow-up subject"
+      })
+    ).toBe("");
+  });
+
+  it("uses the follow-up template subject for new-email follow-ups", () => {
+    expect(
+      getFollowUpSendSubject({
+        sendMode: "NEW_EMAIL",
+        originalSubject: "Original outreach",
+        renderedFollowUpSubject: "Different follow-up subject"
+      })
+    ).toBe("Different follow-up subject");
   });
 
   it("reuses original message metadata for same-thread references", () => {

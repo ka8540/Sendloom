@@ -93,6 +93,47 @@ describe("gmail provider", () => {
     expect(result.data.threadId).toBeUndefined();
   });
 
+  it("sends Gmail replies with thread id and reply headers", async () => {
+    refreshGoogleAccessTokenMock.mockResolvedValue({
+      access_token: "access-token",
+      expires_in: 3600,
+      token_type: "Bearer"
+    });
+
+    vi.mocked(global.fetch).mockResolvedValue(
+      new Response(JSON.stringify({ id: "gmail-reply-id", threadId: "gmail-thread-id" }), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json"
+        }
+      })
+    );
+
+    const result = await sendEmail({
+      from: "Sender Example <sender@example.com>",
+      to: "recipient@example.com",
+      subject: "Re: Original outreach",
+      html: "<p>Following up</p>",
+      gmailThreadId: "gmail-thread-id",
+      inReplyTo: "<original@example.com>",
+      references: "<original@example.com>",
+      sender: {
+        fromEmail: "sender@example.com",
+        oauthRefreshToken: "refresh-token"
+      }
+    });
+
+    const [, request] = vi.mocked(global.fetch).mock.calls[0] ?? [];
+    const payload = JSON.parse(String(request?.body)) as { raw: string; threadId?: string };
+    const mimeMessage = Buffer.from(payload.raw, "base64url").toString("utf8");
+
+    expect(payload.threadId).toBe("gmail-thread-id");
+    expect(mimeMessage).toContain("Subject: Re: Original outreach");
+    expect(mimeMessage).toContain("In-Reply-To: <original@example.com>");
+    expect(mimeMessage).toContain("References: <original@example.com>");
+    expect(result.data.threadId).toBe("gmail-thread-id");
+  });
+
   it("surfaces reconnect guidance when the refresh token is no longer valid", async () => {
     refreshGoogleAccessTokenMock.mockRejectedValue(new Error("invalid_grant"));
 

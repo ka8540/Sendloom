@@ -5,6 +5,7 @@ import {
   addFollowUpDelay,
   canProcessFollowUpsForRunStatus,
   disabledFollowUpConfig,
+  getFollowUpSendSubject,
   mergeReferencesHeader,
   validateFollowUpConfig,
   type NormalizedFollowUpConfig
@@ -1842,7 +1843,11 @@ async function processFollowUpJob(recipientJob: RecipientJobWithContext) {
       fromEmail: string;
       name: string;
     };
-    const subject = renderedMessage.subject || latestJob.subject;
+    const subject = getFollowUpSendSubject({
+      sendMode: followUpConfig.sendMode,
+      originalSubject: latestJob.subject,
+      renderedFollowUpSubject: renderedMessage.subject
+    });
     const references = mergeReferencesHeader(latestJob.referencesHeader, latestJob.messageIdHeader);
     const useThreading = followUpConfig.sendMode === "SAME_THREAD" && (latestJob.messageIdHeader || latestJob.providerThreadId);
 
