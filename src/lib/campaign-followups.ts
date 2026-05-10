@@ -3,6 +3,7 @@ import type { FollowUpSendMode } from "@prisma/client";
 export const FOLLOW_UP_MIN_DELAY_DAYS = 1;
 export const FOLLOW_UP_MAX_DELAY_DAYS = 60;
 export const FOLLOW_UP_SEND_MODES = ["SAME_THREAD", "NEW_EMAIL"] as const;
+export const FOLLOW_UP_PROCESSABLE_RUN_STATUSES = ["QUEUED", "RUNNING", "COMPLETED"] as const;
 
 export type NormalizedFollowUpConfig =
   | {
@@ -116,6 +117,10 @@ export function validateFollowUpConfig(
 
 export function addFollowUpDelay(sentAt: Date, delayDays: number) {
   return new Date(sentAt.getTime() + delayDays * 24 * 60 * 60_000);
+}
+
+export function canProcessFollowUpsForRunStatus(status: string) {
+  return FOLLOW_UP_PROCESSABLE_RUN_STATUSES.includes(status as (typeof FOLLOW_UP_PROCESSABLE_RUN_STATUSES)[number]);
 }
 
 export function mergeReferencesHeader(currentReferences?: string | null, messageIdHeader?: string | null) {

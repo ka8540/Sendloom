@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { isCronRequestAuthorized } from "@/lib/cron-auth";
 import { env } from "@/lib/env";
 import { processPendingCampaignWork } from "@/services/campaigns";
 import { syncConnectedSenderReplies } from "@/services/replies";
@@ -7,14 +8,7 @@ import { syncConnectedSenderReplies } from "@/services/replies";
 export const maxDuration = 60;
 
 function isAuthorized(request: Request) {
-  if (!env.CRON_SECRET) {
-    return true;
-  }
-
-  const authHeader = request.headers.get("authorization");
-  const secretHeader = request.headers.get("x-cron-secret");
-
-  return authHeader === `Bearer ${env.CRON_SECRET}` || secretHeader === env.CRON_SECRET;
+  return isCronRequestAuthorized(request.headers, env.CRON_SECRET);
 }
 
 async function handleCron(request: Request) {

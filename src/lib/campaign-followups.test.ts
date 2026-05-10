@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   addFollowUpDelay,
+  canProcessFollowUpsForRunStatus,
   mergeReferencesHeader,
   validateFollowUpConfig
 } from "@/lib/campaign-followups";
@@ -85,6 +86,12 @@ describe("campaign follow-up validation", () => {
     const sentAt = new Date("2026-05-06T12:00:00.000Z");
 
     expect(addFollowUpDelay(sentAt, 3).toISOString()).toBe("2026-05-09T12:00:00.000Z");
+  });
+
+  it("allows completed runs to process due follow-ups", () => {
+    expect(canProcessFollowUpsForRunStatus("COMPLETED")).toBe(true);
+    expect(canProcessFollowUpsForRunStatus("RUNNING")).toBe(true);
+    expect(canProcessFollowUpsForRunStatus("CANCELLED")).toBe(false);
   });
 
   it("reuses original message metadata for same-thread references", () => {

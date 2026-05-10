@@ -3,6 +3,7 @@ import { Prisma, type CampaignStatus, type FollowUpJobStatus } from "@prisma/cli
 
 import {
   addFollowUpDelay,
+  canProcessFollowUpsForRunStatus,
   disabledFollowUpConfig,
   mergeReferencesHeader,
   validateFollowUpConfig,
@@ -110,6 +111,26 @@ const FOLLOW_UP_CANCELABLE_STATUSES = ["SCHEDULED", "RETRYING"] as const satisfi
 const FOLLOW_UP_RESCHEDULABLE_STATUSES = ["NONE", "SCHEDULED", "RETRYING"] as const satisfies ReadonlyArray<FollowUpJobStatus>;
 const FOLLOW_UP_ORIGINAL_DELIVERED_STATUSES = ["SENT", "OPENED", "CLICKED"] as const;
 const FOLLOW_UP_RETRY_DELAY_MINUTES = 5;
+
+function dueFollowUpJobWhere(now: Date): Prisma.RecipientJobWhereInput {
+  return {
+    followUpSentAt: null,
+    OR: [
+      {
+        followUpStatus: "SCHEDULED",
+        followUpScheduledAt: {
+          lte: now
+        }
+      },
+      {
+        followUpStatus: "RETRYING",
+        followUpNextRetryAt: {
+          lte: now
+        }
+      }
+    ]
+  };
+}
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
@@ -1921,6 +1942,7 @@ export async function processCampaignRun(
   const lockResult = await withRedisLock(`sendloom:campaign-run:${runId}`, RUN_LOCK_TTL_SECONDS, async () => {
     const deadline = getDeadline(args.maxDurationMs);
     const maxRecipientJobs = args.maxRecipientJobs ?? DEFAULT_MAX_RECIPIENT_JOBS_PER_RUN;
+    const now = new Date();
 
     const run = await prisma.campaignRun.findUnique({
       where: { id: runId },
@@ -1933,7 +1955,7 @@ export async function processCampaignRun(
       }
     });
 
-    if (!run || !["QUEUED", "RUNNING"].includes(run.status)) {
+    if (!run) {
       return {
         processedJobs: 0,
         hasRemainingWork: false,
@@ -1941,7 +1963,26 @@ export async function processCampaignRun(
       };
     }
 
-    const isDue = !run.scheduledFor || run.scheduledFor <= new Date();
+    const dueFollowUpCount = canProcessFollowUpsForRunStatus(run.status)
+      ? await prisma.recipientJob.count({
+          where: {
+            campaignRunId: run.id,
+            ...dueFollowUpJobWhere(now)
+          }
+        })
+      : 0;
+    const canProcessOriginalJobs = ["QUEUED", "RUNNING"].includes(run.status);
+    const canProcessDueFollowUps = dueFollowUpCount > 0;
+
+    if (!canProcessOriginalJobs && !canProcessDueFollowUps) {
+      return {
+        processedJobs: 0,
+        hasRemainingWork: false,
+        rateLimited: false
+      };
+    }
+
+    const isDue = canProcessDueFollowUps || !run.scheduledFor || run.scheduledFor <= now;
     if (!isDue) {
       return {
         processedJobs: 0,
@@ -1950,7 +1991,7 @@ export async function processCampaignRun(
       };
     }
 
-    if (run.status === "QUEUED") {
+    if (canProcessOriginalJobs && run.status === "QUEUED") {
       await ensureRunIsStarted(run.id);
       await prisma.campaign.update({
         where: { id: run.campaignId },
@@ -1960,37 +2001,41 @@ export async function processCampaignRun(
       });
     }
 
-    await ensureRecipientJobs(run.campaignId, run.id);
+    if (canProcessOriginalJobs) {
+      await ensureRecipientJobs(run.campaignId, run.id);
+    }
 
-    const candidateJobs = await prisma.recipientJob.findMany({
-      where: {
-        campaignRunId: run.id,
-        OR: [
-          {
-            status: "PENDING"
+    const candidateJobs = canProcessOriginalJobs
+      ? await prisma.recipientJob.findMany({
+          where: {
+            campaignRunId: run.id,
+            OR: [
+              {
+                status: "PENDING"
+              },
+              {
+                status: "RETRYING",
+                nextRetryAt: {
+                  lte: now
+                }
+              }
+            ]
           },
-          {
-            status: "RETRYING",
-            nextRetryAt: {
-              lte: new Date()
-            }
-          }
-        ]
-      },
-      include: {
-        campaignRun: {
           include: {
-            campaign: {
+            campaignRun: {
               include: {
-                senderProfile: true
+                campaign: {
+                  include: {
+                    senderProfile: true
+                  }
+                }
               }
             }
-          }
-        }
-      },
-      orderBy: [{ nextRetryAt: "asc" }, { createdAt: "asc" }],
-      take: maxRecipientJobs
-    });
+          },
+          orderBy: [{ nextRetryAt: "asc" }, { createdAt: "asc" }],
+          take: maxRecipientJobs
+        })
+      : [];
 
     let processedJobs = 0;
     let rateLimited = false;
@@ -2014,20 +2059,7 @@ export async function processCampaignRun(
       const followUpCandidateJobs = await prisma.recipientJob.findMany({
         where: {
           campaignRunId: run.id,
-          OR: [
-            {
-              followUpStatus: "SCHEDULED",
-              followUpScheduledAt: {
-                lte: new Date()
-              }
-            },
-            {
-              followUpStatus: "RETRYING",
-              followUpNextRetryAt: {
-                lte: new Date()
-              }
-            }
-          ]
+          ...dueFollowUpJobWhere(now)
         },
         include: {
           campaignRun: {
@@ -2311,6 +2343,7 @@ export async function processPendingCampaignWork(args: ProcessCampaignWorkArgs =
   const maxRuns = args.maxRuns ?? DEFAULT_MAX_RUNS;
   const maxRecipientJobsPerRun = args.maxRecipientJobsPerRun ?? DEFAULT_MAX_RECIPIENT_JOBS_PER_RUN;
   const errors: CampaignProcessingError[] = [...scheduling.errors];
+  const now = new Date();
   const dueRunWhere: Prisma.CampaignRunWhereInput = {
     ...(args.runId ? { id: args.runId } : {}),
     ...(args.campaignId ? { campaignId: args.campaignId } : {}),
@@ -2337,12 +2370,18 @@ export async function processPendingCampaignWork(args: ProcessCampaignWorkArgs =
       {
         status: "QUEUED",
         scheduledFor: {
-          lte: new Date()
+          lte: now
         }
       },
       {
         status: "QUEUED",
         scheduledFor: null
+      },
+      {
+        status: "COMPLETED",
+        recipientJobs: {
+          some: dueFollowUpJobWhere(now)
+        }
       }
     ]
   };
