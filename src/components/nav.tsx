@@ -11,17 +11,62 @@ import { SendloomLogo } from "@/components/sendloom-logo";
 import { SessionControls } from "@/components/session-controls";
 
 const SIDEBAR_COLLAPSED_STORAGE_KEY = "sendloom.sidebarCollapsed";
+const SIDEBAR_COLLAPSED_COOKIE_NAME = "sendloom_sidebar_collapsed";
+const SIDEBAR_COLLAPSED_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
 const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
-function readStoredSidebarCollapsed() {
+function readStoredCookieSidebarCollapsed() {
   try {
-    return window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === "true";
+    const cookie = document.cookie
+      .split("; ")
+      .find((entry) => entry.startsWith(`${SIDEBAR_COLLAPSED_COOKIE_NAME}=`))
+      ?.split("=")[1];
+
+    if (cookie === "true") {
+      return true;
+    }
+
+    if (cookie === "false") {
+      return false;
+    }
   } catch {
-    return false;
+    return null;
   }
+
+  return null;
+}
+
+function readStoredSidebarCollapsed(fallback: boolean) {
+  const cookieValue = readStoredCookieSidebarCollapsed();
+  if (cookieValue !== null) {
+    return cookieValue;
+  }
+
+  try {
+    const storedValue = window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY);
+
+    if (storedValue === "true") {
+      return true;
+    }
+
+    if (storedValue === "false") {
+      return false;
+    }
+  } catch {
+    return fallback;
+  }
+
+  return fallback;
 }
 
 function storeSidebarCollapsed(collapsed: boolean) {
+  try {
+    document.documentElement.dataset.sidebarCollapsed = collapsed ? "true" : "false";
+    document.cookie = `${SIDEBAR_COLLAPSED_COOKIE_NAME}=${collapsed ? "true" : "false"}; path=/; max-age=${SIDEBAR_COLLAPSED_COOKIE_MAX_AGE}; SameSite=Lax`;
+  } catch {
+    // Keep the current session state usable if cookies are unavailable.
+  }
+
   try {
     window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, collapsed ? "true" : "false");
   } catch {
@@ -29,9 +74,9 @@ function storeSidebarCollapsed(collapsed: boolean) {
   }
 }
 
-export function AppNav({ isAdmin = false }: { isAdmin?: boolean }) {
+export function AppNav({ initialCollapsed = false, isAdmin = false }: { initialCollapsed?: boolean; isAdmin?: boolean }) {
   const pathname = usePathname();
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(initialCollapsed);
   const toggleCollapsed = useCallback(() => {
     setCollapsed((current) => {
       const nextCollapsed = !current;
@@ -42,8 +87,10 @@ export function AppNav({ isAdmin = false }: { isAdmin?: boolean }) {
   }, []);
 
   useIsomorphicLayoutEffect(() => {
-    setCollapsed(readStoredSidebarCollapsed());
-  }, []);
+    const storedCollapsed = readStoredSidebarCollapsed(initialCollapsed);
+    setCollapsed(storedCollapsed);
+    storeSidebarCollapsed(storedCollapsed);
+  }, [initialCollapsed]);
 
   const items: Array<{ href: Route; label: string; icon: LucideIcon }> = isAdmin
     ? [{ href: "/admin" as Route, label: "Admin", icon: ShieldUser }]
