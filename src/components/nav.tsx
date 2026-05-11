@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import type { Route } from "next";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -10,9 +10,41 @@ import { BrandText } from "@/components/brand-text";
 import { SendloomLogo } from "@/components/sendloom-logo";
 import { SessionControls } from "@/components/session-controls";
 
+const SIDEBAR_COLLAPSED_STORAGE_KEY = "sendloom.sidebarCollapsed";
+const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
+
+function readStoredSidebarCollapsed() {
+  try {
+    return window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function storeSidebarCollapsed(collapsed: boolean) {
+  try {
+    window.localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, collapsed ? "true" : "false");
+  } catch {
+    // Keep the in-memory sidebar state usable when storage is unavailable.
+  }
+}
+
 export function AppNav({ isAdmin = false }: { isAdmin?: boolean }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const toggleCollapsed = useCallback(() => {
+    setCollapsed((current) => {
+      const nextCollapsed = !current;
+      storeSidebarCollapsed(nextCollapsed);
+
+      return nextCollapsed;
+    });
+  }, []);
+
+  useIsomorphicLayoutEffect(() => {
+    setCollapsed(readStoredSidebarCollapsed());
+  }, []);
+
   const items: Array<{ href: Route; label: string; icon: LucideIcon }> = isAdmin
     ? [{ href: "/admin" as Route, label: "Admin", icon: ShieldUser }]
     : [
@@ -40,7 +72,7 @@ export function AppNav({ isAdmin = false }: { isAdmin?: boolean }) {
         <button
           className="sidebar-toggle"
           type="button"
-          onClick={() => setCollapsed((current) => !current)}
+          onClick={toggleCollapsed}
           aria-label={collapsed ? "Open sidebar" : "Close sidebar"}
           title={collapsed ? "Open sidebar" : "Close sidebar"}
         >
