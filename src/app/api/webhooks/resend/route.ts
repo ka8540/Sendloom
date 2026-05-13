@@ -5,13 +5,23 @@ import { NextResponse } from "next/server";
 import { env } from "@/lib/env";
 import { processProviderEvent } from "@/services/campaigns";
 
+type ResendWebhookPayload = {
+  type: "email.sent" | "email.delivered" | "email.bounced" | "email.complained" | "email.opened" | "email.clicked";
+  data: {
+    email_id: string;
+  };
+};
+
 function verifySignature(rawBody: string, signature: string | null) {
   if (!signature || !env.RESEND_WEBHOOK_SECRET) {
     return false;
   }
 
   const expected = crypto.createHmac("sha256", env.RESEND_WEBHOOK_SECRET).update(rawBody).digest("hex");
-  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
+  const expectedBuffer = Buffer.from(expected);
+  const signatureBuffer = Buffer.from(signature);
+
+  return expectedBuffer.length === signatureBuffer.length && crypto.timingSafeEqual(expectedBuffer, signatureBuffer);
 }
 
 export async function POST(request: Request) {
@@ -21,12 +31,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid webhook signature." }, { status: 401 });
   }
 
-  const payload = JSON.parse(rawBody) as {
-    type: "email.sent" | "email.delivered" | "email.bounced" | "email.complained" | "email.opened" | "email.clicked";
-    data: {
-      email_id: string;
-    };
-  };
+  let payload: ResendWebhookPayload;
+
+  try {
+    payload = JSON.parse(rawBody) as ResendWebhookPayload;
+  } catch {
+    return NextResponse.json({ error: "Invalid webhook payload." }, { status: 400 });
+  }
 
   const eventMap = {
     "email.sent": "ACCEPTED",
@@ -36,11 +47,16 @@ export async function POST(request: Request) {
     "email.opened": "OPENED",
     "email.clicked": "CLICKED"
   } as const;
+  const eventType = eventMap[payload.type];
+
+  if (!eventType || typeof payload.data?.email_id !== "string") {
+    return NextResponse.json({ error: "Unsupported webhook payload." }, { status: 400 });
+  }
 
   await processProviderEvent({
     provider: "resend",
     providerMessageId: payload.data.email_id,
-    eventType: eventMap[payload.type],
+    eventType,
     payload: payload as unknown as Record<string, unknown>
   });
 

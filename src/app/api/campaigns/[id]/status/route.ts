@@ -2,7 +2,7 @@ import { after } from "next/server";
 import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/api-auth";
-import { getCampaignStatus, processPendingCampaignWork } from "@/services/campaigns";
+import { getCampaignStatus, getOwnedCampaignReference, processUserCampaignWork } from "@/services/campaigns";
 
 export async function GET(_: Request, context: { params: Promise<{ id: string }> }) {
   const auth = await requireApiUser();
@@ -11,8 +11,14 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
   }
 
   const { id } = await context.params;
+  const campaign = await getOwnedCampaignReference(id, auth.user.id);
+  if (!campaign) {
+    return NextResponse.json({ error: "Campaign not found." }, { status: 404 });
+  }
+
   after(async () => {
-    await processPendingCampaignWork({
+    await processUserCampaignWork({
+      userId: auth.user.id,
       campaignId: id,
       maxDurationMs: 25_000
     });

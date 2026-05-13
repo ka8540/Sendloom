@@ -27,6 +27,15 @@ function campaignOwnershipFilter(campaignId: string, userId?: string) {
   };
 }
 
+export async function getOwnedCampaignReference(campaignId: string, userId: string) {
+  return prisma.campaign.findFirst({
+    where: campaignOwnershipFilter(campaignId, userId),
+    select: {
+      id: true
+    }
+  });
+}
+
 async function getSuppressedEmailsForUser(userId: string | null) {
   return userId ? getSuppressedEmailSet(userId) : new Set<string>();
 }
@@ -47,6 +56,15 @@ type ProcessCampaignWorkArgs = {
   maxDurationMs?: number;
   maxRecipientJobsPerRun?: number;
   maxRuns?: number;
+};
+
+type UserScopedProcessCampaignWorkArgs = ProcessCampaignWorkArgs & {
+  userId: string;
+};
+
+type InternalProcessCampaignWorkArgs = ProcessCampaignWorkArgs & {
+  userId?: string;
+  discoverScheduledRuns: boolean;
 };
 
 type ProcessCampaignRunResult = {
@@ -722,6 +740,7 @@ export async function launchCampaign(campaignId: string, userId?: string) {
   const activeRun = await prisma.campaignRun.findFirst({
     where: {
       campaignId,
+      ...(userId ? { campaign: { userId } } : {}),
       status: {
         in: ["QUEUED", "RUNNING", "PAUSED"]
       }
@@ -1500,7 +1519,7 @@ export async function processProviderEvent(args: {
   return recipientJob;
 }
 
-export async function processPendingCampaignWork(args: ProcessCampaignWorkArgs = {}) {
+async function processCampaignWork(args: InternalProcessCampaignWorkArgs) {
   const scheduling: QueueScheduledRunsResult = {
     campaignsScanned: 0,
     runsCreated: 0,
@@ -1509,14 +1528,16 @@ export async function processPendingCampaignWork(args: ProcessCampaignWorkArgs =
     errors: []
   };
 
-  try {
-    Object.assign(scheduling, await queueScheduledRuns());
-  } catch (error) {
-    console.error("[campaign-cron] Scheduled campaign discovery failed.", error);
-    scheduling.errors.push({
-      scope: "scheduling",
-      message: getErrorMessage(error)
-    });
+  if (args.discoverScheduledRuns) {
+    try {
+      Object.assign(scheduling, await queueScheduledRuns());
+    } catch (error) {
+      console.error("[campaign-cron] Scheduled campaign discovery failed.", error);
+      scheduling.errors.push({
+        scope: "scheduling",
+        message: getErrorMessage(error)
+      });
+    }
   }
 
   const deadline = getDeadline(args.maxDurationMs);
@@ -1527,7 +1548,7 @@ export async function processPendingCampaignWork(args: ProcessCampaignWorkArgs =
     ...(args.runId ? { id: args.runId } : {}),
     ...(args.campaignId ? { campaignId: args.campaignId } : {}),
     campaign: {
-      userId: {
+      userId: args.userId ?? {
         not: null
       },
       status: {
@@ -1650,4 +1671,18 @@ export async function processPendingCampaignWork(args: ProcessCampaignWorkArgs =
     hasRemainingWork: hasRemainingWork || remainingRuns > 0,
     errors
   };
+}
+
+export async function processTrustedCampaignWork(args: ProcessCampaignWorkArgs = {}) {
+  return processCampaignWork({
+    ...args,
+    discoverScheduledRuns: true
+  });
+}
+
+export async function processUserCampaignWork(args: UserScopedProcessCampaignWorkArgs) {
+  return processCampaignWork({
+    ...args,
+    discoverScheduledRuns: false
+  });
 }

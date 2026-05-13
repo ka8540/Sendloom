@@ -19,6 +19,23 @@ export function verifyTrackingToken(token: string) {
   return jwt.verify(token, env.SESSION_SECRET) as TrackingClaims;
 }
 
+export function safeVerifyTrackingToken(token: string) {
+  try {
+    const claims = verifyTrackingToken(token);
+    if (
+      typeof claims.email !== "string" ||
+      typeof claims.jobId !== "string" ||
+      !["unsubscribe", "open", "click"].includes(claims.type)
+    ) {
+      return null;
+    }
+
+    return claims;
+  } catch {
+    return null;
+  }
+}
+
 export function makeTrackingUrl(type: TrackingClaims["type"], jobId: string, email: string, target?: string) {
   const token = signTrackingToken({ type, jobId, email, target });
   if (type === "unsubscribe") {

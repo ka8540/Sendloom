@@ -19,7 +19,8 @@ import { ErrorToastOnMount } from "@/components/error-toast-provider";
 import { LocalDateTime } from "@/components/local-date-time";
 import { requireOperatorUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { processPendingCampaignWork } from "@/services/campaigns";
+import { getPaginationParams } from "@/lib/pagination";
+import { processUserCampaignWork } from "@/services/campaigns";
 import styles from "./page.module.css";
 
 type ScheduleConfig =
@@ -146,7 +147,12 @@ export default async function CampaignsPage({
     : resolvedSearchParams.page;
   const parsedPage = requestedPage ? Number.parseInt(requestedPage, 10) : 1;
   const currentPage = Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1;
-  const [imports, mappings, templates, senders, campaigns] = await Promise.all([
+  const pagination = getPaginationParams(resolvedSearchParams, {
+    defaultPageSize: PAGE_SIZE,
+    maxPageSize: PAGE_SIZE
+  });
+  const campaignWhere = { userId: user.id };
+  const [imports, mappings, templates, senders, campaigns, totalCampaigns, activeSequences, scheduledSequences, validatedSequences] = await Promise.all([
     prisma.import.findMany({ where: { userId: user.id }, orderBy: { createdAt: "desc" } }),
     prisma.mapping.findMany({ where: { userId: user.id }, orderBy: { createdAt: "desc" } }),
     prisma.template.findMany({ where: { userId: user.id }, orderBy: { updatedAt: "desc" } }),
@@ -155,8 +161,10 @@ export default async function CampaignsPage({
       orderBy: { createdAt: "asc" }
     }),
     prisma.campaign.findMany({
-      where: { userId: user.id },
+      where: campaignWhere,
       orderBy: { updatedAt: "desc" },
+      skip: pagination.skip,
+      take: pagination.take,
       include: {
         import: {
           select: {
@@ -175,6 +183,31 @@ export default async function CampaignsPage({
           }
         },
         runs: { orderBy: { createdAt: "desc" }, take: 1 }
+      }
+    }),
+    prisma.campaign.count({
+      where: campaignWhere
+    }),
+    prisma.campaign.count({
+      where: {
+        userId: user.id,
+        OR: [{ status: "RUNNING" }, { runs: { some: { status: { in: ["QUEUED", "RUNNING"] } } } }]
+      }
+    }),
+    prisma.campaign.count({
+      where: {
+        userId: user.id,
+        scheduleType: {
+          not: "immediate"
+        }
+      }
+    }),
+    prisma.campaign.count({
+      where: {
+        userId: user.id,
+        lastValidatedAt: {
+          not: null
+        }
       }
     })
   ]);
@@ -196,29 +229,23 @@ export default async function CampaignsPage({
     )
   ) {
     after(async () => {
-      await processPendingCampaignWork({
+      await processUserCampaignWork({
+        userId: user.id,
         maxDurationMs: 20_000
       });
     });
   }
 
-  const activeSequences = campaigns.filter(
-    (campaign) =>
-      campaign.status === "RUNNING" ||
-      campaign.runs.some((run) => ["QUEUED", "RUNNING"].includes(run.status))
-  ).length;
-  const scheduledSequences = campaigns.filter((campaign) => campaign.scheduleType !== "immediate").length;
-  const validatedSequences = campaigns.filter((campaign) => Boolean(campaign.lastValidatedAt)).length;
-  const totalPages = Math.max(1, Math.ceil(campaigns.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(totalCampaigns / PAGE_SIZE));
 
   if (currentPage > totalPages) {
     redirect(currentPage === 1 ? "/campaigns" : `/campaigns?page=${totalPages}`);
   }
 
   const startIndex = (currentPage - 1) * PAGE_SIZE;
-  const pagedCampaigns = campaigns.slice(startIndex, startIndex + PAGE_SIZE);
-  const showingFrom = campaigns.length ? startIndex + 1 : 0;
-  const showingTo = Math.min(startIndex + PAGE_SIZE, campaigns.length);
+  const pagedCampaigns = campaigns;
+  const showingFrom = totalCampaigns ? startIndex + 1 : 0;
+  const showingTo = Math.min(startIndex + PAGE_SIZE, totalCampaigns);
 
   return (
     <div className={styles.page}>
@@ -327,7 +354,7 @@ export default async function CampaignsPage({
           </div>
           <div>
             <span>Total sequences</span>
-            <strong>{campaigns.length}</strong>
+            <strong>{totalCampaigns}</strong>
             <p>Everything currently configured in your workspace.</p>
           </div>
         </article>
@@ -372,11 +399,11 @@ export default async function CampaignsPage({
           </div>
           <div className={styles.sectionMeta}>
             <Users aria-hidden="true" />
-            <span>{campaigns.length} total</span>
+            <span>{totalCampaigns} total</span>
           </div>
         </div>
 
-        {campaigns.length ? (
+        {pagedCampaigns.length ? (
           <div className={styles.sequenceList}>
             {pagedCampaigns.map((campaign) => {
               const latestRun = campaign.runs[0];
@@ -452,7 +479,7 @@ export default async function CampaignsPage({
             {totalPages > 1 ? (
               <div className={styles.paginationBar}>
                 <span className={styles.paginationSummary}>
-                  Showing {showingFrom}-{showingTo} of {campaigns.length}
+                  Showing {showingFrom}-{showingTo} of {totalCampaigns}
                 </span>
                 <div className={styles.paginationControls}>
                   {currentPage > 1 ? (

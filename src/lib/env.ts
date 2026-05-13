@@ -2,6 +2,8 @@ import { loadEnvConfig } from "@next/env";
 import { z } from "zod";
 
 const globalForEnv = globalThis as typeof globalThis & { __sendloomEnvLoaded?: boolean };
+const cronSecretSchema =
+  process.env.NODE_ENV === "production" ? z.string().min(1) : z.string().min(1).optional();
 
 if (!globalForEnv.__sendloomEnvLoaded) {
   loadEnvConfig(process.cwd());
@@ -17,7 +19,7 @@ const envSchema = z.object({
   GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
   OPENAI_API_KEY: z.string().min(1).optional(),
   HUNTER_KEY_ENCRYPTION_SECRET: z.string().min(12).optional(),
-  CRON_SECRET: z.string().min(1).optional(),
+  CRON_SECRET: cronSecretSchema,
   RESEND_API_KEY: z.string().optional(),
   RESEND_WEBHOOK_SECRET: z.string().optional(),
   APP_BASE_URL: z.string().url(),

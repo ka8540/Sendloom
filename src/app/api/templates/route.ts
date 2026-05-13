@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { requireApiUser } from "@/lib/api-auth";
+import { getPaginationParams } from "@/lib/pagination";
 import { TEMPLATE_FORMATS } from "@/lib/templates";
-import { listTemplates, upsertTemplate } from "@/services/templates";
+import { listTemplatesPage, upsertTemplate } from "@/services/templates";
 
 const schema = z.object({
   id: z.string().optional(),
@@ -14,13 +15,18 @@ const schema = z.object({
   previewPayload: z.record(z.unknown()).optional()
 });
 
-export async function GET() {
+export async function GET(request: Request) {
   const auth = await requireApiUser();
   if ("response" in auth) {
     return auth.response;
   }
 
-  return NextResponse.json(await listTemplates(auth.user.id));
+  const pagination = getPaginationParams(new URL(request.url).searchParams, {
+    defaultPageSize: 20,
+    maxPageSize: 100
+  });
+
+  return NextResponse.json(await listTemplatesPage(auth.user.id, pagination));
 }
 
 export async function POST(request: Request) {

@@ -173,6 +173,7 @@ export default async function OverviewCommandCenter() {
       orderBy: {
         updatedAt: "desc"
       },
+      take: 10,
       include: {
         import: {
           select: {
