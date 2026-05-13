@@ -1,28 +1,20 @@
 import { NextResponse } from "next/server";
 
 import { env } from "@/lib/env";
-import { processTrustedCampaignWork } from "@/services/campaigns";
+import { processPendingCampaignWork } from "@/services/campaigns";
 import { syncConnectedSenderReplies } from "@/services/replies";
 
 export const maxDuration = 60;
 
 function isAuthorized(request: Request) {
-  let cronSecret: string | undefined;
-
-  try {
-    cronSecret = env.CRON_SECRET;
-  } catch {
-    return false;
-  }
-
-  if (!cronSecret) {
-    return false;
+  if (!env.CRON_SECRET) {
+    return true;
   }
 
   const authHeader = request.headers.get("authorization");
   const secretHeader = request.headers.get("x-cron-secret");
 
-  return authHeader === `Bearer ${cronSecret}` || secretHeader === cronSecret;
+  return authHeader === `Bearer ${env.CRON_SECRET}` || secretHeader === env.CRON_SECRET;
 }
 
 async function handleCron(request: Request) {
@@ -30,10 +22,10 @@ async function handleCron(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let result: Awaited<ReturnType<typeof processTrustedCampaignWork>>;
+  let result: Awaited<ReturnType<typeof processPendingCampaignWork>>;
 
   try {
-    result = await processTrustedCampaignWork({
+    result = await processPendingCampaignWork({
       maxDurationMs: 55_000
     });
   } catch (error) {

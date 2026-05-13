@@ -26,7 +26,7 @@ import { SCHEDULE_EDIT_DISABLED_MESSAGE, canEditCampaignSchedule } from "@/lib/c
 import { isCampaignSetupLocked } from "@/lib/campaign-setup-lock";
 import { prisma } from "@/lib/db";
 import { GMAIL_RECONNECT_ERROR } from "@/lib/provider";
-import { launchCampaign, pauseCampaign, processUserCampaignWork, validateCampaign } from "@/services/campaigns";
+import { launchCampaign, pauseCampaign, processPendingCampaignWork, validateCampaign } from "@/services/campaigns";
 import { syncRepliesForSenderProfile } from "@/services/replies";
 import styles from "./page.module.css";
 
@@ -197,8 +197,7 @@ async function launch(campaignId: string) {
   revalidatePath(`/campaigns/${campaignId}`);
   revalidatePath("/campaigns");
   after(async () => {
-    await processUserCampaignWork({
-      userId: user.id,
+    await processPendingCampaignWork({
       runId: run.id,
       maxDurationMs: 55_000
     });
@@ -253,8 +252,7 @@ async function togglePause(campaignId: string) {
     revalidatePath(`/campaigns/${campaignId}`);
     revalidatePath("/campaigns");
     after(async () => {
-      await processUserCampaignWork({
-        userId: user.id,
+      await processPendingCampaignWork({
         runId: run.id,
         maxDurationMs: 55_000
       });
@@ -526,8 +524,7 @@ export default async function CampaignDetailPage({
 
   if (isActiveRun) {
     after(async () => {
-      await processUserCampaignWork({
-        userId: user.id,
+      await processPendingCampaignWork({
         campaignId: campaign.id,
         maxDurationMs: 25_000
       });

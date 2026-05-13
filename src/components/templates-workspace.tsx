@@ -2,7 +2,6 @@
 
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 
 import { TemplateForm, type EditableTemplate, type TemplateDraft } from "@/components/forms";
 import {
@@ -64,21 +63,7 @@ function toSnippet(format: TemplateFormat, body: string) {
   return collapsed || "No body content yet.";
 }
 
-type TemplatesWorkspacePagination = {
-  page: number;
-  pageSize: number;
-  total: number;
-  totalPages: number;
-};
-
-export function TemplatesWorkspace({
-  templates: initialTemplates,
-  pagination
-}: {
-  templates: EditableTemplate[];
-  pagination?: TemplatesWorkspacePagination;
-}) {
-  const router = useRouter();
+export function TemplatesWorkspace({ templates: initialTemplates }: { templates: EditableTemplate[] }) {
   const [templates, setTemplates] = useState(initialTemplates.map(normalizeTemplate));
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
   const [hoveredTemplateId, setHoveredTemplateId] = useState<string | null>(null);
@@ -92,13 +77,9 @@ export function TemplatesWorkspace({
   }, [initialTemplates]);
 
   useEffect(() => {
-    if (pagination) {
-      return;
-    }
-
     const totalPages = Math.max(1, Math.ceil(templates.length / TEMPLATE_PAGE_SIZE));
     setCurrentPage((page) => Math.min(page, totalPages));
-  }, [pagination, templates.length]);
+  }, [templates.length]);
 
   useEffect(() => {
     return () => {
@@ -114,15 +95,11 @@ export function TemplatesWorkspace({
 
   const editingTemplate = templates.find((template) => template.id === editingTemplateId) ?? null;
   const previewVariables = extractVariables(draft.subject, draft.htmlBody);
-  const visiblePage = pagination?.page ?? currentPage;
-  const totalPages = pagination?.totalPages ?? Math.max(1, Math.ceil(templates.length / TEMPLATE_PAGE_SIZE));
-  const templateTotal = pagination?.total ?? templates.length;
-  const pagedTemplates = pagination
-    ? templates
-    : templates.slice(
-        (currentPage - 1) * TEMPLATE_PAGE_SIZE,
-        currentPage * TEMPLATE_PAGE_SIZE
-      );
+  const totalPages = Math.max(1, Math.ceil(templates.length / TEMPLATE_PAGE_SIZE));
+  const pagedTemplates = templates.slice(
+    (currentPage - 1) * TEMPLATE_PAGE_SIZE,
+    currentPage * TEMPLATE_PAGE_SIZE
+  );
 
   const handleSaved = (savedTemplate: EditableTemplate) => {
     const normalized = normalizeTemplate(savedTemplate);
@@ -134,11 +111,6 @@ export function TemplatesWorkspace({
     setCurrentPage(1);
     setEditingTemplateId(null);
     setDraft(createDraft(null));
-
-    if (pagination) {
-      router.push("/templates");
-      router.refresh();
-    }
   };
 
   const handleStartEditing = (template: EditableTemplate) => {
@@ -310,43 +282,33 @@ export function TemplatesWorkspace({
               </article>
             );
           })}
-            {!templateTotal ? <div className="surface-note">Create your first template to start using it in sequences.</div> : null}
+            {!templates.length ? <div className="surface-note">Create your first template to start using it in sequences.</div> : null}
           </div>
-          {templateTotal > TEMPLATE_PAGE_SIZE ? (
+          {templates.length > TEMPLATE_PAGE_SIZE ? (
             <div className="templates-pagination" aria-label="Template pages">
               <div className="templates-pagination__controls">
                 <button
                   className="templates-pagination__button"
                   type="button"
                   aria-label="Previous template page"
-                  disabled={visiblePage === 1}
+                  disabled={currentPage === 1}
                   onClick={() => {
                     handleTemplateMouseLeave();
-                    if (pagination) {
-                      router.push(visiblePage - 1 === 1 ? "/templates" : `/templates?page=${visiblePage - 1}`);
-                      return;
-                    }
-
                     setCurrentPage((page) => Math.max(1, page - 1));
                   }}
                 >
                   <ChevronLeft aria-hidden="true" />
                 </button>
                 <span className="templates-pagination__page">
-                  {visiblePage} / {totalPages}
+                  {currentPage} / {totalPages}
                 </span>
                 <button
                   className="templates-pagination__button"
                   type="button"
                   aria-label="Next template page"
-                  disabled={visiblePage === totalPages}
+                  disabled={currentPage === totalPages}
                   onClick={() => {
                     handleTemplateMouseLeave();
-                    if (pagination) {
-                      router.push(`/templates?page=${visiblePage + 1}`);
-                      return;
-                    }
-
                     setCurrentPage((page) => Math.min(totalPages, page + 1));
                   }}
                 >

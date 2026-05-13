@@ -1,30 +1,13 @@
-import Link from "next/link";
-import { redirect } from "next/navigation";
-import { ChevronLeft, ChevronRight } from "lucide-react";
-
 import { UploadImportForm } from "@/components/forms";
 import { MappingLibrary, TemplateFieldPicker } from "@/components/mapping-library";
 import { requireOperatorUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { getPaginationParams } from "@/lib/pagination";
 
-const IMPORTS_PAGE_SIZE = 5;
-
-export default async function ImportsPage({
-  searchParams
-}: {
-  searchParams?: Promise<Record<string, string | string[] | undefined>>;
-}) {
+export default async function ImportsPage() {
   const user = await requireOperatorUser();
-  const resolvedSearchParams = searchParams ? await searchParams : {};
-  const pagination = getPaginationParams(resolvedSearchParams, {
-    defaultPageSize: IMPORTS_PAGE_SIZE,
-    maxPageSize: IMPORTS_PAGE_SIZE
-  });
-  const where = { userId: user.id };
-  const [imports, totalImports] = await Promise.all([
+  const [imports, mappings] = await Promise.all([
     prisma.import.findMany({
-      where,
+      where: { userId: user.id },
       include: {
         columns: true,
         rows: { take: 5, orderBy: { rowIndex: "asc" } },
@@ -34,27 +17,13 @@ export default async function ImportsPage({
           }
         }
       },
-      orderBy: { createdAt: "desc" },
-      skip: pagination.skip,
-      take: pagination.take
+      orderBy: { createdAt: "desc" }
     }),
-    prisma.import.count({ where })
+    prisma.mapping.findMany({
+      where: { userId: user.id },
+      orderBy: { updatedAt: "desc" }
+    })
   ]);
-  const totalPages = Math.max(1, Math.ceil(totalImports / IMPORTS_PAGE_SIZE));
-
-  if (pagination.page > totalPages) {
-    redirect(pagination.page === 1 ? "/imports" : `/imports?page=${totalPages}`);
-  }
-
-  const mappings = await prisma.mapping.findMany({
-    where: {
-      userId: user.id,
-      importId: {
-        in: imports.map((entry) => entry.id)
-      }
-    },
-    orderBy: { updatedAt: "desc" }
-  });
 
   const latestMappings = new Map<string, (typeof mappings)[number]>();
 
@@ -130,39 +99,6 @@ export default async function ImportsPage({
         <h2>Imports</h2>
         <p className="muted">Review, rename, reselect template fields, page through, or delete imported audiences in one place.</p>
         <MappingLibrary items={mappingItems} />
-        {totalImports > IMPORTS_PAGE_SIZE ? (
-          <div className="imports-pagination">
-            {pagination.page > 1 ? (
-              <Link
-                className="imports-pagination__button"
-                href={pagination.page - 1 === 1 ? "/imports" : `/imports?page=${pagination.page - 1}`}
-                aria-label="Previous imports page"
-              >
-                <ChevronLeft aria-hidden="true" />
-              </Link>
-            ) : (
-              <span className="imports-pagination__button" aria-disabled="true" aria-label="Previous imports page">
-                <ChevronLeft aria-hidden="true" />
-              </span>
-            )}
-            <span className="imports-pagination__count">
-              {pagination.page} / {totalPages}
-            </span>
-            {pagination.page < totalPages ? (
-              <Link
-                className="imports-pagination__button"
-                href={`/imports?page=${pagination.page + 1}`}
-                aria-label="Next imports page"
-              >
-                <ChevronRight aria-hidden="true" />
-              </Link>
-            ) : (
-              <span className="imports-pagination__button" aria-disabled="true" aria-label="Next imports page">
-                <ChevronRight aria-hidden="true" />
-              </span>
-            )}
-          </div>
-        ) : null}
       </section>
     </div>
   );

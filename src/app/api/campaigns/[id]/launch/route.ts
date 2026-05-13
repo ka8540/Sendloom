@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/api-auth";
 import { writeAuditLog } from "@/lib/audit";
-import { launchCampaign, processUserCampaignWork } from "@/services/campaigns";
+import { launchCampaign, processPendingCampaignWork } from "@/services/campaigns";
 
 export const maxDuration = 60;
 
@@ -16,8 +16,7 @@ export async function POST(_: Request, context: { params: Promise<{ id: string }
   const { id } = await context.params;
   const run = await launchCampaign(id, auth.user.id);
   after(async () => {
-    await processUserCampaignWork({
-      userId: auth.user.id,
+    await processPendingCampaignWork({
       runId: run.id,
       maxDurationMs: 55_000
     });

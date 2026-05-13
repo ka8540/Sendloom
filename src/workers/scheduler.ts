@@ -1,4 +1,4 @@
-import { processTrustedCampaignWork } from "@/services/campaigns";
+import { processPendingCampaignWork } from "@/services/campaigns";
 import { syncConnectedSenderReplies } from "@/services/replies";
 
 let ticking = false;
@@ -11,7 +11,7 @@ async function tick() {
   ticking = true;
 
   try {
-    const result = await processTrustedCampaignWork({
+    const result = await processPendingCampaignWork({
       maxDurationMs: 55_000
     });
     const replySync = await syncConnectedSenderReplies();

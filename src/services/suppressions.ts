@@ -1,5 +1,4 @@
 import { prisma } from "@/lib/db";
-import { getPaginationMeta, type PaginationParams } from "@/lib/pagination";
 
 export type SuppressionReason = "UNSUBSCRIBED" | "HARD_BOUNCE" | "COMPLAINT" | "INVALID_EMAIL" | "MANUAL_BLOCK";
 
@@ -12,24 +11,6 @@ export async function listSuppressions(userId: string) {
     where: { userId },
     orderBy: { updatedAt: "desc" }
   });
-}
-
-export async function listSuppressionsPage(userId: string, pagination: PaginationParams) {
-  const where = { userId };
-  const [items, total] = await Promise.all([
-    prisma.suppression.findMany({
-      where,
-      orderBy: { updatedAt: "desc" },
-      skip: pagination.skip,
-      take: pagination.take
-    }),
-    prisma.suppression.count({ where })
-  ]);
-
-  return {
-    items,
-    ...getPaginationMeta(pagination.page, pagination.pageSize, total)
-  };
 }
 
 export async function suppressEmail(userId: string, email: string, reason: SuppressionReason, source: string, notes?: string) {

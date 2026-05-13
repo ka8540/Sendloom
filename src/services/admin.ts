@@ -3,7 +3,6 @@ import { unlink } from "node:fs/promises";
 import { prisma } from "@/lib/db";
 import { isAdminUser } from "@/lib/auth";
 import { writeAuditLog } from "@/lib/audit";
-import { getPaginationMeta, type PaginationParams } from "@/lib/pagination";
 
 export class AdminActionError extends Error {
   status: number;
@@ -41,15 +40,10 @@ function getUniqueFilePaths(paths: string[]) {
   return Array.from(new Set(paths.filter(Boolean)));
 }
 
-async function fetchAdminUsers(pagination?: PaginationParams) {
-  return prisma.user.findMany({
+export async function listAdminUsers() {
+  const now = new Date();
+  const users = await prisma.user.findMany({
     orderBy: [{ isAdmin: "desc" }, { createdAt: "desc" }],
-    ...(pagination
-      ? {
-          skip: pagination.skip,
-          take: pagination.take
-        }
-      : {}),
     select: {
       id: true,
       email: true,
@@ -77,51 +71,32 @@ async function fetchAdminUsers(pagination?: PaginationParams) {
       }
     }
   });
-}
 
-type AdminUserListEntry = Awaited<ReturnType<typeof fetchAdminUsers>>[number];
+  return users.map((user) => {
+    const hasTrackedSessionData = Boolean(user.lastLoginAt || user.lastSeenAt || user.sessionExpiresAt);
+    const isLoggedIn = Boolean(user.sessionExpiresAt && user.sessionExpiresAt > now);
 
-function toAdminUserPayload(user: AdminUserListEntry, now: Date) {
-  const hasTrackedSessionData = Boolean(user.lastLoginAt || user.lastSeenAt || user.sessionExpiresAt);
-  const isLoggedIn = Boolean(user.sessionExpiresAt && user.sessionExpiresAt > now);
-
-  return {
-    id: user.id,
-    email: user.email,
-    isAdmin: isAdminUser(user),
-    apiAccessDisabled: user.apiAccessDisabled,
-    importsWriteDisabled: user.importsWriteDisabled,
-    templatesWriteDisabled: user.templatesWriteDisabled,
-    launchesDisabled: user.launchesDisabled,
-    aiEnhancementsDisabled: user.aiEnhancementsDisabled,
-    hasPasswordLogin: Boolean(user.passwordHash),
-    authProvider: user.passwordHash ? "Password" : "Google",
-    lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
-    lastSeenAt: user.lastSeenAt?.toISOString() ?? null,
-    sessionExpiresAt: user.sessionExpiresAt?.toISOString() ?? null,
-    isLoggedIn,
-    sessionStatus: isLoggedIn ? "active" : hasTrackedSessionData ? "signed_out" : "untracked",
-    createdAt: user.createdAt.toISOString(),
-    updatedAt: user.updatedAt.toISOString(),
-    counts: user._count
-  };
-}
-
-export async function listAdminUsers() {
-  const now = new Date();
-  const users = await fetchAdminUsers();
-
-  return users.map((user) => toAdminUserPayload(user, now));
-}
-
-export async function listAdminUsersPage(pagination: PaginationParams) {
-  const now = new Date();
-  const [users, total] = await Promise.all([fetchAdminUsers(pagination), prisma.user.count()]);
-
-  return {
-    items: users.map((user) => toAdminUserPayload(user, now)),
-    ...getPaginationMeta(pagination.page, pagination.pageSize, total)
-  };
+    return {
+      id: user.id,
+      email: user.email,
+      isAdmin: isAdminUser(user),
+      apiAccessDisabled: user.apiAccessDisabled,
+      importsWriteDisabled: user.importsWriteDisabled,
+      templatesWriteDisabled: user.templatesWriteDisabled,
+      launchesDisabled: user.launchesDisabled,
+      aiEnhancementsDisabled: user.aiEnhancementsDisabled,
+      hasPasswordLogin: Boolean(user.passwordHash),
+      authProvider: user.passwordHash ? "Password" : "Google",
+      lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
+      lastSeenAt: user.lastSeenAt?.toISOString() ?? null,
+      sessionExpiresAt: user.sessionExpiresAt?.toISOString() ?? null,
+      isLoggedIn,
+      sessionStatus: isLoggedIn ? "active" : hasTrackedSessionData ? "signed_out" : "untracked",
+      createdAt: user.createdAt.toISOString(),
+      updatedAt: user.updatedAt.toISOString(),
+      counts: user._count
+    };
+  });
 }
 
 export async function updateUserAdminControls(args: {

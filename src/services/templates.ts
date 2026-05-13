@@ -1,7 +1,6 @@
 import type { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
-import { getPaginationMeta, type PaginationParams } from "@/lib/pagination";
 import {
   extractTemplateVariables,
   renderTemplate,
@@ -70,24 +69,6 @@ export async function listTemplates(userId: string) {
     where: { userId },
     orderBy: { updatedAt: "desc" }
   });
-}
-
-export async function listTemplatesPage(userId: string, pagination: PaginationParams) {
-  const where = { userId };
-  const [items, total] = await Promise.all([
-    prisma.template.findMany({
-      where,
-      orderBy: { updatedAt: "desc" },
-      skip: pagination.skip,
-      take: pagination.take
-    }),
-    prisma.template.count({ where })
-  ]);
-
-  return {
-    items,
-    ...getPaginationMeta(pagination.page, pagination.pageSize, total)
-  };
 }
 
 export async function previewTemplate(templateId: string, userId: string, payload: MergeVariables) {

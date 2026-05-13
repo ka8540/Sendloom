@@ -2,8 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { requireApiUser } from "@/lib/api-auth";
-import { getPaginationParams } from "@/lib/pagination";
-import { listSuppressionsPage, suppressEmail } from "@/services/suppressions";
+import { listSuppressions, suppressEmail } from "@/services/suppressions";
 
 const schema = z.object({
   email: z.string().email(),
@@ -12,18 +11,13 @@ const schema = z.object({
   source: z.string().min(1).max(64).optional()
 });
 
-export async function GET(request: Request) {
+export async function GET() {
   const auth = await requireApiUser();
   if ("response" in auth) {
     return auth.response;
   }
 
-  const pagination = getPaginationParams(new URL(request.url).searchParams, {
-    defaultPageSize: 20,
-    maxPageSize: 100
-  });
-
-  return NextResponse.json(await listSuppressionsPage(auth.user.id, pagination));
+  return NextResponse.json(await listSuppressions(auth.user.id));
 }
 
 export async function POST(request: Request) {

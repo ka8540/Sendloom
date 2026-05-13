@@ -1,16 +1,12 @@
 import { NextResponse } from "next/server";
 
 import { prisma } from "@/lib/db";
-import { safeVerifyTrackingToken } from "@/lib/tracking";
+import { verifyTrackingToken } from "@/lib/tracking";
 import { suppressEmail } from "@/services/suppressions";
 
 export async function GET(_: Request, context: { params: Promise<{ token: string }> }) {
   const { token } = await context.params;
-  const payload = safeVerifyTrackingToken(token);
-
-  if (payload?.type !== "unsubscribe") {
-    return new NextResponse("Invalid unsubscribe link.", { status: 400 });
-  }
+  const payload = verifyTrackingToken(token);
 
   const recipientJob = await prisma.recipientJob.findUnique({
     where: { id: payload.jobId },
