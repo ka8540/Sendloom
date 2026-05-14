@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildTemplatePreviewPayload,
   convertTemplateBody,
   extractTemplateVariables,
   renderTemplate,
   renderTemplatePreview,
+  renderTemplateSubjectPreview,
   templateContentToPlainText,
   validateTemplateBody
 } from "@/lib/templates";
@@ -18,10 +20,30 @@ describe("templates", () => {
     expect(renderTemplate("Hi {{name}}", { name: "Ari" })).toBe("Hi Ari");
   });
 
+  it("renders subject preview variables with sample values", () => {
+    expect(renderTemplateSubjectPreview("Referral request for {{company}}")).toBe("Referral request for Acme");
+  });
+
   it("renders plain text templates into preview HTML", () => {
     const preview = renderTemplatePreview("PLAIN_TEXT", "Hi {{name}},\n\nThanks for your time.", { name: "Ari" });
     expect(preview).toContain("<p>Hi Ari,</p>");
     expect(preview).toContain("<p>Thanks for your time.</p>");
+  });
+
+  it("fills missing preview variables with readable sample values", () => {
+    const preview = renderTemplatePreview("PLAIN_TEXT", "Hi {{first_name}},\n\nCustom: {{custom_field}}");
+
+    expect(preview).toContain("<p>Hi Alex,</p>");
+    expect(preview).toContain("<p>Custom: Custom Field</p>");
+  });
+
+  it("keeps detected variables and preview payload values consistent", () => {
+    const variables = extractTemplateVariables("Hi {{first_name}}, {{company}} is hiring a {{job_title}}.");
+    const payload = buildTemplatePreviewPayload(variables, { company: "NetApp" });
+
+    expect(renderTemplate("Hi {{first_name}}, {{company}} is hiring a {{job_title}}.", payload)).toBe(
+      "Hi Alex, NetApp is hiring a Software Engineer."
+    );
   });
 
   it("renders plain text bullets and numbered items into real lists", () => {
@@ -44,6 +66,15 @@ describe("templates", () => {
     );
     expect(preview).toContain("Hi Ari");
     expect(preview).toContain("Would it make sense to connect?");
+  });
+
+  it("sanitizes HTML preview values after rendering variables", () => {
+    const preview = renderTemplatePreview("HTML", "<p>Hi {{first_name}}</p>", {
+      first_name: "<img src=x onerror=alert(1)>"
+    });
+
+    expect(preview).not.toContain("onerror");
+    expect(preview).not.toContain("alert(1)");
   });
 
   it("converts HTML templates to plain text and validates JSON content", () => {

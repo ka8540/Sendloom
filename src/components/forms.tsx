@@ -19,6 +19,7 @@ import {
   type TemplateFormat,
   validateTemplateBody
 } from "@/lib/templates";
+import type { MergeVariables } from "@/lib/types";
 
 type ActionState = {
   pending: boolean;
@@ -33,6 +34,7 @@ export type TemplateDraft = {
   subject: string;
   format: TemplateFormat;
   htmlBody: string;
+  previewPayload?: MergeVariables | null;
 };
 
 export type EditableTemplate = {
@@ -42,6 +44,7 @@ export type EditableTemplate = {
   format: TemplateFormat;
   htmlBody: string;
   variableManifest: string[];
+  previewPayload?: MergeVariables | null;
 };
 
 export function LoginForm() {
@@ -211,7 +214,8 @@ function getTemplateFields(template?: EditableTemplate | null): TemplateDraft {
     name: template?.name ?? "",
     subject: template?.subject ?? "",
     format,
-    htmlBody: template?.htmlBody ?? getDefaultTemplateBody(format)
+    htmlBody: template?.htmlBody ?? getDefaultTemplateBody(format),
+    previewPayload: template?.previewPayload ?? null
   };
 }
 

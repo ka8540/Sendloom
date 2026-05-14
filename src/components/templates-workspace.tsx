@@ -5,26 +5,44 @@ import { useEffect, useRef, useState } from "react";
 
 import { TemplateForm, type EditableTemplate, type TemplateDraft } from "@/components/forms";
 import {
+  buildTemplatePreviewPayload,
+  extractTemplateVariables,
   getDefaultTemplateBody,
   getTemplateFormatLabel,
   renderTemplatePreview,
+  renderTemplateSubjectPreview,
   templateContentToPlainText,
   type TemplateFormat
 } from "@/lib/templates";
+import type { MergeVariables } from "@/lib/types";
 
 const DEFAULT_TEMPLATE_DRAFT: TemplateDraft = {
   name: "",
   subject: "",
   format: "PLAIN_TEXT",
-  htmlBody: getDefaultTemplateBody("PLAIN_TEXT")
+  htmlBody: getDefaultTemplateBody("PLAIN_TEXT"),
+  previewPayload: null
 };
 const TEMPLATE_PAGE_SIZE = 5;
+
+function normalizePreviewPayload(payload: MergeVariables | null | undefined) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return null;
+  }
+
+  return Object.fromEntries(
+    Object.entries(payload).filter(
+      ([, value]) => value === null || ["string", "number", "boolean"].includes(typeof value)
+    )
+  ) as MergeVariables;
+}
 
 function normalizeTemplate(template: EditableTemplate): EditableTemplate {
   return {
     ...template,
     format: (template.format ?? DEFAULT_TEMPLATE_DRAFT.format) as TemplateFormat,
-    variableManifest: Array.isArray(template.variableManifest) ? template.variableManifest : []
+    variableManifest: Array.isArray(template.variableManifest) ? template.variableManifest : [],
+    previewPayload: normalizePreviewPayload(template.previewPayload)
   };
 }
 
@@ -34,22 +52,16 @@ function createDraft(template?: EditableTemplate | null): TemplateDraft {
     name: template?.name ?? DEFAULT_TEMPLATE_DRAFT.name,
     subject: template?.subject ?? DEFAULT_TEMPLATE_DRAFT.subject,
     format,
-    htmlBody: template?.htmlBody ?? getDefaultTemplateBody(format)
+    htmlBody: template?.htmlBody ?? getDefaultTemplateBody(format),
+    previewPayload: normalizePreviewPayload(template?.previewPayload)
   };
 }
 
 function extractVariables(...values: string[]) {
-  const variablePattern = /{{\s*([^}]+?)\s*}}/g;
   const variables = new Set<string>();
 
   for (const value of values) {
-    for (const match of value.matchAll(variablePattern)) {
-      const variable = match[1]?.trim();
-
-      if (variable) {
-        variables.add(variable);
-      }
-    }
+    extractTemplateVariables(value).forEach((variable) => variables.add(variable));
   }
 
   return [...variables];
@@ -95,6 +107,7 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
 
   const editingTemplate = templates.find((template) => template.id === editingTemplateId) ?? null;
   const previewVariables = extractVariables(draft.subject, draft.htmlBody);
+  const previewPayload = buildTemplatePreviewPayload(previewVariables, draft.previewPayload ?? undefined);
   const totalPages = Math.max(1, Math.ceil(templates.length / TEMPLATE_PAGE_SIZE));
   const pagedTemplates = templates.slice(
     (currentPage - 1) * TEMPLATE_PAGE_SIZE,
@@ -193,13 +206,15 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
           <div className="template-preview-mail">
             <div className="template-preview-mail__subject">
               <span className="template-preview-mail__label">Subject</span>
-              <strong>{draft.subject || "Add a subject to preview it here."}</strong>
+              <strong>
+                {draft.subject ? renderTemplateSubjectPreview(draft.subject, previewPayload) : "Add a subject to preview it here."}
+              </strong>
             </div>
 
             <div className="template-preview-mail__body">
               <div
                 dangerouslySetInnerHTML={{
-                  __html: renderTemplatePreview(draft.format, draft.htmlBody)
+                  __html: renderTemplatePreview(draft.format, draft.htmlBody, previewPayload)
                 }}
               />
             </div>

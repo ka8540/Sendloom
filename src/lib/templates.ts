@@ -9,6 +9,22 @@ export type TemplateFormat = (typeof TEMPLATE_FORMATS)[number];
 const VARIABLE_PATTERN = /{{\s*([a-zA-Z0-9_]+)\s*}}/g;
 const UNORDERED_LIST_ITEM_PATTERN = /^(?:[-*]|\u2022)\s+(.+)$/;
 const ORDERED_LIST_ITEM_PATTERN = /^\d+(?:[.)]|-)\s+(.+)$/;
+const TEMPLATE_PREVIEW_SAMPLE_VALUES: Record<string, string> = {
+  company: "Acme",
+  email: "alex@example.com",
+  first_name: "Alex",
+  firstname: "Alex",
+  firstName: "Alex",
+  job_title: "Software Engineer",
+  jobtitle: "Software Engineer",
+  jobTitle: "Software Engineer",
+  last_name: "Morgan",
+  lastname: "Morgan",
+  lastName: "Morgan",
+  name: "Alex",
+  role: "Software Engineer",
+  title: "Software Engineer"
+};
 const DEFAULT_JSON_TEMPLATE = {
   greeting: "Hi {{name}},",
   intro: "I noticed {{company}} and wanted to reach out.",
@@ -34,6 +50,37 @@ function escapeHtml(input: string) {
     .replace(/>/g, "&gt;")
     .replace(/\"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+function normalizeVariableName(input: string) {
+  return input
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .replace(/[\s-]+/g, "_")
+    .toLowerCase();
+}
+
+function titleCaseVariable(input: string) {
+  return input
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function getTemplatePreviewFallback(variable: string) {
+  return (
+    TEMPLATE_PREVIEW_SAMPLE_VALUES[variable] ??
+    TEMPLATE_PREVIEW_SAMPLE_VALUES[normalizeVariableName(variable)] ??
+    titleCaseVariable(variable) ??
+    variable
+  );
+}
+
+function hasPreviewValue(value: MergeVariables[string] | undefined) {
+  return value !== undefined && value !== null && String(value).trim() !== "";
 }
 
 function stripHtml(input: string) {
@@ -356,11 +403,28 @@ export function extractTemplateVariables(input: string) {
   return Array.from(matches);
 }
 
+export function buildTemplatePreviewPayload(variables: string[], payload: MergeVariables = {}) {
+  const previewPayload: MergeVariables = { ...payload };
+
+  for (const variable of variables) {
+    if (!hasPreviewValue(previewPayload[variable])) {
+      previewPayload[variable] = getTemplatePreviewFallback(variable);
+    }
+  }
+
+  return previewPayload;
+}
+
 export function renderTemplate(input: string, payload: MergeVariables) {
   return input.replace(VARIABLE_PATTERN, (_, key) => {
     const value = payload[key];
     return value === undefined || value === null ? "" : String(value);
   });
+}
+
+export function renderTemplateSubjectPreview(input: string, payload: MergeVariables = {}) {
+  const previewPayload = buildTemplatePreviewPayload(extractTemplateVariables(input), payload);
+  return renderTemplate(input, previewPayload);
 }
 
 export function templateContentToPlainText(format: TemplateFormat, input: string) {
@@ -453,5 +517,6 @@ export function sanitizeTemplatePreview(html: string) {
 }
 
 export function renderTemplatePreview(format: TemplateFormat, input: string, payload: MergeVariables = {}) {
-  return sanitizeTemplatePreview(renderTemplateContent(format, input, payload));
+  const previewPayload = buildTemplatePreviewPayload(extractTemplateVariables(input), payload);
+  return sanitizeTemplatePreview(renderTemplateContent(format, input, previewPayload));
 }

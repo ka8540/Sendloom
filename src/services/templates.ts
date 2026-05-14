@@ -3,8 +3,8 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import {
   extractTemplateVariables,
-  renderTemplate,
   renderTemplatePreview,
+  renderTemplateSubjectPreview,
   type TemplateFormat,
   validateTemplateBody
 } from "@/lib/templates";
@@ -80,7 +80,7 @@ export async function previewTemplate(templateId: string, userId: string, payloa
   });
 
   return {
-    subject: renderTemplate(template.subject, payload),
+    subject: renderTemplateSubjectPreview(template.subject, payload),
     html: renderTemplatePreview(template.format as TemplateFormat, template.htmlBody, payload)
   };
 }
