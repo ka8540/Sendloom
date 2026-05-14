@@ -104,9 +104,12 @@ function formatDateTime(value?: Date | string | null, timeZone?: string) {
 function formatDeliveryLabel(scheduleType?: string | null, scheduleConfig?: ScheduleConfig | null) {
   if (scheduleType === "once") {
     const onceConfig = scheduleConfig && "scheduledFor" in scheduleConfig ? scheduleConfig : null;
+    const detail = onceConfig?.scheduledFor ? formatDateTime(onceConfig.scheduledFor, onceConfig.timeZone) : "Waiting for schedule";
+
     return {
       label: "Run once",
-      detail: onceConfig?.scheduledFor ? formatDateTime(onceConfig.scheduledFor, onceConfig.timeZone) : "Waiting for schedule"
+      detail,
+      fullDetail: detail
     };
   }
 
@@ -116,17 +119,23 @@ function formatDeliveryLabel(scheduleType?: string | null, scheduleConfig?: Sche
     const timeLabel = recurringConfig?.time ?? "09:00";
     const dayLabel =
       recurringConfig?.frequency === "weekly" ? ` · ${formatWeeklyDayLabel(recurringConfig)}` : "";
-    const zoneLabel = recurringConfig?.timeZone ? ` · ${recurringConfig.timeZone}` : "";
+    const detail = `${frequencyLabel}${dayLabel}`;
+    const secondaryDetail = recurringConfig?.timeZone ? `${timeLabel} · ${recurringConfig.timeZone}` : timeLabel;
 
     return {
       label: "Recurring",
-      detail: `${frequencyLabel}${dayLabel} · ${timeLabel}${zoneLabel}`
+      detail,
+      secondaryDetail,
+      fullDetail: `${detail} · ${secondaryDetail}`
     };
   }
 
+  const detail = "Starts as soon as you launch it";
+
   return {
     label: "Send now",
-    detail: "Starts as soon as you launch it"
+    detail,
+    fullDetail: detail
   };
 }
 
@@ -418,7 +427,10 @@ export default async function CampaignsPage({
                     <div className={styles.signalCard}>
                       <span>Delivery</span>
                       <strong>{delivery.label}</strong>
-                      <p>{delivery.detail}</p>
+                      <p title={delivery.fullDetail}>
+                        <span>{delivery.detail}</span>
+                        {delivery.secondaryDetail ? <span>{delivery.secondaryDetail}</span> : null}
+                      </p>
                     </div>
 
                     <div className={styles.signalCard}>
