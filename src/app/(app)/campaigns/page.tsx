@@ -85,6 +85,54 @@ function getDeliveredCount(run?: {
   return (run?.sentCount ?? 0) + (run?.openedCount ?? 0) + (run?.clickedCount ?? 0);
 }
 
+function getIssueCount(run?: {
+  failedCount?: number | null;
+  suppressedCount?: number | null;
+  invalidCount?: number | null;
+} | null) {
+  return (run?.failedCount ?? 0) + (run?.suppressedCount ?? 0) + (run?.invalidCount ?? 0);
+}
+
+function getProcessedCount(run?: {
+  sentCount?: number | null;
+  openedCount?: number | null;
+  clickedCount?: number | null;
+  failedCount?: number | null;
+  suppressedCount?: number | null;
+  invalidCount?: number | null;
+} | null) {
+  return getDeliveredCount(run) + getIssueCount(run);
+}
+
+function hasKnownRunMetrics(
+  run:
+    | {
+        status?: string | null;
+        totalRecipients?: number | null;
+      }
+    | null
+    | undefined,
+  processedCount: number
+) {
+  if (!run || !run.totalRecipients || run.totalRecipients <= 0) {
+    return false;
+  }
+
+  return !["QUEUED", "RUNNING"].includes(run.status ?? "") || processedCount > 0;
+}
+
+function getPercent(value: number, total: number) {
+  if (total <= 0) {
+    return 0;
+  }
+
+  return Math.min(100, Math.max(0, Math.round((value / total) * 100)));
+}
+
+function formatCount(value: number) {
+  return new Intl.NumberFormat("en-US").format(value);
+}
+
 function formatDateTime(value?: Date | string | null, timeZone?: string) {
   if (!value) {
     return "Not available";
@@ -169,7 +217,8 @@ export default async function CampaignsPage({
       include: {
         import: {
           select: {
-            fileName: true
+            fileName: true,
+            rowCount: true
           }
         },
         template: {
@@ -226,6 +275,25 @@ export default async function CampaignsPage({
 
   const startIndex = (currentPage - 1) * PAGE_SIZE;
   const pagedCampaigns = campaigns.slice(startIndex, startIndex + PAGE_SIZE);
+  const latestRunIds = pagedCampaigns.flatMap((campaign) => (campaign.runs[0] ? [campaign.runs[0].id] : []));
+  const latestRunCountRows = latestRunIds.length
+    ? await prisma.recipientJob.groupBy({
+        by: ["campaignRunId", "status"],
+        where: {
+          campaignRunId: {
+            in: latestRunIds
+          }
+        },
+        _count: true
+      })
+    : [];
+  const latestRunCounts = new Map<string, Record<string, number>>();
+
+  for (const row of latestRunCountRows) {
+    const counts = latestRunCounts.get(row.campaignRunId) ?? {};
+    counts[row.status] = row._count;
+    latestRunCounts.set(row.campaignRunId, counts);
+  }
   const showingFrom = campaigns.length ? startIndex + 1 : 0;
   const showingTo = Math.min(startIndex + PAGE_SIZE, campaigns.length);
 
@@ -389,70 +457,171 @@ export default async function CampaignsPage({
           <div className={styles.sequenceList}>
             {pagedCampaigns.map((campaign) => {
               const latestRun = campaign.runs[0];
-              const deliveredCount = getDeliveredCount(latestRun);
+              const latestRunCountsByStatus = latestRun ? latestRunCounts.get(latestRun.id) : null;
+              const latestRunSnapshot = latestRun
+                ? {
+                    ...latestRun,
+                    sentCount: latestRunCountsByStatus ? (latestRunCountsByStatus.SENT ?? 0) : latestRun.sentCount,
+                    openedCount: latestRunCountsByStatus ? (latestRunCountsByStatus.OPENED ?? 0) : latestRun.openedCount,
+                    clickedCount: latestRunCountsByStatus ? (latestRunCountsByStatus.CLICKED ?? 0) : latestRun.clickedCount,
+                    failedCount: latestRunCountsByStatus ? (latestRunCountsByStatus.FAILED ?? 0) : latestRun.failedCount,
+                    suppressedCount: latestRunCountsByStatus
+                      ? (latestRunCountsByStatus.SUPPRESSED ?? 0)
+                      : latestRun.suppressedCount,
+                    invalidCount: latestRunCountsByStatus ? (latestRunCountsByStatus.INVALID ?? 0) : latestRun.invalidCount
+                  }
+                : null;
+              const deliveredCount = getDeliveredCount(latestRunSnapshot);
+              const issueCount = getIssueCount(latestRunSnapshot);
+              const processedCount = getProcessedCount(latestRunSnapshot);
+              const runMetricsKnown = hasKnownRunMetrics(latestRunSnapshot, processedCount);
+              const recipientCount = latestRun?.totalRecipients ?? campaign.import.rowCount;
+              const deliveryHealthPercent =
+                runMetricsKnown && latestRunSnapshot
+                  ? getPercent(deliveredCount, latestRunSnapshot.totalRecipients)
+                  : null;
+              const progressPercent =
+                latestRunSnapshot && latestRunSnapshot.totalRecipients > 0
+                  ? getPercent(processedCount, latestRunSnapshot.totalRecipients)
+                  : 0;
+              const openedPercent =
+                runMetricsKnown && latestRunSnapshot
+                  ? getPercent(latestRunSnapshot.openedCount, latestRunSnapshot.totalRecipients)
+                  : null;
               const delivery = formatDeliveryLabel(campaign.scheduleType, campaign.scheduleConfig as ScheduleConfig | null);
               const latestRunSummary = latestRun
-                ? `${deliveredCount}/${latestRun.totalRecipients} delivered`
+                ? runMetricsKnown
+                  ? `${formatCount(deliveredCount)}/${formatCount(latestRun.totalRecipients)} delivered`
+                  : "Metrics syncing"
                 : "No run started yet";
               const latestRunValue = latestRun?.updatedAt?.toISOString() ?? null;
               const validatedAtValue = campaign.lastValidatedAt?.toISOString() ?? null;
+              const healthDetail = latestRun
+                ? runMetricsKnown
+                  ? latestRunSummary
+                  : "Waiting for activity"
+                : campaign.lastValidatedAt
+                  ? "Validated and ready"
+                  : "Awaiting first run";
+              const healthValue = latestRun
+                ? deliveryHealthPercent === null
+                  ? "—"
+                  : `${deliveryHealthPercent}%`
+                : campaign.lastValidatedAt
+                  ? "Ready"
+                  : "—";
+              const performanceMetric =
+                latestRun
+                  ? {
+                      label: "Opened",
+                      value: openedPercent === null ? "—" : `${openedPercent}%`,
+                      detail:
+                        openedPercent === null
+                          ? "Waiting for activity"
+                          : `${formatCount(latestRunSnapshot?.openedCount ?? 0)} opens`
+                    }
+                  : {
+                      label: "Delivered",
+                      value: "—",
+                      detail: "No run yet"
+                    };
 
               return (
                 <article key={campaign.id} className={styles.sequenceRow}>
-                  <div className={styles.sequencePrimary}>
-                    <div className={styles.sequenceHeader}>
-                      <Link href={`/campaigns/${campaign.id}`} className={styles.sequenceTitle}>
-                        {campaign.name}
-                      </Link>
-                      <span className="badge">{humanize(campaign.status)}</span>
+                  <Link
+                    href={`/campaigns/${campaign.id}`}
+                    className={styles.sequenceContentLink}
+                    aria-label={`Open sequence ${campaign.name}`}
+                  >
+                    <div className={styles.sequenceMainGrid}>
+                      <div className={styles.sequencePrimary}>
+                        <div className={styles.sequenceIdentity}>
+                          <div className={styles.sequenceIcon}>
+                            <SendHorizontal aria-hidden="true" />
+                          </div>
+                          <div className={styles.sequenceTitleBlock}>
+                            <div className={styles.sequenceHeader}>
+                              <h3 className={styles.sequenceTitle} title={campaign.name}>
+                                {campaign.name}
+                              </h3>
+                              <span className="badge">{humanize(campaign.status)}</span>
+                            </div>
+
+                            <div className={styles.sequenceMetaRow}>
+                              <span className={styles.metaPill} title={campaign.import.fileName}>
+                                <Users aria-hidden="true" />
+                                <span>{campaign.import.fileName}</span>
+                              </span>
+                              <span
+                                className={styles.metaPill}
+                                title={`${campaign.senderProfile.name} <${campaign.senderProfile.fromEmail}>`}
+                              >
+                                <Mail aria-hidden="true" />
+                                <span>{campaign.senderProfile.name}</span>
+                              </span>
+                              <span className={styles.metaPill} title={campaign.template.name}>
+                                <CheckCircle2 aria-hidden="true" />
+                                <span>{campaign.template.name}</span>
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className={`${styles.metricCell} ${styles.metricHealth}`}>
+                        <span>Health</span>
+                        <strong>{healthValue}</strong>
+                        <div className={styles.metricTrack} aria-hidden="true">
+                          <span style={{ width: `${progressPercent}%` }} />
+                        </div>
+                        <small>{healthDetail}</small>
+                      </div>
+
+                      <div className={`${styles.metricCell} ${styles.metricEnrolled}`}>
+                        <span>Enrolled</span>
+                        <strong>{formatCount(recipientCount)}</strong>
+                        <small>Recipients</small>
+                      </div>
+
+                      <div className={`${styles.metricCell} ${styles.metricPerformance}`}>
+                        <span>{performanceMetric.label}</span>
+                        <strong>{performanceMetric.value}</strong>
+                        <small>{performanceMetric.detail}</small>
+                      </div>
                     </div>
 
-                    <div className={styles.sequenceMetaRow}>
-                      <span className={styles.metaPill}>
-                        <Users aria-hidden="true" />
-                        {campaign.import.fileName}
-                      </span>
-                      <span className={styles.metaPill}>
-                        <Mail aria-hidden="true" />
-                        {campaign.senderProfile.name}
-                      </span>
-                      <span className={styles.metaPill}>
-                        <CheckCircle2 aria-hidden="true" />
-                        {campaign.template.name}
-                      </span>
-                    </div>
-                  </div>
+                    <div className={styles.sequenceDetails}>
+                      <div className={styles.detailItem}>
+                        <span>Delivery</span>
+                        <strong title={delivery.fullDetail}>{delivery.label}</strong>
+                        <small>{delivery.fullDetail}</small>
+                      </div>
 
-                  <div className={styles.sequenceSignals}>
-                    <div className={styles.signalCard}>
-                      <span>Delivery</span>
-                      <strong>{delivery.label}</strong>
-                      <p title={delivery.fullDetail}>
-                        <span>{delivery.detail}</span>
-                        {delivery.secondaryDetail ? <span>{delivery.secondaryDetail}</span> : null}
-                      </p>
-                    </div>
+                      <div className={styles.detailItem}>
+                        <span>Latest run</span>
+                        <strong>{latestRun ? humanize(latestRun.status) : "Waiting to launch"}</strong>
+                        <small>{latestRunValue ? <LocalDateTime value={latestRunValue} /> : "No delivery activity yet"}</small>
+                      </div>
 
-                    <div className={styles.signalCard}>
-                      <span>Latest run</span>
-                      <strong>{latestRun ? humanize(latestRun.status) : "Waiting to launch"}</strong>
-                      <p>{latestRunValue ? <LocalDateTime value={latestRunValue} /> : "No delivery activity yet"}</p>
-                    </div>
+                      <div className={styles.detailItem}>
+                        <span>Validation</span>
+                        <strong>{validatedAtValue ? "Validated" : "Needs validation"}</strong>
+                        <small>{validatedAtValue ? <LocalDateTime value={validatedAtValue} /> : "Before next send"}</small>
+                      </div>
 
-                    <div className={styles.signalCard}>
-                      <span>Delivery health</span>
-                      <strong>{latestRunSummary}</strong>
-                      <p>
-                        {validatedAtValue ? (
-                          <>
-                            Validated <LocalDateTime value={validatedAtValue} />
-                          </>
-                        ) : (
-                          "Needs validation before the next send"
-                        )}
-                      </p>
+                      <div className={styles.detailItem}>
+                        <span>Health</span>
+                        <strong>{latestRunSummary}</strong>
+                        <small>
+                          {latestRun && runMetricsKnown
+                            ? issueCount
+                              ? `${formatCount(issueCount)} issue${issueCount === 1 ? "" : "s"}`
+                              : "Clean delivery"
+                            : "No confirmed delivery yet"}
+                        </small>
+                      </div>
                     </div>
-                  </div>
+                  </Link>
 
                   <div className={styles.sequenceActions}>
                     <CampaignCardActions campaignId={campaign.id} campaignName={campaign.name} />
