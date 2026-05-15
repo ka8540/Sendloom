@@ -533,7 +533,7 @@ export default async function CampaignsPage({
                     className={styles.sequenceContentLink}
                     aria-label={`Open sequence ${campaign.name}`}
                   >
-                    <div className={styles.sequenceContent}>
+                    <div className={styles.sequenceMainGrid}>
                       <div className={styles.sequencePrimary}>
                         <div className={styles.sequenceIdentity}>
                           <div className={styles.sequenceIcon}>
@@ -568,52 +568,57 @@ export default async function CampaignsPage({
                         </div>
                       </div>
 
-                      <div className={styles.sequenceMetrics}>
-                        <div className={styles.metricCell}>
-                          <span>Health</span>
-                          <strong>{healthValue}</strong>
-                          <div className={styles.metricTrack} aria-hidden="true">
-                            <span style={{ width: `${progressPercent}%` }} />
-                          </div>
-                          <small>{healthDetail}</small>
+                      <div className={`${styles.metricCell} ${styles.metricHealth}`}>
+                        <span>Health</span>
+                        <strong>{healthValue}</strong>
+                        <div className={styles.metricTrack} aria-hidden="true">
+                          <span style={{ width: `${progressPercent}%` }} />
                         </div>
-
-                        <div className={styles.metricCell}>
-                          <span>Enrolled</span>
-                          <strong>{formatCount(recipientCount)}</strong>
-                          <small>Recipients</small>
-                        </div>
-
-                        <div className={styles.metricCell}>
-                          <span>{performanceMetric.label}</span>
-                          <strong>{performanceMetric.value}</strong>
-                          <small>{performanceMetric.detail}</small>
-                        </div>
+                        <small>{healthDetail}</small>
                       </div>
 
-                      <div className={styles.sequenceDetails}>
-                        <span className={styles.detailSegment} title={delivery.fullDetail}>
-                          <strong>Delivery</strong>
-                          {delivery.label}
-                        </span>
-                        <span className={styles.detailSegment}>
-                          <strong>Latest run</strong>
-                          {latestRun ? humanize(latestRun.status) : "Waiting to launch"}
-                          {latestRunValue ? <LocalDateTime value={latestRunValue} /> : null}
-                        </span>
-                        <span className={styles.detailSegment}>
-                          <strong>Validation</strong>
-                          {validatedAtValue ? <LocalDateTime value={validatedAtValue} /> : "Before next send"}
-                        </span>
-                        <span className={styles.detailSegment}>
-                          <strong>Health</strong>
-                          {latestRunSummary}
+                      <div className={`${styles.metricCell} ${styles.metricEnrolled}`}>
+                        <span>Enrolled</span>
+                        <strong>{formatCount(recipientCount)}</strong>
+                        <small>Recipients</small>
+                      </div>
+
+                      <div className={`${styles.metricCell} ${styles.metricPerformance}`}>
+                        <span>{performanceMetric.label}</span>
+                        <strong>{performanceMetric.value}</strong>
+                        <small>{performanceMetric.detail}</small>
+                      </div>
+                    </div>
+
+                    <div className={styles.sequenceDetails}>
+                      <div className={styles.detailItem}>
+                        <span>Delivery</span>
+                        <strong title={delivery.fullDetail}>{delivery.label}</strong>
+                        <small>{delivery.fullDetail}</small>
+                      </div>
+
+                      <div className={styles.detailItem}>
+                        <span>Latest run</span>
+                        <strong>{latestRun ? humanize(latestRun.status) : "Waiting to launch"}</strong>
+                        <small>{latestRunValue ? <LocalDateTime value={latestRunValue} /> : "No delivery activity yet"}</small>
+                      </div>
+
+                      <div className={styles.detailItem}>
+                        <span>Validation</span>
+                        <strong>{validatedAtValue ? "Validated" : "Needs validation"}</strong>
+                        <small>{validatedAtValue ? <LocalDateTime value={validatedAtValue} /> : "Before next send"}</small>
+                      </div>
+
+                      <div className={styles.detailItem}>
+                        <span>Health</span>
+                        <strong>{latestRunSummary}</strong>
+                        <small>
                           {latestRun && runMetricsKnown
                             ? issueCount
                               ? `${formatCount(issueCount)} issue${issueCount === 1 ? "" : "s"}`
                               : "Clean delivery"
-                            : null}
-                        </span>
+                            : "No confirmed delivery yet"}
+                        </small>
                       </div>
                     </div>
                   </Link>
