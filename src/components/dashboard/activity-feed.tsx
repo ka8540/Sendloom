@@ -4,10 +4,12 @@ import {
   CircleCheck,
   FilePenLine,
   FileSpreadsheet,
-  PencilLine,
+  MessageSquareReply,
   SendHorizontal,
-  ShieldAlert,
-  TriangleAlert
+  ShieldBan,
+  Trash2,
+  TriangleAlert,
+  Workflow
 } from "lucide-react";
 
 import type { ActivityItem } from "@/components/dashboard/types";
@@ -81,38 +83,66 @@ function capitalize(value: string) {
 }
 
 function getActivityIcon(item: ActivityItem) {
-  const title = item.title.toLowerCase();
+  const activityText = `${item.title} ${item.description}`.toLowerCase();
 
-  if (item.tone === "warning" || title.includes("failed") || title.includes("issue") || title.includes("error")) {
+  if (isFailureActivity(item, activityText)) {
     return TriangleAlert;
   }
 
-  if (title.includes("ready") || title.includes("validated")) {
-    return CircleCheck;
+  if (matchesAny(activityText, ["deleted", "removed", "trashed"])) {
+    return Trash2;
   }
 
-  if (item.kind === "template") {
-    return FilePenLine;
+  if (item.kind === "suppression") {
+    return ShieldBan;
   }
 
   if (item.kind === "import") {
     return FileSpreadsheet;
   }
 
-  if (item.kind === "suppression") {
-    return ShieldAlert;
-  }
-
-  if (item.kind === "run" && item.tone === "accent") {
-    return SendHorizontal;
-  }
-
-  if (item.kind === "run" && item.tone === "success") {
-    return CircleCheck;
+  if (item.kind === "template") {
+    return FilePenLine;
   }
 
   if (item.kind === "run") {
-    return PencilLine;
+    if (matchesAny(activityText, ["reply", "replied", "response received"])) {
+      return MessageSquareReply;
+    }
+
+    if (matchesAny(activityText, ["ready", "validated"])) {
+      return CircleCheck;
+    }
+
+    if (matchesAny(activityText, ["send", "sending", "sent", "launch", "launched", "running", "queued"])) {
+      return SendHorizontal;
+    }
+
+    return Workflow;
+  }
+
+  if (matchesAny(activityText, ["template", "copy refreshed"])) {
+    return FilePenLine;
+  }
+
+  if (matchesAny(activityText, ["import", ".csv", ".xlsx", ".xls", "rows are ready", "list ready", "mapping ready"])) {
+    return FileSpreadsheet;
+  }
+
+  if (matchesAny(activityText, ["suppression", "unsubscribe", "blocked"])) {
+    return ShieldBan;
+  }
+
+  if (matchesAny(activityText, ["ready", "validated"])) {
+    return CircleCheck;
+  }
+
+  if (matchesAny(activityText, ["reply", "replied", "response received"])) {
+    return MessageSquareReply;
+  }
+
+  if (matchesAny(activityText, ["sequence", "campaign", "launch", "launched", "send", "sending", "sent"])) {
+    return SendHorizontal;
   }
 
   return Activity;
@@ -130,4 +160,12 @@ function getActivityTone(item: ActivityItem): ActivityItem["tone"] {
   }
 
   return item.tone;
+}
+
+function isFailureActivity(item: ActivityItem, activityText: string) {
+  return item.tone === "warning" || matchesAny(activityText, ["failed", "failure", "error", "issue"]);
+}
+
+function matchesAny(value: string, terms: string[]) {
+  return terms.some((term) => value.includes(term));
 }
