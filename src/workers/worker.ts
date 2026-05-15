@@ -5,14 +5,10 @@ import { getUserSafeGmailSendError, isGmailDailyLimitError, sendEmail, type Emai
 import { queues } from "@/lib/queue";
 import { consumeSendWindow, getSendWindowKey } from "@/lib/rate-limit";
 import { getRedis } from "@/lib/redis";
+import { classifySendFailure, isRetryableFailure, MAX_RETRY_ATTEMPTS } from "@/lib/retry-policy";
 import { enqueueRecipientJobs, markRecipientAttempt, pauseCampaignRunForSenderLimit } from "@/services/campaigns";
 
 const connection = getRedis() as unknown as ConnectionOptions;
-
-function isRetriableError(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
-  return /429|rate|timeout|temporar/i.test(message);
-}
 
 const launchWorker = new Worker(
   "launch",
@@ -72,7 +68,9 @@ const sendWorker = new Worker(
         await markRecipientAttempt({
           jobId,
           status: "RETRYING",
-          lastError: "Rate limit window reached"
+          lastError: "Rate limit window reached",
+          failureCode: "GMAIL_RATE_LIMITED",
+          failureSource: "GMAIL"
         });
         await queues.send.add(
           "send-recipient",
@@ -121,11 +119,17 @@ const sendWorker = new Worker(
         return;
       }
 
-      if (recipientJob.retryCount < 5 && isRetriableError(error)) {
+      const failureCode = classifySendFailure(error, {
+        senderConnected: Boolean(recipientJob.campaignRun.campaign.senderProfile.oauthRefreshToken)
+      });
+
+      if (recipientJob.retryCount < MAX_RETRY_ATTEMPTS && isRetryableFailure(failureCode)) {
         await markRecipientAttempt({
           jobId,
           status: "RETRYING",
-          lastError: message
+          lastError: message,
+          failureCode,
+          failureSource: "GMAIL"
         });
         await queues.send.add(
           "send-recipient",
@@ -141,7 +145,9 @@ const sendWorker = new Worker(
       await markRecipientAttempt({
         jobId,
         status: "FAILED",
-        lastError: message
+        lastError: message,
+        failureCode,
+        failureSource: "GMAIL"
       });
     }
   },

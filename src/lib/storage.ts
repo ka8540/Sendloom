@@ -1,9 +1,10 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
+import { access, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { env } from "@/lib/env";
 
-function getUploadRoot() {
+export function getUploadRoot() {
   if (process.env.VERCEL) {
     return path.resolve("/tmp", env.LOCAL_UPLOAD_DIR);
   }
@@ -22,4 +23,22 @@ export async function storeUpload(fileName: string, contents: Buffer, subdirecto
   await writeFile(fullPath, contents);
 
   return fullPath;
+}
+
+export async function checkStorageHealth() {
+  try {
+    const root = getUploadRoot();
+    await mkdir(root, { recursive: true });
+    await access(root, fsConstants.R_OK | fsConstants.W_OK);
+
+    return {
+      status: "ok" as const,
+      message: "Storage reachable."
+    };
+  } catch {
+    return {
+      status: "down" as const,
+      message: "Storage unavailable."
+    };
+  }
 }

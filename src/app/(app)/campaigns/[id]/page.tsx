@@ -22,11 +22,24 @@ import { ErrorToastOnMount } from "@/components/error-toast-provider";
 import { LocalDateTime } from "@/components/local-date-time";
 import { getAttachmentPreviewKind } from "@/lib/attachments";
 import { requireOperatorUser } from "@/lib/auth";
+import {
+  calculateCampaignHealth,
+  getValidationChecksFromSnapshot,
+  getValidationSummaryFromSnapshot,
+  type CampaignHealthStatus
+} from "@/lib/campaign-health";
 import { SCHEDULE_EDIT_DISABLED_MESSAGE, canEditCampaignSchedule } from "@/lib/campaign-schedule-edit";
 import { isCampaignSetupLocked } from "@/lib/campaign-setup-lock";
 import { prisma } from "@/lib/db";
+import { FAILURE_CODES, getHumanReadableFailureMessage, type FailureCode } from "@/lib/failures";
 import { GMAIL_RECONNECT_ERROR } from "@/lib/provider";
-import { launchCampaign, pauseCampaign, processPendingCampaignWork, validateCampaign } from "@/services/campaigns";
+import {
+  CampaignLaunchBlockedError,
+  launchCampaign,
+  pauseCampaign,
+  processPendingCampaignWork,
+  validateCampaign
+} from "@/services/campaigns";
 import { syncRepliesForSenderProfile } from "@/services/replies";
 import styles from "./page.module.css";
 
@@ -115,6 +128,35 @@ function getDeliveredCount(run?: {
   return (run?.sentCount ?? 0) + (run?.openedCount ?? 0) + (run?.clickedCount ?? 0);
 }
 
+function getHealthLabel(status: CampaignHealthStatus) {
+  if (status === "NEEDS_ATTENTION") {
+    return "Needs attention";
+  }
+
+  return humanize(status);
+}
+
+function getLatestActivity(...values: Array<Date | null | undefined>) {
+  return values.reduce<Date | null>((latest, value) => {
+    if (!value) {
+      return latest;
+    }
+
+    return !latest || value > latest ? value : latest;
+  }, null);
+}
+
+function getRecipientFailureCode(metadata: unknown): FailureCode | null {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return null;
+  }
+
+  const failureCode = (metadata as { failureCode?: unknown }).failureCode;
+  return typeof failureCode === "string" && FAILURE_CODES.includes(failureCode as FailureCode)
+    ? (failureCode as FailureCode)
+    : null;
+}
+
 function formatScheduleLabel(scheduleType?: string | null, scheduleConfig?: ScheduleConfig | null) {
   if (scheduleType === "once") {
     const onceConfig = scheduleConfig && "scheduledFor" in scheduleConfig ? scheduleConfig : null;
@@ -193,7 +235,19 @@ async function launch(campaignId: string) {
     redirect(`/campaigns/${campaignId}?${params.toString()}`);
   }
 
-  const run = await launchCampaign(campaignId, user.id);
+  let run;
+  try {
+    run = await launchCampaign(campaignId, user.id);
+  } catch (error) {
+    if (error instanceof CampaignLaunchBlockedError) {
+      const params = new URLSearchParams({
+        launch_error: error.message
+      });
+      redirect(`/campaigns/${campaignId}?${params.toString()}`);
+    }
+
+    throw error;
+  }
   revalidatePath(`/campaigns/${campaignId}`);
   revalidatePath("/campaigns");
   after(async () => {
@@ -248,7 +302,19 @@ async function togglePause(campaignId: string) {
       redirect(`/campaigns/${campaignId}?${params.toString()}`);
     }
 
-    const run = await launchCampaign(campaignId, user.id);
+    let run;
+    try {
+      run = await launchCampaign(campaignId, user.id);
+    } catch (error) {
+      if (error instanceof CampaignLaunchBlockedError) {
+        const params = new URLSearchParams({
+          launch_error: error.message
+        });
+        redirect(`/campaigns/${campaignId}?${params.toString()}`);
+      }
+
+      throw error;
+    }
     revalidatePath(`/campaigns/${campaignId}`);
     revalidatePath("/campaigns");
     after(async () => {
@@ -313,6 +379,7 @@ export default async function CampaignDetailPage({
   const gmailStatus = getSearchParam(resolvedSearchParams, "gmail");
   const gmailError = getSearchParam(resolvedSearchParams, "gmail_error");
   const gmailSender = getSearchParam(resolvedSearchParams, "gmail_sender");
+  const launchError = getSearchParam(resolvedSearchParams, "launch_error");
   const gmailErrorMessage = gmailError ? `${gmailError}${gmailSender ? ` Reconnect ${gmailSender} before sending again.` : ""}` : null;
   const campaign = await prisma.campaign.findFirstOrThrow({
     where: {
@@ -356,7 +423,8 @@ export default async function CampaignDetailPage({
   }
 
   const requestedRecipientPage = Number.parseInt(String(resolvedSearchParams.recipientsPage ?? "1"), 10);
-  const [imports, mappings, templates, senders, recipientJobCount, replyCountAggregate] = await Promise.all([
+  const [imports, mappings, templates, senders, recipientJobCount, replyCountAggregate, recipientStatusCounts, latestRecipientActivity] =
+    await Promise.all([
     prisma.import.findMany({
       where: { userId: user.id },
       orderBy: { updatedAt: "desc" },
@@ -414,6 +482,29 @@ export default async function CampaignDetailPage({
           _sum: {
             replyCount: 0
           }
+        }),
+    latestRun
+      ? prisma.recipientJob.groupBy({
+          by: ["status"],
+          where: {
+            campaignRunId: latestRun.id
+          },
+          _count: true
+        })
+      : Promise.resolve([]),
+    latestRun
+      ? prisma.recipientJob.aggregate({
+          where: {
+            campaignRunId: latestRun.id
+          },
+          _max: {
+            updatedAt: true
+          }
+        })
+      : Promise.resolve({
+          _max: {
+            updatedAt: null
+          }
         })
   ]);
 
@@ -428,6 +519,31 @@ export default async function CampaignDetailPage({
     (attachment) => attachment.fileName
   );
   const issueCount = (latestRun?.failedCount ?? 0) + (latestRun?.invalidCount ?? 0);
+  const validationSummary = getValidationSummaryFromSnapshot(campaign.validationSnapshot);
+  const validationChecks = getValidationChecksFromSnapshot(campaign.validationSnapshot);
+  const recipientStatusCountMap = new Map(recipientStatusCounts.map((entry) => [entry.status, entry._count]));
+  const pendingRecipients = (recipientStatusCountMap.get("PENDING") ?? 0) + (recipientStatusCountMap.get("RETRYING") ?? 0);
+  const retryableFailureCount = recipientStatusCountMap.get("RETRYING") ?? 0;
+  const lastActivityAt = latestRun
+    ? getLatestActivity(latestRun.updatedAt, latestRecipientActivity._max.updatedAt)
+    : campaign.updatedAt;
+  const sequenceHealth = calculateCampaignHealth({
+    campaignStatus: campaign.status,
+    runStatus: latestRun?.status ?? null,
+    pendingRecipients,
+    failedRecipients: latestRun?.failedCount ?? 0,
+    invalidRecipients: latestRun?.invalidCount ?? 0,
+    suppressedRecipients: latestRun?.suppressedCount ?? 0,
+    retryableFailureCount,
+    validationSummary,
+    validationChecks,
+    lastActivityAt,
+    lastReplySyncError: campaign.senderProfile.lastReplySyncError,
+    gmailWarning: senderNeedsReconnect
+  });
+  const healthActionHints = Array.from(
+    new Set(validationChecks.map((check) => check.actionLabel).filter((label): label is string => Boolean(label)))
+  ).slice(0, 4);
   const replyCount = replyCountAggregate._sum.replyCount ?? 0;
   const deliveredCount = getDeliveredCount(latestRun);
   const launchButtonLabel = isActiveRun
@@ -535,6 +651,7 @@ export default async function CampaignDetailPage({
     <div className={styles.page}>
       <ActiveRunRefresher active={isActiveRun} />
       {gmailErrorMessage ? <ErrorToastOnMount message={gmailErrorMessage} title="Gmail connection failed" /> : null}
+      {launchError ? <ErrorToastOnMount message={launchError} title="Sequence launch blocked" /> : null}
       {gmailStatus === "connected" ? (
         <div className={styles.flashNotice}>
           <RefreshCcw aria-hidden="true" />
@@ -692,6 +809,62 @@ export default async function CampaignDetailPage({
           <span className={styles.metricMeta}>Failures and invalid records that still need review.</span>
         </article>
       </section>
+      <section className={styles.panel}>
+        <div className={styles.panelHeader}>
+          <div>
+            <h2>Sequence Health</h2>
+            <p>Current validation and delivery posture.</p>
+          </div>
+          <span className={`badge ${sequenceHealth.status === "HEALTHY" ? "" : "warning"}`}>
+            {getHealthLabel(sequenceHealth.status)}
+          </span>
+        </div>
+
+        <div className={styles.summaryList}>
+          <div className={styles.summaryItem}>
+            <ShieldAlert aria-hidden="true" />
+            <div>
+              <span>Validation</span>
+              <strong>
+                {validationSummary.blockers} blockers · {validationSummary.errors} errors · {validationSummary.warnings} warnings
+              </strong>
+            </div>
+          </div>
+          <div className={styles.summaryItem}>
+            <SendHorizontal aria-hidden="true" />
+            <div>
+              <span>Recipient health</span>
+              <strong>
+                {latestRun?.failedCount ?? 0} failed · {retryableFailureCount} retryable · {latestRun?.suppressedCount ?? 0} skipped/suppressed
+              </strong>
+            </div>
+          </div>
+          <div className={styles.summaryItem}>
+            <RefreshCcw aria-hidden="true" />
+            <div>
+              <span>Last activity</span>
+              <strong>{lastActivityAt ? <LocalDateTime value={lastActivityAt.toISOString()} /> : "No activity yet"}</strong>
+            </div>
+          </div>
+        </div>
+
+        {sequenceHealth.stuck ? (
+          <div className={styles.reconnectNotice}>
+            <strong>Sequence appears stuck</strong>
+            <p>Pending recipients remain, but no campaign activity has changed for at least 20 minutes.</p>
+          </div>
+        ) : null}
+
+        {healthActionHints.length ? (
+          <div className={styles.metaRow}>
+            {healthActionHints.map((hint) => (
+              <span key={hint} className={styles.metaChip}>
+                {hint}
+              </span>
+            ))}
+          </div>
+        ) : null}
+      </section>
       <section className={styles.detailGrid}>
         <article className={styles.panel}>
           <CampaignSetupEditor
@@ -719,8 +892,11 @@ export default async function CampaignDetailPage({
               {paginatedRecipientJobs.map((job) => (
                 (() => {
                   const showLastError = RECIPIENT_ERROR_STATUSES.has(job.status) && Boolean(job.lastError);
+                  const failureCode = getRecipientFailureCode(job.metadata);
                   const jobDetail = showLastError
-                    ? job.lastError
+                    ? failureCode
+                      ? getHumanReadableFailureMessage(failureCode)
+                      : job.lastError
                     : RECIPIENT_SUCCESS_STATUSES.has(job.status)
                       ? "Delivered successfully"
                       : "No error reported";
@@ -734,6 +910,22 @@ export default async function CampaignDetailPage({
                       <div className={styles.jobTrail}>
                         <span className={styles.jobStatusBadge}>{humanize(job.status)}</span>
                         <span className={showLastError ? styles.jobError : styles.jobErrorMuted}>{jobDetail}</span>
+                        {showLastError ? (
+                          <>
+                            <span className={styles.jobErrorMuted}>
+                              {job.status === "RETRYING" ? "Retryable" : "Permanent"}
+                            </span>
+                            <span className={styles.jobErrorMuted}>Attempt {job.retryCount}</span>
+                            <span className={styles.jobErrorMuted}>
+                              Last attempt <LocalDateTime value={job.updatedAt.toISOString()} />
+                            </span>
+                            {job.nextRetryAt ? (
+                              <span className={styles.jobErrorMuted}>
+                                Next retry <LocalDateTime value={job.nextRetryAt.toISOString()} />
+                              </span>
+                            ) : null}
+                          </>
+                        ) : null}
                       </div>
                     </div>
                   );

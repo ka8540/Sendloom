@@ -7,7 +7,7 @@ import { getAttachmentFilesFromFormData } from "@/lib/campaign-attachments";
 import { prisma } from "@/lib/db";
 import { GMAIL_RECONNECT_ERROR } from "@/lib/provider";
 import { storeUpload } from "@/lib/storage";
-import { createCampaignDraft, launchCampaign, processPendingCampaignWork, validateCampaign } from "@/services/campaigns";
+import { CampaignLaunchBlockedError, createCampaignDraft, launchCampaign, processPendingCampaignWork } from "@/services/campaigns";
 
 export const maxDuration = 60;
 
@@ -143,8 +143,23 @@ export async function POST(request: Request) {
   );
 
   if (payload.autoLaunch && payload.scheduleRule.type === "immediate") {
-    await validateCampaign(campaign.id, auth.user.id);
-    const run = await launchCampaign(campaign.id, auth.user.id);
+    let run;
+    try {
+      run = await launchCampaign(campaign.id, auth.user.id);
+    } catch (error) {
+      if (error instanceof CampaignLaunchBlockedError) {
+        return NextResponse.json(
+          {
+            error: error.message,
+            campaignId: campaign.id,
+            validation: error.report
+          },
+          { status: 409 }
+        );
+      }
+
+      throw error;
+    }
     after(async () => {
       await processPendingCampaignWork({
         runId: run.id,
@@ -155,7 +170,23 @@ export async function POST(request: Request) {
   }
 
   if (payload.scheduleRule.type === "once" || payload.scheduleRule.type === "recurring") {
-    const run = await launchCampaign(campaign.id, auth.user.id);
+    let run;
+    try {
+      run = await launchCampaign(campaign.id, auth.user.id);
+    } catch (error) {
+      if (error instanceof CampaignLaunchBlockedError) {
+        return NextResponse.json(
+          {
+            error: error.message,
+            campaignId: campaign.id,
+            validation: error.report
+          },
+          { status: 409 }
+        );
+      }
+
+      throw error;
+    }
     return NextResponse.json({
       campaignId: campaign.id,
       runId: run.id,

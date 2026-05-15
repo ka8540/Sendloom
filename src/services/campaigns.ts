@@ -1,4 +1,3 @@
-import { addMinutes } from "date-fns";
 import { Prisma, type CampaignStatus } from "@prisma/client";
 
 import { CAMPAIGN_SETUP_LOCKED_RUN_STATUSES, isCampaignSetupLocked } from "@/lib/campaign-setup-lock";
@@ -8,15 +7,22 @@ import {
   SCHEDULABLE_CAMPAIGN_STATUSES
 } from "@/lib/campaign-scheduling";
 import { prisma } from "@/lib/db";
+import type { FailureCode, FailureSource } from "@/lib/failures";
 import { buildMergePayload } from "@/lib/mapping";
 import { GMAIL_RECONNECT_ERROR, getUserSafeGmailSendError, isGmailReconnectError, sendEmail, type EmailAttachment } from "@/lib/provider";
 import { consumeSendWindow, getSendWindowKey } from "@/lib/rate-limit";
 import { getRedis } from "@/lib/redis";
+import { classifySendFailure, getNextRetryAt, isRetryableFailure, MAX_RETRY_ATTEMPTS } from "@/lib/retry-policy";
 import { getNextRunDate, normalizeScheduleRule } from "@/lib/schedule";
+import { getSystemHealth } from "@/lib/system-health";
 import { renderTemplate, renderTemplateContent, type TemplateFormat } from "@/lib/templates";
 import { makeTrackingUrl, shaKey } from "@/lib/tracking";
 import type { CampaignValidationReport, ScheduleRule } from "@/lib/types";
-import { buildValidationReport } from "@/lib/validation";
+import {
+  buildStructuredValidationChecks,
+  buildValidationReport,
+  withStructuredValidationChecks
+} from "@/lib/validation";
 import { markSenderRequiresReconnect } from "@/services/senders";
 import { getSuppressedEmailSet, suppressEmail } from "@/services/suppressions";
 
@@ -29,6 +35,24 @@ function campaignOwnershipFilter(campaignId: string, userId?: string) {
 
 async function getSuppressedEmailsForUser(userId: string | null) {
   return userId ? getSuppressedEmailSet(userId) : new Set<string>();
+}
+
+async function getSuppressionReasonsForUser(userId: string | null) {
+  if (!userId) {
+    return new Map<string, string>();
+  }
+
+  const suppressions = await prisma.suppression.findMany({
+    where: {
+      userId
+    },
+    select: {
+      email: true,
+      reason: true
+    }
+  });
+
+  return new Map(suppressions.map((entry) => [entry.email, entry.reason]));
 }
 
 type CampaignAttachmentSnapshot = EmailAttachment;
@@ -227,9 +251,18 @@ async function ensureRunIsStarted(runId: string) {
   });
 }
 
-function isRetriableError(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
-  return /429|rate|timeout|temporar/i.test(message);
+export function hasLaunchBlockingValidationIssues(report: CampaignValidationReport) {
+  return Boolean(report.summary && (report.summary.blockers > 0 || report.summary.errors > 0));
+}
+
+export class CampaignLaunchBlockedError extends Error {
+  report: CampaignValidationReport;
+
+  constructor(report: CampaignValidationReport) {
+    super("Fix validation blockers before launching this sequence.");
+    this.name = "CampaignLaunchBlockedError";
+    this.report = report;
+  }
 }
 
 export async function createCampaignDraft(input: {
@@ -303,33 +336,68 @@ export async function validateCampaign(campaignId: string, userId?: string): Pro
   const campaign = await prisma.campaign.findFirstOrThrow({
     where: campaignOwnershipFilter(campaignId, userId),
     include: {
+      senderProfile: true,
+      mapping: true,
+      template: true,
       import: {
         include: {
+          columns: true,
           rows: true
         }
       }
     }
   });
 
-  const suppressedEmails = await getSuppressedEmailsForUser(campaign.userId);
+  const [suppressedEmails, suppressionReasons, systemHealth] = await Promise.all([
+    getSuppressedEmailsForUser(campaign.userId),
+    getSuppressionReasonsForUser(campaign.userId),
+    getSystemHealth()
+  ]);
   const templateSnapshot = campaign.templateSnapshot as CampaignTemplateSnapshot;
-  const report = buildValidationReport({
-    rows: campaign.import.rows.map((row) => {
-      const payload = buildMergePayload(row.normalized as Record<string, unknown>, campaign.mappingSnapshot as {
-        reservedFieldMap?: Record<string, string>;
-        variableMap?: Record<string, string>;
-      });
+  const mappingSnapshot = campaign.mappingSnapshot as {
+    reservedFieldMap?: Record<string, string>;
+    variableMap?: Record<string, string>;
+  };
+  const rows = campaign.import.rows.map((row) => {
+    const payload = buildMergePayload(row.normalized as Record<string, unknown>, mappingSnapshot);
 
-      return {
-        rowIndex: row.rowIndex,
-        email: typeof payload.email === "string" ? payload.email : row.email,
-        payload
-      };
-    }),
+    return {
+      rowIndex: row.rowIndex,
+      email: typeof payload.email === "string" ? payload.email : row.email,
+      payload,
+      normalized: row.normalized as Record<string, unknown>
+    };
+  });
+  const baseReport = buildValidationReport({
+    rows,
     templateSubject: templateSnapshot.subject,
     templateHtml: templateSnapshot.htmlBody,
     suppressedEmails
   });
+  const checks = await buildStructuredValidationChecks({
+    campaignId,
+    userId: campaign.userId,
+    senderProfile: campaign.senderProfile,
+    importRecord: {
+      rowCount: campaign.import.rowCount,
+      rows: rows.map((row) => ({
+        rowIndex: row.rowIndex,
+        email: row.email,
+        normalized: row.normalized
+      })),
+      columns: campaign.import.columns
+    },
+    mappingRecord: campaign.mapping,
+    templateRecord: campaign.template,
+    templateSnapshot,
+    mappingSnapshot,
+    scheduleType: campaign.scheduleType,
+    scheduleConfig: campaign.scheduleConfig,
+    suppressionReasons,
+    report: baseReport,
+    systemHealth
+  });
+  const report = withStructuredValidationChecks(baseReport, checks);
 
   await prisma.campaign.update({
     where: { id: campaignId },
@@ -339,6 +407,15 @@ export async function validateCampaign(campaignId: string, userId?: string): Pro
       validationSnapshot: report
     }
   });
+
+  return report;
+}
+
+async function ensureCampaignLaunchable(campaignId: string, userId?: string) {
+  const report = await validateCampaign(campaignId, userId);
+  if (hasLaunchBlockingValidationIssues(report)) {
+    throw new CampaignLaunchBlockedError(report);
+  }
 
   return report;
 }
@@ -646,6 +723,27 @@ export async function updateCampaignSchedule(
 }
 
 export async function launchCampaign(campaignId: string, userId?: string) {
+  const existingActiveRun = await prisma.campaignRun.findFirst({
+    where: {
+      campaignId,
+      ...(userId
+        ? {
+            campaign: {
+              userId
+            }
+          }
+        : {}),
+      status: {
+        in: ["QUEUED", "RUNNING"]
+      }
+    },
+    orderBy: { createdAt: "desc" }
+  });
+
+  if (!existingActiveRun) {
+    await ensureCampaignLaunchable(campaignId, userId);
+  }
+
   const launchedRun = await withRedisLock(`sendloom:campaign-launch:${campaignId}`, RUN_LOCK_TTL_SECONDS, async () => {
     const campaign = await prisma.campaign.findFirstOrThrow({
       where: campaignOwnershipFilter(campaignId, userId),
@@ -1131,7 +1229,9 @@ async function processRecipientJob(recipientJob: RecipientJobWithContext) {
         await markRecipientAttempt({
           jobId: latestJob.id,
           status: "RETRYING",
-          lastError: "Rate limit window reached"
+          lastError: "Rate limit window reached",
+          failureCode: "GMAIL_RATE_LIMITED",
+          failureSource: "GMAIL"
         });
 
         return {
@@ -1178,7 +1278,9 @@ async function processRecipientJob(recipientJob: RecipientJobWithContext) {
         await markRecipientAttempt({
           jobId: latestJob.id,
           status: "FAILED",
-          lastError: GMAIL_RECONNECT_ERROR
+          lastError: GMAIL_RECONNECT_ERROR,
+          failureCode: "GMAIL_PROFILE_DISCONNECTED",
+          failureSource: "GMAIL"
         });
 
         await failQueuedRecipientJobs(latestJob.campaignRunId, GMAIL_RECONNECT_ERROR, latestJob.id);
@@ -1191,11 +1293,17 @@ async function processRecipientJob(recipientJob: RecipientJobWithContext) {
 
       console.error("[campaign-send] Delivery failed.", error);
 
-      if (latestJob.retryCount < 5 && isRetriableError(error)) {
+      const failureCode = classifySendFailure(error, {
+        senderConnected: Boolean(latestJob.campaignRun.campaign.senderProfile.oauthRefreshToken)
+      });
+
+      if (latestJob.retryCount < MAX_RETRY_ATTEMPTS && isRetryableFailure(failureCode)) {
         await markRecipientAttempt({
           jobId: latestJob.id,
           status: "RETRYING",
-          lastError: message
+          lastError: message,
+          failureCode,
+          failureSource: "GMAIL"
         });
 
         return {
@@ -1207,7 +1315,9 @@ async function processRecipientJob(recipientJob: RecipientJobWithContext) {
       await markRecipientAttempt({
         jobId: latestJob.id,
         status: "FAILED",
-        lastError: message
+        lastError: message,
+        failureCode,
+        failureSource: "GMAIL"
       });
 
       return {
@@ -1355,7 +1465,24 @@ export async function markRecipientAttempt(args: {
   status: "SENT" | "FAILED" | "RETRYING" | "INVALID";
   providerMessageId?: string;
   lastError?: string;
+  failureCode?: FailureCode;
+  failureSource?: FailureSource;
 }) {
+  const current = await prisma.recipientJob.findUniqueOrThrow({
+    where: { id: args.jobId },
+    select: {
+      retryCount: true,
+      metadata: true
+    }
+  });
+  const currentMetadata =
+    current.metadata && typeof current.metadata === "object" && !Array.isArray(current.metadata)
+      ? (current.metadata as Record<string, unknown>)
+      : {};
+  const retryable = args.failureCode ? isRetryableFailure(args.failureCode) : false;
+  const nextRetryAt =
+    args.status === "RETRYING" && args.failureCode ? getNextRetryAt(args.failureCode, current.retryCount) : null;
+  const now = new Date();
   const updated = await prisma.recipientJob.update({
     where: { id: args.jobId },
     data: {
@@ -1363,7 +1490,15 @@ export async function markRecipientAttempt(args: {
       providerMessageId: args.providerMessageId,
       lastError: args.status === "SENT" ? null : args.lastError ?? null,
       retryCount: args.status === "RETRYING" ? { increment: 1 } : undefined,
-      nextRetryAt: args.status === "RETRYING" ? addMinutes(new Date(), 5) : null
+      nextRetryAt,
+      metadata: {
+        ...currentMetadata,
+        failureCode: args.status === "SENT" ? null : args.failureCode ?? null,
+        failureSource: args.status === "SENT" ? null : args.failureSource ?? null,
+        retryable: args.status === "SENT" ? false : retryable,
+        lastAttemptAt: now.toISOString(),
+        resolvedAt: args.status === "SENT" ? now.toISOString() : null
+      } as Prisma.InputJsonValue
     }
   });
 

@@ -1,7 +1,9 @@
 import type { CSSProperties } from "react";
 
 import { AdminUserManagement } from "@/components/admin-user-management";
+import { LocalDateTime } from "@/components/local-date-time";
 import { requireAdminUser } from "@/lib/auth";
+import { getSystemHealth } from "@/lib/system-health";
 import { listAdminUsers } from "@/services/admin";
 
 import styles from "./page.module.css";
@@ -93,7 +95,15 @@ function AdminStatsCharts({
 
 export default async function AdminDashboardPage() {
   const admin = await requireAdminUser();
-  const users = await listAdminUsers();
+  const [users, systemHealth] = await Promise.all([listAdminUsers(), getSystemHealth()]);
+  const systemHealthCards = [
+    ["Database", systemHealth.checks.database],
+    ["Redis", systemHealth.checks.redis],
+    ["Storage", systemHealth.checks.storage],
+    ["Google OAuth", systemHealth.checks.googleOAuth],
+    ["Mail provider", systemHealth.checks.mailProvider],
+    ["Cron", systemHealth.checks.cron]
+  ] satisfies Array<[string, { message: string }]>;
 
   const metrics = {
     totalUsers: users.length,
@@ -145,6 +155,31 @@ export default async function AdminDashboardPage() {
         <span className={`badge ${metrics.loggedInUsers ? "" : "warning"}`}>{metrics.loggedInUsers} active user session{metrics.loggedInUsers === 1 ? "" : "s"}</span>
         <span className={`badge ${metrics.restrictedUsers ? "warning" : ""}`}>{metrics.restrictedUsers} account restriction{metrics.restrictedUsers === 1 ? "" : "s"}</span>
         <span className="badge">Signed in as {admin.email}</span>
+      </section>
+
+      <section className={`${styles.visualCard} card`}>
+        <div className={styles.visualHeader}>
+          <div>
+            <p className={styles.sectionKicker}>System health</p>
+            <h2>Runtime checks</h2>
+          </div>
+          <span className={`${styles.statusPill} ${systemHealth.status === "ok" ? styles.statusPillActive : styles.statusPillWarning}`}>
+            {systemHealth.status === "ok" ? "Healthy" : systemHealth.status === "degraded" ? "Degraded" : "Down"}
+          </span>
+        </div>
+
+        <div className={styles.detailsGrid}>
+          {systemHealthCards.map(([label, check]) => (
+            <div key={label} className={styles.detailCard}>
+              <span className={styles.detailLabel}>{label}</span>
+              <span className={styles.detailValue}>{check.message}</span>
+            </div>
+          ))}
+        </div>
+
+        <p className={styles.sessionNote}>
+          Last checked <LocalDateTime value={systemHealth.timestamp} />.
+        </p>
       </section>
 
       <AdminStatsCharts

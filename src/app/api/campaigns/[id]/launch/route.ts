@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/api-auth";
 import { writeAuditLog } from "@/lib/audit";
-import { launchCampaign, processPendingCampaignWork } from "@/services/campaigns";
+import { CampaignLaunchBlockedError, launchCampaign, processPendingCampaignWork } from "@/services/campaigns";
 
 export const maxDuration = 60;
 
@@ -14,7 +14,22 @@ export async function POST(_: Request, context: { params: Promise<{ id: string }
   }
 
   const { id } = await context.params;
-  const run = await launchCampaign(id, auth.user.id);
+  let run;
+  try {
+    run = await launchCampaign(id, auth.user.id);
+  } catch (error) {
+    if (error instanceof CampaignLaunchBlockedError) {
+      return NextResponse.json(
+        {
+          error: error.message,
+          validation: error.report
+        },
+        { status: 409 }
+      );
+    }
+
+    throw error;
+  }
   after(async () => {
     await processPendingCampaignWork({
       runId: run.id,

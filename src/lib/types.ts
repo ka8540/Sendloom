@@ -20,6 +20,15 @@ export type ValidationIssue = {
   email?: string;
 };
 
+import type { FailureCheckResult } from "@/lib/failures";
+
+export type CampaignValidationSummary = {
+  blockers: number;
+  errors: number;
+  warnings: number;
+  info: number;
+};
+
 export type CampaignValidationReport = {
   validRecipients: number;
   invalidRecipients: number;
@@ -27,6 +36,8 @@ export type CampaignValidationReport = {
   duplicateRecipients: number;
   estimatedDurationMinutes: number;
   issues: ValidationIssue[];
+  checks?: FailureCheckResult[];
+  summary?: CampaignValidationSummary;
 };
 
 export type ScheduleRule =
