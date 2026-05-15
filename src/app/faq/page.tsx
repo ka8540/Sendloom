@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import faqStyles from "@/app/faq/page.module.css";
 import landingStyles from "@/app/landing.module.css";
 import legalStyles from "@/app/legal.module.css";
 import { BrandText } from "@/components/brand-text";
@@ -246,7 +247,6 @@ export default function FaqPage() {
       <div className={legalStyles.frame}>
         <header className={legalStyles.hero}>
           <span className={legalStyles.eyebrow}>Support</span>
-          <span className={legalStyles.meta}>30 answers</span>
           <h1 className={legalStyles.title}>Frequently Asked Questions</h1>
           <p className={legalStyles.description}>
             Answers to common questions about importing contacts, finding emails, writing templates, connecting Gmail,
@@ -320,6 +320,18 @@ export default function FaqPage() {
             </header>
 
             <FaqList sections={faqSections} />
+
+            <section className={faqStyles.contactSection} aria-labelledby="faq-contact-title">
+              <div className={faqStyles.contactCopy}>
+                <p className={faqStyles.contactEyebrow}>Need more help?</p>
+                <h3 id="faq-contact-title">Still have questions?</h3>
+                <p>If you have another question about Sendloom, contact us and we will help you find the right answer.</p>
+              </div>
+
+              <a className="button secondary" href="mailto:hello@sendloom.net">
+                Contact us
+              </a>
+            </section>
 
             <div className={legalStyles.bottomActions}>
               <Link className="button" href="/">

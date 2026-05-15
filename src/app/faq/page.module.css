@@ -117,6 +117,44 @@
   padding-bottom: 1rem;
 }
 
+.contactSection {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.15rem;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--surface-ghost);
+}
+
+.contactCopy {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.contactEyebrow {
+  margin: 0;
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.contactCopy h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 1.2rem;
+  letter-spacing: -0.03em;
+}
+
+.contactCopy p:last-child {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
 @media (max-width: 720px) {
   .faqCard {
     border-radius: 18px;
@@ -129,5 +167,15 @@
 
   .faqAnswer {
     padding-inline: 1rem;
+  }
+
+  .contactSection {
+    display: grid;
+    border-radius: 18px;
+  }
+
+  .contactSection :global(.button),
+  .contactSection :global(.secondary) {
+    width: 100%;
   }
 }

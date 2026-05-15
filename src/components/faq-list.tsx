@@ -4,7 +4,6 @@ import { ChevronDown } from "lucide-react";
 import { useState } from "react";
 
 import styles from "@/app/faq/page.module.css";
-import { renderBrandText } from "@/components/brand-text";
 
 type FaqItem = {
   answer: string;
@@ -73,14 +72,14 @@ export function FaqList({ sections }: { sections: readonly FaqSection[] }) {
                       type="button"
                       onClick={() => togglePinnedId(id)}
                     >
-                      <span>{renderBrandText(item.question)}</span>
+                      <span>{item.question}</span>
                       <ChevronDown aria-hidden="true" />
                     </button>
                   </h4>
 
                   <div id={answerId} aria-hidden={!isVisible} className={styles.faqAnswerWrap}>
                     <div className={styles.faqAnswerInner}>
-                      <p className={styles.faqAnswer}>{renderBrandText(item.answer)}</p>
+                      <p className={styles.faqAnswer}>{item.answer}</p>
                     </div>
                   </div>
                 </article>
