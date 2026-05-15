@@ -22,12 +22,6 @@ import { ErrorToastOnMount } from "@/components/error-toast-provider";
 import { LocalDateTime } from "@/components/local-date-time";
 import { getAttachmentPreviewKind } from "@/lib/attachments";
 import { requireOperatorUser } from "@/lib/auth";
-import {
-  calculateCampaignHealth,
-  getValidationChecksFromSnapshot,
-  getValidationSummaryFromSnapshot,
-  type CampaignHealthStatus
-} from "@/lib/campaign-health";
 import { SCHEDULE_EDIT_DISABLED_MESSAGE, canEditCampaignSchedule } from "@/lib/campaign-schedule-edit";
 import { isCampaignSetupLocked } from "@/lib/campaign-setup-lock";
 import { prisma } from "@/lib/db";
@@ -126,24 +120,6 @@ function getDeliveredCount(run?: {
   clickedCount?: number | null;
 } | null) {
   return (run?.sentCount ?? 0) + (run?.openedCount ?? 0) + (run?.clickedCount ?? 0);
-}
-
-function getHealthLabel(status: CampaignHealthStatus) {
-  if (status === "NEEDS_ATTENTION") {
-    return "Needs attention";
-  }
-
-  return humanize(status);
-}
-
-function getLatestActivity(...values: Array<Date | null | undefined>) {
-  return values.reduce<Date | null>((latest, value) => {
-    if (!value) {
-      return latest;
-    }
-
-    return !latest || value > latest ? value : latest;
-  }, null);
 }
 
 function getRecipientFailureCode(metadata: unknown): FailureCode | null {
@@ -423,7 +399,7 @@ export default async function CampaignDetailPage({
   }
 
   const requestedRecipientPage = Number.parseInt(String(resolvedSearchParams.recipientsPage ?? "1"), 10);
-  const [imports, mappings, templates, senders, recipientJobCount, replyCountAggregate, recipientStatusCounts, latestRecipientActivity] =
+  const [imports, mappings, templates, senders, recipientJobCount, replyCountAggregate, recipientStatusCounts] =
     await Promise.all([
     prisma.import.findMany({
       where: { userId: user.id },
@@ -492,20 +468,6 @@ export default async function CampaignDetailPage({
           _count: true
         })
       : Promise.resolve([]),
-    latestRun
-      ? prisma.recipientJob.aggregate({
-          where: {
-            campaignRunId: latestRun.id
-          },
-          _max: {
-            updatedAt: true
-          }
-        })
-      : Promise.resolve({
-          _max: {
-            updatedAt: null
-          }
-        })
   ]);
 
   const senderNeedsReconnect = !campaign.senderProfile.oauthRefreshToken;
@@ -519,31 +481,7 @@ export default async function CampaignDetailPage({
     (attachment) => attachment.fileName
   );
   const issueCount = (latestRun?.failedCount ?? 0) + (latestRun?.invalidCount ?? 0);
-  const validationSummary = getValidationSummaryFromSnapshot(campaign.validationSnapshot);
-  const validationChecks = getValidationChecksFromSnapshot(campaign.validationSnapshot);
   const recipientStatusCountMap = new Map(recipientStatusCounts.map((entry) => [entry.status, entry._count]));
-  const pendingRecipients = (recipientStatusCountMap.get("PENDING") ?? 0) + (recipientStatusCountMap.get("RETRYING") ?? 0);
-  const retryableFailureCount = recipientStatusCountMap.get("RETRYING") ?? 0;
-  const lastActivityAt = latestRun
-    ? getLatestActivity(latestRun.updatedAt, latestRecipientActivity._max.updatedAt)
-    : campaign.updatedAt;
-  const sequenceHealth = calculateCampaignHealth({
-    campaignStatus: campaign.status,
-    runStatus: latestRun?.status ?? null,
-    pendingRecipients,
-    failedRecipients: latestRun?.failedCount ?? 0,
-    invalidRecipients: latestRun?.invalidCount ?? 0,
-    suppressedRecipients: latestRun?.suppressedCount ?? 0,
-    retryableFailureCount,
-    validationSummary,
-    validationChecks,
-    lastActivityAt,
-    lastReplySyncError: campaign.senderProfile.lastReplySyncError,
-    gmailWarning: senderNeedsReconnect
-  });
-  const healthActionHints = Array.from(
-    new Set(validationChecks.map((check) => check.actionLabel).filter((label): label is string => Boolean(label)))
-  ).slice(0, 4);
   const replyCount = replyCountAggregate._sum.replyCount ?? 0;
   const deliveredCount = getDeliveredCount(latestRun);
   const launchButtonLabel = isActiveRun
@@ -808,62 +746,6 @@ export default async function CampaignDetailPage({
           <strong className={styles.metricValue}>{issueCount}</strong>
           <span className={styles.metricMeta}>Failures and invalid records that still need review.</span>
         </article>
-      </section>
-      <section className={styles.panel}>
-        <div className={styles.panelHeader}>
-          <div>
-            <h2>Sequence Health</h2>
-            <p>Current validation and delivery posture.</p>
-          </div>
-          <span className={`badge ${sequenceHealth.status === "HEALTHY" ? "" : "warning"}`}>
-            {getHealthLabel(sequenceHealth.status)}
-          </span>
-        </div>
-
-        <div className={styles.summaryList}>
-          <div className={styles.summaryItem}>
-            <ShieldAlert aria-hidden="true" />
-            <div>
-              <span>Validation</span>
-              <strong>
-                {validationSummary.blockers} blockers · {validationSummary.errors} errors · {validationSummary.warnings} warnings
-              </strong>
-            </div>
-          </div>
-          <div className={styles.summaryItem}>
-            <SendHorizontal aria-hidden="true" />
-            <div>
-              <span>Recipient health</span>
-              <strong>
-                {latestRun?.failedCount ?? 0} failed · {retryableFailureCount} retryable · {latestRun?.suppressedCount ?? 0} skipped/suppressed
-              </strong>
-            </div>
-          </div>
-          <div className={styles.summaryItem}>
-            <RefreshCcw aria-hidden="true" />
-            <div>
-              <span>Last activity</span>
-              <strong>{lastActivityAt ? <LocalDateTime value={lastActivityAt.toISOString()} /> : "No activity yet"}</strong>
-            </div>
-          </div>
-        </div>
-
-        {sequenceHealth.stuck ? (
-          <div className={styles.reconnectNotice}>
-            <strong>Sequence appears stuck</strong>
-            <p>Pending recipients remain, but no campaign activity has changed for at least 20 minutes.</p>
-          </div>
-        ) : null}
-
-        {healthActionHints.length ? (
-          <div className={styles.metaRow}>
-            {healthActionHints.map((hint) => (
-              <span key={hint} className={styles.metaChip}>
-                {hint}
-              </span>
-            ))}
-          </div>
-        ) : null}
       </section>
       <section className={styles.detailGrid}>
         <article className={styles.panel}>
