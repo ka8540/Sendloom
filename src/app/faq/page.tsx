@@ -1,3 +1,4 @@
+import { Mail } from "lucide-react";
 import Link from "next/link";
 
 import faqStyles from "@/app/faq/page.module.css";
@@ -328,19 +329,11 @@ export default function FaqPage() {
                 <p>If you have another question about Sendloom, contact us and we will help you find the right answer.</p>
               </div>
 
-              <a className="button secondary" href="mailto:hello@sendloom.net">
-                Contact us
+              <a className={faqStyles.contactButton} href="mailto:hello@sendloom.net">
+                <Mail aria-hidden="true" />
+                Email support
               </a>
             </section>
-
-            <div className={legalStyles.bottomActions}>
-              <Link className="button" href="/">
-                Back to home
-              </Link>
-              <Link className="button secondary" href="/terms">
-                Read terms
-              </Link>
-            </div>
           </article>
         </div>
 
