@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import type { Route } from "next";
 import Link from "next/link";
+import { after } from "next/server";
 import type { CampaignStatus, ImportStatus, RunStatus } from "@prisma/client";
 import {
   ArrowRight,
@@ -19,6 +20,7 @@ import { formatCompactNumber, formatRelativeTime, buildTrend, humanizeEnum } fro
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { SequencePanel } from "@/components/dashboard/sequence-panel";
 import type { ActivityItem, SequenceRowData } from "@/components/dashboard/types";
+import { processPendingCampaignWork } from "@/services/campaigns";
 import styles from "./overview-command-center.module.css";
 
 const ACTIVE_RUN_STATUSES: RunStatus[] = ["QUEUED", "RUNNING"];
@@ -30,6 +32,42 @@ function getDeliveredCount(run?: {
   clickedCount?: number | null;
 } | null) {
   return (run?.sentCount ?? 0) + (run?.openedCount ?? 0) + (run?.clickedCount ?? 0);
+}
+
+function getIssueCount(run?: {
+  failedCount?: number | null;
+  suppressedCount?: number | null;
+  invalidCount?: number | null;
+} | null) {
+  return (run?.failedCount ?? 0) + (run?.suppressedCount ?? 0) + (run?.invalidCount ?? 0);
+}
+
+function getProcessedCount(run?: {
+  sentCount?: number | null;
+  openedCount?: number | null;
+  clickedCount?: number | null;
+  failedCount?: number | null;
+  suppressedCount?: number | null;
+  invalidCount?: number | null;
+} | null) {
+  return getDeliveredCount(run) + getIssueCount(run);
+}
+
+function hasKnownRunMetrics(
+  run:
+    | {
+        status?: RunStatus | null;
+        totalRecipients?: number | null;
+      }
+    | null
+    | undefined,
+  processedCount: number
+) {
+  if (!run || !run.totalRecipients || run.totalRecipients <= 0) {
+    return false;
+  }
+
+  return !ACTIVE_RUN_STATUSES.includes(run.status ?? "COMPLETED") || processedCount > 0;
 }
 
 export default async function OverviewCommandCenter() {
@@ -196,6 +234,7 @@ export default async function OverviewCommandCenter() {
           },
           take: 1,
           select: {
+            id: true,
             status: true,
             totalRecipients: true,
             sentCount: true,
@@ -262,12 +301,61 @@ export default async function OverviewCommandCenter() {
     })
   ]);
 
+  const latestRunIds = recentCampaigns.flatMap((campaign) => (campaign.runs[0] ? [campaign.runs[0].id] : []));
+  const latestRunCountRows = latestRunIds.length
+    ? await prisma.recipientJob.groupBy({
+        by: ["campaignRunId", "status"],
+        where: {
+          campaignRunId: {
+            in: latestRunIds
+          }
+        },
+        _count: true
+      })
+    : [];
+  const latestRunCounts = new Map<string, Record<string, number>>();
+
+  for (const row of latestRunCountRows) {
+    const counts = latestRunCounts.get(row.campaignRunId) ?? {};
+    counts[row.status] = row._count;
+    latestRunCounts.set(row.campaignRunId, counts);
+  }
+
+  const overviewCampaigns = recentCampaigns.map((campaign) => {
+    const latestRun = campaign.runs[0] ?? null;
+    const latestRunCountsByStatus = latestRun ? latestRunCounts.get(latestRun.id) : null;
+    const latestRunSnapshot = latestRun
+      ? {
+          ...latestRun,
+          sentCount: latestRunCountsByStatus ? (latestRunCountsByStatus.SENT ?? 0) : latestRun.sentCount,
+          openedCount: latestRunCountsByStatus ? (latestRunCountsByStatus.OPENED ?? 0) : latestRun.openedCount,
+          clickedCount: latestRunCountsByStatus ? (latestRunCountsByStatus.CLICKED ?? 0) : latestRun.clickedCount,
+          failedCount: latestRunCountsByStatus ? (latestRunCountsByStatus.FAILED ?? 0) : latestRun.failedCount,
+          suppressedCount: latestRunCountsByStatus ? (latestRunCountsByStatus.SUPPRESSED ?? 0) : latestRun.suppressedCount,
+          invalidCount: latestRunCountsByStatus ? (latestRunCountsByStatus.INVALID ?? 0) : latestRun.invalidCount
+        }
+      : null;
+
+    return {
+      ...campaign,
+      latestRun: latestRunSnapshot
+    };
+  });
+
+  if (activeSequenceCount > 0) {
+    after(async () => {
+      await processPendingCampaignWork({
+        maxDurationMs: 20_000
+      });
+    });
+  }
+
   const sentLastDayCount = sentLastDay._sum.sentCount ?? 0;
   const sentPreviousDayCount = sentPreviousDay._sum.sentCount ?? 0;
   const sentTrend = buildTrend(sentLastDayCount, sentPreviousDayCount, "day");
-  const runTotals = recentCampaigns.reduce(
+  const runTotals = overviewCampaigns.reduce(
     (totals, campaign) => {
-      const latestRun = campaign.runs[0];
+      const latestRun = campaign.latestRun;
 
       if (!latestRun) {
         return totals;
@@ -293,44 +381,55 @@ export default async function OverviewCommandCenter() {
       recipients: 0
     }
   );
-  const deliveryMix = buildDeliveryMix(runTotals);
+  const hasPendingDeliveryMetrics =
+    activeSequenceCount > 0 &&
+    runTotals.recipients > 0 &&
+    runTotals.sent + runTotals.failed + runTotals.suppressed + runTotals.invalid === 0;
+  const deliveryMix = buildDeliveryMix(runTotals, hasPendingDeliveryMetrics);
   const engagementFunnel = buildEngagementFunnel(runTotals);
 
-  const sequenceRows: SequenceRowData[] = recentCampaigns.map((campaign) => {
-    const latestRun = campaign.runs[0] ?? null;
+  const sequenceRows: SequenceRowData[] = overviewCampaigns.map((campaign) => {
+    const latestRun = campaign.latestRun;
     const status = deriveSequenceStatus(campaign.status, latestRun?.status);
     const deliveredCount = getDeliveredCount(latestRun);
-    const processedCount =
-      deliveredCount +
-      (latestRun?.failedCount ?? 0) +
-      (latestRun?.suppressedCount ?? 0) +
-      (latestRun?.invalidCount ?? 0);
+    const processedCount = getProcessedCount(latestRun);
     const totalRecipients = latestRun?.totalRecipients ?? 0;
-    const issueCount =
-      (latestRun?.failedCount ?? 0) +
-      (latestRun?.suppressedCount ?? 0) +
-      (latestRun?.invalidCount ?? 0);
+    const issueCount = getIssueCount(latestRun);
+    const runMetricsKnown = hasKnownRunMetrics(latestRun, processedCount);
+    const isActiveRun = ACTIVE_RUN_STATUSES.includes(latestRun?.status ?? "COMPLETED");
     const progressPercent =
       totalRecipients > 0
-        ? Math.max(6, Math.min(100, Math.round((processedCount / totalRecipients) * 100)))
+        ? Math.min(100, Math.max(0, Math.round((processedCount / totalRecipients) * 100)))
         : latestRun?.status === "COMPLETED" || campaign.status === "COMPLETED"
           ? 100
           : 0;
     const progressLabel =
       totalRecipients > 0
-        ? `${formatCompactNumber(processedCount)} of ${formatCompactNumber(totalRecipients)} recipients processed`
+        ? runMetricsKnown
+          ? `${formatCompactNumber(processedCount)} of ${formatCompactNumber(totalRecipients)} recipients processed`
+          : latestRun?.status === "QUEUED"
+            ? `Queued for ${formatCompactNumber(totalRecipients)} recipients`
+            : `Sending to ${formatCompactNumber(totalRecipients)} recipients`
         : latestRun
           ? `${humanizeEnum(latestRun.status)} run`
           : "Awaiting first launch";
     const deliveryLabel = latestRun
-      ? `${formatCompactNumber(deliveredCount)} delivered`
+      ? runMetricsKnown
+        ? `${formatCompactNumber(deliveredCount)} delivered`
+        : isActiveRun
+          ? "Metrics syncing"
+          : `${formatCompactNumber(deliveredCount)} delivered`
       : campaign.lastValidatedAt
         ? "Validated and ready"
         : "Needs validation";
     const deliveryDetail = latestRun
-      ? issueCount
-        ? `${formatCompactNumber(issueCount)} delivery issues · ${formatCompactNumber(latestRun.openedCount)} opens`
-        : `${formatCompactNumber(latestRun.openedCount)} opens · clean delivery`
+      ? runMetricsKnown
+        ? issueCount
+          ? `${formatCompactNumber(issueCount)} delivery issues · ${formatCompactNumber(latestRun.openedCount)} opens`
+          : `${formatCompactNumber(latestRun.openedCount)} opens · clean delivery`
+        : isActiveRun
+          ? "Waiting for activity"
+          : `${formatCompactNumber(latestRun.openedCount)} opens · clean delivery`
       : `${campaign.template.name} · ${campaign.senderProfile.fromEmail}`;
     const lastActivityAt = latestRun?.updatedAt ?? campaign.updatedAt;
     const canRelaunch = Boolean(campaign.lastValidatedAt) && !ACTIVE_RUN_STATUSES.includes(latestRun?.status ?? "COMPLETED");
@@ -425,11 +524,11 @@ export default async function OverviewCommandCenter() {
                 <div
                   className={styles.deliveryDonut}
                   style={{ "--chart-background": deliveryMix.gradient } as CSSProperties}
-                  aria-label={`Delivery mix is ${deliveryMix.cleanRate} clean`}
+                  aria-label={`Delivery mix is ${deliveryMix.cleanRate ?? "syncing"} clean`}
                   role="img"
                 >
                   <span className={styles.deliveryDonutText}>
-                    <strong>{deliveryMix.cleanRate}</strong>
+                    <strong>{deliveryMix.cleanRate ?? "—"}</strong>
                     <small>clean</small>
                   </span>
                 </div>
@@ -634,7 +733,7 @@ function buildDeliveryMix(totals: {
   failed: number;
   suppressed: number;
   invalid: number;
-}) {
+}, pending = false) {
   const segments = [
     { label: "Sent", value: totals.sent, color: "var(--accent)" },
     { label: "Failed", value: totals.failed, color: "#d96952" },
@@ -646,7 +745,7 @@ function buildDeliveryMix(totals: {
   return {
     segments,
     gradient: buildConicGradient(segments, total),
-    cleanRate: formatPercent(totals.sent, total)
+    cleanRate: total > 0 ? formatPercent(totals.sent, total) : pending ? null : "0%"
   };
 }
 
