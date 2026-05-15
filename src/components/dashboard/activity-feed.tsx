@@ -5,6 +5,7 @@ import {
   FilePenLine,
   FileSpreadsheet,
   MessageSquareReply,
+  Search,
   SendHorizontal,
   ShieldBan,
   Trash2,
@@ -133,6 +134,10 @@ function getActivityIcon(item: ActivityItem) {
     return ShieldBan;
   }
 
+  if (matchesAny(activityText, ["hunter", "finder", "domain search", "email finder", "found emails", "enriched contacts"])) {
+    return Search;
+  }
+
   if (matchesAny(activityText, ["ready", "validated"])) {
     return CircleCheck;
   }
@@ -149,13 +154,13 @@ function getActivityIcon(item: ActivityItem) {
 }
 
 function getActivityTone(item: ActivityItem): ActivityItem["tone"] {
-  const title = item.title.toLowerCase();
+  const activityText = `${item.title} ${item.description}`.toLowerCase();
 
-  if (item.tone === "warning" || title.includes("failed") || title.includes("issue") || title.includes("error")) {
+  if (isFailureActivity(item, activityText)) {
     return "warning";
   }
 
-  if (item.tone === "success" || title.includes("ready") || title.includes("validated")) {
+  if (item.tone === "success" || matchesAny(activityText, ["ready", "validated", "clean delivery"])) {
     return "success";
   }
 
@@ -163,7 +168,19 @@ function getActivityTone(item: ActivityItem): ActivityItem["tone"] {
 }
 
 function isFailureActivity(item: ActivityItem, activityText: string) {
-  return item.tone === "warning" || matchesAny(activityText, ["failed", "failure", "error", "issue"]);
+  if (item.tone === "warning") {
+    return true;
+  }
+
+  if (matchesAny(activityText, ["failed", "failure", "error", "bounced", "invalid", "rejected", "warning", "attention required"])) {
+    return true;
+  }
+
+  if (matchesAny(activityText, ["0 issues", "no issues", "all clear"])) {
+    return false;
+  }
+
+  return /\b[1-9]\d*\s+issues?\b/.test(activityText);
 }
 
 function matchesAny(value: string, terms: string[]) {
