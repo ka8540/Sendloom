@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowUpRight, PencilLine, Trash2 } from "lucide-react";
+import { ArrowUpRight, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -54,14 +54,6 @@ export function CampaignCardActions(props: { campaignId: string; campaignName: s
         aria-label={`Open sequence ${props.campaignName}`}
       >
         <ArrowUpRight aria-hidden="true" />
-      </Link>
-      <Link
-        className="field-icon-button campaign-card-action campaign-card-action--edit"
-        href={`/campaigns/${props.campaignId}`}
-        data-tooltip="Edit sequence"
-        aria-label={`Edit sequence ${props.campaignName}`}
-      >
-        <PencilLine aria-hidden="true" />
       </Link>
       <button
         type="button"

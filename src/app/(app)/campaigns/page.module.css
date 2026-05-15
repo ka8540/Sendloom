@@ -196,8 +196,7 @@
   padding: 1.2rem 1.25rem;
 }
 
-.summaryCard span,
-.signalCard span {
+.summaryCard span {
   color: var(--muted);
   font-weight: 700;
 }
@@ -210,8 +209,7 @@
   line-height: 1;
 }
 
-.summaryCard p,
-.signalCard p {
+.summaryCard p {
   margin: 0.45rem 0 0;
   color: var(--muted);
   line-height: 1.5;
@@ -301,10 +299,10 @@
 
 .sequenceRow {
   display: grid;
-  grid-template-columns: minmax(280px, 1fr) minmax(620px, 1.35fr) minmax(8.75rem, auto);
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 1rem;
-  align-items: start;
-  padding: 1.15rem;
+  align-items: center;
+  padding: 1rem 1.05rem;
   border-radius: 24px;
   border: 1px solid var(--line);
   background: color-mix(in srgb, var(--surface-muted) 88%, transparent);
@@ -323,8 +321,52 @@
 }
 
 .sequencePrimary {
+  min-width: 0;
+}
+
+.sequenceContentLink {
+  display: block;
+  min-width: 0;
+  color: inherit;
+}
+
+.sequenceContent {
   display: grid;
-  gap: 0.9rem;
+  grid-template-columns: minmax(18rem, 1.2fr) minmax(22rem, 1fr);
+  gap: 1rem 1.35rem;
+  align-items: center;
+  min-width: 0;
+}
+
+.sequenceIdentity {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  min-width: 0;
+}
+
+.sequenceIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.6rem;
+  height: 2.6rem;
+  margin-top: 0.05rem;
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--accent) 16%, var(--line));
+  background: color-mix(in srgb, var(--accent-soft) 46%, var(--surface));
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.sequenceIcon svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.sequenceTitleBlock {
+  display: grid;
+  gap: 0.72rem;
   min-width: 0;
 }
 
@@ -336,14 +378,20 @@
 }
 
 .sequenceTitle {
+  min-width: 0;
+  margin: 0;
   color: var(--text);
-  font-size: 1.2rem;
-  font-weight: 800;
-  letter-spacing: -0.04em;
+  font-size: 1.08rem;
+  font-weight: 750;
+  letter-spacing: -0.03em;
   line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.sequenceTitle:hover {
+.sequenceContentLink:hover .sequenceTitle,
+.sequenceContentLink:focus-visible .sequenceTitle {
   color: var(--accent-strong);
 }
 
@@ -357,15 +405,22 @@
   display: inline-flex;
   align-items: center;
   gap: 0.48rem;
-  max-width: 100%;
-  padding: 0.58rem 0.8rem;
+  min-width: 0;
+  max-width: 14rem;
+  padding: 0.48rem 0.72rem;
   border-radius: 999px;
   border: 1px solid var(--line);
   background: var(--surface);
   color: var(--muted);
-  font-size: 0.92rem;
+  font-size: 0.86rem;
   font-weight: 650;
-  overflow-wrap: anywhere;
+}
+
+.metaPill span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .metaPill svg {
@@ -373,51 +428,104 @@
   flex-shrink: 0;
 }
 
-.sequenceSignals {
+.sequenceMetrics {
   display: grid;
-  grid-template-columns: minmax(220px, 1.35fr) repeat(2, minmax(160px, 1fr));
-  gap: 0.75rem;
-  align-items: stretch;
+  grid-template-columns: minmax(10rem, 1fr) repeat(2, minmax(7rem, 0.72fr));
+  gap: 0.9rem;
+  align-items: center;
   min-width: 0;
 }
 
-.signalCard {
+.metricCell {
   display: grid;
-  align-content: start;
   gap: 0.28rem;
   min-width: 0;
-  min-height: 8.15rem;
-  padding: 0.95rem 1rem;
-  border-radius: 20px;
-  border: 1px solid var(--line);
-  background: var(--surface);
 }
 
-.signalCard strong {
-  font-size: 0.98rem;
-  letter-spacing: -0.02em;
-  line-height: 1.3;
+.metricCell span,
+.detailItem span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-transform: uppercase;
 }
 
-.signalCard p {
+.metricCell strong {
+  color: var(--text);
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+}
+
+.metricCell small,
+.detailItem small {
   min-width: 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.35;
+}
+
+.metricTrack {
+  position: relative;
+  height: 0.42rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--button-secondary-bg) 88%, transparent);
+  overflow: hidden;
+}
+
+.metricTrack span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  min-width: 0.5rem;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent) 0%, color-mix(in srgb, var(--accent) 62%, white) 100%);
+}
+
+.sequenceDetails {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.8rem;
+  min-width: 0;
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(-0.3rem);
+  transition: max-height 180ms ease, opacity 150ms ease, transform 150ms ease, margin-top 150ms ease;
+}
+
+.sequenceRow:hover .sequenceDetails,
+.sequenceRow:focus-within .sequenceDetails {
+  max-height: 14rem;
+  margin-top: 0.05rem;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.detailItem {
+  display: grid;
+  gap: 0.28rem;
+  min-width: 0;
+  padding: 0.72rem 0.78rem;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--line) 90%, transparent);
+  background: color-mix(in srgb, var(--surface) 84%, transparent);
+}
+
+.detailItem strong {
+  color: var(--text);
   font-size: 0.92rem;
-  overflow-wrap: anywhere;
-}
-
-.signalCard p span {
-  display: block;
-}
-
-.signalCard p span + span {
-  margin-top: 0.12rem;
+  font-weight: 650;
+  line-height: 1.3;
 }
 
 .sequenceActions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  padding-top: 0.1rem;
   min-width: 0;
 }
 
@@ -427,17 +535,6 @@
   justify-content: flex-end;
   gap: 0.48rem;
   min-height: 2.7rem;
-  opacity: 0;
-  pointer-events: none;
-  transform: translateX(0.35rem);
-  transition: opacity 150ms ease, transform 150ms ease;
-}
-
-.sequenceRow:hover .sequenceActions :global(.campaign-card-actions),
-.sequenceRow:focus-within .sequenceActions :global(.campaign-card-actions) {
-  opacity: 1;
-  pointer-events: auto;
-  transform: translateX(0);
 }
 
 .sequenceActions :global(.campaign-card-action) {
@@ -454,8 +551,6 @@
   background: color-mix(in srgb, var(--accent-soft) 36%, var(--surface) 64%);
 }
 
-.sequenceActions :global(.campaign-card-action--edit:hover),
-.sequenceActions :global(.campaign-card-action--edit:focus-visible),
 .sequenceActions :global(.campaign-card-action--open:hover),
 .sequenceActions :global(.campaign-card-action--open:focus-visible) {
   color: var(--text);
@@ -478,73 +573,58 @@
 
 @container (max-width: 1180px) {
   .sequenceRow {
+    grid-template-columns: 1fr auto;
+  }
+
+  .sequenceContent {
     grid-template-columns: 1fr;
+  }
+
+  .sequenceDetails {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container (max-width: 920px) {
+  .sequenceRow {
+    grid-template-columns: 1fr;
+  }
+
+  .sequenceMetrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .metricCell:first-child {
+    grid-column: 1 / -1;
   }
 
   .sequenceActions {
     justify-content: flex-start;
   }
-
-  .sequenceActions :global(.campaign-card-actions),
-  .sequenceActions :global(.campaign-card-actions__error) {
-    justify-content: flex-start;
-    text-align: left;
-  }
-
-  .sequenceActions :global(.campaign-card-actions) {
-    opacity: 1;
-    pointer-events: auto;
-    transform: none;
-  }
-}
-
-@container (max-width: 920px) {
-  .sequenceSignals {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .signalCard:first-child {
-    grid-column: 1 / -1;
-  }
 }
 
 @container (max-width: 620px) {
-  .sequenceSignals {
+  .sequenceMetrics,
+  .sequenceDetails {
     grid-template-columns: 1fr;
   }
 
-  .signalCard:first-child {
+  .metricCell:first-child {
     grid-column: auto;
   }
 }
 
 @media (max-width: 1280px) {
   .sequenceRow {
+    grid-template-columns: 1fr auto;
+  }
+
+  .sequenceContent {
     grid-template-columns: 1fr;
   }
 
-  .sequenceActions {
-    justify-content: flex-start;
-  }
-
-  .sequenceActions :global(.campaign-card-actions),
-  .sequenceActions :global(.campaign-card-actions__error) {
-    justify-content: flex-start;
-    text-align: left;
-  }
-
-  .sequenceActions :global(.campaign-card-actions) {
-    opacity: 1;
-    pointer-events: auto;
-    transform: none;
-  }
-}
-
-@media (hover: none) {
-  .sequenceActions :global(.campaign-card-actions) {
-    opacity: 1;
-    pointer-events: auto;
-    transform: none;
+  .sequenceDetails {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -556,10 +636,6 @@
 }
 
 @media (max-width: 860px) {
-  .sequenceSignals {
-    grid-template-columns: 1fr;
-  }
-
   .sectionHeader {
     flex-direction: column;
   }
@@ -567,6 +643,34 @@
   .paginationBar {
     flex-direction: column;
     align-items: flex-start;
+  }
+}
+
+@media (max-width: 760px) {
+  .sequenceRow {
+    grid-template-columns: 1fr;
+  }
+
+  .sequenceMetrics,
+  .sequenceDetails {
+    grid-template-columns: 1fr;
+  }
+
+  .metricCell:first-child {
+    grid-column: auto;
+  }
+
+  .sequenceActions {
+    justify-content: flex-start;
+  }
+}
+
+@media (hover: none) {
+  .sequenceDetails {
+    max-height: none;
+    margin-top: 0.05rem;
+    opacity: 1;
+    transform: none;
   }
 }
 

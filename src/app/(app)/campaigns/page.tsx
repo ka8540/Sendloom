@@ -85,6 +85,37 @@ function getDeliveredCount(run?: {
   return (run?.sentCount ?? 0) + (run?.openedCount ?? 0) + (run?.clickedCount ?? 0);
 }
 
+function getIssueCount(run?: {
+  failedCount?: number | null;
+  suppressedCount?: number | null;
+  invalidCount?: number | null;
+} | null) {
+  return (run?.failedCount ?? 0) + (run?.suppressedCount ?? 0) + (run?.invalidCount ?? 0);
+}
+
+function getProcessedCount(run?: {
+  sentCount?: number | null;
+  openedCount?: number | null;
+  clickedCount?: number | null;
+  failedCount?: number | null;
+  suppressedCount?: number | null;
+  invalidCount?: number | null;
+} | null) {
+  return getDeliveredCount(run) + getIssueCount(run);
+}
+
+function getPercent(value: number, total: number) {
+  if (total <= 0) {
+    return 0;
+  }
+
+  return Math.min(100, Math.max(0, Math.round((value / total) * 100)));
+}
+
+function formatCount(value: number) {
+  return new Intl.NumberFormat("en-US").format(value);
+}
+
 function formatDateTime(value?: Date | string | null, timeZone?: string) {
   if (!value) {
     return "Not available";
@@ -169,7 +200,8 @@ export default async function CampaignsPage({
       include: {
         import: {
           select: {
-            fileName: true
+            fileName: true,
+            rowCount: true
           }
         },
         template: {
@@ -390,69 +422,154 @@ export default async function CampaignsPage({
             {pagedCampaigns.map((campaign) => {
               const latestRun = campaign.runs[0];
               const deliveredCount = getDeliveredCount(latestRun);
+              const issueCount = getIssueCount(latestRun);
+              const processedCount = getProcessedCount(latestRun);
+              const recipientCount = latestRun?.totalRecipients ?? campaign.import.rowCount;
+              const deliveryHealthPercent =
+                latestRun && latestRun.totalRecipients > 0
+                  ? getPercent(deliveredCount, latestRun.totalRecipients)
+                  : campaign.lastValidatedAt
+                    ? 100
+                    : 0;
+              const progressPercent =
+                latestRun && latestRun.totalRecipients > 0
+                  ? getPercent(processedCount, latestRun.totalRecipients)
+                  : campaign.lastValidatedAt
+                    ? 100
+                    : 0;
+              const openedPercent =
+                latestRun && latestRun.totalRecipients > 0
+                  ? getPercent(latestRun.openedCount, latestRun.totalRecipients)
+                  : null;
               const delivery = formatDeliveryLabel(campaign.scheduleType, campaign.scheduleConfig as ScheduleConfig | null);
               const latestRunSummary = latestRun
-                ? `${deliveredCount}/${latestRun.totalRecipients} delivered`
+                ? `${formatCount(deliveredCount)}/${formatCount(latestRun.totalRecipients)} delivered`
                 : "No run started yet";
               const latestRunValue = latestRun?.updatedAt?.toISOString() ?? null;
               const validatedAtValue = campaign.lastValidatedAt?.toISOString() ?? null;
+              const healthDetail = latestRun
+                ? latestRunSummary
+                : campaign.lastValidatedAt
+                  ? "Validated and ready"
+                  : "Awaiting first run";
+              const healthValue = latestRun
+                ? `${deliveryHealthPercent}%`
+                : campaign.lastValidatedAt
+                  ? "Ready"
+                  : "Pending";
+              const performanceMetric =
+                openedPercent !== null
+                  ? {
+                      label: "Opened",
+                      value: `${openedPercent}%`,
+                      detail: `${formatCount(latestRun?.openedCount ?? 0)} opens`
+                    }
+                  : {
+                      label: "Delivered",
+                      value: latestRun ? formatCount(deliveredCount) : "—",
+                      detail: latestRun ? latestRunSummary : "No run yet"
+                    };
 
               return (
                 <article key={campaign.id} className={styles.sequenceRow}>
-                  <div className={styles.sequencePrimary}>
-                    <div className={styles.sequenceHeader}>
-                      <Link href={`/campaigns/${campaign.id}`} className={styles.sequenceTitle}>
-                        {campaign.name}
-                      </Link>
-                      <span className="badge">{humanize(campaign.status)}</span>
-                    </div>
+                  <Link
+                    href={`/campaigns/${campaign.id}`}
+                    className={styles.sequenceContentLink}
+                    aria-label={`Open sequence ${campaign.name}`}
+                  >
+                    <div className={styles.sequenceContent}>
+                      <div className={styles.sequencePrimary}>
+                        <div className={styles.sequenceIdentity}>
+                          <div className={styles.sequenceIcon}>
+                            <SendHorizontal aria-hidden="true" />
+                          </div>
+                          <div className={styles.sequenceTitleBlock}>
+                            <div className={styles.sequenceHeader}>
+                              <h3 className={styles.sequenceTitle} title={campaign.name}>
+                                {campaign.name}
+                              </h3>
+                              <span className="badge">{humanize(campaign.status)}</span>
+                            </div>
 
-                    <div className={styles.sequenceMetaRow}>
-                      <span className={styles.metaPill}>
-                        <Users aria-hidden="true" />
-                        {campaign.import.fileName}
-                      </span>
-                      <span className={styles.metaPill}>
-                        <Mail aria-hidden="true" />
-                        {campaign.senderProfile.name}
-                      </span>
-                      <span className={styles.metaPill}>
-                        <CheckCircle2 aria-hidden="true" />
-                        {campaign.template.name}
-                      </span>
-                    </div>
-                  </div>
+                            <div className={styles.sequenceMetaRow}>
+                              <span className={styles.metaPill} title={campaign.import.fileName}>
+                                <Users aria-hidden="true" />
+                                <span>{campaign.import.fileName}</span>
+                              </span>
+                              <span
+                                className={styles.metaPill}
+                                title={`${campaign.senderProfile.name} <${campaign.senderProfile.fromEmail}>`}
+                              >
+                                <Mail aria-hidden="true" />
+                                <span>{campaign.senderProfile.name}</span>
+                              </span>
+                              <span className={styles.metaPill} title={campaign.template.name}>
+                                <CheckCircle2 aria-hidden="true" />
+                                <span>{campaign.template.name}</span>
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
 
-                  <div className={styles.sequenceSignals}>
-                    <div className={styles.signalCard}>
-                      <span>Delivery</span>
-                      <strong>{delivery.label}</strong>
-                      <p title={delivery.fullDetail}>
-                        <span>{delivery.detail}</span>
-                        {delivery.secondaryDetail ? <span>{delivery.secondaryDetail}</span> : null}
-                      </p>
-                    </div>
+                      <div className={styles.sequenceMetrics}>
+                        <div className={styles.metricCell}>
+                          <span>Health</span>
+                          <strong>{healthValue}</strong>
+                          <div className={styles.metricTrack} aria-hidden="true">
+                            <span style={{ width: `${progressPercent}%` }} />
+                          </div>
+                          <small>{healthDetail}</small>
+                        </div>
 
-                    <div className={styles.signalCard}>
-                      <span>Latest run</span>
-                      <strong>{latestRun ? humanize(latestRun.status) : "Waiting to launch"}</strong>
-                      <p>{latestRunValue ? <LocalDateTime value={latestRunValue} /> : "No delivery activity yet"}</p>
-                    </div>
+                        <div className={styles.metricCell}>
+                          <span>Enrolled</span>
+                          <strong>{formatCount(recipientCount)}</strong>
+                          <small>Recipients</small>
+                        </div>
 
-                    <div className={styles.signalCard}>
-                      <span>Delivery health</span>
-                      <strong>{latestRunSummary}</strong>
-                      <p>
-                        {validatedAtValue ? (
-                          <>
-                            Validated <LocalDateTime value={validatedAtValue} />
-                          </>
-                        ) : (
-                          "Needs validation before the next send"
-                        )}
-                      </p>
+                        <div className={styles.metricCell}>
+                          <span>{performanceMetric.label}</span>
+                          <strong>{performanceMetric.value}</strong>
+                          <small>{performanceMetric.detail}</small>
+                        </div>
+                      </div>
+
+                      <div className={styles.sequenceDetails}>
+                        <div className={styles.detailItem}>
+                          <span>Delivery</span>
+                          <strong>{delivery.label}</strong>
+                          <small title={delivery.fullDetail}>{delivery.fullDetail}</small>
+                        </div>
+
+                        <div className={styles.detailItem}>
+                          <span>Latest run</span>
+                          <strong>{latestRun ? humanize(latestRun.status) : "Waiting to launch"}</strong>
+                          <small>{latestRunValue ? <LocalDateTime value={latestRunValue} /> : "No delivery activity yet"}</small>
+                        </div>
+
+                        <div className={styles.detailItem}>
+                          <span>Validation</span>
+                          <strong>{validatedAtValue ? "Validated" : "Needs validation"}</strong>
+                          <small>
+                            {validatedAtValue ? <LocalDateTime value={validatedAtValue} /> : "Before the next send"}
+                          </small>
+                        </div>
+
+                        <div className={styles.detailItem}>
+                          <span>Delivery health</span>
+                          <strong>{latestRunSummary}</strong>
+                          <small>
+                            {latestRun
+                              ? issueCount
+                                ? `${formatCount(issueCount)} issue${issueCount === 1 ? "" : "s"}`
+                                : "Clean delivery"
+                              : "No run started yet"}
+                          </small>
+                        </div>
+                      </div>
                     </div>
-                  </div>
+                  </Link>
 
                   <div className={styles.sequenceActions}>
                     <CampaignCardActions campaignId={campaign.id} campaignName={campaign.name} />
