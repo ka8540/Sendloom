@@ -13,6 +13,7 @@ import {
   Workflow
 } from "lucide-react";
 
+import { LocalDateTime } from "@/components/local-date-time";
 import type { ActivityItem } from "@/components/dashboard/types";
 import styles from "./overview-command-center.module.css";
 
@@ -50,14 +51,14 @@ export function ActivityFeed({ items }: { items: ActivityItem[] }) {
                       <strong className={styles.activityTitle} title={item.title}>
                         {item.title}
                       </strong>
-                      <time className={styles.activityTime} title={item.timeDetail}>
+                      <time className={styles.activityTime} dateTime={item.timeValue}>
                         {item.timeLabel}
                       </time>
                     </span>
                     <span className={styles.activityLog} title={item.description}>
                       <span className={styles.activityLogPrefix}>System log:</span> {item.description}
                     </span>
-                    <span className={styles.activityTimeDetail}>{item.timeDetail}</span>
+                    <LocalDateTime value={item.timeValue} className={styles.activityTimeDetail} />
                   </span>
                 </Link>
               </li>

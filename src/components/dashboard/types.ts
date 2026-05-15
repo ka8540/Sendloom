@@ -25,7 +25,7 @@ export type SequenceRowData = {
   deliveryLabel: string;
   deliveryDetail: string;
   lastActivityLabel: string;
-  lastActivityDetail: string;
+  lastActivityAt: string;
   updatedAtValue: number;
   isValidated: boolean;
   needsAttention: boolean;
@@ -38,7 +38,7 @@ export type ActivityItem = {
   title: string;
   description: string;
   timeLabel: string;
-  timeDetail: string;
+  timeValue: string;
   kind: "run" | "import" | "template" | "suppression";
   tone: "accent" | "success" | "warning" | "muted";
 };

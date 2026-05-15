@@ -4,6 +4,7 @@ import { ArrowUpRight } from "lucide-react";
 import { useRouter } from "next/navigation";
 import type { KeyboardEvent } from "react";
 
+import { LocalDateTime } from "@/components/local-date-time";
 import type { SequenceRowData } from "@/components/dashboard/types";
 import { SequenceRowActions } from "./sequence-row-actions";
 import styles from "./overview-command-center.module.css";
@@ -60,7 +61,9 @@ export function SequenceRow({ sequence, onRelaunch }: { sequence: SequenceRowDat
           <div className={styles.sequenceActivity}>
             <span>Last activity</span>
             <strong>{sequence.lastActivityLabel}</strong>
-            <small>{sequence.lastActivityDetail}</small>
+            <small>
+              <LocalDateTime value={sequence.lastActivityAt} />
+            </small>
           </div>
         </div>
 

@@ -15,7 +15,7 @@ import {
 import { requireOperatorUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { ActivityFeed } from "@/components/dashboard/activity-feed";
-import { formatCompactNumber, formatDateTime, formatRelativeTime, buildTrend, humanizeEnum } from "@/components/dashboard/formatters";
+import { formatCompactNumber, formatRelativeTime, buildTrend, humanizeEnum } from "@/components/dashboard/formatters";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { SequencePanel } from "@/components/dashboard/sequence-panel";
 import type { ActivityItem, SequenceRowData } from "@/components/dashboard/types";
@@ -347,7 +347,7 @@ export default async function OverviewCommandCenter() {
       deliveryLabel,
       deliveryDetail,
       lastActivityLabel: formatRelativeTime(lastActivityAt),
-      lastActivityDetail: formatDateTime(lastActivityAt),
+      lastActivityAt: lastActivityAt.toISOString(),
       updatedAtValue: lastActivityAt.getTime(),
       isValidated: Boolean(campaign.lastValidatedAt),
       needsAttention: status.tone === "failed",
@@ -770,7 +770,7 @@ function buildActivityItems({
           ? `${formatCompactNumber(run.sentCount)} sent, ${formatCompactNumber(issueCount)} issues across ${formatCompactNumber(run.totalRecipients)} recipients`
           : `${humanizeEnum(run.status)} run activity recorded.`,
       timeLabel: formatRelativeTime(run.updatedAt),
-      timeDetail: formatDateTime(run.updatedAt),
+      timeValue: run.updatedAt.toISOString(),
       kind: "run",
       tone: run.status === "FAILED" ? "warning" : run.status === "RUNNING" ? "accent" : "success"
     };
@@ -785,7 +785,7 @@ function buildActivityItems({
         ? `${formatCompactNumber(entry.rowCount)} rows are ready for mapping and launch.`
         : `Import status changed to ${humanizeEnum(entry.status).toLowerCase()}.`,
     timeLabel: formatRelativeTime(entry.updatedAt),
-    timeDetail: formatDateTime(entry.updatedAt),
+    timeValue: entry.updatedAt.toISOString(),
     kind: "import",
     tone: entry.status === "FAILED" ? "warning" : "muted"
   }));
@@ -796,7 +796,7 @@ function buildActivityItems({
     title: `${entry.name} updated`,
     description: `${entry.format.toUpperCase()} copy refreshed and ready to reuse.`,
     timeLabel: formatRelativeTime(entry.updatedAt),
-    timeDetail: formatDateTime(entry.updatedAt),
+    timeValue: entry.updatedAt.toISOString(),
     kind: "template",
     tone: "muted"
   }));
