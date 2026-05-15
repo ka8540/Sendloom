@@ -104,6 +104,23 @@ function getProcessedCount(run?: {
   return getDeliveredCount(run) + getIssueCount(run);
 }
 
+function hasKnownRunMetrics(
+  run:
+    | {
+        status?: string | null;
+        totalRecipients?: number | null;
+      }
+    | null
+    | undefined,
+  processedCount: number
+) {
+  if (!run || !run.totalRecipients || run.totalRecipients <= 0) {
+    return false;
+  }
+
+  return !["QUEUED", "RUNNING"].includes(run.status ?? "") || processedCount > 0;
+}
+
 function getPercent(value: number, total: number) {
   if (total <= 0) {
     return 0;
@@ -258,6 +275,25 @@ export default async function CampaignsPage({
 
   const startIndex = (currentPage - 1) * PAGE_SIZE;
   const pagedCampaigns = campaigns.slice(startIndex, startIndex + PAGE_SIZE);
+  const latestRunIds = pagedCampaigns.flatMap((campaign) => (campaign.runs[0] ? [campaign.runs[0].id] : []));
+  const latestRunCountRows = latestRunIds.length
+    ? await prisma.recipientJob.groupBy({
+        by: ["campaignRunId", "status"],
+        where: {
+          campaignRunId: {
+            in: latestRunIds
+          }
+        },
+        _count: true
+      })
+    : [];
+  const latestRunCounts = new Map<string, Record<string, number>>();
+
+  for (const row of latestRunCountRows) {
+    const counts = latestRunCounts.get(row.campaignRunId) ?? {};
+    counts[row.status] = row._count;
+    latestRunCounts.set(row.campaignRunId, counts);
+  }
   const showingFrom = campaigns.length ? startIndex + 1 : 0;
   const showingTo = Math.min(startIndex + PAGE_SIZE, campaigns.length);
 
@@ -421,53 +457,73 @@ export default async function CampaignsPage({
           <div className={styles.sequenceList}>
             {pagedCampaigns.map((campaign) => {
               const latestRun = campaign.runs[0];
-              const deliveredCount = getDeliveredCount(latestRun);
-              const issueCount = getIssueCount(latestRun);
-              const processedCount = getProcessedCount(latestRun);
+              const latestRunCountsByStatus = latestRun ? latestRunCounts.get(latestRun.id) : null;
+              const latestRunSnapshot = latestRun
+                ? {
+                    ...latestRun,
+                    sentCount: latestRunCountsByStatus ? (latestRunCountsByStatus.SENT ?? 0) : latestRun.sentCount,
+                    openedCount: latestRunCountsByStatus ? (latestRunCountsByStatus.OPENED ?? 0) : latestRun.openedCount,
+                    clickedCount: latestRunCountsByStatus ? (latestRunCountsByStatus.CLICKED ?? 0) : latestRun.clickedCount,
+                    failedCount: latestRunCountsByStatus ? (latestRunCountsByStatus.FAILED ?? 0) : latestRun.failedCount,
+                    suppressedCount: latestRunCountsByStatus
+                      ? (latestRunCountsByStatus.SUPPRESSED ?? 0)
+                      : latestRun.suppressedCount,
+                    invalidCount: latestRunCountsByStatus ? (latestRunCountsByStatus.INVALID ?? 0) : latestRun.invalidCount
+                  }
+                : null;
+              const deliveredCount = getDeliveredCount(latestRunSnapshot);
+              const issueCount = getIssueCount(latestRunSnapshot);
+              const processedCount = getProcessedCount(latestRunSnapshot);
+              const runMetricsKnown = hasKnownRunMetrics(latestRunSnapshot, processedCount);
               const recipientCount = latestRun?.totalRecipients ?? campaign.import.rowCount;
               const deliveryHealthPercent =
-                latestRun && latestRun.totalRecipients > 0
-                  ? getPercent(deliveredCount, latestRun.totalRecipients)
-                  : campaign.lastValidatedAt
-                    ? 100
-                    : 0;
+                runMetricsKnown && latestRunSnapshot
+                  ? getPercent(deliveredCount, latestRunSnapshot.totalRecipients)
+                  : null;
               const progressPercent =
-                latestRun && latestRun.totalRecipients > 0
-                  ? getPercent(processedCount, latestRun.totalRecipients)
-                  : campaign.lastValidatedAt
-                    ? 100
-                    : 0;
+                latestRunSnapshot && latestRunSnapshot.totalRecipients > 0
+                  ? getPercent(processedCount, latestRunSnapshot.totalRecipients)
+                  : 0;
               const openedPercent =
-                latestRun && latestRun.totalRecipients > 0
-                  ? getPercent(latestRun.openedCount, latestRun.totalRecipients)
+                runMetricsKnown && latestRunSnapshot
+                  ? getPercent(latestRunSnapshot.openedCount, latestRunSnapshot.totalRecipients)
                   : null;
               const delivery = formatDeliveryLabel(campaign.scheduleType, campaign.scheduleConfig as ScheduleConfig | null);
               const latestRunSummary = latestRun
-                ? `${formatCount(deliveredCount)}/${formatCount(latestRun.totalRecipients)} delivered`
+                ? runMetricsKnown
+                  ? `${formatCount(deliveredCount)}/${formatCount(latestRun.totalRecipients)} delivered`
+                  : "Metrics syncing"
                 : "No run started yet";
               const latestRunValue = latestRun?.updatedAt?.toISOString() ?? null;
               const validatedAtValue = campaign.lastValidatedAt?.toISOString() ?? null;
               const healthDetail = latestRun
-                ? latestRunSummary
+                ? runMetricsKnown
+                  ? latestRunSummary
+                  : "Waiting for activity"
                 : campaign.lastValidatedAt
                   ? "Validated and ready"
                   : "Awaiting first run";
               const healthValue = latestRun
-                ? `${deliveryHealthPercent}%`
+                ? deliveryHealthPercent === null
+                  ? "—"
+                  : `${deliveryHealthPercent}%`
                 : campaign.lastValidatedAt
                   ? "Ready"
-                  : "Pending";
+                  : "—";
               const performanceMetric =
-                openedPercent !== null
+                latestRun
                   ? {
                       label: "Opened",
-                      value: `${openedPercent}%`,
-                      detail: `${formatCount(latestRun?.openedCount ?? 0)} opens`
+                      value: openedPercent === null ? "—" : `${openedPercent}%`,
+                      detail:
+                        openedPercent === null
+                          ? "Waiting for activity"
+                          : `${formatCount(latestRunSnapshot?.openedCount ?? 0)} opens`
                     }
                   : {
                       label: "Delivered",
-                      value: latestRun ? formatCount(deliveredCount) : "—",
-                      detail: latestRun ? latestRunSummary : "No run yet"
+                      value: "—",
+                      detail: "No run yet"
                     };
 
               return (
@@ -536,37 +592,28 @@ export default async function CampaignsPage({
                       </div>
 
                       <div className={styles.sequenceDetails}>
-                        <div className={styles.detailItem}>
-                          <span>Delivery</span>
-                          <strong>{delivery.label}</strong>
-                          <small title={delivery.fullDetail}>{delivery.fullDetail}</small>
-                        </div>
-
-                        <div className={styles.detailItem}>
-                          <span>Latest run</span>
-                          <strong>{latestRun ? humanize(latestRun.status) : "Waiting to launch"}</strong>
-                          <small>{latestRunValue ? <LocalDateTime value={latestRunValue} /> : "No delivery activity yet"}</small>
-                        </div>
-
-                        <div className={styles.detailItem}>
-                          <span>Validation</span>
-                          <strong>{validatedAtValue ? "Validated" : "Needs validation"}</strong>
-                          <small>
-                            {validatedAtValue ? <LocalDateTime value={validatedAtValue} /> : "Before the next send"}
-                          </small>
-                        </div>
-
-                        <div className={styles.detailItem}>
-                          <span>Delivery health</span>
-                          <strong>{latestRunSummary}</strong>
-                          <small>
-                            {latestRun
-                              ? issueCount
-                                ? `${formatCount(issueCount)} issue${issueCount === 1 ? "" : "s"}`
-                                : "Clean delivery"
-                              : "No run started yet"}
-                          </small>
-                        </div>
+                        <span className={styles.detailSegment} title={delivery.fullDetail}>
+                          <strong>Delivery</strong>
+                          {delivery.label}
+                        </span>
+                        <span className={styles.detailSegment}>
+                          <strong>Latest run</strong>
+                          {latestRun ? humanize(latestRun.status) : "Waiting to launch"}
+                          {latestRunValue ? <LocalDateTime value={latestRunValue} /> : null}
+                        </span>
+                        <span className={styles.detailSegment}>
+                          <strong>Validation</strong>
+                          {validatedAtValue ? <LocalDateTime value={validatedAtValue} /> : "Before next send"}
+                        </span>
+                        <span className={styles.detailSegment}>
+                          <strong>Health</strong>
+                          {latestRunSummary}
+                          {latestRun && runMetricsKnown
+                            ? issueCount
+                              ? `${formatCount(issueCount)} issue${issueCount === 1 ? "" : "s"}`
+                              : "Clean delivery"
+                            : null}
+                        </span>
                       </div>
                     </div>
                   </Link>
