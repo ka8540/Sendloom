@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Trash2 } from "lucide-react";
+import { ArrowUpRight, PencilLine, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -47,16 +47,29 @@ export function CampaignCardActions(props: { campaignId: string; campaignName: s
 
   return (
     <div className="campaign-card-actions">
-      <Link className="button secondary" href={`/campaigns/${props.campaignId}`}>
-        Open
+      <Link
+        className="field-icon-button campaign-card-action campaign-card-action--open"
+        href={`/campaigns/${props.campaignId}`}
+        data-tooltip="Open sequence"
+        aria-label={`Open sequence ${props.campaignName}`}
+      >
+        <ArrowUpRight aria-hidden="true" />
+      </Link>
+      <Link
+        className="field-icon-button campaign-card-action campaign-card-action--edit"
+        href={`/campaigns/${props.campaignId}`}
+        data-tooltip="Edit sequence"
+        aria-label={`Edit sequence ${props.campaignName}`}
+      >
+        <PencilLine aria-hidden="true" />
       </Link>
       <button
         type="button"
-        className="field-icon-button field-icon-button--danger"
+        className="field-icon-button campaign-card-action campaign-card-action--delete field-icon-button--danger"
         data-tooltip="Delete sequence"
         onClick={() => void deleteCampaign()}
         disabled={pending}
-        aria-label={`Delete ${props.campaignName}`}
+        aria-label={`Delete sequence ${props.campaignName}`}
       >
         <Trash2 aria-hidden="true" />
       </button>

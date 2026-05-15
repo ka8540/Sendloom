@@ -301,7 +301,7 @@
 
 .sequenceRow {
   display: grid;
-  grid-template-columns: minmax(280px, 1fr) minmax(620px, 1.35fr) auto;
+  grid-template-columns: minmax(280px, 1fr) minmax(620px, 1.35fr) minmax(8.75rem, auto);
   gap: 1rem;
   align-items: start;
   padding: 1.15rem;
@@ -314,6 +314,11 @@
 .sequenceRow:hover {
   transform: translateY(-1px);
   border-color: color-mix(in srgb, var(--accent) 18%, var(--line));
+  box-shadow: 0 18px 32px rgba(28, 42, 70, 0.08);
+}
+
+.sequenceRow:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 22%, var(--line));
   box-shadow: 0 18px 32px rgba(28, 42, 70, 0.08);
 }
 
@@ -413,14 +418,54 @@
   align-items: center;
   justify-content: flex-end;
   padding-top: 0.1rem;
+  min-width: 0;
 }
 
 .sequenceActions :global(.campaign-card-actions) {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 0.6rem;
-  flex-wrap: wrap;
+  gap: 0.48rem;
+  min-height: 2.7rem;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(0.35rem);
+  transition: opacity 150ms ease, transform 150ms ease;
+}
+
+.sequenceRow:hover .sequenceActions :global(.campaign-card-actions),
+.sequenceRow:focus-within .sequenceActions :global(.campaign-card-actions) {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0);
+}
+
+.sequenceActions :global(.campaign-card-action) {
+  width: 2.55rem;
+  height: 2.55rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 84%, transparent);
+  color: var(--muted);
+}
+
+.sequenceActions :global(.campaign-card-action--open) {
+  border-color: color-mix(in srgb, var(--accent) 22%, var(--line));
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent-soft) 36%, var(--surface) 64%);
+}
+
+.sequenceActions :global(.campaign-card-action--edit:hover),
+.sequenceActions :global(.campaign-card-action--edit:focus-visible),
+.sequenceActions :global(.campaign-card-action--open:hover),
+.sequenceActions :global(.campaign-card-action--open:focus-visible) {
+  color: var(--text);
+}
+
+.sequenceActions :global(.campaign-card-action--delete:hover:not(:disabled)),
+.sequenceActions :global(.campaign-card-action--delete:focus-visible) {
+  border-color: color-mix(in srgb, var(--warning) 36%, var(--line));
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning-soft) 62%, var(--surface) 38%);
 }
 
 .sequenceActions :global(.campaign-card-actions__error) {
@@ -444,6 +489,12 @@
   .sequenceActions :global(.campaign-card-actions__error) {
     justify-content: flex-start;
     text-align: left;
+  }
+
+  .sequenceActions :global(.campaign-card-actions) {
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
   }
 }
 
@@ -480,6 +531,20 @@
   .sequenceActions :global(.campaign-card-actions__error) {
     justify-content: flex-start;
     text-align: left;
+  }
+
+  .sequenceActions :global(.campaign-card-actions) {
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
+  }
+}
+
+@media (hover: none) {
+  .sequenceActions :global(.campaign-card-actions) {
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
   }
 }
 
