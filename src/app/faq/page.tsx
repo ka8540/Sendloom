@@ -329,9 +329,9 @@ export default function FaqPage() {
                 <p>If you have another question about Sendloom, contact us and we will help you find the right answer.</p>
               </div>
 
-              <a className={faqStyles.contactButton} href="mailto:hello@sendloom.net">
+              <a className={faqStyles.contactButton} href="mailto:ka8540@g.rit.edu">
                 <Mail aria-hidden="true" />
-                Email support
+                Contact us
               </a>
             </section>
           </article>
@@ -375,7 +375,7 @@ export default function FaqPage() {
                 <Link href="/privacy">Privacy</Link>
                 <Link href="/terms">Terms</Link>
                 <Link href="/faq">FAQ</Link>
-                <a href="mailto:hello@sendloom.net">Contact</a>
+                <a href="mailto:ka8540@g.rit.edu">Contact</a>
               </div>
             </div>
           </div>
