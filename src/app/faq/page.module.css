@@ -1,0 +1,133 @@
+.faqSections {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.faqSection {
+  display: grid;
+  gap: 1rem;
+}
+
+.faqSection + .faqSection {
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--line);
+}
+
+.faqSection h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 1.28rem;
+  letter-spacing: -0.03em;
+}
+
+.faqCards {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.faqCard {
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--surface-ghost);
+  overflow: hidden;
+  transition:
+    border-color 180ms ease,
+    background-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.faqCard:hover,
+.faqCard:focus-within,
+.faqCardVisible {
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--line));
+  background: color-mix(in srgb, var(--surface) 92%, var(--accent-soft));
+  box-shadow: var(--shadow);
+}
+
+.faqHeading {
+  margin: 0;
+}
+
+.faqQuestion {
+  width: 100%;
+  min-height: 4.3rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.1rem;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  font-weight: 700;
+  line-height: 1.45;
+  cursor: pointer;
+}
+
+.faqQuestion span {
+  min-width: 0;
+}
+
+.faqQuestion svg {
+  width: 1.1rem;
+  height: 1.1rem;
+  flex: 0 0 auto;
+  color: var(--accent);
+  transition: transform 180ms ease;
+}
+
+.faqQuestion:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 72%, transparent);
+  outline-offset: -0.35rem;
+}
+
+.faqCardVisible .faqQuestion svg {
+  transform: rotate(180deg);
+}
+
+.faqAnswerWrap {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 220ms ease,
+    opacity 180ms ease;
+}
+
+.faqAnswerInner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.faqAnswer {
+  margin: 0;
+  padding: 0 1.1rem;
+  color: var(--muted);
+  line-height: 1.72;
+  transition: padding-bottom 220ms ease;
+}
+
+.faqCardVisible .faqAnswerWrap {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.faqCardVisible .faqAnswer {
+  padding-bottom: 1rem;
+}
+
+@media (max-width: 720px) {
+  .faqCard {
+    border-radius: 18px;
+  }
+
+  .faqQuestion {
+    min-height: 4rem;
+    padding-inline: 1rem;
+  }
+
+  .faqAnswer {
+    padding-inline: 1rem;
+  }
+}
