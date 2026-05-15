@@ -1,15 +1,17 @@
 import Link from "next/link";
-import { Activity, FileSpreadsheet, ScrollText, SendHorizontal, ShieldAlert } from "lucide-react";
+import {
+  Activity,
+  CircleCheck,
+  FilePenLine,
+  FileSpreadsheet,
+  PencilLine,
+  SendHorizontal,
+  ShieldAlert,
+  TriangleAlert
+} from "lucide-react";
 
 import type { ActivityItem } from "@/components/dashboard/types";
 import styles from "./overview-command-center.module.css";
-
-const kindIcons = {
-  run: SendHorizontal,
-  import: FileSpreadsheet,
-  template: ScrollText,
-  suppression: ShieldAlert
-} as const;
 
 export function ActivityFeed({ items }: { items: ActivityItem[] }) {
   return (
@@ -27,33 +29,46 @@ export function ActivityFeed({ items }: { items: ActivityItem[] }) {
       </div>
 
       {items.length ? (
-        <div className={styles.activityList}>
+        <ol className={styles.activityList} aria-label="Recent activity timeline">
           {items.map((item) => {
-            const Icon = kindIcons[item.kind] ?? Activity;
+            const Icon = getActivityIcon(item);
+            const visualTone = getActivityTone(item);
 
             return (
-              <Link key={item.id} href={item.href} className={styles.activityItem}>
-                <span className={`${styles.activityIcon} ${styles[`activityIcon${capitalize(item.tone)}`]}`}>
-                  <Icon aria-hidden="true" />
-                </span>
-                <div className={styles.activityContent}>
-                  <div className={styles.activityHeading}>
-                    <strong>{item.title}</strong>
-                    <span>{item.timeLabel}</span>
-                  </div>
-                  <p>{item.description}</p>
-                  <small>{item.timeDetail}</small>
-                </div>
-              </Link>
+              <li key={item.id} className={styles.activityTimelineEntry}>
+                <Link href={item.href} className={styles.activityItem}>
+                  <span className={styles.activityTimelineMark} aria-hidden="true">
+                    <span className={`${styles.activityIcon} ${styles[`activityIcon${capitalize(visualTone)}`]}`}>
+                      <Icon aria-hidden="true" />
+                    </span>
+                  </span>
+                  <span className={styles.activityContent}>
+                    <span className={styles.activityHeading}>
+                      <strong className={styles.activityTitle} title={item.title}>
+                        {item.title}
+                      </strong>
+                      <time className={styles.activityTime} title={item.timeDetail}>
+                        {item.timeLabel}
+                      </time>
+                    </span>
+                    <span className={styles.activityLog} title={item.description}>
+                      <span className={styles.activityLogPrefix}>System log:</span> {item.description}
+                    </span>
+                    <span className={styles.activityTimeDetail}>{item.timeDetail}</span>
+                  </span>
+                </Link>
+              </li>
             );
           })}
-        </div>
+        </ol>
       ) : (
         <div className={styles.activityEmpty}>
-          <Activity aria-hidden="true" />
+          <span className={styles.activityEmptyIcon}>
+            <Activity aria-hidden="true" />
+          </span>
           <div>
-            <strong>No live activity yet</strong>
-            <p>Launch a sequence, import a list, or update a template to start building the activity stream.</p>
+            <strong>No recent activity yet</strong>
+            <p>Create or launch a sequence to see updates here.</p>
           </div>
         </div>
       )}
@@ -63,4 +78,56 @@ export function ActivityFeed({ items }: { items: ActivityItem[] }) {
 
 function capitalize(value: string) {
   return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function getActivityIcon(item: ActivityItem) {
+  const title = item.title.toLowerCase();
+
+  if (item.tone === "warning" || title.includes("failed") || title.includes("issue") || title.includes("error")) {
+    return TriangleAlert;
+  }
+
+  if (title.includes("ready") || title.includes("validated")) {
+    return CircleCheck;
+  }
+
+  if (item.kind === "template") {
+    return FilePenLine;
+  }
+
+  if (item.kind === "import") {
+    return FileSpreadsheet;
+  }
+
+  if (item.kind === "suppression") {
+    return ShieldAlert;
+  }
+
+  if (item.kind === "run" && item.tone === "accent") {
+    return SendHorizontal;
+  }
+
+  if (item.kind === "run" && item.tone === "success") {
+    return CircleCheck;
+  }
+
+  if (item.kind === "run") {
+    return PencilLine;
+  }
+
+  return Activity;
+}
+
+function getActivityTone(item: ActivityItem): ActivityItem["tone"] {
+  const title = item.title.toLowerCase();
+
+  if (item.tone === "warning" || title.includes("failed") || title.includes("issue") || title.includes("error")) {
+    return "warning";
+  }
+
+  if (item.tone === "success" || title.includes("ready") || title.includes("validated")) {
+    return "success";
+  }
+
+  return item.tone;
 }
