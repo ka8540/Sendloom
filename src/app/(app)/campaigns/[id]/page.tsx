@@ -43,6 +43,8 @@ const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 const RECIPIENT_ERROR_STATUSES = new Set(["FAILED", "RETRYING", "INVALID", "BOUNCED", "COMPLAINED"]);
 const RECIPIENT_SUCCESS_STATUSES = new Set(["SENT", "OPENED", "CLICKED"]);
 
+type RecipientStatusTone = "success" | "warning" | "danger" | "neutral";
+
 type CampaignTemplateSnapshot = {
   attachments?: Array<{
     fileName: string;
@@ -131,6 +133,22 @@ function getRecipientFailureCode(metadata: unknown): FailureCode | null {
   return typeof failureCode === "string" && FAILURE_CODES.includes(failureCode as FailureCode)
     ? (failureCode as FailureCode)
     : null;
+}
+
+function getRecipientStatusTone(status: string): RecipientStatusTone {
+  if (RECIPIENT_SUCCESS_STATUSES.has(status)) {
+    return "success";
+  }
+
+  if (status === "RETRYING") {
+    return "warning";
+  }
+
+  if (RECIPIENT_ERROR_STATUSES.has(status)) {
+    return "danger";
+  }
+
+  return "neutral";
 }
 
 function formatScheduleLabel(scheduleType?: string | null, scheduleConfig?: ScheduleConfig | null) {
@@ -774,6 +792,7 @@ export default async function CampaignDetailPage({
               {paginatedRecipientJobs.map((job) => (
                 (() => {
                   const showLastError = RECIPIENT_ERROR_STATUSES.has(job.status) && Boolean(job.lastError);
+                  const statusTone = getRecipientStatusTone(job.status);
                   const failureCode = getRecipientFailureCode(job.metadata);
                   const jobDetail = showLastError
                     ? failureCode
@@ -782,33 +801,62 @@ export default async function CampaignDetailPage({
                     : RECIPIENT_SUCCESS_STATUSES.has(job.status)
                       ? "Delivered successfully"
                       : "No error reported";
+                  const jobStatusBadgeClassName = [
+                    styles.jobStatusBadge,
+                    statusTone === "success"
+                      ? styles.jobStatusBadgeSuccess
+                      : statusTone === "warning"
+                        ? styles.jobStatusBadgeWarning
+                        : statusTone === "danger"
+                          ? styles.jobStatusBadgeDanger
+                          : styles.jobStatusBadgeNeutral
+                  ].join(" ");
+                  const jobSummaryClassName = [styles.jobSummary, !showLastError ? styles.jobSummaryExpanded : ""]
+                    .filter(Boolean)
+                    .join(" ");
+                  const jobMessageClassName =
+                    statusTone === "warning"
+                      ? styles.jobMessageWarning
+                      : statusTone === "danger"
+                        ? styles.jobMessageDanger
+                        : styles.jobMessageMuted;
 
                   return (
                     <div key={job.id} className={styles.jobRow}>
                       <div className={styles.jobIdentity}>
-                        <strong>{job.recipientEmail}</strong>
-                        <span>{job.recipientName || "Name unavailable"}</span>
+                        <strong className={styles.jobEmail} title={job.recipientEmail}>
+                          {job.recipientEmail}
+                        </strong>
+                        <span className={styles.jobName} title={job.recipientName || undefined}>
+                          {job.recipientName || "Name unavailable"}
+                        </span>
                       </div>
-                      <div className={styles.jobTrail}>
-                        <span className={styles.jobStatusBadge}>{humanize(job.status)}</span>
-                        <span className={showLastError ? styles.jobError : styles.jobErrorMuted}>{jobDetail}</span>
-                        {showLastError ? (
-                          <>
-                            <span className={styles.jobErrorMuted}>
-                              {job.status === "RETRYING" ? "Retryable" : "Permanent"}
-                            </span>
-                            <span className={styles.jobErrorMuted}>Attempt {job.retryCount}</span>
-                            <span className={styles.jobErrorMuted}>
+                      <div className={jobSummaryClassName}>
+                        <div className={styles.jobSummaryMain}>
+                          <span className={jobStatusBadgeClassName}>{humanize(job.status)}</span>
+                          <span className={jobMessageClassName} title={jobDetail || undefined}>
+                            {jobDetail}
+                          </span>
+                        </div>
+                      </div>
+                      {showLastError ? (
+                        <div className={styles.jobMeta}>
+                          <div className={styles.jobMetaInline}>
+                            <span>{job.status === "RETRYING" ? "Retryable" : "Permanent"}</span>
+                            <span>Attempt {job.retryCount}</span>
+                          </div>
+                          <div className={styles.jobMetaStack}>
+                            <span>
                               Last attempt <LocalDateTime value={job.updatedAt.toISOString()} />
                             </span>
                             {job.nextRetryAt ? (
-                              <span className={styles.jobErrorMuted}>
+                              <span>
                                 Next retry <LocalDateTime value={job.nextRetryAt.toISOString()} />
                               </span>
                             ) : null}
-                          </>
-                        ) : null}
-                      </div>
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   );
                 })()
