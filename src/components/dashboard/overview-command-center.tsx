@@ -361,32 +361,36 @@ export default async function OverviewCommandCenter() {
         return totals;
       }
 
-      totals.sent += latestRun.sentCount;
+      totals.delivered += getDeliveredCount(latestRun);
       totals.failed += latestRun.failedCount;
-      totals.suppressed += latestRun.suppressedCount;
       totals.invalid += latestRun.invalidCount;
-      totals.opened += latestRun.openedCount;
-      totals.clicked += latestRun.clickedCount;
+      totals.suppressed += latestRun.suppressedCount;
       totals.recipients += latestRun.totalRecipients;
 
       return totals;
     },
     {
-      sent: 0,
+      delivered: 0,
       failed: 0,
-      suppressed: 0,
       invalid: 0,
-      opened: 0,
-      clicked: 0,
+      suppressed: 0,
       recipients: 0
     }
   );
-  const hasPendingDeliveryMetrics =
-    activeSequenceCount > 0 &&
-    runTotals.recipients > 0 &&
-    runTotals.sent + runTotals.failed + runTotals.suppressed + runTotals.invalid === 0;
-  const deliveryMix = buildDeliveryMix(runTotals, hasPendingDeliveryMetrics);
-  const engagementFunnel = buildEngagementFunnel(runTotals);
+  const analyticsIssueCount = runTotals.failed + runTotals.invalid;
+  const eligibleRecipientCount = Math.max(
+    0,
+    Math.max(runTotals.recipients - runTotals.suppressed, runTotals.delivered + analyticsIssueCount)
+  );
+  const deliveryMix = buildDeliveryMix({
+    delivered: runTotals.delivered,
+    issues: analyticsIssueCount
+  });
+  const analyticsPulse = buildAnalyticsPulse({
+    delivered: runTotals.delivered,
+    issues: analyticsIssueCount,
+    eligibleRecipients: eligibleRecipientCount
+  });
 
   const sequenceRows: SequenceRowData[] = overviewCampaigns.map((campaign) => {
     const latestRun = campaign.latestRun;
@@ -517,19 +521,19 @@ export default async function OverviewCommandCenter() {
                   <BarChart3 aria-hidden="true" />
                   Analytics pulse
                 </span>
-                <strong>{formatCompactNumber(runTotals.recipients)} recipients</strong>
+                <strong>{formatCompactNumber(runTotals.recipients)} targeted</strong>
               </div>
 
               <div className={styles.deliveryInsight}>
                 <div
                   className={styles.deliveryDonut}
                   style={{ "--chart-background": deliveryMix.gradient } as CSSProperties}
-                  aria-label={`Delivery mix is ${deliveryMix.cleanRate ?? "syncing"} clean`}
+                  aria-label={`Delivery success is ${deliveryMix.cleanRate ?? "unavailable"}`}
                   role="img"
                 >
                   <span className={styles.deliveryDonutText}>
                     <strong>{deliveryMix.cleanRate ?? "—"}</strong>
-                    <small>clean</small>
+                    <small>success</small>
                   </span>
                 </div>
                 <div className={styles.deliveryLegend}>
@@ -547,11 +551,11 @@ export default async function OverviewCommandCenter() {
               </div>
 
               <div className={styles.funnelChart}>
-                {engagementFunnel.map((item) => (
+                {analyticsPulse.map((item) => (
                   <div key={item.label} className={styles.funnelRow}>
                     <div className={styles.funnelMeta}>
                       <span>{item.label}</span>
-                      <strong>{formatCompactNumber(item.value)}</strong>
+                      <strong>{item.value}</strong>
                     </div>
                     <div className={styles.funnelTrack} aria-hidden="true">
                       <span
@@ -729,33 +733,50 @@ function deriveSequenceStatus(campaignStatus: CampaignStatus, runStatus?: RunSta
 }
 
 function buildDeliveryMix(totals: {
-  sent: number;
-  failed: number;
-  suppressed: number;
-  invalid: number;
-}, pending = false) {
+  delivered: number;
+  issues: number;
+}) {
   const segments = [
-    { label: "Sent", value: totals.sent, color: "var(--accent)" },
-    { label: "Failed", value: totals.failed, color: "#d96952" },
-    { label: "Suppressed", value: totals.suppressed, color: "var(--warning)" },
-    { label: "Invalid", value: totals.invalid, color: "color-mix(in srgb, var(--muted) 72%, transparent)" }
+    { label: "Delivered", value: totals.delivered, color: "var(--accent)" },
+    { label: "Issues", value: totals.issues, color: "#d96952" }
   ];
   const total = segments.reduce((sum, segment) => sum + segment.value, 0);
 
   return {
     segments,
     gradient: buildConicGradient(segments, total),
-    cleanRate: total > 0 ? formatPercent(totals.sent, total) : pending ? null : "0%"
+    cleanRate: total > 0 ? formatPercent(totals.delivered, total) : null
   };
 }
 
-function buildEngagementFunnel(totals: { sent: number; opened: number; clicked: number }) {
-  const base = Math.max(totals.sent, totals.opened, totals.clicked);
+function buildAnalyticsPulse(totals: {
+  delivered: number;
+  issues: number;
+  eligibleRecipients: number;
+}) {
+  const coveragePercent = getNullablePercent(totals.delivered, totals.eligibleRecipients);
+  const successPercent = getNullablePercent(totals.delivered, totals.delivered + totals.issues);
+  const issueRate = getNullablePercent(totals.issues, totals.delivered + totals.issues);
 
   return [
-    { label: "Sent", value: totals.sent, percent: getPercent(totals.sent, base), color: "var(--accent)" },
-    { label: "Opened", value: totals.opened, percent: getPercent(totals.opened, base), color: "var(--success)" },
-    { label: "Clicked", value: totals.clicked, percent: getPercent(totals.clicked, base), color: "#6f8ff8" }
+    {
+      label: "Delivered",
+      value: formatCompactNumber(totals.delivered),
+      percent: coveragePercent ?? 0,
+      color: "var(--accent)"
+    },
+    {
+      label: "Delivery success",
+      value: successPercent === null ? "—" : `${successPercent}%`,
+      percent: successPercent ?? 0,
+      color: "var(--success)"
+    },
+    {
+      label: "Issues",
+      value: formatCompactNumber(totals.issues),
+      percent: issueRate ?? 0,
+      color: "#d96952"
+    }
   ];
 }
 
@@ -814,6 +835,14 @@ function getPercent(value: number, total: number) {
   }
 
   return Math.min(100, Math.round((value / total) * 100));
+}
+
+function getNullablePercent(value: number, total: number) {
+  if (total <= 0) {
+    return null;
+  }
+
+  return getPercent(value, total);
 }
 
 function formatPercent(value: number, total: number) {
