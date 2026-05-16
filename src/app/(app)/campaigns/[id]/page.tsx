@@ -779,7 +779,7 @@ export default async function CampaignDetailPage({
           />
         </article>
 
-        <article className={styles.panel}>
+        <article className={`${styles.panel} ${styles.jobPanel}`}>
           <div className={styles.panelHeader}>
             <div>
               <h2>Recent recipient activity</h2>
@@ -811,9 +811,10 @@ export default async function CampaignDetailPage({
                           ? styles.jobStatusBadgeDanger
                           : styles.jobStatusBadgeNeutral
                   ].join(" ");
-                  const jobSummaryClassName = [styles.jobSummary, !showLastError ? styles.jobSummaryExpanded : ""]
-                    .filter(Boolean)
-                    .join(" ");
+                  const jobContentClassName = [
+                    styles.jobContent,
+                    showLastError ? styles.jobContentSplit : styles.jobContentSingle
+                  ].join(" ");
                   const jobMessageClassName =
                     statusTone === "warning"
                       ? styles.jobMessageWarning
@@ -831,32 +832,32 @@ export default async function CampaignDetailPage({
                           {job.recipientName || "Name unavailable"}
                         </span>
                       </div>
-                      <div className={jobSummaryClassName}>
-                        <div className={styles.jobSummaryMain}>
+                      <div className={jobContentClassName}>
+                        <div className={styles.jobPrimary}>
                           <span className={jobStatusBadgeClassName}>{humanize(job.status)}</span>
                           <span className={jobMessageClassName} title={jobDetail || undefined}>
                             {jobDetail}
                           </span>
                         </div>
-                      </div>
-                      {showLastError ? (
-                        <div className={styles.jobMeta}>
-                          <div className={styles.jobMetaInline}>
-                            <span>{job.status === "RETRYING" ? "Retryable" : "Permanent"}</span>
-                            <span>Attempt {job.retryCount}</span>
-                          </div>
-                          <div className={styles.jobMetaStack}>
-                            <span>
-                              Last attempt <LocalDateTime value={job.updatedAt.toISOString()} />
-                            </span>
-                            {job.nextRetryAt ? (
+                        {showLastError ? (
+                          <div className={styles.jobMeta}>
+                            <div className={styles.jobMetaInline}>
+                              <span>{job.status === "RETRYING" ? "Retryable" : "Permanent"}</span>
+                              <span>Attempt {job.retryCount}</span>
+                            </div>
+                            <div className={styles.jobMetaStack}>
                               <span>
-                                Next retry <LocalDateTime value={job.nextRetryAt.toISOString()} />
+                                Last attempt <LocalDateTime value={job.updatedAt.toISOString()} />
                               </span>
-                            ) : null}
+                              {job.nextRetryAt ? (
+                                <span>
+                                  Next retry <LocalDateTime value={job.nextRetryAt.toISOString()} />
+                                </span>
+                              ) : null}
+                            </div>
                           </div>
-                        </div>
-                      ) : null}
+                        ) : null}
+                      </div>
                     </div>
                   );
                 })()

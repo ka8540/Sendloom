@@ -285,6 +285,13 @@
   box-shadow: var(--shadow);
 }
 
+.jobPanel {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
 .panelHeader {
   display: flex;
   justify-content: space-between;
@@ -456,9 +463,14 @@
 
 .jobList {
   display: grid;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   gap: 0.65rem;
   align-content: start;
   align-self: start;
+  padding-bottom: clamp(1rem, 4vw, 4rem);
+  overflow: hidden;
 }
 
 .paginationRow {
@@ -513,23 +525,29 @@
 
 .jobRow {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(260px, 1.2fr) minmax(220px, 1fr);
-  gap: 0.95rem 1.1rem;
+  grid-template-columns: minmax(180px, 0.92fr) minmax(0, 1.58fr);
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  gap: 0.95rem 1rem;
   align-items: start;
-  padding: 1rem 1.05rem;
-  border-radius: 18px;
+  padding: 0.95rem 1rem;
+  border-radius: 16px;
   border: 1px solid var(--line);
   background: var(--surface-muted);
+  overflow: hidden;
 }
 
 .jobRow > * {
   min-width: 0;
+  max-width: 100%;
 }
 
 .jobIdentity {
   display: grid;
   gap: 0.28rem;
   min-width: 0;
+  align-content: start;
 }
 
 .jobEmail {
@@ -549,11 +567,11 @@
   font-size: 0.92rem;
 }
 
-.jobSummary {
+.jobContent {
   display: grid;
-  align-content: start;
-  gap: 0.55rem;
   min-width: 0;
+  max-width: 100%;
+  width: 100%;
 }
 
 .jobStatusBadge {
@@ -595,16 +613,29 @@
   color: var(--muted);
 }
 
-.jobSummaryExpanded {
-  grid-column: 2 / -1;
+.jobContentSingle {
+  align-items: start;
 }
 
-.jobSummaryMain {
+.jobContentSingle .jobPrimary {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 0.7rem;
   min-width: 0;
   flex-wrap: wrap;
+}
+
+.jobContentSplit {
+  grid-template-columns: minmax(0, 1.12fr) minmax(0, 0.88fr);
+  gap: 0.9rem 1rem;
+  align-items: start;
+}
+
+.jobPrimary {
+  display: grid;
+  align-content: start;
+  gap: 0.42rem;
+  min-width: 0;
 }
 
 .jobMessageMuted,
@@ -612,11 +643,18 @@
 .jobMessageDanger {
   display: -webkit-box;
   min-width: 0;
+  max-width: 100%;
   overflow: hidden;
-  line-height: 1.55;
-  font-size: 0.95rem;
+  line-height: 1.5;
+  font-size: 0.94rem;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+}
+
+.jobContentSingle .jobMessageMuted,
+.jobContentSingle .jobMessageWarning,
+.jobContentSingle .jobMessageDanger {
+  -webkit-line-clamp: 1;
 }
 
 .jobMessageMuted {
@@ -634,7 +672,9 @@
 .jobMeta {
   display: grid;
   align-content: start;
-  gap: 0.4rem;
+  min-width: 0;
+  max-width: 100%;
+  gap: 0.34rem;
 }
 
 .jobMetaInline {
@@ -662,6 +702,13 @@
   gap: 0.18rem;
   font-size: 0.86rem;
   line-height: 1.5;
+  min-width: 0;
+}
+
+.jobMetaStack span {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .emptyState {
@@ -686,12 +733,11 @@
 
 @media (max-width: 1080px) {
   .jobRow {
-    grid-template-columns: minmax(220px, 1fr) minmax(0, 1.4fr);
+    grid-template-columns: minmax(170px, 0.9fr) minmax(0, 1.1fr);
   }
 
-  .jobMeta,
-  .jobSummaryExpanded {
-    grid-column: 2 / -1;
+  .jobContentSplit {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -705,14 +751,9 @@
     gap: 0.75rem;
   }
 
-  .jobSummaryExpanded,
-  .jobMeta {
-    grid-column: auto;
-  }
-
-  .jobSummaryMain {
-    flex-direction: column;
-    gap: 0.55rem;
+  .jobContentSingle .jobPrimary {
+    align-items: flex-start;
+    gap: 0.5rem;
   }
 
   .panelHeader,
