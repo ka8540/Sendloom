@@ -555,3 +555,17 @@ export function withStructuredValidationChecks(report: CampaignValidationReport,
     summary: summarizeFailureChecks(checks)
   };
 }
+
+export function getLaunchBlockingValidationChecks(report: CampaignValidationReport) {
+  return (report.checks ?? []).filter((check) => check.severity === "BLOCKER" || check.severity === "ERROR");
+}
+
+export function getLaunchBlockingValidationMessage(report: CampaignValidationReport) {
+  const [primaryCheck] = getLaunchBlockingValidationChecks(report);
+
+  if (!primaryCheck) {
+    return "Fix validation blockers before launching this sequence.";
+  }
+
+  return primaryCheck.details ? `${primaryCheck.message} ${primaryCheck.details}` : primaryCheck.message;
+}

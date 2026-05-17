@@ -22,6 +22,7 @@ import { ErrorToastOnMount } from "@/components/error-toast-provider";
 import { LocalDateTime } from "@/components/local-date-time";
 import { getAttachmentPreviewKind } from "@/lib/attachments";
 import { requireOperatorUser } from "@/lib/auth";
+import { getValidationChecksFromSnapshot } from "@/lib/campaign-health";
 import { SCHEDULE_EDIT_DISABLED_MESSAGE, canEditCampaignSchedule } from "@/lib/campaign-schedule-edit";
 import { isCampaignSetupLocked } from "@/lib/campaign-setup-lock";
 import { prisma } from "@/lib/db";
@@ -515,6 +516,10 @@ export default async function CampaignDetailPage({
   const scheduleLabel = formatScheduleLabel(campaign.scheduleType, scheduleConfig);
   const latestRunValue = latestRun?.updatedAt?.toISOString() ?? null;
   const validatedAtValue = campaign.lastValidatedAt?.toISOString() ?? null;
+  const validationChecks = getValidationChecksFromSnapshot(campaign.validationSnapshot);
+  const blockingValidationChecks = validationChecks.filter(
+    (check) => check.severity === "BLOCKER" || check.severity === "ERROR"
+  );
   const reconnectHref = `/api/auth/google/connect?email=${encodeURIComponent(campaign.senderProfile.fromEmail)}&next=${encodeURIComponent(`/campaigns/${campaign.id}`)}`;
   const totalRecipientPages = Math.max(1, Math.ceil(recipientJobCount / RECIPIENTS_PAGE_SIZE));
   const recipientPage = Number.isFinite(requestedRecipientPage)
@@ -765,6 +770,44 @@ export default async function CampaignDetailPage({
           <span className={styles.metricMeta}>Failures and invalid records that still need review.</span>
         </article>
       </section>
+      {validationChecks.length ? (
+        <section className={styles.validationBand}>
+          <article className={`${styles.panel} ${styles.validationPanel}`}>
+            <div className={styles.panelHeader}>
+              <div>
+                <h2>Validation</h2>
+                <p>
+                  {blockingValidationChecks.length
+                    ? `${blockingValidationChecks.length} launch blocker${blockingValidationChecks.length === 1 ? "" : "s"} need attention before this sequence can send.`
+                    : "The latest validation found no launch blockers."}
+                </p>
+              </div>
+            </div>
+
+            <div className={styles.validationList}>
+              {validationChecks.map((check, index) => (
+                <div
+                  key={`${check.code}-${index}`}
+                  className={[
+                    styles.validationItem,
+                    check.severity === "BLOCKER"
+                      ? styles.validationItemBlocker
+                      : check.severity === "ERROR"
+                        ? styles.validationItemError
+                        : styles.validationItemWarning
+                  ].join(" ")}
+                >
+                  <span>{humanize(check.severity)}</span>
+                  <div>
+                    <strong>{check.message}</strong>
+                    {check.details ? <em>{check.details}</em> : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </article>
+        </section>
+      ) : null}
       <section className={styles.detailGrid}>
         <article className={styles.panel}>
           <CampaignSetupEditor

@@ -21,6 +21,7 @@ import type { CampaignValidationReport, ScheduleRule } from "@/lib/types";
 import {
   buildStructuredValidationChecks,
   buildValidationReport,
+  getLaunchBlockingValidationMessage,
   withStructuredValidationChecks
 } from "@/lib/validation";
 import { markSenderRequiresReconnect } from "@/services/senders";
@@ -259,7 +260,7 @@ export class CampaignLaunchBlockedError extends Error {
   report: CampaignValidationReport;
 
   constructor(report: CampaignValidationReport) {
-    super("Fix validation blockers before launching this sequence.");
+    super(getLaunchBlockingValidationMessage(report));
     this.name = "CampaignLaunchBlockedError";
     this.report = report;
   }

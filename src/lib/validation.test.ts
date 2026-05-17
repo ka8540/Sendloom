@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { buildStructuredValidationChecks, buildValidationReport } from "@/lib/validation";
+import {
+  buildStructuredValidationChecks,
+  buildValidationReport,
+  getLaunchBlockingValidationMessage,
+  withStructuredValidationChecks
+} from "@/lib/validation";
 
 describe("validation", () => {
   it("marks missing email rows as invalid", () => {
@@ -154,5 +159,37 @@ describe("validation", () => {
     });
 
     expect(checks).toContainEqual(expect.objectContaining({ code: "INVALID_RECIPIENT_EMAIL", severity: "ERROR" }));
+  });
+
+  it("uses the first blocker or error as the launch-blocked message", () => {
+    const report = withStructuredValidationChecks(
+      buildValidationReport({
+        rows: [],
+        templateSubject: "",
+        templateHtml: "",
+        suppressedEmails: new Set()
+      }),
+      [
+        {
+          code: "DUPLICATE_RECIPIENT",
+          severity: "WARNING",
+          source: "VALIDATION",
+          message: "The import contains duplicate recipients.",
+          retryable: false
+        },
+        {
+          code: "MISSING_MAPPING",
+          severity: "BLOCKER",
+          source: "IMPORT",
+          message: "Recipient email mapping is missing.",
+          details: "Map the email field before launching.",
+          retryable: false
+        }
+      ]
+    );
+
+    expect(getLaunchBlockingValidationMessage(report)).toBe(
+      "Recipient email mapping is missing. Map the email field before launching."
+    );
   });
 });
