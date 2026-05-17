@@ -15,13 +15,14 @@ import { getRedis } from "@/lib/redis";
 import { classifySendFailure, getNextRetryAt, isRetryableFailure, MAX_RETRY_ATTEMPTS } from "@/lib/retry-policy";
 import { getNextRunDate, normalizeScheduleRule } from "@/lib/schedule";
 import { getSystemHealth } from "@/lib/system-health";
-import { renderTemplate, renderTemplateContent, type TemplateFormat } from "@/lib/templates";
+import { extractTemplateVariables, renderTemplate, renderTemplateContent, type TemplateFormat } from "@/lib/templates";
 import { makeTrackingUrl, shaKey } from "@/lib/tracking";
 import type { CampaignValidationReport, ScheduleRule } from "@/lib/types";
 import {
   buildStructuredValidationChecks,
   buildValidationReport,
   getLaunchBlockingValidationMessage,
+  getUnresolvedTemplateVariables,
   withStructuredValidationChecks
 } from "@/lib/validation";
 import { markSenderRequiresReconnect } from "@/services/senders";
@@ -1103,6 +1104,9 @@ async function ensureRecipientJobs(campaignId: string, runId: string) {
   const subjectTemplate = templateSnapshot.subject;
   const templateFormat = templateSnapshot.format ?? "HTML";
   const htmlTemplate = templateSnapshot.htmlBody;
+  const templateVariables = Array.from(
+    new Set([...extractTemplateVariables(subjectTemplate), ...extractTemplateVariables(htmlTemplate)])
+  );
   const mappingSnapshot = campaign.mappingSnapshot as {
     reservedFieldMap?: Record<string, string>;
     variableMap?: Record<string, string>;
@@ -1124,6 +1128,28 @@ async function ensureRecipientJobs(campaignId: string, runId: string) {
     const metadata: Record<string, unknown> = {
       rowIndex: row.rowIndex
     };
+
+    const unresolvedVariables = getUnresolvedTemplateVariables(templateVariables, payload);
+    if (unresolvedVariables.length > 0) {
+      await createRecipientJobIgnoringDuplicate({
+        campaignRunId: runId,
+        importRowId: row.id,
+        recipientEmail: email,
+        recipientName: typeof payload.name === "string" ? payload.name : null,
+        subject: renderTemplate(subjectTemplate, payload),
+        htmlBody: renderTemplateContent(templateFormat, htmlTemplate, payload),
+        dedupeKey: shaKey([runId, email]),
+        status: "INVALID",
+        lastError: `Missing template variable value${unresolvedVariables.length === 1 ? "" : "s"}: ${unresolvedVariables.join(", ")}`,
+        metadata: {
+          ...metadata,
+          failureCode: "UNRESOLVED_TEMPLATE_VARIABLE",
+          failureSource: "TEMPLATE",
+          unresolvedVariables
+        } as Prisma.InputJsonValue
+      });
+      continue;
+    }
 
     if (suppressedEmails.has(email)) {
       await createRecipientJobIgnoringDuplicate({

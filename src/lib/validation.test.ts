@@ -125,7 +125,7 @@ describe("validation", () => {
       report
     });
 
-    expect(checks).toContainEqual(expect.objectContaining({ code: "UNRESOLVED_TEMPLATE_VARIABLE", severity: "BLOCKER" }));
+    expect(checks).toContainEqual(expect.objectContaining({ code: "UNRESOLVED_TEMPLATE_VARIABLE", severity: "WARNING" }));
   });
 
   it("detects invalid recipient emails", async () => {

@@ -185,6 +185,16 @@ function getTemplateVariables(templateSnapshot?: StructuredValidationParams["tem
   );
 }
 
+export function getUnresolvedTemplateVariables(
+  variables: string[],
+  payload: Record<string, unknown>
+) {
+  return variables.filter((variable) => {
+    const value = payload[variable];
+    return value === undefined || value === null || String(value).trim() === "";
+  });
+}
+
 function getScheduleFailure(params: StructuredValidationParams, now: Date) {
   const scheduleConfig =
     params.scheduleConfig && typeof params.scheduleConfig === "object" && !Array.isArray(params.scheduleConfig)
@@ -440,11 +450,7 @@ export async function buildStructuredValidationChecks(params: StructuredValidati
     const renderedSubject = renderTemplate(templateSnapshot?.subject ?? "", payload);
     const renderedBody = renderTemplateContent(templateSnapshot?.format ?? "HTML", templateSnapshot?.htmlBody ?? "", payload);
 
-    for (const variable of templateVariables) {
-      if (payload[variable] === undefined || payload[variable] === null || String(payload[variable]).trim() === "") {
-        unresolvedVariables.add(variable);
-      }
-    }
+    getUnresolvedTemplateVariables(templateVariables, payload).forEach((variable) => unresolvedVariables.add(variable));
 
     if (/{{\s*[a-zA-Z0-9_]+\s*}}/.test(renderedSubject) || /{{\s*[a-zA-Z0-9_]+\s*}}/.test(renderedBody)) {
       templateVariables.forEach((variable) => unresolvedVariables.add(variable));
@@ -454,6 +460,7 @@ export async function buildStructuredValidationChecks(params: StructuredValidati
   if (unresolvedVariables.size > 0 || params.report.issues.some((issue) => issue.code === "MISSING_VARIABLE")) {
     checks.push(
       createFailureCheck("UNRESOLVED_TEMPLATE_VARIABLE", "TEMPLATE", {
+        message: "Some recipients have unresolved template variables and will be skipped.",
         details: Array.from(unresolvedVariables).join(", ") || undefined,
         actionLabel: "Fix template variables"
       })
