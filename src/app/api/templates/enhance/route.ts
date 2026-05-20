@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/api-auth";
 import { env } from "@/lib/env";
+import { createRateLimitResponse, rateLimit } from "@/lib/rate-limit";
 import { enhanceTemplateRequestSchema, type SpamAnalysisPayload } from "@/lib/template-enhancement-request";
 import { getDefaultTemplateBody, TEMPLATE_FORMATS, type TemplateFormat, validateTemplateBody } from "@/lib/templates";
 
@@ -247,6 +248,11 @@ export async function POST(request: Request) {
     const auth = await requireApiUser("aiEnhance");
     if ("response" in auth) {
       return auth.response;
+    }
+
+    const limit = await rateLimit({ key: `templates:enhance:user:${auth.user.id}`, limit: 20, windowSeconds: 60 });
+    if (!limit.allowed) {
+      return createRateLimitResponse(limit.retryAfterSeconds);
     }
 
     const payload = enhanceTemplateRequestSchema.parse(await request.json());

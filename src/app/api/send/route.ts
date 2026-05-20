@@ -5,6 +5,7 @@ import { renderEmailTemplate } from "@/components/email-template";
 import { requireApiUser } from "@/lib/api-auth";
 import { env } from "@/lib/env";
 import { GMAIL_RECONNECT_ERROR, getUserSafeGmailSendError, isGmailReconnectError, sendEmail } from "@/lib/provider";
+import { createRateLimitResponse, rateLimit } from "@/lib/rate-limit";
 import { getDefaultUserSender, markSenderRequiresReconnect } from "@/services/senders";
 
 const schema = z
@@ -18,6 +19,11 @@ export async function POST(request: Request) {
   const auth = await requireApiUser();
   if ("response" in auth) {
     return auth.response;
+  }
+
+  const limit = await rateLimit({ key: `send:test:user:${auth.user.id}`, limit: 10, windowSeconds: 60 });
+  if (!limit.allowed) {
+    return createRateLimitResponse(limit.retryAfterSeconds);
   }
 
   try {

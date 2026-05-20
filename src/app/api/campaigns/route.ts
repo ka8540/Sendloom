@@ -6,6 +6,7 @@ import { createForbiddenApiResponse, getApiRestrictionMessage, requireApiUser } 
 import { getAttachmentFilesFromFormData } from "@/lib/campaign-attachments";
 import { prisma } from "@/lib/db";
 import { GMAIL_RECONNECT_ERROR } from "@/lib/provider";
+import { createRateLimitResponse, rateLimit } from "@/lib/rate-limit";
 import { storeUpload } from "@/lib/storage";
 import { CampaignLaunchBlockedError, createCampaignDraft, launchCampaign, processPendingCampaignWork } from "@/services/campaigns";
 
@@ -56,6 +57,11 @@ export async function POST(request: Request) {
   const auth = await requireApiUser();
   if ("response" in auth) {
     return auth.response;
+  }
+
+  const limit = await rateLimit({ key: `campaigns:create:user:${auth.user.id}`, limit: 20, windowSeconds: 60 });
+  if (!limit.allowed) {
+    return createRateLimitResponse(limit.retryAfterSeconds);
   }
 
   const formData = await request.formData();

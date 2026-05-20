@@ -4,6 +4,7 @@ import { z } from "zod";
 import { createForbiddenApiResponse, getApiRestrictionMessage, requireApiUser } from "@/lib/api-auth";
 import type { EmailAttachment } from "@/lib/provider";
 import { GMAIL_RECONNECT_ERROR } from "@/lib/provider";
+import { createRateLimitResponse, rateLimit } from "@/lib/rate-limit";
 import { storeUpload } from "@/lib/storage";
 import { writeAuditLog } from "@/lib/audit";
 import { prisma } from "@/lib/db";
@@ -55,6 +56,11 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   const auth = await requireApiUser();
   if ("response" in auth) {
     return auth.response;
+  }
+
+  const limit = await rateLimit({ key: `campaigns:update:user:${auth.user.id}`, limit: 30, windowSeconds: 60 });
+  if (!limit.allowed) {
+    return createRateLimitResponse(limit.retryAfterSeconds);
   }
 
   const { id } = await context.params;
@@ -221,6 +227,11 @@ export async function DELETE(_: Request, context: { params: Promise<{ id: string
   const auth = await requireApiUser();
   if ("response" in auth) {
     return auth.response;
+  }
+
+  const limit = await rateLimit({ key: `campaigns:delete:user:${auth.user.id}`, limit: 30, windowSeconds: 60 });
+  if (!limit.allowed) {
+    return createRateLimitResponse(limit.retryAfterSeconds);
   }
 
   const { id } = await context.params;

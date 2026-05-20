@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { getSendWindowKey } from "@/lib/rate-limit";
+import { getClientIp, getSendWindowKey } from "@/lib/rate-limit";
 
 describe("send window keys", () => {
   it("scopes the send window by user id when present", () => {
@@ -13,5 +13,23 @@ describe("send window keys", () => {
 
   it("keeps the legacy global bucket when no owner information is available", () => {
     expect(getSendWindowKey()).toBe("global-send-window");
+  });
+});
+
+describe("getClientIp", () => {
+  function makeRequest(headers: Record<string, string>) {
+    return new Request("https://example.com", { headers });
+  }
+
+  it("returns the first entry from x-forwarded-for", () => {
+    expect(getClientIp(makeRequest({ "x-forwarded-for": "203.0.113.1, 10.0.0.1" }))).toBe("203.0.113.1");
+  });
+
+  it("falls back to x-real-ip when no forwarded header is present", () => {
+    expect(getClientIp(makeRequest({ "x-real-ip": "198.51.100.7" }))).toBe("198.51.100.7");
+  });
+
+  it("returns 'unknown' when neither header is set", () => {
+    expect(getClientIp(makeRequest({}))).toBe("unknown");
   });
 });

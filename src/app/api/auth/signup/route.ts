@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { createPasswordHash, normalizeUserEmail, setSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { createRateLimitResponse, getClientIp, rateLimit } from "@/lib/rate-limit";
 
 const schema = z
   .object({
@@ -16,6 +17,12 @@ const schema = z
   });
 
 export async function POST(request: Request) {
+  const ip = getClientIp(request);
+  const limit = await rateLimit({ key: `auth:signup:ip:${ip}`, limit: 5, windowSeconds: 60 * 60 });
+  if (!limit.allowed) {
+    return createRateLimitResponse(limit.retryAfterSeconds);
+  }
+
   const payload = schema.parse(await request.json());
   const email = normalizeUserEmail(payload.email);
   const existingUser = await prisma.user.findUnique({

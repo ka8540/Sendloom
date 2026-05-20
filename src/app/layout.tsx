@@ -3,6 +3,7 @@ import { Bebas_Neue, Space_Grotesk } from "next/font/google";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 
 import "@/app/globals.css";
+import { CsrfFetchPatch } from "@/components/csrf-fetch-patch";
 import { ErrorToastProvider } from "@/components/error-toast-provider";
 import { ManualProvider } from "@/components/manual/ManualProvider";
 import { PublicLoadScreen } from "@/components/public-load-screen";
@@ -43,6 +44,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+        <CsrfFetchPatch />
         <ErrorToastProvider>
           <ManualProvider>
             {children}
