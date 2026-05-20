@@ -196,6 +196,7 @@ flowchart TD
 | `/` | Landing page |
 | `/signup` | Account creation |
 | `/login` | Sign in |
+| `/faq` | Frequently asked questions |
 | `/privacy` | Privacy page |
 | `/terms` | Terms page |
 | `/track/open/[token]` | Open tracking pixel |
@@ -225,6 +226,7 @@ flowchart TD
 - `POST /api/auth/login`
 - `POST /api/auth/logout`
 - `GET /api/auth/google/login`
+- `GET /api/auth/google/login/callback`
 - `GET /api/auth/google/connect`
 - `GET /api/auth/google/callback`
 
@@ -267,11 +269,16 @@ flowchart TD
 - `POST /api/cron/campaigns`
 - `POST /api/webhooks/resend`
 
+### Health
+
+- `GET /api/health`
+
 ### Admin
 
 - `GET /api/admin/users`
 - `PATCH /api/admin/users/[id]`
 - `DELETE /api/admin/users/[id]`
+- `GET /api/admin/system-health`
 
 ### Legacy/internal suppressions surface
 
@@ -304,7 +311,7 @@ flowchart TD
 
 ```text
 .
-├── .env.example
+├── .nvmrc
 ├── README.md
 ├── next.config.mjs
 ├── package.json
@@ -323,9 +330,11 @@ flowchart TD
 │   │   │   ├── templates
 │   │   │   └── workspace
 │   │   ├── api
+│   │   ├── faq
 │   │   ├── login
 │   │   ├── signup
 │   │   ├── track
+│   │   ├── unsubscribe
 │   │   ├── privacy
 │   │   └── terms
 │   ├── components
@@ -339,7 +348,7 @@ flowchart TD
 │   ├── services
 │   └── workers
 ├── uploads
-├── vercel.json
+├── tsconfig.json
 └── vitest.config.ts
 ```
 
@@ -360,7 +369,7 @@ flowchart TD
 
 ## Environment Variables
 
-Minimum local setup comes from `.env.example`.
+Create a local `.env` file at the repo root with the values below. Secrets and sample env files are intentionally not committed to the repo.
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
@@ -397,11 +406,13 @@ Minimum local setup comes from `.env.example`.
 
 ```bash
 npm install
-cp .env.example .env
+# create a local .env using the variables listed above
 npm run prisma:generate
 npm run prisma:migrate
 npm run dev
 ```
+
+The Node version is pinned in `.nvmrc` (`20`).
 
 ### Useful extra processes
 
@@ -410,8 +421,18 @@ npm run worker
 npm run scheduler
 ```
 
+### Tests
+
+Vitest covers the `src/lib` regression surface (auth, scheduling, templates, validation, retry policy, spam analysis, and friends).
+
+```bash
+npm test            # one-shot run
+npm run test:watch  # watch mode
+```
+
 ### Notes
 
 - The app can process campaign work inline during launches and status refreshes, so local development still works even without a fully separate worker setup.
 - `/api/cron/campaigns` can also advance pending campaign work and trigger reply sync.
 - Uploads default to the local `uploads/` directory.
+- Linting is configured through `next lint`. Type checks run via `npx tsc --noEmit`.

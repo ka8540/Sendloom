@@ -176,5 +176,3 @@ sendWorker.on("failed", (job, error) => {
 webhookWorker.on("failed", (job, error) => {
   console.error("Webhook worker failed", job?.id, error);
 });
-
-console.log("Sendloom workers started.");

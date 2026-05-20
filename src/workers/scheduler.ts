@@ -11,29 +11,10 @@ async function tick() {
   ticking = true;
 
   try {
-    const result = await processPendingCampaignWork({
+    await processPendingCampaignWork({
       maxDurationMs: 55_000
     });
-    const replySync = await syncConnectedSenderReplies();
-
-    if (
-      result.dueCampaignsFound > 0 ||
-      result.runsCreated > 0 ||
-      result.runsProcessed > 0 ||
-      result.recipientJobsProcessed > 0 ||
-      result.errors.length > 0 ||
-      replySync.repliesStored > 0 ||
-      replySync.sendersFailed > 0
-    ) {
-      console.log("[scheduler] Campaign tick complete.", {
-        dueCampaignsFound: result.dueCampaignsFound,
-        runsCreated: result.runsCreated,
-        runsProcessed: result.runsProcessed,
-        recipientJobsProcessed: result.recipientJobsProcessed,
-        repliesSynced: replySync.repliesStored,
-        errors: result.errors.length + replySync.sendersFailed
-      });
-    }
+    await syncConnectedSenderReplies();
   } catch (error) {
     console.error("[scheduler] Campaign tick failed.", error);
   } finally {
