@@ -1360,6 +1360,106 @@ html[data-sidebar-collapsed="true"] .sidebar .theme-menu--footer .theme-menu__pa
   gap: 1rem;
 }
 
+.saved-templates__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.1rem;
+  flex-wrap: wrap;
+}
+
+.saved-templates__search {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex: 0 1 18rem;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-muted);
+  padding: 0.5rem 0.85rem;
+  color: var(--muted);
+  transition: border-color 160ms ease, background-color 160ms ease, box-shadow 180ms ease;
+}
+
+.saved-templates__search:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 34%, transparent);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+  background: var(--surface);
+}
+
+.saved-templates__search svg {
+  inline-size: 0.95rem;
+  block-size: 0.95rem;
+  flex: 0 0 auto;
+}
+
+.saved-templates__search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  padding: 0;
+}
+
+.saved-templates__search input::placeholder {
+  color: var(--muted);
+}
+
+.saved-templates__search input::-webkit-search-cancel-button {
+  appearance: none;
+}
+
+.saved-templates__search-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+.saved-templates__search-clear:hover {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--text);
+}
+
+.saved-templates__search-clear:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.saved-templates__search-clear svg {
+  inline-size: 0.85rem;
+  block-size: 0.85rem;
+}
+
+.saved-templates__empty {
+  display: grid;
+  gap: 0.25rem;
+}
+
+@media (max-width: 640px) {
+  .saved-templates__header {
+    align-items: stretch;
+  }
+
+  .saved-templates__search {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+}
+
 .templates-pagination {
   display: flex;
   justify-content: flex-end;

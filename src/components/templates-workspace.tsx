@@ -1,7 +1,7 @@
 "use client";
 
-import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight, Search, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { TemplateForm, type EditableTemplate, type TemplateDraft } from "@/components/forms";
 import {
@@ -80,6 +80,7 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
   const [hoveredTemplateId, setHoveredTemplateId] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [searchQuery, setSearchQuery] = useState("");
   const [draft, setDraft] = useState<TemplateDraft>(createDraft(null));
   const hoverIntentTimeoutRef = useRef<number | null>(null);
   const hoverLeaveTimeoutRef = useRef<number | null>(null);
@@ -88,10 +89,34 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
     setTemplates(initialTemplates.map(normalizeTemplate));
   }, [initialTemplates]);
 
+  const normalizedSearchQuery = searchQuery.trim().toLowerCase();
+  const filteredTemplates = useMemo(() => {
+    if (!normalizedSearchQuery) {
+      return templates;
+    }
+
+    return templates.filter((template) => {
+      const haystack = [
+        template.name,
+        template.format,
+        getTemplateFormatLabel(template.format),
+        template.subject
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return haystack.includes(normalizedSearchQuery);
+    });
+  }, [templates, normalizedSearchQuery]);
+
   useEffect(() => {
-    const totalPages = Math.max(1, Math.ceil(templates.length / TEMPLATE_PAGE_SIZE));
+    const totalPages = Math.max(1, Math.ceil(filteredTemplates.length / TEMPLATE_PAGE_SIZE));
     setCurrentPage((page) => Math.min(page, totalPages));
-  }, [templates.length]);
+  }, [filteredTemplates.length]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [normalizedSearchQuery]);
 
   useEffect(() => {
     return () => {
@@ -108,11 +133,14 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
   const editingTemplate = templates.find((template) => template.id === editingTemplateId) ?? null;
   const previewVariables = extractVariables(draft.subject, draft.htmlBody);
   const previewPayload = buildTemplatePreviewPayload(previewVariables, draft.previewPayload ?? undefined);
-  const totalPages = Math.max(1, Math.ceil(templates.length / TEMPLATE_PAGE_SIZE));
-  const pagedTemplates = templates.slice(
+  const totalPages = Math.max(1, Math.ceil(filteredTemplates.length / TEMPLATE_PAGE_SIZE));
+  const pagedTemplates = filteredTemplates.slice(
     (currentPage - 1) * TEMPLATE_PAGE_SIZE,
     currentPage * TEMPLATE_PAGE_SIZE
   );
+  const hasTemplates = templates.length > 0;
+  const isSearching = normalizedSearchQuery.length > 0;
+  const hasNoResults = isSearching && filteredTemplates.length === 0;
 
   const handleSaved = (savedTemplate: EditableTemplate) => {
     const normalized = normalizeTemplate(savedTemplate);
@@ -237,7 +265,30 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
         </section>
 
         <section className="card">
-          <h2 style={{ marginTop: 0 }}>Saved templates</h2>
+          <div className="saved-templates__header">
+            <h2 style={{ marginTop: 0, marginBottom: 0 }}>Saved templates</h2>
+            {hasTemplates ? (
+              <label className="saved-templates__search" aria-label="Search saved templates">
+                <Search aria-hidden="true" />
+                <input
+                  type="search"
+                  value={searchQuery}
+                  placeholder="Search templates..."
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                />
+                {searchQuery ? (
+                  <button
+                    type="button"
+                    className="saved-templates__search-clear"
+                    aria-label="Clear template search"
+                    onClick={() => setSearchQuery("")}
+                  >
+                    <X aria-hidden="true" />
+                  </button>
+                ) : null}
+              </label>
+            ) : null}
+          </div>
           <div className="templates-list">
           {pagedTemplates.map((template) => {
             const isEditing = template.id === editingTemplateId;
@@ -297,9 +348,16 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
               </article>
             );
           })}
-            {!templates.length ? <div className="surface-note">Create your first template to start using it in sequences.</div> : null}
+            {!hasTemplates ? (
+              <div className="surface-note">Create your first template to start using it in sequences.</div>
+            ) : hasNoResults ? (
+              <div className="surface-note saved-templates__empty">
+                <strong>No templates found</strong>
+                <span>Try a different search term.</span>
+              </div>
+            ) : null}
           </div>
-          {templates.length > TEMPLATE_PAGE_SIZE ? (
+          {filteredTemplates.length > TEMPLATE_PAGE_SIZE ? (
             <div className="templates-pagination" aria-label="Template pages">
               <div className="templates-pagination__controls">
                 <button
