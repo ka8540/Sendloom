@@ -13,6 +13,7 @@ import {
   Users
 } from "lucide-react";
 
+import { ActiveRunRefresher } from "@/components/active-run-refresher";
 import { CampaignCardActions } from "@/components/campaign-card-actions";
 import { CampaignBuilder } from "@/components/campaign-builder";
 import { ErrorToastOnMount } from "@/components/error-toast-provider";
@@ -265,6 +266,7 @@ export default async function CampaignsPage({
       campaign.status === "RUNNING" ||
       campaign.runs.some((run) => ["QUEUED", "RUNNING"].includes(run.status))
   ).length;
+  const hasLiveActivity = activeSequences > 0;
   const scheduledSequences = campaigns.filter((campaign) => campaign.scheduleType !== "immediate").length;
   const validatedSequences = campaigns.filter((campaign) => Boolean(campaign.lastValidatedAt)).length;
   const totalPages = Math.max(1, Math.ceil(campaigns.length / PAGE_SIZE));
@@ -299,6 +301,7 @@ export default async function CampaignsPage({
 
   return (
     <div className={styles.page}>
+      <ActiveRunRefresher active={hasLiveActivity} intervalMs={4_000} />
       {gmailError ? <ErrorToastOnMount message={gmailError} title="Gmail connection failed" /> : null}
       <section className={styles.topGrid}>
         {gmailStatus === "connected" ? (
