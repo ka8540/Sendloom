@@ -17,7 +17,7 @@ type LandingNavItem = {
 
 const defaultNavItems = [
   { href: "#top", label: "Home" },
-  { href: "#proof", label: "Why Sendloom" },
+  { href: "#chaos", label: "Why Sendloom" },
   { href: "#workflow", label: "Workflow" },
   { href: "mailto:hello@sendloom.net", label: "Contact" }
 ] as const;
