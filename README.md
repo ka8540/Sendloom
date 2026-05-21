@@ -296,7 +296,7 @@ sequenceDiagram
     participant Store as Object storage (local dir / R2 attachments bucket)
     participant Svc as createCampaignDraft()
     participant DB as PostgreSQL
-    User->>UI: Pick import, mapping, template, sender; attach resumes/files
+    User->>UI: Pick import, mapping, template, sender, then attach resumes/files
     UI->>API: multipart form (fields + attachment files)
     API->>API: Validate auth and attachment size limits
     loop Each attachment
