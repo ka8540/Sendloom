@@ -181,6 +181,222 @@ flowchart TD
 - **Enrichment:** Hunter
 - **AI assistance:** OpenAI Responses API
 
+## Sequence Diagrams
+
+These diagrams trace the main flows the app performs, from the browser through the API routes, services, and external systems.
+
+### Sign up and log in
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant UI as Browser
+    participant API as /api/auth/signup or /login
+    participant RL as Redis (rate limit)
+    participant DB as PostgreSQL
+    User->>UI: Enter email and password
+    UI->>API: POST credentials
+    API->>RL: rateLimit(ip / email)
+    RL-->>API: allowed
+    API->>DB: find or create User (bcrypt hash)
+    DB-->>API: user record
+    API->>UI: Set signed session cookie (JWT)
+    UI-->>User: Redirect to /workspace or /admin
+```
+
+### Connect a Gmail sender (Google OAuth)
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant UI as Browser
+    participant Connect as /api/auth/google/connect
+    participant Google as Google OAuth
+    participant CB as /api/auth/google/callback
+    participant DB as PostgreSQL
+    User->>UI: Click "Connect Gmail"
+    UI->>Connect: GET connect route
+    Connect-->>UI: Redirect to Google consent (state cookie set)
+    UI->>Google: Approve Gmail send + profile scopes
+    Google-->>CB: Redirect with code and state
+    CB->>CB: Verify state cookie matches
+    CB->>Google: Exchange code for tokens
+    Google-->>CB: Access token and refresh token
+    CB->>Google: Fetch Google profile
+    CB->>DB: Upsert SenderProfile with refresh token
+    CB-->>UI: Redirect back with gmail=connected
+```
+
+### Import a CSV/XLSX audience
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant UI as Browser
+    participant API as POST /api/imports
+    participant Svc as createImport()
+    participant Parse as parseSpreadsheet()
+    participant Store as Object storage (local dir / R2 imports bucket)
+    participant DB as PostgreSQL
+    User->>UI: Choose a CSV or XLSX file
+    UI->>API: multipart/form-data upload
+    API->>Svc: createImport(file, userId)
+    Svc->>Parse: Parse columns and rows
+    Parse-->>Svc: columns, rows, sample rows
+    Svc->>Store: uploadObject(imports bucket, scoped key)
+    Store-->>Svc: storage key
+    Svc->>DB: Create Import + ImportColumn/Row + Mapping
+    DB-->>Svc: import record
+    Svc-->>UI: Import id and detected columns
+```
+
+### Find a missing email (Finder)
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant UI as Browser
+    participant API as POST /api/email-finder
+    participant DB as PostgreSQL
+    participant Hunter as Hunter API
+    User->>UI: Enter first name, last name, company domain
+    UI->>API: POST lookup request
+    API->>DB: Get the user's decrypted Hunter API key
+    DB-->>API: API key
+    API->>Hunter: findHunterEmail(name, domain)
+    Hunter-->>API: Candidate emails and confidence
+    API-->>UI: Results
+```
+
+### Write a template with AI assistance
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant UI as Browser
+    participant API as POST /api/templates/enhance
+    participant OpenAI as OpenAI Responses API
+    User->>UI: Click "Enhance with AI" on subject or body
+    UI->>API: POST field type, current text, context
+    API->>API: Rate limit and build prompt
+    API->>OpenAI: POST /v1/responses
+    OpenAI-->>API: Rewritten subject or body
+    API->>API: Validate template body format
+    API-->>UI: Enhanced text
+    UI-->>User: Updated copy in the editor
+```
+
+### Create a sequence with attachments
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant UI as Browser
+    participant API as POST /api/campaigns
+    participant Store as Object storage (local dir / R2 attachments bucket)
+    participant Svc as createCampaignDraft()
+    participant DB as PostgreSQL
+    User->>UI: Pick import, mapping, template, sender; attach resumes/files
+    UI->>API: multipart form (fields + attachment files)
+    API->>API: Validate auth and attachment size limits
+    loop Each attachment
+        API->>Store: uploadObject(attachments bucket, scoped key)
+        Store-->>API: storage key
+    end
+    API->>Svc: createCampaignDraft(payload + attachment keys)
+    Svc->>DB: Create Campaign (templateSnapshot stores attachment keys)
+    DB-->>Svc: campaign
+    Svc-->>UI: Campaign id
+```
+
+### Launch a sequence and send email
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant UI as Browser
+    participant API as POST /api/campaigns/[id]/launch
+    participant Svc as launchCampaign()
+    participant Proc as processPendingCampaignWork()
+    participant DB as PostgreSQL
+    participant Store as Object storage (local dir / R2 attachments bucket)
+    participant Gmail as Gmail API
+    User->>UI: Click Launch
+    UI->>API: POST launch
+    API->>Svc: launchCampaign(id, userId)
+    Svc->>DB: Validate campaign, create CampaignRun + RecipientJobs
+    DB-->>Svc: run
+    API-->>UI: Run accepted
+    Note over API,Proc: Work continues in the background via after()
+    Proc->>DB: Load pending RecipientJobs
+    loop Each recipient
+        Proc->>Store: getObjectBuffer(attachment keys)
+        Store-->>Proc: Attachment bytes
+        Proc->>Gmail: Send rendered email + attachments
+        Gmail-->>Proc: Message id
+        Proc->>DB: Update RecipientJob (SENT / FAILED)
+    end
+```
+
+### Download a sequence attachment
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant UI as Browser
+    participant API as GET /api/campaigns/[id]/attachments/[index]
+    participant DB as PostgreSQL
+    participant Store as Object storage (local dir / R2 attachments bucket)
+    User->>UI: Click an attachment on the sequence detail page
+    UI->>API: GET attachment route
+    API->>API: requireApiUser (session check)
+    API->>DB: Find Campaign where id AND userId (ownership check)
+    DB-->>API: campaign or none
+    alt Not the owner / not found
+        API-->>UI: 404 Not found
+    else Owner
+        API->>Store: getObjectBuffer(attachments bucket, key)
+        Store-->>API: File bytes
+        API-->>UI: File stream with Content-Disposition
+    end
+```
+
+### Track an email open
+
+```mermaid
+sequenceDiagram
+    actor Recipient
+    participant Inbox as Email client
+    participant API as GET /track/open/[token]
+    participant DB as PostgreSQL
+    Recipient->>Inbox: Open the email
+    Inbox->>API: Request the tracking pixel
+    API->>API: verifyTrackingToken(token)
+    API->>DB: Update RecipientJob status = OPENED
+    API-->>Inbox: 1x1 transparent GIF
+```
+
+### Scheduled processing and reply sync (cron)
+
+```mermaid
+sequenceDiagram
+    participant Cron as Vercel Cron
+    participant API as /api/cron/campaigns
+    participant Proc as processPendingCampaignWork()
+    participant Replies as syncConnectedSenderReplies()
+    participant DB as PostgreSQL
+    participant Gmail as Gmail API
+    Cron->>API: GET /api/cron/campaigns (CRON_SECRET)
+    API->>API: Authorize the cron secret
+    API->>Proc: Advance due and scheduled campaign work
+    Proc->>DB: Process scheduled runs and recipient jobs
+    Proc->>Gmail: Send any pending emails
+    API->>Replies: syncConnectedSenderReplies()
+    Replies->>Gmail: Fetch new replies per connected sender
+    Replies->>DB: Store InboundReply records
+    API-->>Cron: Summary of runs, jobs, and replies
+```
+
 ## Tech Stack
 
 | Layer | Technology | Why it is here |
