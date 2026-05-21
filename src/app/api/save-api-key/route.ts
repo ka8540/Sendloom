@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { requireApiUser } from "@/lib/api-auth";
+import { createRateLimitResponse, rateLimit } from "@/lib/rate-limit";
 import { saveHunterKeyForUser } from "@/services/hunter-keys";
 
 const schema = z.object({
@@ -12,6 +13,11 @@ export async function POST(request: Request) {
   const auth = await requireApiUser();
   if ("response" in auth) {
     return auth.response;
+  }
+
+  const limit = await rateLimit({ key: `save-api-key:user:${auth.user.id}`, limit: 10, windowSeconds: 60 });
+  if (!limit.allowed) {
+    return createRateLimitResponse(limit.retryAfterSeconds);
   }
 
   const body = await request.json().catch(() => null);

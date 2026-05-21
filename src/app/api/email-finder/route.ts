@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { requireApiUser } from "@/lib/api-auth";
 import { HunterApiError, findHunterEmail } from "@/lib/hunter";
+import { createRateLimitResponse, rateLimit } from "@/lib/rate-limit";
 import { getDecryptedHunterKeyForUser } from "@/services/hunter-keys";
 
 const schema = z.object({
@@ -15,6 +16,11 @@ export async function POST(request: Request) {
   const auth = await requireApiUser();
   if ("response" in auth) {
     return auth.response;
+  }
+
+  const limit = await rateLimit({ key: `email-finder:user:${auth.user.id}`, limit: 60, windowSeconds: 60 });
+  if (!limit.allowed) {
+    return createRateLimitResponse(limit.retryAfterSeconds);
   }
 
   const body = await request.json().catch(() => null);

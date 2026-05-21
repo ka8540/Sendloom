@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { requireApiUser } from "@/lib/api-auth";
+import { createRateLimitResponse, rateLimit } from "@/lib/rate-limit";
 import { TEMPLATE_FORMATS } from "@/lib/templates";
 import { listTemplates, upsertTemplate } from "@/services/templates";
 
@@ -27,6 +28,11 @@ export async function POST(request: Request) {
   const auth = await requireApiUser("templatesWrite");
   if ("response" in auth) {
     return auth.response;
+  }
+
+  const limit = await rateLimit({ key: `templates:write:user:${auth.user.id}`, limit: 30, windowSeconds: 60 });
+  if (!limit.allowed) {
+    return createRateLimitResponse(limit.retryAfterSeconds);
   }
 
   const payload = schema.parse(await request.json());
