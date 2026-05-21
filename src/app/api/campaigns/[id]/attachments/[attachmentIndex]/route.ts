@@ -1,10 +1,9 @@
-import { readFile } from "node:fs/promises";
-
 import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/api-auth";
 import { getAttachmentContentType } from "@/lib/attachments";
 import { prisma } from "@/lib/db";
+import { getObjectBuffer } from "@/lib/storage";
 import type { EmailAttachment } from "@/lib/provider";
 
 type CampaignTemplateSnapshot = {
@@ -67,7 +66,7 @@ export async function GET(
     if (attachment.contentBase64) {
       contents = Buffer.from(attachment.contentBase64, "base64");
     } else if (attachment.storagePath) {
-      contents = await readFile(attachment.storagePath);
+      contents = await getObjectBuffer(attachment.storagePath);
     } else {
       return createNotFoundResponse();
     }

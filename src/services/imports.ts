@@ -1,8 +1,8 @@
-import { unlink } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/db";
-import { storeUpload } from "@/lib/storage";
+import { buildImportKey, deleteObject, uploadObject } from "@/lib/storage";
 import { inferSampleType, parseSpreadsheet } from "@/lib/uploads";
 import { normalizeHeader } from "@/lib/utils";
 
@@ -35,65 +35,79 @@ async function getOwnedImport(importId: string, userId: string) {
 }
 
 export async function createImport(fileName: string, fileType: string, content: Buffer, userId: string) {
-  const storagePath = await storeUpload(fileName, content);
   const parsed = parseSpreadsheet(fileName, content);
   const normalizedColumns = parsed.columns.map((column) => normalizeHeader(column));
 
-  const createdImport = await prisma.import.create({
-    data: {
-      userId,
-      fileName,
-      fileType,
-      storagePath,
-      status: "PROCESSED",
-      rowCount: parsed.rows.length,
-      sampleRows: parsed.sampleRows as Prisma.InputJsonValue,
-      columns: {
-        create: parsed.columns.map((column) => ({
-          sourceName: column,
-          normalized: normalizeHeader(column),
-          sampleType: inferSampleType(parsed.rows.find((row) => row[column] !== undefined)?.[column]),
-          sampleValue: String(parsed.rows.find((row) => row[column] !== undefined)?.[column] ?? "")
-        }))
+  const importId = randomUUID();
+  const storageKey = buildImportKey(userId, importId, fileName);
+  await uploadObject({
+    key: storageKey,
+    body: content,
+    contentType: fileType || undefined,
+    metadata: { userId, importId }
+  });
+
+  try {
+    const createdImport = await prisma.import.create({
+      data: {
+        id: importId,
+        userId,
+        fileName,
+        fileType,
+        storagePath: storageKey,
+        status: "PROCESSED",
+        rowCount: parsed.rows.length,
+        sampleRows: parsed.sampleRows as Prisma.InputJsonValue,
+        columns: {
+          create: parsed.columns.map((column) => ({
+            sourceName: column,
+            normalized: normalizeHeader(column),
+            sampleType: inferSampleType(parsed.rows.find((row) => row[column] !== undefined)?.[column]),
+            sampleValue: String(parsed.rows.find((row) => row[column] !== undefined)?.[column] ?? "")
+          }))
+        },
+        rows: {
+          create: parsed.rows.map((row, index) => {
+            const normalized = Object.fromEntries(
+              Object.entries(row).map(([key, value]) => [normalizeHeader(key), value])
+            );
+            const emailCandidate = Object.entries(normalized).find(([key]) => key.includes("email"))?.[1];
+            return {
+              rowIndex: index + 1,
+              email: typeof emailCandidate === "string" ? emailCandidate.toLowerCase() : null,
+              payload: row as Prisma.InputJsonValue,
+              normalized: normalized as Prisma.InputJsonValue
+            };
+          })
+        }
       },
-      rows: {
-        create: parsed.rows.map((row, index) => {
-          const normalized = Object.fromEntries(
-            Object.entries(row).map(([key, value]) => [normalizeHeader(key), value])
-          );
-          const emailCandidate = Object.entries(normalized).find(([key]) => key.includes("email"))?.[1];
-          return {
-            rowIndex: index + 1,
-            email: typeof emailCandidate === "string" ? emailCandidate.toLowerCase() : null,
-            payload: row as Prisma.InputJsonValue,
-            normalized: normalized as Prisma.InputJsonValue
-          };
-        })
+      include: {
+        columns: true
       }
-    },
-    include: {
-      columns: true
-    }
-  });
+    });
 
-  const reservedFieldMap = {
-    email: detectColumn(normalizedColumns, ["email", "mail"]),
-    name: detectColumn(normalizedColumns, ["name", "full_name", "fullname"]),
-    company: detectColumn(normalizedColumns, ["company", "organization", "org"])
-  };
+    const reservedFieldMap = {
+      email: detectColumn(normalizedColumns, ["email", "mail"]),
+      name: detectColumn(normalizedColumns, ["name", "full_name", "fullname"]),
+      company: detectColumn(normalizedColumns, ["company", "organization", "org"])
+    };
 
-  const variableMap = createVariableMap(normalizedColumns, reservedFieldMap);
+    const variableMap = createVariableMap(normalizedColumns, reservedFieldMap);
 
-  await prisma.mapping.create({
-    data: {
-      userId,
-      importId: createdImport.id,
-      reservedFieldMap,
-      variableMap
-    }
-  });
+    await prisma.mapping.create({
+      data: {
+        userId,
+        importId: createdImport.id,
+        reservedFieldMap,
+        variableMap
+      }
+    });
 
-  return createdImport;
+    return createdImport;
+  } catch (error) {
+    await deleteObject(storageKey).catch(() => {});
+    throw error;
+  }
 }
 
 export async function getImportColumns(importId: string, userId: string) {
@@ -178,8 +192,8 @@ export async function deleteImport(importId: string, userId: string) {
     });
   });
 
-  if (!process.env.VERCEL && importRecord.storagePath) {
-    await unlink(importRecord.storagePath).catch(() => {});
+  if (importRecord.storagePath) {
+    await deleteObject(importRecord.storagePath).catch(() => {});
   }
 
   return { id: importRecord.id, deleted: true };

@@ -5,7 +5,7 @@ import { createForbiddenApiResponse, getApiRestrictionMessage, requireApiUser } 
 import type { EmailAttachment } from "@/lib/provider";
 import { GMAIL_RECONNECT_ERROR } from "@/lib/provider";
 import { createRateLimitResponse, rateLimit } from "@/lib/rate-limit";
-import { storeUpload } from "@/lib/storage";
+import { buildAttachmentKey, uploadObject } from "@/lib/storage";
 import { writeAuditLog } from "@/lib/audit";
 import { prisma } from "@/lib/db";
 import type { ScheduleRule } from "@/lib/types";
@@ -173,19 +173,16 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       }
 
       const buffer = Buffer.from(await file.arrayBuffer());
-      attachments.push(
-        process.env.VERCEL
-          ? {
-              fileName: file.name,
-              contentBase64: buffer.toString("base64"),
-              contentType: file.type || null
-            }
-          : {
-              fileName: file.name,
-              storagePath: await storeUpload(file.name, buffer, "attachments"),
-              contentType: file.type || null
-            }
-      );
+      const upload = await uploadObject({
+        key: buildAttachmentKey(auth.user.id, file.name),
+        body: buffer,
+        contentType: file.type || undefined
+      });
+      attachments.push({
+        fileName: file.name,
+        storagePath: upload.key,
+        contentType: file.type || null
+      });
     }
   }
 

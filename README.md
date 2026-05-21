@@ -154,6 +154,7 @@ flowchart TD
     Prisma --> Postgres["PostgreSQL"]
     Services --> Redis["Redis"]
     Redis --> Workers["BullMQ workers and scheduler"]
+    Services --> Storage["Object storage: local uploads or Cloudflare R2"]
     Services --> Google["Google OAuth + Gmail send/reply sync"]
     Services --> Hunter["Hunter API"]
     Services --> OpenAI["OpenAI Responses API"]
@@ -168,6 +169,7 @@ flowchart TD
 - **Shared infrastructure/domain helpers:** `src/lib`
 - **Persistence:** Prisma + PostgreSQL
 - **Rate limiting and queueing:** Redis + BullMQ
+- **Object storage:** Local uploads in development or Cloudflare R2 in production
 - **Email transport:** Gmail OAuth through Nodemailer
 - **Enrichment:** Hunter
 - **AI assistance:** OpenAI Responses API
@@ -185,6 +187,7 @@ flowchart TD
 | AI | OpenAI Responses API | Subject/body enhancement and spam cleanup |
 | Enrichment | Hunter API | Finder and domain search |
 | File ingest | `xlsx` + CSV parsing | Spreadsheet upload and normalization |
+| File/object storage | Local filesystem (development) or Cloudflare R2 (production) | Stores import spreadsheets and sequence attachments/resumes |
 | Tests | Vitest | Library-level regression coverage |
 
 ## Main Routes
@@ -384,8 +387,13 @@ Create a local `.env` file at the repo root with the values below. Secrets and s
 | `HUNTER_KEY_ENCRYPTION_SECRET` | For Finder | Encrypts stored Hunter API keys |
 | `CRON_SECRET` | Recommended in production | Protects `/api/cron/campaigns` |
 | `APP_BASE_URL` | Yes | Base URL used for redirects and tracking links |
-| `OBJECT_STORAGE_MODE` | Yes | Storage mode, currently `local` |
-| `LOCAL_UPLOAD_DIR` | Yes | Local upload destination |
+| `OBJECT_STORAGE_MODE` | Yes | Storage backend: `local` for the local filesystem, `r2` for Cloudflare R2 |
+| `LOCAL_UPLOAD_DIR` | Yes | Local upload destination, used when `OBJECT_STORAGE_MODE=local` |
+| `CLOUDFLARE_R2_ACCOUNT_ID` | When `OBJECT_STORAGE_MODE=r2` | Cloudflare account id used for the R2 S3-compatible endpoint |
+| `CLOUDFLARE_R2_BUCKET` | When `OBJECT_STORAGE_MODE=r2` | R2 bucket name for imports and attachments |
+| `CLOUDFLARE_R2_ACCESS_KEY_ID` | When `OBJECT_STORAGE_MODE=r2` | R2 API access key id (server-side only) |
+| `CLOUDFLARE_R2_SECRET_ACCESS_KEY` | When `OBJECT_STORAGE_MODE=r2` | R2 API secret access key (server-side only) |
+| `CLOUDFLARE_R2_PUBLIC_BASE_URL` | Optional | Public base URL for the bucket; only set if objects are served publicly |
 | `DEFAULT_FROM_EMAIL` | Optional | Default sender metadata |
 | `DEFAULT_FROM_NAME` | Optional | Default sender display name |
 | `ADMIN_EMAIL` | Optional | Bootstrap admin email |
@@ -434,5 +442,27 @@ npm run test:watch  # watch mode
 
 - The app can process campaign work inline during launches and status refreshes, so local development still works even without a fully separate worker setup.
 - `/api/cron/campaigns` can also advance pending campaign work and trigger reply sync.
-- Uploads default to the local `uploads/` directory.
+- Uploads default to the local `uploads/` directory. With `OBJECT_STORAGE_MODE=local`, import spreadsheets and sequence attachments are written under `LOCAL_UPLOAD_DIR`.
+- Production deployments (for example on Vercel) can set `OBJECT_STORAGE_MODE=r2` to store the same files in Cloudflare R2 instead. Existing local upload records keep working in either mode.
 - Linting is configured through `next lint`. Type checks run via `npx tsc --noEmit`.
+
+## Cloudflare R2 Object Storage
+
+Sendloom can store import spreadsheets and sequence attachments/resumes in Cloudflare R2 instead of the local filesystem. R2 is recommended for production and Vercel deployments, where the local filesystem is ephemeral. All R2 access happens server-side; credentials are never exposed to the browser.
+
+Local development continues to use the local filesystem with `OBJECT_STORAGE_MODE=local`.
+
+### Setup steps
+
+1. **Create an R2 bucket.** In the Cloudflare dashboard, open **R2** and create a bucket for Sendloom uploads.
+2. **Create an R2 API token.** Under **R2 → Manage R2 API Tokens**, create a token with object read/write permissions for the bucket. Note the **Access Key ID** and **Secret Access Key**.
+3. **Set the environment variables** (in Vercel project settings, or your hosting environment):
+   - `OBJECT_STORAGE_MODE=r2`
+   - `CLOUDFLARE_R2_ACCOUNT_ID` — your Cloudflare account id
+   - `CLOUDFLARE_R2_BUCKET` — the bucket name
+   - `CLOUDFLARE_R2_ACCESS_KEY_ID` — the token's access key id
+   - `CLOUDFLARE_R2_SECRET_ACCESS_KEY` — the token's secret access key
+   - `CLOUDFLARE_R2_PUBLIC_BASE_URL` — optional; only set if the bucket is served publicly
+4. **Deploy.** Sendloom uses Cloudflare's S3-compatible endpoint (`https://<account-id>.r2.cloudflarestorage.com`, region `auto`). When `OBJECT_STORAGE_MODE=r2`, the four required `CLOUDFLARE_R2_*` variables must be present or the server will fail fast on startup.
+
+Attachments are still downloaded through the authenticated `/api/campaigns/[id]/attachments/[attachmentIndex]` route, so ownership checks remain in force regardless of storage mode.

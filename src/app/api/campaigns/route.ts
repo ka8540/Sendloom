@@ -7,7 +7,7 @@ import { getAttachmentFilesFromFormData } from "@/lib/campaign-attachments";
 import { prisma } from "@/lib/db";
 import { GMAIL_RECONNECT_ERROR } from "@/lib/provider";
 import { createRateLimitResponse, rateLimit } from "@/lib/rate-limit";
-import { storeUpload } from "@/lib/storage";
+import { buildAttachmentKey, uploadObject } from "@/lib/storage";
 import { CampaignLaunchBlockedError, createCampaignDraft, launchCampaign, processPendingCampaignWork } from "@/services/campaigns";
 
 export const maxDuration = 60;
@@ -124,19 +124,16 @@ export async function POST(request: Request) {
       }
 
       const buffer = Buffer.from(await attachment.arrayBuffer());
-      attachments.push(
-        process.env.VERCEL
-          ? {
-              fileName: attachment.name,
-              contentBase64: buffer.toString("base64"),
-              contentType: attachment.type || null
-            }
-          : {
-              fileName: attachment.name,
-              storagePath: await storeUpload(attachment.name, buffer, "attachments"),
-              contentType: attachment.type || null
-            }
-      );
+      const upload = await uploadObject({
+        key: buildAttachmentKey(auth.user.id, attachment.name),
+        body: buffer,
+        contentType: attachment.type || undefined
+      });
+      attachments.push({
+        fileName: attachment.name,
+        storagePath: upload.key,
+        contentType: attachment.type || null
+      });
     }
   }
 

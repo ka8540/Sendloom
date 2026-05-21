@@ -1,9 +1,7 @@
-import { constants as fsConstants } from "node:fs";
-import { access, stat } from "node:fs/promises";
-
 import { createFailureCheck, type FailureCheckResult } from "@/lib/failures";
 import { buildMergePayload } from "@/lib/mapping";
 import { getNextRunDate } from "@/lib/schedule";
+import { getObjectBuffer } from "@/lib/storage";
 import { extractTemplateVariables, renderTemplate, renderTemplateContent, type TemplateFormat } from "@/lib/templates";
 import type { CampaignValidationReport, CampaignValidationSummary, ValidationIssue } from "@/lib/types";
 import { isValidEmail } from "@/lib/utils";
@@ -285,9 +283,8 @@ async function buildAttachmentFailureChecks(attachments: CampaignAttachmentValid
     }
 
     try {
-      await access(attachment.storagePath as string, fsConstants.R_OK);
-      const fileStats = await stat(attachment.storagePath as string);
-      if (fileStats.size > MAX_ATTACHMENT_BYTES) {
+      const fileBuffer = await getObjectBuffer(attachment.storagePath as string);
+      if (fileBuffer.byteLength > MAX_ATTACHMENT_BYTES) {
         checks.push(
           createFailureCheck("ATTACHMENT_TOO_LARGE", "ATTACHMENT", {
             details: `${attachment.fileName} is larger than 10 MB.`,

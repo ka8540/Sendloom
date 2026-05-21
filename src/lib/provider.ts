@@ -2,6 +2,7 @@ import MailComposer from "nodemailer/lib/mail-composer";
 
 import { env } from "@/lib/env";
 import { normalizeGoogleApiErrorMessage, refreshGoogleAccessToken } from "@/lib/google";
+import { getObjectBuffer } from "@/lib/storage";
 
 export const GMAIL_RECONNECT_ERROR =
   "This Gmail sender needs to be reconnected. Google says its access expired, was revoked, or is missing the required send permission.";
@@ -74,7 +75,7 @@ export function getUserSafeGmailSendError(error: unknown) {
   return GMAIL_SEND_USER_ERROR;
 }
 
-function getAttachmentPayload(attachment: EmailAttachment) {
+async function getAttachmentPayload(attachment: EmailAttachment) {
   if (attachment.contentBase64) {
     return {
       filename: attachment.fileName,
@@ -89,18 +90,22 @@ function getAttachmentPayload(attachment: EmailAttachment) {
 
   return {
     filename: attachment.fileName,
-    path: attachment.storagePath,
+    content: await getObjectBuffer(attachment.storagePath),
     contentType: attachment.contentType ?? undefined
   };
 }
 
 async function buildRawGmailMessage(args: SendArgs) {
+  const attachments = args.attachments
+    ? await Promise.all(args.attachments.map(getAttachmentPayload))
+    : undefined;
+
   const composer = new MailComposer({
     from: args.from,
     to: args.to,
     subject: args.subject,
     html: args.html,
-    attachments: args.attachments?.map(getAttachmentPayload)
+    attachments
   });
 
   const message = await new Promise<Buffer>((resolve, reject) => {

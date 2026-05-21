@@ -8,26 +8,54 @@ if (!globalForEnv.__sendloomEnvLoaded) {
   globalForEnv.__sendloomEnvLoaded = true;
 }
 
-const envSchema = z.object({
-  DATABASE_URL: z.string().min(1),
-  REDIS_URL: z.string().min(1),
-  SESSION_SECRET: z.string().min(12),
-  MAIL_PROVIDER: z.enum(["gmail", "resend"]).default("gmail"),
-  GOOGLE_CLIENT_ID: z.string().min(1).optional(),
-  GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
-  OPENAI_API_KEY: z.string().min(1).optional(),
-  HUNTER_KEY_ENCRYPTION_SECRET: z.string().min(12).optional(),
-  CRON_SECRET: z.string().min(1).optional(),
-  RESEND_API_KEY: z.string().optional(),
-  RESEND_WEBHOOK_SECRET: z.string().optional(),
-  APP_BASE_URL: z.string().url(),
-  OBJECT_STORAGE_MODE: z.enum(["local"]).default("local"),
-  LOCAL_UPLOAD_DIR: z.string().default("./uploads"),
-  DEFAULT_FROM_EMAIL: z.string().email().optional(),
-  DEFAULT_FROM_NAME: z.string().min(1).optional(),
-  ADMIN_EMAIL: z.string().email().optional(),
-  ADMIN_PASSWORD: z.string().min(8).optional()
-});
+const envSchema = z
+  .object({
+    DATABASE_URL: z.string().min(1),
+    REDIS_URL: z.string().min(1),
+    SESSION_SECRET: z.string().min(12),
+    MAIL_PROVIDER: z.enum(["gmail", "resend"]).default("gmail"),
+    GOOGLE_CLIENT_ID: z.string().min(1).optional(),
+    GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
+    OPENAI_API_KEY: z.string().min(1).optional(),
+    HUNTER_KEY_ENCRYPTION_SECRET: z.string().min(12).optional(),
+    CRON_SECRET: z.string().min(1).optional(),
+    RESEND_API_KEY: z.string().optional(),
+    RESEND_WEBHOOK_SECRET: z.string().optional(),
+    APP_BASE_URL: z.string().url(),
+    OBJECT_STORAGE_MODE: z.enum(["local", "r2"]).default("local"),
+    LOCAL_UPLOAD_DIR: z.string().default("./uploads"),
+    CLOUDFLARE_R2_ACCOUNT_ID: z.string().min(1).optional(),
+    CLOUDFLARE_R2_BUCKET: z.string().min(1).optional(),
+    CLOUDFLARE_R2_ACCESS_KEY_ID: z.string().min(1).optional(),
+    CLOUDFLARE_R2_SECRET_ACCESS_KEY: z.string().min(1).optional(),
+    CLOUDFLARE_R2_PUBLIC_BASE_URL: z.string().url().optional(),
+    DEFAULT_FROM_EMAIL: z.string().email().optional(),
+    DEFAULT_FROM_NAME: z.string().min(1).optional(),
+    ADMIN_EMAIL: z.string().email().optional(),
+    ADMIN_PASSWORD: z.string().min(8).optional()
+  })
+  .superRefine((value, ctx) => {
+    if (value.OBJECT_STORAGE_MODE !== "r2") {
+      return;
+    }
+
+    const requiredR2Keys = [
+      "CLOUDFLARE_R2_ACCOUNT_ID",
+      "CLOUDFLARE_R2_BUCKET",
+      "CLOUDFLARE_R2_ACCESS_KEY_ID",
+      "CLOUDFLARE_R2_SECRET_ACCESS_KEY"
+    ] as const;
+
+    for (const key of requiredR2Keys) {
+      if (!value[key]) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [key],
+          message: `${key} is required when OBJECT_STORAGE_MODE is "r2".`
+        });
+      }
+    }
+  });
 
 export type AppEnv = z.infer<typeof envSchema>;
 
@@ -47,6 +75,11 @@ function readRawEnv() {
     APP_BASE_URL: process.env.APP_BASE_URL,
     OBJECT_STORAGE_MODE: process.env.OBJECT_STORAGE_MODE,
     LOCAL_UPLOAD_DIR: process.env.LOCAL_UPLOAD_DIR,
+    CLOUDFLARE_R2_ACCOUNT_ID: process.env.CLOUDFLARE_R2_ACCOUNT_ID,
+    CLOUDFLARE_R2_BUCKET: process.env.CLOUDFLARE_R2_BUCKET,
+    CLOUDFLARE_R2_ACCESS_KEY_ID: process.env.CLOUDFLARE_R2_ACCESS_KEY_ID,
+    CLOUDFLARE_R2_SECRET_ACCESS_KEY: process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY,
+    CLOUDFLARE_R2_PUBLIC_BASE_URL: process.env.CLOUDFLARE_R2_PUBLIC_BASE_URL,
     DEFAULT_FROM_EMAIL: process.env.DEFAULT_FROM_EMAIL,
     DEFAULT_FROM_NAME: process.env.DEFAULT_FROM_NAME,
     ADMIN_EMAIL: process.env.ADMIN_EMAIL,

@@ -1,8 +1,7 @@
-import { unlink } from "node:fs/promises";
-
 import { prisma } from "@/lib/db";
 import { isAdminUser } from "@/lib/auth";
 import { writeAuditLog } from "@/lib/audit";
+import { deleteObject } from "@/lib/storage";
 
 export class AdminActionError extends Error {
   status: number;
@@ -265,9 +264,7 @@ export async function deleteUserAccountData(args: {
     });
   });
 
-  if (!process.env.VERCEL) {
-    await Promise.all(filePaths.map((path) => unlink(path).catch(() => undefined)));
-  }
+  await Promise.all(filePaths.map((storageKey) => deleteObject(storageKey).catch(() => undefined)));
 
   await writeAuditLog({
     actorEmail: args.actorEmail,
