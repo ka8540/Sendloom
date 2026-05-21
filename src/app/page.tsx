@@ -10,7 +10,7 @@ import { SendloomLogo } from "@/components/sendloom-logo";
 
 import styles from "@/app/landing.module.css";
 
-const HEADLINE_WORDS = ["Cold", "outreach,", "without", "the", "chaos."] as const;
+const HEADLINE_WORDS = ["Cold", "outreach", "that", "feels", "crafted,", "not", "sprayed."] as const;
 
 const chaosTools = [
   { tag: "Spreadsheets", note: "Leads scattered across CSV exports nobody trusts." },
@@ -129,17 +129,17 @@ export default function LandingPage() {
             </div>
             <h1 className={styles.headline}>
               <span className={styles.headlineLine}>
-                {HEADLINE_WORDS.slice(0, 2).map((word) => (
+                {HEADLINE_WORDS.slice(0, 4).map((word) => (
                   <span key={word} className={styles.headlineWord} data-hero-word>
                     {word}
                   </span>
                 ))}
               </span>
               <span className={styles.headlineLine}>
-                {HEADLINE_WORDS.slice(2).map((word) => (
+                {HEADLINE_WORDS.slice(4).map((word) => (
                   <span
                     key={word}
-                    className={`${styles.headlineWord}${word === "chaos." ? ` ${styles.headlineAccent}` : ""}`}
+                    className={`${styles.headlineWord}${word === "sprayed." ? ` ${styles.headlineAccent}` : ""}`}
                     data-hero-word
                   >
                     {word}
