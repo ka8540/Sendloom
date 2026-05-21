@@ -2,180 +2,276 @@ import Link from "next/link";
 
 import { AnimatedEmailPath } from "@/components/AnimatedEmailPath";
 import { BrandText, renderBrandText } from "@/components/brand-text";
-import { LandingSceneShell } from "@/components/landing-scene-shell";
+import { LandingCommandCenter } from "@/components/landing-command-center";
+import { LandingHeroFlow } from "@/components/landing-hero-flow";
+import { LandingMotion } from "@/components/landing-motion";
 import { LandingNav } from "@/components/landing-nav";
 import { SendloomLogo } from "@/components/sendloom-logo";
 
 import styles from "@/app/landing.module.css";
 
-const featureCards = [
-  {
-    index: "01",
-    title: "Write in the format your team actually wants.",
-    body:
-      "Switch between plain text, HTML, and structured JSON inside the same template editor. Sendloom renders each one into a clean email preview while keeping merge variables and inline AI help intact.",
-    pills: ["Plain text", "HTML", "Structured JSON"]
-  },
-  {
-    index: "02",
-    title: "Find the right inbox before you launch.",
-    body:
-      "Run name-plus-domain lookups or domain-wide searches from the same dashboard, then plug your own API key from hunter.io into Sendloom so the finder stays inside your workflow instead of becoming another tab.",
-    pills: ["Find Email", "Domain Search", "Bring your own API key"]
-  },
-  {
-    index: "03",
-    title: "Stay fast without acting reckless.",
-    body:
-      "Sendloom keeps retries, tracking links, and send-window guardrails in the loop so campaigns feel deliberate even when the list is moving quickly.",
-    pills: ["120/min per user", "Delivery guardrails", "Retries + tracking"]
-  },
-  {
-    index: "04",
-    title: "Launch from a connected Gmail sender.",
-    body:
-      "Use the mailbox you already trust, connect Google in minutes, and move from upload to launch with a single operator dashboard instead of five disconnected tools.",
-    pills: ["Google OAuth", "Sender profiles", "Live run status"]
-  }
+const HEADLINE_WORDS = ["Cold", "outreach,", "without", "the", "chaos."] as const;
+
+const chaosTools = [
+  { tag: "Spreadsheets", note: "Leads scattered across CSV exports nobody trusts." },
+  { tag: "Gmail tabs", note: "Sending one-by-one and losing track of who replied." },
+  { tag: "Hunter.io", note: "Missing emails looked up in yet another window." },
+  { tag: "Template docs", note: "Copy living in a doc, pasted in by hand each time." },
+  { tag: "Reminders", note: "Follow-ups set manually, then quietly forgotten." },
+  { tag: "Tracking sheet", note: "Delivery state guessed at from memory." }
 ] as const;
 
 const workflowSteps = [
   {
-    title: "Import your audience",
-    body: "Upload a spreadsheet, detect columns instantly, and keep the row data structured for every downstream send."
+    index: "01",
+    title: "Import",
+    body: "Upload a CSV or XLSX, detect columns instantly, and keep every row structured for the sends that follow."
   },
   {
-    title: "Find missing emails when the list is incomplete",
-    body: "Use name-plus-domain lookups or domain search with your own API key from hunter.io, then keep those results inside the same operator flow."
+    index: "02",
+    title: "Enrich",
+    body: "Fill the gaps with name-plus-domain or domain-wide lookups using your own hunter.io API key, without leaving the workspace."
   },
   {
-    title: "Choose the message system",
-    body: "Pair the list with a template, sender, and attachment strategy, then write in plain text, HTML, or JSON with inline AI help before you save."
+    index: "03",
+    title: "Template",
+    body: "Write in plain text, HTML, or structured JSON with merge variables and inline AI help, then preview it as a real email."
   },
   {
-    title: "Launch and watch the run",
-    body: "Immediate sequences begin processing from the app itself, and status updates stay visible while the run moves."
+    index: "04",
+    title: "Sequence",
+    body: "Pair the list with a sender and template, set the send window, and assemble the run on one surface."
   },
   {
-    title: "Keep the sequence honest",
-    body: "Clicks, opens, and retry states stay attached to the campaign so your next send starts smarter."
+    index: "05",
+    title: "Follow-up",
+    body: "Schedule the next touch with controlled pacing so timing stays deliberate instead of frantic."
+  },
+  {
+    index: "06",
+    title: "Track",
+    body: "Watch delivery, opens, clicks, replies, and retries stay attached to the campaign that produced them."
   }
 ] as const;
+
+const capabilities = [
+  {
+    title: "Lead imports",
+    body: "Bring in CSV and XLSX files, map fields once, and keep row data intact for every downstream send.",
+    tags: ["CSV", "XLSX", "Field mapping"]
+  },
+  {
+    title: "Hunter.io enrichment",
+    body: "Run name-plus-domain and domain-wide lookups with your own API key so the finder lives inside the flow.",
+    tags: ["Find email", "Domain search", "Bring your own key"]
+  },
+  {
+    title: "Template intelligence",
+    body: "Switch between plain text, HTML, and JSON while merge variables, attachments, and AI-polished copy stay aligned.",
+    tags: ["Plain text", "HTML", "JSON"]
+  },
+  {
+    title: "Gmail-connected sending",
+    body: "Send from the mailbox you already trust through Google OAuth, with sender profiles and live run status.",
+    tags: ["Google OAuth", "Sender profiles", "Live status"]
+  },
+  {
+    title: "Follow-up scheduling",
+    body: "Add follow-ups with controlled pacing and send-window guardrails so the cadence stays measured.",
+    tags: ["Send windows", "Cadence", "Pacing guardrails"]
+  },
+  {
+    title: "Delivery visibility",
+    body: "Keep opens, clicks, replies, retries, and recipient status visible from the system that launches the run.",
+    tags: ["Opens & clicks", "Replies", "Retries"]
+  }
+] as const;
+
+const trustPoints = [
+  {
+    title: "Gmail-connected sending",
+    body: "Launch from your own connected mailbox through Google OAuth, not an anonymous blasting relay."
+  },
+  {
+    title: "Safe pacing",
+    body: "Per-user send windows keep the throughput deliberate, so a run feels measured rather than reckless."
+  },
+  {
+    title: "Validation before launch",
+    body: "Check the list, sender, and template together before anything leaves the workspace."
+  },
+  {
+    title: "Retries & failure visibility",
+    body: "Failed sends surface with their retry state instead of disappearing into a silent log."
+  },
+  {
+    title: "Follow-up control",
+    body: "Decide the timing and stop a sequence the moment a reply changes the plan."
+  },
+  {
+    title: "Ownership of workflows",
+    body: "Imports, templates, senders, and runs stay yours, in one place you can see and audit."
+  }
+];
 
 export default function LandingPage() {
   return (
     <main id="top" className={styles.page}>
       <AnimatedEmailPath />
+      <LandingMotion />
       <div className={styles.frame}>
         <LandingNav />
 
         <section className={styles.hero}>
           <div className={styles.heroCopy}>
-            <div className={styles.eyebrow}>Built for founders, operators, and lean GTM teams</div>
+            <div className={styles.eyebrow} data-reveal>
+              Outreach operations, one workspace
+            </div>
             <h1 className={styles.headline}>
-              Cold outreach that feels <span className={styles.headlineAccent}>crafted</span>, not sprayed.
+              <span className={styles.headlineLine}>
+                {HEADLINE_WORDS.slice(0, 2).map((word) => (
+                  <span key={word} className={styles.headlineWord} data-hero-word>
+                    {word}
+                  </span>
+                ))}
+              </span>
+              <span className={styles.headlineLine}>
+                {HEADLINE_WORDS.slice(2).map((word) => (
+                  <span
+                    key={word}
+                    className={`${styles.headlineWord}${word === "chaos." ? ` ${styles.headlineAccent}` : ""}`}
+                    data-hero-word
+                  >
+                    {word}
+                  </span>
+                ))}
+              </span>
             </h1>
-            <p className={styles.lede}>
-              <BrandText>Sendloom</BrandText> turns your spreadsheet, template, and connected Gmail sender into one clean launch
-              surface. Import lists, map fields, find missing contact emails with your own API key from hunter.io, choose plain text,
-              HTML, or structured JSON templates, enhance subject lines and email copy with AI, add attachments, track runs, and keep
-              delivery history in the same place the sequence actually lives.
+            <p className={styles.lede} data-reveal>
+              Import leads, enrich contacts, write templates, schedule follow-ups, send through a connected Gmail
+              sender, and track every sequence from one calm command center. <BrandText>Sendloom</BrandText> keeps the
+              whole outbound run in a single place.
             </p>
 
-            <div className={styles.ctaRow}>
+            <div className={styles.ctaRow} data-reveal>
               <Link className={styles.primaryButton} href="/signup">
-                Try it now
+                Start building
               </Link>
-              <a className={styles.ghostButton} href="#proof">
+              <a className={styles.ghostButton} href="#workflow">
                 See how it works
               </a>
             </div>
 
-            <div className={styles.statRow}>
-              <article className={styles.statCard}>
-                <span className={styles.statValue}>120/min/user</span>
-                <span className={styles.statLabel}>Per-user send window guardrail built into the flow</span>
-              </article>
-              <article className={styles.statCard}>
-                <span className={styles.statValue}>Finder-ready</span>
-                <span className={styles.statLabel}>Use your own hunter.io API key for name and domain lookups without leaving the dashboard</span>
-              </article>
-              <article className={styles.statCard}>
-                <span className={styles.statValue}>3 formats</span>
-                <span className={styles.statLabel}>Write templates in plain text, HTML, or JSON and preview them as real email</span>
-              </article>
-            </div>
+            <ul className={styles.heroMeta} data-reveal>
+              <li>Gmail-connected sender</li>
+              <li>hunter.io finder built in</li>
+              <li>Plain text · HTML · JSON</li>
+            </ul>
           </div>
 
-          <div className={styles.heroVisual}>
-            <div className={styles.sceneShell}>
-              <div className={styles.sceneCanvas}>
-                <LandingSceneShell />
-              </div>
-
-              <div className={styles.floatingCard}>
-                <span className={styles.floatingLabel}>Template polish</span>
-                <strong className={styles.floatingValue}>Plain text, HTML, or JSON</strong>
-                <span className={styles.floatingMeta}>Use the format that fits the workflow, then preview it like a real email instead of raw markup.</span>
-              </div>
-
-              <div className={styles.floatingCardAlt}>
-                <span className={styles.floatingLabel}>Live controls</span>
-                <strong className={styles.floatingValue}>Imports → templates → launch</strong>
-                <span className={styles.floatingMeta}>One operator surface instead of tabs stitched together by memory.</span>
-              </div>
-
-              <div className={styles.floatingCardLower}>
-                <span className={styles.floatingLabel}>Run visibility</span>
-                <strong className={styles.floatingValue}>Delivery-aware</strong>
-                <span className={styles.floatingMeta}>Status, retries, opens, and clicks stay attached to the campaign.</span>
-              </div>
-            </div>
+          <div className={styles.heroVisual} data-reveal>
+            <LandingHeroFlow />
           </div>
+
+          <a className={styles.scrollCue} href="#chaos" aria-label="Scroll to learn more">
+            <span>Scroll</span>
+            <span className={styles.scrollCueLine} aria-hidden="true" />
+          </a>
         </section>
 
-        <section className={styles.belt} id="proof">
-          <article className={styles.beltCard}>
-            <strong>Audience imports</strong>
-            <span>Bring in CSV and XLSX files without rebuilding your workflow every time the list changes.</span>
-          </article>
-          <article className={styles.beltCard}>
-            <strong>Email finder</strong>
-            <span>Bring your own API key from hunter.io and run name or domain lookups inside the same workspace.</span>
-          </article>
-          <article className={styles.beltCard}>
-            <strong>Template intelligence</strong>
-            <span>Keep merge variables, AI-polished copy, format choice, attachment snapshots, and subject lines aligned to the same template record.</span>
-          </article>
-          <article className={styles.beltCard}>
-            <strong>Respectful sending</strong>
-            <span>Retries and delivery state stay inside the sending engine, not in a separate afterthought spreadsheet.</span>
-          </article>
-          <article className={styles.beltCard}>
-            <strong>Operator clarity</strong>
-            <span>Recent runs, recipient statuses, finder results, and connected senders are visible from the same system that launches them.</span>
-          </article>
-        </section>
-
-        <section className={styles.section}>
-          <div className={styles.sectionHeader}>
-            <p className={styles.sectionEyebrow}>Why it feels different</p>
-            <h2 className={styles.sectionTitle}>A launch surface designed for signal, not volume theater.</h2>
+        <section className={styles.chaos} id="chaos">
+          <div className={styles.sectionHeader} data-reveal>
+            <p className={styles.sectionEyebrow}>The usual setup</p>
+            <h2 className={styles.sectionTitle}>Six tabs, one fragile process.</h2>
             <p className={styles.sectionText}>
-              Great outreach products don’t just blast faster. They help small teams stay precise while the audience, message, and
-              sender all change underneath them. <BrandText>Sendloom</BrandText> was shaped around that operator reality.
+              Most outbound runs are stitched together by memory: a spreadsheet here, a finder there, templates in a
+              doc, and follow-ups living on sticky notes. Every handoff is a place for the sequence to break.
             </p>
           </div>
 
-          <div className={styles.featureGrid}>
-            {featureCards.map((feature) => (
-              <article key={feature.index} className={styles.featureCard}>
-                <span className={styles.featureIndex}>{feature.index}</span>
-                <h3>{feature.title}</h3>
-                <p>{renderBrandText(feature.body)}</p>
-                <div className={styles.featurePills}>
-                  {feature.pills.map((pill) => (
-                    <span key={pill}>{pill}</span>
+          <div className={styles.chaosLayout}>
+            <div className={styles.chaosGrid}>
+              {chaosTools.map((tool) => (
+                <article key={tool.tag} className={styles.chaosCard} data-reveal>
+                  <span className={styles.chaosTag}>{tool.tag}</span>
+                  <span className={styles.chaosNote}>{tool.note}</span>
+                </article>
+              ))}
+            </div>
+
+            <div className={styles.chaosArrow} aria-hidden="true">
+              <span className={styles.chaosArrowLine} />
+              <span className={styles.chaosArrowLabel}>becomes</span>
+            </div>
+
+            <article className={styles.unifiedCard} data-reveal>
+              <div className={styles.unifiedMark}>
+                <SendloomLogo className={styles.unifiedLogo} />
+                <strong>
+                  <BrandText>Sendloom</BrandText>
+                </strong>
+              </div>
+              <p>
+                One workspace where the list, the finder, the template, the sender, the schedule, and the tracking all
+                share the same source of truth.
+              </p>
+              <span className={styles.unifiedChip}>Import → Enrich → Template → Sequence → Follow-up → Track</span>
+            </article>
+          </div>
+        </section>
+
+        <section className={styles.section} id="workflow">
+          <div className={styles.sectionHeader} data-reveal>
+            <p className={styles.sectionEyebrow}>How it flows</p>
+            <h2 className={styles.sectionTitle}>From raw list to a live sequence, in one continuous line.</h2>
+            <p className={styles.sectionText}>
+              Each step hands off cleanly to the next, so you never re-export, re-paste, or rebuild context to keep a
+              run moving.
+            </p>
+          </div>
+
+          <div className={styles.workflowTrack} data-workflow>
+            <svg
+              className={styles.workflowSpine}
+              viewBox="0 0 1000 120"
+              fill="none"
+              preserveAspectRatio="none"
+              aria-hidden="true"
+            >
+              <path className={styles.workflowSpineBase} d="M 20 60 H 980" pathLength={1000} />
+              <path className={styles.workflowSpineActive} d="M 20 60 H 980" pathLength={1000} data-workflow-line />
+            </svg>
+            <ol className={styles.workflowSteps}>
+              {workflowSteps.map((step) => (
+                <li key={step.index} className={styles.workflowStep} data-reveal>
+                  <span className={styles.workflowDot} aria-hidden="true" />
+                  <span className={styles.workflowIndex}>{step.index}</span>
+                  <h3>{step.title}</h3>
+                  <p>{step.body}</p>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </section>
+
+        <section className={styles.section}>
+          <div className={styles.sectionHeader} data-reveal>
+            <p className={styles.sectionEyebrow}>Capabilities</p>
+            <h2 className={styles.sectionTitle}>Everything the run needs, on one surface.</h2>
+            <p className={styles.sectionText}>
+              The pieces that usually live in five disconnected tools are designed to work together inside{" "}
+              <BrandText>Sendloom</BrandText>.
+            </p>
+          </div>
+
+          <div className={styles.capGrid}>
+            {capabilities.map((capability) => (
+              <article key={capability.title} className={styles.capCard} data-reveal>
+                <h3>{capability.title}</h3>
+                <p>{renderBrandText(capability.body)}</p>
+                <div className={styles.capTags}>
+                  {capability.tags.map((tag) => (
+                    <span key={tag}>{tag}</span>
                   ))}
                 </div>
               </article>
@@ -183,51 +279,54 @@ export default function LandingPage() {
           </div>
         </section>
 
-        <section className={styles.section} id="workflow">
-          <div className={styles.sectionHeader}>
-            <p className={styles.sectionEyebrow}>Workflow</p>
-            <h2 className={styles.sectionTitle}>From raw list to a live sequence, without the usual glue work.</h2>
+        <section className={styles.section}>
+          <div className={styles.sectionHeader} data-reveal>
+            <p className={styles.sectionEyebrow}>The command center</p>
+            <h2 className={styles.sectionTitle}>See the whole run from one calm screen.</h2>
+            <p className={styles.sectionText}>
+              Sequence health, delivery status, recipient activity, the template behind the send, and follow-up timing,
+              all visible together instead of guessed at across tabs.
+            </p>
           </div>
 
-          <div className={styles.workflow}>
-            <article className={styles.workflowPanel}>
-              <h3>Built for the person actually shipping the campaign.</h3>
-              <p>
-                If you’re the one importing leads, checking the sender, fixing the template, and watching the run at the same time,
-                the interface should help you think clearly. That’s the bar this product is trying to hit.
-              </p>
-              <p>
-                The page layout, delivery primitives, and tracking model are all there to reduce hesitation at launch time and make
-                the sequence easier to trust afterward.
-              </p>
-            </article>
+          <div className={styles.commandWrap} data-reveal>
+            <LandingCommandCenter />
+          </div>
+        </section>
 
-            <div className={styles.workflowStack}>
-              {workflowSteps.map((step, index) => (
-                <article key={step.title} className={styles.step}>
-                  <span className={styles.stepNumber}>0{index + 1}</span>
-                  <div>
-                    <h4>{step.title}</h4>
-                    <p>{step.body}</p>
-                  </div>
-                </article>
-              ))}
-            </div>
+        <section className={styles.section}>
+          <div className={styles.sectionHeader} data-reveal>
+            <p className={styles.sectionEyebrow}>Controlled, not sprayed</p>
+            <h2 className={styles.sectionTitle}>Built for deliberate outreach.</h2>
+            <p className={styles.sectionText}>
+              <BrandText>Sendloom</BrandText> is shaped around control: send from a mailbox you own, pace the run, check
+              before you launch, and keep failures visible.
+            </p>
+          </div>
+
+          <div className={styles.trustGrid}>
+            {trustPoints.map((point) => (
+              <article key={point.title} className={styles.trustCard} data-reveal>
+                <span className={styles.trustMark} aria-hidden="true" />
+                <h3>{point.title}</h3>
+                <p>{renderBrandText(point.body)}</p>
+              </article>
+            ))}
           </div>
         </section>
 
         <section className={styles.ctaSection}>
-          <article className={styles.ctaPanel}>
-            <h2>Walk in with a spreadsheet. Walk out with a running sequence.</h2>
-            <p>
-              Connect Gmail, create the campaign, and start testing the full flow from a single login. The fastest way to understand
-              {" "}
-              <BrandText>Sendloom</BrandText> is to put your own list through it.
+          <article className={styles.ctaPanel} data-reveal>
+            <p className={styles.sectionEyebrow}>Ready when you are</p>
+            <h2>Build your next outreach run in one place.</h2>
+            <p className={styles.ctaLede}>
+              Connect Gmail, import a list, write the template, and launch the sequence from a single login. The
+              fastest way to understand <BrandText>Sendloom</BrandText> is to put your own list through it.
             </p>
 
             <div className={styles.ctaActions}>
               <Link className={styles.primaryButton} href="/signup">
-                Try it
+                Get started
               </Link>
               <a className={styles.ghostButton} href="#workflow">
                 See workflow
@@ -249,7 +348,8 @@ export default function LandingPage() {
                 </div>
               </div>
               <p className={styles.footerCopy}>
-                Built for small teams who want imports, templates, sender setup, launch, and run visibility in one calm system.
+                Built for small teams who want imports, templates, sender setup, launch, and run visibility in one calm
+                system.
               </p>
             </div>
 
@@ -257,7 +357,7 @@ export default function LandingPage() {
               <div className={styles.footerColumn}>
                 <span className={styles.footerHeading}>Product</span>
                 <a href="#workflow">Workflow</a>
-                <a href="#proof">Why it works</a>
+                <a href="#chaos">Why it works</a>
                 <Link href="/signup">
                   Try <BrandText>Sendloom</BrandText>
                 </Link>
