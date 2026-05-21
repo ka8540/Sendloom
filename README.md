@@ -99,10 +99,13 @@ flowchart LR
     B --> C["Use Finder for missing emails if needed"]
     C --> D["Write template in plain text, HTML, or JSON"]
     D --> E["Connect Gmail sender with Google OAuth"]
-    E --> F["Create and validate sequence"]
+    E --> F["Create and validate sequence, attach resumes/files"]
     F --> G["Launch now / once / recurring"]
     G --> H["Track run progress in Overview and sequence detail"]
     H --> I["Watch recipients, opens, replies, retries, and failures"]
+    A -. import file stored .-> S["Object storage: local uploads or Cloudflare R2"]
+    F -. attachments stored .-> S
+    G -. attachments read at send time .-> S
 ```
 
 ## What Feels Different In The Current App
@@ -154,7 +157,11 @@ flowchart TD
     Prisma --> Postgres["PostgreSQL"]
     Services --> Redis["Redis"]
     Redis --> Workers["BullMQ workers and scheduler"]
-    Services --> Storage["Object storage: local uploads or Cloudflare R2"]
+    Services --> Storage["Object storage helper (src/lib/storage.ts)"]
+    Storage --> Local["Local uploads directory (development)"]
+    Storage --> R2["Cloudflare R2 S3-compatible API (production)"]
+    R2 --> R2Imports["Imports bucket: CSV/XLSX files"]
+    R2 --> R2Attach["Attachments bucket: resumes and sequence files"]
     Services --> Google["Google OAuth + Gmail send/reply sync"]
     Services --> Hunter["Hunter API"]
     Services --> OpenAI["OpenAI Responses API"]
