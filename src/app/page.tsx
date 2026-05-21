@@ -139,7 +139,7 @@ export default function LandingPage() {
                 {HEADLINE_WORDS.slice(4).map((word) => (
                   <span
                     key={word}
-                    className={`${styles.headlineWord}${word === "sprayed." ? ` ${styles.headlineAccent}` : ""}`}
+                    className={`${styles.headlineWord}${word === "crafted," ? ` ${styles.headlineAccent}` : ""}`}
                     data-hero-word
                   >
                     {word}
