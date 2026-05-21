@@ -14,7 +14,11 @@ import { env } from "@/lib/env";
 
 export type StorageMode = "local" | "r2";
 
+// Imports (CSV/XLSX) and attachments (resumes/files) live in separate R2 buckets.
+export type StorageBucket = "imports" | "attachments";
+
 export type UploadObjectArgs = {
+  bucket: StorageBucket;
   key: string;
   body: Buffer | Uint8Array | ReadableStream;
   contentType?: string;
@@ -78,24 +82,38 @@ async function toBuffer(body: Buffer | Uint8Array | ReadableStream): Promise<Buf
 
 let cachedR2Client: S3Client | null = null;
 
-function getR2Config() {
+function getR2Credentials() {
   const accountId = env.CLOUDFLARE_R2_ACCOUNT_ID;
-  const bucket = env.CLOUDFLARE_R2_BUCKET;
   const accessKeyId = env.CLOUDFLARE_R2_ACCESS_KEY_ID;
   const secretAccessKey = env.CLOUDFLARE_R2_SECRET_ACCESS_KEY;
 
-  if (!accountId || !bucket || !accessKeyId || !secretAccessKey) {
+  if (!accountId || !accessKeyId || !secretAccessKey) {
     throw new Error(
-      "Cloudflare R2 storage is not configured. Set CLOUDFLARE_R2_ACCOUNT_ID, CLOUDFLARE_R2_BUCKET, CLOUDFLARE_R2_ACCESS_KEY_ID, and CLOUDFLARE_R2_SECRET_ACCESS_KEY."
+      "Cloudflare R2 storage is not configured. Set CLOUDFLARE_R2_ACCOUNT_ID, CLOUDFLARE_R2_ACCESS_KEY_ID, and CLOUDFLARE_R2_SECRET_ACCESS_KEY."
     );
   }
 
-  return { accountId, bucket, accessKeyId, secretAccessKey };
+  return { accountId, accessKeyId, secretAccessKey };
+}
+
+function getR2BucketName(bucket: StorageBucket) {
+  const name =
+    bucket === "imports"
+      ? env.CLOUDFLARE_R2_IMPORTS_BUCKET
+      : env.CLOUDFLARE_R2_ATTACHMENTS_BUCKET;
+
+  if (!name) {
+    const variable =
+      bucket === "imports" ? "CLOUDFLARE_R2_IMPORTS_BUCKET" : "CLOUDFLARE_R2_ATTACHMENTS_BUCKET";
+    throw new Error(`Cloudflare R2 ${bucket} storage is not configured. Set ${variable}.`);
+  }
+
+  return name;
 }
 
 function getR2Client() {
   if (!cachedR2Client) {
-    const { accountId, accessKeyId, secretAccessKey } = getR2Config();
+    const { accountId, accessKeyId, secretAccessKey } = getR2Credentials();
     cachedR2Client = new S3Client({
       region: "auto",
       endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
@@ -142,10 +160,9 @@ export async function uploadObject(args: UploadObjectArgs): Promise<UploadObject
   const buffer = await toBuffer(args.body);
 
   if (env.OBJECT_STORAGE_MODE === "r2") {
-    const { bucket } = getR2Config();
     await getR2Client().send(
       new PutObjectCommand({
-        Bucket: bucket,
+        Bucket: getR2BucketName(args.bucket),
         Key: args.key,
         Body: buffer,
         ContentType: args.contentType,
@@ -163,12 +180,11 @@ export async function uploadObject(args: UploadObjectArgs): Promise<UploadObject
   return { key: args.key };
 }
 
-export async function getObjectBuffer(key: string): Promise<Buffer> {
+export async function getObjectBuffer(bucket: StorageBucket, key: string): Promise<Buffer> {
   if (env.OBJECT_STORAGE_MODE === "r2" && !path.isAbsolute(key)) {
-    const { bucket } = getR2Config();
     const response = await getR2Client().send(
       new GetObjectCommand({
-        Bucket: bucket,
+        Bucket: getR2BucketName(bucket),
         Key: key
       })
     );
@@ -184,12 +200,11 @@ export async function getObjectBuffer(key: string): Promise<Buffer> {
   return readFile(resolveLocalPath(key));
 }
 
-export async function deleteObject(key: string): Promise<void> {
+export async function deleteObject(bucket: StorageBucket, key: string): Promise<void> {
   if (env.OBJECT_STORAGE_MODE === "r2" && !path.isAbsolute(key)) {
-    const { bucket } = getR2Config();
     await getR2Client().send(
       new DeleteObjectCommand({
-        Bucket: bucket,
+        Bucket: getR2BucketName(bucket),
         Key: key
       })
     );
@@ -202,7 +217,9 @@ export async function deleteObject(key: string): Promise<void> {
 export async function checkStorageHealth() {
   if (env.OBJECT_STORAGE_MODE === "r2") {
     try {
-      getR2Config();
+      getR2Credentials();
+      getR2BucketName("imports");
+      getR2BucketName("attachments");
       return {
         status: "ok" as const,
         message: "Cloudflare R2 storage configured."

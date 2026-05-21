@@ -283,7 +283,7 @@ async function buildAttachmentFailureChecks(attachments: CampaignAttachmentValid
     }
 
     try {
-      const fileBuffer = await getObjectBuffer(attachment.storagePath as string);
+      const fileBuffer = await getObjectBuffer("attachments", attachment.storagePath as string);
       if (fileBuffer.byteLength > MAX_ATTACHMENT_BYTES) {
         checks.push(
           createFailureCheck("ATTACHMENT_TOO_LARGE", "ATTACHMENT", {

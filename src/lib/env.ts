@@ -25,7 +25,8 @@ const envSchema = z
     OBJECT_STORAGE_MODE: z.enum(["local", "r2"]).default("local"),
     LOCAL_UPLOAD_DIR: z.string().default("./uploads"),
     CLOUDFLARE_R2_ACCOUNT_ID: z.string().min(1).optional(),
-    CLOUDFLARE_R2_BUCKET: z.string().min(1).optional(),
+    CLOUDFLARE_R2_IMPORTS_BUCKET: z.string().min(1).optional(),
+    CLOUDFLARE_R2_ATTACHMENTS_BUCKET: z.string().min(1).optional(),
     CLOUDFLARE_R2_ACCESS_KEY_ID: z.string().min(1).optional(),
     CLOUDFLARE_R2_SECRET_ACCESS_KEY: z.string().min(1).optional(),
     CLOUDFLARE_R2_PUBLIC_BASE_URL: z.string().url().optional(),
@@ -41,7 +42,8 @@ const envSchema = z
 
     const requiredR2Keys = [
       "CLOUDFLARE_R2_ACCOUNT_ID",
-      "CLOUDFLARE_R2_BUCKET",
+      "CLOUDFLARE_R2_IMPORTS_BUCKET",
+      "CLOUDFLARE_R2_ATTACHMENTS_BUCKET",
       "CLOUDFLARE_R2_ACCESS_KEY_ID",
       "CLOUDFLARE_R2_SECRET_ACCESS_KEY"
     ] as const;
@@ -76,7 +78,8 @@ function readRawEnv() {
     OBJECT_STORAGE_MODE: process.env.OBJECT_STORAGE_MODE,
     LOCAL_UPLOAD_DIR: process.env.LOCAL_UPLOAD_DIR,
     CLOUDFLARE_R2_ACCOUNT_ID: process.env.CLOUDFLARE_R2_ACCOUNT_ID,
-    CLOUDFLARE_R2_BUCKET: process.env.CLOUDFLARE_R2_BUCKET,
+    CLOUDFLARE_R2_IMPORTS_BUCKET: process.env.CLOUDFLARE_R2_IMPORTS_BUCKET,
+    CLOUDFLARE_R2_ATTACHMENTS_BUCKET: process.env.CLOUDFLARE_R2_ATTACHMENTS_BUCKET,
     CLOUDFLARE_R2_ACCESS_KEY_ID: process.env.CLOUDFLARE_R2_ACCESS_KEY_ID,
     CLOUDFLARE_R2_SECRET_ACCESS_KEY: process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY,
     CLOUDFLARE_R2_PUBLIC_BASE_URL: process.env.CLOUDFLARE_R2_PUBLIC_BASE_URL,

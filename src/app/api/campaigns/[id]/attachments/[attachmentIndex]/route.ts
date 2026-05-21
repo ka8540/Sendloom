@@ -66,7 +66,7 @@ export async function GET(
     if (attachment.contentBase64) {
       contents = Buffer.from(attachment.contentBase64, "base64");
     } else if (attachment.storagePath) {
-      contents = await getObjectBuffer(attachment.storagePath);
+      contents = await getObjectBuffer("attachments", attachment.storagePath);
     } else {
       return createNotFoundResponse();
     }

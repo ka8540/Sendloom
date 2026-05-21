@@ -90,7 +90,7 @@ async function getAttachmentPayload(attachment: EmailAttachment) {
 
   return {
     filename: attachment.fileName,
-    content: await getObjectBuffer(attachment.storagePath),
+    content: await getObjectBuffer("attachments", attachment.storagePath),
     contentType: attachment.contentType ?? undefined
   };
 }

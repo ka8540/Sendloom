@@ -390,10 +390,11 @@ Create a local `.env` file at the repo root with the values below. Secrets and s
 | `OBJECT_STORAGE_MODE` | Yes | Storage backend: `local` for the local filesystem, `r2` for Cloudflare R2 |
 | `LOCAL_UPLOAD_DIR` | Yes | Local upload destination, used when `OBJECT_STORAGE_MODE=local` |
 | `CLOUDFLARE_R2_ACCOUNT_ID` | When `OBJECT_STORAGE_MODE=r2` | Cloudflare account id used for the R2 S3-compatible endpoint |
-| `CLOUDFLARE_R2_BUCKET` | When `OBJECT_STORAGE_MODE=r2` | R2 bucket name for imports and attachments |
+| `CLOUDFLARE_R2_IMPORTS_BUCKET` | When `OBJECT_STORAGE_MODE=r2` | R2 bucket name for import spreadsheets (CSV/XLSX) |
+| `CLOUDFLARE_R2_ATTACHMENTS_BUCKET` | When `OBJECT_STORAGE_MODE=r2` | R2 bucket name for sequence attachments/resumes |
 | `CLOUDFLARE_R2_ACCESS_KEY_ID` | When `OBJECT_STORAGE_MODE=r2` | R2 API access key id (server-side only) |
 | `CLOUDFLARE_R2_SECRET_ACCESS_KEY` | When `OBJECT_STORAGE_MODE=r2` | R2 API secret access key (server-side only) |
-| `CLOUDFLARE_R2_PUBLIC_BASE_URL` | Optional | Public base URL for the bucket; only set if objects are served publicly |
+| `CLOUDFLARE_R2_PUBLIC_BASE_URL` | Optional | Public base URL for a bucket; only set if objects are served publicly |
 | `DEFAULT_FROM_EMAIL` | Optional | Default sender metadata |
 | `DEFAULT_FROM_NAME` | Optional | Default sender display name |
 | `ADMIN_EMAIL` | Optional | Bootstrap admin email |
@@ -450,19 +451,25 @@ npm run test:watch  # watch mode
 
 Sendloom can store import spreadsheets and sequence attachments/resumes in Cloudflare R2 instead of the local filesystem. R2 is recommended for production and Vercel deployments, where the local filesystem is ephemeral. All R2 access happens server-side; credentials are never exposed to the browser.
 
+Two separate R2 buckets are used so import spreadsheets and sequence attachments are kept apart:
+
+- **Imports bucket** — CSV/XLSX files uploaded through the import workflow.
+- **Attachments bucket** — resume/attachment files uploaded for sequences.
+
 Local development continues to use the local filesystem with `OBJECT_STORAGE_MODE=local`.
 
 ### Setup steps
 
-1. **Create an R2 bucket.** In the Cloudflare dashboard, open **R2** and create a bucket for Sendloom uploads.
-2. **Create an R2 API token.** Under **R2 → Manage R2 API Tokens**, create a token with object read/write permissions for the bucket. Note the **Access Key ID** and **Secret Access Key**.
+1. **Create two R2 buckets.** In the Cloudflare dashboard, open **R2** and create one bucket for import spreadsheets and another for sequence attachments (for example, `sendloom-imports` and `sendloom-attachments`).
+2. **Create an R2 API token.** Under **R2 → Manage R2 API Tokens**, create a token with object read/write permissions for both buckets. Note the **Access Key ID** and **Secret Access Key**.
 3. **Set the environment variables** (in Vercel project settings, or your hosting environment):
    - `OBJECT_STORAGE_MODE=r2`
    - `CLOUDFLARE_R2_ACCOUNT_ID` — your Cloudflare account id
-   - `CLOUDFLARE_R2_BUCKET` — the bucket name
+   - `CLOUDFLARE_R2_IMPORTS_BUCKET` — the bucket name for import spreadsheets
+   - `CLOUDFLARE_R2_ATTACHMENTS_BUCKET` — the bucket name for sequence attachments
    - `CLOUDFLARE_R2_ACCESS_KEY_ID` — the token's access key id
    - `CLOUDFLARE_R2_SECRET_ACCESS_KEY` — the token's secret access key
-   - `CLOUDFLARE_R2_PUBLIC_BASE_URL` — optional; only set if the bucket is served publicly
-4. **Deploy.** Sendloom uses Cloudflare's S3-compatible endpoint (`https://<account-id>.r2.cloudflarestorage.com`, region `auto`). When `OBJECT_STORAGE_MODE=r2`, the four required `CLOUDFLARE_R2_*` variables must be present or the server will fail fast on startup.
+   - `CLOUDFLARE_R2_PUBLIC_BASE_URL` — optional; only set if a bucket is served publicly
+4. **Deploy.** Sendloom uses Cloudflare's S3-compatible endpoint (`https://<account-id>.r2.cloudflarestorage.com`, region `auto`). When `OBJECT_STORAGE_MODE=r2`, the five required `CLOUDFLARE_R2_*` variables (account id, both bucket names, access key id, and secret) must be present or the server will fail fast on startup.
 
 Attachments are still downloaded through the authenticated `/api/campaigns/[id]/attachments/[attachmentIndex]` route, so ownership checks remain in force regardless of storage mode.

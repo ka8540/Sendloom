@@ -41,6 +41,7 @@ export async function createImport(fileName: string, fileType: string, content: 
   const importId = randomUUID();
   const storageKey = buildImportKey(userId, importId, fileName);
   await uploadObject({
+    bucket: "imports",
     key: storageKey,
     body: content,
     contentType: fileType || undefined,
@@ -105,7 +106,7 @@ export async function createImport(fileName: string, fileType: string, content: 
 
     return createdImport;
   } catch (error) {
-    await deleteObject(storageKey).catch(() => {});
+    await deleteObject("imports", storageKey).catch(() => {});
     throw error;
   }
 }
@@ -193,7 +194,7 @@ export async function deleteImport(importId: string, userId: string) {
   });
 
   if (importRecord.storagePath) {
-    await deleteObject(importRecord.storagePath).catch(() => {});
+    await deleteObject("imports", importRecord.storagePath).catch(() => {});
   }
 
   return { id: importRecord.id, deleted: true };

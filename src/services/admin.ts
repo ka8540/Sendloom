@@ -225,10 +225,12 @@ export async function deleteUserAccountData(args: {
     throw new AdminActionError("Admin accounts cannot be deleted from this dashboard.", 403);
   }
 
-  const filePaths = getUniqueFilePaths([
-    ...targetUser.imports.map((entry) => entry.storagePath).filter((value): value is string => Boolean(value)),
-    ...targetUser.campaigns.flatMap((campaign) => extractAttachmentPaths(campaign.templateSnapshot))
-  ]);
+  const importKeys = getUniqueFilePaths(
+    targetUser.imports.map((entry) => entry.storagePath).filter((value): value is string => Boolean(value))
+  );
+  const attachmentKeys = getUniqueFilePaths(
+    targetUser.campaigns.flatMap((campaign) => extractAttachmentPaths(campaign.templateSnapshot))
+  );
 
   await prisma.$transaction(async (tx) => {
     await tx.campaign.deleteMany({
@@ -264,7 +266,10 @@ export async function deleteUserAccountData(args: {
     });
   });
 
-  await Promise.all(filePaths.map((storageKey) => deleteObject(storageKey).catch(() => undefined)));
+  await Promise.all([
+    ...importKeys.map((storageKey) => deleteObject("imports", storageKey).catch(() => undefined)),
+    ...attachmentKeys.map((storageKey) => deleteObject("attachments", storageKey).catch(() => undefined))
+  ]);
 
   await writeAuditLog({
     actorEmail: args.actorEmail,
@@ -274,7 +279,7 @@ export async function deleteUserAccountData(args: {
     metadata: {
       targetEmail: targetUser.email,
       deletedCounts: targetUser._count,
-      deletedFiles: filePaths.length
+      deletedFiles: importKeys.length + attachmentKeys.length
     }
   });
 

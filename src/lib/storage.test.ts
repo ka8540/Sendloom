@@ -87,20 +87,20 @@ describe("local storage mode", () => {
 
   it("uploads, reads, and deletes an object on the local filesystem", async () => {
     const key = buildImportKey("user-1", "import-9", "leads.csv");
-    const result = await uploadObject({ key, body: Buffer.from("a,b\n1,2\n") });
+    const result = await uploadObject({ bucket: "imports", key, body: Buffer.from("a,b\n1,2\n") });
 
     expect(result.key).toBe(key);
     expect(result.url).toBeUndefined();
 
-    const buffer = await getObjectBuffer(key);
+    const buffer = await getObjectBuffer("imports", key);
     expect(buffer.toString()).toBe("a,b\n1,2\n");
 
-    await deleteObject(key);
-    await expect(getObjectBuffer(key)).rejects.toThrow();
+    await deleteObject("imports", key);
+    await expect(getObjectBuffer("imports", key)).rejects.toThrow();
   });
 
   it("rejects keys that escape the upload root", async () => {
-    await expect(getObjectBuffer("../../../etc/passwd")).rejects.toThrow(/Invalid storage key/);
+    await expect(getObjectBuffer("imports", "../../../etc/passwd")).rejects.toThrow(/Invalid storage key/);
   });
 });
 
@@ -109,8 +109,28 @@ describe("r2 storage mode", () => {
     useR2ModeWithoutCredentials();
 
     await expect(
-      uploadObject({ key: "users/user-1/imports/import-9/leads.csv", body: Buffer.from("x") })
+      uploadObject({
+        bucket: "attachments",
+        key: "users/user-1/campaigns/attachments/resume.pdf",
+        body: Buffer.from("x")
+      })
     ).rejects.toThrow(/Cloudflare R2 storage is not configured/);
+  });
+
+  it("fails clearly when a bucket name is missing", async () => {
+    useR2ModeWithoutCredentials();
+    mockEnv.CLOUDFLARE_R2_ACCOUNT_ID = "account-id";
+    mockEnv.CLOUDFLARE_R2_ACCESS_KEY_ID = "access-key-id";
+    mockEnv.CLOUDFLARE_R2_SECRET_ACCESS_KEY = "secret-access-key";
+    mockEnv.CLOUDFLARE_R2_IMPORTS_BUCKET = "sendloom-imports";
+
+    await expect(
+      uploadObject({
+        bucket: "attachments",
+        key: "users/user-1/campaigns/attachments/resume.pdf",
+        body: Buffer.from("x")
+      })
+    ).rejects.toThrow(/CLOUDFLARE_R2_ATTACHMENTS_BUCKET/);
   });
 
   it("reports unhealthy storage when R2 credentials are missing", async () => {

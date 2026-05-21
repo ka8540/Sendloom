@@ -174,6 +174,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
 
       const buffer = Buffer.from(await file.arrayBuffer());
       const upload = await uploadObject({
+        bucket: "attachments",
         key: buildAttachmentKey(auth.user.id, file.name),
         body: buffer,
         contentType: file.type || undefined

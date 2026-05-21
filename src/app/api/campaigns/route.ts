@@ -125,6 +125,7 @@ export async function POST(request: Request) {
 
       const buffer = Buffer.from(await attachment.arrayBuffer());
       const upload = await uploadObject({
+        bucket: "attachments",
         key: buildAttachmentKey(auth.user.id, attachment.name),
         body: buffer,
         contentType: attachment.type || undefined
