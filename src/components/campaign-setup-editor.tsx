@@ -570,6 +570,21 @@ export function CampaignSetupEditor(props: {
   const followUpTemplateName =
     props.templateOptions.find((option) => option.id === props.initialFollowUp.templateId)?.label ??
     "Template unavailable";
+  const followUpStatusInfo = (() => {
+    if (!props.initialFollowUp.enabled) {
+      return { label: "Off", variant: "off" } as const;
+    }
+    if (props.followUpStats.total === 0) {
+      return { label: "Scheduled", variant: "active" } as const;
+    }
+    if (props.followUpStats.pending === 0) {
+      return { label: "Completed", variant: "done" } as const;
+    }
+    if (props.followUpStats.sent > 0) {
+      return { label: "In progress", variant: "active" } as const;
+    }
+    return { label: "Pending", variant: "active" } as const;
+  })();
 
   return (
     <div className={styles.root}>
@@ -870,10 +885,19 @@ export function CampaignSetupEditor(props: {
             <InfoTip label="An extra email sent automatically after the initial send completes." />
           </div>
           <div className={styles.followUpHeaderActions}>
-            <span className={`${styles.followUpPill}${followUpDisplayEnabled ? ` ${styles.followUpPillOn}` : ""}`}>
-              {followUpDisplayEnabled ? "On" : "Off"}
-            </span>
-            {/* Standalone edit controls — only visible in read-only mode */}
+            {/* Status badge — only in read-only mode */}
+            {!editing && !followUpEditing ? (
+              <span
+                className={styles.followUpStatusBadge}
+                data-variant={followUpStatusInfo.variant}
+                aria-label={`Follow-up status: ${followUpStatusInfo.label}`}
+              >
+                <span className={styles.followUpStatusDot} aria-hidden="true" />
+                {followUpStatusInfo.label}
+              </span>
+            ) : null}
+
+            {/* Standalone edit button */}
             {!editing && !followUpEditing && canEditFollowUp ? (
               <button
                 type="button"
@@ -885,9 +909,11 @@ export function CampaignSetupEditor(props: {
                 }}
               >
                 <PencilLine aria-hidden="true" />
-                Edit
+                Edit follow-up
               </button>
             ) : null}
+
+            {/* Standalone save / cancel */}
             {!editing && followUpEditing ? (
               <>
                 <button
@@ -902,7 +928,7 @@ export function CampaignSetupEditor(props: {
                 <button
                   type="button"
                   className={`${styles.followUpActionBtn} ${styles.followUpActionBtnPrimary}`}
-                  aria-label="Save follow-up changes"
+                  aria-label="Save follow-up settings"
                   onClick={() => void saveFollowUpOnly()}
                   disabled={pending}
                 >
@@ -911,7 +937,7 @@ export function CampaignSetupEditor(props: {
                   ) : (
                     <Save aria-hidden="true" />
                   )}
-                  Save
+                  Save follow-up
                 </button>
               </>
             ) : null}
@@ -1042,45 +1068,49 @@ export function CampaignSetupEditor(props: {
 
         {/* ── Read-only ON summary ── */}
         {!followUpEditing && !editing && props.initialFollowUp.enabled ? (
-          <div className={styles.followUpSummaryGrid}>
-            <div className={styles.followUpSummaryCard}>
-              <span className={styles.followUpSummaryLabel}>Template</span>
-              <span className={styles.followUpSummaryValue}>{followUpTemplateName}</span>
+          <div className={styles.followUpCard}>
+            <div className={styles.followUpCardRow}>
+              <div className={styles.followUpCardCell}>
+                <span className={styles.followUpCardLabel}>Template</span>
+                <span className={styles.followUpCardValue}>{followUpTemplateName}</span>
+              </div>
+              <div className={styles.followUpCardCell}>
+                <span className={styles.followUpCardLabel}>Delivery mode</span>
+                <span className={styles.followUpCardValue}>
+                  {FOLLOW_UP_SEND_MODE_LABELS[props.initialFollowUp.sendMode]}
+                </span>
+              </div>
             </div>
-            <div className={styles.followUpSummaryCard}>
-              <span className={styles.followUpSummaryLabel}>Send time</span>
-              <span className={styles.followUpSummaryValue}>
-                {props.initialFollowUp.scheduledAt ? (
-                  <LocalDateTime value={props.initialFollowUp.scheduledAt} />
+            <div className={styles.followUpCardRow}>
+              <div className={styles.followUpCardCell}>
+                <span className={styles.followUpCardLabel}>Send time</span>
+                <span className={styles.followUpCardValue}>
+                  {props.initialFollowUp.scheduledAt ? (
+                    <LocalDateTime value={props.initialFollowUp.scheduledAt} />
+                  ) : (
+                    "Not scheduled"
+                  )}
+                </span>
+              </div>
+              <div className={styles.followUpCardCell}>
+                <span className={styles.followUpCardLabel}>Progress</span>
+                {props.followUpStats.total > 0 ? (
+                  <div className={styles.followUpProgressRow}>
+                    <span className={styles.followUpProgressChip}>{props.followUpStats.sent} sent</span>
+                    <span className={styles.followUpProgressChip}>{props.followUpStats.pending} pending</span>
+                    {props.followUpStats.failed > 0 ? (
+                      <span className={`${styles.followUpProgressChip} ${styles.followUpProgressChipBad}`}>
+                        {props.followUpStats.failed} failed
+                      </span>
+                    ) : null}
+                    {props.followUpStats.skipped > 0 ? (
+                      <span className={styles.followUpProgressChip}>{props.followUpStats.skipped} skipped</span>
+                    ) : null}
+                  </div>
                 ) : (
-                  "Not scheduled"
+                  <span className={styles.followUpCardValueMuted}>Not started yet</span>
                 )}
-              </span>
-            </div>
-            <div className={styles.followUpSummaryCard}>
-              <span className={styles.followUpSummaryLabel}>Delivery mode</span>
-              <span className={styles.followUpSummaryValue}>
-                {FOLLOW_UP_SEND_MODE_LABELS[props.initialFollowUp.sendMode]}
-              </span>
-            </div>
-            <div className={styles.followUpSummaryCard}>
-              <span className={styles.followUpSummaryLabel}>Progress</span>
-              {props.followUpStats.total > 0 ? (
-                <div className={styles.followUpProgressRow}>
-                  <span className={styles.followUpProgressChip}>{props.followUpStats.sent} sent</span>
-                  <span className={styles.followUpProgressChip}>{props.followUpStats.pending} pending</span>
-                  {props.followUpStats.failed > 0 ? (
-                    <span className={`${styles.followUpProgressChip} ${styles.followUpProgressChipBad}`}>
-                      {props.followUpStats.failed} failed
-                    </span>
-                  ) : null}
-                  {props.followUpStats.skipped > 0 ? (
-                    <span className={styles.followUpProgressChip}>{props.followUpStats.skipped} skipped</span>
-                  ) : null}
-                </div>
-              ) : (
-                <span className={styles.followUpSummaryValueMuted}>Not started</span>
-              )}
+              </div>
             </div>
           </div>
         ) : null}
@@ -1088,13 +1118,17 @@ export function CampaignSetupEditor(props: {
         {/* ── Read-only OFF state ── */}
         {!followUpEditing && !editing && !props.initialFollowUp.enabled ? (
           <div className={styles.followUpOffState}>
-            <span className={styles.followUpOffStateText}>
-              No follow-up email is scheduled for this sequence.
-            </span>
+            <div className={styles.followUpOffContent}>
+              <span className={styles.followUpOffTitle}>No follow-up configured</span>
+              <span className={styles.followUpOffDesc}>
+                Add a scheduled follow-up after the initial email sends.
+              </span>
+            </div>
             {canEditFollowUp ? (
               <button
                 type="button"
                 className={styles.followUpAddBtn}
+                aria-label="Add a follow-up email to this sequence"
                 onClick={() => {
                   setSuccess(null);
                   setFollowUpEditing(true);

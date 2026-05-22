@@ -562,58 +562,101 @@ select.fieldControl option {
   flex-shrink: 0;
 }
 
-/* Status pill */
-.followUpPill {
-  flex-shrink: 0;
-  padding: 0.19rem 0.52rem;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: var(--surface-muted);
-  color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  user-select: none;
-}
-
-.followUpPillOn {
-  border-color: color-mix(in srgb, var(--accent) 32%, transparent);
-  background: var(--accent-soft);
-  color: var(--accent-strong);
-}
-
-/* Compact "Edit" ghost button */
-.followUpEditBtn {
+/* ── Status badge (replaces old ON/OFF pill) ── */
+.followUpStatusBadge {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
-  padding: 0.26rem 0.58rem;
-  border-radius: 8px;
+  padding: 0.2rem 0.54rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 0.74rem;
+  font-weight: 650;
+  letter-spacing: 0.005em;
+  user-select: none;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.followUpStatusDot {
+  width: 0.36rem;
+  height: 0.36rem;
+  border-radius: 999px;
+  background: currentColor;
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+
+/* Active: Scheduled / Pending / In progress */
+.followUpStatusBadge[data-variant="active"] {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  border-color: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+/* Completed */
+.followUpStatusBadge[data-variant="done"] {
+  background: var(--surface-muted);
+  color: var(--muted);
+  border-color: var(--line);
+}
+
+/* Off */
+.followUpStatusBadge[data-variant="off"] {
+  background: var(--surface-muted);
+  color: var(--muted);
+  border-color: var(--line);
+}
+
+/* ── "Edit follow-up" button ── */
+.followUpEditBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+  padding: 0.3rem 0.68rem;
+  border-radius: 9px;
   border: 1px solid var(--field-border);
   background: var(--field-bg);
-  color: var(--muted);
-  font-size: 0.76rem;
+  color: var(--text);
+  font-size: 0.78rem;
   font-weight: 650;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
   cursor: pointer;
-  transition: color 140ms ease, border-color 140ms ease, background-color 140ms ease;
+  transition:
+    color 140ms ease,
+    border-color 140ms ease,
+    background-color 140ms ease,
+    transform 120ms ease;
 }
 
 .followUpEditBtn svg {
-  width: 0.75rem;
-  height: 0.75rem;
+  width: 0.76rem;
+  height: 0.76rem;
+  color: var(--muted);
+  transition: color 140ms ease;
 }
 
 .followUpEditBtn:hover:not(:disabled),
 .followUpEditBtn:focus-visible {
+  transform: translateY(-1px);
   border-color: color-mix(in srgb, var(--accent) 30%, var(--field-border));
-  background: color-mix(in srgb, var(--accent-soft) 50%, var(--field-bg));
+  background: color-mix(in srgb, var(--accent-soft) 48%, var(--field-bg));
   color: var(--accent-strong);
   outline: none;
 }
 
+.followUpEditBtn:hover:not(:disabled) svg,
+.followUpEditBtn:focus-visible svg {
+  color: var(--accent-strong);
+}
+
+.followUpEditBtn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
 .followUpEditBtn:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  outline: 2px solid color-mix(in srgb, var(--accent) 26%, transparent);
   outline-offset: 2px;
 }
 
@@ -779,31 +822,42 @@ select.fieldControl option {
   outline-offset: 1px;
 }
 
-/* Read-only ON: 2-col summary grid */
-.followUpSummaryGrid {
+/* ── Read-only ON: single cohesive card ── */
+.followUpCard {
+  border: 1px solid color-mix(in srgb, var(--line) 85%, transparent);
+  border-radius: 13px;
+  background: var(--surface-muted);
+  overflow: hidden;
+}
+
+.followUpCardRow {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.4rem;
 }
 
-.followUpSummaryCard {
+.followUpCardRow + .followUpCardRow {
+  border-top: 1px solid color-mix(in srgb, var(--line) 62%, transparent);
+}
+
+.followUpCardCell {
+  padding: 0.66rem 0.88rem;
   display: grid;
-  gap: 0.24rem;
-  padding: 0.6rem 0.72rem;
-  border-radius: 11px;
-  border: 1px solid color-mix(in srgb, var(--line) 75%, transparent);
-  background: var(--surface-muted);
+  gap: 0.22rem;
 }
 
-.followUpSummaryLabel {
+.followUpCardCell + .followUpCardCell {
+  border-left: 1px solid color-mix(in srgb, var(--line) 62%, transparent);
+}
+
+.followUpCardLabel {
   color: var(--muted);
-  font-size: 0.67rem;
+  font-size: 0.66rem;
   font-weight: 700;
-  letter-spacing: 0.07em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
-.followUpSummaryValue {
+.followUpCardValue {
   color: var(--text);
   font-size: 0.9rem;
   font-weight: 650;
@@ -811,9 +865,9 @@ select.fieldControl option {
   overflow-wrap: anywhere;
 }
 
-.followUpSummaryValueMuted {
+.followUpCardValueMuted {
   color: var(--muted);
-  font-size: 0.88rem;
+  font-size: 0.84rem;
 }
 
 /* Progress chips inside the summary card */
@@ -841,22 +895,34 @@ select.fieldControl option {
   color: color-mix(in srgb, #d96952 65%, var(--text));
 }
 
-/* Read-only OFF state */
+/* ── Read-only OFF state ── */
 .followUpOffState {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.8rem;
   flex-wrap: wrap;
-  padding: 0.8rem 0.9rem;
+  padding: 0.82rem 0.9rem;
   border-radius: 12px;
   border: 1px dashed color-mix(in srgb, var(--line) 68%, transparent);
-  background: color-mix(in srgb, var(--surface-muted) 55%, transparent);
+  background: color-mix(in srgb, var(--surface-muted) 50%, transparent);
 }
 
-.followUpOffStateText {
+.followUpOffContent {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.followUpOffTitle {
+  color: var(--text);
+  font-size: 0.87rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.followUpOffDesc {
   color: var(--muted);
-  font-size: 0.84rem;
+  font-size: 0.79rem;
   line-height: 1.45;
 }
 
@@ -908,8 +974,13 @@ select.fieldControl option {
 
 /* Responsive */
 @media (max-width: 560px) {
-  .followUpSummaryGrid {
+  .followUpCard .followUpCardRow {
     grid-template-columns: 1fr;
+  }
+
+  .followUpCard .followUpCardCell + .followUpCardCell {
+    border-left: none;
+    border-top: 1px solid color-mix(in srgb, var(--line) 62%, transparent);
   }
 
   .followUpDateRow {
@@ -922,5 +993,10 @@ select.fieldControl option {
 
   .followUpHeaderActions {
     gap: 0.3rem;
+  }
+
+  .followUpEditBtn {
+    font-size: 0.75rem;
+    padding: 0.28rem 0.56rem;
   }
 }
