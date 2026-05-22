@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",
-    "build:vercel": "prisma migrate deploy && prisma generate && next build",
+    "build:vercel": "npm run prisma:recover-follow-up && prisma migrate deploy && prisma generate && next build",
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",
@@ -17,6 +17,7 @@
     "postinstall": "prisma generate",
     "prisma:generate": "prisma generate",
     "prisma:deploy": "prisma migrate deploy",
+    "prisma:recover-follow-up": "node scripts/recover-follow-up-migration.mjs",
     "prisma:migrate": "prisma migrate dev",
     "worker": "tsx src/workers/worker.ts",
     "scheduler": "tsx src/workers/scheduler.ts"
