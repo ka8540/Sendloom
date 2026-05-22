@@ -687,37 +687,44 @@ export async function updateCampaignSetup(
     ]);
 
     if (processedFollowUps > 0) {
-      const followUpDetailsChanged =
-        input.followUp.enabled !== campaign.followUpEnabled ||
-        (input.followUp.templateId ?? null) !== campaign.followUpTemplateId ||
-        (input.followUp.sendMode ?? null) !== campaign.followUpSendMode;
+      // Disabling is always permitted — it cancels pending jobs without rewriting history.
+      if (input.followUp.enabled !== false) {
+        // When re-scheduling (still enabled), template and delivery mode are locked.
+        const followUpDetailsChanged =
+          (input.followUp.templateId ?? null) !== campaign.followUpTemplateId ||
+          (input.followUp.sendMode ?? null) !== campaign.followUpSendMode;
 
-      if (followUpDetailsChanged) {
-        throw new Error(
-          "Follow-up template, delivery mode, and enablement cannot be changed after sending starts. You can still reschedule pending follow-ups."
-        );
+        if (followUpDetailsChanged) {
+          throw new Error(
+            "Follow-up template and delivery mode cannot be changed after sending has started. You can reschedule or disable pending follow-ups."
+          );
+        }
+
+        if (pendingFollowUps === 0) {
+          throw new Error("No pending follow-up emails remain to reschedule.");
+        }
+
+        const validation = validateFollowUpConfig(input.followUp);
+        if (!validation.ok) {
+          throw new Error(validation.error);
+        }
+
+        followUpData = {
+          followUpEnabled: campaign.followUpEnabled,
+          followUpTemplateId: campaign.followUpTemplateId,
+          followUpSendMode: campaign.followUpSendMode,
+          followUpScheduledAt: new Date(input.followUp.scheduledAt ?? ""),
+          followUpTimezone: input.followUp.timezone ?? campaign.followUpTimezone,
+          followUpTemplateSnapshot:
+            campaign.followUpTemplateSnapshot === null
+              ? Prisma.JsonNull
+              : (campaign.followUpTemplateSnapshot as Prisma.InputJsonValue)
+        };
+      } else {
+        // Disabling after partial sends — clear the follow-up config.
+        // The backfill below will cancel any remaining PENDING jobs.
+        followUpData = await buildFollowUpCampaignData(input.followUp, userId ?? "");
       }
-
-      if (pendingFollowUps === 0) {
-        throw new Error("No pending follow-up emails remain to reschedule.");
-      }
-
-      const validation = validateFollowUpConfig(input.followUp);
-      if (!validation.ok) {
-        throw new Error(validation.error);
-      }
-
-      followUpData = {
-        followUpEnabled: campaign.followUpEnabled,
-        followUpTemplateId: campaign.followUpTemplateId,
-        followUpSendMode: campaign.followUpSendMode,
-        followUpScheduledAt: new Date(input.followUp.scheduledAt ?? ""),
-        followUpTimezone: input.followUp.timezone ?? campaign.followUpTimezone,
-        followUpTemplateSnapshot:
-          campaign.followUpTemplateSnapshot === null
-            ? Prisma.JsonNull
-            : (campaign.followUpTemplateSnapshot as Prisma.InputJsonValue)
-      };
     } else {
       followUpData = await buildFollowUpCampaignData(input.followUp, userId ?? "");
     }
