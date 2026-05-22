@@ -774,7 +774,7 @@ export default async function CampaignDetailPage({
           </div>
           <span className={styles.metricLabel}>Audience size</span>
           <strong className={styles.metricValue}>{displayRun?.totalRecipients ?? campaign.import.rowCount ?? 0}</strong>
-          <span className={styles.metricMeta}>{isFromPreviousRun ? "People in the last completed run." : "People queued for this run."}</span>
+          <span className={styles.metricMeta}>{isFromPreviousRun ? "Last run" : "This run"}</span>
         </article>
         <article className={styles.metricCard}>
           <div className={styles.metricIcon}>
@@ -782,7 +782,7 @@ export default async function CampaignDetailPage({
           </div>
           <span className={styles.metricLabel}>Delivered</span>
           <strong className={styles.metricValue}>{deliveredCount}</strong>
-          <span className={styles.metricMeta}>{isFromPreviousRun ? "From the last completed run." : "Messages that successfully reached recipients."}</span>
+          <span className={styles.metricMeta}>{isFromPreviousRun ? "Last run" : "Sent + opened + clicked"}</span>
         </article>
         <article className={styles.metricCard}>
           <div className={styles.metricIcon}>
@@ -790,7 +790,7 @@ export default async function CampaignDetailPage({
           </div>
           <span className={styles.metricLabel}>Replies</span>
           <strong className={styles.metricValue}>{replyCount}</strong>
-          <span className={styles.metricMeta}>{isFromPreviousRun ? "Replies from the last completed run." : "Replies matched back to emails sent from this run."}</span>
+          <span className={styles.metricMeta}>{isFromPreviousRun ? "Last run" : "This run"}</span>
         </article>
         <article className={styles.metricCard}>
           <div className={styles.metricIcon}>
@@ -798,7 +798,7 @@ export default async function CampaignDetailPage({
           </div>
           <span className={styles.metricLabel}>Needs attention</span>
           <strong className={styles.metricValue}>{issueCount}</strong>
-          <span className={styles.metricMeta}>Failures and invalid records that still need review.</span>
+          <span className={styles.metricMeta}>Failed &amp; invalid</span>
         </article>
       </section>
       {validationChecks.length ? (
@@ -857,7 +857,7 @@ export default async function CampaignDetailPage({
           <div className={styles.panelHeader}>
             <div>
               <h2>Recent recipient activity</h2>
-              <p>{isFromPreviousRun ? "Showing activity from the last completed run. Metrics will reset when the next run starts." : "The newest recipient updates from the latest run."}</p>
+              {isFromPreviousRun ? <p className={styles.panelNote}>Last completed run</p> : null}
             </div>
           </div>
 

@@ -1,6 +1,6 @@
 import type { Route } from "next";
 import Link from "next/link";
-import { Eye, LoaderCircle, Play, Trash2 } from "lucide-react";
+import { Eye, LoaderCircle, Pause, Play, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, type MouseEvent } from "react";
 
@@ -12,16 +12,18 @@ export function SequenceRowActions({
   campaignId,
   campaignName,
   canRelaunch,
+  isActiveRun,
   onRelaunch
 }: {
   href: Route;
   campaignId: string;
   campaignName: string;
   canRelaunch: boolean;
+  isActiveRun: boolean;
   onRelaunch: () => void;
 }) {
   const router = useRouter();
-  const [pendingAction, setPendingAction] = useState<"launch" | "delete" | null>(null);
+  const [pendingAction, setPendingAction] = useState<"launch" | "pause" | "delete" | null>(null);
   const [error, setError] = useState<string | null>(null);
   useErrorToastEffect(error, "Sequence action failed");
 
@@ -48,6 +50,32 @@ export function SequenceRowActions({
       setPendingAction(null);
     } catch {
       setError("Could not relaunch the sequence.");
+      setPendingAction(null);
+    }
+  }
+
+  async function handlePause(event: MouseEvent<HTMLButtonElement>) {
+    event.stopPropagation();
+    if (pendingAction) {
+      return;
+    }
+
+    setPendingAction("pause");
+    setError(null);
+
+    try {
+      const response = await fetch(`/api/campaigns/${campaignId}/pause`, { method: "POST" });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        setError(payload.error ?? "Could not pause the sequence.");
+        setPendingAction(null);
+        return;
+      }
+
+      router.refresh();
+      setPendingAction(null);
+    } catch {
+      setError("Could not pause the sequence.");
       setPendingAction(null);
     }
   }
@@ -95,18 +123,33 @@ export function SequenceRowActions({
         </span>
         <span className={styles.sequenceActionLabel}>View</span>
       </Link>
-      <button
-        type="button"
-        className={`${styles.sequenceActionButton} ${styles.sequenceActionButtonLaunch}`}
-        onClick={(event) => void handleRelaunch(event)}
-        disabled={!canRelaunch || Boolean(pendingAction)}
-        aria-label={canRelaunch ? `Relaunch ${campaignName}` : `${campaignName} is busy`}
-      >
-        <span className={styles.sequenceActionIconWrap}>
-          {pendingAction === "launch" ? <LoaderCircle className={styles.spin} aria-hidden="true" /> : <Play aria-hidden="true" />}
-        </span>
-        <span className={styles.sequenceActionLabel}>{canRelaunch ? "Relaunch" : "Busy"}</span>
-      </button>
+      {isActiveRun ? (
+        <button
+          type="button"
+          className={`${styles.sequenceActionButton} ${styles.sequenceActionButtonLaunch}`}
+          onClick={(event) => void handlePause(event)}
+          disabled={Boolean(pendingAction)}
+          aria-label={`Pause ${campaignName}`}
+        >
+          <span className={styles.sequenceActionIconWrap}>
+            {pendingAction === "pause" ? <LoaderCircle className={styles.spin} aria-hidden="true" /> : <Pause aria-hidden="true" />}
+          </span>
+          <span className={styles.sequenceActionLabel}>Pause</span>
+        </button>
+      ) : (
+        <button
+          type="button"
+          className={`${styles.sequenceActionButton} ${styles.sequenceActionButtonLaunch}`}
+          onClick={(event) => void handleRelaunch(event)}
+          disabled={!canRelaunch || Boolean(pendingAction)}
+          aria-label={canRelaunch ? `Relaunch ${campaignName}` : `${campaignName}`}
+        >
+          <span className={styles.sequenceActionIconWrap}>
+            {pendingAction === "launch" ? <LoaderCircle className={styles.spin} aria-hidden="true" /> : <Play aria-hidden="true" />}
+          </span>
+          <span className={styles.sequenceActionLabel}>{canRelaunch ? "Relaunch" : "—"}</span>
+        </button>
+      )}
       <button
         type="button"
         className={`${styles.sequenceActionButton} ${styles.sequenceActionButtonDelete} ${styles.sequenceActionDanger}`}

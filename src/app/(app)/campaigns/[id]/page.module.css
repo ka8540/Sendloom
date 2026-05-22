@@ -376,6 +376,18 @@
   color: var(--muted);
 }
 
+.panelNote {
+  margin: 0.25rem 0 0;
+  padding: 0.2rem 0.55rem;
+  border-radius: 6px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 0.78rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  display: inline-block;
+}
+
 .setupGrid {
   display: grid;
   gap: 0.8rem;
