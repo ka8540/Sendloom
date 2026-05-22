@@ -3,8 +3,6 @@ import { after } from "next/server";
 import { redirect } from "next/navigation";
 import {
   CalendarClock,
-  ChevronLeft,
-  ChevronRight,
   Eye,
   FileStack,
   Mail,
@@ -26,8 +24,9 @@ import { getValidationChecksFromSnapshot } from "@/lib/campaign-health";
 import { SCHEDULE_EDIT_DISABLED_MESSAGE, canEditCampaignSchedule } from "@/lib/campaign-schedule-edit";
 import { isCampaignSetupLocked } from "@/lib/campaign-setup-lock";
 import { prisma } from "@/lib/db";
-import { FAILURE_CODES, getHumanReadableFailureMessage, type FailureCode } from "@/lib/failures";
 import { GMAIL_RECONNECT_ERROR } from "@/lib/provider";
+import { RECIPIENT_ACTIVITY_PAGE_SIZE, buildRecipientActivityItem } from "@/lib/recipient-activity";
+import { RecipientActivity } from "@/components/recipient-activity";
 import {
   CampaignLaunchBlockedError,
   launchCampaign,
@@ -39,12 +38,7 @@ import { syncRepliesForSenderProfile } from "@/services/replies";
 import styles from "./page.module.css";
 
 export const maxDuration = 60;
-const RECIPIENTS_PAGE_SIZE = 10;
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
-const RECIPIENT_ERROR_STATUSES = new Set(["FAILED", "RETRYING", "INVALID", "BOUNCED", "COMPLAINED"]);
-const RECIPIENT_SUCCESS_STATUSES = new Set(["SENT", "OPENED", "CLICKED"]);
-
-type RecipientStatusTone = "success" | "warning" | "danger" | "neutral";
 
 type CampaignTemplateSnapshot = {
   attachments?: Array<{
@@ -123,33 +117,6 @@ function getDeliveredCount(run?: {
   clickedCount?: number | null;
 } | null) {
   return (run?.sentCount ?? 0) + (run?.openedCount ?? 0) + (run?.clickedCount ?? 0);
-}
-
-function getRecipientFailureCode(metadata: unknown): FailureCode | null {
-  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
-    return null;
-  }
-
-  const failureCode = (metadata as { failureCode?: unknown }).failureCode;
-  return typeof failureCode === "string" && FAILURE_CODES.includes(failureCode as FailureCode)
-    ? (failureCode as FailureCode)
-    : null;
-}
-
-function getRecipientStatusTone(status: string): RecipientStatusTone {
-  if (RECIPIENT_SUCCESS_STATUSES.has(status)) {
-    return "success";
-  }
-
-  if (status === "RETRYING") {
-    return "warning";
-  }
-
-  if (RECIPIENT_ERROR_STATUSES.has(status)) {
-    return "danger";
-  }
-
-  return "neutral";
 }
 
 function formatScheduleLabel(scheduleType?: string | null, scheduleConfig?: ScheduleConfig | null) {
@@ -325,33 +292,6 @@ async function togglePause(campaignId: string) {
   revalidatePath(`/campaigns/${campaignId}`);
   revalidatePath("/campaigns");
 }
-function buildRecipientPageHref(
-  campaignId: string,
-  searchParams: Record<string, string | string[] | undefined>,
-  page: number
-) {
-  const nextParams = new URLSearchParams();
-
-  for (const [key, value] of Object.entries(searchParams)) {
-    if (key === "recipientsPage" || value == null) {
-      continue;
-    }
-
-    if (Array.isArray(value)) {
-      value.forEach((entry) => nextParams.append(key, entry));
-      continue;
-    }
-
-    nextParams.set(key, value);
-  }
-
-  if (page > 1) {
-    nextParams.set("recipientsPage", String(page));
-  }
-
-  const query = nextParams.toString();
-  return query ? `/campaigns/${campaignId}?${query}` : `/campaigns/${campaignId}`;
-}
 
 function getSearchParam(
   searchParams: Record<string, string | string[] | undefined>,
@@ -447,7 +387,6 @@ export default async function CampaignDetailPage({
     }
   }
 
-  const requestedRecipientPage = Number.parseInt(String(resolvedSearchParams.recipientsPage ?? "1"), 10);
   const [imports, mappings, templates, senders, recipientJobCount, replyCountAggregate, recipientStatusCounts] =
     await Promise.all([
     prisma.import.findMany({
@@ -551,20 +490,28 @@ export default async function CampaignDetailPage({
     (check) => check.severity === "BLOCKER" || check.severity === "ERROR"
   );
   const reconnectHref = `/api/auth/google/connect?email=${encodeURIComponent(campaign.senderProfile.fromEmail)}&next=${encodeURIComponent(`/campaigns/${campaign.id}`)}`;
-  const totalRecipientPages = Math.max(1, Math.ceil(recipientJobCount / RECIPIENTS_PAGE_SIZE));
-  const recipientPage = Number.isFinite(requestedRecipientPage)
-    ? Math.min(Math.max(requestedRecipientPage, 1), totalRecipientPages)
-    : 1;
-  const paginatedRecipientJobs = displayRun
+  // First page of recipient activity — later pages load client-side without a route navigation.
+  const initialRecipientJobs = displayRun
     ? await prisma.recipientJob.findMany({
         where: {
           campaignRunId: displayRun.id
         },
         orderBy: { updatedAt: "desc" },
-        skip: (recipientPage - 1) * RECIPIENTS_PAGE_SIZE,
-        take: RECIPIENTS_PAGE_SIZE
+        take: RECIPIENT_ACTIVITY_PAGE_SIZE,
+        select: {
+          id: true,
+          recipientEmail: true,
+          recipientName: true,
+          status: true,
+          lastError: true,
+          metadata: true,
+          retryCount: true,
+          updatedAt: true,
+          nextRetryAt: true
+        }
       })
     : [];
+  const recipientActivityItems = initialRecipientJobs.map(buildRecipientActivityItem);
   const canEditSchedule = canEditCampaignSchedule({
     campaignStatus: campaign.status,
     // When showing a previous run's metrics, the actual latest (QUEUED) run has 0 jobs.
@@ -861,106 +808,15 @@ export default async function CampaignDetailPage({
             </div>
           </div>
 
-          {recipientJobCount ? (
-            <div className={styles.jobList}>
-              {paginatedRecipientJobs.map((job) => (
-                (() => {
-                  const showLastError = RECIPIENT_ERROR_STATUSES.has(job.status) && Boolean(job.lastError);
-                  const statusTone = getRecipientStatusTone(job.status);
-                  const failureCode = getRecipientFailureCode(job.metadata);
-                  const jobDetail = showLastError
-                    ? failureCode
-                      ? getHumanReadableFailureMessage(failureCode)
-                      : job.lastError
-                    : RECIPIENT_SUCCESS_STATUSES.has(job.status)
-                      ? "Delivered successfully"
-                      : "No error reported";
-                  const jobStatusBadgeClassName = [
-                    styles.jobStatusBadge,
-                    statusTone === "success"
-                      ? styles.jobStatusBadgeSuccess
-                      : statusTone === "warning"
-                        ? styles.jobStatusBadgeWarning
-                        : statusTone === "danger"
-                          ? styles.jobStatusBadgeDanger
-                          : styles.jobStatusBadgeNeutral
-                  ].join(" ");
-                  const jobContentClassName = [
-                    styles.jobContent,
-                    showLastError ? styles.jobContentSplit : styles.jobContentSingle
-                  ].join(" ");
-                  const jobMessageClassName =
-                    statusTone === "warning"
-                      ? styles.jobMessageWarning
-                      : statusTone === "danger"
-                        ? styles.jobMessageDanger
-                        : styles.jobMessageMuted;
-
-                  return (
-                    <div key={job.id} className={styles.jobRow}>
-                      <div className={styles.jobIdentity}>
-                        <strong className={styles.jobEmail} title={job.recipientEmail}>
-                          {job.recipientEmail}
-                        </strong>
-                        <span className={styles.jobName} title={job.recipientName || undefined}>
-                          {job.recipientName || "Name unavailable"}
-                        </span>
-                      </div>
-                      <div className={jobContentClassName}>
-                        <div className={styles.jobPrimary}>
-                          <span className={jobStatusBadgeClassName}>{humanize(job.status)}</span>
-                          <span className={jobMessageClassName} title={jobDetail || undefined}>
-                            {jobDetail}
-                          </span>
-                        </div>
-                        {showLastError ? (
-                          <div className={styles.jobMeta}>
-                            <div className={styles.jobMetaInline}>
-                              <span>{job.status === "RETRYING" ? "Retryable" : "Permanent"}</span>
-                              <span>Attempt {job.retryCount}</span>
-                            </div>
-                            <div className={styles.jobMetaStack}>
-                              <span>
-                                Last attempt <LocalDateTime value={job.updatedAt.toISOString()} />
-                              </span>
-                              {job.nextRetryAt ? (
-                                <span>
-                                  Next retry <LocalDateTime value={job.nextRetryAt.toISOString()} />
-                                </span>
-                              ) : null}
-                            </div>
-                          </div>
-                        ) : null}
-                      </div>
-                    </div>
-                  );
-                })()
-              ))}
-
-              {recipientJobCount > RECIPIENTS_PAGE_SIZE ? (
-                <div className={styles.paginationRow}>
-                  <a
-                    href={buildRecipientPageHref(campaign.id, resolvedSearchParams, recipientPage - 1)}
-                    className={styles.paginationButton}
-                    aria-label="Previous recipient page"
-                    aria-disabled={recipientPage === 1}
-                  >
-                    <ChevronLeft aria-hidden="true" />
-                  </a>
-                  <span className={styles.paginationCount}>
-                    {recipientPage} / {totalRecipientPages}
-                  </span>
-                  <a
-                    href={buildRecipientPageHref(campaign.id, resolvedSearchParams, recipientPage + 1)}
-                    className={styles.paginationButton}
-                    aria-label="Next recipient page"
-                    aria-disabled={recipientPage === totalRecipientPages}
-                  >
-                    <ChevronRight aria-hidden="true" />
-                  </a>
-                </div>
-              ) : null}
-            </div>
+          {recipientJobCount && displayRun ? (
+            <RecipientActivity
+              campaignId={campaign.id}
+              runId={displayRun.id}
+              initialItems={recipientActivityItems}
+              initialPage={1}
+              totalCount={recipientJobCount}
+              pageSize={RECIPIENT_ACTIVITY_PAGE_SIZE}
+            />
           ) : (
             <div className={styles.emptyState}>
               {isFromPreviousRun
