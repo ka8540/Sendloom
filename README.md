@@ -79,7 +79,12 @@ Current sequence behavior includes:
 
 ### Admin
 
-Admin users can manage account-level restrictions and user controls from `/admin`.
+Admin users access a dedicated control center through sidebar sub-navigation that appears automatically when signed in as an admin. The admin area is split into four focused sub-pages:
+
+- **Overview** (`/admin`) — aggregate metrics (total users, active sessions, restricted accounts, admin count), a user-status donut chart, top domains by sender count, and a live system health strip with a shortcut to the full health report.
+- **User Management** (`/admin/users`) — searchable, paginated user table with a sticky inspector panel. Click any user row to inspect their account details, session status, data counts, and apply per-user controls (restrict API access, imports, templates, launches, and AI enhancements) or delete the account.
+- **Restrictions** (`/admin/restrictions`) — a dedicated picker-and-panel view for managing per-user access restrictions and reviewing which controls are active on each account.
+- **System Health** (`/admin/system-health`) — live runtime check cards for Database, Redis, Storage/R2, Google OAuth, Mail Provider, and Cron. Includes a **Recheck** button that re-fetches all service statuses on demand without a page reload.
 
 ### Hidden/Internal Surfaces
 
@@ -441,7 +446,10 @@ sequenceDiagram
 | `/campaigns/[id]` | Sequence detail, setup, monitoring, and launch controls |
 | `/sequences` | Redirect alias to `/campaigns` |
 | `/sequences/[id]` | Alias for sequence detail |
-| `/admin` | Admin controls |
+| `/admin` | Admin overview — metrics, user-status chart, and health strip |
+| `/admin/users` | User management — searchable table and per-user inspector panel |
+| `/admin/restrictions` | Restrictions — per-user access control picker and panel |
+| `/admin/system-health` | System health — live runtime check cards with Recheck button |
 | `/suppressions` | Redirects to `/workspace` |
 
 ## API Surface
@@ -548,6 +556,12 @@ sequenceDiagram
 │   ├── app
 │   │   ├── (app)
 │   │   │   ├── admin
+│   │   │   │   ├── restrictions
+│   │   │   │   ├── system-health
+│   │   │   │   ├── users
+│   │   │   │   ├── admin-workspace.tsx
+│   │   │   │   ├── page.module.css
+│   │   │   │   └── page.tsx
 │   │   │   ├── campaigns
 │   │   │   ├── finder
 │   │   │   ├── imports
@@ -586,6 +600,12 @@ sequenceDiagram
 - `src/app/(app)/templates`: template workspace
 - `src/app/(app)/finder`: Finder workspace
 - `src/app/(app)/imports`: import/mapping workflow
+- `src/app/(app)/admin/admin-workspace.tsx`: all admin client components — `AdminOverviewSection`, `AdminUsersSection`, `AdminRestrictionsSection`, `AdminSystemHealthSection`
+- `src/app/(app)/admin/page.tsx`: admin overview page (server component, fetches metrics)
+- `src/app/(app)/admin/users/page.tsx`: user management page
+- `src/app/(app)/admin/restrictions/page.tsx`: restrictions management page
+- `src/app/(app)/admin/system-health/page.tsx`: system health page
+- `src/components/nav.tsx`: app sidebar — shows admin sub-navigation when `isAdmin=true`
 - `src/components/dashboard`: overview cards, activity, and sequence panels
 - `src/lib/templates.ts`: template parsing, rendering, and preview logic
 - `src/services/campaigns.ts`: sequence launch and processing logic
