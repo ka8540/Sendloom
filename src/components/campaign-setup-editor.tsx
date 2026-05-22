@@ -115,9 +115,14 @@ function getFileIcon(kind: AttachmentPreviewKind) {
 
 function InfoTip({ label }: { label: string }) {
   return (
-    <button type="button" className={styles.infoTip} aria-label={label} title={label}>
-      <Info aria-hidden="true" />
-    </button>
+    <span className={styles.infoTipWrap}>
+      <button type="button" className={styles.infoTip} aria-label={label}>
+        <Info aria-hidden="true" />
+      </button>
+      <span className={styles.infoBubble} aria-hidden="true">
+        {label}
+      </span>
+    </span>
   );
 }
 
