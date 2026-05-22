@@ -875,6 +875,75 @@ export async function pauseCampaign(campaignId: string, userId?: string) {
   return pausedRun;
 }
 
+/**
+ * Resume a PAUSED campaign, respecting the schedule type:
+ * - immediate: queue immediately (scheduledFor = now)
+ * - once:      restore original scheduled time if still in the future, else queue now
+ * - recurring: advance to the next occurrence (getNextRunDate), status = SCHEDULED
+ *
+ * Unlike launchCampaign's PAUSED branch (which always sets scheduledFor = now),
+ * this prevents recurring/scheduled sequences from sending immediately on resume.
+ */
+export async function resumeCampaign(campaignId: string, userId?: string) {
+  const campaign = await prisma.campaign.findFirstOrThrow({
+    where: campaignOwnershipFilter(campaignId, userId),
+    select: {
+      id: true,
+      scheduleType: true,
+      scheduleConfig: true
+    }
+  });
+
+  const pausedRun = await prisma.campaignRun.findFirst({
+    where: {
+      campaignId,
+      status: "PAUSED"
+    },
+    orderBy: { createdAt: "desc" }
+  });
+
+  if (!pausedRun) {
+    return null;
+  }
+
+  const rule = campaign.scheduleConfig as ScheduleRule;
+  const now = new Date();
+
+  let scheduledFor: Date;
+  let nextCampaignStatus: "RUNNING" | "SCHEDULED";
+
+  if (campaign.scheduleType === "recurring") {
+    // Always advance to the next scheduled occurrence — never send immediately.
+    scheduledFor = getNextRunDate(rule, now);
+    nextCampaignStatus = "SCHEDULED";
+  } else if (campaign.scheduleType === "once") {
+    // Use the configured scheduled time if it's still in the future.
+    const configuredTime = getNextRunDate(rule, now);
+    const isFuture = !Number.isNaN(configuredTime.getTime()) && configuredTime > now;
+    scheduledFor = isFuture ? configuredTime : now;
+    nextCampaignStatus = isFuture ? "SCHEDULED" : "RUNNING";
+  } else {
+    // immediate: queue now, process ASAP.
+    scheduledFor = now;
+    nextCampaignStatus = "RUNNING";
+  }
+
+  const resumedRun = await prisma.campaignRun.update({
+    where: { id: pausedRun.id },
+    data: {
+      status: "QUEUED",
+      scheduledFor
+    }
+  });
+
+  await prisma.campaign.update({
+    where: { id: campaign.id },
+    data: { status: nextCampaignStatus }
+  });
+
+  return resumedRun;
+}
+
 export async function queueScheduledRuns() {
   const summary: QueueScheduledRunsResult = {
     campaignsScanned: 0,

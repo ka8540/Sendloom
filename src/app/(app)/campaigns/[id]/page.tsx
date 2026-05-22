@@ -387,7 +387,7 @@ export default async function CampaignDetailPage({
       senderProfile: true,
       runs: {
         orderBy: { createdAt: "desc" },
-        take: 1,
+        take: 2,
         select: {
           id: true,
           status: true,
@@ -405,7 +405,37 @@ export default async function CampaignDetailPage({
       }
     }
   });
-  const latestRun = campaign.runs[0] ?? null;
+  const latestRun = campaign.runs[0] ?? null; // most-recent run — drives UI state (locks, buttons, auto-refresh)
+
+  // Determine which run to pull metrics from. If the latest run is queued/unstarted
+  // and a previous completed run exists, show that completed run's data instead of zeros.
+  const ACTIVE_STATUSES = new Set(["QUEUED", "RUNNING", "PAUSED"]);
+  const DONE_STATUSES = new Set(["COMPLETED", "FAILED", "CANCELLED"]);
+  const latestActiveRun = campaign.runs.find((r) => ACTIVE_STATUSES.has(r.status)) ?? null;
+  const latestCompletedRun = campaign.runs.find((r) => DONE_STATUSES.has(r.status)) ?? null;
+
+  let displayRun: typeof latestRun | null = latestRun;
+  let isFromPreviousRun = false;
+
+  if (latestActiveRun) {
+    const activeProcessed =
+      (latestActiveRun.sentCount ?? 0) +
+      (latestActiveRun.openedCount ?? 0) +
+      (latestActiveRun.clickedCount ?? 0) +
+      (latestActiveRun.failedCount ?? 0) +
+      (latestActiveRun.suppressedCount ?? 0) +
+      (latestActiveRun.invalidCount ?? 0);
+
+    if (activeProcessed === 0 && latestCompletedRun) {
+      displayRun = latestCompletedRun;
+      isFromPreviousRun = true;
+    } else {
+      displayRun = latestActiveRun;
+    }
+  } else {
+    displayRun = latestCompletedRun;
+  }
+
   if (latestRun && campaign.senderProfile.oauthRefreshToken) {
     try {
       await syncRepliesForSenderProfile(campaign.senderProfileId, {
@@ -457,17 +487,17 @@ export default async function CampaignDetailPage({
         oauthRefreshToken: true
       }
     }),
-    latestRun
+    displayRun
       ? prisma.recipientJob.count({
           where: {
-            campaignRunId: latestRun.id
+            campaignRunId: displayRun.id
           }
         })
       : Promise.resolve(0),
-    latestRun
+    displayRun
       ? prisma.recipientJob.aggregate({
           where: {
-            campaignRunId: latestRun.id
+            campaignRunId: displayRun.id
           },
           _sum: {
             replyCount: true
@@ -478,11 +508,11 @@ export default async function CampaignDetailPage({
             replyCount: 0
           }
         }),
-    latestRun
+    displayRun
       ? prisma.recipientJob.groupBy({
           by: ["status"],
           where: {
-            campaignRunId: latestRun.id
+            campaignRunId: displayRun.id
           },
           _count: true
         })
@@ -499,10 +529,10 @@ export default async function CampaignDetailPage({
   const attachments = ((campaign.templateSnapshot as CampaignTemplateSnapshot).attachments ?? []).filter(
     (attachment) => attachment.fileName
   );
-  const issueCount = (latestRun?.failedCount ?? 0) + (latestRun?.invalidCount ?? 0);
+  const issueCount = (displayRun?.failedCount ?? 0) + (displayRun?.invalidCount ?? 0);
   const recipientStatusCountMap = new Map(recipientStatusCounts.map((entry) => [entry.status, entry._count]));
   const replyCount = replyCountAggregate._sum.replyCount ?? 0;
-  const deliveredCount = getDeliveredCount(latestRun);
+  const deliveredCount = getDeliveredCount(displayRun);
   const launchButtonLabel = isActiveRun
     ? "Run is processing"
     : isPausedRun
@@ -525,10 +555,10 @@ export default async function CampaignDetailPage({
   const recipientPage = Number.isFinite(requestedRecipientPage)
     ? Math.min(Math.max(requestedRecipientPage, 1), totalRecipientPages)
     : 1;
-  const paginatedRecipientJobs = latestRun
+  const paginatedRecipientJobs = displayRun
     ? await prisma.recipientJob.findMany({
         where: {
-          campaignRunId: latestRun.id
+          campaignRunId: displayRun.id
         },
         orderBy: { updatedAt: "desc" },
         skip: (recipientPage - 1) * RECIPIENTS_PAGE_SIZE,
@@ -537,7 +567,8 @@ export default async function CampaignDetailPage({
     : [];
   const canEditSchedule = canEditCampaignSchedule({
     campaignStatus: campaign.status,
-    latestRunRecipientJobCount: recipientJobCount,
+    // When showing a previous run's metrics, the actual latest (QUEUED) run has 0 jobs.
+    latestRunRecipientJobCount: isFromPreviousRun ? 0 : recipientJobCount,
     latestRunScheduledFor: latestRun?.scheduledFor ?? null,
     latestRunStartedAt: latestRun?.startedAt ?? null,
     latestRunStatus: latestRun?.status ?? null
@@ -742,8 +773,8 @@ export default async function CampaignDetailPage({
             <Users aria-hidden="true" />
           </div>
           <span className={styles.metricLabel}>Audience size</span>
-          <strong className={styles.metricValue}>{latestRun?.totalRecipients ?? campaign.import.rowCount ?? 0}</strong>
-          <span className={styles.metricMeta}>People queued for this run.</span>
+          <strong className={styles.metricValue}>{displayRun?.totalRecipients ?? campaign.import.rowCount ?? 0}</strong>
+          <span className={styles.metricMeta}>{isFromPreviousRun ? "Last run" : "This run"}</span>
         </article>
         <article className={styles.metricCard}>
           <div className={styles.metricIcon}>
@@ -751,7 +782,7 @@ export default async function CampaignDetailPage({
           </div>
           <span className={styles.metricLabel}>Delivered</span>
           <strong className={styles.metricValue}>{deliveredCount}</strong>
-          <span className={styles.metricMeta}>Messages that successfully reached recipients.</span>
+          <span className={styles.metricMeta}>{isFromPreviousRun ? "Last run" : "Sent + opened + clicked"}</span>
         </article>
         <article className={styles.metricCard}>
           <div className={styles.metricIcon}>
@@ -759,7 +790,7 @@ export default async function CampaignDetailPage({
           </div>
           <span className={styles.metricLabel}>Replies</span>
           <strong className={styles.metricValue}>{replyCount}</strong>
-          <span className={styles.metricMeta}>Replies matched back to emails sent from this run.</span>
+          <span className={styles.metricMeta}>{isFromPreviousRun ? "Last run" : "This run"}</span>
         </article>
         <article className={styles.metricCard}>
           <div className={styles.metricIcon}>
@@ -767,7 +798,7 @@ export default async function CampaignDetailPage({
           </div>
           <span className={styles.metricLabel}>Needs attention</span>
           <strong className={styles.metricValue}>{issueCount}</strong>
-          <span className={styles.metricMeta}>Failures and invalid records that still need review.</span>
+          <span className={styles.metricMeta}>Failed &amp; invalid</span>
         </article>
       </section>
       {validationChecks.length ? (
@@ -826,7 +857,7 @@ export default async function CampaignDetailPage({
           <div className={styles.panelHeader}>
             <div>
               <h2>Recent recipient activity</h2>
-              <p>The newest recipient updates from the latest run.</p>
+              {isFromPreviousRun ? <p className={styles.panelNote}>Last completed run</p> : null}
             </div>
           </div>
 
@@ -931,7 +962,11 @@ export default async function CampaignDetailPage({
               ) : null}
             </div>
           ) : (
-            <div className={styles.emptyState}>Launch the sequence to start seeing recipient activity here.</div>
+            <div className={styles.emptyState}>
+              {isFromPreviousRun
+                ? "No recipient activity recorded for this run yet."
+                : "Launch the sequence to start seeing recipient activity here."}
+            </div>
           )}
         </article>
       </section>

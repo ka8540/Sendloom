@@ -30,6 +30,8 @@ export type SequenceRowData = {
   isValidated: boolean;
   needsAttention: boolean;
   canRelaunch: boolean;
+  isActiveRun: boolean;
+  isPausedRun: boolean;
 };
 
 export type ActivityItem = {

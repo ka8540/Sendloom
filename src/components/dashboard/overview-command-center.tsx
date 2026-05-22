@@ -24,6 +24,7 @@ import { processPendingCampaignWork } from "@/services/campaigns";
 import styles from "./overview-command-center.module.css";
 
 const ACTIVE_RUN_STATUSES: RunStatus[] = ["QUEUED", "RUNNING"];
+const DONE_RUN_STATUSES = new Set<RunStatus>(["COMPLETED", "FAILED", "CANCELLED"]);
 const FAILURE_RUN_STATUSES: RunStatus[] = ["FAILED"];
 
 function getDeliveredCount(run?: {
@@ -232,7 +233,7 @@ export default async function OverviewCommandCenter() {
           orderBy: {
             createdAt: "desc"
           },
-          take: 1,
+          take: 2,
           select: {
             id: true,
             status: true,
@@ -301,7 +302,36 @@ export default async function OverviewCommandCenter() {
     })
   ]);
 
-  const latestRunIds = recentCampaigns.flatMap((campaign) => (campaign.runs[0] ? [campaign.runs[0].id] : []));
+  // For each campaign, determine which run to display metrics from.
+  // If the latest run is QUEUED/RUNNING with 0 processed and a completed run exists,
+  // use the completed run so recurring sequences show real metrics instead of zeros.
+  const campaignDisplayRunInfo = new Map<
+    string,
+    { displayRun: (typeof recentCampaigns)[0]["runs"][0] | null; isFromPreviousRun: boolean }
+  >();
+  for (const campaign of recentCampaigns) {
+    const activeRun = campaign.runs.find((r) => ACTIVE_RUN_STATUSES.includes(r.status)) ?? null;
+    const completedRun = campaign.runs.find((r) => DONE_RUN_STATUSES.has(r.status)) ?? null;
+    let displayRun: (typeof campaign.runs)[0] | null = null;
+    let isFromPreviousRun = false;
+    if (activeRun) {
+      const activeProcessed = getProcessedCount(activeRun);
+      if (activeProcessed === 0 && completedRun) {
+        displayRun = completedRun;
+        isFromPreviousRun = true;
+      } else {
+        displayRun = activeRun;
+      }
+    } else {
+      displayRun = completedRun;
+    }
+    campaignDisplayRunInfo.set(campaign.id, { displayRun, isFromPreviousRun });
+  }
+
+  const latestRunIds = recentCampaigns.flatMap((campaign) => {
+    const info = campaignDisplayRunInfo.get(campaign.id);
+    return info?.displayRun ? [info.displayRun.id] : [];
+  });
   const latestRunCountRows = latestRunIds.length
     ? await prisma.recipientJob.groupBy({
         by: ["campaignRunId", "status"],
@@ -322,23 +352,29 @@ export default async function OverviewCommandCenter() {
   }
 
   const overviewCampaigns = recentCampaigns.map((campaign) => {
-    const latestRun = campaign.runs[0] ?? null;
-    const latestRunCountsByStatus = latestRun ? latestRunCounts.get(latestRun.id) : null;
-    const latestRunSnapshot = latestRun
+    const actualLatestRun = campaign.runs[0] ?? null;
+    const { displayRun, isFromPreviousRun } = campaignDisplayRunInfo.get(campaign.id) ?? {
+      displayRun: null,
+      isFromPreviousRun: false
+    };
+    const latestRunCountsByStatus = displayRun ? latestRunCounts.get(displayRun.id) : null;
+    const displayRunSnapshot = displayRun
       ? {
-          ...latestRun,
-          sentCount: latestRunCountsByStatus ? (latestRunCountsByStatus.SENT ?? 0) : latestRun.sentCount,
-          openedCount: latestRunCountsByStatus ? (latestRunCountsByStatus.OPENED ?? 0) : latestRun.openedCount,
-          clickedCount: latestRunCountsByStatus ? (latestRunCountsByStatus.CLICKED ?? 0) : latestRun.clickedCount,
-          failedCount: latestRunCountsByStatus ? (latestRunCountsByStatus.FAILED ?? 0) : latestRun.failedCount,
-          suppressedCount: latestRunCountsByStatus ? (latestRunCountsByStatus.SUPPRESSED ?? 0) : latestRun.suppressedCount,
-          invalidCount: latestRunCountsByStatus ? (latestRunCountsByStatus.INVALID ?? 0) : latestRun.invalidCount
+          ...displayRun,
+          sentCount: latestRunCountsByStatus ? (latestRunCountsByStatus.SENT ?? 0) : displayRun.sentCount,
+          openedCount: latestRunCountsByStatus ? (latestRunCountsByStatus.OPENED ?? 0) : displayRun.openedCount,
+          clickedCount: latestRunCountsByStatus ? (latestRunCountsByStatus.CLICKED ?? 0) : displayRun.clickedCount,
+          failedCount: latestRunCountsByStatus ? (latestRunCountsByStatus.FAILED ?? 0) : displayRun.failedCount,
+          suppressedCount: latestRunCountsByStatus ? (latestRunCountsByStatus.SUPPRESSED ?? 0) : displayRun.suppressedCount,
+          invalidCount: latestRunCountsByStatus ? (latestRunCountsByStatus.INVALID ?? 0) : displayRun.invalidCount
         }
       : null;
 
     return {
       ...campaign,
-      latestRun: latestRunSnapshot
+      latestRun: displayRunSnapshot,
+      actualLatestRunStatus: actualLatestRun?.status ?? null,
+      isFromPreviousRun
     };
   });
 
@@ -393,25 +429,26 @@ export default async function OverviewCommandCenter() {
   });
 
   const sequenceRows: SequenceRowData[] = overviewCampaigns.map((campaign) => {
-    const latestRun = campaign.latestRun;
-    const status = deriveSequenceStatus(campaign.status, latestRun?.status);
+    const latestRun = campaign.latestRun; // display run (metrics)
+    const actualRunStatus = campaign.actualLatestRunStatus; // real latest run status (for status badge / actions)
+    const status = deriveSequenceStatus(campaign.status, actualRunStatus);
     const deliveredCount = getDeliveredCount(latestRun);
     const processedCount = getProcessedCount(latestRun);
     const totalRecipients = latestRun?.totalRecipients ?? 0;
     const issueCount = getIssueCount(latestRun);
     const runMetricsKnown = hasKnownRunMetrics(latestRun, processedCount);
-    const isActiveRun = ACTIVE_RUN_STATUSES.includes(latestRun?.status ?? "COMPLETED");
+    const isActiveRun = ACTIVE_RUN_STATUSES.includes(actualRunStatus ?? "COMPLETED");
     const progressPercent =
       totalRecipients > 0
         ? Math.min(100, Math.max(0, Math.round((processedCount / totalRecipients) * 100)))
-        : latestRun?.status === "COMPLETED" || campaign.status === "COMPLETED"
+        : actualRunStatus === "COMPLETED" || campaign.status === "COMPLETED"
           ? 100
           : 0;
     const progressLabel =
       totalRecipients > 0
         ? runMetricsKnown
           ? `${formatCompactNumber(processedCount)} of ${formatCompactNumber(totalRecipients)} recipients processed`
-          : latestRun?.status === "QUEUED"
+          : actualRunStatus === "QUEUED"
             ? `Queued for ${formatCompactNumber(totalRecipients)} recipients`
             : `Sending to ${formatCompactNumber(totalRecipients)} recipients`
         : latestRun
@@ -436,7 +473,12 @@ export default async function OverviewCommandCenter() {
           : `${formatCompactNumber(latestRun.openedCount)} opens · clean delivery`
       : `${campaign.template.name} · ${campaign.senderProfile.fromEmail}`;
     const lastActivityAt = latestRun?.updatedAt ?? campaign.updatedAt;
-    const canRelaunch = Boolean(campaign.lastValidatedAt) && !ACTIVE_RUN_STATUSES.includes(latestRun?.status ?? "COMPLETED");
+    const isPausedRun = actualRunStatus === "PAUSED";
+    // Exclude PAUSED — paused sequences get a Resume button, not Relaunch
+    const canRelaunch =
+      Boolean(campaign.lastValidatedAt) &&
+      !ACTIVE_RUN_STATUSES.includes(actualRunStatus ?? "COMPLETED") &&
+      !isPausedRun;
 
     return {
       id: campaign.id,
@@ -454,7 +496,9 @@ export default async function OverviewCommandCenter() {
       updatedAtValue: lastActivityAt.getTime(),
       isValidated: Boolean(campaign.lastValidatedAt),
       needsAttention: status.tone === "failed",
-      canRelaunch
+      canRelaunch,
+      isActiveRun,
+      isPausedRun
     };
   });
 

@@ -1086,6 +1086,16 @@
   --sequence-action-label-width: 2.7rem;
 }
 
+.sequenceActionButtonPause {
+  --sequence-action-expanded-width: 6.35rem;
+  --sequence-action-label-width: 2.9rem;
+}
+
+.sequenceActionButtonResume {
+  --sequence-action-expanded-width: 7.0rem;
+  --sequence-action-label-width: 3.55rem;
+}
+
 .sequenceActionButtonLaunch {
   --sequence-action-expanded-width: 8.45rem;
   --sequence-action-label-width: 4.9rem;
