@@ -199,6 +199,7 @@ export function CampaignSetupEditor(props: {
   initialFollowUp: InitialFollowUp;
   followUpStats: FollowUpStats;
   followUpEditable: boolean;
+  followUpScheduleEditable: boolean;
 }) {
   const router = useRouter();
   const addAttachmentInputRef = useRef<HTMLInputElement | null>(null);
@@ -362,7 +363,12 @@ export function CampaignSetupEditor(props: {
       timezone: string | null;
     } | null = null;
 
-    if (props.followUpEditable) {
+    if (props.followUpEditable || props.followUpScheduleEditable) {
+      if (props.followUpScheduleEditable && !props.followUpEditable && !followUpDraft.enabled) {
+        setError("Pending follow-up emails can only be rescheduled while follow-ups are enabled.");
+        return;
+      }
+
       if (followUpDraft.enabled) {
         if (!followUpDraft.templateId) {
           setError("Choose a follow-up template.");
@@ -782,21 +788,30 @@ export function CampaignSetupEditor(props: {
           </span>
         </div>
 
-        {editing && !props.followUpEditable ? (
+        {editing && !props.followUpEditable && !props.followUpScheduleEditable ? (
           <p className={styles.followUpLockNote}>
-            Follow-up emails have started sending and can no longer be changed.
+            Follow-up emails have finished sending and can no longer be changed.
           </p>
         ) : null}
 
-        {editing && props.followUpEditable ? (
+        {editing && props.followUpScheduleEditable && !props.followUpEditable ? (
+          <p className={styles.followUpLockNote}>
+            Follow-up emails have started sending. Only the pending follow-up schedule can be changed.
+          </p>
+        ) : null}
+
+        {editing && (props.followUpEditable || props.followUpScheduleEditable) ? (
           <div className={styles.followUpFields}>
             <label className={styles.followUpToggle}>
               <input
                 type="checkbox"
                 className={styles.followUpCheckbox}
                 checked={followUpDraft.enabled}
+                disabled={!props.followUpEditable}
                 onChange={(event) =>
-                  setFollowUpDraft((draft) => ({ ...draft, enabled: event.target.checked }))
+                  props.followUpEditable
+                    ? setFollowUpDraft((draft) => ({ ...draft, enabled: event.target.checked }))
+                    : undefined
                 }
               />
               <span>Add a follow-up email</span>
@@ -809,6 +824,7 @@ export function CampaignSetupEditor(props: {
                   <select
                     className={styles.fieldControl}
                     value={followUpDraft.templateId}
+                    disabled={!props.followUpEditable}
                     onChange={(event) =>
                       setFollowUpDraft((draft) => ({ ...draft, templateId: event.target.value }))
                     }
@@ -857,7 +873,12 @@ export function CampaignSetupEditor(props: {
                         followUpDraft.sendMode === "same_thread" ? ` ${styles.followUpSegmentActive}` : ""
                       }`}
                       aria-pressed={followUpDraft.sendMode === "same_thread"}
-                      onClick={() => setFollowUpDraft((draft) => ({ ...draft, sendMode: "same_thread" }))}
+                      disabled={!props.followUpEditable}
+                      onClick={() =>
+                        props.followUpEditable
+                          ? setFollowUpDraft((draft) => ({ ...draft, sendMode: "same_thread" }))
+                          : undefined
+                      }
                       title="Send as a reply to the original Gmail thread."
                     >
                       Same email thread
@@ -868,7 +889,12 @@ export function CampaignSetupEditor(props: {
                         followUpDraft.sendMode === "new_email" ? ` ${styles.followUpSegmentActive}` : ""
                       }`}
                       aria-pressed={followUpDraft.sendMode === "new_email"}
-                      onClick={() => setFollowUpDraft((draft) => ({ ...draft, sendMode: "new_email" }))}
+                      disabled={!props.followUpEditable}
+                      onClick={() =>
+                        props.followUpEditable
+                          ? setFollowUpDraft((draft) => ({ ...draft, sendMode: "new_email" }))
+                          : undefined
+                      }
                       title="Send as a separate email using the follow-up template subject."
                     >
                       New email

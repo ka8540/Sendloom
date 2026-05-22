@@ -574,8 +574,9 @@ export default async function CampaignDetailPage({
     scheduledAt: campaign.followUpScheduledAt ? campaign.followUpScheduledAt.toISOString() : null,
     timezone: campaign.followUpTimezone ?? ""
   };
-  // Follow-up config can still be changed only before any follow-up has been processed.
-  const followUpEditable = followUpStats.sent + followUpStats.failed + followUpStats.skipped === 0;
+  const followUpHasProcessed = followUpStats.sent + followUpStats.failed + followUpStats.skipped > 0;
+  const followUpEditable = !followUpHasProcessed;
+  const followUpScheduleEditable = followUpHasProcessed && followUpStats.pending > 0 && campaign.followUpEnabled;
 
   const initialSetup = {
     name: campaign.name,
@@ -816,6 +817,7 @@ export default async function CampaignDetailPage({
             initialFollowUp={initialFollowUp}
             followUpStats={followUpStats}
             followUpEditable={followUpEditable}
+            followUpScheduleEditable={followUpScheduleEditable}
           />
         </article>
 

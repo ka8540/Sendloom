@@ -577,6 +577,12 @@ export async function updateCampaignSetup(
       templateId: true,
       senderProfileId: true,
       templateSnapshot: true,
+      followUpEnabled: true,
+      followUpTemplateId: true,
+      followUpSendMode: true,
+      followUpScheduledAt: true,
+      followUpTimezone: true,
+      followUpTemplateSnapshot: true,
       runs: {
         where: {
           status: {
@@ -665,17 +671,56 @@ export async function updateCampaignSetup(
 
   let followUpData: FollowUpCampaignData | null = null;
   if (input.followUp) {
-    // Don't let config change once any recipient's follow-up has actually been processed.
-    const processedFollowUps = await prisma.recipientJob.count({
-      where: {
-        campaignRun: { campaignId: campaign.id },
-        followUpStatus: { in: ["SENT", "FAILED", "SKIPPED"] }
-      }
-    });
+    const [processedFollowUps, pendingFollowUps] = await Promise.all([
+      prisma.recipientJob.count({
+        where: {
+          campaignRun: { campaignId: campaign.id },
+          followUpStatus: { in: ["SENT", "FAILED", "SKIPPED"] }
+        }
+      }),
+      prisma.recipientJob.count({
+        where: {
+          campaignRun: { campaignId: campaign.id },
+          followUpStatus: "PENDING"
+        }
+      })
+    ]);
+
     if (processedFollowUps > 0) {
-      throw new Error("Follow-up emails have already started sending and can no longer be changed.");
+      const followUpDetailsChanged =
+        input.followUp.enabled !== campaign.followUpEnabled ||
+        (input.followUp.templateId ?? null) !== campaign.followUpTemplateId ||
+        (input.followUp.sendMode ?? null) !== campaign.followUpSendMode;
+
+      if (followUpDetailsChanged) {
+        throw new Error(
+          "Follow-up template, delivery mode, and enablement cannot be changed after sending starts. You can still reschedule pending follow-ups."
+        );
+      }
+
+      if (pendingFollowUps === 0) {
+        throw new Error("No pending follow-up emails remain to reschedule.");
+      }
+
+      const validation = validateFollowUpConfig(input.followUp);
+      if (!validation.ok) {
+        throw new Error(validation.error);
+      }
+
+      followUpData = {
+        followUpEnabled: campaign.followUpEnabled,
+        followUpTemplateId: campaign.followUpTemplateId,
+        followUpSendMode: campaign.followUpSendMode,
+        followUpScheduledAt: new Date(input.followUp.scheduledAt ?? ""),
+        followUpTimezone: input.followUp.timezone ?? campaign.followUpTimezone,
+        followUpTemplateSnapshot:
+          campaign.followUpTemplateSnapshot === null
+            ? Prisma.JsonNull
+            : (campaign.followUpTemplateSnapshot as Prisma.InputJsonValue)
+      };
+    } else {
+      followUpData = await buildFollowUpCampaignData(input.followUp, userId ?? "");
     }
-    followUpData = await buildFollowUpCampaignData(input.followUp, userId ?? "");
   }
 
   const updatedCampaign = await prisma.campaign.update({
