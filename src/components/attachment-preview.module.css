@@ -1,152 +1,163 @@
-.root {
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
   display: grid;
-  gap: 0.9rem;
-}
-
-.tabRow {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.65rem;
-}
-
-.tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.55rem;
-  max-width: 100%;
-  padding: 0.78rem 0.9rem;
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  background: var(--surface-muted);
-  color: var(--text);
-  cursor: pointer;
-  font-weight: 700;
-  transition: transform 140ms ease, border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
-}
-
-.tab span {
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-
-.tab:hover,
-.tab:focus-visible {
-  outline: none;
-  transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--accent) 28%, transparent);
-}
-
-.tab:active {
-  transform: translateY(1px) scale(0.985);
-}
-
-.tabActive {
-  background: var(--accent-soft);
-  border-color: color-mix(in srgb, var(--accent) 34%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent);
-}
-
-.tab svg,
-.previewFallback svg {
-  width: 1rem;
-  height: 1rem;
-  flex-shrink: 0;
-}
-
-.previewCard {
-  display: grid;
-  gap: 0.95rem;
+  place-items: center;
   padding: 1rem;
+  background: color-mix(in srgb, var(--background) 74%, transparent);
+  backdrop-filter: blur(12px);
+}
+
+.modal {
+  width: min(48rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   border-radius: 20px;
   border: 1px solid var(--line);
-  background: var(--surface-muted);
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 8%, transparent), transparent 36%),
+    color-mix(in srgb, var(--surface) 94%, var(--surface-strong) 6%);
+  box-shadow: var(--shadow);
+  overflow: hidden;
 }
 
-.previewHeader {
+.modalHeader {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 0.9rem;
+  gap: 1rem;
+  padding: 0.95rem 1.1rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
 }
 
-.previewMeta {
+.modalMeta {
   display: grid;
-  gap: 0.2rem;
+  gap: 0.16rem;
   min-width: 0;
 }
 
-.previewMeta strong,
-.previewMeta span {
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-
-.previewMeta span {
-  color: var(--muted);
-}
-
-.previewActions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.7rem;
-}
-
-.previewViewport {
-  min-height: 340px;
+.modalMeta strong {
+  font-size: 0.98rem;
+  letter-spacing: -0.025em;
+  white-space: nowrap;
   overflow: hidden;
-  border-radius: 18px;
+  text-overflow: ellipsis;
+}
+
+.modalMeta span {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.modalClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 2.35rem;
+  height: 2.35rem;
+  padding: 0;
+  border-radius: 999px;
   border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-strong) 78%, transparent);
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    transform 140ms ease,
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease;
+}
+
+.modalClose svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.modalClose:hover,
+.modalClose:focus-visible {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--line));
+  background: color-mix(in srgb, var(--accent-soft) 46%, var(--surface-strong));
+  color: var(--text);
+  outline: none;
+}
+
+.modalClose:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  outline-offset: 2px;
+}
+
+.viewport {
+  overflow: auto;
+  min-height: 0;
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--surface-strong) 92%, transparent), var(--surface)),
-    radial-gradient(circle at top right, color-mix(in srgb, var(--accent) 8%, transparent), transparent 30%);
+    radial-gradient(circle at top right, color-mix(in srgb, var(--accent) 8%, transparent), transparent 32%);
 }
 
-.previewViewport iframe {
+.viewport iframe {
+  display: block;
   width: 100%;
-  min-height: 340px;
+  height: min(68vh, 620px);
   border: 0;
   background: white;
 }
 
-.previewViewportImage {
+.viewportImage {
   display: grid;
   place-items: center;
-  padding: 1rem;
+  padding: 1.25rem;
 }
 
-.previewViewportImage img {
+.viewportImage img {
   max-width: 100%;
-  max-height: 420px;
-  border-radius: 14px;
+  max-height: min(66vh, 560px);
+  border-radius: 12px;
   object-fit: contain;
-  box-shadow: 0 18px 36px rgba(20, 32, 51, 0.16);
+  box-shadow: 0 18px 36px rgba(20, 32, 51, 0.18);
 }
 
-.previewFallback {
+.fallback {
   display: grid;
-  gap: 0.5rem;
-  justify-items: start;
-  padding: 1.15rem;
-  border-radius: 18px;
-  border: 1px dashed color-mix(in srgb, var(--accent) 22%, var(--line));
-  background: var(--surface);
+  gap: 0.4rem;
+  justify-items: center;
+  text-align: center;
+  padding: 3rem 1.5rem;
 }
 
-.previewFallback span {
+.fallback svg {
+  width: 1.7rem;
+  height: 1.7rem;
   color: var(--muted);
-  line-height: 1.6;
 }
 
-@media (max-width: 760px) {
-  .previewHeader {
+.fallback span {
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
+.modalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  padding: 0.8rem 1.1rem;
+  border-top: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
+}
+
+@media (max-width: 560px) {
+  .modalActions {
     display: grid;
   }
 
-  .previewActions {
-    display: grid;
-  }
-
-  .previewActions :global(.button) {
+  .modalActions :global(.button) {
     width: 100%;
+  }
+
+  .viewport iframe {
+    height: min(60vh, 460px);
   }
 }

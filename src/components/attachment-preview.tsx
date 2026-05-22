@@ -1,12 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Download, ExternalLink, Eye, FileText, Image as ImageIcon } from "lucide-react";
+import { useEffect } from "react";
+import { Download, ExternalLink, FileText, X } from "lucide-react";
 
 import type { AttachmentPreviewKind } from "@/lib/attachments";
 import styles from "./attachment-preview.module.css";
 
-type AttachmentPreviewItem = {
+export type AttachmentPreviewItem = {
   contentType?: string | null;
   downloadUrl: string;
   fileName: string;
@@ -27,83 +27,97 @@ function getPreviewLabel(item: AttachmentPreviewItem) {
     return "Text preview";
   }
 
-  return item.contentType ? item.contentType : "Preview not available in browser";
+  return item.contentType ?? "Preview not available in browser";
 }
 
-export function AttachmentPreview({ attachments }: { attachments: AttachmentPreviewItem[] }) {
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const selectedAttachment = attachments[selectedIndex] ?? attachments[0];
-
-  const previewSurface = useMemo(() => {
-    if (!selectedAttachment) {
-      return null;
+export function AttachmentPreviewModal({
+  attachment,
+  onClose
+}: {
+  attachment: AttachmentPreviewItem | null;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    if (!attachment) {
+      return;
     }
 
-    if (selectedAttachment.previewKind === "image") {
-      return (
-        <div className={`${styles.previewViewport} ${styles.previewViewportImage}`}>
-          <img src={selectedAttachment.previewUrl} alt={selectedAttachment.fileName} />
-        </div>
-      );
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        onClose();
+      }
     }
 
-    if (selectedAttachment.previewKind === "pdf" || selectedAttachment.previewKind === "text") {
-      return (
-        <div className={styles.previewViewport}>
-          <iframe key={selectedAttachment.previewUrl} src={selectedAttachment.previewUrl} title={selectedAttachment.fileName} />
-        </div>
-      );
-    }
+    window.addEventListener("keydown", onKeyDown);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
 
-    return (
-      <div className={styles.previewFallback}>
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [attachment, onClose]);
+
+  if (!attachment) {
+    return null;
+  }
+
+  let surface;
+  if (attachment.previewKind === "image") {
+    surface = (
+      <div className={`${styles.viewport} ${styles.viewportImage}`}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={attachment.previewUrl} alt={attachment.fileName} />
+      </div>
+    );
+  } else if (attachment.previewKind === "pdf" || attachment.previewKind === "text") {
+    surface = (
+      <div className={styles.viewport}>
+        <iframe key={attachment.previewUrl} src={attachment.previewUrl} title={`Preview of ${attachment.fileName}`} />
+      </div>
+    );
+  } else {
+    surface = (
+      <div className={styles.fallback}>
         <FileText aria-hidden="true" />
         <strong>Browser preview isn’t available for this file type.</strong>
         <span>Open or download the attachment to inspect it directly.</span>
       </div>
     );
-  }, [selectedAttachment]);
-
-  if (!selectedAttachment) {
-    return null;
   }
 
   return (
-    <div className={styles.root}>
-      <div className={styles.tabRow}>
-        {attachments.map((attachment, index) => (
-          <button
-            key={`${attachment.fileName}-${index}`}
-            className={`${styles.tab}${selectedIndex === index ? ` ${styles.tabActive}` : ""}`}
-            type="button"
-            onClick={() => setSelectedIndex(index)}
-          >
-            {attachment.previewKind === "image" ? <ImageIcon aria-hidden="true" /> : <Eye aria-hidden="true" />}
-            <span>{attachment.fileName}</span>
+    <div className={styles.backdrop} role="presentation" onMouseDown={onClose}>
+      <div
+        className={styles.modal}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Preview ${attachment.fileName}`}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className={styles.modalHeader}>
+          <div className={styles.modalMeta}>
+            <strong title={attachment.fileName}>{attachment.fileName}</strong>
+            <span>{getPreviewLabel(attachment)}</span>
+          </div>
+          <button type="button" className={styles.modalClose} onClick={onClose} aria-label="Close preview">
+            <X aria-hidden="true" />
           </button>
-        ))}
-      </div>
-
-      <section className={styles.previewCard}>
-        <div className={styles.previewHeader}>
-          <div className={styles.previewMeta}>
-            <strong>{selectedAttachment.fileName}</strong>
-            <span>{getPreviewLabel(selectedAttachment)}</span>
-          </div>
-          <div className={styles.previewActions}>
-            <a className="button secondary" href={selectedAttachment.previewUrl} target="_blank" rel="noreferrer">
-              <ExternalLink aria-hidden="true" />
-              Open
-            </a>
-            <a className="button secondary" href={selectedAttachment.downloadUrl}>
-              <Download aria-hidden="true" />
-              Download
-            </a>
-          </div>
         </div>
 
-        {previewSurface}
-      </section>
+        {surface}
+
+        <div className={styles.modalActions}>
+          <a className="button secondary" href={attachment.previewUrl} target="_blank" rel="noreferrer">
+            <ExternalLink aria-hidden="true" />
+            Open
+          </a>
+          <a className="button secondary" href={attachment.downloadUrl}>
+            <Download aria-hidden="true" />
+            Download
+          </a>
+        </div>
+      </div>
     </div>
   );
 }

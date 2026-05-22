@@ -1,10 +1,25 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { FilePlus2, Loader2, Lock, PencilLine, Save, Trash2, Upload, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import {
+  Download,
+  Eye,
+  File as FileIcon,
+  FilePlus2,
+  FileText,
+  Image as ImageIcon,
+  Info,
+  Loader2,
+  Lock,
+  PencilLine,
+  Save,
+  Trash2,
+  Upload,
+  X
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 
-import { AttachmentPreview } from "@/components/attachment-preview";
+import { AttachmentPreviewModal, type AttachmentPreviewItem } from "@/components/attachment-preview";
 import { useErrorToastEffect } from "@/components/error-toast-provider";
 import { getAttachmentPreviewKind, type AttachmentPreviewKind } from "@/lib/attachments";
 import styles from "./campaign-setup-editor.module.css";
@@ -70,6 +85,42 @@ function getOptionLabel(options: SetupOption[], id: string) {
   return options.find((option) => option.id === id)?.label ?? "Not available";
 }
 
+function getFileTypeLabel(fileName: string) {
+  const lastDot = fileName.lastIndexOf(".");
+  if (lastDot === -1 || lastDot === fileName.length - 1) {
+    return "File";
+  }
+  return fileName.slice(lastDot + 1).toUpperCase();
+}
+
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  if (bytes < 1024 * 1024) {
+    return `${Math.round(bytes / 1024)} KB`;
+  }
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function getFileIcon(kind: AttachmentPreviewKind) {
+  if (kind === "image") {
+    return ImageIcon;
+  }
+  if (kind === "pdf" || kind === "text") {
+    return FileText;
+  }
+  return FileIcon;
+}
+
+function InfoTip({ label }: { label: string }) {
+  return (
+    <button type="button" className={styles.infoTip} aria-label={label} title={label}>
+      <Info aria-hidden="true" />
+    </button>
+  );
+}
+
 export function CampaignSetupEditor(props: {
   campaignId: string;
   currentSenderNeedsReconnect: boolean;
@@ -90,6 +141,7 @@ export function CampaignSetupEditor(props: {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [previewId, setPreviewId] = useState<string | null>(null);
   useErrorToastEffect(error, "Sequence setup failed");
 
   useEffect(() => {
@@ -107,6 +159,7 @@ export function CampaignSetupEditor(props: {
     setPending(false);
     setError(null);
     setSuccess(null);
+    setPreviewId(null);
   }, [props.initialSetup]);
 
   useEffect(() => {
@@ -276,24 +329,27 @@ export function CampaignSetupEditor(props: {
   const currentTemplateDescription = props.templateOptions.find((option) => option.id === draftSetup.templateId)?.description;
   const currentSenderDescription = props.senderOptions.find((option) => option.id === draftSetup.senderProfileId)?.description;
 
-  const previewItems = useMemo(
-    () =>
-      draftSetup.attachments.map((attachment) => ({
-        contentType: attachment.contentType ?? null,
-        downloadUrl: attachment.downloadUrl,
-        fileName: attachment.fileName,
-        previewKind: attachment.previewKind,
-        previewUrl: attachment.previewUrl
-      })),
-    [draftSetup.attachments]
-  );
+  const previewAttachment = previewId
+    ? draftSetup.attachments.find((attachment) => attachment.id === previewId) ?? null
+    : null;
+  const previewItem: AttachmentPreviewItem | null = previewAttachment
+    ? {
+        contentType: previewAttachment.contentType ?? null,
+        downloadUrl: previewAttachment.downloadUrl,
+        fileName: previewAttachment.fileName,
+        previewKind: previewAttachment.previewKind,
+        previewUrl: previewAttachment.previewUrl
+      }
+    : null;
+
+  const attachmentCount = draftSetup.attachments.length;
 
   return (
     <div className={styles.root}>
       <div className={styles.header}>
         <div>
           <h2>Sequence setup</h2>
-          <p>Update the next launch configuration without leaving this page.</p>
+          <p>Review and update launch configuration.</p>
         </div>
         <div className={styles.headerActions}>
           {editing ? (
@@ -320,19 +376,19 @@ export function CampaignSetupEditor(props: {
               </button>
             </>
           ) : (
-              <button
-                type="button"
-                className={`field-icon-button ${styles.headerIconAction}`}
-                data-tooltip={props.isLocked ? "Editing locked while run is active" : "Edit setup"}
-                aria-label={props.isLocked ? "Editing locked while run is active" : "Edit setup"}
-                onClick={() => {
-                  setSuccess(null);
-                  setEditing(true);
-                }}
-                disabled={props.isLocked}
-              >
-                <PencilLine aria-hidden="true" />
-              </button>
+            <button
+              type="button"
+              className={`field-icon-button ${styles.headerIconAction}`}
+              data-tooltip={props.isLocked ? "Editing locked while run is active" : "Edit setup"}
+              aria-label={props.isLocked ? "Editing locked while run is active" : "Edit setup"}
+              onClick={() => {
+                setSuccess(null);
+                setEditing(true);
+              }}
+              disabled={props.isLocked}
+            >
+              <PencilLine aria-hidden="true" />
+            </button>
           )}
         </div>
       </div>
@@ -340,14 +396,16 @@ export function CampaignSetupEditor(props: {
       {props.isLocked ? (
         <div className={styles.noticeLocked}>
           <Lock aria-hidden="true" />
-          <span>Sequence setup is locked while the current run is processing.</span>
+          <span>Setup is locked while the current run is processing.</span>
         </div>
       ) : null}
       {success ? <div className={styles.noticeSuccess}>{success}</div> : null}
 
-      <div className={styles.grid}>
-        <label className={styles.fieldCard}>
-          <span className={styles.fieldLabel}>Sequence name</span>
+      <div className={styles.configList}>
+        <label className={styles.configRow}>
+          <span className={styles.configLabelRow}>
+            <span className={styles.configLabel}>Sequence name</span>
+          </span>
           {editing ? (
             <input
               className={styles.fieldControl}
@@ -356,12 +414,14 @@ export function CampaignSetupEditor(props: {
               placeholder="Name this sequence"
             />
           ) : (
-            <strong className={styles.fieldValue}>{savedSetup.name}</strong>
+            <span className={styles.configValue}>{savedSetup.name}</span>
           )}
         </label>
 
-        <label className={styles.fieldCard}>
-          <span className={styles.fieldLabel}>Contact list</span>
+        <label className={styles.configRow}>
+          <span className={styles.configLabelRow}>
+            <span className={styles.configLabel}>Contact list</span>
+          </span>
           {editing ? (
             <select
               className={styles.fieldControl}
@@ -377,14 +437,16 @@ export function CampaignSetupEditor(props: {
             </select>
           ) : (
             <>
-              <strong className={styles.fieldValue}>{getOptionLabel(props.importOptions, savedSetup.importId)}</strong>
-              {currentImportDescription ? <span className={styles.fieldHint}>{currentImportDescription}</span> : null}
+              <span className={styles.configValue}>{getOptionLabel(props.importOptions, savedSetup.importId)}</span>
+              {currentImportDescription ? <span className={styles.configMeta}>{currentImportDescription}</span> : null}
             </>
           )}
         </label>
 
-        <label className={styles.fieldCard}>
-          <span className={styles.fieldLabel}>Email template</span>
+        <label className={styles.configRow}>
+          <span className={styles.configLabelRow}>
+            <span className={styles.configLabel}>Email template</span>
+          </span>
           {editing ? (
             <select
               className={styles.fieldControl}
@@ -400,14 +462,16 @@ export function CampaignSetupEditor(props: {
             </select>
           ) : (
             <>
-              <strong className={styles.fieldValue}>{getOptionLabel(props.templateOptions, savedSetup.templateId)}</strong>
-              {currentTemplateDescription ? <span className={styles.fieldHint}>{currentTemplateDescription}</span> : null}
+              <span className={styles.configValue}>{getOptionLabel(props.templateOptions, savedSetup.templateId)}</span>
+              {currentTemplateDescription ? <span className={styles.configMeta}>{currentTemplateDescription}</span> : null}
             </>
           )}
         </label>
 
-        <label className={styles.fieldCard}>
-          <span className={styles.fieldLabel}>Sender</span>
+        <label className={styles.configRow}>
+          <span className={styles.configLabelRow}>
+            <span className={styles.configLabel}>Sender</span>
+          </span>
           {editing ? (
             <select
               className={styles.fieldControl}
@@ -423,8 +487,8 @@ export function CampaignSetupEditor(props: {
             </select>
           ) : (
             <>
-              <strong className={styles.fieldValue}>{getOptionLabel(props.senderOptions, savedSetup.senderProfileId)}</strong>
-              {currentSenderDescription ? <span className={styles.fieldHint}>{currentSenderDescription}</span> : null}
+              <span className={styles.configValue}>{getOptionLabel(props.senderOptions, savedSetup.senderProfileId)}</span>
+              {currentSenderDescription ? <span className={styles.configMeta}>{currentSenderDescription}</span> : null}
               {props.currentSenderNeedsReconnect ? (
                 <span className={styles.warningText}>Reconnect required before the next send.</span>
               ) : null}
@@ -432,21 +496,23 @@ export function CampaignSetupEditor(props: {
           )}
         </label>
 
-        <div className={styles.fieldCard}>
-          <span className={styles.fieldLabel}>Send timing</span>
-          <strong className={styles.fieldValue}>{props.scheduleLabel}</strong>
-          <span className={styles.fieldHint}>Timing stays unchanged here so you can adjust delivery safely later.</span>
+        <div className={styles.configRow}>
+          <span className={styles.configLabelRow}>
+            <span className={styles.configLabel}>Send timing</span>
+            <InfoTip label="Editing setup does not change delivery timing unless you update this field." />
+          </span>
+          <span className={styles.configValue}>{props.scheduleLabel}</span>
         </div>
       </div>
 
       <div className={styles.attachmentSection}>
         <div className={styles.attachmentHeader}>
-          <div>
+          <div className={styles.attachmentTitleRow}>
             <h3>Attachments</h3>
-            <p>Add, replace, or remove the files included with the next launch.</p>
+            <InfoTip label="Files are included with the next launch." />
           </div>
           {editing ? (
-            <div className={styles.attachmentToolbar}>
+            <>
               <input
                 ref={addAttachmentInputRef}
                 className={styles.hiddenInput}
@@ -461,73 +527,115 @@ export function CampaignSetupEditor(props: {
               />
               <button
                 type="button"
-                className="button secondary"
+                className={styles.addButton}
                 onClick={() => addAttachmentInputRef.current?.click()}
               >
                 <FilePlus2 aria-hidden="true" />
                 Add attachment
               </button>
-            </div>
+            </>
           ) : (
             <span className={styles.attachmentCount}>
-              {savedSetup.attachments.length ? `${savedSetup.attachments.length} file${savedSetup.attachments.length > 1 ? "s" : ""}` : "No files"}
+              {attachmentCount ? `${attachmentCount} file${attachmentCount > 1 ? "s" : ""}` : "No files"}
             </span>
           )}
         </div>
 
-        {draftSetup.attachments.length ? (
+        {attachmentCount ? (
           <div className={styles.attachmentList}>
-            {draftSetup.attachments.map((attachment) => (
-              <div key={attachment.id} className={styles.attachmentRow}>
-                <div className={styles.attachmentMeta}>
-                  <strong>{attachment.fileName}</strong>
-                  <span>
-                    {"file" in attachment ? "Ready to upload on save" : "Currently attached"}
+            {draftSetup.attachments.map((attachment) => {
+              const Icon = getFileIcon(attachment.previewKind);
+              const isUpload = "file" in attachment;
+              const typeLabel = getFileTypeLabel(attachment.fileName);
+              return (
+                <div key={attachment.id} className={styles.attachmentRow}>
+                  <span className={styles.fileIconTile}>
+                    <Icon aria-hidden="true" />
                   </span>
-                </div>
-                {editing ? (
-                  <div className={styles.attachmentRowActions}>
-                    <input
-                      ref={(node) => {
-                        replaceAttachmentInputRefs.current[attachment.id] = node;
-                      }}
-                      className={styles.hiddenInput}
-                      type="file"
-                      onChange={(event) => {
-                        const file = event.target.files?.[0];
-                        if (file) {
-                          replaceAttachment(attachment.id, file);
-                        }
-                        event.currentTarget.value = "";
-                      }}
-                    />
-                    <button
-                      type="button"
-                      className="field-icon-button"
-                      data-tooltip="Replace file"
-                      onClick={() => replaceAttachmentInputRefs.current[attachment.id]?.click()}
-                    >
-                      <Upload aria-hidden="true" />
-                    </button>
-                    <button
-                      type="button"
-                      className="field-icon-button field-icon-button--danger"
-                      data-tooltip="Remove file"
-                      onClick={() => removeAttachment(attachment.id)}
-                    >
-                      <Trash2 aria-hidden="true" />
-                    </button>
+                  <div className={styles.attachmentInfo}>
+                    <span className={styles.attachmentName} title={attachment.fileName}>
+                      {attachment.fileName}
+                    </span>
+                    <span className={styles.attachmentSub}>
+                      {typeLabel}
+                      {isUpload ? ` · ${formatFileSize(attachment.file.size)}` : ""}
+                      {" · "}
+                      {isUpload ? (
+                        <span className={styles.attachmentSubPending}>Pending save</span>
+                      ) : (
+                        "Attached"
+                      )}
+                    </span>
                   </div>
-                ) : null}
-              </div>
-            ))}
+                  <div className={styles.attachmentActions}>
+                    <button
+                      type="button"
+                      className={styles.rowAction}
+                      aria-label={`Preview ${attachment.fileName}`}
+                      title="Preview"
+                      onClick={() => setPreviewId(attachment.id)}
+                    >
+                      <Eye aria-hidden="true" />
+                    </button>
+                    {editing ? (
+                      <>
+                        <input
+                          ref={(node) => {
+                            replaceAttachmentInputRefs.current[attachment.id] = node;
+                          }}
+                          className={styles.hiddenInput}
+                          type="file"
+                          onChange={(event) => {
+                            const file = event.target.files?.[0];
+                            if (file) {
+                              replaceAttachment(attachment.id, file);
+                            }
+                            event.currentTarget.value = "";
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className={styles.rowAction}
+                          aria-label={`Replace ${attachment.fileName}`}
+                          title="Replace"
+                          onClick={() => replaceAttachmentInputRefs.current[attachment.id]?.click()}
+                        >
+                          <Upload aria-hidden="true" />
+                        </button>
+                        <button
+                          type="button"
+                          className={`${styles.rowAction} ${styles.rowActionDanger}`}
+                          aria-label={`Remove ${attachment.fileName}`}
+                          title="Remove"
+                          onClick={() => removeAttachment(attachment.id)}
+                        >
+                          <Trash2 aria-hidden="true" />
+                        </button>
+                      </>
+                    ) : (
+                      <a
+                        className={styles.rowAction}
+                        href={attachment.downloadUrl}
+                        aria-label={`Download ${attachment.fileName}`}
+                        title="Download"
+                      >
+                        <Download aria-hidden="true" />
+                      </a>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         ) : (
-          <div className={styles.emptyAttachments}>No files are attached yet. Add a resume or supporting file before the next launch.</div>
+          <div className={styles.attachmentEmpty}>
+            <strong>No attachments added</strong>
+            <span>Attach a resume, PDF, DOCX, or supporting file for this sequence.</span>
+          </div>
         )}
-
-        {previewItems.length ? <AttachmentPreview attachments={previewItems} /> : null}
       </div>
+
+      <AttachmentPreviewModal attachment={previewItem} onClose={() => setPreviewId(null)} />
     </div>
   );
 }
