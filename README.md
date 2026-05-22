@@ -666,6 +666,10 @@ npm run dev
 
 The Node version is pinned in `.nvmrc` (`20`).
 
+### Vercel deployments
+
+Vercel uses `npm run build:vercel`, which runs `prisma migrate deploy` before the Next.js build. Make sure `DATABASE_URL` and, for providers that require a direct connection for migrations, `DATABASE_URL_UNPOOLED` are set for each Vercel environment.
+
 ### Useful extra processes
 
 ```bash
