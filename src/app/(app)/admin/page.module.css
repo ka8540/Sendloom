@@ -772,3 +772,399 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ── Admin Workspace & Tab System ──────────────────────────────────────────── */
+
+.adminWorkspace {
+  display: grid;
+  gap: 0;
+}
+
+/* Tab bar */
+.adminTabBar {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin-bottom: 1.35rem;
+}
+
+.adminTabBar::-webkit-scrollbar {
+  display: none;
+}
+
+.adminTab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.72rem 1.05rem;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 600;
+  white-space: nowrap;
+  margin-bottom: -1px;
+  transition: color 160ms ease, border-color 160ms ease;
+  border-radius: 0;
+}
+
+.adminTab svg {
+  width: 0.95rem;
+  height: 0.95rem;
+  flex-shrink: 0;
+}
+
+.adminTab:hover {
+  color: var(--text);
+}
+
+.adminTabActive {
+  color: var(--accent-strong);
+  border-bottom-color: var(--accent);
+}
+
+.adminTab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: 4px;
+}
+
+/* Tab panel fade-in */
+@keyframes adminTabFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tabPanel {
+  display: grid;
+  gap: 1.35rem;
+  animation: adminTabFadeIn 190ms ease;
+}
+
+/* ── Overview: admin badge + health strip ───────────────────────────────────── */
+
+.overviewStrip {
+  display: grid;
+  grid-template-columns: minmax(0, 0.52fr) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.adminBadgeCard {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.adminBadgeEmail {
+  margin: 0;
+  font-size: 0.96rem;
+  font-weight: 700;
+  word-break: break-all;
+}
+
+.sessionChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.healthStripCard {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.healthStripHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.healthStripTitle {
+  margin: 0.15rem 0 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.healthDots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem 1.1rem;
+}
+
+.healthDot {
+  display: flex;
+  align-items: center;
+  gap: 0.48rem;
+}
+
+.healthDotIndicator {
+  width: 0.52rem;
+  height: 0.52rem;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.healthDotOk {
+  background: var(--success);
+}
+
+.healthDotWarn {
+  background: var(--warning);
+}
+
+.healthDotLabel {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.healthViewLink {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: var(--accent-strong);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: left;
+  width: fit-content;
+}
+
+.healthViewLink:hover,
+.healthViewLink:focus-visible {
+  text-decoration: underline;
+  outline: none;
+}
+
+/* ── System Health Tab ───────────────────────────────────────────────────────── */
+
+.healthTabHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.healthTabHeader h2 {
+  margin: 0.15rem 0 0;
+  font-size: 1.2rem;
+}
+
+.healthGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.healthCheckCard {
+  display: grid;
+  gap: 0.6rem;
+  padding: 1.1rem;
+}
+
+.healthCheckTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.healthCheckIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 9px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  flex-shrink: 0;
+}
+
+.healthCheckIcon svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.healthCheckIconWarn {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.healthCheckWarn {
+  border-color: color-mix(in srgb, var(--warning) 22%, var(--line));
+}
+
+.healthCheckLabel {
+  margin: 0;
+  font-size: 0.98rem;
+  font-weight: 700;
+}
+
+.healthCheckMessage {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+/* ── Restrictions Tab ────────────────────────────────────────────────────────── */
+
+.restrictionsLayout {
+  display: grid;
+  gap: 1rem;
+  align-items: start;
+}
+
+.restrictionsUserPickerCard {
+  display: grid;
+  gap: 0.8rem;
+  padding: 1.1rem;
+}
+
+.restrictionsPickerTitle {
+  margin: 0.15rem 0 0;
+  font-size: 1.1rem;
+}
+
+.restrictionsUserList {
+  display: grid;
+  gap: 0.3rem;
+  max-height: 18rem;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.restrictionsUserItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  padding: 0.52rem 0.72rem;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 600;
+  text-align: left;
+  transition: background 140ms ease, border-color 140ms ease;
+  min-width: 0;
+}
+
+.restrictionsUserItem:hover {
+  background: var(--surface-muted);
+  border-color: var(--line);
+}
+
+.restrictionsUserItem:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.restrictionsUserItemSelected {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--line));
+  color: var(--accent-strong);
+}
+
+.restrictionsUserItemEmail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.restrictionsUserItemPills {
+  display: flex;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.restrictionsPanelCard {
+  display: grid;
+  gap: 1.1rem;
+  padding: 1.25rem;
+  align-content: start;
+}
+
+.restrictionsPanelHeader {
+  display: grid;
+  gap: 0.35rem;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.restrictionsPanelEmail {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.restrictionsBadgeRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.restrictionsEmptyState {
+  margin: 0;
+  padding: 0.75rem 0.25rem;
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+/* ── Responsive: new elements ────────────────────────────────────────────────── */
+
+@media (min-width: 900px) {
+  .restrictionsLayout {
+    grid-template-columns: 22rem minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 1100px) {
+  .overviewStrip {
+    grid-template-columns: 1fr;
+  }
+
+  .healthGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 800px) {
+  .overviewStrip,
+  .healthGrid,
+  .restrictionsLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .adminTab {
+    padding: 0.65rem 0.8rem;
+    font-size: 0.82rem;
+  }
+
+  .healthTabHeader {
+    flex-direction: column;
+    gap: 0.65rem;
+  }
+}
