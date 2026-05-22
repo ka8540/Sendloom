@@ -13,6 +13,7 @@ export function SequenceRowActions({
   campaignName,
   canRelaunch,
   isActiveRun,
+  isPausedRun,
   onRelaunch
 }: {
   href: Route;
@@ -20,10 +21,11 @@ export function SequenceRowActions({
   campaignName: string;
   canRelaunch: boolean;
   isActiveRun: boolean;
+  isPausedRun: boolean;
   onRelaunch: () => void;
 }) {
   const router = useRouter();
-  const [pendingAction, setPendingAction] = useState<"launch" | "pause" | "delete" | null>(null);
+  const [pendingAction, setPendingAction] = useState<"launch" | "pause" | "resume" | "delete" | null>(null);
   const [error, setError] = useState<string | null>(null);
   useErrorToastEffect(error, "Sequence action failed");
 
@@ -80,6 +82,32 @@ export function SequenceRowActions({
     }
   }
 
+  async function handleResume(event: MouseEvent<HTMLButtonElement>) {
+    event.stopPropagation();
+    if (pendingAction) {
+      return;
+    }
+
+    setPendingAction("resume");
+    setError(null);
+
+    try {
+      const response = await fetch(`/api/campaigns/${campaignId}/resume`, { method: "POST" });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        setError(payload.error ?? "Could not resume the sequence.");
+        setPendingAction(null);
+        return;
+      }
+
+      router.refresh();
+      setPendingAction(null);
+    } catch {
+      setError("Could not resume the sequence.");
+      setPendingAction(null);
+    }
+  }
+
   async function handleDelete(event: MouseEvent<HTMLButtonElement>) {
     event.stopPropagation();
     if (pendingAction) {
@@ -123,10 +151,12 @@ export function SequenceRowActions({
         </span>
         <span className={styles.sequenceActionLabel}>View</span>
       </Link>
+
       {isActiveRun ? (
+        /* Active QUEUED / RUNNING → offer Pause */
         <button
           type="button"
-          className={`${styles.sequenceActionButton} ${styles.sequenceActionButtonLaunch}`}
+          className={`${styles.sequenceActionButton} ${styles.sequenceActionButtonPause}`}
           onClick={(event) => void handlePause(event)}
           disabled={Boolean(pendingAction)}
           aria-label={`Pause ${campaignName}`}
@@ -136,7 +166,22 @@ export function SequenceRowActions({
           </span>
           <span className={styles.sequenceActionLabel}>Pause</span>
         </button>
+      ) : isPausedRun ? (
+        /* PAUSED → offer Resume (returns to scheduled/queued state without sending immediately) */
+        <button
+          type="button"
+          className={`${styles.sequenceActionButton} ${styles.sequenceActionButtonResume}`}
+          onClick={(event) => void handleResume(event)}
+          disabled={Boolean(pendingAction)}
+          aria-label={`Resume ${campaignName}`}
+        >
+          <span className={styles.sequenceActionIconWrap}>
+            {pendingAction === "resume" ? <LoaderCircle className={styles.spin} aria-hidden="true" /> : <Play aria-hidden="true" />}
+          </span>
+          <span className={styles.sequenceActionLabel}>Resume</span>
+        </button>
       ) : (
+        /* COMPLETED / ready → offer Relaunch */
         <button
           type="button"
           className={`${styles.sequenceActionButton} ${styles.sequenceActionButtonLaunch}`}
@@ -150,6 +195,7 @@ export function SequenceRowActions({
           <span className={styles.sequenceActionLabel}>{canRelaunch ? "Relaunch" : "—"}</span>
         </button>
       )}
+
       <button
         type="button"
         className={`${styles.sequenceActionButton} ${styles.sequenceActionButtonDelete} ${styles.sequenceActionDanger}`}

@@ -473,7 +473,12 @@ export default async function OverviewCommandCenter() {
           : `${formatCompactNumber(latestRun.openedCount)} opens · clean delivery`
       : `${campaign.template.name} · ${campaign.senderProfile.fromEmail}`;
     const lastActivityAt = latestRun?.updatedAt ?? campaign.updatedAt;
-    const canRelaunch = Boolean(campaign.lastValidatedAt) && !ACTIVE_RUN_STATUSES.includes(actualRunStatus ?? "COMPLETED");
+    const isPausedRun = actualRunStatus === "PAUSED";
+    // Exclude PAUSED — paused sequences get a Resume button, not Relaunch
+    const canRelaunch =
+      Boolean(campaign.lastValidatedAt) &&
+      !ACTIVE_RUN_STATUSES.includes(actualRunStatus ?? "COMPLETED") &&
+      !isPausedRun;
 
     return {
       id: campaign.id,
@@ -492,7 +497,8 @@ export default async function OverviewCommandCenter() {
       isValidated: Boolean(campaign.lastValidatedAt),
       needsAttention: status.tone === "failed",
       canRelaunch,
-      isActiveRun
+      isActiveRun,
+      isPausedRun
     };
   });
 

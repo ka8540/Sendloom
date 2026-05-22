@@ -74,6 +74,7 @@ export function SequenceRow({ sequence, onRelaunch }: { sequence: SequenceRowDat
             campaignName={sequence.name}
             canRelaunch={sequence.canRelaunch}
             isActiveRun={sequence.isActiveRun}
+            isPausedRun={sequence.isPausedRun}
             onRelaunch={onRelaunch}
           />
           <span className={styles.sequenceArrow}>
