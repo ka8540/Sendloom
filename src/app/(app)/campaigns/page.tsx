@@ -190,6 +190,48 @@ function formatDeliveryLabel(scheduleType?: string | null, scheduleConfig?: Sche
 
 const PAGE_SIZE = 10;
 
+const ACTIVE_RUN_STATUSES = new Set(["QUEUED", "RUNNING", "PAUSED"]);
+const COMPLETED_RUN_STATUSES = new Set(["COMPLETED", "FAILED", "CANCELLED"]);
+
+type RunSummary = {
+  id: string;
+  status: string;
+  totalRecipients: number;
+  sentCount: number | null;
+  openedCount: number | null;
+  clickedCount: number | null;
+  failedCount: number | null;
+  suppressedCount: number | null;
+  invalidCount: number | null;
+  updatedAt: Date;
+  scheduledFor: Date | null;
+};
+
+function selectDisplayRun(runs: RunSummary[]): { run: RunSummary | null; isFromPreviousRun: boolean } {
+  const activeRun = runs.find((r) => ACTIVE_RUN_STATUSES.has(r.status)) ?? null;
+  const completedRun = runs.find((r) => COMPLETED_RUN_STATUSES.has(r.status)) ?? null;
+
+  if (!activeRun) {
+    return { run: completedRun, isFromPreviousRun: false };
+  }
+
+  // If the active run has no processed recipients yet and a previous completed run exists,
+  // show the completed run's metrics while indicating the next run is queued/scheduled.
+  const activeProcessed =
+    (activeRun.sentCount ?? 0) +
+    (activeRun.openedCount ?? 0) +
+    (activeRun.clickedCount ?? 0) +
+    (activeRun.failedCount ?? 0) +
+    (activeRun.suppressedCount ?? 0) +
+    (activeRun.invalidCount ?? 0);
+
+  if (activeProcessed === 0 && completedRun) {
+    return { run: completedRun, isFromPreviousRun: true };
+  }
+
+  return { run: activeRun, isFromPreviousRun: false };
+}
+
 export default async function CampaignsPage({
   searchParams
 }: {
@@ -233,7 +275,7 @@ export default async function CampaignsPage({
             fromEmail: true
           }
         },
-        runs: { orderBy: { createdAt: "desc" }, take: 1 }
+        runs: { orderBy: { createdAt: "desc" }, take: 2 }
       }
     })
   ]);
@@ -277,7 +319,17 @@ export default async function CampaignsPage({
 
   const startIndex = (currentPage - 1) * PAGE_SIZE;
   const pagedCampaigns = campaigns.slice(startIndex, startIndex + PAGE_SIZE);
-  const latestRunIds = pagedCampaigns.flatMap((campaign) => (campaign.runs[0] ? [campaign.runs[0].id] : []));
+
+  // Determine which run to show metrics from for each campaign.
+  // If the latest run is queued/unstarted and a previous completed run exists, show that instead.
+  const campaignDisplayRuns = new Map(
+    pagedCampaigns.map((campaign) => [campaign.id, selectDisplayRun(campaign.runs as RunSummary[])])
+  );
+
+  const latestRunIds = pagedCampaigns.flatMap((campaign) => {
+    const { run } = campaignDisplayRuns.get(campaign.id)!;
+    return run ? [run.id] : [];
+  });
   const latestRunCountRows = latestRunIds.length
     ? await prisma.recipientJob.groupBy({
         by: ["campaignRunId", "status"],
@@ -459,54 +511,58 @@ export default async function CampaignsPage({
         {campaigns.length ? (
           <div className={styles.sequenceList}>
             {pagedCampaigns.map((campaign) => {
-              const latestRun = campaign.runs[0];
-              const latestRunCountsByStatus = latestRun ? latestRunCounts.get(latestRun.id) : null;
-              const latestRunSnapshot = latestRun
+              const latestRun = campaign.runs[0]; // most-recent run — used for status label only
+              const { run: displayRun, isFromPreviousRun } = campaignDisplayRuns.get(campaign.id)!;
+              const displayRunCountsByStatus = displayRun ? latestRunCounts.get(displayRun.id) : null;
+              const displayRunSnapshot = displayRun
                 ? {
-                    ...latestRun,
-                    sentCount: latestRunCountsByStatus ? (latestRunCountsByStatus.SENT ?? 0) : latestRun.sentCount,
-                    openedCount: latestRunCountsByStatus ? (latestRunCountsByStatus.OPENED ?? 0) : latestRun.openedCount,
-                    clickedCount: latestRunCountsByStatus ? (latestRunCountsByStatus.CLICKED ?? 0) : latestRun.clickedCount,
-                    failedCount: latestRunCountsByStatus ? (latestRunCountsByStatus.FAILED ?? 0) : latestRun.failedCount,
-                    suppressedCount: latestRunCountsByStatus
-                      ? (latestRunCountsByStatus.SUPPRESSED ?? 0)
-                      : latestRun.suppressedCount,
-                    invalidCount: latestRunCountsByStatus ? (latestRunCountsByStatus.INVALID ?? 0) : latestRun.invalidCount
+                    ...displayRun,
+                    sentCount: displayRunCountsByStatus ? (displayRunCountsByStatus.SENT ?? 0) : displayRun.sentCount,
+                    openedCount: displayRunCountsByStatus ? (displayRunCountsByStatus.OPENED ?? 0) : displayRun.openedCount,
+                    clickedCount: displayRunCountsByStatus ? (displayRunCountsByStatus.CLICKED ?? 0) : displayRun.clickedCount,
+                    failedCount: displayRunCountsByStatus ? (displayRunCountsByStatus.FAILED ?? 0) : displayRun.failedCount,
+                    suppressedCount: displayRunCountsByStatus
+                      ? (displayRunCountsByStatus.SUPPRESSED ?? 0)
+                      : displayRun.suppressedCount,
+                    invalidCount: displayRunCountsByStatus ? (displayRunCountsByStatus.INVALID ?? 0) : displayRun.invalidCount
                   }
                 : null;
-              const deliveredCount = getDeliveredCount(latestRunSnapshot);
-              const issueCount = getIssueCount(latestRunSnapshot);
-              const processedCount = getProcessedCount(latestRunSnapshot);
-              const runMetricsKnown = hasKnownRunMetrics(latestRunSnapshot, processedCount);
-              const recipientCount = latestRun?.totalRecipients ?? campaign.import.rowCount;
+              const deliveredCount = getDeliveredCount(displayRunSnapshot);
+              const issueCount = getIssueCount(displayRunSnapshot);
+              const processedCount = getProcessedCount(displayRunSnapshot);
+              const runMetricsKnown = hasKnownRunMetrics(displayRunSnapshot, processedCount);
+              const recipientCount = displayRun?.totalRecipients ?? campaign.import.rowCount;
               const deliveryHealthPercent =
-                runMetricsKnown && latestRunSnapshot
-                  ? getPercent(deliveredCount, latestRunSnapshot.totalRecipients)
+                runMetricsKnown && displayRunSnapshot
+                  ? getPercent(deliveredCount, displayRunSnapshot.totalRecipients)
                   : null;
               const progressPercent =
-                latestRunSnapshot && latestRunSnapshot.totalRecipients > 0
-                  ? getPercent(processedCount, latestRunSnapshot.totalRecipients)
+                displayRunSnapshot && displayRunSnapshot.totalRecipients > 0
+                  ? getPercent(processedCount, displayRunSnapshot.totalRecipients)
                   : 0;
               const openedPercent =
-                runMetricsKnown && latestRunSnapshot
-                  ? getPercent(latestRunSnapshot.openedCount, latestRunSnapshot.totalRecipients)
+                runMetricsKnown && displayRunSnapshot
+                  ? getPercent(displayRunSnapshot.openedCount ?? 0, displayRunSnapshot.totalRecipients)
                   : null;
               const delivery = formatDeliveryLabel(campaign.scheduleType, campaign.scheduleConfig as ScheduleConfig | null);
-              const latestRunSummary = latestRun
+              const latestRunSummary = displayRun
                 ? runMetricsKnown
-                  ? `${formatCount(deliveredCount)}/${formatCount(latestRun.totalRecipients)} delivered`
+                  ? `${formatCount(deliveredCount)}/${formatCount(displayRun.totalRecipients)} delivered${isFromPreviousRun ? " (last run)" : ""}`
                   : "Metrics syncing"
                 : "No run started yet";
+              // For the "Latest run" row, show the actual most-recent run's status
               const latestRunValue = latestRun?.updatedAt?.toISOString() ?? null;
               const validatedAtValue = campaign.lastValidatedAt?.toISOString() ?? null;
-              const healthDetail = latestRun
+              const healthDetail = displayRun
                 ? runMetricsKnown
-                  ? latestRunSummary
+                  ? isFromPreviousRun
+                    ? `Last run · ${formatCount(deliveredCount)} delivered`
+                    : latestRunSummary
                   : "Waiting for activity"
                 : campaign.lastValidatedAt
                   ? "Validated and ready"
                   : "Awaiting first run";
-              const healthValue = latestRun
+              const healthValue = displayRun
                 ? deliveryHealthPercent === null
                   ? "—"
                   : `${deliveryHealthPercent}%`
@@ -514,14 +570,14 @@ export default async function CampaignsPage({
                   ? "Ready"
                   : "—";
               const performanceMetric =
-                latestRun
+                displayRun
                   ? {
                       label: "Opened",
                       value: openedPercent === null ? "—" : `${openedPercent}%`,
                       detail:
                         openedPercent === null
-                          ? "Waiting for activity"
-                          : `${formatCount(latestRunSnapshot?.openedCount ?? 0)} opens`
+                          ? isFromPreviousRun ? "Next run queued" : "Waiting for activity"
+                          : `${formatCount(displayRunSnapshot?.openedCount ?? 0)} opens${isFromPreviousRun ? " (last run)" : ""}`
                     }
                   : {
                       label: "Delivered",
@@ -616,7 +672,7 @@ export default async function CampaignsPage({
                         <span>Health</span>
                         <strong>{latestRunSummary}</strong>
                         <small>
-                          {latestRun && runMetricsKnown
+                          {displayRun && runMetricsKnown
                             ? issueCount
                               ? `${formatCount(issueCount)} issue${issueCount === 1 ? "" : "s"}`
                               : "Clean delivery"
