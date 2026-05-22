@@ -61,19 +61,27 @@
 }
 
 .visualHeader,
-.managementHeader,
-.detailPanelHeader {
+.managementHeader {
   display: flex;
   justify-content: space-between;
   gap: 1rem;
   align-items: flex-start;
 }
 
+.detailPanelHeader {
+  display: grid;
+  gap: 0.5rem;
+}
+
 .visualHeader h2,
-.managementHeader h2,
-.detailPanelHeader h2 {
+.managementHeader h2 {
   margin: 0.15rem 0 0;
   font-size: 1.2rem;
+}
+
+.detailPanelHeader h2 {
+  margin: 0.1rem 0 0;
+  font-size: 1rem;
 }
 
 .detailPanelHeader > div {
@@ -82,9 +90,8 @@
 
 .detailEmail {
   max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: break-word;
+  word-break: break-all;
 }
 
 .sectionKicker {
@@ -548,7 +555,7 @@
 .detailValue {
   display: block;
   min-width: 0;
-  font-size: 0.88rem;
+  font-size: 0.92rem;
   font-weight: 700;
   line-height: 1.35;
   white-space: normal;
@@ -581,7 +588,7 @@
 
 .countItem span {
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 0.82rem;
 }
 
 .controlPanel {
@@ -720,9 +727,9 @@
   }
 }
 
-@container adminManagement (min-width: 72rem) {
+@container adminManagement (min-width: 52rem) {
   .managementGrid {
-    grid-template-columns: minmax(0, 1fr) minmax(20.75rem, 22.5rem);
+    grid-template-columns: minmax(0, 1fr) minmax(22.5rem, 26rem);
   }
 
   .detailPanel {
@@ -745,8 +752,7 @@
 
 @media (max-width: 800px) {
   .visualHeader,
-  .managementHeader,
-  .detailPanelHeader {
+  .managementHeader {
     display: grid;
   }
 
