@@ -909,6 +909,59 @@
   font-size: 1.2rem;
 }
 
+.healthTabActions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.recheckButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  padding: 0.4rem 0.78rem;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 140ms ease, background-color 160ms ease, border-color 160ms ease, opacity 160ms ease;
+}
+
+.recheckButton svg {
+  inline-size: 0.9rem;
+  block-size: 0.9rem;
+  flex-shrink: 0;
+}
+
+.recheckButton:hover:not(:disabled),
+.recheckButton:focus-visible {
+  transform: translateY(-1px);
+  background: color-mix(in srgb, var(--accent-soft) 70%, var(--accent) 30%);
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
+  outline: none;
+}
+
+.recheckButton:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+@keyframes recheckSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.recheckSpinning {
+  animation: recheckSpin 700ms linear infinite;
+}
+
 .healthGrid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

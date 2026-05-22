@@ -1,7 +1,7 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import {
   ChevronLeft,
   ChevronRight,
@@ -10,10 +10,12 @@ import {
   Key,
   Mail,
   PanelRightOpen,
+  RefreshCw,
   Search,
   Server,
   Zap,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import type { Route } from "next";
 import Link from "next/link";
 
@@ -666,6 +668,15 @@ export function AdminRestrictionsSection({
 // ── System Health Section ─────────────────────────────────────────────────────
 
 export function AdminSystemHealthSection({ systemHealth }: { systemHealth: SystemHealthReport }) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+
+  function handleRecheck() {
+    startTransition(() => {
+      router.refresh();
+    });
+  }
+
   const healthChecks = [
     { label: "Database", check: systemHealth.checks.database, Icon: Database },
     { label: "Redis", check: systemHealth.checks.redis, Icon: Server },
@@ -682,17 +693,31 @@ export function AdminSystemHealthSection({ systemHealth }: { systemHealth: Syste
           <p className={styles.sectionKicker}>Infrastructure</p>
           <h2>Runtime checks</h2>
         </div>
-        <span
-          className={`${styles.statusPill} ${
-            systemHealth.status === "ok" ? styles.statusPillActive : styles.statusPillWarning
-          }`}
-        >
-          {systemHealth.status === "ok"
-            ? "Healthy"
-            : systemHealth.status === "degraded"
-            ? "Degraded"
-            : "Down"}
-        </span>
+        <div className={styles.healthTabActions}>
+          <span
+            className={`${styles.statusPill} ${
+              systemHealth.status === "ok" ? styles.statusPillActive : styles.statusPillWarning
+            }`}
+          >
+            {systemHealth.status === "ok"
+              ? "Healthy"
+              : systemHealth.status === "degraded"
+              ? "Degraded"
+              : "Down"}
+          </span>
+          <button
+            className={styles.recheckButton}
+            onClick={handleRecheck}
+            disabled={isPending}
+            aria-label="Recheck system health"
+          >
+            <RefreshCw
+              aria-hidden="true"
+              className={isPending ? styles.recheckSpinning : undefined}
+            />
+            {isPending ? "Checking…" : "Recheck"}
+          </button>
+        </div>
       </div>
 
       <div className={styles.healthGrid}>
