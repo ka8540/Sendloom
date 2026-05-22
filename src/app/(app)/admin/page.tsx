@@ -1,11 +1,11 @@
-import { AdminWorkspace } from "@/app/(app)/admin/admin-workspace";
+import { AdminOverviewSection } from "@/app/(app)/admin/admin-workspace";
 import { requireAdminUser } from "@/lib/auth";
 import { getSystemHealth } from "@/lib/system-health";
 import { listAdminUsers } from "@/services/admin";
 
 import styles from "./page.module.css";
 
-export default async function AdminDashboardPage() {
+export default async function AdminOverviewPage() {
   const admin = await requireAdminUser();
   const [users, systemHealth] = await Promise.all([listAdminUsers(), getSystemHealth()]);
 
@@ -35,19 +35,16 @@ export default async function AdminDashboardPage() {
   return (
     <div className={styles.page}>
       <section className={`${styles.hero} card`}>
-        <h1 className={styles.heroTitle}>Admin dashboard</h1>
+        <h1 className={styles.heroTitle}>Admin overview</h1>
         <p className="muted">
-          Review active accounts, inspect user-level footprint, restrict API capabilities, end
-          sessions, and wipe an account&apos;s data from one protected control surface.
+          High-level snapshot of user activity, account health, and infrastructure status.
         </p>
       </section>
 
-      <AdminWorkspace
-        users={users}
-        systemHealth={systemHealth}
-        adminId={admin.id}
-        adminEmail={admin.email}
+      <AdminOverviewSection
         metrics={metrics}
+        systemHealth={systemHealth}
+        adminEmail={admin.email}
         footprint={footprint}
       />
     </div>

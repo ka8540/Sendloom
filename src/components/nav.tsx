@@ -5,7 +5,20 @@ import type { Route } from "next";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
-import { FileSpreadsheet, House, PanelLeftClose, PanelLeftOpen, ScrollText, Search, SendHorizontal, ShieldUser } from "lucide-react";
+import {
+  Activity,
+  FileSpreadsheet,
+  House,
+  LayoutDashboard,
+  PanelLeftClose,
+  PanelLeftOpen,
+  ScrollText,
+  Search,
+  SendHorizontal,
+  ShieldAlert,
+  ShieldUser,
+  Users,
+} from "lucide-react";
 import { BrandText } from "@/components/brand-text";
 import { SendloomLogo } from "@/components/sendloom-logo";
 import { SessionControls } from "@/components/session-controls";
@@ -74,6 +87,14 @@ function storeSidebarCollapsed(collapsed: boolean) {
   }
 }
 
+type NavItem = {
+  href: Route;
+  label: string;
+  icon: LucideIcon;
+  /** Match only the exact pathname, not sub-paths */
+  exact?: boolean;
+};
+
 export function AppNav({ initialCollapsed = false, isAdmin = false }: { initialCollapsed?: boolean; isAdmin?: boolean }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(initialCollapsed);
@@ -81,7 +102,6 @@ export function AppNav({ initialCollapsed = false, isAdmin = false }: { initialC
     setCollapsed((current) => {
       const nextCollapsed = !current;
       storeSidebarCollapsed(nextCollapsed);
-
       return nextCollapsed;
     });
   }, []);
@@ -92,14 +112,19 @@ export function AppNav({ initialCollapsed = false, isAdmin = false }: { initialC
     storeSidebarCollapsed(storedCollapsed);
   }, [initialCollapsed]);
 
-  const items: Array<{ href: Route; label: string; icon: LucideIcon }> = isAdmin
-    ? [{ href: "/admin" as Route, label: "Admin", icon: ShieldUser }]
+  const items: NavItem[] = isAdmin
+    ? [
+        { href: "/admin" as Route, label: "Overview", icon: LayoutDashboard, exact: true },
+        { href: "/admin/users" as Route, label: "Users", icon: Users },
+        { href: "/admin/restrictions" as Route, label: "Restrictions", icon: ShieldAlert },
+        { href: "/admin/system-health" as Route, label: "System Health", icon: Activity },
+      ]
     : [
         { href: "/workspace" as Route, label: "Overview", icon: House },
         { href: "/finder" as Route, label: "Finder", icon: Search },
         { href: "/imports" as Route, label: "Imports", icon: FileSpreadsheet },
         { href: "/templates" as Route, label: "Templates", icon: ScrollText },
-        { href: "/campaigns" as Route, label: "Sequences", icon: SendHorizontal }
+        { href: "/campaigns" as Route, label: "Sequences", icon: SendHorizontal },
       ];
 
   return (
@@ -126,9 +151,19 @@ export function AppNav({ initialCollapsed = false, isAdmin = false }: { initialC
           {collapsed ? <PanelLeftOpen aria-hidden="true" /> : <PanelLeftClose aria-hidden="true" />}
         </button>
       </div>
-      <nav className="nav">
+
+      {isAdmin && (
+        <div className="nav-section-header">
+          <ShieldUser aria-hidden="true" />
+          <span>Admin</span>
+        </div>
+      )}
+
+      <nav className="nav" aria-label={isAdmin ? "Admin navigation" : "Main navigation"}>
         {items.map((item) => {
-          const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+          const active = item.exact
+            ? pathname === item.href
+            : pathname === item.href || pathname.startsWith(`${item.href}/`);
           const Icon = item.icon;
 
           return (

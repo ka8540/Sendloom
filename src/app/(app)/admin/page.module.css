@@ -773,72 +773,12 @@
   }
 }
 
-/* ── Admin Workspace & Tab System ──────────────────────────────────────────── */
+/* ── Admin Section (page-level content wrapper) ─────────────────────────────── */
 
-.adminWorkspace {
-  display: grid;
-  gap: 0;
-}
-
-/* Tab bar */
-.adminTabBar {
-  display: flex;
-  gap: 0;
-  border-bottom: 1px solid var(--line);
-  overflow-x: auto;
-  scrollbar-width: none;
-  margin-bottom: 1.35rem;
-}
-
-.adminTabBar::-webkit-scrollbar {
-  display: none;
-}
-
-.adminTab {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.72rem 1.05rem;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.86rem;
-  font-weight: 600;
-  white-space: nowrap;
-  margin-bottom: -1px;
-  transition: color 160ms ease, border-color 160ms ease;
-  border-radius: 0;
-}
-
-.adminTab svg {
-  width: 0.95rem;
-  height: 0.95rem;
-  flex-shrink: 0;
-}
-
-.adminTab:hover {
-  color: var(--text);
-}
-
-.adminTabActive {
-  color: var(--accent-strong);
-  border-bottom-color: var(--accent);
-}
-
-.adminTab:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-  border-radius: 4px;
-}
-
-/* Tab panel fade-in */
-@keyframes adminTabFadeIn {
+@keyframes adminSectionFadeIn {
   from {
     opacity: 0;
-    transform: translateY(5px);
+    transform: translateY(4px);
   }
   to {
     opacity: 1;
@@ -846,10 +786,10 @@
   }
 }
 
-.tabPanel {
+.adminSection {
   display: grid;
   gap: 1.35rem;
-  animation: adminTabFadeIn 190ms ease;
+  animation: adminSectionFadeIn 200ms ease;
 }
 
 /* ── Overview: admin badge + health strip ───────────────────────────────────── */

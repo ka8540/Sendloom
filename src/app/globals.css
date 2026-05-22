@@ -400,6 +400,31 @@ html[data-sidebar-collapsed="true"] .shell {
   cursor: wait;
 }
 
+/* Admin section header label */
+.nav-section-header {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0 0.25rem 0 1rem;
+  color: var(--accent-strong);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  margin-bottom: -0.15rem;
+}
+
+.nav-section-header svg {
+  width: 0.82rem;
+  height: 0.82rem;
+  flex-shrink: 0;
+}
+
+.sidebar.is-collapsed .nav-section-header,
+html[data-sidebar-collapsed="true"] .sidebar .nav-section-header {
+  display: none;
+}
+
 .sidebar.is-collapsed,
 html[data-sidebar-collapsed="true"] .sidebar {
   padding-inline: 0.75rem;

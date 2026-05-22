@@ -1,22 +1,21 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ChevronLeft,
   ChevronRight,
   Database,
   HardDrive,
   Key,
-  LayoutDashboard,
   Mail,
   PanelRightOpen,
   Search,
   Server,
-  Shield,
-  Users,
   Zap,
 } from "lucide-react";
+import type { Route } from "next";
+import Link from "next/link";
 
 import type { SystemHealthReport } from "@/lib/system-health";
 import { AdminUserControls } from "@/components/admin-user-controls";
@@ -51,22 +50,6 @@ export type AdminDashboardUser = {
   };
 };
 
-type AdminWorkspaceProps = {
-  users: AdminDashboardUser[];
-  systemHealth: SystemHealthReport;
-  adminId: string;
-  adminEmail: string;
-  metrics: {
-    totalUsers: number;
-    loggedInUsers: number;
-    restrictedUsers: number;
-    connectedSenders: number;
-  };
-  footprint: Array<{ label: string; value: number }>;
-};
-
-type TabId = "overview" | "users" | "restrictions" | "health";
-
 const PAGE_SIZE = 10;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -89,57 +72,23 @@ function isCheckHealthy(check: { status: string }) {
   return check.status === "ok" || check.status === "configured";
 }
 
-// ── Tab Navigation ────────────────────────────────────────────────────────────
+// ── Overview Section ──────────────────────────────────────────────────────────
 
-const TABS = [
-  { id: "overview" as const, label: "Overview", Icon: LayoutDashboard },
-  { id: "users" as const, label: "Users", Icon: Users },
-  { id: "restrictions" as const, label: "Restrictions", Icon: Shield },
-  { id: "health" as const, label: "System Health", Icon: Server },
-];
-
-function AdminTabBar({
-  activeTab,
-  onTabChange,
-}: {
-  activeTab: TabId;
-  onTabChange: (tab: TabId) => void;
-}) {
-  return (
-    <nav className={styles.adminTabBar} role="tablist" aria-label="Admin workspaces">
-      {TABS.map(({ id, label, Icon }) => (
-        <button
-          key={id}
-          role="tab"
-          aria-selected={activeTab === id}
-          aria-controls={`tabpanel-${id}`}
-          id={`tab-${id}`}
-          type="button"
-          className={`${styles.adminTab}${activeTab === id ? ` ${styles.adminTabActive}` : ""}`}
-          onClick={() => onTabChange(id)}
-        >
-          <Icon aria-hidden="true" />
-          {label}
-        </button>
-      ))}
-    </nav>
-  );
-}
-
-// ── Overview Tab ──────────────────────────────────────────────────────────────
-
-function OverviewTab({
+export function AdminOverviewSection({
   metrics,
   systemHealth,
   adminEmail,
   footprint,
-  onNavigate,
 }: {
-  metrics: AdminWorkspaceProps["metrics"];
+  metrics: {
+    totalUsers: number;
+    loggedInUsers: number;
+    restrictedUsers: number;
+    connectedSenders: number;
+  };
   systemHealth: SystemHealthReport;
   adminEmail: string;
   footprint: Array<{ label: string; value: number }>;
-  onNavigate: (tab: TabId) => void;
 }) {
   const { totalUsers, loggedInUsers, restrictedUsers } = metrics;
   const offlineUsers = Math.max(totalUsers - loggedInUsers, 0);
@@ -169,7 +118,7 @@ function OverviewTab({
   ];
 
   return (
-    <div className={styles.tabPanel} role="tabpanel" id="tabpanel-overview" aria-labelledby="tab-overview">
+    <div className={styles.adminSection}>
       {/* Metric cards */}
       <section className={styles.metrics} aria-label="Key metrics">
         {metricItems.map(({ label, value }) => (
@@ -226,9 +175,9 @@ function OverviewTab({
               </div>
             ))}
           </div>
-          <button type="button" className={styles.healthViewLink} onClick={() => onNavigate("health")}>
+          <Link href={"/admin/system-health" as Route} className={styles.healthViewLink}>
             View full health report →
-          </button>
+          </Link>
         </div>
       </div>
 
@@ -293,19 +242,16 @@ function OverviewTab({
   );
 }
 
-// ── Users Tab ─────────────────────────────────────────────────────────────────
+// ── Users Section ─────────────────────────────────────────────────────────────
 
-function UsersTab({
+export function AdminUsersSection({
   users,
-  selectedUserId,
-  onSelectUser,
   adminId,
 }: {
   users: AdminDashboardUser[];
-  selectedUserId: string | null;
-  onSelectUser: (id: string) => void;
   adminId: string;
 }) {
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(users[0]?.id ?? null);
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
 
@@ -334,11 +280,11 @@ function UsersTab({
 
   useEffect(() => {
     if (!filteredUsers.length) {
-      onSelectUser("");
+      setSelectedUserId(null);
       return;
     }
     if (!filteredUsers.some((u) => u.id === selectedUserId)) {
-      onSelectUser(filteredUsers[0].id);
+      setSelectedUserId(filteredUsers[0].id);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filteredUsers]);
@@ -355,12 +301,7 @@ function UsersTab({
     : [];
 
   return (
-    <div
-      className={styles.tabPanel}
-      role="tabpanel"
-      id="tabpanel-users"
-      aria-labelledby="tab-users"
-    >
+    <div className={styles.adminSection}>
       <div className={styles.managementSection}>
         <div className={styles.managementGrid}>
           {/* Table card */}
@@ -434,7 +375,7 @@ function UsersTab({
                           <button
                             type="button"
                             className={styles.userEmailButton}
-                            onClick={() => onSelectUser(user.id)}
+                            onClick={() => setSelectedUserId(user.id)}
                             title={user.email}
                           >
                             {user.email}
@@ -477,7 +418,7 @@ function UsersTab({
                           <button
                             type="button"
                             className={styles.rowActionButton}
-                            onClick={() => onSelectUser(user.id)}
+                            onClick={() => setSelectedUserId(user.id)}
                             aria-label={`View ${user.email} details`}
                           >
                             <PanelRightOpen aria-hidden="true" />
@@ -592,19 +533,20 @@ function UsersTab({
   );
 }
 
-// ── Restrictions Tab ──────────────────────────────────────────────────────────
+// ── Restrictions Section ──────────────────────────────────────────────────────
 
-function RestrictionsTab({
+export function AdminRestrictionsSection({
   users,
-  selectedUserId,
-  onSelectUser,
   adminId,
+  initialUserId,
 }: {
   users: AdminDashboardUser[];
-  selectedUserId: string | null;
-  onSelectUser: (id: string) => void;
   adminId: string;
+  initialUserId?: string | null;
 }) {
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(
+    initialUserId ?? users[0]?.id ?? null
+  );
   const [query, setQuery] = useState("");
 
   const filteredUsers = useMemo(() => {
@@ -615,12 +557,7 @@ function RestrictionsTab({
   const selectedUser = users.find((u) => u.id === selectedUserId) ?? null;
 
   return (
-    <div
-      className={styles.tabPanel}
-      role="tabpanel"
-      id="tabpanel-restrictions"
-      aria-labelledby="tab-restrictions"
-    >
+    <div className={styles.adminSection}>
       <div className={styles.restrictionsLayout}>
         {/* User picker */}
         <div className={`${styles.restrictionsUserPickerCard} card`}>
@@ -647,7 +584,7 @@ function RestrictionsTab({
                   className={`${styles.restrictionsUserItem}${
                     user.id === selectedUserId ? ` ${styles.restrictionsUserItemSelected}` : ""
                   }`}
-                  onClick={() => onSelectUser(user.id)}
+                  onClick={() => setSelectedUserId(user.id)}
                 >
                   <span className={styles.restrictionsUserItemEmail}>{user.email}</span>
                   <span className={styles.restrictionsUserItemPills}>
@@ -668,7 +605,7 @@ function RestrictionsTab({
           </div>
         </div>
 
-        {/* Restrictions panel */}
+        {/* Controls panel */}
         <div className={`${styles.restrictionsPanelCard} card`}>
           {!selectedUser ? (
             <p className={styles.emptyDetailText}>
@@ -726,9 +663,9 @@ function RestrictionsTab({
   );
 }
 
-// ── System Health Tab ─────────────────────────────────────────────────────────
+// ── System Health Section ─────────────────────────────────────────────────────
 
-function SystemHealthTab({ systemHealth }: { systemHealth: SystemHealthReport }) {
+export function AdminSystemHealthSection({ systemHealth }: { systemHealth: SystemHealthReport }) {
   const healthChecks = [
     { label: "Database", check: systemHealth.checks.database, Icon: Database },
     { label: "Redis", check: systemHealth.checks.redis, Icon: Server },
@@ -739,12 +676,7 @@ function SystemHealthTab({ systemHealth }: { systemHealth: SystemHealthReport })
   ];
 
   return (
-    <div
-      className={styles.tabPanel}
-      role="tabpanel"
-      id="tabpanel-health"
-      aria-labelledby="tab-health"
-    >
+    <div className={styles.adminSection}>
       <div className={styles.healthTabHeader}>
         <div>
           <p className={styles.sectionKicker}>Infrastructure</p>
@@ -795,57 +727,6 @@ function SystemHealthTab({ systemHealth }: { systemHealth: SystemHealthReport })
       <p className={styles.sessionNote}>
         Last checked <LocalDateTime value={systemHealth.timestamp} />.
       </p>
-    </div>
-  );
-}
-
-// ── Main Export ───────────────────────────────────────────────────────────────
-
-export function AdminWorkspace({
-  users,
-  systemHealth,
-  adminId,
-  adminEmail,
-  metrics,
-  footprint,
-}: AdminWorkspaceProps) {
-  const [activeTab, setActiveTab] = useState<TabId>("overview");
-  const [selectedUserId, setSelectedUserId] = useState<string | null>(users[0]?.id ?? null);
-
-  const handleSelectUser = useCallback((id: string) => {
-    setSelectedUserId(id || null);
-  }, []);
-
-  return (
-    <div className={styles.adminWorkspace}>
-      <AdminTabBar activeTab={activeTab} onTabChange={setActiveTab} />
-
-      {activeTab === "overview" && (
-        <OverviewTab
-          metrics={metrics}
-          systemHealth={systemHealth}
-          adminEmail={adminEmail}
-          footprint={footprint}
-          onNavigate={setActiveTab}
-        />
-      )}
-      {activeTab === "users" && (
-        <UsersTab
-          users={users}
-          selectedUserId={selectedUserId}
-          onSelectUser={handleSelectUser}
-          adminId={adminId}
-        />
-      )}
-      {activeTab === "restrictions" && (
-        <RestrictionsTab
-          users={users}
-          selectedUserId={selectedUserId}
-          onSelectUser={handleSelectUser}
-          adminId={adminId}
-        />
-      )}
-      {activeTab === "health" && <SystemHealthTab systemHealth={systemHealth} />}
     </div>
   );
 }
