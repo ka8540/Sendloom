@@ -349,3 +349,36 @@
     justify-content: space-between;
   }
 }
+
+.followUpChip {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  margin-top: 0.16rem;
+  padding: 0.1rem 0.44rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface-muted);
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.followUpChip[data-tone="success"] {
+  border-color: color-mix(in srgb, var(--success) 26%, var(--line));
+  background: color-mix(in srgb, var(--accent-soft) 70%, var(--surface));
+  color: color-mix(in srgb, var(--success) 80%, var(--text));
+}
+
+.followUpChip[data-tone="warning"] {
+  border-color: color-mix(in srgb, var(--warning) 32%, var(--line));
+  background: var(--warning-soft);
+  color: color-mix(in srgb, var(--warning) 82%, var(--text));
+}
+
+.followUpChip[data-tone="danger"] {
+  border-color: color-mix(in srgb, #d96952 34%, var(--line));
+  background: color-mix(in srgb, #d96952 14%, var(--surface));
+  color: color-mix(in srgb, #d96952 60%, var(--text));
+}

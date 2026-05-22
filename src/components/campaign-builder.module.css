@@ -277,3 +277,113 @@
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
+
+/* ---------- Follow-up email ---------- */
+
+.followUpPanel {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1rem 1.05rem;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: var(--surface-muted);
+}
+
+.followUpToggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  cursor: pointer;
+}
+
+.followUpCheckbox {
+  width: 1.15rem;
+  height: 1.15rem;
+  margin-top: 0.12rem;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.followUpToggleCopy {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.followUpToggleCopy strong {
+  letter-spacing: -0.02em;
+}
+
+.followUpToggleCopy span {
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.followUpFields {
+  display: grid;
+  gap: 0.85rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid color-mix(in srgb, var(--line) 76%, transparent);
+}
+
+.followUpRow {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.followUpModeLabel {
+  font-weight: 650;
+  font-size: 0.92rem;
+}
+
+.segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem;
+  padding: 0.28rem;
+  border-radius: 12px;
+  border: 1px solid var(--field-border);
+  background: var(--field-bg);
+}
+
+.segment {
+  padding: 0.55rem 0.7rem;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 650;
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+.segment:hover {
+  color: var(--text);
+}
+
+.segmentActive {
+  background: color-mix(in srgb, var(--accent-soft) 70%, var(--surface-strong));
+  border-color: color-mix(in srgb, var(--accent) 32%, transparent);
+  color: var(--accent-strong);
+}
+
+.segment:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 32%, transparent);
+  outline-offset: 1px;
+}
+
+.followUpHint {
+  margin: 0.1rem 0 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+@media (max-width: 620px) {
+  .followUpRow {
+    grid-template-columns: 1fr;
+  }
+}

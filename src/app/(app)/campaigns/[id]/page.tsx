@@ -29,6 +29,7 @@ import { RECIPIENT_ACTIVITY_PAGE_SIZE, buildRecipientActivityItem } from "@/lib/
 import { RecipientActivity } from "@/components/recipient-activity";
 import {
   CampaignLaunchBlockedError,
+  getFollowUpStats,
   launchCampaign,
   pauseCampaign,
   processPendingCampaignWork,
@@ -507,7 +508,9 @@ export default async function CampaignDetailPage({
           metadata: true,
           retryCount: true,
           updatedAt: true,
-          nextRetryAt: true
+          nextRetryAt: true,
+          followUpStatus: true,
+          followUpError: true
         }
       })
     : [];
@@ -560,6 +563,19 @@ export default async function CampaignDetailPage({
       : `${sender.fromEmail} • reconnect required`,
     disabled: !sender.oauthRefreshToken
   }));
+
+  const followUpStats = await getFollowUpStats(displayRun ? [displayRun.id] : []);
+  const initialFollowUp = {
+    enabled: campaign.followUpEnabled,
+    templateId: campaign.followUpTemplateId ?? "",
+    sendMode: (campaign.followUpSendMode === "new_email" ? "new_email" : "same_thread") as
+      | "same_thread"
+      | "new_email",
+    scheduledAt: campaign.followUpScheduledAt ? campaign.followUpScheduledAt.toISOString() : null,
+    timezone: campaign.followUpTimezone ?? ""
+  };
+  // Follow-up config can still be changed only before any follow-up has been processed.
+  const followUpEditable = followUpStats.sent + followUpStats.failed + followUpStats.skipped === 0;
 
   const initialSetup = {
     name: campaign.name,
@@ -797,6 +813,9 @@ export default async function CampaignDetailPage({
             senderOptions={senderOptions}
             templateOptions={templateOptions}
             scheduleLabel={scheduleLabel}
+            initialFollowUp={initialFollowUp}
+            followUpStats={followUpStats}
+            followUpEditable={followUpEditable}
           />
         </article>
 

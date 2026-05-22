@@ -122,6 +122,15 @@ export function RecipientActivity({
                       {item.email}
                     </span>
                     <span className={styles.name}>{item.name ?? "Name unavailable"}</span>
+                    {item.followUp ? (
+                      <span
+                        className={styles.followUpChip}
+                        data-tone={item.followUp.tone}
+                        title={item.followUp.message ?? undefined}
+                      >
+                        {item.followUp.label}
+                      </span>
+                    ) : null}
                   </div>
                   <span
                     className={styles.badge}

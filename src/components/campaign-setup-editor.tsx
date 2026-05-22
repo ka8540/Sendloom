@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Download,
   Eye,
@@ -21,8 +21,69 @@ import { useRouter } from "next/navigation";
 
 import { AttachmentPreviewModal, type AttachmentPreviewItem } from "@/components/attachment-preview";
 import { useErrorToastEffect } from "@/components/error-toast-provider";
+import { LocalDateTime } from "@/components/local-date-time";
 import { getAttachmentPreviewKind, type AttachmentPreviewKind } from "@/lib/attachments";
+import { FOLLOW_UP_SEND_MODE_LABELS, type FollowUpSendMode } from "@/lib/follow-up";
+import { convertScheduledLocalInputToUtc, fallbackTimeZones } from "@/lib/schedule";
 import styles from "./campaign-setup-editor.module.css";
+
+type FollowUpStats = {
+  pending: number;
+  sent: number;
+  failed: number;
+  skipped: number;
+  total: number;
+};
+
+type InitialFollowUp = {
+  enabled: boolean;
+  templateId: string;
+  sendMode: FollowUpSendMode;
+  scheduledAt: string | null;
+  timezone: string;
+};
+
+type FollowUpDraft = {
+  enabled: boolean;
+  templateId: string;
+  sendMode: FollowUpSendMode;
+  scheduledAtLocal: string;
+  timezone: string;
+};
+
+/** Render a UTC instant as a datetime-local value in the given timezone. */
+function toDateTimeLocalValue(iso: string | null, timeZone: string) {
+  if (!iso) {
+    return "";
+  }
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).formatToParts(date);
+  const get = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
+  const hour = get("hour") === "24" ? "00" : get("hour");
+  return `${get("year")}-${get("month")}-${get("day")}T${hour}:${get("minute")}`;
+}
+
+function buildFollowUpDraft(initial: InitialFollowUp, browserTimeZone: string): FollowUpDraft {
+  const timezone = initial.timezone || browserTimeZone;
+  return {
+    enabled: initial.enabled,
+    templateId: initial.templateId,
+    sendMode: initial.sendMode,
+    scheduledAtLocal: toDateTimeLocalValue(initial.scheduledAt, timezone),
+    timezone
+  };
+}
 
 type SetupOption = {
   id: string;
@@ -135,14 +196,28 @@ export function CampaignSetupEditor(props: {
   senderOptions: SetupOption[];
   templateOptions: SetupOption[];
   scheduleLabel: string;
+  initialFollowUp: InitialFollowUp;
+  followUpStats: FollowUpStats;
+  followUpEditable: boolean;
 }) {
   const router = useRouter();
   const addAttachmentInputRef = useRef<HTMLInputElement | null>(null);
   const replaceAttachmentInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const uploadUrls = useRef(new Set<string>());
+  const browserTimeZone = useMemo(
+    () => Intl.DateTimeFormat().resolvedOptions().timeZone || "America/New_York",
+    []
+  );
+  const timeZoneOptions = useMemo(
+    () => Array.from(new Set([browserTimeZone, ...fallbackTimeZones])),
+    [browserTimeZone]
+  );
   const [editing, setEditing] = useState(false);
   const [savedSetup, setSavedSetup] = useState<SetupState>(() => cloneSetupState(props.initialSetup));
   const [draftSetup, setDraftSetup] = useState<SetupState>(() => cloneSetupState(props.initialSetup));
+  const [followUpDraft, setFollowUpDraft] = useState<FollowUpDraft>(() =>
+    buildFollowUpDraft(props.initialFollowUp, browserTimeZone)
+  );
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -160,12 +235,13 @@ export function CampaignSetupEditor(props: {
     const nextSetup = cloneSetupState(props.initialSetup);
     setSavedSetup(nextSetup);
     setDraftSetup(nextSetup);
+    setFollowUpDraft(buildFollowUpDraft(props.initialFollowUp, browserTimeZone));
     setEditing(false);
     setPending(false);
     setError(null);
     setSuccess(null);
     setPreviewId(null);
-  }, [props.initialSetup]);
+  }, [props.initialSetup, props.initialFollowUp, browserTimeZone]);
 
   useEffect(() => {
     if (!props.isLocked || !editing) {
@@ -278,6 +354,50 @@ export function CampaignSetupEditor(props: {
       return;
     }
 
+    let followUpPayload: {
+      enabled: boolean;
+      templateId: string | null;
+      sendMode: FollowUpSendMode | null;
+      scheduledAt: string | null;
+      timezone: string | null;
+    } | null = null;
+
+    if (props.followUpEditable) {
+      if (followUpDraft.enabled) {
+        if (!followUpDraft.templateId) {
+          setError("Choose a follow-up template.");
+          return;
+        }
+        if (!followUpDraft.scheduledAtLocal) {
+          setError("Choose when the follow-up should send.");
+          return;
+        }
+        const followUpScheduledAt = convertScheduledLocalInputToUtc(
+          followUpDraft.scheduledAtLocal,
+          followUpDraft.timezone
+        );
+        if (Number.isNaN(followUpScheduledAt.getTime()) || followUpScheduledAt <= new Date()) {
+          setError("Choose a future date and time for the follow-up.");
+          return;
+        }
+        followUpPayload = {
+          enabled: true,
+          templateId: followUpDraft.templateId,
+          sendMode: followUpDraft.sendMode,
+          scheduledAt: followUpScheduledAt.toISOString(),
+          timezone: followUpDraft.timezone
+        };
+      } else {
+        followUpPayload = {
+          enabled: false,
+          templateId: null,
+          sendMode: null,
+          scheduledAt: null,
+          timezone: null
+        };
+      }
+    }
+
     setPending(true);
     setError(null);
     setSuccess(null);
@@ -305,6 +425,10 @@ export function CampaignSetupEditor(props: {
     });
 
     formData.set("attachmentsPlan", JSON.stringify(attachmentsPlan));
+
+    if (followUpPayload) {
+      formData.set("followUp", JSON.stringify(followUpPayload));
+    }
 
     try {
       const response = await fetch(`/api/campaigns/${props.campaignId}`, {
@@ -348,6 +472,9 @@ export function CampaignSetupEditor(props: {
     : null;
 
   const attachmentCount = draftSetup.attachments.length;
+  const followUpTemplateName =
+    props.templateOptions.find((option) => option.id === props.initialFollowUp.templateId)?.label ??
+    "Template unavailable";
 
   return (
     <div className={styles.root}>
@@ -638,6 +765,169 @@ export function CampaignSetupEditor(props: {
             <span>Attach a resume, PDF, DOCX, or supporting file for this sequence.</span>
           </div>
         )}
+      </div>
+
+      <div className={styles.attachmentSection}>
+        <div className={styles.attachmentHeader}>
+          <div className={styles.attachmentTitleRow}>
+            <h3>Follow-up email</h3>
+            <InfoTip label="An extra email scheduled to send automatically after the initial send." />
+          </div>
+          <span
+            className={`${styles.followUpPill}${
+              (editing ? followUpDraft.enabled : props.initialFollowUp.enabled) ? ` ${styles.followUpPillOn}` : ""
+            }`}
+          >
+            {(editing ? followUpDraft.enabled : props.initialFollowUp.enabled) ? "On" : "Off"}
+          </span>
+        </div>
+
+        {editing && !props.followUpEditable ? (
+          <p className={styles.followUpLockNote}>
+            Follow-up emails have started sending and can no longer be changed.
+          </p>
+        ) : null}
+
+        {editing && props.followUpEditable ? (
+          <div className={styles.followUpFields}>
+            <label className={styles.followUpToggle}>
+              <input
+                type="checkbox"
+                className={styles.followUpCheckbox}
+                checked={followUpDraft.enabled}
+                onChange={(event) =>
+                  setFollowUpDraft((draft) => ({ ...draft, enabled: event.target.checked }))
+                }
+              />
+              <span>Add a follow-up email</span>
+            </label>
+
+            {followUpDraft.enabled ? (
+              <>
+                <label className={styles.configRow}>
+                  <span className={styles.configLabel}>Follow-up template</span>
+                  <select
+                    className={styles.fieldControl}
+                    value={followUpDraft.templateId}
+                    onChange={(event) =>
+                      setFollowUpDraft((draft) => ({ ...draft, templateId: event.target.value }))
+                    }
+                  >
+                    <option value="">Choose the follow-up email</option>
+                    {props.templateOptions.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className={styles.configRow}>
+                  <span className={styles.configLabel}>Send follow-up at</span>
+                  <input
+                    type="datetime-local"
+                    className={styles.fieldControl}
+                    value={followUpDraft.scheduledAtLocal}
+                    onChange={(event) =>
+                      setFollowUpDraft((draft) => ({ ...draft, scheduledAtLocal: event.target.value }))
+                    }
+                  />
+                </label>
+                <label className={styles.configRow}>
+                  <span className={styles.configLabel}>Timezone</span>
+                  <select
+                    className={styles.fieldControl}
+                    value={followUpDraft.timezone}
+                    onChange={(event) =>
+                      setFollowUpDraft((draft) => ({ ...draft, timezone: event.target.value }))
+                    }
+                  >
+                    {timeZoneOptions.map((timeZone) => (
+                      <option key={timeZone} value={timeZone}>
+                        {timeZone}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className={styles.configRow}>
+                  <span className={styles.configLabel}>Delivery mode</span>
+                  <div className={styles.followUpSegmented} role="group" aria-label="Follow-up delivery mode">
+                    <button
+                      type="button"
+                      className={`${styles.followUpSegment}${
+                        followUpDraft.sendMode === "same_thread" ? ` ${styles.followUpSegmentActive}` : ""
+                      }`}
+                      aria-pressed={followUpDraft.sendMode === "same_thread"}
+                      onClick={() => setFollowUpDraft((draft) => ({ ...draft, sendMode: "same_thread" }))}
+                      title="Send as a reply to the original Gmail thread."
+                    >
+                      Same email thread
+                    </button>
+                    <button
+                      type="button"
+                      className={`${styles.followUpSegment}${
+                        followUpDraft.sendMode === "new_email" ? ` ${styles.followUpSegmentActive}` : ""
+                      }`}
+                      aria-pressed={followUpDraft.sendMode === "new_email"}
+                      onClick={() => setFollowUpDraft((draft) => ({ ...draft, sendMode: "new_email" }))}
+                      title="Send as a separate email using the follow-up template subject."
+                    >
+                      New email
+                    </button>
+                  </div>
+                </div>
+              </>
+            ) : null}
+          </div>
+        ) : null}
+
+        {!editing && props.initialFollowUp.enabled ? (
+          <div className={styles.configList}>
+            <div className={styles.configRow}>
+              <span className={styles.configLabel}>Follow-up template</span>
+              <span className={styles.configValue}>{followUpTemplateName}</span>
+            </div>
+            <div className={styles.configRow}>
+              <span className={styles.configLabel}>Send follow-up at</span>
+              <span className={styles.configValue}>
+                {props.initialFollowUp.scheduledAt ? (
+                  <LocalDateTime value={props.initialFollowUp.scheduledAt} />
+                ) : (
+                  "Not scheduled"
+                )}
+              </span>
+            </div>
+            <div className={styles.configRow}>
+              <span className={styles.configLabel}>Delivery mode</span>
+              <span className={styles.configValue}>
+                {FOLLOW_UP_SEND_MODE_LABELS[props.initialFollowUp.sendMode]}
+              </span>
+            </div>
+            {props.followUpStats.total > 0 ? (
+              <div className={styles.configRow}>
+                <span className={styles.configLabel}>Progress</span>
+                <div className={styles.followUpStats}>
+                  <span className={styles.followUpStat}>{props.followUpStats.sent} sent</span>
+                  <span className={styles.followUpStat}>{props.followUpStats.pending} pending</span>
+                  {props.followUpStats.failed > 0 ? (
+                    <span className={`${styles.followUpStat} ${styles.followUpStatBad}`}>
+                      {props.followUpStats.failed} failed
+                    </span>
+                  ) : null}
+                  {props.followUpStats.skipped > 0 ? (
+                    <span className={styles.followUpStat}>{props.followUpStats.skipped} skipped</span>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {!editing && !props.initialFollowUp.enabled ? (
+          <div className={styles.attachmentEmpty}>
+            <strong>No follow-up configured</strong>
+            <span>Edit setup to schedule a follow-up email after the initial send.</span>
+          </div>
+        ) : null}
       </div>
 
       <AttachmentPreviewModal attachment={previewItem} onClose={() => setPreviewId(null)} />

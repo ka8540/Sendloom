@@ -32,6 +32,7 @@ export type SequenceRowData = {
   canRelaunch: boolean;
   isActiveRun: boolean;
   isPausedRun: boolean;
+  followUpLabel: string | null;
 };
 
 export type ActivityItem = {

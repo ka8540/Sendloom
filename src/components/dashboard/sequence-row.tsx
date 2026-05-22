@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, MailPlus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import type { KeyboardEvent } from "react";
 
@@ -37,6 +37,12 @@ export function SequenceRow({ sequence, onRelaunch }: { sequence: SequenceRowDat
           <div className={styles.sequenceTitleBlock}>
             <h3 className={styles.sequenceName}>{sequence.name}</h3>
             <p className={styles.sequenceSummary}>{sequence.summary}</p>
+            {sequence.followUpLabel ? (
+              <span className={styles.sequenceFollowUp}>
+                <MailPlus aria-hidden="true" />
+                {sequence.followUpLabel}
+              </span>
+            ) : null}
           </div>
         </div>
 

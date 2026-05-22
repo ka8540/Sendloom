@@ -551,3 +551,116 @@ select.fieldControl option {
     align-self: flex-start;
   }
 }
+
+/* ---------- Follow-up email ---------- */
+
+.followUpPill {
+  flex-shrink: 0;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface-muted);
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.followUpPillOn {
+  border-color: color-mix(in srgb, var(--accent) 32%, transparent);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.followUpLockNote {
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--warning) 26%, var(--line));
+  background: color-mix(in srgb, var(--warning-soft) 32%, var(--surface));
+  color: var(--text);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.followUpFields {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.followUpToggle {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  cursor: pointer;
+  font-weight: 650;
+  font-size: 0.9rem;
+}
+
+.followUpCheckbox {
+  width: 1.1rem;
+  height: 1.1rem;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.followUpSegmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.3rem;
+  padding: 0.26rem;
+  border-radius: 11px;
+  border: 1px solid var(--field-border);
+  background: var(--field-bg);
+}
+
+.followUpSegment {
+  padding: 0.5rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 650;
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+.followUpSegment:hover {
+  color: var(--text);
+}
+
+.followUpSegmentActive {
+  background: color-mix(in srgb, var(--accent-soft) 70%, var(--surface-strong));
+  border-color: color-mix(in srgb, var(--accent) 32%, transparent);
+  color: var(--accent-strong);
+}
+
+.followUpSegment:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 32%, transparent);
+  outline-offset: 1px;
+}
+
+.followUpStats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.34rem;
+}
+
+.followUpStat {
+  padding: 0.16rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface-muted);
+  color: var(--text);
+  font-size: 0.76rem;
+  font-weight: 650;
+}
+
+.followUpStatBad {
+  border-color: color-mix(in srgb, #d96952 34%, var(--line));
+  background: color-mix(in srgb, #d96952 12%, var(--surface));
+  color: color-mix(in srgb, #d96952 58%, var(--text));
+}

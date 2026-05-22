@@ -30,6 +30,14 @@ type SendArgs = {
   html: string;
   sender: SenderAuth;
   attachments?: EmailAttachment[];
+  /** Gmail thread id to append this message to (same-thread follow-ups). */
+  threadId?: string;
+  /** RFC822 Message-ID header to set on the outgoing message. */
+  messageId?: string;
+  /** RFC822 Message-ID this message replies to (same-thread follow-ups). */
+  inReplyTo?: string;
+  /** RFC822 References chain (same-thread follow-ups). */
+  references?: string[];
 };
 
 const GMAIL_RECONNECT_PATTERNS = [
@@ -44,6 +52,7 @@ const GMAIL_RECONNECT_PATTERNS = [
 
 type GmailSendApiResponse = {
   id?: string;
+  threadId?: string;
   error?: {
     code?: number;
     message?: string;
@@ -105,7 +114,10 @@ async function buildRawGmailMessage(args: SendArgs) {
     to: args.to,
     subject: args.subject,
     html: args.html,
-    attachments
+    attachments,
+    ...(args.messageId ? { messageId: args.messageId } : {}),
+    ...(args.inReplyTo ? { inReplyTo: args.inReplyTo } : {}),
+    ...(args.references && args.references.length ? { references: args.references } : {})
   });
 
   const message = await new Promise<Buffer>((resolve, reject) => {
@@ -140,14 +152,14 @@ async function getGoogleAccessToken(sender: SenderAuth) {
   return tokens.access_token;
 }
 
-async function sendGmailMessage(raw: string, accessToken: string) {
+async function sendGmailMessage(raw: string, accessToken: string, threadId?: string) {
   const response = await fetch(GOOGLE_GMAIL_SEND_URL, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({ raw })
+    body: JSON.stringify(threadId ? { raw, threadId } : { raw })
   });
 
   const payload = (await response.json().catch(() => ({}))) as GmailSendApiResponse;
@@ -167,11 +179,12 @@ export async function sendEmail(args: SendArgs) {
   try {
     const accessToken = await getGoogleAccessToken(args.sender);
     const rawMessage = await buildRawGmailMessage(args);
-    const response = await sendGmailMessage(rawMessage, accessToken);
+    const response = await sendGmailMessage(rawMessage, accessToken, args.threadId);
 
     return {
       data: {
-        id: response.id
+        id: response.id,
+        threadId: response.threadId
       }
     };
   } catch (error) {

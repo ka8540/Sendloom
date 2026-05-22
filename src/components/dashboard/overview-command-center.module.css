@@ -1704,3 +1704,24 @@
     white-space: normal;
   }
 }
+
+.sequenceFollowUp {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.34rem;
+  width: fit-content;
+  margin-top: 0.5rem;
+  padding: 0.22rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--line));
+  background: color-mix(in srgb, var(--accent-soft) 60%, transparent);
+  color: var(--accent-strong);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.sequenceFollowUp svg {
+  width: 0.82rem;
+  height: 0.82rem;
+}

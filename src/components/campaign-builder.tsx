@@ -46,6 +46,11 @@ export function CampaignBuilder(props: {
   const [selectedWeekdays, setSelectedWeekdays] = useState<number[]>([1]);
   const browserTimeZone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "America/New_York", []);
   const [selectedTimeZone, setSelectedTimeZone] = useState(browserTimeZone);
+  const [followUpEnabled, setFollowUpEnabled] = useState(false);
+  const [followUpTemplateId, setFollowUpTemplateId] = useState("");
+  const [followUpSendMode, setFollowUpSendMode] = useState<"same_thread" | "new_email">("same_thread");
+  const [followUpDateTime, setFollowUpDateTime] = useState("");
+  const [followUpTimeZone, setFollowUpTimeZone] = useState(browserTimeZone);
   const [selectedMappingId, setSelectedMappingId] = useState(() => {
     const firstImportId = props.imports[0]?.id;
     return props.mappings.find((mapping) => mapping.importId === firstImportId)?.id ?? "";
@@ -178,6 +183,34 @@ export function CampaignBuilder(props: {
       if (scheduleRule.type === "recurring" && scheduleRule.frequency === "weekly" && !selectedWeekdays.length) {
         throw new Error("Select at least one day.");
       }
+
+      if (followUpEnabled) {
+        if (!followUpTemplateId) {
+          throw new Error("Choose a follow-up template.");
+        }
+        if (!followUpDateTime) {
+          throw new Error("Choose when the follow-up should send.");
+        }
+        const followUpScheduledAt = convertScheduledLocalInputToUtc(followUpDateTime, followUpTimeZone);
+        if (Number.isNaN(followUpScheduledAt.getTime()) || followUpScheduledAt <= new Date()) {
+          throw new Error("Choose a future date and time for the follow-up.");
+        }
+        formData.set(
+          "followUp",
+          JSON.stringify({
+            enabled: true,
+            templateId: followUpTemplateId,
+            sendMode: followUpSendMode,
+            scheduledAt: followUpScheduledAt.toISOString(),
+            timezone: followUpTimeZone
+          })
+        );
+      } else {
+        formData.set(
+          "followUp",
+          JSON.stringify({ enabled: false, templateId: null, sendMode: null, scheduledAt: null, timezone: null })
+        );
+      }
     } catch (error) {
       setState({
         pending: false,
@@ -209,6 +242,11 @@ export function CampaignBuilder(props: {
     setFrequency("weekly");
     setSelectedWeekdays([1]);
     setSelectedTimeZone(browserTimeZone);
+    setFollowUpEnabled(false);
+    setFollowUpTemplateId("");
+    setFollowUpSendMode("same_thread");
+    setFollowUpDateTime("");
+    setFollowUpTimeZone(browserTimeZone);
     router.refresh();
     setState({ pending: false });
   }
@@ -453,6 +491,98 @@ export function CampaignBuilder(props: {
           This schedule will run in {selectedTimeZone}.
         </p>
       ) : null}
+      <div className={styles.followUpPanel}>
+        <label className={styles.followUpToggle}>
+          <input
+            type="checkbox"
+            className={styles.followUpCheckbox}
+            checked={followUpEnabled}
+            onChange={(event) => {
+              setFollowUpEnabled(event.target.checked);
+              setState({ pending: false });
+            }}
+          />
+          <span className={styles.followUpToggleCopy}>
+            <strong>Add follow-up email</strong>
+            <span>Schedule one more email to land after the initial send.</span>
+          </span>
+        </label>
+
+        {followUpEnabled ? (
+          <div className={styles.followUpFields}>
+            <div className="field">
+              <label htmlFor="followUpTemplateId">Follow-up template</label>
+              <select
+                id="followUpTemplateId"
+                value={followUpTemplateId}
+                onChange={(event) => {
+                  setFollowUpTemplateId(event.target.value);
+                  setState({ pending: false });
+                }}
+              >
+                <option value="">{hasTemplates ? "Choose the follow-up email" : "Create a template first"}</option>
+                {renderOptions(props.templates)}
+              </select>
+            </div>
+            <div className={styles.followUpRow}>
+              <div className="field">
+                <label htmlFor="followUpAt">Send follow-up at</label>
+                <input
+                  id="followUpAt"
+                  type="datetime-local"
+                  value={followUpDateTime}
+                  onChange={(event) => {
+                    setFollowUpDateTime(event.target.value);
+                    setState({ pending: false });
+                  }}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="followUpTimeZone">Follow-up timezone</label>
+                <select
+                  id="followUpTimeZone"
+                  value={followUpTimeZone}
+                  onChange={(event) => setFollowUpTimeZone(event.target.value)}
+                >
+                  {timeZoneOptions.map((timeZone) => (
+                    <option key={timeZone.value} value={timeZone.value}>
+                      {timeZone.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="field">
+              <span className={styles.followUpModeLabel}>Delivery mode</span>
+              <div className={styles.segmented} role="group" aria-label="Follow-up delivery mode">
+                <button
+                  type="button"
+                  className={`${styles.segment}${followUpSendMode === "same_thread" ? ` ${styles.segmentActive}` : ""}`}
+                  aria-pressed={followUpSendMode === "same_thread"}
+                  onClick={() => setFollowUpSendMode("same_thread")}
+                  title="Send as a reply to the original Gmail thread."
+                >
+                  Same email thread
+                </button>
+                <button
+                  type="button"
+                  className={`${styles.segment}${followUpSendMode === "new_email" ? ` ${styles.segmentActive}` : ""}`}
+                  aria-pressed={followUpSendMode === "new_email"}
+                  onClick={() => setFollowUpSendMode("new_email")}
+                  title="Send as a separate email using the follow-up template subject."
+                >
+                  New email
+                </button>
+              </div>
+              <p className={styles.followUpHint}>
+                {followUpSendMode === "same_thread"
+                  ? "Sends as a reply inside the original Gmail thread."
+                  : "Sends as a separate email using the follow-up template subject."}
+              </p>
+            </div>
+          </div>
+        ) : null}
+      </div>
       <button className="button" type="submit" disabled={state.pending || !canCreateSequence}>
         {state.pending ? "Preparing sequence..." : "Create sequence"}
       </button>

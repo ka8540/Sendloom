@@ -4,6 +4,12 @@ export const RECIPIENT_ACTIVITY_PAGE_SIZE = 10;
 
 export type RecipientActivityTone = "success" | "warning" | "danger" | "neutral";
 
+export type RecipientFollowUpView = {
+  label: string;
+  tone: RecipientActivityTone;
+  message: string | null;
+};
+
 export type RecipientActivityItem = {
   id: string;
   email: string;
@@ -18,6 +24,7 @@ export type RecipientActivityItem = {
   attemptCount: number;
   lastAttemptAt: string;
   nextRetryAt: string | null;
+  followUp: RecipientFollowUpView | null;
 };
 
 export type RecipientActivityPage = {
@@ -38,7 +45,31 @@ type RecipientJobInput = {
   retryCount: number;
   updatedAt: Date | string;
   nextRetryAt: Date | string | null;
+  followUpStatus: string | null;
+  followUpError: string | null;
 };
+
+function buildFollowUpView(
+  followUpStatus: string | null,
+  followUpError: string | null
+): RecipientFollowUpView | null {
+  switch (followUpStatus) {
+    case "PENDING":
+      return { label: "Follow-up pending", tone: "neutral", message: null };
+    case "SENT":
+      return { label: "Follow-up sent", tone: "success", message: null };
+    case "FAILED":
+      return { label: "Follow-up failed", tone: "danger", message: followUpError?.trim() || "Delivery failed." };
+    case "SKIPPED":
+      return {
+        label: "Follow-up skipped",
+        tone: "warning",
+        message: followUpError?.trim() || "Skipped."
+      };
+    default:
+      return null;
+  }
+}
 
 const SUCCESS_STATUSES = new Set(["SENT", "OPENED", "CLICKED"]);
 const ENGAGED_STATUSES = new Set(["OPENED", "CLICKED"]);
@@ -151,6 +182,7 @@ export function buildRecipientActivityItem(job: RecipientJobInput): RecipientAct
     retryable: job.status === "RETRYING",
     attemptCount: job.retryCount,
     lastAttemptAt: toIso(job.updatedAt),
-    nextRetryAt: job.nextRetryAt ? toIso(job.nextRetryAt) : null
+    nextRetryAt: job.nextRetryAt ? toIso(job.nextRetryAt) : null,
+    followUp: buildFollowUpView(job.followUpStatus, job.followUpError)
   };
 }

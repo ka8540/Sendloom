@@ -351,6 +351,28 @@ export default async function OverviewCommandCenter() {
     latestRunCounts.set(row.campaignRunId, counts);
   }
 
+  // Per-run follow-up counts so cards can show follow-up progress and pause state.
+  const followUpCountRows = latestRunIds.length
+    ? await prisma.recipientJob.groupBy({
+        by: ["campaignRunId", "followUpStatus"],
+        where: {
+          campaignRunId: { in: latestRunIds },
+          followUpStatus: { not: null }
+        },
+        _count: true
+      })
+    : [];
+  const followUpCounts = new Map<string, Record<string, number>>();
+
+  for (const row of followUpCountRows) {
+    if (!row.followUpStatus) {
+      continue;
+    }
+    const counts = followUpCounts.get(row.campaignRunId) ?? {};
+    counts[row.followUpStatus] = row._count;
+    followUpCounts.set(row.campaignRunId, counts);
+  }
+
   const overviewCampaigns = recentCampaigns.map((campaign) => {
     const actualLatestRun = campaign.runs[0] ?? null;
     const { displayRun, isFromPreviousRun } = campaignDisplayRunInfo.get(campaign.id) ?? {
@@ -437,7 +459,7 @@ export default async function OverviewCommandCenter() {
     const totalRecipients = latestRun?.totalRecipients ?? 0;
     const issueCount = getIssueCount(latestRun);
     const runMetricsKnown = hasKnownRunMetrics(latestRun, processedCount);
-    const isActiveRun = ACTIVE_RUN_STATUSES.includes(actualRunStatus ?? "COMPLETED");
+    const runIsActive = ACTIVE_RUN_STATUSES.includes(actualRunStatus ?? "COMPLETED");
     const progressPercent =
       totalRecipients > 0
         ? Math.min(100, Math.max(0, Math.round((processedCount / totalRecipients) * 100)))
@@ -457,7 +479,7 @@ export default async function OverviewCommandCenter() {
     const deliveryLabel = latestRun
       ? runMetricsKnown
         ? `${formatCompactNumber(deliveredCount)} delivered`
-        : isActiveRun
+        : runIsActive
           ? "Metrics syncing"
           : `${formatCompactNumber(deliveredCount)} delivered`
       : campaign.lastValidatedAt
@@ -468,17 +490,41 @@ export default async function OverviewCommandCenter() {
         ? issueCount
           ? `${formatCompactNumber(issueCount)} delivery issues · ${formatCompactNumber(latestRun.openedCount)} opens`
           : `${formatCompactNumber(latestRun.openedCount)} opens · clean delivery`
-        : isActiveRun
+        : runIsActive
           ? "Waiting for activity"
           : `${formatCompactNumber(latestRun.openedCount)} opens · clean delivery`
       : `${campaign.template.name} · ${campaign.senderProfile.fromEmail}`;
     const lastActivityAt = latestRun?.updatedAt ?? campaign.updatedAt;
-    const isPausedRun = actualRunStatus === "PAUSED";
-    // Exclude PAUSED — paused sequences get a Resume button, not Relaunch
+    const campaignPaused = campaign.status === "PAUSED";
+
+    // Follow-up progress for this campaign's display run.
+    const followUpRunCounts = latestRun ? followUpCounts.get(latestRun.id) : null;
+    const followUpPending = followUpRunCounts?.PENDING ?? 0;
+    const followUpSent = followUpRunCounts?.SENT ?? 0;
+    const followUpFailed = followUpRunCounts?.FAILED ?? 0;
+    const followUpSkipped = followUpRunCounts?.SKIPPED ?? 0;
+    const followUpTotal = followUpPending + followUpSent + followUpFailed + followUpSkipped;
+    const hasPendingFollowUps = followUpPending > 0;
+    let followUpLabel: string | null = null;
+    if (campaign.followUpEnabled) {
+      followUpLabel =
+        followUpTotal === 0
+          ? "Follow-up scheduled"
+          : hasPendingFollowUps
+            ? `${formatCompactNumber(followUpSent)}/${formatCompactNumber(followUpTotal)} follow-ups sent`
+            : `${formatCompactNumber(followUpSent)} follow-ups sent`;
+    }
+
+    // A sequence with pending follow-ups is still active — offer Pause / Resume.
+    const isPausedRun = actualRunStatus === "PAUSED" || campaignPaused;
+    const isActiveRun =
+      !campaignPaused && (ACTIVE_RUN_STATUSES.includes(actualRunStatus ?? "COMPLETED") || hasPendingFollowUps);
+    // Exclude PAUSED / active — paused sequences resume, active ones pause.
     const canRelaunch =
       Boolean(campaign.lastValidatedAt) &&
       !ACTIVE_RUN_STATUSES.includes(actualRunStatus ?? "COMPLETED") &&
-      !isPausedRun;
+      !isPausedRun &&
+      !hasPendingFollowUps;
 
     return {
       id: campaign.id,
@@ -498,7 +544,8 @@ export default async function OverviewCommandCenter() {
       needsAttention: status.tone === "failed",
       canRelaunch,
       isActiveRun,
-      isPausedRun
+      isPausedRun,
+      followUpLabel
     };
   });
 

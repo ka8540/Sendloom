@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { createForbiddenApiResponse, getApiRestrictionMessage, requireApiUser } from "@/lib/api-auth";
+import { isFollowUpSendMode, validateFollowUpConfig, type FollowUpConfigInput } from "@/lib/follow-up";
 import type { EmailAttachment } from "@/lib/provider";
 import { GMAIL_RECONNECT_ERROR } from "@/lib/provider";
 import { createRateLimitResponse, rateLimit } from "@/lib/rate-limit";
@@ -187,6 +188,33 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     }
   }
 
+  let followUp: FollowUpConfigInput | undefined;
+  if (formData.has("followUp")) {
+    let rawFollowUp: unknown;
+    try {
+      rawFollowUp = JSON.parse(String(formData.get("followUp") ?? "{}"));
+    } catch {
+      return NextResponse.json({ error: "Follow-up data could not be read." }, { status: 400 });
+    }
+
+    const source = (rawFollowUp ?? {}) as Record<string, unknown>;
+    const sendMode = source.sendMode;
+    followUp = {
+      enabled: source.enabled === true,
+      templateId: typeof source.templateId === "string" ? source.templateId : null,
+      sendMode: isFollowUpSendMode(sendMode) ? sendMode : null,
+      scheduledAt: typeof source.scheduledAt === "string" ? source.scheduledAt : null,
+      timezone: typeof source.timezone === "string" ? source.timezone : null
+    };
+
+    if (followUp.enabled) {
+      const followUpValidation = validateFollowUpConfig(followUp);
+      if (!followUpValidation.ok) {
+        return NextResponse.json({ error: followUpValidation.error }, { status: 400 });
+      }
+    }
+  }
+
   try {
     const updatedCampaign = await updateCampaignSetup(
       {
@@ -195,7 +223,8 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
         importId,
         templateId,
         senderProfileId,
-        attachments
+        attachments,
+        followUp
       },
       auth.user.id
     );

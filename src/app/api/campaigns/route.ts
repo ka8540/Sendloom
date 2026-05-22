@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { createForbiddenApiResponse, getApiRestrictionMessage, requireApiUser } from "@/lib/api-auth";
 import { getAttachmentFilesFromFormData } from "@/lib/campaign-attachments";
+import { validateFollowUpConfig } from "@/lib/follow-up";
 import { prisma } from "@/lib/db";
 import { GMAIL_RECONNECT_ERROR } from "@/lib/provider";
 import { createRateLimitResponse, rateLimit } from "@/lib/rate-limit";
@@ -43,6 +44,14 @@ const scheduleRuleSchema = z.union([
   recurringScheduleRuleSchema
 ]);
 
+const followUpConfigSchema = z.object({
+  enabled: z.boolean(),
+  templateId: z.string().nullable().default(null),
+  sendMode: z.enum(["same_thread", "new_email"]).nullable().default(null),
+  scheduledAt: z.string().nullable().default(null),
+  timezone: z.string().nullable().default(null)
+});
+
 const schema = z.object({
   name: z.string().min(1),
   importId: z.string(),
@@ -50,7 +59,8 @@ const schema = z.object({
   templateId: z.string(),
   senderProfileId: z.string(),
   scheduleRule: scheduleRuleSchema,
-  autoLaunch: z.boolean().optional()
+  autoLaunch: z.boolean().optional(),
+  followUp: followUpConfigSchema.optional()
 });
 
 export async function POST(request: Request) {
@@ -73,11 +83,19 @@ export async function POST(request: Request) {
     templateId: formData.get("templateId"),
     senderProfileId: formData.get("senderProfileId"),
     scheduleRule: JSON.parse(String(formData.get("scheduleRule") ?? "{}")),
-    autoLaunch: formData.get("autoLaunch") === "true"
+    autoLaunch: formData.get("autoLaunch") === "true",
+    followUp: formData.has("followUp") ? JSON.parse(String(formData.get("followUp") ?? "{}")) : undefined
   });
 
   if (payload.scheduleRule.type === "once" && new Date(payload.scheduleRule.scheduledFor) <= new Date()) {
     return NextResponse.json({ error: "Choose a future time for a one-time scheduled send." }, { status: 400 });
+  }
+
+  if (payload.followUp?.enabled) {
+    const followUpValidation = validateFollowUpConfig(payload.followUp);
+    if (!followUpValidation.ok) {
+      return NextResponse.json({ error: followUpValidation.error }, { status: 400 });
+    }
   }
 
   const launchRestrictionMessage = getApiRestrictionMessage(auth.user, "campaignLaunch");

@@ -8,6 +8,14 @@ import {
 } from "@/lib/campaign-scheduling";
 import { prisma } from "@/lib/db";
 import type { FailureCode, FailureSource } from "@/lib/failures";
+import {
+  MAX_FOLLOW_UP_ATTEMPTS,
+  toReplySubject,
+  validateFollowUpConfig,
+  type FollowUpConfigInput,
+  type FollowUpSendMode,
+  type FollowUpTemplateSnapshot
+} from "@/lib/follow-up";
 import { buildMergePayload } from "@/lib/mapping";
 import { GMAIL_RECONNECT_ERROR, getUserSafeGmailSendError, isGmailReconnectError, sendEmail, type EmailAttachment } from "@/lib/provider";
 import { consumeSendWindow, getSendWindowKey } from "@/lib/rate-limit";
@@ -231,10 +239,18 @@ async function finalizeRunIfComplete(runId: string) {
     }
   });
 
+  // The sequence is only "complete" once any pending follow-ups have also resolved.
+  const pendingFollowUps = await prisma.recipientJob.count({
+    where: {
+      campaignRun: { campaignId: run.campaignId },
+      followUpStatus: "PENDING"
+    }
+  });
+
   await prisma.campaign.update({
     where: { id: run.campaignId },
     data: {
-      status: "COMPLETED"
+      status: pendingFollowUps > 0 ? "RUNNING" : "COMPLETED"
     }
   });
 
@@ -267,6 +283,68 @@ export class CampaignLaunchBlockedError extends Error {
   }
 }
 
+type FollowUpCampaignData = {
+  followUpEnabled: boolean;
+  followUpTemplateId: string | null;
+  followUpSendMode: string | null;
+  followUpScheduledAt: Date | null;
+  followUpTimezone: string | null;
+  followUpTemplateSnapshot: Prisma.InputJsonValue | typeof Prisma.JsonNull;
+};
+
+/**
+ * Validate a follow-up config and resolve a Campaign-shaped data object,
+ * snapshotting the chosen follow-up template so later edits don't change
+ * what already-launched recipients receive.
+ */
+async function buildFollowUpCampaignData(
+  followUp: FollowUpConfigInput | undefined,
+  userId: string
+): Promise<FollowUpCampaignData> {
+  if (!followUp?.enabled) {
+    return {
+      followUpEnabled: false,
+      followUpTemplateId: null,
+      followUpSendMode: null,
+      followUpScheduledAt: null,
+      followUpTimezone: null,
+      followUpTemplateSnapshot: Prisma.JsonNull
+    };
+  }
+
+  const validation = validateFollowUpConfig(followUp);
+  if (!validation.ok) {
+    throw new Error(validation.error);
+  }
+
+  const template = await prisma.template.findFirst({
+    where: {
+      id: followUp.templateId ?? "",
+      userId
+    }
+  });
+
+  if (!template) {
+    throw new Error("Choose a follow-up template connected to your account.");
+  }
+
+  const snapshot: FollowUpTemplateSnapshot = {
+    subject: template.subject,
+    format: (template.format as string | null) ?? "HTML",
+    htmlBody: template.htmlBody,
+    variableManifest: template.variableManifest
+  };
+
+  return {
+    followUpEnabled: true,
+    followUpTemplateId: template.id,
+    followUpSendMode: followUp.sendMode,
+    followUpScheduledAt: new Date(followUp.scheduledAt ?? ""),
+    followUpTimezone: followUp.timezone ?? null,
+    followUpTemplateSnapshot: snapshot as Prisma.InputJsonValue
+  };
+}
+
 export async function createCampaignDraft(input: {
   name: string;
   importId: string;
@@ -275,6 +353,7 @@ export async function createCampaignDraft(input: {
   senderProfileId: string;
   scheduleRule: ScheduleRule;
   attachments?: CampaignAttachmentSnapshot[];
+  followUp?: FollowUpConfigInput;
 }, userId: string) {
   const scheduleRule = normalizeScheduleRule(input.scheduleRule);
   const [importRecord, template, mapping, senderProfile] = await Promise.all([
@@ -305,6 +384,8 @@ export async function createCampaignDraft(input: {
     })
   ]);
 
+  const followUpData = await buildFollowUpCampaignData(input.followUp, userId);
+
   return prisma.campaign.create({
     data: {
       userId,
@@ -315,6 +396,7 @@ export async function createCampaignDraft(input: {
       senderProfileId: input.senderProfileId,
       scheduleType: input.scheduleRule.type,
       scheduleConfig: scheduleRule,
+      ...followUpData,
       templateSnapshot: {
         subject: template.subject,
         format: (template.format as TemplateFormat | null) ?? "HTML",
@@ -481,6 +563,7 @@ export async function updateCampaignSetup(
     templateId: string;
     senderProfileId: string;
     attachments: CampaignAttachmentSnapshot[];
+    followUp?: FollowUpConfigInput;
   },
   userId?: string
 ) {
@@ -580,7 +663,22 @@ export async function updateCampaignSetup(
     campaign.senderProfileId !== senderProfile.id ||
     JSON.stringify(currentTemplateSnapshot.attachments ?? []) !== JSON.stringify(input.attachments);
 
-  return prisma.campaign.update({
+  let followUpData: FollowUpCampaignData | null = null;
+  if (input.followUp) {
+    // Don't let config change once any recipient's follow-up has actually been processed.
+    const processedFollowUps = await prisma.recipientJob.count({
+      where: {
+        campaignRun: { campaignId: campaign.id },
+        followUpStatus: { in: ["SENT", "FAILED", "SKIPPED"] }
+      }
+    });
+    if (processedFollowUps > 0) {
+      throw new Error("Follow-up emails have already started sending and can no longer be changed.");
+    }
+    followUpData = await buildFollowUpCampaignData(input.followUp, userId ?? "");
+  }
+
+  const updatedCampaign = await prisma.campaign.update({
     where: { id: campaign.id },
     data: {
       name: input.name,
@@ -597,6 +695,7 @@ export async function updateCampaignSetup(
         fromEmail: senderProfile.fromEmail,
         name: senderProfile.name
       } as Prisma.InputJsonValue,
+      ...(followUpData ?? {}),
       ...(structuralSetupChanged
         ? {
             status: "DRAFT" as const,
@@ -606,6 +705,41 @@ export async function updateCampaignSetup(
         : {})
     }
   });
+
+  // When follow-up is toggled, reconcile already-delivered recipients so the
+  // scheduler sees the right set of owed follow-ups.
+  if (followUpData) {
+    const runs = await prisma.campaignRun.findMany({
+      where: { campaignId: campaign.id },
+      select: { id: true }
+    });
+    const runIds = runs.map((run) => run.id);
+
+    if (runIds.length > 0) {
+      if (followUpData.followUpEnabled) {
+        // Enabling: owe a follow-up to every recipient already delivered.
+        await prisma.recipientJob.updateMany({
+          where: {
+            campaignRunId: { in: runIds },
+            status: { in: ["SENT", "OPENED", "CLICKED"] },
+            followUpStatus: null
+          },
+          data: { followUpStatus: "PENDING" }
+        });
+      } else {
+        // Disabling: cancel follow-ups that have not been sent yet.
+        await prisma.recipientJob.updateMany({
+          where: {
+            campaignRunId: { in: runIds },
+            followUpStatus: "PENDING"
+          },
+          data: { followUpStatus: null }
+        });
+      }
+    }
+  }
+
+  return updatedCampaign;
 }
 
 export async function updateCampaignSchedule(
@@ -855,6 +989,21 @@ export async function pauseCampaign(campaignId: string, userId?: string) {
   });
 
   if (!activeRun) {
+    // No active run, but pending follow-ups can still be paused.
+    const pendingFollowUps = await prisma.recipientJob.count({
+      where: {
+        campaignRun: { campaignId },
+        followUpStatus: "PENDING"
+      }
+    });
+
+    if (pendingFollowUps > 0) {
+      await prisma.campaign.update({
+        where: { id: campaign.id },
+        data: { status: "PAUSED" }
+      });
+    }
+
     return null;
   }
 
@@ -889,6 +1038,7 @@ export async function resumeCampaign(campaignId: string, userId?: string) {
     where: campaignOwnershipFilter(campaignId, userId),
     select: {
       id: true,
+      status: true,
       scheduleType: true,
       scheduleConfig: true
     }
@@ -903,6 +1053,22 @@ export async function resumeCampaign(campaignId: string, userId?: string) {
   });
 
   if (!pausedRun) {
+    // No paused run, but a follow-up-only sequence can still be resumed.
+    const pendingFollowUps = await prisma.recipientJob.count({
+      where: {
+        campaignRun: { campaignId },
+        followUpStatus: "PENDING"
+      }
+    });
+
+    if (campaign.status === "PAUSED" && pendingFollowUps > 0) {
+      // Back to RUNNING so the follow-up scheduler picks it up again on schedule.
+      await prisma.campaign.update({
+        where: { id: campaign.id },
+        data: { status: "RUNNING" }
+      });
+    }
+
     return null;
   }
 
@@ -1343,12 +1509,16 @@ async function processRecipientJob(recipientJob: RecipientJobWithContext) {
       const templateSnapshot = latestJob.campaignRun.campaign.templateSnapshot as {
         attachments?: EmailAttachment[];
       };
+      // Set our own Message-ID so same-thread follow-ups can reference it.
+      const senderDomain = latestJob.campaignRun.campaign.senderProfile.fromEmail.split("@")[1] || "sendloom.app";
+      const initialMessageIdHeader = `<sl-${latestJob.id}-${Date.now()}@${senderDomain}>`;
       const response = await sendEmail({
         from: `${sender.name} <${sender.fromEmail}>`,
         to: latestJob.recipientEmail,
         subject: latestJob.subject,
         html: latestJob.htmlBody,
         attachments: templateSnapshot.attachments ?? [],
+        messageId: initialMessageIdHeader,
         sender: {
           fromEmail: latestJob.campaignRun.campaign.senderProfile.fromEmail,
           oauthRefreshToken: latestJob.campaignRun.campaign.senderProfile.oauthRefreshToken
@@ -1358,7 +1528,10 @@ async function processRecipientJob(recipientJob: RecipientJobWithContext) {
       await markRecipientAttempt({
         jobId: latestJob.id,
         status: "SENT",
-        providerMessageId: response.data?.id
+        providerMessageId: response.data?.id,
+        gmailThreadId: response.data?.threadId ?? undefined,
+        initialMessageIdHeader,
+        followUpStatus: latestJob.campaignRun.campaign.followUpEnabled ? "PENDING" : undefined
       });
 
       return {
@@ -1563,6 +1736,12 @@ export async function markRecipientAttempt(args: {
   lastError?: string;
   failureCode?: FailureCode;
   failureSource?: FailureSource;
+  /** Gmail thread id of the initial send (captured for same-thread follow-ups). */
+  gmailThreadId?: string;
+  /** RFC822 Message-ID set on the initial send (for follow-up References). */
+  initialMessageIdHeader?: string;
+  /** Initial follow-up lifecycle status to set (e.g. "PENDING" once delivered). */
+  followUpStatus?: string;
 }) {
   const current = await prisma.recipientJob.findUniqueOrThrow({
     where: { id: args.jobId },
@@ -1587,6 +1766,9 @@ export async function markRecipientAttempt(args: {
       lastError: args.status === "SENT" ? null : args.lastError ?? null,
       retryCount: args.status === "RETRYING" ? { increment: 1 } : undefined,
       nextRetryAt,
+      ...(args.gmailThreadId ? { gmailThreadId: args.gmailThreadId } : {}),
+      ...(args.initialMessageIdHeader ? { initialMessageIdHeader: args.initialMessageIdHeader } : {}),
+      ...(args.followUpStatus ? { followUpStatus: args.followUpStatus } : {}),
       metadata: {
         ...currentMetadata,
         failureCode: args.status === "SENT" ? null : args.failureCode ?? null,
@@ -1731,6 +1913,342 @@ export async function processProviderEvent(args: {
   return recipientJob;
 }
 
+type FollowUpJobWithContext = Prisma.RecipientJobGetPayload<{
+  include: {
+    campaignRun: {
+      include: {
+        campaign: {
+          include: {
+            senderProfile: true;
+          };
+        };
+      };
+    };
+  };
+}>;
+
+async function markFollowUpResult(jobId: string, status: "SENT" | "FAILED" | "SKIPPED", error: string | null) {
+  await prisma.recipientJob.update({
+    where: { id: jobId },
+    data: {
+      followUpStatus: status,
+      followUpError: status === "SENT" ? null : error,
+      followUpSentAt: status === "SENT" ? new Date() : undefined,
+      followUpNextRetryAt: null
+    }
+  });
+}
+
+/**
+ * Send the follow-up email for a single recipient. Reuses the same guardrails
+ * as the initial send: per-sender rate window, suppression checks, sender
+ * OAuth validation, retry/backoff. Same-thread mode replies inside the
+ * original Gmail thread; new-email mode sends a standalone message.
+ */
+async function sendFollowUpForRecipient(
+  job: FollowUpJobWithContext
+): Promise<{ processed: boolean; rateLimited: boolean }> {
+  const outcome = await withRedisLock(
+    `sendloom:follow-up-job:${job.id}`,
+    RECIPIENT_LOCK_TTL_SECONDS,
+    async () => {
+      const fresh = await prisma.recipientJob.findUnique({
+        where: { id: job.id },
+        include: {
+          campaignRun: {
+            include: {
+              campaign: {
+                include: {
+                  senderProfile: true
+                }
+              }
+            }
+          }
+        }
+      });
+
+      if (!fresh || fresh.followUpStatus !== "PENDING") {
+        return { processed: false, rateLimited: false };
+      }
+
+      if (fresh.followUpNextRetryAt && fresh.followUpNextRetryAt > new Date()) {
+        return { processed: false, rateLimited: false };
+      }
+
+      const campaign = fresh.campaignRun.campaign;
+      if (
+        !campaign.followUpEnabled ||
+        !campaign.followUpScheduledAt ||
+        campaign.followUpScheduledAt > new Date() ||
+        ["PAUSED", "CANCELLED", "FAILED"].includes(campaign.status)
+      ) {
+        return { processed: false, rateLimited: false };
+      }
+
+      const sendMode = campaign.followUpSendMode as FollowUpSendMode | null;
+      const snapshot = campaign.followUpTemplateSnapshot as FollowUpTemplateSnapshot | null;
+      if (!sendMode || !snapshot) {
+        await markFollowUpResult(fresh.id, "FAILED", "Follow-up configuration is missing.");
+        return { processed: true, rateLimited: false };
+      }
+
+      // Skip recipients who unsubscribed or were suppressed after the initial send.
+      const suppressed = await getSuppressedEmailsForUser(campaign.userId);
+      if (suppressed.has(fresh.recipientEmail.toLowerCase())) {
+        await markFollowUpResult(fresh.id, "SKIPPED", "Recipient unsubscribed before the follow-up.");
+        return { processed: true, rateLimited: false };
+      }
+
+      // Same-thread follow-ups need the original Gmail thread metadata.
+      if (sendMode === "same_thread" && !fresh.gmailThreadId) {
+        await markFollowUpResult(fresh.id, "SKIPPED", "Missing Gmail thread id from the original send.");
+        return { processed: true, rateLimited: false };
+      }
+
+      if (!campaign.senderProfile.oauthRefreshToken) {
+        await markFollowUpResult(fresh.id, "FAILED", GMAIL_RECONNECT_ERROR);
+        return { processed: true, rateLimited: false };
+      }
+
+      const rateWindow = await consumeSendWindow(
+        getSendWindowKey({
+          userId: campaign.userId ?? campaign.senderProfile.userId,
+          senderProfileId: campaign.senderProfileId
+        })
+      );
+      if (!rateWindow.allowed) {
+        return { processed: false, rateLimited: true };
+      }
+
+      const importRow = await prisma.importRow.findUnique({ where: { id: fresh.importRowId } });
+      const mappingSnapshot = campaign.mappingSnapshot as {
+        reservedFieldMap?: Record<string, string>;
+        variableMap?: Record<string, string>;
+      };
+      const payload = importRow
+        ? buildMergePayload(importRow.normalized as Record<string, unknown>, mappingSnapshot)
+        : {};
+      const followUpFormat = (snapshot.format as TemplateFormat | undefined) ?? "HTML";
+      const renderedBody = renderTemplateContent(followUpFormat, snapshot.htmlBody, payload);
+      const subject =
+        sendMode === "same_thread" ? toReplySubject(fresh.subject) : renderTemplate(snapshot.subject, payload);
+
+      if (sendMode === "new_email" && !subject.trim()) {
+        await markFollowUpResult(fresh.id, "FAILED", "Follow-up subject is empty.");
+        return { processed: true, rateLimited: false };
+      }
+
+      const sender = campaign.senderSnapshot as { fromEmail: string; name: string };
+      const senderDomain = campaign.senderProfile.fromEmail.split("@")[1] || "sendloom.app";
+      const followUpMessageId = `<slf-${fresh.id}-${Date.now()}@${senderDomain}>`;
+
+      try {
+        const response = await sendEmail({
+          from: `${sender.name} <${sender.fromEmail}>`,
+          to: fresh.recipientEmail,
+          subject,
+          html: renderedBody,
+          messageId: followUpMessageId,
+          sender: {
+            fromEmail: campaign.senderProfile.fromEmail,
+            oauthRefreshToken: campaign.senderProfile.oauthRefreshToken
+          },
+          ...(sendMode === "same_thread" && fresh.gmailThreadId
+            ? {
+                threadId: fresh.gmailThreadId,
+                ...(fresh.initialMessageIdHeader
+                  ? {
+                      inReplyTo: fresh.initialMessageIdHeader,
+                      references: [fresh.initialMessageIdHeader]
+                    }
+                  : {})
+              }
+            : {})
+        });
+
+        await prisma.recipientJob.update({
+          where: { id: fresh.id },
+          data: {
+            followUpStatus: "SENT",
+            followUpSentAt: new Date(),
+            followUpError: null,
+            followUpMessageId: response.data?.id ?? null,
+            followUpAttemptCount: fresh.followUpAttemptCount + 1,
+            followUpNextRetryAt: null
+          }
+        });
+
+        return { processed: true, rateLimited: false };
+      } catch (error) {
+        const message = getUserSafeGmailSendError(error);
+
+        if (isGmailReconnectError(error)) {
+          await markSenderRequiresReconnect(campaign.senderProfile.id);
+          await markFollowUpResult(fresh.id, "FAILED", GMAIL_RECONNECT_ERROR);
+          return { processed: true, rateLimited: false };
+        }
+
+        console.error("[follow-up-send] Delivery failed.", error);
+
+        const failureCode = classifySendFailure(error, {
+          senderConnected: Boolean(campaign.senderProfile.oauthRefreshToken)
+        });
+        const attempts = fresh.followUpAttemptCount + 1;
+
+        if (attempts < MAX_FOLLOW_UP_ATTEMPTS && isRetryableFailure(failureCode)) {
+          await prisma.recipientJob.update({
+            where: { id: fresh.id },
+            data: {
+              followUpStatus: "PENDING",
+              followUpAttemptCount: attempts,
+              followUpError: message,
+              followUpNextRetryAt: getNextRetryAt(failureCode, fresh.followUpAttemptCount)
+            }
+          });
+          return { processed: true, rateLimited: false };
+        }
+
+        await prisma.recipientJob.update({
+          where: { id: fresh.id },
+          data: {
+            followUpStatus: "FAILED",
+            followUpAttemptCount: attempts,
+            followUpError: message,
+            followUpNextRetryAt: null
+          }
+        });
+        return { processed: true, rateLimited: false };
+      }
+    }
+  );
+
+  return outcome ?? { processed: false, rateLimited: false };
+}
+
+/** Mark a follow-up-only campaign COMPLETED once every follow-up has resolved. */
+async function finalizeFollowUpCampaign(campaignId: string) {
+  const campaign = await prisma.campaign.findUnique({
+    where: { id: campaignId },
+    select: { status: true }
+  });
+
+  if (!campaign || campaign.status !== "RUNNING") {
+    return;
+  }
+
+  const [pendingFollowUps, activeRuns] = await Promise.all([
+    prisma.recipientJob.count({
+      where: { campaignRun: { campaignId }, followUpStatus: "PENDING" }
+    }),
+    prisma.campaignRun.count({
+      where: { campaignId, status: { in: ["QUEUED", "RUNNING"] } }
+    })
+  ]);
+
+  if (pendingFollowUps === 0 && activeRuns === 0) {
+    await prisma.campaign.update({
+      where: { id: campaignId },
+      data: { status: "COMPLETED" }
+    });
+  }
+}
+
+/**
+ * Server-side follow-up scheduler. Finds recipients whose follow-up is due
+ * (campaign follow-up enabled, scheduled time reached, initial send delivered)
+ * and sends each one. Runs from the campaign cron — never the browser.
+ */
+async function processDueFollowUps(deadline: number, maxJobs = DEFAULT_MAX_RECIPIENT_JOBS_PER_RUN) {
+  const now = new Date();
+  const candidates = await prisma.recipientJob.findMany({
+    where: {
+      followUpStatus: "PENDING",
+      OR: [{ followUpNextRetryAt: null }, { followUpNextRetryAt: { lte: now } }],
+      campaignRun: {
+        campaign: {
+          followUpEnabled: true,
+          followUpScheduledAt: { lte: now },
+          status: { notIn: ["PAUSED", "CANCELLED", "FAILED"] },
+          userId: { not: null },
+          senderProfile: {
+            oauthRefreshToken: { not: null }
+          }
+        }
+      }
+    },
+    include: {
+      campaignRun: {
+        include: {
+          campaign: {
+            include: {
+              senderProfile: true
+            }
+          }
+        }
+      }
+    },
+    orderBy: [{ followUpNextRetryAt: "asc" }, { createdAt: "asc" }],
+    take: maxJobs
+  });
+
+  const affectedCampaignIds = new Set<string>();
+  let processed = 0;
+
+  for (const job of candidates) {
+    if (!hasTimeRemaining(deadline)) {
+      break;
+    }
+
+    affectedCampaignIds.add(job.campaignRun.campaignId);
+    const result = await sendFollowUpForRecipient(job);
+    if (result.processed) {
+      processed += 1;
+    }
+    if (result.rateLimited) {
+      break;
+    }
+  }
+
+  for (const campaignId of affectedCampaignIds) {
+    await finalizeFollowUpCampaign(campaignId);
+  }
+
+  return { processed, candidates: candidates.length };
+}
+
+export type FollowUpStats = {
+  pending: number;
+  sent: number;
+  failed: number;
+  skipped: number;
+  total: number;
+};
+
+/** Aggregate per-recipient follow-up counts across a set of campaign runs. */
+export async function getFollowUpStats(campaignRunIds: string[]): Promise<FollowUpStats> {
+  const empty: FollowUpStats = { pending: 0, sent: 0, failed: 0, skipped: 0, total: 0 };
+  if (!campaignRunIds.length) {
+    return empty;
+  }
+
+  const rows = await prisma.recipientJob.groupBy({
+    by: ["followUpStatus"],
+    where: {
+      campaignRunId: { in: campaignRunIds },
+      followUpStatus: { not: null }
+    },
+    _count: true
+  });
+
+  const counts = Object.fromEntries(rows.map((row) => [row.followUpStatus, row._count]));
+  const pending = counts.PENDING ?? 0;
+  const sent = counts.SENT ?? 0;
+  const failed = counts.FAILED ?? 0;
+  const skipped = counts.SKIPPED ?? 0;
+
+  return { pending, sent, failed, skipped, total: pending + sent + failed + skipped };
+}
+
 export async function processPendingCampaignWork(args: ProcessCampaignWorkArgs = {}) {
   const scheduling: QueueScheduledRunsResult = {
     campaignsScanned: 0,
@@ -1867,9 +2385,40 @@ export async function processPendingCampaignWork(args: ProcessCampaignWorkArgs =
     }
   }
 
-  const remainingRuns = await prisma.campaignRun.count({
-    where: dueRunWhere
-  });
+  // Follow-up sweep — only on the unscoped cron pass, never the per-run after() hooks.
+  let followUpsProcessed = 0;
+  if (!args.runId && !args.campaignId) {
+    try {
+      if (hasTimeRemaining(deadline)) {
+        const followUpResult = await processDueFollowUps(deadline, maxRecipientJobsPerRun);
+        followUpsProcessed = followUpResult.processed;
+      }
+    } catch (error) {
+      console.error("[campaign-cron] Follow-up processing failed.", error);
+      errors.push({
+        scope: "campaign-run",
+        message: getErrorMessage(error)
+      });
+    }
+  }
+
+  const [remainingRuns, remainingFollowUps] = await Promise.all([
+    prisma.campaignRun.count({
+      where: dueRunWhere
+    }),
+    prisma.recipientJob.count({
+      where: {
+        followUpStatus: "PENDING",
+        campaignRun: {
+          campaign: {
+            followUpEnabled: true,
+            followUpScheduledAt: { lte: new Date() },
+            status: { notIn: ["PAUSED", "CANCELLED", "FAILED"] }
+          }
+        }
+      }
+    })
+  ]);
 
   return {
     dueCampaignsFound,
@@ -1878,7 +2427,8 @@ export async function processPendingCampaignWork(args: ProcessCampaignWorkArgs =
     schedulingLockSkipped: scheduling.lockSkipped,
     runsProcessed,
     recipientJobsProcessed,
-    hasRemainingWork: hasRemainingWork || remainingRuns > 0,
+    followUpsProcessed,
+    hasRemainingWork: hasRemainingWork || remainingRuns > 0 || remainingFollowUps > 0,
     errors
   };
 }
