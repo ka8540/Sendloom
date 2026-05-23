@@ -594,12 +594,19 @@ export default async function CampaignDetailPage({
     }))
   };
 
+  const hasPendingFollowUps = followUpStats.pending > 0;
   if (isActiveRun) {
     after(async () => {
       await processPendingCampaignWork({
         campaignId: campaign.id,
         maxDurationMs: 25_000
       });
+    });
+  } else if (hasPendingFollowUps) {
+    // Initial run is done but follow-ups are pending — run an unscoped pass so
+    // processDueFollowUps() can pick them up (scoped runs exclude the follow-up sweep).
+    after(async () => {
+      await processPendingCampaignWork({ maxDurationMs: 25_000 });
     });
   }
 
