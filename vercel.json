@@ -1,9 +1,3 @@
 {
-  "buildCommand": "npm run build:vercel",
-  "crons": [
-    {
-      "path": "/api/cron/campaigns",
-      "schedule": "* * * * *"
-    }
-  ]
+  "buildCommand": "npm run build:vercel"
 }
