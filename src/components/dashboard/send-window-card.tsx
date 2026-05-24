@@ -13,15 +13,36 @@ export type SendWindowSender = {
 type Tone = "ok" | "near" | "blocked";
 
 function resolveTone(window: DailySendWindow): Tone {
+  if (!window.ledgerAvailable) return "blocked";
   if (window.isBlocked) return "blocked";
   if (window.limit > 0 && window.sentLast24h >= Math.max(1, Math.floor(window.limit * 0.8))) return "near";
   return "ok";
 }
 
-function chipLabel(tone: Tone) {
+function chipLabel(tone: Tone, window: DailySendWindow) {
+  if (!window.ledgerAvailable) return "Ledger unavailable";
   if (tone === "blocked") return "Limit reached";
   if (tone === "near") return "Approaching limit";
   return "Within safety window";
+}
+
+function titleForWindow(tone: Tone, window: DailySendWindow) {
+  if (!window.ledgerAvailable) return "Gmail send tracking is paused";
+  if (tone === "blocked") return "Daily Gmail safety limit reached";
+  if (tone === "near") return "Sending close to the daily safety limit";
+  return "Gmail send window is healthy";
+}
+
+function subtitleForWindow(tone: Tone, window: DailySendWindow) {
+  if (!window.ledgerAvailable) {
+    return "Send tracking is temporarily unavailable, so Sendloom pauses new sends until the database setup is complete.";
+  }
+
+  if (tone === "blocked") {
+    return "Sendloom paused sending to avoid Gmail rejections. Sequences will resume automatically when the rolling 24-hour window clears.";
+  }
+
+  return "Tracking successful sends in a rolling 24-hour window per Gmail sender so campaigns stop before Gmail's quotas kick in.";
 }
 
 export function SendWindowCard({
@@ -45,23 +66,13 @@ export function SendWindowCard({
           <span className={styles.statusDot} aria-hidden="true" />
           <span className={styles.eyebrow}>Gmail send window</span>
           <span className={styles.statusChip} data-tone={tone}>
-            {chipLabel(tone)}
+            {chipLabel(tone, combined)}
           </span>
         </div>
 
-        <h2 className={styles.title}>
-          {tone === "blocked"
-            ? "Daily Gmail safety limit reached"
-            : tone === "near"
-              ? "Sending close to the daily safety limit"
-              : "Gmail send window is healthy"}
-        </h2>
+        <h2 className={styles.title}>{titleForWindow(tone, combined)}</h2>
 
-        <p className={styles.subtitle}>
-          {tone === "blocked"
-            ? "Sendloom paused sending to avoid Gmail rejections. Sequences will resume automatically when the rolling 24-hour window clears."
-            : "Tracking successful sends in a rolling 24-hour window per Gmail sender so campaigns stop before Gmail's quotas kick in."}
-        </p>
+        <p className={styles.subtitle}>{subtitleForWindow(tone, combined)}</p>
 
         <div className={styles.usageBlock}>
           <div className={styles.usageRow}>
@@ -88,11 +99,13 @@ export function SendWindowCard({
       <div className={styles.meta}>
         <div className={styles.metaTitleRow}>
           <span className={styles.metaTitle}>
-            {tone === "blocked" ? "Sending resumes" : "Window resets"}
+            {!combined.ledgerAvailable ? "Database setup needed" : tone === "blocked" ? "Sending resumes" : "Window resets"}
           </span>
         </div>
 
-        {tone === "blocked" && combined.resetAt ? (
+        {!combined.ledgerAvailable ? (
+          <p className={styles.metaResume}>Complete the pending database update to resume tracked sending.</p>
+        ) : tone === "blocked" && combined.resetAt ? (
           <p className={styles.metaResume}>
             <strong>
               <LocalDateTime value={combined.resetAt} />
@@ -110,7 +123,9 @@ export function SendWindowCard({
         )}
 
         <p className={styles.metaNote}>
-          {tone === "blocked"
+          {!combined.ledgerAvailable
+            ? "No recipients are marked failed while sending is paused for ledger setup."
+            : tone === "blocked"
             ? "Pending recipients stay queued — no failures are recorded for sends blocked by the safety limit."
             : "Sendloom calculates the reset from the oldest counted send, so capacity returns gradually."}
         </p>
@@ -138,6 +153,8 @@ export function SendWindowCard({
                         <>
                           resumes <LocalDateTime value={sender.window.resetAt} />
                         </>
+                      ) : !sender.window.ledgerAvailable ? (
+                        <>setup needed</>
                       ) : (
                         <>{sender.window.remaining.toLocaleString()} remaining</>
                       )}

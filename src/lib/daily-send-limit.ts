@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { env } from "@/lib/env";
 import { getRedis } from "@/lib/redis";
+import { isMissingSendLedgerTableError, warnMissingSendLedgerTable } from "@/lib/send-ledger-table";
 
 export const ROLLING_WINDOW_MS = 24 * 60 * 60 * 1000;
 const RESERVATION_PREFIX = "gmail-daily-send-window";
@@ -15,6 +16,7 @@ export type DailySendWindow = {
   sentLast24h: number;
   remaining: number;
   isBlocked: boolean;
+  ledgerAvailable: boolean;
   resetAt: string | null;
   oldestCountedSendAt: string | null;
   windowStart: string;
@@ -69,20 +71,29 @@ function buildWhere(scope: DailySendLimitScope, since: Date) {
 
 async function readDbCount(scope: DailySendLimitScope, since: Date) {
   if (!isScopeAddressable(scope)) {
-    return { count: 0, oldest: null as Date | null };
+    return { count: 0, oldest: null as Date | null, ledgerAvailable: true };
   }
 
   const where = buildWhere(scope, since);
-  const [count, oldest] = await Promise.all([
-    prisma.sendLedger.count({ where }),
-    prisma.sendLedger.findFirst({
-      where,
-      orderBy: { sentAt: "asc" },
-      select: { sentAt: true }
-    })
-  ]);
+  try {
+    const [count, oldest] = await Promise.all([
+      prisma.sendLedger.count({ where }),
+      prisma.sendLedger.findFirst({
+        where,
+        orderBy: { sentAt: "asc" },
+        select: { sentAt: true }
+      })
+    ]);
 
-  return { count, oldest: oldest?.sentAt ?? null };
+    return { count, oldest: oldest?.sentAt ?? null, ledgerAvailable: true };
+  } catch (error) {
+    if (isMissingSendLedgerTableError(error)) {
+      warnMissingSendLedgerTable();
+      return { count: 0, oldest: null as Date | null, ledgerAvailable: false };
+    }
+
+    throw error;
+  }
 }
 
 /**
@@ -94,11 +105,11 @@ export async function getGmailDailySendWindow(scope: DailySendLimitScope): Promi
   const limit = getDailySendLimit();
   const now = new Date();
   const windowStart = new Date(now.getTime() - ROLLING_WINDOW_MS);
-  const { count, oldest } = await readDbCount(scope, windowStart);
+  const { count, oldest, ledgerAvailable } = await readDbCount(scope, windowStart);
 
   const sentLast24h = count;
-  const isBlocked = sentLast24h >= limit;
-  const remaining = Math.max(0, limit - sentLast24h);
+  const isBlocked = ledgerAvailable && sentLast24h >= limit;
+  const remaining = ledgerAvailable ? Math.max(0, limit - sentLast24h) : 0;
   const resetAt = isBlocked && oldest ? new Date(oldest.getTime() + ROLLING_WINDOW_MS).toISOString() : null;
 
   return {
@@ -106,6 +117,7 @@ export async function getGmailDailySendWindow(scope: DailySendLimitScope): Promi
     sentLast24h,
     remaining,
     isBlocked,
+    ledgerAvailable,
     resetAt,
     oldestCountedSendAt: oldest?.toISOString() ?? null,
     windowStart: windowStart.toISOString(),
@@ -128,6 +140,10 @@ export async function reserveSendCapacity(scope: DailySendLimitScope): Promise<R
   }
 
   const window = await getGmailDailySendWindow(scope);
+  if (!window.ledgerAvailable) {
+    return { allowed: false, window };
+  }
+
   if (window.isBlocked) {
     return { allowed: false, window };
   }
@@ -237,7 +253,11 @@ export class DailySendLimitReachedError extends Error {
   scope: DailySendLimitScope;
 
   constructor(scope: DailySendLimitScope, window: DailySendWindow) {
-    super("Gmail daily send safety limit reached for this sender.");
+    super(
+      window.ledgerAvailable
+        ? "Gmail daily send safety limit reached for this sender."
+        : "Gmail daily send ledger is unavailable."
+    );
     this.name = "DailySendLimitReachedError";
     this.window = window;
     this.scope = scope;
@@ -246,7 +266,7 @@ export class DailySendLimitReachedError extends Error {
 
 export async function assertCanSendWithinDailyLimit(scope: DailySendLimitScope) {
   const window = await getGmailDailySendWindow(scope);
-  if (window.isBlocked) {
+  if (!window.ledgerAvailable || window.isBlocked) {
     throw new DailySendLimitReachedError(scope, window);
   }
   return window;

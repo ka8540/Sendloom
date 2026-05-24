@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Prisma } from "@prisma/client";
 
 const { sendLedgerMock, redisEvalMock, redisZremMock } = vi.hoisted(() => ({
   sendLedgerMock: {
@@ -35,6 +36,14 @@ import {
 } from "@/lib/daily-send-limit";
 
 const SCOPE = { userId: "user_1", senderProfileId: "sender_1" };
+
+function missingSendLedgerError() {
+  return new Prisma.PrismaClientKnownRequestError("The table `public.SendLedger` does not exist.", {
+    code: "P2021",
+    clientVersion: "test",
+    meta: { table: "public.SendLedger" }
+  });
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -114,6 +123,22 @@ describe("getGmailDailySendWindow", () => {
     expect(callArgs.where.userId).toBe("u_only");
     expect(callArgs.where.senderProfileId).toBeUndefined();
   });
+
+  it("returns a ledger-unavailable window instead of throwing when the table is missing", async () => {
+    sendLedgerMock.count.mockRejectedValueOnce(missingSendLedgerError());
+    sendLedgerMock.findFirst.mockRejectedValueOnce(missingSendLedgerError());
+
+    const window = await getGmailDailySendWindow(SCOPE);
+
+    expect(window).toMatchObject({
+      ledgerAvailable: false,
+      sentLast24h: 0,
+      remaining: 0,
+      isBlocked: false,
+      resetAt: null,
+      oldestCountedSendAt: null
+    });
+  });
 });
 
 describe("reserveSendCapacity", () => {
@@ -164,6 +189,19 @@ describe("reserveSendCapacity", () => {
     const result = await reserveSendCapacity({});
     expect(result.allowed).toBe(true);
     expect(sendLedgerMock.count).not.toHaveBeenCalled();
+    expect(redisEvalMock).not.toHaveBeenCalled();
+  });
+
+  it("denies reservations without hitting Redis when the send ledger table is missing", async () => {
+    sendLedgerMock.count.mockRejectedValueOnce(missingSendLedgerError());
+    sendLedgerMock.findFirst.mockRejectedValueOnce(missingSendLedgerError());
+
+    const result = await reserveSendCapacity(SCOPE);
+
+    expect(result.allowed).toBe(false);
+    if (!result.allowed) {
+      expect(result.window.ledgerAvailable).toBe(false);
+    }
     expect(redisEvalMock).not.toHaveBeenCalled();
   });
 });

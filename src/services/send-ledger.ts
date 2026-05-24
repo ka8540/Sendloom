@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { releaseSendReservation, type DailySendLimitScope } from "@/lib/daily-send-limit";
+import { isMissingSendLedgerTableError, warnMissingSendLedgerTable } from "@/lib/send-ledger-table";
 
 export type RecordSendArgs = {
   scope: DailySendLimitScope;
@@ -24,19 +25,31 @@ export type RecordSendArgs = {
 export async function recordSendOnLedger(args: RecordSendArgs) {
   const sentAt = args.sentAt ?? new Date();
 
-  await prisma.sendLedger.create({
-    data: {
-      userId: args.scope.userId ?? null,
-      senderProfileId: args.scope.senderProfileId ?? null,
-      campaignId: args.campaignId ?? null,
-      campaignRunId: args.campaignRunId ?? null,
-      recipientJobId: args.recipientJobId ?? null,
-      messageId: args.messageId ?? null,
-      threadId: args.threadId ?? null,
-      kind: args.kind ?? "INITIAL",
-      sentAt
+  try {
+    await prisma.sendLedger.create({
+      data: {
+        userId: args.scope.userId ?? null,
+        senderProfileId: args.scope.senderProfileId ?? null,
+        campaignId: args.campaignId ?? null,
+        campaignRunId: args.campaignRunId ?? null,
+        recipientJobId: args.recipientJobId ?? null,
+        messageId: args.messageId ?? null,
+        threadId: args.threadId ?? null,
+        kind: args.kind ?? "INITIAL",
+        sentAt
+      }
+    });
+  } catch (error) {
+    if (!isMissingSendLedgerTableError(error)) {
+      throw error;
     }
-  });
+
+    warnMissingSendLedgerTable();
+    if (args.reservationId) {
+      await releaseSendReservation(args.scope, args.reservationId);
+    }
+    return;
+  }
 
   if (args.reservationId) {
     await releaseSendReservation(args.scope, args.reservationId);
