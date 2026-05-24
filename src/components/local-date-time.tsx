@@ -6,9 +6,10 @@ type LocalDateTimeProps = {
   value?: string | null;
   emptyLabel?: string;
   className?: string;
+  variant?: "dateTime" | "time";
 };
 
-export function LocalDateTime({ value, emptyLabel = "Not available", className }: LocalDateTimeProps) {
+export function LocalDateTime({ value, emptyLabel = "Not available", className, variant = "dateTime" }: LocalDateTimeProps) {
   const formatted = useMemo(() => {
     if (!value) {
       return emptyLabel;
@@ -21,17 +22,26 @@ export function LocalDateTime({ value, emptyLabel = "Not available", className }
     }
 
     const browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const options: Intl.DateTimeFormatOptions =
+      variant === "time"
+        ? {
+            hour: "numeric",
+            minute: "2-digit",
+            timeZone: browserTimeZone,
+            timeZoneName: "short"
+          }
+        : {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+            timeZone: browserTimeZone,
+            timeZoneName: "short"
+          };
 
-    return new Intl.DateTimeFormat("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-      timeZone: browserTimeZone,
-      timeZoneName: "short"
-    }).format(date);
-  }, [emptyLabel, value]);
+    return new Intl.DateTimeFormat("en-US", options).format(date);
+  }, [emptyLabel, value, variant]);
 
   return <span className={className}>{formatted}</span>;
 }

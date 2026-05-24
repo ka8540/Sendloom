@@ -49,16 +49,14 @@ export function SequenceRow({ sequence, onRelaunch }: { sequence: SequenceRowDat
             <span className={styles.sequenceProgressFill} style={{ width: `${sequence.progressPercent}%` }} />
           </div>
           {sequence.dailyLimitBlock ? (
-            <p className={styles.sequenceLimitNote}>
+            <p className={styles.sequenceLimitNote} title="Paused by Gmail safety limit">
               <ShieldAlert aria-hidden="true" />
-              <span>
-                Paused by Gmail safety limit
-                {sequence.dailyLimitBlock.resumesAt ? (
-                  <>
-                    {" "}· resumes <LocalDateTime value={sequence.dailyLimitBlock.resumesAt} />
-                  </>
-                ) : null}
-              </span>
+              <span className={styles.sequenceLimitText}>Safety pause</span>
+              {sequence.dailyLimitBlock.resumesAt ? (
+                <span className={styles.sequenceLimitResume}>
+                  resumes <LocalDateTime value={sequence.dailyLimitBlock.resumesAt} variant="time" />
+                </span>
+              ) : null}
             </p>
           ) : (
             <p className={styles.sequenceDeliveryDetail}>{sequence.deliveryDetail}</p>

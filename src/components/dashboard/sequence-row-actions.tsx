@@ -158,7 +158,7 @@ export function SequenceRowActions({
         /* Auto-paused by daily safety limit — no manual action makes sense; show a clear waiting affordance. */
         <button
           type="button"
-          className={`${styles.sequenceActionButton} ${styles.sequenceActionButtonPause}`}
+          className={`${styles.sequenceActionButton} ${styles.sequenceActionButtonWaiting}`}
           disabled
           aria-label={`${campaignName} waiting for Gmail safety window to reset`}
           title="Waiting for the Gmail safety window to reset"
@@ -166,7 +166,7 @@ export function SequenceRowActions({
           <span className={styles.sequenceActionIconWrap}>
             <ShieldAlert aria-hidden="true" />
           </span>
-          <span className={styles.sequenceActionLabel}>Waiting</span>
+          <span className={styles.sequenceActionLabel}>Wait</span>
         </button>
       ) : isActiveRun ? (
         /* Active QUEUED / RUNNING → offer Pause */
