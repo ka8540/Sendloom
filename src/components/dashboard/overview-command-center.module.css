@@ -432,6 +432,10 @@
   letter-spacing: -0.04em;
 }
 
+.sendWindowSection {
+  display: block;
+}
+
 .metricsGrid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -867,6 +871,27 @@
   font-weight: 400;
   line-height: 1.5;
   letter-spacing: 0;
+}
+
+.sequenceLimitNote {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.32rem 0.6rem 0.32rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.84rem;
+  font-weight: 500;
+  background: var(--warning-soft);
+  color: color-mix(in srgb, var(--warning) 86%, var(--text) 14%);
+  border: 1px solid color-mix(in srgb, var(--warning) 32%, transparent);
+  width: fit-content;
+}
+
+.sequenceLimitNote svg {
+  width: 0.9rem;
+  height: 0.9rem;
+  stroke-width: 2;
 }
 
 .sequenceStatus {

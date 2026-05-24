@@ -131,6 +131,39 @@ flowchart LR
 - Open and click tracking routes still exist in the app.
 - Unsubscribe and suppression plumbing still exists in the codebase, but the operator-facing suppression dashboard is hidden from the active app flow.
 
+### Gmail daily send safety limit
+
+Sendloom stops sending before Gmail starts rejecting. Each successful Gmail send is
+recorded in the `SendLedger` table; before every send attempt the worker checks the
+rolling 24-hour count for that sender and blocks if the safety cap is hit.
+
+- **Default cap**: 450 successful sends per rolling 24 hours.
+- **Override**: set `GMAIL_DAILY_SEND_SAFETY_LIMIT` in your environment (e.g. `GMAIL_DAILY_SEND_SAFETY_LIMIT=450`). Missing or invalid values fall back to 450.
+- **Scope**: tracked per connected Gmail sender (`SenderProfile`), because Gmail's
+  quota is per-mailbox. A user-level rollup is also surfaced on the Overview page.
+- **Rolling window**, not midnight reset: the system looks at the last 24 hours from
+  now. `resetAt` is the oldest counted successful send + 24 hours — at that moment
+  enough capacity frees up for sending to resume.
+- **What counts**: confirmed Gmail sends (initial and follow-up) recorded via
+  `recordSendOnLedger`. Failed sends, retry attempts that failed, suppressed,
+  invalid, or skipped recipients are **not** counted.
+- **Blocking behavior**: when the cap is hit during a send, the affected
+  `CampaignRun` is set to `PAUSED` with `progressSnapshot.pauseReason = "DAILY_SEND_LIMIT"`
+  and `pauseResumesAt = <resetAt ISO>`. The in-flight recipient job stays `PENDING`
+  (not `FAILED`) so it picks up automatically on resume.
+- **Auto-resume**: `processPendingCampaignWork` (run on every Overview render and
+  every scheduler tick) calls `resumeCampaignRunsBlockedByDailyLimit`, which releases
+  any run whose `pauseResumesAt` has passed. Manual pauses are left alone — they
+  carry no `DAILY_SEND_LIMIT` reason.
+- **Concurrency safety**: a Redis sorted-set + Lua script reserves capacity
+  atomically before the Gmail call, so the 10 worker fibers cannot collectively
+  blow past the cap. The DB ledger remains the source of truth; Redis only
+  guards the race window between "decide to send" and "ledger write".
+- **UI surfaces**: Overview has a dedicated send-window card (per sender);
+  blocked sequences show "Paused by Gmail safety limit · resumes …" on the row
+  and a compact alert on the sequence detail page. No recipient is marked
+  "Failed/Permanent" because of the safety limit.
+
 ### Replies
 
 - Reply counts are part of the sequence detail view.

@@ -94,7 +94,7 @@ const trustPoints = [
   },
   {
     title: "Safe pacing",
-    body: "Per-user send windows keep the throughput deliberate, so a run feels measured rather than reckless."
+    body: "Built-in Gmail safety windows track a rolling 24-hour send count per sender and automatically pause campaigns before account limits are hit."
   },
   {
     title: "Validation before launch",

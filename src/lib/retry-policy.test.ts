@@ -24,4 +24,20 @@ describe("retry policy", () => {
     );
     expect(classifySendFailure(new Error("anything"), { senderConnected: false })).toBe("GMAIL_PROFILE_DISCONNECTED");
   });
+
+  it.each([
+    "User-rate limit exceeded",
+    "userRateLimitExceeded",
+    "rateLimitExceeded",
+    "Daily Limit Exceeded",
+    "dailyLimitExceeded",
+    "Quota exceeded for user",
+    "Too many concurrent requests for user",
+    "Exceeded rate limits",
+    "Mail sending limit exceeded for this account"
+  ])("classifies %s as retryable rate-limit error (not permanent)", (message) => {
+    const code = classifySendFailure(new Error(message), { senderConnected: true });
+    expect(code).toBe("GMAIL_RATE_LIMITED");
+    expect(isRetryableFailure(code)).toBe(true);
+  });
 });

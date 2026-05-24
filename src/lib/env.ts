@@ -33,7 +33,8 @@ const envSchema = z
     DEFAULT_FROM_EMAIL: z.string().email().optional(),
     DEFAULT_FROM_NAME: z.string().min(1).optional(),
     ADMIN_EMAIL: z.string().email().optional(),
-    ADMIN_PASSWORD: z.string().min(8).optional()
+    ADMIN_PASSWORD: z.string().min(8).optional(),
+    GMAIL_DAILY_SEND_SAFETY_LIMIT: z.coerce.number().int().positive().default(450)
   })
   .superRefine((value, ctx) => {
     if (value.OBJECT_STORAGE_MODE !== "r2") {
@@ -86,7 +87,8 @@ function readRawEnv() {
     DEFAULT_FROM_EMAIL: process.env.DEFAULT_FROM_EMAIL,
     DEFAULT_FROM_NAME: process.env.DEFAULT_FROM_NAME,
     ADMIN_EMAIL: process.env.ADMIN_EMAIL,
-    ADMIN_PASSWORD: process.env.ADMIN_PASSWORD
+    ADMIN_PASSWORD: process.env.ADMIN_PASSWORD,
+    GMAIL_DAILY_SEND_SAFETY_LIMIT: process.env.GMAIL_DAILY_SEND_SAFETY_LIMIT
   };
 }
 

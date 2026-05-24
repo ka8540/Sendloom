@@ -1,6 +1,6 @@
 import type { Route } from "next";
 import Link from "next/link";
-import { Eye, LoaderCircle, Pause, Play, Trash2 } from "lucide-react";
+import { Eye, LoaderCircle, Pause, Play, ShieldAlert, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, type MouseEvent } from "react";
 
@@ -14,6 +14,7 @@ export function SequenceRowActions({
   canRelaunch,
   isActiveRun,
   isPausedRun,
+  isDailyLimitBlocked = false,
   onRelaunch
 }: {
   href: Route;
@@ -22,6 +23,7 @@ export function SequenceRowActions({
   canRelaunch: boolean;
   isActiveRun: boolean;
   isPausedRun: boolean;
+  isDailyLimitBlocked?: boolean;
   onRelaunch: () => void;
 }) {
   const router = useRouter();
@@ -152,7 +154,21 @@ export function SequenceRowActions({
         <span className={styles.sequenceActionLabel}>View</span>
       </Link>
 
-      {isActiveRun ? (
+      {isDailyLimitBlocked ? (
+        /* Auto-paused by daily safety limit — no manual action makes sense; show a clear waiting affordance. */
+        <button
+          type="button"
+          className={`${styles.sequenceActionButton} ${styles.sequenceActionButtonPause}`}
+          disabled
+          aria-label={`${campaignName} waiting for Gmail safety window to reset`}
+          title="Waiting for the Gmail safety window to reset"
+        >
+          <span className={styles.sequenceActionIconWrap}>
+            <ShieldAlert aria-hidden="true" />
+          </span>
+          <span className={styles.sequenceActionLabel}>Waiting</span>
+        </button>
+      ) : isActiveRun ? (
         /* Active QUEUED / RUNNING → offer Pause */
         <button
           type="button"

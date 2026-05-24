@@ -83,6 +83,19 @@ function getFailureCode(metadata: unknown): FailureCode | null {
   return typeof code === "string" && FAILURE_CODES.includes(code as FailureCode) ? (code as FailureCode) : null;
 }
 
+function getDailyLimitBlock(metadata: unknown): { blockedUntil: string | null } | null {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return null;
+  }
+  const record = metadata as { blockedBy?: unknown; blockedUntil?: unknown };
+  if (record.blockedBy !== "DAILY_SEND_LIMIT") {
+    return null;
+  }
+  return {
+    blockedUntil: typeof record.blockedUntil === "string" ? record.blockedUntil : null
+  };
+}
+
 function toIso(value: Date | string) {
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }
@@ -137,6 +150,25 @@ function resolveMessage(status: string, isIssue: boolean, failureCode: FailureCo
 export function buildRecipientActivityItem(job: RecipientJobInput): RecipientActivityItem {
   const isIssue = ISSUE_STATUSES.has(job.status);
   const failureCode = getFailureCode(job.metadata);
+  const dailyLimitBlock = job.status === "PENDING" ? getDailyLimitBlock(job.metadata) : null;
+
+  if (dailyLimitBlock) {
+    return {
+      id: job.id,
+      email: job.recipientEmail,
+      name: job.recipientName?.trim() ? job.recipientName.trim() : null,
+      status: job.status,
+      statusLabel: "Paused by safety limit",
+      tone: "warning",
+      engaged: false,
+      message: "Held until the Gmail daily safety window resets.",
+      isIssue: false,
+      retryable: true,
+      attemptCount: job.retryCount,
+      lastAttemptAt: toIso(job.updatedAt),
+      nextRetryAt: dailyLimitBlock.blockedUntil
+    };
+  }
 
   return {
     id: job.id,

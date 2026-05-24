@@ -14,13 +14,15 @@ import {
 } from "lucide-react";
 
 import { requireOperatorUser } from "@/lib/auth";
+import { getGmailDailySendWindow } from "@/lib/daily-send-limit";
 import { prisma } from "@/lib/db";
 import { ActivityFeed } from "@/components/dashboard/activity-feed";
 import { formatCompactNumber, formatRelativeTime, buildTrend, humanizeEnum } from "@/components/dashboard/formatters";
 import { MetricCard } from "@/components/dashboard/metric-card";
+import { SendWindowCard, type SendWindowSender } from "@/components/dashboard/send-window-card";
 import { SequencePanel } from "@/components/dashboard/sequence-panel";
 import type { ActivityItem, SequenceRowData } from "@/components/dashboard/types";
-import { processPendingCampaignWork } from "@/services/campaigns";
+import { processPendingCampaignWork, readDailyLimitPauseInfo } from "@/services/campaigns";
 import styles from "./overview-command-center.module.css";
 
 const ACTIVE_RUN_STATUSES: RunStatus[] = ["QUEUED", "RUNNING"];
@@ -97,7 +99,9 @@ export default async function OverviewCommandCenter() {
     recentCampaigns,
     recentRuns,
     recentImports,
-    recentTemplates
+    recentTemplates,
+    connectedSenders,
+    userSendWindow
   ] = await Promise.all([
     prisma.import.count({
       where: {
@@ -245,7 +249,8 @@ export default async function OverviewCommandCenter() {
             openedCount: true,
             clickedCount: true,
             createdAt: true,
-            updatedAt: true
+            updatedAt: true,
+            progressSnapshot: true
           }
         }
       }
@@ -299,8 +304,41 @@ export default async function OverviewCommandCenter() {
         format: true,
         updatedAt: true
       }
-    })
+    }),
+    prisma.senderProfile.findMany({
+      where: { userId: user.id },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        fromEmail: true,
+        name: true,
+        oauthRefreshToken: true
+      }
+    }),
+    getGmailDailySendWindow({ userId: user.id })
   ]);
+
+  const sendWindowSenders: SendWindowSender[] = await Promise.all(
+    connectedSenders.map(async (sender) => ({
+      senderProfileId: sender.id,
+      senderEmail: sender.fromEmail,
+      senderName: sender.name,
+      connected: Boolean(sender.oauthRefreshToken),
+      window: await getGmailDailySendWindow({
+        userId: user.id,
+        senderProfileId: sender.id
+      })
+    }))
+  );
+
+  const blockedSenderProfileIds = new Set(
+    sendWindowSenders.filter((sender) => sender.window.isBlocked).map((sender) => sender.senderProfileId)
+  );
+  const blockedResumeBySenderProfileId = new Map<string, string | null>(
+    sendWindowSenders
+      .filter((sender) => sender.window.isBlocked)
+      .map((sender) => [sender.senderProfileId, sender.window.resetAt])
+  );
 
   // For each campaign, determine which run to display metrics from.
   // If the latest run is QUEUED/RUNNING with 0 processed and a completed run exists,
@@ -430,8 +468,20 @@ export default async function OverviewCommandCenter() {
 
   const sequenceRows: SequenceRowData[] = overviewCampaigns.map((campaign) => {
     const latestRun = campaign.latestRun; // display run (metrics)
+    const actualLatestRun = campaign.runs[0] ?? null;
     const actualRunStatus = campaign.actualLatestRunStatus; // real latest run status (for status badge / actions)
-    const status = deriveSequenceStatus(campaign.status, actualRunStatus);
+    const dailyLimitInfo = readDailyLimitPauseInfo(actualLatestRun?.progressSnapshot ?? null);
+    const senderResumesAt = blockedResumeBySenderProfileId.get(campaign.senderProfileId) ?? null;
+    const isSenderBlocked = blockedSenderProfileIds.has(campaign.senderProfileId);
+    const dailyLimitBlock =
+      dailyLimitInfo || isSenderBlocked
+        ? {
+            resumesAt: dailyLimitInfo?.pauseResumesAt ?? senderResumesAt ?? null
+          }
+        : null;
+    const status = dailyLimitBlock
+      ? { label: "Paused · safety limit", tone: "paused" as const }
+      : deriveSequenceStatus(campaign.status, actualRunStatus);
     const deliveredCount = getDeliveredCount(latestRun);
     const processedCount = getProcessedCount(latestRun);
     const totalRecipients = latestRun?.totalRecipients ?? 0;
@@ -473,8 +523,8 @@ export default async function OverviewCommandCenter() {
           : `${formatCompactNumber(latestRun.openedCount)} opens · clean delivery`
       : `${campaign.template.name} · ${campaign.senderProfile.fromEmail}`;
     const lastActivityAt = latestRun?.updatedAt ?? campaign.updatedAt;
-    const isPausedRun = actualRunStatus === "PAUSED";
-    // Exclude PAUSED — paused sequences get a Resume button, not Relaunch
+    const isPausedRun = actualRunStatus === "PAUSED" || Boolean(dailyLimitBlock);
+    // Exclude PAUSED and daily-limit blocked — those don't get a Relaunch action.
     const canRelaunch =
       Boolean(campaign.lastValidatedAt) &&
       !ACTIVE_RUN_STATUSES.includes(actualRunStatus ?? "COMPLETED") &&
@@ -498,7 +548,8 @@ export default async function OverviewCommandCenter() {
       needsAttention: status.tone === "failed",
       canRelaunch,
       isActiveRun,
-      isPausedRun
+      isPausedRun,
+      dailyLimitBlock
     };
   });
 
@@ -650,6 +701,10 @@ export default async function OverviewCommandCenter() {
             </div>
           </div>
         </div>
+      </section>
+
+      <section className={styles.sendWindowSection}>
+        <SendWindowCard combined={userSendWindow} senders={sendWindowSenders} />
       </section>
 
       <section className={styles.metricsGrid}>

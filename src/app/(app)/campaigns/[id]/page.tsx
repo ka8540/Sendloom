@@ -24,6 +24,7 @@ import { getValidationChecksFromSnapshot } from "@/lib/campaign-health";
 import { SCHEDULE_EDIT_DISABLED_MESSAGE, canEditCampaignSchedule } from "@/lib/campaign-schedule-edit";
 import { isCampaignSetupLocked } from "@/lib/campaign-setup-lock";
 import { prisma } from "@/lib/db";
+import { getGmailDailySendWindow } from "@/lib/daily-send-limit";
 import { GMAIL_RECONNECT_ERROR } from "@/lib/provider";
 import { RECIPIENT_ACTIVITY_PAGE_SIZE, buildRecipientActivityItem } from "@/lib/recipient-activity";
 import { RecipientActivity } from "@/components/recipient-activity";
@@ -32,6 +33,7 @@ import {
   launchCampaign,
   pauseCampaign,
   processPendingCampaignWork,
+  readDailyLimitPauseInfo,
   validateCampaign
 } from "@/services/campaigns";
 import { syncRepliesForSenderProfile } from "@/services/replies";
@@ -340,7 +342,8 @@ export default async function CampaignDetailPage({
           clickedCount: true,
           scheduledFor: true,
           startedAt: true,
-          updatedAt: true
+          updatedAt: true,
+          progressSnapshot: true
         }
       }
     }
@@ -461,6 +464,13 @@ export default async function CampaignDetailPage({
   const senderNeedsReconnect = !campaign.senderProfile.oauthRefreshToken;
   const isActiveRun = latestRun ? ["QUEUED", "RUNNING"].includes(latestRun.status) : false;
   const isPausedRun = latestRun?.status === "PAUSED" || campaign.status === "PAUSED";
+  const dailyLimitPauseInfo = readDailyLimitPauseInfo(latestRun?.progressSnapshot ?? null);
+  const senderSendWindow = await getGmailDailySendWindow({
+    userId: user.id,
+    senderProfileId: campaign.senderProfileId
+  });
+  const dailyLimitActive = Boolean(dailyLimitPauseInfo) || senderSendWindow.isBlocked;
+  const dailyLimitResumeIso = dailyLimitPauseInfo?.pauseResumesAt ?? senderSendWindow.resetAt ?? null;
   const setupLocked = isCampaignSetupLocked({
     campaignStatus: campaign.status,
     latestRunStatus: latestRun?.status ?? null
@@ -472,13 +482,15 @@ export default async function CampaignDetailPage({
   const recipientStatusCountMap = new Map(recipientStatusCounts.map((entry) => [entry.status, entry._count]));
   const replyCount = replyCountAggregate._sum.replyCount ?? 0;
   const deliveredCount = getDeliveredCount(displayRun);
-  const launchButtonLabel = isActiveRun
-    ? "Run is processing"
-    : isPausedRun
-      ? "Sequence paused"
-      : latestRun
-        ? "Launch again"
-        : "Launch sequence";
+  const launchButtonLabel = dailyLimitActive
+    ? "Waiting for Gmail safety window"
+    : isActiveRun
+      ? "Run is processing"
+      : isPausedRun
+        ? "Sequence paused"
+        : latestRun
+          ? "Launch again"
+          : "Launch sequence";
   const validationButtonLabel = campaign.lastValidatedAt ? "Refresh validation" : "Validate sequence";
   const pauseButtonLabel = isPausedRun ? "Resume sequence" : "Pause sequence";
   const scheduleConfig = getScheduleConfig(campaign.scheduleType, campaign.scheduleConfig as ScheduleConfig | null);
@@ -597,6 +609,30 @@ export default async function CampaignDetailPage({
           <span>Gmail reconnected. This sequence is ready to launch again.</span>
         </div>
       ) : null}
+      {dailyLimitActive ? (
+        <aside className={styles.safetyLimitCard} role="status" aria-live="polite">
+          <span className={styles.safetyLimitIcon} aria-hidden="true">
+            <ShieldAlert />
+          </span>
+          <div className={styles.safetyLimitBody}>
+            <strong className={styles.safetyLimitTitle}>Daily Gmail safety limit reached</strong>
+            <p className={styles.safetyLimitCopy}>
+              {campaign.senderProfile.fromEmail} has sent{" "}
+              {senderSendWindow.sentLast24h.toLocaleString()} / {senderSendWindow.limit.toLocaleString()} emails
+              in the last 24 hours. Sendloom paused sending to avoid Gmail rejections.
+              {dailyLimitResumeIso ? (
+                <>
+                  {" "}Sending will resume at{" "}
+                  <strong>
+                    <LocalDateTime value={dailyLimitResumeIso} />
+                  </strong>
+                  .
+                </>
+              ) : null}
+            </p>
+          </div>
+        </aside>
+      ) : null}
       <section className={styles.overview}>
         <div className={styles.overviewMain}>
           <div className={styles.kicker}>Sequence overview</div>
@@ -704,7 +740,11 @@ export default async function CampaignDetailPage({
                 </a>
               ) : (
                 <form action={launch.bind(null, campaign.id)}>
-                  <button className="button" type="submit" disabled={isActiveRun || isPausedRun}>
+                  <button
+                    className="button"
+                    type="submit"
+                    disabled={isActiveRun || isPausedRun || dailyLimitActive}
+                  >
                     {launchButtonLabel}
                   </button>
                 </form>

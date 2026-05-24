@@ -1,12 +1,19 @@
 import { Worker, type ConnectionOptions } from "bullmq";
 
 import { prisma } from "@/lib/db";
+import { releaseSendReservation, reserveSendCapacity } from "@/lib/daily-send-limit";
 import { getUserSafeGmailSendError, isGmailDailyLimitError, sendEmail, type EmailAttachment } from "@/lib/provider";
 import { queues } from "@/lib/queue";
 import { consumeSendWindow, getSendWindowKey } from "@/lib/rate-limit";
 import { getRedis } from "@/lib/redis";
 import { classifySendFailure, isRetryableFailure, MAX_RETRY_ATTEMPTS } from "@/lib/retry-policy";
-import { enqueueRecipientJobs, markRecipientAttempt, pauseCampaignRunForSenderLimit } from "@/services/campaigns";
+import {
+  enqueueRecipientJobs,
+  markRecipientAttempt,
+  pauseCampaignRunForDailyLimit,
+  pauseCampaignRunForSenderLimit
+} from "@/services/campaigns";
+import { recordSendOnLedger } from "@/services/send-ledger";
 
 const connection = getRedis() as unknown as ConnectionOptions;
 
@@ -57,14 +64,47 @@ const sendWorker = new Worker(
       return;
     }
 
+    const scope = {
+      userId: recipientJob.campaignRun.campaign.userId ?? recipientJob.campaignRun.campaign.senderProfile.userId,
+      senderProfileId: recipientJob.campaignRun.campaign.senderProfileId
+    };
+
+    let activeReservationId: string | null = null;
+
     try {
+      const dailyReservation = await reserveSendCapacity(scope);
+      if (!dailyReservation.allowed) {
+        const resumeAt = dailyReservation.window.resetAt ? new Date(dailyReservation.window.resetAt) : null;
+        await pauseCampaignRunForDailyLimit({
+          runId: recipientJob.campaignRunId,
+          jobId,
+          message: "Sendloom paused sending to stay under Gmail's daily safety limit.",
+          resumeAt,
+          scope
+        });
+        if (resumeAt) {
+          await queues.send.add(
+            "send-recipient",
+            { jobId },
+            {
+              jobId: recipientJob.dedupeKey,
+              delay: Math.max(1_000, resumeAt.getTime() - Date.now())
+            }
+          );
+        }
+        return;
+      }
+      activeReservationId = dailyReservation.reservationId;
+
       const rateWindow = await consumeSendWindow(
         getSendWindowKey({
-          userId: recipientJob.campaignRun.campaign.userId ?? recipientJob.campaignRun.campaign.senderProfile.userId,
-          senderProfileId: recipientJob.campaignRun.campaign.senderProfileId
+          userId: scope.userId,
+          senderProfileId: scope.senderProfileId
         })
       );
       if (!rateWindow.allowed) {
+        await releaseSendReservation(scope, activeReservationId);
+        activeReservationId = null;
         await markRecipientAttempt({
           jobId,
           status: "RETRYING",
@@ -107,7 +147,22 @@ const sendWorker = new Worker(
         status: "SENT",
         providerMessageId: response.data?.id
       });
+
+      await recordSendOnLedger({
+        scope,
+        reservationId: activeReservationId,
+        campaignId: recipientJob.campaignRun.campaignId,
+        campaignRunId: recipientJob.campaignRunId,
+        recipientJobId: jobId,
+        messageId: response.data?.id ?? null
+      });
+      activeReservationId = null;
     } catch (error) {
+      if (activeReservationId) {
+        await releaseSendReservation(scope, activeReservationId);
+        activeReservationId = null;
+      }
+
       const message = getUserSafeGmailSendError(error);
       console.error("[worker-send] Delivery failed.", error);
       if (isGmailDailyLimitError(error)) {

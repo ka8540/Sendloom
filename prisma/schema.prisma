@@ -332,6 +332,25 @@ model RateLimitWindow {
   updatedAt    DateTime @updatedAt
 }
 
+model SendLedger {
+  id              String   @id @default(cuid())
+  userId          String?
+  senderProfileId String?
+  campaignId      String?
+  campaignRunId   String?
+  recipientJobId  String?
+  kind            String   @default("INITIAL")
+  provider        String   @default("GMAIL")
+  messageId       String?
+  threadId        String?
+  sentAt          DateTime
+  createdAt       DateTime @default(now())
+
+  @@index([senderProfileId, sentAt])
+  @@index([userId, sentAt])
+  @@index([recipientJobId])
+}
+
 model AuditLog {
   id         String   @id @default(cuid())
   actorEmail String

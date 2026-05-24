@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, ShieldAlert } from "lucide-react";
 import { useRouter } from "next/navigation";
 import type { KeyboardEvent } from "react";
 
@@ -48,7 +48,21 @@ export function SequenceRow({ sequence, onRelaunch }: { sequence: SequenceRowDat
           <div className={styles.sequenceProgressTrack} aria-hidden="true">
             <span className={styles.sequenceProgressFill} style={{ width: `${sequence.progressPercent}%` }} />
           </div>
-          <p className={styles.sequenceDeliveryDetail}>{sequence.deliveryDetail}</p>
+          {sequence.dailyLimitBlock ? (
+            <p className={styles.sequenceLimitNote}>
+              <ShieldAlert aria-hidden="true" />
+              <span>
+                Paused by Gmail safety limit
+                {sequence.dailyLimitBlock.resumesAt ? (
+                  <>
+                    {" "}· resumes <LocalDateTime value={sequence.dailyLimitBlock.resumesAt} />
+                  </>
+                ) : null}
+              </span>
+            </p>
+          ) : (
+            <p className={styles.sequenceDeliveryDetail}>{sequence.deliveryDetail}</p>
+          )}
         </div>
       </div>
 
@@ -75,6 +89,7 @@ export function SequenceRow({ sequence, onRelaunch }: { sequence: SequenceRowDat
             canRelaunch={sequence.canRelaunch}
             isActiveRun={sequence.isActiveRun}
             isPausedRun={sequence.isPausedRun}
+            isDailyLimitBlocked={Boolean(sequence.dailyLimitBlock)}
             onRelaunch={onRelaunch}
           />
           <span className={styles.sequenceArrow}>

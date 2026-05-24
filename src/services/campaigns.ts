@@ -6,6 +6,7 @@ import {
   planScheduledCampaignRun,
   SCHEDULABLE_CAMPAIGN_STATUSES
 } from "@/lib/campaign-scheduling";
+import { releaseSendReservation, reserveSendCapacity } from "@/lib/daily-send-limit";
 import { prisma } from "@/lib/db";
 import type { FailureCode, FailureSource } from "@/lib/failures";
 import { buildMergePayload } from "@/lib/mapping";
@@ -13,6 +14,7 @@ import { GMAIL_RECONNECT_ERROR, getUserSafeGmailSendError, isGmailReconnectError
 import { consumeSendWindow, getSendWindowKey } from "@/lib/rate-limit";
 import { getRedis } from "@/lib/redis";
 import { classifySendFailure, getNextRetryAt, isRetryableFailure, MAX_RETRY_ATTEMPTS } from "@/lib/retry-policy";
+import { recordSendOnLedger } from "@/services/send-ledger";
 import { getNextRunDate, normalizeScheduleRule } from "@/lib/schedule";
 import { getSystemHealth } from "@/lib/system-health";
 import { extractTemplateVariables, renderTemplate, renderTemplateContent, type TemplateFormat } from "@/lib/templates";
@@ -1314,14 +1316,39 @@ async function processRecipientJob(recipientJob: RecipientJobWithContext) {
       };
     }
 
+    const scope = {
+      userId: latestJob.campaignRun.campaign.userId ?? latestJob.campaignRun.campaign.senderProfile.userId,
+      senderProfileId: latestJob.campaignRun.campaign.senderProfileId
+    };
+    let activeReservationId: string | null = null;
+
     try {
+      const dailyReservation = await reserveSendCapacity(scope);
+      if (!dailyReservation.allowed) {
+        const resumeAt = dailyReservation.window.resetAt ? new Date(dailyReservation.window.resetAt) : null;
+        await pauseCampaignRunForDailyLimit({
+          runId: latestJob.campaignRunId,
+          jobId: latestJob.id,
+          message: "Sendloom paused sending to stay under Gmail's daily safety limit.",
+          resumeAt,
+          scope
+        });
+        return {
+          processed: true,
+          rateLimited: true
+        };
+      }
+      activeReservationId = dailyReservation.reservationId;
+
       const rateWindow = await consumeSendWindow(
         getSendWindowKey({
-          userId: latestJob.campaignRun.campaign.userId ?? latestJob.campaignRun.campaign.senderProfile.userId,
-          senderProfileId: latestJob.campaignRun.campaign.senderProfileId
+          userId: scope.userId,
+          senderProfileId: scope.senderProfileId
         })
       );
       if (!rateWindow.allowed) {
+        await releaseSendReservation(scope, activeReservationId);
+        activeReservationId = null;
         await markRecipientAttempt({
           jobId: latestJob.id,
           status: "RETRYING",
@@ -1361,11 +1388,26 @@ async function processRecipientJob(recipientJob: RecipientJobWithContext) {
         providerMessageId: response.data?.id
       });
 
+      await recordSendOnLedger({
+        scope,
+        reservationId: activeReservationId,
+        campaignId: latestJob.campaignRun.campaignId,
+        campaignRunId: latestJob.campaignRunId,
+        recipientJobId: latestJob.id,
+        messageId: response.data?.id ?? null
+      });
+      activeReservationId = null;
+
       return {
         processed: true,
         rateLimited: false
       };
     } catch (error) {
+      if (activeReservationId) {
+        await releaseSendReservation(scope, activeReservationId);
+        activeReservationId = null;
+      }
+
       const message = getUserSafeGmailSendError(error);
 
       if (isGmailReconnectError(error)) {
@@ -1641,6 +1683,189 @@ export async function pauseCampaignRunForSenderLimit(args: {
   await syncRunCounts(args.runId);
 }
 
+/**
+ * Pause a run because the rolling 24h Gmail safety limit was hit. Unlike
+ * `pauseCampaignRunForSenderLimit`, this does NOT mark the in-flight recipient
+ * job as failed — the recipient hasn't done anything wrong, the sender hit the
+ * cap. The job stays PENDING and resumes automatically once `resumeAt` passes.
+ *
+ * `progressSnapshot` is reused as the place to store the pause reason so we
+ * don't need a schema change. `resumeCampaignRunsBlockedByDailyLimit` reads it.
+ */
+export async function pauseCampaignRunForDailyLimit(args: {
+  runId: string;
+  jobId?: string;
+  message: string;
+  resumeAt: Date | null;
+  scope: { userId?: string | null; senderProfileId?: string | null };
+}) {
+  await prisma.$transaction(async (tx) => {
+    if (args.jobId) {
+      const job = await tx.recipientJob.findUniqueOrThrow({
+        where: { id: args.jobId },
+        select: { metadata: true }
+      });
+      const currentMetadata =
+        job.metadata && typeof job.metadata === "object" && !Array.isArray(job.metadata)
+          ? (job.metadata as Record<string, unknown>)
+          : {};
+
+      await tx.recipientJob.update({
+        where: { id: args.jobId },
+        data: {
+          // Keep the recipient PENDING so it picks up automatically on resume.
+          status: "PENDING",
+          lastError: null,
+          nextRetryAt: null,
+          metadata: {
+            ...currentMetadata,
+            blockedBy: "DAILY_SEND_LIMIT",
+            blockedAt: new Date().toISOString(),
+            blockedUntil: args.resumeAt?.toISOString() ?? null
+          } as Prisma.InputJsonValue
+        }
+      });
+    }
+
+    const existingRun = await tx.campaignRun.findUniqueOrThrow({
+      where: { id: args.runId },
+      select: { progressSnapshot: true, campaignId: true }
+    });
+    const existingSnapshot =
+      existingRun.progressSnapshot && typeof existingRun.progressSnapshot === "object" && !Array.isArray(existingRun.progressSnapshot)
+        ? (existingRun.progressSnapshot as Record<string, unknown>)
+        : {};
+
+    await tx.campaignRun.update({
+      where: { id: args.runId },
+      data: {
+        status: "PAUSED",
+        progressSnapshot: {
+          ...existingSnapshot,
+          pauseReason: "DAILY_SEND_LIMIT",
+          pauseMessage: args.message,
+          pauseResumesAt: args.resumeAt?.toISOString() ?? null,
+          pausedSenderProfileId: args.scope.senderProfileId ?? null,
+          pausedUserId: args.scope.userId ?? null,
+          pausedAt: new Date().toISOString()
+        } as Prisma.InputJsonValue
+      }
+    });
+
+    await tx.campaign.update({
+      where: { id: existingRun.campaignId },
+      data: {
+        status: "PAUSED"
+      }
+    });
+  });
+
+  await syncRunCounts(args.runId);
+}
+
+type DailyLimitPauseInfo = {
+  pauseReason?: string;
+  pauseMessage?: string;
+  pauseResumesAt?: string | null;
+  pausedAt?: string;
+  pausedSenderProfileId?: string | null;
+  pausedUserId?: string | null;
+};
+
+export function readDailyLimitPauseInfo(progressSnapshot: unknown): DailyLimitPauseInfo | null {
+  if (!progressSnapshot || typeof progressSnapshot !== "object" || Array.isArray(progressSnapshot)) {
+    return null;
+  }
+  const snapshot = progressSnapshot as Record<string, unknown>;
+  if (snapshot.pauseReason !== "DAILY_SEND_LIMIT") {
+    return null;
+  }
+  return {
+    pauseReason: "DAILY_SEND_LIMIT",
+    pauseMessage: typeof snapshot.pauseMessage === "string" ? snapshot.pauseMessage : undefined,
+    pauseResumesAt: typeof snapshot.pauseResumesAt === "string" ? snapshot.pauseResumesAt : null,
+    pausedAt: typeof snapshot.pausedAt === "string" ? snapshot.pausedAt : undefined,
+    pausedSenderProfileId:
+      typeof snapshot.pausedSenderProfileId === "string" ? snapshot.pausedSenderProfileId : null,
+    pausedUserId: typeof snapshot.pausedUserId === "string" ? snapshot.pausedUserId : null
+  };
+}
+
+/**
+ * Auto-resume runs that were paused because of the daily safety limit once
+ * their resume window has passed. A user-initiated pause has no DAILY_SEND_LIMIT
+ * reason and is left untouched, satisfying "respect manual pause".
+ */
+export async function resumeCampaignRunsBlockedByDailyLimit(now = new Date()) {
+  const candidates = await prisma.campaignRun.findMany({
+    where: { status: "PAUSED" },
+    select: {
+      id: true,
+      campaignId: true,
+      progressSnapshot: true,
+      scheduledFor: true,
+      campaign: {
+        select: {
+          scheduleType: true,
+          scheduleConfig: true
+        }
+      }
+    }
+  });
+
+  let resumedCount = 0;
+  for (const candidate of candidates) {
+    const info = readDailyLimitPauseInfo(candidate.progressSnapshot);
+    if (!info) {
+      continue;
+    }
+    if (info.pauseResumesAt && new Date(info.pauseResumesAt) > now) {
+      continue;
+    }
+
+    const existingSnapshot =
+      candidate.progressSnapshot && typeof candidate.progressSnapshot === "object" && !Array.isArray(candidate.progressSnapshot)
+        ? (candidate.progressSnapshot as Record<string, unknown>)
+        : {};
+    const clearedSnapshot = { ...existingSnapshot };
+    delete clearedSnapshot.pauseReason;
+    delete clearedSnapshot.pauseMessage;
+    delete clearedSnapshot.pauseResumesAt;
+    delete clearedSnapshot.pausedAt;
+    delete clearedSnapshot.pausedSenderProfileId;
+    delete clearedSnapshot.pausedUserId;
+
+    await prisma.$transaction(async (tx) => {
+      await tx.campaignRun.update({
+        where: { id: candidate.id },
+        data: {
+          status: "QUEUED",
+          scheduledFor: now,
+          progressSnapshot: clearedSnapshot as Prisma.InputJsonValue
+        }
+      });
+      await tx.campaign.update({
+        where: { id: candidate.campaignId },
+        data: { status: "RUNNING" }
+      });
+    });
+
+    await prisma.recipientJob.updateMany({
+      where: {
+        campaignRunId: candidate.id,
+        status: "PENDING"
+      },
+      data: {
+        nextRetryAt: null
+      }
+    });
+
+    resumedCount += 1;
+  }
+
+  return { resumedCount };
+}
+
 export async function getCampaignStatus(campaignId: string, userId?: string) {
   return prisma.campaign.findFirstOrThrow({
     where: campaignOwnershipFilter(campaignId, userId),
@@ -1748,6 +1973,12 @@ export async function processPendingCampaignWork(args: ProcessCampaignWorkArgs =
       scope: "scheduling",
       message: getErrorMessage(error)
     });
+  }
+
+  try {
+    await resumeCampaignRunsBlockedByDailyLimit();
+  } catch (error) {
+    console.error("[campaign-cron] Daily-limit auto-resume failed.", error);
   }
 
   const deadline = getDeadline(args.maxDurationMs);

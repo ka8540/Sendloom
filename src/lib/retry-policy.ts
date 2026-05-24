@@ -67,7 +67,16 @@ export function classifySendFailure(error: unknown, options: { senderConnected: 
     normalized.includes("550-5.4.5") ||
     normalized.includes("550 5.4.5") ||
     normalized.includes("429") ||
-    normalized.includes("rate limit")
+    normalized.includes("rate limit") ||
+    normalized.includes("user-rate limit exceeded") ||
+    normalized.includes("userratelimitexceeded") ||
+    normalized.includes("ratelimitexceeded") ||
+    normalized.includes("dailylimitexceeded") ||
+    normalized.includes("daily limit exceeded") ||
+    normalized.includes("quota exceeded") ||
+    normalized.includes("too many concurrent requests for user") ||
+    normalized.includes("exceeded rate limits") ||
+    normalized.includes("mail sending limit exceeded")
   ) {
     return "GMAIL_RATE_LIMITED";
   }

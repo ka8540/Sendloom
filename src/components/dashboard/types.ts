@@ -32,6 +32,9 @@ export type SequenceRowData = {
   canRelaunch: boolean;
   isActiveRun: boolean;
   isPausedRun: boolean;
+  dailyLimitBlock: {
+    resumesAt: string | null;
+  } | null;
 };
 
 export type ActivityItem = {

@@ -31,6 +31,58 @@
   color: var(--warning);
 }
 
+.safetyLimitCard {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.95rem;
+  padding: 1rem 1.15rem;
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--warning) 34%, var(--line));
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--warning) 12%, transparent), transparent 18rem),
+    linear-gradient(180deg, color-mix(in srgb, var(--warning-soft) 70%, transparent), var(--surface));
+  box-shadow: var(--shadow);
+  align-items: center;
+}
+
+.safetyLimitIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--warning) 18%, transparent);
+  color: var(--warning);
+  border: 1px solid color-mix(in srgb, var(--warning) 28%, transparent);
+}
+
+.safetyLimitIcon svg {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.safetyLimitBody {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.safetyLimitTitle {
+  font-size: 0.98rem;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.005em;
+}
+
+.safetyLimitCopy {
+  margin: 0;
+  font-size: 0.86rem;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--text) 88%, var(--muted) 12%);
+}
+
 .overview {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.8fr);
