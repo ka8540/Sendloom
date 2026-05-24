@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Prisma } from "@prisma/client";
 
-const { sendLedgerMock, redisEvalMock, redisZremMock } = vi.hoisted(() => ({
+const { sendLedgerMock, recipientJobMock, redisEvalMock, redisZremMock } = vi.hoisted(() => ({
   sendLedgerMock: {
+    findMany: vi.fn()
+  },
+  recipientJobMock: {
     count: vi.fn(),
     findFirst: vi.fn()
   },
@@ -18,7 +21,8 @@ vi.mock("@/lib/env", () => ({
 
 vi.mock("@/lib/db", () => ({
   prisma: {
-    sendLedger: sendLedgerMock
+    sendLedger: sendLedgerMock,
+    recipientJob: recipientJobMock
   }
 }));
 
@@ -37,6 +41,27 @@ import {
 
 const SCOPE = { userId: "user_1", senderProfileId: "sender_1" };
 
+function ledgerEntries(count: number, oldest = new Date()) {
+  return Array.from({ length: count }, (_, index) => ({
+    sentAt: index === 0 ? oldest : new Date(oldest.getTime() + index * 1000),
+    recipientJobId: `job_${index}`
+  }));
+}
+
+function mockDbCount({
+  ledger = [],
+  legacyCount = 0,
+  legacyOldest = null
+}: {
+  ledger?: Array<{ sentAt: Date; recipientJobId: string | null }>;
+  legacyCount?: number;
+  legacyOldest?: Date | null;
+}) {
+  sendLedgerMock.findMany.mockResolvedValueOnce(ledger);
+  recipientJobMock.count.mockResolvedValueOnce(legacyCount);
+  recipientJobMock.findFirst.mockResolvedValueOnce(legacyOldest ? { updatedAt: legacyOldest } : null);
+}
+
 function missingSendLedgerError() {
   return new Prisma.PrismaClientKnownRequestError("The table `public.SendLedger` does not exist.", {
     code: "P2021",
@@ -51,8 +76,7 @@ beforeEach(() => {
 
 describe("getGmailDailySendWindow", () => {
   it("reports zero sends and is not blocked when nothing was sent recently", async () => {
-    sendLedgerMock.count.mockResolvedValueOnce(0);
-    sendLedgerMock.findFirst.mockResolvedValueOnce(null);
+    mockDbCount({});
 
     const window = await getGmailDailySendWindow(SCOPE);
 
@@ -67,8 +91,7 @@ describe("getGmailDailySendWindow", () => {
   });
 
   it("is not blocked at limit - 1 and reports remaining correctly", async () => {
-    sendLedgerMock.count.mockResolvedValueOnce(2);
-    sendLedgerMock.findFirst.mockResolvedValueOnce({ sentAt: new Date() });
+    mockDbCount({ ledger: ledgerEntries(2) });
 
     const window = await getGmailDailySendWindow(SCOPE);
 
@@ -80,8 +103,7 @@ describe("getGmailDailySendWindow", () => {
 
   it("blocks at exactly the limit and resetAt = oldest send + 24h", async () => {
     const oldest = new Date("2026-05-24T02:00:00.000Z");
-    sendLedgerMock.count.mockResolvedValueOnce(3);
-    sendLedgerMock.findFirst.mockResolvedValueOnce({ sentAt: oldest });
+    mockDbCount({ ledger: ledgerEntries(3, oldest) });
 
     const window = await getGmailDailySendWindow(SCOPE);
 
@@ -92,8 +114,7 @@ describe("getGmailDailySendWindow", () => {
 
   it("blocks when over the limit (legacy/imported state)", async () => {
     const oldest = new Date("2026-05-24T01:30:00.000Z");
-    sendLedgerMock.count.mockResolvedValueOnce(99);
-    sendLedgerMock.findFirst.mockResolvedValueOnce({ sentAt: oldest });
+    mockDbCount({ ledger: ledgerEntries(99, oldest) });
 
     const window = await getGmailDailySendWindow(SCOPE);
 
@@ -103,30 +124,52 @@ describe("getGmailDailySendWindow", () => {
   });
 
   it("scopes by sender profile when provided", async () => {
-    sendLedgerMock.count.mockResolvedValueOnce(0);
-    sendLedgerMock.findFirst.mockResolvedValueOnce(null);
+    mockDbCount({});
 
     await getGmailDailySendWindow({ userId: "u", senderProfileId: "sender_xyz" });
 
-    const callArgs = sendLedgerMock.count.mock.calls[0]?.[0];
+    const callArgs = sendLedgerMock.findMany.mock.calls[0]?.[0];
     expect(callArgs.where.senderProfileId).toBe("sender_xyz");
     expect(callArgs.where.userId).toBeUndefined();
+    const legacyCallArgs = recipientJobMock.count.mock.calls[0]?.[0];
+    expect(legacyCallArgs.where.campaignRun.campaign.senderProfileId).toBe("sender_xyz");
+    expect(legacyCallArgs.where.campaignRun.campaign.userId).toBeUndefined();
   });
 
   it("falls back to user scope when no sender profile is given", async () => {
-    sendLedgerMock.count.mockResolvedValueOnce(0);
-    sendLedgerMock.findFirst.mockResolvedValueOnce(null);
+    mockDbCount({});
 
     await getGmailDailySendWindow({ userId: "u_only" });
 
-    const callArgs = sendLedgerMock.count.mock.calls[0]?.[0];
+    const callArgs = sendLedgerMock.findMany.mock.calls[0]?.[0];
     expect(callArgs.where.userId).toBe("u_only");
     expect(callArgs.where.senderProfileId).toBeUndefined();
+    const legacyCallArgs = recipientJobMock.count.mock.calls[0]?.[0];
+    expect(legacyCallArgs.where.campaignRun.campaign.userId).toBe("u_only");
+    expect(legacyCallArgs.where.campaignRun.campaign.senderProfileId).toBeUndefined();
+  });
+
+  it("combines ledger rows with legacy sent jobs that are not already in the ledger", async () => {
+    const ledgerOldest = new Date("2026-05-24T03:00:00.000Z");
+    const legacyOldest = new Date("2026-05-24T02:00:00.000Z");
+    mockDbCount({
+      ledger: ledgerEntries(2, ledgerOldest),
+      legacyCount: 1,
+      legacyOldest
+    });
+
+    const window = await getGmailDailySendWindow(SCOPE);
+
+    expect(window.sentLast24h).toBe(3);
+    expect(window.isBlocked).toBe(true);
+    expect(window.oldestCountedSendAt).toBe(legacyOldest.toISOString());
+    const legacyCallArgs = recipientJobMock.count.mock.calls[0]?.[0];
+    expect(legacyCallArgs.where.id.notIn).toEqual(["job_0", "job_1"]);
+    expect(legacyCallArgs.where.status.in).toEqual(["SENT", "OPENED", "CLICKED", "BOUNCED", "COMPLAINED"]);
   });
 
   it("returns a ledger-unavailable window instead of throwing when the table is missing", async () => {
-    sendLedgerMock.count.mockRejectedValueOnce(missingSendLedgerError());
-    sendLedgerMock.findFirst.mockRejectedValueOnce(missingSendLedgerError());
+    sendLedgerMock.findMany.mockRejectedValueOnce(missingSendLedgerError());
 
     const window = await getGmailDailySendWindow(SCOPE);
 
@@ -138,14 +181,14 @@ describe("getGmailDailySendWindow", () => {
       resetAt: null,
       oldestCountedSendAt: null
     });
+    expect(recipientJobMock.count).not.toHaveBeenCalled();
   });
 });
 
 describe("reserveSendCapacity", () => {
   it("denies when the DB count already meets the limit", async () => {
     const oldest = new Date();
-    sendLedgerMock.count.mockResolvedValueOnce(3);
-    sendLedgerMock.findFirst.mockResolvedValueOnce({ sentAt: oldest });
+    mockDbCount({ ledger: ledgerEntries(3, oldest) });
 
     const result = await reserveSendCapacity(SCOPE);
 
@@ -157,8 +200,7 @@ describe("reserveSendCapacity", () => {
   });
 
   it("calls the Lua reservation script when under the limit and returns allowed", async () => {
-    sendLedgerMock.count.mockResolvedValueOnce(1);
-    sendLedgerMock.findFirst.mockResolvedValueOnce({ sentAt: new Date() });
+    mockDbCount({ ledger: ledgerEntries(1) });
     redisEvalMock.mockResolvedValueOnce([1, 2]);
 
     const result = await reserveSendCapacity(SCOPE);
@@ -172,13 +214,11 @@ describe("reserveSendCapacity", () => {
   });
 
   it("denies when Redis says the combined reservations + DB count would exceed the limit", async () => {
-    sendLedgerMock.count.mockResolvedValueOnce(2);
-    sendLedgerMock.findFirst.mockResolvedValueOnce({ sentAt: new Date() });
+    mockDbCount({ ledger: ledgerEntries(2) });
     // Redis sees an in-flight reservation pushing us to the cap.
     redisEvalMock.mockResolvedValueOnce([0, 3]);
     // Helper re-reads the DB count to build the refreshed window.
-    sendLedgerMock.count.mockResolvedValueOnce(2);
-    sendLedgerMock.findFirst.mockResolvedValueOnce({ sentAt: new Date() });
+    mockDbCount({ ledger: ledgerEntries(2) });
 
     const result = await reserveSendCapacity(SCOPE);
 
@@ -188,13 +228,12 @@ describe("reserveSendCapacity", () => {
   it("treats an unaddressable scope (no user/sender) as a no-op pass", async () => {
     const result = await reserveSendCapacity({});
     expect(result.allowed).toBe(true);
-    expect(sendLedgerMock.count).not.toHaveBeenCalled();
+    expect(sendLedgerMock.findMany).not.toHaveBeenCalled();
     expect(redisEvalMock).not.toHaveBeenCalled();
   });
 
   it("denies reservations without hitting Redis when the send ledger table is missing", async () => {
-    sendLedgerMock.count.mockRejectedValueOnce(missingSendLedgerError());
-    sendLedgerMock.findFirst.mockRejectedValueOnce(missingSendLedgerError());
+    sendLedgerMock.findMany.mockRejectedValueOnce(missingSendLedgerError());
 
     const result = await reserveSendCapacity(SCOPE);
 

@@ -1,3 +1,5 @@
+import type { RecipientJobStatus } from "@prisma/client";
+
 import { prisma } from "@/lib/db";
 import { env } from "@/lib/env";
 import { getRedis } from "@/lib/redis";
@@ -5,6 +7,7 @@ import { isMissingSendLedgerTableError, warnMissingSendLedgerTable } from "@/lib
 
 export const ROLLING_WINDOW_MS = 24 * 60 * 60 * 1000;
 const RESERVATION_PREFIX = "gmail-daily-send-window";
+const LEGACY_SENT_RECIPIENT_STATUSES: RecipientJobStatus[] = ["SENT", "OPENED", "CLICKED", "BOUNCED", "COMPLAINED"];
 
 export type DailySendLimitScope = {
   userId?: string | null;
@@ -69,6 +72,30 @@ function buildWhere(scope: DailySendLimitScope, since: Date) {
   };
 }
 
+function buildLegacyRecipientWhere(scope: DailySendLimitScope, since: Date, excludedRecipientJobIds: string[]) {
+  const campaignFilter = scope.senderProfileId
+    ? { senderProfileId: scope.senderProfileId }
+    : { userId: scope.userId ?? undefined };
+
+  return {
+    updatedAt: { gte: since },
+    status: { in: LEGACY_SENT_RECIPIENT_STATUSES },
+    ...(excludedRecipientJobIds.length > 0 ? { id: { notIn: excludedRecipientJobIds } } : {}),
+    campaignRun: {
+      campaign: campaignFilter
+    }
+  };
+}
+
+function minDate(...dates: Array<Date | null>) {
+  const presentDates = dates.filter((date): date is Date => Boolean(date));
+  if (presentDates.length === 0) {
+    return null;
+  }
+
+  return new Date(Math.min(...presentDates.map((date) => date.getTime())));
+}
+
 async function readDbCount(scope: DailySendLimitScope, since: Date) {
   if (!isScopeAddressable(scope)) {
     return { count: 0, oldest: null as Date | null, ledgerAvailable: true };
@@ -76,16 +103,33 @@ async function readDbCount(scope: DailySendLimitScope, since: Date) {
 
   const where = buildWhere(scope, since);
   try {
-    const [count, oldest] = await Promise.all([
-      prisma.sendLedger.count({ where }),
-      prisma.sendLedger.findFirst({
-        where,
-        orderBy: { sentAt: "asc" },
-        select: { sentAt: true }
+    const ledgerEntries = await prisma.sendLedger.findMany({
+      where,
+      orderBy: { sentAt: "asc" },
+      select: {
+        sentAt: true,
+        recipientJobId: true
+      }
+    });
+    const ledgerRecipientJobIds = ledgerEntries
+      .map((entry) => entry.recipientJobId)
+      .filter((recipientJobId): recipientJobId is string => Boolean(recipientJobId));
+    const legacyWhere = buildLegacyRecipientWhere(scope, since, ledgerRecipientJobIds);
+    const [legacyCount, legacyOldest] = await Promise.all([
+      prisma.recipientJob.count({ where: legacyWhere }),
+      prisma.recipientJob.findFirst({
+        where: legacyWhere,
+        orderBy: { updatedAt: "asc" },
+        select: { updatedAt: true }
       })
     ]);
+    const ledgerOldest = ledgerEntries[0]?.sentAt ?? null;
 
-    return { count, oldest: oldest?.sentAt ?? null, ledgerAvailable: true };
+    return {
+      count: ledgerEntries.length + legacyCount,
+      oldest: minDate(ledgerOldest, legacyOldest?.updatedAt ?? null),
+      ledgerAvailable: true
+    };
   } catch (error) {
     if (isMissingSendLedgerTableError(error)) {
       warnMissingSendLedgerTable();

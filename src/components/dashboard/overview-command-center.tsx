@@ -94,7 +94,6 @@ export default async function OverviewCommandCenter() {
     activeSequenceCount,
     validatedSequenceCount,
     needsAttentionCount,
-    sentLastDay,
     sentPreviousDay,
     recentCampaigns,
     recentRuns,
@@ -189,15 +188,6 @@ export default async function OverviewCommandCenter() {
         userId: user.id,
         OR: [{ status: "FAILED" }, { runs: { some: { status: { in: FAILURE_RUN_STATUSES } } } }]
       }
-    }),
-    prisma.campaignRun.aggregate({
-      where: {
-        campaign: { userId: user.id },
-        updatedAt: {
-          gte: dayAgo
-        }
-      },
-      _sum: { sentCount: true }
     }),
     prisma.campaignRun.aggregate({
       where: {
@@ -424,7 +414,7 @@ export default async function OverviewCommandCenter() {
     });
   }
 
-  const sentLastDayCount = sentLastDay._sum.sentCount ?? 0;
+  const sentLastDayCount = userSendWindow.sentLast24h;
   const sentPreviousDayCount = sentPreviousDay._sum.sentCount ?? 0;
   const sentTrend = buildTrend(sentLastDayCount, sentPreviousDayCount, "day");
   const runTotals = overviewCampaigns.reduce(
