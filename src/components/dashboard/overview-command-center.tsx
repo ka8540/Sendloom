@@ -463,8 +463,22 @@ export default async function OverviewCommandCenter() {
     const dailyLimitInfo = readDailyLimitPauseInfo(actualLatestRun?.progressSnapshot ?? null);
     const senderResumesAt = blockedResumeBySenderProfileId.get(campaign.senderProfileId) ?? null;
     const isSenderBlocked = blockedSenderProfileIds.has(campaign.senderProfileId);
+    const isActiveRun = ACTIVE_RUN_STATUSES.includes(actualRunStatus ?? "COMPLETED");
+    const actualProcessedCount = getProcessedCount(actualLatestRun);
+    const actualTotalRecipients = actualLatestRun?.totalRecipients ?? 0;
+    const hasActualRecipientWorkRemaining = actualLatestRun
+      ? actualTotalRecipients <= 0
+        ? isActiveRun || Boolean(dailyLimitInfo)
+        : actualProcessedCount < actualTotalRecipients
+      : false;
+    const deliveredCount = getDeliveredCount(latestRun);
+    const processedCount = getProcessedCount(latestRun);
+    const totalRecipients = latestRun?.totalRecipients ?? 0;
+    const issueCount = getIssueCount(latestRun);
+    const isRunWaitingForDailyLimit =
+      hasActualRecipientWorkRemaining && (Boolean(dailyLimitInfo) || (isActiveRun && isSenderBlocked));
     const dailyLimitBlock =
-      dailyLimitInfo || isSenderBlocked
+      isRunWaitingForDailyLimit
         ? {
             resumesAt: dailyLimitInfo?.pauseResumesAt ?? senderResumesAt ?? null
           }
@@ -472,12 +486,7 @@ export default async function OverviewCommandCenter() {
     const status = dailyLimitBlock
       ? { label: "Paused · safety limit", tone: "paused" as const }
       : deriveSequenceStatus(campaign.status, actualRunStatus);
-    const deliveredCount = getDeliveredCount(latestRun);
-    const processedCount = getProcessedCount(latestRun);
-    const totalRecipients = latestRun?.totalRecipients ?? 0;
-    const issueCount = getIssueCount(latestRun);
     const runMetricsKnown = hasKnownRunMetrics(latestRun, processedCount);
-    const isActiveRun = ACTIVE_RUN_STATUSES.includes(actualRunStatus ?? "COMPLETED");
     const progressPercent =
       totalRecipients > 0
         ? Math.min(100, Math.max(0, Math.round((processedCount / totalRecipients) * 100)))
