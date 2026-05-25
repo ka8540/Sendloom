@@ -7,7 +7,7 @@ import { isMissingSendLedgerTableError, warnMissingSendLedgerTable } from "@/lib
 
 export const ROLLING_WINDOW_MS = 24 * 60 * 60 * 1000;
 const RESERVATION_PREFIX = "gmail-daily-send-window";
-const LEGACY_SENT_RECIPIENT_STATUSES: RecipientJobStatus[] = ["SENT", "OPENED", "CLICKED", "BOUNCED", "COMPLAINED"];
+const SUCCESSFUL_RECIPIENT_STATUSES: RecipientJobStatus[] = ["SENT", "OPENED", "CLICKED"];
 
 export type DailySendLimitScope = {
   userId?: string | null;
@@ -79,7 +79,8 @@ function buildLegacyRecipientWhere(scope: DailySendLimitScope, since: Date, excl
 
   return {
     updatedAt: { gte: since },
-    status: { in: LEGACY_SENT_RECIPIENT_STATUSES },
+    status: { in: SUCCESSFUL_RECIPIENT_STATUSES },
+    providerMessageId: { not: null },
     ...(excludedRecipientJobIds.length > 0 ? { id: { notIn: excludedRecipientJobIds } } : {}),
     campaignRun: {
       campaign: campaignFilter
@@ -108,12 +109,37 @@ async function readDbCount(scope: DailySendLimitScope, since: Date) {
       orderBy: { sentAt: "asc" },
       select: {
         sentAt: true,
+        messageId: true,
         recipientJobId: true
       }
     });
-    const ledgerRecipientJobIds = ledgerEntries
-      .map((entry) => entry.recipientJobId)
-      .filter((recipientJobId): recipientJobId is string => Boolean(recipientJobId));
+    const ledgerRecipientJobIds = [
+      ...new Set(
+        ledgerEntries
+          .map((entry) => entry.recipientJobId)
+          .filter((recipientJobId): recipientJobId is string => Boolean(recipientJobId))
+      )
+    ];
+    const successfulLedgerRecipientJobIds =
+      ledgerRecipientJobIds.length > 0
+        ? new Set(
+            (
+              await prisma.recipientJob.findMany({
+                where: {
+                  id: { in: ledgerRecipientJobIds },
+                  status: { in: SUCCESSFUL_RECIPIENT_STATUSES }
+                },
+                select: { id: true }
+              })
+            ).map((job) => job.id)
+          )
+        : new Set<string>();
+    const countableLedgerEntries = ledgerEntries.filter((entry) => {
+      if (!entry.messageId) {
+        return false;
+      }
+      return !entry.recipientJobId || successfulLedgerRecipientJobIds.has(entry.recipientJobId);
+    });
     const legacyWhere = buildLegacyRecipientWhere(scope, since, ledgerRecipientJobIds);
     const [legacyCount, legacyOldest] = await Promise.all([
       prisma.recipientJob.count({ where: legacyWhere }),
@@ -123,10 +149,10 @@ async function readDbCount(scope: DailySendLimitScope, since: Date) {
         select: { updatedAt: true }
       })
     ]);
-    const ledgerOldest = ledgerEntries[0]?.sentAt ?? null;
+    const ledgerOldest = countableLedgerEntries[0]?.sentAt ?? null;
 
     return {
-      count: ledgerEntries.length + legacyCount,
+      count: countableLedgerEntries.length + legacyCount,
       oldest: minDate(ledgerOldest, legacyOldest?.updatedAt ?? null),
       ledgerAvailable: true
     };

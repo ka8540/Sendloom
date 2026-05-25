@@ -6,6 +6,7 @@ const { sendLedgerMock, recipientJobMock, redisEvalMock, redisZremMock } = vi.ho
     findMany: vi.fn()
   },
   recipientJobMock: {
+    findMany: vi.fn(),
     count: vi.fn(),
     findFirst: vi.fn()
   },
@@ -41,23 +42,36 @@ import {
 
 const SCOPE = { userId: "user_1", senderProfileId: "sender_1" };
 
-function ledgerEntries(count: number, oldest = new Date()) {
+type MockLedgerEntry = { sentAt: Date; messageId: string | null; recipientJobId: string | null };
+
+function ledgerEntries(count: number, oldest = new Date()): MockLedgerEntry[] {
   return Array.from({ length: count }, (_, index) => ({
     sentAt: index === 0 ? oldest : new Date(oldest.getTime() + index * 1000),
+    messageId: `message_${index}`,
     recipientJobId: `job_${index}`
   }));
 }
 
 function mockDbCount({
   ledger = [],
+  successfulLedgerRecipientJobIds,
   legacyCount = 0,
   legacyOldest = null
 }: {
-  ledger?: Array<{ sentAt: Date; recipientJobId: string | null }>;
+  ledger?: MockLedgerEntry[];
+  successfulLedgerRecipientJobIds?: string[];
   legacyCount?: number;
   legacyOldest?: Date | null;
 }) {
+  const defaultSuccessfulLedgerRecipientJobIds = ledger
+    .map((entry) => entry.recipientJobId)
+    .filter((recipientJobId): recipientJobId is string => Boolean(recipientJobId));
   sendLedgerMock.findMany.mockResolvedValueOnce(ledger);
+  if (defaultSuccessfulLedgerRecipientJobIds.length > 0) {
+    recipientJobMock.findMany.mockResolvedValueOnce(
+      (successfulLedgerRecipientJobIds ?? defaultSuccessfulLedgerRecipientJobIds).map((id) => ({ id }))
+    );
+  }
   recipientJobMock.count.mockResolvedValueOnce(legacyCount);
   recipientJobMock.findFirst.mockResolvedValueOnce(legacyOldest ? { updatedAt: legacyOldest } : null);
 }
@@ -149,7 +163,7 @@ describe("getGmailDailySendWindow", () => {
     expect(legacyCallArgs.where.campaignRun.campaign.senderProfileId).toBeUndefined();
   });
 
-  it("combines ledger rows with legacy sent jobs that are not already in the ledger", async () => {
+  it("combines successful ledger rows with legacy sent jobs that are not already in the ledger", async () => {
     const ledgerOldest = new Date("2026-05-24T03:00:00.000Z");
     const legacyOldest = new Date("2026-05-24T02:00:00.000Z");
     mockDbCount({
@@ -165,7 +179,38 @@ describe("getGmailDailySendWindow", () => {
     expect(window.oldestCountedSendAt).toBe(legacyOldest.toISOString());
     const legacyCallArgs = recipientJobMock.count.mock.calls[0]?.[0];
     expect(legacyCallArgs.where.id.notIn).toEqual(["job_0", "job_1"]);
-    expect(legacyCallArgs.where.status.in).toEqual(["SENT", "OPENED", "CLICKED", "BOUNCED", "COMPLAINED"]);
+    expect(legacyCallArgs.where.status.in).toEqual(["SENT", "OPENED", "CLICKED"]);
+    expect(legacyCallArgs.where.providerMessageId).toEqual({ not: null });
+  });
+
+  it("discounts ledger rows for recipient jobs that are not currently successful", async () => {
+    const oldest = new Date("2026-05-24T02:00:00.000Z");
+    mockDbCount({
+      ledger: ledgerEntries(3, oldest),
+      successfulLedgerRecipientJobIds: ["job_1"]
+    });
+
+    const window = await getGmailDailySendWindow(SCOPE);
+
+    expect(window.sentLast24h).toBe(1);
+    expect(window.remaining).toBe(2);
+    expect(window.isBlocked).toBe(false);
+    expect(window.oldestCountedSendAt).toBe(new Date(oldest.getTime() + 1000).toISOString());
+    const ledgerStatusArgs = recipientJobMock.findMany.mock.calls[0]?.[0];
+    expect(ledgerStatusArgs.where.id.in).toEqual(["job_0", "job_1", "job_2"]);
+    expect(ledgerStatusArgs.where.status.in).toEqual(["SENT", "OPENED", "CLICKED"]);
+  });
+
+  it("discounts ledger rows without a Gmail message id", async () => {
+    const oldest = new Date("2026-05-24T02:00:00.000Z");
+    const ledger = ledgerEntries(2, oldest);
+    ledger[0].messageId = null;
+    mockDbCount({ ledger });
+
+    const window = await getGmailDailySendWindow(SCOPE);
+
+    expect(window.sentLast24h).toBe(1);
+    expect(window.oldestCountedSendAt).toBe(new Date(oldest.getTime() + 1000).toISOString());
   });
 
   it("returns a ledger-unavailable window instead of throwing when the table is missing", async () => {
