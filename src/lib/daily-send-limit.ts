@@ -72,13 +72,12 @@ function buildWhere(scope: DailySendLimitScope, since: Date) {
   };
 }
 
-function buildLegacyRecipientWhere(scope: DailySendLimitScope, since: Date, excludedRecipientJobIds: string[]) {
+function buildLegacyRecipientWhere(scope: DailySendLimitScope, excludedRecipientJobIds: string[]) {
   const campaignFilter = scope.senderProfileId
     ? { senderProfileId: scope.senderProfileId }
     : { userId: scope.userId ?? undefined };
 
   return {
-    updatedAt: { gte: since },
     status: { in: SUCCESSFUL_RECIPIENT_STATUSES },
     providerMessageId: { not: null },
     ...(excludedRecipientJobIds.length > 0 ? { id: { notIn: excludedRecipientJobIds } } : {}),
@@ -88,13 +87,31 @@ function buildLegacyRecipientWhere(scope: DailySendLimitScope, since: Date, excl
   };
 }
 
-function minDate(...dates: Array<Date | null>) {
-  const presentDates = dates.filter((date): date is Date => Boolean(date));
+function minDate(dates: Date[]) {
+  const presentDates = dates.filter((date) => !Number.isNaN(date.getTime()));
   if (presentDates.length === 0) {
     return null;
   }
 
   return new Date(Math.min(...presentDates.map((date) => date.getTime())));
+}
+
+function parseDate(value: unknown) {
+  if (typeof value !== "string" && !(value instanceof Date)) {
+    return null;
+  }
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function getRecipientConfirmedSendAt(metadata: unknown) {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return null;
+  }
+
+  const record = metadata as Record<string, unknown>;
+  return parseDate(record.resolvedAt) ?? parseDate(record.sentAt) ?? parseDate(record.lastAttemptAt);
 }
 
 async function readDbCount(scope: DailySendLimitScope, since: Date) {
@@ -108,6 +125,7 @@ async function readDbCount(scope: DailySendLimitScope, since: Date) {
       where,
       orderBy: { sentAt: "asc" },
       select: {
+        id: true,
         sentAt: true,
         messageId: true,
         recipientJobId: true
@@ -120,40 +138,53 @@ async function readDbCount(scope: DailySendLimitScope, since: Date) {
           .filter((recipientJobId): recipientJobId is string => Boolean(recipientJobId))
       )
     ];
-    const successfulLedgerRecipientJobIds =
+    const successfulLedgerRecipientSendAts =
       ledgerRecipientJobIds.length > 0
-        ? new Set(
+        ? new Map(
             (
               await prisma.recipientJob.findMany({
                 where: {
                   id: { in: ledgerRecipientJobIds },
-                  status: { in: SUCCESSFUL_RECIPIENT_STATUSES }
+                  status: { in: SUCCESSFUL_RECIPIENT_STATUSES },
+                  providerMessageId: { not: null }
                 },
-                select: { id: true }
+                select: { id: true, metadata: true }
               })
-            ).map((job) => job.id)
+            ).map((job) => [job.id, getRecipientConfirmedSendAt(job.metadata)])
           )
-        : new Set<string>();
-    const countableLedgerEntries = ledgerEntries.filter((entry) => {
+        : new Map<string, Date | null>();
+    const ledgerSendDates = ledgerEntries.flatMap((entry) => {
       if (!entry.messageId) {
-        return false;
+        return [];
       }
-      return !entry.recipientJobId || successfulLedgerRecipientJobIds.has(entry.recipientJobId);
+
+      if (!entry.recipientJobId) {
+        return [entry.sentAt];
+      }
+
+      if (!successfulLedgerRecipientSendAts.has(entry.recipientJobId)) {
+        return [];
+      }
+
+      const recipientSendAt = successfulLedgerRecipientSendAts.get(entry.recipientJobId);
+      if (recipientSendAt) {
+        return [recipientSendAt];
+      }
+
+      return entry.id.startsWith("legacy_") ? [] : [entry.sentAt];
     });
-    const legacyWhere = buildLegacyRecipientWhere(scope, since, ledgerRecipientJobIds);
-    const [legacyCount, legacyOldest] = await Promise.all([
-      prisma.recipientJob.count({ where: legacyWhere }),
-      prisma.recipientJob.findFirst({
-        where: legacyWhere,
-        orderBy: { updatedAt: "asc" },
-        select: { updatedAt: true }
-      })
-    ]);
-    const ledgerOldest = countableLedgerEntries[0]?.sentAt ?? null;
+    const legacyRecipients = await prisma.recipientJob.findMany({
+      where: buildLegacyRecipientWhere(scope, ledgerRecipientJobIds),
+      select: { metadata: true }
+    });
+    const legacySendDates = legacyRecipients
+      .map((recipient) => getRecipientConfirmedSendAt(recipient.metadata))
+      .filter((sendAt): sendAt is Date => Boolean(sendAt));
+    const countedSendDates = [...ledgerSendDates, ...legacySendDates].filter((sendAt) => sendAt >= since);
 
     return {
-      count: countableLedgerEntries.length + legacyCount,
-      oldest: minDate(ledgerOldest, legacyOldest?.updatedAt ?? null),
+      count: countedSendDates.length,
+      oldest: minDate(countedSendDates),
       ledgerAvailable: true
     };
   } catch (error) {

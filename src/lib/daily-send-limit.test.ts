@@ -6,9 +6,7 @@ const { sendLedgerMock, recipientJobMock, redisEvalMock, redisZremMock } = vi.ho
     findMany: vi.fn()
   },
   recipientJobMock: {
-    findMany: vi.fn(),
-    count: vi.fn(),
-    findFirst: vi.fn()
+    findMany: vi.fn()
   },
   redisEvalMock: vi.fn(),
   redisZremMock: vi.fn()
@@ -42,10 +40,20 @@ import {
 
 const SCOPE = { userId: "user_1", senderProfileId: "sender_1" };
 
-type MockLedgerEntry = { sentAt: Date; messageId: string | null; recipientJobId: string | null };
+type MockLedgerEntry = { id: string; sentAt: Date; messageId: string | null; recipientJobId: string | null };
+type MockRecipient = { id?: string; metadata: Record<string, string | null> | null };
+
+function recentDate(offsetMs = 60_000) {
+  return new Date(Date.now() - ROLLING_WINDOW_MS + offsetMs);
+}
+
+function expiredDate(offsetMs = 60_000) {
+  return new Date(Date.now() - ROLLING_WINDOW_MS - offsetMs);
+}
 
 function ledgerEntries(count: number, oldest = new Date()): MockLedgerEntry[] {
   return Array.from({ length: count }, (_, index) => ({
+    id: `ledger_${index}`,
     sentAt: index === 0 ? oldest : new Date(oldest.getTime() + index * 1000),
     messageId: `message_${index}`,
     recipientJobId: `job_${index}`
@@ -55,25 +63,36 @@ function ledgerEntries(count: number, oldest = new Date()): MockLedgerEntry[] {
 function mockDbCount({
   ledger = [],
   successfulLedgerRecipientJobIds,
-  legacyCount = 0,
-  legacyOldest = null
+  successfulLedgerRecipients,
+  legacySendAts = []
 }: {
   ledger?: MockLedgerEntry[];
   successfulLedgerRecipientJobIds?: string[];
-  legacyCount?: number;
-  legacyOldest?: Date | null;
+  successfulLedgerRecipients?: MockRecipient[];
+  legacySendAts?: Date[];
 }) {
-  const defaultSuccessfulLedgerRecipientJobIds = ledger
-    .map((entry) => entry.recipientJobId)
-    .filter((recipientJobId): recipientJobId is string => Boolean(recipientJobId));
+  const defaultSuccessfulLedgerRecipients = ledger
+    .filter((entry) => entry.recipientJobId)
+    .map((entry) => ({
+      id: entry.recipientJobId as string,
+      metadata: { resolvedAt: entry.sentAt.toISOString() }
+    }));
   sendLedgerMock.findMany.mockResolvedValueOnce(ledger);
-  if (defaultSuccessfulLedgerRecipientJobIds.length > 0) {
+  if (defaultSuccessfulLedgerRecipients.length > 0) {
     recipientJobMock.findMany.mockResolvedValueOnce(
-      (successfulLedgerRecipientJobIds ?? defaultSuccessfulLedgerRecipientJobIds).map((id) => ({ id }))
+      successfulLedgerRecipients ??
+        (successfulLedgerRecipientJobIds
+          ? defaultSuccessfulLedgerRecipients.filter((recipient) =>
+              successfulLedgerRecipientJobIds.includes(recipient.id ?? "")
+            )
+          : defaultSuccessfulLedgerRecipients)
     );
   }
-  recipientJobMock.count.mockResolvedValueOnce(legacyCount);
-  recipientJobMock.findFirst.mockResolvedValueOnce(legacyOldest ? { updatedAt: legacyOldest } : null);
+  recipientJobMock.findMany.mockResolvedValueOnce(
+    legacySendAts.map((sendAt) => ({
+      metadata: { resolvedAt: sendAt.toISOString() }
+    }))
+  );
 }
 
 function missingSendLedgerError() {
@@ -85,7 +104,7 @@ function missingSendLedgerError() {
 }
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  vi.resetAllMocks();
 });
 
 describe("getGmailDailySendWindow", () => {
@@ -116,7 +135,7 @@ describe("getGmailDailySendWindow", () => {
   });
 
   it("blocks at exactly the limit and resetAt = oldest send + 24h", async () => {
-    const oldest = new Date("2026-05-24T02:00:00.000Z");
+    const oldest = recentDate();
     mockDbCount({ ledger: ledgerEntries(3, oldest) });
 
     const window = await getGmailDailySendWindow(SCOPE);
@@ -127,7 +146,7 @@ describe("getGmailDailySendWindow", () => {
   });
 
   it("blocks when over the limit (legacy/imported state)", async () => {
-    const oldest = new Date("2026-05-24T01:30:00.000Z");
+    const oldest = recentDate();
     mockDbCount({ ledger: ledgerEntries(99, oldest) });
 
     const window = await getGmailDailySendWindow(SCOPE);
@@ -145,7 +164,7 @@ describe("getGmailDailySendWindow", () => {
     const callArgs = sendLedgerMock.findMany.mock.calls[0]?.[0];
     expect(callArgs.where.senderProfileId).toBe("sender_xyz");
     expect(callArgs.where.userId).toBeUndefined();
-    const legacyCallArgs = recipientJobMock.count.mock.calls[0]?.[0];
+    const legacyCallArgs = recipientJobMock.findMany.mock.calls.at(-1)?.[0];
     expect(legacyCallArgs.where.campaignRun.campaign.senderProfileId).toBe("sender_xyz");
     expect(legacyCallArgs.where.campaignRun.campaign.userId).toBeUndefined();
   });
@@ -158,18 +177,17 @@ describe("getGmailDailySendWindow", () => {
     const callArgs = sendLedgerMock.findMany.mock.calls[0]?.[0];
     expect(callArgs.where.userId).toBe("u_only");
     expect(callArgs.where.senderProfileId).toBeUndefined();
-    const legacyCallArgs = recipientJobMock.count.mock.calls[0]?.[0];
+    const legacyCallArgs = recipientJobMock.findMany.mock.calls.at(-1)?.[0];
     expect(legacyCallArgs.where.campaignRun.campaign.userId).toBe("u_only");
     expect(legacyCallArgs.where.campaignRun.campaign.senderProfileId).toBeUndefined();
   });
 
   it("combines successful ledger rows with legacy sent jobs that are not already in the ledger", async () => {
-    const ledgerOldest = new Date("2026-05-24T03:00:00.000Z");
-    const legacyOldest = new Date("2026-05-24T02:00:00.000Z");
+    const legacyOldest = recentDate();
+    const ledgerOldest = new Date(legacyOldest.getTime() + 1000);
     mockDbCount({
       ledger: ledgerEntries(2, ledgerOldest),
-      legacyCount: 1,
-      legacyOldest
+      legacySendAts: [legacyOldest]
     });
 
     const window = await getGmailDailySendWindow(SCOPE);
@@ -177,14 +195,14 @@ describe("getGmailDailySendWindow", () => {
     expect(window.sentLast24h).toBe(3);
     expect(window.isBlocked).toBe(true);
     expect(window.oldestCountedSendAt).toBe(legacyOldest.toISOString());
-    const legacyCallArgs = recipientJobMock.count.mock.calls[0]?.[0];
+    const legacyCallArgs = recipientJobMock.findMany.mock.calls.at(-1)?.[0];
     expect(legacyCallArgs.where.id.notIn).toEqual(["job_0", "job_1"]);
     expect(legacyCallArgs.where.status.in).toEqual(["SENT", "OPENED", "CLICKED"]);
     expect(legacyCallArgs.where.providerMessageId).toEqual({ not: null });
   });
 
   it("discounts ledger rows for recipient jobs that are not currently successful", async () => {
-    const oldest = new Date("2026-05-24T02:00:00.000Z");
+    const oldest = recentDate();
     mockDbCount({
       ledger: ledgerEntries(3, oldest),
       successfulLedgerRecipientJobIds: ["job_1"]
@@ -202,7 +220,7 @@ describe("getGmailDailySendWindow", () => {
   });
 
   it("discounts ledger rows without a Gmail message id", async () => {
-    const oldest = new Date("2026-05-24T02:00:00.000Z");
+    const oldest = recentDate();
     const ledger = ledgerEntries(2, oldest);
     ledger[0].messageId = null;
     mockDbCount({ ledger });
@@ -211,6 +229,40 @@ describe("getGmailDailySendWindow", () => {
 
     expect(window.sentLast24h).toBe(1);
     expect(window.oldestCountedSendAt).toBe(new Date(oldest.getTime() + 1000).toISOString());
+  });
+
+  it("does not re-age legacy ledger rows whose real send timestamp is outside the window", async () => {
+    const recentBackfillTimestamp = recentDate();
+    const oldSendTimestamp = expiredDate();
+    const ledger = ledgerEntries(3, recentBackfillTimestamp).map((entry) => ({
+      ...entry,
+      id: `legacy_${entry.recipientJobId}`
+    }));
+    mockDbCount({
+      ledger,
+      successfulLedgerRecipients: ledger.map((entry) => ({
+        id: entry.recipientJobId ?? "",
+        metadata: { resolvedAt: oldSendTimestamp.toISOString() }
+      }))
+    });
+
+    const window = await getGmailDailySendWindow(SCOPE);
+
+    expect(window.sentLast24h).toBe(0);
+    expect(window.isBlocked).toBe(false);
+    expect(window.oldestCountedSendAt).toBeNull();
+  });
+
+  it("does not count legacy fallback rows when only their mutable updatedAt would be recent", async () => {
+    mockDbCount({
+      legacySendAts: [expiredDate(), expiredDate(120_000), expiredDate(180_000)]
+    });
+
+    const window = await getGmailDailySendWindow(SCOPE);
+
+    expect(window.sentLast24h).toBe(0);
+    const legacyCallArgs = recipientJobMock.findMany.mock.calls.at(-1)?.[0];
+    expect(legacyCallArgs.where.updatedAt).toBeUndefined();
   });
 
   it("returns a ledger-unavailable window instead of throwing when the table is missing", async () => {
@@ -226,7 +278,7 @@ describe("getGmailDailySendWindow", () => {
       resetAt: null,
       oldestCountedSendAt: null
     });
-    expect(recipientJobMock.count).not.toHaveBeenCalled();
+    expect(recipientJobMock.findMany).not.toHaveBeenCalled();
   });
 });
 
