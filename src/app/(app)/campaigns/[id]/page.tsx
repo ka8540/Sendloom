@@ -469,8 +469,9 @@ export default async function CampaignDetailPage({
     userId: user.id,
     senderProfileId: campaign.senderProfileId
   });
-  const dailyLimitActive = Boolean(dailyLimitPauseInfo) || senderSendWindow.isBlocked;
-  const dailyLimitResumeIso = dailyLimitPauseInfo?.pauseResumesAt ?? senderSendWindow.resetAt ?? null;
+  const dailyLimitActive = senderSendWindow.isBlocked;
+  const dailyLimitResumeIso =
+    dailyLimitActive ? (dailyLimitPauseInfo?.pauseResumesAt ?? senderSendWindow.resetAt ?? null) : null;
   const setupLocked = isCampaignSetupLocked({
     campaignStatus: campaign.status,
     latestRunStatus: latestRun?.status ?? null

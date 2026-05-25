@@ -22,7 +22,7 @@ import { MetricCard } from "@/components/dashboard/metric-card";
 import { SendWindowCard, type SendWindowSender } from "@/components/dashboard/send-window-card";
 import { SequencePanel } from "@/components/dashboard/sequence-panel";
 import type { ActivityItem, SequenceRowData } from "@/components/dashboard/types";
-import { processPendingCampaignWork, readDailyLimitPauseInfo } from "@/services/campaigns";
+import { processPendingCampaignWork, readDailyLimitPauseInfo, resumeCampaignRunsBlockedByDailyLimit } from "@/services/campaigns";
 import styles from "./overview-command-center.module.css";
 
 const ACTIVE_RUN_STATUSES: RunStatus[] = ["QUEUED", "RUNNING"];
@@ -80,6 +80,8 @@ export default async function OverviewCommandCenter() {
   const twoWeeksAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
   const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
   const twoDaysAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);
+
+  await resumeCampaignRunsBlockedByDailyLimit(now);
 
   const [
     processedImportCount,
@@ -466,9 +468,10 @@ export default async function OverviewCommandCenter() {
     const isActiveRun = ACTIVE_RUN_STATUSES.includes(actualRunStatus ?? "COMPLETED");
     const actualProcessedCount = getProcessedCount(actualLatestRun);
     const actualTotalRecipients = actualLatestRun?.totalRecipients ?? 0;
+    const dailyLimitPauseStillBlocked = Boolean(dailyLimitInfo) && isSenderBlocked;
     const hasActualRecipientWorkRemaining = actualLatestRun
       ? actualTotalRecipients <= 0
-        ? isActiveRun || Boolean(dailyLimitInfo)
+        ? isActiveRun || dailyLimitPauseStillBlocked
         : actualProcessedCount < actualTotalRecipients
       : false;
     const deliveredCount = getDeliveredCount(latestRun);
@@ -476,7 +479,7 @@ export default async function OverviewCommandCenter() {
     const totalRecipients = latestRun?.totalRecipients ?? 0;
     const issueCount = getIssueCount(latestRun);
     const isRunWaitingForDailyLimit =
-      hasActualRecipientWorkRemaining && (Boolean(dailyLimitInfo) || (isActiveRun && isSenderBlocked));
+      hasActualRecipientWorkRemaining && (dailyLimitPauseStillBlocked || (isActiveRun && isSenderBlocked));
     const dailyLimitBlock =
       isRunWaitingForDailyLimit
         ? {

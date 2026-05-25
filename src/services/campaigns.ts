@@ -6,7 +6,7 @@ import {
   planScheduledCampaignRun,
   SCHEDULABLE_CAMPAIGN_STATUSES
 } from "@/lib/campaign-scheduling";
-import { releaseSendReservation, reserveSendCapacity } from "@/lib/daily-send-limit";
+import { getGmailDailySendWindow, releaseSendReservation, reserveSendCapacity } from "@/lib/daily-send-limit";
 import { prisma } from "@/lib/db";
 import type { FailureCode, FailureSource } from "@/lib/failures";
 import { buildMergePayload } from "@/lib/mapping";
@@ -1806,6 +1806,8 @@ export async function resumeCampaignRunsBlockedByDailyLimit(now = new Date()) {
       scheduledFor: true,
       campaign: {
         select: {
+          userId: true,
+          senderProfileId: true,
           scheduleType: true,
           scheduleConfig: true
         }
@@ -1819,7 +1821,18 @@ export async function resumeCampaignRunsBlockedByDailyLimit(now = new Date()) {
     if (!info) {
       continue;
     }
-    if (info.pauseResumesAt && new Date(info.pauseResumesAt) > now) {
+    const pauseResumesAt = info.pauseResumesAt ? new Date(info.pauseResumesAt) : null;
+    let shouldResume = !pauseResumesAt || Number.isNaN(pauseResumesAt.getTime()) || pauseResumesAt <= now;
+
+    if (!shouldResume) {
+      const window = await getGmailDailySendWindow({
+        userId: info.pausedUserId ?? candidate.campaign.userId,
+        senderProfileId: info.pausedSenderProfileId ?? candidate.campaign.senderProfileId
+      });
+      shouldResume = window.ledgerAvailable && !window.isBlocked;
+    }
+
+    if (!shouldResume) {
       continue;
     }
 
