@@ -57,3 +57,66 @@ export function canEditCampaignSchedule({
 
   return !Number.isNaN(scheduledFor.getTime()) && scheduledFor > now;
 }
+
+type CampaignScheduleUpdateInput = {
+  campaignStatus: CampaignStatus;
+  hasValidatedSnapshot: boolean;
+  scheduleType: "immediate" | "once" | "recurring";
+  latestRun: {
+    status: RunStatus;
+    startedAt: Date | string | null;
+    recipientJobCount: number;
+    scheduledFor: Date | string | null;
+  } | null;
+};
+
+export type CampaignScheduleUpdatePlan = {
+  runAction: "reuse" | "create" | "none";
+  nextStatus: CampaignStatus;
+};
+
+/**
+ * Pure decision for how a schedule edit should affect a campaign's lifecycle.
+ *
+ * - `reuse`: the latest run is still pending (queued/paused, unstarted, no
+ *   recipient jobs) so we simply move its scheduled time.
+ * - `create`: there is no reusable run (the latest run already completed/failed,
+ *   or none exists) and the new schedule is a one-time/recurring send, so a
+ *   fresh run must be queued. The historical run is left untouched.
+ * - `none`: nothing run-related changes (e.g. switching back to "send right
+ *   away", which is launched explicitly).
+ */
+export function planCampaignScheduleUpdate({
+  campaignStatus,
+  hasValidatedSnapshot,
+  scheduleType,
+  latestRun
+}: CampaignScheduleUpdateInput): CampaignScheduleUpdatePlan {
+  const canReuseRun = Boolean(
+    latestRun &&
+      (latestRun.status === "QUEUED" || latestRun.status === "PAUSED") &&
+      !latestRun.startedAt &&
+      (latestRun.recipientJobCount ?? 0) === 0
+  );
+
+  const isScheduledSend = scheduleType === "once" || scheduleType === "recurring";
+  const shouldCreateRun = !canReuseRun && isScheduledSend;
+
+  let nextStatus: CampaignStatus = campaignStatus;
+
+  if (canReuseRun && latestRun?.status === "QUEUED") {
+    nextStatus = scheduleType === "immediate" ? "RUNNING" : "SCHEDULED";
+  } else if (scheduleType === "immediate" && campaignStatus === "SCHEDULED") {
+    nextStatus = hasValidatedSnapshot ? "VALIDATED" : "DRAFT";
+  } else if (shouldCreateRun) {
+    nextStatus = "SCHEDULED";
+  }
+
+  const runAction: CampaignScheduleUpdatePlan["runAction"] = canReuseRun
+    ? "reuse"
+    : shouldCreateRun
+      ? "create"
+      : "none";
+
+  return { runAction, nextStatus };
+}

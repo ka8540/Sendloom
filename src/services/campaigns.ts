@@ -1,7 +1,11 @@
 import { Prisma, type CampaignStatus } from "@prisma/client";
 
 import { CAMPAIGN_SETUP_LOCKED_RUN_STATUSES, isCampaignSetupLocked } from "@/lib/campaign-setup-lock";
-import { SCHEDULE_EDIT_DISABLED_MESSAGE, canEditCampaignSchedule } from "@/lib/campaign-schedule-edit";
+import {
+  SCHEDULE_EDIT_DISABLED_MESSAGE,
+  canEditCampaignSchedule,
+  planCampaignScheduleUpdate
+} from "@/lib/campaign-schedule-edit";
 import {
   planScheduledCampaignRun,
   SCHEDULABLE_CAMPAIGN_STATUSES
@@ -663,23 +667,25 @@ export async function updateCampaignSchedule(
     }
   }
 
-  const runToUpdate =
-    latestRun &&
-    ["QUEUED", "PAUSED"].includes(latestRun.status) &&
-    !latestRun.startedAt &&
-    latestRun._count.recipientJobs === 0
-      ? latestRun
-      : null;
   const nextScheduledFor = scheduleRule.type === "immediate" ? new Date() : getNextRunDate(scheduleRule);
-  let nextCampaignStatus = campaign.status;
 
-  if (runToUpdate?.status === "QUEUED") {
-    nextCampaignStatus = scheduleRule.type === "immediate" ? "RUNNING" : "SCHEDULED";
-  } else if (scheduleRule.type === "immediate" && campaign.status === "SCHEDULED") {
-    nextCampaignStatus = campaign.lastValidatedAt ? "VALIDATED" : "DRAFT";
-  } else if (!latestRun && scheduleRule.type !== "immediate") {
-    nextCampaignStatus = "SCHEDULED";
-  }
+  // Decide how this edit affects the campaign lifecycle. Critically, when the
+  // latest run has already completed/failed, switching to a scheduled send must
+  // queue a brand-new run and reset the campaign to SCHEDULED — otherwise a
+  // finished "send right away" sequence stays COMPLETED and never re-sends.
+  const { runAction, nextStatus: nextCampaignStatus } = planCampaignScheduleUpdate({
+    campaignStatus: campaign.status,
+    hasValidatedSnapshot: Boolean(campaign.lastValidatedAt),
+    scheduleType: scheduleRule.type,
+    latestRun: latestRun
+      ? {
+          status: latestRun.status,
+          startedAt: latestRun.startedAt,
+          recipientJobCount: latestRun._count.recipientJobs,
+          scheduledFor: latestRun.scheduledFor
+        }
+      : null
+  });
 
   return prisma.$transaction(async (tx) => {
     const updatedCampaign = await tx.campaign.update({
@@ -691,9 +697,9 @@ export async function updateCampaignSchedule(
       }
     });
 
-    if (runToUpdate) {
+    if (runAction === "reuse" && latestRun) {
       const updatedRun = await tx.campaignRun.update({
-        where: { id: runToUpdate.id },
+        where: { id: latestRun.id },
         data: {
           launchType: scheduleRule.type,
           scheduledFor: nextScheduledFor
@@ -703,7 +709,7 @@ export async function updateCampaignSchedule(
       return { campaign: updatedCampaign, run: updatedRun };
     }
 
-    if (!latestRun && (scheduleRule.type === "once" || scheduleRule.type === "recurring")) {
+    if (runAction === "create") {
       const totalRecipients = await tx.importRow.count({
         where: {
           importId: campaign.importId
