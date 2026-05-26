@@ -149,7 +149,8 @@ export function LandingScene() {
     const pointer = new THREE.Vector2(0, 0);
     const targetRotation = new THREE.Vector2(0, 0);
     const dummy = new THREE.Object3D();
-    const clock = new THREE.Clock();
+    const timer = new THREE.Timer();
+    timer.connect(document);
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
     const resolveDarkTheme = () => {
       const explicitTheme = document.documentElement.dataset.theme;
@@ -217,8 +218,9 @@ export function LandingScene() {
     mediaQuery.addEventListener("change", syncTheme);
     resize();
 
-    renderer.setAnimationLoop(() => {
-      const elapsed = clock.getElapsedTime();
+    renderer.setAnimationLoop((timestamp) => {
+      timer.update(timestamp);
+      const elapsed = timer.getElapsed();
 
       targetRotation.x += ((pointer.y * 0.45) - targetRotation.x) * 0.04;
       targetRotation.y += ((pointer.x * 0.55) - targetRotation.y) * 0.04;
@@ -264,6 +266,7 @@ export function LandingScene() {
       mount.removeEventListener("pointerleave", handlePointerLeave);
       mediaQuery.removeEventListener("change", syncTheme);
       renderer.setAnimationLoop(null);
+      timer.dispose();
       renderer.dispose();
       packetGeometry.dispose();
       packetMaterial.dispose();

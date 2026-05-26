@@ -342,7 +342,8 @@ export function LoadScreen() {
 
     const pointer = new THREE.Vector2(0, 0);
     const targetRotation = new THREE.Vector2(0, 0);
-    const clock = new THREE.Clock();
+    const timer = new THREE.Timer();
+    timer.connect(document);
 
     const resize = () => {
       const width = mount.clientWidth;
@@ -384,8 +385,9 @@ export function LoadScreen() {
     applyPalette();
     resize();
 
-    const renderFrame = () => {
-      const elapsed = clock.getElapsedTime();
+    const renderFrame = (timestamp?: DOMHighResTimeStamp) => {
+      timer.update(timestamp);
+      const elapsed = timer.getElapsed();
 
       targetRotation.x += ((pointer.y * 0.18) - targetRotation.x) * 0.04;
       targetRotation.y += ((pointer.x * 0.24) - targetRotation.y) * 0.04;
@@ -415,6 +417,7 @@ export function LoadScreen() {
       mount.removeEventListener("pointermove", handlePointerMove);
       mount.removeEventListener("pointerleave", handlePointerLeave);
       mount.removeChild(renderer.domElement);
+      timer.dispose();
 
       ring.geometry.dispose();
       ringMaterial.dispose();
