@@ -1,4 +1,4 @@
-import { formatRelativeDate } from "@/components/suppressions/formatters";
+import { LocalDateTime } from "@/components/local-date-time";
 
 import styles from "./suppressions.module.css";
 
@@ -27,7 +27,7 @@ export function SuppressionLogHeader({ visibleCount, automatedCount, lastUpdated
           </span>
           <span className={styles.logTimestamp}>
             <small>Updated</small>
-            <strong>{lastUpdatedAt ? formatRelativeDate(lastUpdatedAt) : "No activity"}</strong>
+            <strong>{lastUpdatedAt ? <LocalDateTime value={lastUpdatedAt} /> : "No activity"}</strong>
           </span>
         </div>
       </div>

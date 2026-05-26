@@ -12,6 +12,11 @@ import styles from "./overview-command-center.module.css";
 const PAGE_SIZE = 10;
 const OVERVIEW_REFRESH_INTERVAL_MS = 4_000;
 const RELAUNCH_REFRESH_WINDOW_MS = 30_000;
+const RESUME_REFRESH_DELAY_MS = 250;
+
+function isDocumentVisible() {
+  return typeof document === "undefined" || document.visibilityState !== "hidden";
+}
 
 export function SequencePanel({ rows }: { rows: SequenceRowData[] }) {
   const router = useRouter();
@@ -23,6 +28,7 @@ export function SequencePanel({ rows }: { rows: SequenceRowData[] }) {
   const [currentPage, setCurrentPage] = useState(1);
   const [refreshUntil, setRefreshUntil] = useState<number | null>(null);
   const refreshInFlightRef = useRef(false);
+  const resumeTimeoutRef = useRef<number | null>(null);
 
   const filteredRows = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -87,7 +93,11 @@ export function SequencePanel({ rows }: { rows: SequenceRowData[] }) {
       return;
     }
 
-    const interval = window.setInterval(() => {
+    function refreshIfVisible() {
+      if (!isDocumentVisible()) {
+        return;
+      }
+
       if (!hasActiveRuns && refreshUntil && Date.now() > refreshUntil) {
         setRefreshUntil(null);
         return;
@@ -101,10 +111,37 @@ export function SequencePanel({ rows }: { rows: SequenceRowData[] }) {
       startRefresh(() => {
         router.refresh();
       });
+    }
+
+    const interval = window.setInterval(() => {
+      refreshIfVisible();
     }, OVERVIEW_REFRESH_INTERVAL_MS);
+
+    function handleVisibilityChange() {
+      if (!isDocumentVisible()) {
+        return;
+      }
+
+      if (resumeTimeoutRef.current !== null) {
+        window.clearTimeout(resumeTimeoutRef.current);
+      }
+
+      resumeTimeoutRef.current = window.setTimeout(() => {
+        resumeTimeoutRef.current = null;
+        refreshIfVisible();
+      }, RESUME_REFRESH_DELAY_MS);
+    }
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
       window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+
+      if (resumeTimeoutRef.current !== null) {
+        window.clearTimeout(resumeTimeoutRef.current);
+        resumeTimeoutRef.current = null;
+      }
     };
   }, [hasActiveRuns, refreshUntil, router, startRefresh]);
 

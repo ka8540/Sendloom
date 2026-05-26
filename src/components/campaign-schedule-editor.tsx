@@ -65,6 +65,16 @@ const weekdayOptions = [
   { label: "Sat", value: "6" }
 ] as const;
 
+const DEFAULT_BROWSER_TIME_ZONE = "America/New_York";
+
+function readBrowserTimeZone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || DEFAULT_BROWSER_TIME_ZONE;
+  } catch {
+    return DEFAULT_BROWSER_TIME_ZONE;
+  }
+}
+
 function getDraftWeekdays(scheduleConfig: Extract<ScheduleConfig, { type: "recurring" }>) {
   const days = scheduleConfig.daysOfWeek?.length ? scheduleConfig.daysOfWeek : [scheduleConfig.dayOfWeek ?? 1];
   return Array.from(new Set(days.filter((day) => Number.isInteger(day) && day >= 0 && day <= 6)))
@@ -183,7 +193,7 @@ export function CampaignScheduleEditor(props: {
   initialSchedule: ScheduleConfig;
 }) {
   const router = useRouter();
-  const browserTimeZone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "America/New_York", []);
+  const [browserTimeZone, setBrowserTimeZone] = useState(DEFAULT_BROWSER_TIME_ZONE);
   const timeZoneOptions = useMemo(
     () =>
       Array.from(new Set([browserTimeZone, ...fallbackTimeZones])).map((timeZone) => ({
@@ -198,6 +208,10 @@ export function CampaignScheduleEditor(props: {
   const [error, setError] = useState<string | null>(null);
   const { showError } = useErrorToast();
   useErrorToastEffect(error, "Schedule update failed");
+
+  useEffect(() => {
+    setBrowserTimeZone(readBrowserTimeZone());
+  }, []);
 
   useEffect(() => {
     if (isOpen) {

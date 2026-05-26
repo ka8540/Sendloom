@@ -1,6 +1,6 @@
 import { X } from "lucide-react";
 
-import { formatDateTime } from "@/components/suppressions/formatters";
+import { LocalDateTime } from "@/components/local-date-time";
 import { formatSuppressionSource, SUPPRESSION_REASON_LABELS } from "@/components/suppressions/suppression-badge";
 import type { SuppressionRecord } from "@/components/suppressions/types";
 
@@ -31,11 +31,15 @@ export function SuppressionSidePanel(props: SuppressionSidePanelProps) {
       <dl className={styles.sidePanelMeta}>
         <div>
           <dt>Created</dt>
-          <dd>{formatDateTime(props.suppression.createdAt)}</dd>
+          <dd>
+            <LocalDateTime value={props.suppression.createdAt} />
+          </dd>
         </div>
         <div>
           <dt>Updated</dt>
-          <dd>{formatDateTime(props.suppression.updatedAt)}</dd>
+          <dd>
+            <LocalDateTime value={props.suppression.updatedAt} />
+          </dd>
         </div>
         <div>
           <dt>Reason</dt>

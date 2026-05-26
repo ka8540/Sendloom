@@ -28,6 +28,16 @@ const weekdayOptions = [
   { label: "Sat", value: 6 }
 ] as const;
 
+const DEFAULT_BROWSER_TIME_ZONE = "America/New_York";
+
+function readBrowserTimeZone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || DEFAULT_BROWSER_TIME_ZONE;
+  } catch {
+    return DEFAULT_BROWSER_TIME_ZONE;
+  }
+}
+
 export function CampaignBuilder(props: {
   imports: Option[];
   mappings: MappingOption[];
@@ -44,8 +54,8 @@ export function CampaignBuilder(props: {
   const [scheduleType, setScheduleType] = useState("immediate");
   const [frequency, setFrequency] = useState("weekly");
   const [selectedWeekdays, setSelectedWeekdays] = useState<number[]>([1]);
-  const browserTimeZone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "America/New_York", []);
-  const [selectedTimeZone, setSelectedTimeZone] = useState(browserTimeZone);
+  const [browserTimeZone, setBrowserTimeZone] = useState(DEFAULT_BROWSER_TIME_ZONE);
+  const [selectedTimeZone, setSelectedTimeZone] = useState(DEFAULT_BROWSER_TIME_ZONE);
   const [selectedMappingId, setSelectedMappingId] = useState(() => {
     const firstImportId = props.imports[0]?.id;
     return props.mappings.find((mapping) => mapping.importId === firstImportId)?.id ?? "";
@@ -80,6 +90,12 @@ export function CampaignBuilder(props: {
     () => props.mappings.filter((mapping) => mapping.importId === selectedImportId),
     [props.mappings, selectedImportId]
   );
+
+  useEffect(() => {
+    const nextTimeZone = readBrowserTimeZone();
+    setBrowserTimeZone(nextTimeZone);
+    setSelectedTimeZone((current) => (current === DEFAULT_BROWSER_TIME_ZONE ? nextTimeZone : current));
+  }, []);
 
   useEffect(() => {
     if (!mappingOptions.length) {

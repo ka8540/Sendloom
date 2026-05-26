@@ -48,6 +48,7 @@ type Props = {
 const RESULTS_PAGE_SIZE = 10;
 const SAVED_DOMAIN_SEARCHES_PAGE_SIZE = 10;
 const LOCAL_STORAGE_SAVED_DOMAIN_SEARCHES_KEY = "sendloom_hunter_domain_searches";
+const HYDRATION_TIME_ZONE = "UTC";
 const DOMAIN_CATEGORY_ORDER = ["IT", "HR", "Sales", "Marketing", "Operations", "Finance", "Leadership", "Other"] as const;
 type DomainCategory = (typeof DOMAIN_CATEGORY_ORDER)[number];
 type DomainSearchResultRow = HunterResultRow & {
@@ -71,18 +72,35 @@ function splitFullName(fullName: string) {
   };
 }
 
-function formatUpdatedAt(updatedAt: string | null) {
+function readBrowserTimeZone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || HYDRATION_TIME_ZONE;
+  } catch {
+    return HYDRATION_TIME_ZONE;
+  }
+}
+
+function formatUpdatedAt(updatedAt: string | null, timeZone = HYDRATION_TIME_ZONE) {
   if (!updatedAt) {
     return null;
   }
 
-  return new Date(updatedAt).toLocaleString();
-}
-
-function formatSavedDomainSearchUpdatedAt(updatedAt: string) {
   return new Intl.DateTimeFormat("en-US", {
     month: "short",
-    day: "numeric"
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone,
+    timeZoneName: "short"
+  }).format(new Date(updatedAt));
+}
+
+function formatSavedDomainSearchUpdatedAt(updatedAt: string, timeZone = HYDRATION_TIME_ZONE) {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone
   }).format(new Date(updatedAt));
 }
 
@@ -259,18 +277,24 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
   const [savedDomainSearchDetailsByDomain, setSavedDomainSearchDetailsByDomain] = useState<
     Record<string, HunterDomainSearchDetail>
   >({});
+  const [browserTimeZone, setBrowserTimeZone] = useState<string | null>(null);
+  const displayTimeZone = browserTimeZone ?? HYDRATION_TIME_ZONE;
   const savedSearchLoadRequestId = useRef(0);
   useErrorToastEffect(error, "Hunter search failed");
   useErrorToastEffect(settingsError, "Hunter settings failed");
+
+  useEffect(() => {
+    setBrowserTimeZone(readBrowserTimeZone());
+  }, []);
 
   const statusCopy = useMemo(() => {
     if (!keyStatus.configured) {
       return "No Hunter API key saved yet.";
     }
 
-    const updated = formatUpdatedAt(keyStatus.updatedAt);
+    const updated = formatUpdatedAt(keyStatus.updatedAt, displayTimeZone);
     return updated ? `Saved key ••••${keyStatus.last4 ?? "----"} updated ${updated}` : `Saved key ••••${keyStatus.last4 ?? "----"}`;
-  }, [keyStatus]);
+  }, [displayTimeZone, keyStatus]);
 
   const applyDomainSearchResults = useCallback(
     (domain: string, nextResults: HunterResultRow[], savedSearchId?: string | null) => {
@@ -894,7 +918,7 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
                             {savedSearch.resultCount} result{savedSearch.resultCount === 1 ? "" : "s"}
                           </span>
                           <span className={styles.savedSearchUpdated}>
-                            {formatSavedDomainSearchUpdatedAt(savedSearch.updatedAt)}
+                            {formatSavedDomainSearchUpdatedAt(savedSearch.updatedAt, displayTimeZone)}
                           </span>
                         </span>
                       </button>
@@ -1196,7 +1220,7 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
                 />
                 <p className={styles.modalKeyStatusNote}>
                   {keyStatus.configured
-                    ? `Saved key ••••${keyStatus.last4 ?? "----"}${keyStatus.updatedAt ? ` · ${formatUpdatedAt(keyStatus.updatedAt)}` : ""}`
+                    ? `Saved key ••••${keyStatus.last4 ?? "----"}${keyStatus.updatedAt ? ` · ${formatUpdatedAt(keyStatus.updatedAt, displayTimeZone)}` : ""}`
                     : "No Hunter key saved yet for this account."}
                 </p>
               </div>
