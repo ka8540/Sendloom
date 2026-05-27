@@ -6,6 +6,20 @@ import {
   getNextRetryAt,
   isRetryableFailure
 } from "@/lib/retry-policy";
+import { GmailSendError, type GmailSendFailureDiagnostic } from "@/lib/gmail-errors";
+
+function gmailError(diagnostic: Partial<GmailSendFailureDiagnostic>, message = "Gmail API rejected the send.") {
+  return new GmailSendError(message, {
+    provider: "gmail",
+    timestamp: "2026-05-27T12:00:00.000Z",
+    httpStatus: diagnostic.httpStatus ?? null,
+    code: diagnostic.code ?? null,
+    status: diagnostic.status ?? null,
+    reason: diagnostic.reason ?? null,
+    message: diagnostic.message ?? null,
+    retryAfterSeconds: diagnostic.retryAfterSeconds ?? null
+  });
+}
 
 describe("retry policy", () => {
   it("retries temporary failures and caps retry scheduling at three attempts", () => {
@@ -39,5 +53,33 @@ describe("retry policy", () => {
     const code = classifySendFailure(new Error(message), { senderConnected: true });
     expect(code).toBe("GMAIL_RATE_LIMITED");
     expect(isRetryableFailure(code)).toBe(true);
+  });
+
+  it("classifies structured Gmail quota and rate-limit diagnostics as retryable", () => {
+    for (const error of [
+      gmailError({ httpStatus: 429, code: "429", status: "RESOURCE_EXHAUSTED" }),
+      gmailError({ httpStatus: 403, code: "403", reason: "userRateLimitExceeded" }),
+      gmailError({ httpStatus: 403, code: "403", reason: "quotaExceeded" }),
+      gmailError({ httpStatus: 403, code: "403", status: "RESOURCE_EXHAUSTED", message: "Resource has been exhausted" })
+    ]) {
+      const code = classifySendFailure(error, { senderConnected: true });
+      expect(code).toBe("GMAIL_RATE_LIMITED");
+      expect(isRetryableFailure(code)).toBe(true);
+    }
+  });
+
+  it("classifies structured Gmail 5xx diagnostics as temporary", () => {
+    expect(classifySendFailure(gmailError({ httpStatus: 503, code: "503" }), { senderConnected: true })).toBe(
+      "GMAIL_TEMPORARY_FAILURE"
+    );
+  });
+
+  it("keeps unknown structured Gmail rejections permanent", () => {
+    expect(
+      classifySendFailure(
+        gmailError({ httpStatus: 400, code: "400", status: "INVALID_ARGUMENT", message: "Invalid recipient" }),
+        { senderConnected: true }
+      )
+    ).toBe("GMAIL_SEND_REJECTED");
   });
 });

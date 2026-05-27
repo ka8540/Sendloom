@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { getClientIp, getSendWindowKey } from "@/lib/rate-limit";
+import { getClientIp, getSendWindowKey, getSendWindowSpacingMs } from "@/lib/rate-limit";
 
 describe("send window keys", () => {
   it("scopes the send window by user id when present", () => {
@@ -13,6 +13,11 @@ describe("send window keys", () => {
 
   it("keeps the legacy global bucket when no owner information is available", () => {
     expect(getSendWindowKey()).toBe("global-send-window");
+  });
+
+  it("derives smooth per-send pacing from the per-minute cap", () => {
+    expect(getSendWindowSpacingMs(120)).toBe(500);
+    expect(getSendWindowSpacingMs(60)).toBe(1000);
   });
 });
 

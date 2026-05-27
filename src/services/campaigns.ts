@@ -13,8 +13,21 @@ import {
 import { getGmailDailySendWindow, releaseSendReservation, reserveSendCapacity } from "@/lib/daily-send-limit";
 import { prisma } from "@/lib/db";
 import type { FailureCode, FailureSource } from "@/lib/failures";
+import {
+  buildGmailSendFailureMetadata,
+  getGmailRetryAfterDate,
+  type GmailSendFailureMetadata
+} from "@/lib/gmail-errors";
 import { buildMergePayload } from "@/lib/mapping";
-import { GMAIL_RECONNECT_ERROR, getUserSafeGmailSendError, isGmailReconnectError, sendEmail, type EmailAttachment } from "@/lib/provider";
+import {
+  GMAIL_RECONNECT_ERROR,
+  GMAIL_SEND_RATE_LIMIT_USER_ERROR,
+  getUserSafeGmailSendError,
+  isGmailDailyLimitError,
+  isGmailReconnectError,
+  sendEmail,
+  type EmailAttachment
+} from "@/lib/provider";
 import { consumeSendWindow, getSendWindowKey } from "@/lib/rate-limit";
 import { getRedis } from "@/lib/redis";
 import { classifySendFailure, getNextRetryAt, isRetryableFailure, MAX_RETRY_ATTEMPTS } from "@/lib/retry-policy";
@@ -121,10 +134,48 @@ const RECIPIENT_LOCK_TTL_SECONDS = 5 * 60;
 const DEFAULT_MAX_DURATION_MS = 45_000;
 const DEFAULT_MAX_RUNS = 5;
 const DEFAULT_MAX_RECIPIENT_JOBS_PER_RUN = 25;
+const GMAIL_RATE_LIMIT_PAUSE_MS = 60 * 60 * 1000;
+const GMAIL_PROVIDER_DAILY_LIMIT_RETRY_MS = 24 * 60 * 60 * 1000;
 const TERMINAL_RECIPIENT_STATUSES = new Set(["SENT", "SUPPRESSED", "INVALID", "OPENED", "CLICKED", "BOUNCED", "COMPLAINED"]);
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function logGmailSendFailure(
+  event: "campaign-send",
+  args: {
+    campaignId: string;
+    campaignRunId: string;
+    recipientJobId: string;
+    senderProfileId: string;
+    userId: string | null;
+    failureCode: FailureCode;
+    retryable: boolean;
+    attemptNumber: number;
+    nextRetryAt?: Date | null;
+    failureDetails: GmailSendFailureMetadata;
+  }
+) {
+  const diagnostic = args.failureDetails.lastInternalError;
+
+  console.error(`[${event}] Gmail send failed.`, {
+    campaignId: args.campaignId,
+    campaignRunId: args.campaignRunId,
+    recipientJobId: args.recipientJobId,
+    senderProfileId: args.senderProfileId,
+    userId: args.userId,
+    provider: diagnostic.provider,
+    gmailHttpStatus: diagnostic.httpStatus,
+    gmailCode: diagnostic.code,
+    gmailStatus: diagnostic.status,
+    gmailReason: diagnostic.reason,
+    gmailMessage: diagnostic.message,
+    failureCode: args.failureCode,
+    retryable: args.retryable,
+    attemptNumber: args.attemptNumber,
+    nextRetryAt: args.nextRetryAt?.toISOString() ?? null
+  });
 }
 
 function getDeadline(maxDurationMs = DEFAULT_MAX_DURATION_MS) {
@@ -1358,9 +1409,13 @@ async function processRecipientJob(recipientJob: RecipientJobWithContext) {
         await markRecipientAttempt({
           jobId: latestJob.id,
           status: "RETRYING",
-          lastError: "Rate limit window reached",
+          lastError: GMAIL_SEND_RATE_LIMIT_USER_ERROR,
           failureCode: "GMAIL_RATE_LIMITED",
-          failureSource: "GMAIL"
+          failureSource: "GMAIL",
+          failureDetails: buildGmailSendFailureMetadata(new Error("Sendloom sender send window reached."), {
+            failureCode: "GMAIL_RATE_LIMITED",
+            retryable: true
+          })
         });
 
         return {
@@ -1414,17 +1469,41 @@ async function processRecipientJob(recipientJob: RecipientJobWithContext) {
         activeReservationId = null;
       }
 
-      const message = getUserSafeGmailSendError(error);
+      const failureCode = classifySendFailure(error, {
+        senderConnected: Boolean(latestJob.campaignRun.campaign.senderProfile.oauthRefreshToken)
+      });
+      const retryable = isRetryableFailure(failureCode);
+      const message = getUserSafeGmailSendError(error, failureCode);
+      const failureDetails = buildGmailSendFailureMetadata(error, {
+        failureCode,
+        retryable
+      });
+      const logContext = {
+        campaignId: latestJob.campaignRun.campaignId,
+        campaignRunId: latestJob.campaignRunId,
+        recipientJobId: latestJob.id,
+        senderProfileId: latestJob.campaignRun.campaign.senderProfileId,
+        userId: latestJob.campaignRun.campaign.userId,
+        failureCode,
+        retryable,
+        attemptNumber: latestJob.retryCount + 1,
+        failureDetails
+      };
 
       if (isGmailReconnectError(error)) {
         await markSenderRequiresReconnect(latestJob.campaignRun.campaign.senderProfile.id);
 
-        await markRecipientAttempt({
+        const updated = await markRecipientAttempt({
           jobId: latestJob.id,
           status: "FAILED",
           lastError: GMAIL_RECONNECT_ERROR,
-          failureCode: "GMAIL_PROFILE_DISCONNECTED",
-          failureSource: "GMAIL"
+          failureCode,
+          failureSource: "GMAIL",
+          failureDetails
+        });
+        logGmailSendFailure("campaign-send", {
+          ...logContext,
+          nextRetryAt: updated.nextRetryAt
         });
 
         await failQueuedRecipientJobs(latestJob.campaignRunId, GMAIL_RECONNECT_ERROR, latestJob.id);
@@ -1435,33 +1514,77 @@ async function processRecipientJob(recipientJob: RecipientJobWithContext) {
         };
       }
 
-      console.error("[campaign-send] Delivery failed.", error);
-
-      const failureCode = classifySendFailure(error, {
-        senderConnected: Boolean(latestJob.campaignRun.campaign.senderProfile.oauthRefreshToken)
-      });
-
-      if (latestJob.retryCount < MAX_RETRY_ATTEMPTS && isRetryableFailure(failureCode)) {
-        await markRecipientAttempt({
+      if (isGmailDailyLimitError(error)) {
+        const resumeAt = getGmailRetryAfterDate(error, GMAIL_PROVIDER_DAILY_LIMIT_RETRY_MS);
+        await pauseCampaignRunForSenderLimit({
+          runId: latestJob.campaignRunId,
           jobId: latestJob.id,
-          status: "RETRYING",
-          lastError: message,
-          failureCode,
-          failureSource: "GMAIL"
+          message,
+          resumeAt,
+          failureDetails
+        });
+        logGmailSendFailure("campaign-send", {
+          ...logContext,
+          nextRetryAt: resumeAt
         });
 
         return {
           processed: true,
-          rateLimited: false
+          rateLimited: true
         };
       }
 
-      await markRecipientAttempt({
+      if (latestJob.retryCount < MAX_RETRY_ATTEMPTS && retryable) {
+        const updated = await markRecipientAttempt({
+          jobId: latestJob.id,
+          status: "RETRYING",
+          lastError: message,
+          failureCode,
+          failureSource: "GMAIL",
+          failureDetails
+        });
+        logGmailSendFailure("campaign-send", {
+          ...logContext,
+          nextRetryAt: updated.nextRetryAt
+        });
+
+        return {
+          processed: true,
+          rateLimited: failureCode === "GMAIL_RATE_LIMITED"
+        };
+      }
+
+      if (failureCode === "GMAIL_RATE_LIMITED") {
+        const resumeAt = getGmailRetryAfterDate(error, GMAIL_RATE_LIMIT_PAUSE_MS);
+        await pauseCampaignRunForSenderLimit({
+          runId: latestJob.campaignRunId,
+          jobId: latestJob.id,
+          message,
+          resumeAt,
+          failureDetails
+        });
+        logGmailSendFailure("campaign-send", {
+          ...logContext,
+          nextRetryAt: resumeAt
+        });
+
+        return {
+          processed: true,
+          rateLimited: true
+        };
+      }
+
+      const updated = await markRecipientAttempt({
         jobId: latestJob.id,
         status: "FAILED",
         lastError: message,
         failureCode,
-        failureSource: "GMAIL"
+        failureSource: "GMAIL",
+        failureDetails
+      });
+      logGmailSendFailure("campaign-send", {
+        ...logContext,
+        nextRetryAt: updated.nextRetryAt
       });
 
       return {
@@ -1611,6 +1734,7 @@ export async function markRecipientAttempt(args: {
   lastError?: string;
   failureCode?: FailureCode;
   failureSource?: FailureSource;
+  failureDetails?: Record<string, unknown>;
 }) {
   const current = await prisma.recipientJob.findUniqueOrThrow({
     where: { id: args.jobId },
@@ -1627,6 +1751,17 @@ export async function markRecipientAttempt(args: {
   const nextRetryAt =
     args.status === "RETRYING" && args.failureCode ? getNextRetryAt(args.failureCode, current.retryCount) : null;
   const now = new Date();
+  const clearedFailureDetails = {
+    failureCategory: null,
+    provider: null,
+    providerErrorCode: null,
+    providerErrorReason: null,
+    providerErrorStatus: null,
+    providerHttpStatus: null,
+    providerErrorMessage: null,
+    providerRetryAfterSeconds: null,
+    lastInternalError: null
+  };
   const updated = await prisma.recipientJob.update({
     where: { id: args.jobId },
     data: {
@@ -1637,6 +1772,7 @@ export async function markRecipientAttempt(args: {
       nextRetryAt,
       metadata: {
         ...currentMetadata,
+        ...(args.status === "SENT" ? clearedFailureDetails : (args.failureDetails ?? {})),
         failureCode: args.status === "SENT" ? null : args.failureCode ?? null,
         failureSource: args.status === "SENT" ? null : args.failureSource ?? null,
         retryable: args.status === "SENT" ? false : retryable,
@@ -1655,23 +1791,62 @@ export async function pauseCampaignRunForSenderLimit(args: {
   runId: string;
   jobId?: string;
   message: string;
+  resumeAt?: Date | null;
+  failureDetails?: Record<string, unknown>;
 }) {
   await prisma.$transaction(async (tx) => {
+    const pausedAt = new Date();
+
     if (args.jobId) {
+      const job = await tx.recipientJob.findUniqueOrThrow({
+        where: { id: args.jobId },
+        select: { metadata: true }
+      });
+      const currentMetadata =
+        job.metadata && typeof job.metadata === "object" && !Array.isArray(job.metadata)
+          ? (job.metadata as Record<string, unknown>)
+          : {};
+
       await tx.recipientJob.update({
         where: { id: args.jobId },
         data: {
-          status: "FAILED",
-          lastError: args.message,
-          nextRetryAt: null
+          status: "PENDING",
+          lastError: null,
+          nextRetryAt: args.resumeAt ?? null,
+          metadata: {
+            ...currentMetadata,
+            ...(args.failureDetails ?? {}),
+            failureCode: "GMAIL_RATE_LIMITED",
+            failureSource: "GMAIL",
+            retryable: true,
+            blockedBy: "GMAIL_SENDER_LIMIT",
+            blockedAt: pausedAt.toISOString(),
+            blockedUntil: args.resumeAt?.toISOString() ?? null
+          } as Prisma.InputJsonValue
         }
       });
     }
 
+    const existingRun = await tx.campaignRun.findUniqueOrThrow({
+      where: { id: args.runId },
+      select: { progressSnapshot: true, campaignId: true }
+    });
+    const existingSnapshot =
+      existingRun.progressSnapshot && typeof existingRun.progressSnapshot === "object" && !Array.isArray(existingRun.progressSnapshot)
+        ? (existingRun.progressSnapshot as Record<string, unknown>)
+        : {};
+
     const run = await tx.campaignRun.update({
       where: { id: args.runId },
       data: {
-        status: "PAUSED"
+        status: "PAUSED",
+        progressSnapshot: {
+          ...existingSnapshot,
+          pauseReason: "GMAIL_SENDER_LIMIT",
+          pauseMessage: args.message,
+          pauseResumesAt: args.resumeAt?.toISOString() ?? null,
+          pausedAt: pausedAt.toISOString()
+        } as Prisma.InputJsonValue
       },
       select: {
         campaignId: true
@@ -1770,7 +1945,7 @@ export async function pauseCampaignRunForDailyLimit(args: {
 }
 
 type DailyLimitPauseInfo = {
-  pauseReason?: string;
+  pauseReason?: "DAILY_SEND_LIMIT" | "GMAIL_SENDER_LIMIT";
   pauseMessage?: string;
   pauseResumesAt?: string | null;
   pausedAt?: string;
@@ -1783,11 +1958,11 @@ export function readDailyLimitPauseInfo(progressSnapshot: unknown): DailyLimitPa
     return null;
   }
   const snapshot = progressSnapshot as Record<string, unknown>;
-  if (snapshot.pauseReason !== "DAILY_SEND_LIMIT") {
+  if (snapshot.pauseReason !== "DAILY_SEND_LIMIT" && snapshot.pauseReason !== "GMAIL_SENDER_LIMIT") {
     return null;
   }
   return {
-    pauseReason: "DAILY_SEND_LIMIT",
+    pauseReason: snapshot.pauseReason,
     pauseMessage: typeof snapshot.pauseMessage === "string" ? snapshot.pauseMessage : undefined,
     pauseResumesAt: typeof snapshot.pauseResumesAt === "string" ? snapshot.pauseResumesAt : null,
     pausedAt: typeof snapshot.pausedAt === "string" ? snapshot.pausedAt : undefined,
@@ -1798,9 +1973,9 @@ export function readDailyLimitPauseInfo(progressSnapshot: unknown): DailyLimitPa
 }
 
 /**
- * Auto-resume runs that were paused because of the daily safety limit once
- * their resume window has passed. A user-initiated pause has no DAILY_SEND_LIMIT
- * reason and is left untouched, satisfying "respect manual pause".
+ * Auto-resume runs that were paused by system Gmail limits once their resume
+ * window has passed. A user-initiated pause has no system pause reason and is
+ * left untouched, satisfying "respect manual pause".
  */
 export async function resumeCampaignRunsBlockedByDailyLimit(now = new Date()) {
   const candidates = await prisma.campaignRun.findMany({
@@ -1830,7 +2005,7 @@ export async function resumeCampaignRunsBlockedByDailyLimit(now = new Date()) {
     const pauseResumesAt = info.pauseResumesAt ? new Date(info.pauseResumesAt) : null;
     let shouldResume = !pauseResumesAt || Number.isNaN(pauseResumesAt.getTime()) || pauseResumesAt <= now;
 
-    if (!shouldResume) {
+    if (!shouldResume && info.pauseReason === "DAILY_SEND_LIMIT") {
       const window = await getGmailDailySendWindow({
         userId: info.pausedUserId ?? candidate.campaign.userId,
         senderProfileId: info.pausedSenderProfileId ?? candidate.campaign.senderProfileId

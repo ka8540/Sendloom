@@ -2,7 +2,19 @@ import { Worker, type ConnectionOptions } from "bullmq";
 
 import { prisma } from "@/lib/db";
 import { releaseSendReservation, reserveSendCapacity } from "@/lib/daily-send-limit";
-import { getUserSafeGmailSendError, isGmailDailyLimitError, sendEmail, type EmailAttachment } from "@/lib/provider";
+import type { FailureCode } from "@/lib/failures";
+import {
+  buildGmailSendFailureMetadata,
+  getGmailRetryAfterDate,
+  type GmailSendFailureMetadata
+} from "@/lib/gmail-errors";
+import {
+  GMAIL_SEND_RATE_LIMIT_USER_ERROR,
+  getUserSafeGmailSendError,
+  isGmailDailyLimitError,
+  sendEmail,
+  type EmailAttachment
+} from "@/lib/provider";
 import { queues } from "@/lib/queue";
 import { consumeSendWindow, getSendWindowKey } from "@/lib/rate-limit";
 import { getRedis } from "@/lib/redis";
@@ -16,6 +28,41 @@ import {
 import { recordSendOnLedger } from "@/services/send-ledger";
 
 const connection = getRedis() as unknown as ConnectionOptions;
+const GMAIL_RATE_LIMIT_PAUSE_MS = 60 * 60 * 1000;
+const GMAIL_PROVIDER_DAILY_LIMIT_RETRY_MS = 24 * 60 * 60 * 1000;
+
+function logGmailSendFailure(args: {
+  campaignId: string;
+  campaignRunId: string;
+  recipientJobId: string;
+  senderProfileId: string;
+  userId: string | null;
+  failureCode: FailureCode;
+  retryable: boolean;
+  attemptNumber: number;
+  nextRetryAt?: Date | null;
+  failureDetails: GmailSendFailureMetadata;
+}) {
+  const diagnostic = args.failureDetails.lastInternalError;
+
+  console.error("[worker-send] Gmail send failed.", {
+    campaignId: args.campaignId,
+    campaignRunId: args.campaignRunId,
+    recipientJobId: args.recipientJobId,
+    senderProfileId: args.senderProfileId,
+    userId: args.userId,
+    provider: diagnostic.provider,
+    gmailHttpStatus: diagnostic.httpStatus,
+    gmailCode: diagnostic.code,
+    gmailStatus: diagnostic.status,
+    gmailReason: diagnostic.reason,
+    gmailMessage: diagnostic.message,
+    failureCode: args.failureCode,
+    retryable: args.retryable,
+    attemptNumber: args.attemptNumber,
+    nextRetryAt: args.nextRetryAt?.toISOString() ?? null
+  });
+}
 
 const launchWorker = new Worker(
   "launch",
@@ -108,9 +155,13 @@ const sendWorker = new Worker(
         await markRecipientAttempt({
           jobId,
           status: "RETRYING",
-          lastError: "Rate limit window reached",
+          lastError: GMAIL_SEND_RATE_LIMIT_USER_ERROR,
           failureCode: "GMAIL_RATE_LIMITED",
-          failureSource: "GMAIL"
+          failureSource: "GMAIL",
+          failureDetails: buildGmailSendFailureMetadata(new Error("Sendloom sender send window reached."), {
+            failureCode: "GMAIL_RATE_LIMITED",
+            retryable: true
+          })
         });
         await queues.send.add(
           "send-recipient",
@@ -163,46 +214,94 @@ const sendWorker = new Worker(
         activeReservationId = null;
       }
 
-      const message = getUserSafeGmailSendError(error);
-      console.error("[worker-send] Delivery failed.", error);
+      const failureCode = classifySendFailure(error, {
+        senderConnected: Boolean(recipientJob.campaignRun.campaign.senderProfile.oauthRefreshToken)
+      });
+      const retryable = isRetryableFailure(failureCode);
+      const message = getUserSafeGmailSendError(error, failureCode);
+      const failureDetails = buildGmailSendFailureMetadata(error, {
+        failureCode,
+        retryable
+      });
+      const logContext = {
+        campaignId: recipientJob.campaignRun.campaignId,
+        campaignRunId: recipientJob.campaignRunId,
+        recipientJobId: jobId,
+        senderProfileId: recipientJob.campaignRun.campaign.senderProfileId,
+        userId: recipientJob.campaignRun.campaign.userId,
+        failureCode,
+        retryable,
+        attemptNumber: recipientJob.retryCount + 1,
+        failureDetails
+      };
+
       if (isGmailDailyLimitError(error)) {
+        const resumeAt = getGmailRetryAfterDate(error, GMAIL_PROVIDER_DAILY_LIMIT_RETRY_MS);
         await pauseCampaignRunForSenderLimit({
           runId: recipientJob.campaignRunId,
           jobId,
-          message
+          message,
+          resumeAt,
+          failureDetails
+        });
+        logGmailSendFailure({
+          ...logContext,
+          nextRetryAt: resumeAt
         });
         return;
       }
 
-      const failureCode = classifySendFailure(error, {
-        senderConnected: Boolean(recipientJob.campaignRun.campaign.senderProfile.oauthRefreshToken)
-      });
-
-      if (recipientJob.retryCount < MAX_RETRY_ATTEMPTS && isRetryableFailure(failureCode)) {
-        await markRecipientAttempt({
+      if (recipientJob.retryCount < MAX_RETRY_ATTEMPTS && retryable) {
+        const updated = await markRecipientAttempt({
           jobId,
           status: "RETRYING",
           lastError: message,
           failureCode,
-          failureSource: "GMAIL"
+          failureSource: "GMAIL",
+          failureDetails
+        });
+        logGmailSendFailure({
+          ...logContext,
+          nextRetryAt: updated.nextRetryAt
         });
         await queues.send.add(
           "send-recipient",
           { jobId },
           {
             jobId: recipientJob.dedupeKey,
-            delay: 5 * 60_000
+            delay: Math.max(1_000, (updated.nextRetryAt?.getTime() ?? Date.now() + 5 * 60_000) - Date.now())
           }
         );
         return;
       }
 
-      await markRecipientAttempt({
+      if (failureCode === "GMAIL_RATE_LIMITED") {
+        const resumeAt = getGmailRetryAfterDate(error, GMAIL_RATE_LIMIT_PAUSE_MS);
+        await pauseCampaignRunForSenderLimit({
+          runId: recipientJob.campaignRunId,
+          jobId,
+          message,
+          resumeAt,
+          failureDetails
+        });
+        logGmailSendFailure({
+          ...logContext,
+          nextRetryAt: resumeAt
+        });
+        return;
+      }
+
+      const updated = await markRecipientAttempt({
         jobId,
         status: "FAILED",
         lastError: message,
         failureCode,
-        failureSource: "GMAIL"
+        failureSource: "GMAIL",
+        failureDetails
+      });
+      logGmailSendFailure({
+        ...logContext,
+        nextRetryAt: updated.nextRetryAt
       });
     }
   },

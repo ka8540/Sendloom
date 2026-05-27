@@ -1,4 +1,9 @@
 import { getFailureSeverity, getHumanReadableFailureMessage, type FailureCode } from "@/lib/failures";
+import {
+  getGmailErrorInspectionText,
+  isGmailRateLimitLikeError,
+  isGmailTemporaryLikeError
+} from "@/lib/gmail-errors";
 
 export const MAX_RETRY_ATTEMPTS = 3;
 
@@ -43,8 +48,7 @@ export function classifySendFailure(error: unknown, options: { senderConnected: 
     return "GMAIL_PROFILE_DISCONNECTED";
   }
 
-  const message = error instanceof Error ? error.message : String(error);
-  const normalized = message.toLowerCase();
+  const normalized = getGmailErrorInspectionText(error);
 
   if (
     normalized.includes("needs to be reconnected") ||
@@ -62,33 +66,11 @@ export function classifySendFailure(error: unknown, options: { senderConnected: 
     return "GMAIL_REFRESH_FAILED";
   }
 
-  if (
-    normalized.includes("daily user sending limit exceeded") ||
-    normalized.includes("550-5.4.5") ||
-    normalized.includes("550 5.4.5") ||
-    normalized.includes("429") ||
-    normalized.includes("rate limit") ||
-    normalized.includes("user-rate limit exceeded") ||
-    normalized.includes("userratelimitexceeded") ||
-    normalized.includes("ratelimitexceeded") ||
-    normalized.includes("dailylimitexceeded") ||
-    normalized.includes("daily limit exceeded") ||
-    normalized.includes("quota exceeded") ||
-    normalized.includes("too many concurrent requests for user") ||
-    normalized.includes("exceeded rate limits") ||
-    normalized.includes("mail sending limit exceeded")
-  ) {
+  if (isGmailRateLimitLikeError(error)) {
     return "GMAIL_RATE_LIMITED";
   }
 
-  if (
-    normalized.includes("timeout") ||
-    normalized.includes("temporar") ||
-    normalized.includes("unavailable") ||
-    normalized.includes("econnreset") ||
-    normalized.includes("socket hang up") ||
-    /\b50[234]\b/.test(normalized)
-  ) {
+  if (isGmailTemporaryLikeError(error)) {
     return "GMAIL_TEMPORARY_FAILURE";
   }
 

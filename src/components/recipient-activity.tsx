@@ -135,7 +135,7 @@ export function RecipientActivity({
 
                 {item.isIssue ? (
                   <div className={styles.detailStrip} data-tone={item.tone}>
-                    <span className={styles.detailFlag}>{item.retryable ? "Retryable" : "Permanent"}</span>
+                    <span className={styles.detailFlag}>{item.detailLabel ?? (item.retryable ? "Retryable" : "Permanent")}</span>
                     {item.attemptCount > 0 ? (
                       <span className={styles.detailItem}>Attempt {item.attemptCount}</span>
                     ) : null}

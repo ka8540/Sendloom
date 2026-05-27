@@ -20,7 +20,13 @@ vi.mock("@/lib/google", () => ({
 }));
 
 import { refreshGoogleAccessToken } from "@/lib/google";
-import { GMAIL_RECONNECT_ERROR, sendEmail } from "@/lib/provider";
+import { getGmailSendFailureDiagnostic } from "@/lib/gmail-errors";
+import {
+  GMAIL_RECONNECT_ERROR,
+  GMAIL_SEND_RATE_LIMIT_USER_ERROR,
+  getUserSafeGmailSendError,
+  sendEmail
+} from "@/lib/provider";
 import { GMAIL_API_NOT_ENABLED_ERROR } from "@/lib/google";
 
 const refreshGoogleAccessTokenMock = vi.mocked(refreshGoogleAccessToken);
@@ -187,6 +193,60 @@ describe("gmail provider", () => {
         }
       })
     ).rejects.toThrow(GMAIL_API_NOT_ENABLED_ERROR);
+  });
+
+  it("preserves structured Gmail rate-limit diagnostics without exposing them as user-facing copy", async () => {
+    refreshGoogleAccessTokenMock.mockResolvedValue({
+      access_token: "access-token",
+      expires_in: 3600,
+      token_type: "Bearer"
+    });
+
+    vi.mocked(global.fetch).mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: {
+            code: 403,
+            message: "User-rate limit exceeded",
+            status: "PERMISSION_DENIED",
+            errors: [{ reason: "userRateLimitExceeded", message: "User-rate limit exceeded" }]
+          }
+        }),
+        {
+          status: 403,
+          headers: {
+            "Content-Type": "application/json",
+            "Retry-After": "90"
+          }
+        }
+      )
+    );
+
+    try {
+      await sendEmail({
+        from: "Sender Example <sender@example.com>",
+        to: "recipient@example.com",
+        subject: "Slow down",
+        html: "<p>Hello</p>",
+        sender: {
+          fromEmail: "sender@example.com",
+          oauthRefreshToken: "refresh-token"
+        }
+      });
+      throw new Error("Expected sendEmail to fail.");
+    } catch (error) {
+      const diagnostic = getGmailSendFailureDiagnostic(error);
+      expect(diagnostic).toMatchObject({
+        provider: "gmail",
+        httpStatus: 403,
+        code: "403",
+        status: "PERMISSION_DENIED",
+        reason: "userRateLimitExceeded",
+        message: "User-rate limit exceeded",
+        retryAfterSeconds: 90
+      });
+      expect(getUserSafeGmailSendError(error, "GMAIL_RATE_LIMITED")).toBe(GMAIL_SEND_RATE_LIMIT_USER_ERROR);
+    }
   });
 
   afterEach(() => {

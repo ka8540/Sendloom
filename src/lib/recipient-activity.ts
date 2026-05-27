@@ -15,6 +15,7 @@ export type RecipientActivityItem = {
   message: string;
   isIssue: boolean;
   retryable: boolean;
+  detailLabel: string | null;
   attemptCount: number;
   lastAttemptAt: string;
   nextRetryAt: string | null;
@@ -43,6 +44,11 @@ type RecipientJobInput = {
 const SUCCESS_STATUSES = new Set(["SENT", "OPENED", "CLICKED"]);
 const ENGAGED_STATUSES = new Set(["OPENED", "CLICKED"]);
 const ISSUE_STATUSES = new Set(["FAILED", "RETRYING", "INVALID", "BOUNCED", "COMPLAINED"]);
+const ACTION_REQUIRED_FAILURES = new Set<FailureCode>([
+  "GMAIL_PROFILE_DISCONNECTED",
+  "GMAIL_TOKEN_EXPIRED",
+  "GMAIL_REFRESH_FAILED"
+]);
 
 const STATUS_LABELS: Record<string, string> = {
   PENDING: "Queued",
@@ -57,11 +63,19 @@ const STATUS_LABELS: Record<string, string> = {
   SUPPRESSED: "Skipped"
 };
 
-function toStatusLabel(status: string) {
+function toStatusLabel(status: string, failureCode: FailureCode | null) {
+  if (failureCode && ACTION_REQUIRED_FAILURES.has(failureCode)) {
+    return "Action required";
+  }
+
   return STATUS_LABELS[status] ?? `${status.charAt(0)}${status.slice(1).toLowerCase()}`;
 }
 
-function toTone(status: string): RecipientActivityTone {
+function toTone(status: string, failureCode: FailureCode | null): RecipientActivityTone {
+  if (failureCode && ACTION_REQUIRED_FAILURES.has(failureCode)) {
+    return "warning";
+  }
+
   if (SUCCESS_STATUSES.has(status)) {
     return "success";
   }
@@ -83,15 +97,25 @@ function getFailureCode(metadata: unknown): FailureCode | null {
   return typeof code === "string" && FAILURE_CODES.includes(code as FailureCode) ? (code as FailureCode) : null;
 }
 
-function getDailyLimitBlock(metadata: unknown): { blockedUntil: string | null } | null {
+function inferFailureCode(lastError: string | null): FailureCode | null {
+  const normalized = lastError?.toLowerCase() ?? "";
+  if (normalized.includes("gmail sender needs to be reconnected") || normalized.includes("reconnect gmail")) {
+    return "GMAIL_PROFILE_DISCONNECTED";
+  }
+
+  return null;
+}
+
+function getSystemBlock(metadata: unknown): { blockedBy: "DAILY_SEND_LIMIT" | "GMAIL_SENDER_LIMIT"; blockedUntil: string | null } | null {
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
     return null;
   }
   const record = metadata as { blockedBy?: unknown; blockedUntil?: unknown };
-  if (record.blockedBy !== "DAILY_SEND_LIMIT") {
+  if (record.blockedBy !== "DAILY_SEND_LIMIT" && record.blockedBy !== "GMAIL_SENDER_LIMIT") {
     return null;
   }
   return {
+    blockedBy: record.blockedBy,
     blockedUntil: typeof record.blockedUntil === "string" ? record.blockedUntil : null
   };
 }
@@ -120,6 +144,12 @@ function resolveMessage(status: string, isIssue: boolean, failureCode: FailureCo
 
   if (isIssue) {
     if (failureCode) {
+      if (failureCode === "GMAIL_RATE_LIMITED") {
+        return "Gmail is rate limiting sends right now. Sendloom will retry automatically.";
+      }
+      if (ACTION_REQUIRED_FAILURES.has(failureCode)) {
+        return "Reconnect Gmail to continue sending.";
+      }
       return getHumanReadableFailureMessage(failureCode);
     }
     if (error) {
@@ -149,38 +179,45 @@ function resolveMessage(status: string, isIssue: boolean, failureCode: FailureCo
  */
 export function buildRecipientActivityItem(job: RecipientJobInput): RecipientActivityItem {
   const isIssue = ISSUE_STATUSES.has(job.status);
-  const failureCode = getFailureCode(job.metadata);
-  const dailyLimitBlock = job.status === "PENDING" ? getDailyLimitBlock(job.metadata) : null;
+  const failureCode = getFailureCode(job.metadata) ?? inferFailureCode(job.lastError);
+  const systemBlock = job.status === "PENDING" ? getSystemBlock(job.metadata) : null;
 
-  if (dailyLimitBlock) {
+  if (systemBlock) {
     return {
       id: job.id,
       email: job.recipientEmail,
       name: job.recipientName?.trim() ? job.recipientName.trim() : null,
       status: job.status,
-      statusLabel: "Paused by safety limit",
+      statusLabel: "Paused",
       tone: "warning",
       engaged: false,
-      message: "Held until the Gmail daily safety window resets.",
-      isIssue: false,
+      message:
+        systemBlock.blockedBy === "DAILY_SEND_LIMIT"
+          ? "Daily Gmail safety limit reached. Sending resumes automatically when the safety window resets."
+          : "Gmail is rate limiting sends right now. Sendloom will retry automatically.",
+      isIssue: true,
       retryable: true,
+      detailLabel: "Paused",
       attemptCount: job.retryCount,
       lastAttemptAt: toIso(job.updatedAt),
-      nextRetryAt: dailyLimitBlock.blockedUntil
+      nextRetryAt: systemBlock.blockedUntil
     };
   }
+
+  const retryable = job.status === "RETRYING";
 
   return {
     id: job.id,
     email: job.recipientEmail,
     name: job.recipientName?.trim() ? job.recipientName.trim() : null,
     status: job.status,
-    statusLabel: toStatusLabel(job.status),
-    tone: toTone(job.status),
+    statusLabel: toStatusLabel(job.status, failureCode),
+    tone: toTone(job.status, failureCode),
     engaged: ENGAGED_STATUSES.has(job.status),
     message: resolveMessage(job.status, isIssue, failureCode, job.lastError),
     isIssue,
-    retryable: job.status === "RETRYING",
+    retryable,
+    detailLabel: failureCode && ACTION_REQUIRED_FAILURES.has(failureCode) ? "Action required" : retryable ? "Retrying" : null,
     attemptCount: job.retryCount,
     lastAttemptAt: toIso(job.updatedAt),
     nextRetryAt: job.nextRetryAt ? toIso(job.nextRetryAt) : null

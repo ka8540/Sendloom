@@ -1,13 +1,28 @@
 import MailComposer from "nodemailer/lib/mail-composer";
 
 import { env } from "@/lib/env";
+import type { FailureCode } from "@/lib/failures";
+import {
+  buildGmailApiFailureDiagnostic,
+  GmailSendError,
+  isGmailDailyLimitLikeError,
+  isGmailRateLimitLikeError,
+  isGmailTemporaryLikeError,
+  type GoogleApiErrorBody
+} from "@/lib/gmail-errors";
 import { normalizeGoogleApiErrorMessage, refreshGoogleAccessToken } from "@/lib/google";
 import { getObjectBuffer } from "@/lib/storage";
 
 export const GMAIL_RECONNECT_ERROR =
   "This Gmail sender needs to be reconnected. Google says its access expired, was revoked, or is missing the required send permission.";
 export const GMAIL_SEND_USER_ERROR = "Couldn't send the email right now. Please try again.";
-export const GMAIL_SEND_LIMIT_USER_ERROR = "Gmail sending is temporarily unavailable. Please try again later.";
+export const GMAIL_SEND_RATE_LIMIT_USER_ERROR =
+  "Gmail is rate limiting sends right now. Sendloom will retry automatically.";
+export const GMAIL_SEND_TEMPORARY_USER_ERROR =
+  "Gmail is temporarily unavailable for this send. Sendloom will retry automatically.";
+export const GMAIL_SEND_DAILY_LIMIT_USER_ERROR =
+  "Daily Gmail safety limit reached. Sending resumes automatically when the safety window resets.";
+export const GMAIL_SEND_REJECTED_USER_ERROR = "Gmail rejected this recipient.";
 
 const GOOGLE_GMAIL_SEND_URL = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send";
 
@@ -44,11 +59,7 @@ const GMAIL_RECONNECT_PATTERNS = [
 
 type GmailSendApiResponse = {
   id?: string;
-  error?: {
-    code?: number;
-    message?: string;
-    status?: string;
-  };
+  error?: GoogleApiErrorBody;
 };
 
 export function isGmailReconnectError(error: unknown) {
@@ -63,13 +74,21 @@ export function isGmailReconnectError(error: unknown) {
   return GMAIL_RECONNECT_PATTERNS.some((pattern) => normalized.includes(pattern));
 }
 
-export function getUserSafeGmailSendError(error: unknown) {
+export function getUserSafeGmailSendError(error: unknown, failureCode?: FailureCode) {
   if (isGmailReconnectError(error)) {
     return GMAIL_RECONNECT_ERROR;
   }
 
-  if (isGmailDailyLimitError(error)) {
-    return GMAIL_SEND_LIMIT_USER_ERROR;
+  if (failureCode === "GMAIL_RATE_LIMITED" || isGmailRateLimitLikeError(error)) {
+    return isGmailDailyLimitError(error) ? GMAIL_SEND_DAILY_LIMIT_USER_ERROR : GMAIL_SEND_RATE_LIMIT_USER_ERROR;
+  }
+
+  if (failureCode === "GMAIL_TEMPORARY_FAILURE" || isGmailTemporaryLikeError(error)) {
+    return GMAIL_SEND_TEMPORARY_USER_ERROR;
+  }
+
+  if (failureCode === "GMAIL_SEND_REJECTED") {
+    return GMAIL_SEND_REJECTED_USER_ERROR;
   }
 
   return GMAIL_SEND_USER_ERROR;
@@ -153,7 +172,14 @@ async function sendGmailMessage(raw: string, accessToken: string) {
   const payload = (await response.json().catch(() => ({}))) as GmailSendApiResponse;
 
   if (!response.ok || !payload.id) {
-    throw new Error(normalizeGoogleApiErrorMessage(payload.error?.message || "Could not send Gmail message."));
+    const fallbackMessage = "Could not send Gmail message.";
+    const diagnostic = buildGmailApiFailureDiagnostic(payload.error, {
+      httpStatus: response.status,
+      retryAfter: response.headers.get("retry-after"),
+      fallbackMessage
+    });
+    const message = normalizeGoogleApiErrorMessage(diagnostic.message || fallbackMessage);
+    throw new GmailSendError(message, diagnostic);
   }
 
   return payload;
@@ -184,6 +210,5 @@ export async function sendEmail(args: SendArgs) {
 }
 
 export function isGmailDailyLimitError(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
-  return /daily user sending limit exceeded|550-5\.4\.5|550 5\.4\.5/i.test(message);
+  return isGmailDailyLimitLikeError(error);
 }
