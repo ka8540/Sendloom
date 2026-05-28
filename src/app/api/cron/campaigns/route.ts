@@ -8,7 +8,9 @@ export const maxDuration = 60;
 
 function isAuthorized(request: Request) {
   if (!env.CRON_SECRET) {
-    return true;
+    // Fail closed in production. Env validation also rejects production
+    // startup with no CRON_SECRET, but this is the second line of defence.
+    return process.env.NODE_ENV !== "production";
   }
 
   const authHeader = request.headers.get("authorization");

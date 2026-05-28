@@ -9,9 +9,12 @@ import { env } from "@/lib/env";
 const SESSION_COOKIE = "mergepilot_session";
 export const SESSION_DURATION_SECONDS = 60 * 60 * 24 * 30;
 export const SESSION_ERROR_MESSAGE = "Your session has expired. Sign in again to keep working.";
+export const SESSION_TYPE = "session";
+export const SESSION_AUDIENCE = "sendloom-session";
 
 type SessionClaims = JwtPayload & {
   email: string;
+  typ?: typeof SESSION_TYPE;
 };
 
 const SESSION_TOUCH_INTERVAL_MS = 5 * 60 * 1000;
@@ -28,8 +31,15 @@ export function isConfiguredAdminEmail(email: string) {
   return normalizeUserEmail(env.ADMIN_EMAIL) === normalizeUserEmail(email);
 }
 
-export function isAdminUser(user: { email: string; isAdmin?: boolean | null }) {
-  return Boolean(user.isAdmin) || isConfiguredAdminEmail(user.email);
+// Admin authority MUST come from the DB-side `isAdmin` flag. We deliberately
+// do NOT grant admin at runtime based on an email-equals-env-string check.
+// The seed script (`ensureBootstrapData`) is the only path that flips the DB
+// flag for the configured ADMIN_EMAIL, and that only runs at boot/login under
+// known conditions. This prevents an attacker who can populate `session.email`
+// (e.g., via a Google login flow that we've now also locked down) from being
+// auto-promoted to admin.
+export function isAdminUser(user: { email?: string; isAdmin?: boolean | null }) {
+  return Boolean(user.isAdmin);
 }
 
 export async function createPasswordHash(password: string) {
@@ -41,13 +51,22 @@ export async function verifyPassword(password: string, hash: string) {
 }
 
 export function createSessionToken(email: string) {
-  return jwt.sign({ email: normalizeUserEmail(email) }, env.SESSION_SECRET, { expiresIn: SESSION_DURATION_SECONDS });
+  return jwt.sign(
+    { email: normalizeUserEmail(email), typ: SESSION_TYPE },
+    env.SESSION_SECRET,
+    { expiresIn: SESSION_DURATION_SECONDS, audience: SESSION_AUDIENCE }
+  );
 }
 
 export function verifySessionToken(token: string): SessionClaims | null {
   try {
-    const claims = jwt.verify(token, env.SESSION_SECRET);
-    if (typeof claims === "string" || typeof claims.email !== "string" || typeof claims.exp !== "number") {
+    const claims = jwt.verify(token, env.SESSION_SECRET, { audience: SESSION_AUDIENCE });
+    if (
+      typeof claims === "string" ||
+      typeof claims.email !== "string" ||
+      typeof claims.exp !== "number" ||
+      (claims as SessionClaims).typ !== SESSION_TYPE
+    ) {
       return null;
     }
 
@@ -68,7 +87,8 @@ export async function setSession(email: string) {
   await prisma.user.update({
     where: { email: normalizedEmail },
     data: {
-      isAdmin: isConfiguredAdminEmail(normalizedEmail) ? true : undefined,
+      // isAdmin is NOT set here — admin status only flips via the bootstrap
+      // seed (`ensureBootstrapData`) on login when ADMIN_PASSWORD is provided.
       lastLoginAt: now,
       lastSeenAt: now,
       sessionIssuedAt: issuedAt,
@@ -89,15 +109,28 @@ export async function setSession(email: string) {
 export async function clearSession() {
   const store = await cookies();
   const token = store.get(SESSION_COOKIE)?.value;
-  const claims = token ? verifySessionToken(token) : null;
-  if (claims?.email) {
-    await prisma.user.updateMany({
-      where: { email: claims.email },
-      data: {
-        sessionIssuedAt: new Date(),
-        sessionExpiresAt: null
+  // Best-effort revoke ALL sessions for this user (advances sessionIssuedAt
+  // so older JWTs fail the freshness check). We decode without verifying so
+  // that even an expired-but-recent cookie still triggers DB-side revocation.
+  if (token) {
+    try {
+      const decoded = jwt.decode(token) as JwtPayload | string | null;
+      const email =
+        decoded && typeof decoded === "object" && typeof decoded.email === "string"
+          ? (decoded.email as string)
+          : null;
+      if (email) {
+        await prisma.user.updateMany({
+          where: { email: normalizeUserEmail(email) },
+          data: {
+            sessionIssuedAt: new Date(),
+            sessionExpiresAt: null
+          }
+        });
       }
-    });
+    } catch {
+      // Ignore — we still want to clear the cookie below.
+    }
   }
 
   store.set(SESSION_COOKIE, "", {

@@ -4,6 +4,8 @@ import {
   GMAIL_CONNECT_CANCELED_ERROR,
   GMAIL_CONNECT_USER_ERROR,
   GOOGLE_LOGIN_CANCELED_ERROR,
+  GOOGLE_LOGIN_PASSWORD_ACCOUNT_EXISTS_ERROR,
+  GOOGLE_LOGIN_UNVERIFIED_EMAIL_ERROR,
   GOOGLE_LOGIN_USER_ERROR,
   getGmailConnectUserError,
   getGoogleLoginUserError
@@ -18,6 +20,14 @@ describe("user-facing auth errors", () => {
 
   it("uses a friendlier canceled login error when the user closes consent", () => {
     expect(getGoogleLoginUserError("access_denied")).toBe(GOOGLE_LOGIN_CANCELED_ERROR);
+  });
+
+  it("surfaces the unverified-email reason from the Google login callback", () => {
+    expect(getGoogleLoginUserError("email_unverified")).toBe(GOOGLE_LOGIN_UNVERIFIED_EMAIL_ERROR);
+  });
+
+  it("surfaces the password-account-exists reason from the Google login callback", () => {
+    expect(getGoogleLoginUserError("password_account_exists")).toBe(GOOGLE_LOGIN_PASSWORD_ACCOUNT_EXISTS_ERROR);
   });
 
   it("uses a generic Gmail connection error for backend and provider failures", () => {

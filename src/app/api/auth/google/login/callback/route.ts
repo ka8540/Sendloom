@@ -30,18 +30,35 @@ export async function GET(request: Request) {
   try {
     const tokens = await exchangeGoogleCode(code, getGoogleLoginRedirectUri(origin));
     const profile = await fetchGoogleUserInfo(tokens.access_token);
+
+    // Reject sign-in if Google didn't verify the email. Without this an
+    // attacker controlling a Google Workspace can set an unverified primary
+    // email matching a victim Sendloom account, then sign in as that victim.
+    if (profile.email_verified !== true) {
+      return NextResponse.redirect(
+        new URL(`/login?error=${encodeURIComponent(getGoogleLoginUserError("email_unverified"))}`, request.url)
+      );
+    }
+
     const email = normalizeUserEmail(profile.email);
 
-    const user = await prisma.user.upsert({
-      where: { email },
-      update: {
-        isAdmin: process.env.ADMIN_EMAIL?.trim().toLowerCase() === email ? true : undefined
-      },
-      create: {
-        email,
-        isAdmin: process.env.ADMIN_EMAIL?.trim().toLowerCase() === email
-      }
-    });
+    // Do NOT silently merge a Google identity into an existing password-only
+    // account. Password users must explicitly connect Google from inside their
+    // account (via /api/auth/google/connect).
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing && existing.passwordHash) {
+      return NextResponse.redirect(
+        new URL(`/login?error=${encodeURIComponent(getGoogleLoginUserError("password_account_exists"))}`, request.url)
+      );
+    }
+
+    const user = existing
+      ? existing
+      : await prisma.user.create({
+          data: {
+            email
+          }
+        });
 
     await setSession(email);
     return NextResponse.redirect(new URL(isAdminUser(user) ? "/admin" : "/workspace", request.url));

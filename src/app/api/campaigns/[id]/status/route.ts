@@ -2,6 +2,7 @@ import { after } from "next/server";
 import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/api-auth";
+import { prisma } from "@/lib/db";
 import { getCampaignStatus, processPendingCampaignWork } from "@/services/campaigns";
 
 export async function GET(_: Request, context: { params: Promise<{ id: string }> }) {
@@ -11,6 +12,17 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
   }
 
   const { id } = await context.params;
+
+  // Verify ownership BEFORE scheduling background work so a random
+  // authenticated user cannot trigger campaign processing for arbitrary IDs.
+  const owned = await prisma.campaign.findFirst({
+    where: { id, userId: auth.user.id },
+    select: { id: true }
+  });
+  if (!owned) {
+    return NextResponse.json({ error: "Campaign not found." }, { status: 404 });
+  }
+
   after(async () => {
     await processPendingCampaignWork({
       campaignId: id,

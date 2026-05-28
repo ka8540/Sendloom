@@ -41,11 +41,13 @@ export async function POST(request: Request) {
   }
 
   const passwordHash = await createPasswordHash(payload.password);
+  // Admin status is bootstrapped only via `ensureBootstrapData` (which runs on
+  // login when ADMIN_EMAIL + ADMIN_PASSWORD are set). Signup never grants
+  // admin to prevent privilege escalation from a guessable email match.
   const user = await prisma.user.create({
     data: {
       email,
-      passwordHash,
-      isAdmin: process.env.ADMIN_EMAIL?.trim().toLowerCase() === email
+      passwordHash
     }
   });
 

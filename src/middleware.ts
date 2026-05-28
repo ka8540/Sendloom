@@ -11,11 +11,13 @@ import {
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
+// Endpoints that are unsafe-method but cannot present a CSRF cookie token
+// (third-party callbacks, server-to-server cron, signed webhooks). Google
+// OAuth endpoints are GET-only redirects, so they don't appear here — they
+// are protected by the OAuth `state` cookie validated in their callbacks.
 const CSRF_EXEMPT_PREFIXES = [
   "/api/cron",
-  "/api/webhooks",
-  "/api/auth/google",
-  "/api/health"
+  "/api/webhooks"
 ];
 
 function isCsrfExempt(pathname: string) {
