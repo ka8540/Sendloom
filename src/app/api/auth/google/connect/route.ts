@@ -13,6 +13,16 @@ const GOOGLE_NEXT_COOKIE = "sendloom_google_oauth_next";
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const origin = url.origin;
+
+  // Defense-in-depth CSRF for the Gmail-connect kickoff: only allow
+  // same-origin navigations. Cross-site requests (where a browser sends
+  // Sec-Fetch-Site = "cross-site"/"none" for top-level nav from foreign
+  // origins) are rejected.
+  const fetchSite = request.headers.get("sec-fetch-site");
+  if (fetchSite && fetchSite !== "same-origin" && fetchSite !== "same-site" && fetchSite !== "none") {
+    return NextResponse.redirect(new URL("/login", request.url));
+  }
+
   const user = await getSessionUser();
 
   if (!user) {

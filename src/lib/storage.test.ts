@@ -102,6 +102,15 @@ describe("local storage mode", () => {
   it("rejects keys that escape the upload root", async () => {
     await expect(getObjectBuffer("imports", "../../../etc/passwd")).rejects.toThrow(/Invalid storage key/);
   });
+
+  it("rejects absolute filesystem paths in storage keys", async () => {
+    await expect(getObjectBuffer("imports", "/etc/passwd")).rejects.toThrow(/Invalid storage key/);
+    await expect(getObjectBuffer("imports", "C:\\Windows\\system.ini")).rejects.toThrow(/Invalid storage key/);
+  });
+
+  it("rejects storage keys containing traversal segments", async () => {
+    await expect(getObjectBuffer("imports", "users/u1/imports/../../leak")).rejects.toThrow(/Invalid storage key/);
+  });
 });
 
 describe("r2 storage mode", () => {

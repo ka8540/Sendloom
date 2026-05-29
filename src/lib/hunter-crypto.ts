@@ -7,7 +7,16 @@ const AUTH_TAG_LENGTH = 16;
 const SEGMENT_SEPARATOR = ".";
 
 function getEncryptionKey() {
-  const secret = env.HUNTER_KEY_ENCRYPTION_SECRET ?? env.SESSION_SECRET;
+  // Hunter keys must NOT share an encryption key with session JWTs. In
+  // production env validation requires HUNTER_KEY_ENCRYPTION_SECRET; in dev
+  // we fall back to SESSION_SECRET only to keep local bootstrapping painless.
+  const secret = env.HUNTER_KEY_ENCRYPTION_SECRET;
+  if (!secret) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("HUNTER_KEY_ENCRYPTION_SECRET is required in production.");
+    }
+    return createHash("sha256").update(env.SESSION_SECRET).digest();
+  }
   return createHash("sha256").update(secret).digest();
 }
 

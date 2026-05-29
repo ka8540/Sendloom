@@ -18,7 +18,9 @@ vi.mock("@/lib/db", () => ({
 
 vi.mock("@/lib/env", () => ({
   env: {
-    SESSION_SECRET: "test-session-secret"
+    SESSION_SECRET: "test-session-secret",
+    TRACKING_SECRET: "test-tracking-secret",
+    APP_BASE_URL: "https://app.example.com"
   }
 }));
 

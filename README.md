@@ -655,13 +655,15 @@ Create a local `.env` file at the repo root with the values below. Secrets and s
 | `DATABASE_URL` | Yes | Prisma/PostgreSQL connection |
 | `DATABASE_URL_UNPOOLED` | Recommended | Direct Prisma connection for migrations |
 | `REDIS_URL` | Yes | Redis/BullMQ/rate-limit backend |
-| `SESSION_SECRET` | Yes | JWT signing for sessions and tracking tokens |
+| `SESSION_SECRET` | Yes | JWT signing for session cookies ONLY. Must NOT be reused for any other purpose. |
+| `TRACKING_SECRET` | Required in production | JWT signing for open/click/unsubscribe tracking tokens. Must be different from `SESSION_SECRET` — tracking tokens are sent in every email and are not secret. |
 | `MAIL_PROVIDER` | Yes | Mail backend selector, typically `gmail` |
 | `GOOGLE_CLIENT_ID` | For Google auth | Google OAuth client id |
 | `GOOGLE_CLIENT_SECRET` | For Google auth | Google OAuth client secret |
 | `OPENAI_API_KEY` | Optional | AI enhancement and spam cleanup |
-| `HUNTER_KEY_ENCRYPTION_SECRET` | For Finder | Encrypts stored Hunter API keys |
-| `CRON_SECRET` | Recommended in production | Protects `/api/cron/campaigns` |
+| `HUNTER_KEY_ENCRYPTION_SECRET` | Required in production | Encrypts stored Hunter API keys. Must NOT be the same as `SESSION_SECRET`. |
+| `CRON_SECRET` | Required in production | Protects `/api/cron/campaigns`. With this unset, the cron route fails closed in production. |
+| `RESEND_WEBHOOK_SECRET` | Required in production for Resend | HMAC secret. Webhook fails closed in production when unset. |
 | `APP_BASE_URL` | Yes | Base URL used for redirects and tracking links |
 | `OBJECT_STORAGE_MODE` | Yes | Storage backend: `local` for the local filesystem, `r2` for Cloudflare R2 |
 | `LOCAL_UPLOAD_DIR` | Yes | Local upload destination, used when `OBJECT_STORAGE_MODE=local` |
@@ -676,7 +678,16 @@ Create a local `.env` file at the repo root with the values below. Secrets and s
 | `ADMIN_EMAIL` | Optional | Bootstrap admin email |
 | `ADMIN_PASSWORD` | Optional | Bootstrap admin password |
 | `RESEND_API_KEY` | Optional | Reserved for provider/webhook expansion |
-| `RESEND_WEBHOOK_SECRET` | Optional | Used by the Resend webhook route |
+
+### Security deployment notes
+
+- Generate each secret with `openssl rand -hex 32`.
+- **Rotate `SESSION_SECRET` after deploying this release.** Tracking tokens that were issued in older releases were signed with `SESSION_SECRET`; rotating it invalidates any leaked tracking tokens that could have been replayed as session cookies.
+- Set `TRACKING_SECRET` to a separate value from `SESSION_SECRET` before issuing the first new tracking link.
+- Set `CRON_SECRET` before deploying to production — the cron route refuses to run without it.
+- Set `HUNTER_KEY_ENCRYPTION_SECRET` before any user saves their first Hunter API key, otherwise existing keys cannot be decrypted after a future rotation.
+- Confirm response security headers are returned by the deployed host (HSTS, CSP, X-Frame-Options, etc. are emitted by `next.config.mjs`).
+- Admin privileges are sourced from the DB `users.isAdmin` flag only. Use `ADMIN_EMAIL` + `ADMIN_PASSWORD` to bootstrap the first admin via the seed; later changes must go through DB-level updates.
 
 ## Local Development
 

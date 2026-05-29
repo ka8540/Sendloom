@@ -127,10 +127,30 @@ function getR2Client() {
   return cachedR2Client;
 }
 
-function resolveLocalPath(key: string) {
-  if (path.isAbsolute(key)) {
-    return key;
+export function assertSafeStorageKey(key: string) {
+  if (!key || typeof key !== "string") {
+    throw new Error("Invalid storage key.");
   }
+  if (path.isAbsolute(key)) {
+    throw new Error("Invalid storage key.");
+  }
+  // Reject Windows-style absolute paths and drive letters too.
+  if (/^[a-zA-Z]:[\\/]/.test(key)) {
+    throw new Error("Invalid storage key.");
+  }
+  // Reject any traversal segments anywhere in the key.
+  const segments = key.split(/[\\/]+/);
+  if (segments.some((segment) => segment === ".." || segment === ".")) {
+    throw new Error("Invalid storage key.");
+  }
+  if (segments.some((segment) => segment.length === 0)) {
+    // disallow leading slash via empty first segment
+    throw new Error("Invalid storage key.");
+  }
+}
+
+function resolveLocalPath(key: string) {
+  assertSafeStorageKey(key);
 
   const root = getUploadRoot();
   const resolved = path.resolve(root, key);
@@ -181,7 +201,11 @@ export async function uploadObject(args: UploadObjectArgs): Promise<UploadObject
 }
 
 export async function getObjectBuffer(bucket: StorageBucket, key: string): Promise<Buffer> {
-  if (env.OBJECT_STORAGE_MODE === "r2" && !path.isAbsolute(key)) {
+  // Always validate first — never allow R2 to fall back to a local absolute
+  // path on key shape mismatch, and never trust a DB-stored absolute path.
+  assertSafeStorageKey(key);
+
+  if (env.OBJECT_STORAGE_MODE === "r2") {
     const response = await getR2Client().send(
       new GetObjectCommand({
         Bucket: getR2BucketName(bucket),
@@ -201,7 +225,13 @@ export async function getObjectBuffer(bucket: StorageBucket, key: string): Promi
 }
 
 export async function deleteObject(bucket: StorageBucket, key: string): Promise<void> {
-  if (env.OBJECT_STORAGE_MODE === "r2" && !path.isAbsolute(key)) {
+  try {
+    assertSafeStorageKey(key);
+  } catch {
+    return;
+  }
+
+  if (env.OBJECT_STORAGE_MODE === "r2") {
     await getR2Client().send(
       new DeleteObjectCommand({
         Bucket: getR2BucketName(bucket),

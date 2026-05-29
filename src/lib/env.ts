@@ -13,6 +13,7 @@ const envSchema = z
     DATABASE_URL: z.string().min(1),
     REDIS_URL: z.string().min(1),
     SESSION_SECRET: z.string().min(12),
+    TRACKING_SECRET: z.string().min(12).optional(),
     MAIL_PROVIDER: z.enum(["gmail", "resend"]).default("gmail"),
     GOOGLE_CLIENT_ID: z.string().min(1).optional(),
     GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
@@ -37,25 +38,41 @@ const envSchema = z
     GMAIL_DAILY_SEND_SAFETY_LIMIT: z.coerce.number().int().positive().default(450)
   })
   .superRefine((value, ctx) => {
-    if (value.OBJECT_STORAGE_MODE !== "r2") {
-      return;
+    if (value.OBJECT_STORAGE_MODE === "r2") {
+      const requiredR2Keys = [
+        "CLOUDFLARE_R2_ACCOUNT_ID",
+        "CLOUDFLARE_R2_IMPORTS_BUCKET",
+        "CLOUDFLARE_R2_ATTACHMENTS_BUCKET",
+        "CLOUDFLARE_R2_ACCESS_KEY_ID",
+        "CLOUDFLARE_R2_SECRET_ACCESS_KEY"
+      ] as const;
+
+      for (const key of requiredR2Keys) {
+        if (!value[key]) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [key],
+            message: `${key} is required when OBJECT_STORAGE_MODE is "r2".`
+          });
+        }
+      }
     }
 
-    const requiredR2Keys = [
-      "CLOUDFLARE_R2_ACCOUNT_ID",
-      "CLOUDFLARE_R2_IMPORTS_BUCKET",
-      "CLOUDFLARE_R2_ATTACHMENTS_BUCKET",
-      "CLOUDFLARE_R2_ACCESS_KEY_ID",
-      "CLOUDFLARE_R2_SECRET_ACCESS_KEY"
-    ] as const;
+    if (process.env.NODE_ENV === "production") {
+      const requiredInProduction = [
+        ["CRON_SECRET", value.CRON_SECRET],
+        ["TRACKING_SECRET", value.TRACKING_SECRET],
+        ["HUNTER_KEY_ENCRYPTION_SECRET", value.HUNTER_KEY_ENCRYPTION_SECRET]
+      ] as const;
 
-    for (const key of requiredR2Keys) {
-      if (!value[key]) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: [key],
-          message: `${key} is required when OBJECT_STORAGE_MODE is "r2".`
-        });
+      for (const [key, val] of requiredInProduction) {
+        if (!val) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [key],
+            message: `${key} is required in production.`
+          });
+        }
       }
     }
   });
@@ -67,6 +84,7 @@ function readRawEnv() {
     DATABASE_URL: process.env.DATABASE_URL,
     REDIS_URL: process.env.REDIS_URL,
     SESSION_SECRET: process.env.SESSION_SECRET,
+    TRACKING_SECRET: process.env.TRACKING_SECRET,
     MAIL_PROVIDER: process.env.MAIL_PROVIDER,
     GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
     GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,

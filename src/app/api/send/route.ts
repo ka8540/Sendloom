@@ -10,8 +10,7 @@ import { getDefaultUserSender, markSenderRequiresReconnect } from "@/services/se
 
 const schema = z
   .object({
-    firstName: z.string().min(1).default("John"),
-    to: z.string().email().optional()
+    firstName: z.string().min(1).default("John")
   })
   .optional();
 
@@ -43,7 +42,9 @@ export async function POST(request: Request) {
     const html = renderEmailTemplate({ firstName: payload?.firstName ?? "John" });
     const result = await sendEmail({
       from: `${sender.name || env.DEFAULT_FROM_NAME || sender.fromEmail} <${sender.fromEmail}>`,
-      to: payload?.to ?? auth.user.email,
+      // Test sends are deliberately locked to the authenticated user's own
+      // email to prevent /api/send from being used as a generic Gmail relay.
+      to: auth.user.email,
       subject: "Sendloom delivery test",
       html,
       sender: {
