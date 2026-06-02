@@ -1076,9 +1076,14 @@
 
 .sequenceProgressTrack {
   position: relative;
-  height: 0.55rem;
+  height: 0.5rem;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--button-secondary-bg) 88%, transparent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--button-secondary-bg) 96%, transparent),
+    color-mix(in srgb, var(--button-secondary-bg) 74%, transparent)
+  );
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 52%, transparent);
   overflow: hidden;
 }
 
@@ -1086,7 +1091,55 @@
   position: absolute;
   inset: 0 auto 0 0;
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--accent) 0%, color-mix(in srgb, var(--accent) 60%, white) 100%);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, white 24%, transparent), transparent 58%),
+    linear-gradient(90deg, var(--accent) 0%, color-mix(in srgb, var(--accent) 55%, white) 100%);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 30%, transparent),
+    inset 0 -1px 1px color-mix(in srgb, black 14%, transparent);
+  transition: width 600ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Indeterminate loading while a run's first metrics are still syncing:
+   hide the determinate fill and sweep a subtle accent shimmer across the track. */
+.sequenceProgressTrackSyncing .sequenceProgressFill {
+  display: none;
+}
+
+.sequenceProgressTrackSyncing::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--accent) 32%, transparent) 50%,
+    transparent 100%
+  );
+  transform: translateX(-100%);
+  animation: sequenceProgressIndeterminate 1.6s ease-in-out infinite;
+}
+
+@keyframes sequenceProgressIndeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sequenceProgressFill {
+    transition: none;
+  }
+
+  .sequenceProgressTrackSyncing::after {
+    transform: none;
+    animation: none;
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+  }
 }
 
 .sequenceSidebar {

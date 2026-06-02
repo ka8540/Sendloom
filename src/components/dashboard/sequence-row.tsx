@@ -72,7 +72,10 @@ export function SequenceRow({ sequence, onRelaunch }: { sequence: SequenceRowDat
               </div>
             ))}
           </dl>
-          <div className={styles.sequenceProgressTrack} aria-hidden="true">
+          <div
+            className={`${styles.sequenceProgressTrack}${sequence.health.tone === "syncing" ? ` ${styles.sequenceProgressTrackSyncing}` : ""}`}
+            aria-hidden="true"
+          >
             <span className={styles.sequenceProgressFill} style={{ width: `${sequence.progressPercent}%` }} />
           </div>
           {sequence.dailyLimitBlock ? (
