@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { ChevronDown, ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -9,7 +8,7 @@ import type { SequenceRowData } from "@/components/dashboard/types";
 import { SequenceRow } from "./sequence-row";
 import styles from "./overview-command-center.module.css";
 
-const PAGE_SIZE = 10;
+const RECENT_SEQUENCES_PAGE_SIZE = 5;
 const OVERVIEW_REFRESH_INTERVAL_MS = 4_000;
 const RELAUNCH_REFRESH_WINDOW_MS = 30_000;
 const RESUME_REFRESH_DELAY_MS = 250;
@@ -63,14 +62,16 @@ export function SequencePanel({ rows }: { rows: SequenceRowData[] }) {
     return nextRows;
   }, [focus, query, rows, sort, status]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / RECENT_SEQUENCES_PAGE_SIZE));
   const clampedPage = Math.min(currentPage, totalPages);
   const pagedRows = useMemo(
-    () => filteredRows.slice((clampedPage - 1) * PAGE_SIZE, clampedPage * PAGE_SIZE),
+    () =>
+      filteredRows.slice(
+        (clampedPage - 1) * RECENT_SEQUENCES_PAGE_SIZE,
+        clampedPage * RECENT_SEQUENCES_PAGE_SIZE
+      ),
     [clampedPage, filteredRows]
   );
-  const showingFrom = filteredRows.length ? (clampedPage - 1) * PAGE_SIZE + 1 : 0;
-  const showingTo = Math.min(clampedPage * PAGE_SIZE, filteredRows.length);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -212,16 +213,13 @@ export function SequencePanel({ rows }: { rows: SequenceRowData[] }) {
             ))}
           </div>
           <div className={styles.sequencePagination}>
-            <span className={styles.sequencePaginationSummary}>
-              Showing {showingFrom}-{showingTo} of {filteredRows.length}
-            </span>
             <div className={styles.sequencePaginationControls}>
               <button
                 type="button"
                 className={styles.sequencePaginationButton}
                 onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
                 disabled={clampedPage === 1}
-                aria-label="Show previous sequences"
+                aria-label="Previous recent sequences page"
               >
                 <ChevronLeft aria-hidden="true" />
               </button>
@@ -233,7 +231,7 @@ export function SequencePanel({ rows }: { rows: SequenceRowData[] }) {
                 className={styles.sequencePaginationButton}
                 onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
                 disabled={clampedPage === totalPages}
-                aria-label="Show next sequences"
+                aria-label="Next recent sequences page"
               >
                 <ChevronRight aria-hidden="true" />
               </button>
@@ -241,15 +239,9 @@ export function SequencePanel({ rows }: { rows: SequenceRowData[] }) {
           </div>
         </>
       ) : (
-        <div className={styles.sequenceEmpty}>
+        <div className={styles.sequenceEmptyCompact} role="status">
           <Search aria-hidden="true" />
-          <div>
-            <strong>No sequences match this view</strong>
-            <p>Adjust the search or filters, or create a fresh sequence to give the command center something new to work with.</p>
-          </div>
-          <Link href="/campaigns" className="button">
-            Create Sequence
-          </Link>
+          <span>No sequences found</span>
         </div>
       )}
     </>
