@@ -5,9 +5,16 @@ import { useRouter } from "next/navigation";
 import type { KeyboardEvent } from "react";
 
 import { LocalDateTime } from "@/components/local-date-time";
-import type { SequenceRowData } from "@/components/dashboard/types";
+import type { SequenceHealthTone, SequenceRowData } from "@/components/dashboard/types";
 import { SequenceRowActions } from "./sequence-row-actions";
 import styles from "./overview-command-center.module.css";
+
+const HEALTH_TONE_CLASS: Record<SequenceHealthTone, string> = {
+  clean: styles.sequenceHealthClean,
+  issues: styles.sequenceHealthIssues,
+  syncing: styles.sequenceHealthSyncing,
+  idle: styles.sequenceHealthIdle
+};
 
 export function SequenceRow({ sequence, onRelaunch }: { sequence: SequenceRowData; onRelaunch: () => void }) {
   const router = useRouter();
@@ -36,15 +43,35 @@ export function SequenceRow({ sequence, onRelaunch }: { sequence: SequenceRowDat
         <div className={styles.sequenceIdentity}>
           <div className={styles.sequenceTitleBlock}>
             <h3 className={styles.sequenceName}>{sequence.name}</h3>
-            <p className={styles.sequenceSummary}>{sequence.summary}</p>
+            <div className={styles.sequenceMeta} title={sequence.summary}>
+              <span
+                className={`${styles.sequenceMetaChip} ${styles.sequenceMetaChipPrimary}`}
+                title={sequence.meta.list}
+              >
+                {sequence.meta.list}
+              </span>
+              <span className={styles.sequenceMetaChip} title={sequence.meta.template}>
+                {sequence.meta.template}
+              </span>
+              <span className={styles.sequenceMetaChip} title={sequence.meta.sender}>
+                {sequence.meta.sender}
+              </span>
+            </div>
           </div>
         </div>
 
         <div className={styles.sequenceProgressGroup}>
-          <div className={styles.sequenceProgressMeta}>
-            <span>{sequence.progressLabel}</span>
-            <strong>{sequence.deliveryLabel}</strong>
-          </div>
+          <dl className={styles.sequenceMetrics}>
+            {sequence.metrics.map((metric) => (
+              <div
+                key={metric.key}
+                className={`${styles.sequenceMetric}${metric.tone === "issues" ? ` ${styles.sequenceMetricIssues}` : ""}`}
+              >
+                <dt className={styles.sequenceMetricLabel}>{metric.label}</dt>
+                <dd className={styles.sequenceMetricValue}>{metric.value}</dd>
+              </div>
+            ))}
+          </dl>
           <div className={styles.sequenceProgressTrack} aria-hidden="true">
             <span className={styles.sequenceProgressFill} style={{ width: `${sequence.progressPercent}%` }} />
           </div>
@@ -59,7 +86,10 @@ export function SequenceRow({ sequence, onRelaunch }: { sequence: SequenceRowDat
               ) : null}
             </p>
           ) : (
-            <p className={styles.sequenceDeliveryDetail}>{sequence.deliveryDetail}</p>
+            <p className={`${styles.sequenceHealth} ${HEALTH_TONE_CLASS[sequence.health.tone]}`}>
+              <span className={styles.sequenceHealthDot} aria-hidden="true" />
+              {sequence.health.label}
+            </p>
           )}
         </div>
       </div>

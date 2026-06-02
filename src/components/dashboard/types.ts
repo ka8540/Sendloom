@@ -13,17 +13,35 @@ export type SequenceStatusTone =
   | "paused"
   | "draft";
 
+export type SequenceHealthTone = "clean" | "issues" | "syncing" | "idle";
+
+export type SequenceMetric = {
+  key: string;
+  label: string;
+  value: string;
+  tone?: "issues";
+};
+
 export type SequenceRowData = {
   id: string;
   href: Route;
   name: string;
   statusLabel: string;
   statusTone: SequenceStatusTone;
+  // Full "list · template · sender" string — kept for search matching and as the
+  // accessible label behind the truncated metadata chips.
   summary: string;
+  meta: {
+    list: string;
+    template: string;
+    sender: string;
+  };
   progressPercent: number;
-  progressLabel: string;
-  deliveryLabel: string;
-  deliveryDetail: string;
+  metrics: SequenceMetric[];
+  health: {
+    label: string;
+    tone: SequenceHealthTone;
+  };
   lastActivityLabel: string;
   lastActivityAt: string;
   updatedAtValue: number;

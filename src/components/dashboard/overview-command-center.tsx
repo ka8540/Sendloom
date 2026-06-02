@@ -21,7 +21,7 @@ import { formatCompactNumber, formatRelativeTime, buildTrend, humanizeEnum } fro
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { SendWindowCard, type SendWindowSender } from "@/components/dashboard/send-window-card";
 import { SequencePanel } from "@/components/dashboard/sequence-panel";
-import type { ActivityItem, SequenceRowData } from "@/components/dashboard/types";
+import type { ActivityItem, SequenceHealthTone, SequenceMetric, SequenceRowData } from "@/components/dashboard/types";
 import { processPendingCampaignWork, readDailyLimitPauseInfo, resumeCampaignRunsBlockedByDailyLimit } from "@/services/campaigns";
 import styles from "./overview-command-center.module.css";
 
@@ -496,34 +496,40 @@ export default async function OverviewCommandCenter() {
         : actualRunStatus === "COMPLETED" || campaign.status === "COMPLETED"
           ? 100
           : 0;
-    const progressLabel =
-      totalRecipients > 0
-        ? runMetricsKnown
-          ? `${formatCompactNumber(processedCount)} of ${formatCompactNumber(totalRecipients)} recipients processed`
-          : actualRunStatus === "QUEUED"
-            ? `Queued for ${formatCompactNumber(totalRecipients)} recipients`
-            : `Sending to ${formatCompactNumber(totalRecipients)} recipients`
-        : latestRun
-          ? `${humanizeEnum(latestRun.status)} run`
-          : "Awaiting first launch";
-    const deliveryLabel = latestRun
-      ? runMetricsKnown
-        ? `${formatCompactNumber(deliveredCount)} delivered`
-        : isActiveRun
-          ? "Metrics syncing"
-          : `${formatCompactNumber(deliveredCount)} delivered`
-      : campaign.lastValidatedAt
-        ? "Validated and ready"
-        : "Needs validation";
-    const deliveryDetail = latestRun
-      ? runMetricsKnown
-        ? issueCount
-          ? `${formatCompactNumber(issueCount)} delivery issues · ${formatCompactNumber(latestRun.openedCount)} opens`
-          : `${formatCompactNumber(latestRun.openedCount)} opens · clean delivery`
-        : isActiveRun
-          ? "Waiting for activity"
-          : `${formatCompactNumber(latestRun.openedCount)} opens · clean delivery`
-      : `${campaign.template.name} · ${campaign.senderProfile.fromEmail}`;
+    // Compact card metrics: show real numbers whenever we have a run that isn't an
+    // active run still syncing its first counts. Active + unknown metrics = "syncing"
+    // (values render as "—"); a genuinely zero metric still renders as "0".
+    const metricsKnown = Boolean(latestRun) && (!isActiveRun || runMetricsKnown);
+    const isSyncing = Boolean(latestRun) && isActiveRun && !runMetricsKnown;
+    const metricNumber = (value: number) => (metricsKnown ? formatCompactNumber(value) : "—");
+    const processedValue = !metricsKnown
+      ? "—"
+      : totalRecipients > 0
+        ? `${formatCompactNumber(processedCount)}/${formatCompactNumber(totalRecipients)}`
+        : formatCompactNumber(processedCount);
+    const hasIssues = metricsKnown && issueCount > 0;
+    const metrics: SequenceMetric[] = [
+      { key: "processed", label: "Processed", value: processedValue },
+      { key: "delivered", label: "Delivered", value: metricNumber(deliveredCount) },
+      { key: "opened", label: "Opened", value: metricNumber(latestRun?.openedCount ?? 0) },
+      {
+        key: "issues",
+        label: "Issues",
+        value: metricsKnown ? formatCompactNumber(issueCount) : "—",
+        tone: hasIssues ? "issues" : undefined
+      }
+    ];
+    const health: { label: string; tone: SequenceHealthTone } = dailyLimitBlock
+      ? { label: "Safety pause", tone: "idle" }
+      : isSyncing
+        ? { label: "Syncing metrics", tone: "syncing" }
+        : !latestRun
+          ? campaign.lastValidatedAt
+            ? { label: "Ready to launch", tone: "idle" }
+            : { label: "Needs validation", tone: "idle" }
+          : hasIssues
+            ? { label: `${formatCompactNumber(issueCount)} ${issueCount === 1 ? "issue" : "issues"}`, tone: "issues" }
+            : { label: "Clean delivery", tone: "clean" };
     const lastActivityAt = latestRun?.updatedAt ?? campaign.updatedAt;
     const isPausedRun = actualRunStatus === "PAUSED" || Boolean(dailyLimitBlock);
     // Exclude PAUSED and daily-limit blocked — those don't get a Relaunch action.
@@ -539,10 +545,14 @@ export default async function OverviewCommandCenter() {
       statusLabel: status.label,
       statusTone: status.tone,
       summary: `${campaign.import.fileName} · ${campaign.template.name} · ${campaign.senderProfile.name}`,
+      meta: {
+        list: campaign.import.fileName,
+        template: campaign.template.name,
+        sender: campaign.senderProfile.name
+      },
       progressPercent,
-      progressLabel,
-      deliveryLabel,
-      deliveryDetail,
+      metrics,
+      health,
       lastActivityLabel: formatRelativeTime(lastActivityAt),
       lastActivityAt: lastActivityAt.toISOString(),
       updatedAtValue: lastActivityAt.getTime(),
