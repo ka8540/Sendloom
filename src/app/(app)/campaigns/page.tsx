@@ -1,9 +1,6 @@
 import Link from "next/link";
 import { after } from "next/server";
-import { redirect } from "next/navigation";
 import {
-  ChevronLeft,
-  ChevronRight,
   CalendarClock,
   CheckCircle2,
   Mail,
@@ -21,6 +18,7 @@ import { LocalDateTime } from "@/components/local-date-time";
 import { requireOperatorUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { processPendingCampaignWork } from "@/services/campaigns";
+import { SequenceBoard } from "./sequence-board";
 import styles from "./page.module.css";
 
 type ScheduleConfig =
@@ -241,11 +239,6 @@ export default async function CampaignsPage({
   const resolvedSearchParams = searchParams ? await searchParams : {};
   const gmailStatus = getSearchParam(resolvedSearchParams, "gmail");
   const gmailError = getSearchParam(resolvedSearchParams, "gmail_error");
-  const requestedPage = Array.isArray(resolvedSearchParams.page)
-    ? resolvedSearchParams.page[0]
-    : resolvedSearchParams.page;
-  const parsedPage = requestedPage ? Number.parseInt(requestedPage, 10) : 1;
-  const currentPage = Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1;
   const [imports, mappings, templates, senders, campaigns] = await Promise.all([
     prisma.import.findMany({ where: { userId: user.id }, orderBy: { createdAt: "desc" } }),
     prisma.mapping.findMany({ where: { userId: user.id }, orderBy: { createdAt: "desc" } }),
@@ -311,22 +304,16 @@ export default async function CampaignsPage({
   const hasLiveActivity = activeSequences > 0;
   const scheduledSequences = campaigns.filter((campaign) => campaign.scheduleType !== "immediate").length;
   const validatedSequences = campaigns.filter((campaign) => Boolean(campaign.lastValidatedAt)).length;
-  const totalPages = Math.max(1, Math.ceil(campaigns.length / PAGE_SIZE));
-
-  if (currentPage > totalPages) {
-    redirect(currentPage === 1 ? "/campaigns" : `/campaigns?page=${totalPages}`);
-  }
-
-  const startIndex = (currentPage - 1) * PAGE_SIZE;
-  const pagedCampaigns = campaigns.slice(startIndex, startIndex + PAGE_SIZE);
 
   // Determine which run to show metrics from for each campaign.
   // If the latest run is queued/unstarted and a previous completed run exists, show that instead.
+  // All campaigns are computed here; the board paginates client-side so prev/next never
+  // re-renders the route.
   const campaignDisplayRuns = new Map(
-    pagedCampaigns.map((campaign) => [campaign.id, selectDisplayRun(campaign.runs as RunSummary[])])
+    campaigns.map((campaign) => [campaign.id, selectDisplayRun(campaign.runs as RunSummary[])])
   );
 
-  const latestRunIds = pagedCampaigns.flatMap((campaign) => {
+  const latestRunIds = campaigns.flatMap((campaign) => {
     const { run } = campaignDisplayRuns.get(campaign.id)!;
     return run ? [run.id] : [];
   });
@@ -348,8 +335,185 @@ export default async function CampaignsPage({
     counts[row.status] = row._count;
     latestRunCounts.set(row.campaignRunId, counts);
   }
-  const showingFrom = campaigns.length ? startIndex + 1 : 0;
-  const showingTo = Math.min(startIndex + PAGE_SIZE, campaigns.length);
+
+  const sequenceCards = campaigns.map((campaign) => {
+    const latestRun = campaign.runs[0]; // most-recent run — used for status label only
+    const { run: displayRun, isFromPreviousRun } = campaignDisplayRuns.get(campaign.id)!;
+    const displayRunCountsByStatus = displayRun ? latestRunCounts.get(displayRun.id) : null;
+    const displayRunSnapshot = displayRun
+      ? {
+          ...displayRun,
+          sentCount: displayRunCountsByStatus ? (displayRunCountsByStatus.SENT ?? 0) : displayRun.sentCount,
+          openedCount: displayRunCountsByStatus ? (displayRunCountsByStatus.OPENED ?? 0) : displayRun.openedCount,
+          clickedCount: displayRunCountsByStatus ? (displayRunCountsByStatus.CLICKED ?? 0) : displayRun.clickedCount,
+          failedCount: displayRunCountsByStatus ? (displayRunCountsByStatus.FAILED ?? 0) : displayRun.failedCount,
+          suppressedCount: displayRunCountsByStatus
+            ? (displayRunCountsByStatus.SUPPRESSED ?? 0)
+            : displayRun.suppressedCount,
+          invalidCount: displayRunCountsByStatus ? (displayRunCountsByStatus.INVALID ?? 0) : displayRun.invalidCount
+        }
+      : null;
+    const deliveredCount = getDeliveredCount(displayRunSnapshot);
+    const issueCount = getIssueCount(displayRunSnapshot);
+    const processedCount = getProcessedCount(displayRunSnapshot);
+    const runMetricsKnown = hasKnownRunMetrics(displayRunSnapshot, processedCount);
+    const recipientCount = displayRun?.totalRecipients ?? campaign.import.rowCount;
+    const deliveryHealthPercent =
+      runMetricsKnown && displayRunSnapshot
+        ? getPercent(deliveredCount, displayRunSnapshot.totalRecipients)
+        : null;
+    const progressPercent =
+      displayRunSnapshot && displayRunSnapshot.totalRecipients > 0
+        ? getPercent(processedCount, displayRunSnapshot.totalRecipients)
+        : 0;
+    const openedPercent =
+      runMetricsKnown && displayRunSnapshot
+        ? getPercent(displayRunSnapshot.openedCount ?? 0, displayRunSnapshot.totalRecipients)
+        : null;
+    const delivery = formatDeliveryLabel(campaign.scheduleType, campaign.scheduleConfig as ScheduleConfig | null);
+    const latestRunSummary = displayRun
+      ? runMetricsKnown
+        ? `${formatCount(deliveredCount)}/${formatCount(displayRun.totalRecipients)} delivered${isFromPreviousRun ? " (last run)" : ""}`
+        : "Metrics syncing"
+      : "No run started yet";
+    // For the "Latest run" row, show the actual most-recent run's status
+    const latestRunValue = latestRun?.updatedAt?.toISOString() ?? null;
+    const validatedAtValue = campaign.lastValidatedAt?.toISOString() ?? null;
+    const healthDetail = displayRun
+      ? runMetricsKnown
+        ? isFromPreviousRun
+          ? `Last run · ${formatCount(deliveredCount)} delivered`
+          : latestRunSummary
+        : "Waiting for activity"
+      : campaign.lastValidatedAt
+        ? "Validated and ready"
+        : "Awaiting first run";
+    const healthValue = displayRun
+      ? deliveryHealthPercent === null
+        ? "—"
+        : `${deliveryHealthPercent}%`
+      : campaign.lastValidatedAt
+        ? "Ready"
+        : "—";
+    const performanceMetric =
+      displayRun
+        ? {
+            label: "Opened",
+            value: openedPercent === null ? "—" : `${openedPercent}%`,
+            detail:
+              openedPercent === null
+                ? isFromPreviousRun ? "Next run queued" : "Waiting for activity"
+                : `${formatCount(displayRunSnapshot?.openedCount ?? 0)} opens${isFromPreviousRun ? " (last run)" : ""}`
+          }
+        : {
+            label: "Delivered",
+            value: "—",
+            detail: "No run yet"
+          };
+
+    return (
+      <article key={campaign.id} className={styles.sequenceRow}>
+        <Link
+          href={`/campaigns/${campaign.id}`}
+          className={styles.sequenceContentLink}
+          aria-label={`Open sequence ${campaign.name}`}
+        >
+          <div className={styles.sequenceMainGrid}>
+            <div className={styles.sequencePrimary}>
+              <div className={styles.sequenceIdentity}>
+                <div className={styles.sequenceIcon}>
+                  <SendHorizontal aria-hidden="true" />
+                </div>
+                <div className={styles.sequenceTitleBlock}>
+                  <div className={styles.sequenceHeader}>
+                    <h3 className={styles.sequenceTitle} title={campaign.name}>
+                      {campaign.name}
+                    </h3>
+                    <span className="badge">{humanize(campaign.status)}</span>
+                  </div>
+
+                  <div className={styles.sequenceMetaRow}>
+                    <span className={styles.metaPill} title={campaign.import.fileName}>
+                      <Users aria-hidden="true" />
+                      <span>{campaign.import.fileName}</span>
+                    </span>
+                    <span
+                      className={styles.metaPill}
+                      title={`${campaign.senderProfile.name} <${campaign.senderProfile.fromEmail}>`}
+                    >
+                      <Mail aria-hidden="true" />
+                      <span>{campaign.senderProfile.name}</span>
+                    </span>
+                    <span className={styles.metaPill} title={campaign.template.name}>
+                      <CheckCircle2 aria-hidden="true" />
+                      <span>{campaign.template.name}</span>
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className={`${styles.metricCell} ${styles.metricHealth}`}>
+              <span>Health</span>
+              <strong>{healthValue}</strong>
+              <div className={styles.metricTrack} aria-hidden="true">
+                <span style={{ width: `${progressPercent}%` }} />
+              </div>
+              <small>{healthDetail}</small>
+            </div>
+
+            <div className={`${styles.metricCell} ${styles.metricEnrolled}`}>
+              <span>Enrolled</span>
+              <strong>{formatCount(recipientCount)}</strong>
+              <small>Recipients</small>
+            </div>
+
+            <div className={`${styles.metricCell} ${styles.metricPerformance}`}>
+              <span>{performanceMetric.label}</span>
+              <strong>{performanceMetric.value}</strong>
+              <small>{performanceMetric.detail}</small>
+            </div>
+          </div>
+
+          <div className={styles.sequenceDetails}>
+            <div className={styles.detailItem}>
+              <span>Delivery</span>
+              <strong title={delivery.fullDetail}>{delivery.label}</strong>
+              <small>{delivery.fullDetail}</small>
+            </div>
+
+            <div className={styles.detailItem}>
+              <span>Latest run</span>
+              <strong>{latestRun ? humanize(latestRun.status) : "Waiting to launch"}</strong>
+              <small>{latestRunValue ? <LocalDateTime value={latestRunValue} /> : "No delivery activity yet"}</small>
+            </div>
+
+            <div className={styles.detailItem}>
+              <span>Validation</span>
+              <strong>{validatedAtValue ? "Validated" : "Needs validation"}</strong>
+              <small>{validatedAtValue ? <LocalDateTime value={validatedAtValue} /> : "Before next send"}</small>
+            </div>
+
+            <div className={styles.detailItem}>
+              <span>Health</span>
+              <strong>{latestRunSummary}</strong>
+              <small>
+                {displayRun && runMetricsKnown
+                  ? issueCount
+                    ? `${formatCount(issueCount)} issue${issueCount === 1 ? "" : "s"}`
+                    : "Clean delivery"
+                  : "No confirmed delivery yet"}
+              </small>
+            </div>
+          </div>
+        </Link>
+
+        <div className={styles.sequenceActions}>
+          <CampaignCardActions campaignId={campaign.id} campaignName={campaign.name} />
+        </div>
+      </article>
+    );
+  });
 
   return (
     <div className={styles.page}>
@@ -495,240 +659,7 @@ export default async function CampaignsPage({
         </article>
       </section>
 
-      <section className={styles.sequenceSection}>
-        <div className={styles.sectionHeader}>
-          <div>
-            <span className={styles.kicker}>Sequence board</span>
-            <h2>Sequences</h2>
-            <p>Delivery posture, latest run, and setup context at a glance.</p>
-          </div>
-          <div className={styles.sectionMeta}>
-            <Users aria-hidden="true" />
-            <span>{campaigns.length} total</span>
-          </div>
-        </div>
-
-        {campaigns.length ? (
-          <div className={styles.sequenceList}>
-            {pagedCampaigns.map((campaign) => {
-              const latestRun = campaign.runs[0]; // most-recent run — used for status label only
-              const { run: displayRun, isFromPreviousRun } = campaignDisplayRuns.get(campaign.id)!;
-              const displayRunCountsByStatus = displayRun ? latestRunCounts.get(displayRun.id) : null;
-              const displayRunSnapshot = displayRun
-                ? {
-                    ...displayRun,
-                    sentCount: displayRunCountsByStatus ? (displayRunCountsByStatus.SENT ?? 0) : displayRun.sentCount,
-                    openedCount: displayRunCountsByStatus ? (displayRunCountsByStatus.OPENED ?? 0) : displayRun.openedCount,
-                    clickedCount: displayRunCountsByStatus ? (displayRunCountsByStatus.CLICKED ?? 0) : displayRun.clickedCount,
-                    failedCount: displayRunCountsByStatus ? (displayRunCountsByStatus.FAILED ?? 0) : displayRun.failedCount,
-                    suppressedCount: displayRunCountsByStatus
-                      ? (displayRunCountsByStatus.SUPPRESSED ?? 0)
-                      : displayRun.suppressedCount,
-                    invalidCount: displayRunCountsByStatus ? (displayRunCountsByStatus.INVALID ?? 0) : displayRun.invalidCount
-                  }
-                : null;
-              const deliveredCount = getDeliveredCount(displayRunSnapshot);
-              const issueCount = getIssueCount(displayRunSnapshot);
-              const processedCount = getProcessedCount(displayRunSnapshot);
-              const runMetricsKnown = hasKnownRunMetrics(displayRunSnapshot, processedCount);
-              const recipientCount = displayRun?.totalRecipients ?? campaign.import.rowCount;
-              const deliveryHealthPercent =
-                runMetricsKnown && displayRunSnapshot
-                  ? getPercent(deliveredCount, displayRunSnapshot.totalRecipients)
-                  : null;
-              const progressPercent =
-                displayRunSnapshot && displayRunSnapshot.totalRecipients > 0
-                  ? getPercent(processedCount, displayRunSnapshot.totalRecipients)
-                  : 0;
-              const openedPercent =
-                runMetricsKnown && displayRunSnapshot
-                  ? getPercent(displayRunSnapshot.openedCount ?? 0, displayRunSnapshot.totalRecipients)
-                  : null;
-              const delivery = formatDeliveryLabel(campaign.scheduleType, campaign.scheduleConfig as ScheduleConfig | null);
-              const latestRunSummary = displayRun
-                ? runMetricsKnown
-                  ? `${formatCount(deliveredCount)}/${formatCount(displayRun.totalRecipients)} delivered${isFromPreviousRun ? " (last run)" : ""}`
-                  : "Metrics syncing"
-                : "No run started yet";
-              // For the "Latest run" row, show the actual most-recent run's status
-              const latestRunValue = latestRun?.updatedAt?.toISOString() ?? null;
-              const validatedAtValue = campaign.lastValidatedAt?.toISOString() ?? null;
-              const healthDetail = displayRun
-                ? runMetricsKnown
-                  ? isFromPreviousRun
-                    ? `Last run · ${formatCount(deliveredCount)} delivered`
-                    : latestRunSummary
-                  : "Waiting for activity"
-                : campaign.lastValidatedAt
-                  ? "Validated and ready"
-                  : "Awaiting first run";
-              const healthValue = displayRun
-                ? deliveryHealthPercent === null
-                  ? "—"
-                  : `${deliveryHealthPercent}%`
-                : campaign.lastValidatedAt
-                  ? "Ready"
-                  : "—";
-              const performanceMetric =
-                displayRun
-                  ? {
-                      label: "Opened",
-                      value: openedPercent === null ? "—" : `${openedPercent}%`,
-                      detail:
-                        openedPercent === null
-                          ? isFromPreviousRun ? "Next run queued" : "Waiting for activity"
-                          : `${formatCount(displayRunSnapshot?.openedCount ?? 0)} opens${isFromPreviousRun ? " (last run)" : ""}`
-                    }
-                  : {
-                      label: "Delivered",
-                      value: "—",
-                      detail: "No run yet"
-                    };
-
-              return (
-                <article key={campaign.id} className={styles.sequenceRow}>
-                  <Link
-                    href={`/campaigns/${campaign.id}`}
-                    className={styles.sequenceContentLink}
-                    aria-label={`Open sequence ${campaign.name}`}
-                  >
-                    <div className={styles.sequenceMainGrid}>
-                      <div className={styles.sequencePrimary}>
-                        <div className={styles.sequenceIdentity}>
-                          <div className={styles.sequenceIcon}>
-                            <SendHorizontal aria-hidden="true" />
-                          </div>
-                          <div className={styles.sequenceTitleBlock}>
-                            <div className={styles.sequenceHeader}>
-                              <h3 className={styles.sequenceTitle} title={campaign.name}>
-                                {campaign.name}
-                              </h3>
-                              <span className="badge">{humanize(campaign.status)}</span>
-                            </div>
-
-                            <div className={styles.sequenceMetaRow}>
-                              <span className={styles.metaPill} title={campaign.import.fileName}>
-                                <Users aria-hidden="true" />
-                                <span>{campaign.import.fileName}</span>
-                              </span>
-                              <span
-                                className={styles.metaPill}
-                                title={`${campaign.senderProfile.name} <${campaign.senderProfile.fromEmail}>`}
-                              >
-                                <Mail aria-hidden="true" />
-                                <span>{campaign.senderProfile.name}</span>
-                              </span>
-                              <span className={styles.metaPill} title={campaign.template.name}>
-                                <CheckCircle2 aria-hidden="true" />
-                                <span>{campaign.template.name}</span>
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className={`${styles.metricCell} ${styles.metricHealth}`}>
-                        <span>Health</span>
-                        <strong>{healthValue}</strong>
-                        <div className={styles.metricTrack} aria-hidden="true">
-                          <span style={{ width: `${progressPercent}%` }} />
-                        </div>
-                        <small>{healthDetail}</small>
-                      </div>
-
-                      <div className={`${styles.metricCell} ${styles.metricEnrolled}`}>
-                        <span>Enrolled</span>
-                        <strong>{formatCount(recipientCount)}</strong>
-                        <small>Recipients</small>
-                      </div>
-
-                      <div className={`${styles.metricCell} ${styles.metricPerformance}`}>
-                        <span>{performanceMetric.label}</span>
-                        <strong>{performanceMetric.value}</strong>
-                        <small>{performanceMetric.detail}</small>
-                      </div>
-                    </div>
-
-                    <div className={styles.sequenceDetails}>
-                      <div className={styles.detailItem}>
-                        <span>Delivery</span>
-                        <strong title={delivery.fullDetail}>{delivery.label}</strong>
-                        <small>{delivery.fullDetail}</small>
-                      </div>
-
-                      <div className={styles.detailItem}>
-                        <span>Latest run</span>
-                        <strong>{latestRun ? humanize(latestRun.status) : "Waiting to launch"}</strong>
-                        <small>{latestRunValue ? <LocalDateTime value={latestRunValue} /> : "No delivery activity yet"}</small>
-                      </div>
-
-                      <div className={styles.detailItem}>
-                        <span>Validation</span>
-                        <strong>{validatedAtValue ? "Validated" : "Needs validation"}</strong>
-                        <small>{validatedAtValue ? <LocalDateTime value={validatedAtValue} /> : "Before next send"}</small>
-                      </div>
-
-                      <div className={styles.detailItem}>
-                        <span>Health</span>
-                        <strong>{latestRunSummary}</strong>
-                        <small>
-                          {displayRun && runMetricsKnown
-                            ? issueCount
-                              ? `${formatCount(issueCount)} issue${issueCount === 1 ? "" : "s"}`
-                              : "Clean delivery"
-                            : "No confirmed delivery yet"}
-                        </small>
-                      </div>
-                    </div>
-                  </Link>
-
-                  <div className={styles.sequenceActions}>
-                    <CampaignCardActions campaignId={campaign.id} campaignName={campaign.name} />
-                  </div>
-                </article>
-              );
-            })}
-
-            {totalPages > 1 ? (
-              <div className={styles.paginationBar}>
-                <span className={styles.paginationSummary}>
-                  Showing {showingFrom}-{showingTo} of {campaigns.length}
-                </span>
-                <div className={styles.paginationControls}>
-                  {currentPage > 1 ? (
-                    <Link className={styles.paginationButton} href={currentPage - 1 === 1 ? "/campaigns" : `/campaigns?page=${currentPage - 1}`}>
-                      <ChevronLeft aria-hidden="true" />
-                    </Link>
-                  ) : (
-                    <span className={styles.paginationButton} aria-disabled="true">
-                      <ChevronLeft aria-hidden="true" />
-                    </span>
-                  )}
-
-                  <span className={styles.paginationPage}>
-                    Page {currentPage} of {totalPages}
-                  </span>
-
-                  {currentPage < totalPages ? (
-                    <Link className={styles.paginationButton} href={`/campaigns?page=${currentPage + 1}`}>
-                      <ChevronRight aria-hidden="true" />
-                    </Link>
-                  ) : (
-                    <span className={styles.paginationButton} aria-disabled="true">
-                      <ChevronRight aria-hidden="true" />
-                    </span>
-                  )}
-                </div>
-              </div>
-            ) : null}
-          </div>
-        ) : (
-          <div className={styles.emptyState}>
-            <strong>No sequences yet</strong>
-            <p>Create your first sequence above to see delivery activity, timing, and validation status here.</p>
-          </div>
-        )}
-      </section>
+      <SequenceBoard cards={sequenceCards} totalCount={campaigns.length} pageSize={PAGE_SIZE} />
     </div>
   );
 }

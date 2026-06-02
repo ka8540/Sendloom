@@ -239,6 +239,14 @@
   font-weight: 700;
 }
 
+.sectionHeaderAside {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.7rem;
+  flex-shrink: 0;
+}
+
 .sequenceList {
   display: grid;
   gap: 0.95rem;
@@ -248,36 +256,40 @@
 .paginationBar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 1rem;
-  padding-top: 0.3rem;
+  padding-top: 0.45rem;
 }
 
-.paginationSummary,
 .paginationPage {
+  min-width: 3.5rem;
+  text-align: center;
   color: var(--muted);
   font-weight: 650;
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .paginationControls {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 
 .paginationButton {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2.7rem;
-  height: 2.7rem;
+  width: 2.5rem;
+  height: 2.5rem;
   padding: 0;
   border-radius: 999px;
   border: 1px solid var(--line);
-  background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
   color: var(--text);
-  transition: transform 140ms ease, border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+  cursor: pointer;
+  appearance: none;
+  transition: transform 140ms ease, border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease, opacity 160ms ease;
 }
 
 .paginationButton svg {
@@ -285,16 +297,22 @@
   height: 0.95rem;
 }
 
-.paginationButton:hover {
+.paginationButton:hover:not(:disabled),
+.paginationButton:focus-visible {
   transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--accent) 18%, var(--line));
-  background: var(--surface-muted);
-  box-shadow: 0 12px 24px rgba(28, 42, 70, 0.08);
+  border-color: color-mix(in srgb, var(--accent) 22%, var(--line));
+  background: color-mix(in srgb, var(--surface-muted) 68%, var(--accent-soft) 32%);
+  box-shadow: 0 10px 22px rgba(28, 42, 70, 0.1);
+  outline: none;
 }
 
-.paginationButton[aria-disabled="true"] {
-  opacity: 0.45;
-  pointer-events: none;
+.paginationButton:active:not(:disabled) {
+  transform: translateY(0) scale(0.96);
+}
+
+.paginationButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .sequenceRow {
@@ -708,8 +726,7 @@
     flex-direction: column;
   }
 
-  .paginationBar {
-    flex-direction: column;
+  .sectionHeaderAside {
     align-items: flex-start;
   }
 }
