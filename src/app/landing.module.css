@@ -1537,24 +1537,21 @@
 }
 
 .trustMark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 2.2rem;
   height: 2.2rem;
   border-radius: 10px;
   background: linear-gradient(140deg, color-mix(in srgb, var(--landing-emerald) 26%, transparent), color-mix(in srgb, var(--landing-blue) 18%, transparent));
   border: 1px solid color-mix(in srgb, var(--landing-emerald) 28%, transparent);
-  position: relative;
+  color: var(--landing-emerald-deep);
 }
 
-.trustMark::after {
-  content: "";
-  position: absolute;
-  left: 0.62rem;
-  top: 0.92rem;
-  width: 0.45rem;
-  height: 0.78rem;
-  border-right: 2px solid var(--landing-emerald-deep);
-  border-bottom: 2px solid var(--landing-emerald-deep);
-  transform: rotate(42deg);
+.trustMark svg {
+  width: 1.2rem;
+  height: 1.2rem;
+  display: block;
 }
 
 .trustCard h3 {

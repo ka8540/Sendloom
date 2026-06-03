@@ -307,7 +307,11 @@ export default function LandingPage() {
           <div className={styles.trustGrid}>
             {trustPoints.map((point) => (
               <article key={point.title} className={styles.trustCard} data-reveal>
-                <span className={styles.trustMark} aria-hidden="true" />
+                <span className={styles.trustMark} aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </span>
                 <h3>{point.title}</h3>
                 <p>{renderBrandText(point.body)}</p>
               </article>
