@@ -72,6 +72,45 @@ describe("retry policy", () => {
     expect(classifySendFailure(gmailError({ httpStatus: 503, code: "503" }), { senderConnected: true })).toBe(
       "GMAIL_TEMPORARY_FAILURE"
     );
+    expect(
+      classifySendFailure(gmailError({ httpStatus: 500, code: "500", reason: "backendError", message: "Backend Error" }), {
+        senderConnected: true
+      })
+    ).toBe("GMAIL_TEMPORARY_FAILURE");
+  });
+
+  it.each([
+    "Backend Error",
+    "internalError",
+    "Internal error, please try again later",
+    "try again later",
+    "500 Internal Server Error",
+    "Service unavailable",
+    "The service is temporarily unavailable",
+    "socket hang up",
+    "fetch failed"
+  ])("classifies %s as a retryable temporary failure (not permanent)", (message) => {
+    const code = classifySendFailure(new Error(message), { senderConnected: true });
+    expect(code).toBe("GMAIL_TEMPORARY_FAILURE");
+    expect(isRetryableFailure(code)).toBe(true);
+  });
+
+  it("never marks Gmail throttling or temporary errors as a permanent rejection", () => {
+    const transient = [
+      new Error("userRateLimitExceeded"),
+      new Error("rateLimitExceeded"),
+      new Error("Too many concurrent requests for user"),
+      new Error("try again later"),
+      new Error("Backend Error"),
+      gmailError({ httpStatus: 429, code: "429" }),
+      gmailError({ httpStatus: 403, code: "403", reason: "quotaExceeded" }),
+      gmailError({ httpStatus: 503, code: "503" })
+    ];
+    for (const error of transient) {
+      const code = classifySendFailure(error, { senderConnected: true });
+      expect(code).not.toBe("GMAIL_SEND_REJECTED");
+      expect(isRetryableFailure(code)).toBe(true);
+    }
   });
 
   it("keeps unknown structured Gmail rejections permanent", () => {
@@ -80,6 +119,14 @@ describe("retry policy", () => {
         gmailError({ httpStatus: 400, code: "400", status: "INVALID_ARGUMENT", message: "Invalid recipient" }),
         { senderConnected: true }
       )
+    ).toBe("GMAIL_SEND_REJECTED");
+  });
+
+  it("keeps a 550 'no such user' recipient rejection permanent (not a 50x temporary)", () => {
+    expect(
+      classifySendFailure(new Error("550 5.1.1 The email account that you tried to reach does not exist"), {
+        senderConnected: true
+      })
     ).toBe("GMAIL_SEND_REJECTED");
   });
 });

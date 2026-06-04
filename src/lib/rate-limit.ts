@@ -1,9 +1,24 @@
 import { NextResponse } from "next/server";
 
+import { env } from "@/lib/env";
 import { getRedis } from "@/lib/redis";
 
-export const SENDS_PER_MINUTE = 120;
+/**
+ * Default per-sender send cap (per minute). Gmail's anti-abuse rate limiter trips
+ * well below the API's documented per-second quota, so we pace conservatively.
+ * The previous hardcoded 120/min caused large sequences to mass-fail once Gmail
+ * began rate limiting after ~100-150 sends. Override with GMAIL_SENDS_PER_MINUTE.
+ */
+export const DEFAULT_GMAIL_SENDS_PER_MINUTE = 30;
 export const SEND_WINDOW_MAX_PACING_WAIT_MS = 10_000;
+
+/** Resolved per-sender send cap (per minute), configurable via GMAIL_SENDS_PER_MINUTE. */
+export function getGmailSendsPerMinute() {
+  const configured = env.GMAIL_SENDS_PER_MINUTE;
+  return typeof configured === "number" && Number.isFinite(configured) && configured > 0
+    ? configured
+    : DEFAULT_GMAIL_SENDS_PER_MINUTE;
+}
 
 export type RateLimitOptions = {
   key: string;
@@ -105,7 +120,7 @@ export function getSendWindowKey(scope: SendWindowScope = {}) {
   return GLOBAL_SEND_WINDOW_KEY;
 }
 
-export function getSendWindowSpacingMs(limit = SENDS_PER_MINUTE) {
+export function getSendWindowSpacingMs(limit = getGmailSendsPerMinute()) {
   return Math.max(1, Math.ceil(60_000 / Math.max(1, limit)));
 }
 
@@ -120,7 +135,8 @@ async function tryConsumeSendWindow(key: string) {
   const now = Date.now();
   const window = `${key}:${new Date(now).toISOString().slice(0, 16)}`;
   const paceKey = `${key}:${SEND_WINDOW_PACE_SUFFIX}`;
-  const spacingMs = getSendWindowSpacingMs();
+  const limit = getGmailSendsPerMinute();
+  const spacingMs = getSendWindowSpacingMs(limit);
   const paceTtlMs = Math.max(1_000, spacingMs * 4);
   const script = `
     local windowKey = KEYS[1]
@@ -154,7 +170,7 @@ async function tryConsumeSendWindow(key: string) {
     window,
     paceKey,
     String(now),
-    String(SENDS_PER_MINUTE),
+    String(limit),
     String(spacingMs),
     String(paceTtlMs)
   )) as [number, number, "allowed" | "window" | "pacing", number];

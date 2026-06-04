@@ -147,6 +147,28 @@ rolling 24-hour count for that sender and blocks if the safety cap is hit.
 - **What counts**: confirmed Gmail sends (initial and follow-up) recorded via
   `recordSendOnLedger`. Failed sends, retry attempts that failed, suppressed,
   invalid, or skipped recipients are **not** counted.
+
+### Gmail send pacing (large sequences)
+
+The daily safety cap above protects the rolling 24h volume; pacing protects the
+per-minute rate. Gmail's anti-abuse limiter trips well below the API's documented
+per-second quota, so each connected sender is paced independently:
+
+- **Rate**: `GMAIL_SENDS_PER_MINUTE` (default `30`) — a Redis send-window plus a
+  pace key spaces sends evenly (30/min ≈ one send every 2s) per sender.
+- **Concurrency**: `GMAIL_SENDER_CONCURRENCY` (default `2`) — caps simultaneous
+  worker sends so a single mailbox never bursts concurrent requests.
+- **On throttle**: a Gmail rate/quota/temporary error (HTTP 429/5xx,
+  `userRateLimitExceeded`, `quotaExceeded`, `Backend Error`, "try again later",
+  etc.) is classified as retryable — the recipient is retried with backoff or the
+  run is paused, **never** marked as a permanent recipient rejection. The real
+  provider code/reason/status is stored in the recipient job's diagnostic
+  metadata (never tokens or message bodies) for debugging.
+
+> The previous build hardcoded 120 sends/minute, which caused large sequences
+> (100+ recipients) to trip Gmail's rate limiter partway through. Raise
+> `GMAIL_SENDS_PER_MINUTE` only if you have verified headroom for the sending
+> mailbox.
 - **Blocking behavior**: when the cap is hit during a send, the affected
   `CampaignRun` is set to `PAUSED` with `progressSnapshot.pauseReason = "DAILY_SEND_LIMIT"`
   and `pauseResumesAt = <resetAt ISO>`. The in-flight recipient job stays `PENDING`
@@ -678,6 +700,9 @@ Create a local `.env` file at the repo root with the values below. Secrets and s
 | `ADMIN_EMAIL` | Optional | Bootstrap admin email |
 | `ADMIN_PASSWORD` | Optional | Bootstrap admin password |
 | `RESEND_API_KEY` | Optional | Reserved for provider/webhook expansion |
+| `GMAIL_DAILY_SEND_SAFETY_LIMIT` | Optional | Successful Gmail sends allowed per sender per rolling 24h. Defaults to `450`. |
+| `GMAIL_SENDS_PER_MINUTE` | Optional | Per-sender send pacing. Defaults to `30`. Keep this conservative — Gmail throttles sustained API sends well below its documented per-second quota, and a higher value can mass-fail large sequences. |
+| `GMAIL_SENDER_CONCURRENCY` | Optional | Max simultaneous Gmail sends the worker runs. Defaults to `2`. Prevents bursts of concurrent requests from one mailbox. |
 
 ### Security deployment notes
 

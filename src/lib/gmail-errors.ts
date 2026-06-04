@@ -303,11 +303,21 @@ export function isGmailTemporaryLikeError(error: unknown) {
 
   return (
     normalized.includes("timeout") ||
+    normalized.includes("timed out") ||
     normalized.includes("temporar") ||
     normalized.includes("unavailable") ||
+    normalized.includes("try again later") ||
+    normalized.includes("backend error") ||
+    normalized.includes("backenderror") ||
+    normalized.includes("internal error") ||
+    normalized.includes("internalerror") ||
     normalized.includes("econnreset") ||
+    normalized.includes("etimedout") ||
     normalized.includes("socket hang up") ||
-    /\b50[234]\b/.test(normalized)
+    normalized.includes("fetch failed") ||
+    // 500/502/503/504 expressed only in free-text error strings (the structured
+    // httpStatus path above covers GmailSendError diagnostics).
+    /\b50[0234]\b/.test(normalized)
   );
 }
 

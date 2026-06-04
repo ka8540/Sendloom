@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { getClientIp, getSendWindowKey, getSendWindowSpacingMs } from "@/lib/rate-limit";
+import {
+  DEFAULT_GMAIL_SENDS_PER_MINUTE,
+  getClientIp,
+  getSendWindowKey,
+  getSendWindowSpacingMs
+} from "@/lib/rate-limit";
 
 describe("send window keys", () => {
   it("scopes the send window by user id when present", () => {
@@ -18,6 +23,13 @@ describe("send window keys", () => {
   it("derives smooth per-send pacing from the per-minute cap", () => {
     expect(getSendWindowSpacingMs(120)).toBe(500);
     expect(getSendWindowSpacingMs(60)).toBe(1000);
+  });
+
+  it("defaults to Gmail-safe pacing well below the old 120/min burst rate", () => {
+    // 30/min spaces sends 2s apart per sender, vs the previous 120/min (500ms)
+    // that tripped Gmail rate limits partway through large sequences.
+    expect(DEFAULT_GMAIL_SENDS_PER_MINUTE).toBe(30);
+    expect(getSendWindowSpacingMs(DEFAULT_GMAIL_SENDS_PER_MINUTE)).toBe(2000);
   });
 });
 

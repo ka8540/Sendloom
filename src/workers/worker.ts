@@ -1,6 +1,7 @@
 import { Worker, type ConnectionOptions } from "bullmq";
 
 import { prisma } from "@/lib/db";
+import { env } from "@/lib/env";
 import { releaseSendReservation, reserveSendCapacity } from "@/lib/daily-send-limit";
 import type { FailureCode } from "@/lib/failures";
 import {
@@ -307,7 +308,10 @@ const sendWorker = new Worker(
   },
   {
     connection,
-    concurrency: 10
+    // Bound simultaneous Gmail sends. With per-sender pacing (GMAIL_SENDS_PER_MINUTE)
+    // this keeps a single mailbox from bursting concurrent requests, which is what
+    // Gmail's rate limiter punishes hardest on large sequences. Was hardcoded to 10.
+    concurrency: env.GMAIL_SENDER_CONCURRENCY
   }
 );
 
