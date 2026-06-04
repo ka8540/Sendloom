@@ -16,6 +16,7 @@ import { ActiveRunRefresher } from "@/components/active-run-refresher";
 import { CampaignScheduleEditor } from "@/components/campaign-schedule-editor";
 import { CampaignSetupEditor } from "@/components/campaign-setup-editor";
 import { CampaignDetailDeleteButton } from "@/components/campaign-detail-delete-button";
+import { CampaignRetryFailedButton } from "@/components/campaign-retry-failed-button";
 import { ErrorToastOnMount } from "@/components/error-toast-provider";
 import { LocalDateTime } from "@/components/local-date-time";
 import { getAttachmentPreviewKind } from "@/lib/attachments";
@@ -27,6 +28,7 @@ import { prisma } from "@/lib/db";
 import { getGmailDailySendWindow } from "@/lib/daily-send-limit";
 import { GMAIL_RECONNECT_ERROR } from "@/lib/provider";
 import { RECIPIENT_ACTIVITY_PAGE_SIZE, buildRecipientActivityItem } from "@/lib/recipient-activity";
+import { canShowRetryFailedAction, isManuallyRetriableFailedJob } from "@/lib/retry-eligibility";
 import { RecipientActivity } from "@/components/recipient-activity";
 import {
   CampaignLaunchBlockedError,
@@ -494,6 +496,34 @@ export default async function CampaignDetailPage({
           : "Launch sequence";
   const validationButtonLabel = campaign.lastValidatedAt ? "Refresh validation" : "Validate sequence";
   const pauseButtonLabel = isPausedRun ? "Resume sequence" : "Pause sequence";
+  // Retry-failed action: only surfaces when the latest run has finished and still
+  // has retryable failed recipients, with nothing actively sending, paused, or
+  // blocked. The eligible count is computed off the run's own recipient jobs.
+  const latestRunStatus = latestRun?.status ?? null;
+  const retryGateOpen =
+    Boolean(latestRun) &&
+    DONE_STATUSES.has(latestRunStatus ?? "") &&
+    !isActiveRun &&
+    !isPausedRun &&
+    !senderNeedsReconnect &&
+    !dailyLimitActive &&
+    (latestRun?.failedCount ?? 0) > 0;
+  let retryableFailedCount = 0;
+  if (retryGateOpen && latestRun) {
+    const failedJobs = await prisma.recipientJob.findMany({
+      where: { campaignRunId: latestRun.id, status: "FAILED" },
+      select: { status: true, metadata: true }
+    });
+    retryableFailedCount = failedJobs.filter(isManuallyRetriableFailedJob).length;
+  }
+  const canRetryFailed = canShowRetryFailedAction({
+    latestRunStatus,
+    isActiveRun,
+    isPausedRun,
+    senderConnected: !senderNeedsReconnect,
+    dailyLimitActive,
+    retryableFailedCount
+  });
   const scheduleConfig = getScheduleConfig(campaign.scheduleType, campaign.scheduleConfig as ScheduleConfig | null);
   const scheduleLabel = formatScheduleLabel(campaign.scheduleType, scheduleConfig);
   const latestRunValue = latestRun?.updatedAt?.toISOString() ?? null;
@@ -732,6 +762,13 @@ export default async function CampaignDetailPage({
                 initialSchedule={scheduleConfig}
               />
               <CampaignDetailDeleteButton campaignId={campaign.id} campaignName={campaign.name} />
+              {canRetryFailed ? (
+                <CampaignRetryFailedButton
+                  campaignId={campaign.id}
+                  failedCount={retryableFailedCount}
+                  className={styles.actionSecondaryItem}
+                />
+              ) : null}
             </div>
 
             <div className={styles.actionPrimaryRow}>

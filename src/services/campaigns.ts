@@ -30,6 +30,7 @@ import {
 } from "@/lib/provider";
 import { consumeSendWindow, getSendWindowKey } from "@/lib/rate-limit";
 import { getRedis } from "@/lib/redis";
+import { isManuallyRetriableFailedJob } from "@/lib/retry-eligibility";
 import { classifySendFailure, getNextRetryAt, isRetryableFailure, MAX_RETRY_ATTEMPTS } from "@/lib/retry-policy";
 import { recordSendOnLedger } from "@/services/send-ledger";
 import { getNextRunDate, normalizeScheduleRule } from "@/lib/schedule";
@@ -1001,6 +1002,139 @@ export async function resumeCampaign(campaignId: string, userId?: string) {
   });
 
   return resumedRun;
+}
+
+export type RetryFailedRecipientsResult =
+  | { status: "ok"; retried: number; run: { id: string; status: string } }
+  | { status: "not_found" }
+  | { status: "no_failures" }
+  | { status: "run_active" }
+  | { status: "paused" }
+  | { status: "sender_disconnected" }
+  | { status: "daily_limit"; resumeAt: string | null }
+  | { status: "locked" };
+
+/**
+ * Re-queue only the eligible failed recipients of a sequence's latest finished
+ * run so they retry through the exact same safe send pipeline as a normal run
+ * (Gmail auth check, per-sender pacing, daily safety limit, retry policy,
+ * suppression/unsubscribe checks, provider diagnostics). Successful, opened,
+ * delivered, suppressed, invalid, and unsubscribed recipients are never touched,
+ * and the full recipient list is never duplicated — the existing run is reopened
+ * in place. A Redis lock plus the "already active" guard prevent a double-click
+ * from queueing duplicate retries.
+ */
+export async function retryFailedRecipients(
+  campaignId: string,
+  userId: string
+): Promise<RetryFailedRecipientsResult> {
+  const outcome = await withRedisLock(
+    `sendloom:campaign-retry-failed:${campaignId}`,
+    RUN_LOCK_TTL_SECONDS,
+    async (): Promise<RetryFailedRecipientsResult> => {
+      const campaign = await prisma.campaign.findFirst({
+        where: campaignOwnershipFilter(campaignId, userId),
+        include: {
+          senderProfile: {
+            select: { id: true, userId: true, oauthRefreshToken: true }
+          },
+          runs: {
+            orderBy: { createdAt: "desc" },
+            take: 1,
+            select: { id: true, status: true, startedAt: true }
+          }
+        }
+      });
+
+      if (!campaign) {
+        return { status: "not_found" };
+      }
+
+      const latestRun = campaign.runs[0] ?? null;
+      if (!latestRun) {
+        return { status: "no_failures" };
+      }
+
+      // Never reopen a run that is still sending, or one that the user paused.
+      if (["QUEUED", "RUNNING"].includes(latestRun.status) || ["RUNNING", "QUEUED"].includes(campaign.status)) {
+        return { status: "run_active" };
+      }
+      if (latestRun.status === "PAUSED" || campaign.status === "PAUSED") {
+        return { status: "paused" };
+      }
+      if (!campaign.senderProfile.oauthRefreshToken) {
+        return { status: "sender_disconnected" };
+      }
+
+      const sendWindow = await getGmailDailySendWindow({
+        userId: campaign.userId ?? campaign.senderProfile.userId,
+        senderProfileId: campaign.senderProfileId
+      });
+      if (sendWindow.isBlocked) {
+        return { status: "daily_limit", resumeAt: sendWindow.resetAt };
+      }
+
+      const failedJobs = await prisma.recipientJob.findMany({
+        where: { campaignRunId: latestRun.id, status: "FAILED" },
+        select: { id: true, status: true, recipientEmail: true, metadata: true }
+      });
+      if (failedJobs.length === 0) {
+        return { status: "no_failures" };
+      }
+
+      const suppressedEmails = await getSuppressedEmailsForUser(campaign.userId);
+      const eligibleIds = failedJobs
+        .filter(
+          (job) =>
+            isManuallyRetriableFailedJob(job) && !suppressedEmails.has(job.recipientEmail.toLowerCase())
+        )
+        .map((job) => job.id);
+
+      if (eligibleIds.length === 0) {
+        return { status: "no_failures" };
+      }
+
+      await prisma.$transaction([
+        // Reset only the eligible failed jobs back to PENDING with a fresh retry
+        // budget. Other recipients in the run keep their terminal state, so
+        // successful sends are never resent. Stale failure metadata is harmless
+        // on a PENDING job and is overwritten on the next attempt.
+        prisma.recipientJob.updateMany({
+          where: { id: { in: eligibleIds } },
+          data: {
+            status: "PENDING",
+            lastError: null,
+            nextRetryAt: null,
+            retryCount: 0
+          }
+        }),
+        prisma.campaignRun.update({
+          where: { id: latestRun.id },
+          data: {
+            status: "QUEUED",
+            scheduledFor: new Date(),
+            startedAt: latestRun.startedAt ?? new Date(),
+            completedAt: null
+          }
+        }),
+        prisma.campaign.update({
+          where: { id: campaignId },
+          data: { status: "RUNNING" }
+        })
+      ]);
+
+      await syncRunCounts(latestRun.id);
+
+      const refreshed = await prisma.campaignRun.findUniqueOrThrow({
+        where: { id: latestRun.id },
+        select: { id: true, status: true }
+      });
+
+      return { status: "ok", retried: eligibleIds.length, run: refreshed };
+    }
+  );
+
+  return outcome ?? { status: "locked" };
 }
 
 export async function queueScheduledRuns() {
