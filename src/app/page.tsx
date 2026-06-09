@@ -94,7 +94,7 @@ const trustPoints = [
   },
   {
     title: "Safe pacing",
-    body: "Built-in Gmail safety windows track a rolling 24-hour send count per sender and automatically pause campaigns before account limits are hit."
+    body: "Sendloom automatically paces and spaces out sends from each connected Gmail account to reduce throttling, with daily safety controls that help prevent runaway sends."
   },
   {
     title: "Validation before launch",
