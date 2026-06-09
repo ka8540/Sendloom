@@ -5,12 +5,14 @@ import { getRedis } from "@/lib/redis";
 
 /**
  * Default per-sender send cap (per minute). Gmail's anti-abuse rate limiter trips
- * well below the API's documented per-second quota, so we pace conservatively.
- * The previous hardcoded 120/min caused large sequences to mass-fail once Gmail
- * began rate limiting after ~100-150 sends. Override with GMAIL_SENDS_PER_MINUTE.
+ * well below the API's documented per-second quota, so we pace hard and per sender.
+ * Earlier values (120/min, then 30/min) still let large sequences mass-fail once
+ * Gmail began rate limiting. 3/min per connected sender keeps a single mailbox far
+ * under the limit. This is the single source of truth — override with
+ * GMAIL_SENDS_PER_MINUTE. It is independent of the rolling 24h daily safety cap
+ * (GMAIL_DAILY_SEND_SAFETY_LIMIT), which is enforced separately.
  */
-export const DEFAULT_GMAIL_SENDS_PER_MINUTE = 30;
-export const SEND_WINDOW_MAX_PACING_WAIT_MS = 10_000;
+export const DEFAULT_GMAIL_SENDS_PER_MINUTE = 3;
 
 /** Resolved per-sender send cap (per minute), configurable via GMAIL_SENDS_PER_MINUTE. */
 export function getGmailSendsPerMinute() {
@@ -98,110 +100,108 @@ export function getClientIp(request: Request): string {
   return "unknown";
 }
 
-const GLOBAL_SEND_WINDOW_KEY = "global-send-window";
-const USER_SEND_WINDOW_PREFIX = "user-send-window";
-const SENDER_SEND_WINDOW_PREFIX = "sender-send-window";
-const SEND_WINDOW_PACE_SUFFIX = "pace";
+const GLOBAL_SEND_WINDOW_KEY = "gmail-send-rate:global";
+const SEND_WINDOW_PREFIX = "gmail-send-rate";
 
 type SendWindowScope = {
   userId?: string | null;
   senderProfileId?: string | null;
 };
 
+/**
+ * Resolve the Redis key that scopes the per-minute send window. Pacing is
+ * per connected Gmail sender, so the sender profile is preferred; the user id
+ * is only a fallback for the rare scope with no sender (kept for safety — every
+ * campaign has a senderProfileId, so the sender branch is what runs in practice).
+ */
 export function getSendWindowKey(scope: SendWindowScope = {}) {
-  if (scope.userId) {
-    return `${USER_SEND_WINDOW_PREFIX}:${scope.userId}`;
+  if (scope.senderProfileId) {
+    return `${SEND_WINDOW_PREFIX}:sender:${scope.senderProfileId}`;
   }
 
-  if (scope.senderProfileId) {
-    return `${SENDER_SEND_WINDOW_PREFIX}:${scope.senderProfileId}`;
+  if (scope.userId) {
+    return `${SEND_WINDOW_PREFIX}:user:${scope.userId}`;
   }
 
   return GLOBAL_SEND_WINDOW_KEY;
 }
 
+/** Even spacing (ms) implied by a per-minute cap. Informational helper only. */
 export function getSendWindowSpacingMs(limit = getGmailSendsPerMinute()) {
   return Math.max(1, Math.ceil(60_000 / Math.max(1, limit)));
 }
 
-function sleep(ms: number) {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
-}
+export type SendWindowResult = {
+  allowed: boolean;
+  retryAt: Date;
+  reason: "allowed" | "window";
+  count: number;
+  limit: number;
+};
 
-async function tryConsumeSendWindow(key: string) {
-  const redis = getRedis();
-  const now = Date.now();
-  const window = `${key}:${new Date(now).toISOString().slice(0, 16)}`;
-  const paceKey = `${key}:${SEND_WINDOW_PACE_SUFFIX}`;
+/**
+ * Atomically consume one slot from the sender's per-minute send window.
+ *
+ * A fixed 60-second bucket holds at most `GMAIL_SENDS_PER_MINUTE` sends. The
+ * INCR + conditional EXPIRE run inside a single Lua script so concurrent
+ * workers/processes can never over-consume the window — even 10 workers racing
+ * the same sender see one atomic counter. When the window is full the caller is
+ * told the exact time the bucket frees (`retryAt`) and must defer the job; it
+ * must NOT call Gmail or mark the recipient failed.
+ *
+ * This intentionally does not enforce sub-second spacing: at 3/min that would
+ * push slots ~20s apart, further than a single tick can wait, which previously
+ * collapsed throughput. The per-minute count alone is what protects Gmail.
+ */
+export async function consumeSendWindow(key = GLOBAL_SEND_WINDOW_KEY): Promise<SendWindowResult> {
   const limit = getGmailSendsPerMinute();
-  const spacingMs = getSendWindowSpacingMs(limit);
-  const paceTtlMs = Math.max(1_000, spacingMs * 4);
+  const now = Date.now();
+  const windowKey = `${key}:${new Date(now).toISOString().slice(0, 16)}`;
+
+  if (limit <= 0) {
+    return { allowed: false, retryAt: new Date(now + 60_000), reason: "window", count: 0, limit };
+  }
+
   const script = `
     local windowKey = KEYS[1]
-    local paceKey = KEYS[2]
     local now = tonumber(ARGV[1])
     local limit = tonumber(ARGV[2])
-    local spacingMs = tonumber(ARGV[3])
-    local paceTtlMs = tonumber(ARGV[4])
     local count = tonumber(redis.call('GET', windowKey) or '0')
     if count >= limit then
-      local ttl = redis.call('TTL', windowKey)
-      if ttl < 0 then ttl = 60 end
-      return {0, now + (ttl * 1000), 'window', count}
+      local ttl = redis.call('PTTL', windowKey)
+      if ttl < 0 then ttl = 60000 end
+      return {0, now + ttl, count}
     end
-
-    local nextAt = tonumber(redis.call('GET', paceKey) or '0')
-    if nextAt > now then
-      return {0, nextAt, 'pacing', count}
-    end
-
     count = redis.call('INCR', windowKey)
     if count == 1 then
       redis.call('EXPIRE', windowKey, 60)
     end
-    redis.call('SET', paceKey, now + spacingMs, 'PX', paceTtlMs)
-    return {1, now + spacingMs, 'allowed', count}
+    return {1, now, count}
   `;
-  const result = (await redis.eval(
-    script,
-    2,
-    window,
-    paceKey,
-    String(now),
-    String(limit),
-    String(spacingMs),
-    String(paceTtlMs)
-  )) as [number, number, "allowed" | "window" | "pacing", number];
 
-  return {
-    allowed: result[0] === 1,
-    retryAt: new Date(result[1]),
-    reason: result[2],
-    count: result[3]
-  };
-}
-
-export async function consumeSendWindow(
-  key = GLOBAL_SEND_WINDOW_KEY,
-  options: { maxPacingWaitMs?: number } = {}
-) {
-  const maxPacingWaitMs = options.maxPacingWaitMs ?? SEND_WINDOW_MAX_PACING_WAIT_MS;
-  const startedAt = Date.now();
-
-  for (;;) {
-    const result = await tryConsumeSendWindow(key);
-    if (result.allowed) {
-      return result;
+  try {
+    const result = (await getRedis().eval(script, 1, windowKey, String(now), String(limit))) as [
+      number,
+      number,
+      number
+    ];
+    const allowed = result[0] === 1;
+    return {
+      allowed,
+      retryAt: new Date(allowed ? now : result[1]),
+      reason: allowed ? "allowed" : "window",
+      count: result[2],
+      limit
+    };
+  } catch (error) {
+    // In production a missing Redis must not silently disable pacing — fail
+    // closed by deferring (caller requeues), mirroring the daily-limit guard.
+    if (process.env.NODE_ENV === "production") {
+      throw error;
     }
-
-    const waitMs = result.retryAt.getTime() - Date.now();
-    const wouldExceedWaitBudget = Date.now() + waitMs - startedAt > maxPacingWaitMs;
-    if (result.reason !== "pacing" || waitMs <= 0 || wouldExceedWaitBudget) {
-      return result;
+    if (process.env.NODE_ENV !== "test") {
+      console.warn("[rate-limit] Redis unavailable; allowing send window in development.");
     }
-
-    await sleep(waitMs);
+    return { allowed: true, retryAt: new Date(now), reason: "allowed", count: 1, limit };
   }
 }

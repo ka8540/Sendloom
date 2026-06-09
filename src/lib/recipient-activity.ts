@@ -106,18 +106,35 @@ function inferFailureCode(lastError: string | null): FailureCode | null {
   return null;
 }
 
-function getSystemBlock(metadata: unknown): { blockedBy: "DAILY_SEND_LIMIT" | "GMAIL_SENDER_LIMIT"; blockedUntil: string | null } | null {
+type SystemBlockReason = "DAILY_SEND_LIMIT" | "GMAIL_SENDER_LIMIT" | "GMAIL_SENDER_PACING";
+
+function getSystemBlock(metadata: unknown): { blockedBy: SystemBlockReason; blockedUntil: string | null } | null {
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
     return null;
   }
   const record = metadata as { blockedBy?: unknown; blockedUntil?: unknown };
-  if (record.blockedBy !== "DAILY_SEND_LIMIT" && record.blockedBy !== "GMAIL_SENDER_LIMIT") {
+  if (
+    record.blockedBy !== "DAILY_SEND_LIMIT" &&
+    record.blockedBy !== "GMAIL_SENDER_LIMIT" &&
+    record.blockedBy !== "GMAIL_SENDER_PACING"
+  ) {
     return null;
   }
   return {
     blockedBy: record.blockedBy,
     blockedUntil: typeof record.blockedUntil === "string" ? record.blockedUntil : null
   };
+}
+
+function getSystemBlockMessage(blockedBy: SystemBlockReason) {
+  switch (blockedBy) {
+    case "DAILY_SEND_LIMIT":
+      return "Daily Gmail safety limit reached. Sending resumes automatically when the safety window resets.";
+    case "GMAIL_SENDER_PACING":
+      return "Sending slowly to protect your Gmail account. Queued for the next send window.";
+    default:
+      return "Gmail is rate limiting sends right now. Sendloom will retry automatically.";
+  }
 }
 
 function toIso(value: Date | string) {
@@ -183,21 +200,22 @@ export function buildRecipientActivityItem(job: RecipientJobInput): RecipientAct
   const systemBlock = job.status === "PENDING" ? getSystemBlock(job.metadata) : null;
 
   if (systemBlock) {
+    // Per-minute pacing is normal throttling, not something the user must act
+    // on — surface it as "Queued" and keep it out of issue/attention counts.
+    // The daily-cap and Gmail-throttle pauses stay flagged as warnings.
+    const isPacing = systemBlock.blockedBy === "GMAIL_SENDER_PACING";
     return {
       id: job.id,
       email: job.recipientEmail,
       name: job.recipientName?.trim() ? job.recipientName.trim() : null,
       status: job.status,
-      statusLabel: "Paused",
-      tone: "warning",
+      statusLabel: isPacing ? "Queued" : "Paused",
+      tone: isPacing ? "neutral" : "warning",
       engaged: false,
-      message:
-        systemBlock.blockedBy === "DAILY_SEND_LIMIT"
-          ? "Daily Gmail safety limit reached. Sending resumes automatically when the safety window resets."
-          : "Gmail is rate limiting sends right now. Sendloom will retry automatically.",
-      isIssue: true,
+      message: getSystemBlockMessage(systemBlock.blockedBy),
+      isIssue: !isPacing,
       retryable: true,
-      detailLabel: "Paused",
+      detailLabel: isPacing ? "Queued" : "Paused",
       attemptCount: job.retryCount,
       lastAttemptAt: toIso(job.updatedAt),
       nextRetryAt: systemBlock.blockedUntil

@@ -21,14 +21,13 @@ import {
 import { buildMergePayload } from "@/lib/mapping";
 import {
   GMAIL_RECONNECT_ERROR,
-  GMAIL_SEND_RATE_LIMIT_USER_ERROR,
   getUserSafeGmailSendError,
   isGmailDailyLimitError,
   isGmailReconnectError,
   sendEmail,
   type EmailAttachment
 } from "@/lib/provider";
-import { consumeSendWindow, getSendWindowKey } from "@/lib/rate-limit";
+import { consumeSendWindow, getGmailSendsPerMinute, getSendWindowKey } from "@/lib/rate-limit";
 import { getRedis } from "@/lib/redis";
 import { isManuallyRetriableFailedJob } from "@/lib/retry-eligibility";
 import { classifySendFailure, getNextRetryAt, isRetryableFailure, MAX_RETRY_ATTEMPTS } from "@/lib/retry-policy";
@@ -1500,7 +1499,9 @@ async function processRecipientJob(recipientJob: RecipientJobWithContext) {
       };
     }
 
-    if (latestJob.status === "RETRYING" && latestJob.nextRetryAt && latestJob.nextRetryAt > new Date()) {
+    // Not yet due: a future nextRetryAt means either a backoff retry or a job
+    // deferred for per-minute pacing. Either way, leave it queued.
+    if (latestJob.nextRetryAt && latestJob.nextRetryAt > new Date()) {
       return {
         processed: false,
         rateLimited: false
@@ -1538,22 +1539,16 @@ async function processRecipientJob(recipientJob: RecipientJobWithContext) {
         })
       );
       if (!rateWindow.allowed) {
+        // Proactive per-sender pacing: defer to the next send window. Not a
+        // failure — keep the recipient queued, don't touch retryCount, don't
+        // call Gmail. `processed: false` so the scheduler doesn't count this as
+        // progress (it moves on to other senders' runs).
         await releaseSendReservation(scope, activeReservationId);
         activeReservationId = null;
-        await markRecipientAttempt({
-          jobId: latestJob.id,
-          status: "RETRYING",
-          lastError: GMAIL_SEND_RATE_LIMIT_USER_ERROR,
-          failureCode: "GMAIL_RATE_LIMITED",
-          failureSource: "GMAIL",
-          failureDetails: buildGmailSendFailureMetadata(new Error("Sendloom sender send window reached."), {
-            failureCode: "GMAIL_RATE_LIMITED",
-            retryable: true
-          })
-        });
+        await deferRecipientForSendWindow({ jobId: latestJob.id, retryAt: rateWindow.retryAt });
 
         return {
-          processed: true,
+          processed: false,
           rateLimited: true
         };
       }
@@ -1785,17 +1780,21 @@ export async function processCampaignRun(
 
     await ensureRecipientJobs(run.campaignId, run.id);
 
+    const now = new Date();
     const candidateJobs = await prisma.recipientJob.findMany({
       where: {
         campaignRunId: run.id,
         OR: [
           {
-            status: "PENDING"
+            // PENDING jobs deferred for per-minute pacing carry a future
+            // nextRetryAt — skip them until their send window frees.
+            status: "PENDING",
+            OR: [{ nextRetryAt: null }, { nextRetryAt: { lte: now } }]
           },
           {
             status: "RETRYING",
             nextRetryAt: {
-              lte: new Date()
+              lte: now
             }
           }
         ]
@@ -1912,6 +1911,52 @@ export async function markRecipientAttempt(args: {
         retryable: args.status === "SENT" ? false : retryable,
         lastAttemptAt: now.toISOString(),
         resolvedAt: args.status === "SENT" ? now.toISOString() : null
+      } as Prisma.InputJsonValue
+    }
+  });
+
+  await syncRunCounts(updated.campaignRunId);
+
+  return updated;
+}
+
+/**
+ * Per-minute pacing reached for this sender — defer the recipient to the next
+ * send window WITHOUT treating it as a failure. Pacing is a deliberate throttle,
+ * not a delivery error, so we must NOT increment retryCount, set a failure code,
+ * or mark the job FAILED/permanent (doing exactly that is what surfaced paced
+ * recipients as "Failed / Permanent" and burned their retry budget). The job
+ * stays PENDING with a future nextRetryAt so the candidate query skips it until
+ * the window frees, and a benign metadata marker lets the activity list show a
+ * "Queued / waiting for the send window" state instead of an error.
+ *
+ * This is independent of the rolling 24h daily cap: no daily slot is consumed
+ * (the caller releases its reservation before deferring).
+ */
+export async function deferRecipientForSendWindow(args: { jobId: string; retryAt: Date }) {
+  const current = await prisma.recipientJob.findUniqueOrThrow({
+    where: { id: args.jobId },
+    select: { metadata: true }
+  });
+  const currentMetadata =
+    current.metadata && typeof current.metadata === "object" && !Array.isArray(current.metadata)
+      ? (current.metadata as Record<string, unknown>)
+      : {};
+
+  const updated = await prisma.recipientJob.update({
+    where: { id: args.jobId },
+    data: {
+      status: "PENDING",
+      lastError: null,
+      nextRetryAt: args.retryAt,
+      metadata: {
+        ...currentMetadata,
+        failureCode: null,
+        failureSource: null,
+        retryable: true,
+        blockedBy: "GMAIL_SENDER_PACING",
+        blockedAt: new Date().toISOString(),
+        blockedUntil: args.retryAt.toISOString()
       } as Prisma.InputJsonValue
     }
   });
@@ -2372,10 +2417,23 @@ export async function processPendingCampaignWork(args: ProcessCampaignWorkArgs =
     });
   }
 
+  const perMinuteLimit = getGmailSendsPerMinute();
+
   while (hasTimeRemaining(deadline) && runsProcessed < maxRuns) {
     const runs = await prisma.campaignRun.findMany({
       where: dueRunWhere,
-      orderBy: [{ scheduledFor: "asc" }, { createdAt: "asc" }],
+      // updatedAt rotates fairness across sequences that share a sender: a run
+      // bumps updatedAt every time it advances a job (syncRunCounts), so the run
+      // that sent least recently is tried first next pass — round-robin with no
+      // schema change. scheduledFor still orders genuinely scheduled runs.
+      orderBy: [{ scheduledFor: "asc" }, { updatedAt: "asc" }, { createdAt: "asc" }],
+      include: {
+        campaign: {
+          select: {
+            senderProfileId: true
+          }
+        }
+      },
       take: maxRuns
     });
 
@@ -2383,6 +2441,19 @@ export async function processPendingCampaignWork(args: ProcessCampaignWorkArgs =
       break;
     }
 
+    // How many due runs share each sender, so we can split that sender's
+    // per-minute window fairly — one send per run per pass when several compete,
+    // instead of letting the first sequence drain the whole 3/min window.
+    const runsPerSender = new Map<string, number>();
+    for (const run of runs) {
+      const senderId = run.campaign.senderProfileId;
+      runsPerSender.set(senderId, (runsPerSender.get(senderId) ?? 0) + 1);
+    }
+
+    // Senders whose per-minute window filled during this pass. We skip their
+    // remaining runs but keep serving other senders — one sender hitting its
+    // limit must never block a different connected sender.
+    const exhaustedSenders = new Set<string>();
     let progressedThisPass = false;
 
     for (const run of runs) {
@@ -2390,10 +2461,20 @@ export async function processPendingCampaignWork(args: ProcessCampaignWorkArgs =
         break;
       }
 
+      const senderId = run.campaign.senderProfileId;
+      if (exhaustedSenders.has(senderId)) {
+        hasRemainingWork = true;
+        continue;
+      }
+
+      const competingRuns = runsPerSender.get(senderId) ?? 1;
+      const fairBatch =
+        competingRuns > 1 ? Math.max(1, Math.floor(perMinuteLimit / competingRuns)) : maxRecipientJobsPerRun;
+
       try {
         const result = await processCampaignRun(run.id, {
           maxDurationMs: Math.max(1_000, deadline - Date.now()),
-          maxRecipientJobs: maxRecipientJobsPerRun
+          maxRecipientJobs: fairBatch
         });
 
         if (!result.locked) {
@@ -2405,8 +2486,10 @@ export async function processPendingCampaignWork(args: ProcessCampaignWorkArgs =
           progressedThisPass || result.processedJobs > 0 || (!result.locked && !result.hasRemainingWork);
 
         if (result.rateLimited) {
+          // This sender's send window is full for now. Don't break the whole
+          // pass — just stop serving this sender and move to the next one.
           hasRemainingWork = true;
-          break;
+          exhaustedSenders.add(senderId);
         }
       } catch (error) {
         console.error("[campaign-cron] Failed to process campaign run.", {

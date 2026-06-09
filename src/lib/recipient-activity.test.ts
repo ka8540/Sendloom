@@ -50,6 +50,28 @@ describe("recipient activity", () => {
     expect(item.nextRetryAt).toBe("2026-05-27T13:00:00.000Z");
   });
 
+  it("shows per-minute pacing as queued, never failed or permanent", () => {
+    const item = buildRecipientActivityItem({
+      ...BASE_JOB,
+      status: "PENDING",
+      retryCount: 0,
+      metadata: {
+        blockedBy: "GMAIL_SENDER_PACING",
+        blockedUntil: "2026-05-27T12:01:00.000Z",
+        retryable: true
+      }
+    });
+
+    expect(item.statusLabel).toBe("Queued");
+    expect(item.message).toBe("Sending slowly to protect your Gmail account. Queued for the next send window.");
+    // Pacing is normal throttling — not an issue, not failed, not permanent.
+    expect(item.isIssue).toBe(false);
+    expect(item.retryable).toBe(true);
+    expect(item.tone).toBe("neutral");
+    expect(item.detailLabel).not.toBe("Permanent");
+    expect(item.nextRetryAt).toBe("2026-05-27T12:01:00.000Z");
+  });
+
   it("shows Gmail auth failures as action required", () => {
     const item = buildRecipientActivityItem({
       ...BASE_JOB,

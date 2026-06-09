@@ -36,11 +36,13 @@ const envSchema = z
     ADMIN_EMAIL: z.string().email().optional(),
     ADMIN_PASSWORD: z.string().min(8).optional(),
     GMAIL_DAILY_SEND_SAFETY_LIMIT: z.coerce.number().int().positive().default(450),
-    // Per-sender send pacing. Gmail throttles sustained API sends well below its
-    // documented per-second quota, so we pace conservatively. The previous
-    // hardcoded 120/min tripped Gmail rate limits on large sequences after
-    // ~100-150 sends; 30/min keeps a single mailbox safely under the limit.
-    GMAIL_SENDS_PER_MINUTE: z.coerce.number().int().positive().max(600).default(30),
+    // Per-sender send pacing: max Gmail sends per minute per connected sender.
+    // Gmail throttles sustained API sends well below its documented per-second
+    // quota, so we pace hard. 120/min then 30/min still tripped rate limits on
+    // large sequences; 3/min keeps a single mailbox far under the limit. This is
+    // separate from GMAIL_DAILY_SEND_SAFETY_LIMIT (the rolling 24h cap) — both
+    // are enforced. Parallel sequences for the same sender share this window.
+    GMAIL_SENDS_PER_MINUTE: z.coerce.number().int().positive().max(600).default(3),
     // Maximum simultaneous Gmail sends the worker runs at once. Combined with the
     // per-sender pacing above this prevents a burst of concurrent sends from one
     // mailbox, which is what Gmail's anti-abuse rate limiter punishes hardest.

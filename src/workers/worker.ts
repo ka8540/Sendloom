@@ -10,7 +10,6 @@ import {
   type GmailSendFailureMetadata
 } from "@/lib/gmail-errors";
 import {
-  GMAIL_SEND_RATE_LIMIT_USER_ERROR,
   getUserSafeGmailSendError,
   isGmailDailyLimitError,
   sendEmail,
@@ -21,6 +20,7 @@ import { consumeSendWindow, getSendWindowKey } from "@/lib/rate-limit";
 import { getRedis } from "@/lib/redis";
 import { classifySendFailure, isRetryableFailure, MAX_RETRY_ATTEMPTS } from "@/lib/retry-policy";
 import {
+  deferRecipientForSendWindow,
   enqueueRecipientJobs,
   markRecipientAttempt,
   pauseCampaignRunForDailyLimit,
@@ -104,7 +104,9 @@ const sendWorker = new Worker(
       return;
     }
 
-    if (recipientJob.status === "RETRYING" && recipientJob.nextRetryAt && recipientJob.nextRetryAt > new Date()) {
+    // Not yet due: a future nextRetryAt means a backoff retry or a job deferred
+    // for per-minute pacing. Leave it queued for its scheduled time.
+    if (recipientJob.nextRetryAt && recipientJob.nextRetryAt > new Date()) {
       return;
     }
 
@@ -151,19 +153,12 @@ const sendWorker = new Worker(
         })
       );
       if (!rateWindow.allowed) {
+        // Per-sender pacing reached: defer to the next send window. Not a
+        // failure — keep the recipient queued, don't touch retryCount, don't
+        // call Gmail. Re-enqueue for the moment the window frees.
         await releaseSendReservation(scope, activeReservationId);
         activeReservationId = null;
-        await markRecipientAttempt({
-          jobId,
-          status: "RETRYING",
-          lastError: GMAIL_SEND_RATE_LIMIT_USER_ERROR,
-          failureCode: "GMAIL_RATE_LIMITED",
-          failureSource: "GMAIL",
-          failureDetails: buildGmailSendFailureMetadata(new Error("Sendloom sender send window reached."), {
-            failureCode: "GMAIL_RATE_LIMITED",
-            retryable: true
-          })
-        });
+        await deferRecipientForSendWindow({ jobId, retryAt: rateWindow.retryAt });
         await queues.send.add(
           "send-recipient",
           { jobId },
