@@ -1527,6 +1527,8 @@
 }
 
 .trustCard {
+  position: relative;
+  overflow: hidden;
   display: grid;
   gap: 0.6rem;
   padding: 1.5rem;
@@ -1534,6 +1536,38 @@
   border: 1px solid color-mix(in srgb, var(--landing-ink) 8%, var(--landing-edge));
   background: color-mix(in srgb, var(--landing-panel-strong) 78%, transparent);
   box-shadow: 0 18px 40px rgba(15, 30, 55, 0.08);
+  transition: transform 240ms ease, box-shadow 240ms ease, border-color 240ms ease;
+}
+
+/* Keep card content above the hover highlight layer. */
+.trustCard > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Soft emerald radial highlight that fades in on hover (no layout impact). */
+.trustCard::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  background: radial-gradient(130% 120% at 50% -10%, color-mix(in srgb, var(--landing-emerald) 16%, transparent), transparent 62%);
+  opacity: 0;
+  transition: opacity 240ms ease;
+  pointer-events: none;
+}
+
+.trustCard:hover,
+.trustCard:focus-within {
+  transform: translateY(-6px);
+  border-color: color-mix(in srgb, var(--landing-emerald) 34%, transparent);
+  box-shadow: 0 28px 56px rgba(10, 22, 40, 0.2), 0 8px 26px color-mix(in srgb, var(--landing-emerald) 20%, transparent);
+}
+
+.trustCard:hover::before,
+.trustCard:focus-within::before {
+  opacity: 1;
 }
 
 .trustMark {
@@ -1546,6 +1580,14 @@
   background: linear-gradient(140deg, color-mix(in srgb, var(--landing-emerald) 26%, transparent), color-mix(in srgb, var(--landing-blue) 18%, transparent));
   border: 1px solid color-mix(in srgb, var(--landing-emerald) 28%, transparent);
   color: var(--landing-emerald-deep);
+  transition: transform 240ms ease, border-color 240ms ease, box-shadow 240ms ease;
+}
+
+.trustCard:hover .trustMark,
+.trustCard:focus-within .trustMark {
+  transform: scale(1.06);
+  border-color: color-mix(in srgb, var(--landing-emerald) 48%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--landing-emerald) 14%, transparent);
 }
 
 .trustMark svg {
@@ -2136,5 +2178,24 @@
 
   .capCard {
     transition: none;
+  }
+
+  /* Keep the trust cards' colour/glow feedback but drop the transform lift. */
+  .trustCard {
+    transition: border-color 200ms ease, box-shadow 200ms ease;
+  }
+
+  .trustCard:hover,
+  .trustCard:focus-within {
+    transform: none;
+  }
+
+  .trustMark {
+    transition: border-color 200ms ease, box-shadow 200ms ease;
+  }
+
+  .trustCard:hover .trustMark,
+  .trustCard:focus-within .trustMark {
+    transform: none;
   }
 }

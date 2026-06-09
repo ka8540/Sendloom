@@ -54,6 +54,10 @@ export function LandingMotion() {
             y: 0,
             duration: 0.85,
             ease: "power2.out",
+            // Drop the leftover inline transform once revealed so CSS :hover
+            // transitions (e.g. the feature-card lift) aren't blocked by GSAP's
+            // inline style. Visually identical — the element ends at y: 0.
+            clearProps: "transform",
             scrollTrigger: {
               trigger: element,
               start: "top 88%",
