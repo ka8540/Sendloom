@@ -131,7 +131,9 @@ function getSystemBlockMessage(blockedBy: SystemBlockReason) {
     case "DAILY_SEND_LIMIT":
       return "Daily Gmail safety limit reached. Sending resumes automatically when the safety window resets.";
     case "GMAIL_SENDER_PACING":
-      return "Sending slowly to protect your Gmail account. Queued for the next send window.";
+      // Compact per-row copy — the "Queued" pill carries the state, so this is a
+      // short muted label rather than the full pacing explanation on every row.
+      return "Next send window";
     default:
       return "Gmail is rate limiting sends right now. Sendloom will retry automatically.";
   }

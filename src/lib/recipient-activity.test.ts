@@ -63,7 +63,8 @@ describe("recipient activity", () => {
     });
 
     expect(item.statusLabel).toBe("Queued");
-    expect(item.message).toBe("Sending slowly to protect your Gmail account. Queued for the next send window.");
+    // Compact copy — no long repeated pacing sentence on every queued row.
+    expect(item.message).toBe("Next send window");
     // Pacing is normal throttling — not an issue, not failed, not permanent.
     expect(item.isIssue).toBe(false);
     expect(item.retryable).toBe(true);
