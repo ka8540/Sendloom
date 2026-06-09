@@ -18,31 +18,23 @@ export function getDefaultBackFallback(pathname: string): AppFallbackHref {
   return "/";
 }
 
-export function canUseBrowserBack(args: {
-  currentOrigin: string;
-  currentPathname: string;
-  historyLength: number;
-  referrer: string;
-}) {
-  const { currentOrigin, currentPathname, historyLength, referrer } = args;
-
-  if (historyLength <= 1 || !referrer) {
+/**
+ * Decide whether the in-app back button should call `router.back()` or fall back
+ * to a safe in-app route.
+ *
+ * `document.referrer` cannot answer this: it only reflects the document-load
+ * referrer and never changes during client-side (SPA) navigation, so it wrongly
+ * rejected app-to-app moves and sent every back press to the dashboard. Instead
+ * we rely on the count of in-app navigations performed since the app shell
+ * mounted (`navigationDepth`). A positive depth means there is a real previous
+ * in-app entry to return to; a depth of zero means the user landed directly on
+ * this page (deep link / new tab / first page after login) and going back could
+ * leave the app, so the caller should use the fallback.
+ */
+export function shouldUseBrowserBack(args: { alwaysUseFallback?: boolean; navigationDepth: number }) {
+  if (args.alwaysUseFallback) {
     return false;
   }
 
-  try {
-    const referrerUrl = new URL(referrer);
-
-    if (referrerUrl.origin !== currentOrigin || referrerUrl.pathname === currentPathname) {
-      return false;
-    }
-
-    if (isAppPath(currentPathname)) {
-      return isAppPath(referrerUrl.pathname);
-    }
-
-    return true;
-  } catch {
-    return false;
-  }
+  return args.navigationDepth > 0;
 }

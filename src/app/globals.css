@@ -225,6 +225,17 @@ body {
   min-height: 100vh;
 }
 
+/*
+ * Load screen gate. The synchronous boot script (loadScreenInitScript) sets
+ * html[data-load-screen="show"|"hide"] before the first paint. The loader overlay
+ * is server-rendered into the initial HTML on load-screen paths so it covers the
+ * page immediately — but we only let it show when the boot script asked for it,
+ * which keeps cooldown / no-JS visits flash-free (content shows, overlay hidden).
+ */
+html:not([data-load-screen="show"]) [data-loader-overlay] {
+  display: none !important;
+}
+
 a {
   color: inherit;
   text-decoration: none;

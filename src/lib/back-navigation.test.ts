@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { canUseBrowserBack, getDefaultBackFallback } from "@/lib/back-navigation";
+import { getDefaultBackFallback, shouldUseBrowserBack } from "@/lib/back-navigation";
 
 describe("getDefaultBackFallback", () => {
   it("sends app routes back to overview by default", () => {
@@ -19,50 +19,17 @@ describe("getDefaultBackFallback", () => {
   });
 });
 
-describe("canUseBrowserBack", () => {
-  const currentOrigin = "https://sendloom.test";
-
-  it("allows browser back for app-to-app navigation", () => {
-    expect(
-      canUseBrowserBack({
-        currentOrigin,
-        currentPathname: "/campaigns/abc123",
-        historyLength: 3,
-        referrer: "https://sendloom.test/campaigns"
-      })
-    ).toBe(true);
+describe("shouldUseBrowserBack", () => {
+  it("uses browser history once the user has navigated within the app", () => {
+    expect(shouldUseBrowserBack({ navigationDepth: 1 })).toBe(true);
+    expect(shouldUseBrowserBack({ navigationDepth: 3 })).toBe(true);
   });
 
-  it("blocks browser back when an app page was opened from public auth pages", () => {
-    expect(
-      canUseBrowserBack({
-        currentOrigin,
-        currentPathname: "/campaigns/abc123",
-        historyLength: 3,
-        referrer: "https://sendloom.test/login"
-      })
-    ).toBe(false);
+  it("falls back when the page was opened directly (no in-app history)", () => {
+    expect(shouldUseBrowserBack({ navigationDepth: 0 })).toBe(false);
   });
 
-  it("blocks browser back when the referrer is outside the app or site", () => {
-    expect(
-      canUseBrowserBack({
-        currentOrigin,
-        currentPathname: "/workspace",
-        historyLength: 2,
-        referrer: "https://example.com/"
-      })
-    ).toBe(false);
-  });
-
-  it("still allows public pages to use same-origin browser history", () => {
-    expect(
-      canUseBrowserBack({
-        currentOrigin,
-        currentPathname: "/login",
-        historyLength: 2,
-        referrer: "https://sendloom.test/signup"
-      })
-    ).toBe(true);
+  it("always falls back when the caller forces it", () => {
+    expect(shouldUseBrowserBack({ alwaysUseFallback: true, navigationDepth: 5 })).toBe(false);
   });
 });

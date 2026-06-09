@@ -1,10 +1,10 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { ArrowLeft } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 
-import { canUseBrowserBack, getDefaultBackFallback, type AppFallbackHref } from "@/lib/back-navigation";
+import { getDefaultBackFallback, shouldUseBrowserBack, type AppFallbackHref } from "@/lib/back-navigation";
 
 type BackButtonProps = {
   alwaysUseFallback?: boolean;
@@ -17,16 +17,56 @@ export function BackButton({ alwaysUseFallback = false, className, fallbackHref,
   const router = useRouter();
   const pathname = usePathname();
 
+  // How many in-app client navigations have happened since this button mounted.
+  // The back button lives in the persistent app shell, so this ref survives every
+  // app-to-app navigation and tells us whether router.back() can safely return to
+  // a real previous in-app page instead of leaving the app.
+  const navigationDepthRef = useRef(0);
+  const initializedRef = useRef(false);
+  const poppedRef = useRef(false);
+
+  useEffect(() => {
+    if (alwaysUseFallback) {
+      return;
+    }
+
+    // A popstate (browser/our own back or forward) means the upcoming pathname
+    // change is not a forward push, so we should not count it as new depth.
+    const handlePopState = () => {
+      poppedRef.current = true;
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, [alwaysUseFallback]);
+
+  useEffect(() => {
+    if (alwaysUseFallback) {
+      return;
+    }
+
+    if (!initializedRef.current) {
+      // First pathname seen by this button is the entry point — nothing to go
+      // back to within the app yet.
+      initializedRef.current = true;
+      return;
+    }
+
+    if (poppedRef.current) {
+      poppedRef.current = false;
+      navigationDepthRef.current = Math.max(0, navigationDepthRef.current - 1);
+      return;
+    }
+
+    navigationDepthRef.current += 1;
+  }, [alwaysUseFallback, pathname]);
+
   const handleClick = useCallback(() => {
     if (
-      !alwaysUseFallback &&
       typeof window !== "undefined" &&
-      canUseBrowserBack({
-        currentOrigin: window.location.origin,
-        currentPathname: pathname,
-        historyLength: window.history.length,
-        referrer: document.referrer
-      })
+      shouldUseBrowserBack({ alwaysUseFallback, navigationDepth: navigationDepthRef.current })
     ) {
       router.back();
       return;

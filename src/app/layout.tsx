@@ -7,6 +7,7 @@ import { CsrfFetchPatch } from "@/components/csrf-fetch-patch";
 import { ErrorToastProvider } from "@/components/error-toast-provider";
 import { ManualProvider } from "@/components/manual/ManualProvider";
 import { PublicLoadScreen } from "@/components/public-load-screen";
+import { loadScreenInitScript } from "@/lib/load-screen";
 import { themeInitScript } from "@/lib/theme";
 
 const loaderDisplayFont = Bebas_Neue({
@@ -44,6 +45,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+        <script dangerouslySetInnerHTML={{ __html: loadScreenInitScript }} />
         <CsrfFetchPatch />
         <ErrorToastProvider>
           <ManualProvider>

@@ -439,7 +439,7 @@ export function LoadScreen() {
   const caption = showFinalMessage ? "TO SENDLOOM" : activeBeat.caption;
 
   return (
-    <div ref={overlayRef} className={styles.loader}>
+    <div ref={overlayRef} className={styles.loader} data-loader-overlay="">
       <div ref={sceneRef} className={styles.scene} aria-hidden="true" />
       <div className={styles.texture} aria-hidden="true" />
 
