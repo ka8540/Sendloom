@@ -75,14 +75,30 @@
 
 /* ===================== NAV (shared component) ===================== */
 
+/* Hidden until the page is scrolled past the show threshold; visibility is the
+   only thing that changes — the glass pill itself never loses its styles. */
 .nav {
   position: fixed;
   top: 1rem;
   left: 50%;
   z-index: 40;
   width: min(1200px, calc(100vw - 3rem));
-  transform: translateX(-50%);
+  transform: translate(-50%, -0.9rem);
   padding: 0;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 240ms ease,
+    transform 240ms ease,
+    visibility 240ms;
+}
+
+.navVisible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translate(-50%, 0);
 }
 
 .navOpen {
@@ -2183,6 +2199,11 @@
   .heroChipTop,
   .heroChipBottom {
     animation: none !important;
+  }
+
+  .nav {
+    transition: opacity 120ms ease, visibility 120ms;
+    transform: translate(-50%, 0);
   }
 
   .navInner,

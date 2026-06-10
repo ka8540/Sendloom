@@ -26,6 +26,9 @@ function isInternalRoute(href: string) {
   return href.startsWith("/");
 }
 
+/* Scroll depth at which the floating nav appears; below it the hero stands alone. */
+const NAV_SHOW_THRESHOLD = 120;
+
 export function LandingNav({ items = defaultNavItems }: { items?: readonly LandingNavItem[] }) {
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
@@ -44,7 +47,7 @@ export function LandingNav({ items = defaultNavItems }: { items?: readonly Landi
 
   useEffect(() => {
     const updateScrolled = () => {
-      setScrolled(window.scrollY > 16);
+      setScrolled(window.scrollY > NAV_SHOW_THRESHOLD);
     };
 
     updateScrolled();
@@ -57,8 +60,15 @@ export function LandingNav({ items = defaultNavItems }: { items?: readonly Landi
 
   const closeMenu = () => setOpen(false);
 
+  /* The open mobile menu pins the nav visible even if scroll state changes. */
+  const visible = scrolled || open;
+
   return (
-    <header className={`${styles.nav}${open ? ` ${styles.navOpen}` : ""}${scrolled ? ` ${styles.navScrolled}` : ""}`}>
+    <header
+      className={`${styles.nav}${visible ? ` ${styles.navVisible}` : ""}${open ? ` ${styles.navOpen}` : ""}${
+        scrolled ? ` ${styles.navScrolled}` : ""
+      }`}
+    >
       <div className={styles.navInner}>
         <div className={styles.brand}>
           <SendloomLogo className={styles.brandMark} />

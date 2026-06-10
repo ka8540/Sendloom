@@ -119,9 +119,10 @@ export default function LandingPage() {
     <main id="top" className={styles.page}>
       <AnimatedEmailPath />
       <LandingMotion />
+      {/* Kept outside .frame so no animated/transformed ancestor can capture
+          the fixed nav or interfere with its backdrop-filter. */}
+      <LandingNav />
       <div className={styles.frame}>
-        <LandingNav />
-
         <section className={styles.hero}>
           <div className={styles.heroCopy}>
             <div className={styles.eyebrow} data-reveal>
