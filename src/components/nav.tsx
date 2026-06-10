@@ -8,6 +8,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   Activity,
   FileSpreadsheet,
+  History,
   House,
   LayoutDashboard,
   PanelLeftClose,
@@ -118,6 +119,7 @@ export function AppNav({ initialCollapsed = false, isAdmin = false }: { initialC
         { href: "/admin/users" as Route, label: "Users", icon: Users },
         { href: "/admin/restrictions" as Route, label: "Restrictions", icon: ShieldAlert },
         { href: "/admin/system-health" as Route, label: "System Health", icon: Activity },
+        { href: "/admin/activity" as Route, label: "Activity Logs", icon: History },
       ]
     : [
         { href: "/workspace" as Route, label: "Overview", icon: House },

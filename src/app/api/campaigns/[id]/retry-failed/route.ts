@@ -2,7 +2,7 @@ import { after } from "next/server";
 import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/api-auth";
-import { writeAuditLog } from "@/lib/audit";
+import { recordAuditEvent } from "@/lib/audit";
 import { createRateLimitResponse, rateLimit } from "@/lib/rate-limit";
 import {
   processPendingCampaignWork,
@@ -28,7 +28,7 @@ const FAILURE_RESPONSES: Record<
   locked: { status: 409, error: "A retry is already being prepared. Try again in a moment." }
 };
 
-export async function POST(_: Request, context: { params: Promise<{ id: string }> }) {
+export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const auth = await requireApiUser("campaignLaunch");
   if ("response" in auth) {
     return auth.response;
@@ -54,12 +54,14 @@ export async function POST(_: Request, context: { params: Promise<{ id: string }
     });
   });
 
-  await writeAuditLog({
-    actorEmail: auth.user.email,
-    action: "campaign.retry_failed",
-    entityType: "campaign",
-    entityId: id,
-    metadata: { runId: result.run.id, retried: result.retried }
+  await recordAuditEvent({
+    actor: { id: auth.user.id, email: auth.user.email },
+    action: "sequence.retry_failed_started",
+    category: "SEQUENCE",
+    target: { type: "sequence", id },
+    message: `Retried ${result.retried} failed recipient${result.retried === 1 ? "" : "s"}.`,
+    metadata: { runId: result.run.id, retried: result.retried },
+    request
   });
 
   return NextResponse.json({ retried: result.retried, run: result.run });

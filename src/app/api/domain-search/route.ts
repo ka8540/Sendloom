@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { requireApiUser } from "@/lib/api-auth";
+import { recordAuditEvent } from "@/lib/audit";
 import { HunterApiError, searchHunterDomain } from "@/lib/hunter";
 import { createRateLimitResponse, rateLimit } from "@/lib/rate-limit";
 import { saveHunterDomainSearchForUser } from "@/services/hunter-domain-searches";
@@ -43,6 +44,17 @@ export async function POST(request: Request) {
   try {
     const results = await searchHunterDomain(apiKey, payload.domain);
     const savedSearch = await saveHunterDomainSearchForUser(auth.user.id, payload.domain, results);
+
+    await recordAuditEvent({
+      actor: { id: auth.user.id, email: auth.user.email },
+      action: "hunter.domain_search",
+      category: "HUNTER",
+      target: { type: "domain_search", id: savedSearch?.id, name: payload.domain },
+      message: `Ran a Hunter domain search for ${payload.domain}.`,
+      metadata: { domain: payload.domain, resultCount: results?.length ?? 0 },
+      request
+    });
+
     return NextResponse.json({ results, savedSearch });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Domain search failed.";

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { requireApiUser } from "@/lib/api-auth";
+import { recordAuditEvent } from "@/lib/audit";
 import { saveMapping } from "@/services/imports";
 
 const schema = z.object({
@@ -18,5 +19,16 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const { id } = await context.params;
   const payload = schema.parse(await request.json());
   const mapping = await saveMapping(id, auth.user.id, payload.reservedFieldMap, payload.variableMap);
+
+  await recordAuditEvent({
+    actor: { id: auth.user.id, email: auth.user.email },
+    action: "mapping.saved",
+    category: "MAPPING",
+    target: { type: "mapping", id: mapping.id },
+    message: "Saved the column mapping for an import.",
+    metadata: { importId: id, mappedFields: Object.keys(payload.reservedFieldMap).length },
+    request
+  });
+
   return NextResponse.json(mapping);
 }

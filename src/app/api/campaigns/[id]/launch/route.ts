@@ -2,13 +2,13 @@ import { after } from "next/server";
 import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/api-auth";
-import { writeAuditLog } from "@/lib/audit";
+import { recordAuditEvent } from "@/lib/audit";
 import { createRateLimitResponse, rateLimit } from "@/lib/rate-limit";
 import { CampaignLaunchBlockedError, launchCampaign, processPendingCampaignWork } from "@/services/campaigns";
 
 export const maxDuration = 60;
 
-export async function POST(_: Request, context: { params: Promise<{ id: string }> }) {
+export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const auth = await requireApiUser("campaignLaunch");
   if ("response" in auth) {
     return auth.response;
@@ -42,12 +42,15 @@ export async function POST(_: Request, context: { params: Promise<{ id: string }
       maxDurationMs: 55_000
     });
   });
-  await writeAuditLog({
-    actorEmail: auth.user.email,
-    action: "campaign.launch",
-    entityType: "campaign",
-    entityId: id,
-    metadata: { runId: run.id }
+  await recordAuditEvent({
+    actor: { id: auth.user.id, email: auth.user.email },
+    action: "sequence.launched",
+    category: "SEQUENCE",
+    severity: "SUCCESS",
+    target: { type: "sequence", id },
+    message: `Launched a sequence run (${run.totalRecipients} recipients).`,
+    metadata: { runId: run.id, recipients: run.totalRecipients },
+    request
   });
   return NextResponse.json(run);
 }

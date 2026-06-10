@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { recordAuditEvent } from "@/lib/audit";
 import { createPasswordHash, normalizeUserEmail, setSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { createRateLimitResponse, getClientIp, rateLimit } from "@/lib/rate-limit";
@@ -52,5 +53,13 @@ export async function POST(request: Request) {
   });
 
   await setSession(user.email);
+  await recordAuditEvent({
+    actor: { id: user.id, email: user.email },
+    action: "auth.signup",
+    category: "USER",
+    severity: "SUCCESS",
+    message: "Account created with email and password.",
+    request
+  });
   return NextResponse.json({ success: true });
 }

@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
+import { recordAuditEvent } from "@/lib/audit";
 import { getSessionUser } from "@/lib/auth";
 import { exchangeGoogleCode, fetchGoogleUserInfo, getGoogleRedirectUri } from "@/lib/google";
 import { getGmailConnectUserError } from "@/lib/user-facing-errors";
@@ -52,7 +53,7 @@ export async function GET(request: Request) {
     const tokens = await exchangeGoogleCode(code, getGoogleRedirectUri(origin));
     const profile = await fetchGoogleUserInfo(tokens.access_token);
 
-    await upsertGoogleSender({
+    const sender = await upsertGoogleSender({
       userId: user.id,
       accountId: profile.sub,
       email: profile.email,
@@ -62,9 +63,27 @@ export async function GET(request: Request) {
       scope: tokens.scope
     });
 
+    await recordAuditEvent({
+      actor: { id: user.id, email: user.email },
+      action: "sender.connected",
+      category: "SENDER",
+      severity: "SUCCESS",
+      target: { type: "sender", id: sender.id, name: sender.fromEmail },
+      message: `Connected Gmail sender ${sender.fromEmail}.`,
+      request
+    });
+
     return NextResponse.redirect(buildRedirectUrl(request.url, nextPath, { gmail: "connected" }));
   } catch (connectError) {
     console.error("[google-connect] Gmail connection callback failed.", connectError);
+    await recordAuditEvent({
+      actor: { id: user.id, email: user.email },
+      action: "sender.connect_failed",
+      category: "SENDER",
+      severity: "ERROR",
+      message: "Gmail sender connection failed during the OAuth callback.",
+      request
+    });
     return NextResponse.redirect(buildRedirectUrl(request.url, nextPath, { gmail_error: getGmailConnectUserError() }));
   }
 }

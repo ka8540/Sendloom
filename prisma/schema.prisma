@@ -352,13 +352,26 @@ model SendLedger {
 }
 
 model AuditLog {
-  id         String   @id @default(cuid())
-  actorEmail String
-  action     String
-  entityType String
-  entityId   String
-  metadata   Json?
-  createdAt  DateTime @default(now())
+  id          String   @id @default(cuid())
+  actorUserId String?
+  actorEmail  String
+  actorName   String?
+  action      String
+  category    String   @default("SYSTEM")
+  severity    String   @default("INFO")
+  entityType  String?
+  entityId    String?
+  targetName  String?
+  message     String?
+  metadata    Json?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  @@index([actorUserId, createdAt])
+  @@index([actorEmail, createdAt])
+  @@index([category, createdAt])
+  @@index([severity, createdAt])
 }
 
 model HunterDomainSearch {

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { requireApiUser } from "@/lib/api-auth";
+import { recordAuditEvent } from "@/lib/audit";
 import { createRateLimitResponse, rateLimit } from "@/lib/rate-limit";
 import { saveHunterKeyForUser } from "@/services/hunter-keys";
 
@@ -28,6 +29,15 @@ export async function POST(request: Request) {
 
   const payload = parsed.data;
   const saved = await saveHunterKeyForUser(auth.user.id, payload.apiKey);
+
+  await recordAuditEvent({
+    actor: { id: auth.user.id, email: auth.user.email },
+    action: "hunter.api_key_saved",
+    category: "HUNTER",
+    message: "Saved a Hunter API key.",
+    metadata: { keyLast4: saved.last4 },
+    request
+  });
 
   return NextResponse.json(saved);
 }
