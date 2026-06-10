@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/api-auth";
+import { recordAuditEvent } from "@/lib/audit";
 import { createRateLimitResponse, rateLimit } from "@/lib/rate-limit";
 import { createImport } from "@/services/imports";
 
@@ -47,6 +48,17 @@ export async function POST(request: Request) {
 
   const buffer = Buffer.from(await file.arrayBuffer());
   const importRecord = await createImport(file.name, file.type, buffer, auth.user.id);
+
+  await recordAuditEvent({
+    actor: { id: auth.user.id, email: auth.user.email },
+    action: "import.uploaded",
+    category: "IMPORT",
+    severity: "SUCCESS",
+    target: { type: "import", id: importRecord.id, name: importRecord.fileName },
+    message: `Uploaded ${importRecord.fileName} (${importRecord.rowCount} rows).`,
+    metadata: { rowCount: importRecord.rowCount, fileType: importRecord.fileType, status: importRecord.status },
+    request
+  });
 
   return NextResponse.json(importRecord);
 }

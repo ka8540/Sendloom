@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { requireApiUser } from "@/lib/api-auth";
+import { recordAuditEvent } from "@/lib/audit";
 import { createRateLimitResponse, rateLimit } from "@/lib/rate-limit";
 import { TEMPLATE_FORMATS } from "@/lib/templates";
 import { listTemplates, upsertTemplate } from "@/services/templates";
@@ -38,6 +39,18 @@ export async function POST(request: Request) {
   const payload = schema.parse(await request.json());
   try {
     const template = await upsertTemplate(payload, auth.user.id);
+
+    await recordAuditEvent({
+      actor: { id: auth.user.id, email: auth.user.email },
+      action: payload.id ? "template.updated" : "template.created",
+      category: "TEMPLATE",
+      severity: payload.id ? "INFO" : "SUCCESS",
+      target: { type: "template", id: template.id, name: template.name },
+      message: payload.id ? `Updated template ${template.name}.` : `Created template ${template.name}.`,
+      metadata: { format: template.format, version: template.version },
+      request
+    });
+
     return NextResponse.json(template);
   } catch (error) {
     return NextResponse.json(

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/api-auth";
+import { recordAuditEvent } from "@/lib/audit";
 import { env } from "@/lib/env";
 import { createRateLimitResponse, rateLimit } from "@/lib/rate-limit";
 import { enhanceTemplateRequestSchema, type SpamAnalysisPayload } from "@/lib/template-enhancement-request";
@@ -267,6 +268,19 @@ export async function POST(request: Request) {
       subjectContext: payload.subjectContext,
       bodyContext: payload.bodyContext,
       spamAnalysis: payload.spamAnalysis
+    });
+
+    await recordAuditEvent({
+      actor: { id: auth.user.id, email: auth.user.email },
+      action: action === "fix-spam" ? "template.spam_fix_applied" : "template.ai_enhanced",
+      category: "TEMPLATE",
+      target: payload.templateName ? { type: "template", name: payload.templateName } : null,
+      message:
+        action === "fix-spam"
+          ? "Used AI to rework spam-flagged template copy."
+          : `Used AI enhancement on the template ${fieldType}.`,
+      metadata: { fieldType, templateFormat },
+      request
     });
 
     return NextResponse.json({

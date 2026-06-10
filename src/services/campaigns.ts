@@ -1,5 +1,6 @@
 import { Prisma, type CampaignStatus } from "@prisma/client";
 
+import { recordAuditEvent } from "@/lib/audit";
 import { CAMPAIGN_SETUP_LOCKED_RUN_STATUSES, isCampaignSetupLocked } from "@/lib/campaign-setup-lock";
 import {
   SCHEDULE_EDIT_DISABLED_MESSAGE,
@@ -255,7 +256,14 @@ async function finalizeRunIfComplete(runId: string) {
     include: {
       campaign: {
         select: {
-          id: true
+          id: true,
+          name: true,
+          userId: true,
+          user: {
+            select: {
+              email: true
+            }
+          }
         }
       }
     }
@@ -278,7 +286,7 @@ async function finalizeRunIfComplete(runId: string) {
     return false;
   }
 
-  await syncRunCounts(runId);
+  const counts = await syncRunCounts(runId);
 
   await prisma.campaignRun.update({
     where: { id: runId },
@@ -294,6 +302,28 @@ async function finalizeRunIfComplete(runId: string) {
       status: "COMPLETED"
     }
   });
+
+  // Aggregate send outcome for the admin audit timeline, attributed to the
+  // sequence owner. recordAuditEvent is best-effort and never throws here.
+  if (run.campaign.user?.email) {
+    const failedCount = counts.FAILED ?? 0;
+    await recordAuditEvent({
+      actor: { id: run.campaign.userId, email: run.campaign.user.email },
+      action: "send.run_completed",
+      category: "EMAIL_SEND",
+      severity: failedCount > 0 ? "WARNING" : "SUCCESS",
+      target: { type: "sequence", id: run.campaignId, name: run.campaign.name },
+      message: `Send run completed for ${run.campaign.name}.`,
+      metadata: {
+        runId,
+        totalRecipients: run.totalRecipients,
+        sent: counts.SENT ?? 0,
+        failed: failedCount,
+        suppressed: counts.SUPPRESSED ?? 0,
+        invalid: counts.INVALID ?? 0
+      }
+    });
+  }
 
   await ensureNextRecurringRun(run.campaignId);
 
@@ -2121,6 +2151,29 @@ export async function pauseCampaignRunForDailyLimit(args: {
   });
 
   await syncRunCounts(args.runId);
+
+  // Surface the safety pause on the owner's audit timeline. Best-effort —
+  // recordAuditEvent never throws for non-critical events.
+  if (args.scope.userId) {
+    const owner = await prisma.user
+      .findUnique({ where: { id: args.scope.userId }, select: { email: true } })
+      .catch(() => null);
+
+    if (owner) {
+      await recordAuditEvent({
+        actor: { id: args.scope.userId, email: owner.email },
+        action: "send.daily_limit_reached",
+        category: "EMAIL_SEND",
+        severity: "WARNING",
+        target: { type: "run", id: args.runId },
+        message: "Gmail's rolling 24h safety limit paused sending. It resumes automatically.",
+        metadata: {
+          resumeAt: args.resumeAt?.toISOString() ?? null,
+          senderProfileId: args.scope.senderProfileId ?? null
+        }
+      });
+    }
+  }
 }
 
 type DailyLimitPauseInfo = {

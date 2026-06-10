@@ -6,7 +6,7 @@ import type { EmailAttachment } from "@/lib/provider";
 import { GMAIL_RECONNECT_ERROR } from "@/lib/provider";
 import { createRateLimitResponse, rateLimit } from "@/lib/rate-limit";
 import { buildAttachmentKey, uploadObject } from "@/lib/storage";
-import { writeAuditLog } from "@/lib/audit";
+import { recordAuditEvent } from "@/lib/audit";
 import { prisma } from "@/lib/db";
 import type { ScheduleRule } from "@/lib/types";
 import { deleteCampaign, updateCampaignSchedule, updateCampaignSetup } from "@/services/campaigns";
@@ -98,11 +98,14 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
         auth.user.id
       );
 
-      await writeAuditLog({
-        actorEmail: auth.user.email,
-        action: "campaign.schedule.update",
-        entityType: "campaign",
-        entityId: id
+      await recordAuditEvent({
+        actor: { id: auth.user.id, email: auth.user.email },
+        action: "sequence.schedule_updated",
+        category: "SEQUENCE",
+        target: { type: "sequence", id },
+        message: `Updated the send schedule (${scheduleRule.type}).`,
+        metadata: { scheduleType: scheduleRule.type },
+        request
       });
 
       return NextResponse.json(updatedCampaign);
@@ -200,11 +203,14 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       auth.user.id
     );
 
-    await writeAuditLog({
-      actorEmail: auth.user.email,
-      action: "campaign.update",
-      entityType: "campaign",
-      entityId: id
+    await recordAuditEvent({
+      actor: { id: auth.user.id, email: auth.user.email },
+      action: "sequence.updated",
+      category: "SEQUENCE",
+      target: { type: "sequence", id, name },
+      message: `Updated sequence ${name}.`,
+      metadata: { attachmentCount: attachments.length },
+      request
     });
 
     return NextResponse.json({ campaign: updatedCampaign });
@@ -221,7 +227,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   }
 }
 
-export async function DELETE(_: Request, context: { params: Promise<{ id: string }> }) {
+export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
   const auth = await requireApiUser();
   if ("response" in auth) {
     return auth.response;
@@ -234,11 +240,13 @@ export async function DELETE(_: Request, context: { params: Promise<{ id: string
 
   const { id } = await context.params;
   const result = await deleteCampaign(id, auth.user.id);
-  await writeAuditLog({
-    actorEmail: auth.user.email,
-    action: "campaign.delete",
-    entityType: "campaign",
-    entityId: id
+  await recordAuditEvent({
+    actor: { id: auth.user.id, email: auth.user.email },
+    action: "sequence.deleted",
+    category: "SEQUENCE",
+    target: { type: "sequence", id },
+    message: "Deleted a sequence.",
+    request
   });
 
   return NextResponse.json(result);

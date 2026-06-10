@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { recordAuditEvent } from "@/lib/audit";
 import { isAdminUser, normalizeUserEmail, setSession, verifyPassword } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { createRateLimitResponse, getClientIp, rateLimit } from "@/lib/rate-limit";
@@ -41,10 +42,26 @@ export async function POST(request: Request) {
 
   const valid = await verifyPassword(payload.password, user.passwordHash);
   if (!valid) {
+    await recordAuditEvent({
+      actor: { id: user.id, email: user.email },
+      action: "auth.login_failed",
+      category: "AUTH",
+      severity: "WARNING",
+      message: "Password sign-in failed (invalid credentials).",
+      request
+    });
     return NextResponse.json({ error: "Invalid credentials." }, { status: 401 });
   }
 
   await setSession(email);
+  await recordAuditEvent({
+    actor: { id: user.id, email: user.email },
+    action: "auth.login",
+    category: "AUTH",
+    severity: "SUCCESS",
+    message: "Signed in with email and password.",
+    request
+  });
   return NextResponse.json({
     success: true,
     redirectTo: isAdminUser(user) ? "/admin" : "/workspace"

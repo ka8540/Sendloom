@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db";
 import { isAdminUser } from "@/lib/auth";
-import { writeAuditLog } from "@/lib/audit";
+import { recordAuditEvent } from "@/lib/audit";
 import { deleteObject } from "@/lib/storage";
 
 export class AdminActionError extends Error {
@@ -158,20 +158,24 @@ export async function updateUserAdminControls(args: {
     }
   });
 
-  await writeAuditLog({
-    actorEmail: args.actorEmail,
+  await recordAuditEvent({
+    actor: { id: args.actorUserId, email: args.actorEmail },
     action: args.revokeSession ? "admin.user.update_and_revoke_session" : "admin.user.update_controls",
-    entityType: "user",
-    entityId: updatedUser.id,
+    category: "ADMIN",
+    severity: "WARNING",
+    target: { type: "user", id: updatedUser.id, name: updatedUser.email },
+    message: args.revokeSession
+      ? `Updated restrictions and revoked sessions for ${updatedUser.email}.`
+      : `Updated account restrictions for ${updatedUser.email}.`,
     metadata: {
-      targetEmail: updatedUser.email,
       apiAccessDisabled: updatedUser.apiAccessDisabled,
       importsWriteDisabled: updatedUser.importsWriteDisabled,
       templatesWriteDisabled: updatedUser.templatesWriteDisabled,
       launchesDisabled: updatedUser.launchesDisabled,
       aiEnhancementsDisabled: updatedUser.aiEnhancementsDisabled,
       sessionRevoked: Boolean(args.revokeSession)
-    }
+    },
+    critical: true
   });
 
   return updatedUser;
@@ -258,7 +262,9 @@ export async function deleteUserAccountData(args: {
     });
 
     await tx.auditLog.deleteMany({
-      where: { actorEmail: targetUser.email }
+      where: {
+        OR: [{ actorEmail: targetUser.email }, { actorUserId: targetUser.id }]
+      }
     });
 
     await tx.user.delete({
@@ -271,16 +277,18 @@ export async function deleteUserAccountData(args: {
     ...attachmentKeys.map((storageKey) => deleteObject("attachments", storageKey).catch(() => undefined))
   ]);
 
-  await writeAuditLog({
-    actorEmail: args.actorEmail,
+  await recordAuditEvent({
+    actor: { id: args.actorUserId, email: args.actorEmail },
     action: "admin.user.delete_all_data",
-    entityType: "user",
-    entityId: targetUser.id,
+    category: "ADMIN",
+    severity: "SECURITY",
+    target: { type: "user", id: targetUser.id, name: targetUser.email },
+    message: `Wiped all account data for ${targetUser.email}.`,
     metadata: {
-      targetEmail: targetUser.email,
       deletedCounts: targetUser._count,
       deletedFiles: importKeys.length + attachmentKeys.length
-    }
+    },
+    critical: true
   });
 
   return {

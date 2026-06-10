@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { requireApiUser } from "@/lib/api-auth";
+import { recordAuditEvent } from "@/lib/audit";
 import { HunterApiError, findHunterEmail } from "@/lib/hunter";
 import { createRateLimitResponse, rateLimit } from "@/lib/rate-limit";
 import { getDecryptedHunterKeyForUser } from "@/services/hunter-keys";
@@ -43,6 +44,16 @@ export async function POST(request: Request) {
 
   try {
     const results = await findHunterEmail(apiKey, payload.firstName, payload.lastName, payload.domain);
+
+    await recordAuditEvent({
+      actor: { id: auth.user.id, email: auth.user.email },
+      action: "hunter.email_search",
+      category: "HUNTER",
+      message: `Searched Hunter for an email at ${payload.domain}.`,
+      metadata: { domain: payload.domain, found: Boolean(results?.length) },
+      request
+    });
+
     return NextResponse.json({ results });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Email finder request failed.";

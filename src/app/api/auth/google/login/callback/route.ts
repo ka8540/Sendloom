@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
+import { recordAuditEvent } from "@/lib/audit";
 import { isAdminUser, normalizeUserEmail, setSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { exchangeGoogleCode, fetchGoogleUserInfo, getGoogleLoginRedirectUri } from "@/lib/google";
@@ -61,6 +62,14 @@ export async function GET(request: Request) {
         });
 
     await setSession(email);
+    await recordAuditEvent({
+      actor: { id: user.id, email: user.email },
+      action: existing ? "auth.google_login" : "auth.google_signup",
+      category: existing ? "AUTH" : "USER",
+      severity: "SUCCESS",
+      message: existing ? "Signed in with Google." : "Account created with Google sign-in.",
+      request
+    });
     return NextResponse.redirect(new URL(isAdminUser(user) ? "/admin" : "/workspace", request.url));
   } catch (loginError) {
     console.error("[google-login] Google sign-in callback failed.", loginError);

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { recordAuditEvent } from "@/lib/audit";
 import { SESSION_ERROR_MESSAGE, getSessionUser, isAdminUser } from "@/lib/auth";
 
 export function createUnauthorizedApiResponse(message = SESSION_ERROR_MESSAGE) {
@@ -75,7 +76,7 @@ export async function requireApiUser(capability?: ApiCapability) {
   } as const;
 }
 
-export async function requireAdminApiUser() {
+export async function requireAdminApiUser(request?: Request) {
   const user = await getSessionUser();
   if (!user) {
     return {
@@ -84,6 +85,15 @@ export async function requireAdminApiUser() {
   }
 
   if (!isAdminUser(user)) {
+    await recordAuditEvent({
+      actor: { id: user.id, email: user.email },
+      action: "security.admin_access_denied",
+      category: "SECURITY",
+      severity: "SECURITY",
+      message: "Blocked a non-admin request to an admin API.",
+      request
+    });
+
     return {
       response: createForbiddenApiResponse("Admin access is required.")
     } as const;

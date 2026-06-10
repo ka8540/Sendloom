@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { createForbiddenApiResponse, getApiRestrictionMessage, requireApiUser } from "@/lib/api-auth";
+import { recordAuditEvent } from "@/lib/audit";
 import { getAttachmentFilesFromFormData } from "@/lib/campaign-attachments";
 import { prisma } from "@/lib/db";
 import { GMAIL_RECONNECT_ERROR } from "@/lib/provider";
@@ -146,6 +147,29 @@ export async function POST(request: Request) {
     auth.user.id
   );
 
+  await recordAuditEvent({
+    actor: { id: auth.user.id, email: auth.user.email },
+    action: "sequence.created",
+    category: "SEQUENCE",
+    severity: "SUCCESS",
+    target: { type: "sequence", id: campaign.id, name: payload.name },
+    message: `Created sequence ${payload.name}.`,
+    metadata: { scheduleType: payload.scheduleRule.type, attachmentCount: attachments?.length ?? 0 },
+    request
+  });
+
+  if (attachments?.length) {
+    await recordAuditEvent({
+      actor: { id: auth.user.id, email: auth.user.email },
+      action: "file.attachments_uploaded",
+      category: "FILE",
+      target: { type: "sequence", id: campaign.id, name: payload.name },
+      message: `Uploaded ${attachments.length} attachment${attachments.length === 1 ? "" : "s"} for ${payload.name}.`,
+      metadata: { fileNames: attachments.map((attachment) => attachment.fileName) },
+      request
+    });
+  }
+
   if (payload.autoLaunch && payload.scheduleRule.type === "immediate") {
     let run;
     try {
@@ -170,6 +194,16 @@ export async function POST(request: Request) {
         maxDurationMs: 55_000
       });
     });
+    await recordAuditEvent({
+      actor: { id: auth.user.id, email: auth.user.email },
+      action: "sequence.launched",
+      category: "SEQUENCE",
+      severity: "SUCCESS",
+      target: { type: "sequence", id: campaign.id, name: payload.name },
+      message: `Launched sequence ${payload.name} (${run.totalRecipients} recipients).`,
+      metadata: { runId: run.id, recipients: run.totalRecipients },
+      request
+    });
     return NextResponse.json({ campaignId: campaign.id, runId: run.id, autoLaunched: true });
   }
 
@@ -191,6 +225,16 @@ export async function POST(request: Request) {
 
       throw error;
     }
+    await recordAuditEvent({
+      actor: { id: auth.user.id, email: auth.user.email },
+      action: "sequence.scheduled",
+      category: "SEQUENCE",
+      severity: "SUCCESS",
+      target: { type: "sequence", id: campaign.id, name: payload.name },
+      message: `Scheduled sequence ${payload.name} (${payload.scheduleRule.type}).`,
+      metadata: { runId: run.id, scheduleType: payload.scheduleRule.type },
+      request
+    });
     return NextResponse.json({
       campaignId: campaign.id,
       runId: run.id,
