@@ -107,7 +107,7 @@ export function LandingMotion() {
         const track = document.querySelector<HTMLElement>("[data-workflow]");
         if (line && track) {
           /* Steps render lit for no-JS/reduced-motion; once motion is
-             confirmed they go dark and light up as the line passes. */
+             confirmed they go dark and light up as the thread passes. */
           const steps = gsap.utils.toArray<HTMLElement>("[data-step]", track);
           steps.forEach((step) => step.removeAttribute("data-active"));
 
@@ -132,6 +132,35 @@ export function LandingMotion() {
               }
             }
           });
+
+          /* A glowing packet rides the thread while the section is on
+             screen. Driven via getPointAtLength in viewBox coordinates, so
+             it stays exact under the rail's non-uniform scaling. The rail is
+             display:none below 1100px — skip the loop entirely there. */
+          const packet = track.querySelector<SVGGElement>("[data-workflow-packet]");
+          const rail = line.closest("svg");
+          if (packet && rail && window.getComputedStyle(rail).display !== "none") {
+            const totalLength = line.getTotalLength();
+            const proxy = { progress: 0 };
+            gsap.set(packet, { opacity: 1 });
+            gsap.to(proxy, {
+              progress: 1,
+              duration: 7.5,
+              repeat: -1,
+              repeatDelay: 0.8,
+              ease: "power1.inOut",
+              onUpdate: () => {
+                const point = line.getPointAtLength(proxy.progress * totalLength);
+                packet.setAttribute("transform", `translate(${point.x.toFixed(2)} ${point.y.toFixed(2)})`);
+              },
+              scrollTrigger: {
+                trigger: track,
+                start: "top 95%",
+                end: "bottom top",
+                toggleActions: "play pause resume pause"
+              }
+            });
+          }
         }
       });
 

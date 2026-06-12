@@ -25,6 +25,12 @@ import styles from "@/app/landing.module.css";
 
 const HEADLINE_WORDS = ["Cold", "outreach", "that", "feels", "crafted,", "not", "sprayed."] as const;
 
+/* Weaves through the six step dots: x at each column centre (1200-unit
+   reference width), y alternating 26/58 to match the staggered card rows.
+   Horizontal tangents at every dot keep the wave smooth. */
+const WORKFLOW_RAIL_PATH =
+  "M 92 26 C 194 26 194 58 295 58 S 397 26 498 26 S 600 58 702 58 S 803 26 905 26 S 1006 58 1108 58";
+
 const chaosTools = [
   { tag: "Spreadsheets", note: "Leads scattered across CSV exports nobody trusts." },
   { tag: "Gmail tabs", note: "Sending one-by-one and losing track of who replied." },
@@ -258,27 +264,41 @@ export default function LandingPage() {
           </div>
 
           <div className={styles.workflowTrack} data-workflow>
+            {/* The thread: a woven rail curving through the step dots, drawn
+                on scroll, with a glowing packet travelling it on a loop. The
+                point heights match the alternating card stagger below. */}
             <svg
-              className={styles.workflowSpine}
-              viewBox="0 0 1000 120"
+              className={styles.workflowRail}
+              viewBox="0 0 1200 80"
               fill="none"
               preserveAspectRatio="none"
               aria-hidden="true"
             >
-              <path className={styles.workflowSpineBase} d="M 20 60 H 980" pathLength={1000} />
-              <path className={styles.workflowSpineActive} d="M 20 60 H 980" pathLength={1000} data-workflow-line />
+              <path className={styles.workflowRailBase} d={WORKFLOW_RAIL_PATH} pathLength={1000} />
+              <path
+                className={styles.workflowRailActive}
+                d={WORKFLOW_RAIL_PATH}
+                pathLength={1000}
+                data-workflow-line
+              />
+              <g className={styles.workflowPacket} data-workflow-packet>
+                <circle className={styles.workflowPacketGlow} r="9" />
+                <circle className={styles.workflowPacketCore} r="3.5" />
+              </g>
             </svg>
             <ol className={styles.workflowSteps}>
               {workflowSteps.map((step) => {
                 const Icon = step.icon;
                 return (
-                  <li key={step.index} className={styles.workflowStep} data-step data-active="true">
+                  <li key={step.index} className={styles.workflowStep} data-step data-active="true" data-reveal>
                     <span className={styles.workflowDot} aria-hidden="true" />
-                    <div className={styles.workflowCard}>
+                    <div className={`${styles.workflowCard} ${styles.fxCard}`} data-card-fx>
+                      <span className={styles.workflowIndex} aria-hidden="true">
+                        {step.index}
+                      </span>
                       <span className={styles.workflowIcon} aria-hidden="true">
                         <Icon strokeWidth={1.7} />
                       </span>
-                      <span className={styles.workflowIndex}>{step.index}</span>
                       <h3>{step.title}</h3>
                       <p>{step.body}</p>
                     </div>
