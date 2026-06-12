@@ -32,7 +32,7 @@ type LegalPageProps = {
   highlights: readonly LegalHighlight[];
   lastUpdated: string;
   quickFacts: readonly LegalQuickFact[];
-  relatedHref: "/privacy" | "/terms";
+  relatedHref: "/abuse" | "/privacy" | "/terms";
   relatedLabel: string;
   sectionBody: string;
   sectionEyebrow: string;
@@ -45,6 +45,7 @@ const legalNavItems = [
   { href: "/", label: "Home" },
   { href: "/privacy", label: "Privacy" },
   { href: "/terms", label: "Terms" },
+  { href: "/abuse", label: "Abuse" },
   { href: "mailto:ka8540@g.rit.edu", label: "Contact" }
 ] as const;
 

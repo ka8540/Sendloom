@@ -77,6 +77,16 @@ model User {
     templatesWriteDisabled Boolean  @default(false)
     launchesDisabled       Boolean  @default(false)
     aiEnhancementsDisabled Boolean  @default(false)
+    adultVerifiedAt        DateTime?
+    termsAcceptedAt        DateTime?
+    privacyAcceptedAt      DateTime?
+    antiAbuseAcceptedAt    DateTime?
+    policyVersion          String?
+    ageGateVersion         String?
+    eligibilityBlockedAt   DateTime?
+    eligibilityBlockedReason String?
+    restrictedAt           DateTime?
+    restrictedReason       String?
     magicLinkToken String?
     magicLinkExpiry DateTime?
     lastLoginAt    DateTime?

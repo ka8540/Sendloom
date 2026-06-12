@@ -1,4 +1,5 @@
 import { cookies, headers } from "next/headers";
+import { redirect } from "next/navigation";
 
 import { AppMobileGate } from "@/components/app-mobile-gate";
 import { AppNav } from "@/components/nav";
@@ -41,6 +42,19 @@ function SidebarPreferenceScript() {
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
+
+  // Redirect unverified non-admin users to the eligibility verification page
+  if (
+    !isAdminUser(user) &&
+    (!user.adultVerifiedAt || !user.termsAcceptedAt || !user.privacyAcceptedAt || !user.antiAbuseAcceptedAt)
+  ) {
+    redirect("/verify-eligibility");
+  }
+
+  if (user.eligibilityBlockedAt) {
+    redirect("/verify-eligibility");
+  }
+
   const requestHeaders = await headers();
   const requestCookies = await cookies();
   const userAgent = requestHeaders.get("user-agent") ?? "";

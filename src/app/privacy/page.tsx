@@ -15,6 +15,11 @@ const highlights = [
     label: "Your control",
     value: "You decide",
     detail: "You can stop using the service, revoke Google access, or request deletion of account data."
+  },
+  {
+    label: "Age policy",
+    value: "18+ only",
+    detail: "Sendloom does not knowingly collect data from users under 18. Ineligible accounts are blocked."
   }
 ] as const;
 
@@ -34,6 +39,10 @@ const quickFacts = [
   {
     title: "Deletion requests",
     body: "You can request account data deletion by emailing the contact listed on this page."
+  },
+  {
+    title: "Eligibility enforcement",
+    body: "Users must confirm they are 18 or older and accept policies before accessing product features. Unverified accounts are blocked."
   }
 ] as const;
 
@@ -54,6 +63,15 @@ const sections = [
       "Connected Gmail account information needed to send email on your behalf after you explicitly authorize it.",
       "Templates, imports, uploaded files, mappings, sender profiles, campaigns, and suppression records that you create inside Sendloom.",
       "Usage and operational data needed to keep the service secure, reliable, and functioning correctly."
+    ]
+  },
+  {
+    id: "age-and-eligibility",
+    title: "Age and eligibility",
+    paragraphs: [
+      "Sendloom is intended for users 18 years of age and older. We do not knowingly collect personal information from individuals under 18.",
+      "Users who indicate they are under 18 are blocked from using the service. We do not collect exact date of birth; eligibility is confirmed through an adult certification step during onboarding.",
+      "Accounts that have not completed eligibility verification within 30 days of creation may be purged, along with any associated temporary data."
     ]
   },
   {
@@ -87,6 +105,15 @@ const sections = [
     ]
   },
   {
+    id: "data-minimization",
+    title: "Data minimization",
+    paragraphs: [
+      "Sendloom does not collect exact date of birth, unnecessary location data, device fingerprints, or behavioral analytics from users who have not completed eligibility verification.",
+      "Incomplete or unverified onboarding records may be purged after 30 days if the user never completed eligibility and policy confirmation.",
+      "Data needed for fraud prevention, security, or legal compliance is retained as required regardless of verification status."
+    ]
+  },
+  {
     id: "sharing",
     title: "How data is shared",
     paragraphs: [
@@ -111,6 +138,13 @@ const sections = [
     ]
   },
   {
+    id: "legal-review-notice",
+    title: "Legal review notice",
+    paragraphs: [
+      "This policy is provided for transparency and operational guidance. It should be reviewed by qualified legal counsel before reliance in any regulated context."
+    ]
+  },
+  {
     id: "contact",
     title: "Contact",
     paragraphs: ["If you have privacy questions or data requests, contact Sendloom at ka8540@g.rit.edu."]
@@ -123,14 +157,15 @@ export default function PrivacyPage() {
       commitments={[
         "Google account access stays tied to the product action you choose.",
         "Operational data supports sending, tracking, and suppression workflows.",
-        "You can revoke access or request deletion whenever you need to."
+        "You can revoke access or request deletion whenever you need to.",
+        "No unnecessary data is collected from unverified or ineligible users."
       ]}
       description="This Privacy Policy explains what information Sendloom collects, how it is used, and what control you keep over the data attached to your account."
       eyebrow="Trust and transparency"
       guideBody="Everything below keeps the original policy substance, but the flow is organized so the answers are easier to scan before you log in, connect Google, or upload a list."
       guideTitle="The short read"
       highlights={highlights}
-      lastUpdated="March 25, 2026"
+      lastUpdated="June 12, 2026"
       quickFacts={quickFacts}
       relatedHref="/terms"
       relatedLabel="Read terms"

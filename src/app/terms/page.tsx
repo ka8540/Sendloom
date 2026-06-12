@@ -15,6 +15,11 @@ const highlights = [
     label: "Enforcement",
     value: "Access can end",
     detail: "Accounts can be suspended or terminated when terms are violated or risk is created."
+  },
+  {
+    label: "Age",
+    value: "18+ only",
+    detail: "Sendloom is for adults conducting lawful business outreach. Users must be 18 or older."
   }
 ] as const;
 
@@ -34,6 +39,10 @@ const quickFacts = [
   {
     title: "Termination",
     body: "Access may be suspended or terminated when required by law or when risk to the service appears."
+  },
+  {
+    title: "Age requirement",
+    body: "You must be 18 or older to use Sendloom. The service is not intended for minors."
   }
 ] as const;
 
@@ -44,6 +53,15 @@ const sections = [
     paragraphs: [
       "Sendloom is provided for lawful outreach, campaign operations, and related workflow management.",
       "You agree to use the service responsibly and in compliance with all applicable laws, regulations, and platform rules."
+    ]
+  },
+  {
+    id: "eligibility",
+    title: "Eligibility",
+    bullets: [
+      "You must be 18 years of age or older to create an account or use Sendloom.",
+      "By creating an account, you represent that you meet this age requirement.",
+      "Sendloom is a business outreach tool and is not intended for children, teens, or minors."
     ]
   },
   {
@@ -62,6 +80,16 @@ const sections = [
       "You may not use Sendloom for spam, phishing, fraud, or unlawful messaging activity.",
       "You may not attempt to gain unauthorized access to the service or other user accounts.",
       "You may not use the service in a way that harms the platform, its infrastructure, or other users."
+    ]
+  },
+  {
+    id: "recipient-data",
+    title: "Recipient data and outreach rules",
+    bullets: [
+      "You must have a lawful basis for the contact lists you upload and use with Sendloom.",
+      "You must honor unsubscribe and opt-out requests from recipients.",
+      "You must not use Sendloom to contact individuals known or believed to be minors.",
+      "Sendloom may restrict or suspend accounts that violate these outreach rules."
     ]
   },
   {
@@ -103,6 +131,13 @@ const sections = [
     ]
   },
   {
+    id: "legal-review-notice",
+    title: "Legal review notice",
+    paragraphs: [
+      "These terms are provided for transparency and operational guidance. They should be reviewed by qualified legal counsel before reliance in any regulated context."
+    ]
+  },
+  {
     id: "contact",
     title: "Contact",
     paragraphs: ["If you have questions about these terms, contact Sendloom at ka8540@g.rit.edu."]
@@ -115,14 +150,15 @@ export default function TermsPage() {
       commitments={[
         "Use the service for lawful outreach and real workflow operations.",
         "Keep control of your login and any connected sender accounts.",
-        "Expect platform protections when activity puts the service or other users at risk."
+        "Expect platform protections when activity puts the service or other users at risk.",
+        "Comply with the Anti-Abuse Policy when conducting outreach."
       ]}
       description="These Terms of Service govern your use of Sendloom and outline the responsibilities that come with account access, connected senders, and lawful outreach activity."
       eyebrow="Service boundaries"
       guideBody="This version keeps the substance of the original terms intact, but organizes the reading path around the questions operators usually have before they connect a sender or launch outreach."
       guideTitle="The quick read"
       highlights={highlights}
-      lastUpdated="March 25, 2026"
+      lastUpdated="June 12, 2026"
       quickFacts={quickFacts}
       relatedHref="/privacy"
       relatedLabel="Read privacy policy"

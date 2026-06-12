@@ -56,6 +56,34 @@ export function getApiRestrictionMessage(
   return null;
 }
 
+export function getVerificationBlockMessage(
+  user: {
+    adultVerifiedAt?: Date | null;
+    termsAcceptedAt?: Date | null;
+    privacyAcceptedAt?: Date | null;
+    antiAbuseAcceptedAt?: Date | null;
+    eligibilityBlockedAt?: Date | null;
+    restrictedAt?: Date | null;
+    restrictedReason?: string | null;
+  }
+) {
+  if (user.eligibilityBlockedAt) {
+    return "Sendloom is not available to users under 18.";
+  }
+
+  if (user.restrictedAt) {
+    return user.restrictedReason
+      ? `Your account has been restricted: ${user.restrictedReason}`
+      : "Your account has been restricted. Contact support for assistance.";
+  }
+
+  if (!user.adultVerifiedAt || !user.termsAcceptedAt || !user.privacyAcceptedAt || !user.antiAbuseAcceptedAt) {
+    return "Your account must complete eligibility and policy confirmation before using Sendloom.";
+  }
+
+  return null;
+}
+
 export async function requireApiUser(capability?: ApiCapability) {
   const user = await getSessionUser();
   if (!user) {
@@ -68,6 +96,13 @@ export async function requireApiUser(capability?: ApiCapability) {
   if (restrictionMessage) {
     return {
       response: createForbiddenApiResponse(restrictionMessage)
+    } as const;
+  }
+
+  const verificationMessage = getVerificationBlockMessage(user);
+  if (verificationMessage) {
+    return {
+      response: createForbiddenApiResponse(verificationMessage)
     } as const;
   }
 

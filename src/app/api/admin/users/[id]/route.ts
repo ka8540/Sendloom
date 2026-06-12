@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { requireAdminApiUser } from "@/lib/api-auth";
 import { createRateLimitResponse, rateLimit } from "@/lib/rate-limit";
-import { AdminActionError, deleteUserAccountData, updateUserAdminControls } from "@/services/admin";
+import { AdminActionError, deleteUserAccountData, restrictUserAccount, unrestrictUserAccount, updateUserAdminControls } from "@/services/admin";
 
 const updateSchema = z.object({
   apiAccessDisabled: z.boolean(),
@@ -12,6 +12,15 @@ const updateSchema = z.object({
   launchesDisabled: z.boolean(),
   aiEnhancementsDisabled: z.boolean(),
   revokeSession: z.boolean().optional()
+});
+
+const restrictSchema = z.object({
+  action: z.literal("restrict"),
+  reason: z.string().min(1).max(500)
+});
+
+const unrestrictSchema = z.object({
+  action: z.literal("unrestrict")
 });
 
 function createAdminErrorResponse(error: unknown) {
@@ -53,8 +62,34 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       return createRateLimitResponse(limit.retryAfterSeconds);
     }
 
-    const payload = updateSchema.parse(await request.json());
+    const body = await request.json();
     const { id } = await context.params;
+
+    // Handle restrict action
+    if (body.action === "restrict") {
+      const payload = restrictSchema.parse(body);
+      const result = await restrictUserAccount({
+        actorEmail: auth.user.email,
+        actorUserId: auth.user.id,
+        userId: id,
+        reason: payload.reason
+      });
+      return NextResponse.json(result);
+    }
+
+    // Handle unrestrict action
+    if (body.action === "unrestrict") {
+      unrestrictSchema.parse(body);
+      const result = await unrestrictUserAccount({
+        actorEmail: auth.user.email,
+        actorUserId: auth.user.id,
+        userId: id
+      });
+      return NextResponse.json(result);
+    }
+
+    // Default: update controls
+    const payload = updateSchema.parse(body);
     const updatedUser = await updateUserAdminControls({
       actorEmail: auth.user.email,
       actorUserId: auth.user.id,

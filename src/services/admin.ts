@@ -52,6 +52,16 @@ export async function listAdminUsers() {
       templatesWriteDisabled: true,
       launchesDisabled: true,
       aiEnhancementsDisabled: true,
+      adultVerifiedAt: true,
+      termsAcceptedAt: true,
+      privacyAcceptedAt: true,
+      antiAbuseAcceptedAt: true,
+      policyVersion: true,
+      ageGateVersion: true,
+      eligibilityBlockedAt: true,
+      eligibilityBlockedReason: true,
+      restrictedAt: true,
+      restrictedReason: true,
       passwordHash: true,
       lastLoginAt: true,
       lastSeenAt: true,
@@ -84,6 +94,22 @@ export async function listAdminUsers() {
       templatesWriteDisabled: user.templatesWriteDisabled,
       launchesDisabled: user.launchesDisabled,
       aiEnhancementsDisabled: user.aiEnhancementsDisabled,
+      adultVerifiedAt: user.adultVerifiedAt?.toISOString() ?? null,
+      termsAcceptedAt: user.termsAcceptedAt?.toISOString() ?? null,
+      privacyAcceptedAt: user.privacyAcceptedAt?.toISOString() ?? null,
+      antiAbuseAcceptedAt: user.antiAbuseAcceptedAt?.toISOString() ?? null,
+      policyVersion: user.policyVersion ?? null,
+      ageGateVersion: user.ageGateVersion ?? null,
+      eligibilityBlockedAt: user.eligibilityBlockedAt?.toISOString() ?? null,
+      eligibilityBlockedReason: user.eligibilityBlockedReason ?? null,
+      restrictedAt: user.restrictedAt?.toISOString() ?? null,
+      restrictedReason: user.restrictedReason ?? null,
+      isVerified: Boolean(
+        user.adultVerifiedAt &&
+        user.termsAcceptedAt &&
+        user.privacyAcceptedAt &&
+        user.antiAbuseAcceptedAt
+      ),
       hasPasswordLogin: Boolean(user.passwordHash),
       authProvider: user.passwordHash ? "Password" : "Google",
       lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
@@ -296,4 +322,97 @@ export async function deleteUserAccountData(args: {
     email: targetUser.email,
     deleted: true
   };
+}
+
+export async function restrictUserAccount(args: {
+  actorEmail: string;
+  actorUserId: string;
+  userId: string;
+  reason: string;
+}) {
+  const targetUser = await prisma.user.findUnique({
+    where: { id: args.userId },
+    select: { id: true, email: true, isAdmin: true }
+  });
+
+  if (!targetUser) {
+    throw new AdminActionError("User not found.", 404);
+  }
+
+  if (targetUser.id === args.actorUserId) {
+    throw new AdminActionError("You cannot restrict your own account.", 403);
+  }
+
+  if (isAdminUser(targetUser)) {
+    throw new AdminActionError("Admin accounts cannot be restricted from this dashboard.", 403);
+  }
+
+  const now = new Date();
+  const updatedUser = await prisma.user.update({
+    where: { id: targetUser.id },
+    data: {
+      restrictedAt: now,
+      restrictedReason: args.reason || "Restricted by administrator."
+    },
+    select: {
+      id: true,
+      email: true,
+      restrictedAt: true,
+      restrictedReason: true
+    }
+  });
+
+  await recordAuditEvent({
+    actor: { id: args.actorUserId, email: args.actorEmail },
+    action: "admin.user.restricted",
+    category: "ADMIN",
+    severity: "WARNING",
+    target: { type: "user", id: updatedUser.id, name: updatedUser.email },
+    message: `Restricted account ${updatedUser.email}: ${args.reason}`,
+    metadata: { reason: args.reason },
+    critical: true
+  });
+
+  return updatedUser;
+}
+
+export async function unrestrictUserAccount(args: {
+  actorEmail: string;
+  actorUserId: string;
+  userId: string;
+}) {
+  const targetUser = await prisma.user.findUnique({
+    where: { id: args.userId },
+    select: { id: true, email: true, isAdmin: true }
+  });
+
+  if (!targetUser) {
+    throw new AdminActionError("User not found.", 404);
+  }
+
+  const updatedUser = await prisma.user.update({
+    where: { id: targetUser.id },
+    data: {
+      restrictedAt: null,
+      restrictedReason: null
+    },
+    select: {
+      id: true,
+      email: true,
+      restrictedAt: true,
+      restrictedReason: true
+    }
+  });
+
+  await recordAuditEvent({
+    actor: { id: args.actorUserId, email: args.actorEmail },
+    action: "admin.user.unrestricted",
+    category: "ADMIN",
+    severity: "WARNING",
+    target: { type: "user", id: updatedUser.id, name: updatedUser.email },
+    message: `Removed restriction from ${updatedUser.email}.`,
+    critical: true
+  });
+
+  return updatedUser;
 }

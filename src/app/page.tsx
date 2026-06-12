@@ -465,6 +465,7 @@ export default function LandingPage() {
                 <span className={styles.footerHeading}>Legal</span>
                 <Link href="/privacy">Privacy</Link>
                 <Link href="/terms">Terms</Link>
+                <Link href="/abuse">Anti-Abuse</Link>
                 <Link href="/faq">FAQ</Link>
                 <a href="mailto:hello@sendloom.net">Contact</a>
               </div>
@@ -478,6 +479,7 @@ export default function LandingPage() {
             <div className={styles.footerLinks}>
               <Link href="/privacy">Privacy</Link>
               <Link href="/terms">Terms</Link>
+              <Link href="/abuse">Anti-Abuse</Link>
               <Link href="/faq">FAQ</Link>
               <Link href="/login">Login</Link>
             </div>
