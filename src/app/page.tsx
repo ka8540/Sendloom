@@ -1,3 +1,15 @@
+import {
+  Activity,
+  CalendarClock,
+  FileSpreadsheet,
+  FileText,
+  Mail,
+  PenLine,
+  Radar,
+  Search,
+  Upload,
+  Workflow
+} from "lucide-react";
 import Link from "next/link";
 
 import { AnimatedEmailPath } from "@/components/AnimatedEmailPath";
@@ -6,11 +18,18 @@ import { LandingCommandCenter } from "@/components/landing-command-center";
 import { LandingHeroFlow } from "@/components/landing-hero-flow";
 import { LandingMotion } from "@/components/landing-motion";
 import { LandingNav } from "@/components/landing-nav";
+import { LandingPointerFX } from "@/components/landing-pointer-fx";
 import { SendloomLogo } from "@/components/sendloom-logo";
 
 import styles from "@/app/landing.module.css";
 
 const HEADLINE_WORDS = ["Cold", "outreach", "that", "feels", "crafted,", "not", "sprayed."] as const;
+
+/* Weaves through the six step dots: x at each column centre (1200-unit
+   reference width), y alternating 26/58 to match the staggered card rows.
+   Horizontal tangents at every dot keep the wave smooth. */
+const WORKFLOW_RAIL_PATH =
+  "M 92 26 C 194 26 194 58 295 58 S 397 26 498 26 S 600 58 702 58 S 803 26 905 26 S 1006 58 1108 58";
 
 const chaosTools = [
   { tag: "Spreadsheets", note: "Leads scattered across CSV exports nobody trusts." },
@@ -24,31 +43,37 @@ const chaosTools = [
 const workflowSteps = [
   {
     index: "01",
+    icon: Upload,
     title: "Import",
     body: "Upload a CSV or XLSX, detect columns instantly, and keep every row structured for the sends that follow."
   },
   {
     index: "02",
+    icon: Search,
     title: "Enrich",
     body: "Fill the gaps with name-plus-domain or domain-wide lookups using your own hunter.io API key, without leaving the workspace."
   },
   {
     index: "03",
+    icon: PenLine,
     title: "Template",
     body: "Write in plain text, HTML, or structured JSON with merge variables and inline AI help, then preview it as a real email."
   },
   {
     index: "04",
+    icon: Workflow,
     title: "Sequence",
     body: "Pair the list with a sender and template, set the send window, and assemble the run on one surface."
   },
   {
     index: "05",
+    icon: CalendarClock,
     title: "Follow-up",
     body: "Schedule the next touch with controlled pacing so timing stays deliberate instead of frantic."
   },
   {
     index: "06",
+    icon: Activity,
     title: "Track",
     body: "Watch delivery, opens, clicks, replies, and retries stay attached to the campaign that produced them."
   }
@@ -56,31 +81,37 @@ const workflowSteps = [
 
 const capabilities = [
   {
+    icon: FileSpreadsheet,
     title: "Lead imports",
     body: "Bring in CSV and XLSX files, map fields once, and keep row data intact for every downstream send.",
     tags: ["CSV", "XLSX", "Field mapping"]
   },
   {
+    icon: Radar,
     title: "Hunter.io enrichment",
     body: "Run name-plus-domain and domain-wide lookups with your own API key so the finder lives inside the flow.",
     tags: ["Find email", "Domain search", "Bring your own key"]
   },
   {
+    icon: FileText,
     title: "Template intelligence",
     body: "Switch between plain text, HTML, and JSON while merge variables, attachments, and AI-polished copy stay aligned.",
     tags: ["Plain text", "HTML", "JSON"]
   },
   {
+    icon: Mail,
     title: "Gmail-connected sending",
     body: "Send from the mailbox you already trust through Google OAuth, with sender profiles and live run status.",
     tags: ["Google OAuth", "Sender profiles", "Live status"]
   },
   {
+    icon: CalendarClock,
     title: "Follow-up scheduling",
     body: "Add follow-ups with controlled pacing and send-window guardrails so the cadence stays measured.",
     tags: ["Send windows", "Cadence", "Pacing guardrails"]
   },
   {
+    icon: Activity,
     title: "Delivery visibility",
     body: "Keep opens, clicks, replies, retries, and recipient status visible from the system that launches the run.",
     tags: ["Opens & clicks", "Replies", "Retries"]
@@ -90,7 +121,7 @@ const capabilities = [
 const trustPoints = [
   {
     title: "Gmail-connected sending",
-    body: "Launch from your own connected mailbox through Google OAuth, not an anonymous blasting relay."
+    body: "Launch from your own connected mailbox through Google OAuth, not an anonymous relay."
   },
   {
     title: "Safe pacing",
@@ -119,6 +150,7 @@ export default function LandingPage() {
     <main id="top" className={styles.page}>
       <AnimatedEmailPath />
       <LandingMotion />
+      <LandingPointerFX />
       {/* Kept outside .frame so no animated/transformed ancestor can capture
           the fixed nav or interfere with its backdrop-filter. */}
       <LandingNav />
@@ -193,7 +225,7 @@ export default function LandingPage() {
           <div className={styles.chaosLayout}>
             <div className={styles.chaosGrid}>
               {chaosTools.map((tool) => (
-                <article key={tool.tag} className={styles.chaosCard} data-reveal>
+                <article key={tool.tag} className={styles.chaosCard} data-chaos>
                   <span className={styles.chaosTag}>{tool.tag}</span>
                   <span className={styles.chaosNote}>{tool.note}</span>
                 </article>
@@ -232,25 +264,47 @@ export default function LandingPage() {
           </div>
 
           <div className={styles.workflowTrack} data-workflow>
+            {/* The thread: a woven rail curving through the step dots, drawn
+                on scroll, with a glowing packet travelling it on a loop. The
+                point heights match the alternating card stagger below. */}
             <svg
-              className={styles.workflowSpine}
-              viewBox="0 0 1000 120"
+              className={styles.workflowRail}
+              viewBox="0 0 1200 80"
               fill="none"
               preserveAspectRatio="none"
               aria-hidden="true"
             >
-              <path className={styles.workflowSpineBase} d="M 20 60 H 980" pathLength={1000} />
-              <path className={styles.workflowSpineActive} d="M 20 60 H 980" pathLength={1000} data-workflow-line />
+              <path className={styles.workflowRailBase} d={WORKFLOW_RAIL_PATH} pathLength={1000} />
+              <path
+                className={styles.workflowRailActive}
+                d={WORKFLOW_RAIL_PATH}
+                pathLength={1000}
+                data-workflow-line
+              />
+              <g className={styles.workflowPacket} data-workflow-packet>
+                <circle className={styles.workflowPacketGlow} r="9" />
+                <circle className={styles.workflowPacketCore} r="3.5" />
+              </g>
             </svg>
             <ol className={styles.workflowSteps}>
-              {workflowSteps.map((step) => (
-                <li key={step.index} className={styles.workflowStep} data-reveal>
-                  <span className={styles.workflowDot} aria-hidden="true" />
-                  <span className={styles.workflowIndex}>{step.index}</span>
-                  <h3>{step.title}</h3>
-                  <p>{step.body}</p>
-                </li>
-              ))}
+              {workflowSteps.map((step) => {
+                const Icon = step.icon;
+                return (
+                  <li key={step.index} className={styles.workflowStep} data-step data-active="true" data-reveal>
+                    <span className={styles.workflowDot} aria-hidden="true" />
+                    <div className={`${styles.workflowCard} ${styles.fxCard}`} data-card-fx>
+                      <span className={styles.workflowIndex} aria-hidden="true">
+                        {step.index}
+                      </span>
+                      <span className={styles.workflowIcon} aria-hidden="true">
+                        <Icon strokeWidth={1.7} />
+                      </span>
+                      <h3>{step.title}</h3>
+                      <p>{step.body}</p>
+                    </div>
+                  </li>
+                );
+              })}
             </ol>
           </div>
         </section>
@@ -266,17 +320,28 @@ export default function LandingPage() {
           </div>
 
           <div className={styles.capGrid}>
-            {capabilities.map((capability) => (
-              <article key={capability.title} className={styles.capCard} data-reveal>
-                <h3>{capability.title}</h3>
-                <p>{renderBrandText(capability.body)}</p>
-                <div className={styles.capTags}>
-                  {capability.tags.map((tag) => (
-                    <span key={tag}>{tag}</span>
-                  ))}
-                </div>
-              </article>
-            ))}
+            {capabilities.map((capability) => {
+              const Icon = capability.icon;
+              return (
+                <article
+                  key={capability.title}
+                  className={`${styles.capCard} ${styles.fxCard}`}
+                  data-reveal
+                  data-card-fx
+                >
+                  <span className={styles.capIcon} aria-hidden="true">
+                    <Icon strokeWidth={1.7} />
+                  </span>
+                  <h3>{capability.title}</h3>
+                  <p>{renderBrandText(capability.body)}</p>
+                  <div className={styles.capTags}>
+                    {capability.tags.map((tag) => (
+                      <span key={tag}>{tag}</span>
+                    ))}
+                  </div>
+                </article>
+              );
+            })}
           </div>
         </section>
 
@@ -305,39 +370,62 @@ export default function LandingPage() {
             </p>
           </div>
 
-          <div className={styles.trustGrid}>
-            {trustPoints.map((point) => (
-              <article key={point.title} className={styles.trustCard} data-reveal>
-                <span className={styles.trustMark} aria-hidden="true">
-                  <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M5 12.5l4.2 4.2L19 7" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                </span>
-                <h3>{point.title}</h3>
-                <p>{renderBrandText(point.body)}</p>
-              </article>
-            ))}
+          <div className={styles.trustWrap}>
+            <div className={styles.trustOrbit} aria-hidden="true">
+              <span className={styles.trustOrbitRing} />
+              <span className={styles.trustOrbitRingAlt} />
+            </div>
+            <div className={styles.trustGrid}>
+              {trustPoints.map((point) => (
+                <article
+                  key={point.title}
+                  className={`${styles.trustCard} ${styles.fxCard}`}
+                  data-reveal
+                  data-card-fx
+                >
+                  <span className={styles.trustMark} aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path
+                        className={styles.trustCheckPath}
+                        d="M5 12.5l4.2 4.2L19 7"
+                        stroke="currentColor"
+                        strokeWidth="2.4"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </span>
+                  <h3>{point.title}</h3>
+                  <p>{renderBrandText(point.body)}</p>
+                </article>
+              ))}
+            </div>
           </div>
         </section>
 
         <section className={styles.ctaSection}>
-          <article className={styles.ctaPanel} data-reveal>
-            <p className={styles.sectionEyebrow}>Ready when you are</p>
-            <h2>Build your next outreach run in one place.</h2>
-            <p className={styles.ctaLede}>
-              Connect Gmail, import a list, write the template, and launch the sequence from a single login. The
-              fastest way to understand <BrandText>Sendloom</BrandText> is to put your own list through it.
-            </p>
+          <div className={styles.ctaShell} data-reveal>
+            <span className={styles.ctaSpin} aria-hidden="true" />
+            <article className={styles.ctaPanel}>
+              <span className={`${styles.ctaAurora} ${styles.ctaAuroraGreen}`} aria-hidden="true" />
+              <span className={`${styles.ctaAurora} ${styles.ctaAuroraBlue}`} aria-hidden="true" />
+              <p className={styles.sectionEyebrow}>Ready when you are</p>
+              <h2>Build your next outreach run in one place.</h2>
+              <p className={styles.ctaLede}>
+                Connect Gmail, import a list, write the template, and launch the sequence from a single login. The
+                fastest way to understand <BrandText>Sendloom</BrandText> is to put your own list through it.
+              </p>
 
-            <div className={styles.ctaActions}>
-              <Link className={styles.primaryButton} href="/signup">
-                Get started
-              </Link>
-              <a className={styles.ghostButton} href="#workflow">
-                See workflow
-              </a>
-            </div>
-          </article>
+              <div className={styles.ctaActions}>
+                <Link className={styles.primaryButton} href="/signup">
+                  Get started
+                </Link>
+                <a className={styles.ghostButton} href="#workflow">
+                  See workflow
+                </a>
+              </div>
+            </article>
+          </div>
         </section>
 
         <footer className={styles.footer}>

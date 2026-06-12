@@ -14,6 +14,21 @@ const flowNodes = [
 export function LandingHeroFlow() {
   return (
     <div className={styles.heroStage}>
+      <div className={styles.heroOrbit} aria-hidden="true" data-pointer-parallax="-10">
+        <span className={styles.orbitRing} />
+        <span className={styles.orbitRingInner} />
+        <span className={styles.orbitTrack}>
+          <span className={styles.orbitSatellite}>
+            <span className={styles.orbitEnvelope}>
+              <Mail strokeWidth={1.8} />
+            </span>
+          </span>
+        </span>
+        <span className={styles.orbitTrackInner}>
+          <span className={styles.orbitDot} />
+        </span>
+      </div>
+
       <div className={styles.heroPanel}>
         <span className={styles.heroPanelGlow} aria-hidden="true" />
         <div className={styles.heroPanelBar}>
@@ -52,19 +67,29 @@ export function LandingHeroFlow() {
             })}
           </ul>
         </div>
+
+        <div className={styles.heroPanelFooter} aria-hidden="true">
+          <span className={styles.heroPanelFooterDot} />
+          <span>Run paced · follow-ups scheduled</span>
+          <span className={styles.heroCaret} />
+        </div>
       </div>
 
-      <aside className={`${styles.heroChip} ${styles.heroChipTop}`} aria-hidden="true">
-        <span className={styles.heroChipLabel}>Template</span>
-        <strong className={styles.heroChipValue}>Plain text · HTML · JSON</strong>
-        <span className={styles.heroChipMeta}>Previewed as a real email</span>
-      </aside>
+      <div className={`${styles.heroChipWrap} ${styles.heroChipWrapTop}`} data-pointer-parallax="18" aria-hidden="true">
+        <aside className={`${styles.heroChip} ${styles.heroChipTop}`}>
+          <span className={styles.heroChipLabel}>Template</span>
+          <strong className={styles.heroChipValue}>Plain text · HTML · JSON</strong>
+          <span className={styles.heroChipMeta}>Previewed as a real email</span>
+        </aside>
+      </div>
 
-      <aside className={`${styles.heroChip} ${styles.heroChipBottom}`} aria-hidden="true">
-        <span className={styles.heroChipLabel}>Delivery</span>
-        <strong className={styles.heroChipValue}>Opens · replies · retries</strong>
-        <span className={styles.heroChipMeta}>Attached to the campaign</span>
-      </aside>
+      <div className={`${styles.heroChipWrap} ${styles.heroChipWrapBottom}`} data-pointer-parallax="12" aria-hidden="true">
+        <aside className={`${styles.heroChip} ${styles.heroChipBottom}`}>
+          <span className={styles.heroChipLabel}>Delivery</span>
+          <strong className={styles.heroChipValue}>Opens · replies · retries</strong>
+          <span className={styles.heroChipMeta}>Attached to the campaign</span>
+        </aside>
+      </div>
     </div>
   );
 }
