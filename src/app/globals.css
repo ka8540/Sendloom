@@ -666,6 +666,52 @@ html[data-sidebar-collapsed="true"] .sidebar .nav-footer-theme {
   background: var(--surface-strong);
 }
 
+.password-input-shell {
+  position: relative;
+  display: grid;
+  min-width: 0;
+}
+
+.password-input-shell input {
+  padding-right: 3.35rem;
+}
+
+.password-toggle-button {
+  position: absolute;
+  top: 50%;
+  right: 0.62rem;
+  display: inline-grid;
+  place-items: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transform: translateY(-50%);
+  transition:
+    background-color 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
+}
+
+.password-toggle-button:hover,
+.password-toggle-button:focus-visible {
+  outline: none;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.password-toggle-button:active {
+  transform: translateY(-50%) scale(0.94);
+}
+
+.password-toggle-button svg {
+  width: 1.08rem;
+  height: 1.08rem;
+}
+
 .field textarea {
   min-height: 240px;
   resize: vertical;

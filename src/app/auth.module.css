@@ -624,6 +624,10 @@
   background: color-mix(in srgb, var(--surface-strong) 94%, transparent);
 }
 
+.formWrap :global(.password-input-shell input) {
+  padding-right: 3.45rem;
+}
+
 .formWrap :global(.form .button) {
   width: 100%;
   min-height: 3.1rem;
@@ -952,6 +956,16 @@
     padding: 0.56rem 0.82rem;
   }
 
+  .formWrap :global(.password-input-shell input) {
+    padding-right: 3rem;
+  }
+
+  .formWrap :global(.password-toggle-button) {
+    right: 0.42rem;
+    width: 2rem;
+    height: 2rem;
+  }
+
   .formWrap :global(.form .button) {
     min-height: 2.38rem;
     margin-top: 0;
@@ -1091,6 +1105,16 @@
 
   .formWrap :global(.field input) {
     padding: 0.54rem 0.78rem;
+  }
+
+  .formWrap :global(.password-input-shell input) {
+    padding-right: 3rem;
+  }
+
+  .formWrap :global(.password-toggle-button) {
+    right: 0.42rem;
+    width: 2rem;
+    height: 2rem;
   }
 
   .formWrap :global(.form .button) {

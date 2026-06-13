@@ -118,7 +118,7 @@ export function AuthPage({
 
             <a className={styles.providerButton} href="/api/auth/google/login">
               <GoogleIcon />
-              Continue with Google
+              Google
             </a>
 
             <div className={styles.divider}>

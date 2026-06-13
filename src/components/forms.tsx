@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Sparkles } from "lucide-react";
+import { Eye, EyeOff, Sparkles } from "lucide-react";
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
 
@@ -29,6 +29,14 @@ type ActionState = {
 type EnhanceField = "subject" | "body";
 const DEFAULT_TEMPLATE_FORMAT: TemplateFormat = "PLAIN_TEXT";
 
+type PasswordFieldProps = {
+  id: string;
+  label: string;
+  name: string;
+  autoComplete?: string;
+  minLength?: number;
+};
+
 export type TemplateDraft = {
   name: string;
   subject: string;
@@ -46,6 +54,30 @@ export type EditableTemplate = {
   variableManifest: string[];
   previewPayload?: MergeVariables | null;
 };
+
+function PasswordField({ id, label, name, autoComplete, minLength }: PasswordFieldProps) {
+  const [isVisible, setIsVisible] = useState(false);
+  const inputType = isVisible ? "text" : "password";
+  const actionLabel = isVisible ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`;
+
+  return (
+    <div className="field">
+      <label htmlFor={id}>{label}</label>
+      <div className="password-input-shell">
+        <input id={id} name={name} type={inputType} autoComplete={autoComplete} minLength={minLength} required />
+        <button
+          aria-label={actionLabel}
+          aria-pressed={isVisible}
+          className="password-toggle-button"
+          type="button"
+          onClick={() => setIsVisible((current) => !current)}
+        >
+          {isVisible ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export function LoginForm() {
   const router = useRouter();
@@ -91,10 +123,7 @@ export function LoginForm() {
         <label htmlFor="email">Email</label>
         <input id="email" name="email" type="email" required />
       </div>
-      <div className="field">
-        <label htmlFor="password">Password</label>
-        <input id="password" name="password" type="password" required />
-      </div>
+      <PasswordField id="password" name="password" label="Password" autoComplete="current-password" />
       <button className="button" type="submit" disabled={state.pending}>
         {state.pending ? "Signing in..." : "Sign in"}
       </button>
@@ -146,14 +175,14 @@ export function SignupForm() {
         <label htmlFor="signup-email">Email</label>
         <input id="signup-email" name="email" type="email" required />
       </div>
-      <div className="field">
-        <label htmlFor="signup-password">Password</label>
-        <input id="signup-password" name="password" type="password" minLength={8} required />
-      </div>
-      <div className="field">
-        <label htmlFor="signup-confirm-password">Confirm password</label>
-        <input id="signup-confirm-password" name="confirmPassword" type="password" minLength={8} required />
-      </div>
+      <PasswordField id="signup-password" name="password" label="Password" autoComplete="new-password" minLength={8} />
+      <PasswordField
+        id="signup-confirm-password"
+        name="confirmPassword"
+        label="Confirm password"
+        autoComplete="new-password"
+        minLength={8}
+      />
       <button className="button" type="submit" disabled={state.pending}>
         {state.pending ? "Creating account..." : "Create account"}
       </button>
