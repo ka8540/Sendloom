@@ -173,9 +173,9 @@ export function LegalPage({
             </div>
           </article>
         </div>
-
-        <MarketingFooter />
       </div>
+
+      <MarketingFooter />
     </main>
   );
 }

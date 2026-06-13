@@ -429,8 +429,9 @@ export default function LandingPage() {
           </div>
         </section>
 
-        <MarketingFooter />
       </div>
+
+      <MarketingFooter />
     </main>
   );
 }

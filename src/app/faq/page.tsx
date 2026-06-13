@@ -335,8 +335,9 @@ export default function FaqPage() {
           </article>
         </div>
 
-        <MarketingFooter />
       </div>
+
+      <MarketingFooter />
     </main>
   );
 }
