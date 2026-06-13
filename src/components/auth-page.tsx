@@ -1,10 +1,11 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
+import { ArrowLeft, Gauge, Mail, ShieldCheck, Workflow } from "lucide-react";
 import Link from "next/link";
 
 import styles from "@/app/auth.module.css";
 import { AnimatedEmailPath } from "@/components/AnimatedEmailPath";
+import { AuthPointerFX } from "@/components/auth-pointer-fx";
 import { AuthVideoPreview } from "@/components/auth-video-preview";
-import { BackButton } from "@/components/back-button";
 import { BrandText, renderBrandText } from "@/components/brand-text";
 import { ErrorToastOnMount } from "@/components/error-toast-provider";
 import { SendloomLogo } from "@/components/sendloom-logo";
@@ -21,6 +22,13 @@ type AuthPageProps = {
   switchText: string;
   title: string;
 };
+
+const STATUS_CHIPS = [
+  { Icon: Mail, label: "Gmail-ready" },
+  { Icon: Gauge, label: "Safe pacing" },
+  { Icon: Workflow, label: "Sequence workspace" },
+  { Icon: ShieldCheck, label: "OAuth secured" }
+] as const;
 
 function GoogleIcon() {
   return (
@@ -59,48 +67,79 @@ export function AuthPage({
 }: AuthPageProps) {
   return (
     <main id="top" className={styles.page}>
+      <AuthPointerFX />
       <AnimatedEmailPath />
 
+      <div className={styles.orbits} aria-hidden="true">
+        <span className={styles.orbitRing} />
+        <span className={`${styles.orbitRing} ${styles.orbitRingTwo}`} />
+        <span className={`${styles.orbitRing} ${styles.orbitRingThree}`} />
+      </div>
+
+      <Link className={styles.backHome} href="/" aria-label="Back to home">
+        <ArrowLeft aria-hidden="true" />
+        <span>Back to home</span>
+      </Link>
+
       <div className={styles.frame}>
-        <div className={styles.topBar}>
-          <BackButton alwaysUseFallback className={styles.backButton} fallbackHref="/" label="Back to home" />
-        </div>
+        <section className={styles.showcase} data-parallax="6" aria-label="Sendloom preview">
+          <span className={styles.showcaseGlow} aria-hidden="true" />
 
-        <header className={styles.hero}>
-          <span className={styles.eyebrow}>{eyebrow}</span>
-          <h1 className={styles.title}>{renderBrandText(title)}</h1>
-          <p className={styles.description}>{renderBrandText(description)}</p>
-        </header>
-
-        <div className={styles.layout}>
-          <section className={styles.visual} aria-label="Product preview">
-            <div className={styles.visualShell}>
-              {/* Layer order: shell accents, centered preview, then compact supporting cards. */}
-              <div className={styles.visualStage}>
-                <div className={styles.visualFrame}>
-                  <article className={`${styles.visualNote} ${styles.visualNoteLeft}`}>
-                    <span className={styles.visualNoteEyebrow}>Sequence ready</span>
-                    <strong>Map the send before you log in.</strong>
-                    <p>Timing, sender state, and templates stay in view.</p>
-                  </article>
-
-                  <div className={styles.visualVideoWrap}>
-                    <AuthVideoPreview />
-                  </div>
-
-                  <article className={`${styles.visualNote} ${styles.visualNoteRight}`}>
-                    <span className={styles.visualNoteEyebrow}>Quick preview</span>
-                    <strong>See the workflow in one pass.</strong>
-                    <p>Imports, writing, and launch steps at a glance.</p>
-                  </article>
-                </div>
-              </div>
+          <header className={styles.showcaseHead}>
+            <div className={styles.brandLockup}>
+              <SendloomLogo className={styles.brandMark} />
+              <span className={styles.brandName}>
+                <BrandText>Sendloom</BrandText>
+              </span>
+              <span className={styles.brandTag}>Command center</span>
             </div>
-          </section>
 
-          <section className={styles.panel}>
-            {providerError ? <ErrorToastOnMount message={providerError} title="Google sign-in failed" /> : null}
+            <span className={styles.eyebrow}>{eyebrow}</span>
+            <h1 className={styles.title}>{renderBrandText(title)}</h1>
+            <p className={styles.description}>{renderBrandText(description)}</p>
+          </header>
 
+          <div className={styles.stage}>
+            <article className={`${styles.floatCard} ${styles.floatCardLeft}`} data-parallax="14">
+              <span className={styles.floatCardEyebrow}>Sequence ready</span>
+              <strong>Map the send before you log in.</strong>
+              <p>Timing, sender state, and templates stay in view.</p>
+            </article>
+
+            <div className={styles.videoFrame}>
+              <AuthVideoPreview />
+            </div>
+
+            <article className={`${styles.floatCard} ${styles.floatCardRight}`} data-parallax="18">
+              <span className={styles.floatCardEyebrow}>Quick preview</span>
+              <strong>See the workflow in one pass.</strong>
+              <p>Import, template, launch, and track at a glance.</p>
+            </article>
+          </div>
+
+          <ul className={styles.chips}>
+            {STATUS_CHIPS.map(({ Icon, label }, index) => (
+              <li
+                key={label}
+                className={styles.chip}
+                style={{ "--chip-index": String(index) } as CSSProperties}
+              >
+                <span className={styles.chipIcon}>
+                  <Icon aria-hidden="true" />
+                </span>
+                {label}
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <section className={styles.panel} data-card-fx aria-label={panelTitle}>
+          {providerError ? <ErrorToastOnMount message={providerError} title="Google sign-in failed" /> : null}
+
+          <span className={styles.panelBorder} aria-hidden="true" />
+          <span className={styles.panelSpot} aria-hidden="true" />
+
+          <div className={styles.panelInner}>
             <div className={styles.panelTop}>
               <SendloomLogo className={styles.panelLogo} />
               <div className={styles.panelBrand}>
@@ -118,7 +157,7 @@ export function AuthPage({
 
             <a className={styles.providerButton} href="/api/auth/google/login">
               <GoogleIcon />
-              Google
+              Continue with Google
             </a>
 
             <div className={styles.divider}>
@@ -132,11 +171,11 @@ export function AuthPage({
             </p>
 
             <p className={styles.legal}>
-              By continuing, you agree to the <Link href="/terms">Terms of Service</Link> and <Link href="/privacy">Privacy
-              Policy</Link>.
+              By continuing, you agree to the <Link href="/terms">Terms of Service</Link> and{" "}
+              <Link href="/privacy">Privacy Policy</Link>.
             </p>
-          </section>
-        </div>
+          </div>
+        </section>
       </div>
     </main>
   );
