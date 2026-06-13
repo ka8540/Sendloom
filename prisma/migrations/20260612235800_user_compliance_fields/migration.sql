@@ -1,0 +1,11 @@
+ALTER TABLE "User"
+  ADD COLUMN IF NOT EXISTS "adultVerifiedAt" TIMESTAMP(3),
+  ADD COLUMN IF NOT EXISTS "termsAcceptedAt" TIMESTAMP(3),
+  ADD COLUMN IF NOT EXISTS "privacyAcceptedAt" TIMESTAMP(3),
+  ADD COLUMN IF NOT EXISTS "antiAbuseAcceptedAt" TIMESTAMP(3),
+  ADD COLUMN IF NOT EXISTS "policyVersion" TEXT,
+  ADD COLUMN IF NOT EXISTS "ageGateVersion" TEXT,
+  ADD COLUMN IF NOT EXISTS "eligibilityBlockedAt" TIMESTAMP(3),
+  ADD COLUMN IF NOT EXISTS "eligibilityBlockedReason" TEXT,
+  ADD COLUMN IF NOT EXISTS "restrictedAt" TIMESTAMP(3),
+  ADD COLUMN IF NOT EXISTS "restrictedReason" TEXT;
