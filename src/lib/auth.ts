@@ -158,6 +158,7 @@ export async function getSession() {
     where: { email: claims.email },
     select: {
       email: true,
+      eligibilityBlockedAt: true,
       sessionExpiresAt: true,
       sessionIssuedAt: true,
       lastSeenAt: true
@@ -165,6 +166,10 @@ export async function getSession() {
   });
 
   if (!user) {
+    return null;
+  }
+
+  if (user.eligibilityBlockedAt) {
     return null;
   }
 

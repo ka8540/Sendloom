@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { recordAuditEvent } from "@/lib/audit";
-import { getSessionUser } from "@/lib/auth";
+import { clearSession, getSessionUser } from "@/lib/auth";
 import { createUnauthorizedApiResponse } from "@/lib/api-auth";
 import { prisma } from "@/lib/db";
 
@@ -28,6 +28,8 @@ export async function POST(request: Request) {
     message: "User self-reported as ineligible (under 18). Account blocked.",
     request
   });
+
+  await clearSession();
 
   return NextResponse.json({
     blocked: true,

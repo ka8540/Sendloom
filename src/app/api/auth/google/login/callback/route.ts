@@ -47,6 +47,20 @@ export async function GET(request: Request) {
     // account. Password users must explicitly connect Google from inside their
     // account (via /api/auth/google/connect).
     const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing?.eligibilityBlockedAt) {
+      await recordAuditEvent({
+        actor: { id: existing.id, email: existing.email },
+        action: "auth.google_login_blocked",
+        category: "SECURITY",
+        severity: "WARNING",
+        message: "Blocked Google sign-in for an ineligible account.",
+        request
+      });
+      return NextResponse.redirect(
+        new URL(`/login?error=${encodeURIComponent(getGoogleLoginUserError("account_ineligible"))}`, request.url)
+      );
+    }
+
     if (existing && existing.passwordHash) {
       return NextResponse.redirect(
         new URL(`/login?error=${encodeURIComponent(getGoogleLoginUserError("password_account_exists"))}`, request.url)

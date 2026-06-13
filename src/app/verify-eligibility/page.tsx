@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import styles from './verify.module.css';
 
@@ -16,6 +16,45 @@ export default function VerifyEligibilityPage() {
   const [blocked, setBlocked] = useState(false);
 
   const allChecked = confirmAdult && acceptTerms && acceptAntiAbuse;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function syncEligibilityState() {
+      const res = await fetch('/api/auth/eligibility-status', { cache: 'no-store' });
+      if (cancelled) return;
+
+      if (res.status === 401) {
+        router.replace('/login');
+        return;
+      }
+
+      if (!res.ok) {
+        return;
+      }
+
+      const status = (await res.json().catch(() => null)) as { blocked?: boolean; verified?: boolean } | null;
+      if (cancelled || !status) return;
+
+      if (status.blocked) {
+        await fetch('/api/auth/logout', { method: 'POST' }).catch(() => null);
+        if (!cancelled) {
+          setBlocked(true);
+        }
+        return;
+      }
+
+      if (status.verified) {
+        router.replace('/workspace');
+      }
+    }
+
+    void syncEligibilityState();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
 
   async function handleContinue() {
     if (!allChecked) return;
@@ -62,7 +101,7 @@ export default function VerifyEligibilityPage() {
         .find(row => row.startsWith('sendloom_csrf='))
         ?.split('=')[1] ?? '';
 
-      await fetch('/api/auth/report-ineligible', {
+      const res = await fetch('/api/auth/report-ineligible', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -70,8 +109,20 @@ export default function VerifyEligibilityPage() {
         },
         body: JSON.stringify({ reason: 'self_reported_underage' })
       });
+      if (res.status === 401) {
+        router.replace('/login');
+        return;
+      }
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: 'Something went wrong.' }));
+        setError(data.error || 'Something went wrong.');
+        setLoading(false);
+        return;
+      }
     } catch {
-      // Best effort
+      setError('Something went wrong. Please try again.');
+      setLoading(false);
+      return;
     }
     setBlocked(true);
     setLoading(false);

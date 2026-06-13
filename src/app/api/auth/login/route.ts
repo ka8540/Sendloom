@@ -53,6 +53,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid credentials." }, { status: 401 });
   }
 
+  if (user.eligibilityBlockedAt) {
+    await recordAuditEvent({
+      actor: { id: user.id, email: user.email },
+      action: "auth.login_blocked",
+      category: "SECURITY",
+      severity: "WARNING",
+      message: "Blocked sign-in for an ineligible account.",
+      request
+    });
+    return NextResponse.json({ error: "This account is not eligible to use Sendloom." }, { status: 403 });
+  }
+
   await setSession(email);
   await recordAuditEvent({
     actor: { id: user.id, email: user.email },

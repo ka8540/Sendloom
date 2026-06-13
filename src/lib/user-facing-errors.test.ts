@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   GMAIL_CONNECT_CANCELED_ERROR,
   GMAIL_CONNECT_USER_ERROR,
+  GOOGLE_LOGIN_ACCOUNT_INELIGIBLE_ERROR,
   GOOGLE_LOGIN_CANCELED_ERROR,
   GOOGLE_LOGIN_PASSWORD_ACCOUNT_EXISTS_ERROR,
   GOOGLE_LOGIN_UNVERIFIED_EMAIL_ERROR,
@@ -28,6 +29,10 @@ describe("user-facing auth errors", () => {
 
   it("surfaces the password-account-exists reason from the Google login callback", () => {
     expect(getGoogleLoginUserError("password_account_exists")).toBe(GOOGLE_LOGIN_PASSWORD_ACCOUNT_EXISTS_ERROR);
+  });
+
+  it("surfaces the account-ineligible reason from the Google login callback", () => {
+    expect(getGoogleLoginUserError("account_ineligible")).toBe(GOOGLE_LOGIN_ACCOUNT_INELIGIBLE_ERROR);
   });
 
   it("uses a generic Gmail connection error for backend and provider failures", () => {
