@@ -19,7 +19,7 @@ const defaultNavItems = [
   { href: "#top", label: "Home" },
   { href: "#chaos", label: "Why Sendloom" },
   { href: "#workflow", label: "Workflow" },
-  { href: "mailto:hello@sendloom.net", label: "Contact" }
+  { href: "mailto:ka8540@g.rit.edu", label: "Contact" }
 ] as const;
 
 function isInternalRoute(href: string) {
