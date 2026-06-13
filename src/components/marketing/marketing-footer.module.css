@@ -1,28 +1,62 @@
 /* ============================================================
    Sendloom marketing footer
-   A full-bleed, cinematic footer band. A giant ghosted
-   "Sendloom" wordmark spans the entire viewport behind a
-   centered max-width glass panel that holds the content.
+   A full-bleed, cinematic, THEME-AWARE footer band. A giant
+   ghosted "Sendloom" wordmark spans the entire viewport behind
+   a centered max-width glass panel that holds the content.
 
-   Self-contained: ships its own deep atmosphere +
-   interactivity so it can sit on the landing, FAQ, and legal
-   pages without depending on the landing-page motion/pointer
-   layers. Intentionally a deep band on every theme — a dark
-   footer under a light page is a deliberate premium pattern.
+   Every colour is driven through --mf-* custom properties so the
+   footer is designed twice: a bright frosted-glass treatment for
+   light theme (the default below) and a deep navy treatment for
+   dark theme (overridden via :root[data-theme="dark"] and the
+   prefers-color-scheme media query, mirroring landing.module.css).
+
+   Self-contained: ships its own atmosphere + interactivity so it
+   can sit on the landing, FAQ, and legal pages without depending
+   on the landing-page motion/pointer layers.
    ============================================================ */
 
 .footer {
-  /* internal palette — Sendloom green/teal/blue on deep navy */
-  --mf-base-1: #0c1320;
-  --mf-base-2: #060910;
-  --mf-ink: #e9f1ff;
-  --mf-muted: #94a8c5;
-  --mf-teal: #2fc48a;
-  --mf-mint: #8be7bf;
-  --mf-blue: #6c97ff;
-  --mf-line: rgba(151, 169, 198, 0.16);
-  --mf-panel: rgba(17, 27, 42, 0.5);
-  --mf-edge: rgba(255, 255, 255, 0.09);
+  /* -------- LIGHT THEME (default): frosted glass on a bright page -------- */
+  --mf-ink: #16233a;
+  --mf-muted: #5a6b86;
+  --mf-heading: #0f7a58;
+  --mf-link: #16233a;
+  --mf-link-hover: #0f7a58;
+  --mf-accent: #16906a;
+  --mf-band:
+    radial-gradient(120% 90% at 8% -12%, rgba(22, 124, 90, 0.16), transparent 52%),
+    radial-gradient(120% 100% at 94% -4%, rgba(33, 83, 194, 0.13), transparent 56%),
+    radial-gradient(160% 130% at 50% 128%, rgba(22, 124, 90, 0.1), transparent 60%),
+    linear-gradient(180deg, #eef4fb 0%, #e4edf6 100%);
+  --mf-band-border: rgba(20, 32, 51, 0.08);
+  --mf-band-inset: rgba(255, 255, 255, 0.7);
+  --mf-grid: rgba(20, 32, 51, 0.05);
+  --mf-blob-teal: rgba(22, 124, 90, 0.26);
+  --mf-blob-blue: rgba(33, 83, 194, 0.22);
+  --mf-glow: rgba(22, 124, 90, 0.16);
+  --mf-wordmark-opacity: 0.2;
+  --mf-wordmark-grad:
+    linear-gradient(
+      100deg,
+      rgba(22, 124, 90, 0.92) 0%,
+      rgba(35, 167, 116, 0.98) 26%,
+      rgba(33, 83, 194, 0.78) 52%,
+      rgba(22, 124, 90, 0.92) 78%,
+      rgba(35, 167, 116, 0.98) 100%
+    );
+  --mf-panel-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.74), rgba(255, 255, 255, 0.52));
+  --mf-panel-border: rgba(255, 255, 255, 0.85);
+  --mf-panel-shadow: 0 34px 70px rgba(20, 40, 70, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --mf-spot-rgb: 22, 124, 90;
+  --mf-spot-max: 0.16;
+  --mf-rim-opacity: 0.55;
+  --mf-line: rgba(20, 32, 51, 0.12);
+  --mf-badge-bg: rgba(255, 255, 255, 0.5);
+  --mf-badge-border: rgba(20, 32, 51, 0.12);
+  --mf-badge-hover-bg: rgba(22, 124, 90, 0.1);
+  --mf-chip-bg: rgba(255, 255, 255, 0.55);
+  --mf-focus-ring: rgba(22, 124, 90, 0.4);
+
   --mf-spot-opacity: 0;
   --mf-glow-opacity: 0;
 
@@ -34,14 +68,97 @@
   margin-top: clamp(2rem, 6vw, 4.5rem);
   padding: clamp(9rem, 22vw, 16rem) clamp(1.2rem, 4vw, 3rem) clamp(2.2rem, 4vw, 3.2rem);
   color: var(--mf-ink);
-  background:
+  background: var(--mf-band);
+  border-top: 1px solid var(--mf-band-border);
+  box-shadow: inset 0 1px 0 var(--mf-band-inset);
+  font-family: var(--font-loader-body), "Space Grotesk", ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
+/* -------- DARK THEME: deep navy with teal/blue glow -------- */
+:global(:root[data-theme="dark"]) .footer {
+  --mf-ink: #e9f1ff;
+  --mf-muted: #94a8c5;
+  --mf-heading: #8be7bf;
+  --mf-link: #e9f1ff;
+  --mf-link-hover: #8be7bf;
+  --mf-accent: #2fc48a;
+  --mf-band:
     radial-gradient(120% 90% at 10% -10%, rgba(47, 196, 138, 0.2), transparent 52%),
     radial-gradient(120% 100% at 92% 0%, rgba(108, 151, 255, 0.18), transparent 56%),
     radial-gradient(160% 130% at 50% 130%, rgba(47, 196, 138, 0.14), transparent 60%),
-    linear-gradient(180deg, var(--mf-base-1) 0%, var(--mf-base-2) 100%);
-  border-top: 1px solid var(--mf-edge);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  font-family: var(--font-loader-body), "Space Grotesk", ui-sans-serif, system-ui, -apple-system, sans-serif;
+    linear-gradient(180deg, #0c1320 0%, #060910 100%);
+  --mf-band-border: rgba(255, 255, 255, 0.09);
+  --mf-band-inset: rgba(255, 255, 255, 0.06);
+  --mf-grid: rgba(151, 169, 198, 0.05);
+  --mf-blob-teal: rgba(47, 196, 138, 0.5);
+  --mf-blob-blue: rgba(108, 151, 255, 0.42);
+  --mf-glow: rgba(47, 196, 138, 0.12);
+  --mf-wordmark-opacity: 0.12;
+  --mf-wordmark-grad:
+    linear-gradient(
+      100deg,
+      rgba(47, 196, 138, 0.85) 0%,
+      rgba(139, 231, 191, 0.95) 26%,
+      rgba(108, 151, 255, 0.82) 52%,
+      rgba(47, 196, 138, 0.85) 78%,
+      rgba(139, 231, 191, 0.95) 100%
+    );
+  --mf-panel-bg: linear-gradient(180deg, rgba(24, 37, 57, 0.62), rgba(12, 19, 31, 0.5));
+  --mf-panel-border: rgba(255, 255, 255, 0.09);
+  --mf-panel-shadow: 0 34px 70px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  --mf-spot-rgb: 139, 231, 191;
+  --mf-spot-max: 0.18;
+  --mf-rim-opacity: 0.7;
+  --mf-line: rgba(151, 169, 198, 0.16);
+  --mf-badge-bg: rgba(255, 255, 255, 0.04);
+  --mf-badge-border: rgba(151, 169, 198, 0.16);
+  --mf-badge-hover-bg: rgba(47, 196, 138, 0.1);
+  --mf-chip-bg: rgba(255, 255, 255, 0.04);
+  --mf-focus-ring: rgba(47, 196, 138, 0.4);
+}
+
+@media (prefers-color-scheme: dark) {
+  :global(:root:not([data-theme])) .footer {
+    --mf-ink: #e9f1ff;
+    --mf-muted: #94a8c5;
+    --mf-heading: #8be7bf;
+    --mf-link: #e9f1ff;
+    --mf-link-hover: #8be7bf;
+    --mf-accent: #2fc48a;
+    --mf-band:
+      radial-gradient(120% 90% at 10% -10%, rgba(47, 196, 138, 0.2), transparent 52%),
+      radial-gradient(120% 100% at 92% 0%, rgba(108, 151, 255, 0.18), transparent 56%),
+      radial-gradient(160% 130% at 50% 130%, rgba(47, 196, 138, 0.14), transparent 60%),
+      linear-gradient(180deg, #0c1320 0%, #060910 100%);
+    --mf-band-border: rgba(255, 255, 255, 0.09);
+    --mf-band-inset: rgba(255, 255, 255, 0.06);
+    --mf-grid: rgba(151, 169, 198, 0.05);
+    --mf-blob-teal: rgba(47, 196, 138, 0.5);
+    --mf-blob-blue: rgba(108, 151, 255, 0.42);
+    --mf-glow: rgba(47, 196, 138, 0.12);
+    --mf-wordmark-opacity: 0.12;
+    --mf-wordmark-grad:
+      linear-gradient(
+        100deg,
+        rgba(47, 196, 138, 0.85) 0%,
+        rgba(139, 231, 191, 0.95) 26%,
+        rgba(108, 151, 255, 0.82) 52%,
+        rgba(47, 196, 138, 0.85) 78%,
+        rgba(139, 231, 191, 0.95) 100%
+      );
+    --mf-panel-bg: linear-gradient(180deg, rgba(24, 37, 57, 0.62), rgba(12, 19, 31, 0.5));
+    --mf-panel-border: rgba(255, 255, 255, 0.09);
+    --mf-panel-shadow: 0 34px 70px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    --mf-spot-rgb: 139, 231, 191;
+    --mf-spot-max: 0.18;
+    --mf-rim-opacity: 0.7;
+    --mf-line: rgba(151, 169, 198, 0.16);
+    --mf-badge-bg: rgba(255, 255, 255, 0.04);
+    --mf-badge-border: rgba(151, 169, 198, 0.16);
+    --mf-badge-hover-bg: rgba(47, 196, 138, 0.1);
+    --mf-chip-bg: rgba(255, 255, 255, 0.04);
+    --mf-focus-ring: rgba(47, 196, 138, 0.4);
+  }
 }
 
 /* faint engineering grid, masked so it melts into the band */
@@ -52,8 +169,8 @@
   z-index: 0;
   pointer-events: none;
   background-image:
-    linear-gradient(rgba(151, 169, 198, 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(151, 169, 198, 0.05) 1px, transparent 1px);
+    linear-gradient(var(--mf-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--mf-grid) 1px, transparent 1px);
   background-size: 132px 132px;
   -webkit-mask-image: radial-gradient(140% 90% at 50% 30%, black, transparent 82%);
   mask-image: radial-gradient(140% 90% at 50% 30%, black, transparent 82%);
@@ -73,7 +190,7 @@
   position: absolute;
   border-radius: 50%;
   filter: blur(70px);
-  opacity: 0.55;
+  opacity: 0.6;
   will-change: transform;
 }
 
@@ -82,7 +199,7 @@
   left: -8%;
   width: 36rem;
   height: 36rem;
-  background: radial-gradient(circle, rgba(47, 196, 138, 0.5), transparent 68%);
+  background: radial-gradient(circle, var(--mf-blob-teal), transparent 68%);
   animation: mfDriftA 19s ease-in-out infinite;
 }
 
@@ -91,7 +208,7 @@
   right: -6%;
   width: 42rem;
   height: 42rem;
-  background: radial-gradient(circle, rgba(108, 151, 255, 0.42), transparent 68%);
+  background: radial-gradient(circle, var(--mf-blob-blue), transparent 68%);
   animation: mfDriftB 23s ease-in-out infinite;
 }
 
@@ -115,7 +232,7 @@
   height: 40rem;
   border-radius: 50%;
   pointer-events: none;
-  background: radial-gradient(circle, rgba(47, 196, 138, 0.12), transparent 62%);
+  background: radial-gradient(circle, var(--mf-glow), transparent 62%);
   filter: blur(18px);
   opacity: var(--mf-glow-opacity);
   transform: translate3d(calc(var(--mf-fx, 50%) - 20rem), calc(var(--mf-fy, 50%) - 20rem), 0);
@@ -143,29 +260,33 @@
   letter-spacing: -0.055em;
   white-space: nowrap;
   user-select: none;
-  background:
-    linear-gradient(
-      100deg,
-      rgba(47, 196, 138, 0.85) 0%,
-      rgba(139, 231, 191, 0.95) 26%,
-      rgba(108, 151, 255, 0.82) 52%,
-      rgba(47, 196, 138, 0.85) 78%,
-      rgba(139, 231, 191, 0.95) 100%
-    );
-  background-size: 220% 100%;
+  background: var(--mf-wordmark-grad);
+  background-size: 240% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  /* a subtle ghost, faded top + bottom so it blends into the band */
-  opacity: 0.11;
+  opacity: var(--mf-wordmark-opacity);
+  /* fade top + bottom so it blends into the band */
   -webkit-mask-image: linear-gradient(180deg, transparent 0%, black 22%, black 74%, transparent 100%);
   mask-image: linear-gradient(180deg, transparent 0%, black 22%, black 74%, transparent 100%);
-  animation: mfShimmer 14s ease-in-out infinite;
+  /* shimmer (background sweep) + a gentle ambient drift/pulse */
+  animation: mfShimmer 11s ease-in-out infinite, mfWordmarkAmbient 16s ease-in-out infinite;
 }
 
 @keyframes mfShimmer {
   0%, 100% { background-position: 0% 50%; }
   50% { background-position: 100% 50%; }
+}
+
+@keyframes mfWordmarkAmbient {
+  0%, 100% {
+    transform: translateX(0);
+    opacity: var(--mf-wordmark-opacity);
+  }
+  50% {
+    transform: translateX(-1.4%);
+    opacity: calc(var(--mf-wordmark-opacity) * 1.35);
+  }
 }
 
 /* ----------------------- centered content container ----------------------- */
@@ -185,20 +306,17 @@
   gap: clamp(1.7rem, 3vw, 2.6rem);
   padding: clamp(1.8rem, 3.6vw, 3rem);
   border-radius: clamp(22px, 2.4vw, 30px);
-  border: 1px solid var(--mf-edge);
+  border: 1px solid var(--mf-panel-border);
   background:
     radial-gradient(
       460px 340px at var(--mf-mx, 50%) var(--mf-my, 0%),
-      rgba(139, 231, 191, calc(0.18 * var(--mf-spot-opacity))),
+      rgba(var(--mf-spot-rgb), calc(var(--mf-spot-max) * var(--mf-spot-opacity))),
       transparent 60%
     ),
-    linear-gradient(180deg, rgba(24, 37, 57, 0.62), rgba(12, 19, 31, 0.5));
-  background-color: var(--mf-panel);
+    var(--mf-panel-bg);
   backdrop-filter: blur(24px) saturate(1.3);
   -webkit-backdrop-filter: blur(24px) saturate(1.3);
-  box-shadow:
-    0 34px 70px rgba(0, 0, 0, 0.42),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  box-shadow: var(--mf-panel-shadow);
 }
 
 /* animated rim sheen */
@@ -225,7 +343,7 @@
     linear-gradient(#000 0 0) content-box,
     linear-gradient(#000 0 0);
   mask-composite: exclude;
-  opacity: 0.7;
+  opacity: var(--mf-rim-opacity);
   pointer-events: none;
   animation: mfShimmer 9s ease-in-out infinite;
 }
@@ -256,7 +374,7 @@
   width: 2.9rem;
   height: 2.9rem;
   border-radius: 16px;
-  box-shadow: 0 14px 30px rgba(47, 196, 138, 0.28);
+  box-shadow: 0 14px 30px rgba(22, 124, 90, 0.28);
   transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1), filter 320ms ease;
 }
 
@@ -293,13 +411,13 @@
   font-weight: 500;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--mf-mint);
+  color: var(--mf-heading);
 }
 
 .link {
   position: relative;
   width: fit-content;
-  color: var(--mf-ink);
+  color: var(--mf-link);
   font-weight: 560;
   line-height: 1.5;
   transition: color 180ms ease;
@@ -314,7 +432,7 @@
   width: 100%;
   height: 1.5px;
   border-radius: 2px;
-  background: linear-gradient(90deg, var(--mf-teal), var(--mf-mint));
+  background: linear-gradient(90deg, var(--mf-accent), var(--mf-heading));
   transform: scaleX(0);
   transform-origin: left center;
   transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -322,9 +440,9 @@
 
 .link:hover,
 .link:focus-visible {
-  color: var(--mf-mint);
+  color: var(--mf-link-hover);
   outline: none;
-  text-shadow: 0 0 18px rgba(139, 231, 191, 0.4);
+  text-shadow: 0 0 18px rgba(47, 196, 138, 0.28);
 }
 
 .link:hover::after,
@@ -334,7 +452,7 @@
 
 .link:focus-visible {
   border-radius: 4px;
-  box-shadow: 0 0 0 3px rgba(47, 196, 138, 0.4);
+  box-shadow: 0 0 0 3px var(--mf-focus-ring);
 }
 
 /* ----------------------- trust badges ----------------------- */
@@ -365,26 +483,27 @@
   gap: 0.5rem;
   padding: 0.44rem 0.85rem;
   border-radius: 999px;
-  border: 1px solid var(--mf-line);
-  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--mf-badge-border);
+  background: var(--mf-badge-bg);
   color: var(--mf-ink);
   font-size: 0.83rem;
   font-weight: 600;
-  transition: transform 200ms ease, border-color 200ms ease, background-color 200ms ease;
+  transition: transform 200ms ease, border-color 200ms ease, background-color 200ms ease, box-shadow 200ms ease;
 }
 
 .badge:hover {
   transform: translateY(-2px);
-  border-color: color-mix(in srgb, var(--mf-teal) 42%, var(--mf-line));
-  background: rgba(47, 196, 138, 0.1);
+  border-color: color-mix(in srgb, var(--mf-accent) 50%, var(--mf-badge-border));
+  background: var(--mf-badge-hover-bg);
+  box-shadow: 0 8px 20px rgba(22, 124, 90, 0.14);
 }
 
 .badgeDot {
   width: 0.42rem;
   height: 0.42rem;
   border-radius: 999px;
-  background: var(--mf-teal);
-  box-shadow: 0 0 0 3px rgba(47, 196, 138, 0.18);
+  background: var(--mf-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--mf-accent) 22%, transparent);
 }
 
 /* ----------------------- bottom bar ----------------------- */
@@ -432,7 +551,7 @@
 
 .bottomLinks .link:hover,
 .bottomLinks .link:focus-visible {
-  color: var(--mf-mint);
+  color: var(--mf-link-hover);
 }
 
 .contact {
@@ -442,8 +561,8 @@
   width: 2.3rem;
   height: 2.3rem;
   border-radius: 12px;
-  border: 1px solid var(--mf-line);
-  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--mf-badge-border);
+  background: var(--mf-chip-bg);
   color: var(--mf-ink);
   transition: transform 200ms ease, color 200ms ease, border-color 200ms ease, background-color 200ms ease;
 }
@@ -457,17 +576,17 @@
 .contact:focus-visible {
   outline: none;
   transform: translateY(-2px);
-  color: var(--mf-mint);
-  border-color: color-mix(in srgb, var(--mf-teal) 46%, var(--mf-line));
-  background: rgba(47, 196, 138, 0.12);
+  color: var(--mf-link-hover);
+  border-color: color-mix(in srgb, var(--mf-accent) 50%, var(--mf-badge-border));
+  background: var(--mf-badge-hover-bg);
 }
 
 .contact:focus-visible {
-  box-shadow: 0 0 0 3px rgba(47, 196, 138, 0.4);
+  box-shadow: 0 0 0 3px var(--mf-focus-ring);
 }
 
 .brandAccent {
-  color: var(--mf-mint);
+  color: var(--mf-heading);
 }
 
 /* ============================================================
@@ -523,7 +642,7 @@
 
 /* ============================================================
    Reduced motion — kill shimmer / drift / parallax / glow.
-   Belt and suspenders alongside the JS guards.
+   Keep simple opacity/colour transitions only.
    ============================================================ */
 
 @media (prefers-reduced-motion: reduce) {
