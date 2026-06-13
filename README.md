@@ -9,6 +9,8 @@ The live product surface today is organized around:
 - `Imports`
 - `Templates`
 - `Sequences`
+- `Eligibility verification`
+- `Legal / Anti-Abuse`
 - `Admin` for admin users
 
 The UI is branded as **Sendloom**. The npm package name in `package.json` is still `mergepilot`, and that mismatch is expected in the current codebase.
@@ -86,6 +88,25 @@ Admin users access a dedicated control center through sidebar sub-navigation tha
 - **Restrictions** (`/admin/restrictions`) — a dedicated picker-and-panel view for managing per-user access restrictions and reviewing which controls are active on each account.
 - **System Health** (`/admin/system-health`) — live runtime check cards for Database, Redis, Storage/R2, Google OAuth, Mail Provider, and Cron. Includes a **Recheck** button that re-fetches all service statuses on demand without a page reload.
 
+### Eligibility Verification And Anti-Abuse
+
+Sendloom now gates the authenticated operator app behind an eligibility and policy confirmation step for non-admin users.
+
+Current behavior:
+
+- new or unverified non-admin users are redirected from the app shell to `/verify-eligibility`
+- users must confirm they are 18 or older
+- users must accept the Terms of Service, Privacy Policy, and Anti-Abuse Policy before accessing the operator workspace
+- ineligible users can self-report through the verification screen, which marks the account as blocked
+- blocked or restricted accounts are denied authenticated API access with user-facing error messages
+- verification, ineligibility, restriction, and unrestriction events are recorded in the audit log
+
+The public legal surface now includes:
+
+- `/terms` with adult eligibility and lawful-use language
+- `/privacy` with age/eligibility data handling notes
+- `/abuse` with prohibited-use, enforcement, reporting, and no-minors rules
+
 ### Hidden/Internal Surfaces
 
 The codebase still contains suppression models, APIs, and UI components, but suppression management is not part of the active operator navigation anymore.
@@ -100,17 +121,19 @@ Current behavior:
 
 ```mermaid
 flowchart LR
-    A["Upload CSV/XLSX"] --> B["Review columns and template fields"]
-    B --> C["Use Finder for missing emails if needed"]
-    C --> D["Write template in plain text, HTML, or JSON"]
-    D --> E["Connect Gmail sender with Google OAuth"]
-    E --> F["Create and validate sequence, attach resumes/files"]
-    F --> G["Launch now / once / recurring"]
-    G --> H["Track run progress in Overview and sequence detail"]
-    H --> I["Watch recipients, opens, replies, retries, and failures"]
-    A -. import file stored .-> S["Object storage: local uploads or Cloudflare R2"]
-    F -. attachments stored .-> S
-    G -. attachments read at send time .-> S
+    A["Sign up or sign in"] --> B["Confirm 18+ eligibility and accept policies"]
+    B --> C["Upload CSV/XLSX"]
+    C --> D["Review columns and template fields"]
+    D --> E["Use Finder for missing emails if needed"]
+    E --> F["Write template in plain text, HTML, or JSON"]
+    F --> G["Connect Gmail sender with Google OAuth"]
+    G --> H["Create and validate sequence, attach resumes/files"]
+    H --> I["Launch now / once / recurring"]
+    I --> J["Track run progress in Overview and sequence detail"]
+    J --> K["Watch recipients, opens, replies, retries, and failures"]
+    C -. import file stored .-> S["Object storage: local uploads or Cloudflare R2"]
+    H -. attachments stored .-> S
+    I -. attachments read at send time .-> S
 ```
 
 ## What Feels Different In The Current App
@@ -121,6 +144,7 @@ flowchart LR
 - Replies are matched back from connected Gmail accounts and surfaced on sequence detail pages.
 - Plain-text templates now behave more like real email composition, including paragraph, ordered-list, and unordered-list handling.
 - Finder is a main workflow surface, not an afterthought.
+- Eligibility, policy acceptance, and anti-abuse enforcement are now part of the core onboarding and access-control path.
 
 ## Notable Current Behaviors
 
@@ -130,6 +154,18 @@ flowchart LR
 - The send pipeline appends an open-tracking pixel to rendered HTML email output.
 - Open and click tracking routes still exist in the app.
 - Unsubscribe and suppression plumbing still exists in the codebase, but the operator-facing suppression dashboard is hidden from the active app flow.
+
+### Eligibility, policy acceptance, and account restrictions
+
+- Non-admin users must complete `/verify-eligibility` before entering the app shell.
+- Verification records `adultVerifiedAt`, `termsAcceptedAt`, `privacyAcceptedAt`, `antiAbuseAcceptedAt`, `policyVersion`, and `ageGateVersion` on the `User`.
+- Users who select "I am not eligible" are marked with `eligibilityBlockedAt` and `eligibilityBlockedReason = "self_reported_underage"`.
+- `requireApiUser()` denies API access when the account is globally API-disabled, blocked for ineligibility, restricted by an admin, or missing policy confirmation.
+- Capability-specific API gates still apply for imports, templates, campaign launches, and AI enhancement.
+- Admins can restrict or unrestrict non-admin users through `PATCH /api/admin/users/[id]` using `action: "restrict"` or `action: "unrestrict"`.
+- Admin accounts and the acting admin's own account are protected from restriction/deletion flows in the dashboard APIs.
+- Restricted accounts store `restrictedAt` and `restrictedReason`; admin, restriction, unrestriction, and policy-acceptance actions are audit logged.
+- The database migration `20260612235800_user_compliance_fields` adds the compliance and restriction columns required by Prisma and the auth flow.
 
 ### Gmail daily send safety limit
 
@@ -280,7 +316,33 @@ sequenceDiagram
     API->>DB: find or create User (bcrypt hash)
     DB-->>API: user record
     API->>UI: Set signed session cookie (JWT)
-    UI-->>User: Redirect to /workspace or /admin
+    UI-->>User: Redirect to /verify-eligibility, /workspace, or /admin
+```
+
+### Confirm eligibility and policies
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant UI as /verify-eligibility
+    participant Verify as /api/auth/verify-eligibility
+    participant Block as /api/auth/report-ineligible
+    participant DB as PostgreSQL
+    participant Audit as AuditLog
+    User->>UI: Confirm adult eligibility and policy acceptance
+    alt Eligible adult user
+        UI->>Verify: POST confirmations + CSRF token
+        Verify->>DB: Set adult/policy timestamps and versions
+        Verify->>Audit: Record compliance.policy_accepted
+        Verify-->>UI: success
+        UI-->>User: Redirect to /workspace
+    else User reports under 18
+        UI->>Block: POST self-reported ineligibility
+        Block->>DB: Set eligibilityBlockedAt and reason
+        Block->>Audit: Record compliance.eligibility_blocked
+        Block-->>UI: blocked
+        UI-->>User: Show access unavailable state
+    end
 ```
 
 ### Connect a Gmail sender (Google OAuth)
@@ -504,6 +566,7 @@ sequenceDiagram
 | `/faq` | Frequently asked questions |
 | `/privacy` | Privacy page |
 | `/terms` | Terms page |
+| `/abuse` | Anti-Abuse Policy |
 | `/track/open/[token]` | Open tracking pixel |
 | `/track/click/[token]` | Click tracking redirect |
 | `/unsubscribe/[token]` | Legacy unsubscribe/compliance route |
@@ -518,6 +581,7 @@ sequenceDiagram
 | `/templates` | Template editor and preview workspace |
 | `/campaigns` | Main sequence list and builder |
 | `/campaigns/[id]` | Sequence detail, setup, monitoring, and launch controls |
+| `/verify-eligibility` | Adult eligibility, terms/privacy, and anti-abuse confirmation gate |
 | `/sequences` | Redirect alias to `/campaigns` |
 | `/sequences/[id]` | Alias for sequence detail |
 | `/admin` | Admin overview — metrics, user-status chart, and health strip |
@@ -537,6 +601,9 @@ sequenceDiagram
 - `GET /api/auth/google/login/callback`
 - `GET /api/auth/google/connect`
 - `GET /api/auth/google/callback`
+- `GET /api/auth/eligibility-status`
+- `POST /api/auth/verify-eligibility`
+- `POST /api/auth/report-ineligible`
 
 ### Imports
 
@@ -584,7 +651,7 @@ sequenceDiagram
 ### Admin
 
 - `GET /api/admin/users`
-- `PATCH /api/admin/users/[id]`
+- `PATCH /api/admin/users/[id]` — updates per-user controls, restricts, or unrestricts users
 - `DELETE /api/admin/users/[id]`
 - `GET /api/admin/system-health`
 
@@ -598,7 +665,7 @@ sequenceDiagram
 
 | Model | Purpose |
 | --- | --- |
-| `User` | Operator/admin account plus per-user restrictions and settings |
+| `User` | Operator/admin account plus auth state, policy acceptance timestamps, eligibility blocks, and per-user restrictions/settings |
 | `SenderProfile` | Connected Gmail sender identity |
 | `Import` | Uploaded spreadsheet metadata |
 | `ImportColumn` | Normalized column definitions |
@@ -644,13 +711,15 @@ sequenceDiagram
 │   │   │   ├── templates
 │   │   │   └── workspace
 │   │   ├── api
+│   │   ├── abuse
 │   │   ├── faq
 │   │   ├── login
 │   │   ├── signup
 │   │   ├── track
 │   │   ├── unsubscribe
 │   │   ├── privacy
-│   │   └── terms
+│   │   ├── terms
+│   │   └── verify-eligibility
 │   ├── components
 │   │   ├── dashboard
 │   │   ├── suppressions
@@ -669,6 +738,11 @@ sequenceDiagram
 ### Important directories
 
 - `src/app/page.tsx`: marketing landing page
+- `src/app/verify-eligibility`: adult eligibility and policy confirmation screen
+- `src/app/abuse/page.tsx`: Anti-Abuse Policy page
+- `src/app/api/auth/verify-eligibility/route.ts`: records adult, terms, privacy, and anti-abuse acceptance
+- `src/app/api/auth/report-ineligible/route.ts`: records self-reported under-18/ineligible accounts
+- `src/app/api/auth/eligibility-status/route.ts`: returns verification, blocked, restricted, and policy status
 - `src/app/(app)/workspace`: overview dashboard
 - `src/app/(app)/campaigns`: active sequence list and detail surface
 - `src/app/(app)/templates`: template workspace
@@ -686,6 +760,7 @@ sequenceDiagram
 - `src/services/replies.ts`: Gmail reply sync and matching
 - `src/services/hunter-keys.ts`: Hunter key storage
 - `src/services/hunter-domain-searches.ts`: Finder history layer
+- `prisma/migrations/20260612235800_user_compliance_fields`: adds the user compliance and restriction columns used by the eligibility/admin flows
 
 ## Environment Variables
 
@@ -726,6 +801,7 @@ Create a local `.env` file at the repo root with the values below. Secrets and s
 ### Security deployment notes
 
 - Generate each secret with `openssl rand -hex 32`.
+- Deploy Prisma migration `20260612235800_user_compliance_fields` before serving the age-safety build; without it Prisma will query missing `User` columns such as `adultVerifiedAt`.
 - **Rotate `SESSION_SECRET` after deploying this release.** Tracking tokens that were issued in older releases were signed with `SESSION_SECRET`; rotating it invalidates any leaked tracking tokens that could have been replayed as session cookies.
 - Set `TRACKING_SECRET` to a separate value from `SESSION_SECRET` before issuing the first new tracking link.
 - Set `CRON_SECRET` before deploying to production — the cron route refuses to run without it.
