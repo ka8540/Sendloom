@@ -19,6 +19,7 @@ import { LandingHeroFlow } from "@/components/landing-hero-flow";
 import { LandingMotion } from "@/components/landing-motion";
 import { LandingNav } from "@/components/landing-nav";
 import { LandingPointerFX } from "@/components/landing-pointer-fx";
+import { MarketingFooter } from "@/components/marketing/MarketingFooter";
 import { SendloomLogo } from "@/components/sendloom-logo";
 
 import styles from "@/app/landing.module.css";
@@ -428,63 +429,7 @@ export default function LandingPage() {
           </div>
         </section>
 
-        <footer className={styles.footer}>
-          <div className={styles.footerTop}>
-            <div className={styles.footerBrandBlock}>
-              <div className={styles.footerBrand}>
-                <SendloomLogo className={styles.footerBrandMark} />
-                <div>
-                  <strong>
-                    <BrandText>Sendloom</BrandText>
-                  </strong>
-                  <span>Outreach operations with one source of truth.</span>
-                </div>
-              </div>
-              <p className={styles.footerCopy}>
-                Built for small teams who want imports, templates, sender setup, launch, and run visibility in one calm
-                system.
-              </p>
-            </div>
-
-            <div className={styles.footerColumns}>
-              <div className={styles.footerColumn}>
-                <span className={styles.footerHeading}>Product</span>
-                <a href="#workflow">Workflow</a>
-                <a href="#chaos">Why it works</a>
-                <Link href="/signup">
-                  Try <BrandText>Sendloom</BrandText>
-                </Link>
-              </div>
-              <div className={styles.footerColumn}>
-                <span className={styles.footerHeading}>Access</span>
-                <Link href="/login">Login</Link>
-                <Link href="/signup">Create account</Link>
-                <Link href="/workspace">Dashboard</Link>
-              </div>
-              <div className={styles.footerColumn}>
-                <span className={styles.footerHeading}>Legal</span>
-                <Link href="/privacy">Privacy</Link>
-                <Link href="/terms">Terms</Link>
-                <Link href="/abuse">Anti-Abuse</Link>
-                <Link href="/faq">FAQ</Link>
-                <a href="mailto:hello@sendloom.net">Contact</a>
-              </div>
-            </div>
-          </div>
-
-          <div className={styles.footerBottom}>
-            <span>
-              <BrandText>Sendloom</BrandText>.net
-            </span>
-            <div className={styles.footerLinks}>
-              <Link href="/privacy">Privacy</Link>
-              <Link href="/terms">Terms</Link>
-              <Link href="/abuse">Anti-Abuse</Link>
-              <Link href="/faq">FAQ</Link>
-              <Link href="/login">Login</Link>
-            </div>
-          </div>
-        </footer>
+        <MarketingFooter />
       </div>
     </main>
   );

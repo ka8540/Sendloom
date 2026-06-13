@@ -3,6 +3,7 @@ import Link from "next/link";
 import styles from "@/app/legal.module.css";
 import { renderBrandText } from "@/components/brand-text";
 import { LandingNav } from "@/components/landing-nav";
+import { MarketingFooter } from "@/components/marketing/MarketingFooter";
 
 type LegalHighlight = {
   detail: string;
@@ -172,6 +173,8 @@ export function LegalPage({
             </div>
           </article>
         </div>
+
+        <MarketingFooter />
       </div>
     </main>
   );

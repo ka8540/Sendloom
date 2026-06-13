@@ -1,0 +1,523 @@
+/* ============================================================
+   Sendloom marketing footer
+   A premium glass footer band layered over a giant, ghosted
+   "Sendloom" wordmark. Self-contained: ships its own deep
+   atmosphere + interactivity so it can sit on the landing,
+   FAQ, and legal pages without depending on the landing-page
+   motion/pointer layers.
+
+   Intentionally a deep band on every theme — a dark footer
+   under a light page is a deliberate premium pattern, and it
+   lets the teal/mint/blue glass + wordmark read cleanly.
+   ============================================================ */
+
+.footer {
+  /* internal palette — Sendloom green/teal/blue on deep navy */
+  --mf-base-1: #0c1320;
+  --mf-base-2: #070b12;
+  --mf-ink: #e9f1ff;
+  --mf-muted: #93a7c4;
+  --mf-teal: #2fc48a;
+  --mf-mint: #8be7bf;
+  --mf-blue: #6c97ff;
+  --mf-line: rgba(151, 169, 198, 0.16);
+  --mf-panel: rgba(17, 27, 42, 0.52);
+  --mf-edge: rgba(255, 255, 255, 0.09);
+  --mf-spot-opacity: 0;
+
+  position: relative;
+  isolation: isolate;
+  overflow: clip;
+  margin-top: clamp(3.5rem, 8vw, 6rem);
+  padding: clamp(7rem, 17vw, 12rem) clamp(1.2rem, 4vw, 3rem) clamp(1.8rem, 4vw, 2.6rem);
+  border-radius: clamp(24px, 3vw, 34px);
+  border: 1px solid var(--mf-edge);
+  color: var(--mf-ink);
+  background:
+    radial-gradient(120% 80% at 12% 0%, rgba(47, 196, 138, 0.18), transparent 55%),
+    radial-gradient(120% 90% at 92% 6%, rgba(108, 151, 255, 0.16), transparent 58%),
+    radial-gradient(140% 120% at 50% 130%, rgba(47, 196, 138, 0.14), transparent 60%),
+    linear-gradient(180deg, var(--mf-base-1) 0%, var(--mf-base-2) 100%);
+  box-shadow:
+    0 40px 90px rgba(0, 0, 0, 0.46),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  font-family: var(--font-loader-body), "Space Grotesk", ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
+/* faint engineering grid, masked so it melts into the band */
+.footer::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(151, 169, 198, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(151, 169, 198, 0.05) 1px, transparent 1px);
+  background-size: 120px 120px;
+  -webkit-mask-image: radial-gradient(circle at 50% 40%, black, transparent 78%);
+  mask-image: radial-gradient(circle at 50% 40%, black, transparent 78%);
+}
+
+/* ----------------------- soft drifting blobs ----------------------- */
+
+.blob {
+  position: absolute;
+  z-index: 0;
+  border-radius: 50%;
+  filter: blur(60px);
+  opacity: 0.55;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.blobTeal {
+  top: 8%;
+  left: -6%;
+  width: 26rem;
+  height: 26rem;
+  background: radial-gradient(circle, rgba(47, 196, 138, 0.5), transparent 68%);
+  animation: mfDriftA 17s ease-in-out infinite;
+}
+
+.blobBlue {
+  bottom: -10%;
+  right: -4%;
+  width: 30rem;
+  height: 30rem;
+  background: radial-gradient(circle, rgba(108, 151, 255, 0.42), transparent 68%);
+  animation: mfDriftB 21s ease-in-out infinite;
+}
+
+@keyframes mfDriftA {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(40px, 26px, 0) scale(1.08); }
+}
+
+@keyframes mfDriftB {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(-44px, -22px, 0) scale(1.06); }
+}
+
+/* ----------------------- giant ghost wordmark ----------------------- */
+
+.wordmarkWrap {
+  position: absolute;
+  left: 50%;
+  top: clamp(0.5rem, 2.5vw, 2rem);
+  z-index: 0;
+  width: 130%;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  transform: translate3d(-50%, var(--mf-wordmark-y, 0px), 0);
+  will-change: transform;
+}
+
+.wordmark {
+  margin: 0;
+  font-weight: 700;
+  font-size: clamp(5.5rem, 26vw, 21rem);
+  line-height: 0.78;
+  letter-spacing: -0.055em;
+  white-space: nowrap;
+  user-select: none;
+  background:
+    linear-gradient(
+      100deg,
+      rgba(47, 196, 138, 0.85) 0%,
+      rgba(139, 231, 191, 0.95) 26%,
+      rgba(108, 151, 255, 0.8) 52%,
+      rgba(47, 196, 138, 0.85) 78%,
+      rgba(139, 231, 191, 0.95) 100%
+    );
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  /* keeps the wordmark a subtle ghost, and fades it so it blends
+     into the band rather than reading as a hard label */
+  opacity: 0.1;
+  -webkit-mask-image: linear-gradient(180deg, transparent 0%, black 26%, black 72%, transparent 100%);
+  mask-image: linear-gradient(180deg, transparent 0%, black 26%, black 72%, transparent 100%);
+  animation: mfShimmer 14s ease-in-out infinite;
+}
+
+@keyframes mfShimmer {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+/* ----------------------- glass content panel ----------------------- */
+
+.panel {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  gap: clamp(1.6rem, 3vw, 2.4rem);
+  padding: clamp(1.6rem, 3.4vw, 2.6rem);
+  border-radius: clamp(20px, 2.4vw, 28px);
+  border: 1px solid var(--mf-edge);
+  background:
+    radial-gradient(
+      420px 320px at var(--mf-mx, 50%) var(--mf-my, 0%),
+      rgba(139, 231, 191, calc(0.16 * var(--mf-spot-opacity))),
+      transparent 60%
+    ),
+    linear-gradient(180deg, rgba(23, 35, 54, 0.62), rgba(13, 20, 32, 0.5));
+  background-color: var(--mf-panel);
+  backdrop-filter: blur(22px) saturate(1.25);
+  -webkit-backdrop-filter: blur(22px) saturate(1.25);
+  box-shadow:
+    0 30px 60px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+/* animated rim sheen along the top edge */
+.panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    100deg,
+    transparent 18%,
+    rgba(47, 196, 138, 0.55) 42%,
+    rgba(139, 231, 191, 0.75) 50%,
+    rgba(108, 151, 255, 0.55) 58%,
+    transparent 82%
+  );
+  background-size: 220% 100%;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  opacity: 0.7;
+  pointer-events: none;
+  animation: mfShimmer 9s ease-in-out infinite;
+}
+
+/* ----------------------- top: brand + columns ----------------------- */
+
+.top {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) repeat(3, minmax(0, 1fr));
+  gap: clamp(1.6rem, 3vw, 2.6rem);
+  align-items: start;
+}
+
+.brandBlock {
+  display: grid;
+  gap: 1.1rem;
+  max-width: 30rem;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.85rem;
+  width: fit-content;
+}
+
+.brandMark {
+  width: 2.9rem;
+  height: 2.9rem;
+  border-radius: 16px;
+  box-shadow: 0 14px 30px rgba(47, 196, 138, 0.28);
+  transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1), filter 320ms ease;
+}
+
+.brand:hover .brandMark,
+.brand:focus-visible .brandMark {
+  transform: rotate(-6deg) scale(1.07);
+  filter: drop-shadow(0 0 14px rgba(47, 196, 138, 0.5));
+}
+
+.brandName {
+  font-size: 1.45rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--mf-ink);
+}
+
+.tagline {
+  margin: 0;
+  color: var(--mf-muted);
+  line-height: 1.65;
+  font-size: 0.98rem;
+}
+
+.column {
+  display: grid;
+  gap: 0.7rem;
+  align-content: start;
+}
+
+.heading {
+  margin-bottom: 0.15rem;
+  font-family: var(--font-loader-display), var(--font-loader-body), sans-serif;
+  font-size: 0.82rem;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--mf-mint);
+}
+
+.link {
+  position: relative;
+  width: fit-content;
+  color: var(--mf-ink);
+  font-weight: 560;
+  line-height: 1.5;
+  transition: color 180ms ease;
+}
+
+/* underline that wipes in + glows on hover/focus */
+.link::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -2px;
+  width: 100%;
+  height: 1.5px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--mf-teal), var(--mf-mint));
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.link:hover,
+.link:focus-visible {
+  color: var(--mf-mint);
+  outline: none;
+  text-shadow: 0 0 18px rgba(139, 231, 191, 0.4);
+}
+
+.link:hover::after,
+.link:focus-visible::after {
+  transform: scaleX(1);
+}
+
+.link:focus-visible {
+  border-radius: 4px;
+  box-shadow: 0 0 0 3px rgba(47, 196, 138, 0.4);
+}
+
+/* ----------------------- trust badges ----------------------- */
+
+.badges {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.badgesLabel {
+  margin: 0;
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--mf-muted);
+}
+
+.badgeRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.42rem 0.82rem;
+  border-radius: 999px;
+  border: 1px solid var(--mf-line);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--mf-ink);
+  font-size: 0.82rem;
+  font-weight: 600;
+  transition: transform 200ms ease, border-color 200ms ease, background-color 200ms ease;
+}
+
+.badge:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--mf-teal) 42%, var(--mf-line));
+  background: rgba(47, 196, 138, 0.1);
+}
+
+.badgeDot {
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 999px;
+  background: var(--mf-teal);
+  box-shadow: 0 0 0 3px rgba(47, 196, 138, 0.18);
+}
+
+/* ----------------------- bottom bar ----------------------- */
+
+.divider {
+  height: 1px;
+  border: 0;
+  margin: 0;
+  background: linear-gradient(90deg, transparent, var(--mf-line), transparent);
+}
+
+.bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.copyright {
+  margin: 0;
+  color: var(--mf-muted);
+  font-size: 0.9rem;
+}
+
+.bottomRight {
+  display: inline-flex;
+  align-items: center;
+  gap: 1.1rem;
+  flex-wrap: wrap;
+}
+
+.bottomLinks {
+  display: inline-flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.bottomLinks .link {
+  font-size: 0.88rem;
+  font-weight: 560;
+  color: var(--mf-muted);
+}
+
+.bottomLinks .link:hover,
+.bottomLinks .link:focus-visible {
+  color: var(--mf-mint);
+}
+
+.contact {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.3rem;
+  height: 2.3rem;
+  border-radius: 12px;
+  border: 1px solid var(--mf-line);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--mf-ink);
+  transition: transform 200ms ease, color 200ms ease, border-color 200ms ease, background-color 200ms ease;
+}
+
+.contact svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.contact:hover,
+.contact:focus-visible {
+  outline: none;
+  transform: translateY(-2px);
+  color: var(--mf-mint);
+  border-color: color-mix(in srgb, var(--mf-teal) 46%, var(--mf-line));
+  background: rgba(47, 196, 138, 0.12);
+}
+
+.contact:focus-visible {
+  box-shadow: 0 0 0 3px rgba(47, 196, 138, 0.4);
+}
+
+.brandAccent {
+  color: var(--mf-mint);
+}
+
+/* ============================================================
+   Scroll reveal — staggered. The hidden state only applies once
+   JS confirms motion is allowed (data-animate="true"), so the
+   footer renders fully visible without JS or under reduced motion.
+   ============================================================ */
+
+.footer[data-animate="true"] .reveal {
+  opacity: 0;
+  transform: translateY(26px);
+  transition:
+    opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  transition-delay: var(--reveal-delay, 0ms);
+}
+
+.footer[data-animate="true"][data-revealed="true"] .reveal {
+  opacity: 1;
+  transform: none;
+}
+
+/* ============================================================
+   Responsive
+   ============================================================ */
+
+@media (max-width: 920px) {
+  .top {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .brandBlock {
+    grid-column: 1 / -1;
+    max-width: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .footer {
+    padding-top: clamp(5.5rem, 28vw, 8rem);
+    border-radius: 22px;
+  }
+
+  .top {
+    grid-template-columns: 1fr;
+    gap: 1.6rem;
+  }
+
+  .wordmark {
+    font-size: clamp(4.2rem, 34vw, 9rem);
+  }
+
+  .bottom {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+/* ============================================================
+   Reduced motion — kill shimmer / drift / parallax. Belt and
+   suspenders alongside the JS guards.
+   ============================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  .blobTeal,
+  .blobBlue,
+  .wordmark,
+  .panel::before {
+    animation: none;
+  }
+
+  .wordmarkWrap {
+    transform: translate3d(-50%, 0, 0);
+  }
+
+  .footer[data-animate="true"] .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}

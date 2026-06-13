@@ -2,12 +2,10 @@ import { Mail } from "lucide-react";
 import Link from "next/link";
 
 import faqStyles from "@/app/faq/page.module.css";
-import landingStyles from "@/app/landing.module.css";
 import legalStyles from "@/app/legal.module.css";
-import { BrandText } from "@/components/brand-text";
 import { FaqList } from "@/components/faq-list";
 import { LandingNav } from "@/components/landing-nav";
-import { SendloomLogo } from "@/components/sendloom-logo";
+import { MarketingFooter } from "@/components/marketing/MarketingFooter";
 
 const faqNavItems = [
   { href: "/", label: "Home" },
@@ -337,61 +335,7 @@ export default function FaqPage() {
           </article>
         </div>
 
-        <footer className={landingStyles.footer}>
-          <div className={landingStyles.footerTop}>
-            <div className={landingStyles.footerBrandBlock}>
-              <div className={landingStyles.footerBrand}>
-                <SendloomLogo className={landingStyles.footerBrandMark} />
-                <div>
-                  <strong>
-                    <BrandText>Sendloom</BrandText>
-                  </strong>
-                  <span>Outreach operations with one source of truth.</span>
-                </div>
-              </div>
-              <p className={landingStyles.footerCopy}>
-                Built for small teams who want imports, templates, sender setup, launch, and run visibility in one calm
-                system.
-              </p>
-            </div>
-
-            <div className={landingStyles.footerColumns}>
-              <div className={landingStyles.footerColumn}>
-                <span className={landingStyles.footerHeading}>Product</span>
-                <Link href="/#workflow">Workflow</Link>
-                <Link href="/#proof">Why it works</Link>
-                <Link href="/signup">
-                  Try <BrandText>Sendloom</BrandText>
-                </Link>
-              </div>
-              <div className={landingStyles.footerColumn}>
-                <span className={landingStyles.footerHeading}>Access</span>
-                <Link href="/login">Login</Link>
-                <Link href="/signup">Create account</Link>
-                <Link href="/workspace">Dashboard</Link>
-              </div>
-              <div className={landingStyles.footerColumn}>
-                <span className={landingStyles.footerHeading}>Legal</span>
-                <Link href="/privacy">Privacy</Link>
-                <Link href="/terms">Terms</Link>
-                <Link href="/faq">FAQ</Link>
-                <a href="mailto:ka8540@g.rit.edu">Contact</a>
-              </div>
-            </div>
-          </div>
-
-          <div className={landingStyles.footerBottom}>
-            <span>
-              <BrandText>Sendloom</BrandText>.net
-            </span>
-            <div className={landingStyles.footerLinks}>
-              <Link href="/privacy">Privacy</Link>
-              <Link href="/terms">Terms</Link>
-              <Link href="/faq">FAQ</Link>
-              <Link href="/login">Login</Link>
-            </div>
-          </div>
-        </footer>
+        <MarketingFooter />
       </div>
     </main>
   );
