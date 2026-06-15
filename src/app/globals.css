@@ -757,6 +757,25 @@ html[data-sidebar-collapsed="true"] .sidebar .nav-footer-theme {
   animation: error-toast-enter 180ms ease-out;
 }
 
+/* Success tone reuses the error-toast layout but leans on theme-adaptive accent/success
+   tokens so it reads as confirmation rather than failure in both light and dark themes. */
+.error-toast--success {
+  border-color: color-mix(in srgb, var(--success) 32%, var(--line));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 92%, transparent) 0%, var(--accent-soft) 100%);
+}
+
+.error-toast--success .error-toast__icon {
+  background: var(--accent-soft-strong);
+  color: var(--success);
+}
+
+.error-toast--success .error-toast__dismiss:hover,
+.error-toast--success .error-toast__dismiss:focus-visible {
+  background: var(--accent-soft-strong);
+  color: var(--success);
+}
+
 .error-toast__icon {
   display: inline-flex;
   align-items: center;

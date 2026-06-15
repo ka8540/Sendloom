@@ -4,7 +4,9 @@ import { Eye, LoaderCircle, Pause, Play, ShieldAlert, Trash2 } from "lucide-reac
 import { useRouter } from "next/navigation";
 import { useState, type MouseEvent } from "react";
 
-import { useErrorToastEffect } from "@/components/error-toast-provider";
+import { useErrorToast, useErrorToastEffect } from "@/components/error-toast-provider";
+import { PastScheduleRelaunchModal } from "@/components/past-schedule-relaunch-modal";
+import { PAST_SCHEDULE_CONFIRMATION_CODE } from "@/lib/campaign-scheduling";
 import styles from "./overview-command-center.module.css";
 
 export function SequenceRowActions({
@@ -29,6 +31,9 @@ export function SequenceRowActions({
   const router = useRouter();
   const [pendingAction, setPendingAction] = useState<"launch" | "pause" | "resume" | "delete" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pastScheduleConfirmOpen, setPastScheduleConfirmOpen] = useState(false);
+  const [pastScheduleConverting, setPastScheduleConverting] = useState(false);
+  const { showSuccess } = useErrorToast();
   useErrorToastEffect(error, "Sequence action failed");
 
   async function handleRelaunch(event: MouseEvent<HTMLButtonElement>) {
@@ -44,6 +49,14 @@ export function SequenceRowActions({
       const response = await fetch(`/api/campaigns/${campaignId}/launch`, { method: "POST" });
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
+        // A past "schedule once" sequence needs explicit confirmation before we convert it
+        // to send right away — surface the modal instead of a raw validation error.
+        if (response.status === 409 && payload.code === PAST_SCHEDULE_CONFIRMATION_CODE) {
+          setPendingAction(null);
+          setPastScheduleConfirmOpen(true);
+          return;
+        }
+
         setError(payload.error ?? "Could not relaunch the sequence.");
         setPendingAction(null);
         return;
@@ -56,6 +69,46 @@ export function SequenceRowActions({
       setError("Could not relaunch the sequence.");
       setPendingAction(null);
     }
+  }
+
+  async function handleConfirmConvertAndRelaunch() {
+    if (pastScheduleConverting) {
+      return;
+    }
+
+    setPastScheduleConverting(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`/api/campaigns/${campaignId}/launch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ convertPastScheduleToImmediate: true })
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        setError(payload.error ?? "Could not relaunch the sequence.");
+        setPastScheduleConverting(false);
+        return;
+      }
+
+      setPastScheduleConfirmOpen(false);
+      setPastScheduleConverting(false);
+      onRelaunch();
+      router.refresh();
+      showSuccess("Sequence switched to send right away and relaunched.");
+    } catch {
+      setError("Could not relaunch the sequence.");
+      setPastScheduleConverting(false);
+    }
+  }
+
+  function handleCancelPastScheduleConfirm() {
+    if (pastScheduleConverting) {
+      return;
+    }
+    setPastScheduleConfirmOpen(false);
   }
 
   async function handlePause(event: MouseEvent<HTMLButtonElement>) {
@@ -142,6 +195,7 @@ export function SequenceRowActions({
   }
 
   return (
+    <>
     <div className={styles.sequenceActionGroup} onClick={(event) => event.stopPropagation()}>
       <Link
         href={href}
@@ -225,5 +279,12 @@ export function SequenceRowActions({
         <span className={styles.sequenceActionLabel}>Delete</span>
       </button>
     </div>
+    <PastScheduleRelaunchModal
+      open={pastScheduleConfirmOpen}
+      pending={pastScheduleConverting}
+      onCancel={handleCancelPastScheduleConfirm}
+      onConfirm={() => void handleConfirmConvertAndRelaunch()}
+    />
+    </>
   );
 }

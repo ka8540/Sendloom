@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 
 import { ActiveRunRefresher } from "@/components/active-run-refresher";
+import { CampaignLaunchButton } from "@/components/campaign-launch-button";
 import { CampaignScheduleEditor } from "@/components/campaign-schedule-editor";
 import { CampaignSetupEditor } from "@/components/campaign-setup-editor";
 import { CampaignDetailDeleteButton } from "@/components/campaign-detail-delete-button";
@@ -168,60 +169,6 @@ function getScheduleConfig(scheduleType?: string | null, scheduleConfig?: Schedu
   }
 
   return { type: "immediate" };
-}
-
-async function launch(campaignId: string) {
-  "use server";
-
-  const user = await requireOperatorUser();
-  const campaign = await prisma.campaign.findFirst({
-    where: {
-      id: campaignId,
-      userId: user.id
-    },
-    select: {
-      senderProfile: {
-        select: {
-          fromEmail: true,
-          oauthRefreshToken: true
-        }
-      }
-    }
-  });
-
-  if (!campaign) {
-    redirect("/campaigns");
-  }
-
-  if (!campaign.senderProfile.oauthRefreshToken) {
-    const params = new URLSearchParams({
-      gmail_error: GMAIL_RECONNECT_ERROR,
-      gmail_sender: campaign.senderProfile.fromEmail
-    });
-    redirect(`/campaigns/${campaignId}?${params.toString()}`);
-  }
-
-  let run;
-  try {
-    run = await launchCampaign(campaignId, user.id);
-  } catch (error) {
-    if (error instanceof CampaignLaunchBlockedError) {
-      const params = new URLSearchParams({
-        launch_error: error.message
-      });
-      redirect(`/campaigns/${campaignId}?${params.toString()}`);
-    }
-
-    throw error;
-  }
-  revalidatePath(`/campaigns/${campaignId}`);
-  revalidatePath("/campaigns");
-  after(async () => {
-    await processPendingCampaignWork({
-      runId: run.id,
-      maxDurationMs: 55_000
-    });
-  });
 }
 
 async function validate(campaignId: string) {
@@ -777,15 +724,11 @@ export default async function CampaignDetailPage({
                   Reconnect to launch
                 </a>
               ) : (
-                <form action={launch.bind(null, campaign.id)}>
-                  <button
-                    className="button"
-                    type="submit"
-                    disabled={isActiveRun || isPausedRun || dailyLimitActive}
-                  >
-                    {launchButtonLabel}
-                  </button>
-                </form>
+                <CampaignLaunchButton
+                  campaignId={campaign.id}
+                  label={launchButtonLabel}
+                  disabled={isActiveRun || isPausedRun || dailyLimitActive}
+                />
               )}
             </div>
           </div>

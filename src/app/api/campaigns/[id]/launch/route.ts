@@ -3,10 +3,30 @@ import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/api-auth";
 import { recordAuditEvent } from "@/lib/audit";
+import { PAST_SCHEDULE_CONFIRMATION_CODE } from "@/lib/campaign-scheduling";
 import { createRateLimitResponse, rateLimit } from "@/lib/rate-limit";
-import { CampaignLaunchBlockedError, launchCampaign, processPendingCampaignWork } from "@/services/campaigns";
+import {
+  CampaignLaunchBlockedError,
+  launchCampaign,
+  PastScheduleConfirmationRequiredError,
+  processPendingCampaignWork
+} from "@/services/campaigns";
 
 export const maxDuration = 60;
+
+/**
+ * Reads the opt-in flag that lets a relaunch convert a past "schedule once" sequence to
+ * send right away. The body is optional (most launches send none), so a missing or
+ * malformed body simply means "do not convert".
+ */
+async function readConvertPastScheduleFlag(request: Request): Promise<boolean> {
+  try {
+    const body = await request.clone().json();
+    return body?.convertPastScheduleToImmediate === true;
+  } catch {
+    return false;
+  }
+}
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const auth = await requireApiUser("campaignLaunch");
@@ -20,10 +40,22 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   }
 
   const { id } = await context.params;
+  const convertPastScheduleToImmediate = await readConvertPastScheduleFlag(request);
+
   let run;
   try {
-    run = await launchCampaign(id, auth.user.id);
+    run = await launchCampaign(id, auth.user.id, { convertPastScheduleToImmediate });
   } catch (error) {
+    if (error instanceof PastScheduleConfirmationRequiredError) {
+      return NextResponse.json(
+        {
+          error: error.message,
+          code: PAST_SCHEDULE_CONFIRMATION_CODE
+        },
+        { status: 409 }
+      );
+    }
+
     if (error instanceof CampaignLaunchBlockedError) {
       return NextResponse.json(
         {
