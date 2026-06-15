@@ -4,6 +4,41 @@ import type { ScheduleRule } from "@/lib/types";
 export const SCHEDULABLE_CAMPAIGN_STATUSES = new Set(["DRAFT", "VALIDATED", "SCHEDULED", "COMPLETED"]);
 export const ACTIVE_RUN_STATUSES = new Set(["QUEUED", "RUNNING", "PAUSED"]);
 
+/**
+ * Structured response code returned by the launch endpoint when a relaunch targets a
+ * one-time ("schedule once") sequence whose scheduled time has already passed. The
+ * client uses this to show a confirmation modal instead of a raw validation error, then
+ * retries the launch with `convertPastScheduleToImmediate: true`.
+ */
+export const PAST_SCHEDULE_CONFIRMATION_CODE = "PAST_SCHEDULE_CONFIRMATION_REQUIRED";
+
+/**
+ * True when a sequence is configured as a one-time ("schedule once") send whose
+ * scheduled moment has already passed. Relaunching such a sequence would otherwise fail
+ * the "One-time schedule must be in the future" validation, so the relaunch flow uses
+ * this to offer converting it to an immediate send instead of hard-blocking.
+ *
+ * A missing or unparseable schedule is intentionally NOT treated as "past": that is a
+ * genuine configuration error that the normal validation should continue to surface.
+ * The comparison always uses server time so it is not affected by the client timezone.
+ */
+export function isPastOnceSchedule(
+  scheduleType: string | null | undefined,
+  scheduleConfig: ScheduleRule | null | undefined,
+  now = new Date()
+): boolean {
+  if (scheduleType !== "once" || !scheduleConfig || scheduleConfig.type !== "once") {
+    return false;
+  }
+
+  const runDate = getNextRunDate(scheduleConfig, now);
+  if (Number.isNaN(runDate.getTime())) {
+    return false;
+  }
+
+  return runDate <= now;
+}
+
 export type ScheduledRunState = {
   status: string;
   scheduledFor: Date | null;

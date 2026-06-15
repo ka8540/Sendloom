@@ -23,6 +23,7 @@ export function SequencePanel({ rows }: { rows: SequenceRowData[] }) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
   const [focus, setFocus] = useState("recent");
+  const [scheduleType, setScheduleType] = useState("all");
   const [sort, setSort] = useState("activity");
   const [currentPage, setCurrentPage] = useState(1);
   const [refreshUntil, setRefreshUntil] = useState<number | null>(null);
@@ -43,8 +44,9 @@ export function SequencePanel({ rows }: { rows: SequenceRowData[] }) {
         (focus === "attention" && row.needsAttention) ||
         (focus === "validated" && row.isValidated) ||
         (focus === "running" && row.statusTone === "running");
+      const matchesScheduleType = scheduleType === "all" || row.scheduleType === scheduleType;
 
-      return matchesQuery && matchesStatus && matchesFocus;
+      return matchesQuery && matchesStatus && matchesFocus && matchesScheduleType;
     });
 
     nextRows.sort((left, right) => {
@@ -60,7 +62,7 @@ export function SequencePanel({ rows }: { rows: SequenceRowData[] }) {
     });
 
     return nextRows;
-  }, [focus, query, rows, sort, status]);
+  }, [focus, query, rows, scheduleType, sort, status]);
 
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / RECENT_SEQUENCES_PAGE_SIZE));
   const clampedPage = Math.min(currentPage, totalPages);
@@ -75,7 +77,7 @@ export function SequencePanel({ rows }: { rows: SequenceRowData[] }) {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [query, status, focus, sort]);
+  }, [query, status, focus, scheduleType, sort]);
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -188,6 +190,22 @@ export function SequencePanel({ rows }: { rows: SequenceRowData[] }) {
               <option value="running">Running now</option>
               <option value="validated">Validated</option>
               <option value="attention">Needs attention</option>
+            </select>
+            <ChevronDown aria-hidden="true" />
+          </div>
+        </label>
+        <label className={styles.toolbarField}>
+          <span className={styles.toolbarLabel}>Type</span>
+          <div className={styles.toolbarSelect}>
+            <select
+              aria-label="Filter recent sequences by schedule type"
+              value={scheduleType}
+              onChange={(event) => setScheduleType(event.target.value)}
+            >
+              <option value="all">All types</option>
+              <option value="immediate">Send immediately</option>
+              <option value="once">Schedule once</option>
+              <option value="recurring">Repeat schedule</option>
             </select>
             <ChevronDown aria-hidden="true" />
           </div>

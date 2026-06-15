@@ -15,6 +15,12 @@ export type SequenceStatusTone =
 
 export type SequenceHealthTone = "clean" | "issues" | "syncing" | "idle";
 
+// How the sequence was scheduled. Mirrors Campaign.scheduleType in the DB
+// ("immediate" | "once" | "recurring"); legacy/missing values normalize to
+// "immediate" via normalizeScheduleType so the filter never receives an
+// unexpected value.
+export type SequenceScheduleType = "immediate" | "once" | "recurring";
+
 export type SequenceMetric = {
   key: string;
   label: string;
@@ -36,6 +42,7 @@ export type SequenceRowData = {
     template: string;
     sender: string;
   };
+  scheduleType: SequenceScheduleType;
   progressPercent: number;
   metrics: SequenceMetric[];
   health: {

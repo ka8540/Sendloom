@@ -8,6 +8,7 @@ import {
   planCampaignScheduleUpdate
 } from "@/lib/campaign-schedule-edit";
 import {
+  isPastOnceSchedule,
   planScheduledCampaignRun,
   SCHEDULABLE_CAMPAIGN_STATUSES
 } from "@/lib/campaign-scheduling";
@@ -351,6 +352,19 @@ export class CampaignLaunchBlockedError extends Error {
     super(getLaunchBlockingValidationMessage(report));
     this.name = "CampaignLaunchBlockedError";
     this.report = report;
+  }
+}
+
+/**
+ * Thrown by {@link launchCampaign} when a relaunch targets a one-time ("schedule once")
+ * sequence whose scheduled time is already in the past, and the caller has not opted in
+ * to converting it. The launch endpoint surfaces this as a structured response so the
+ * UI can confirm with the user before switching the sequence to send right away.
+ */
+export class PastScheduleConfirmationRequiredError extends Error {
+  constructor() {
+    super("This sequence was originally scheduled for a time that has already passed.");
+    this.name = "PastScheduleConfirmationRequiredError";
   }
 }
 
@@ -813,7 +827,11 @@ export async function updateCampaignSchedule(
   });
 }
 
-export async function launchCampaign(campaignId: string, userId?: string) {
+export async function launchCampaign(
+  campaignId: string,
+  userId?: string,
+  options: { convertPastScheduleToImmediate?: boolean } = {}
+) {
   const existingActiveRun = await prisma.campaignRun.findFirst({
     where: {
       campaignId,
@@ -832,6 +850,44 @@ export async function launchCampaign(campaignId: string, userId?: string) {
   });
 
   if (!existingActiveRun) {
+    // A paused run is resumed (not relaunched) further down, so leave that path alone.
+    const pausedRun = await prisma.campaignRun.findFirst({
+      where: {
+        campaignId,
+        ...(userId ? { campaign: { userId } } : {}),
+        status: "PAUSED"
+      },
+      select: { id: true }
+    });
+
+    if (!pausedRun) {
+      // Relaunching a "schedule once" sequence whose time has already passed would fail
+      // validation with "One-time schedule must be in the future". Detect that here and
+      // either ask the caller to confirm, or convert the sequence to send right away.
+      // findFirstOrThrow with the ownership filter doubles as the permission check.
+      const scheduleCampaign = await prisma.campaign.findFirstOrThrow({
+        where: campaignOwnershipFilter(campaignId, userId),
+        select: { scheduleType: true, scheduleConfig: true }
+      });
+
+      if (isPastOnceSchedule(scheduleCampaign.scheduleType, scheduleCampaign.scheduleConfig as ScheduleRule | null)) {
+        if (!options.convertPastScheduleToImmediate) {
+          throw new PastScheduleConfirmationRequiredError();
+        }
+
+        // Switch to immediate mode so the stale past scheduledAt no longer applies and the
+        // run created below sends right away. Persisted before validation so the launch sees
+        // the updated rule.
+        await prisma.campaign.update({
+          where: { id: campaignId },
+          data: {
+            scheduleType: "immediate",
+            scheduleConfig: { type: "immediate" } as Prisma.InputJsonValue
+          }
+        });
+      }
+    }
+
     await ensureCampaignLaunchable(campaignId, userId);
   }
 

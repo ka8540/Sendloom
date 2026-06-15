@@ -594,6 +594,14 @@
   overflow: hidden;
 }
 
+.sequenceSection {
+  /* Establish a query container so the filter toolbar can size its columns to
+     the section's real width. The main column is narrow when the activity rail
+     sits beside it and much wider once the rail stacks below — a relationship
+     viewport media queries can't track, so the toolbar queries this container. */
+  container: filtersToolbar / inline-size;
+}
+
 .sectionTop {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -692,13 +700,34 @@
 
 .toolbar {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  /* Column count snaps to the toolbar's real container width (see the
+     `container` declaration on .sequenceSection). Base is a single full-width
+     column; the @container rules below promote it to 2 then 4 columns only when
+     there is room for the selected labels to show in full. The search field
+     always spans the whole row via .toolbarFieldWide. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.8rem;
   align-items: end;
   padding: 1rem;
   border-radius: 24px;
   border: 1px solid var(--line);
   background: color-mix(in srgb, var(--surface-muted) 86%, transparent);
+}
+
+/* Two-up once the section is wide enough that each dropdown keeps its full
+   label (e.g. "Send immediately", "Latest activity") without truncation. */
+@container filtersToolbar (min-width: 29rem) {
+  .toolbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Four-up only on genuinely wide sections, so the four filters share one row
+   without cramping or clipping. Skips an awkward 3-column state entirely. */
+@container filtersToolbar (min-width: 56rem) {
+  .toolbar {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }
 
 .toolbarField {
@@ -1811,10 +1840,6 @@
 }
 
 @media (max-width: 900px) {
-  .toolbar {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .sequenceRow {
     grid-template-columns: 1fr;
   }
@@ -1852,8 +1877,7 @@
     border-radius: 24px;
   }
 
-  .metricsGrid,
-  .toolbar {
+  .metricsGrid {
     grid-template-columns: 1fr;
   }
 

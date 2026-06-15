@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, X } from "lucide-react";
+import { AlertCircle, CheckCircle2, X } from "lucide-react";
 import {
   createContext,
   useCallback,
@@ -14,6 +14,8 @@ import {
 
 import { renderBrandText } from "@/components/brand-text";
 
+type ToastTone = "error" | "success";
+
 type ShowErrorOptions = {
   durationMs?: number;
   title?: string;
@@ -23,14 +25,17 @@ type ErrorToast = {
   id: number;
   message: string;
   title: string;
+  tone: ToastTone;
 };
 
 type ErrorToastContextValue = {
   showError: (message: string, options?: ShowErrorOptions) => void;
+  showSuccess: (message: string, options?: ShowErrorOptions) => void;
 };
 
 const DEFAULT_DURATION_MS = 5200;
 const DEFAULT_TITLE = "Something went wrong";
+const DEFAULT_SUCCESS_TITLE = "Done";
 
 const ErrorToastContext = createContext<ErrorToastContextValue | null>(null);
 
@@ -49,8 +54,8 @@ export function ErrorToastProvider({ children }: { children: ReactNode }) {
     setToasts((current) => current.filter((toast) => toast.id !== id));
   }, []);
 
-  const showError = useCallback(
-    (message: string, options?: ShowErrorOptions) => {
+  const pushToast = useCallback(
+    (message: string, tone: ToastTone, options?: ShowErrorOptions) => {
       const trimmedMessage = message.trim();
       if (!trimmedMessage) {
         return;
@@ -60,7 +65,8 @@ export function ErrorToastProvider({ children }: { children: ReactNode }) {
       const nextToast: ErrorToast = {
         id,
         message: trimmedMessage,
-        title: options?.title?.trim() || DEFAULT_TITLE
+        title: options?.title?.trim() || (tone === "success" ? DEFAULT_SUCCESS_TITLE : DEFAULT_TITLE),
+        tone
       };
 
       setToasts((current) => [...current, nextToast].slice(-4));
@@ -74,6 +80,16 @@ export function ErrorToastProvider({ children }: { children: ReactNode }) {
     [dismissToast]
   );
 
+  const showError = useCallback(
+    (message: string, options?: ShowErrorOptions) => pushToast(message, "error", options),
+    [pushToast]
+  );
+
+  const showSuccess = useCallback(
+    (message: string, options?: ShowErrorOptions) => pushToast(message, "success", options),
+    [pushToast]
+  );
+
   useEffect(() => {
     return () => {
       timersRef.current.forEach((timeoutId) => {
@@ -85,9 +101,10 @@ export function ErrorToastProvider({ children }: { children: ReactNode }) {
 
   const contextValue = useMemo<ErrorToastContextValue>(
     () => ({
-      showError
+      showError,
+      showSuccess
     }),
-    [showError]
+    [showError, showSuccess]
   );
 
   return (
@@ -95,9 +112,13 @@ export function ErrorToastProvider({ children }: { children: ReactNode }) {
       {children}
       <div className="error-toast-viewport" aria-live="assertive" aria-atomic="false">
         {toasts.map((toast) => (
-          <div key={toast.id} className="error-toast" role="alert">
+          <div
+            key={toast.id}
+            className={`error-toast${toast.tone === "success" ? " error-toast--success" : ""}`}
+            role={toast.tone === "success" ? "status" : "alert"}
+          >
             <span className="error-toast__icon" aria-hidden="true">
-              <AlertCircle />
+              {toast.tone === "success" ? <CheckCircle2 /> : <AlertCircle />}
             </span>
             <div className="error-toast__copy">
               <strong className="error-toast__title">{renderBrandText(toast.title)}</strong>
