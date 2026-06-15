@@ -21,7 +21,13 @@ import { formatCompactNumber, formatRelativeTime, buildTrend, humanizeEnum } fro
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { SendWindowCard, type SendWindowSender } from "@/components/dashboard/send-window-card";
 import { SequencePanel } from "@/components/dashboard/sequence-panel";
-import type { ActivityItem, SequenceHealthTone, SequenceMetric, SequenceRowData } from "@/components/dashboard/types";
+import type {
+  ActivityItem,
+  SequenceHealthTone,
+  SequenceMetric,
+  SequenceRowData,
+  SequenceScheduleType
+} from "@/components/dashboard/types";
 import { processPendingCampaignWork, readDailyLimitPauseInfo, resumeCampaignRunsBlockedByDailyLimit } from "@/services/campaigns";
 import styles from "./overview-command-center.module.css";
 
@@ -550,6 +556,7 @@ export default async function OverviewCommandCenter() {
         template: campaign.template.name,
         sender: campaign.senderProfile.name
       },
+      scheduleType: normalizeScheduleType(campaign.scheduleType),
       progressPercent,
       metrics,
       health,
@@ -785,6 +792,22 @@ export default async function OverviewCommandCenter() {
       </section>
     </div>
   );
+}
+
+// Normalize the raw Campaign.scheduleType column into the closed set the UI
+// filter understands. Legacy rows created before scheduling existed (or any
+// unexpected value) fall back to "immediate" so the dashboard never crashes on
+// stale data.
+function normalizeScheduleType(scheduleType: string | null | undefined): SequenceScheduleType {
+  switch (scheduleType) {
+    case "once":
+      return "once";
+    case "recurring":
+      return "recurring";
+    case "immediate":
+    default:
+      return "immediate";
+  }
 }
 
 function deriveSequenceStatus(campaignStatus: CampaignStatus, runStatus?: RunStatus | null) {

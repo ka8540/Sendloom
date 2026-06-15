@@ -28,6 +28,46 @@ It shows:
 - live-refresh behavior while runs are queued or running
 - quick entry points back into the current work
 
+#### Recent sequences filters
+
+The "Recent sequences" panel ("Jump into the work that moved last") exposes a row
+of client-side filters that narrow the visible sequence cards without a page
+reload:
+
+- **Search** — matches against the sequence name and its `list · template · sender` summary.
+- **Status** — running, completed, needs attention, scheduled, draft.
+- **Focus** — all recent, running now, validated, needs attention.
+- **Type** — schedule type of the sequence (see below).
+- **Sort** — latest activity, progress, or name.
+
+**Type (schedule-type) filter.** Filters cards by how the sequence was scheduled:
+
+| Option | Shows |
+| --- | --- |
+| All types | every sequence (default) |
+| Send immediately | sequences launched right away / immediate mode |
+| Schedule once | sequences scheduled to send one time |
+| Repeat schedule | recurring / repeating scheduled sequences |
+
+How it combines: all five filters are applied together (logical AND) and then the
+result is sorted. The Type filter stacks with Search, Status, Focus, and Sort, and
+changing any filter resets pagination to the first page. Relaunch, remove, and
+open-detail row actions are unaffected.
+
+Implementation notes / data assumptions:
+
+- The filter reads `Campaign.scheduleType` (`"immediate" | "once" | "recurring"`),
+  the same column written by the campaign builder and scheduling APIs.
+- Values are normalized in the dashboard data layer by `normalizeScheduleType`
+  (`src/components/dashboard/overview-command-center.tsx`) into the closed
+  `SequenceScheduleType` union (`src/components/dashboard/types.ts`). Legacy or
+  missing values (`null`) fall back to `"immediate"`, so older sequences group
+  under **Send immediately** and never break the UI.
+- The filtering itself lives in `SequencePanel`
+  (`src/components/dashboard/sequence-panel.tsx`) and reuses the existing toolbar
+  dropdown styles, so light and dark mode and spacing stay consistent with the
+  other filters.
+
 ### Finder
 
 The Finder workspace is a first-class part of the current nav and appears before Imports.
