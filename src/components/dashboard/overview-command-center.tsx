@@ -16,8 +16,6 @@ import {
 import { requireOperatorUser } from "@/lib/auth";
 import { getGmailDailySendWindow } from "@/lib/daily-send-limit";
 import { prisma } from "@/lib/db";
-import { getOverviewAttention } from "@/services/overview-analytics";
-import { NeedsAttentionPanel } from "@/components/dashboard/needs-attention-panel";
 import { ActivityFeed } from "@/components/dashboard/activity-feed";
 import { formatCompactNumber, formatRelativeTime, buildTrend, humanizeEnum } from "@/components/dashboard/formatters";
 import { MetricCard } from "@/components/dashboard/metric-card";
@@ -330,15 +328,6 @@ export default async function OverviewCommandCenter() {
       })
     }))
   );
-
-  // "Needs attention" section. Reuses the sender windows already computed above
-  // for the (untouched) Send window card, so it adds a few light aggregate
-  // queries but no extra ledger reads and no token access.
-  const overviewAttention = await getOverviewAttention({
-    userId: user.id,
-    now,
-    senderWindows: sendWindowSenders
-  });
 
   const blockedSenderProfileIds = new Set(
     sendWindowSenders.filter((sender) => sender.window.isBlocked).map((sender) => sender.senderProfileId)
@@ -764,8 +753,6 @@ export default async function OverviewCommandCenter() {
           href="/templates"
         />
       </section>
-
-      <NeedsAttentionPanel data={overviewAttention} />
 
       <section className={styles.mainGrid}>
         <div className={styles.sequenceSection}>
