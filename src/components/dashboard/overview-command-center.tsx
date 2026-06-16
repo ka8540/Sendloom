@@ -16,6 +16,8 @@ import {
 import { requireOperatorUser } from "@/lib/auth";
 import { getGmailDailySendWindow } from "@/lib/daily-send-limit";
 import { prisma } from "@/lib/db";
+import { getOverviewAnalytics } from "@/services/overview-analytics";
+import { AnalyticsCommandCenter } from "@/components/dashboard/analytics-command-center";
 import { ActivityFeed } from "@/components/dashboard/activity-feed";
 import { formatCompactNumber, formatRelativeTime, buildTrend, humanizeEnum } from "@/components/dashboard/formatters";
 import { MetricCard } from "@/components/dashboard/metric-card";
@@ -328,6 +330,17 @@ export default async function OverviewCommandCenter() {
       })
     }))
   );
+
+  // Performance intelligence section. Reuses the sender windows already computed
+  // above so the analytics command center adds aggregate queries but no extra
+  // ledger reads. Defaults to the 30-day window; the client refetches other
+  // windows from /api/overview/analytics.
+  const overviewAnalytics = await getOverviewAnalytics({
+    userId: user.id,
+    window: "30d",
+    now,
+    senderWindows: sendWindowSenders
+  });
 
   const blockedSenderProfileIds = new Set(
     sendWindowSenders.filter((sender) => sender.window.isBlocked).map((sender) => sender.senderProfileId)
@@ -753,6 +766,8 @@ export default async function OverviewCommandCenter() {
           href="/templates"
         />
       </section>
+
+      <AnalyticsCommandCenter initialData={overviewAnalytics} initialWindow="30d" />
 
       <section className={styles.mainGrid}>
         <div className={styles.sequenceSection}>
