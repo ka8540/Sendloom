@@ -2,6 +2,10 @@
 
 Sendloom is a full-stack outreach operations app for small teams that want one place to import a list, find missing emails, write the message, connect Gmail, launch the sequence, and watch the run move.
 
+## Documentation
+
+For the full production documentation, architecture notes, operational runbook, and version history, see [DOCUMENTATION.md](./DOCUMENTATION.md).
+
 The live product surface today is organized around:
 
 - `Overview`
