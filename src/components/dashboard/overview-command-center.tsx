@@ -9,8 +9,7 @@ import {
   FileSpreadsheet,
   PieChart,
   SendHorizontal,
-  Sparkles,
-  ScrollText
+  Sparkles
 } from "lucide-react";
 
 import { requireOperatorUser } from "@/lib/auth";
@@ -18,8 +17,7 @@ import { getGmailDailySendWindow } from "@/lib/daily-send-limit";
 import { prisma } from "@/lib/db";
 import { ActivityFeed } from "@/components/dashboard/activity-feed";
 import { formatCompactNumber, formatRelativeTime, buildTrend, humanizeEnum } from "@/components/dashboard/formatters";
-import { MetricCard } from "@/components/dashboard/metric-card";
-import { SendWindowCard, type SendWindowSender } from "@/components/dashboard/send-window-card";
+import { OverviewSummary, type SendWindowSender, type TemplateFormatSlice } from "@/components/dashboard/overview-summary";
 import { SequencePanel } from "@/components/dashboard/sequence-panel";
 import type {
   ActivityItem,
@@ -83,7 +81,6 @@ export default async function OverviewCommandCenter() {
   const user = await requireOperatorUser();
   const now = new Date();
   const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-  const twoWeeksAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
   const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
   const twoDaysAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);
 
@@ -92,13 +89,11 @@ export default async function OverviewCommandCenter() {
   const [
     processedImportCount,
     importCountThisWeek,
-    importCountPreviousWeek,
+    mappedProcessedImportCount,
     campaignCount,
-    campaignCountThisWeek,
-    campaignCountPreviousWeek,
     templateCount,
     templateCountThisWeek,
-    templateCountPreviousWeek,
+    templateFormatGroups,
     activeSequenceCount,
     validatedSequenceCount,
     needsAttentionCount,
@@ -124,35 +119,17 @@ export default async function OverviewCommandCenter() {
         }
       }
     }),
+    // Processed imports that already have a field mapping — i.e. ready to launch.
     prisma.import.count({
       where: {
         userId: user.id,
-        createdAt: {
-          gte: twoWeeksAgo,
-          lt: weekAgo
-        }
+        status: "PROCESSED",
+        mappings: { some: {} }
       }
     }),
     prisma.campaign.count({
       where: {
         userId: user.id
-      }
-    }),
-    prisma.campaign.count({
-      where: {
-        userId: user.id,
-        createdAt: {
-          gte: weekAgo
-        }
-      }
-    }),
-    prisma.campaign.count({
-      where: {
-        userId: user.id,
-        createdAt: {
-          gte: twoWeeksAgo,
-          lt: weekAgo
-        }
       }
     }),
     prisma.template.count({
@@ -168,14 +145,11 @@ export default async function OverviewCommandCenter() {
         }
       }
     }),
-    prisma.template.count({
-      where: {
-        userId: user.id,
-        updatedAt: {
-          gte: twoWeeksAgo,
-          lt: weekAgo
-        }
-      }
+    // Template count by format, for the Templates card breakdown.
+    prisma.template.groupBy({
+      by: ["format"],
+      where: { userId: user.id },
+      _count: true
     }),
     prisma.campaign.count({
       where: {
@@ -579,6 +553,42 @@ export default async function OverviewCommandCenter() {
   });
   const sequenceHealth = buildSequenceHealth(sequenceRows);
 
+  // ----- Summary-card data -----
+  // Active-status breakdown is derived from the campaigns already loaded above
+  // (no extra query); the rest reuse the scoped counts fetched for this user.
+  const activeBreakdown = overviewCampaigns.reduce(
+    (acc, campaign) => {
+      const runStatus = campaign.actualLatestRunStatus;
+      if (runStatus === "RUNNING") {
+        acc.running += 1;
+      } else if (runStatus === "QUEUED") {
+        acc.queued += 1;
+      } else if (runStatus === "PAUSED" || campaign.status === "PAUSED") {
+        acc.paused += 1;
+      } else if (campaign.status === "SCHEDULED") {
+        acc.scheduled += 1;
+      }
+      return acc;
+    },
+    { running: 0, queued: 0, paused: 0, scheduled: 0 }
+  );
+  const summaryActive = {
+    activeNow: activeBreakdown.running + activeBreakdown.queued,
+    total: campaignCount,
+    ...activeBreakdown
+  };
+  const summaryLists = {
+    processed: processedImportCount,
+    ready: Math.min(processedImportCount, mappedProcessedImportCount),
+    needsMapping: Math.max(0, processedImportCount - mappedProcessedImportCount),
+    recent: importCountThisWeek
+  };
+  const summaryTemplates = {
+    total: templateCount,
+    formats: buildTemplateFormatSummary(templateFormatGroups),
+    updatedThisWeek: templateCountThisWeek
+  };
+
   return (
     <div className={styles.page}>
       <section className={styles.hero}>
@@ -722,37 +732,12 @@ export default async function OverviewCommandCenter() {
         </div>
       </section>
 
-      <section className={styles.sendWindowSection}>
-        <SendWindowCard combined={userSendWindow} senders={sendWindowSenders} />
-      </section>
-
-      <section className={styles.metricsGrid}>
-        <MetricCard
-          icon={SendHorizontal}
-          label="Active sequences"
-          value={formatCompactNumber(activeSequenceCount)}
-          detail={`Running or queued sequences across ${formatCompactNumber(campaignCount)} total workflows.`}
-          trend={buildTrend(campaignCountThisWeek, campaignCountPreviousWeek, "week")}
-          href="/campaigns"
-          emphasis
-        />
-        <MetricCard
-          icon={FileSpreadsheet}
-          label="Lists ready"
-          value={formatCompactNumber(processedImportCount)}
-          detail="Processed imports available to map, validate, and launch."
-          trend={buildTrend(importCountThisWeek, importCountPreviousWeek, "week")}
-          href="/imports"
-        />
-        <MetricCard
-          icon={ScrollText}
-          label="Templates live"
-          value={formatCompactNumber(templateCount)}
-          detail="Playable email assets currently available across the workspace."
-          trend={buildTrend(templateCountThisWeek, templateCountPreviousWeek, "week")}
-          href="/templates"
-        />
-      </section>
+      <OverviewSummary
+        active={summaryActive}
+        lists={summaryLists}
+        templates={summaryTemplates}
+        sendWindow={{ combined: userSendWindow, senders: sendWindowSenders }}
+      />
 
       <section className={styles.mainGrid}>
         <div className={styles.sequenceSection}>
@@ -792,6 +777,40 @@ export default async function OverviewCommandCenter() {
       </section>
     </div>
   );
+}
+
+const TEMPLATE_FORMAT_ORDER = ["HTML", "PLAIN_TEXT", "JSON"] as const;
+const TEMPLATE_FORMAT_LABEL: Record<string, string> = {
+  HTML: "HTML",
+  PLAIN_TEXT: "Plain text",
+  JSON: "JSON"
+};
+
+// Collapse the Template.format groupBy into ordered, non-empty slices for the
+// Templates card. Known formats keep a friendly label and canonical order;
+// anything unexpected falls back to its raw value so nothing is dropped.
+function buildTemplateFormatSummary(
+  groups: Array<{ format: string; _count: number }>
+): TemplateFormatSlice[] {
+  const counts = new Map<string, number>();
+  for (const group of groups) {
+    counts.set(group.format, (counts.get(group.format) ?? 0) + group._count);
+  }
+
+  const slices: TemplateFormatSlice[] = [];
+  for (const format of TEMPLATE_FORMAT_ORDER) {
+    const count = counts.get(format) ?? 0;
+    if (count > 0) {
+      slices.push({ key: format, label: TEMPLATE_FORMAT_LABEL[format] ?? format, count });
+    }
+    counts.delete(format);
+  }
+  for (const [format, count] of counts) {
+    if (count > 0) {
+      slices.push({ key: format, label: TEMPLATE_FORMAT_LABEL[format] ?? format, count });
+    }
+  }
+  return slices;
 }
 
 // Normalize the raw Campaign.scheduleType column into the closed set the UI
