@@ -1,0 +1,471 @@
+/* ===========================================================================
+   Overview summary — four compact "command center" cards in one row.
+   Theme-aware via global tokens. `--danger` / `--info` are the two accents the
+   global palette leaves to components. Responsive via a container query so the
+   row adapts to the real content width (sidebar open or closed), not just the
+   viewport.
+   =========================================================================== */
+
+.summary {
+  --danger: #d96952;
+  --info: #3b82f6;
+  container-type: inline-size;
+  min-width: 0;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+  align-items: stretch;
+  min-width: 0;
+}
+
+/* Tone routing — scoped under .grid so the attribute selectors never leak. */
+.grid [data-tone="accent"] {
+  --tone: var(--accent);
+}
+.grid [data-tone="info"] {
+  --tone: var(--info);
+}
+.grid [data-tone="warning"] {
+  --tone: var(--warning);
+}
+.grid [data-tone="danger"] {
+  --tone: var(--danger);
+}
+.grid [data-tone="muted"] {
+  --tone: color-mix(in srgb, var(--muted) 78%, transparent);
+}
+.grid [data-format="0"] {
+  --tone: var(--accent);
+}
+.grid [data-format="1"] {
+  --tone: var(--info);
+}
+.grid [data-format="2"] {
+  --tone: var(--warning);
+}
+
+/* ----- Card shell ----- */
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  min-width: 0;
+  padding: 1.15rem 1.2rem 1rem;
+  border-radius: 22px;
+  border: 1px solid var(--line);
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--accent) 7%, transparent), transparent 14rem),
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 95%, transparent), var(--surface-muted));
+  box-shadow: var(--shadow);
+  color: inherit;
+  text-decoration: none;
+  overflow: hidden;
+  transition: transform 160ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 10%, transparent));
+  opacity: 0.5;
+  transition: opacity 180ms ease;
+  pointer-events: none;
+}
+
+.card:hover,
+.card:focus-visible {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--accent) 26%, var(--line));
+  box-shadow:
+    0 22px 44px rgba(28, 42, 70, 0.16),
+    0 0 0 1px color-mix(in srgb, var(--accent) 14%, transparent);
+  outline: none;
+}
+
+.card:hover::before,
+.card:focus-visible::before {
+  opacity: 1;
+}
+
+/* ----- Head ----- */
+.cardHead {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.iconBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 13px;
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent-soft) 96%, transparent),
+    color-mix(in srgb, var(--accent-soft) 58%, transparent)
+  );
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 20%, transparent),
+    0 6px 14px color-mix(in srgb, var(--accent) 12%, transparent);
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+.iconBadge svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.card:hover .iconBadge {
+  transform: translateY(-1px) scale(1.04);
+}
+
+.cardLabel {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statusPill {
+  --tone: var(--muted);
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.28rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--tone) 26%, transparent);
+  background: color-mix(in srgb, var(--tone) 13%, transparent);
+  color: var(--tone);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.statusPill[data-tone="muted"] {
+  color: var(--muted);
+}
+
+.pulseDot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: var(--tone);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--tone) 40%, transparent);
+  animation: summaryPulse 1.8s ease-out infinite;
+}
+
+/* ----- Stat (number) ----- */
+.stat {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.statValue {
+  font-size: 2.15rem;
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: -0.05em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.statValueOf {
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--muted);
+}
+
+.statUnit {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+/* ----- Visual middle area (stretches so footers align) ----- */
+.visual {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.6rem;
+  flex: 1;
+  min-height: 2.6rem;
+}
+
+.calm {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+/* ----- Segmented status rail (active + template formats) ----- */
+.rail {
+  display: flex;
+  gap: 3px;
+  height: 0.5rem;
+}
+
+.railSegment {
+  --tone: var(--muted);
+  min-width: 8px;
+  border-radius: 999px;
+  background: var(--tone);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.chip {
+  --tone: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.24rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--tone) 22%, var(--line));
+  background: color-mix(in srgb, var(--tone) 9%, transparent);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.chip b {
+  color: var(--text);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.chipDot {
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 999px;
+  background: var(--tone);
+}
+
+/* ----- Lists readiness ring ----- */
+.ringRow {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+}
+
+.ring {
+  --tone: var(--accent);
+  position: relative;
+  width: 3.3rem;
+  height: 3.3rem;
+  flex-shrink: 0;
+}
+
+.ring svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.ringTrack {
+  fill: none;
+  stroke: color-mix(in srgb, var(--muted) 24%, transparent);
+  stroke-width: 3.4;
+}
+
+.ringValue {
+  fill: none;
+  stroke: var(--tone);
+  stroke-width: 3.4;
+  stroke-linecap: round;
+  transition: stroke-dasharray 600ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ringText {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.miniChips {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.miniChip {
+  --tone: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.miniChip b {
+  color: var(--text);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ----- Send-window meter ----- */
+.meter {
+  --tone: var(--accent);
+  position: relative;
+  width: 100%;
+  height: 0.55rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--button-secondary-bg) 80%, transparent);
+  box-shadow: inset 0 1px 2px color-mix(in srgb, var(--text) 8%, transparent);
+  overflow: hidden;
+}
+
+.meterFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--tone), color-mix(in srgb, var(--tone) 62%, transparent));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 28%, transparent);
+  transition: width 320ms ease;
+}
+
+.meterMeta {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.meterMeta strong {
+  color: var(--text);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.meterReset {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+/* ----- Footer ----- */
+.cardFoot {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.cardFootText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cardFootBadge {
+  flex-shrink: 0;
+  padding: 0.18rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.cardFootArrow {
+  width: 0.95rem;
+  height: 0.95rem;
+  flex-shrink: 0;
+  color: var(--muted);
+  transition: transform 160ms ease, color 160ms ease;
+}
+
+.card:hover .cardFootArrow,
+.card:focus-visible .cardFootArrow {
+  transform: translate(2px, -2px);
+  color: var(--accent-strong);
+}
+
+/* ----- Keyframes ----- */
+@keyframes summaryPulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--tone) 42%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 6px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+/* ----- Responsive (container-based so it tracks the real content width) ----- */
+@container (max-width: 1040px) {
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container (max-width: 540px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Fallback for engines without container query support: viewport breakpoints. */
+@supports not (container-type: inline-size) {
+  @media (max-width: 1180px) {
+    .grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (max-width: 640px) {
+    .grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card,
+  .iconBadge,
+  .meterFill,
+  .ringValue,
+  .cardFootArrow {
+    transition: none;
+  }
+  .pulseDot {
+    animation: none;
+  }
+}

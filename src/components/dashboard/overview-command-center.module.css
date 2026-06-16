@@ -433,193 +433,12 @@
   letter-spacing: -0.04em;
 }
 
-.sendWindowSection {
-  display: block;
-}
-
-.metricsGrid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 1rem;
-}
-
-.metricCard {
-  position: relative;
-  display: grid;
-  gap: 1rem;
-  padding: 1.2rem 1.25rem;
-  border-radius: 26px;
-  border: 1px solid var(--line);
-  background:
-    radial-gradient(circle at top right, color-mix(in srgb, var(--accent) 6%, transparent), transparent 16rem),
-    linear-gradient(180deg, color-mix(in srgb, var(--surface) 95%, transparent), var(--surface-muted));
-  box-shadow: var(--shadow);
-  transition: transform 160ms ease, border-color 180ms ease, box-shadow 180ms ease, background-color 180ms ease;
-  overflow: hidden;
-}
-
-/* Thin top accent rail — the premium "card edge" signal, brightens on hover. */
-.metricCard::before {
-  content: "";
-  position: absolute;
-  inset: 0 0 auto 0;
-  height: 3px;
-  background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 10%, transparent));
-  opacity: 0.5;
-  transition: opacity 180ms ease;
-  pointer-events: none;
-}
-
-.metricCard:hover {
-  transform: translateY(-2px);
-  border-color: color-mix(in srgb, var(--accent) 26%, var(--line));
-  box-shadow:
-    0 22px 44px rgba(28, 42, 70, 0.16),
-    0 0 0 1px color-mix(in srgb, var(--accent) 14%, transparent);
-}
-
-.metricCard:hover::before {
-  opacity: 1;
-}
-
-.metricCardPrimary {
-  grid-column: span 2;
-  background:
-    radial-gradient(circle at top right, color-mix(in srgb, var(--accent) 12%, transparent), transparent 18rem),
-    linear-gradient(180deg, color-mix(in srgb, var(--surface) 95%, transparent), var(--surface-muted));
-}
-
-.metricCardTop,
-.metricCardBody {
-  display: grid;
-  gap: 0.55rem;
-}
-
-.metricCardTop {
-  grid-template-columns: auto 1fr;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.metricIcon,
-.activityIcon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2.6rem;
-  height: 2.6rem;
-  border-radius: 16px;
-  background: color-mix(in srgb, var(--accent-soft) 88%, transparent);
-  color: var(--accent);
-}
-
-.metricIcon svg,
-.metricTrend svg,
 .sequenceArrow svg,
 .activityIcon svg,
 .activityEmpty svg,
 .heroButtons svg {
   width: 1rem;
   height: 1rem;
-}
-
-/* Premium icon badge for the metric cards (does not affect .activityIcon). */
-.metricIcon {
-  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--accent-soft) 96%, transparent),
-      color-mix(in srgb, var(--accent-soft) 58%, transparent)
-    );
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, white 20%, transparent),
-    0 6px 14px color-mix(in srgb, var(--accent) 12%, transparent);
-  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
-}
-
-.metricCard:hover .metricIcon {
-  transform: translateY(-1px) scale(1.04);
-  border-color: color-mix(in srgb, var(--accent) 34%, transparent);
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, white 24%, transparent),
-    0 10px 22px color-mix(in srgb, var(--accent) 18%, transparent);
-}
-
-.metricTrend {
-  justify-self: end;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.4rem 0.72rem;
-  border-radius: 999px;
-  border: 1px solid transparent;
-  font-size: 0.78rem;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  font-variant-numeric: tabular-nums;
-}
-
-.metricTrendUp {
-  background: color-mix(in srgb, var(--accent-soft) 84%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 22%, transparent);
-  color: var(--accent-strong);
-}
-
-.metricTrendDown {
-  background: color-mix(in srgb, #d96952 12%, transparent);
-  border-color: color-mix(in srgb, #d96952 26%, transparent);
-  color: #e98f82;
-}
-
-.metricTrendFlat {
-  background: color-mix(in srgb, var(--button-secondary-bg) 92%, transparent);
-  border-color: color-mix(in srgb, var(--muted) 16%, transparent);
-  color: var(--muted);
-}
-
-.metricLabel {
-  color: var(--muted);
-  font-size: 0.84rem;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.metricValue {
-  font-size: clamp(2.05rem, 4vw, 3rem);
-  line-height: 1;
-  letter-spacing: -0.06em;
-  font-variant-numeric: tabular-nums;
-}
-
-.metricDetail {
-  margin: 0;
-  color: var(--muted);
-  line-height: 1.55;
-  padding-right: 3.35rem;
-  padding-bottom: 0.7rem;
-}
-
-.metricArrow {
-  position: absolute;
-  right: 1.1rem;
-  bottom: 1.1rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2rem;
-  height: 2rem;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  color: var(--muted);
-  transition: transform 160ms ease, border-color 180ms ease, color 180ms ease;
-}
-
-.metricCard:hover .metricArrow {
-  transform: translate(2px, -2px);
-  color: var(--text);
-  border-color: color-mix(in srgb, var(--accent) 18%, var(--line));
 }
 
 .mainGrid {
@@ -1680,6 +1499,9 @@
 .activityIcon {
   position: relative;
   z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 1.9rem;
   height: 1.9rem;
   border-radius: 999px;
@@ -1871,14 +1693,6 @@
     grid-template-columns: 1fr;
   }
 
-  .metricsGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .metricCardPrimary {
-    grid-column: span 2;
-  }
-
   .sectionTop {
     grid-template-columns: 1fr;
   }
@@ -1924,14 +1738,6 @@
   .activitySection {
     padding: 1.1rem;
     border-radius: 24px;
-  }
-
-  .metricsGrid {
-    grid-template-columns: 1fr;
-  }
-
-  .metricCardPrimary {
-    grid-column: span 1;
   }
 
   .heroButtons,
