@@ -75,15 +75,15 @@ export function OverviewSummary({
   );
 }
 
+// Icon + status pill sit on their own row so the label below always gets the
+// full card width — no more truncated titles when the sidebar narrows the row.
 function CardHead({
   icon: Icon,
-  label,
   status,
   statusTone,
   pulse
 }: {
   icon: LucideIcon;
-  label: string;
   status: string;
   statusTone: StatusTone;
   pulse?: boolean;
@@ -93,7 +93,6 @@ function CardHead({
       <span className={styles.iconBadge}>
         <Icon aria-hidden="true" />
       </span>
-      <span className={styles.cardLabel}>{label}</span>
       <span className={styles.statusPill} data-tone={statusTone}>
         {pulse ? <span className={styles.pulseDot} aria-hidden="true" /> : null}
         {status}
@@ -102,9 +101,10 @@ function CardHead({
   );
 }
 
-function Stat({ value, unit }: { value: string; unit: string }) {
+function Stat({ label, value, unit }: { label: string; value: string; unit: string }) {
   return (
     <div className={styles.stat}>
+      <span className={styles.statLabel}>{label}</span>
       <strong className={styles.statValue}>{value}</strong>
       <span className={styles.statUnit}>{unit}</span>
     </div>
@@ -126,8 +126,8 @@ function ActiveCard({ data }: { data: ActiveSummary }) {
 
   return (
     <Link href={"/campaigns" as Route} className={styles.card} data-kind="active">
-      <CardHead icon={Activity} label="Active sequences" status={status} statusTone={statusTone} pulse={data.running > 0} />
-      <Stat value={formatCompactNumber(moving)} unit="active now" />
+      <CardHead icon={Activity} status={status} statusTone={statusTone} pulse={data.running > 0} />
+      <Stat label="Active sequences" value={formatCompactNumber(moving)} unit="active now" />
 
       <div className={styles.visual}>
         {railTotal > 0 ? (
@@ -171,8 +171,8 @@ function ListsCard({ data }: { data: ListsSummary }) {
 
   return (
     <Link href={"/imports" as Route} className={styles.card} data-kind="lists">
-      <CardHead icon={FileSpreadsheet} label="Lists ready" status={status} statusTone={statusTone} />
-      <Stat value={formatCompactNumber(data.processed)} unit="processed imports" />
+      <CardHead icon={FileSpreadsheet} status={status} statusTone={statusTone} />
+      <Stat label="Lists ready" value={formatCompactNumber(data.processed)} unit="processed imports" />
 
       <div className={styles.visual}>
         {hasData ? (
@@ -200,7 +200,7 @@ function ListsCard({ data }: { data: ListsSummary }) {
         )}
       </div>
 
-      <CardFoot text="Ready to map, validate, and launch" />
+      <CardFoot text="Ready to map and launch" />
     </Link>
   );
 }
@@ -217,8 +217,8 @@ function TemplatesCard({ data }: { data: TemplatesSummary }) {
 
   return (
     <Link href={"/templates" as Route} className={styles.card} data-kind="templates">
-      <CardHead icon={LayoutTemplate} label="Templates live" status={status} statusTone={statusTone} />
-      <Stat value={formatCompactNumber(data.total)} unit="email templates" />
+      <CardHead icon={LayoutTemplate} status={status} statusTone={statusTone} />
+      <Stat label="Templates live" value={formatCompactNumber(data.total)} unit="email templates" />
 
       <div className={styles.visual}>
         {hasData ? (
@@ -284,11 +284,12 @@ function SendWindowCardCompact({ combined, senders }: { combined: DailySendWindo
 
   return (
     <Link href={"/workspace" as Route} className={styles.card} data-kind="send">
-      <CardHead icon={Gauge} label="Gmail send window" status={SEND_STATUS[tone].label} statusTone={SEND_STATUS[tone].tone} />
+      <CardHead icon={Gauge} status={SEND_STATUS[tone].label} statusTone={SEND_STATUS[tone].tone} />
 
       {combined.ledgerAvailable ? (
         <>
           <div className={styles.stat}>
+            <span className={styles.statLabel}>Gmail send window</span>
             <strong className={styles.statValue}>
               {combined.sentLast24h.toLocaleString()}
               <span className={styles.statValueOf}> / {combined.limit.toLocaleString()}</span>
@@ -308,27 +309,31 @@ function SendWindowCardCompact({ combined, senders }: { combined: DailySendWindo
             >
               <span className={styles.meterFill} style={{ width: `${usedPercent}%` }} />
             </div>
-            <p className={styles.meterMeta}>
-              <strong>{combined.remaining.toLocaleString()}</strong> remaining
+            <div className={styles.meterMeta}>
+              <span className={styles.meterRemaining}>
+                <strong>{combined.remaining.toLocaleString()}</strong> remaining
+              </span>
               {tone === "blocked" && combined.resetAt ? (
                 <span className={styles.meterReset}>
-                  · resumes <LocalDateTime value={combined.resetAt} variant="time" />
+                  Resumes <LocalDateTime value={combined.resetAt} variant="time" />
                 </span>
               ) : oldestExpiry ? (
                 <span className={styles.meterReset}>
-                  · resets from <LocalDateTime value={oldestExpiry} variant="time" />
+                  Resets from <LocalDateTime value={oldestExpiry} variant="time" />
                 </span>
               ) : (
-                <span className={styles.meterReset}>· no sends in 24h</span>
+                <span className={styles.meterReset}>No sends in the last 24h</span>
               )}
-            </p>
+            </div>
           </div>
         </>
       ) : (
-        <div className={styles.visual}>
-          <Stat value="—" unit="tracking paused" />
-          <p className={styles.calm}>Send tracking is paused until the database setup completes.</p>
-        </div>
+        <>
+          <Stat label="Gmail send window" value="—" unit="tracking paused" />
+          <div className={styles.visual}>
+            <p className={styles.calm}>Send tracking is paused until the database setup completes.</p>
+          </div>
+        </>
       )}
 
       {primary ? (
