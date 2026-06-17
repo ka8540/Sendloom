@@ -923,6 +923,78 @@
   font-size: 1.05rem;
 }
 
+/* ===================== Flow bridge (list → launch) ===================== */
+
+.flowLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.02fr) minmax(0, 0.98fr);
+  gap: 2.8rem;
+  align-items: center;
+  margin-top: 2.4rem;
+}
+
+.flowCopy {
+  display: grid;
+  gap: 1.1rem;
+  align-content: center;
+  max-width: 30rem;
+}
+
+.flowStages {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.8rem;
+  font-weight: 640;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--landing-muted);
+}
+
+.flowStage {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.flowStage:not(:first-child)::before {
+  content: "→";
+  color: var(--landing-emerald);
+  font-weight: 700;
+}
+
+.flowStage:last-child {
+  color: var(--landing-emerald-deep);
+}
+
+.flowVisual {
+  display: grid;
+  place-items: center;
+  width: 100%;
+}
+
+@media (max-width: 980px) {
+  .flowLayout {
+    grid-template-columns: 1fr;
+    gap: 2.2rem;
+    justify-items: center;
+    text-align: center;
+  }
+
+  .flowCopy {
+    justify-items: center;
+    max-width: 36rem;
+  }
+
+  .flowStages {
+    justify-content: center;
+  }
+}
+
 /* ===================== Chaos section ===================== */
 
 .chaos {

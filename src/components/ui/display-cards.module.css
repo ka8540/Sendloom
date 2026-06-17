@@ -1,0 +1,261 @@
+/* ============================================================
+   DisplayCards — layered, interactive product-stage cards.
+   Theme-aware via the shared global tokens (--accent / --link /
+   --surface-* / --line / --shadow), so the same component reads
+   correctly on both the light and dark Sendloom surfaces.
+
+   The diagonal fan is centred on the middle card so the group
+   never drifts off its column, and every offset is fluid so the
+   stack cannot push horizontal overflow onto small screens.
+   ============================================================ */
+
+.stack {
+  /* Fan geometry — overridable per breakpoint. */
+  --card-w: min(21rem, calc(100vw - 3rem));
+  --card-h: 9.75rem;
+  --step-x: 2rem;
+  --step-y: 3rem;
+
+  display: grid;
+  grid-template-areas: "stack";
+  place-items: center;
+  width: 100%;
+  /* Reserve room for the full fan (centre card ± one step) plus breathing space. */
+  min-height: calc(var(--card-h) + 2 * var(--step-y) + 1rem);
+}
+
+.card {
+  grid-area: stack;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: var(--card-w);
+  height: var(--card-h);
+  padding: 1.05rem 1.2rem;
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface-strong) 90%, transparent),
+      color-mix(in srgb, var(--surface) 78%, transparent)
+    );
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  backdrop-filter: blur(14px) saturate(140%);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  user-select: none;
+  z-index: var(--z, 1);
+  /* Centre the fan on the middle card (i === 1) so it stays put in its column. */
+  transform:
+    translate(calc((var(--i) - 1) * var(--step-x)), calc((var(--i) - 1) * var(--step-y)))
+    rotate(calc((var(--i) - 1) * 2deg));
+  transition:
+    transform 480ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 320ms ease,
+    border-color 320ms ease,
+    background 320ms ease,
+    opacity 320ms ease;
+}
+
+/* Per-tone accent: emerald is the brand default, blue is the restrained mid-accent. */
+.card[data-tone="emerald"] {
+  --tone: var(--accent);
+  --tone-strong: var(--accent-strong);
+  --tone-soft: var(--accent-soft);
+  --tone-soft-strong: var(--accent-soft-strong);
+}
+
+.card[data-tone="blue"] {
+  --tone: var(--link);
+  --tone-strong: var(--link);
+  --tone-soft: color-mix(in srgb, var(--link) 12%, transparent);
+  --tone-soft-strong: color-mix(in srgb, var(--link) 22%, transparent);
+}
+
+/* A hairline of tone along the top edge, lit on hover. */
+.card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--tone), color-mix(in srgb, var(--tone) 10%, transparent));
+  opacity: 0;
+  transition: opacity 320ms ease;
+  z-index: 2;
+}
+
+/* Soft inner tone wash, kept faint so text stays the focus. */
+.card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  background: radial-gradient(120% 90% at 12% 0%, var(--tone-soft), transparent 62%);
+  opacity: 0.6;
+  transition: opacity 320ms ease;
+  pointer-events: none;
+}
+
+.cardHead,
+.cardStatus {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.cardIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  color: var(--tone-strong);
+  background: var(--tone-soft-strong);
+  border: 1px solid color-mix(in srgb, var(--tone) 24%, transparent);
+  transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1), background 320ms ease;
+}
+
+.cardIcon svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.cardTitle {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  font-size: 1.06rem;
+  font-weight: 640;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.cardDescription {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  color: color-mix(in srgb, var(--text) 78%, transparent);
+}
+
+.cardStatus {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 560;
+  color: var(--muted);
+}
+
+.cardStatusDot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: var(--tone);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--tone) 18%, transparent);
+}
+
+/* ---- Hover choreography: lift the targeted card, recede the rest ---- */
+
+/* While the stack is engaged, the unhovered cards gently step back. */
+.stack:hover .card {
+  opacity: 0.66;
+  transform:
+    translate(calc((var(--i) - 1) * var(--step-x)), calc((var(--i) - 1) * var(--step-y) + 0.3rem))
+    rotate(calc((var(--i) - 1) * 2deg))
+    scale(0.985);
+}
+
+/* The hovered card comes forward, straightens, and brightens.
+   Higher specificity than the recede rule above so it always wins. */
+.stack:hover .card:hover {
+  opacity: 1;
+  z-index: 40;
+  transform:
+    translate(calc((var(--i) - 1) * var(--step-x)), calc((var(--i) - 1) * var(--step-y) - 0.9rem))
+    rotate(0deg)
+    scale(1.035);
+  border-color: color-mix(in srgb, var(--tone) 48%, var(--line));
+  box-shadow:
+    0 26px 54px color-mix(in srgb, var(--tone) 18%, rgba(8, 18, 14, 0.34)),
+    0 0 0 1px color-mix(in srgb, var(--tone) 26%, transparent);
+}
+
+.stack:hover .card:hover::before {
+  opacity: 1;
+}
+
+.stack:hover .card:hover::after {
+  opacity: 1;
+}
+
+.stack:hover .card:hover .cardIcon {
+  transform: scale(1.08);
+  background: color-mix(in srgb, var(--tone) 26%, var(--tone-soft-strong));
+}
+
+/* ---- Entrance: cards fan out with a short stagger once revealed ---- */
+/* Keyed on [data-revealed], which the landing GSAP timeline sets on the
+   [data-reveal] root. With JS off / reduced motion the attribute is never
+   added, so cards simply render in their settled positions. */
+.stack[data-revealed] .card {
+  animation: dcSettle 720ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation-delay: calc(var(--i) * 120ms + 200ms);
+}
+
+@keyframes dcSettle {
+  from {
+    opacity: 0;
+    transform:
+      translate(calc((var(--i) - 1) * var(--step-x) * 0.4), calc((var(--i) - 1) * var(--step-y) * 0.4 + 1.5rem))
+      rotate(0deg)
+      scale(0.95);
+  }
+}
+
+@media (max-width: 980px) {
+  .stack {
+    --card-w: min(20.5rem, calc(100vw - 3rem));
+  }
+}
+
+@media (max-width: 560px) {
+  .stack {
+    --card-w: min(19rem, calc(100vw - 4rem));
+    --card-h: 9.25rem;
+    --step-x: 1.05rem;
+    --step-y: 2.65rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card {
+    transition: opacity 200ms ease, border-color 200ms ease, box-shadow 200ms ease;
+  }
+
+  .stack[data-revealed] .card {
+    animation: none;
+  }
+
+  /* Keep the resting fan on hover — distinguish the active card with
+     opacity and the tone glow only, never with motion. */
+  .card,
+  .stack:hover .card,
+  .stack:hover .card:hover {
+    transform:
+      translate(calc((var(--i) - 1) * var(--step-x)), calc((var(--i) - 1) * var(--step-y)))
+      rotate(calc((var(--i) - 1) * 2deg));
+  }
+
+  .stack:hover .card:hover .cardIcon {
+    transform: none;
+  }
+}

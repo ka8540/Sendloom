@@ -7,6 +7,7 @@ import {
   PenLine,
   Radar,
   Search,
+  Send,
   Upload,
   Workflow
 } from "lucide-react";
@@ -21,6 +22,7 @@ import { LandingNav } from "@/components/landing-nav";
 import { LandingPointerFX } from "@/components/landing-pointer-fx";
 import { MarketingFooter } from "@/components/marketing/MarketingFooter";
 import { SendloomLogo } from "@/components/sendloom-logo";
+import DisplayCards, { type DisplayCardItem } from "@/components/ui/display-cards";
 
 import styles from "@/app/landing.module.css";
 
@@ -40,6 +42,32 @@ const chaosTools = [
   { tag: "Reminders", note: "Follow-ups set manually, then quietly forgotten." },
   { tag: "Tracking sheet", note: "Delivery state guessed at from memory." }
 ] as const;
+
+/* The condensed three-beat run — audience → message → controlled send — that the
+   full workflow below then unpacks step by step. */
+const flowCards: DisplayCardItem[] = [
+  {
+    icon: <Upload strokeWidth={1.8} aria-hidden="true" />,
+    title: "Audience imported",
+    description: "CSV and XLSX fields mapped",
+    status: "Ready for sequencing",
+    tone: "emerald"
+  },
+  {
+    icon: <FileText strokeWidth={1.8} aria-hidden="true" />,
+    title: "Template prepared",
+    description: "Variables reviewed and previewed",
+    status: "Ready to personalize",
+    tone: "blue"
+  },
+  {
+    icon: <Send strokeWidth={1.8} aria-hidden="true" />,
+    title: "Gmail sequence queued",
+    description: "Connected sender with controlled pacing",
+    status: "Ready to launch",
+    tone: "emerald"
+  }
+];
 
 const workflowSteps = [
   {
@@ -251,6 +279,28 @@ export default function LandingPage() {
               </p>
               <span className={styles.unifiedChip}>Import → Enrich → Template → Sequence → Follow-up → Track</span>
             </article>
+          </div>
+        </section>
+
+        <section className={styles.section}>
+          <div className={styles.flowLayout}>
+            <div className={styles.flowCopy} data-reveal>
+              <p className={styles.sectionEyebrow}>From list to launch</p>
+              <h2 className={styles.sectionTitle}>Everything needed for a controlled run.</h2>
+              <p className={styles.sectionText}>
+                Bring in the audience, shape the message, and launch through a connected Gmail sender—all from one
+                workspace.
+              </p>
+              <ol className={styles.flowStages} aria-hidden="true">
+                <li className={styles.flowStage}>Audience</li>
+                <li className={styles.flowStage}>Message</li>
+                <li className={styles.flowStage}>Controlled send</li>
+              </ol>
+            </div>
+
+            <div className={styles.flowVisual}>
+              <DisplayCards cards={flowCards} data-reveal />
+            </div>
           </div>
         </section>
 
