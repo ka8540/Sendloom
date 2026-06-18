@@ -90,7 +90,7 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
   const [disabled, setDisabled] = useState(!featureEnabled);
 
   const [searches, setSearches] = useState<ProspectSearchNode[]>([]);
-  const [searchesLoading, setSearchesLoading] = useState(featureEnabled);
+  const [searchesLoading, setSearchesLoading] = useState(true);
   const [searchesError, setSearchesError] = useState<string | null>(null);
   const [searchesHasNext, setSearchesHasNext] = useState(false);
   const [searchesEndCursor, setSearchesEndCursor] = useState<string | null>(null);
@@ -220,6 +220,8 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
         setSearchesLoading(false);
         return;
       }
+      // Backend reachable and enabled — clear any stale server-rendered hint.
+      setDisabled(false);
       if (result.error || !result.data) {
         setSearchesError(result.error ?? "Could not load prospect searches.");
         setSearchesLoading(false);
@@ -261,10 +263,11 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
   }, [loadingMore, searchesEndCursor, searchesHasNext]);
 
   useEffect(() => {
-    if (!featureEnabled) {
-      setDisabled(true);
-      return;
-    }
+    // Always verify against the live endpoint rather than trusting the
+    // server-rendered `featureEnabled` hint alone. If that hint is stale (e.g. a
+    // dev server that cached an older env) but the backend is actually enabled,
+    // this recovers instead of stranding the user on the disabled card. A
+    // genuinely disabled backend returns 404 and loadSearches re-sets `disabled`.
     void loadSearches({ autoSelect: true });
     // Run once on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
