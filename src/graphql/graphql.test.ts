@@ -30,9 +30,13 @@ function seedCompany(prisma: FakePrisma, overrides: Record<string, unknown>) {
     normalizedName: "apple",
     officialName: "Apple Inc.",
     officialDomain: "apple.com",
+    officialWebsiteDomain: "apple.com",
     officialWebsite: "https://www.apple.com",
     linkedinUrl: null,
     domainConfidence: "HIGH",
+    emailDomain: "apple.com",
+    emailDomainConfidence: "MEDIUM",
+    emailDomainEvidence: null,
     emailPattern: "flast",
     patternConfidence: "MEDIUM",
     patternEvidence: null,
@@ -196,12 +200,16 @@ describe("No secrets in responses (#25)", () => {
 
     const result = await graphql({
       schema: prospectSchema,
-      source: `{ company(id: "comp_A") { id name officialDomain emailPattern patternConfidence } }`,
+      source: `{ company(id: "comp_A") { id name officialWebsiteDomain emailDomain emailDomainConfidence emailPattern patternConfidence } }`,
       contextValue: makeContext({ user: FAKE_USER, prisma, userId: "user_A" })
     });
 
     const serialized = JSON.stringify(result.data);
     expect(serialized).not.toMatch(/token|secret|apiKey|bearer|password/i);
-    expect(result.data?.company).toMatchObject({ officialDomain: "apple.com", emailPattern: "flast" });
+    expect(result.data?.company).toMatchObject({
+      officialWebsiteDomain: "apple.com",
+      emailDomain: "apple.com",
+      emailPattern: "flast"
+    });
   });
 });

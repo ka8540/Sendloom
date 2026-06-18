@@ -6,7 +6,18 @@ import { buildConnection, cursorArgs, decodeCursor, resolveFirst } from "@/graph
 import { asStringArray, mapProspectError } from "@/graphql/resolvers/helpers";
 import { notFoundError, requireUser } from "@/graphql/errors";
 
-type EvidenceRow = { pattern?: unknown; reason?: unknown; sourceName?: unknown; sourceUrl?: unknown; percentage?: unknown };
+type EvidenceRow = {
+  emailDomain?: unknown;
+  pattern?: unknown;
+  observedPattern?: unknown;
+  reason?: unknown;
+  sourceName?: unknown;
+  sourceUrl?: unknown;
+  sourceType?: unknown;
+  percentage?: unknown;
+  confidence?: unknown;
+  observedAt?: unknown;
+};
 
 export const companyQueries = {
   async company(_root: unknown, args: { id: string }, context: GraphQLContext) {
@@ -47,6 +58,25 @@ export const companyMutations = {
     } catch (error) {
       mapProspectError(error);
     }
+  },
+
+  async setCompanyEmailInferenceOverride(
+    _root: unknown,
+    args: {
+      companyId: string;
+      emailDomain: string;
+      emailPattern: string;
+      confidence: "HIGH" | "MEDIUM" | "LOW" | "UNAVAILABLE";
+      reason?: string | null;
+    },
+    context: GraphQLContext
+  ) {
+    const user = requireUser(context);
+    try {
+      return await context.services.prospectSearch.setCompanyEmailInferenceOverride(user.id, args);
+    } catch (error) {
+      mapProspectError(error);
+    }
   }
 };
 
@@ -60,20 +90,43 @@ export const Company = {
   domainConfidence(parent: ProspectCompany) {
     return coerceConfidenceLevel(parent.domainConfidence);
   },
+  officialWebsiteDomain(parent: ProspectCompany) {
+    return parent.officialWebsiteDomain ?? parent.officialDomain ?? null;
+  },
+  emailDomainConfidence(parent: ProspectCompany) {
+    return coerceConfidenceLevel(parent.emailDomainConfidence);
+  },
+  emailDomainEvidence(parent: ProspectCompany) {
+    const evidence = Array.isArray(parent.emailDomainEvidence) ? (parent.emailDomainEvidence as EvidenceRow[]) : [];
+    return evidence
+      .filter((row) => typeof row?.emailDomain === "string")
+      .map((row) => ({
+        emailDomain: String(row.emailDomain),
+        sourceUrl: typeof row.sourceUrl === "string" ? row.sourceUrl : null,
+        sourceName: typeof row.sourceName === "string" ? row.sourceName : "inference",
+        sourceType: typeof row.sourceType === "string" ? row.sourceType : "search_snippet",
+        observedPattern: typeof row.observedPattern === "string" ? row.observedPattern : null,
+        percentage: typeof row.percentage === "number" ? row.percentage : null,
+        confidence: coerceConfidenceLevel(row.confidence),
+        observedAt: typeof row.observedAt === "string" ? row.observedAt : null
+      }));
+  },
   patternConfidence(parent: ProspectCompany) {
     return coerceConfidenceLevel(parent.patternConfidence);
   },
   patternEvidence(parent: ProspectCompany) {
     const evidence = Array.isArray(parent.patternEvidence) ? (parent.patternEvidence as EvidenceRow[]) : [];
-    const confidence = coerceConfidenceLevel(parent.patternConfidence);
     return evidence
       .filter((row) => typeof row?.pattern === "string")
       .map((row) => ({
         pattern: String(row.pattern),
+        emailDomain: typeof row.emailDomain === "string" ? row.emailDomain : null,
         sourceUrl: typeof row.sourceUrl === "string" ? row.sourceUrl : null,
+        sourceType: typeof row.sourceType === "string" ? row.sourceType : "search_snippet",
         sourceName: typeof row.sourceName === "string" ? row.sourceName : typeof row.reason === "string" ? row.reason : "inference",
         percentage: typeof row.percentage === "number" ? row.percentage : null,
-        confidence
+        confidence: coerceConfidenceLevel(row.confidence ?? parent.patternConfidence),
+        observedAt: typeof row.observedAt === "string" ? row.observedAt : null
       }));
   }
 };

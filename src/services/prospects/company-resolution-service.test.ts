@@ -17,6 +17,7 @@ describe("CompanyResolutionService", () => {
 
     expect(ai.calls).toHaveLength(0);
     expect(result.officialDomain).toBe("apple.com");
+    expect(result.officialWebsiteDomain).toBe("apple.com");
     expect(result.domainConfidence).toBe("HIGH");
     expect(result.normalizedName).toBe("apple");
   });
@@ -27,7 +28,7 @@ describe("CompanyResolutionService", () => {
         company_resolution: {
           officialName: "Apple Inc.",
           normalizedName: "apple",
-          officialDomain: "apple.com",
+          officialWebsiteDomain: "apple.com",
           officialWebsite: "https://www.apple.com",
           linkedinCompanyUrl: "https://www.linkedin.com/company/apple/",
           confidence: "HIGH",
@@ -41,6 +42,7 @@ describe("CompanyResolutionService", () => {
     const result = await service.resolve({ companyName: "Apple", budget: budget() });
     expect(ai.callsOfType("company_resolution")).toHaveLength(1);
     expect(result.officialDomain).toBe("apple.com");
+    expect(result.officialWebsiteDomain).toBe("apple.com");
     expect(result.linkedinCompanyUrl).toBe("https://www.linkedin.com/company/apple/");
   });
 
@@ -50,7 +52,7 @@ describe("CompanyResolutionService", () => {
         company_resolution: {
           officialName: "Sketchy Co",
           normalizedName: "sketchy",
-          officialDomain: "gmail.com",
+          officialWebsiteDomain: "gmail.com",
           officialWebsite: null,
           linkedinCompanyUrl: null,
           confidence: "HIGH",
@@ -73,6 +75,7 @@ describe("CompanyResolutionService", () => {
     const result = await service.resolve({ companyName: "Apple", budget: budget() });
     expect(ai.calls).toHaveLength(0);
     expect(result.officialDomain).toBeNull();
+    expect(result.officialWebsiteDomain).toBeNull();
     expect(result.domainConfidence).toBe("UNAVAILABLE");
   });
 });

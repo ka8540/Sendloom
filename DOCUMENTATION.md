@@ -1196,27 +1196,33 @@ than replacing them. A read-only frontend now consumes it at `/prospects` (see
 
 ### 23.2 Pipeline
 
-`createProspectSearch` → resolve company → run Apify actor → normalize +
-de-duplicate profiles → exclude current-company mismatches → classify unique
-titles into position categories → upsert position nodes and assign people →
-infer **one** company email pattern → generate each person's email
-deterministically → mark search `READY`. Ownership/not-found errors throw;
+`createProspectSearch` → resolve company website identity → run Apify actor →
+normalize + de-duplicate profiles → exclude current-company mismatches →
+classify unique titles into position categories → upsert position nodes and
+assign people → infer the employee email domain and email pattern from evidence
+→ generate each person's email deterministically → mark search `READY`.
+Ownership/not-found errors throw;
 provider/AI failures are persisted as a structured `FAILED` search (with
 `errorCode`) rather than crashing the request. A timeout bounds the synchronous
 run.
 
 ### 23.3 AI responsibilities and cost controls
 
-AI is used only for company resolution (≤1 call, skipped when a domain is
+AI is used only for company resolution (≤1 call, skipped when a website domain is
 provided), one **batched** title-classification call, and one company-level
-email-pattern call — roughly **three calls per search, never one per person**.
+email-domain/pattern ranking call — roughly **three calls per search, never one
+per person**.
 Deterministic title rules and a database cache
 (`ProspectTitleClassification`) avoid repeat model calls; `AiCallBudget` enforces
 the `PROSPECT_AI_MAX_*` ceilings. Every AI response is re-validated with Zod and
-coerced to the allowed enums. Candidate emails are produced with deterministic
-TypeScript (`generateEmail`). AI logs record only `{ searchId, taskType, model,
-inputItemCount, latencyMs, success }` — never prompts, personal data, candidate
-emails, raw payloads, or keys.
+coerced to the allowed enums. For email inference, AI ranks evidence only: the
+selected email domain and selected pattern must already appear in collected
+evidence, and website domain alone is never enough. Candidate emails are
+produced with deterministic TypeScript (`generateEmail`) from
+`ProspectCompany.emailDomain` plus `emailPattern`. AI logs record only safe task
+metadata such as search id, model, evidence/input counts, selected domain/pattern,
+latency, and success — never prompts, personal data, candidate emails, raw
+payloads, or keys.
 
 ### 23.4 Data model
 
@@ -1225,7 +1231,7 @@ New Prisma models (migration
 
 | Model | Purpose |
 | --- | --- |
-| `ProspectCompany` | Resolved company node (domain, website, LinkedIn, confidence, email pattern). Unique per `(userId, normalizedName)`. |
+| `ProspectCompany` | Resolved company node. `officialWebsiteDomain`/`officialDomain` track the public website, while `emailDomain`, `emailDomainEvidence`, `emailPattern`, and `patternEvidence` are evidence-backed employee email inference fields. Unique per `(userId, normalizedName)`. |
 | `ProspectCompanyPosition` | One node per position category under a company. Unique per `(companyId, category)`. |
 | `ProspectPerson` | A discovered professional, assigned to one position node, with inferred-email metadata. Unique per `(userId, sourceProfileId)`. |
 | `ProspectSearch` | A discovery request, its status, Apify run references, and counts. |
@@ -1250,7 +1256,8 @@ src/services/prospects/          provider + business logic (no resolver calls pr
   apify-profile-search.ts        Apify actor wrapper + profile normalization
   company-resolution-service.ts  AI task 1
   role-classification-service.ts deterministic map + cache + AI task 2
-  email-pattern-service.ts       AI task 3
+  email-domain-service.ts        email-domain/pattern evidence ranking + AI task 3
+  email-pattern-service.ts       compatibility export for email-domain service
   email-generation-service.ts    deterministic email generation
   prospect-validation.ts         create-search input validation
 src/app/api/graphql/route.ts     POST /api/graphql (Yoga), feature-flagged
@@ -1274,8 +1281,11 @@ this phase.
 and OpenAI mocked (no live calls): normalization, email generation, input
 validation, Apify input mapping/normalization/dedupe/company-match, title
 classification (batching, deterministic rules, caching, enum coercion), the
-full pipeline (positions upserted, people assigned, ~3 AI calls regardless of
-people count, structured provider failures), and the GraphQL layer
+full pipeline (positions upserted, people assigned, Applied Materials website
+domain `appliedmaterials.com` kept separate from email domain `amat.com`, no
+high-confidence emails without email-domain evidence, manual override
+regeneration, ~3 AI calls regardless of people count, structured provider
+failures), and the GraphQL layer
 (authentication, depth limit, pagination bound, cross-user isolation, DataLoader
 batching, disabled-feature rejection). Use `npm run prospect:test` for a live
 end-to-end smoke test against the real providers.
@@ -1294,13 +1304,18 @@ Pure presentation/branching logic lives in
 Behavior:
 
 - Lists previous searches; selecting a `READY` search loads the company summary,
-  position-category breakdown (empty categories hidden), and people.
+  separate website/email domains, position-category breakdown (empty categories
+  hidden), and people.
 - People default to **20 per page** (`first: 20`, never 5) with cursor-based
   previous/next pagination; the category filter passes `positionCategory`.
 - Inferred emails are labelled **inferred, not verified** — only a real
   `VERIFIED` status uses the green badge — with a persistent banner above the
   table. Copy controls render only when an address is present; missing addresses
   show "Unavailable". LinkedIn links open in a new tab with `rel="noopener noreferrer"`.
+- If the website domain differs from the employee email domain, both are shown
+  clearly. Applied Materials is the regression example: website
+  `appliedmaterials.com`, employee email domain `amat.com`, pattern
+  `first_last`.
 - Handles the disabled flag (clean "not enabled" card), processing/failed/
   canceled searches (safe `errorCode`/message, never raw GraphQL errors), and
   empty states. It creates **no** sequences or imports and sends nothing.

@@ -1,16 +1,27 @@
 import type { PrismaClient, ProspectCompany, ProspectSearch } from "@prisma/client";
 
 import { env } from "@/lib/env";
-import { type PositionCategory, coercePositionCategory, displayNameForCategory } from "@/lib/prospect-enums";
+import {
+  type ConfidenceLevel,
+  type PositionCategory,
+  coercePositionCategory,
+  displayNameForCategory,
+  isConfidenceLevel,
+  isEmailPattern
+} from "@/lib/prospect-enums";
 import {
   ApifyProfileSearchService,
   type NormalizedProfile
 } from "@/services/prospects/apify-profile-search";
 import { CompanyResolutionService, type CompanyResolution } from "@/services/prospects/company-resolution-service";
+import {
+  EmailDomainService,
+  isAllowedBusinessEmailDomain,
+  makeManualEmailDomainEvidence
+} from "@/services/prospects/email-domain-service";
 import { resolveCandidateEmail } from "@/services/prospects/email-generation-service";
-import { EmailPatternService } from "@/services/prospects/email-pattern-service";
 import { AiCallBudget, createAiBudget } from "@/services/prospects/prospect-ai";
-import { normalizeTitle } from "@/services/prospects/prospect-normalization";
+import { normalizeDomain, normalizeTitle } from "@/services/prospects/prospect-normalization";
 import { RoleClassificationService } from "@/services/prospects/role-classification-service";
 import type { ValidatedCreateProspectSearch } from "@/services/prospects/prospect-validation";
 
@@ -56,7 +67,7 @@ export type ProspectSearchServiceDeps = {
   apify: ApifyProfileSearchService;
   companyResolution: CompanyResolutionService;
   roleClassifier: RoleClassificationService;
-  emailPattern: EmailPatternService;
+  emailDomain: EmailDomainService;
   pipelineTimeoutMs?: number;
 };
 
@@ -65,7 +76,7 @@ export class ProspectSearchService {
   private readonly apify: ApifyProfileSearchService;
   private readonly companyResolution: CompanyResolutionService;
   private readonly roleClassifier: RoleClassificationService;
-  private readonly emailPattern: EmailPatternService;
+  private readonly emailDomain: EmailDomainService;
   private readonly pipelineTimeoutMs: number;
 
   constructor(deps: ProspectSearchServiceDeps) {
@@ -73,7 +84,7 @@ export class ProspectSearchService {
     this.apify = deps.apify;
     this.companyResolution = deps.companyResolution;
     this.roleClassifier = deps.roleClassifier;
-    this.emailPattern = deps.emailPattern;
+    this.emailDomain = deps.emailDomain;
     this.pipelineTimeoutMs = deps.pipelineTimeoutMs ?? DEFAULT_PIPELINE_TIMEOUT_MS;
   }
 
@@ -212,12 +223,13 @@ export class ProspectSearchService {
       search.id
     );
 
-    // 4) Infer ONE company email pattern.
+    // 4) Infer ONE company email domain + pattern from evidence.
     await this.setStatus(search.id, "INFERRING_EMAIL_PATTERN");
-    const pattern = await this.emailPattern.infer({
-      company: resolution.officialName,
-      domain: company.officialDomain,
-      evidence: [],
+    const inference = await this.emailDomain.infer({
+      userId,
+      companyId: company.id,
+      companyName: resolution.officialName,
+      officialWebsiteDomain: company.officialWebsiteDomain ?? company.officialDomain,
       budget,
       searchId: search.id
     });
@@ -225,11 +237,12 @@ export class ProspectSearchService {
     const updatedCompany = await this.prisma.prospectCompany.update({
       where: { id: company.id },
       data: {
-        emailPattern: pattern.selectedPattern,
-        patternConfidence: pattern.confidence,
-        patternEvidence: pattern.reasonSummary
-          ? [{ pattern: pattern.selectedPattern, reason: pattern.reasonSummary, evidenceCount: pattern.evidenceCount }]
-          : undefined
+        emailDomain: inference.selectedEmailDomain,
+        emailDomainConfidence: inference.emailDomainConfidence,
+        emailDomainEvidence: inference.emailDomainEvidence,
+        emailPattern: inference.selectedPattern,
+        patternConfidence: inference.patternConfidence,
+        patternEvidence: inference.patternEvidence
       }
     });
 
@@ -261,16 +274,19 @@ export class ProspectSearchService {
         name: resolution.officialName,
         normalizedName: resolution.normalizedName,
         officialName: resolution.officialName,
-        officialDomain: resolution.officialDomain,
+        officialDomain: resolution.officialWebsiteDomain,
+        officialWebsiteDomain: resolution.officialWebsiteDomain,
         officialWebsite: resolution.officialWebsite,
         linkedinUrl: resolution.linkedinCompanyUrl,
         domainConfidence: resolution.domainConfidence,
+        emailDomainConfidence: "UNAVAILABLE",
         patternConfidence: "UNAVAILABLE"
       },
       update: {
         name: resolution.officialName,
         officialName: resolution.officialName,
-        officialDomain: resolution.officialDomain,
+        officialDomain: resolution.officialWebsiteDomain,
+        officialWebsiteDomain: resolution.officialWebsiteDomain,
         officialWebsite: resolution.officialWebsite,
         linkedinUrl: resolution.linkedinCompanyUrl,
         domainConfidence: resolution.domainConfidence
@@ -344,7 +360,7 @@ export class ProspectSearchService {
     classifications: Map<string, { category: PositionCategory }>
   ): Promise<number> {
     const allowLowConfidence = env.PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS;
-    const patternConfidence = coerceConfidenceLevelSafe(company.patternConfidence);
+    const candidateConfidence = combinedEmailConfidence(company.emailDomainConfidence, company.patternConfidence);
     let processed = 0;
 
     for (const profile of profiles) {
@@ -357,9 +373,9 @@ export class ProspectSearchService {
       const candidate = resolveCandidateEmail({
         firstName: profile.firstName,
         lastName: profile.lastName,
-        domain: company.officialDomain,
+        domain: company.emailDomain,
         pattern: company.emailPattern,
-        patternConfidence,
+        patternConfidence: candidateConfidence,
         allowLowConfidence
       });
 
@@ -454,15 +470,16 @@ export class ProspectSearchService {
     return this.requireOwnedCompany(userId, companyId);
   }
 
-  /** Re-run email-pattern inference and regenerate every person's email. */
+  /** Re-run email-domain/pattern inference and regenerate every person's email. */
   async reinferCompanyEmailPattern(userId: string, companyId: string): Promise<ProspectCompany> {
     const company = await this.requireOwnedCompany(userId, companyId);
     const budget = createAiBudget();
 
-    const pattern = await this.emailPattern.infer({
-      company: company.officialName ?? company.name,
-      domain: company.officialDomain,
-      evidence: [],
+    const inference = await this.emailDomain.infer({
+      userId,
+      companyId,
+      companyName: company.officialName ?? company.name,
+      officialWebsiteDomain: company.officialWebsiteDomain ?? company.officialDomain,
       budget,
       searchId: null
     });
@@ -470,25 +487,77 @@ export class ProspectSearchService {
     const updatedCompany = await this.prisma.prospectCompany.update({
       where: { id: company.id },
       data: {
-        emailPattern: pattern.selectedPattern,
-        patternConfidence: pattern.confidence,
-        patternEvidence: pattern.reasonSummary
-          ? [{ pattern: pattern.selectedPattern, reason: pattern.reasonSummary, evidenceCount: pattern.evidenceCount }]
-          : undefined
+        emailDomain: inference.selectedEmailDomain,
+        emailDomainConfidence: inference.emailDomainConfidence,
+        emailDomainEvidence: inference.emailDomainEvidence,
+        emailPattern: inference.selectedPattern,
+        patternConfidence: inference.patternConfidence,
+        patternEvidence: inference.patternEvidence
       }
     });
 
+    await this.regenerateCompanyEmails(userId, updatedCompany);
+    return this.requireOwnedCompany(userId, companyId);
+  }
+
+  async setCompanyEmailInferenceOverride(
+    userId: string,
+    input: {
+      companyId: string;
+      emailDomain: string;
+      emailPattern: string;
+      confidence: ConfidenceLevel;
+      reason?: string | null;
+    }
+  ): Promise<ProspectCompany> {
+    await this.requireOwnedCompany(userId, input.companyId);
+
+    const emailDomain = normalizeDomain(input.emailDomain);
+    if (!emailDomain || !isAllowedBusinessEmailDomain(emailDomain)) {
+      throw new ProspectError("INVALID_STATE", "Enter a valid business email domain.");
+    }
+    if (!isEmailPattern(input.emailPattern)) {
+      throw new ProspectError("INVALID_STATE", "Enter a supported email pattern.");
+    }
+    if (!isConfidenceLevel(input.confidence)) {
+      throw new ProspectError("INVALID_STATE", "Enter a valid confidence level.");
+    }
+
+    const manualEvidence = makeManualEmailDomainEvidence({
+      emailDomain,
+      emailPattern: input.emailPattern,
+      confidence: input.confidence,
+      reason: input.reason
+    });
+
+    const updatedCompany = await this.prisma.prospectCompany.update({
+      where: { id: input.companyId },
+      data: {
+        emailDomain,
+        emailDomainConfidence: input.confidence,
+        emailDomainEvidence: [manualEvidence.domainEvidence],
+        emailPattern: input.emailPattern,
+        patternConfidence: input.confidence,
+        patternEvidence: [manualEvidence.patternEvidence]
+      }
+    });
+
+    await this.regenerateCompanyEmails(userId, updatedCompany);
+    return this.requireOwnedCompany(userId, input.companyId);
+  }
+
+  private async regenerateCompanyEmails(userId: string, updatedCompany: ProspectCompany): Promise<void> {
     const allowLowConfidence = env.PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS;
-    const patternConfidence = coerceConfidenceLevelSafe(updatedCompany.patternConfidence);
-    const people = await this.prisma.prospectPerson.findMany({ where: { companyId, userId } });
+    const candidateConfidence = combinedEmailConfidence(updatedCompany.emailDomainConfidence, updatedCompany.patternConfidence);
+    const people = await this.prisma.prospectPerson.findMany({ where: { companyId: updatedCompany.id, userId } });
 
     for (const person of people) {
       const candidate = resolveCandidateEmail({
         firstName: person.firstName,
         lastName: person.lastName,
-        domain: updatedCompany.officialDomain,
+        domain: updatedCompany.emailDomain,
         pattern: updatedCompany.emailPattern,
-        patternConfidence,
+        patternConfidence: candidateConfidence,
         allowLowConfidence
       });
       await this.prisma.prospectPerson.update({
@@ -502,11 +571,27 @@ export class ProspectSearchService {
         }
       });
     }
-
-    return updatedCompany;
   }
 }
 
-function coerceConfidenceLevelSafe(value: string) {
+function coerceConfidenceLevelSafe(value: string | null | undefined): ConfidenceLevel {
   return value === "HIGH" || value === "MEDIUM" || value === "LOW" ? value : "UNAVAILABLE";
+}
+
+function combinedEmailConfidence(
+  emailDomainConfidence: string | null | undefined,
+  patternConfidence: string | null | undefined
+): ConfidenceLevel {
+  const domain = coerceConfidenceLevelSafe(emailDomainConfidence);
+  const pattern = coerceConfidenceLevelSafe(patternConfidence);
+  if (domain === "UNAVAILABLE" || pattern === "UNAVAILABLE") {
+    return "UNAVAILABLE";
+  }
+  if (domain === "LOW" || pattern === "LOW") {
+    return "LOW";
+  }
+  if (domain === "MEDIUM" || pattern === "MEDIUM") {
+    return "MEDIUM";
+  }
+  return "HIGH";
 }

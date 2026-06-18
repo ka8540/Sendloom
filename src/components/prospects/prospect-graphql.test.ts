@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   PEOPLE_PAGE_SIZE,
   PEOPLE_QUERY,
+  PROSPECT_SEARCHES_QUERY,
   SEARCHES_PAGE_SIZE,
   buildPeopleVariables,
   buildSearchesVariables,
@@ -47,6 +48,12 @@ describe("prospect graphql helper", () => {
   it("defaults searches page size to 20", () => {
     expect(buildSearchesVariables().first).toBe(20);
     expect(SEARCHES_PAGE_SIZE).toBe(20);
+  });
+
+  it("requests website and email domains separately", () => {
+    expect(PEOPLE_QUERY).toContain("inferredEmail");
+    expect(PROSPECT_SEARCHES_QUERY).toContain("officialWebsiteDomain");
+    expect(PROSPECT_SEARCHES_QUERY).toContain("emailDomain");
   });
 
   describe("isDisabledResponse", () => {

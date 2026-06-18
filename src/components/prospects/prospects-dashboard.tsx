@@ -554,8 +554,8 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
                           <span>
                             <Users aria-hidden="true" /> {search.peopleCount}
                           </span>
-                          {search.company?.officialDomain && (
-                            <span className={styles.truncate}>{search.company.officialDomain}</span>
+                          {(search.company?.officialWebsiteDomain ?? search.company?.officialDomain) && (
+                            <span className={styles.truncate}>{search.company?.officialWebsiteDomain ?? search.company?.officialDomain}</span>
                           )}
                           <span>{formatDateTime(search.createdAt)}</span>
                         </span>
@@ -730,8 +730,17 @@ function SummaryCards({
   const status = search ? statusBadge(search.status) : null;
   const pattern = company?.emailPattern ?? search?.company?.emailPattern ?? null;
   const patternConfidence = company?.patternConfidence ?? search?.company?.patternConfidence ?? "UNAVAILABLE";
+  const emailDomain = company?.emailDomain ?? search?.company?.emailDomain ?? null;
+  const emailDomainConfidence = company?.emailDomainConfidence ?? search?.company?.emailDomainConfidence ?? "UNAVAILABLE";
+  const websiteDomain =
+    company?.officialWebsiteDomain ??
+    company?.officialDomain ??
+    search?.company?.officialWebsiteDomain ??
+    search?.company?.officialDomain ??
+    null;
   const peopleCount = company?.peopleCount ?? search?.company?.peopleCount ?? search?.peopleCount ?? 0;
   const positionCount = company?.positions.filter((position) => position.peopleCount > 0).length ?? 0;
+  const domainDiffers = Boolean(websiteDomain && emailDomain && websiteDomain !== emailDomain);
 
   return (
     <div className={styles.summaryGrid}>
@@ -740,7 +749,7 @@ function SummaryCards({
           <Building2 aria-hidden="true" /> Company
         </span>
         <span className={styles.summaryValue}>{company?.name ?? search?.company?.name ?? search?.requestedCompany ?? "—"}</span>
-        <span className={styles.summaryMeta}>{company?.officialDomain ?? search?.company?.officialDomain ?? "Domain unresolved"}</span>
+        <span className={styles.summaryMeta}>Website: {websiteDomain ?? "unresolved"}</span>
       </div>
 
       <div className={`card ${styles.summaryCard}`}>
@@ -755,8 +764,14 @@ function SummaryCards({
         <span className={styles.summaryLabel}>
           <AtSign aria-hidden="true" /> Email pattern
         </span>
-        <span className={styles.summaryValue}>{pattern ? <code className={styles.patternCode}>{pattern}</code> : "—"}</span>
-        <span className={styles.summaryWarn}>Inferred · {confidenceBadge(patternConfidence).label.toLowerCase()} confidence, not verified</span>
+        <span className={styles.summaryValue}>{emailDomain ?? "Unavailable"}</span>
+        <span className={styles.summaryMeta}>
+          {pattern ? <code className={styles.patternCode}>{pattern}</code> : "Pattern unavailable"}
+        </span>
+        <span className={styles.summaryWarn}>
+          Inferred · {confidenceBadge(emailDomainConfidence === "UNAVAILABLE" ? patternConfidence : emailDomainConfidence).label.toLowerCase()} confidence, not verified
+        </span>
+        {domainDiffers && <span className={styles.summaryMeta}>Website differs from email domain</span>}
       </div>
 
       <div className={`card ${styles.summaryCard}`}>
@@ -784,8 +799,12 @@ function CompanyCard({ company, loading }: { company: CompanyDetail | null; load
   if (!company) {
     return null;
   }
-  const domainConfidence = confidenceBadge(company.domainConfidence);
+  const websiteDomain = company.officialWebsiteDomain ?? company.officialDomain;
+  const emailDomainConfidence = confidenceBadge(company.emailDomainConfidence);
   const patternConfidence = confidenceBadge(company.patternConfidence);
+  const domainDiffers = Boolean(websiteDomain && company.emailDomain && websiteDomain !== company.emailDomain);
+  const firstDomainEvidence = company.emailDomainEvidence[0] ?? null;
+  const firstPatternEvidence = company.patternEvidence[0] ?? null;
   return (
     <div className={`card ${styles.companyCard}`}>
       <div className={styles.companyHeader}>
@@ -797,7 +816,7 @@ function CompanyCard({ company, loading }: { company: CompanyDetail | null; load
           <div className={styles.companyLinks}>
             {company.officialWebsite && (
               <a href={company.officialWebsite} target={EXTERNAL_LINK_TARGET} rel={EXTERNAL_LINK_REL}>
-                {company.officialDomain ?? "Website"} <ExternalLink aria-hidden="true" />
+                {websiteDomain ?? "Website"} <ExternalLink aria-hidden="true" />
               </a>
             )}
             {company.linkedinUrl && (
@@ -810,14 +829,23 @@ function CompanyCard({ company, loading }: { company: CompanyDetail | null; load
       </div>
       <div className={styles.companyMetaGrid}>
         <div className={styles.metaItem}>
-          <span className={styles.metaLabel}>Domain confidence</span>
-          <BadgePill badge={domainConfidence} />
+          <span className={styles.metaLabel}>Company website</span>
+          <span className={styles.metaValue}>{websiteDomain ?? "Unavailable"}</span>
+        </div>
+        <div className={styles.metaItem}>
+          <span className={styles.metaLabel}>Email domain</span>
+          <span className={styles.metaValue}>{company.emailDomain ?? "Unavailable"}</span>
+          {domainDiffers && <span className={styles.metaHint}>Different from website</span>}
         </div>
         <div className={styles.metaItem}>
           <span className={styles.metaLabel}>Email pattern</span>
           <span className={styles.metaValue}>
             {company.emailPattern ? <code className={styles.patternCode}>{company.emailPattern}</code> : "—"}
           </span>
+        </div>
+        <div className={styles.metaItem}>
+          <span className={styles.metaLabel}>Email confidence</span>
+          <BadgePill badge={emailDomainConfidence} />
         </div>
         <div className={styles.metaItem}>
           <span className={styles.metaLabel}>Pattern confidence</span>
@@ -828,7 +856,45 @@ function CompanyCard({ company, loading }: { company: CompanyDetail | null; load
           <span className={styles.metaValue}>{company.peopleCount}</span>
         </div>
       </div>
+      <div className={styles.evidencePanel}>
+        <span className={styles.metaLabel}>Evidence</span>
+        {firstDomainEvidence || firstPatternEvidence ? (
+          <div className={styles.evidenceList}>
+            {firstDomainEvidence && (
+              <EvidenceItem
+                label={`Email domain: ${firstDomainEvidence.emailDomain}`}
+                sourceName={firstDomainEvidence.sourceName}
+                sourceUrl={firstDomainEvidence.sourceUrl}
+              />
+            )}
+            {firstPatternEvidence && (
+              <EvidenceItem
+                label={`Pattern: ${firstPatternEvidence.pattern}`}
+                sourceName={firstPatternEvidence.sourceName}
+                sourceUrl={firstPatternEvidence.sourceUrl}
+              />
+            )}
+          </div>
+        ) : (
+          <span className={styles.metaHint}>No evidence-backed email domain or pattern is available yet.</span>
+        )}
+      </div>
     </div>
+  );
+}
+
+function EvidenceItem({ label, sourceName, sourceUrl }: { label: string; sourceName: string; sourceUrl: string | null }) {
+  return (
+    <span className={styles.evidenceItem}>
+      <span>{label}</span>
+      {sourceUrl ? (
+        <a href={sourceUrl} target={EXTERNAL_LINK_TARGET} rel={EXTERNAL_LINK_REL}>
+          {sourceName} <ExternalLink aria-hidden="true" />
+        </a>
+      ) : (
+        <span className={styles.evidenceSource}>{sourceName}</span>
+      )}
+    </span>
   );
 }
 
@@ -856,7 +922,7 @@ function StatusCard({
       {processing ? (
         <p className={styles.statusBody}>
           <LoaderCircle aria-hidden="true" className={styles.spin} /> Processing — this can take up to a minute while we resolve
-          the company, search people, and infer the email pattern.
+          the company, search people, and infer the email domain and pattern.
         </p>
       ) : failed ? (
         <p className={styles.statusBody}>

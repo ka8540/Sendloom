@@ -730,7 +730,7 @@ sequenceDiagram
 | `RateLimitWindow` | Per-user send guardrails |
 | `AuditLog` | Admin and operational audit records |
 | `HunterDomainSearch` | Stored Finder domain search history |
-| `ProspectCompany` | Resolved company node in the prospect graph (domain, email pattern, confidence) |
+| `ProspectCompany` | Resolved company node in the prospect graph (website domain, evidence-backed email domain, email pattern, confidence) |
 | `ProspectCompanyPosition` | Position-category node under a company (e.g. `SOFTWARE_ENGINEERING`) |
 | `ProspectPerson` | A discovered professional assigned to one position node, with an inferred business email |
 | `ProspectSearch` | A prospect discovery request and its pipeline status |
@@ -857,12 +857,12 @@ Create a local `.env` file at the repo root with the values below. Secrets and s
 | `APIFY_PROSPECT_ACTOR_ID` | Optional | Actor id/slug. Defaults to `harvestapi/linkedin-profile-search`. |
 | `LOCAL_PROSPECT_MAX_RESULTS` | Optional | Hard local cap on results per search. Defaults to `25`. |
 | `PROSPECT_AI_ENABLED` | Optional | Enables the AI company/role/pattern steps. Defaults to `true`. |
-| `PROSPECT_AI_MODEL` | Optional | Override the prospect AI model. Blank uses the project default (`gpt-5-mini`). |
+| `PROSPECT_AI_MODEL` | Optional | Override the prospect AI model. Blank uses the project default (`gpt-5`); local testing can set the latest available strong model, for example `gpt-5.5`. |
 | `PROSPECT_AI_MAX_COMPANY_CALLS_PER_SEARCH` | Optional | Per-search company-resolution AI call cap. Defaults to `2`. |
 | `PROSPECT_AI_MAX_ROLE_CALLS_PER_SEARCH` | Optional | Per-search title-classification AI call cap. Defaults to `1`. |
-| `PROSPECT_AI_MAX_PATTERN_CALLS_PER_SEARCH` | Optional | Per-search email-pattern AI call cap. Defaults to `1`. |
+| `PROSPECT_AI_MAX_PATTERN_CALLS_PER_SEARCH` | Optional | Per-search email-domain/pattern ranking AI call cap. Defaults to `1`. |
 | `PROSPECT_AI_MAX_UNIQUE_TITLES` | Optional | Max unique titles sent to the model in one batch. Defaults to `100`. |
-| `PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS` | Optional | When `true`, generate emails even for LOW-confidence patterns (local testing only). Defaults to `false`. |
+| `PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS` | Optional | When `true`, generate emails even for LOW-confidence email-domain/pattern inference (local testing only). Defaults to `false`. |
 
 ### Security deployment notes
 
@@ -935,12 +935,12 @@ npm run test:watch  # watch mode
 A user creates a prospect search for a company + job titles + locations. The
 backend then:
 
-1. resolves the company (official name, domain, LinkedIn URL),
+1. resolves the company (official name, public website domain, LinkedIn URL),
 2. discovers professional profiles via the Apify LinkedIn profile-search actor,
 3. normalizes + de-duplicates profiles and drops anyone not currently at the company,
 4. classifies each unique job title into a position category,
-5. infers **one** email pattern for the whole company,
-6. generates each person's candidate email **deterministically** from that pattern.
+5. separately infers the employee email domain and email pattern from evidence,
+6. generates each person's candidate email **deterministically** from that selected email domain and pattern.
 
 The result is exposed as a graph:
 
@@ -959,13 +959,21 @@ typical search makes about **three** model calls total:
 | --- | --- | --- |
 | Company resolution | ≤ 1 | Skipped entirely when a valid company domain is supplied. |
 | Title classification | ≤ 1 | One **batched** call for all unique unknown titles; deterministic map + DB cache handle the rest. |
-| Email pattern | ≤ 1 | One call per company, selecting from a fixed pattern set. |
+| Email domain + pattern | ≤ 1 | One call per company, ranking evidence only. The selected domain and pattern must already appear in evidence. |
 
 Per-search ceilings are enforced in code (`AiCallBudget`) and configured via
 `PROSPECT_AI_MAX_*`. Every AI response is re-validated server-side with Zod and
-coerced to the allowed enums — AI output is never trusted directly. Candidate
-emails are then generated with deterministic TypeScript (`generateEmail`), so AI
-cost does not scale with the number of people.
+coerced to the allowed enums — AI output is never trusted directly. AI ranks
+evidence only; it cannot invent an employee email domain or pattern. Candidate
+emails are then generated with deterministic TypeScript (`generateEmail`) from
+`ProspectCompany.emailDomain` plus `emailPattern`, so AI cost does not scale with
+the number of people.
+
+Website domain and employee email domain are separate fields. For example,
+Applied Materials can resolve to website `appliedmaterials.com` while using
+employee email domain `amat.com` and pattern `first_last`. If email-domain or
+pattern evidence is missing or conflicting, the result stays `LOW` or
+`UNAVAILABLE` and high-confidence emails are not generated.
 
 ### Architecture
 
@@ -975,7 +983,7 @@ GraphQL resolver
        → CompanyResolutionService     (AI task 1)
        → ApifyProfileSearchService    (Apify actor + normalization)
        → RoleClassificationService    (deterministic map + cache + AI task 2)
-       → EmailPatternService          (AI task 3)
+       → EmailDomainService           (evidence collection + AI ranking task 3)
        → email-generation-service     (deterministic, no AI)
 ```
 
@@ -1029,13 +1037,14 @@ client — reusing the global CSRF fetch patch, so no CSRF protection is bypasse
 and lets you:
 
 - browse previous prospect searches and select a `READY` one,
-- view the resolved company summary, position-category breakdown, and people,
+- view the resolved company summary, separate website/email domains, position-category breakdown, and people,
 - filter the current page by position category, and copy individual inferred emails.
 
 People results default to **20 per page** (never 5), with cursor-based
 previous/next pagination. Every address is clearly labelled **inferred, not
 verified** (only a real `VERIFIED` status uses the green badge), and a persistent
-banner reinforces this above the table. The page handles the disabled flag,
+banner reinforces that generated emails are inferred from the selected email
+domain and pattern. The page handles the disabled flag,
 processing/failed/canceled searches, and empty states gracefully — and it
 **never** creates sequences, imports, or sends anything. When
 `PROSPECT_GRAPH_ENABLED` is off, the GraphQL route returns 404 and the page shows
@@ -1062,7 +1071,14 @@ Process it (runs the pipeline):
 mutation ($id: ID!) {
   processProspectSearch(id: $id) {
     id status peopleCount
-    company { id name officialDomain emailPattern patternConfidence }
+    company {
+      id name
+      officialWebsiteDomain
+      emailDomain
+      emailPattern
+      emailDomainConfidence
+      patternConfidence
+    }
   }
 }
 ```
@@ -1072,11 +1088,34 @@ Query the company graph:
 ```graphql
 query ($companyId: ID!) {
   company(id: $companyId) {
-    id name officialDomain
+    id name officialWebsiteDomain emailDomain emailPattern
+    emailDomainEvidence { sourceName sourceUrl sourceType confidence }
+    patternEvidence { pattern sourceName sourceUrl sourceType confidence }
     positions {
       category displayName peopleCount
       people { firstName lastName currentTitle location inferredEmail emailStatus }
     }
+  }
+}
+```
+
+Manual correction for local testing:
+
+```graphql
+mutation SetCompanyEmailInferenceOverride($companyId: ID!) {
+  setCompanyEmailInferenceOverride(
+    companyId: $companyId
+    emailDomain: "amat.com"
+    emailPattern: "first_last"
+    confidence: HIGH
+    reason: "Manual correction based on verified company email-format evidence"
+  ) {
+    id
+    name
+    officialWebsiteDomain
+    emailDomain
+    emailPattern
+    patternConfidence
   }
 }
 ```
@@ -1105,8 +1144,7 @@ parts are redacted and no tokens are printed.
 
 ### Current limitations
 
-- No frontend, no Finder/dashboard integration, no CSV export, no sequence
-  creation, and no automatic outreach.
+- No CSV export, no sequence creation, and no automatic outreach.
 - Synchronous processing is intended for small result sets (≤ 25 locally, capped
   by `LOCAL_PROSPECT_MAX_RESULTS`); the pipeline has a timeout and returns a
   structured `FAILED` status on provider errors.

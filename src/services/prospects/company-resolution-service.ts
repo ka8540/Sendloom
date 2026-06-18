@@ -18,6 +18,8 @@ export type CompanyEvidence = {
 export type CompanyResolution = {
   officialName: string;
   normalizedName: string;
+  officialWebsiteDomain: string | null;
+  /** Backward-compatible alias for officialWebsiteDomain. */
   officialDomain: string | null;
   officialWebsite: string | null;
   linkedinCompanyUrl: string | null;
@@ -39,7 +41,7 @@ export type ResolveCompanyInput = {
 const aiCompanyResolutionSchema = z.object({
   officialName: z.string(),
   normalizedName: z.string(),
-  officialDomain: z.string().nullable(),
+  officialWebsiteDomain: z.string().nullable(),
   officialWebsite: z.string().nullable(),
   linkedinCompanyUrl: z.string().nullable(),
   confidence: z.enum(CONFIDENCE_LEVELS as unknown as [string, ...string[]]),
@@ -61,7 +63,7 @@ const AI_COMPANY_JSON_SCHEMA = {
   required: [
     "officialName",
     "normalizedName",
-    "officialDomain",
+    "officialWebsiteDomain",
     "officialWebsite",
     "linkedinCompanyUrl",
     "confidence",
@@ -71,7 +73,7 @@ const AI_COMPANY_JSON_SCHEMA = {
   properties: {
     officialName: { type: "string" },
     normalizedName: { type: "string" },
-    officialDomain: { type: ["string", "null"] },
+    officialWebsiteDomain: { type: ["string", "null"] },
     officialWebsite: { type: ["string", "null"] },
     linkedinCompanyUrl: { type: ["string", "null"] },
     confidence: { type: "string", enum: [...CONFIDENCE_LEVELS] },
@@ -94,9 +96,10 @@ const AI_COMPANY_JSON_SCHEMA = {
 
 const INSTRUCTIONS = [
   "You resolve a user-supplied company name to its official identity.",
-  "Return the official company name, its primary corporate email domain, official website, and LinkedIn company URL.",
-  "Never invent a domain you are not confident about. If you lack sufficient evidence, set confidence to LOW or UNAVAILABLE and requiresConfirmation to true, and leave officialDomain null.",
-  "Never return a personal mailbox domain (gmail.com, outlook.com, etc.) as a company domain.",
+  "Return the official company name, public website domain, official website URL, and LinkedIn company URL.",
+  "The public website domain is not necessarily the employee email domain. Do not infer employee email domains here.",
+  "Never invent a website domain you are not confident about. If you lack sufficient evidence, set confidence to LOW or UNAVAILABLE and requiresConfirmation to true, and leave officialWebsiteDomain null.",
+  "Never return a personal mailbox domain (gmail.com, outlook.com, etc.) as a company website domain.",
   "Confidence must be one of HIGH, MEDIUM, LOW, UNAVAILABLE."
 ].join(" ");
 
@@ -129,6 +132,7 @@ export class CompanyResolutionService {
       return {
         officialName: companyName,
         normalizedName,
+        officialWebsiteDomain: safeProvidedDomain,
         officialDomain: safeProvidedDomain,
         officialWebsite: websiteFromDomain(safeProvidedDomain),
         linkedinCompanyUrl: providedLinkedin,
@@ -137,8 +141,8 @@ export class CompanyResolutionService {
         evidence: [
           {
             sourceUrl: null,
-            sourceName: "user-provided domain",
-            claim: `Domain ${safeProvidedDomain} was supplied with the request.`
+            sourceName: "user-provided website domain",
+            claim: `Website domain ${safeProvidedDomain} was supplied with the request.`
           }
         ]
       };
@@ -165,7 +169,7 @@ export class CompanyResolutionService {
         });
 
         const parsed = aiCompanyResolutionSchema.parse(raw);
-        const aiDomain = normalizeDomain(parsed.officialDomain);
+        const aiDomain = normalizeDomain(parsed.officialWebsiteDomain);
         const safeAiDomain = aiDomain && !isPersonalEmailDomain(aiDomain) ? aiDomain : null;
         let confidence = coerceConfidenceLevel(parsed.confidence);
 
@@ -189,6 +193,7 @@ export class CompanyResolutionService {
         return {
           officialName: parsed.officialName.trim() || companyName,
           normalizedName,
+          officialWebsiteDomain: safeAiDomain,
           officialDomain: safeAiDomain,
           officialWebsite,
           linkedinCompanyUrl: providedLinkedin ?? pickLinkedInCompanyUrl(parsed.linkedinCompanyUrl),
@@ -206,6 +211,7 @@ export class CompanyResolutionService {
     return {
       officialName: companyName,
       normalizedName,
+      officialWebsiteDomain: null,
       officialDomain: null,
       officialWebsite: null,
       linkedinCompanyUrl: providedLinkedin,

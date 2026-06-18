@@ -58,6 +58,9 @@ function search(overrides: Partial<ProspectSearchNode> = {}): ProspectSearchNode
       id: "c1",
       name: "Stripe, Inc.",
       officialDomain: "stripe.com",
+      officialWebsiteDomain: "stripe.com",
+      emailDomain: "stripe.com",
+      emailDomainConfidence: "HIGH",
       emailPattern: "first.last",
       patternConfidence: "HIGH",
       peopleCount: 3

@@ -17,7 +17,7 @@ export const EXTERNAL_LINK_REL = "noopener noreferrer";
 
 // The single warning shown above the people table. Inferred is NOT verified.
 export const INFERRED_EMAIL_NOTICE =
-  "Generated emails are inferred from the company pattern until verified.";
+  "Generated emails are inferred from the selected email domain and pattern until verified.";
 
 export type BadgeTone = "verified" | "inferred" | "neutral" | "warning" | "muted" | "blocked";
 
@@ -38,11 +38,11 @@ export function emailStatusBadge(status: EmailCandidateStatus): Badge {
     case "VERIFIED":
       return { label: "Verified", tone: "verified", hint: "Verified deliverable address." };
     case "INFERRED_HIGH":
-      return { label: "Inferred · High", tone: "inferred", hint: "Inferred from the company pattern (high confidence). Not verified." };
+      return { label: "Inferred · High", tone: "inferred", hint: "Inferred from the selected email domain and pattern (high confidence). Not verified." };
     case "INFERRED_MEDIUM":
-      return { label: "Inferred · Medium", tone: "neutral", hint: "Inferred from the company pattern (medium confidence). Not verified." };
+      return { label: "Inferred · Medium", tone: "neutral", hint: "Inferred from the selected email domain and pattern (medium confidence). Not verified." };
     case "INFERRED_LOW":
-      return { label: "Inferred · Low", tone: "warning", hint: "Inferred from the company pattern (low confidence). Not verified." };
+      return { label: "Inferred · Low", tone: "warning", hint: "Inferred from the selected email domain and pattern (low confidence). Not verified." };
     case "SUPPRESSED":
       return { label: "Suppressed", tone: "blocked", hint: "Suppressed — excluded from outreach." };
     case "INVALID":
@@ -90,7 +90,7 @@ const STATUS_LABELS: Record<ProspectSearchStatus, string> = {
   RESOLVING_COMPANY: "Resolving company",
   SEARCHING_PEOPLE: "Searching people",
   CLASSIFYING_POSITIONS: "Classifying roles",
-  INFERRING_EMAIL_PATTERN: "Inferring email pattern",
+  INFERRING_EMAIL_PATTERN: "Inferring email format",
   READY: "Ready",
   FAILED: "Failed",
   CANCELED: "Canceled"

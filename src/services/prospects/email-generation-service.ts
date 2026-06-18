@@ -79,7 +79,7 @@ export function generateEmail(input: GenerateEmailInput): string | null {
   return `${localPart}@${domain}`;
 }
 
-// Map a company pattern's confidence onto a per-person email candidate status.
+// Map a company-level email-domain/pattern confidence onto a per-person status.
 const STATUS_BY_CONFIDENCE: Record<ConfidenceLevel, EmailCandidateStatus> = {
   HIGH: "INFERRED_HIGH",
   MEDIUM: "INFERRED_MEDIUM",

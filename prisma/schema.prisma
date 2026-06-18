@@ -414,9 +414,13 @@ model ProspectCompany {
   normalizedName    String
   officialName      String?
   officialDomain    String?
+  officialWebsiteDomain String?
   officialWebsite   String?
   linkedinUrl       String?
   domainConfidence  String   @default("UNAVAILABLE")
+  emailDomain       String?
+  emailDomainConfidence String @default("UNAVAILABLE")
+  emailDomainEvidence Json?
   emailPattern      String?
   patternConfidence String   @default("UNAVAILABLE")
   patternEvidence   Json?
@@ -430,6 +434,7 @@ model ProspectCompany {
 
   @@unique([userId, normalizedName])
   @@index([userId, officialDomain])
+  @@index([userId, emailDomain])
 }
 
 model ProspectCompanyPosition {

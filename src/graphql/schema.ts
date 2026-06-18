@@ -52,10 +52,24 @@ export const typeDefs = /* GraphQL */ `
 
   type EmailPatternEvidence {
     pattern: String!
+    emailDomain: String
     sourceUrl: String
     sourceName: String!
+    sourceType: String!
     percentage: Float
     confidence: ConfidenceLevel!
+    observedAt: DateTime
+  }
+
+  type EmailDomainEvidence {
+    emailDomain: String!
+    sourceUrl: String
+    sourceName: String!
+    sourceType: String!
+    observedPattern: String
+    percentage: Float
+    confidence: ConfidenceLevel!
+    observedAt: DateTime
   }
 
   type Company {
@@ -63,9 +77,13 @@ export const typeDefs = /* GraphQL */ `
     name: String!
     normalizedName: String!
     officialDomain: String
+    officialWebsiteDomain: String
     officialWebsite: String
     linkedinUrl: String
     domainConfidence: ConfidenceLevel!
+    emailDomain: String
+    emailDomainConfidence: ConfidenceLevel!
+    emailDomainEvidence: [EmailDomainEvidence!]!
     emailPattern: String
     patternConfidence: ConfidenceLevel!
     patternEvidence: [EmailPatternEvidence!]!
@@ -190,5 +208,12 @@ export const typeDefs = /* GraphQL */ `
     cancelProspectSearch(id: ID!): ProspectSearch!
     reclassifyCompanyPositions(companyId: ID!): Company!
     reinferCompanyEmailPattern(companyId: ID!): Company!
+    setCompanyEmailInferenceOverride(
+      companyId: ID!
+      emailDomain: String!
+      emailPattern: String!
+      confidence: ConfidenceLevel!
+      reason: String
+    ): Company!
   }
 `;

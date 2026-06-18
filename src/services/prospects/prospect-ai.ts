@@ -1,9 +1,8 @@
 import { env } from "@/lib/env";
 
-// Default model for prospect AI tasks. Mirrors the model used by the existing
-// template-enhancement endpoint; override with PROSPECT_AI_MODEL. We never
-// hardcode a deprecated model.
-export const DEFAULT_PROSPECT_AI_MODEL = "gpt-5-mini";
+// Default model for prospect AI tasks; override with PROSPECT_AI_MODEL for the
+// latest model available in the local environment (for example, gpt-5.5).
+export const DEFAULT_PROSPECT_AI_MODEL = "gpt-5";
 
 export type AiTaskType = "company_resolution" | "role_classification" | "email_pattern";
 

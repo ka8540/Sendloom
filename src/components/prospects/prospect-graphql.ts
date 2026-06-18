@@ -61,6 +61,9 @@ export type CompanySummary = {
   id: string;
   name: string;
   officialDomain: string | null;
+  officialWebsiteDomain: string | null;
+  emailDomain: string | null;
+  emailDomainConfidence: ConfidenceLevel;
   emailPattern: string | null;
   patternConfidence: ConfidenceLevel;
   peopleCount: number;
@@ -91,10 +94,24 @@ export type PositionNode = {
 
 export type PatternEvidenceNode = {
   pattern: string;
+  emailDomain: string | null;
   sourceUrl: string | null;
   sourceName: string;
+  sourceType: string;
   percentage: number | null;
   confidence: ConfidenceLevel;
+  observedAt: string | null;
+};
+
+export type EmailDomainEvidenceNode = {
+  emailDomain: string;
+  sourceUrl: string | null;
+  sourceName: string;
+  sourceType: string;
+  observedPattern: string | null;
+  percentage: number | null;
+  confidence: ConfidenceLevel;
+  observedAt: string | null;
 };
 
 export type CompanyDetail = {
@@ -102,9 +119,13 @@ export type CompanyDetail = {
   name: string;
   normalizedName: string;
   officialDomain: string | null;
+  officialWebsiteDomain: string | null;
   officialWebsite: string | null;
   linkedinUrl: string | null;
   domainConfidence: ConfidenceLevel;
+  emailDomain: string | null;
+  emailDomainConfidence: ConfidenceLevel;
+  emailDomainEvidence: EmailDomainEvidenceNode[];
   emailPattern: string | null;
   patternConfidence: ConfidenceLevel;
   peopleCount: number;
@@ -168,6 +189,9 @@ export const PROSPECT_SEARCHES_QUERY = /* GraphQL */ `
             id
             name
             officialDomain
+            officialWebsiteDomain
+            emailDomain
+            emailDomainConfidence
             emailPattern
             patternConfidence
             peopleCount
@@ -190,18 +214,34 @@ export const COMPANY_DETAIL_QUERY = /* GraphQL */ `
       name
       normalizedName
       officialDomain
+      officialWebsiteDomain
       officialWebsite
       linkedinUrl
       domainConfidence
+      emailDomain
+      emailDomainConfidence
+      emailDomainEvidence {
+        emailDomain
+        sourceUrl
+        sourceName
+        sourceType
+        observedPattern
+        percentage
+        confidence
+        observedAt
+      }
       emailPattern
       patternConfidence
       peopleCount
       patternEvidence {
         pattern
+        emailDomain
         sourceUrl
         sourceName
+        sourceType
         percentage
         confidence
+        observedAt
       }
       positions {
         id
@@ -270,6 +310,9 @@ export const PROCESS_SEARCH_MUTATION = /* GraphQL */ `
         id
         name
         officialDomain
+        officialWebsiteDomain
+        emailDomain
+        emailDomainConfidence
         emailPattern
         patternConfidence
         peopleCount
