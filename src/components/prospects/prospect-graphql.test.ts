@@ -4,8 +4,10 @@ import {
   PEOPLE_PAGE_SIZE,
   PEOPLE_QUERY,
   PROSPECT_SEARCHES_QUERY,
+  REFRESH_COMPANY_EMAIL_FORMAT_MUTATION,
   SEARCHES_PAGE_SIZE,
   DELETE_COMPANY_MUTATION,
+  SET_COMPANY_EMAIL_INFERENCE_OVERRIDE_MUTATION,
   buildPeopleVariables,
   buildSearchesVariables,
   isDisabledResponse,
@@ -59,6 +61,12 @@ describe("prospect graphql helper", () => {
 
   it("declares the delete-company mutation", () => {
     expect(DELETE_COMPANY_MUTATION).toContain("deleteCompany(companyId: $companyId)");
+  });
+
+  it("declares email-format refresh and manual override mutations", () => {
+    expect(REFRESH_COMPANY_EMAIL_FORMAT_MUTATION).toContain("refreshCompanyEmailFormat(companyId: $companyId");
+    expect(REFRESH_COMPANY_EMAIL_FORMAT_MUTATION).toContain("sourceUrl: $sourceUrl");
+    expect(SET_COMPANY_EMAIL_INFERENCE_OVERRIDE_MUTATION).toContain("setCompanyEmailInferenceOverride");
   });
 
   describe("isDisabledResponse", () => {

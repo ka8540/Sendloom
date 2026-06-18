@@ -273,4 +273,63 @@ describe("Company email inference API", () => {
     expect(result.data?.deleteCompany).toBe(true);
     expect(deleteCompany).toHaveBeenCalledWith("user_A", "comp_A");
   });
+
+  it("requires auth for refreshing company email format", async () => {
+    const result = await graphql({
+      schema: prospectSchema,
+      source: `mutation { refreshCompanyEmailFormat(companyId: "comp_A") { id } }`,
+      contextValue: makeContext({ user: null })
+    });
+
+    expect(result.data?.refreshCompanyEmailFormat ?? null).toBeNull();
+    expect(result.errors?.[0]?.extensions?.code).toBe("UNAUTHENTICATED");
+  });
+
+  it("refreshes company email format through the owner-scoped mutation", async () => {
+    const refreshCompanyEmailFormat = vi.fn(async () => ({
+      id: "comp_A",
+      userId: "user_A",
+      name: "Esri",
+      normalizedName: "esri",
+      officialName: "Esri",
+      officialDomain: "esri.com",
+      officialWebsiteDomain: "esri.com",
+      officialWebsite: "https://www.esri.com",
+      linkedinUrl: null,
+      domainConfidence: "HIGH",
+      emailDomain: "esri.com",
+      emailDomainConfidence: "HIGH",
+      emailDomainEvidence: [],
+      emailPattern: "flast",
+      patternConfidence: "HIGH",
+      patternEvidence: [],
+      createdAt: new Date(),
+      updatedAt: new Date()
+    }));
+
+    const result = await graphql({
+      schema: prospectSchema,
+      source: `mutation { refreshCompanyEmailFormat(companyId: "comp_A", sourceUrl: "https://rocketreach.co/esri-email-format_b5c60d6df42e0c51") { id emailDomain emailPattern } }`,
+      contextValue: makeContext({
+        user: FAKE_USER,
+        services: {
+          prospectSearch: {
+            refreshCompanyEmailFormat
+          } as unknown as GraphQLContext["services"]["prospectSearch"]
+        }
+      })
+    });
+
+    expect(result.errors).toBeUndefined();
+    expect(result.data?.refreshCompanyEmailFormat).toMatchObject({
+      id: "comp_A",
+      emailDomain: "esri.com",
+      emailPattern: "flast"
+    });
+    expect(refreshCompanyEmailFormat).toHaveBeenCalledWith(
+      "user_A",
+      "comp_A",
+      "https://rocketreach.co/esri-email-format_b5c60d6df42e0c51"
+    );
+  });
 });

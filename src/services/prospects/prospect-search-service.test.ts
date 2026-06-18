@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApifyProfileSearchService, type ApifyRunner } from "@/services/prospects/apify-profile-search";
 import { CompanyResolutionService } from "@/services/prospects/company-resolution-service";
 import { EmailDomainService, type EmailEvidenceProvider } from "@/services/prospects/email-domain-service";
+import { EmailFormatDiscoveryService } from "@/services/prospects/email-format-discovery-service";
 import { ProspectSearchService } from "@/services/prospects/prospect-search-service";
 import { RoleClassificationService } from "@/services/prospects/role-classification-service";
 import type { ValidatedCreateProspectSearch } from "@/services/prospects/prospect-validation";
@@ -29,6 +30,24 @@ const APPLIED_MATERIALS: ValidatedCreateProspectSearch = {
   locations: ["United States"],
   maxResults: 10
 };
+
+const ESRI: ValidatedCreateProspectSearch = {
+  companyName: "Esri",
+  companyDomain: "esri.com",
+  companyLinkedinUrl: null,
+  jobTitles: ["Software Engineer"],
+  locations: ["United States"],
+  maxResults: 10
+};
+
+const ESRI_ROCKETREACH_TEXT = `
+The most common Esri email format is [first_initial][last] (ex. jdoe@esri.com), which is being used by 84.7% of Esri work email addresses.
+
+Email Format | Example | Percentage
+[first_initial][last] | jdoe@esri.com | 84.7%
+[first][last] | janedoe@esri.com | 6.3%
+[first]_[last] | jane_doe@esri.com | 1.9%
+`;
 
 function profile(id: string, firstName: string, lastName: string, title: string, companyName = "Apple") {
   return {
@@ -318,6 +337,59 @@ describe("ProspectSearchService pipeline", () => {
     expect(jane.emailStatus).not.toBe("VERIFIED");
   });
 
+  it("refreshes a company email format from a direct RocketReach-style source URL", async () => {
+    const runner: ApifyRunner = {
+      run: vi.fn(async () => ({
+        runId: "run-esri",
+        datasetId: "ds-esri",
+        items: [profile("jane", "Jane", "Doe", "Software Engineer", "Esri")]
+      }))
+    };
+    const fetchPage = vi.fn(async () => ESRI_ROCKETREACH_TEXT);
+    const ai = createMockAi({
+      responses: {
+        role_classification: { classifications: [] },
+        email_pattern: {
+          selectedEmailDomain: "esri.com",
+          selectedPattern: "flast",
+          confidence: "HIGH",
+          reasonSummary: "RocketReach evidence indicates flast at esri.com.",
+          evidenceIndexesUsed: [0, 1]
+        }
+      }
+    });
+    const service = new ProspectSearchService({
+      prisma: prisma as unknown as PrismaClient,
+      apify: new ApifyProfileSearchService({ token: "t", actorId: "actor", runner }),
+      companyResolution: new CompanyResolutionService(ai.client),
+      roleClassifier: new RoleClassificationService(prisma as unknown as PrismaClient, ai.client),
+      emailDomain: new EmailDomainService(
+        prisma as unknown as PrismaClient,
+        ai.client,
+        new EmailFormatDiscoveryService({ searchProvider: null, fetchPage })
+      )
+    });
+
+    const created = await service.createSearch(USER_ID, ESRI);
+    await service.processSearch(USER_ID, created.id);
+    const company = prisma._state.companies[0];
+    expect(prisma._state.people[0].inferredEmail).toBeNull();
+
+    await service.refreshCompanyEmailFormat(
+      USER_ID,
+      company.id,
+      "https://rocketreach.co/esri-email-format_b5c60d6df42e0c51"
+    );
+
+    expect(fetchPage).toHaveBeenCalledWith("https://rocketreach.co/esri-email-format_b5c60d6df42e0c51");
+    expect(prisma._state.companies[0].emailDomain).toBe("esri.com");
+    expect(prisma._state.companies[0].emailPattern).toBe("flast");
+    expect(prisma._state.companies[0].patternConfidence).toBe("HIGH");
+    expect(prisma._state.people[0].inferredEmail).toBe("jdoe@esri.com");
+    expect(prisma._state.people[0].emailStatus).toBe("INFERRED_HIGH");
+    expect(prisma._state.people[0].emailStatus).not.toBe("VERIFIED");
+  });
+
   it("deletes an owned company graph and its related searches", async () => {
     prisma._state.companies.push({
       id: "company_1",
@@ -413,5 +485,25 @@ describe("ProspectSearchService pipeline", () => {
     const created = await service.createSearch(USER_ID, VALIDATED);
 
     await expect(service.processSearch("someone_else", created.id)).rejects.toThrow(/not found/i);
+  });
+
+  it("rejects refreshing a company owned by another user", async () => {
+    const runner: ApifyRunner = { run: vi.fn(async () => ({ runId: null, datasetId: null, items: [] })) };
+    const { service } = buildService(prisma, runner, AI_RESPONSES);
+    prisma._state.companies.push({
+      id: "company_1",
+      userId: USER_ID,
+      name: "Esri",
+      normalizedName: "esri",
+      officialName: "Esri",
+      officialDomain: "esri.com",
+      officialWebsiteDomain: "esri.com",
+      emailDomainConfidence: "UNAVAILABLE",
+      patternConfidence: "UNAVAILABLE",
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+
+    await expect(service.refreshCompanyEmailFormat("someone_else", "company_1")).rejects.toThrow(/company not found/i);
   });
 });

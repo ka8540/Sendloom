@@ -208,6 +208,7 @@ export const typeDefs = /* GraphQL */ `
     cancelProspectSearch(id: ID!): ProspectSearch!
     reclassifyCompanyPositions(companyId: ID!): Company!
     reinferCompanyEmailPattern(companyId: ID!): Company!
+    refreshCompanyEmailFormat(companyId: ID!, sourceUrl: String): Company!
     deleteCompany(companyId: ID!): Boolean!
     setCompanyEmailInferenceOverride(
       companyId: ID!

@@ -33,10 +33,13 @@ import {
   PEOPLE_QUERY,
   PROCESS_SEARCH_MUTATION,
   PROSPECT_SEARCHES_QUERY,
+  REFRESH_COMPANY_EMAIL_FORMAT_MUTATION,
+  SET_COMPANY_EMAIL_INFERENCE_OVERRIDE_MUTATION,
   buildPeopleVariables,
   buildSearchesVariables,
   prospectGraphql,
   type CompanyDetail,
+  type ConfidenceLevel,
   type Connection,
   type PersonNode,
   type PositionCategory,
@@ -87,6 +90,20 @@ type CreateForm = {
 };
 
 const EMPTY_FORM: CreateForm = { companyName: "", jobTitles: "", locations: "", maxResults: "25" };
+const EMAIL_PATTERN_OPTIONS = [
+  "first",
+  "last",
+  "firstlast",
+  "first.last",
+  "first_last",
+  "flast",
+  "f.last",
+  "f_last",
+  "firstl",
+  "first.l",
+  "lastf",
+  "last.first"
+];
 
 export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean }) {
   const [disabled, setDisabled] = useState(!featureEnabled);
@@ -123,6 +140,13 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
   const [creating, setCreating] = useState(false);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [deletingCompanyId, setDeletingCompanyId] = useState<string | null>(null);
+  const [refreshingFormatId, setRefreshingFormatId] = useState<string | null>(null);
+  const [formatSourceUrl, setFormatSourceUrl] = useState("");
+  const [showFormatSource, setShowFormatSource] = useState(false);
+  const [showManualFormat, setShowManualFormat] = useState(false);
+  const [manualEmailDomain, setManualEmailDomain] = useState("");
+  const [manualEmailPattern, setManualEmailPattern] = useState("first.last");
+  const [manualConfidence, setManualConfidence] = useState<ConfidenceLevel>("HIGH");
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
 
@@ -201,6 +225,12 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
       setActionError(null);
       setActionNotice(null);
       setCompany(null);
+      setFormatSourceUrl("");
+      setShowFormatSource(false);
+      setShowManualFormat(false);
+      setManualEmailDomain("");
+      setManualEmailPattern("first.last");
+      setManualConfidence("HIGH");
       resetPeopleState();
       if (search.status === "READY" && search.company) {
         void loadCompany(search.company.id);
@@ -459,6 +489,74 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
     [loadSearches, resetPeopleState]
   );
 
+  const reloadCompanyPeople = useCallback(
+    async (updatedCompany: CompanyDetail) => {
+      setCompany(updatedCompany);
+      peopleAfterCursors.current = [null];
+      await loadPeople({ companyId: updatedCompany.id, category: activeCategory, pageIndex: 0, after: null });
+      await loadSearches();
+    },
+    [activeCategory, loadPeople, loadSearches]
+  );
+
+  const handleRefreshEmailFormat = useCallback(
+    async (target: CompanyDetail, sourceUrl?: string | null) => {
+      setRefreshingFormatId(target.id);
+      setActionError(null);
+      setActionNotice(null);
+      const result = await prospectGraphql<{ refreshCompanyEmailFormat: CompanyDetail }>(
+        REFRESH_COMPANY_EMAIL_FORMAT_MUTATION,
+        { companyId: target.id, sourceUrl: sourceUrl?.trim() || null }
+      );
+      setRefreshingFormatId(null);
+      if (result.disabled) {
+        setDisabled(true);
+        return;
+      }
+      if (result.error || !result.data) {
+        setActionError(result.error ?? "Could not refresh the email format.");
+        return;
+      }
+      await reloadCompanyPeople(result.data.refreshCompanyEmailFormat);
+      setActionNotice(
+        result.data.refreshCompanyEmailFormat.emailDomain && result.data.refreshCompanyEmailFormat.emailPattern
+          ? "Email format refreshed from public evidence."
+          : "No evidence-backed email format found yet."
+      );
+    },
+    [reloadCompanyPeople]
+  );
+
+  const handleManualEmailFormat = useCallback(
+    async (target: CompanyDetail) => {
+      setRefreshingFormatId(target.id);
+      setActionError(null);
+      setActionNotice(null);
+      const result = await prospectGraphql<{ setCompanyEmailInferenceOverride: CompanyDetail }>(
+        SET_COMPANY_EMAIL_INFERENCE_OVERRIDE_MUTATION,
+        {
+          companyId: target.id,
+          emailDomain: manualEmailDomain.trim(),
+          emailPattern: manualEmailPattern,
+          confidence: manualConfidence,
+          reason: "Manual correction from prospect dashboard"
+        }
+      );
+      setRefreshingFormatId(null);
+      if (result.disabled) {
+        setDisabled(true);
+        return;
+      }
+      if (result.error || !result.data) {
+        setActionError(result.error ?? "Could not apply the manual email format.");
+        return;
+      }
+      await reloadCompanyPeople(result.data.setCompanyEmailInferenceOverride);
+      setActionNotice("Manual email format applied.");
+    },
+    [manualConfidence, manualEmailDomain, manualEmailPattern, reloadCompanyPeople]
+  );
+
   const visiblePeople = useMemo(() => filterPeopleByText(people, peopleFilter), [people, peopleFilter]);
   const visibleCategories = useMemo(
     () => (company ? company.positions.filter((position) => position.peopleCount > 0) : []),
@@ -656,6 +754,21 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
                     company={company}
                     loading={companyLoading}
                     deleting={Boolean(company && deletingCompanyId === company.id)}
+                    refreshingFormat={Boolean(company && refreshingFormatId === company.id)}
+                    formatSourceUrl={formatSourceUrl}
+                    showFormatSource={showFormatSource}
+                    showManualFormat={showManualFormat}
+                    manualEmailDomain={manualEmailDomain}
+                    manualEmailPattern={manualEmailPattern}
+                    manualConfidence={manualConfidence}
+                    onFormatSourceUrlChange={setFormatSourceUrl}
+                    onToggleFormatSource={() => setShowFormatSource((value) => !value)}
+                    onToggleManualFormat={() => setShowManualFormat((value) => !value)}
+                    onManualEmailDomainChange={setManualEmailDomain}
+                    onManualEmailPatternChange={setManualEmailPattern}
+                    onManualConfidenceChange={setManualConfidence}
+                    onRefreshEmailFormat={handleRefreshEmailFormat}
+                    onManualEmailFormat={handleManualEmailFormat}
                     onDelete={handleDeleteCompany}
                   />
 
@@ -838,11 +951,41 @@ function CompanyCard({
   company,
   loading,
   deleting,
+  refreshingFormat,
+  formatSourceUrl,
+  showFormatSource,
+  showManualFormat,
+  manualEmailDomain,
+  manualEmailPattern,
+  manualConfidence,
+  onFormatSourceUrlChange,
+  onToggleFormatSource,
+  onToggleManualFormat,
+  onManualEmailDomainChange,
+  onManualEmailPatternChange,
+  onManualConfidenceChange,
+  onRefreshEmailFormat,
+  onManualEmailFormat,
   onDelete
 }: {
   company: CompanyDetail | null;
   loading: boolean;
   deleting: boolean;
+  refreshingFormat: boolean;
+  formatSourceUrl: string;
+  showFormatSource: boolean;
+  showManualFormat: boolean;
+  manualEmailDomain: string;
+  manualEmailPattern: string;
+  manualConfidence: ConfidenceLevel;
+  onFormatSourceUrlChange: (value: string) => void;
+  onToggleFormatSource: () => void;
+  onToggleManualFormat: () => void;
+  onManualEmailDomainChange: (value: string) => void;
+  onManualEmailPatternChange: (value: string) => void;
+  onManualConfidenceChange: (value: ConfidenceLevel) => void;
+  onRefreshEmailFormat: (company: CompanyDetail, sourceUrl?: string | null) => void;
+  onManualEmailFormat: (company: CompanyDetail) => void;
   onDelete: (company: CompanyDetail) => void;
 }) {
   if (loading && !company) {
@@ -862,6 +1005,7 @@ function CompanyCard({
   const domainDiffers = Boolean(websiteDomain && company.emailDomain && websiteDomain !== company.emailDomain);
   const firstDomainEvidence = company.emailDomainEvidence[0] ?? null;
   const firstPatternEvidence = company.patternEvidence[0] ?? null;
+  const hasEmailFormat = Boolean(company.emailDomain && company.emailPattern);
   return (
     <div className={`card ${styles.companyCard}`}>
       <div className={styles.companyHeader}>
@@ -943,7 +1087,96 @@ function CompanyCard({
             )}
           </div>
         ) : (
-          <span className={styles.metaHint}>No evidence-backed email domain or pattern is available yet.</span>
+          <span className={styles.metaHint}>No evidence-backed email format found yet. Search public sources or set the format manually.</span>
+        )}
+      </div>
+      <div className={styles.formatActions}>
+        <div className={styles.formatActionText}>
+          <span className={styles.metaLabel}>Email format discovery</span>
+          <span className={styles.metaHint}>
+            {hasEmailFormat
+              ? "Email format found from public evidence. Generated emails are inferred until verified."
+              : "Search public sources or paste a known public email-format page."}
+          </span>
+        </div>
+        <div className={styles.formatButtonRow}>
+          <button
+            type="button"
+            className={styles.secondaryButton}
+            onClick={() => onRefreshEmailFormat(company, null)}
+            disabled={refreshingFormat}
+          >
+            {refreshingFormat ? <LoaderCircle aria-hidden="true" className={styles.spin} /> : <RefreshCw aria-hidden="true" />}
+            <span>{hasEmailFormat ? "Refresh email format" : "Find email format"}</span>
+          </button>
+          <button type="button" className={styles.ghostButton} onClick={onToggleFormatSource}>
+            Use specific source URL
+          </button>
+          {!hasEmailFormat && (
+            <button type="button" className={styles.ghostButton} onClick={onToggleManualFormat}>
+              Fix manually
+            </button>
+          )}
+        </div>
+        {showFormatSource && (
+          <div className={styles.sourceRefreshRow}>
+            <input
+              className={styles.input}
+              value={formatSourceUrl}
+              onChange={(event) => onFormatSourceUrlChange(event.target.value)}
+              placeholder="https://rocketreach.co/esri-email-format_b5c60d6df42e0c51"
+              aria-label="Specific public email-format source URL"
+            />
+            <button
+              type="button"
+              className={styles.primaryButton}
+              onClick={() => onRefreshEmailFormat(company, formatSourceUrl)}
+              disabled={refreshingFormat || !formatSourceUrl.trim()}
+            >
+              Parse source
+            </button>
+          </div>
+        )}
+        {showManualFormat && (
+          <div className={styles.manualFormatGrid}>
+            <input
+              className={styles.input}
+              value={manualEmailDomain}
+              onChange={(event) => onManualEmailDomainChange(event.target.value)}
+              placeholder="amat.com"
+              aria-label="Manual email domain"
+            />
+            <select
+              className={styles.input}
+              value={manualEmailPattern}
+              onChange={(event) => onManualEmailPatternChange(event.target.value)}
+              aria-label="Manual email pattern"
+            >
+              {EMAIL_PATTERN_OPTIONS.map((pattern) => (
+                <option key={pattern} value={pattern}>
+                  {pattern}
+                </option>
+              ))}
+            </select>
+            <select
+              className={styles.input}
+              value={manualConfidence}
+              onChange={(event) => onManualConfidenceChange(event.target.value as ConfidenceLevel)}
+              aria-label="Manual confidence"
+            >
+              <option value="HIGH">High</option>
+              <option value="MEDIUM">Medium</option>
+              <option value="LOW">Low</option>
+            </select>
+            <button
+              type="button"
+              className={styles.secondaryButton}
+              onClick={() => onManualEmailFormat(company)}
+              disabled={refreshingFormat || !manualEmailDomain.trim()}
+            >
+              Apply manual fix
+            </button>
+          </div>
         )}
       </div>
     </div>

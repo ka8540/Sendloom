@@ -54,6 +54,7 @@ export type EmailEvidenceBundle = {
 export type EmailEvidenceProviderInput = {
   companyName: string;
   officialWebsiteDomain: string | null;
+  sourceUrl?: string | null;
 };
 
 export interface EmailEvidenceProvider {
@@ -75,6 +76,7 @@ export type InferCompanyEmailInput = {
   companyId?: string | null;
   companyName: string;
   officialWebsiteDomain: string | null | undefined;
+  sourceUrl?: string | null;
   extraEvidence?: EmailEvidenceBundle;
   budget: AiCallBudget;
   searchId?: string | null;
@@ -528,13 +530,16 @@ function highConfidenceAllowed(rows: RankedEvidence[]): boolean {
 export function buildEmailFormatSearchQueries(companyName: string, websiteDomain: string | null): string[] {
   const queries = [
     `"${companyName}" email format`,
-    `"${companyName}" employee email format`,
     `"${companyName}" email pattern`,
+    `"${companyName}" employee email format`,
+    `site:rocketreach.co "${companyName} Email Format"`,
     `site:rocketreach.co "${companyName}" "Email Format"`,
     `site:hunter.io "${companyName}" "email format"`
   ];
   if (websiteDomain) {
     queries.push(`"${websiteDomain}" email format`);
+    queries.push(`"${websiteDomain}" email pattern`);
+    queries.push(`site:hunter.io "${websiteDomain}" "email pattern"`);
   }
   return queries;
 }
@@ -550,7 +555,8 @@ export class EmailDomainService {
     const officialWebsiteDomain = normalizeDomain(input.officialWebsiteDomain);
     const providerEvidence = await this.evidenceProvider.findEvidence({
       companyName: input.companyName,
-      officialWebsiteDomain
+      officialWebsiteDomain,
+      sourceUrl: input.sourceUrl ?? null
     });
     const hunterEvidence = await this.collectHunterEvidence(input.userId, officialWebsiteDomain);
 

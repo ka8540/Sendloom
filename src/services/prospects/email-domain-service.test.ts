@@ -183,6 +183,86 @@ describe("EmailDomainService.infer", () => {
     expect(result.selectedPattern).toBeNull();
     expect(ai.calls).toHaveLength(0);
   });
+
+  it("chooses the highest percentage public format evidence", async () => {
+    const ai = createMockAi({ enabled: false });
+    const service = new EmailDomainService(createFakePrisma() as unknown as PrismaClient, ai.client, {
+      async findEvidence() {
+        return {
+          domainEvidence: [
+            {
+              emailDomain: "esri.com",
+              sourceName: "RocketReach",
+              sourceUrl: "https://rocketreach.co/esri-email-format_b5c60d6df42e0c51",
+              sourceType: "public_format_page",
+              observedPattern: "flast",
+              percentage: 84.7,
+              confidence: "HIGH",
+              observedAt: "2026-06-18T00:00:00.000Z"
+            },
+            {
+              emailDomain: "esri.com",
+              sourceName: "RocketReach",
+              sourceUrl: "https://rocketreach.co/esri-email-format_b5c60d6df42e0c51",
+              sourceType: "public_format_page",
+              observedPattern: "firstlast",
+              percentage: 6.3,
+              confidence: "LOW",
+              observedAt: "2026-06-18T00:00:00.000Z"
+            }
+          ],
+          patternEvidence: [
+            {
+              pattern: "flast",
+              emailDomain: "esri.com",
+              percentage: 84.7,
+              sourceName: "RocketReach",
+              sourceUrl: "https://rocketreach.co/esri-email-format_b5c60d6df42e0c51",
+              sourceType: "public_format_page",
+              confidence: "HIGH",
+              observedAt: "2026-06-18T00:00:00.000Z"
+            },
+            {
+              pattern: "firstlast",
+              emailDomain: "esri.com",
+              percentage: 6.3,
+              sourceName: "RocketReach",
+              sourceUrl: "https://rocketreach.co/esri-email-format_b5c60d6df42e0c51",
+              sourceType: "public_format_page",
+              confidence: "LOW",
+              observedAt: "2026-06-18T00:00:00.000Z"
+            }
+          ]
+        };
+      }
+    });
+
+    const result = await service.infer({
+      userId: "user_1",
+      companyName: "Esri",
+      officialWebsiteDomain: "esri.com",
+      budget: budget()
+    });
+
+    expect(result.selectedEmailDomain).toBe("esri.com");
+    expect(result.selectedPattern).toBe("flast");
+    expect(result.patternConfidence).toBe("HIGH");
+  });
+
+  it("uses the public example email domain over the website domain", async () => {
+    const ai = createMockAi({ enabled: false });
+    const service = new EmailDomainService(createFakePrisma() as unknown as PrismaClient, ai.client, evidenceProvider());
+
+    const result = await service.infer({
+      userId: "user_1",
+      companyName: "Applied Materials",
+      officialWebsiteDomain: "appliedmaterials.com",
+      budget: budget()
+    });
+
+    expect(result.selectedEmailDomain).toBe("amat.com");
+    expect(result.selectedPattern).toBe("first_last");
+  });
 });
 
 describe("inferPatternFromEmailSample", () => {

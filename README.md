@@ -855,6 +855,9 @@ Create a local `.env` file at the repo root with the values below. Secrets and s
 | `GRAPHQL_GRAPHIQL_ENABLED` | Optional | Enables the GraphiQL playground locally. Defaults to `false`; never serves in production regardless of value. |
 | `APIFY_API_TOKEN` | For prospect search | Token for the Apify LinkedIn profile-search actor. |
 | `APIFY_PROSPECT_ACTOR_ID` | Optional | Actor id/slug. Defaults to `harvestapi/linkedin-profile-search`. |
+| `WEB_SEARCH_PROVIDER` | Optional | Public email-format search provider for Prospect Graph evidence discovery. Supported values: `none`, `serper`, `brave`. Defaults to `none`; direct source URL refresh still works. |
+| `SERPER_API_KEY` | When `WEB_SEARCH_PROVIDER=serper` | Serper API key used only for public email-format search queries. |
+| `BRAVE_SEARCH_API_KEY` | When `WEB_SEARCH_PROVIDER=brave` | Brave Search API key used only for public email-format search queries. |
 | `LOCAL_PROSPECT_MAX_RESULTS` | Optional | Hard local cap on results per search. Defaults to `25`. |
 | `PROSPECT_AI_ENABLED` | Optional | Enables the AI company/role/pattern steps. Defaults to `true`. |
 | `PROSPECT_AI_MODEL` | Optional | Override the prospect AI model. Blank uses the project default (`gpt-5`); local testing can set the latest available strong model, for example `gpt-5.5`. |
@@ -976,6 +979,17 @@ employee email domain `amat.com` and pattern `first_last`. If email-domain or
 pattern evidence is missing or conflicting, the result stays `LOW` or
 `UNAVAILABLE` and high-confidence emails are not generated.
 
+Email-format discovery first searches/parses public evidence sources before
+giving up. When `WEB_SEARCH_PROVIDER` is `serper` or `brave`, Prospect Graph
+queries public results such as RocketReach/Hunter-style email-format pages,
+fetches only public text/HTML pages through the safe fetcher, and parses rows
+like `[first_initial][last] | jdoe@esri.com | 84.7%`. The example email domain
+wins over the website domain, so Esri can resolve to `flast@esri.com` and
+Applied Materials can resolve to `first_last@amat.com` when public evidence
+supports it. If no search provider is configured, the backend logs
+`No web search provider configured`; `/prospects` can still refresh from a
+specific public source URL.
+
 ### Architecture
 
 ```text
@@ -1040,6 +1054,7 @@ you:
 - browse previous prospect searches and select a `READY` one,
 - view the resolved company summary, separate website/email domains, position-category breakdown, and people,
 - filter the current page by position category, and copy individual inferred emails.
+- find/refresh an email format from public evidence, or paste a specific public source URL.
 - delete an owned company prospect graph and its related prospect searches.
 
 People results default to **20 per page** (never 5), with cursor-based
@@ -1119,6 +1134,23 @@ mutation SetCompanyEmailInferenceOverride($companyId: ID!) {
     emailDomain
     emailPattern
     patternConfidence
+  }
+}
+```
+
+Refresh from a public email-format source URL:
+
+```graphql
+mutation RefreshCompanyEmailFormat($companyId: ID!) {
+  refreshCompanyEmailFormat(
+    companyId: $companyId
+    sourceUrl: "https://rocketreach.co/esri-email-format_b5c60d6df42e0c51"
+  ) {
+    id
+    emailDomain
+    emailPattern
+    patternConfidence
+    patternEvidence { sourceName sourceUrl percentage confidence }
   }
 }
 ```

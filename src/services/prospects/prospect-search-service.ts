@@ -491,6 +491,16 @@ export class ProspectSearchService {
   /** Re-run email-domain/pattern inference and regenerate every person's email. */
   async reinferCompanyEmailPattern(userId: string, companyId: string): Promise<ProspectCompany> {
     const company = await this.requireOwnedCompany(userId, companyId);
+    return this.refreshCompanyEmailFormat(userId, companyId, null, company);
+  }
+
+  async refreshCompanyEmailFormat(
+    userId: string,
+    companyId: string,
+    sourceUrl?: string | null,
+    ownedCompany?: ProspectCompany
+  ): Promise<ProspectCompany> {
+    const company = ownedCompany ?? (await this.requireOwnedCompany(userId, companyId));
     const budget = createAiBudget();
 
     const inference = await this.emailDomain.infer({
@@ -498,6 +508,7 @@ export class ProspectSearchService {
       companyId,
       companyName: company.officialName ?? company.name,
       officialWebsiteDomain: company.officialWebsiteDomain ?? company.officialDomain,
+      sourceUrl: sourceUrl?.trim() || null,
       budget,
       searchId: null
     });

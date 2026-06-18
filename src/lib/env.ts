@@ -66,6 +66,12 @@ const envSchema = z
     // --- Prospect graph backend (local-first prototype) ---
     APIFY_API_TOKEN: z.string().min(1).optional(),
     APIFY_PROSPECT_ACTOR_ID: z.string().min(1).default("harvestapi/linkedin-profile-search"),
+    WEB_SEARCH_PROVIDER: z.preprocess(
+      (value) => (value === "" || value === undefined ? "none" : String(value).trim().toLowerCase()),
+      z.enum(["none", "serper", "brave"]).default("none")
+    ),
+    SERPER_API_KEY: z.string().min(1).optional(),
+    BRAVE_SEARCH_API_KEY: z.string().min(1).optional(),
     PROSPECT_GRAPH_ENABLED: booleanFlag(false),
     GRAPHQL_GRAPHIQL_ENABLED: booleanFlag(false),
     LOCAL_PROSPECT_MAX_RESULTS: z.coerce.number().int().positive().max(200).default(25),
@@ -156,6 +162,9 @@ function readRawEnv() {
     GMAIL_SENDER_CONCURRENCY: process.env.GMAIL_SENDER_CONCURRENCY,
     APIFY_API_TOKEN: process.env.APIFY_API_TOKEN,
     APIFY_PROSPECT_ACTOR_ID: process.env.APIFY_PROSPECT_ACTOR_ID,
+    WEB_SEARCH_PROVIDER: process.env.WEB_SEARCH_PROVIDER,
+    SERPER_API_KEY: process.env.SERPER_API_KEY,
+    BRAVE_SEARCH_API_KEY: process.env.BRAVE_SEARCH_API_KEY,
     PROSPECT_GRAPH_ENABLED: process.env.PROSPECT_GRAPH_ENABLED,
     GRAPHQL_GRAPHIQL_ENABLED: process.env.GRAPHQL_GRAPHIQL_ENABLED,
     LOCAL_PROSPECT_MAX_RESULTS: process.env.LOCAL_PROSPECT_MAX_RESULTS,

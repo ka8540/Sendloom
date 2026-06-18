@@ -1206,6 +1206,31 @@ provider/AI failures are persisted as a structured `FAILED` search (with
 `errorCode`) rather than crashing the request. A timeout bounds the synchronous
 run.
 
+### 23.2.1 Public email-format discovery
+
+Email-domain/pattern inference uses `EmailFormatDiscoveryService` before falling
+back to unavailable/manual correction. With `WEB_SEARCH_PROVIDER=serper` or
+`WEB_SEARCH_PROVIDER=brave`, it builds public email-format queries for the
+company name and website domain, prefers RocketReach/Hunter-style email-format
+pages, and parses public snippets/pages for rows such as:
+
+```text
+[first_initial][last] | jdoe@esri.com | 84.7%
+[first]_[last] | jane_doe@amat.com | highest percentage
+```
+
+The parser maps public pattern notation to Sendloom patterns (`[first_initial][last]`
+→ `flast`, `[first]_[last]` → `first_last`) and uses the example email domain as
+the employee email domain. It never treats the public website domain as the
+employee email domain unless evidence shows that exact domain.
+
+Page fetching is intentionally conservative: only `http`/`https`, no localhost,
+loopback, private IPs, metadata IPs, credentials, cookies, JavaScript execution,
+browser automation, or Google HTML scraping. Redirects are capped, responses
+timeout after about 9 seconds, and only small text/HTML responses are parsed. If
+no search provider is configured, the backend logs `No web search provider
+configured`; direct source URL refresh still works for local testing.
+
 ### 23.3 AI responsibilities and cost controls
 
 AI is used only for company resolution (≤1 call, skipped when a website domain is
@@ -1319,6 +1344,12 @@ Behavior:
   clearly. Applied Materials is the regression example: website
   `appliedmaterials.com`, employee email domain `amat.com`, pattern
   `first_last`.
+- When email format is unavailable, the dashboard shows "Find email format" and
+  "Use specific source URL" controls. A direct public source URL such as
+  `https://rocketreach.co/esri-email-format_b5c60d6df42e0c51` calls
+  `refreshCompanyEmailFormat`, parses the source, updates evidence, and
+  regenerates existing people emails as inferred. Manual override remains a
+  fallback, not the primary path.
 - Handles the disabled flag (clean "not enabled" card), processing/failed/
   canceled searches (safe `errorCode`/message, never raw GraphQL errors), and
   empty states. It creates **no** sequences or imports and sends nothing.

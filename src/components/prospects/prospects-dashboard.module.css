@@ -640,6 +640,38 @@
   height: 0.8rem;
 }
 
+.formatActions {
+  display: grid;
+  gap: 0.8rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--line);
+}
+
+.formatActionText {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.formatButtonRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.sourceRefreshRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.7rem;
+  align-items: center;
+}
+
+.manualFormatGrid {
+  display: grid;
+  grid-template-columns: minmax(8rem, 1fr) minmax(8rem, 0.8fr) minmax(7rem, 0.65fr) auto;
+  gap: 0.7rem;
+  align-items: center;
+}
+
 /* ---- People section ----------------------------------------------------- */
 
 .peopleSection {
@@ -1159,5 +1191,10 @@
 
   .peopleShowing {
     white-space: normal;
+  }
+
+  .sourceRefreshRow,
+  .manualFormatGrid {
+    grid-template-columns: 1fr;
   }
 }

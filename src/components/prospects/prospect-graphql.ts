@@ -336,6 +336,110 @@ export const DELETE_COMPANY_MUTATION = /* GraphQL */ `
   }
 `;
 
+export const REFRESH_COMPANY_EMAIL_FORMAT_MUTATION = /* GraphQL */ `
+  mutation RefreshCompanyEmailFormat($companyId: ID!, $sourceUrl: String) {
+    refreshCompanyEmailFormat(companyId: $companyId, sourceUrl: $sourceUrl) {
+      id
+      name
+      officialDomain
+      officialWebsiteDomain
+      officialWebsite
+      linkedinUrl
+      domainConfidence
+      emailDomain
+      emailDomainConfidence
+      emailDomainEvidence {
+        emailDomain
+        sourceUrl
+        sourceName
+        sourceType
+        observedPattern
+        percentage
+        confidence
+        observedAt
+      }
+      emailPattern
+      patternConfidence
+      peopleCount
+      patternEvidence {
+        pattern
+        emailDomain
+        sourceUrl
+        sourceName
+        sourceType
+        percentage
+        confidence
+        observedAt
+      }
+      positions {
+        id
+        category
+        displayName
+        rawTitles
+        peopleCount
+      }
+    }
+  }
+`;
+
+export const SET_COMPANY_EMAIL_INFERENCE_OVERRIDE_MUTATION = /* GraphQL */ `
+  mutation SetCompanyEmailInferenceOverride(
+    $companyId: ID!
+    $emailDomain: String!
+    $emailPattern: String!
+    $confidence: ConfidenceLevel!
+    $reason: String
+  ) {
+    setCompanyEmailInferenceOverride(
+      companyId: $companyId
+      emailDomain: $emailDomain
+      emailPattern: $emailPattern
+      confidence: $confidence
+      reason: $reason
+    ) {
+      id
+      name
+      officialDomain
+      officialWebsiteDomain
+      officialWebsite
+      linkedinUrl
+      domainConfidence
+      emailDomain
+      emailDomainConfidence
+      emailDomainEvidence {
+        emailDomain
+        sourceUrl
+        sourceName
+        sourceType
+        observedPattern
+        percentage
+        confidence
+        observedAt
+      }
+      emailPattern
+      patternConfidence
+      peopleCount
+      patternEvidence {
+        pattern
+        emailDomain
+        sourceUrl
+        sourceName
+        sourceType
+        percentage
+        confidence
+        observedAt
+      }
+      positions {
+        id
+        category
+        displayName
+        rawTitles
+        peopleCount
+      }
+    }
+  }
+`;
+
 // ---------------------------------------------------------------------------
 // Variable builders — the people defaults MUST be 20, never 5.
 // ---------------------------------------------------------------------------
