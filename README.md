@@ -688,6 +688,10 @@ sequenceDiagram
 - `POST /api/cron/campaigns`
 - `POST /api/webhooks/resend`
 
+### Prospect graph (local backend prototype, disabled by default)
+
+- `POST /api/graphql` — GraphQL endpoint for the Company → Position → People graph. Gated behind `PROSPECT_GRAPH_ENABLED`; see [Prospect Graph Backend](#prospect-graph-backend-local-graphql-prototype).
+
 ### Health
 
 - `GET /api/health`
@@ -725,6 +729,11 @@ sequenceDiagram
 | `RateLimitWindow` | Per-user send guardrails |
 | `AuditLog` | Admin and operational audit records |
 | `HunterDomainSearch` | Stored Finder domain search history |
+| `ProspectCompany` | Resolved company node in the prospect graph (domain, email pattern, confidence) |
+| `ProspectCompanyPosition` | Position-category node under a company (e.g. `SOFTWARE_ENGINEERING`) |
+| `ProspectPerson` | A discovered professional assigned to one position node, with an inferred business email |
+| `ProspectSearch` | A prospect discovery request and its pipeline status |
+| `ProspectTitleClassification` | Global cache of AI title→category classifications (avoids re-calling the model) |
 
 ## Repository Guide
 
@@ -841,6 +850,18 @@ Create a local `.env` file at the repo root with the values below. Secrets and s
 | `GMAIL_DAILY_SEND_SAFETY_LIMIT` | Optional | Successful Gmail sends allowed per sender per rolling 24h. Defaults to `450`. |
 | `GMAIL_SENDS_PER_MINUTE` | Optional | Max Gmail sends per minute **per connected sender**. Defaults to `3`. Parallel sequences for the same sender share this window; it is separate from the rolling 24h daily cap. Keep this conservative — Gmail throttles sustained API sends well below its documented per-second quota, and a higher value can mass-fail large sequences. |
 | `GMAIL_SENDER_CONCURRENCY` | Optional | Max simultaneous Gmail sends the worker runs. Defaults to `2`. Prevents bursts of concurrent requests from one mailbox. |
+| `PROSPECT_GRAPH_ENABLED` | Optional | Master flag for the prospect GraphQL backend. Defaults to `false`. Keep `false` in production. |
+| `GRAPHQL_GRAPHIQL_ENABLED` | Optional | Enables the GraphiQL playground locally. Defaults to `false`; never serves in production regardless of value. |
+| `APIFY_API_TOKEN` | For prospect search | Token for the Apify LinkedIn profile-search actor. |
+| `APIFY_PROSPECT_ACTOR_ID` | Optional | Actor id/slug. Defaults to `harvestapi/linkedin-profile-search`. |
+| `LOCAL_PROSPECT_MAX_RESULTS` | Optional | Hard local cap on results per search. Defaults to `25`. |
+| `PROSPECT_AI_ENABLED` | Optional | Enables the AI company/role/pattern steps. Defaults to `true`. |
+| `PROSPECT_AI_MODEL` | Optional | Override the prospect AI model. Blank uses the project default (`gpt-5-mini`). |
+| `PROSPECT_AI_MAX_COMPANY_CALLS_PER_SEARCH` | Optional | Per-search company-resolution AI call cap. Defaults to `2`. |
+| `PROSPECT_AI_MAX_ROLE_CALLS_PER_SEARCH` | Optional | Per-search title-classification AI call cap. Defaults to `1`. |
+| `PROSPECT_AI_MAX_PATTERN_CALLS_PER_SEARCH` | Optional | Per-search email-pattern AI call cap. Defaults to `1`. |
+| `PROSPECT_AI_MAX_UNIQUE_TITLES` | Optional | Max unique titles sent to the model in one batch. Defaults to `100`. |
+| `PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS` | Optional | When `true`, generate emails even for LOW-confidence patterns (local testing only). Defaults to `false`. |
 
 ### Security deployment notes
 
@@ -897,6 +918,176 @@ npm run test:watch  # watch mode
 - Uploads default to the local `uploads/` directory. With `OBJECT_STORAGE_MODE=local`, import spreadsheets and sequence attachments are written under `LOCAL_UPLOAD_DIR`.
 - Production deployments (for example on Vercel) can set `OBJECT_STORAGE_MODE=r2` to store the same files in Cloudflare R2 instead. Existing local upload records keep working in either mode.
 - Linting is configured through `next lint`. Type checks run via `npx tsc --noEmit`.
+
+## Prospect Graph Backend (Local GraphQL Prototype)
+
+> **Backend-only phase.** This is a local-first GraphQL backend for prospect
+> discovery. There is **no frontend** for it yet, no Finder/dashboard changes,
+> no sequence creation, and **no automatic sending**. It is disabled by default
+> (and in production) and is meant to be exercised through GraphiQL, automated
+> tests, and the local CLI script before it is ever surfaced in the UI.
+
+### What it does
+
+A user creates a prospect search for a company + job titles + locations. The
+backend then:
+
+1. resolves the company (official name, domain, LinkedIn URL),
+2. discovers professional profiles via the Apify LinkedIn profile-search actor,
+3. normalizes + de-duplicates profiles and drops anyone not currently at the company,
+4. classifies each unique job title into a position category,
+5. infers **one** email pattern for the whole company,
+6. generates each person's candidate email **deterministically** from that pattern.
+
+The result is exposed as a graph:
+
+```text
+Company
+  └── Position category (SOFTWARE_ENGINEERING, HUMAN_RESOURCES, …)
+        └── People (with an inferred — never verified — business email)
+```
+
+### AI usage (strictly bounded)
+
+AI is used only where semantic reasoning helps, **never once per person**. A
+typical search makes about **three** model calls total:
+
+| Task | Calls | Notes |
+| --- | --- | --- |
+| Company resolution | ≤ 1 | Skipped entirely when a valid company domain is supplied. |
+| Title classification | ≤ 1 | One **batched** call for all unique unknown titles; deterministic map + DB cache handle the rest. |
+| Email pattern | ≤ 1 | One call per company, selecting from a fixed pattern set. |
+
+Per-search ceilings are enforced in code (`AiCallBudget`) and configured via
+`PROSPECT_AI_MAX_*`. Every AI response is re-validated server-side with Zod and
+coerced to the allowed enums — AI output is never trusted directly. Candidate
+emails are then generated with deterministic TypeScript (`generateEmail`), so AI
+cost does not scale with the number of people.
+
+### Architecture
+
+```text
+GraphQL resolver
+   → ProspectSearchService            (src/services/prospects/prospect-search-service.ts)
+       → CompanyResolutionService     (AI task 1)
+       → ApifyProfileSearchService    (Apify actor + normalization)
+       → RoleClassificationService    (deterministic map + cache + AI task 2)
+       → EmailPatternService          (AI task 3)
+       → email-generation-service     (deterministic, no AI)
+```
+
+- GraphQL is the Sendloom backend API layer; it **calls** Apify/OpenAI, it does
+  not replace them.
+- Resolvers never call providers directly — all business logic lives in services
+  so it can later move to BullMQ / the existing cron.
+- `src/graphql/` holds the schema, context, DataLoaders, resolvers, and security
+  rules; `src/app/api/graphql/route.ts` is the Yoga endpoint.
+
+### Security controls
+
+- Every operation requires a valid Sendloom session (reuses `getSessionUser()` /
+  the same restriction + verification checks as the REST API — no GraphQL-only auth).
+- All data is user-scoped (DataLoaders and queries filter by `userId`), so one
+  user can never read another's company graph.
+- Mutations are CSRF-protected by the existing global middleware (`POST /api/graphql`).
+- Query depth and field-count (complexity) limits, a max page size of 100, and
+  SSRF-safe inputs are enforced; introspection is disabled in production.
+- Provider tokens, AI prompts, and raw Apify payloads are never exposed in
+  responses or logs.
+
+### Data minimization
+
+Only professional fields are stored (name, current title, current company,
+professional location, LinkedIn URL, inferred business-email metadata). Profile
+photos, phone numbers, personal emails, education, full employment history,
+biographies, posts, and connections are discarded at the ingestion boundary.
+
+### Enabling it locally
+
+Set in `.env` (see [`.env.example`](./.env.example) for the full list):
+
+```bash
+PROSPECT_GRAPH_ENABLED=true
+GRAPHQL_GRAPHIQL_ENABLED=true
+APIFY_API_TOKEN=...      # required to actually run the pipeline
+OPENAI_API_KEY=...       # required for the AI steps
+```
+
+Then open `http://localhost:3000/api/graphql` in the browser (while logged in)
+to use GraphiQL. The endpoint pre-fills the `x-csrf-token` header from your
+`sendloom_csrf` cookie so mutations work; on a brand-new session, reload the page
+once so the cookie is present.
+
+### GraphiQL examples
+
+Create a search:
+
+```graphql
+mutation {
+  createProspectSearch(input: {
+    companyName: "Apple"
+    jobTitles: ["Software Engineer", "Technical Recruiter", "Data Analyst"]
+    locations: ["United States"]
+    maxResults: 25
+  }) { id status requestedCompany requestedTitles requestedLocations }
+}
+```
+
+Process it (runs the pipeline):
+
+```graphql
+mutation ($id: ID!) {
+  processProspectSearch(id: $id) {
+    id status peopleCount
+    company { id name officialDomain emailPattern patternConfidence }
+  }
+}
+```
+
+Query the company graph:
+
+```graphql
+query ($companyId: ID!) {
+  company(id: $companyId) {
+    id name officialDomain
+    positions {
+      category displayName peopleCount
+      people { firstName lastName currentTitle location inferredEmail emailStatus }
+    }
+  }
+}
+```
+
+Filter people by category (cursor-paginated, `first` ≤ 100):
+
+```graphql
+query ($companyId: ID!) {
+  people(companyId: $companyId, positionCategory: SOFTWARE_ENGINEERING, first: 25) {
+    edges { node { id fullName currentTitle inferredEmail emailConfidence } }
+    pageInfo { hasNextPage endCursor }
+  }
+}
+```
+
+### Local CLI smoke test
+
+```bash
+npm run prospect:test -- --user <userId> --company "Apple" \
+  --titles "Software Engineer,Technical Recruiter,Data Analyst" \
+  --locations "United States" --max 8
+```
+
+Prints only counts and the Company → Positions → People structure; email local
+parts are redacted and no tokens are printed.
+
+### Current limitations
+
+- No frontend, no Finder/dashboard integration, no CSV export, no sequence
+  creation, and no automatic outreach.
+- Synchronous processing is intended for small result sets (≤ 25 locally, capped
+  by `LOCAL_PROSPECT_MAX_RESULTS`); the pipeline has a timeout and returns a
+  structured `FAILED` status on provider errors.
+- A person has a single current-position category (no multi-position history yet).
 
 ## Cloudflare R2 Object Storage
 

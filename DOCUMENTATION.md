@@ -24,6 +24,7 @@
 - [20. Operational Runbook](#20-operational-runbook)
 - [21. Known Limitations](#21-known-limitations)
 - [22. Roadmap / Future Improvements](#22-roadmap--future-improvements)
+- [23. Prospect Graph Backend (Local GraphQL Prototype)](#23-prospect-graph-backend-local-graphql-prototype)
 
 ## 1. Executive Summary
 
@@ -1167,3 +1168,110 @@ Grounded future work that is not currently claimed as done:
 - Add production smoke tests for cron, Gmail OAuth, R2, Redis, and database after deployment.
 - Add legal review and counsel-approved policy text before relying on policy pages in regulated contexts.
 - Add SOC 2/security readiness work: access reviews, secret rotation playbooks, backup/restore drills, incident response, logging retention, and vendor inventory.
+
+## 23. Prospect Graph Backend (Local GraphQL Prototype)
+
+> **Phase status: backend-only, local-first, disabled by default (and in
+> production).** There is no frontend, no Finder/dashboard change, no CSV export,
+> no sequence creation, and no automatic outreach. It is exercised through
+> GraphiQL, Vitest, and a local CLI script. See the README's
+> [Prospect Graph Backend](./README.md#prospect-graph-backend-local-graphql-prototype)
+> section for the GraphiQL walkthrough and full environment variable list.
+
+### 23.1 Purpose
+
+Given a company name, job titles, and locations, the backend discovers
+professional profiles and exposes them as a graph:
+
+```text
+Company → Position category → People (with an inferred, never verified, business email)
+```
+
+GraphQL is the Sendloom backend API layer; it **calls** Apify and OpenAI rather
+than replacing them. The frontend is intentionally deferred.
+
+### 23.2 Pipeline
+
+`createProspectSearch` → resolve company → run Apify actor → normalize +
+de-duplicate profiles → exclude current-company mismatches → classify unique
+titles into position categories → upsert position nodes and assign people →
+infer **one** company email pattern → generate each person's email
+deterministically → mark search `READY`. Ownership/not-found errors throw;
+provider/AI failures are persisted as a structured `FAILED` search (with
+`errorCode`) rather than crashing the request. A timeout bounds the synchronous
+run.
+
+### 23.3 AI responsibilities and cost controls
+
+AI is used only for company resolution (≤1 call, skipped when a domain is
+provided), one **batched** title-classification call, and one company-level
+email-pattern call — roughly **three calls per search, never one per person**.
+Deterministic title rules and a database cache
+(`ProspectTitleClassification`) avoid repeat model calls; `AiCallBudget` enforces
+the `PROSPECT_AI_MAX_*` ceilings. Every AI response is re-validated with Zod and
+coerced to the allowed enums. Candidate emails are produced with deterministic
+TypeScript (`generateEmail`). AI logs record only `{ searchId, taskType, model,
+inputItemCount, latencyMs, success }` — never prompts, personal data, candidate
+emails, raw payloads, or keys.
+
+### 23.4 Data model
+
+New Prisma models (migration
+`prisma/migrations/20260617120000_add_prospect_graph_backend`):
+
+| Model | Purpose |
+| --- | --- |
+| `ProspectCompany` | Resolved company node (domain, website, LinkedIn, confidence, email pattern). Unique per `(userId, normalizedName)`. |
+| `ProspectCompanyPosition` | One node per position category under a company. Unique per `(companyId, category)`. |
+| `ProspectPerson` | A discovered professional, assigned to one position node, with inferred-email metadata. Unique per `(userId, sourceProfileId)`. |
+| `ProspectSearch` | A discovery request, its status, Apify run references, and counts. |
+| `ProspectTitleClassification` | Global cache of title→category classifications. |
+
+Category, status, and confidence values are stored as strings (mirroring the
+`AuditLog` pattern) and validated against GraphQL enums at the API boundary.
+
+### 23.5 Code map
+
+```text
+src/graphql/                     GraphQL layer
+  schema.ts                      SDL (enums, types, queries, mutations)
+  context.ts                     per-request context (session-based auth)
+  loaders.ts                     user-scoped DataLoaders (no N+1)
+  pagination.ts                  cursor pagination + max page size (100)
+  security.ts                    depth limit, field-count limit, no-introspection
+  server.ts                      executable schema + Yoga factory
+  resolvers/                     company / person / prospect-search / scalars
+src/services/prospects/          provider + business logic (no resolver calls providers directly)
+  prospect-search-service.ts     pipeline orchestrator
+  apify-profile-search.ts        Apify actor wrapper + profile normalization
+  company-resolution-service.ts  AI task 1
+  role-classification-service.ts deterministic map + cache + AI task 2
+  email-pattern-service.ts       AI task 3
+  email-generation-service.ts    deterministic email generation
+  prospect-validation.ts         create-search input validation
+src/app/api/graphql/route.ts     POST /api/graphql (Yoga), feature-flagged
+```
+
+### 23.6 Security and compliance
+
+Every operation requires a valid Sendloom session (reuses `getSessionUser()` plus
+the REST API restriction/verification checks). All data is user-scoped, so
+cross-user access is impossible. Mutations are CSRF-protected by the existing
+global middleware. Depth/complexity limits, a max page size of 100, and a hard
+feature flag (returns 404 when disabled) apply; introspection is disabled in
+production. Only professional fields are stored — photos, phone numbers, personal
+emails, education, full employment history, biographies, posts, and connections
+are discarded at ingestion. No email is ever sent and no sequence is created in
+this phase.
+
+### 23.7 Testing
+
+`npm test` covers the deterministic pieces and provider integration with Apify
+and OpenAI mocked (no live calls): normalization, email generation, input
+validation, Apify input mapping/normalization/dedupe/company-match, title
+classification (batching, deterministic rules, caching, enum coercion), the
+full pipeline (positions upserted, people assigned, ~3 AI calls regardless of
+people count, structured provider failures), and the GraphQL layer
+(authentication, depth limit, pagination bound, cross-user isolation, DataLoader
+batching, disabled-feature rejection). Use `npm run prospect:test` for a live
+end-to-end smoke test against the real providers.

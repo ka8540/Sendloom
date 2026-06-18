@@ -8,6 +8,14 @@ if (!globalForEnv.__sendloomEnvLoaded) {
   globalForEnv.__sendloomEnvLoaded = true;
 }
 
+// Coerce a string env flag into a boolean. Only the literal string "true"
+// (case-insensitive) enables a flag; anything else (including unset) is false.
+const booleanFlag = (defaultValue: boolean) =>
+  z
+    .string()
+    .optional()
+    .transform((value) => (value === undefined ? defaultValue : value.trim().toLowerCase() === "true"));
+
 const envSchema = z
   .object({
     DATABASE_URL: z.string().min(1),
@@ -46,7 +54,22 @@ const envSchema = z
     // Maximum simultaneous Gmail sends the worker runs at once. Combined with the
     // per-sender pacing above this prevents a burst of concurrent sends from one
     // mailbox, which is what Gmail's anti-abuse rate limiter punishes hardest.
-    GMAIL_SENDER_CONCURRENCY: z.coerce.number().int().positive().max(50).default(2)
+    GMAIL_SENDER_CONCURRENCY: z.coerce.number().int().positive().max(50).default(2),
+    // --- Prospect graph backend (local-first prototype) ---
+    APIFY_API_TOKEN: z.string().min(1).optional(),
+    APIFY_PROSPECT_ACTOR_ID: z.string().min(1).default("harvestapi/linkedin-profile-search"),
+    PROSPECT_GRAPH_ENABLED: booleanFlag(false),
+    GRAPHQL_GRAPHIQL_ENABLED: booleanFlag(false),
+    LOCAL_PROSPECT_MAX_RESULTS: z.coerce.number().int().positive().max(200).default(25),
+    PROSPECT_AI_ENABLED: booleanFlag(true),
+    // Empty string (a blank `PROSPECT_AI_MODEL=` line) is treated as unset so the
+    // default model is used.
+    PROSPECT_AI_MODEL: z.preprocess((value) => (value === "" ? undefined : value), z.string().min(1).optional()),
+    PROSPECT_AI_MAX_COMPANY_CALLS_PER_SEARCH: z.coerce.number().int().nonnegative().default(2),
+    PROSPECT_AI_MAX_ROLE_CALLS_PER_SEARCH: z.coerce.number().int().nonnegative().default(1),
+    PROSPECT_AI_MAX_PATTERN_CALLS_PER_SEARCH: z.coerce.number().int().nonnegative().default(1),
+    PROSPECT_AI_MAX_UNIQUE_TITLES: z.coerce.number().int().positive().default(100),
+    PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS: booleanFlag(false)
   })
   .superRefine((value, ctx) => {
     if (value.OBJECT_STORAGE_MODE === "r2") {
@@ -119,7 +142,19 @@ function readRawEnv() {
     ADMIN_PASSWORD: process.env.ADMIN_PASSWORD,
     GMAIL_DAILY_SEND_SAFETY_LIMIT: process.env.GMAIL_DAILY_SEND_SAFETY_LIMIT,
     GMAIL_SENDS_PER_MINUTE: process.env.GMAIL_SENDS_PER_MINUTE,
-    GMAIL_SENDER_CONCURRENCY: process.env.GMAIL_SENDER_CONCURRENCY
+    GMAIL_SENDER_CONCURRENCY: process.env.GMAIL_SENDER_CONCURRENCY,
+    APIFY_API_TOKEN: process.env.APIFY_API_TOKEN,
+    APIFY_PROSPECT_ACTOR_ID: process.env.APIFY_PROSPECT_ACTOR_ID,
+    PROSPECT_GRAPH_ENABLED: process.env.PROSPECT_GRAPH_ENABLED,
+    GRAPHQL_GRAPHIQL_ENABLED: process.env.GRAPHQL_GRAPHIQL_ENABLED,
+    LOCAL_PROSPECT_MAX_RESULTS: process.env.LOCAL_PROSPECT_MAX_RESULTS,
+    PROSPECT_AI_ENABLED: process.env.PROSPECT_AI_ENABLED,
+    PROSPECT_AI_MODEL: process.env.PROSPECT_AI_MODEL,
+    PROSPECT_AI_MAX_COMPANY_CALLS_PER_SEARCH: process.env.PROSPECT_AI_MAX_COMPANY_CALLS_PER_SEARCH,
+    PROSPECT_AI_MAX_ROLE_CALLS_PER_SEARCH: process.env.PROSPECT_AI_MAX_ROLE_CALLS_PER_SEARCH,
+    PROSPECT_AI_MAX_PATTERN_CALLS_PER_SEARCH: process.env.PROSPECT_AI_MAX_PATTERN_CALLS_PER_SEARCH,
+    PROSPECT_AI_MAX_UNIQUE_TITLES: process.env.PROSPECT_AI_MAX_UNIQUE_TITLES,
+    PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS: process.env.PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS
   };
 }
 
