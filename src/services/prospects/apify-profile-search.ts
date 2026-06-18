@@ -190,8 +190,8 @@ function companyUrlSlug(url: string | null | undefined): string | null {
 /**
  * Decide whether a profile's current employer matches the resolved company.
  * If neither a company URL nor a company name can be compared, the profile is
- * kept (we cannot prove a mismatch). A profile with a clearly different current
- * company is excluded.
+ * excluded. Prospect searches should never fill a graph from a broad title-only
+ * scrape when we cannot verify the current employer.
  */
 export function currentCompanyMatches(
   profile: NormalizedProfile,
@@ -207,7 +207,7 @@ export function currentCompanyMatches(
     return normalizeCompanyName(profile.currentCompanyName) === normalizeCompanyName(target.companyName);
   }
 
-  return true;
+  return false;
 }
 
 /** Remove duplicate profiles, preferring the first occurrence. */

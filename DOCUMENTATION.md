@@ -1191,8 +1191,8 @@ Company → Position category → People (with an inferred, never verified, busi
 ```
 
 GraphQL is the Sendloom backend API layer; it **calls** Apify and OpenAI rather
-than replacing them. A read-only frontend now consumes it at `/prospects` (see
-23.8).
+than replacing them. The `/prospects` frontend consumes it for local review and
+company graph cleanup (see 23.8).
 
 ### 23.2 Pipeline
 
@@ -1214,8 +1214,11 @@ email-domain/pattern ranking call — roughly **three calls per search, never on
 per person**.
 Deterministic title rules and a database cache
 (`ProspectTitleClassification`) avoid repeat model calls; `AiCallBudget` enforces
-the `PROSPECT_AI_MAX_*` ceilings. Every AI response is re-validated with Zod and
-coerced to the allowed enums. For email inference, AI ranks evidence only: the
+the `PROSPECT_AI_MAX_*` ceilings. `PROSPECT_AI_MODEL` selects the model for these
+tasks and `PROSPECT_AI_REASONING_EFFORT` defaults to `low` (`none`, `low`,
+`medium`, `high`, and `xhigh` are accepted; legacy `minimal` is coerced to
+`low`). Every AI response is re-validated with Zod and coerced to the allowed
+enums. For email inference, AI ranks evidence only: the
 selected email domain and selected pattern must already appear in collected
 evidence, and website domain alone is never enough. Candidate emails are
 produced with deterministic TypeScript (`generateEmail`) from
@@ -1292,8 +1295,8 @@ end-to-end smoke test against the real providers.
 
 ### 23.8 Frontend dashboard (`/prospects`)
 
-A read-only operator dashboard at `/prospects` (sidebar entry next to Finder)
-reviews the graph in-app. It is a client component
+An operator dashboard at `/prospects` (sidebar entry next to Finder) reviews the
+graph in-app. It is a client component
 (`src/components/prospects/prospects-dashboard.tsx`) that calls the existing
 `POST /api/graphql` endpoint through a small typed helper
 (`src/components/prospects/prospect-graphql.ts`); CSRF is handled by the global
@@ -1319,7 +1322,9 @@ Behavior:
 - Handles the disabled flag (clean "not enabled" card), processing/failed/
   canceled searches (safe `errorCode`/message, never raw GraphQL errors), and
   empty states. It creates **no** sequences or imports and sends nothing.
-  Optional, clearly-gated create/process/cancel controls reuse existing mutations.
+  Optional, clearly-gated create/process/cancel/delete controls reuse existing
+  mutations. Delete removes the owned company prospect graph and related
+  prospect searches only.
 - Matches the dashboard theme (glass panels, green/teal accents, dark/light) and
   is responsive with the sidebar open or collapsed (the people table collapses to
   stacked cards on narrow viewports).

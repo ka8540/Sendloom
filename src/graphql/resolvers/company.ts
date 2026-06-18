@@ -60,6 +60,15 @@ export const companyMutations = {
     }
   },
 
+  async deleteCompany(_root: unknown, args: { companyId: string }, context: GraphQLContext) {
+    const user = requireUser(context);
+    try {
+      return await context.services.prospectSearch.deleteCompany(user.id, args.companyId);
+    } catch (error) {
+      mapProspectError(error);
+    }
+  },
+
   async setCompanyEmailInferenceOverride(
     _root: unknown,
     args: {
@@ -111,10 +120,19 @@ export const Company = {
         observedAt: typeof row.observedAt === "string" ? row.observedAt : null
       }));
   },
+  emailPattern(parent: ProspectCompany) {
+    return parent.emailDomain ? parent.emailPattern : null;
+  },
   patternConfidence(parent: ProspectCompany) {
+    if (!parent.emailDomain) {
+      return "UNAVAILABLE";
+    }
     return coerceConfidenceLevel(parent.patternConfidence);
   },
   patternEvidence(parent: ProspectCompany) {
+    if (!parent.emailDomain) {
+      return [];
+    }
     const evidence = Array.isArray(parent.patternEvidence) ? (parent.patternEvidence as EvidenceRow[]) : [];
     return evidence
       .filter((row) => typeof row?.pattern === "string")

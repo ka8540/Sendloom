@@ -19,6 +19,7 @@ import {
   RefreshCw,
   Search,
   Sparkles,
+  Trash2,
   Users,
   X
 } from "lucide-react";
@@ -27,6 +28,7 @@ import {
   CANCEL_SEARCH_MUTATION,
   COMPANY_DETAIL_QUERY,
   CREATE_SEARCH_MUTATION,
+  DELETE_COMPANY_MUTATION,
   PEOPLE_PAGE_SIZE,
   PEOPLE_QUERY,
   PROCESS_SEARCH_MUTATION,
@@ -120,6 +122,7 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
   const [form, setForm] = useState<CreateForm>(EMPTY_FORM);
   const [creating, setCreating] = useState(false);
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const [deletingCompanyId, setDeletingCompanyId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
 
@@ -421,6 +424,41 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
     [loadSearches]
   );
 
+  const handleDeleteCompany = useCallback(
+    async (target: CompanyDetail) => {
+      const confirmed = window.confirm(
+        `Delete ${target.name} and its prospect graph? This removes the company, its inferred people, and related searches.`
+      );
+      if (!confirmed) {
+        return;
+      }
+
+      setDeletingCompanyId(target.id);
+      setActionError(null);
+      setActionNotice(null);
+      const result = await prospectGraphql<{ deleteCompany: boolean }>(DELETE_COMPANY_MUTATION, {
+        companyId: target.id
+      });
+      setDeletingCompanyId(null);
+      if (result.disabled) {
+        setDisabled(true);
+        return;
+      }
+      if (result.error || !result.data?.deleteCompany) {
+        setActionError(result.error ?? "Could not delete this company.");
+        return;
+      }
+
+      setSelectedSearchId(null);
+      setCompany(null);
+      setActiveCategory(null);
+      resetPeopleState();
+      setActionNotice("Company deleted.");
+      await loadSearches({ autoSelect: true });
+    },
+    [loadSearches, resetPeopleState]
+  );
+
   const visiblePeople = useMemo(() => filterPeopleByText(people, peopleFilter), [people, peopleFilter]);
   const visibleCategories = useMemo(
     () => (company ? company.positions.filter((position) => position.peopleCount > 0) : []),
@@ -614,7 +652,12 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
 
               {selectedView === "ready" && (
                 <>
-                  <CompanyCard company={company} loading={companyLoading} />
+                  <CompanyCard
+                    company={company}
+                    loading={companyLoading}
+                    deleting={Boolean(company && deletingCompanyId === company.id)}
+                    onDelete={handleDeleteCompany}
+                  />
 
                   {company && (
                     <div className={`card ${styles.peopleSection}`}>
@@ -768,9 +811,13 @@ function SummaryCards({
         <span className={styles.summaryMeta}>
           {pattern ? <code className={styles.patternCode}>{pattern}</code> : "Pattern unavailable"}
         </span>
-        <span className={styles.summaryWarn}>
-          Inferred · {confidenceBadge(emailDomainConfidence === "UNAVAILABLE" ? patternConfidence : emailDomainConfidence).label.toLowerCase()} confidence, not verified
-        </span>
+        {emailDomain && pattern ? (
+          <span className={styles.summaryWarn}>
+            Inferred · {confidenceBadge(emailDomainConfidence === "UNAVAILABLE" ? patternConfidence : emailDomainConfidence).label.toLowerCase()} confidence, not verified
+          </span>
+        ) : (
+          <span className={styles.summaryMeta}>Email inference unavailable</span>
+        )}
         {domainDiffers && <span className={styles.summaryMeta}>Website differs from email domain</span>}
       </div>
 
@@ -787,7 +834,17 @@ function SummaryCards({
   );
 }
 
-function CompanyCard({ company, loading }: { company: CompanyDetail | null; loading: boolean }) {
+function CompanyCard({
+  company,
+  loading,
+  deleting,
+  onDelete
+}: {
+  company: CompanyDetail | null;
+  loading: boolean;
+  deleting: boolean;
+  onDelete: (company: CompanyDetail) => void;
+}) {
   if (loading && !company) {
     return (
       <div className={`card ${styles.companyCard}`}>
@@ -826,6 +883,16 @@ function CompanyCard({ company, loading }: { company: CompanyDetail | null; load
             )}
           </div>
         </div>
+        <button
+          type="button"
+          className={styles.dangerButton}
+          onClick={() => onDelete(company)}
+          disabled={deleting}
+          title="Delete company graph"
+        >
+          {deleting ? <LoaderCircle aria-hidden="true" className={styles.spin} /> : <Trash2 aria-hidden="true" />}
+          <span>Delete</span>
+        </button>
       </div>
       <div className={styles.companyMetaGrid}>
         <div className={styles.metaItem}>

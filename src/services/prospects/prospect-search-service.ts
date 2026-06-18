@@ -138,6 +138,17 @@ export class ProspectSearchService {
     });
   }
 
+  async deleteCompany(userId: string, companyId: string): Promise<boolean> {
+    const company = await this.requireOwnedCompany(userId, companyId);
+
+    await this.prisma.prospectSearch.deleteMany({ where: { userId, companyId: company.id } });
+    await this.prisma.prospectPerson.deleteMany({ where: { userId, companyId: company.id } });
+    await this.prisma.prospectCompanyPosition.deleteMany({ where: { companyId: company.id } });
+    await this.prisma.prospectCompany.delete({ where: { id: company.id } });
+
+    return true;
+  }
+
   /**
    * Run the full discovery pipeline for a search. Ownership / not-found errors
    * throw; provider/AI failures are persisted as a FAILED search and returned so
@@ -190,6 +201,13 @@ export class ProspectSearchService {
       budget,
       searchId: search.id
     });
+
+    if (!resolution.officialWebsiteDomain && !resolution.linkedinCompanyUrl) {
+      throw new ProspectError(
+        "COMPANY_UNRESOLVED",
+        "Could not resolve this company well enough to run a targeted profile search. Add a company website domain or LinkedIn company URL and try again."
+      );
+    }
 
     const company = await this.upsertCompany(userId, resolution);
     await this.prisma.prospectSearch.update({ where: { id: search.id }, data: { companyId: company.id } });

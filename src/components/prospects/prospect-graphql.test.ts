@@ -5,6 +5,7 @@ import {
   PEOPLE_QUERY,
   PROSPECT_SEARCHES_QUERY,
   SEARCHES_PAGE_SIZE,
+  DELETE_COMPANY_MUTATION,
   buildPeopleVariables,
   buildSearchesVariables,
   isDisabledResponse,
@@ -54,6 +55,10 @@ describe("prospect graphql helper", () => {
     expect(PEOPLE_QUERY).toContain("inferredEmail");
     expect(PROSPECT_SEARCHES_QUERY).toContain("officialWebsiteDomain");
     expect(PROSPECT_SEARCHES_QUERY).toContain("emailDomain");
+  });
+
+  it("declares the delete-company mutation", () => {
+    expect(DELETE_COMPANY_MUTATION).toContain("deleteCompany(companyId: $companyId)");
   });
 
   describe("isDisabledResponse", () => {

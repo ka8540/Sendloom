@@ -16,6 +16,14 @@ const booleanFlag = (defaultValue: boolean) =>
     .optional()
     .transform((value) => (value === undefined ? defaultValue : value.trim().toLowerCase() === "true"));
 
+const prospectAiReasoningEffort = z.preprocess((value) => {
+  if (value === undefined || value === "") {
+    return "low";
+  }
+  const normalized = String(value).trim().toLowerCase();
+  return normalized === "minimal" ? "low" : normalized;
+}, z.enum(["none", "low", "medium", "high", "xhigh"]).default("low"));
+
 const envSchema = z
   .object({
     DATABASE_URL: z.string().min(1),
@@ -65,6 +73,9 @@ const envSchema = z
     // Empty string (a blank `PROSPECT_AI_MODEL=` line) is treated as unset so the
     // default model is used.
     PROSPECT_AI_MODEL: z.preprocess((value) => (value === "" ? undefined : value), z.string().min(1).optional()),
+    // GPT-5.5 rejects the legacy "minimal" effort value. If an old deployment
+    // still sets it, coerce to "low" so prospect AI stays available.
+    PROSPECT_AI_REASONING_EFFORT: prospectAiReasoningEffort,
     PROSPECT_AI_MAX_COMPANY_CALLS_PER_SEARCH: z.coerce.number().int().nonnegative().default(2),
     PROSPECT_AI_MAX_ROLE_CALLS_PER_SEARCH: z.coerce.number().int().nonnegative().default(1),
     PROSPECT_AI_MAX_PATTERN_CALLS_PER_SEARCH: z.coerce.number().int().nonnegative().default(1),
@@ -150,6 +161,7 @@ function readRawEnv() {
     LOCAL_PROSPECT_MAX_RESULTS: process.env.LOCAL_PROSPECT_MAX_RESULTS,
     PROSPECT_AI_ENABLED: process.env.PROSPECT_AI_ENABLED,
     PROSPECT_AI_MODEL: process.env.PROSPECT_AI_MODEL,
+    PROSPECT_AI_REASONING_EFFORT: process.env.PROSPECT_AI_REASONING_EFFORT,
     PROSPECT_AI_MAX_COMPANY_CALLS_PER_SEARCH: process.env.PROSPECT_AI_MAX_COMPANY_CALLS_PER_SEARCH,
     PROSPECT_AI_MAX_ROLE_CALLS_PER_SEARCH: process.env.PROSPECT_AI_MAX_ROLE_CALLS_PER_SEARCH,
     PROSPECT_AI_MAX_PATTERN_CALLS_PER_SEARCH: process.env.PROSPECT_AI_MAX_PATTERN_CALLS_PER_SEARCH,

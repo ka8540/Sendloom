@@ -70,6 +70,17 @@ export function createFakePrisma() {
     return true;
   }
 
+  function deleteRows(rows: Row[], predicate: (row: Row) => boolean): number {
+    let count = 0;
+    for (let index = rows.length - 1; index >= 0; index -= 1) {
+      if (predicate(rows[index])) {
+        rows.splice(index, 1);
+        count += 1;
+      }
+    }
+    return count;
+  }
+
   const now = () => new Date();
 
   return {
@@ -88,6 +99,10 @@ export function createFakePrisma() {
       },
       findMany: async ({ where }: { where: Row }) => searches.filter((r) => matchGeneric(r, where)).map((r) => ({ ...r })),
       count: async ({ where }: { where: Row }) => searches.filter((r) => matchGeneric(r, where)).length,
+      deleteMany: async ({ where }: { where: Row }) => {
+        const count = deleteRows(searches, (r) => matchGeneric(r, where ?? {}));
+        return { count };
+      },
       update: async ({ where, data }: { where: Row; data: Row }) => {
         const row = searches.find((r) => r.id === where.id);
         Object.assign(row!, data, { updatedAt: now() });
@@ -123,7 +138,16 @@ export function createFakePrisma() {
         return row ? { ...row } : null;
       },
       findMany: async ({ where }: { where: Row }) => companies.filter((r) => matchGeneric(r, where ?? {})).map((r) => ({ ...r })),
-      count: async ({ where }: { where: Row }) => companies.filter((r) => matchGeneric(r, where ?? {})).length
+      count: async ({ where }: { where: Row }) => companies.filter((r) => matchGeneric(r, where ?? {})).length,
+      delete: async ({ where }: { where: Row }) => {
+        const index = companies.findIndex((r) => r.id === where.id);
+        const row = companies[index];
+        if (!row) {
+          throw new Error("Company not found.");
+        }
+        companies.splice(index, 1);
+        return { ...row };
+      }
     },
 
     prospectCompanyPosition: {
@@ -138,7 +162,11 @@ export function createFakePrisma() {
         }
         return { ...row };
       },
-      findMany: async ({ where }: { where: Row }) => positions.filter((r) => matchPosition(r, where ?? {})).map((r) => ({ ...r }))
+      findMany: async ({ where }: { where: Row }) => positions.filter((r) => matchPosition(r, where ?? {})).map((r) => ({ ...r })),
+      deleteMany: async ({ where }: { where: Row }) => {
+        const count = deleteRows(positions, (r) => matchPosition(r, where ?? {}));
+        return { count };
+      }
     },
 
     prospectPerson: {
@@ -160,6 +188,10 @@ export function createFakePrisma() {
       },
       findMany: async ({ where }: { where: Row }) => people.filter((r) => matchPerson(r, where ?? {})).map((r) => ({ ...r })),
       count: async ({ where }: { where: Row }) => people.filter((r) => matchPerson(r, where ?? {})).length,
+      deleteMany: async ({ where }: { where: Row }) => {
+        const count = deleteRows(people, (r) => matchPerson(r, where ?? {}));
+        return { count };
+      },
       groupBy: async ({ by, where }: { by: string[]; where: Row }) => {
         const key = by[0];
         const counts = new Map<string, number>();

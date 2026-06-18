@@ -106,8 +106,8 @@ describe("currentCompanyMatches", () => {
     expect(currentCompanyMatches(base, { companyName: "Apple" })).toBe(true);
   });
 
-  it("keeps a profile when no company signal is comparable", () => {
-    expect(currentCompanyMatches({ ...base, currentCompanyName: null }, { companyName: "Apple" })).toBe(true);
+  it("excludes a profile when no current-company signal is comparable", () => {
+    expect(currentCompanyMatches({ ...base, currentCompanyName: null }, { companyName: "Apple" })).toBe(false);
   });
 });
 

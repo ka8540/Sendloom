@@ -330,6 +330,12 @@ export const CANCEL_SEARCH_MUTATION = /* GraphQL */ `
   }
 `;
 
+export const DELETE_COMPANY_MUTATION = /* GraphQL */ `
+  mutation DeleteCompany($companyId: ID!) {
+    deleteCompany(companyId: $companyId)
+  }
+`;
+
 // ---------------------------------------------------------------------------
 // Variable builders — the people defaults MUST be 20, never 5.
 // ---------------------------------------------------------------------------

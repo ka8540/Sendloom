@@ -858,6 +858,7 @@ Create a local `.env` file at the repo root with the values below. Secrets and s
 | `LOCAL_PROSPECT_MAX_RESULTS` | Optional | Hard local cap on results per search. Defaults to `25`. |
 | `PROSPECT_AI_ENABLED` | Optional | Enables the AI company/role/pattern steps. Defaults to `true`. |
 | `PROSPECT_AI_MODEL` | Optional | Override the prospect AI model. Blank uses the project default (`gpt-5`); local testing can set the latest available strong model, for example `gpt-5.5`. |
+| `PROSPECT_AI_REASONING_EFFORT` | Optional | Reasoning effort for prospect AI calls. Defaults to `low`. Supported values are `none`, `low`, `medium`, `high`, and `xhigh`; legacy `minimal` is coerced to `low` for GPT-5.5 compatibility. |
 | `PROSPECT_AI_MAX_COMPANY_CALLS_PER_SEARCH` | Optional | Per-search company-resolution AI call cap. Defaults to `2`. |
 | `PROSPECT_AI_MAX_ROLE_CALLS_PER_SEARCH` | Optional | Per-search title-classification AI call cap. Defaults to `1`. |
 | `PROSPECT_AI_MAX_PATTERN_CALLS_PER_SEARCH` | Optional | Per-search email-domain/pattern ranking AI call cap. Defaults to `1`. |
@@ -1031,14 +1032,15 @@ once so the cookie is present.
 
 ### Prospects dashboard
 
-A read-only review dashboard lives at **`/prospects`** (in the operator sidebar,
-next to Finder). It consumes the same `POST /api/graphql` endpoint from the
-client — reusing the global CSRF fetch patch, so no CSRF protection is bypassed —
-and lets you:
+A review dashboard lives at **`/prospects`** (in the operator sidebar, next to
+Finder). It consumes the same `POST /api/graphql` endpoint from the client —
+reusing the global CSRF fetch patch, so no CSRF protection is bypassed — and lets
+you:
 
 - browse previous prospect searches and select a `READY` one,
 - view the resolved company summary, separate website/email domains, position-category breakdown, and people,
 - filter the current page by position category, and copy individual inferred emails.
+- delete an owned company prospect graph and its related prospect searches.
 
 People results default to **20 per page** (never 5), with cursor-based
 previous/next pagination. Every address is clearly labelled **inferred, not
@@ -1046,7 +1048,8 @@ verified** (only a real `VERIFIED` status uses the green badge), and a persisten
 banner reinforces that generated emails are inferred from the selected email
 domain and pattern. The page handles the disabled flag,
 processing/failed/canceled searches, and empty states gracefully — and it
-**never** creates sequences, imports, or sends anything. When
+**never** creates sequences, imports, or sends anything. Deleting a prospect
+company only removes the local prospect graph/search rows for that company. When
 `PROSPECT_GRAPH_ENABLED` is off, the GraphQL route returns 404 and the page shows
 a clean "Prospect Graph is not enabled" card instead of erroring.
 
@@ -1117,6 +1120,14 @@ mutation SetCompanyEmailInferenceOverride($companyId: ID!) {
     emailPattern
     patternConfidence
   }
+}
+```
+
+Delete a local company prospect graph:
+
+```graphql
+mutation DeleteCompany($companyId: ID!) {
+  deleteCompany(companyId: $companyId)
 }
 ```
 

@@ -265,6 +265,24 @@ describe("ProspectSearchService pipeline", () => {
     expect(jane.emailConfidence).toBe("UNAVAILABLE");
   });
 
+  it("fails before Apify when company resolution has no website or LinkedIn anchor", async () => {
+    const runner: ApifyRunner = { run: vi.fn(async () => ({ runId: null, datasetId: null, items: [] })) };
+    const { service } = buildService(prisma, runner, { enabled: false });
+
+    const created = await service.createSearch(USER_ID, {
+      ...VALIDATED,
+      companyName: "Unresolved Co",
+      companyDomain: null,
+      companyLinkedinUrl: null
+    });
+    const result = await service.processSearch(USER_ID, created.id);
+
+    expect(result.status).toBe("FAILED");
+    expect(result.errorCode).toBe("COMPANY_UNRESOLVED");
+    expect(runner.run).not.toHaveBeenCalled();
+    expect(prisma._state.companies).toHaveLength(0);
+  });
+
   it("manual override regenerates existing inferred emails without marking them verified", async () => {
     const runner: ApifyRunner = {
       run: vi.fn(async () => ({
@@ -298,6 +316,79 @@ describe("ProspectSearchService pipeline", () => {
     expect(jane.inferredEmail).toBe("jane_doe@amat.com");
     expect(jane.emailStatus).toBe("INFERRED_HIGH");
     expect(jane.emailStatus).not.toBe("VERIFIED");
+  });
+
+  it("deletes an owned company graph and its related searches", async () => {
+    prisma._state.companies.push({
+      id: "company_1",
+      userId: USER_ID,
+      name: "Apple",
+      normalizedName: "apple",
+      officialName: "Apple Inc.",
+      officialDomain: "apple.com",
+      officialWebsiteDomain: "apple.com",
+      emailDomainConfidence: "UNAVAILABLE",
+      patternConfidence: "UNAVAILABLE",
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+    prisma._state.positions.push({
+      id: "position_1",
+      companyId: "company_1",
+      category: "SOFTWARE_ENGINEERING",
+      displayName: "Software Engineering",
+      rawTitles: ["Software Engineer"],
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+    prisma._state.people.push({
+      id: "person_1",
+      userId: USER_ID,
+      companyId: "company_1",
+      positionId: "position_1",
+      sourceProfileId: "profile_1",
+      firstName: "Jane",
+      lastName: "Doe",
+      fullName: "Jane Doe",
+      linkedinUrl: "https://www.linkedin.com/in/jane",
+      emailStatus: "UNAVAILABLE",
+      emailConfidence: "UNAVAILABLE",
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+    prisma._state.searches.push({
+      id: "search_1",
+      userId: USER_ID,
+      companyId: "company_1",
+      requestedCompany: "Apple",
+      requestedTitles: ["Software Engineer"],
+      requestedLocations: ["United States"],
+      maxResults: 25,
+      status: "READY",
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+    prisma._state.searches.push({
+      id: "search_other",
+      userId: USER_ID,
+      companyId: "company_other",
+      requestedCompany: "Other",
+      requestedTitles: ["Software Engineer"],
+      requestedLocations: ["United States"],
+      maxResults: 25,
+      status: "READY",
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+    const runner: ApifyRunner = { run: vi.fn(async () => ({ runId: null, datasetId: null, items: [] })) };
+    const { service } = buildService(prisma, runner, { enabled: false });
+
+    await expect(service.deleteCompany(USER_ID, "company_1")).resolves.toBe(true);
+
+    expect(prisma._state.companies).toHaveLength(0);
+    expect(prisma._state.positions).toHaveLength(0);
+    expect(prisma._state.people).toHaveLength(0);
+    expect(prisma._state.searches.map((row) => row.id)).toEqual(["search_other"]);
   });
 
   it("returns a structured FAILED search when the provider throws (#26)", async () => {

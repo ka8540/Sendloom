@@ -91,6 +91,7 @@
 .secondaryButton,
 .primaryButton,
 .ghostButton,
+.dangerButton,
 .pageButton {
   display: inline-flex;
   align-items: center;
@@ -109,6 +110,7 @@
 .refreshButton:hover,
 .secondaryButton:hover,
 .ghostButton:hover,
+.dangerButton:hover:not(:disabled),
 .pageButton:hover:not(:disabled) {
   background: var(--surface-hover);
   border-color: var(--field-focus);
@@ -119,6 +121,7 @@
 .secondaryButton svg,
 .primaryButton svg,
 .ghostButton svg,
+.dangerButton svg,
 .pageButton svg {
   width: 1.05rem;
   height: 1.05rem;
@@ -140,9 +143,19 @@
   padding: 0.45rem 0.7rem;
 }
 
+.dangerButton {
+  margin-left: auto;
+  border-color: var(--error-toast-border);
+  background: var(--error-toast-icon-bg);
+  color: var(--error-toast-icon-color);
+  padding: 0.5rem 0.7rem;
+  font-size: 0.86rem;
+}
+
 .pageButton:disabled,
 .primaryButton:disabled,
-.secondaryButton:disabled {
+.secondaryButton:disabled,
+.dangerButton:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
@@ -491,6 +504,7 @@
   display: flex;
   align-items: center;
   gap: 1rem;
+  flex-wrap: wrap;
 }
 
 .companyIcon {

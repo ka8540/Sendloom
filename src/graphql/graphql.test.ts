@@ -9,7 +9,13 @@ import { createDepthLimitRule } from "@/graphql/security";
 import { prospectSchema, resolveGraphiqlEnabled } from "@/graphql/server";
 import { createFakePrisma, type FakePrisma } from "@/services/prospects/__test-utils__/fake-prisma";
 
-function makeContext(options: { user: User | null; prisma?: FakePrisma; userId?: string; authError?: string | null }): GraphQLContext {
+function makeContext(options: {
+  user: User | null;
+  prisma?: FakePrisma;
+  userId?: string;
+  authError?: string | null;
+  services?: Partial<GraphQLContext["services"]>;
+}): GraphQLContext {
   const prisma = options.prisma ?? createFakePrisma();
   const userId = options.userId ?? options.user?.id ?? "__anonymous__";
   return {
@@ -17,7 +23,7 @@ function makeContext(options: { user: User | null; prisma?: FakePrisma; userId?:
     authError: options.authError ?? null,
     requestId: "test-request",
     prisma: prisma as unknown as PrismaClient,
-    services: {} as GraphQLContext["services"],
+    services: (options.services ?? {}) as GraphQLContext["services"],
     loaders: createLoaders(prisma as unknown as PrismaClient, userId)
   };
 }
@@ -211,5 +217,60 @@ describe("No secrets in responses (#25)", () => {
       emailDomain: "apple.com",
       emailPattern: "flast"
     });
+  });
+});
+
+describe("Company email inference API", () => {
+  it("does not expose a stale pattern when email domain is unavailable", async () => {
+    const prisma = createFakePrisma();
+    seedCompany(prisma, {
+      id: "comp_A",
+      userId: "user_A",
+      emailDomain: null,
+      emailDomainConfidence: "UNAVAILABLE",
+      emailPattern: "first.last",
+      patternConfidence: "HIGH",
+      patternEvidence: [
+        {
+          pattern: "first.last",
+          emailDomain: "esri.com",
+          sourceName: "legacy row",
+          sourceType: "search_snippet",
+          confidence: "HIGH",
+          observedAt: "2026-06-18T00:00:00.000Z"
+        }
+      ]
+    });
+
+    const result = await graphql({
+      schema: prospectSchema,
+      source: `{ company(id: "comp_A") { emailDomain emailPattern patternConfidence patternEvidence { pattern } } }`,
+      contextValue: makeContext({ user: FAKE_USER, prisma, userId: "user_A" })
+    });
+
+    expect(result.errors).toBeUndefined();
+    expect(result.data?.company).toMatchObject({
+      emailDomain: null,
+      emailPattern: null,
+      patternConfidence: "UNAVAILABLE",
+      patternEvidence: []
+    });
+  });
+
+  it("deletes a company through the owner-scoped mutation", async () => {
+    const deleteCompany = vi.fn(async () => true);
+
+    const result = await graphql({
+      schema: prospectSchema,
+      source: `mutation { deleteCompany(companyId: "comp_A") }`,
+      contextValue: makeContext({
+        user: FAKE_USER,
+        services: { prospectSearch: { deleteCompany } as unknown as GraphQLContext["services"]["prospectSearch"] }
+      })
+    });
+
+    expect(result.errors).toBeUndefined();
+    expect(result.data?.deleteCompany).toBe(true);
+    expect(deleteCompany).toHaveBeenCalledWith("user_A", "comp_A");
   });
 });

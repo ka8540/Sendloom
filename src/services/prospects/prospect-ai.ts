@@ -3,6 +3,9 @@ import { env } from "@/lib/env";
 // Default model for prospect AI tasks; override with PROSPECT_AI_MODEL for the
 // latest model available in the local environment (for example, gpt-5.5).
 export const DEFAULT_PROSPECT_AI_MODEL = "gpt-5";
+export const DEFAULT_PROSPECT_AI_REASONING_EFFORT = "low";
+
+export type ProspectReasoningEffort = "none" | "low" | "medium" | "high" | "xhigh";
 
 export type AiTaskType = "company_resolution" | "role_classification" | "email_pattern";
 
@@ -58,6 +61,7 @@ function logAiCall(entry: {
   searchId?: string | null;
   taskType: AiTaskType;
   model: string;
+  reasoningEffort?: ProspectReasoningEffort;
   inputItemCount: number;
   latencyMs: number;
   success: boolean;
@@ -67,14 +71,21 @@ function logAiCall(entry: {
 
 export class OpenAiProspectClient implements AiClient {
   readonly model: string;
+  readonly reasoningEffort: ProspectReasoningEffort;
   private readonly apiKey?: string;
+  private readonly enabledOverride?: boolean;
 
-  constructor(options?: { apiKey?: string; model?: string }) {
+  constructor(options?: { apiKey?: string; model?: string; reasoningEffort?: ProspectReasoningEffort; enabled?: boolean }) {
     this.apiKey = options?.apiKey ?? env.OPENAI_API_KEY;
     this.model = options?.model ?? env.PROSPECT_AI_MODEL ?? DEFAULT_PROSPECT_AI_MODEL;
+    this.reasoningEffort = options?.reasoningEffort ?? env.PROSPECT_AI_REASONING_EFFORT ?? DEFAULT_PROSPECT_AI_REASONING_EFFORT;
+    this.enabledOverride = options?.enabled;
   }
 
   get enabled(): boolean {
+    if (this.enabledOverride !== undefined) {
+      return this.enabledOverride && Boolean(this.apiKey);
+    }
     return Boolean(env.PROSPECT_AI_ENABLED && this.apiKey);
   }
 
@@ -94,7 +105,7 @@ export class OpenAiProspectClient implements AiClient {
         },
         body: JSON.stringify({
           model: this.model,
-          reasoning: { effort: "minimal" },
+          reasoning: { effort: this.reasoningEffort },
           instructions: request.instructions,
           input: request.input,
           max_output_tokens: request.maxOutputTokens ?? 1200,
@@ -127,6 +138,7 @@ export class OpenAiProspectClient implements AiClient {
         searchId: request.searchId,
         taskType: request.taskType,
         model: this.model,
+        reasoningEffort: this.reasoningEffort,
         inputItemCount: request.inputItemCount,
         latencyMs: Date.now() - startedAt,
         success
