@@ -46,6 +46,16 @@ export class ProspectError extends Error {
 const TERMINAL_STATUSES = new Set(["READY", "CANCELED"]);
 const DEFAULT_PIPELINE_TIMEOUT_MS = 120_000;
 
+function hasConfiguredEmailFormatSearchProvider(): boolean {
+  if (env.WEB_SEARCH_PROVIDER === "serper") {
+    return Boolean(env.SERPER_API_KEY);
+  }
+  if (env.WEB_SEARCH_PROVIDER === "brave") {
+    return Boolean(env.BRAVE_SEARCH_API_KEY);
+  }
+  return false;
+}
+
 async function withTimeout<T>(promise: Promise<T>, ms: number, onTimeout: () => Error): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
   try {
@@ -501,6 +511,13 @@ export class ProspectSearchService {
     ownedCompany?: ProspectCompany
   ): Promise<ProspectCompany> {
     const company = ownedCompany ?? (await this.requireOwnedCompany(userId, companyId));
+    const trimmedSourceUrl = sourceUrl?.trim() || null;
+    if (!trimmedSourceUrl && !hasConfiguredEmailFormatSearchProvider()) {
+      throw new ProspectError(
+        "NOT_CONFIGURED",
+        "No web search provider configured. Paste a public email-format source URL or set WEB_SEARCH_PROVIDER to serper/brave with its API key."
+      );
+    }
     const budget = createAiBudget();
 
     const inference = await this.emailDomain.infer({
@@ -508,7 +525,7 @@ export class ProspectSearchService {
       companyId,
       companyName: company.officialName ?? company.name,
       officialWebsiteDomain: company.officialWebsiteDomain ?? company.officialDomain,
-      sourceUrl: sourceUrl?.trim() || null,
+      sourceUrl: trimmedSourceUrl,
       budget,
       searchId: null
     });

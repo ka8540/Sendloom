@@ -1096,7 +1096,7 @@ function CompanyCard({
           <span className={styles.metaHint}>
             {hasEmailFormat
               ? "Email format found from public evidence. Generated emails are inferred until verified."
-              : "Search public sources or paste a known public email-format page."}
+              : "Search public sources with a configured web search provider, or paste a known public email-format page."}
           </span>
         </div>
         <div className={styles.formatButtonRow}>

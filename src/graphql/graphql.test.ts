@@ -8,6 +8,7 @@ import { resolveFirst } from "@/graphql/pagination";
 import { createDepthLimitRule } from "@/graphql/security";
 import { prospectSchema, resolveGraphiqlEnabled } from "@/graphql/server";
 import { createFakePrisma, type FakePrisma } from "@/services/prospects/__test-utils__/fake-prisma";
+import { ProspectError } from "@/services/prospects/prospect-search-service";
 
 function makeContext(options: {
   user: User | null;
@@ -331,5 +332,31 @@ describe("Company email inference API", () => {
       "comp_A",
       "https://rocketreach.co/esri-email-format_b5c60d6df42e0c51"
     );
+  });
+
+  it("returns a clear error when email-format search is not configured", async () => {
+    const refreshCompanyEmailFormat = vi.fn(async () => {
+      throw new ProspectError(
+        "NOT_CONFIGURED",
+        "No web search provider configured. Paste a public email-format source URL or set WEB_SEARCH_PROVIDER to serper/brave with its API key."
+      );
+    });
+
+    const result = await graphql({
+      schema: prospectSchema,
+      source: `mutation { refreshCompanyEmailFormat(companyId: "comp_A") { id } }`,
+      contextValue: makeContext({
+        user: FAKE_USER,
+        services: {
+          prospectSearch: {
+            refreshCompanyEmailFormat
+          } as unknown as GraphQLContext["services"]["prospectSearch"]
+        }
+      })
+    });
+
+    expect(result.data?.refreshCompanyEmailFormat ?? null).toBeNull();
+    expect(result.errors?.[0]?.extensions?.code).toBe("FORBIDDEN");
+    expect(result.errors?.[0]?.message).toContain("No web search provider configured");
   });
 });

@@ -494,6 +494,24 @@ type RawGraphQLResponse<T> = {
   errors?: Array<{ message?: string; extensions?: { code?: string } }>;
 };
 
+const SAFE_GRAPHQL_ERROR_CODES = new Set(["BAD_USER_INPUT", "FORBIDDEN", "NOT_FOUND", "UNAUTHENTICATED"]);
+
+function safeGraphqlErrorMessage(errors: NonNullable<RawGraphQLResponse<unknown>["errors"]>): string {
+  const first = errors[0];
+  const code = first?.extensions?.code;
+  const message = first?.message?.trim();
+  if (
+    code &&
+    SAFE_GRAPHQL_ERROR_CODES.has(code) &&
+    message &&
+    message.length <= 240 &&
+    !/\b(prisma|secret|token|bearer|stack|password)\b/i.test(message)
+  ) {
+    return message;
+  }
+  return "We couldn't complete that request.";
+}
+
 /**
  * Detect the "feature disabled" signal. The route returns HTTP 404 with
  * `{ error: "Prospect graph is not enabled." }` when PROSPECT_GRAPH_ENABLED is
@@ -550,9 +568,7 @@ export async function prospectGraphql<T>(
 
   const raw = (body ?? {}) as RawGraphQLResponse<T>;
   if (raw.errors && raw.errors.length > 0) {
-    // Surface a generic message; the raw GraphQL error is intentionally not
-    // shown to the user (it may contain internal detail).
-    return { data: raw.data ?? null, disabled: false, error: "We couldn't complete that request." };
+    return { data: raw.data ?? null, disabled: false, error: safeGraphqlErrorMessage(raw.errors) };
   }
 
   return { data: raw.data ?? null, disabled: false, error: null };

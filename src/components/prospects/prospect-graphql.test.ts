@@ -111,6 +111,30 @@ describe("prospect graphql helper", () => {
       expect(result.error).not.toContain("prisma");
     });
 
+    it("passes through safe prospect GraphQL errors", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(
+          async () =>
+            new Response(
+              JSON.stringify({
+                errors: [
+                  {
+                    message:
+                      "No web search provider configured. Paste a public email-format source URL or set WEB_SEARCH_PROVIDER to serper/brave with its API key.",
+                    extensions: { code: "FORBIDDEN" }
+                  }
+                ]
+              }),
+              { status: 200 }
+            )
+        )
+      );
+      const result = await prospectGraphql("{ __typename }");
+      expect(result.error).toContain("No web search provider configured");
+      expect(result.error).toContain("WEB_SEARCH_PROVIDER");
+    });
+
     it("returns data on success", async () => {
       vi.stubGlobal(
         "fetch",
