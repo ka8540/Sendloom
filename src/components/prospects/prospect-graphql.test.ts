@@ -1,0 +1,116 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import {
+  PEOPLE_PAGE_SIZE,
+  PEOPLE_QUERY,
+  SEARCHES_PAGE_SIZE,
+  buildPeopleVariables,
+  buildSearchesVariables,
+  isDisabledResponse,
+  prospectGraphql
+} from "@/components/prospects/prospect-graphql";
+
+describe("prospect graphql helper", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  describe("people query defaults to 20, never 5", () => {
+    it("defaults `first` to 20 when not provided", () => {
+      const vars = buildPeopleVariables({ companyId: "c1" });
+      expect(vars.first).toBe(20);
+      expect(vars.first).not.toBe(5);
+      expect(PEOPLE_PAGE_SIZE).toBe(20);
+    });
+
+    it("sends a null category for the All-people view", () => {
+      expect(buildPeopleVariables({ companyId: "c1" }).category).toBeNull();
+    });
+
+    it("passes the selected positionCategory through", () => {
+      const vars = buildPeopleVariables({ companyId: "c1", category: "SOFTWARE_ENGINEERING" });
+      expect(vars.category).toBe("SOFTWARE_ENGINEERING");
+      expect(vars.companyId).toBe("c1");
+    });
+
+    it("honours an explicit page size and cursor", () => {
+      const vars = buildPeopleVariables({ companyId: "c1", first: 40, after: "cursor-1" });
+      expect(vars.first).toBe(40);
+      expect(vars.after).toBe("cursor-1");
+    });
+
+    it("declares a parameterised People query", () => {
+      expect(PEOPLE_QUERY).toContain("people(companyId: $companyId, positionCategory: $category, first: $first");
+    });
+  });
+
+  it("defaults searches page size to 20", () => {
+    expect(buildSearchesVariables().first).toBe(20);
+    expect(SEARCHES_PAGE_SIZE).toBe(20);
+  });
+
+  describe("isDisabledResponse", () => {
+    it("treats a 404 as disabled", () => {
+      expect(isDisabledResponse(404, null)).toBe(true);
+    });
+
+    it("treats a 'not enabled' error body as disabled", () => {
+      expect(isDisabledResponse(200, { error: "Prospect graph is not enabled." })).toBe(true);
+    });
+
+    it("does not treat a normal payload as disabled", () => {
+      expect(isDisabledResponse(200, { data: { prospectSearches: { edges: [] } } })).toBe(false);
+    });
+  });
+
+  describe("prospectGraphql request wrapper", () => {
+    it("reports disabled when the endpoint returns 404", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => new Response(JSON.stringify({ error: "Prospect graph is not enabled." }), { status: 404 }))
+      );
+      const result = await prospectGraphql("{ __typename }");
+      expect(result.disabled).toBe(true);
+      expect(result.data).toBeNull();
+    });
+
+    it("returns a generic, safe error instead of raw GraphQL error text", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(
+          async () =>
+            new Response(
+              JSON.stringify({ errors: [{ message: "Invalid `prisma.x` invocation: secret internal detail" }] }),
+              { status: 200 }
+            )
+        )
+      );
+      const result = await prospectGraphql("{ __typename }");
+      expect(result.disabled).toBe(false);
+      expect(result.error).toBe("We couldn't complete that request.");
+      expect(result.error).not.toContain("prisma");
+    });
+
+    it("returns data on success", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => new Response(JSON.stringify({ data: { ok: true } }), { status: 200 }))
+      );
+      const result = await prospectGraphql<{ ok: boolean }>("{ ok }");
+      expect(result.error).toBeNull();
+      expect(result.data).toEqual({ ok: true });
+    });
+
+    it("handles a thrown network error gracefully", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => {
+          throw new Error("boom");
+        })
+      );
+      const result = await prospectGraphql("{ __typename }");
+      expect(result.disabled).toBe(false);
+      expect(result.error).toMatch(/network/i);
+    });
+  });
+});

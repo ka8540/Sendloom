@@ -621,6 +621,7 @@ sequenceDiagram
 | --- | --- |
 | `/workspace` | Overview dashboard / operator command center |
 | `/finder` | Finder and domain search |
+| `/prospects` | Prospect Graph dashboard — review company graphs, position groups, and inferred-email people (feature-flagged, read-only) |
 | `/imports` | Audience upload and mapping workflow |
 | `/templates` | Template editor and preview workspace |
 | `/campaigns` | Main sequence list and builder |
@@ -921,11 +922,13 @@ npm run test:watch  # watch mode
 
 ## Prospect Graph Backend (Local GraphQL Prototype)
 
-> **Backend-only phase.** This is a local-first GraphQL backend for prospect
-> discovery. There is **no frontend** for it yet, no Finder/dashboard changes,
-> no sequence creation, and **no automatic sending**. It is disabled by default
-> (and in production) and is meant to be exercised through GraphiQL, automated
-> tests, and the local CLI script before it is ever surfaced in the UI.
+> **Local prototype.** This is a local-first GraphQL backend for prospect
+> discovery, now with a read-only review dashboard at `/prospects` (see
+> [Prospects dashboard](#prospects-dashboard)). It still performs **no sequence
+> creation**, **no imports**, and **no automatic sending** — the dashboard is for
+> reviewing company, position, and people results in-app. It is disabled by
+> default (and in production) behind `PROSPECT_GRAPH_ENABLED`, and can also be
+> exercised through GraphiQL, automated tests, and the local CLI script.
 
 ### What it does
 
@@ -1017,6 +1020,26 @@ Then open `http://localhost:3000/api/graphql` in the browser (while logged in)
 to use GraphiQL. The endpoint pre-fills the `x-csrf-token` header from your
 `sendloom_csrf` cookie so mutations work; on a brand-new session, reload the page
 once so the cookie is present.
+
+### Prospects dashboard
+
+A read-only review dashboard lives at **`/prospects`** (in the operator sidebar,
+next to Finder). It consumes the same `POST /api/graphql` endpoint from the
+client — reusing the global CSRF fetch patch, so no CSRF protection is bypassed —
+and lets you:
+
+- browse previous prospect searches and select a `READY` one,
+- view the resolved company summary, position-category breakdown, and people,
+- filter the current page by position category, and copy individual inferred emails.
+
+People results default to **20 per page** (never 5), with cursor-based
+previous/next pagination. Every address is clearly labelled **inferred, not
+verified** (only a real `VERIFIED` status uses the green badge), and a persistent
+banner reinforces this above the table. The page handles the disabled flag,
+processing/failed/canceled searches, and empty states gracefully — and it
+**never** creates sequences, imports, or sends anything. When
+`PROSPECT_GRAPH_ENABLED` is off, the GraphQL route returns 404 and the page shows
+a clean "Prospect Graph is not enabled" card instead of erroring.
 
 ### GraphiQL examples
 

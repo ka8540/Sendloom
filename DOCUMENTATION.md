@@ -418,6 +418,7 @@ Runtime shape:
 | --- | --- | --- | --- |
 | `/workspace` | Overview dashboard | Verified non-admin user | Admin users redirect to admin surface. |
 | `/finder` | Hunter Finder | Verified user | Requires saved Hunter key for searches. |
+| `/prospects` | Prospect Graph dashboard | Verified user | Read-only review of company/position/people results. Feature-flagged by `PROSPECT_GRAPH_ENABLED`; consumes `POST /api/graphql`; people default to 20/page. |
 | `/imports` | Import and mapping workflow | Verified user | CSV/XLS/XLSX upload and mapping. |
 | `/templates` | Template workspace | Verified user | Plain text, HTML, JSON, AI/spam assistance. |
 | `/campaigns` | Sequence list and builder | Verified user | Main sequence surface. |
@@ -1171,12 +1172,14 @@ Grounded future work that is not currently claimed as done:
 
 ## 23. Prospect Graph Backend (Local GraphQL Prototype)
 
-> **Phase status: backend-only, local-first, disabled by default (and in
-> production).** There is no frontend, no Finder/dashboard change, no CSV export,
-> no sequence creation, and no automatic outreach. It is exercised through
-> GraphiQL, Vitest, and a local CLI script. See the README's
+> **Phase status: local-first prototype, disabled by default (and in
+> production).** It now has a read-only review dashboard at `/prospects` (see
+> 23.8), but still does no CSV export, no sequence creation, no imports, and no
+> automatic outreach. It is exercised through the dashboard, GraphiQL, Vitest, and
+> a local CLI script. See the README's
 > [Prospect Graph Backend](./README.md#prospect-graph-backend-local-graphql-prototype)
-> section for the GraphiQL walkthrough and full environment variable list.
+> and [Prospects dashboard](./README.md#prospects-dashboard) sections for the
+> walkthrough and full environment variable list.
 
 ### 23.1 Purpose
 
@@ -1188,7 +1191,8 @@ Company → Position category → People (with an inferred, never verified, busi
 ```
 
 GraphQL is the Sendloom backend API layer; it **calls** Apify and OpenAI rather
-than replacing them. The frontend is intentionally deferred.
+than replacing them. A read-only frontend now consumes it at `/prospects` (see
+23.8).
 
 ### 23.2 Pipeline
 
@@ -1275,3 +1279,32 @@ people count, structured provider failures), and the GraphQL layer
 (authentication, depth limit, pagination bound, cross-user isolation, DataLoader
 batching, disabled-feature rejection). Use `npm run prospect:test` for a live
 end-to-end smoke test against the real providers.
+
+### 23.8 Frontend dashboard (`/prospects`)
+
+A read-only operator dashboard at `/prospects` (sidebar entry next to Finder)
+reviews the graph in-app. It is a client component
+(`src/components/prospects/prospects-dashboard.tsx`) that calls the existing
+`POST /api/graphql` endpoint through a small typed helper
+(`src/components/prospects/prospect-graphql.ts`); CSRF is handled by the global
+`window.fetch` patch, so no token is attached by hand and CSRF is never bypassed.
+Pure presentation/branching logic lives in
+`src/components/prospects/prospect-view.ts` and is unit-tested (node env, no DOM).
+
+Behavior:
+
+- Lists previous searches; selecting a `READY` search loads the company summary,
+  position-category breakdown (empty categories hidden), and people.
+- People default to **20 per page** (`first: 20`, never 5) with cursor-based
+  previous/next pagination; the category filter passes `positionCategory`.
+- Inferred emails are labelled **inferred, not verified** — only a real
+  `VERIFIED` status uses the green badge — with a persistent banner above the
+  table. Copy controls render only when an address is present; missing addresses
+  show "Unavailable". LinkedIn links open in a new tab with `rel="noopener noreferrer"`.
+- Handles the disabled flag (clean "not enabled" card), processing/failed/
+  canceled searches (safe `errorCode`/message, never raw GraphQL errors), and
+  empty states. It creates **no** sequences or imports and sends nothing.
+  Optional, clearly-gated create/process/cancel controls reuse existing mutations.
+- Matches the dashboard theme (glass panels, green/teal accents, dark/light) and
+  is responsive with the sidebar open or collapsed (the people table collapses to
+  stacked cards on narrow viewports).
