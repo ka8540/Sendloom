@@ -11,7 +11,6 @@ import {
   History,
   House,
   LayoutDashboard,
-  Network,
   PanelLeftClose,
   PanelLeftOpen,
   ScrollText,
@@ -19,6 +18,7 @@ import {
   SendHorizontal,
   ShieldAlert,
   ShieldUser,
+  UserRoundSearch,
   Users,
 } from "lucide-react";
 import { BrandText } from "@/components/brand-text";
@@ -125,7 +125,7 @@ export function AppNav({ initialCollapsed = false, isAdmin = false }: { initialC
     : [
         { href: "/workspace" as Route, label: "Overview", icon: House },
         { href: "/finder" as Route, label: "Finder", icon: Search },
-        { href: "/prospects" as Route, label: "Prospects", icon: Network },
+        { href: "/prospects" as Route, label: "Discover", icon: UserRoundSearch },
         { href: "/imports" as Route, label: "Imports", icon: FileSpreadsheet },
         { href: "/templates" as Route, label: "Templates", icon: ScrollText },
         { href: "/campaigns" as Route, label: "Sequences", icon: SendHorizontal },

@@ -8,6 +8,7 @@ import {
   Radar,
   Search,
   Upload,
+  UserRoundSearch,
   Workflow
 } from "lucide-react";
 import Link from "next/link";
@@ -86,6 +87,12 @@ const capabilities = [
     title: "Lead imports",
     body: "Bring in CSV and XLSX files, map fields once, and keep row data intact for every downstream send.",
     tags: ["CSV", "XLSX", "Field mapping"]
+  },
+  {
+    icon: UserRoundSearch,
+    title: "Discover",
+    body: "Find relevant professionals by company, role, and location, then prepare their inferred work contacts for review.",
+    tags: ["Company", "Role", "Location"]
   },
   {
     icon: Radar,

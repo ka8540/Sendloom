@@ -1,4 +1,4 @@
-// Pure presentation helpers for the Prospect Graph dashboard. No React / no DOM
+// Pure presentation helpers for the Discover dashboard. No React / no DOM
 // imports here on purpose: this is where the page's branching logic lives so it
 // can be unit-tested under the project's node-only vitest setup.
 
@@ -22,15 +22,15 @@ export const INFERRED_EMAIL_NOTICE =
   "Generated emails are inferred from the selected email domain and pattern until verified.";
 
 // User-facing product copy. Kept here (not inline JSX) so the page never leaks
-// backend/debug language and the wording is unit-testable. Never use "Prospect
-// Graph" or "Graph enabled" in the UI — those are internal terms.
-export const PROSPECT_FINDER_TITLE = "Prospect Finder";
-export const PROSPECT_FINDER_TAGLINE = "Prospecting";
+// backend/debug language and the wording is unit-testable. Never use graph or
+// resolver terminology in the UI — those are internal terms.
+export const PROSPECT_FINDER_TITLE = "Discover";
+export const PROSPECT_FINDER_TAGLINE = "Search";
 export const PROSPECT_FINDER_SUBTITLE =
-  "Find the right people, group them by role, and review inferred work emails before adding them to outreach.";
-export const PROSPECT_FINDER_UNAVAILABLE_TITLE = "Prospect Finder is not available right now.";
+  "Find relevant professionals by company, role, and location, then prepare their work contacts for outreach.";
+export const PROSPECT_FINDER_UNAVAILABLE_TITLE = "Discover is not available right now.";
 export const PROSPECT_FINDER_UNAVAILABLE_BODY =
-  "This workspace doesn't have prospecting turned on yet. Check back soon, or reach out to your workspace admin.";
+  "This workspace doesn't have Discover turned on yet. Check back soon, or reach out to your workspace admin.";
 
 // Total page count for a known result total at a fixed page size (>= 1).
 export function resolvePageCount(totalCount: number, pageSize: number): number {

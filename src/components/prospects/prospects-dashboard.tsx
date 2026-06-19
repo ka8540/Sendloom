@@ -2046,7 +2046,7 @@ function NewSearchModal({
       className={styles.modalOverlay}
       role="dialog"
       aria-modal="true"
-      aria-label="Create prospect search"
+      aria-label="Create discovery search"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) {
           onClose();
@@ -2056,7 +2056,7 @@ function NewSearchModal({
       <form className={`card ${styles.modalCard}`} onSubmit={onSubmit}>
         <div className={styles.panelHeader}>
           <div>
-            <h2 className={styles.panelTitle}>Create prospect search</h2>
+            <h2 className={styles.panelTitle}>Create discovery search</h2>
             <p className={styles.panelSubtitle}>Creates a draft. Process it to fetch people.</p>
           </div>
           <button type="button" className={styles.ghostButton} onClick={onClose} aria-label="Close">

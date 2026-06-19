@@ -230,7 +230,7 @@ describe("formatting helpers", () => {
   });
 });
 
-describe("Prospect Finder product copy", () => {
+describe("Discover product copy", () => {
   const COPY = [
     PROSPECT_FINDER_TITLE,
     PROSPECT_FINDER_TAGLINE,
@@ -239,13 +239,20 @@ describe("Prospect Finder product copy", () => {
     PROSPECT_FINDER_UNAVAILABLE_BODY
   ];
 
-  it("uses the user-facing Prospect Finder name (#1)", () => {
-    expect(PROSPECT_FINDER_TITLE).toBe("Prospect Finder");
+  it("uses the user-facing Discover name and requested subtitle", () => {
+    expect(PROSPECT_FINDER_TITLE).toBe("Discover");
+    expect(PROSPECT_FINDER_SUBTITLE).toBe(
+      "Find relevant professionals by company, role, and location, then prepare their work contacts for outreach."
+    );
   });
 
-  it("never uses backend/debug language (#2, #3)", () => {
+  it("never uses old product names or backend/debug language", () => {
     for (const text of COPY) {
+      expect(text).not.toMatch(/prospect finder/i);
       expect(text).not.toMatch(/prospect graph/i);
+      expect(text).not.toMatch(/audience builder/i);
+      expect(text).not.toMatch(/contact discovery/i);
+      expect(text).not.toMatch(/lead finder/i);
       expect(text).not.toMatch(/graph enabled/i);
       expect(text).not.toMatch(/graphql/i);
       expect(text).not.toMatch(/PROSPECT_GRAPH_ENABLED/);
@@ -253,7 +260,44 @@ describe("Prospect Finder product copy", () => {
   });
 
   it("shows a clean product message when unavailable", () => {
-    expect(PROSPECT_FINDER_UNAVAILABLE_TITLE).toBe("Prospect Finder is not available right now.");
+    expect(PROSPECT_FINDER_UNAVAILABLE_TITLE).toBe("Discover is not available right now.");
+  });
+});
+
+describe("Discover navigation and landing contracts", () => {
+  const navSource = readFileSync("src/components/nav.tsx", "utf8");
+  const landingSource = readFileSync("src/app/page.tsx", "utf8");
+
+  it("keeps the existing route while branding the sidebar item as Discover", () => {
+    const oldPluralLabel = "Pros" + "pects";
+
+    expect(navSource).toContain('href: "/prospects" as Route');
+    expect(navSource).toContain('label: "Discover"');
+    expect(navSource).toContain("UserRoundSearch");
+    expect(navSource).toContain("title={collapsed ? item.label : undefined}");
+    expect(navSource).not.toContain(`label: "${oldPluralLabel}"`);
+    expect(navSource).not.toContain("icon: Network");
+  });
+
+  it("adds Discover inside the existing landing capabilities grid without removing current items", () => {
+    for (const title of [
+      "Lead imports",
+      "Hunter.io enrichment",
+      "Template intelligence",
+      "Gmail-connected sending",
+      "Follow-up scheduling",
+      "Delivery visibility"
+    ]) {
+      expect(landingSource).toContain(`title: "${title}"`);
+    }
+
+    expect(landingSource).toContain("UserRoundSearch");
+    expect(landingSource).toContain('title: "Discover"');
+    expect(landingSource).toContain(
+      "Find relevant professionals by company, role, and location, then prepare their inferred work contacts for review."
+    );
+    expect(landingSource).toContain('tags: ["Company", "Role", "Location"]');
+    expect(landingSource).toContain("className={`${styles.capCard} ${styles.fxCard}`}");
   });
 });
 
