@@ -37,6 +37,12 @@ describe("buildActorInput", () => {
     expect(buildActorInput({ companyName: "X", jobTitles: ["a"], locations: [], maxResults: 1 }).takePages).toBe(1);
   });
 
+  it("requests exactly 10 items on a single page for a fixed Discover search (#2, #3)", () => {
+    const input = buildActorInput({ companyName: "X", jobTitles: ["a"], locations: [], maxResults: 10 });
+    expect(input.maxItems).toBe(10);
+    expect(input.takePages).toBe(1);
+  });
+
   it("omits currentCompanies when no LinkedIn company URL is known", () => {
     const input = buildActorInput({ companyName: "X", jobTitles: ["a"], locations: [], maxResults: 10 });
     expect(input.currentCompanies).toBeUndefined();

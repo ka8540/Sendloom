@@ -199,9 +199,32 @@ export type ProspectImportResult = {
   review: ProspectSelectionReview;
 };
 
+export type DiscoverQuota = {
+  resultsPerSearch: number;
+  dailySearchLimit: number;
+  searchesUsed: number;
+  searchesRemaining: number;
+  resetAt: string;
+  /** Presentation-only — the backend re-decides exemption server-side. */
+  unlimited: boolean;
+};
+
 // ---------------------------------------------------------------------------
 // Queries (field names verified against src/graphql/schema.ts).
 // ---------------------------------------------------------------------------
+
+export const DISCOVER_QUOTA_QUERY = /* GraphQL */ `
+  query DiscoverQuota {
+    discoverQuota {
+      resultsPerSearch
+      dailySearchLimit
+      searchesUsed
+      searchesRemaining
+      resetAt
+      unlimited
+    }
+  }
+`;
 
 export const PROSPECT_SEARCHES_QUERY = /* GraphQL */ `
   query ProspectSearches($first: Int!, $after: String) {
@@ -623,6 +646,8 @@ export type GraphQLResult<T> = {
   disabled: boolean;
   /** A single user-safe error message, or null. Never raw provider detail. */
   error: string | null;
+  /** The first error's safe extension code (e.g. DISCOVER_DAILY_LIMIT_REACHED). */
+  errorCode: string | null;
 };
 
 type RawGraphQLResponse<T> = {
@@ -630,7 +655,13 @@ type RawGraphQLResponse<T> = {
   errors?: Array<{ message?: string; extensions?: { code?: string } }>;
 };
 
-const SAFE_GRAPHQL_ERROR_CODES = new Set(["BAD_USER_INPUT", "FORBIDDEN", "NOT_FOUND", "UNAUTHENTICATED"]);
+const SAFE_GRAPHQL_ERROR_CODES = new Set([
+  "BAD_USER_INPUT",
+  "FORBIDDEN",
+  "NOT_FOUND",
+  "UNAUTHENTICATED",
+  "DISCOVER_DAILY_LIMIT_REACHED"
+]);
 
 function safeGraphqlErrorMessage(errors: NonNullable<RawGraphQLResponse<unknown>["errors"]>): string {
   const first = errors[0];
@@ -684,7 +715,12 @@ export async function prospectGraphql<T>(
       signal
     });
   } catch {
-    return { data: null, disabled: false, error: "Network error. Check your connection and try again." };
+    return {
+      data: null,
+      disabled: false,
+      error: "Network error. Check your connection and try again.",
+      errorCode: null
+    };
   }
 
   let body: RawGraphQLResponse<T> | { error?: string } | null = null;
@@ -695,17 +731,23 @@ export async function prospectGraphql<T>(
   }
 
   if (isDisabledResponse(response.status, body)) {
-    return { data: null, disabled: true, error: null };
+    return { data: null, disabled: true, error: null, errorCode: null };
   }
 
   if (!response.ok) {
-    return { data: null, disabled: false, error: "The prospect service is unavailable right now." };
+    return {
+      data: null,
+      disabled: false,
+      error: "The prospect service is unavailable right now.",
+      errorCode: null
+    };
   }
 
   const raw = (body ?? {}) as RawGraphQLResponse<T>;
   if (raw.errors && raw.errors.length > 0) {
-    return { data: raw.data ?? null, disabled: false, error: safeGraphqlErrorMessage(raw.errors) };
+    const code = raw.errors[0]?.extensions?.code ?? null;
+    return { data: raw.data ?? null, disabled: false, error: safeGraphqlErrorMessage(raw.errors), errorCode: code };
   }
 
-  return { data: raw.data ?? null, disabled: false, error: null };
+  return { data: raw.data ?? null, disabled: false, error: null, errorCode: null };
 }

@@ -101,7 +101,16 @@ const envSchema = z
     PROSPECT_EMAIL_FORMAT_MAX_WEB_RESULTS: z.coerce.number().int().positive().max(20).default(5),
     // Cost controls — AI web-search discovery calls per user.
     PROSPECT_EMAIL_FORMAT_AI_DAILY_LIMIT: z.coerce.number().int().nonnegative().default(20),
-    PROSPECT_EMAIL_FORMAT_AI_HOURLY_LIMIT: z.coerce.number().int().nonnegative().default(5)
+    PROSPECT_EMAIL_FORMAT_AI_HOURLY_LIMIT: z.coerce.number().int().nonnegative().default(5),
+    // --- Discover (prospect) daily usage limits ---
+    // Fixed people per processed Discover search (users cannot choose this).
+    DISCOVER_RESULTS_PER_SEARCH: z.coerce.number().int().positive().max(50).default(10),
+    // Processed Discover searches allowed per user per daily window.
+    DISCOVER_DAILY_SEARCH_LIMIT: z.coerce.number().int().positive().max(100).default(4),
+    // Server-only allowlist (comma-separated, case-insensitive) of accounts
+    // exempt from the daily Discover quota. Never prefix with NEXT_PUBLIC_ and
+    // never expose to the client.
+    DISCOVER_QUOTA_EXEMPT_EMAILS: z.string().optional()
   })
   .superRefine((value, ctx) => {
     if (value.OBJECT_STORAGE_MODE === "r2") {
@@ -195,7 +204,10 @@ function readRawEnv() {
     PROSPECT_EMAIL_FORMAT_WEB_SEARCH_ENABLED: process.env.PROSPECT_EMAIL_FORMAT_WEB_SEARCH_ENABLED,
     PROSPECT_EMAIL_FORMAT_MAX_WEB_RESULTS: process.env.PROSPECT_EMAIL_FORMAT_MAX_WEB_RESULTS,
     PROSPECT_EMAIL_FORMAT_AI_DAILY_LIMIT: process.env.PROSPECT_EMAIL_FORMAT_AI_DAILY_LIMIT,
-    PROSPECT_EMAIL_FORMAT_AI_HOURLY_LIMIT: process.env.PROSPECT_EMAIL_FORMAT_AI_HOURLY_LIMIT
+    PROSPECT_EMAIL_FORMAT_AI_HOURLY_LIMIT: process.env.PROSPECT_EMAIL_FORMAT_AI_HOURLY_LIMIT,
+    DISCOVER_RESULTS_PER_SEARCH: process.env.DISCOVER_RESULTS_PER_SEARCH,
+    DISCOVER_DAILY_SEARCH_LIMIT: process.env.DISCOVER_DAILY_SEARCH_LIMIT,
+    DISCOVER_QUOTA_EXEMPT_EMAILS: process.env.DISCOVER_QUOTA_EXEMPT_EMAILS
   };
 }
 

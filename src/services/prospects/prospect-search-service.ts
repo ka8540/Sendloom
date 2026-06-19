@@ -1,5 +1,11 @@
 import type { PrismaClient, ProspectCompany, ProspectSearch } from "@prisma/client";
 
+import {
+  formatDiscoverLimitMessage,
+  resolveResultsPerSearch,
+  reserveDiscoverSearchSlot,
+  type DiscoverQuotaReserver
+} from "@/lib/discover-quota";
 import { env } from "@/lib/env";
 import {
   type ConfidenceLevel,
@@ -34,7 +40,8 @@ export type ProspectErrorCode =
   | "PROVIDER_TIMEOUT"
   | "PROVIDER_ERROR"
   | "NOT_CONFIGURED"
-  | "RATE_LIMITED";
+  | "RATE_LIMITED"
+  | "DISCOVER_DAILY_LIMIT_REACHED";
 
 export class ProspectError extends Error {
   code: ProspectErrorCode;
@@ -128,6 +135,14 @@ export type ProspectSearchServiceDeps = {
   pipelineTimeoutMs?: number;
   /** Injectable for tests; defaults to the Redis-backed per-user limiter. */
   emailFormatRateLimiter?: EmailFormatRateLimiter;
+  /** Injectable for tests; defaults to the Redis-backed atomic daily quota. */
+  discoverQuota?: DiscoverQuotaReserver;
+};
+
+/** Options for processSearch — the actor email is resolved from the session. */
+export type ProcessSearchOptions = {
+  /** Authenticated account email (session-resolved) for the quota exemption. */
+  actorEmail?: string | null;
 };
 
 export class ProspectSearchService {
@@ -138,6 +153,7 @@ export class ProspectSearchService {
   private readonly emailDomain: EmailDomainService;
   private readonly pipelineTimeoutMs: number;
   private readonly emailFormatRateLimiter: EmailFormatRateLimiter;
+  private readonly discoverQuota: DiscoverQuotaReserver;
 
   constructor(deps: ProspectSearchServiceDeps) {
     this.prisma = deps.prisma;
@@ -147,6 +163,7 @@ export class ProspectSearchService {
     this.emailDomain = deps.emailDomain;
     this.pipelineTimeoutMs = deps.pipelineTimeoutMs ?? DEFAULT_PIPELINE_TIMEOUT_MS;
     this.emailFormatRateLimiter = deps.emailFormatRateLimiter ?? defaultEmailFormatRateLimiter;
+    this.discoverQuota = deps.discoverQuota ?? reserveDiscoverSearchSlot;
   }
 
   async createSearch(userId: string, input: ValidatedCreateProspectSearch): Promise<ProspectSearch> {
@@ -158,15 +175,12 @@ export class ProspectSearchService {
         requestedLinkedin: input.companyLinkedinUrl,
         requestedTitles: input.jobTitles,
         requestedLocations: input.locations,
-        maxResults: input.maxResults,
+        // Always the server-fixed value — the user-supplied count is discarded
+        // so the persisted record can never authorize a larger run later.
+        maxResults: resolveResultsPerSearch(),
         status: "DRAFT"
       }
     });
-  }
-
-  /** Effective result cap = the smaller of the request and the local ceiling. */
-  private effectiveMaxResults(requested: number): number {
-    return Math.max(1, Math.min(requested, env.LOCAL_PROSPECT_MAX_RESULTS));
   }
 
   private async requireOwnedSearch(userId: string, searchId: string): Promise<ProspectSearch> {
@@ -214,8 +228,17 @@ export class ProspectSearchService {
    * Run the full discovery pipeline for a search. Ownership / not-found errors
    * throw; provider/AI failures are persisted as a FAILED search and returned so
    * the caller can surface a structured failure (status + errorCode).
+   *
+   * The daily Discover quota is reserved atomically AFTER ownership/state
+   * validation and BEFORE the paid pipeline starts. Reservation is idempotent
+   * per search id, so retrying the same search (double-click, network retry,
+   * refresh, or re-processing a FAILED search) never consumes a second slot.
    */
-  async processSearch(userId: string, searchId: string): Promise<ProspectSearch> {
+  async processSearch(
+    userId: string,
+    searchId: string,
+    options: ProcessSearchOptions = {}
+  ): Promise<ProspectSearch> {
     const search = await this.requireOwnedSearch(userId, searchId);
 
     if (search.status === "READY") {
@@ -225,13 +248,22 @@ export class ProspectSearchService {
       throw new ProspectError("INVALID_STATE", `A ${search.status} search cannot be processed.`);
     }
 
+    const reservation = await this.discoverQuota({
+      userId,
+      email: options.actorEmail ?? null,
+      searchId: search.id
+    });
+    if (!reservation.allowed) {
+      throw new ProspectError("DISCOVER_DAILY_LIMIT_REACHED", formatDiscoverLimitMessage(reservation.status));
+    }
+
     const budget = createAiBudget();
 
     try {
       return await withTimeout(
         this.runPipeline(userId, search, budget),
         this.pipelineTimeoutMs,
-        () => new ProspectError("PROVIDER_TIMEOUT", "The profile search timed out. Try again with fewer results.")
+        () => new ProspectError("PROVIDER_TIMEOUT", "The profile search timed out. Try again in a moment.")
       );
     } catch (error) {
       const code = error instanceof ProspectError ? error.code : "PROVIDER_ERROR";
@@ -273,9 +305,11 @@ export class ProspectSearchService {
     const company = await this.upsertCompany(userId, resolution);
     await this.prisma.prospectSearch.update({ where: { id: search.id }, data: { companyId: company.id } });
 
-    // 2) Discover people via Apify.
+    // 2) Discover people via Apify. The result count is always the server-fixed
+    // value (never search.maxResults), so re-processing an old record — even one
+    // persisted with a larger historical maxResults — runs a 10-person search.
     await this.setStatus(search.id, "SEARCHING_PEOPLE");
-    const maxResults = this.effectiveMaxResults(search.maxResults);
+    const maxResults = resolveResultsPerSearch();
     const searchResult = await this.apify.searchProfiles({
       companyName: resolution.officialName,
       companyLinkedinUrl: resolution.linkedinCompanyUrl,

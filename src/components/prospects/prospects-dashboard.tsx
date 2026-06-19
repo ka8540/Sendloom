@@ -32,6 +32,7 @@ import {
   CREATE_SEARCH_MUTATION,
   DELETE_COMPANY_MUTATION,
   DISCOVER_COMPANY_EMAIL_FORMAT_MUTATION,
+  DISCOVER_QUOTA_QUERY,
   PEOPLE_PAGE_SIZE,
   PEOPLE_QUERY,
   PREPARE_PROSPECT_EXPORT_MUTATION,
@@ -47,6 +48,7 @@ import {
   type CompanyDetail,
   type ConfidenceLevel,
   type Connection,
+  type DiscoverQuota,
   type PersonNode,
   type PositionCategory,
   type PreparedProspectExport,
@@ -69,13 +71,17 @@ import {
   confidenceBadge,
   buildProspectSelectionInput,
   createEmptyProspectSelection,
+  discoverPerSearchSentence,
   emailStatusBadge,
   filterPeopleByText,
   formatDateTime,
   formatPageLabel,
+  formatQuotaRemaining,
+  formatQuotaReset,
   formatSearchError,
   formatShowingLabel,
   isEmailCopyable,
+  isProcessQuotaBlocked,
   getPageSelectionState,
   getProspectSelectionCount,
   isProspectSelected,
@@ -113,7 +119,6 @@ type CreateForm = {
   companyName: string;
   jobTitles: string;
   locations: string;
-  maxResults: string;
 };
 
 type ActionNotice = {
@@ -124,7 +129,7 @@ type ActionNotice = {
 
 type ReviewIntent = "download" | "import";
 
-const EMPTY_FORM: CreateForm = { companyName: "", jobTitles: "", locations: "", maxResults: "25" };
+const EMPTY_FORM: CreateForm = { companyName: "", jobTitles: "", locations: "" };
 const EMAIL_PATTERN_OPTIONS = [
   "first",
   "last",
@@ -185,6 +190,8 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
   const [preparingExport, setPreparingExport] = useState(false);
   const [creatingImport, setCreatingImport] = useState(false);
 
+  const [quota, setQuota] = useState<DiscoverQuota | null>(null);
+
   const [showNewSearch, setShowNewSearch] = useState(false);
   const [form, setForm] = useState<CreateForm>(EMPTY_FORM);
   const [creating, setCreating] = useState(false);
@@ -205,6 +212,17 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
 
   const selectedView = resolveSelectedSearchView(selectedSearch);
   const pageState = resolveProspectPageState({ disabled, loading: searchesLoading, searchCount: searchesTotal });
+
+  const loadQuota = useCallback(async () => {
+    const result = await prospectGraphql<{ discoverQuota: DiscoverQuota }>(DISCOVER_QUOTA_QUERY);
+    if (result.disabled) {
+      setDisabled(true);
+      return;
+    }
+    if (result.data?.discoverQuota) {
+      setQuota(result.data.discoverQuota);
+    }
+  }, []);
 
   const loadCompany = useCallback(async (companyId: string) => {
     const req = ++companyReq.current;
@@ -374,6 +392,7 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
     // this recovers instead of stranding the user on the disabled card. A
     // genuinely disabled backend returns 404 and loadSearches re-sets `disabled`.
     void loadSearches({ autoSelect: true });
+    void loadQuota();
     // Run once on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -448,13 +467,12 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
       setCreating(true);
       setActionError(null);
       setActionNotice(null);
-      const maxResults = Number.parseInt(form.maxResults, 10);
+      // The result count is fixed server-side, so the client never sends one.
       const result = await prospectGraphql<{ createProspectSearch: { id: string } }>(CREATE_SEARCH_MUTATION, {
         input: {
           companyName: form.companyName.trim(),
           jobTitles,
-          locations,
-          maxResults: Number.isFinite(maxResults) ? maxResults : 25
+          locations
         }
       });
       setCreating(false);
@@ -493,8 +511,11 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
         setDisabled(true);
         return;
       }
+      // A processed search consumes a daily slot — refresh the remaining count
+      // immediately so the indicator and Process gating update without a reload.
+      void loadQuota();
       if (result.error || !result.data) {
-        setActionError(result.error ?? "Processing failed. Try again with fewer results.");
+        setActionError(result.error ?? "Processing failed. Try again later.");
         await loadSearches({ pageIndex: historyPageIndex, after });
         return;
       }
@@ -502,7 +523,7 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
       // company, and people render in place.
       await loadSearches({ pageIndex: historyPageIndex, after, selectId: result.data.processProspectSearch.id });
     },
-    [historyPageIndex, loadSearches]
+    [historyPageIndex, loadQuota, loadSearches]
   );
 
   const handleCancel = useCallback(
@@ -843,6 +864,7 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
         </div>
         {!disabled && (
           <div className={styles.headerActions}>
+            <QuotaIndicator quota={quota} />
             <button
               type="button"
               className={styles.refreshButton}
@@ -939,6 +961,7 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
             selectedSearch && (
               <StatusCard
                 search={selectedSearch}
+                quota={quota}
                 processing={processingId === selectedSearch.id}
                 onProcess={() => handleProcess(selectedSearch)}
                 onCancel={() => handleCancel(selectedSearch)}
@@ -1104,6 +1127,7 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
         open={showNewSearch}
         form={form}
         creating={creating}
+        quota={quota}
         onChange={setForm}
         onSubmit={handleCreate}
         onClose={() => setShowNewSearch(false)}
@@ -1465,11 +1489,13 @@ function EvidenceItem({ label, sourceName, sourceUrl }: { label: string; sourceN
 
 function StatusCard({
   search,
+  quota,
   processing,
   onProcess,
   onCancel
 }: {
   search: ProspectSearchNode;
+  quota: DiscoverQuota | null;
   processing: boolean;
   onProcess: () => void;
   onCancel: () => void;
@@ -1478,6 +1504,11 @@ function StatusCard({
   const failed = search.status === "FAILED";
   const canceled = search.status === "CANCELED";
   const error = failed ? formatSearchError(search) : null;
+  const perSearch = quota?.resultsPerSearch ?? 10;
+  // Only a brand-new draft consumes a slot; retrying a started/failed search is
+  // idempotent and stays enabled.
+  const quotaBlocked = isProcessQuotaBlocked(quota, search.status);
+  const resetLabel = formatQuotaReset(quota);
   return (
     <div className={`card ${styles.statusCard}`}>
       <div className={styles.statusHead}>
@@ -1495,14 +1526,24 @@ function StatusCard({
         </p>
       ) : canceled ? (
         <p className={styles.statusBody}>This search was canceled. Create a new one to discover people.</p>
+      ) : quotaBlocked ? (
+        <p className={styles.statusBody}>
+          You've used today's {quota?.dailySearchLimit ?? 4} Discover searches.
+          {resetLabel ? ` ${resetLabel}.` : ""}
+        </p>
       ) : (
         <p className={styles.statusBody}>
-          This search is still a draft. Run Process to resolve the company and discover up to {search.maxResults} people.
+          This search is still a draft. Run Process to resolve the company and discover up to {perSearch} people.
         </p>
       )}
       <div className={styles.statusActions}>
         {!canceled && (
-          <button type="button" className={styles.primaryButton} onClick={onProcess} disabled={processing}>
+          <button
+            type="button"
+            className={styles.primaryButton}
+            onClick={onProcess}
+            disabled={processing || quotaBlocked}
+          >
             {processing ? <LoaderCircle aria-hidden="true" className={styles.spin} /> : null}
             {failed ? "Retry processing" : "Process search"}
           </button>
@@ -2013,6 +2054,7 @@ function NewSearchModal({
   open,
   form,
   creating,
+  quota,
   onChange,
   onSubmit,
   onClose
@@ -2020,6 +2062,7 @@ function NewSearchModal({
   open: boolean;
   form: CreateForm;
   creating: boolean;
+  quota: DiscoverQuota | null;
   onChange: (form: CreateForm) => void;
   onSubmit: (event: FormEvent) => void;
   onClose: () => void;
@@ -2084,28 +2127,16 @@ function NewSearchModal({
           />
           <span className={styles.fieldHint}>Comma separated</span>
         </label>
-        <div className={styles.fieldRow}>
-          <label className={styles.field}>
-            <span className={styles.fieldLabel}>Locations</span>
-            <input
-              className={styles.input}
-              value={form.locations}
-              onChange={(event) => onChange({ ...form, locations: event.target.value })}
-              placeholder="United States"
-            />
-          </label>
-          <label className={styles.field}>
-            <span className={styles.fieldLabel}>Max results</span>
-            <input
-              className={styles.input}
-              type="number"
-              min={1}
-              max={25}
-              value={form.maxResults}
-              onChange={(event) => onChange({ ...form, maxResults: event.target.value })}
-            />
-          </label>
-        </div>
+        <label className={styles.field}>
+          <span className={styles.fieldLabel}>Locations</span>
+          <input
+            className={styles.input}
+            value={form.locations}
+            onChange={(event) => onChange({ ...form, locations: event.target.value })}
+            placeholder="United States"
+          />
+        </label>
+        <DiscoverUsagePanel quota={quota} />
         <div className={styles.modalActions}>
           <button type="button" className={styles.secondaryButton} onClick={onClose}>
             Cancel
@@ -2116,6 +2147,40 @@ function NewSearchModal({
           </button>
         </div>
       </form>
+    </div>
+  );
+}
+
+/** Compact remaining-count chip near the New search action. */
+function QuotaIndicator({ quota }: { quota: DiscoverQuota | null }) {
+  if (!quota) {
+    return null;
+  }
+  if (quota.unlimited) {
+    return <span className={`${styles.quotaIndicator} ${styles.quotaIndicatorUnlimited}`}>Unlimited Discover access</span>;
+  }
+  return <span className={styles.quotaIndicator}>{formatQuotaRemaining(quota)}</span>;
+}
+
+/** The usage helper shown inside the New search modal. */
+function DiscoverUsagePanel({ quota }: { quota: DiscoverQuota | null }) {
+  const remaining = formatQuotaRemaining(quota);
+  const resetLabel = formatQuotaReset(quota);
+  return (
+    <div className={styles.usagePanel}>
+      <span className={styles.usagePanelStrong}>{discoverPerSearchSentence(quota)}</span>
+      {quota?.unlimited ? (
+        <span className={styles.usagePanelRow}>Unlimited Discover access</span>
+      ) : remaining ? (
+        <>
+          <span className={styles.usagePanelRow}>{remaining}</span>
+          {resetLabel && <span className={styles.usagePanelRow}>{resetLabel}</span>}
+        </>
+      ) : (
+        <span className={styles.usagePanelRow}>
+          {quota?.dailySearchLimit ?? 4} Discover searches available per day.
+        </span>
+      )}
     </div>
   );
 }

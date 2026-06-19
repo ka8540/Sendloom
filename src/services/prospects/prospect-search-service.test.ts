@@ -12,8 +12,49 @@ import {
 import { ProspectSearchService } from "@/services/prospects/prospect-search-service";
 import { RoleClassificationService } from "@/services/prospects/role-classification-service";
 import type { ValidatedCreateProspectSearch } from "@/services/prospects/prospect-validation";
+import type { DiscoverQuotaReserver, DiscoverQuotaStatus } from "@/lib/discover-quota";
 import { createFakePrisma, type FakePrisma } from "@/services/prospects/__test-utils__/fake-prisma";
 import { createMockAi } from "@/services/prospects/__test-utils__/mock-ai";
+
+const QUOTA_RESET = new Date("2026-06-20T00:00:00.000Z");
+
+function quotaStatus(used: number, limit: number, unlimited = false): DiscoverQuotaStatus {
+  return {
+    resultsPerSearch: 10,
+    dailySearchLimit: limit,
+    searchesUsed: used,
+    searchesRemaining: Math.max(0, limit - used),
+    resetAt: QUOTA_RESET,
+    unlimited
+  };
+}
+
+/**
+ * In-memory stand-in for the Redis-backed quota: idempotent per search id,
+ * limited per user, with an exempt-email allowlist — enough to drive the
+ * service's quota branch without touching Redis.
+ */
+function makeQuotaReserver(opts: { limit?: number; exemptEmails?: string[] } = {}) {
+  const limit = opts.limit ?? 4;
+  const exempt = new Set((opts.exemptEmails ?? []).map((email) => email.trim().toLowerCase()));
+  const consumed = new Set<string>();
+  const calls: Array<{ userId: string; email: string | null; searchId: string }> = [];
+  const reserve: DiscoverQuotaReserver = async ({ userId, email, searchId }) => {
+    calls.push({ userId, email, searchId });
+    if (email && exempt.has(email.trim().toLowerCase())) {
+      return { allowed: true, status: quotaStatus(0, limit, true) };
+    }
+    if (!consumed.has(searchId) && consumed.size >= limit) {
+      return { allowed: false, status: quotaStatus(consumed.size, limit) };
+    }
+    consumed.add(searchId);
+    return { allowed: true, status: quotaStatus(consumed.size, limit) };
+  };
+  return { reserve, calls, consumed };
+}
+
+// Default permissive reserver so non-quota tests never reach Redis.
+const allowAllQuota: DiscoverQuotaReserver = async () => ({ allowed: true, status: quotaStatus(1, 4) });
 
 // Enable the AI web-search discovery gate for the discovery tests below.
 process.env.OPENAI_API_KEY = "sk-test";
@@ -84,7 +125,8 @@ function buildService(
   prisma: FakePrisma,
   runner: ApifyRunner,
   aiResponses: Parameters<typeof createMockAi>[0],
-  evidenceProvider?: EmailEvidenceProvider
+  evidenceProvider?: EmailEvidenceProvider,
+  discoverQuota: DiscoverQuotaReserver = allowAllQuota
 ) {
   const ai = createMockAi(aiResponses);
   const apify = new ApifyProfileSearchService({ token: "t", actorId: "actor", runner });
@@ -93,7 +135,8 @@ function buildService(
     apify,
     companyResolution: new CompanyResolutionService(ai.client),
     roleClassifier: new RoleClassificationService(prisma as unknown as PrismaClient, ai.client),
-    emailDomain: new EmailDomainService(prisma as unknown as PrismaClient, ai.client, evidenceProvider)
+    emailDomain: new EmailDomainService(prisma as unknown as PrismaClient, ai.client, evidenceProvider),
+    discoverQuota
   });
   return { service, ai };
 }
@@ -745,5 +788,119 @@ describe("ProspectSearchService AI email-format discovery", () => {
     const service = buildDiscoverService(prisma, { caller: discoveryCaller(APPLIED_MATERIALS_RAW) });
 
     await expect(service.discoverCompanyEmailFormat("someone_else", company.id)).rejects.toThrow(/company not found/i);
+  });
+});
+
+describe("Discover daily quota enforcement", () => {
+  function amatRunner() {
+    const run = vi.fn<ApifyRunner["run"]>(async () => ({
+      runId: "run-q",
+      datasetId: "ds-q",
+      items: [profile("q1", "Jane", "Doe", "Software Engineer", "Applied Materials")]
+    }));
+    return { run, runner: { run } as ApifyRunner };
+  }
+
+  const ROLE_ONLY = { responses: { role_classification: { classifications: [] } } };
+
+  it("does not consume quota when creating a draft (#5)", async () => {
+    const quota = makeQuotaReserver();
+    const { service } = buildService(prisma, amatRunner().runner, ROLE_ONLY, undefined, quota.reserve);
+    await service.createSearch(USER_ID, APPLIED_MATERIALS);
+    expect(quota.calls).toHaveLength(0);
+    expect(quota.consumed.size).toBe(0);
+  });
+
+  it("persists the server-fixed maxResults of 10 for new searches (#1)", async () => {
+    const { service } = buildService(prisma, amatRunner().runner, ROLE_ONLY);
+    const created = await service.createSearch(USER_ID, { ...APPLIED_MATERIALS, maxResults: 999 });
+    expect(created.maxResults).toBe(10);
+  });
+
+  it("forces Apify to maxItems 10 / takePages 1 even for a legacy record (#2, #3)", async () => {
+    const { run, runner } = amatRunner();
+    const { service } = buildService(prisma, runner, ROLE_ONLY);
+    const created = await service.createSearch(USER_ID, APPLIED_MATERIALS);
+    // Simulate a historical record persisted with a larger maxResults.
+    prisma._state.searches[0].maxResults = 25;
+    await service.processSearch(USER_ID, created.id, { actorEmail: "u@test.dev" });
+    const actorInput = run.mock.calls[0][1];
+    expect(actorInput.maxItems).toBe(10);
+    expect(actorInput.takePages).toBe(1);
+  });
+
+  it("consumes exactly one slot on the first processed search (#6)", async () => {
+    const quota = makeQuotaReserver();
+    const { service } = buildService(prisma, amatRunner().runner, ROLE_ONLY, undefined, quota.reserve);
+    const created = await service.createSearch(USER_ID, APPLIED_MATERIALS);
+    await service.processSearch(USER_ID, created.id, { actorEmail: "u@test.dev" });
+    expect(quota.consumed.size).toBe(1);
+    expect(quota.calls).toHaveLength(1);
+  });
+
+  it("does not consume a second slot when the same search is retried (#10)", async () => {
+    const quota = makeQuotaReserver();
+    const failingRunner: ApifyRunner = { run: vi.fn(async () => ({ runId: null, datasetId: null, items: [] })) };
+    const { service } = buildService(prisma, failingRunner, { enabled: false }, undefined, quota.reserve);
+    const created = await service.createSearch(USER_ID, {
+      ...APPLIED_MATERIALS,
+      companyName: "Unresolved Co",
+      companyDomain: null,
+      companyLinkedinUrl: null
+    });
+    const first = await service.processSearch(USER_ID, created.id, { actorEmail: "u@test.dev" });
+    const second = await service.processSearch(USER_ID, created.id, { actorEmail: "u@test.dev" });
+    expect(first.status).toBe("FAILED");
+    expect(second.status).toBe("FAILED");
+    expect(quota.consumed.size).toBe(1);
+    expect(quota.calls).toHaveLength(2);
+  });
+
+  it("allows four unique searches then rejects the fifth with a structured error (#7, #8, #9)", async () => {
+    const quota = makeQuotaReserver({ limit: 4 });
+    const { service } = buildService(prisma, amatRunner().runner, ROLE_ONLY, undefined, quota.reserve);
+    for (let i = 0; i < 4; i += 1) {
+      const created = await service.createSearch(USER_ID, APPLIED_MATERIALS);
+      const result = await service.processSearch(USER_ID, created.id, { actorEmail: "u@test.dev" });
+      expect(result.status).toBe("READY");
+    }
+    const fifth = await service.createSearch(USER_ID, APPLIED_MATERIALS);
+    await expect(
+      service.processSearch(USER_ID, fifth.id, { actorEmail: "u@test.dev" })
+    ).rejects.toMatchObject({ code: "DISCOVER_DAILY_LIMIT_REACHED" });
+  });
+
+  it("exempts the owner account from the daily limit (#14)", async () => {
+    const quota = makeQuotaReserver({ limit: 4, exemptEmails: ["kush.ahir2024@gmail.com"] });
+    const { service } = buildService(prisma, amatRunner().runner, ROLE_ONLY, undefined, quota.reserve);
+    for (let i = 0; i < 6; i += 1) {
+      const created = await service.createSearch(USER_ID, APPLIED_MATERIALS);
+      const result = await service.processSearch(USER_ID, created.id, { actorEmail: "KUSH.AHIR2024@gmail.com" });
+      expect(result.status).toBe("READY");
+    }
+    expect(quota.consumed.size).toBe(0);
+  });
+
+  it("does not let a non-exempt user claim the exemption (#15, #16)", async () => {
+    const quota = makeQuotaReserver({ limit: 4, exemptEmails: ["kush.ahir2024@gmail.com"] });
+    const { service } = buildService(prisma, amatRunner().runner, ROLE_ONLY, undefined, quota.reserve);
+    for (let i = 0; i < 4; i += 1) {
+      const created = await service.createSearch(USER_ID, APPLIED_MATERIALS);
+      await service.processSearch(USER_ID, created.id, { actorEmail: "attacker@evil.test" });
+    }
+    const fifth = await service.createSearch(USER_ID, APPLIED_MATERIALS);
+    await expect(
+      service.processSearch(USER_ID, fifth.id, { actorEmail: "attacker@evil.test" })
+    ).rejects.toMatchObject({ code: "DISCOVER_DAILY_LIMIT_REACHED" });
+  });
+
+  it("requires the search to be owned before any quota is reserved (#17)", async () => {
+    const quota = makeQuotaReserver();
+    const { service } = buildService(prisma, amatRunner().runner, ROLE_ONLY, undefined, quota.reserve);
+    const created = await service.createSearch(USER_ID, APPLIED_MATERIALS);
+    await expect(service.processSearch("another_user", created.id, { actorEmail: "x@test.dev" })).rejects.toMatchObject({
+      code: "NOT_FOUND"
+    });
+    expect(quota.calls).toHaveLength(0);
   });
 });

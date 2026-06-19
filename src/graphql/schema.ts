@@ -225,7 +225,17 @@ export const typeDefs = /* GraphQL */ `
     review: ProspectSelectionReview!
   }
 
+  type DiscoverQuota {
+    resultsPerSearch: Int!
+    dailySearchLimit: Int!
+    searchesUsed: Int!
+    searchesRemaining: Int!
+    resetAt: DateTime!
+    unlimited: Boolean!
+  }
+
   type Query {
+    discoverQuota: DiscoverQuota!
     prospectSearch(id: ID!): ProspectSearch
     prospectSearches(first: Int = 20, after: String): ProspectSearchConnection!
 

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
-import type { PersonNode, ProspectSearchNode } from "@/components/prospects/prospect-graphql";
+import type { DiscoverQuota, PersonNode, ProspectSearchNode } from "@/components/prospects/prospect-graphql";
 import {
   EXTERNAL_LINK_REL,
   EXTERNAL_LINK_TARGET,
@@ -15,12 +15,17 @@ import {
   confidenceBadge,
   buildProspectSelectionInput,
   createEmptyProspectSelection,
+  discoverPerSearchCopy,
+  discoverPerSearchSentence,
   emailStatusBadge,
   filterPeopleByText,
   formatPageLabel,
+  formatQuotaRemaining,
+  formatQuotaReset,
   formatSearchError,
   formatShowingLabel,
   isEmailCopyable,
+  isProcessQuotaBlocked,
   getPageSelectionState,
   getProspectSelectionCount,
   isProspectSelected,
@@ -34,6 +39,18 @@ import {
   togglePageProspectSelection,
   toggleProspectSelection
 } from "@/components/prospects/prospect-view";
+
+function quota(overrides: Partial<DiscoverQuota> = {}): DiscoverQuota {
+  return {
+    resultsPerSearch: 10,
+    dailySearchLimit: 4,
+    searchesUsed: 1,
+    searchesRemaining: 3,
+    resetAt: "2026-06-20T00:00:00.000Z",
+    unlimited: false,
+    ...overrides
+  };
+}
 
 function person(overrides: Partial<PersonNode> = {}): PersonNode {
   return {
@@ -403,5 +420,71 @@ describe("prospect dashboard layout contracts", () => {
     expect(dashboardSource).toContain("<ChevronRight");
     expect(dashboardSource).not.toContain(">Previous<");
     expect(dashboardSource).not.toContain(">Next<");
+  });
+});
+
+describe("Discover quota presentation helpers", () => {
+  it("states the fixed per-search count (#2)", () => {
+    expect(discoverPerSearchCopy(null)).toBe("Up to 10 people per search");
+    expect(discoverPerSearchSentence(null)).toBe("Each search returns up to 10 people.");
+    expect(discoverPerSearchCopy(quota({ resultsPerSearch: 10 }))).toBe("Up to 10 people per search");
+  });
+
+  it("shows an ordinary user's remaining count (#3)", () => {
+    expect(formatQuotaRemaining(quota({ searchesUsed: 1, searchesRemaining: 3 }))).toBe(
+      "3 of 4 searches remaining today"
+    );
+    expect(formatQuotaRemaining(quota({ searchesUsed: 4, searchesRemaining: 0 }))).toBe(
+      "0 of 4 searches remaining today"
+    );
+  });
+
+  it("hides the remaining count for the exempt account (#6)", () => {
+    expect(formatQuotaRemaining(quota({ unlimited: true }))).toBeNull();
+    expect(formatQuotaRemaining(null)).toBeNull();
+  });
+
+  it("renders a reset-time label (#4)", () => {
+    expect(formatQuotaReset(quota())).toMatch(/^Resets at /);
+    expect(formatQuotaReset(null)).toBeNull();
+    expect(formatQuotaReset({ resetAt: "not-a-date" })).toBeNull();
+  });
+
+  it("blocks Process only for a new draft when the quota is spent (#5)", () => {
+    const spent = quota({ searchesUsed: 4, searchesRemaining: 0 });
+    expect(isProcessQuotaBlocked(spent, "DRAFT")).toBe(true);
+    // A started/failed search already holds its slot, so retry stays enabled.
+    expect(isProcessQuotaBlocked(spent, "FAILED")).toBe(false);
+    // With slots left, nothing is blocked.
+    expect(isProcessQuotaBlocked(quota({ searchesRemaining: 2 }), "DRAFT")).toBe(false);
+  });
+
+  it("never blocks the exempt account (#6)", () => {
+    const unlimited = quota({ unlimited: true, searchesRemaining: 0 });
+    expect(isProcessQuotaBlocked(unlimited, "DRAFT")).toBe(false);
+    expect(isProcessQuotaBlocked(null, "DRAFT")).toBe(false);
+  });
+});
+
+describe("Discover create modal contracts", () => {
+  const dashboardSource = readFileSync("src/components/prospects/prospects-dashboard.tsx", "utf8");
+
+  it("removes the Max results input (#1)", () => {
+    expect(dashboardSource).not.toContain("Max results");
+    expect(dashboardSource).not.toContain('type="number"');
+  });
+
+  it("does not let the client choose or send a result count (#8)", () => {
+    expect(dashboardSource).not.toContain("maxResults");
+  });
+
+  it("renders the fixed-count helper and quota panel in the modal", () => {
+    expect(dashboardSource).toContain("DiscoverUsagePanel");
+    expect(dashboardSource).toContain("discoverPerSearchSentence");
+  });
+
+  it("refreshes the quota after processing begins (#7)", () => {
+    expect(dashboardSource).toContain("loadQuota");
+    expect(dashboardSource).toContain("DISCOVER_QUOTA_QUERY");
   });
 });

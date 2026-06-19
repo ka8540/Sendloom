@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { resolveResultsPerSearch } from "@/lib/discover-quota";
 import {
   isLinkedInCompanyUrl,
   isPersonalEmailDomain,
@@ -8,7 +9,6 @@ import {
 
 export const MAX_JOB_TITLES = 10;
 export const MAX_LOCATIONS = 10;
-export const MAX_RESULTS_HARD_LIMIT = 200;
 
 export type ValidatedCreateProspectSearch = {
   companyName: string;
@@ -37,6 +37,10 @@ function uniqueTrimmed(values: string[]): string[] {
  * Validate + normalize the createProspectSearch input. Everything is trimmed,
  * arrays are de-duplicated, empty arrays are rejected, malformed LinkedIn URLs
  * and personal email domains are rejected.
+ *
+ * `maxResults` is intentionally accepted but ignored: Discover always uses the
+ * server-fixed per-search result count, so a client (or a hand-crafted GraphQL
+ * request) can never raise the people-per-search ceiling.
  */
 export const createProspectSearchSchema = z
   .object({
@@ -98,14 +102,6 @@ export const createProspectSearchSchema = z
       }
     }
 
-    const maxResults = value.maxResults ?? 25;
-    if (maxResults < 1) {
-      fail(["maxResults"], "maxResults must be at least 1.");
-    }
-    if (maxResults > MAX_RESULTS_HARD_LIMIT) {
-      fail(["maxResults"], `maxResults must be at most ${MAX_RESULTS_HARD_LIMIT}.`);
-    }
-
     if (failed) {
       return z.NEVER;
     }
@@ -116,7 +112,8 @@ export const createProspectSearchSchema = z
       companyLinkedinUrl,
       jobTitles,
       locations,
-      maxResults
+      // Always the server-fixed value — any supplied maxResults is discarded.
+      maxResults: resolveResultsPerSearch()
     };
   });
 

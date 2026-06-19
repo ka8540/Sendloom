@@ -1489,3 +1489,35 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Discover daily-usage quota UI */
+.quotaIndicator {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.quotaIndicatorUnlimited {
+  color: var(--accent);
+}
+
+.usagePanel {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.7rem 0.9rem;
+  border-radius: 0.8rem;
+  border: 1px solid var(--line);
+  background: var(--surface-soft);
+}
+
+.usagePanelStrong {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.usagePanelRow {
+  font-size: 0.8rem;
+  color: var(--muted);
+}

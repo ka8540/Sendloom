@@ -1261,6 +1261,53 @@ text/HTML responses are parsed. If AI discovery is unavailable (no key or the
 flag is off), the UI surfaces a clear message and the manual/source-URL paths
 still work.
 
+### 23.2.2 Daily usage limits (Discover quota)
+
+Discover enforces a fixed, server-side product quota that is independent of (and
+runs alongside) normal API rate limiting:
+
+- **Result count is fixed.** Each processed search returns up to
+  `DISCOVER_RESULTS_PER_SEARCH` people (default 10). The user can never choose
+  the count: the modal has no "Max results" field, `createProspectSearch`
+  discards any supplied `maxResults` (validation + `createSearch` force the
+  value, persisting `10`), and the Apify call always runs with `maxItems: 10`,
+  `takePages: 1` — even when re-processing a legacy record persisted with a
+  larger `maxResults`. A hand-crafted GraphQL request with `maxResults: 1000`
+  therefore cannot raise the ceiling.
+- **Searches per day.** Ordinary users get `DISCOVER_DAILY_SEARCH_LIMIT`
+  processed searches per daily window (default 4) — a maximum of 40 requested
+  people/day.
+- **Drafts are free; processing consumes the quota.** `createProspectSearch`
+  never touches the quota. `processProspectSearch` reserves one slot atomically
+  **after** ownership/state validation and **before** the paid pipeline starts
+  (`reserveDiscoverSearchSlot` in `src/lib/discover-quota.ts`, a single Lua eval
+  so concurrent requests cannot exceed the limit).
+- **Idempotent per search.** A `discover:quota:search:{searchId}` marker means
+  the same search can be reserved repeatedly without consuming a second slot —
+  double clicks, browser/network retries, refreshing a `READY` search, and
+  re-processing a `FAILED` search are all free. Pagination, Excel export, Add to
+  Imports, and the email-format AI refresh do not consume a Discover slot.
+- **Window + reset.** The counter is a UTC calendar-day fixed window
+  (`discover:quota:{userId}:{quotaDate}`) whose key expires at the next UTC
+  midnight; `resetAt` is exposed so the UI can show when access returns.
+- **Limit error.** When the daily quota is spent, `processProspectSearch`
+  returns a structured `DISCOVER_DAILY_LIMIT_REACHED` GraphQL error whose
+  message carries only the limit and reset time — never Redis keys, counters,
+  user ids, stack traces, or provider details.
+- **Status query.** `discoverQuota` (authenticated) returns
+  `{ resultsPerSearch, dailySearchLimit, searchesUsed, searchesRemaining,
+  resetAt, unlimited }` for the dashboard indicator. `unlimited` is
+  presentation-only — the backend re-decides exemption during processing.
+- **Owner exemption (daily only).** Accounts whose authenticated session email
+  is in the **server-only** `DISCOVER_QUOTA_EXEMPT_EMAILS` allowlist
+  (comma-separated, compared after trim + lowercase) bypass the daily limit only.
+  The email is resolved from the session/user record — never from a request
+  body, GraphQL input, or local storage — so a request cannot claim the
+  exemption. The allowlist is never sent to the client (no `NEXT_PUBLIC_`
+  prefix). Exempt accounts still use the fixed per-search count and remain
+  subject to authentication, ownership, CSRF, suppression, and normal rate
+  limiting. `kush.ahir2024@gmail.com` is the configured owner account.
+
 ### 23.3 AI responsibilities and cost controls
 
 AI is used only for company resolution (≤1 call, skipped when a website domain is

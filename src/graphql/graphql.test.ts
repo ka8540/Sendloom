@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { GraphQLContext } from "@/graphql/context";
 import { createLoaders } from "@/graphql/loaders";
 import { resolveFirst } from "@/graphql/pagination";
+import { typeDefs } from "@/graphql/schema";
 import { createDepthLimitRule } from "@/graphql/security";
 import { prospectSchema, resolveGraphiqlEnabled } from "@/graphql/server";
 import { createFakePrisma, type FakePrisma } from "@/services/prospects/__test-utils__/fake-prisma";
@@ -441,5 +442,52 @@ describe("Company email inference API", () => {
     expect(result.data?.discoverCompanyEmailFormat ?? null).toBeNull();
     expect(result.errors?.[0]?.extensions?.code).toBe("FORBIDDEN");
     expect(result.errors?.[0]?.message).toContain("limit");
+  });
+});
+
+describe("Discover quota GraphQL surface", () => {
+  it("maps a DISCOVER_DAILY_LIMIT_REACHED service error to a safe structured error (#9)", async () => {
+    const processSearch = vi.fn(async () => {
+      throw new ProspectError(
+        "DISCOVER_DAILY_LIMIT_REACHED",
+        "You have used today's 4 Discover searches. You can search again after Jun 20, 2026, 12:00 AM UTC."
+      );
+    });
+
+    const result = await graphql({
+      schema: prospectSchema,
+      source: `mutation { processProspectSearch(id: "s1") { id status } }`,
+      contextValue: makeContext({
+        user: FAKE_USER,
+        services: {
+          prospectSearch: {
+            processSearch
+          } as unknown as GraphQLContext["services"]["prospectSearch"]
+        }
+      })
+    });
+
+    expect(result.data?.processProspectSearch ?? null).toBeNull();
+    expect(result.errors?.[0]?.extensions?.code).toBe("DISCOVER_DAILY_LIMIT_REACHED");
+    expect(result.errors?.[0]?.message).toContain("Discover searches");
+    // The authenticated session email is what reaches the service — never input.
+    expect(processSearch).toHaveBeenCalledWith("user_A", "s1", { actorEmail: "a@example.com" });
+  });
+
+  it("requires authentication for the discoverQuota query", async () => {
+    const result = await graphql({
+      schema: prospectSchema,
+      source: `{ discoverQuota { searchesRemaining } }`,
+      contextValue: makeContext({ user: null })
+    });
+    expect(result.data?.discoverQuota ?? null).toBeNull();
+    expect(result.errors?.[0]?.extensions?.code).toBe("UNAUTHENTICATED");
+  });
+
+  it("exposes the quota query/type and never accepts an email on the create input (#15)", () => {
+    expect(typeDefs).toContain("discoverQuota: DiscoverQuota!");
+    expect(typeDefs).toContain("type DiscoverQuota");
+    const inputBlock = typeDefs.match(/input CreateProspectSearchInput \{[^}]*\}/)?.[0] ?? "";
+    expect(inputBlock).not.toContain("email");
   });
 });

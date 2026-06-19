@@ -1,7 +1,7 @@
 import type { ProspectCompany } from "@prisma/client";
 
 import type { GraphQLContext } from "@/graphql/context";
-import { badInputError, forbiddenError, notFoundError } from "@/graphql/errors";
+import { badInputError, discoverDailyLimitError, forbiddenError, notFoundError } from "@/graphql/errors";
 import { ProspectError } from "@/services/prospects/prospect-search-service";
 
 export function asStringArray(value: unknown): string[] {
@@ -28,6 +28,8 @@ export function mapProspectError(error: unknown): never {
       case "NOT_CONFIGURED":
       case "RATE_LIMITED":
         throw forbiddenError(error.message);
+      case "DISCOVER_DAILY_LIMIT_REACHED":
+        throw discoverDailyLimitError(error.message);
       default:
         break;
     }

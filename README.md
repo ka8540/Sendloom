@@ -864,6 +864,9 @@ Create a local `.env` file at the repo root with the values below. Secrets and s
 | `SERPER_API_KEY` | When `WEB_SEARCH_PROVIDER=serper` | Serper API key used only for public email-format search queries. |
 | `BRAVE_SEARCH_API_KEY` | When `WEB_SEARCH_PROVIDER=brave` | Brave Search API key used only for public email-format search queries. |
 | `LOCAL_PROSPECT_MAX_RESULTS` | Optional | Hard local cap on results per search. Defaults to `25`. |
+| `DISCOVER_RESULTS_PER_SEARCH` | Optional | Fixed people per processed Discover search (users cannot choose this). Defaults to `10`; enforced server-side. |
+| `DISCOVER_DAILY_SEARCH_LIMIT` | Optional | Processed Discover searches allowed per user per daily (UTC) window. Defaults to `4` (so ordinary users request at most 40 people/day). |
+| `DISCOVER_QUOTA_EXEMPT_EMAILS` | Optional | Server-only, comma-separated, case-insensitive allowlist of accounts exempt from the **daily** Discover quota only. Resolved from the authenticated session; never trust a request body. Do **not** prefix with `NEXT_PUBLIC_`. |
 | `PROSPECT_AI_ENABLED` | Optional | Enables the AI company/role/pattern steps. Defaults to `true`. |
 | `PROSPECT_AI_MODEL` | Optional | Override the prospect AI model. Blank uses the per-task defaults (company/role: `gpt-5`; AI email-format web search: `gpt-5.5`). |
 | `PROSPECT_AI_REASONING_EFFORT` | Optional | Reasoning effort for prospect AI calls. Defaults to `low`. Supported values are `none`, `low`, `medium`, `high`, and `xhigh`; legacy `minimal` is coerced to `low` for GPT-5.5 compatibility. |
@@ -1084,11 +1087,33 @@ reusing the global CSRF fetch patch, so no CSRF protection is bypassed — and l
 you:
 
 - browse previous searches in a full-width, **server-paginated history table** (10 per page) and select a `READY` one,
-- open **New search** in a modal (the single primary action; it is never permanently open in the page),
+- open **New search** in a modal (the single primary action; it is never permanently open in the page). The modal has **no "Max results" field** — every search returns up to 10 people — and shows a compact usage panel ("Up to 10 people per search", remaining searches, and the reset time),
 - review compact summary cards (company, email format, people found, status) above a full-width people table,
 - filter people by role group, and copy individual inferred emails.
 - **Find with AI** — discover the email format with GPT-5.5 web search, paste a specific public source URL, or fix it manually; the card shows the email domain, pattern, confidence, evidence source, and a reason summary.
 - delete an owned company and its related searches.
+
+#### Daily usage limits
+
+Ordinary users get a fixed, server-enforced quota: **10 people per processed
+search** (the result count is never client-controlled) and **4 processed
+searches per daily UTC window** — at most 40 requested people per day. Creating a
+draft is free; the quota is consumed atomically the moment a draft is
+**processed**, right before the paid Apify/AI pipeline runs. The same search id
+can only consume one slot, so retries — double clicks, browser/network retries,
+refreshes, or re-processing a `FAILED` search — never cost a second slot.
+Pagination, Excel export, Add to Imports, and the email-format AI refresh do not
+consume a Discover slot. When the daily quota is spent the **Process** action is
+disabled and shows the reset time; the GraphQL mutation also returns a structured
+`DISCOVER_DAILY_LIMIT_REACHED` error (never raw counters/keys). The header and
+modal indicator refresh immediately after a search begins processing — no full
+reload. Quota state lives in Redis and the key expires at the next daily window.
+Accounts in the server-only `DISCOVER_QUOTA_EXEMPT_EMAILS` allowlist (resolved
+from the authenticated session, compared case-insensitively) bypass the **daily**
+limit only — they still use the fixed per-search count and remain subject to
+authentication, ownership, CSRF, and normal rate limiting. Historical search
+records keep their old `maxResults` value, but re-processing any search uses the
+fixed server-side count.
 
 Both tables paginate **server-side at exactly 10 rows per page** with independent
 state (paging one never moves the other), using compact chevron (`‹` / `›`)
@@ -1107,7 +1132,23 @@ is not available right now." card instead of erroring or exposing backend terms.
 
 ### GraphiQL examples
 
-Create a search:
+Check your Discover quota (read-only; never consumes a slot):
+
+```graphql
+query {
+  discoverQuota {
+    resultsPerSearch
+    dailySearchLimit
+    searchesUsed
+    searchesRemaining
+    resetAt
+    unlimited
+  }
+}
+```
+
+Create a search (the result count is fixed at 10 server-side — any `maxResults`
+sent here is ignored, so it is omitted):
 
 ```graphql
 mutation {
@@ -1115,7 +1156,6 @@ mutation {
     companyName: "Apple"
     jobTitles: ["Software Engineer", "Technical Recruiter", "Data Analyst"]
     locations: ["United States"]
-    maxResults: 25
   }) { id status requestedCompany requestedTitles requestedLocations }
 }
 ```

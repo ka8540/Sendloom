@@ -11,8 +11,7 @@ describe("createProspectSearchSchema", () => {
     const result = parse({
       companyName: "  Apple  ",
       jobTitles: ["Software Engineer", " software engineer ", "Recruiter"],
-      locations: ["United States", "united states"],
-      maxResults: 25
+      locations: ["United States", "united states"]
     });
     expect(result.success).toBe(true);
     if (result.success) {
@@ -20,6 +19,8 @@ describe("createProspectSearchSchema", () => {
       // duplicates collapsed case-insensitively
       expect(result.data.jobTitles).toEqual(["Software Engineer", "Recruiter"]);
       expect(result.data.locations).toEqual(["United States"]);
+      // The result count is always the server-fixed value.
+      expect(result.data.maxResults).toBe(10);
     }
   });
 
@@ -63,8 +64,14 @@ describe("createProspectSearchSchema", () => {
     ).toBe(true);
   });
 
-  it("bounds maxResults between 1 and 200", () => {
-    expect(parse({ companyName: "Apple", jobTitles: ["Engineer"], maxResults: 0 }).success).toBe(false);
-    expect(parse({ companyName: "Apple", jobTitles: ["Engineer"], maxResults: 201 }).success).toBe(false);
+  it("ignores any supplied maxResults and forces the fixed server value (#4)", () => {
+    for (const maxResults of [1, 25, 100, 1000]) {
+      const result = parse({ companyName: "Apple", jobTitles: ["Engineer"], maxResults });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        // A hand-crafted GraphQL request cannot raise the people-per-search cap.
+        expect(result.data.maxResults).toBe(10);
+      }
+    }
   });
 });

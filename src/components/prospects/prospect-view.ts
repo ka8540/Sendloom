@@ -4,6 +4,7 @@
 
 import type {
   ConfidenceLevel,
+  DiscoverQuota,
   EmailCandidateStatus,
   PersonNode,
   PositionCategory,
@@ -31,6 +32,22 @@ export const PROSPECT_FINDER_SUBTITLE =
 export const PROSPECT_FINDER_UNAVAILABLE_TITLE = "Discover is not available right now.";
 export const PROSPECT_FINDER_UNAVAILABLE_BODY =
   "This workspace doesn't have Discover turned on yet. Check back soon, or reach out to your workspace admin.";
+
+// The GraphQL error code processProspectSearch returns when the daily quota is
+// spent. The client recognizes it to show a clean product message.
+export const DISCOVER_DAILY_LIMIT_ERROR_CODE = "DISCOVER_DAILY_LIMIT_REACHED";
+
+/** "Up to 10 people per search" — driven by the live quota so it never drifts. */
+export function discoverPerSearchCopy(quota: Pick<DiscoverQuota, "resultsPerSearch"> | null): string {
+  const perSearch = quota?.resultsPerSearch ?? 10;
+  return `Up to ${perSearch} people per search`;
+}
+
+/** Full sentence form for the modal helper row. */
+export function discoverPerSearchSentence(quota: Pick<DiscoverQuota, "resultsPerSearch"> | null): string {
+  const perSearch = quota?.resultsPerSearch ?? 10;
+  return `Each search returns up to ${perSearch} people.`;
+}
 
 // Total page count for a known result total at a fixed page size (>= 1).
 export function resolvePageCount(totalCount: number, pageSize: number): number {
@@ -427,4 +444,48 @@ export function buildProspectSelectionInput(
     excludedIds: Array.from(selection.excludedIds),
     positionCategory: selection.positionCategory
   };
+}
+
+// ---------------------------------------------------------------------------
+// Discover daily-quota presentation helpers.
+// ---------------------------------------------------------------------------
+
+/**
+ * Compact remaining-count label, e.g. "3 of 4 searches remaining today".
+ * Exempt (unlimited) accounts return null so the caller can hide the count or
+ * show an "Unlimited" label instead — the limit is never rendered for them.
+ */
+export function formatQuotaRemaining(quota: DiscoverQuota | null): string | null {
+  if (!quota || quota.unlimited) {
+    return null;
+  }
+  return `${quota.searchesRemaining} of ${quota.dailySearchLimit} searches remaining today`;
+}
+
+/** "Resets at 12:00 AM" rendered in the viewer's local timezone. */
+export function formatQuotaReset(quota: Pick<DiscoverQuota, "resetAt"> | null): string | null {
+  if (!quota?.resetAt) {
+    return null;
+  }
+  const date = new Date(quota.resetAt);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return `Resets at ${date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
+}
+
+/**
+ * Whether the Process action should be blocked for a search. Only a brand-new
+ * DRAFT consumes a slot, so only DRAFTs are blocked when the quota is spent;
+ * retrying an already-started/FAILED search is idempotent (free) and stays
+ * enabled, and exempt accounts are never blocked.
+ */
+export function isProcessQuotaBlocked(
+  quota: DiscoverQuota | null,
+  status: ProspectSearchStatus
+): boolean {
+  if (!quota || quota.unlimited) {
+    return false;
+  }
+  return status === "DRAFT" && quota.searchesRemaining <= 0;
 }
