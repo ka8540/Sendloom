@@ -29,7 +29,7 @@ export function createProspectServices(prisma: PrismaClient, aiClient?: AiClient
   // source-URL parser remains as the manual/paste fallback.
   const emailEvidence = new CompositeEmailEvidenceProvider([
     new OpenAIEmailFormatDiscoveryService(),
-    new EmailFormatDiscoveryService()
+    new EmailFormatDiscoveryService({ warnWhenUnconfigured: false })
   ]);
   const emailDomain = new EmailDomainService(prisma, ai, emailEvidence);
 

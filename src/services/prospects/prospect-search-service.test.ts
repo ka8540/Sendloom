@@ -490,6 +490,28 @@ describe("ProspectSearchService pipeline", () => {
     expect(result.errorMessage).toContain("Apify run failed");
   });
 
+  it("marks the search FAILED with a clear message when Apify hits the free-tier run limit", async () => {
+    const runner: ApifyRunner = {
+      run: vi.fn(async () => ({
+        runId: "run-limited",
+        datasetId: null,
+        items: [],
+        status: "SUCCEEDED",
+        statusMessage: "free user run limit reached"
+      }))
+    };
+    const { service } = buildService(prisma, runner, AI_RESPONSES);
+
+    const created = await service.createSearch(USER_ID, VALIDATED);
+    const result = await service.processSearch(USER_ID, created.id);
+
+    expect(result.status).toBe("FAILED");
+    expect(result.errorCode).toBe("PROVIDER_ERROR");
+    expect(result.errorMessage).toMatch(/free user run limit reached/i);
+    // No company graph is persisted from a failed profile search.
+    expect(prisma._state.people).toHaveLength(0);
+  });
+
   it("rejects processing a search owned by another user", async () => {
     const runner: ApifyRunner = { run: vi.fn(async () => ({ runId: null, datasetId: null, items: [] })) };
     const { service } = buildService(prisma, runner, AI_RESPONSES);

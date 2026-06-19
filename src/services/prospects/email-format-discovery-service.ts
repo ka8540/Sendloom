@@ -441,6 +441,13 @@ export class EmailFormatDiscoveryService implements EmailEvidenceProvider {
     private readonly options: {
       searchProvider?: EmailFormatSearchProvider | null;
       fetchPage?: PublicPageFetcher;
+      /**
+       * When false, stay silent if no legacy search provider is configured. Used
+       * when this service is only the source-URL fallback behind AI web search,
+       * so the "No web search provider configured" line is not logged on every
+       * automatic discovery.
+       */
+      warnWhenUnconfigured?: boolean;
     } = {}
   ) {}
 
@@ -455,7 +462,7 @@ export class EmailFormatDiscoveryService implements EmailEvidenceProvider {
 
     const provider = this.options.searchProvider ?? createConfiguredEmailFormatSearchProvider();
     if (!provider?.configured) {
-      if (!input.sourceUrl) {
+      if (!input.sourceUrl && this.options.warnWhenUnconfigured !== false) {
         console.warn("[prospect-email-discovery] No web search provider configured");
       }
       return mergeBundles(bundles);

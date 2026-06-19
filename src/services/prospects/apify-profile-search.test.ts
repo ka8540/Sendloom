@@ -147,4 +147,43 @@ describe("ApifyProfileSearchService.searchProfiles", () => {
     expect(result.profiles).toHaveLength(1);
     expect(result.profiles[0].firstName).toBe("Jane");
   });
+
+  it("surfaces the Apify free-tier run limit instead of silently returning zero people", async () => {
+    const runner: ApifyRunner = {
+      run: vi.fn(async () => ({
+        runId: "run-limited",
+        datasetId: null,
+        items: [],
+        status: "SUCCEEDED",
+        statusMessage: "free user run limit reached"
+      }))
+    };
+    const service = new ApifyProfileSearchService({ token: "test-token", actorId: "actor", runner });
+
+    await expect(
+      service.searchProfiles({ companyName: "Applied Materials", jobTitles: ["Software Engineer"], locations: [], maxResults: 25 })
+    ).rejects.toThrow(/free user run limit reached.*Apify plan/i);
+  });
+
+  it("throws when the run reaches a non-success terminal status", async () => {
+    const runner: ApifyRunner = {
+      run: vi.fn(async () => ({ runId: "run-x", datasetId: null, items: [], status: "ABORTED", statusMessage: null }))
+    };
+    const service = new ApifyProfileSearchService({ token: "test-token", actorId: "actor", runner });
+
+    await expect(
+      service.searchProfiles({ companyName: "X", jobTitles: ["a"], locations: [], maxResults: 10 })
+    ).rejects.toThrow(/did not complete \(status ABORTED\)/i);
+  });
+
+  it("allows a genuine zero-result run that succeeded without a limit message", async () => {
+    const runner: ApifyRunner = {
+      run: vi.fn(async () => ({ runId: "run-empty", datasetId: "ds", items: [], status: "SUCCEEDED", statusMessage: null }))
+    };
+    const service = new ApifyProfileSearchService({ token: "test-token", actorId: "actor", runner });
+
+    const result = await service.searchProfiles({ companyName: "X", jobTitles: ["a"], locations: [], maxResults: 10 });
+    expect(result.profiles).toHaveLength(0);
+    expect(result.totalFound).toBe(0);
+  });
 });

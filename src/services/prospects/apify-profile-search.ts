@@ -228,7 +228,48 @@ export function dedupeProfiles(profiles: NormalizedProfile[]): NormalizedProfile
 // Abstraction over the raw Apify run so the service logic (normalization,
 // filtering, dedupe) is testable without the network or the apify-client SDK.
 export interface ApifyRunner {
-  run(actorId: string, input: ApifyActorInput): Promise<{ runId: string | null; datasetId: string | null; items: RawProfile[] }>;
+  run(actorId: string, input: ApifyActorInput): Promise<{
+    runId: string | null;
+    datasetId: string | null;
+    items: RawProfile[];
+    /** Terminal run status (SUCCEEDED, FAILED, ABORTED, TIMED-OUT, …). */
+    status?: string | null;
+    /** Actor status message (e.g. "free user run limit reached"). */
+    statusMessage?: string | null;
+  }>;
+}
+
+const APIFY_SUCCESS_STATUS = "SUCCEEDED";
+// Quota / plan / abort phrasing that means the run never produced usable data,
+// even when the actor exits "successfully" with zero items (the free-tier
+// "free user run limit reached" case from harvestapi/linkedin-profile-search).
+const APIFY_LIMIT_PATTERN = /\b(limit|upgrade|paid plan|free user|quota|exceeded|insufficient|not enough credit)\b/i;
+
+function describeApifyFailure(status: string | null, message: string): string {
+  const base = message
+    ? `LinkedIn profile search could not run: ${message}`
+    : status
+      ? `LinkedIn profile search did not complete (status ${status})`
+      : "LinkedIn profile search did not complete";
+  return APIFY_LIMIT_PATTERN.test(message)
+    ? `${base}. Upgrade your Apify plan or set a different APIFY_API_TOKEN, then try again.`
+    : `${base}.`;
+}
+
+/**
+ * Throw a clear error when an Apify run did not actually return usable data, so
+ * the pipeline surfaces a FAILED search instead of a silent "Ready" with zero
+ * people. Covers both non-success terminal states and the actor-level free-tier
+ * run limit (which can report SUCCEEDED with zero items + a status message).
+ */
+export function assertApifyRunUsable(run: { status?: string | null; statusMessage?: string | null; itemCount: number }): void {
+  const status = run.status ?? null;
+  const message = run.statusMessage?.trim() ?? "";
+  const limitHit = message !== "" && APIFY_LIMIT_PATTERN.test(message);
+
+  if ((status && status !== APIFY_SUCCESS_STATUS) || (run.itemCount === 0 && limitHit)) {
+    throw new Error(describeApifyFailure(status, message));
+  }
 }
 
 class ApifyClientRunner implements ApifyRunner {
@@ -245,7 +286,9 @@ class ApifyClientRunner implements ApifyRunner {
     return {
       runId: run.id ?? null,
       datasetId,
-      items: items as RawProfile[]
+      items: items as RawProfile[],
+      status: run.status ?? null,
+      statusMessage: run.statusMessage ?? null
     };
   }
 }
@@ -284,7 +327,8 @@ export class ApifyProfileSearchService {
       maxResults: input.maxResults
     });
 
-    const { runId, datasetId, items } = await this.runner.run(this.actorId, actorInput);
+    const { runId, datasetId, items, status, statusMessage } = await this.runner.run(this.actorId, actorInput);
+    assertApifyRunUsable({ status, statusMessage, itemCount: items.length });
 
     const normalized = items
       .map((item) => normalizeProfile(item))
