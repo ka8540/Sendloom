@@ -39,6 +39,10 @@ describe("prospect graphql helper", () => {
       expect(vars.companyId).toBe("c1");
     });
 
+    it("keeps the 20 page size when a category filter is applied (#7)", () => {
+      expect(buildPeopleVariables({ companyId: "c1", category: "DATA_SCIENCE" }).first).toBe(20);
+    });
+
     it("honours an explicit page size and cursor", () => {
       const vars = buildPeopleVariables({ companyId: "c1", first: 40, after: "cursor-1" });
       expect(vars.first).toBe(40);

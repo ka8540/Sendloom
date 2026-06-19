@@ -621,7 +621,7 @@ sequenceDiagram
 | --- | --- |
 | `/workspace` | Overview dashboard / operator command center |
 | `/finder` | Finder and domain search |
-| `/prospects` | Prospect Graph dashboard — review company graphs, position groups, and inferred-email people (feature-flagged, read-only) |
+| `/prospects` | **Prospect Finder** — review discovered people, role groups, and inferred work emails (feature-flagged, read-only) |
 | `/imports` | Audience upload and mapping workflow |
 | `/templates` | Template editor and preview workspace |
 | `/campaigns` | Main sequence list and builder |
@@ -1074,29 +1074,34 @@ to use GraphiQL. The endpoint pre-fills the `x-csrf-token` header from your
 `sendloom_csrf` cookie so mutations work; on a brand-new session, reload the page
 once so the cookie is present.
 
-### Prospects dashboard
+### Prospect Finder dashboard
 
-A review dashboard lives at **`/prospects`** (in the operator sidebar, next to
-Finder). It consumes the same `POST /api/graphql` endpoint from the client —
+The page at **`/prospects`** is the user-facing **Prospect Finder** — a Sendloom
+dashboard for reviewing discovered people and inferred work emails (no
+backend/debug status such as "Prospect Graph" or "Graph enabled" is shown to
+users). It consumes the same `POST /api/graphql` endpoint from the client —
 reusing the global CSRF fetch patch, so no CSRF protection is bypassed — and lets
 you:
 
-- browse previous prospect searches and select a `READY` one,
-- view the resolved company summary, separate website/email domains, position-category breakdown, and people,
-- filter the current page by position category, and copy individual inferred emails.
+- browse previous searches from a compact, full-width history strip and select a `READY` one,
+- open **New search** in a modal (it is never permanently open in the page),
+- review compact summary cards (company, email format, people found, status) above a full-width people table,
+- filter people by role group, and copy individual inferred emails.
 - **Find with AI** — discover the email format with GPT-5.5 web search, paste a specific public source URL, or fix it manually; the card shows the email domain, pattern, confidence, evidence source, and a reason summary.
-- delete an owned company prospect graph and its related prospect searches.
+- delete an owned company and its related searches.
 
-People results default to **20 per page** (never 5), with cursor-based
-previous/next pagination. Every address is clearly labelled **inferred, not
+People results default to **20 per page** (never 5), with compact chevron
+(`‹` / `›`) pagination that shows `Showing 1–20 of N` and `Page X of Y` and
+preserves the selected role group. Every address is clearly labelled **inferred, not
 verified** (only a real `VERIFIED` status uses the green badge), and a persistent
 banner reinforces that generated emails are inferred from the selected email
-domain and pattern. The page handles the disabled flag,
-processing/failed/canceled searches, and empty states gracefully — and it
-**never** creates sequences, imports, or sends anything. Deleting a prospect
-company only removes the local prospect graph/search rows for that company. When
-`PROSPECT_GRAPH_ENABLED` is off, the GraphQL route returns 404 and the page shows
-a clean "Prospect Graph is not enabled" card instead of erroring.
+domain and pattern. The layout is a single responsive column that holds up with
+the app sidebar open or closed, in dark and light themes; it handles loading
+(skeletons), processing/failed/canceled searches, and empty states gracefully —
+and it **never** creates sequences, imports, or sends anything. Deleting a
+company only removes the local prospect rows for that company. When the backend
+is off, the GraphQL route returns 404 and the page shows a clean "Prospect Finder
+is not available right now." card instead of erroring or exposing backend terms.
 
 ### GraphiQL examples
 

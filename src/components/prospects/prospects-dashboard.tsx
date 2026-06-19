@@ -14,7 +14,6 @@ import {
   Inbox,
   LoaderCircle,
   MapPin,
-  Network,
   Plus,
   RefreshCw,
   Search,
@@ -50,16 +49,23 @@ import {
   EXTERNAL_LINK_REL,
   EXTERNAL_LINK_TARGET,
   INFERRED_EMAIL_NOTICE,
+  PROSPECT_FINDER_SUBTITLE,
+  PROSPECT_FINDER_TAGLINE,
+  PROSPECT_FINDER_TITLE,
+  PROSPECT_FINDER_UNAVAILABLE_BODY,
+  PROSPECT_FINDER_UNAVAILABLE_TITLE,
   type Badge,
   type BadgeTone,
   confidenceBadge,
   emailStatusBadge,
   filterPeopleByText,
   formatDateTime,
+  formatPageLabel,
   formatSearchError,
   formatShowingLabel,
   isEmailCopyable,
   personLocation,
+  resolvePageCount,
   resolveProspectPageState,
   resolveSelectedSearchView,
   statusBadge
@@ -593,6 +599,7 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
     [company]
   );
   const peopleOffset = peoplePageIndex * PEOPLE_PAGE_SIZE;
+  const peoplePageCount = resolvePageCount(peopleTotal, PEOPLE_PAGE_SIZE);
 
   // ---- Render -------------------------------------------------------------
 
@@ -601,19 +608,13 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
       <header className={styles.header}>
         <div className={styles.headerCopy}>
           <p className={styles.eyebrow}>
-            <Network aria-hidden="true" /> Prospect graph
+            <Users aria-hidden="true" /> {PROSPECT_FINDER_TAGLINE}
           </p>
-          <h1>Prospects</h1>
-          <p className={styles.subtitle}>
-            Review company graphs, position groups, and inferred business emails before turning them into outreach data.
-          </p>
+          <h1>{PROSPECT_FINDER_TITLE}</h1>
+          <p className={styles.subtitle}>{PROSPECT_FINDER_SUBTITLE}</p>
         </div>
-        <div className={styles.headerActions}>
-          <span className={`${styles.featureBadge} ${disabled ? styles.featureBadgeOff : styles.featureBadgeOn}`}>
-            <span className={styles.featureDot} aria-hidden="true" />
-            {disabled ? "Graph disabled" : "Graph enabled"}
-          </span>
-          {!disabled && (
+        {!disabled && (
+          <div className={styles.headerActions}>
             <button
               type="button"
               className={styles.refreshButton}
@@ -624,8 +625,12 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
               <RefreshCw aria-hidden="true" className={searchesLoading ? styles.spin : undefined} />
               <span>Refresh</span>
             </button>
-          )}
-        </div>
+            <button type="button" className={styles.primaryButton} onClick={() => setShowNewSearch(true)}>
+              <Plus aria-hidden="true" />
+              <span>New search</span>
+            </button>
+          </div>
+        )}
       </header>
 
       {actionError && (
@@ -652,251 +657,187 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
       {pageState === "loading" && <SearchesSkeleton />}
 
       {pageState === "empty" && (
-        <div className={styles.emptyWrap}>
-          <EmptyState
-            icon={<Inbox aria-hidden="true" />}
-            title="No prospect searches yet"
-            body="Run a GraphQL search locally or create one here to see company graphs."
-          />
-          <NewSearchPanel
-            open
-            form={form}
-            creating={creating}
-            onChange={setForm}
-            onSubmit={handleCreate}
-            onToggle={() => setShowNewSearch((value) => !value)}
-            alwaysOpen
-          />
-        </div>
+        <EmptyState
+          icon={<Inbox aria-hidden="true" />}
+          title="No searches yet"
+          body="Create your first search to discover people at a company and review their inferred work emails."
+          action={
+            <button type="button" className={styles.primaryButton} onClick={() => setShowNewSearch(true)}>
+              <Plus aria-hidden="true" />
+              <span>New search</span>
+            </button>
+          }
+        />
       )}
 
       {pageState === "ready" && (
         <>
           <SummaryCards search={selectedSearch} company={company} view={selectedView} />
 
-          <div className={styles.panelGrid}>
-            <section className={`card ${styles.historyPanel}`} aria-label="Search history">
-              <div className={styles.panelHeader}>
-                <div>
-                  <h2 className={styles.panelTitle}>Search history</h2>
-                  <p className={styles.panelSubtitle}>{searchesTotal} total</p>
-                </div>
-                <button type="button" className={styles.ghostButton} onClick={() => setShowNewSearch((value) => !value)}>
-                  <Plus aria-hidden="true" />
-                  <span>New</span>
-                </button>
-              </div>
+          <SearchHistoryStrip
+            searches={searches}
+            total={searchesTotal}
+            selectedId={selectedSearchId}
+            hasNext={searchesHasNext}
+            loadingMore={loadingMore}
+            error={searchesError}
+            onSelect={selectSearch}
+            onLoadMore={loadMoreSearches}
+            onNew={() => setShowNewSearch(true)}
+          />
 
-              <NewSearchPanel
-                open={showNewSearch}
-                form={form}
-                creating={creating}
-                onChange={setForm}
-                onSubmit={handleCreate}
-                onToggle={() => setShowNewSearch((value) => !value)}
+          {selectedView === "none" && (
+            <EmptyState
+              icon={<Building2 aria-hidden="true" />}
+              title="Select a search"
+              body="Choose a search above to review its company, role groups, and people."
+            />
+          )}
+
+          {(selectedView === "processing" || selectedView === "canceled" || selectedView === "failed") &&
+            selectedSearch && (
+              <StatusCard
+                search={selectedSearch}
+                processing={processingId === selectedSearch.id}
+                onProcess={() => handleProcess(selectedSearch)}
+                onCancel={() => handleCancel(selectedSearch)}
+              />
+            )}
+
+          {selectedView === "ready" && (
+            <>
+              <CompanyCard
+                company={company}
+                loading={companyLoading}
+                deleting={Boolean(company && deletingCompanyId === company.id)}
+                refreshingFormat={Boolean(company && refreshingFormatId === company.id)}
+                formatSourceUrl={formatSourceUrl}
+                showFormatSource={showFormatSource}
+                showManualFormat={showManualFormat}
+                manualEmailDomain={manualEmailDomain}
+                manualEmailPattern={manualEmailPattern}
+                manualConfidence={manualConfidence}
+                onFormatSourceUrlChange={setFormatSourceUrl}
+                onToggleFormatSource={() => setShowFormatSource((value) => !value)}
+                onToggleManualFormat={() => setShowManualFormat((value) => !value)}
+                onManualEmailDomainChange={setManualEmailDomain}
+                onManualEmailPatternChange={setManualEmailPattern}
+                onManualConfidenceChange={setManualConfidence}
+                onRefreshEmailFormat={handleRefreshEmailFormat}
+                onDiscoverEmailFormat={handleDiscoverEmailFormat}
+                onManualEmailFormat={handleManualEmailFormat}
+                onDelete={handleDeleteCompany}
               />
 
-              {searchesError && <p className={styles.errorText}>{searchesError}</p>}
+              {company && (
+                <div className={`card ${styles.peopleSection}`}>
+                  <div className={styles.panelHeader}>
+                    <div>
+                      <h2 className={styles.panelTitle}>People</h2>
+                      <p className={styles.panelSubtitle}>{PEOPLE_PAGE_SIZE} per page</p>
+                    </div>
+                  </div>
 
-              <ul className={styles.searchList}>
-                {searches.map((search) => {
-                  const badge = statusBadge(search.status);
-                  const active = search.id === selectedSearchId;
-                  return (
-                    <li key={search.id}>
+                  <div className={styles.categoryRail} role="tablist" aria-label="Role groups">
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={activeCategory === null}
+                      className={`${styles.categoryChip} ${activeCategory === null ? styles.categoryChipActive : ""}`}
+                      onClick={() => handleSelectCategory(null)}
+                    >
+                      All people <span className={styles.categoryCount}>{company.peopleCount}</span>
+                    </button>
+                    {visibleCategories.map((position) => (
+                      <button
+                        key={position.id}
+                        type="button"
+                        role="tab"
+                        aria-selected={activeCategory === position.category}
+                        className={`${styles.categoryChip} ${
+                          activeCategory === position.category ? styles.categoryChipActive : ""
+                        }`}
+                        onClick={() => handleSelectCategory(position.category)}
+                        title={position.rawTitles.join(", ")}
+                      >
+                        {position.displayName} <span className={styles.categoryCount}>{position.peopleCount}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className={styles.noticeBanner} role="note">
+                    <AlertCircle aria-hidden="true" />
+                    <span>{INFERRED_EMAIL_NOTICE}</span>
+                  </div>
+
+                  <div className={styles.peopleToolbar}>
+                    <div className={styles.filterField}>
+                      <Search aria-hidden="true" />
+                      <input
+                        type="search"
+                        value={peopleFilter}
+                        placeholder="Filter this page by name, title, or email"
+                        onChange={(event) => setPeopleFilter(event.target.value)}
+                        aria-label="Filter people on this page"
+                      />
+                    </div>
+                  </div>
+
+                  <div className={styles.tableScroll}>
+                    <PeopleTable
+                      people={visiblePeople}
+                      loading={peopleLoading}
+                      error={peopleError}
+                      copiedId={copiedId}
+                      onCopy={handleCopyEmail}
+                    />
+                  </div>
+
+                  <div className={styles.paginationRow}>
+                    <span className={styles.peopleShowing}>
+                      {formatShowingLabel({ offset: peopleOffset, pageCount: people.length, totalCount: peopleTotal })}
+                    </span>
+                    <div className={styles.pager}>
                       <button
                         type="button"
-                        className={`${styles.searchItem} ${active ? styles.searchItemActive : ""}`}
-                        onClick={() => selectSearch(search)}
-                        aria-current={active ? "true" : undefined}
+                        className={styles.pagerButton}
+                        onClick={handlePeoplePrev}
+                        disabled={peoplePageIndex === 0 || peopleLoading}
+                        aria-label="Previous page"
+                        title="Previous page"
                       >
-                        <span className={styles.searchItemTop}>
-                          <span className={styles.searchItemCompany}>
-                            {search.company?.name ?? search.requestedCompany}
-                          </span>
-                          <BadgePill badge={badge} />
-                        </span>
-                        <span className={styles.searchItemMeta}>
-                          <span>
-                            <Users aria-hidden="true" /> {search.peopleCount}
-                          </span>
-                          {(search.company?.officialWebsiteDomain ?? search.company?.officialDomain) && (
-                            <span className={styles.truncate}>{search.company?.officialWebsiteDomain ?? search.company?.officialDomain}</span>
-                          )}
-                          <span>{formatDateTime(search.createdAt)}</span>
-                        </span>
-                        {search.requestedTitles.length > 0 && (
-                          <span className={styles.searchItemRoles}>
-                            {search.requestedTitles.slice(0, 3).map((title) => (
-                              <span key={title} className={styles.roleTag}>
-                                {title}
-                              </span>
-                            ))}
-                            {search.requestedTitles.length > 3 && (
-                              <span className={styles.roleTag}>+{search.requestedTitles.length - 3}</span>
-                            )}
-                          </span>
-                        )}
+                        <ChevronLeft aria-hidden="true" />
                       </button>
-                    </li>
-                  );
-                })}
-              </ul>
-
-              {searchesHasNext && (
-                <button type="button" className={styles.secondaryButton} onClick={loadMoreSearches} disabled={loadingMore}>
-                  {loadingMore ? <LoaderCircle aria-hidden="true" className={styles.spin} /> : null}
-                  Load more
-                </button>
-              )}
-            </section>
-
-            <section className={styles.mainPanel} aria-label="Company and people">
-              {selectedView === "none" && (
-                <EmptyState
-                  icon={<Building2 aria-hidden="true" />}
-                  title="Select a search"
-                  body="Choose a prospect search on the left to view its company graph and people."
-                />
-              )}
-
-              {(selectedView === "processing" || selectedView === "canceled") && selectedSearch && (
-                <StatusCard
-                  search={selectedSearch}
-                  processing={processingId === selectedSearch.id}
-                  onProcess={() => handleProcess(selectedSearch)}
-                  onCancel={() => handleCancel(selectedSearch)}
-                />
-              )}
-
-              {selectedView === "failed" && selectedSearch && (
-                <StatusCard
-                  search={selectedSearch}
-                  processing={processingId === selectedSearch.id}
-                  onProcess={() => handleProcess(selectedSearch)}
-                  onCancel={() => handleCancel(selectedSearch)}
-                />
-              )}
-
-              {selectedView === "ready" && (
-                <>
-                  <CompanyCard
-                    company={company}
-                    loading={companyLoading}
-                    deleting={Boolean(company && deletingCompanyId === company.id)}
-                    refreshingFormat={Boolean(company && refreshingFormatId === company.id)}
-                    formatSourceUrl={formatSourceUrl}
-                    showFormatSource={showFormatSource}
-                    showManualFormat={showManualFormat}
-                    manualEmailDomain={manualEmailDomain}
-                    manualEmailPattern={manualEmailPattern}
-                    manualConfidence={manualConfidence}
-                    onFormatSourceUrlChange={setFormatSourceUrl}
-                    onToggleFormatSource={() => setShowFormatSource((value) => !value)}
-                    onToggleManualFormat={() => setShowManualFormat((value) => !value)}
-                    onManualEmailDomainChange={setManualEmailDomain}
-                    onManualEmailPatternChange={setManualEmailPattern}
-                    onManualConfidenceChange={setManualConfidence}
-                    onRefreshEmailFormat={handleRefreshEmailFormat}
-                    onDiscoverEmailFormat={handleDiscoverEmailFormat}
-                    onManualEmailFormat={handleManualEmailFormat}
-                    onDelete={handleDeleteCompany}
-                  />
-
-                  {company && (
-                    <div className={`card ${styles.peopleSection}`}>
-                      <div className={styles.panelHeader}>
-                        <div>
-                          <h2 className={styles.panelTitle}>People</h2>
-                          <p className={styles.panelSubtitle}>{PEOPLE_PAGE_SIZE} per page</p>
-                        </div>
-                      </div>
-
-                      <div className={styles.categoryRail} role="tablist" aria-label="Position categories">
-                        <button
-                          type="button"
-                          role="tab"
-                          aria-selected={activeCategory === null}
-                          className={`${styles.categoryChip} ${activeCategory === null ? styles.categoryChipActive : ""}`}
-                          onClick={() => handleSelectCategory(null)}
-                        >
-                          All people <span className={styles.categoryCount}>{company.peopleCount}</span>
-                        </button>
-                        {visibleCategories.map((position) => (
-                          <button
-                            key={position.id}
-                            type="button"
-                            role="tab"
-                            aria-selected={activeCategory === position.category}
-                            className={`${styles.categoryChip} ${
-                              activeCategory === position.category ? styles.categoryChipActive : ""
-                            }`}
-                            onClick={() => handleSelectCategory(position.category)}
-                            title={position.rawTitles.join(", ")}
-                          >
-                            {position.displayName} <span className={styles.categoryCount}>{position.peopleCount}</span>
-                          </button>
-                        ))}
-                      </div>
-
-                      <div className={styles.noticeBanner} role="note">
-                        <AlertCircle aria-hidden="true" />
-                        <span>{INFERRED_EMAIL_NOTICE}</span>
-                      </div>
-
-                      <div className={styles.peopleToolbar}>
-                        <div className={styles.filterField}>
-                          <Search aria-hidden="true" />
-                          <input
-                            type="search"
-                            value={peopleFilter}
-                            placeholder="Filter this page by name, title, or email"
-                            onChange={(event) => setPeopleFilter(event.target.value)}
-                            aria-label="Filter people on this page"
-                          />
-                        </div>
-                        <span className={styles.peopleShowing}>
-                          {formatShowingLabel({ offset: peopleOffset, pageCount: people.length, totalCount: peopleTotal })}
-                        </span>
-                      </div>
-
-                      <PeopleTable
-                        people={visiblePeople}
-                        loading={peopleLoading}
-                        error={peopleError}
-                        copiedId={copiedId}
-                        onCopy={handleCopyEmail}
-                      />
-
-                      <div className={styles.paginationRow}>
-                        <button
-                          type="button"
-                          className={styles.pageButton}
-                          onClick={handlePeoplePrev}
-                          disabled={peoplePageIndex === 0 || peopleLoading}
-                        >
-                          <ChevronLeft aria-hidden="true" />
-                          Previous
-                        </button>
-                        <span className={styles.pageInfo}>Page {peoplePageIndex + 1}</span>
-                        <button
-                          type="button"
-                          className={styles.pageButton}
-                          onClick={handlePeopleNext}
-                          disabled={!peopleHasNext || peopleLoading}
-                        >
-                          Next
-                          <ChevronRight aria-hidden="true" />
-                        </button>
-                      </div>
+                      <span className={styles.pageInfo}>
+                        {formatPageLabel({ pageIndex: peoplePageIndex, pageCount: peoplePageCount })}
+                      </span>
+                      <button
+                        type="button"
+                        className={styles.pagerButton}
+                        onClick={handlePeopleNext}
+                        disabled={!peopleHasNext || peopleLoading}
+                        aria-label="Next page"
+                        title="Next page"
+                      >
+                        <ChevronRight aria-hidden="true" />
+                      </button>
                     </div>
-                  )}
-                </>
+                  </div>
+                </div>
               )}
-            </section>
-          </div>
+            </>
+          )}
         </>
       )}
+
+      <NewSearchModal
+        open={showNewSearch}
+        form={form}
+        creating={creating}
+        onChange={setForm}
+        onSubmit={handleCreate}
+        onClose={() => setShowNewSearch(false)}
+      />
     </div>
   );
 }
@@ -1395,86 +1336,185 @@ function PeopleTable({
   );
 }
 
-function NewSearchPanel({
+function SearchHistoryStrip({
+  searches,
+  total,
+  selectedId,
+  hasNext,
+  loadingMore,
+  error,
+  onSelect,
+  onLoadMore,
+  onNew
+}: {
+  searches: ProspectSearchNode[];
+  total: number;
+  selectedId: string | null;
+  hasNext: boolean;
+  loadingMore: boolean;
+  error: string | null;
+  onSelect: (search: ProspectSearchNode) => void;
+  onLoadMore: () => void;
+  onNew: () => void;
+}) {
+  return (
+    <section className={`card ${styles.historyStrip}`} aria-label="Search history">
+      <div className={styles.historyStripHead}>
+        <div>
+          <h2 className={styles.panelTitle}>Search history</h2>
+          <p className={styles.panelSubtitle}>
+            {total} {total === 1 ? "search" : "searches"}
+          </p>
+        </div>
+        <button type="button" className={styles.ghostButton} onClick={onNew}>
+          <Plus aria-hidden="true" />
+          <span>New search</span>
+        </button>
+      </div>
+      {error && <p className={styles.errorText}>{error}</p>}
+      <div className={styles.historyRail}>
+        {searches.map((search) => {
+          const active = search.id === selectedId;
+          return (
+            <button
+              key={search.id}
+              type="button"
+              className={`${styles.historyChip} ${active ? styles.historyChipActive : ""}`}
+              onClick={() => onSelect(search)}
+              aria-current={active ? "true" : undefined}
+            >
+              <span className={styles.historyChipTop}>
+                <span className={styles.historyChipName}>{search.company?.name ?? search.requestedCompany}</span>
+                <BadgePill badge={statusBadge(search.status)} />
+              </span>
+              <span className={styles.historyChipMeta}>
+                <span>
+                  <Users aria-hidden="true" /> {search.peopleCount}
+                </span>
+                <span>{formatDateTime(search.createdAt)}</span>
+              </span>
+            </button>
+          );
+        })}
+        {hasNext && (
+          <button type="button" className={styles.historyMore} onClick={onLoadMore} disabled={loadingMore}>
+            {loadingMore ? <LoaderCircle aria-hidden="true" className={styles.spin} /> : null}
+            <span>Load more</span>
+          </button>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function NewSearchModal({
   open,
   form,
   creating,
   onChange,
   onSubmit,
-  onToggle,
-  alwaysOpen = false
+  onClose
 }: {
   open: boolean;
   form: CreateForm;
   creating: boolean;
   onChange: (form: CreateForm) => void;
   onSubmit: (event: FormEvent) => void;
-  onToggle: () => void;
-  alwaysOpen?: boolean;
+  onClose: () => void;
 }) {
-  if (!open && !alwaysOpen) {
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  if (!open) {
     return null;
   }
+
   return (
-    <form className={`card ${styles.newSearchPanel}`} onSubmit={onSubmit}>
-      <div className={styles.panelHeader}>
-        <div>
-          <h2 className={styles.panelTitle}>New prospect search</h2>
-          <p className={styles.panelSubtitle}>Creates a draft. Process it to fetch people.</p>
-        </div>
-        {!alwaysOpen && (
-          <button type="button" className={styles.ghostButton} onClick={onToggle} aria-label="Close">
+    <div
+      className={styles.modalOverlay}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Create prospect search"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <form className={`card ${styles.modalCard}`} onSubmit={onSubmit}>
+        <div className={styles.panelHeader}>
+          <div>
+            <h2 className={styles.panelTitle}>Create prospect search</h2>
+            <p className={styles.panelSubtitle}>Creates a draft. Process it to fetch people.</p>
+          </div>
+          <button type="button" className={styles.ghostButton} onClick={onClose} aria-label="Close">
             <X aria-hidden="true" />
           </button>
-        )}
-      </div>
-      <label className={styles.field}>
-        <span className={styles.fieldLabel}>Company name</span>
-        <input
-          className={styles.input}
-          value={form.companyName}
-          onChange={(event) => onChange({ ...form, companyName: event.target.value })}
-          placeholder="Stripe"
-          required
-        />
-      </label>
-      <label className={styles.field}>
-        <span className={styles.fieldLabel}>Job titles</span>
-        <input
-          className={styles.input}
-          value={form.jobTitles}
-          onChange={(event) => onChange({ ...form, jobTitles: event.target.value })}
-          placeholder="Software Engineer, Recruiter"
-        />
-        <span className={styles.fieldHint}>Comma separated</span>
-      </label>
-      <div className={styles.fieldRow}>
+        </div>
         <label className={styles.field}>
-          <span className={styles.fieldLabel}>Locations</span>
+          <span className={styles.fieldLabel}>Company name</span>
           <input
             className={styles.input}
-            value={form.locations}
-            onChange={(event) => onChange({ ...form, locations: event.target.value })}
-            placeholder="United States"
+            value={form.companyName}
+            onChange={(event) => onChange({ ...form, companyName: event.target.value })}
+            placeholder="Stripe"
+            required
+            autoFocus
           />
         </label>
-        <label className={`${styles.field} ${styles.fieldSmall}`}>
-          <span className={styles.fieldLabel}>Max results</span>
+        <label className={styles.field}>
+          <span className={styles.fieldLabel}>Job titles</span>
           <input
             className={styles.input}
-            type="number"
-            min={1}
-            max={25}
-            value={form.maxResults}
-            onChange={(event) => onChange({ ...form, maxResults: event.target.value })}
+            value={form.jobTitles}
+            onChange={(event) => onChange({ ...form, jobTitles: event.target.value })}
+            placeholder="Software Engineer, Recruiter"
           />
+          <span className={styles.fieldHint}>Comma separated</span>
         </label>
-      </div>
-      <button type="submit" className={styles.primaryButton} disabled={creating}>
-        {creating ? <LoaderCircle aria-hidden="true" className={styles.spin} /> : <Plus aria-hidden="true" />}
-        Create draft search
-      </button>
-    </form>
+        <div className={styles.fieldRow}>
+          <label className={styles.field}>
+            <span className={styles.fieldLabel}>Locations</span>
+            <input
+              className={styles.input}
+              value={form.locations}
+              onChange={(event) => onChange({ ...form, locations: event.target.value })}
+              placeholder="United States"
+            />
+          </label>
+          <label className={styles.field}>
+            <span className={styles.fieldLabel}>Max results</span>
+            <input
+              className={styles.input}
+              type="number"
+              min={1}
+              max={25}
+              value={form.maxResults}
+              onChange={(event) => onChange({ ...form, maxResults: event.target.value })}
+            />
+          </label>
+        </div>
+        <div className={styles.modalActions}>
+          <button type="button" className={styles.secondaryButton} onClick={onClose}>
+            Cancel
+          </button>
+          <button type="submit" className={styles.primaryButton} disabled={creating}>
+            {creating ? <LoaderCircle aria-hidden="true" className={styles.spin} /> : <Plus aria-hidden="true" />}
+            Create draft search
+          </button>
+        </div>
+      </form>
+    </div>
   );
 }
 
@@ -1482,12 +1522,14 @@ function EmptyState({
   icon,
   title,
   body,
-  compact = false
+  compact = false,
+  action
 }: {
   icon: ReactNode;
   title: string;
   body: string;
   compact?: boolean;
+  action?: ReactNode;
 }) {
   return (
     <div className={`${styles.emptyState} ${compact ? styles.emptyStateCompact : "card"}`}>
@@ -1496,6 +1538,7 @@ function EmptyState({
       </span>
       <h2 className={styles.emptyTitle}>{title}</h2>
       <p className={styles.emptyBody}>{body}</p>
+      {action && <div className={styles.emptyAction}>{action}</div>}
     </div>
   );
 }
@@ -1506,29 +1549,30 @@ function DisabledState() {
       <span className={styles.disabledIcon} aria-hidden="true">
         <Ban />
       </span>
-      <h2 className={styles.emptyTitle}>Prospect Graph is not enabled</h2>
-      <p className={styles.emptyBody}>
-        Enable <code className={styles.patternCode}>PROSPECT_GRAPH_ENABLED</code> locally to review company, position, and
-        people results.
-      </p>
+      <h2 className={styles.emptyTitle}>{PROSPECT_FINDER_UNAVAILABLE_TITLE}</h2>
+      <p className={styles.emptyBody}>{PROSPECT_FINDER_UNAVAILABLE_BODY}</p>
     </div>
   );
 }
 
 function SearchesSkeleton() {
   return (
-    <div className={styles.panelGrid}>
-      <div className={`card ${styles.historyPanel}`}>
+    <>
+      <div className={styles.summaryGrid}>
         {Array.from({ length: 4 }).map((_, index) => (
-          <div key={index} className={styles.skeletonCard} />
+          <div key={index} className={`card ${styles.summaryCard}`}>
+            <div className={styles.skeletonLine} style={{ width: "40%" }} />
+            <div className={styles.skeletonLine} style={{ width: "70%" }} />
+          </div>
         ))}
       </div>
-      <div className={styles.mainPanel}>
-        <div className={`card ${styles.companyCard}`}>
-          <div className={styles.skeletonLine} style={{ width: "45%" }} />
-          <div className={styles.skeletonLine} style={{ width: "75%" }} />
+      <div className={`card ${styles.peopleSection}`}>
+        <div className={styles.tableSkeleton}>
+          {Array.from({ length: 6 }).map((_, index) => (
+            <div key={index} className={styles.skeletonRow} />
+          ))}
         </div>
       </div>
-    </div>
+    </>
   );
 }

@@ -5,14 +5,21 @@ import {
   EXTERNAL_LINK_REL,
   EXTERNAL_LINK_TARGET,
   INFERRED_EMAIL_NOTICE,
+  PROSPECT_FINDER_SUBTITLE,
+  PROSPECT_FINDER_TAGLINE,
+  PROSPECT_FINDER_TITLE,
+  PROSPECT_FINDER_UNAVAILABLE_BODY,
+  PROSPECT_FINDER_UNAVAILABLE_TITLE,
   confidenceBadge,
   emailStatusBadge,
   filterPeopleByText,
+  formatPageLabel,
   formatSearchError,
   formatShowingLabel,
   isEmailCopyable,
   isVerifiedStatus,
   personLocation,
+  resolvePageCount,
   resolveProspectPageState,
   resolveSelectedSearchView,
   statusBadge
@@ -210,5 +217,61 @@ describe("formatting helpers", () => {
     expect(filterPeopleByText(people, "turing").map((p) => p.id)).toEqual(["b"]);
     expect(filterPeopleByText(people, "alan@x").map((p) => p.id)).toEqual(["b"]);
     expect(filterPeopleByText(people, "")).toHaveLength(2);
+  });
+});
+
+describe("Prospect Finder product copy", () => {
+  const COPY = [
+    PROSPECT_FINDER_TITLE,
+    PROSPECT_FINDER_TAGLINE,
+    PROSPECT_FINDER_SUBTITLE,
+    PROSPECT_FINDER_UNAVAILABLE_TITLE,
+    PROSPECT_FINDER_UNAVAILABLE_BODY
+  ];
+
+  it("uses the user-facing Prospect Finder name (#1)", () => {
+    expect(PROSPECT_FINDER_TITLE).toBe("Prospect Finder");
+  });
+
+  it("never uses backend/debug language (#2, #3)", () => {
+    for (const text of COPY) {
+      expect(text).not.toMatch(/prospect graph/i);
+      expect(text).not.toMatch(/graph enabled/i);
+      expect(text).not.toMatch(/graphql/i);
+      expect(text).not.toMatch(/PROSPECT_GRAPH_ENABLED/);
+    }
+  });
+
+  it("shows a clean product message when unavailable", () => {
+    expect(PROSPECT_FINDER_UNAVAILABLE_TITLE).toBe("Prospect Finder is not available right now.");
+  });
+});
+
+describe("people pagination helpers", () => {
+  it("derives an exact page count from the known total (#8)", () => {
+    expect(resolvePageCount(24, 20)).toBe(2);
+    expect(resolvePageCount(20, 20)).toBe(1);
+    expect(resolvePageCount(21, 20)).toBe(2);
+    expect(resolvePageCount(0, 20)).toBe(1);
+    expect(resolvePageCount(40, 0)).toBe(1);
+  });
+
+  it("formats a compact page label, never Previous/Next text (#8)", () => {
+    expect(formatPageLabel({ pageIndex: 0, pageCount: 2 })).toBe("Page 1 of 2");
+    expect(formatPageLabel({ pageIndex: 1, pageCount: 2 })).toBe("Page 2 of 2");
+    const label = formatPageLabel({ pageIndex: 0, pageCount: 3 });
+    expect(label).not.toMatch(/previous|next/i);
+  });
+
+  it("keeps the page index in range when the count lags behind", () => {
+    expect(formatPageLabel({ pageIndex: 2, pageCount: 1 })).toBe("Page 3 of 3");
+  });
+});
+
+describe("external links are hardened (#12)", () => {
+  it("opens LinkedIn in a new tab without leaking the opener", () => {
+    expect(EXTERNAL_LINK_TARGET).toBe("_blank");
+    expect(EXTERNAL_LINK_REL).toContain("noreferrer");
+    expect(EXTERNAL_LINK_REL).toContain("noopener");
   });
 });

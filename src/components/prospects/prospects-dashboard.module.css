@@ -57,42 +57,11 @@
   flex-wrap: wrap;
 }
 
-.featureBadge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0.85rem;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: var(--surface-soft);
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--muted);
-}
-
-.featureDot {
-  width: 0.55rem;
-  height: 0.55rem;
-  border-radius: 999px;
-  flex: none;
-}
-
-.featureBadgeOn .featureDot {
-  background: var(--success);
-  box-shadow: 0 0 0 0.22rem var(--accent-soft);
-}
-
-.featureBadgeOff .featureDot {
-  background: var(--warning);
-  box-shadow: 0 0 0 0.22rem var(--warning-soft);
-}
-
 .refreshButton,
 .secondaryButton,
 .primaryButton,
 .ghostButton,
-.dangerButton,
-.pageButton {
+.dangerButton {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -111,7 +80,7 @@
 .secondaryButton:hover,
 .ghostButton:hover,
 .dangerButton:hover:not(:disabled),
-.pageButton:hover:not(:disabled) {
+.pagerButton:hover:not(:disabled) {
   background: var(--surface-hover);
   border-color: var(--field-focus);
   transform: translateY(-1px);
@@ -122,7 +91,7 @@
 .primaryButton svg,
 .ghostButton svg,
 .dangerButton svg,
-.pageButton svg {
+.pagerButton svg {
   width: 1.05rem;
   height: 1.05rem;
 }
@@ -152,7 +121,7 @@
   font-size: 0.86rem;
 }
 
-.pageButton:disabled,
+.pagerButton:disabled,
 .primaryButton:disabled,
 .secondaryButton:disabled,
 .dangerButton:disabled {
@@ -265,29 +234,122 @@
   overflow-wrap: anywhere;
 }
 
-/* ---- Two-column layout -------------------------------------------------- */
+/* ---- Search history strip (compact, full-width) ------------------------- */
 
-.panelGrid {
-  display: grid;
-  grid-template-columns: minmax(20rem, 0.82fr) minmax(0, 1.18fr);
-  gap: 1.5rem;
-  align-items: start;
-  min-width: 0;
-}
-
-.historyPanel {
+.historyStrip {
   display: grid;
   gap: 1rem;
-  align-content: start;
   min-width: 0;
-  position: sticky;
-  top: 0;
 }
 
-.mainPanel {
+.historyStripHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.85rem;
+}
+
+.historyRail {
+  display: flex;
+  gap: 0.75rem;
+  overflow-x: auto;
+  padding-bottom: 0.35rem;
+  scrollbar-width: thin;
+  scroll-snap-type: x proximity;
+}
+
+.historyChip {
   display: grid;
-  gap: 1.5rem;
+  gap: 0.55rem;
+  align-content: start;
+  flex: 0 0 auto;
+  width: 17rem;
+  max-width: 80vw;
+  text-align: left;
+  padding: 0.85rem 0.95rem;
+  border-radius: 0.95rem;
+  border: 1px solid var(--line);
+  background: var(--surface-soft);
+  cursor: pointer;
+  scroll-snap-align: start;
+  transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
+}
+
+.historyChip:hover {
+  border-color: var(--field-focus);
+  transform: translateY(-1px);
+}
+
+.historyChipActive {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent-soft-strong);
+}
+
+.historyChipTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
   min-width: 0;
+}
+
+.historyChipName {
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.historyChipMeta {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.historyChipMeta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.historyChipMeta svg {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
+.historyMore {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  flex: 0 0 auto;
+  width: 8rem;
+  border-radius: 0.95rem;
+  border: 1px dashed var(--line);
+  background: transparent;
+  color: var(--muted);
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 140ms ease, color 140ms ease;
+}
+
+.historyMore:hover:not(:disabled) {
+  border-color: var(--field-focus);
+  color: var(--text);
+}
+
+.historyMore:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.historyMore svg {
+  width: 1rem;
+  height: 1rem;
 }
 
 .panelHeader {
@@ -306,100 +368,6 @@
   margin: 0.15rem 0 0;
   font-size: 0.82rem;
   color: var(--muted);
-}
-
-/* ---- Search history list ------------------------------------------------ */
-
-.searchList {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 0.65rem;
-  min-width: 0;
-}
-
-.searchItem {
-  display: grid;
-  gap: 0.5rem;
-  width: 100%;
-  text-align: left;
-  padding: 0.85rem 0.95rem;
-  border-radius: 0.95rem;
-  border: 1px solid var(--line);
-  background: var(--surface-soft);
-  cursor: pointer;
-  transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
-  min-width: 0;
-}
-
-.searchItem:hover {
-  border-color: var(--field-focus);
-  transform: translateY(-1px);
-}
-
-.searchItemActive {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  box-shadow: inset 0 0 0 1px var(--accent-soft-strong);
-}
-
-.searchItemTop {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.6rem;
-}
-
-.searchItemCompany {
-  font-weight: 700;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
-
-.searchItemMeta {
-  display: flex;
-  align-items: center;
-  gap: 0.85rem;
-  flex-wrap: wrap;
-  font-size: 0.82rem;
-  color: var(--muted);
-}
-
-.searchItemMeta span {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  min-width: 0;
-}
-
-.searchItemMeta svg {
-  width: 0.9rem;
-  height: 0.9rem;
-}
-
-.searchItemRoles {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-}
-
-.roleTag {
-  font-size: 0.74rem;
-  padding: 0.15rem 0.5rem;
-  border-radius: 999px;
-  background: var(--button-secondary-bg);
-  color: var(--muted);
-  font-weight: 600;
-}
-
-.truncate {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 11rem;
 }
 
 /* ---- Badges ------------------------------------------------------------- */
@@ -447,11 +415,49 @@
   color: color-mix(in srgb, #e5484d 72%, var(--text));
 }
 
-/* ---- New search panel --------------------------------------------------- */
+/* ---- New search modal --------------------------------------------------- */
 
-.newSearchPanel {
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: start center;
+  padding: clamp(1rem, 6vh, 5rem) 1rem 2rem;
+  overflow-y: auto;
+  background: color-mix(in srgb, #05070d 62%, transparent);
+  backdrop-filter: blur(4px);
+  animation: prospect-fade 140ms ease;
+}
+
+.modalCard {
   display: grid;
   gap: 0.9rem;
+  width: 100%;
+  max-width: 32rem;
+  box-shadow: 0 30px 60px -20px rgba(2, 6, 14, 0.65);
+  animation: prospect-rise 160ms ease;
+}
+
+.modalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+  margin-top: 0.25rem;
+}
+
+@keyframes prospect-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes prospect-rise {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
 }
 
 .field {
@@ -797,10 +803,19 @@
 
 /* ---- People table (CSS grid, responsive to cards) ----------------------- */
 
+.tableScroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+
 .table {
   display: flex;
   flex-direction: column;
-  min-width: 0;
+  /* Keep the 6 columns comfortable; the wrapper scrolls horizontally when the
+     available width (e.g. sidebar open on a laptop) is narrower than this,
+     instead of cramping the cells. Reset to 0 at the mobile card breakpoint. */
+  min-width: 44rem;
 }
 
 .row {
@@ -967,12 +982,43 @@
   justify-content: space-between;
   gap: 0.85rem;
   padding-top: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.pager {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+.pagerButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  flex: none;
+  border-radius: 0.6rem;
+  border: 1px solid var(--line);
+  background: var(--surface-strong);
+  color: var(--text);
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease, transform 140ms ease, opacity 140ms ease;
+}
+
+.pagerButton svg {
+  width: 1.1rem;
+  height: 1.1rem;
 }
 
 .pageInfo {
   font-size: 0.85rem;
   color: var(--muted);
   font-weight: 600;
+  white-space: nowrap;
+  min-width: 6rem;
+  text-align: center;
 }
 
 /* ---- Status / empty / disabled cards ------------------------------------ */
@@ -1022,10 +1068,8 @@
   flex-wrap: wrap;
 }
 
-.emptyWrap {
-  display: grid;
-  gap: 1.25rem;
-  max-width: 38rem;
+.emptyAction {
+  margin-top: 0.4rem;
 }
 
 .emptyState {
@@ -1090,17 +1134,12 @@
 
 /* ---- Skeletons + spinner ------------------------------------------------ */
 
-.skeletonCard,
 .skeletonRow,
 .skeletonLine {
   background: linear-gradient(90deg, var(--surface-soft) 25%, var(--surface-hover) 37%, var(--surface-soft) 63%);
   background-size: 400% 100%;
   animation: prospect-shimmer 1.4s ease infinite;
   border-radius: 0.7rem;
-}
-
-.skeletonCard {
-  height: 4.5rem;
 }
 
 .tableSkeleton {
@@ -1139,19 +1178,15 @@
 
 /* ---- Responsive --------------------------------------------------------- */
 
-@media (max-width: 1080px) {
-  .panelGrid {
-    grid-template-columns: 1fr;
-  }
-
-  .historyPanel {
-    position: static;
-  }
-}
-
 @media (max-width: 640px) {
   .header {
     align-items: flex-start;
+  }
+
+  /* Rows become stacked cards on mobile, so the table no longer needs the
+     comfortable min-width that drives horizontal scroll on wider layouts. */
+  .table {
+    min-width: 0;
   }
 
   .headRow {

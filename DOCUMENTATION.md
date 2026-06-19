@@ -418,7 +418,7 @@ Runtime shape:
 | --- | --- | --- | --- |
 | `/workspace` | Overview dashboard | Verified non-admin user | Admin users redirect to admin surface. |
 | `/finder` | Hunter Finder | Verified user | Requires saved Hunter key for searches. |
-| `/prospects` | Prospect Graph dashboard | Verified user | Read-only review of company/position/people results. Feature-flagged by `PROSPECT_GRAPH_ENABLED`; consumes `POST /api/graphql`; people default to 20/page. |
+| `/prospects` | Prospect Finder | Verified user | User-facing dashboard to review discovered people and inferred work emails. Feature-flagged by `PROSPECT_GRAPH_ENABLED`; consumes `POST /api/graphql`; people default to 20/page; no backend/debug status shown. |
 | `/imports` | Import and mapping workflow | Verified user | CSV/XLS/XLSX upload and mapping. |
 | `/templates` | Template workspace | Verified user | Plain text, HTML, JSON, AI/spam assistance. |
 | `/campaigns` | Sequence list and builder | Verified user | Main sequence surface. |
@@ -1349,12 +1349,22 @@ failures), and the GraphQL layer
 batching, disabled-feature rejection). Use `npm run prospect:test` for a live
 end-to-end smoke test against the real providers.
 
-### 23.8 Frontend dashboard (`/prospects`)
+### 23.8 Frontend dashboard (`/prospects`) — "Prospect Finder"
 
-An operator dashboard at `/prospects` (sidebar entry next to Finder) reviews the
-graph in-app. It is a client component
-(`src/components/prospects/prospects-dashboard.tsx`) that calls the existing
-`POST /api/graphql` endpoint through a small typed helper
+The page at `/prospects` is the user-facing **Prospect Finder** dashboard for
+reviewing discovered people and inferred work emails. It is intentionally a
+product surface, not a debug tool: it never shows backend/debug language (no
+"Prospect Graph" or "Graph enabled"); when the backend is off it shows a clean
+"Prospect Finder is not available right now." card. Layout is a single
+responsive column — full-width summary cards, a compact horizontal search-history
+strip, and a full-width people table — that holds up with the app sidebar open or
+closed in both themes. New searches open in a modal (`Create prospect search`),
+never inline. People paginate **20 per page** with compact chevron controls
+(`Showing 1–20 of N`, `Page X of Y`) that preserve the selected role group, and
+the page creates no sequences/imports and sends nothing.
+
+It is a client component (`src/components/prospects/prospects-dashboard.tsx`) that
+calls the existing `POST /api/graphql` endpoint through a small typed helper
 (`src/components/prospects/prospect-graphql.ts`); CSRF is handled by the global
 `window.fetch` patch, so no token is attached by hand and CSRF is never bypassed.
 Pure presentation/branching logic lives in

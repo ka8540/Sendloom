@@ -19,6 +19,33 @@ export const EXTERNAL_LINK_REL = "noopener noreferrer";
 export const INFERRED_EMAIL_NOTICE =
   "Generated emails are inferred from the selected email domain and pattern until verified.";
 
+// User-facing product copy. Kept here (not inline JSX) so the page never leaks
+// backend/debug language and the wording is unit-testable. Never use "Prospect
+// Graph" or "Graph enabled" in the UI — those are internal terms.
+export const PROSPECT_FINDER_TITLE = "Prospect Finder";
+export const PROSPECT_FINDER_TAGLINE = "Prospecting";
+export const PROSPECT_FINDER_SUBTITLE =
+  "Find the right people, group them by role, and review inferred work emails before adding them to outreach.";
+export const PROSPECT_FINDER_UNAVAILABLE_TITLE = "Prospect Finder is not available right now.";
+export const PROSPECT_FINDER_UNAVAILABLE_BODY =
+  "This workspace doesn't have prospecting turned on yet. Check back soon, or reach out to your workspace admin.";
+
+// Total page count for a known result total at a fixed page size (>= 1).
+export function resolvePageCount(totalCount: number, pageSize: number): number {
+  if (!Number.isFinite(totalCount) || totalCount <= 0 || pageSize <= 0) {
+    return 1;
+  }
+  return Math.max(1, Math.ceil(totalCount / pageSize));
+}
+
+// Compact pager label, e.g. "Page 1 of 3". Never the words "Previous"/"Next" —
+// the controls themselves are chevron icon buttons.
+export function formatPageLabel(input: { pageIndex: number; pageCount: number }): string {
+  const current = Math.max(1, input.pageIndex + 1);
+  const total = Math.max(current, input.pageCount);
+  return `Page ${current} of ${total}`;
+}
+
 export type BadgeTone = "verified" | "inferred" | "neutral" | "warning" | "muted" | "blocked";
 
 export type Badge = {
