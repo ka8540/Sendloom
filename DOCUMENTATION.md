@@ -418,7 +418,7 @@ Runtime shape:
 | --- | --- | --- | --- |
 | `/workspace` | Overview dashboard | Verified non-admin user | Admin users redirect to admin surface. |
 | `/finder` | Hunter Finder | Verified user | Requires saved Hunter key for searches. |
-| `/prospects` | Prospect Finder | Verified user | User-facing dashboard to review discovered people and inferred work emails. Feature-flagged by `PROSPECT_GRAPH_ENABLED`; consumes `POST /api/graphql`; people default to 20/page; no backend/debug status shown. |
+| `/prospects` | Prospect Finder | Verified user | User-facing dashboard to review discovered people and inferred work emails. Feature-flagged by `PROSPECT_GRAPH_ENABLED`; consumes `POST /api/graphql`; search history and people are separate server-paginated tables at 10/page; no backend/debug status shown. |
 | `/imports` | Import and mapping workflow | Verified user | CSV/XLS/XLSX upload and mapping. |
 | `/templates` | Template workspace | Verified user | Plain text, HTML, JSON, AI/spam assistance. |
 | `/campaigns` | Sequence list and builder | Verified user | Main sequence surface. |
@@ -1359,9 +1359,11 @@ product surface, not a debug tool: it never shows backend/debug language (no
 responsive column — full-width summary cards, a compact horizontal search-history
 strip, and a full-width people table — that holds up with the app sidebar open or
 closed in both themes. New searches open in a modal (`Create prospect search`),
-never inline. People paginate **20 per page** with compact chevron controls
-(`Showing 1–20 of N`, `Page X of Y`) that preserve the selected role group, and
-the page creates no sequences/imports and sends nothing.
+never inline (the single primary New search action lives in the header). Search
+history and people are two separate full-width tables that each paginate
+**10 per page** with compact chevron controls (`Showing 1–10 of N`, `Page X of
+Y`) and independent pagination state; the page creates no sequences/imports and
+sends nothing.
 
 It is a client component (`src/components/prospects/prospects-dashboard.tsx`) that
 calls the existing `POST /api/graphql` endpoint through a small typed helper
@@ -1375,8 +1377,10 @@ Behavior:
 - Lists previous searches; selecting a `READY` search loads the company summary,
   separate website/email domains, position-category breakdown (empty categories
   hidden), and people.
-- People default to **20 per page** (`first: 20`, never 5) with cursor-based
-  previous/next pagination; the category filter passes `positionCategory`.
+- Search history and people are **two separate full-width tables**, each
+  server-paginated at **10 per page** (`first: 10`) with **independent** cursor
+  stacks — paging one never affects the other, and the selected company survives
+  history paging. The people table stays 10/page for every `positionCategory`.
 - Inferred emails are labelled **inferred, not verified** — only a real
   `VERIFIED` status uses the green badge — with a persistent banner above the
   table. Copy controls render only when an address is present; missing addresses

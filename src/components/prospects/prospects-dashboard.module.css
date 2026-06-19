@@ -234,122 +234,135 @@
   overflow-wrap: anywhere;
 }
 
-/* ---- Search history strip (compact, full-width) ------------------------- */
+/* ---- Search history table (full-width, server-paginated) ---------------- */
 
-.historyStrip {
+.historyPanel {
   display: grid;
+  gap: 1.1rem;
+  min-width: 0;
+}
+
+.historyTable {
+  display: flex;
+  flex-direction: column;
+  /* Keep the 7 columns readable; the wrapper scrolls horizontally on narrower
+     widths (e.g. sidebar open) instead of cramping. Reset at the card breakpoint. */
+  min-width: 52rem;
+}
+
+.historyHeadRow,
+.historyRow {
+  display: grid;
+  grid-template-columns:
+    minmax(0, 1.6fr) minmax(0, 1.5fr) minmax(0, 1.1fr) 3.5rem minmax(0, auto) minmax(0, 0.9fr) 1.75rem;
   gap: 1rem;
-  min-width: 0;
-}
-
-.historyStripHead {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.85rem;
-}
-
-.historyRail {
-  display: flex;
-  gap: 0.75rem;
-  overflow-x: auto;
-  padding-bottom: 0.35rem;
-  scrollbar-width: thin;
-  scroll-snap-type: x proximity;
-}
-
-.historyChip {
-  display: grid;
-  gap: 0.55rem;
-  align-content: start;
-  flex: 0 0 auto;
-  width: 17rem;
-  max-width: 80vw;
-  text-align: left;
-  padding: 0.85rem 0.95rem;
-  border-radius: 0.95rem;
-  border: 1px solid var(--line);
-  background: var(--surface-soft);
-  cursor: pointer;
-  scroll-snap-align: start;
-  transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
-}
-
-.historyChip:hover {
-  border-color: var(--field-focus);
-  transform: translateY(-1px);
-}
-
-.historyChipActive {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  box-shadow: inset 0 0 0 1px var(--accent-soft-strong);
-}
-
-.historyChipTop {
-  display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.6rem;
+  padding: 0.8rem 0.4rem;
+  border-bottom: 1px solid var(--line);
   min-width: 0;
 }
 
-.historyChipName {
+.historyHeadRow {
+  padding: 0.4rem 0.4rem 0.7rem;
+}
+
+.historyHeadRow span {
+  font-size: 0.74rem;
   font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.historyRow {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border-top: 0;
+  border-left: 0;
+  border-right: 0;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: background 140ms ease, box-shadow 140ms ease;
+}
+
+.historyRow:hover {
+  background: var(--surface-soft);
+}
+
+.historyRowActive {
+  background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.historyCompanyCell {
+  display: grid;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.historyCompanyName {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.historyCompanyDomain {
+  font-size: 0.78rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.historyMutedText {
+  color: var(--muted);
+}
+
+.historyRolesCell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.historyRoleTag {
+  font-size: 0.74rem;
+  padding: 0.12rem 0.5rem;
+  border-radius: 999px;
+  background: var(--button-secondary-bg);
+  color: var(--muted);
+  font-weight: 600;
+  white-space: nowrap;
+  max-width: 9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.historyLocationCell,
+.historyCreatedCell {
+  color: var(--muted);
+  font-size: 0.88rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
 }
 
-.historyChipMeta {
-  display: flex;
-  align-items: center;
-  gap: 0.85rem;
-  font-size: 0.82rem;
-  color: var(--muted);
-}
-
-.historyChipMeta span {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-}
-
-.historyChipMeta svg {
-  width: 0.9rem;
-  height: 0.9rem;
-}
-
-.historyMore {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.4rem;
-  flex: 0 0 auto;
-  width: 8rem;
-  border-radius: 0.95rem;
-  border: 1px dashed var(--line);
-  background: transparent;
-  color: var(--muted);
+.historyPeopleCell {
   font-weight: 600;
-  cursor: pointer;
-  transition: border-color 140ms ease, color 140ms ease;
 }
 
-.historyMore:hover:not(:disabled) {
-  border-color: var(--field-focus);
-  color: var(--text);
+.historyViewCell {
+  display: flex;
+  justify-content: flex-end;
+  color: var(--muted);
 }
 
-.historyMore:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.historyMore svg {
-  width: 1rem;
-  height: 1rem;
+.historyViewCell svg {
+  width: 1.05rem;
+  height: 1.05rem;
 }
 
 .panelHeader {
@@ -1183,23 +1196,31 @@
     align-items: flex-start;
   }
 
-  /* Rows become stacked cards on mobile, so the table no longer needs the
+  /* Rows become stacked cards on mobile, so the tables no longer need the
      comfortable min-width that drives horizontal scroll on wider layouts. */
-  .table {
+  .table,
+  .historyTable {
     min-width: 0;
   }
 
-  .headRow {
+  .headRow,
+  .historyHeadRow {
     display: none;
   }
 
-  .row {
-    grid-template-columns: 1fr;
-    gap: 0.5rem;
-    padding: 1rem 0;
+  .historyViewCell {
+    display: none;
   }
 
-  .row [data-label]::before {
+  .row,
+  .historyRow {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+    padding: 1rem 0.25rem;
+  }
+
+  .row [data-label]::before,
+  .historyRow [data-label]::before {
     content: attr(data-label);
     display: block;
     font-size: 0.68rem;

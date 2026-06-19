@@ -34,6 +34,7 @@ import {
   PROCESS_SEARCH_MUTATION,
   PROSPECT_SEARCHES_QUERY,
   REFRESH_COMPANY_EMAIL_FORMAT_MUTATION,
+  SEARCHES_PAGE_SIZE,
   SET_COMPANY_EMAIL_INFERENCE_OVERRIDE_MUTATION,
   buildPeopleVariables,
   buildSearchesVariables,
@@ -121,9 +122,16 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
   const [searchesHasNext, setSearchesHasNext] = useState(false);
   const [searchesEndCursor, setSearchesEndCursor] = useState<string | null>(null);
   const [searchesTotal, setSearchesTotal] = useState(0);
-  const [loadingMore, setLoadingMore] = useState(false);
+  // Search-history pagination state — fully independent from the people table.
+  const [historyPageIndex, setHistoryPageIndex] = useState(0);
+  const historyAfterCursors = useRef<(string | null)[]>([null]);
+  const searchesReq = useRef(0);
 
+  // The selected search is tracked independently of the current history page so
+  // paging the history table never blanks the company/people sections below.
   const [selectedSearchId, setSelectedSearchId] = useState<string | null>(null);
+  const [selectedSearch, setSelectedSearch] = useState<ProspectSearchNode | null>(null);
+  const selectedSearchIdRef = useRef<string | null>(null);
 
   const [company, setCompany] = useState<CompanyDetail | null>(null);
   const [companyLoading, setCompanyLoading] = useState(false);
@@ -160,12 +168,8 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
   const peopleReq = useRef(0);
   const companyReq = useRef(0);
 
-  const selectedSearch = useMemo(
-    () => searches.find((item) => item.id === selectedSearchId) ?? null,
-    [searches, selectedSearchId]
-  );
   const selectedView = resolveSelectedSearchView(selectedSearch);
-  const pageState = resolveProspectPageState({ disabled, loading: searchesLoading, searchCount: searches.length });
+  const pageState = resolveProspectPageState({ disabled, loading: searchesLoading, searchCount: searchesTotal });
 
   const loadCompany = useCallback(async (companyId: string) => {
     const req = ++companyReq.current;
@@ -227,7 +231,9 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
 
   const selectSearch = useCallback(
     (search: ProspectSearchNode) => {
+      selectedSearchIdRef.current = search.id;
       setSelectedSearchId(search.id);
+      setSelectedSearch(search);
       setActiveCategory(null);
       setActionError(null);
       setActionNotice(null);
@@ -248,13 +254,20 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
   );
 
   const loadSearches = useCallback(
-    async (options?: { autoSelect?: boolean }) => {
+    async (options: { pageIndex?: number; after?: string | null; autoSelect?: boolean; selectId?: string } = {}) => {
+      const pageIndex = options.pageIndex ?? 0;
+      const after = options.after ?? null;
+      const req = ++searchesReq.current;
       setSearchesLoading(true);
       setSearchesError(null);
       const result = await prospectGraphql<{ prospectSearches: Connection<ProspectSearchNode> }>(
         PROSPECT_SEARCHES_QUERY,
-        buildSearchesVariables()
+        buildSearchesVariables({ after })
       );
+      // Ignore a stale page response that a faster later request superseded.
+      if (req !== searchesReq.current) {
+        return;
+      }
       if (result.disabled) {
         setDisabled(true);
         setSearchesLoading(false);
@@ -263,7 +276,7 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
       // Backend reachable and enabled — clear any stale server-rendered hint.
       setDisabled(false);
       if (result.error || !result.data) {
-        setSearchesError(result.error ?? "Could not load prospect searches.");
+        setSearchesError(result.error ?? "Could not load searches.");
         setSearchesLoading(false);
         return;
       }
@@ -273,8 +286,25 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
       setSearchesHasNext(connection.pageInfo.hasNextPage);
       setSearchesEndCursor(connection.pageInfo.endCursor);
       setSearchesTotal(connection.totalCount);
+      setHistoryPageIndex(pageIndex);
       setSearchesLoading(false);
-      if (options?.autoSelect && nodes.length > 0) {
+
+      // Keep the selected search's status/company fresh when it appears on the
+      // freshly loaded page, without disturbing the selection otherwise.
+      const currentSelectedId = selectedSearchIdRef.current;
+      if (currentSelectedId) {
+        const fresh = nodes.find((node) => node.id === currentSelectedId);
+        if (fresh) {
+          setSelectedSearch(fresh);
+        }
+      }
+
+      if (options.selectId) {
+        const node = nodes.find((item) => item.id === options.selectId);
+        if (node) {
+          selectSearch(node);
+        }
+      } else if (options.autoSelect && !currentSelectedId && nodes.length > 0) {
         const preferred = nodes.find((node) => node.status === "READY" && node.company) ?? nodes[0];
         selectSearch(preferred);
       }
@@ -282,25 +312,22 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
     [selectSearch]
   );
 
-  const loadMoreSearches = useCallback(async () => {
-    if (!searchesHasNext || loadingMore) {
+  const handleHistoryNext = useCallback(() => {
+    if (!searchesHasNext || searchesLoading) {
       return;
     }
-    setLoadingMore(true);
-    const result = await prospectGraphql<{ prospectSearches: Connection<ProspectSearchNode> }>(
-      PROSPECT_SEARCHES_QUERY,
-      buildSearchesVariables({ after: searchesEndCursor })
-    );
-    if (!result.disabled && result.data) {
-      const connection = result.data.prospectSearches;
-      setSearches((prev) => [...prev, ...connection.edges.map((edge) => edge.node)]);
-      setSearchesHasNext(connection.pageInfo.hasNextPage);
-      setSearchesEndCursor(connection.pageInfo.endCursor);
-    } else if (result.disabled) {
-      setDisabled(true);
+    const after = searchesEndCursor;
+    historyAfterCursors.current[historyPageIndex + 1] = after;
+    void loadSearches({ pageIndex: historyPageIndex + 1, after });
+  }, [historyPageIndex, loadSearches, searchesEndCursor, searchesHasNext, searchesLoading]);
+
+  const handleHistoryPrev = useCallback(() => {
+    if (historyPageIndex === 0 || searchesLoading) {
+      return;
     }
-    setLoadingMore(false);
-  }, [loadingMore, searchesEndCursor, searchesHasNext]);
+    const after = historyAfterCursors.current[historyPageIndex - 1] ?? null;
+    void loadSearches({ pageIndex: historyPageIndex - 1, after });
+  }, [historyPageIndex, loadSearches, searchesLoading]);
 
   useEffect(() => {
     // Always verify against the live endpoint rather than trusting the
@@ -360,14 +387,16 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
     setActionError(null);
     setActionNotice(null);
     void (async () => {
-      await loadSearches();
+      // Reload the current history page (not page 1) so a refresh doesn't move
+      // the user away from the page they were on.
+      await loadSearches({ pageIndex: historyPageIndex, after: historyAfterCursors.current[historyPageIndex] ?? null });
       if (selectedSearch?.status === "READY" && selectedSearch.company) {
+        peopleAfterCursors.current = [null];
         await loadCompany(selectedSearch.company.id);
         await loadPeople({ companyId: selectedSearch.company.id, category: activeCategory, pageIndex: 0, after: null });
-        peopleAfterCursors.current = [null];
       }
     })();
-  }, [activeCategory, loadCompany, loadPeople, loadSearches, selectedSearch]);
+  }, [activeCategory, historyPageIndex, loadCompany, loadPeople, loadSearches, selectedSearch]);
 
   const handleCreate = useCallback(
     async (event: FormEvent) => {
@@ -402,9 +431,11 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
       const newId = result.data.createProspectSearch.id;
       setForm(EMPTY_FORM);
       setShowNewSearch(false);
-      setActionNotice("Draft search created. Select it and run Process to fetch people.");
-      await loadSearches();
-      setSelectedSearchId(newId);
+      setActionNotice("Draft search created. Process it to fetch people.");
+      // A new draft is the most recent search, so jump history back to page 1
+      // and select it.
+      historyAfterCursors.current = [null];
+      await loadSearches({ pageIndex: 0, after: null, selectId: newId });
     },
     [form, loadSearches]
   );
@@ -419,27 +450,21 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
         { id: search.id }
       );
       setProcessingId(null);
+      const after = historyAfterCursors.current[historyPageIndex] ?? null;
       if (result.disabled) {
         setDisabled(true);
         return;
       }
       if (result.error || !result.data) {
         setActionError(result.error ?? "Processing failed. Try again with fewer results.");
-        await loadSearches();
+        await loadSearches({ pageIndex: historyPageIndex, after });
         return;
       }
-      await loadSearches();
-      const updated = result.data.processProspectSearch;
-      const refreshed = await prospectGraphql<{ prospectSearches: Connection<ProspectSearchNode> }>(
-        PROSPECT_SEARCHES_QUERY,
-        buildSearchesVariables()
-      );
-      const node = refreshed.data?.prospectSearches.edges.map((edge) => edge.node).find((item) => item.id === updated.id);
-      if (node) {
-        selectSearch(node);
-      }
+      // Reload the search's current page and re-select it so the updated status,
+      // company, and people render in place.
+      await loadSearches({ pageIndex: historyPageIndex, after, selectId: result.data.processProspectSearch.id });
     },
-    [loadSearches, selectSearch]
+    [historyPageIndex, loadSearches]
   );
 
   const handleCancel = useCallback(
@@ -456,15 +481,15 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
         setActionError(result.error);
         return;
       }
-      await loadSearches();
+      await loadSearches({ pageIndex: historyPageIndex, after: historyAfterCursors.current[historyPageIndex] ?? null });
     },
-    [loadSearches]
+    [historyPageIndex, loadSearches]
   );
 
   const handleDeleteCompany = useCallback(
     async (target: CompanyDetail) => {
       const confirmed = window.confirm(
-        `Delete ${target.name} and its prospect graph? This removes the company, its inferred people, and related searches.`
+        `Delete ${target.name}? This removes the company, its inferred people, and related searches.`
       );
       if (!confirmed) {
         return;
@@ -486,12 +511,15 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
         return;
       }
 
+      selectedSearchIdRef.current = null;
       setSelectedSearchId(null);
+      setSelectedSearch(null);
       setCompany(null);
       setActiveCategory(null);
       resetPeopleState();
       setActionNotice("Company deleted.");
-      await loadSearches({ autoSelect: true });
+      historyAfterCursors.current = [null];
+      await loadSearches({ pageIndex: 0, after: null, autoSelect: true });
     },
     [loadSearches, resetPeopleState]
   );
@@ -501,9 +529,9 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
       setCompany(updatedCompany);
       peopleAfterCursors.current = [null];
       await loadPeople({ companyId: updatedCompany.id, category: activeCategory, pageIndex: 0, after: null });
-      await loadSearches();
+      await loadSearches({ pageIndex: historyPageIndex, after: historyAfterCursors.current[historyPageIndex] ?? null });
     },
-    [activeCategory, loadPeople, loadSearches]
+    [activeCategory, historyPageIndex, loadPeople, loadSearches]
   );
 
   const handleRefreshEmailFormat = useCallback(
@@ -600,6 +628,8 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
   );
   const peopleOffset = peoplePageIndex * PEOPLE_PAGE_SIZE;
   const peoplePageCount = resolvePageCount(peopleTotal, PEOPLE_PAGE_SIZE);
+  const historyOffset = historyPageIndex * SEARCHES_PAGE_SIZE;
+  const historyPageCount = resolvePageCount(searchesTotal, SEARCHES_PAGE_SIZE);
 
   // ---- Render -------------------------------------------------------------
 
@@ -674,16 +704,19 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
         <>
           <SummaryCards search={selectedSearch} company={company} view={selectedView} />
 
-          <SearchHistoryStrip
+          <SearchHistoryTable
             searches={searches}
             total={searchesTotal}
             selectedId={selectedSearchId}
-            hasNext={searchesHasNext}
-            loadingMore={loadingMore}
+            loading={searchesLoading}
             error={searchesError}
+            pageIndex={historyPageIndex}
+            pageCount={historyPageCount}
+            offset={historyOffset}
+            hasNext={searchesHasNext}
             onSelect={selectSearch}
-            onLoadMore={loadMoreSearches}
-            onNew={() => setShowNewSearch(true)}
+            onPrev={handleHistoryPrev}
+            onNext={handleHistoryNext}
           />
 
           {selectedView === "none" && (
@@ -890,7 +923,7 @@ function SummaryCards({
 
       <div className={`card ${styles.summaryCard}`}>
         <span className={styles.summaryLabel}>
-          <AtSign aria-hidden="true" /> Email pattern
+          <AtSign aria-hidden="true" /> Email format
         </span>
         <span className={styles.summaryValue}>{emailDomain ?? "Unavailable"}</span>
         <span className={styles.summaryMeta}>
@@ -1260,8 +1293,8 @@ function PeopleTable({
     return (
       <EmptyState
         icon={<Users aria-hidden="true" />}
-        title="No people in this view"
-        body="Try a different position category, clear the filter, or process another search."
+        title="No people found for this role group"
+        body="Try a different role group, clear the filter, or run another search."
         compact
       />
     );
@@ -1336,72 +1369,148 @@ function PeopleTable({
   );
 }
 
-function SearchHistoryStrip({
+function SearchHistoryTable({
   searches,
   total,
   selectedId,
-  hasNext,
-  loadingMore,
+  loading,
   error,
+  pageIndex,
+  pageCount,
+  offset,
+  hasNext,
   onSelect,
-  onLoadMore,
-  onNew
+  onPrev,
+  onNext
 }: {
   searches: ProspectSearchNode[];
   total: number;
   selectedId: string | null;
-  hasNext: boolean;
-  loadingMore: boolean;
+  loading: boolean;
   error: string | null;
+  pageIndex: number;
+  pageCount: number;
+  offset: number;
+  hasNext: boolean;
   onSelect: (search: ProspectSearchNode) => void;
-  onLoadMore: () => void;
-  onNew: () => void;
+  onPrev: () => void;
+  onNext: () => void;
 }) {
   return (
-    <section className={`card ${styles.historyStrip}`} aria-label="Search history">
-      <div className={styles.historyStripHead}>
+    <section className={`card ${styles.historyPanel}`} aria-label="Search history">
+      <div className={styles.panelHeader}>
         <div>
           <h2 className={styles.panelTitle}>Search history</h2>
           <p className={styles.panelSubtitle}>
             {total} {total === 1 ? "search" : "searches"}
           </p>
         </div>
-        <button type="button" className={styles.ghostButton} onClick={onNew}>
-          <Plus aria-hidden="true" />
-          <span>New search</span>
-        </button>
       </div>
       {error && <p className={styles.errorText}>{error}</p>}
-      <div className={styles.historyRail}>
-        {searches.map((search) => {
-          const active = search.id === selectedId;
-          return (
-            <button
-              key={search.id}
-              type="button"
-              className={`${styles.historyChip} ${active ? styles.historyChipActive : ""}`}
-              onClick={() => onSelect(search)}
-              aria-current={active ? "true" : undefined}
-            >
-              <span className={styles.historyChipTop}>
-                <span className={styles.historyChipName}>{search.company?.name ?? search.requestedCompany}</span>
-                <BadgePill badge={statusBadge(search.status)} />
-              </span>
-              <span className={styles.historyChipMeta}>
-                <span>
-                  <Users aria-hidden="true" /> {search.peopleCount}
-                </span>
-                <span>{formatDateTime(search.createdAt)}</span>
-              </span>
-            </button>
-          );
-        })}
-        {hasNext && (
-          <button type="button" className={styles.historyMore} onClick={onLoadMore} disabled={loadingMore}>
-            {loadingMore ? <LoaderCircle aria-hidden="true" className={styles.spin} /> : null}
-            <span>Load more</span>
-          </button>
+      <div className={styles.tableScroll}>
+        {loading ? (
+          <div className={styles.tableSkeleton}>
+            {Array.from({ length: 10 }).map((_, index) => (
+              <div key={index} className={styles.skeletonRow} />
+            ))}
+          </div>
+        ) : searches.length === 0 ? (
+          <EmptyState
+            icon={<Inbox aria-hidden="true" />}
+            title="No prospect searches yet"
+            body="Create a search to start discovering relevant people."
+            compact
+          />
+        ) : (
+          <div className={styles.historyTable} role="table" aria-label="Searches">
+            <div className={styles.historyHeadRow} role="row">
+              <span role="columnheader">Company</span>
+              <span role="columnheader">Requested roles</span>
+              <span role="columnheader">Location</span>
+              <span role="columnheader">People</span>
+              <span role="columnheader">Status</span>
+              <span role="columnheader">Created</span>
+              <span role="columnheader" aria-label="Actions" />
+            </div>
+            {searches.map((search) => {
+              const active = search.id === selectedId;
+              const roles = search.requestedTitles;
+              const location = search.requestedLocations[0] ?? null;
+              const domain = search.company?.officialWebsiteDomain ?? search.company?.officialDomain ?? null;
+              return (
+                <button
+                  key={search.id}
+                  type="button"
+                  className={`${styles.historyRow} ${active ? styles.historyRowActive : ""}`}
+                  onClick={() => onSelect(search)}
+                  aria-current={active ? "true" : undefined}
+                >
+                  <span className={styles.historyCompanyCell} data-label="Company">
+                    <span className={styles.historyCompanyName}>{search.company?.name ?? search.requestedCompany}</span>
+                    {domain && <span className={styles.historyCompanyDomain}>{domain}</span>}
+                  </span>
+                  <span className={styles.historyRolesCell} data-label="Roles">
+                    {roles.length === 0 ? (
+                      <span className={styles.historyMutedText}>—</span>
+                    ) : (
+                      <>
+                        {roles.slice(0, 2).map((role) => (
+                          <span key={role} className={styles.historyRoleTag} title={role}>
+                            {role}
+                          </span>
+                        ))}
+                        {roles.length > 2 && <span className={styles.historyRoleTag}>+{roles.length - 2} more</span>}
+                      </>
+                    )}
+                  </span>
+                  <span className={styles.historyLocationCell} data-label="Location" title={location ?? undefined}>
+                    {location ?? "Any location"}
+                  </span>
+                  <span className={styles.historyPeopleCell} data-label="People">
+                    {search.peopleCount}
+                  </span>
+                  <span data-label="Status">
+                    <BadgePill badge={statusBadge(search.status)} />
+                  </span>
+                  <span className={styles.historyCreatedCell} data-label="Created">
+                    {formatDateTime(search.createdAt)}
+                  </span>
+                  <span className={styles.historyViewCell} aria-hidden="true">
+                    <ChevronRight />
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         )}
+      </div>
+      <div className={styles.paginationRow}>
+        <span className={styles.peopleShowing}>
+          {formatShowingLabel({ offset, pageCount: searches.length, totalCount: total })}
+        </span>
+        <div className={styles.pager}>
+          <button
+            type="button"
+            className={styles.pagerButton}
+            onClick={onPrev}
+            disabled={pageIndex === 0 || loading}
+            aria-label="Previous page"
+            title="Previous page"
+          >
+            <ChevronLeft aria-hidden="true" />
+          </button>
+          <span className={styles.pageInfo}>{formatPageLabel({ pageIndex, pageCount })}</span>
+          <button
+            type="button"
+            className={styles.pagerButton}
+            onClick={onNext}
+            disabled={!hasNext || loading}
+            aria-label="Next page"
+            title="Next page"
+          >
+            <ChevronRight aria-hidden="true" />
+          </button>
+        </div>
       </div>
     </section>
   );

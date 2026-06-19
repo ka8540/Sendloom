@@ -1083,16 +1083,18 @@ users). It consumes the same `POST /api/graphql` endpoint from the client —
 reusing the global CSRF fetch patch, so no CSRF protection is bypassed — and lets
 you:
 
-- browse previous searches from a compact, full-width history strip and select a `READY` one,
-- open **New search** in a modal (it is never permanently open in the page),
+- browse previous searches in a full-width, **server-paginated history table** (10 per page) and select a `READY` one,
+- open **New search** in a modal (the single primary action; it is never permanently open in the page),
 - review compact summary cards (company, email format, people found, status) above a full-width people table,
 - filter people by role group, and copy individual inferred emails.
 - **Find with AI** — discover the email format with GPT-5.5 web search, paste a specific public source URL, or fix it manually; the card shows the email domain, pattern, confidence, evidence source, and a reason summary.
 - delete an owned company and its related searches.
 
-People results default to **20 per page** (never 5), with compact chevron
-(`‹` / `›`) pagination that shows `Showing 1–20 of N` and `Page X of Y` and
-preserves the selected role group. Every address is clearly labelled **inferred, not
+Both tables paginate **server-side at exactly 10 rows per page** with independent
+state (paging one never moves the other), using compact chevron (`‹` / `›`)
+controls that show `Showing 1–10 of N` and `Page X of Y`. The people table keeps
+its 10-per-page size for **every** role group, and the selected company stays put
+even when you page the history table. Every address is clearly labelled **inferred, not
 verified** (only a real `VERIFIED` status uses the green badge), and a persistent
 banner reinforces that generated emails are inferred from the selected email
 domain and pattern. The layout is a single responsive column that holds up with

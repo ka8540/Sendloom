@@ -248,11 +248,12 @@ describe("Prospect Finder product copy", () => {
 });
 
 describe("people pagination helpers", () => {
-  it("derives an exact page count from the known total (#8)", () => {
-    expect(resolvePageCount(24, 20)).toBe(2);
-    expect(resolvePageCount(20, 20)).toBe(1);
-    expect(resolvePageCount(21, 20)).toBe(2);
-    expect(resolvePageCount(0, 20)).toBe(1);
+  it("derives an exact page count from the known total at 10 per page (#8)", () => {
+    expect(resolvePageCount(24, 10)).toBe(3);
+    expect(resolvePageCount(10, 10)).toBe(1);
+    expect(resolvePageCount(11, 10)).toBe(2);
+    expect(resolvePageCount(100, 10)).toBe(10);
+    expect(resolvePageCount(0, 10)).toBe(1);
     expect(resolvePageCount(40, 0)).toBe(1);
   });
 
@@ -265,6 +266,17 @@ describe("people pagination helpers", () => {
 
   it("keeps the page index in range when the count lags behind", () => {
     expect(formatPageLabel({ pageIndex: 2, pageCount: 1 })).toBe("Page 3 of 3");
+  });
+
+  it("composes the 10-per-page range and page label for the toolbar", () => {
+    const total = 24;
+    const pageSize = 10;
+    const pageIndex = 0;
+    const pageCount = resolvePageCount(total, pageSize);
+    expect(formatShowingLabel({ offset: pageIndex * pageSize, pageCount: pageSize, totalCount: total })).toBe(
+      "Showing 1–10 of 24"
+    );
+    expect(formatPageLabel({ pageIndex, pageCount })).toBe("Page 1 of 3");
   });
 });
 

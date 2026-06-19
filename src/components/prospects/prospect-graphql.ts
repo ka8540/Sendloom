@@ -5,10 +5,11 @@
 // requests here only need to be same-origin POSTs with a JSON body — we never
 // read or attach the CSRF token by hand, and we never weaken it.
 //
-// The default page size for people is 20 (PEOPLE_PAGE_SIZE), never 5.
+// Both tables paginate server-side at exactly 10 rows per page so the page
+// scales to 100+ searches/people without loading everything into the DOM.
 
-export const PEOPLE_PAGE_SIZE = 20;
-export const SEARCHES_PAGE_SIZE = 20;
+export const PEOPLE_PAGE_SIZE = 10;
+export const SEARCHES_PAGE_SIZE = 10;
 
 export const GRAPHQL_ENDPOINT = "/api/graphql";
 
@@ -497,7 +498,7 @@ export const SET_COMPANY_EMAIL_INFERENCE_OVERRIDE_MUTATION = /* GraphQL */ `
 `;
 
 // ---------------------------------------------------------------------------
-// Variable builders — the people defaults MUST be 20, never 5.
+// Variable builders — both tables default to 10 rows per page.
 // ---------------------------------------------------------------------------
 
 export type PeopleQueryVariables = {
@@ -509,7 +510,7 @@ export type PeopleQueryVariables = {
 
 /**
  * Build the variables for the People query. `first` defaults to
- * PEOPLE_PAGE_SIZE (20). A null/"All people" category is sent as null so the
+ * PEOPLE_PAGE_SIZE (10). A null/"All people" category is sent as null so the
  * backend returns every category.
  */
 export function buildPeopleVariables(args: {

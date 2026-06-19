@@ -21,12 +21,12 @@ describe("prospect graphql helper", () => {
     vi.unstubAllGlobals();
   });
 
-  describe("people query defaults to 20, never 5", () => {
-    it("defaults `first` to 20 when not provided", () => {
+  describe("people query defaults to 10 per page", () => {
+    it("defaults `first` to 10 when not provided (#2)", () => {
       const vars = buildPeopleVariables({ companyId: "c1" });
-      expect(vars.first).toBe(20);
-      expect(vars.first).not.toBe(5);
-      expect(PEOPLE_PAGE_SIZE).toBe(20);
+      expect(vars.first).toBe(10);
+      expect(vars.first).not.toBe(20);
+      expect(PEOPLE_PAGE_SIZE).toBe(10);
     });
 
     it("sends a null category for the All-people view", () => {
@@ -39,8 +39,14 @@ describe("prospect graphql helper", () => {
       expect(vars.companyId).toBe("c1");
     });
 
-    it("keeps the 20 page size when a category filter is applied (#7)", () => {
-      expect(buildPeopleVariables({ companyId: "c1", category: "DATA_SCIENCE" }).first).toBe(20);
+    it("keeps the 10 page size when a category filter is applied (#7)", () => {
+      expect(buildPeopleVariables({ companyId: "c1", category: "DATA_SCIENCE" }).first).toBe(10);
+      expect(buildPeopleVariables({ companyId: "c1", category: "SOFTWARE_ENGINEERING" }).first).toBe(10);
+    });
+
+    it("never uses a page size of 20 for people on this page (#3)", () => {
+      expect(buildPeopleVariables({ companyId: "c1" }).first).not.toBe(20);
+      expect(PEOPLE_PAGE_SIZE).not.toBe(20);
     });
 
     it("honours an explicit page size and cursor", () => {
@@ -54,9 +60,13 @@ describe("prospect graphql helper", () => {
     });
   });
 
-  it("defaults searches page size to 20", () => {
-    expect(buildSearchesVariables().first).toBe(20);
-    expect(SEARCHES_PAGE_SIZE).toBe(20);
+  it("defaults the search-history page size to 10 (#1)", () => {
+    expect(buildSearchesVariables().first).toBe(10);
+    expect(SEARCHES_PAGE_SIZE).toBe(10);
+  });
+
+  it("passes a cursor through for server-side history pagination", () => {
+    expect(buildSearchesVariables({ after: "cursor-2" })).toEqual({ first: 10, after: "cursor-2" });
   });
 
   it("requests website and email domains separately", () => {
