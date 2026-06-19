@@ -50,6 +50,11 @@ export const typeDefs = /* GraphQL */ `
     UNAVAILABLE
   }
 
+  enum ProspectSelectionMode {
+    EXPLICIT
+    ALL_MATCHING
+  }
+
   type EmailPatternEvidence {
     pattern: String!
     emailDomain: String
@@ -189,6 +194,37 @@ export const typeDefs = /* GraphQL */ `
     maxResults: Int = 25
   }
 
+  input ProspectSelectionInput {
+    companyId: ID!
+    mode: ProspectSelectionMode!
+    selectedIds: [ID!]
+    excludedIds: [ID!]
+    positionCategory: PositionCategory
+  }
+
+  type ProspectSelectionReview {
+    selectedCount: Int!
+    exportableCount: Int!
+    unavailableEmailCount: Int!
+    suppressedCount: Int!
+    duplicateEmailCount: Int!
+  }
+
+  type ProspectExport {
+    id: ID!
+    fileName: String!
+    downloadUrl: String!
+    review: ProspectSelectionReview!
+  }
+
+  type ProspectImportResult {
+    importId: ID!
+    fileName: String!
+    rowCount: Int!
+    viewUrl: String!
+    review: ProspectSelectionReview!
+  }
+
   type Query {
     prospectSearch(id: ID!): ProspectSearch
     prospectSearches(first: Int = 20, after: String): ProspectSearchConnection!
@@ -220,5 +256,8 @@ export const typeDefs = /* GraphQL */ `
       confidence: ConfidenceLevel!
       reason: String
     ): Company!
+    reviewProspectSelection(input: ProspectSelectionInput!): ProspectSelectionReview!
+    prepareProspectExport(input: ProspectSelectionInput!): ProspectExport!
+    createProspectImport(input: ProspectSelectionInput!): ProspectImportResult!
   }
 `;

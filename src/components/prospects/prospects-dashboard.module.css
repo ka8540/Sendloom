@@ -159,6 +159,13 @@
   display: inline-flex;
 }
 
+.inlineAlertLink {
+  color: var(--link);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 0.18rem;
+}
+
 .inlineAlertError {
   border-color: color-mix(in srgb, #e5484d 35%, var(--line));
   background: color-mix(in srgb, #e5484d 10%, var(--surface));
@@ -452,12 +459,91 @@
   animation: prospect-rise 160ms ease;
 }
 
+.reviewCard {
+  max-width: 34rem;
+}
+
+.reviewGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.reviewGrid div {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--line);
+  background: var(--surface-soft);
+}
+
+.reviewGrid dt {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.reviewGrid dd {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 800;
+}
+
+.reviewNote {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.reviewLoading {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.reviewLoading svg {
+  width: 1rem;
+  height: 1rem;
+  color: var(--accent);
+}
+
 .modalActions {
   display: flex;
   justify-content: flex-end;
   gap: 0.65rem;
   flex-wrap: wrap;
   margin-top: 0.25rem;
+}
+
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.15rem;
+  height: 2.15rem;
+  flex: none;
+  border-radius: 0.6rem;
+  border: 1px solid var(--line);
+  background: var(--surface-strong);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.iconButton:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.iconButton svg {
+  width: 1rem;
+  height: 1rem;
 }
 
 @keyframes prospect-fade {
@@ -696,6 +782,7 @@
 .peopleSection {
   display: grid;
   gap: 1.1rem;
+  container-type: inline-size;
 }
 
 .categoryRail {
@@ -776,6 +863,56 @@
   flex-wrap: wrap;
 }
 
+.bulkToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.75rem 0.85rem;
+  border-radius: 0.8rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--line));
+  background: color-mix(in srgb, var(--accent-soft) 74%, var(--surface));
+}
+
+.bulkToolbar strong {
+  font-size: 0.92rem;
+}
+
+.bulkActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.selectAllBanner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.62rem 0.8rem;
+  border-radius: 0.7rem;
+  background: var(--surface-soft);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.selectAllBanner button {
+  border: 0;
+  background: transparent;
+  color: var(--link);
+  font: inherit;
+  font-weight: 700;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 0.16rem;
+}
+
 .filterField {
   display: inline-flex;
   align-items: center;
@@ -822,21 +959,26 @@
   scrollbar-width: thin;
 }
 
+.peopleTableShell {
+  max-width: 100%;
+  overflow: visible;
+}
+
 .table {
   display: flex;
   flex-direction: column;
-  /* Keep the 6 columns comfortable; the wrapper scrolls horizontally when the
-     available width (e.g. sidebar open on a laptop) is narrower than this,
-     instead of cramping the cells. Reset to 0 at the mobile card breakpoint. */
-  min-width: 44rem;
+  width: 100%;
+  min-width: 0;
 }
 
 .row {
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1.3fr) minmax(0, 1.1fr) minmax(0, 1.7fr) minmax(0, auto) 2.5rem;
-  gap: 1rem;
+  grid-template-columns:
+    2rem minmax(8.5rem, 1.25fr) minmax(7.5rem, 1.12fr) minmax(7.5rem, 1fr)
+    minmax(9.5rem, 1.2fr) minmax(7.5rem, 0.85fr) 2.35rem;
+  gap: clamp(0.45rem, 1vw, 0.85rem);
   align-items: center;
-  padding: 0.85rem 0;
+  padding: 0.85rem 0.2rem;
   border-bottom: 1px solid var(--line);
   min-width: 0;
 }
@@ -856,6 +998,20 @@
 
 .linkedinHead {
   text-align: right;
+}
+
+.cellSelect {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+}
+
+.selectionCheckbox {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--accent);
+  cursor: pointer;
 }
 
 .cellName {
@@ -885,13 +1041,14 @@
 }
 
 .cellLocation {
-  display: inline-flex;
-  align-items: center;
+  display: flex;
+  align-items: flex-start;
   gap: 0.35rem;
   min-width: 0;
   color: var(--muted);
   font-size: 0.9rem;
-  overflow: hidden;
+  line-height: 1.28;
+  overflow-wrap: anywhere;
 }
 
 .cellLocation svg {
@@ -955,6 +1112,7 @@
 }
 
 .cellStatus {
+  display: flex;
   min-width: 0;
 }
 
@@ -1161,6 +1319,16 @@
   padding: 0.5rem 0;
 }
 
+.skeletonCell {
+  display: block;
+  width: 100%;
+  height: 1.2rem;
+  border-radius: 0.45rem;
+  background: linear-gradient(90deg, var(--surface-soft) 25%, var(--surface-hover) 37%, var(--surface-soft) 63%);
+  background-size: 400% 100%;
+  animation: prospect-shimmer 1.4s ease infinite;
+}
+
 .skeletonRow {
   height: 2.75rem;
 }
@@ -1191,6 +1359,69 @@
 
 /* ---- Responsive --------------------------------------------------------- */
 
+@container (max-width: 980px) {
+  .row {
+    grid-template-columns:
+      2rem minmax(7.25rem, 1.2fr) minmax(6.75rem, 1fr) minmax(6.5rem, 0.9fr)
+      minmax(8.5rem, 1.1fr) minmax(6.5rem, 0.8fr) 2.25rem;
+    gap: 0.5rem;
+  }
+
+  .badge {
+    white-space: normal;
+    line-height: 1.15;
+  }
+
+  .emailText {
+    font-size: 0.82rem;
+  }
+}
+
+@container (max-width: 760px) {
+  .headRow {
+    display: none;
+  }
+
+  .row {
+    grid-template-columns: 2rem minmax(0, 1fr);
+    gap: 0.55rem 0.75rem;
+    align-items: start;
+    padding: 1rem 0.25rem;
+  }
+
+  .cellSelect {
+    grid-row: 1 / span 2;
+    justify-content: flex-start;
+    padding-top: 0.15rem;
+  }
+
+  .row [data-label]:not(.cellSelect)::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 700;
+    color: var(--muted);
+    margin-bottom: 0.2rem;
+  }
+
+  .cellTitle,
+  .personName,
+  .emailText {
+    white-space: normal;
+    overflow: visible;
+  }
+
+  .cellEmail {
+    flex-wrap: wrap;
+  }
+
+  .cellLink {
+    justify-content: flex-start;
+  }
+}
+
 @media (max-width: 640px) {
   .header {
     align-items: flex-start;
@@ -1217,6 +1448,10 @@
     grid-template-columns: 1fr;
     gap: 0.5rem;
     padding: 1rem 0.25rem;
+  }
+
+  .cellSelect {
+    justify-content: flex-start;
   }
 
   .row [data-label]::before,

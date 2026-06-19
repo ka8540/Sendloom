@@ -2,10 +2,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   COMPANY_DETAIL_QUERY,
+  CREATE_PROSPECT_IMPORT_MUTATION,
   DISCOVER_COMPANY_EMAIL_FORMAT_MUTATION,
   PEOPLE_PAGE_SIZE,
   PEOPLE_QUERY,
+  PREPARE_PROSPECT_EXPORT_MUTATION,
   PROSPECT_SEARCHES_QUERY,
+  REVIEW_PROSPECT_SELECTION_MUTATION,
   REFRESH_COMPANY_EMAIL_FORMAT_MUTATION,
   SEARCHES_PAGE_SIZE,
   DELETE_COMPANY_MUTATION,
@@ -83,6 +86,14 @@ describe("prospect graphql helper", () => {
     expect(REFRESH_COMPANY_EMAIL_FORMAT_MUTATION).toContain("refreshCompanyEmailFormat(companyId: $companyId");
     expect(REFRESH_COMPANY_EMAIL_FORMAT_MUTATION).toContain("sourceUrl: $sourceUrl");
     expect(SET_COMPANY_EMAIL_INFERENCE_OVERRIDE_MUTATION).toContain("setCompanyEmailInferenceOverride");
+  });
+
+  it("declares prospect selection review, Excel export, and Imports mutations", () => {
+    expect(REVIEW_PROSPECT_SELECTION_MUTATION).toContain("reviewProspectSelection(input: $input)");
+    expect(PREPARE_PROSPECT_EXPORT_MUTATION).toContain("prepareProspectExport(input: $input)");
+    expect(PREPARE_PROSPECT_EXPORT_MUTATION).toContain("downloadUrl");
+    expect(CREATE_PROSPECT_IMPORT_MUTATION).toContain("createProspectImport(input: $input)");
+    expect(CREATE_PROSPECT_IMPORT_MUTATION).toContain("viewUrl");
   });
 
   it("declares the AI web-search discovery mutation with a force flag and reason", () => {

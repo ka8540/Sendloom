@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import type { PersonNode, ProspectSearchNode } from "@/components/prospects/prospect-graphql";
@@ -11,18 +13,26 @@ import {
   PROSPECT_FINDER_UNAVAILABLE_BODY,
   PROSPECT_FINDER_UNAVAILABLE_TITLE,
   confidenceBadge,
+  buildProspectSelectionInput,
+  createEmptyProspectSelection,
   emailStatusBadge,
   filterPeopleByText,
   formatPageLabel,
   formatSearchError,
   formatShowingLabel,
   isEmailCopyable,
+  getPageSelectionState,
+  getProspectSelectionCount,
+  isProspectSelected,
   isVerifiedStatus,
   personLocation,
   resolvePageCount,
   resolveProspectPageState,
   resolveSelectedSearchView,
-  statusBadge
+  selectAllMatchingProspects,
+  statusBadge,
+  togglePageProspectSelection,
+  toggleProspectSelection
 } from "@/components/prospects/prospect-view";
 
 function person(overrides: Partial<PersonNode> = {}): PersonNode {
@@ -280,10 +290,74 @@ describe("people pagination helpers", () => {
   });
 });
 
+describe("prospect selection helpers", () => {
+  const scope = { companyId: "company_1", positionCategory: "SOFTWARE_ENGINEERING" as const };
+
+  it("row selection toggles individual IDs", () => {
+    const empty = createEmptyProspectSelection();
+    const selected = toggleProspectSelection(empty, "p1", scope);
+    expect(isProspectSelected(selected, "p1", scope)).toBe(true);
+    expect(getProspectSelectionCount(selected, 0)).toBe(1);
+
+    const cleared = toggleProspectSelection(selected, "p1", scope);
+    expect(isProspectSelected(cleared, "p1", scope)).toBe(false);
+    expect(getProspectSelectionCount(cleared, 0)).toBe(0);
+  });
+
+  it("header checkbox selects only the visible page IDs and supports indeterminate state", () => {
+    const pageIds = Array.from({ length: 10 }, (_, index) => `p${index + 1}`);
+    const selectedPage = togglePageProspectSelection(createEmptyProspectSelection(), pageIds, scope);
+    expect(getPageSelectionState(selectedPage, pageIds, scope)).toBe("checked");
+    expect(getProspectSelectionCount(selectedPage, 0)).toBe(10);
+
+    const oneCleared = toggleProspectSelection(selectedPage, "p1", scope);
+    expect(getPageSelectionState(oneCleared, pageIds, scope)).toBe("indeterminate");
+    expect(isProspectSelected(oneCleared, "p2", scope)).toBe(true);
+  });
+
+  it("all-matching selection uses the active category and excludes IDs without storing every person", () => {
+    const allMatching = selectAllMatchingProspects(scope);
+    expect(getProspectSelectionCount(allMatching, 21)).toBe(21);
+    expect(buildProspectSelectionInput(allMatching, "company_1")).toMatchObject({
+      companyId: "company_1",
+      mode: "ALL_MATCHING",
+      positionCategory: "SOFTWARE_ENGINEERING"
+    });
+
+    const excluded = toggleProspectSelection(allMatching, "p5", scope);
+    expect(isProspectSelected(excluded, "p5", scope)).toBe(false);
+    expect(getProspectSelectionCount(excluded, 21)).toBe(20);
+  });
+
+  it("company changes clear selection by returning a fresh explicit state", () => {
+    const selected = toggleProspectSelection(createEmptyProspectSelection(), "p1", scope);
+    expect(getProspectSelectionCount(selected, 0)).toBe(1);
+    expect(getProspectSelectionCount(createEmptyProspectSelection(), 0)).toBe(0);
+  });
+});
+
 describe("external links are hardened (#12)", () => {
   it("opens LinkedIn in a new tab without leaking the opener", () => {
     expect(EXTERNAL_LINK_TARGET).toBe("_blank");
     expect(EXTERNAL_LINK_REL).toContain("noreferrer");
     expect(EXTERNAL_LINK_REL).toContain("noopener");
+  });
+});
+
+describe("prospect dashboard layout contracts", () => {
+  const dashboardSource = readFileSync("src/components/prospects/prospects-dashboard.tsx", "utf8");
+  const dashboardCss = readFileSync("src/components/prospects/prospects-dashboard.module.css", "utf8");
+
+  it("uses a natural-flow People table shell, not the horizontal history scroller", () => {
+    expect(dashboardSource).toContain("styles.peopleTableShell");
+    expect(dashboardSource).not.toContain("<div className={styles.tableScroll}>\n                    <PeopleTable");
+    expect(dashboardCss).toMatch(/\.peopleTableShell\s*\{[^}]*overflow:\s*visible/s);
+  });
+
+  it("renders compact chevron pagination without Previous or Next text buttons", () => {
+    expect(dashboardSource).toContain("<ChevronLeft");
+    expect(dashboardSource).toContain("<ChevronRight");
+    expect(dashboardSource).not.toContain(">Previous<");
+    expect(dashboardSource).not.toContain(">Next<");
   });
 });

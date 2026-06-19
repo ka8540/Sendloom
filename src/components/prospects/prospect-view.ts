@@ -6,6 +6,8 @@ import type {
   ConfidenceLevel,
   EmailCandidateStatus,
   PersonNode,
+  PositionCategory,
+  ProspectSelectionInput,
   ProspectSearchNode,
   ProspectSearchStatus
 } from "@/components/prospects/prospect-graphql";
@@ -256,4 +258,173 @@ export function filterPeopleByText(people: PersonNode[], query: string): PersonN
       .toLowerCase();
     return haystack.includes(trimmed);
   });
+}
+
+// ---------------------------------------------------------------------------
+// Selection helpers.
+// ---------------------------------------------------------------------------
+
+export type ExplicitProspectSelection = {
+  mode: "explicit";
+  selectedIds: Set<string>;
+};
+
+export type AllMatchingProspectSelection = {
+  mode: "allMatching";
+  companyId: string;
+  positionCategory: PositionCategory | null;
+  excludedIds: Set<string>;
+};
+
+export type ProspectSelectionState = ExplicitProspectSelection | AllMatchingProspectSelection;
+export type PageSelectionState = "checked" | "unchecked" | "indeterminate";
+
+export function createEmptyProspectSelection(): ProspectSelectionState {
+  return { mode: "explicit", selectedIds: new Set() };
+}
+
+export function isProspectSelectionEmpty(selection: ProspectSelectionState): boolean {
+  return selection.mode === "explicit" && selection.selectedIds.size === 0;
+}
+
+export function scopeMatchesSelection(
+  selection: ProspectSelectionState,
+  scope: { companyId: string; positionCategory: PositionCategory | null }
+): boolean {
+  if (selection.mode === "explicit") {
+    return true;
+  }
+  return (
+    selection.companyId === scope.companyId &&
+    (selection.positionCategory === null || selection.positionCategory === scope.positionCategory)
+  );
+}
+
+export function isProspectSelected(
+  selection: ProspectSelectionState,
+  personId: string,
+  scope: { companyId: string; positionCategory: PositionCategory | null }
+): boolean {
+  if (selection.mode === "explicit") {
+    return selection.selectedIds.has(personId);
+  }
+  return scopeMatchesSelection(selection, scope) && !selection.excludedIds.has(personId);
+}
+
+export function getProspectSelectionCount(selection: ProspectSelectionState, allMatchingTotal: number): number {
+  if (selection.mode === "explicit") {
+    return selection.selectedIds.size;
+  }
+  return Math.max(0, allMatchingTotal - selection.excludedIds.size);
+}
+
+export function toggleProspectSelection(
+  selection: ProspectSelectionState,
+  personId: string,
+  scope: { companyId: string; positionCategory: PositionCategory | null }
+): ProspectSelectionState {
+  if (selection.mode === "allMatching" && scopeMatchesSelection(selection, scope)) {
+    const excludedIds = new Set(selection.excludedIds);
+    if (excludedIds.has(personId)) {
+      excludedIds.delete(personId);
+    } else {
+      excludedIds.add(personId);
+    }
+    return { ...selection, excludedIds };
+  }
+
+  const selectedIds = selection.mode === "explicit" ? new Set(selection.selectedIds) : new Set<string>();
+  if (selectedIds.has(personId)) {
+    selectedIds.delete(personId);
+  } else {
+    selectedIds.add(personId);
+  }
+  return { mode: "explicit", selectedIds };
+}
+
+export function getPageSelectionState(
+  selection: ProspectSelectionState,
+  pageIds: string[],
+  scope: { companyId: string; positionCategory: PositionCategory | null }
+): PageSelectionState {
+  if (pageIds.length === 0) {
+    return "unchecked";
+  }
+  const selectedCount = pageIds.filter((id) => isProspectSelected(selection, id, scope)).length;
+  if (selectedCount === 0) {
+    return "unchecked";
+  }
+  return selectedCount === pageIds.length ? "checked" : "indeterminate";
+}
+
+export function togglePageProspectSelection(
+  selection: ProspectSelectionState,
+  pageIds: string[],
+  scope: { companyId: string; positionCategory: PositionCategory | null }
+): ProspectSelectionState {
+  if (pageIds.length === 0) {
+    return selection;
+  }
+
+  const pageState = getPageSelectionState(selection, pageIds, scope);
+  const shouldSelect = pageState !== "checked";
+
+  if (selection.mode === "allMatching" && scopeMatchesSelection(selection, scope)) {
+    const excludedIds = new Set(selection.excludedIds);
+    for (const id of pageIds) {
+      if (shouldSelect) {
+        excludedIds.delete(id);
+      } else {
+        excludedIds.add(id);
+      }
+    }
+    return { ...selection, excludedIds };
+  }
+
+  const selectedIds = selection.mode === "explicit" ? new Set(selection.selectedIds) : new Set<string>();
+  for (const id of pageIds) {
+    if (shouldSelect) {
+      selectedIds.add(id);
+    } else {
+      selectedIds.delete(id);
+    }
+  }
+  return { mode: "explicit", selectedIds };
+}
+
+export function selectAllMatchingProspects(scope: {
+  companyId: string;
+  positionCategory: PositionCategory | null;
+}): ProspectSelectionState {
+  return { mode: "allMatching", companyId: scope.companyId, positionCategory: scope.positionCategory, excludedIds: new Set() };
+}
+
+export function buildProspectSelectionInput(
+  selection: ProspectSelectionState,
+  companyId: string
+): ProspectSelectionInput | null {
+  if (selection.mode === "explicit") {
+    if (selection.selectedIds.size === 0) {
+      return null;
+    }
+    return {
+      companyId,
+      mode: "EXPLICIT",
+      selectedIds: Array.from(selection.selectedIds),
+      excludedIds: [],
+      positionCategory: null
+    };
+  }
+
+  if (selection.companyId !== companyId) {
+    return null;
+  }
+
+  return {
+    companyId,
+    mode: "ALL_MATCHING",
+    selectedIds: [],
+    excludedIds: Array.from(selection.excludedIds),
+    positionCategory: selection.positionCategory
+  };
 }

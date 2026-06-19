@@ -53,6 +53,7 @@ export type EmailCandidateStatus =
   | "INVALID";
 
 export type ConfidenceLevel = "HIGH" | "MEDIUM" | "LOW" | "UNAVAILABLE";
+export type ProspectSelectionMode = "EXPLICIT" | "ALL_MATCHING";
 
 // ---------------------------------------------------------------------------
 // Node shapes (only the fields this page selects).
@@ -165,6 +166,37 @@ export type Connection<T> = {
   edges: Array<{ cursor: string; node: T }>;
   pageInfo: PageInfo;
   totalCount: number;
+};
+
+export type ProspectSelectionInput = {
+  companyId: string;
+  mode: ProspectSelectionMode;
+  selectedIds?: string[] | null;
+  excludedIds?: string[] | null;
+  positionCategory?: PositionCategory | null;
+};
+
+export type ProspectSelectionReview = {
+  selectedCount: number;
+  exportableCount: number;
+  unavailableEmailCount: number;
+  suppressedCount: number;
+  duplicateEmailCount: number;
+};
+
+export type PreparedProspectExport = {
+  id: string;
+  fileName: string;
+  downloadUrl: string;
+  review: ProspectSelectionReview;
+};
+
+export type ProspectImportResult = {
+  importId: string;
+  fileName: string;
+  rowCount: number;
+  viewUrl: string;
+  review: ProspectSelectionReview;
 };
 
 // ---------------------------------------------------------------------------
@@ -492,6 +524,53 @@ export const SET_COMPANY_EMAIL_INFERENCE_OVERRIDE_MUTATION = /* GraphQL */ `
         displayName
         rawTitles
         peopleCount
+      }
+    }
+  }
+`;
+
+export const REVIEW_PROSPECT_SELECTION_MUTATION = /* GraphQL */ `
+  mutation ReviewProspectSelection($input: ProspectSelectionInput!) {
+    reviewProspectSelection(input: $input) {
+      selectedCount
+      exportableCount
+      unavailableEmailCount
+      suppressedCount
+      duplicateEmailCount
+    }
+  }
+`;
+
+export const PREPARE_PROSPECT_EXPORT_MUTATION = /* GraphQL */ `
+  mutation PrepareProspectExport($input: ProspectSelectionInput!) {
+    prepareProspectExport(input: $input) {
+      id
+      fileName
+      downloadUrl
+      review {
+        selectedCount
+        exportableCount
+        unavailableEmailCount
+        suppressedCount
+        duplicateEmailCount
+      }
+    }
+  }
+`;
+
+export const CREATE_PROSPECT_IMPORT_MUTATION = /* GraphQL */ `
+  mutation CreateProspectImport($input: ProspectSelectionInput!) {
+    createProspectImport(input: $input) {
+      importId
+      fileName
+      rowCount
+      viewUrl
+      review {
+        selectedCount
+        exportableCount
+        unavailableEmailCount
+        suppressedCount
+        duplicateEmailCount
       }
     }
   }

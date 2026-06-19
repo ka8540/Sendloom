@@ -10,7 +10,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Copy,
+  Download,
   ExternalLink,
+  FileSpreadsheet,
   Inbox,
   LoaderCircle,
   MapPin,
@@ -26,13 +28,16 @@ import {
 import {
   CANCEL_SEARCH_MUTATION,
   COMPANY_DETAIL_QUERY,
+  CREATE_PROSPECT_IMPORT_MUTATION,
   CREATE_SEARCH_MUTATION,
   DELETE_COMPANY_MUTATION,
   DISCOVER_COMPANY_EMAIL_FORMAT_MUTATION,
   PEOPLE_PAGE_SIZE,
   PEOPLE_QUERY,
+  PREPARE_PROSPECT_EXPORT_MUTATION,
   PROCESS_SEARCH_MUTATION,
   PROSPECT_SEARCHES_QUERY,
+  REVIEW_PROSPECT_SELECTION_MUTATION,
   REFRESH_COMPANY_EMAIL_FORMAT_MUTATION,
   SEARCHES_PAGE_SIZE,
   SET_COMPANY_EMAIL_INFERENCE_OVERRIDE_MUTATION,
@@ -44,6 +49,10 @@ import {
   type Connection,
   type PersonNode,
   type PositionCategory,
+  type PreparedProspectExport,
+  type ProspectImportResult,
+  type ProspectSelectionInput,
+  type ProspectSelectionReview,
   type ProspectSearchNode
 } from "@/components/prospects/prospect-graphql";
 import {
@@ -58,6 +67,8 @@ import {
   type Badge,
   type BadgeTone,
   confidenceBadge,
+  buildProspectSelectionInput,
+  createEmptyProspectSelection,
   emailStatusBadge,
   filterPeopleByText,
   formatDateTime,
@@ -65,11 +76,19 @@ import {
   formatSearchError,
   formatShowingLabel,
   isEmailCopyable,
+  getPageSelectionState,
+  getProspectSelectionCount,
+  isProspectSelected,
   personLocation,
   resolvePageCount,
   resolveProspectPageState,
   resolveSelectedSearchView,
-  statusBadge
+  selectAllMatchingProspects,
+  statusBadge,
+  togglePageProspectSelection,
+  toggleProspectSelection,
+  type PageSelectionState,
+  type ProspectSelectionState
 } from "@/components/prospects/prospect-view";
 import styles from "@/components/prospects/prospects-dashboard.module.css";
 
@@ -96,6 +115,14 @@ type CreateForm = {
   locations: string;
   maxResults: string;
 };
+
+type ActionNotice = {
+  message: string;
+  href?: string;
+  label?: string;
+};
+
+type ReviewIntent = "download" | "import";
 
 const EMPTY_FORM: CreateForm = { companyName: "", jobTitles: "", locations: "", maxResults: "25" };
 const EMAIL_PATTERN_OPTIONS = [
@@ -149,6 +176,14 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
 
   const [peopleFilter, setPeopleFilter] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [selection, setSelection] = useState<ProspectSelectionState>(() => createEmptyProspectSelection());
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewIntent, setReviewIntent] = useState<ReviewIntent>("download");
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [review, setReview] = useState<ProspectSelectionReview | null>(null);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [preparingExport, setPreparingExport] = useState(false);
+  const [creatingImport, setCreatingImport] = useState(false);
 
   const [showNewSearch, setShowNewSearch] = useState(false);
   const [form, setForm] = useState<CreateForm>(EMPTY_FORM);
@@ -163,7 +198,7 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
   const [manualEmailPattern, setManualEmailPattern] = useState("first.last");
   const [manualConfidence, setManualConfidence] = useState<ConfidenceLevel>("HIGH");
   const [actionError, setActionError] = useState<string | null>(null);
-  const [actionNotice, setActionNotice] = useState<string | null>(null);
+  const [actionNotice, setActionNotice] = useState<ActionNotice | null>(null);
 
   const peopleReq = useRef(0);
   const companyReq = useRef(0);
@@ -244,6 +279,9 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
       setManualEmailDomain("");
       setManualEmailPattern("first.last");
       setManualConfidence("HIGH");
+      setSelection(createEmptyProspectSelection());
+      setReview(null);
+      setReviewError(null);
       resetPeopleState();
       if (search.status === "READY" && search.company) {
         void loadCompany(search.company.id);
@@ -431,7 +469,7 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
       const newId = result.data.createProspectSearch.id;
       setForm(EMPTY_FORM);
       setShowNewSearch(false);
-      setActionNotice("Draft search created. Process it to fetch people.");
+      setActionNotice({ message: "Draft search created. Process it to fetch people." });
       // A new draft is the most recent search, so jump history back to page 1
       // and select it.
       historyAfterCursors.current = [null];
@@ -516,8 +554,11 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
       setSelectedSearch(null);
       setCompany(null);
       setActiveCategory(null);
+      setSelection(createEmptyProspectSelection());
+      setReview(null);
+      setReviewError(null);
       resetPeopleState();
-      setActionNotice("Company deleted.");
+      setActionNotice({ message: "Company deleted." });
       historyAfterCursors.current = [null];
       await loadSearches({ pageIndex: 0, after: null, autoSelect: true });
     },
@@ -553,11 +594,12 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
         return;
       }
       await reloadCompanyPeople(result.data.refreshCompanyEmailFormat);
-      setActionNotice(
-        result.data.refreshCompanyEmailFormat.emailDomain && result.data.refreshCompanyEmailFormat.emailPattern
-          ? "Email format refreshed from public evidence."
-          : "No evidence-backed email format found yet."
-      );
+      setActionNotice({
+        message:
+          result.data.refreshCompanyEmailFormat.emailDomain && result.data.refreshCompanyEmailFormat.emailPattern
+            ? "Email format refreshed from public evidence."
+            : "No evidence-backed email format found yet."
+      });
     },
     [reloadCompanyPeople]
   );
@@ -582,11 +624,12 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
         return;
       }
       await reloadCompanyPeople(result.data.discoverCompanyEmailFormat);
-      setActionNotice(
-        result.data.discoverCompanyEmailFormat.emailDomain && result.data.discoverCompanyEmailFormat.emailPattern
-          ? "Email format found with AI web search."
-          : "No public email-format evidence found yet. Paste a source URL or set it manually."
-      );
+      setActionNotice({
+        message:
+          result.data.discoverCompanyEmailFormat.emailDomain && result.data.discoverCompanyEmailFormat.emailPattern
+            ? "Email format found with AI web search."
+            : "No public email-format evidence found yet. Paste a source URL or set it manually."
+      });
     },
     [reloadCompanyPeople]
   );
@@ -616,7 +659,7 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
         return;
       }
       await reloadCompanyPeople(result.data.setCompanyEmailInferenceOverride);
-      setActionNotice("Manual email format applied.");
+      setActionNotice({ message: "Manual email format applied." });
     },
     [manualConfidence, manualEmailDomain, manualEmailPattern, reloadCompanyPeople]
   );
@@ -630,6 +673,161 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
   const peoplePageCount = resolvePageCount(peopleTotal, PEOPLE_PAGE_SIZE);
   const historyOffset = historyPageIndex * SEARCHES_PAGE_SIZE;
   const historyPageCount = resolvePageCount(searchesTotal, SEARCHES_PAGE_SIZE);
+  const selectionScope = useMemo(
+    () => ({ companyId: company?.id ?? "", positionCategory: activeCategory }),
+    [activeCategory, company?.id]
+  );
+  const selectionScopeTotal = useMemo(() => {
+    if (!company || selection.mode !== "allMatching" || selection.companyId !== company.id) {
+      return 0;
+    }
+    if (!selection.positionCategory) {
+      return company.peopleCount;
+    }
+    return company.positions.find((position) => position.category === selection.positionCategory)?.peopleCount ?? 0;
+  }, [company, selection]);
+  const selectedCount = getProspectSelectionCount(selection, selectionScopeTotal);
+  const selectedPageIds = useMemo(() => visiblePeople.map((person) => person.id), [visiblePeople]);
+  const pageSelectionState = getPageSelectionState(selection, selectedPageIds, selectionScope);
+  const selectedPageCount = selectedPageIds.filter((id) => isProspectSelected(selection, id, selectionScope)).length;
+  const canSelectAllMatching = Boolean(
+    company &&
+      selection.mode !== "allMatching" &&
+      peopleTotal > selectedPageIds.length &&
+      selectedPageIds.length > 0 &&
+      pageSelectionState === "checked"
+  );
+
+  const buildCurrentSelectionInput = useCallback((): ProspectSelectionInput | null => {
+    if (!company) {
+      return null;
+    }
+    return buildProspectSelectionInput(selection, company.id);
+  }, [company, selection]);
+
+  const clearSelection = useCallback(() => {
+    setSelection(createEmptyProspectSelection());
+    setReview(null);
+    setReviewError(null);
+  }, []);
+
+  const handleTogglePersonSelection = useCallback(
+    (personId: string) => {
+      setSelection((current) => toggleProspectSelection(current, personId, selectionScope));
+    },
+    [selectionScope]
+  );
+
+  const handleTogglePageSelection = useCallback(() => {
+    setSelection((current) => togglePageProspectSelection(current, selectedPageIds, selectionScope));
+  }, [selectedPageIds, selectionScope]);
+
+  const handleSelectAllMatching = useCallback(() => {
+    if (!company) {
+      return;
+    }
+    setSelection(selectAllMatchingProspects({ companyId: company.id, positionCategory: activeCategory }));
+  }, [activeCategory, company]);
+
+  const openReviewDialog = useCallback(
+    async (intent: ReviewIntent) => {
+      const input = buildCurrentSelectionInput();
+      if (!input) {
+        setActionError("Select at least one prospect first.");
+        return;
+      }
+      setReviewIntent(intent);
+      setReviewOpen(true);
+      setReviewLoading(true);
+      setReview(null);
+      setReviewError(null);
+      const result = await prospectGraphql<{ reviewProspectSelection: ProspectSelectionReview }>(
+        REVIEW_PROSPECT_SELECTION_MUTATION,
+        { input }
+      );
+      setReviewLoading(false);
+      if (result.disabled) {
+        setDisabled(true);
+        setReviewOpen(false);
+        return;
+      }
+      if (result.error || !result.data) {
+        setReviewError(result.error ?? "Could not review the selected prospects.");
+        return;
+      }
+      setReview(result.data.reviewProspectSelection);
+    },
+    [buildCurrentSelectionInput]
+  );
+
+  const triggerDownload = useCallback((downloadUrl: string, fileName: string) => {
+    const link = document.createElement("a");
+    link.href = downloadUrl;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }, []);
+
+  const handleDownloadSelected = useCallback(async () => {
+    const input = buildCurrentSelectionInput();
+    if (!input || preparingExport || creatingImport) {
+      return;
+    }
+    setPreparingExport(true);
+    setReviewError(null);
+    const result = await prospectGraphql<{ prepareProspectExport: PreparedProspectExport }>(
+      PREPARE_PROSPECT_EXPORT_MUTATION,
+      { input }
+    );
+    setPreparingExport(false);
+    if (result.disabled) {
+      setDisabled(true);
+      setReviewOpen(false);
+      return;
+    }
+    if (result.error || !result.data) {
+      setReviewError(result.error ?? "Could not prepare the Excel file.");
+      return;
+    }
+    const exportResult = result.data.prepareProspectExport;
+    setReview(exportResult.review);
+    setReviewOpen(false);
+    triggerDownload(exportResult.downloadUrl, exportResult.fileName);
+    setActionNotice({ message: `${exportResult.review.exportableCount} prospects are downloading as an Excel file.` });
+  }, [buildCurrentSelectionInput, creatingImport, preparingExport, triggerDownload]);
+
+  const handleCreateImport = useCallback(async () => {
+    const input = buildCurrentSelectionInput();
+    if (!input || preparingExport || creatingImport) {
+      return;
+    }
+    setCreatingImport(true);
+    setReviewError(null);
+    const result = await prospectGraphql<{ createProspectImport: ProspectImportResult }>(
+      CREATE_PROSPECT_IMPORT_MUTATION,
+      { input }
+    );
+    setCreatingImport(false);
+    if (result.disabled) {
+      setDisabled(true);
+      setReviewOpen(false);
+      return;
+    }
+    if (result.error || !result.data) {
+      setReviewError(result.error ?? "Could not create the import.");
+      return;
+    }
+    const importResult = result.data.createProspectImport;
+    setReview(importResult.review);
+    setReviewOpen(false);
+    clearSelection();
+    setActionNotice({
+      message: `${importResult.review.exportableCount} prospects were added to Imports.`,
+      href: "/imports",
+      label: "View import"
+    });
+  }, [buildCurrentSelectionInput, clearSelection, creatingImport, preparingExport]);
 
   // ---- Render -------------------------------------------------------------
 
@@ -675,7 +873,17 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
       {actionNotice && (
         <div className={styles.inlineAlert} role="status">
           <Sparkles aria-hidden="true" />
-          <span>{actionNotice}</span>
+          <span>
+            {actionNotice.message}
+            {actionNotice.href && actionNotice.label ? (
+              <>
+                {" "}
+                <a href={actionNotice.href} className={styles.inlineAlertLink}>
+                  {actionNotice.label}
+                </a>
+              </>
+            ) : null}
+          </span>
           <button type="button" onClick={() => setActionNotice(null)} aria-label="Dismiss">
             <X aria-hidden="true" />
           </button>
@@ -816,12 +1024,41 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
                     </div>
                   </div>
 
-                  <div className={styles.tableScroll}>
+                  {selectedCount > 0 && (
+                    <BulkSelectionToolbar
+                      selectedCount={selectedCount}
+                      preparingExport={preparingExport}
+                      creatingImport={creatingImport}
+                      onDownload={() => openReviewDialog("download")}
+                      onImport={() => openReviewDialog("import")}
+                      onClear={clearSelection}
+                    />
+                  )}
+
+                  {canSelectAllMatching && (
+                    <SelectAllMatchingBanner
+                      pageCount={selectedPageCount}
+                      totalCount={peopleTotal}
+                      categoryName={
+                        activeCategory
+                          ? company.positions.find((position) => position.category === activeCategory)?.displayName ?? "this role group"
+                          : null
+                      }
+                      onSelectAll={handleSelectAllMatching}
+                    />
+                  )}
+
+                  <div className={styles.peopleTableShell}>
                     <PeopleTable
                       people={visiblePeople}
                       loading={peopleLoading}
                       error={peopleError}
                       copiedId={copiedId}
+                      pageSelectionState={pageSelectionState}
+                      selectionScope={selectionScope}
+                      selection={selection}
+                      onTogglePage={handleTogglePageSelection}
+                      onTogglePerson={handleTogglePersonSelection}
                       onCopy={handleCopyEmail}
                     />
                   </div>
@@ -870,6 +1107,22 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
         onChange={setForm}
         onSubmit={handleCreate}
         onClose={() => setShowNewSearch(false)}
+      />
+      <ProspectReviewDialog
+        open={reviewOpen}
+        intent={reviewIntent}
+        review={review}
+        loading={reviewLoading}
+        error={reviewError}
+        preparingExport={preparingExport}
+        creatingImport={creatingImport}
+        onClose={() => {
+          if (!preparingExport && !creatingImport) {
+            setReviewOpen(false);
+          }
+        }}
+        onDownload={handleDownloadSelected}
+        onImport={handleCreateImport}
       />
     </div>
   );
@@ -1264,24 +1517,146 @@ function StatusCard({
   );
 }
 
+function SelectionCheckbox({
+  checked,
+  indeterminate = false,
+  disabled = false,
+  label,
+  onChange
+}: {
+  checked: boolean;
+  indeterminate?: boolean;
+  disabled?: boolean;
+  label: string;
+  onChange: () => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (ref.current) {
+      ref.current.indeterminate = indeterminate;
+    }
+  }, [indeterminate]);
+
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      className={styles.selectionCheckbox}
+      checked={checked}
+      disabled={disabled}
+      aria-label={label}
+      onChange={onChange}
+    />
+  );
+}
+
+function BulkSelectionToolbar({
+  selectedCount,
+  preparingExport,
+  creatingImport,
+  onDownload,
+  onImport,
+  onClear
+}: {
+  selectedCount: number;
+  preparingExport: boolean;
+  creatingImport: boolean;
+  onDownload: () => void;
+  onImport: () => void;
+  onClear: () => void;
+}) {
+  const busy = preparingExport || creatingImport;
+  return (
+    <div className={styles.bulkToolbar}>
+      <strong>{selectedCount} selected</strong>
+      <div className={styles.bulkActions}>
+        <button type="button" className={styles.secondaryButton} onClick={onDownload} disabled={busy}>
+          <Download aria-hidden="true" />
+          <span>Download Excel</span>
+        </button>
+        <button type="button" className={styles.secondaryButton} onClick={onImport} disabled={busy}>
+          <FileSpreadsheet aria-hidden="true" />
+          <span>Add to Imports</span>
+        </button>
+        <button type="button" className={styles.ghostButton} onClick={onClear} disabled={busy}>
+          Clear selection
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function SelectAllMatchingBanner({
+  pageCount,
+  totalCount,
+  categoryName,
+  onSelectAll
+}: {
+  pageCount: number;
+  totalCount: number;
+  categoryName: string | null;
+  onSelectAll: () => void;
+}) {
+  return (
+    <div className={styles.selectAllBanner} role="status">
+      <span>All {pageCount} people on this page are selected.</span>
+      <button type="button" onClick={onSelectAll}>
+        {categoryName
+          ? `Select all ${totalCount} ${categoryName} prospects.`
+          : `Select all ${totalCount} people in this search.`}
+      </button>
+    </div>
+  );
+}
+
 function PeopleTable({
   people,
   loading,
   error,
   copiedId,
+  pageSelectionState,
+  selectionScope,
+  selection,
+  onTogglePage,
+  onTogglePerson,
   onCopy
 }: {
   people: PersonNode[];
   loading: boolean;
   error: string | null;
   copiedId: string | null;
+  pageSelectionState: PageSelectionState;
+  selectionScope: { companyId: string; positionCategory: PositionCategory | null };
+  selection: ProspectSelectionState;
+  onTogglePage: () => void;
+  onTogglePerson: (personId: string) => void;
   onCopy: (person: PersonNode) => void;
 }) {
   if (loading) {
     return (
-      <div className={styles.tableSkeleton}>
-        {Array.from({ length: 6 }).map((_, index) => (
-          <div key={index} className={styles.skeletonRow} />
+      <div className={styles.table} role="table" aria-label="People">
+        <div className={`${styles.row} ${styles.headRow}`} role="row">
+          <span role="columnheader" aria-label="Select page" />
+          <span role="columnheader">Person</span>
+          <span role="columnheader">Role</span>
+          <span role="columnheader">Location</span>
+          <span role="columnheader">Inferred email</span>
+          <span role="columnheader">Confidence</span>
+          <span role="columnheader" className={styles.linkedinHead}>
+            LinkedIn
+          </span>
+        </div>
+        {Array.from({ length: 10 }).map((_, index) => (
+          <div key={index} className={styles.row} role="row" aria-hidden="true">
+            <span className={styles.skeletonCell} />
+            <span className={styles.skeletonCell} />
+            <span className={styles.skeletonCell} />
+            <span className={styles.skeletonCell} />
+            <span className={styles.skeletonCell} />
+            <span className={styles.skeletonCell} />
+            <span className={styles.skeletonCell} />
+          </div>
         ))}
       </div>
     );
@@ -1303,11 +1678,20 @@ function PeopleTable({
   return (
     <div className={styles.table} role="table" aria-label="People">
       <div className={`${styles.row} ${styles.headRow}`} role="row">
-        <span role="columnheader">Name</span>
-        <span role="columnheader">Title</span>
+        <span role="columnheader" className={styles.cellSelect}>
+          <SelectionCheckbox
+            checked={pageSelectionState === "checked"}
+            indeterminate={pageSelectionState === "indeterminate"}
+            disabled={people.length === 0}
+            label="Select people on this page"
+            onChange={onTogglePage}
+          />
+        </span>
+        <span role="columnheader">Person</span>
+        <span role="columnheader">Role</span>
         <span role="columnheader">Location</span>
         <span role="columnheader">Inferred email</span>
-        <span role="columnheader">Status</span>
+        <span role="columnheader">Confidence</span>
         <span role="columnheader" className={styles.linkedinHead}>
           LinkedIn
         </span>
@@ -1316,13 +1700,21 @@ function PeopleTable({
         const badge = emailStatusBadge(person.emailStatus);
         const copyable = isEmailCopyable(person);
         const copied = copiedId === person.id;
+        const selected = isProspectSelected(selection, person.id, selectionScope);
         return (
           <div className={styles.row} role="row" key={person.id}>
-            <span className={styles.cellName} role="cell" data-label="Name">
+            <span className={styles.cellSelect} role="cell" data-label="Select">
+              <SelectionCheckbox
+                checked={selected}
+                label={`Select ${person.fullName}`}
+                onChange={() => onTogglePerson(person.id)}
+              />
+            </span>
+            <span className={styles.cellName} role="cell" data-label="Person">
               <span className={styles.personName}>{person.fullName}</span>
               <span className={styles.personConfidence}>{confidenceBadge(person.emailConfidence).label} confidence</span>
             </span>
-            <span className={styles.cellTitle} role="cell" data-label="Title" title={person.currentTitle ?? undefined}>
+            <span className={styles.cellTitle} role="cell" data-label="Role" title={person.currentTitle ?? undefined}>
               {person.currentTitle ?? "—"}
             </span>
             <span className={styles.cellLocation} role="cell" data-label="Location">
@@ -1348,7 +1740,7 @@ function PeopleTable({
                 <span className={styles.emailUnavailable}>Unavailable</span>
               )}
             </span>
-            <span className={styles.cellStatus} role="cell" data-label="Status">
+            <span className={styles.cellStatus} role="cell" data-label="Confidence">
               <BadgePill badge={badge} />
             </span>
             <span className={styles.cellLink} role="cell" data-label="LinkedIn">
@@ -1365,6 +1757,107 @@ function PeopleTable({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function ProspectReviewDialog({
+  open,
+  intent,
+  review,
+  loading,
+  error,
+  preparingExport,
+  creatingImport,
+  onClose,
+  onDownload,
+  onImport
+}: {
+  open: boolean;
+  intent: ReviewIntent;
+  review: ProspectSelectionReview | null;
+  loading: boolean;
+  error: string | null;
+  preparingExport: boolean;
+  creatingImport: boolean;
+  onClose: () => void;
+  onDownload: () => void;
+  onImport: () => void;
+}) {
+  if (!open) {
+    return null;
+  }
+
+  const exportableCount = review?.exportableCount ?? 0;
+  const busy = loading || preparingExport || creatingImport;
+  const title = intent === "download" ? "Review Excel export" : "Review import";
+
+  return (
+    <div className={styles.modalOverlay} role="presentation">
+      <div className={`card ${styles.modalCard} ${styles.reviewCard}`} role="dialog" aria-modal="true" aria-labelledby="prospect-review-title">
+        <div className={styles.panelHeader}>
+          <div>
+            <h2 id="prospect-review-title" className={styles.panelTitle}>
+              {title}
+            </h2>
+            <p className={styles.panelSubtitle}>Suppressed records and records without usable email addresses will be skipped.</p>
+          </div>
+          <button type="button" className={styles.iconButton} onClick={onClose} aria-label="Close" disabled={busy}>
+            <X aria-hidden="true" />
+          </button>
+        </div>
+
+        {loading ? (
+          <div className={styles.reviewLoading}>
+            <LoaderCircle aria-hidden="true" className={styles.spin} />
+            <span>Reviewing selected prospects…</span>
+          </div>
+        ) : error ? (
+          <p className={styles.errorText}>{error}</p>
+        ) : review ? (
+          <>
+            <dl className={styles.reviewGrid}>
+              <div>
+                <dt>Selected</dt>
+                <dd>{review.selectedCount}</dd>
+              </div>
+              <div>
+                <dt>Exportable</dt>
+                <dd>{review.exportableCount}</dd>
+              </div>
+              <div>
+                <dt>Unavailable email</dt>
+                <dd>{review.unavailableEmailCount}</dd>
+              </div>
+              <div>
+                <dt>Suppressed</dt>
+                <dd>{review.suppressedCount}</dd>
+              </div>
+              {review.duplicateEmailCount > 0 && (
+                <div>
+                  <dt>Duplicate email</dt>
+                  <dd>{review.duplicateEmailCount}</dd>
+                </div>
+              )}
+            </dl>
+            <p className={styles.reviewNote}>Generated email addresses remain inferred until verified.</p>
+          </>
+        ) : null}
+
+        <div className={styles.modalActions}>
+          <button type="button" className={styles.ghostButton} onClick={onClose} disabled={busy}>
+            Cancel
+          </button>
+          <button type="button" className={styles.secondaryButton} onClick={onDownload} disabled={busy || exportableCount <= 0}>
+            {preparingExport ? <LoaderCircle aria-hidden="true" className={styles.spin} /> : <Download aria-hidden="true" />}
+            <span>{preparingExport ? "Preparing Excel file…" : `Download ${exportableCount} records`}</span>
+          </button>
+          <button type="button" className={styles.primaryButton} onClick={onImport} disabled={busy || exportableCount <= 0}>
+            {creatingImport ? <LoaderCircle aria-hidden="true" className={styles.spin} /> : <FileSpreadsheet aria-hidden="true" />}
+            <span>{creatingImport ? "Creating import…" : `Add ${exportableCount} records to Imports`}</span>
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
