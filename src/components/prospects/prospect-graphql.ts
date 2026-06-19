@@ -128,6 +128,8 @@ export type CompanyDetail = {
   emailDomainEvidence: EmailDomainEvidenceNode[];
   emailPattern: string | null;
   patternConfidence: ConfidenceLevel;
+  emailFormatReason: string | null;
+  emailFormatDiscoveredAt: string | null;
   peopleCount: number;
   patternEvidence: PatternEvidenceNode[];
   positions: PositionNode[];
@@ -232,6 +234,8 @@ export const COMPANY_DETAIL_QUERY = /* GraphQL */ `
       }
       emailPattern
       patternConfidence
+      emailFormatReason
+      emailFormatDiscoveredAt
       peopleCount
       patternEvidence {
         pattern
@@ -360,6 +364,56 @@ export const REFRESH_COMPANY_EMAIL_FORMAT_MUTATION = /* GraphQL */ `
       }
       emailPattern
       patternConfidence
+      emailFormatReason
+      emailFormatDiscoveredAt
+      peopleCount
+      patternEvidence {
+        pattern
+        emailDomain
+        sourceUrl
+        sourceName
+        sourceType
+        percentage
+        confidence
+        observedAt
+      }
+      positions {
+        id
+        category
+        displayName
+        rawTitles
+        peopleCount
+      }
+    }
+  }
+`;
+
+export const DISCOVER_COMPANY_EMAIL_FORMAT_MUTATION = /* GraphQL */ `
+  mutation DiscoverCompanyEmailFormat($companyId: ID!, $force: Boolean) {
+    discoverCompanyEmailFormat(companyId: $companyId, force: $force) {
+      id
+      name
+      officialDomain
+      officialWebsiteDomain
+      officialWebsite
+      linkedinUrl
+      domainConfidence
+      emailDomain
+      emailDomainConfidence
+      emailDomainEvidence {
+        emailDomain
+        sourceUrl
+        sourceName
+        sourceType
+        observedPattern
+        percentage
+        confidence
+        observedAt
+      }
+      emailPattern
+      patternConfidence
+      emailFormatReason
+      emailFormatDiscoveredAt
       peopleCount
       patternEvidence {
         pattern
@@ -418,6 +472,8 @@ export const SET_COMPANY_EMAIL_INFERENCE_OVERRIDE_MUTATION = /* GraphQL */ `
       }
       emailPattern
       patternConfidence
+      emailFormatReason
+      emailFormatDiscoveredAt
       peopleCount
       patternEvidence {
         pattern

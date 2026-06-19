@@ -1206,30 +1206,60 @@ provider/AI failures are persisted as a structured `FAILED` search (with
 `errorCode`) rather than crashing the request. A timeout bounds the synchronous
 run.
 
-### 23.2.1 Public email-format discovery
+### 23.2.1 Email-format discovery (GPT-5.5 web search)
 
-Email-domain/pattern inference uses `EmailFormatDiscoveryService` before falling
-back to unavailable/manual correction. With `WEB_SEARCH_PROVIDER=serper` or
-`WEB_SEARCH_PROVIDER=brave`, it builds public email-format queries for the
-company name and website domain, prefers RocketReach/Hunter-style email-format
-pages, and parses public snippets/pages for rows such as:
+The primary email-format discovery path is **AI web search**. When
+`PROSPECT_EMAIL_DISCOVERY_PROVIDER=openai_web_search` (default),
+`PROSPECT_EMAIL_FORMAT_WEB_SEARCH_ENABLED=true`, `PROSPECT_AI_ENABLED=true`, and
+`OPENAI_API_KEY` is set, `OpenAIEmailFormatDiscoveryService` calls **GPT-5.5 via
+the OpenAI Responses API with the built-in `web_search` tool** (model overridable
+with `PROSPECT_AI_MODEL`; defaults to `gpt-5.5`). It is the only place an OpenAI
+HTTP request is made for this feature — never inside a resolver, never via Chat
+Completions, and no Serper/Brave/Google CSE is added for it.
 
-```text
-[first_initial][last] | jdoe@esri.com | 84.7%
-[first]_[last] | jane_doe@amat.com | highest percentage
-```
+The model is asked to find PUBLIC work email-format evidence and return strict
+structured JSON only (`OPENAI_EMAIL_FORMAT_JSON_SCHEMA`): a `selectedEmailDomain`,
+`selectedPattern`, `confidence`, `reasonSummary`, and an `evidence[]` array of
+`{ sourceName, sourceUrl, sourceType, patternRaw, normalizedPattern, exampleEmail,
+emailDomain, percentage, quote }`. The developer prompt instructs it to extract
+the email domain from example work emails (not assume the website domain), prefer
+RocketReach/Hunter-style format pages, never fabricate a percentage or URL, never
+return personal domains, and never mark anything verified. It runs **once per
+company**, never per person.
 
-The parser maps public pattern notation to Sendloom patterns (`[first_initial][last]`
-→ `flast`, `[first]_[last]` → `first_last`) and uses the example email domain as
-the employee email domain. It never treats the public website domain as the
-employee email domain unless evidence shows that exact domain.
+`validateDiscoveryResult` then validates the model output before it is trusted:
+public pattern notation is normalized (`[first_initial][last]` → `flast`,
+`[first]_[last]` → `first_last`), the example email domain wins over the website
+domain, unsupported patterns and personal/aggregator domains (gmail, yahoo,
+outlook, icloud, rocketreach.co, hunter.io, linkedin.com, …) are dropped, a
+selected domain/pattern must actually appear in the evidence, and `HIGH`
+confidence requires a sourced row that also has a percentage or example email.
+The cleaned evidence is mapped to the standard evidence bundle and the existing
+deterministic selector in `EmailDomainService` makes the final choice — so Esri
+resolves to `flast@esri.com` and Applied Materials to `first_last@amat.com`
+(website `appliedmaterials.com`, email domain `amat.com`) when public evidence
+supports it.
 
-Page fetching is intentionally conservative: only `http`/`https`, no localhost,
-loopback, private IPs, metadata IPs, credentials, cookies, JavaScript execution,
-browser automation, or Google HTML scraping. Redirects are capped, responses
-timeout after about 9 seconds, and only small text/HTML responses are parsed. If
-no search provider is configured, the backend logs `No web search provider
-configured`; direct source URL refresh still works for local testing.
+Cost controls: the web search consumes the per-search `email_pattern` AI budget
+(so the deterministic selector, not a second model call, decides), HIGH-confidence
+results are cached on `ProspectCompany.emailFormatDiscoveredAt` for 7 days (the
+"Find with AI" path skips re-paying unless `force` is set), and each user is rate
+limited per hour and per day (`PROSPECT_EMAIL_FORMAT_AI_HOURLY_LIMIT` /
+`PROSPECT_EMAIL_FORMAT_AI_DAILY_LIMIT`, default 5/20). Logs record only safe
+metadata (company id/name, model, `webSearchUsed`, evidence count, selected
+domain/pattern, confidence, latency) — never the API key, prompt, raw page
+content, tokens, generated people, or personal emails.
+
+**Fallbacks.** Pasting a specific public **source URL** routes to the deterministic
+`EmailFormatDiscoveryService` parser (no web search runs); a **manual override**
+sets the format by hand; and the legacy `WEB_SEARCH_PROVIDER=serper|brave`
+scraper can still supply evidence if configured. The legacy/source-URL fetcher is
+conservative: only `http`/`https`, no localhost, loopback, private/metadata IPs,
+credentials, cookies, JavaScript, browser automation, or Google HTML scraping;
+redirects are capped, responses time out after ~9 seconds, and only small
+text/HTML responses are parsed. If AI discovery is unavailable (no key or the
+flag is off), the UI surfaces a clear message and the manual/source-URL paths
+still work.
 
 ### 23.3 AI responsibilities and cost controls
 
@@ -1243,10 +1273,11 @@ the `PROSPECT_AI_MAX_*` ceilings. `PROSPECT_AI_MODEL` selects the model for thes
 tasks and `PROSPECT_AI_REASONING_EFFORT` defaults to `low` (`none`, `low`,
 `medium`, `high`, and `xhigh` are accepted; legacy `minimal` is coerced to
 `low`). Every AI response is re-validated with Zod and coerced to the allowed
-enums. For email inference, AI ranks evidence only: the
-selected email domain and selected pattern must already appear in collected
-evidence, and website domain alone is never enough. Candidate emails are
-produced with deterministic TypeScript (`generateEmail`) from
+enums. For email inference, the one company-level AI call is GPT-5.5 web search
+that returns public evidence (see §23.2.1); the backend — not the model —
+selects the format, and the selected email domain and pattern must already
+appear in collected evidence, with website domain alone never enough. Candidate
+emails are produced with deterministic TypeScript (`generateEmail`) from
 `ProspectCompany.emailDomain` plus `emailPattern`. AI logs record only safe task
 metadata such as search id, model, evidence/input counts, selected domain/pattern,
 latency, and success — never prompts, personal data, candidate emails, raw
@@ -1344,12 +1375,18 @@ Behavior:
   clearly. Applied Materials is the regression example: website
   `appliedmaterials.com`, employee email domain `amat.com`, pattern
   `first_last`.
-- When email format is unavailable, the dashboard shows "Find email format" and
-  "Use specific source URL" controls. A direct public source URL such as
+- The company card exposes three email-format controls: **Find with AI**
+  (`discoverCompanyEmailFormat`, GPT-5.5 web search — the primary path; relabelled
+  **Refresh with AI** once a format exists, which forces past the cache), **Use
+  source URL** (a direct public page such as
   `https://rocketreach.co/esri-email-format_b5c60d6df42e0c51` calls
-  `refreshCompanyEmailFormat`, parses the source, updates evidence, and
-  regenerates existing people emails as inferred. Manual override remains a
-  fallback, not the primary path.
+  `refreshCompanyEmailFormat`, parses the source deterministically with no web
+  search), and **Fix manually**. On success the card shows the email domain,
+  pattern, confidence, evidence source, and a reason summary; when unavailable it
+  shows "No email format found yet. Use AI web search, paste a public source URL,
+  or set it manually." All three paths regenerate existing people emails as
+  inferred (never `VERIFIED`). Rate-limit / not-configured errors surface as safe
+  messages.
 - Handles the disabled flag (clean "not enabled" card), processing/failed/
   canceled searches (safe `errorCode`/message, never raw GraphQL errors), and
   empty states. It creates **no** sequences or imports and sends nothing.

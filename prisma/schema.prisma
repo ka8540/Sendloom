@@ -424,6 +424,12 @@ model ProspectCompany {
   emailPattern      String?
   patternConfidence String   @default("UNAVAILABLE")
   patternEvidence   Json?
+  // Short, human-readable summary of why this format was selected (from the AI
+  // web-search discovery). Reset on every inference.
+  emailFormatReason String?
+  // When the email format was last discovered/inferred. Drives the cache that
+  // avoids paying for AI web search again within the freshness window.
+  emailFormatDiscoveredAt DateTime?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 

@@ -49,12 +49,20 @@ export type EmailPatternEvidence = {
 export type EmailEvidenceBundle = {
   domainEvidence?: EmailDomainEvidence[];
   patternEvidence?: EmailPatternEvidence[];
+  /** Short, human-readable summary of the selection (from AI web-search). */
+  reasonSummary?: string | null;
 };
 
 export type EmailEvidenceProviderInput = {
   companyName: string;
   officialWebsiteDomain: string | null;
   sourceUrl?: string | null;
+  companyId?: string | null;
+  searchId?: string | null;
+  knownLinkedinUrl?: string | null;
+  targetRoles?: string[];
+  /** Shared per-search AI budget so web-search discovery runs at most once. */
+  budget?: AiCallBudget;
 };
 
 export interface EmailEvidenceProvider {
@@ -77,6 +85,8 @@ export type InferCompanyEmailInput = {
   companyName: string;
   officialWebsiteDomain: string | null | undefined;
   sourceUrl?: string | null;
+  knownLinkedinUrl?: string | null;
+  targetRoles?: string[];
   extraEvidence?: EmailEvidenceBundle;
   budget: AiCallBudget;
   searchId?: string | null;
@@ -165,6 +175,35 @@ const AI_INSTRUCTIONS = [
 class NoopEmailEvidenceProvider implements EmailEvidenceProvider {
   async findEvidence(): Promise<EmailEvidenceBundle> {
     return {};
+  }
+}
+
+/**
+ * Run several evidence providers and merge their bundles. Used to combine the
+ * AI web-search discovery (primary) with the deterministic source-URL parser
+ * (fallback). Provider failures are isolated so one bad source never blocks the
+ * others.
+ */
+export class CompositeEmailEvidenceProvider implements EmailEvidenceProvider {
+  constructor(private readonly providers: EmailEvidenceProvider[]) {}
+
+  async findEvidence(input: EmailEvidenceProviderInput): Promise<EmailEvidenceBundle> {
+    const bundles = await Promise.all(
+      this.providers.map((provider) =>
+        provider.findEvidence(input).catch((error) => {
+          console.warn(
+            "[prospect-email-evidence] provider failed",
+            error instanceof Error ? error.message : error
+          );
+          return {} as EmailEvidenceBundle;
+        })
+      )
+    );
+    return {
+      domainEvidence: bundles.flatMap((bundle) => bundle.domainEvidence ?? []),
+      patternEvidence: bundles.flatMap((bundle) => bundle.patternEvidence ?? []),
+      reasonSummary: bundles.map((bundle) => bundle.reasonSummary).find((reason) => Boolean(reason)) ?? null
+    };
   }
 }
 
@@ -556,8 +595,14 @@ export class EmailDomainService {
     const providerEvidence = await this.evidenceProvider.findEvidence({
       companyName: input.companyName,
       officialWebsiteDomain,
-      sourceUrl: input.sourceUrl ?? null
+      sourceUrl: input.sourceUrl ?? null,
+      companyId: input.companyId ?? null,
+      searchId: input.searchId ?? null,
+      knownLinkedinUrl: input.knownLinkedinUrl ?? null,
+      targetRoles: input.targetRoles ?? [],
+      budget: input.budget
     });
+    const providerReason = typeof providerEvidence.reasonSummary === "string" ? providerEvidence.reasonSummary : null;
     const hunterEvidence = await this.collectHunterEvidence(input.userId, officialWebsiteDomain);
 
     const domainEvidence = dedupeDomainEvidence(
@@ -576,6 +621,10 @@ export class EmailDomainService {
     );
 
     const deterministic = deterministicSelection(domainEvidence, patternEvidence);
+    // Prefer the AI web-search reason when a real domain+pattern was selected.
+    if (providerReason && deterministic.selectedEmailDomain && deterministic.selectedPattern) {
+      deterministic.reasonSummary = providerReason;
+    }
     const ranked = buildRankedEvidence(domainEvidence, patternEvidence);
 
     if (ranked.length === 0 || !this.ai.enabled || !input.budget.canCall("email_pattern")) {
@@ -639,7 +688,7 @@ export class EmailDomainService {
         selectedPattern,
         patternConfidence,
         patternEvidence: selectEvidenceForPattern(selectedPattern, selectedDomain, patternEvidence),
-        reasonSummary: parsed.reasonSummary
+        reasonSummary: providerReason ?? parsed.reasonSummary
       };
       this.logInferenceResult(input, ranked, result);
       return result;

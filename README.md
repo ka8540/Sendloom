@@ -855,12 +855,17 @@ Create a local `.env` file at the repo root with the values below. Secrets and s
 | `GRAPHQL_GRAPHIQL_ENABLED` | Optional | Enables the GraphiQL playground locally. Defaults to `false`; never serves in production regardless of value. |
 | `APIFY_API_TOKEN` | For prospect search | Token for the Apify LinkedIn profile-search actor. |
 | `APIFY_PROSPECT_ACTOR_ID` | Optional | Actor id/slug. Defaults to `harvestapi/linkedin-profile-search`. |
-| `WEB_SEARCH_PROVIDER` | Optional | Public email-format search provider for Prospect Graph evidence discovery. Supported values: `none`, `serper`, `brave`. Defaults to `none`; direct source URL refresh still works. |
+| `PROSPECT_EMAIL_DISCOVERY_PROVIDER` | Optional | Primary email-format discovery provider. `openai_web_search` (default) uses GPT-5.5 + the OpenAI Responses `web_search` tool; `none` disables AI discovery (manual / source-URL only). |
+| `PROSPECT_EMAIL_FORMAT_WEB_SEARCH_ENABLED` | Optional | Master switch for the AI web search. Defaults to `true`; when `false`, web search never runs. |
+| `PROSPECT_EMAIL_FORMAT_MAX_WEB_RESULTS` | Optional | Public results the model is asked to weigh per company. Defaults to `5`. |
+| `PROSPECT_EMAIL_FORMAT_AI_HOURLY_LIMIT` | Optional | Per-user hourly cap on AI email-format searches. Defaults to `5`. |
+| `PROSPECT_EMAIL_FORMAT_AI_DAILY_LIMIT` | Optional | Per-user daily cap on AI email-format searches. Defaults to `20`. |
+| `WEB_SEARCH_PROVIDER` | Optional | Legacy/secondary public email-format scraper. Supported values: `none`, `serper`, `brave`. Defaults to `none`; the AI path above is primary and direct source URL refresh always works. |
 | `SERPER_API_KEY` | When `WEB_SEARCH_PROVIDER=serper` | Serper API key used only for public email-format search queries. |
 | `BRAVE_SEARCH_API_KEY` | When `WEB_SEARCH_PROVIDER=brave` | Brave Search API key used only for public email-format search queries. |
 | `LOCAL_PROSPECT_MAX_RESULTS` | Optional | Hard local cap on results per search. Defaults to `25`. |
 | `PROSPECT_AI_ENABLED` | Optional | Enables the AI company/role/pattern steps. Defaults to `true`. |
-| `PROSPECT_AI_MODEL` | Optional | Override the prospect AI model. Blank uses the project default (`gpt-5`); local testing can set the latest available strong model, for example `gpt-5.5`. |
+| `PROSPECT_AI_MODEL` | Optional | Override the prospect AI model. Blank uses the per-task defaults (company/role: `gpt-5`; AI email-format web search: `gpt-5.5`). |
 | `PROSPECT_AI_REASONING_EFFORT` | Optional | Reasoning effort for prospect AI calls. Defaults to `low`. Supported values are `none`, `low`, `medium`, `high`, and `xhigh`; legacy `minimal` is coerced to `low` for GPT-5.5 compatibility. |
 | `PROSPECT_AI_MAX_COMPANY_CALLS_PER_SEARCH` | Optional | Per-search company-resolution AI call cap. Defaults to `2`. |
 | `PROSPECT_AI_MAX_ROLE_CALLS_PER_SEARCH` | Optional | Per-search title-classification AI call cap. Defaults to `1`. |
@@ -963,7 +968,7 @@ typical search makes about **three** model calls total:
 | --- | --- | --- |
 | Company resolution | ≤ 1 | Skipped entirely when a valid company domain is supplied. |
 | Title classification | ≤ 1 | One **batched** call for all unique unknown titles; deterministic map + DB cache handle the rest. |
-| Email domain + pattern | ≤ 1 | One call per company, ranking evidence only. The selected domain and pattern must already appear in evidence. |
+| Email domain + pattern | ≤ 1 | One call per company. GPT-5.5 web search finds public email-format evidence (or, in the legacy path, ranks scraped evidence); the selected domain and pattern must already appear in evidence. |
 
 Per-search ceilings are enforced in code (`AiCallBudget`) and configured via
 `PROSPECT_AI_MAX_*`. Every AI response is re-validated server-side with Zod and
@@ -979,16 +984,39 @@ employee email domain `amat.com` and pattern `first_last`. If email-domain or
 pattern evidence is missing or conflicting, the result stays `LOW` or
 `UNAVAILABLE` and high-confidence emails are not generated.
 
-Email-format discovery first searches/parses public evidence sources before
-giving up. When `WEB_SEARCH_PROVIDER` is `serper` or `brave`, Prospect Graph
-queries public results such as RocketReach/Hunter-style email-format pages,
-fetches only public text/HTML pages through the safe fetcher, and parses rows
-like `[first_initial][last] | jdoe@esri.com | 84.7%`. The example email domain
-wins over the website domain, so Esri can resolve to `flast@esri.com` and
-Applied Materials can resolve to `first_last@amat.com` when public evidence
-supports it. If no search provider is configured, the backend logs
-`No web search provider configured`; `/prospects` can still refresh from a
-specific public source URL.
+#### Email-format discovery with GPT-5.5 web search (primary path)
+
+The primary way the employee email format is found is **AI web search**. When
+`PROSPECT_EMAIL_DISCOVERY_PROVIDER=openai_web_search` (the default) and
+`OPENAI_API_KEY` is set, `EmailDomainService` calls **GPT-5.5 via the OpenAI
+Responses API with the built-in `web_search` tool** (`PROSPECT_AI_MODEL`
+overrides the model). The model searches public sources such as
+RocketReach/Hunter-style email-format pages and returns **structured evidence
+only** — `{ sourceUrl, sourceType, patternRaw, normalizedPattern, exampleEmail,
+emailDomain, percentage }` rows plus a proposed selection. It runs **once per
+company**, never per person.
+
+The backend then validates that evidence before trusting it: unsupported
+patterns, personal/aggregator domains (gmail, rocketreach.co, hunter.io,
+linkedin.com, …), and any selection not actually present in the evidence are
+rejected; `HIGH` confidence requires a sourced, quantified row; and the example
+email domain wins over the website domain. So Esri resolves to `flast@esri.com`
+and Applied Materials resolves to `first_last@amat.com` (website
+`appliedmaterials.com`, email domain `amat.com`) **when public evidence supports
+it**. Inferred addresses are never marked `VERIFIED`.
+
+Cost is controlled: the web search consumes the same per-search `email_pattern`
+AI budget (so the deterministic selector — not a second model call — makes the
+final choice), high-confidence results are cached on the company for 7 days, and
+each user is rate limited (`PROSPECT_EMAIL_FORMAT_AI_HOURLY_LIMIT` /
+`PROSPECT_EMAIL_FORMAT_AI_DAILY_LIMIT`).
+
+Fallbacks remain: pasting a specific public **source URL** parses that page
+deterministically (no web search), a **manual override** sets the format by
+hand, and the legacy `WEB_SEARCH_PROVIDER=serper|brave` scraper can still supply
+evidence if configured. If AI discovery is unavailable (no key or
+`PROSPECT_EMAIL_FORMAT_WEB_SEARCH_ENABLED=false`), the UI surfaces a clear
+message and the manual/source-URL paths still work.
 
 ### Architecture
 
@@ -998,7 +1026,9 @@ GraphQL resolver
        → CompanyResolutionService     (AI task 1)
        → ApifyProfileSearchService    (Apify actor + normalization)
        → RoleClassificationService    (deterministic map + cache + AI task 2)
-       → EmailDomainService           (evidence collection + AI ranking task 3)
+       → EmailDomainService           (evidence collection + validation + selection)
+           → OpenAIEmailFormatDiscoveryService   (GPT-5.5 + web_search, AI task 3)
+           → EmailFormatDiscoveryService         (source-URL / legacy scraper fallback)
        → email-generation-service     (deterministic, no AI)
 ```
 
@@ -1054,7 +1084,7 @@ you:
 - browse previous prospect searches and select a `READY` one,
 - view the resolved company summary, separate website/email domains, position-category breakdown, and people,
 - filter the current page by position category, and copy individual inferred emails.
-- find/refresh an email format from public evidence, or paste a specific public source URL.
+- **Find with AI** — discover the email format with GPT-5.5 web search, paste a specific public source URL, or fix it manually; the card shows the email domain, pattern, confidence, evidence source, and a reason summary.
 - delete an owned company prospect graph and its related prospect searches.
 
 People results default to **20 per page** (never 5), with cursor-based
@@ -1138,7 +1168,23 @@ mutation SetCompanyEmailInferenceOverride($companyId: ID!) {
 }
 ```
 
-Refresh from a public email-format source URL:
+Discover the email format with GPT-5.5 web search (the "Find with AI" button).
+Pass `force: true` to bypass the 7-day high-confidence cache:
+
+```graphql
+mutation DiscoverCompanyEmailFormat($companyId: ID!) {
+  discoverCompanyEmailFormat(companyId: $companyId, force: false) {
+    id
+    emailDomain
+    emailPattern
+    patternConfidence
+    emailFormatReason
+    patternEvidence { sourceName sourceUrl percentage confidence }
+  }
+}
+```
+
+Refresh from a public email-format source URL (deterministic parse, no web search):
 
 ```graphql
 mutation RefreshCompanyEmailFormat($companyId: ID!) {

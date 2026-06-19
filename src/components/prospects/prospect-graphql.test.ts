@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  COMPANY_DETAIL_QUERY,
+  DISCOVER_COMPANY_EMAIL_FORMAT_MUTATION,
   PEOPLE_PAGE_SIZE,
   PEOPLE_QUERY,
   PROSPECT_SEARCHES_QUERY,
@@ -67,6 +69,36 @@ describe("prospect graphql helper", () => {
     expect(REFRESH_COMPANY_EMAIL_FORMAT_MUTATION).toContain("refreshCompanyEmailFormat(companyId: $companyId");
     expect(REFRESH_COMPANY_EMAIL_FORMAT_MUTATION).toContain("sourceUrl: $sourceUrl");
     expect(SET_COMPANY_EMAIL_INFERENCE_OVERRIDE_MUTATION).toContain("setCompanyEmailInferenceOverride");
+  });
+
+  it("declares the AI web-search discovery mutation with a force flag and reason", () => {
+    expect(DISCOVER_COMPANY_EMAIL_FORMAT_MUTATION).toContain("discoverCompanyEmailFormat(companyId: $companyId, force: $force)");
+    expect(DISCOVER_COMPANY_EMAIL_FORMAT_MUTATION).toContain("emailFormatReason");
+    // The company detail query also exposes the reason so the card can show it.
+    expect(COMPANY_DETAIL_QUERY).toContain("emailFormatReason");
+  });
+
+  it("passes a safe rate-limit / not-configured FORBIDDEN message through to the UI", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              errors: [
+                {
+                  message: "You've reached the AI email-format search limit. Try again in about 30 minutes.",
+                  extensions: { code: "FORBIDDEN" }
+                }
+              ]
+            }),
+            { status: 200 }
+          )
+      )
+    );
+    const result = await prospectGraphql("mutation { discoverCompanyEmailFormat(companyId: \"c1\") { id } }");
+    expect(result.error).toContain("limit");
+    expect(result.error).not.toContain("prisma");
   });
 
   describe("isDisabledResponse", () => {

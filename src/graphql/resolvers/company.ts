@@ -73,6 +73,21 @@ export const companyMutations = {
     }
   },
 
+  async discoverCompanyEmailFormat(
+    _root: unknown,
+    args: { companyId: string; force?: boolean | null },
+    context: GraphQLContext
+  ) {
+    const user = requireUser(context);
+    try {
+      return await context.services.prospectSearch.discoverCompanyEmailFormat(user.id, args.companyId, {
+        force: Boolean(args.force)
+      });
+    } catch (error) {
+      mapProspectError(error);
+    }
+  },
+
   async deleteCompany(_root: unknown, args: { companyId: string }, context: GraphQLContext) {
     const user = requireUser(context);
     try {

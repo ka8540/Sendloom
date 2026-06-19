@@ -29,6 +29,7 @@ import {
   COMPANY_DETAIL_QUERY,
   CREATE_SEARCH_MUTATION,
   DELETE_COMPANY_MUTATION,
+  DISCOVER_COMPANY_EMAIL_FORMAT_MUTATION,
   PEOPLE_PAGE_SIZE,
   PEOPLE_QUERY,
   PROCESS_SEARCH_MUTATION,
@@ -527,6 +528,35 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
     [reloadCompanyPeople]
   );
 
+  const handleDiscoverEmailFormat = useCallback(
+    async (target: CompanyDetail, force = false) => {
+      setRefreshingFormatId(target.id);
+      setActionError(null);
+      setActionNotice(null);
+      const result = await prospectGraphql<{ discoverCompanyEmailFormat: CompanyDetail }>(
+        DISCOVER_COMPANY_EMAIL_FORMAT_MUTATION,
+        { companyId: target.id, force }
+      );
+      setRefreshingFormatId(null);
+      if (result.disabled) {
+        setDisabled(true);
+        return;
+      }
+      if (result.error || !result.data) {
+        // FORBIDDEN messages (rate limit / not configured) pass through safely.
+        setActionError(result.error ?? "Could not find the email format with AI.");
+        return;
+      }
+      await reloadCompanyPeople(result.data.discoverCompanyEmailFormat);
+      setActionNotice(
+        result.data.discoverCompanyEmailFormat.emailDomain && result.data.discoverCompanyEmailFormat.emailPattern
+          ? "Email format found with AI web search."
+          : "No public email-format evidence found yet. Paste a source URL or set it manually."
+      );
+    },
+    [reloadCompanyPeople]
+  );
+
   const handleManualEmailFormat = useCallback(
     async (target: CompanyDetail) => {
       setRefreshingFormatId(target.id);
@@ -768,6 +798,7 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
                     onManualEmailPatternChange={setManualEmailPattern}
                     onManualConfidenceChange={setManualConfidence}
                     onRefreshEmailFormat={handleRefreshEmailFormat}
+                    onDiscoverEmailFormat={handleDiscoverEmailFormat}
                     onManualEmailFormat={handleManualEmailFormat}
                     onDelete={handleDeleteCompany}
                   />
@@ -965,6 +996,7 @@ function CompanyCard({
   onManualEmailPatternChange,
   onManualConfidenceChange,
   onRefreshEmailFormat,
+  onDiscoverEmailFormat,
   onManualEmailFormat,
   onDelete
 }: {
@@ -985,6 +1017,7 @@ function CompanyCard({
   onManualEmailPatternChange: (value: string) => void;
   onManualConfidenceChange: (value: ConfidenceLevel) => void;
   onRefreshEmailFormat: (company: CompanyDetail, sourceUrl?: string | null) => void;
+  onDiscoverEmailFormat: (company: CompanyDetail, force?: boolean) => void;
   onManualEmailFormat: (company: CompanyDetail) => void;
   onDelete: (company: CompanyDetail) => void;
 }) {
@@ -1087,7 +1120,14 @@ function CompanyCard({
             )}
           </div>
         ) : (
-          <span className={styles.metaHint}>No evidence-backed email format found yet. Search public sources or set the format manually.</span>
+          <span className={styles.metaHint}>
+            No email format found yet. Use AI web search, paste a public source URL, or set it manually.
+          </span>
+        )}
+        {company.emailFormatReason && (
+          <span className={styles.metaHint} title="Why this format was selected">
+            {company.emailFormatReason}
+          </span>
         )}
       </div>
       <div className={styles.formatActions}>
@@ -1096,27 +1136,25 @@ function CompanyCard({
           <span className={styles.metaHint}>
             {hasEmailFormat
               ? "Email format found from public evidence. Generated emails are inferred until verified."
-              : "Search public sources with a configured web search provider, or paste a known public email-format page."}
+              : "Find the format with AI web search, paste a known public email-format page, or set it manually."}
           </span>
         </div>
         <div className={styles.formatButtonRow}>
           <button
             type="button"
             className={styles.secondaryButton}
-            onClick={() => onRefreshEmailFormat(company, null)}
+            onClick={() => onDiscoverEmailFormat(company, hasEmailFormat)}
             disabled={refreshingFormat}
           >
-            {refreshingFormat ? <LoaderCircle aria-hidden="true" className={styles.spin} /> : <RefreshCw aria-hidden="true" />}
-            <span>{hasEmailFormat ? "Refresh email format" : "Find email format"}</span>
+            {refreshingFormat ? <LoaderCircle aria-hidden="true" className={styles.spin} /> : <Sparkles aria-hidden="true" />}
+            <span>{hasEmailFormat ? "Refresh with AI" : "Find with AI"}</span>
           </button>
           <button type="button" className={styles.ghostButton} onClick={onToggleFormatSource}>
-            Use specific source URL
+            Use source URL
           </button>
-          {!hasEmailFormat && (
-            <button type="button" className={styles.ghostButton} onClick={onToggleManualFormat}>
-              Fix manually
-            </button>
-          )}
+          <button type="button" className={styles.ghostButton} onClick={onToggleManualFormat}>
+            Fix manually
+          </button>
         </div>
         {showFormatSource && (
           <div className={styles.sourceRefreshRow}>

@@ -20,8 +20,10 @@ import {
   makeManualEmailDomainEvidence
 } from "@/services/prospects/email-domain-service";
 import { resolveCandidateEmail } from "@/services/prospects/email-generation-service";
+import { isOpenAIEmailFormatDiscoveryConfigured } from "@/services/prospects/openai-email-format-discovery";
 import { AiCallBudget, createAiBudget } from "@/services/prospects/prospect-ai";
 import { normalizeDomain, normalizeTitle } from "@/services/prospects/prospect-normalization";
+import { rateLimit } from "@/lib/rate-limit";
 import { RoleClassificationService } from "@/services/prospects/role-classification-service";
 import type { ValidatedCreateProspectSearch } from "@/services/prospects/prospect-validation";
 
@@ -31,7 +33,8 @@ export type ProspectErrorCode =
   | "COMPANY_UNRESOLVED"
   | "PROVIDER_TIMEOUT"
   | "PROVIDER_ERROR"
-  | "NOT_CONFIGURED";
+  | "NOT_CONFIGURED"
+  | "RATE_LIMITED";
 
 export class ProspectError extends Error {
   code: ProspectErrorCode;
@@ -45,6 +48,9 @@ export class ProspectError extends Error {
 
 const TERMINAL_STATUSES = new Set(["READY", "CANCELED"]);
 const DEFAULT_PIPELINE_TIMEOUT_MS = 120_000;
+// Cache window: skip a fresh AI web search when a HIGH-confidence format was
+// discovered within the last 7 days (unless the user forces a refresh).
+const EMAIL_FORMAT_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 function hasConfiguredEmailFormatSearchProvider(): boolean {
   if (env.WEB_SEARCH_PROVIDER === "serper") {
@@ -54,6 +60,47 @@ function hasConfiguredEmailFormatSearchProvider(): boolean {
     return Boolean(env.BRAVE_SEARCH_API_KEY);
   }
   return false;
+}
+
+/** True when any email-format discovery path (AI web search or legacy provider) is usable. */
+function hasConfiguredEmailFormatDiscovery(): boolean {
+  return isOpenAIEmailFormatDiscoveryConfigured() || hasConfiguredEmailFormatSearchProvider();
+}
+
+/** A company has a usable, fresh, high-confidence format already on file. */
+function isFreshHighConfidenceFormat(company: ProspectCompany): boolean {
+  if (!company.emailDomain || !company.emailPattern) {
+    return false;
+  }
+  if (company.emailDomainConfidence !== "HIGH" || company.patternConfidence !== "HIGH") {
+    return false;
+  }
+  const discoveredAt = company.emailFormatDiscoveredAt;
+  if (!discoveredAt) {
+    return false;
+  }
+  return Date.now() - new Date(discoveredAt).getTime() < EMAIL_FORMAT_CACHE_TTL_MS;
+}
+
+export type EmailFormatRateLimit = { allowed: boolean; retryAfterSeconds: number };
+export type EmailFormatRateLimiter = (userId: string) => Promise<EmailFormatRateLimit>;
+
+/** Default per-user cost control: both an hourly and a daily window must allow. */
+async function defaultEmailFormatRateLimiter(userId: string): Promise<EmailFormatRateLimit> {
+  const hourly = await rateLimit({
+    key: `prospect-email-format-ai:hour:${userId}`,
+    limit: env.PROSPECT_EMAIL_FORMAT_AI_HOURLY_LIMIT,
+    windowSeconds: 3600
+  });
+  if (!hourly.allowed) {
+    return { allowed: false, retryAfterSeconds: hourly.retryAfterSeconds };
+  }
+  const daily = await rateLimit({
+    key: `prospect-email-format-ai:day:${userId}`,
+    limit: env.PROSPECT_EMAIL_FORMAT_AI_DAILY_LIMIT,
+    windowSeconds: 86_400
+  });
+  return { allowed: daily.allowed, retryAfterSeconds: daily.retryAfterSeconds };
 }
 
 async function withTimeout<T>(promise: Promise<T>, ms: number, onTimeout: () => Error): Promise<T> {
@@ -79,6 +126,8 @@ export type ProspectSearchServiceDeps = {
   roleClassifier: RoleClassificationService;
   emailDomain: EmailDomainService;
   pipelineTimeoutMs?: number;
+  /** Injectable for tests; defaults to the Redis-backed per-user limiter. */
+  emailFormatRateLimiter?: EmailFormatRateLimiter;
 };
 
 export class ProspectSearchService {
@@ -88,6 +137,7 @@ export class ProspectSearchService {
   private readonly roleClassifier: RoleClassificationService;
   private readonly emailDomain: EmailDomainService;
   private readonly pipelineTimeoutMs: number;
+  private readonly emailFormatRateLimiter: EmailFormatRateLimiter;
 
   constructor(deps: ProspectSearchServiceDeps) {
     this.prisma = deps.prisma;
@@ -96,6 +146,7 @@ export class ProspectSearchService {
     this.roleClassifier = deps.roleClassifier;
     this.emailDomain = deps.emailDomain;
     this.pipelineTimeoutMs = deps.pipelineTimeoutMs ?? DEFAULT_PIPELINE_TIMEOUT_MS;
+    this.emailFormatRateLimiter = deps.emailFormatRateLimiter ?? defaultEmailFormatRateLimiter;
   }
 
   async createSearch(userId: string, input: ValidatedCreateProspectSearch): Promise<ProspectSearch> {
@@ -258,6 +309,8 @@ export class ProspectSearchService {
       companyId: company.id,
       companyName: resolution.officialName,
       officialWebsiteDomain: company.officialWebsiteDomain ?? company.officialDomain,
+      knownLinkedinUrl: company.linkedinUrl,
+      targetRoles: this.asStringArray(search.requestedTitles),
       budget,
       searchId: search.id
     });
@@ -270,7 +323,9 @@ export class ProspectSearchService {
         emailDomainEvidence: inference.emailDomainEvidence,
         emailPattern: inference.selectedPattern,
         patternConfidence: inference.patternConfidence,
-        patternEvidence: inference.patternEvidence
+        patternEvidence: inference.patternEvidence,
+        emailFormatReason: inference.reasonSummary ?? null,
+        emailFormatDiscoveredAt: new Date()
       }
     });
 
@@ -512,20 +567,72 @@ export class ProspectSearchService {
   ): Promise<ProspectCompany> {
     const company = ownedCompany ?? (await this.requireOwnedCompany(userId, companyId));
     const trimmedSourceUrl = sourceUrl?.trim() || null;
-    if (!trimmedSourceUrl && !hasConfiguredEmailFormatSearchProvider()) {
+    if (!trimmedSourceUrl && !hasConfiguredEmailFormatDiscovery()) {
       throw new ProspectError(
         "NOT_CONFIGURED",
-        "No web search provider configured. Paste a public email-format source URL or set WEB_SEARCH_PROVIDER to serper/brave with its API key."
+        "Email-format discovery is not configured. Enable AI web search (set OPENAI_API_KEY with PROSPECT_AI_ENABLED and PROSPECT_EMAIL_FORMAT_WEB_SEARCH_ENABLED), paste a public email-format source URL, or set the format manually."
       );
     }
+    return this.inferAndApplyEmailFormat(userId, company, { sourceUrl: trimmedSourceUrl });
+  }
+
+  /**
+   * Discover a company's email format with AI web search (the "Find with AI"
+   * path). High-confidence results are cached for 7 days to avoid paying for the
+   * search again, and each user is rate limited. Pass `force` to refresh anyway.
+   */
+  async discoverCompanyEmailFormat(
+    userId: string,
+    companyId: string,
+    options: { force?: boolean } = {}
+  ): Promise<ProspectCompany> {
+    const company = await this.requireOwnedCompany(userId, companyId);
+
+    if (!isOpenAIEmailFormatDiscoveryConfigured()) {
+      throw new ProspectError(
+        "NOT_CONFIGURED",
+        "AI email-format search is unavailable. It needs OPENAI_API_KEY with PROSPECT_AI_ENABLED and PROSPECT_EMAIL_FORMAT_WEB_SEARCH_ENABLED. Paste a public source URL or set the format manually instead."
+      );
+    }
+
+    // Cache: reuse a fresh HIGH-confidence format and only regenerate emails for
+    // any new people, unless the user explicitly forced a refresh.
+    if (!options.force && isFreshHighConfidenceFormat(company)) {
+      await this.regenerateCompanyEmails(userId, company);
+      return this.requireOwnedCompany(userId, companyId);
+    }
+
+    const limit = await this.emailFormatRateLimiter(userId);
+    if (!limit.allowed) {
+      const minutes = Math.max(1, Math.ceil(limit.retryAfterSeconds / 60));
+      throw new ProspectError(
+        "RATE_LIMITED",
+        `You've reached the AI email-format search limit. Try again in about ${minutes} minute${minutes === 1 ? "" : "s"}.`
+      );
+    }
+
+    return this.inferAndApplyEmailFormat(userId, company, { sourceUrl: null });
+  }
+
+  /**
+   * Run email-domain/pattern inference for a company, persist the selected
+   * format + evidence, and regenerate every person's candidate email. Shared by
+   * the source-URL refresh and the AI discovery paths.
+   */
+  private async inferAndApplyEmailFormat(
+    userId: string,
+    company: ProspectCompany,
+    opts: { sourceUrl?: string | null }
+  ): Promise<ProspectCompany> {
     const budget = createAiBudget();
 
     const inference = await this.emailDomain.infer({
       userId,
-      companyId,
+      companyId: company.id,
       companyName: company.officialName ?? company.name,
       officialWebsiteDomain: company.officialWebsiteDomain ?? company.officialDomain,
-      sourceUrl: trimmedSourceUrl,
+      knownLinkedinUrl: company.linkedinUrl,
+      sourceUrl: opts.sourceUrl ?? null,
       budget,
       searchId: null
     });
@@ -538,12 +645,14 @@ export class ProspectSearchService {
         emailDomainEvidence: inference.emailDomainEvidence,
         emailPattern: inference.selectedPattern,
         patternConfidence: inference.patternConfidence,
-        patternEvidence: inference.patternEvidence
+        patternEvidence: inference.patternEvidence,
+        emailFormatReason: inference.reasonSummary ?? null,
+        emailFormatDiscoveredAt: new Date()
       }
     });
 
     await this.regenerateCompanyEmails(userId, updatedCompany);
-    return this.requireOwnedCompany(userId, companyId);
+    return this.requireOwnedCompany(userId, company.id);
   }
 
   async setCompanyEmailInferenceOverride(
@@ -584,7 +693,9 @@ export class ProspectSearchService {
         emailDomainEvidence: [manualEvidence.domainEvidence],
         emailPattern: input.emailPattern,
         patternConfidence: input.confidence,
-        patternEvidence: [manualEvidence.patternEvidence]
+        patternEvidence: [manualEvidence.patternEvidence],
+        emailFormatReason: input.reason?.trim() || "Manual override",
+        emailFormatDiscoveredAt: new Date()
       }
     });
 

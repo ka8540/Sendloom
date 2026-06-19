@@ -87,6 +87,8 @@ export const typeDefs = /* GraphQL */ `
     emailPattern: String
     patternConfidence: ConfidenceLevel!
     patternEvidence: [EmailPatternEvidence!]!
+    emailFormatReason: String
+    emailFormatDiscoveredAt: DateTime
     positions: [CompanyPosition!]!
     peopleCount: Int!
     createdAt: DateTime!
@@ -209,6 +211,7 @@ export const typeDefs = /* GraphQL */ `
     reclassifyCompanyPositions(companyId: ID!): Company!
     reinferCompanyEmailPattern(companyId: ID!): Company!
     refreshCompanyEmailFormat(companyId: ID!, sourceUrl: String): Company!
+    discoverCompanyEmailFormat(companyId: ID!, force: Boolean): Company!
     deleteCompany(companyId: ID!): Boolean!
     setCompanyEmailInferenceOverride(
       companyId: ID!

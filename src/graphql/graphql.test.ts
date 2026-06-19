@@ -359,4 +359,87 @@ describe("Company email inference API", () => {
     expect(result.errors?.[0]?.extensions?.code).toBe("FORBIDDEN");
     expect(result.errors?.[0]?.message).toContain("No web search provider configured");
   });
+
+  it("requires auth for AI email-format discovery (#12)", async () => {
+    const result = await graphql({
+      schema: prospectSchema,
+      source: `mutation { discoverCompanyEmailFormat(companyId: "comp_A") { id } }`,
+      contextValue: makeContext({ user: null })
+    });
+
+    expect(result.data?.discoverCompanyEmailFormat ?? null).toBeNull();
+    expect(result.errors?.[0]?.extensions?.code).toBe("UNAUTHENTICATED");
+  });
+
+  it("discovers an email format through the owner-scoped mutation", async () => {
+    const discoverCompanyEmailFormat = vi.fn(async () => ({
+      id: "comp_A",
+      userId: "user_A",
+      name: "Applied Materials",
+      normalizedName: "applied materials",
+      officialName: "Applied Materials, Inc.",
+      officialDomain: "appliedmaterials.com",
+      officialWebsiteDomain: "appliedmaterials.com",
+      officialWebsite: "https://www.appliedmaterials.com",
+      linkedinUrl: null,
+      domainConfidence: "HIGH",
+      emailDomain: "amat.com",
+      emailDomainConfidence: "HIGH",
+      emailDomainEvidence: [],
+      emailPattern: "first_last",
+      patternConfidence: "HIGH",
+      patternEvidence: [],
+      emailFormatReason: "Public evidence shows first_last on amat.com.",
+      emailFormatDiscoveredAt: new Date(),
+      createdAt: new Date(),
+      updatedAt: new Date()
+    }));
+
+    const result = await graphql({
+      schema: prospectSchema,
+      source: `mutation { discoverCompanyEmailFormat(companyId: "comp_A", force: true) { id emailDomain emailPattern emailFormatReason } }`,
+      contextValue: makeContext({
+        user: FAKE_USER,
+        services: {
+          prospectSearch: {
+            discoverCompanyEmailFormat
+          } as unknown as GraphQLContext["services"]["prospectSearch"]
+        }
+      })
+    });
+
+    expect(result.errors).toBeUndefined();
+    expect(result.data?.discoverCompanyEmailFormat).toMatchObject({
+      emailDomain: "amat.com",
+      emailPattern: "first_last",
+      emailFormatReason: "Public evidence shows first_last on amat.com."
+    });
+    expect(discoverCompanyEmailFormat).toHaveBeenCalledWith("user_A", "comp_A", { force: true });
+  });
+
+  it("surfaces a safe rate-limit error from AI discovery", async () => {
+    const discoverCompanyEmailFormat = vi.fn(async () => {
+      throw new ProspectError(
+        "RATE_LIMITED",
+        "You've reached the AI email-format search limit. Try again in about 30 minutes."
+      );
+    });
+
+    const result = await graphql({
+      schema: prospectSchema,
+      source: `mutation { discoverCompanyEmailFormat(companyId: "comp_A") { id } }`,
+      contextValue: makeContext({
+        user: FAKE_USER,
+        services: {
+          prospectSearch: {
+            discoverCompanyEmailFormat
+          } as unknown as GraphQLContext["services"]["prospectSearch"]
+        }
+      })
+    });
+
+    expect(result.data?.discoverCompanyEmailFormat ?? null).toBeNull();
+    expect(result.errors?.[0]?.extensions?.code).toBe("FORBIDDEN");
+    expect(result.errors?.[0]?.message).toContain("limit");
+  });
 });

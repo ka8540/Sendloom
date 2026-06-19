@@ -86,7 +86,22 @@ const envSchema = z
     PROSPECT_AI_MAX_ROLE_CALLS_PER_SEARCH: z.coerce.number().int().nonnegative().default(1),
     PROSPECT_AI_MAX_PATTERN_CALLS_PER_SEARCH: z.coerce.number().int().nonnegative().default(1),
     PROSPECT_AI_MAX_UNIQUE_TITLES: z.coerce.number().int().positive().default(100),
-    PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS: booleanFlag(false)
+    PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS: booleanFlag(false),
+    // --- AI web-search email-format discovery (OpenAI Responses + web_search) ---
+    // Primary email-format discovery now uses GPT-5.5 with the OpenAI Responses
+    // API built-in web_search tool. "none" disables it (manual/source-URL only).
+    PROSPECT_EMAIL_DISCOVERY_PROVIDER: z.preprocess(
+      (value) => (value === "" || value === undefined ? "openai_web_search" : String(value).trim().toLowerCase()),
+      z.enum(["none", "openai_web_search"]).default("openai_web_search")
+    ),
+    // Master switch for the web search call. When false, web search never runs
+    // even if a provider/key is present; manual override + source URL still work.
+    PROSPECT_EMAIL_FORMAT_WEB_SEARCH_ENABLED: booleanFlag(true),
+    // How many web results the model is asked to consider per company.
+    PROSPECT_EMAIL_FORMAT_MAX_WEB_RESULTS: z.coerce.number().int().positive().max(20).default(5),
+    // Cost controls — AI web-search discovery calls per user.
+    PROSPECT_EMAIL_FORMAT_AI_DAILY_LIMIT: z.coerce.number().int().nonnegative().default(20),
+    PROSPECT_EMAIL_FORMAT_AI_HOURLY_LIMIT: z.coerce.number().int().nonnegative().default(5)
   })
   .superRefine((value, ctx) => {
     if (value.OBJECT_STORAGE_MODE === "r2") {
@@ -175,7 +190,12 @@ function readRawEnv() {
     PROSPECT_AI_MAX_ROLE_CALLS_PER_SEARCH: process.env.PROSPECT_AI_MAX_ROLE_CALLS_PER_SEARCH,
     PROSPECT_AI_MAX_PATTERN_CALLS_PER_SEARCH: process.env.PROSPECT_AI_MAX_PATTERN_CALLS_PER_SEARCH,
     PROSPECT_AI_MAX_UNIQUE_TITLES: process.env.PROSPECT_AI_MAX_UNIQUE_TITLES,
-    PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS: process.env.PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS
+    PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS: process.env.PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS,
+    PROSPECT_EMAIL_DISCOVERY_PROVIDER: process.env.PROSPECT_EMAIL_DISCOVERY_PROVIDER,
+    PROSPECT_EMAIL_FORMAT_WEB_SEARCH_ENABLED: process.env.PROSPECT_EMAIL_FORMAT_WEB_SEARCH_ENABLED,
+    PROSPECT_EMAIL_FORMAT_MAX_WEB_RESULTS: process.env.PROSPECT_EMAIL_FORMAT_MAX_WEB_RESULTS,
+    PROSPECT_EMAIL_FORMAT_AI_DAILY_LIMIT: process.env.PROSPECT_EMAIL_FORMAT_AI_DAILY_LIMIT,
+    PROSPECT_EMAIL_FORMAT_AI_HOURLY_LIMIT: process.env.PROSPECT_EMAIL_FORMAT_AI_HOURLY_LIMIT
   };
 }
 

@@ -26,6 +26,7 @@ export function mapProspectError(error: unknown): never {
       case "INVALID_STATE":
         throw badInputError(error.message);
       case "NOT_CONFIGURED":
+      case "RATE_LIMITED":
         throw forbiddenError(error.message);
       default:
         break;
