@@ -286,6 +286,25 @@
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .ambientLayer,
+  .popover {
+    animation: none;
+  }
+
+  .spotlight {
+    transition: none;
+  }
+
+  .helpButton,
+  .iconButton,
+  .skipButton,
+  .nextButton,
+  .progressDot {
+    transition: none;
+  }
+}
+
 @media (max-width: 760px) {
   .helpButton {
     right: 0.8rem;

@@ -96,6 +96,7 @@ import {
   type PageSelectionState,
   type ProspectSelectionState
 } from "@/components/prospects/prospect-view";
+import { useManual } from "@/components/manual/ManualProvider";
 import styles from "@/components/prospects/prospects-dashboard.module.css";
 
 const TONE_CLASS: Record<BadgeTone, string> = {
@@ -212,6 +213,11 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
 
   const selectedView = resolveSelectedSearchView(selectedSearch);
   const pageState = resolveProspectPageState({ disabled, loading: searchesLoading, searchCount: searchesTotal });
+
+  // Contextual onboarding (reuses the shared Sendloom manual/help system). The
+  // dashboard drives stage selection because it knows the real load/search state.
+  const { manual: discoverManual, isOpen: manualOpen, openManualStage, isStageComplete } = useManual();
+  const autoTourStagesRef = useRef<Set<string>>(new Set());
 
   const loadQuota = useCallback(async () => {
     const result = await prospectGraphql<{ discoverQuota: DiscoverQuota }>(DISCOVER_QUOTA_QUERY);
@@ -396,6 +402,43 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
     // Run once on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // State-aware onboarding: auto-open the relevant guide once per stage for a
+  // first-time user. Starter (empty), draft (a draft is selected), and results
+  // (a READY search is open) each persist independently, never auto-repeat once
+  // completed/dismissed, and never launch over a modal or an in-flight process.
+  useEffect(() => {
+    if (!discoverManual || manualOpen || showNewSearch || reviewOpen || processingId) {
+      return;
+    }
+    let stage: "starter" | "draft" | "results" | null = null;
+    if (pageState === "empty") {
+      stage = "starter";
+    } else if (selectedView === "ready") {
+      stage = "results";
+    } else if (selectedSearch?.status === "DRAFT") {
+      stage = "draft";
+    }
+    if (!stage || autoTourStagesRef.current.has(stage)) {
+      return;
+    }
+    autoTourStagesRef.current.add(stage);
+    if (isStageComplete(stage)) {
+      return;
+    }
+    openManualStage(stage);
+  }, [
+    discoverManual,
+    manualOpen,
+    showNewSearch,
+    reviewOpen,
+    processingId,
+    pageState,
+    selectedView,
+    selectedSearch?.status,
+    openManualStage,
+    isStageComplete
+  ]);
 
   const handleSelectCategory = useCallback(
     (category: PositionCategory | null) => {
@@ -854,7 +897,7 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
 
   return (
     <div className={styles.page}>
-      <header className={styles.header}>
+      <header className={styles.header} data-discover-tour="page-intro">
         <div className={styles.headerCopy}>
           <p className={styles.eyebrow}>
             <Users aria-hidden="true" /> {PROSPECT_FINDER_TAGLINE}
@@ -871,11 +914,17 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
               onClick={refreshAll}
               disabled={searchesLoading}
               title="Refresh"
+              data-discover-tour="refresh"
             >
               <RefreshCw aria-hidden="true" className={searchesLoading ? styles.spin : undefined} />
               <span>Refresh</span>
             </button>
-            <button type="button" className={styles.primaryButton} onClick={() => setShowNewSearch(true)}>
+            <button
+              type="button"
+              className={styles.primaryButton}
+              onClick={() => setShowNewSearch(true)}
+              data-discover-tour="new-search"
+            >
               <Plus aria-hidden="true" />
               <span>New search</span>
             </button>
@@ -1002,7 +1051,7 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
                     </div>
                   </div>
 
-                  <div className={styles.categoryRail} role="tablist" aria-label="Role groups">
+                  <div className={styles.categoryRail} role="tablist" aria-label="Role groups" data-discover-tour="role-filters">
                     <button
                       type="button"
                       role="tab"
@@ -1029,13 +1078,13 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
                     ))}
                   </div>
 
-                  <div className={styles.noticeBanner} role="note">
+                  <div className={styles.noticeBanner} role="note" data-discover-tour="inferred-warning">
                     <AlertCircle aria-hidden="true" />
                     <span>{INFERRED_EMAIL_NOTICE}</span>
                   </div>
 
                   <div className={styles.peopleToolbar}>
-                    <div className={styles.filterField}>
+                    <div className={styles.filterField} data-discover-tour="people-filter">
                       <Search aria-hidden="true" />
                       <input
                         type="search"
@@ -1071,7 +1120,7 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
                     />
                   )}
 
-                  <div className={styles.peopleTableShell}>
+                  <div className={styles.peopleTableShell} data-discover-tour="people-table">
                     <PeopleTable
                       people={visiblePeople}
                       loading={peopleLoading}
@@ -1086,7 +1135,7 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
                     />
                   </div>
 
-                  <div className={styles.paginationRow}>
+                  <div className={styles.paginationRow} data-discover-tour="people-pagination">
                     <span className={styles.peopleShowing}>
                       {formatShowingLabel({ offset: peopleOffset, pageCount: people.length, totalCount: peopleTotal })}
                     </span>
@@ -1182,7 +1231,7 @@ function SummaryCards({
 
   return (
     <div className={styles.summaryGrid}>
-      <div className={`card ${styles.summaryCard}`}>
+      <div className={`card ${styles.summaryCard}`} data-discover-tour="company-summary">
         <span className={styles.summaryLabel}>
           <Building2 aria-hidden="true" /> Company
         </span>
@@ -1190,7 +1239,7 @@ function SummaryCards({
         <span className={styles.summaryMeta}>Website: {websiteDomain ?? "unresolved"}</span>
       </div>
 
-      <div className={`card ${styles.summaryCard}`}>
+      <div className={`card ${styles.summaryCard}`} data-discover-tour="people-summary">
         <span className={styles.summaryLabel}>
           <Users aria-hidden="true" /> People found
         </span>
@@ -1198,7 +1247,7 @@ function SummaryCards({
         <span className={styles.summaryMeta}>{positionCount > 0 ? `${positionCount} position groups` : "Position groups appear when ready"}</span>
       </div>
 
-      <div className={`card ${styles.summaryCard}`}>
+      <div className={`card ${styles.summaryCard}`} data-discover-tour="email-format-summary">
         <span className={styles.summaryLabel}>
           <AtSign aria-hidden="true" /> Email format
         </span>
@@ -1216,7 +1265,7 @@ function SummaryCards({
         {domainDiffers && <span className={styles.summaryMeta}>Website differs from email domain</span>}
       </div>
 
-      <div className={`card ${styles.summaryCard}`}>
+      <div className={`card ${styles.summaryCard}`} data-discover-tour="search-status">
         <span className={styles.summaryLabel}>
           <Sparkles aria-hidden="true" /> Search status
         </span>
@@ -1291,7 +1340,7 @@ function CompanyCard({
   const firstPatternEvidence = company.patternEvidence[0] ?? null;
   const hasEmailFormat = Boolean(company.emailDomain && company.emailPattern);
   return (
-    <div className={`card ${styles.companyCard}`}>
+    <div className={`card ${styles.companyCard}`} data-discover-tour="company-details">
       <div className={styles.companyHeader}>
         <div className={styles.companyIcon} aria-hidden="true">
           <Building2 />
@@ -1317,6 +1366,7 @@ function CompanyCard({
           onClick={() => onDelete(company)}
           disabled={deleting}
           title="Delete company graph"
+          data-discover-tour="delete"
         >
           {deleting ? <LoaderCircle aria-hidden="true" className={styles.spin} /> : <Trash2 aria-hidden="true" />}
           <span>Delete</span>
@@ -1351,7 +1401,7 @@ function CompanyCard({
           <span className={styles.metaValue}>{company.peopleCount}</span>
         </div>
       </div>
-      <div className={styles.evidencePanel}>
+      <div className={styles.evidencePanel} data-discover-tour="email-evidence">
         <span className={styles.metaLabel}>Evidence</span>
         {firstDomainEvidence || firstPatternEvidence ? (
           <div className={styles.evidenceList}>
@@ -1396,14 +1446,15 @@ function CompanyCard({
             className={styles.secondaryButton}
             onClick={() => onDiscoverEmailFormat(company, hasEmailFormat)}
             disabled={refreshingFormat}
+            data-discover-tour="refresh-ai"
           >
             {refreshingFormat ? <LoaderCircle aria-hidden="true" className={styles.spin} /> : <Sparkles aria-hidden="true" />}
             <span>{hasEmailFormat ? "Refresh with AI" : "Find with AI"}</span>
           </button>
-          <button type="button" className={styles.ghostButton} onClick={onToggleFormatSource}>
+          <button type="button" className={styles.ghostButton} onClick={onToggleFormatSource} data-discover-tour="source-url">
             Use source URL
           </button>
-          <button type="button" className={styles.ghostButton} onClick={onToggleManualFormat}>
+          <button type="button" className={styles.ghostButton} onClick={onToggleManualFormat} data-discover-tour="manual-format">
             Fix manually
           </button>
         </div>
@@ -1543,6 +1594,7 @@ function StatusCard({
             className={styles.primaryButton}
             onClick={onProcess}
             disabled={processing || quotaBlocked}
+            data-discover-tour="process-action"
           >
             {processing ? <LoaderCircle aria-hidden="true" className={styles.spin} /> : null}
             {failed ? "Retry processing" : "Process search"}
@@ -1609,7 +1661,7 @@ function BulkSelectionToolbar({
 }) {
   const busy = preparingExport || creatingImport;
   return (
-    <div className={styles.bulkToolbar}>
+    <div className={styles.bulkToolbar} data-discover-tour="bulk-actions">
       <strong>{selectedCount} selected</strong>
       <div className={styles.bulkActions}>
         <button type="button" className={styles.secondaryButton} onClick={onDownload} disabled={busy}>
@@ -1640,7 +1692,7 @@ function SelectAllMatchingBanner({
   onSelectAll: () => void;
 }) {
   return (
-    <div className={styles.selectAllBanner} role="status">
+    <div className={styles.selectAllBanner} role="status" data-discover-tour="select-all">
       <span>All {pageCount} people on this page are selected.</span>
       <button type="button" onClick={onSelectAll}>
         {categoryName
@@ -1719,7 +1771,7 @@ function PeopleTable({
   return (
     <div className={styles.table} role="table" aria-label="People">
       <div className={`${styles.row} ${styles.headRow}`} role="row">
-        <span role="columnheader" className={styles.cellSelect}>
+        <span role="columnheader" className={styles.cellSelect} data-discover-tour="selection">
           <SelectionCheckbox
             checked={pageSelectionState === "checked"}
             indeterminate={pageSelectionState === "indeterminate"}
@@ -1773,6 +1825,7 @@ function PeopleTable({
                     onClick={() => onCopy(person)}
                     aria-label={copied ? "Copied" : `Copy ${person.inferredEmail}`}
                     title={copied ? "Copied" : "Copy email"}
+                    data-discover-tour="copy-email"
                   >
                     {copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
                   </button>
@@ -1791,6 +1844,7 @@ function PeopleTable({
                 rel={EXTERNAL_LINK_REL}
                 className={styles.linkButton}
                 aria-label={`Open ${person.fullName} on LinkedIn`}
+                data-discover-tour="profile-link"
               >
                 <ExternalLink aria-hidden="true" />
               </a>
@@ -1931,7 +1985,7 @@ function SearchHistoryTable({
   onNext: () => void;
 }) {
   return (
-    <section className={`card ${styles.historyPanel}`} aria-label="Search history">
+    <section className={`card ${styles.historyPanel}`} aria-label="Search history" data-discover-tour="search-history">
       <div className={styles.panelHeader}>
         <div>
           <h2 className={styles.panelTitle}>Search history</h2>
@@ -2116,6 +2170,7 @@ function NewSearchModal({
             required
             autoFocus
           />
+          <span className={styles.fieldHint}>Enter the company whose professionals you want to find.</span>
         </label>
         <label className={styles.field}>
           <span className={styles.fieldLabel}>Job titles</span>
@@ -2125,7 +2180,9 @@ function NewSearchModal({
             onChange={(event) => onChange({ ...form, jobTitles: event.target.value })}
             placeholder="Software Engineer, Recruiter"
           />
-          <span className={styles.fieldHint}>Comma separated</span>
+          <span className={styles.fieldHint}>
+            Add one or more roles separated by commas, such as Software Engineer, Recruiter, or Data Analyst.
+          </span>
         </label>
         <label className={styles.field}>
           <span className={styles.fieldLabel}>Locations</span>
@@ -2135,6 +2192,7 @@ function NewSearchModal({
             onChange={(event) => onChange({ ...form, locations: event.target.value })}
             placeholder="United States"
           />
+          <span className={styles.fieldHint}>Enter a country, state, city, or professional region to narrow the search.</span>
         </label>
         <DiscoverUsagePanel quota={quota} />
         <div className={styles.modalActions}>
@@ -2157,9 +2215,21 @@ function QuotaIndicator({ quota }: { quota: DiscoverQuota | null }) {
     return null;
   }
   if (quota.unlimited) {
-    return <span className={`${styles.quotaIndicator} ${styles.quotaIndicatorUnlimited}`}>Unlimited Discover access</span>;
+    return (
+      <span
+        className={`${styles.quotaIndicator} ${styles.quotaIndicatorUnlimited}`}
+        data-discover-tour="quota"
+        data-discover-quota="unlimited"
+      >
+        Unlimited Discover access
+      </span>
+    );
   }
-  return <span className={styles.quotaIndicator}>{formatQuotaRemaining(quota)}</span>;
+  return (
+    <span className={styles.quotaIndicator} data-discover-tour="quota" data-discover-quota="limited">
+      {formatQuotaRemaining(quota)}
+    </span>
+  );
 }
 
 /** The usage helper shown inside the New search modal. */

@@ -12,16 +12,20 @@ export function ManualButton() {
     return null;
   }
 
+  const label = manual.helpLabel ?? "Help";
+  const tooltip = manual.helpTooltip ?? "Help";
+
   return (
     <button
       className={styles.helpButton}
       type="button"
       onClick={openManual}
-      aria-label="Help"
+      aria-label={label}
+      data-manual-help-button="true"
     >
       <CircleHelp aria-hidden="true" />
       <span className={styles.helpTooltip} aria-hidden="true">
-        Help
+        {tooltip}
       </span>
     </button>
   );

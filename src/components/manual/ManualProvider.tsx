@@ -1,21 +1,27 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 
-import type { ManualConfig } from "@/components/manual/manualTypes";
+import type { ManualConfig, ManualStep } from "@/components/manual/manualTypes";
 import { ManualButton } from "@/components/manual/ManualButton";
 import { ManualOverlay } from "@/components/manual/ManualOverlay";
+import { filterAvailableManualSteps, isManualTargetPresent } from "@/components/manual/manualSteps";
 import { getManualForPathname } from "@/manuals";
 
 type ManualContextValue = {
   currentStepIndex: number;
   isOpen: boolean;
   manual: ManualConfig | null;
+  /** The steps currently driving the overlay (stage-resolved + availability-filtered). */
+  steps: ManualStep[];
+  activeStage: string | null;
   finishManual: () => void;
   nextStep: () => void;
   openManual: () => void;
+  openManualStage: (stage: string | null) => void;
   skipManual: () => void;
+  isStageComplete: (stage: string | null) => boolean;
 };
 
 const ManualContext = createContext<ManualContextValue | null>(null);
@@ -33,24 +39,31 @@ const SCROLL_KEYS = new Set([
   " "
 ]);
 
-function getStorageKey(manualId: string) {
-  return `${STORAGE_PREFIX}${manualId}`;
+function getStorageKey(manual: ManualConfig, stage: string | null) {
+  const stageSuffix = stage ? `.${stage}` : "";
+  const versionSuffix = manual.version ? `.${manual.version}` : "";
+  return `${STORAGE_PREFIX}${manual.id}${stageSuffix}${versionSuffix}`;
 }
 
-function isManualComplete(manualId: string) {
+function isManualComplete(manual: ManualConfig, stage: string | null) {
   try {
-    return window.localStorage.getItem(getStorageKey(manualId)) === "true";
+    return window.localStorage.getItem(getStorageKey(manual, stage)) === "true";
   } catch {
     return false;
   }
 }
 
-function markManualComplete(manualId: string) {
+function markManualComplete(manual: ManualConfig, stage: string | null) {
   try {
-    window.localStorage.setItem(getStorageKey(manualId), "true");
+    window.localStorage.setItem(getStorageKey(manual, stage), "true");
   } catch {
     // If storage is unavailable, keep the current session state only.
   }
+}
+
+function resolveStepsForStage(manual: ManualConfig, stage: string | null): ManualStep[] {
+  const base = manual.resolveSteps ? manual.resolveSteps(stage) : manual.steps;
+  return filterAvailableManualSteps(base, isManualTargetPresent);
 }
 
 function isManualActivationKey(event: KeyboardEvent) {
@@ -82,37 +95,57 @@ export function useManual() {
 }
 
 export function ManualProvider({ children }: { children: React.ReactNode }) {
-  return (
-    <>
-      {children}
-      <ManualRuntime />
-    </>
-  );
+  return <ManualRuntime>{children}</ManualRuntime>;
 }
 
-function ManualRuntime() {
+function ManualRuntime({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const manual = useMemo(() => getManualForPathname(pathname), [pathname]);
   const [isOpen, setIsOpen] = useState(false);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
+  const [activeStage, setActiveStage] = useState<string | null>(null);
+  const [steps, setSteps] = useState<ManualStep[]>([]);
+  const wasOpenRef = useRef(false);
 
+  const open = useCallback(
+    (stage: string | null) => {
+      if (!manual) {
+        return;
+      }
+      const resolvedSteps = resolveStepsForStage(manual, stage);
+      if (resolvedSteps.length === 0) {
+        return;
+      }
+      setActiveStage(stage);
+      setSteps(resolvedSteps);
+      setCurrentStepIndex(0);
+      setIsOpen(true);
+    },
+    [manual]
+  );
+
+  // Reset on route/manual change, then auto-open once (unless the manual opts out).
   useEffect(() => {
     setIsOpen(false);
     setCurrentStepIndex(0);
+    setActiveStage(null);
+    setSteps([]);
 
-    if (!manual) {
+    if (!manual || manual.autoOpen === false) {
       return;
     }
 
     const timer = window.setTimeout(() => {
-      if (!isManualComplete(manual.id)) {
-        setIsOpen(true);
+      const stage = manual.resolveStage ? manual.resolveStage() : null;
+      if (!isManualComplete(manual, stage)) {
+        open(stage);
       }
     }, AUTO_OPEN_DELAY_MS);
 
     return () => window.clearTimeout(timer);
-  }, [manual]);
+  }, [manual, open]);
 
+  // Scroll lock while a tour is open (unchanged from the original behavior).
   useEffect(() => {
     if (!isOpen) {
       return;
@@ -165,66 +198,102 @@ function ManualRuntime() {
     };
   }, [isOpen]);
 
+  // Return focus to the help button after the tour closes (accessibility).
+  useEffect(() => {
+    if (wasOpenRef.current && !isOpen) {
+      const button = document.querySelector<HTMLElement>("[data-manual-help-button='true']");
+      if (button) {
+        window.requestAnimationFrame(() => button.focus());
+      }
+    }
+    wasOpenRef.current = isOpen;
+  }, [isOpen]);
+
   const finishManual = useCallback(() => {
     if (manual) {
-      markManualComplete(manual.id);
+      markManualComplete(manual, activeStage);
     }
 
     setIsOpen(false);
     setCurrentStepIndex(0);
-  }, [manual]);
+  }, [activeStage, manual]);
 
   const nextStep = useCallback(() => {
-    if (!manual) {
-      return;
-    }
-
     setCurrentStepIndex((stepIndex) => {
       const nextIndex = stepIndex + 1;
 
-      if (nextIndex >= manual.steps.length) {
-        markManualComplete(manual.id);
+      if (nextIndex >= steps.length) {
+        if (manual) {
+          markManualComplete(manual, activeStage);
+        }
         setIsOpen(false);
         return 0;
       }
 
       return nextIndex;
     });
-  }, [manual]);
+  }, [activeStage, manual, steps.length]);
 
   const openManual = useCallback(() => {
     if (!manual) {
       return;
     }
+    open(manual.resolveStage ? manual.resolveStage() : null);
+  }, [manual, open]);
 
-    setCurrentStepIndex(0);
-    setIsOpen(true);
-  }, [manual]);
+  const openManualStage = useCallback(
+    (stage: string | null) => {
+      open(stage);
+    },
+    [open]
+  );
 
   const skipManual = useCallback(() => {
     if (manual) {
-      markManualComplete(manual.id);
+      markManualComplete(manual, activeStage);
     }
 
     setIsOpen(false);
     setCurrentStepIndex(0);
-  }, [manual]);
+  }, [activeStage, manual]);
+
+  const isStageComplete = useCallback(
+    (stage: string | null) => (manual ? isManualComplete(manual, stage) : false),
+    [manual]
+  );
 
   const value = useMemo<ManualContextValue>(
     () => ({
+      activeStage,
       currentStepIndex,
       finishManual,
       isOpen,
+      isStageComplete,
       manual,
       nextStep,
       openManual,
-      skipManual
+      openManualStage,
+      skipManual,
+      steps
     }),
-    [currentStepIndex, finishManual, isOpen, manual, nextStep, openManual, skipManual]
+    [
+      activeStage,
+      currentStepIndex,
+      finishManual,
+      isOpen,
+      isStageComplete,
+      manual,
+      nextStep,
+      openManual,
+      openManualStage,
+      skipManual,
+      steps
+    ]
   );
 
   return (
     <ManualContext.Provider value={value}>
+      {children}
       <ManualButton />
       <ManualOverlay />
     </ManualContext.Provider>

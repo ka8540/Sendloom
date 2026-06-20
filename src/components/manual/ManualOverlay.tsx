@@ -221,7 +221,7 @@ function getPopoverStyle(
 }
 
 export function ManualOverlay() {
-  const { currentStepIndex, finishManual, isOpen, manual, nextStep, skipManual } = useManual();
+  const { currentStepIndex, finishManual, isOpen, manual, nextStep, skipManual, steps } = useManual();
   const popoverRef = useRef<HTMLElement | null>(null);
   const frameRef = useRef<number | null>(null);
   const scrollSettleFrameRef = useRef<number | null>(null);
@@ -230,8 +230,34 @@ export function ManualOverlay() {
   const lastGeometryRef = useRef<OverlayGeometry | null>(null);
   const [geometry, setGeometry] = useState<OverlayGeometry | null>(null);
 
-  const step = manual?.steps[currentStepIndex] ?? null;
-  const isFinalStep = Boolean(manual && currentStepIndex === manual.steps.length - 1);
+  const step = steps[currentStepIndex] ?? null;
+  const isFinalStep = steps.length > 0 && currentStepIndex === steps.length - 1;
+
+  // Escape closes the tour; focus moves into the popover when it opens so
+  // keyboard and screen-reader users land on the guidance.
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        skipManual();
+      }
+    };
+
+    document.addEventListener("keydown", onKeyDown, { capture: true });
+    const focusFrame = window.requestAnimationFrame(() => {
+      popoverRef.current?.focus();
+    });
+
+    return () => {
+      document.removeEventListener("keydown", onKeyDown, true);
+      window.cancelAnimationFrame(focusFrame);
+    };
+  }, [isOpen, skipManual]);
 
   const updateGeometry = useCallback(() => {
     const popoverRect = popoverRef.current?.getBoundingClientRect();
@@ -429,6 +455,7 @@ export function ManualOverlay() {
         role="dialog"
         aria-live="polite"
         aria-label={`${manual.routeLabel} manual`}
+        tabIndex={-1}
       >
         <div className={styles.popoverTop}>
           <span>{manual.routeLabel}</span>
@@ -448,8 +475,8 @@ export function ManualOverlay() {
           <p>{renderBrandText(step.body)}</p>
         </div>
 
-        <div className={styles.progressRow} aria-label={`Step ${currentStepIndex + 1} of ${manual.steps.length}`}>
-          {manual.steps.map((manualStep, index) => (
+        <div className={styles.progressRow} aria-label={`Step ${currentStepIndex + 1} of ${steps.length}`}>
+          {steps.map((manualStep, index) => (
             <span
               key={manualStep.id}
               className={`${styles.progressDot}${index <= currentStepIndex ? ` ${styles.progressDotActive}` : ""}`}
