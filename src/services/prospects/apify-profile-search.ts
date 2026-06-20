@@ -31,6 +31,12 @@ export type ApifyProfileSearchInput = {
   jobTitles: string[];
   locations: string[];
   maxResults: number;
+  /**
+   * 1-based provider page to start from (25 results per page). Defaults to 1.
+   * "Add 10 more" passes the saved continuation page so a follow-up search
+   * resumes after the pages already fetched instead of restarting at page 1.
+   */
+  startPage?: number;
 };
 
 export type ApifyProfileSearchResult = {
@@ -65,7 +71,7 @@ export function buildActorInput(input: ApifyProfileSearchInput): ApifyActorInput
     locations: input.locations,
     maxItems,
     takePages: Math.max(1, Math.ceil(maxItems / 25)),
-    startPage: 1,
+    startPage: Math.max(1, Math.floor(input.startPage ?? 1)),
     autoQuerySegmentation: false
   };
 
@@ -324,7 +330,8 @@ export class ApifyProfileSearchService {
       companyLinkedinUrl: input.companyLinkedinUrl ?? input.linkedinCompanyUrl ?? null,
       jobTitles: input.jobTitles,
       locations: input.locations,
-      maxResults: input.maxResults
+      maxResults: input.maxResults,
+      startPage: input.startPage
     });
 
     const { runId, datasetId, items, status, statusMessage } = await this.runner.run(this.actorId, actorInput);

@@ -34,6 +34,7 @@ import {
   makeManualEmailDomainEvidence
 } from "@/services/prospects/email-domain-service";
 import { resolveCandidateEmail } from "@/services/prospects/email-generation-service";
+import { combinedEmailConfidence } from "@/services/prospects/prospect-email-confidence";
 import { isOpenAIEmailFormatDiscoveryConfigured } from "@/services/prospects/openai-email-format-discovery";
 import { AiCallBudget, createAiBudget } from "@/services/prospects/prospect-ai";
 import { normalizeDomain, normalizeTitle } from "@/services/prospects/prospect-normalization";
@@ -49,7 +50,9 @@ export type ProspectErrorCode =
   | "PROVIDER_ERROR"
   | "NOT_CONFIGURED"
   | "RATE_LIMITED"
-  | "DISCOVER_DAILY_LIMIT_REACHED";
+  | "DISCOVER_DAILY_LIMIT_REACHED"
+  | "DISCOVER_EXPANSION_ALREADY_RUNNING"
+  | "DISCOVER_EXPANSION_FAILED";
 
 export class ProspectError extends Error {
   code: ProspectErrorCode;
@@ -856,28 +859,6 @@ export class ProspectSearchService {
       });
     }
   }
-}
-
-function coerceConfidenceLevelSafe(value: string | null | undefined): ConfidenceLevel {
-  return value === "HIGH" || value === "MEDIUM" || value === "LOW" ? value : "UNAVAILABLE";
-}
-
-function combinedEmailConfidence(
-  emailDomainConfidence: string | null | undefined,
-  patternConfidence: string | null | undefined
-): ConfidenceLevel {
-  const domain = coerceConfidenceLevelSafe(emailDomainConfidence);
-  const pattern = coerceConfidenceLevelSafe(patternConfidence);
-  if (domain === "UNAVAILABLE" || pattern === "UNAVAILABLE") {
-    return "UNAVAILABLE";
-  }
-  if (domain === "LOW" || pattern === "LOW") {
-    return "LOW";
-  }
-  if (domain === "MEDIUM" || pattern === "MEDIUM") {
-    return "MEDIUM";
-  }
-  return "HIGH";
 }
 
 function discoverCacheAgeDays(fetchedAt: Date | null, nowMs: number): number | null {

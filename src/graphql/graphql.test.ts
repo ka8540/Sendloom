@@ -491,3 +491,131 @@ describe("Discover quota GraphQL surface", () => {
     expect(inputBlock).not.toContain("email");
   });
 });
+
+describe("addMoreDiscoverPeople expansion mutation", () => {
+  it("delegates to the expansion service with the session email, never input", async () => {
+    const addMorePeople = vi.fn(async () => ({
+      id: "exp_1",
+      searchId: "s1",
+      status: "READY",
+      requestedCount: 10,
+      addedCount: 10,
+      totalPeopleCount: 20,
+      quotaRemaining: 2,
+      exhausted: false,
+      message: "10 new people were added."
+    }));
+
+    const result = await graphql({
+      schema: prospectSchema,
+      source: `mutation { addMoreDiscoverPeople(searchId: "s1", idempotencyKey: "k1") { id status addedCount totalPeopleCount quotaRemaining exhausted message } }`,
+      contextValue: makeContext({
+        user: FAKE_USER,
+        services: {
+          discoverExpansion: { addMorePeople } as unknown as GraphQLContext["services"]["discoverExpansion"]
+        }
+      })
+    });
+
+    expect(result.errors).toBeUndefined();
+    expect(result.data?.addMoreDiscoverPeople).toMatchObject({ addedCount: 10, totalPeopleCount: 20, exhausted: false });
+    expect(addMorePeople).toHaveBeenCalledWith({
+      userId: "user_A",
+      actorEmail: "a@example.com",
+      searchId: "s1",
+      idempotencyKey: "k1"
+    });
+  });
+
+  it("requires authentication", async () => {
+    const result = await graphql({
+      schema: prospectSchema,
+      source: `mutation { addMoreDiscoverPeople(searchId: "s1", idempotencyKey: "k1") { id } }`,
+      contextValue: makeContext({ user: null })
+    });
+    expect(result.data?.addMoreDiscoverPeople ?? null).toBeNull();
+    expect(result.errors?.[0]?.extensions?.code).toBe("UNAUTHENTICATED");
+  });
+
+  it("rejects a blank idempotency key", async () => {
+    const addMorePeople = vi.fn();
+    const result = await graphql({
+      schema: prospectSchema,
+      source: `mutation { addMoreDiscoverPeople(searchId: "s1", idempotencyKey: "   ") { id } }`,
+      contextValue: makeContext({
+        user: FAKE_USER,
+        services: { discoverExpansion: { addMorePeople } as unknown as GraphQLContext["services"]["discoverExpansion"] }
+      })
+    });
+    expect(result.errors?.[0]?.extensions?.code).toBe("BAD_USER_INPUT");
+    expect(addMorePeople).not.toHaveBeenCalled();
+  });
+
+  it("maps the already-running error to its safe code", async () => {
+    const addMorePeople = vi.fn(async () => {
+      throw new ProspectError("DISCOVER_EXPANSION_ALREADY_RUNNING", "This search is already adding more people.");
+    });
+    const result = await graphql({
+      schema: prospectSchema,
+      source: `mutation { addMoreDiscoverPeople(searchId: "s1", idempotencyKey: "k1") { id } }`,
+      contextValue: makeContext({
+        user: FAKE_USER,
+        services: { discoverExpansion: { addMorePeople } as unknown as GraphQLContext["services"]["discoverExpansion"] }
+      })
+    });
+    expect(result.errors?.[0]?.extensions?.code).toBe("DISCOVER_EXPANSION_ALREADY_RUNNING");
+  });
+
+  it("resolves ProspectSearch.exhausted from the shared cache state", async () => {
+    const prisma = createFakePrisma();
+    const fingerprint = "fp_exhausted";
+    prisma._state.companies.push({
+      id: "comp_A",
+      userId: "user_A",
+      name: "Apple",
+      normalizedName: "apple",
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+    prisma._state.searches.push({
+      id: "s1",
+      userId: "user_A",
+      companyId: "comp_A",
+      requestedCompany: "Apple",
+      requestedTitles: ["Software Engineer"],
+      requestedLocations: ["United States"],
+      maxResults: 10,
+      status: "READY",
+      totalProcessed: 10,
+      cacheFingerprint: fingerprint,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+    prisma._state.discoverCache.push({
+      id: "dc_1",
+      fingerprint,
+      providerExhausted: true,
+      resultCount: 1,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+    // The single cached person is already owned by the user → nothing left.
+    prisma._state.discoverCachePeople.push({ id: "dcp_1", cacheId: "dc_1", sortIndex: 0, sourceProfileId: "x1", linkedinUrl: "https://linkedin.com/in/x1" });
+    prisma._state.people.push({
+      id: "p1",
+      userId: "user_A",
+      companyId: "comp_A",
+      sourceProfileId: "x1",
+      linkedinUrl: "https://linkedin.com/in/x1"
+    });
+
+    const result = await graphql({
+      schema: prospectSchema,
+      source: `{ prospectSearch(id: "s1") { id exhausted } }`,
+      contextValue: makeContext({ user: FAKE_USER, prisma })
+    });
+
+    expect(result.errors).toBeUndefined();
+    expect(result.data?.prospectSearch).toMatchObject({ id: "s1", exhausted: true });
+  });
+});

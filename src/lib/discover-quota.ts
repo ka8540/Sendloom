@@ -261,6 +261,17 @@ export function formatDiscoverLimitMessage(status: DiscoverQuotaStatus): string 
   )}.`;
 }
 
+/**
+ * The limit message for an "Add 10 more" expansion. Same daily allowance, phrased
+ * for adding people. Carries the exact reset timestamp (with the date, never a
+ * bare time) so it is never timezone-ambiguous.
+ */
+export function formatDiscoverExpansionLimitMessage(status: DiscoverQuotaStatus): string {
+  return `You have used today's ${status.dailySearchLimit} Discover searches. You can add more people after your allowance resets on ${formatQuotaReset(
+    status.resetAt
+  )}.`;
+}
+
 /** Format the reset timestamp in UTC so the message is never timezone-ambiguous. */
 export function formatQuotaReset(resetAt: Date): string {
   const formatted = new Intl.DateTimeFormat("en-US", {

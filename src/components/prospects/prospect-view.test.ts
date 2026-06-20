@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 
 import type { DiscoverQuota, PersonNode, ProspectSearchNode } from "@/components/prospects/prospect-graphql";
 import {
+  ADD_MORE_DIALOG_BODY,
+  ADD_MORE_PEOPLE_LABEL,
   EXTERNAL_LINK_REL,
   EXTERNAL_LINK_TARGET,
   INFERRED_EMAIL_NOTICE,
@@ -12,7 +14,11 @@ import {
   PROSPECT_FINDER_TITLE,
   PROSPECT_FINDER_UNAVAILABLE_BODY,
   PROSPECT_FINDER_UNAVAILABLE_TITLE,
+  addMoreDisabledReason,
   confidenceBadge,
+  formatCurrentPeopleLine,
+  formatSearchesRemainingLine,
+  shouldShowAddMore,
   buildProspectSelectionInput,
   createEmptyProspectSelection,
   discoverPerSearchCopy,
@@ -86,6 +92,7 @@ function search(overrides: Partial<ProspectSearchNode> = {}): ProspectSearchNode
     errorCode: null,
     errorMessage: null,
     peopleCount: 3,
+    exhausted: false,
     createdAt: "2026-06-18T00:00:00.000Z",
     completedAt: "2026-06-18T00:01:00.000Z",
     company: {
@@ -444,8 +451,20 @@ describe("Discover quota presentation helpers", () => {
     expect(formatQuotaRemaining(null)).toBeNull();
   });
 
-  it("renders a reset-time label (#4)", () => {
-    expect(formatQuotaReset(quota())).toMatch(/^Resets at /);
+  it("renders a day-qualified reset label so a bare time is never ambiguous (#4)", () => {
+    // Local-component dates keep the calendar-day diff stable across machine
+    // timezones (the formatter also renders in local time).
+    const now = new Date(2026, 5, 20, 9, 0, 0);
+    const todayReset = new Date(2026, 5, 20, 17, 0, 0);
+    const tomorrowReset = new Date(2026, 5, 21, 17, 0, 0);
+    const laterReset = new Date(2026, 5, 25, 17, 0, 0);
+
+    expect(formatQuotaReset({ resetAt: todayReset.toISOString() }, now)).toMatch(/^Resets today at .+\d/);
+    expect(formatQuotaReset({ resetAt: tomorrowReset.toISOString() }, now)).toMatch(/^Resets tomorrow at .+\d/);
+    expect(formatQuotaReset({ resetAt: laterReset.toISOString() }, now)).toMatch(/^Resets \w.* at .+\d/);
+    // Never the old ambiguous "Resets at <time>" with no day.
+    expect(formatQuotaReset({ resetAt: tomorrowReset.toISOString() }, now)).not.toMatch(/^Resets at /);
+
     expect(formatQuotaReset(null)).toBeNull();
     expect(formatQuotaReset({ resetAt: "not-a-date" })).toBeNull();
   });
@@ -463,6 +482,43 @@ describe("Discover quota presentation helpers", () => {
     const unlimited = quota({ unlimited: true, searchesRemaining: 0 });
     expect(isProcessQuotaBlocked(unlimited, "DRAFT")).toBe(false);
     expect(isProcessQuotaBlocked(null, "DRAFT")).toBe(false);
+  });
+});
+
+describe("Add 10 more presentation helpers", () => {
+  it("shows the button only for a READY search with results that is not exhausted (#1, #2, #10)", () => {
+    // READY + results + not exhausted → shown (#1).
+    expect(shouldShowAddMore({ view: "ready", status: "READY", hasResults: true, exhausted: false })).toBe(true);
+    // DRAFT / PROCESSING / FAILED → hidden (#2).
+    expect(shouldShowAddMore({ view: "none", status: "DRAFT", hasResults: false, exhausted: false })).toBe(false);
+    expect(shouldShowAddMore({ view: "processing", status: "SEARCHING_PEOPLE", hasResults: false, exhausted: false })).toBe(false);
+    expect(shouldShowAddMore({ view: "failed", status: "FAILED", hasResults: false, exhausted: false })).toBe(false);
+    // READY but no results yet → hidden.
+    expect(shouldShowAddMore({ view: "ready", status: "READY", hasResults: false, exhausted: false })).toBe(false);
+    // Exhausted → hidden (#10).
+    expect(shouldShowAddMore({ view: "ready", status: "READY", hasResults: true, exhausted: true })).toBe(false);
+  });
+
+  it("disables the button while expanding or when the daily allowance is spent (#5)", () => {
+    expect(addMoreDisabledReason(quota({ searchesRemaining: 3 }), false)).toBeNull();
+    // Disabled (with a reason) while an expansion runs (#5).
+    expect(addMoreDisabledReason(quota({ searchesRemaining: 3 }), true)).toBe("Adding new people…");
+    // Disabled when no daily quota remains.
+    expect(addMoreDisabledReason(quota({ searchesRemaining: 0 }), false)).toMatch(/used today's Discover searches/);
+    // Exempt accounts are never blocked by quota.
+    expect(addMoreDisabledReason(quota({ unlimited: true, searchesRemaining: 0 }), false)).toBeNull();
+  });
+
+  it("renders the current people count and remaining quota for the dialog (#4)", () => {
+    expect(formatCurrentPeopleLine(10)).toBe("Current people: 10");
+    expect(formatSearchesRemainingLine(quota({ searchesRemaining: 3 }))).toBe("Searches remaining today: 3");
+    expect(formatSearchesRemainingLine(quota({ unlimited: true }))).toBe("Searches remaining today: Unlimited");
+  });
+
+  it("explains in the dialog that one daily slot is used (#3)", () => {
+    expect(ADD_MORE_DIALOG_BODY).toContain("1 of your daily Discover searches");
+    expect(ADD_MORE_DIALOG_BODY).toContain("Existing people will not be repeated");
+    expect(ADD_MORE_PEOPLE_LABEL).toBe("Add 10 more");
   });
 });
 
@@ -486,5 +542,39 @@ describe("Discover create modal contracts", () => {
   it("refreshes the quota after processing begins (#7)", () => {
     expect(dashboardSource).toContain("loadQuota");
     expect(dashboardSource).toContain("DISCOVER_QUOTA_QUERY");
+  });
+});
+
+describe("Add 10 more dashboard wiring", () => {
+  const dashboardSource = readFileSync("src/components/prospects/prospects-dashboard.tsx", "utf8");
+
+  it("renders the Add-more button with a stable help target", () => {
+    expect(dashboardSource).toContain('data-discover-tour="add-more-people"');
+    expect(dashboardSource).toContain("UserPlus");
+    expect(dashboardSource).toContain("showAddMore");
+  });
+
+  it("disables the button while an expansion runs so rapid clicks cannot duplicate (#5)", () => {
+    expect(dashboardSource).toContain("expandingSearchId");
+    expect(dashboardSource).toContain("disabled={addMoreDisabled !== null}");
+  });
+
+  it("opens a confirmation dialog before expanding", () => {
+    expect(dashboardSource).toContain("AddMorePeopleDialog");
+    expect(dashboardSource).toContain("setShowAddMoreDialog(true)");
+  });
+
+  it("updates counts + people in place without a full-page reload (#6, #7, #9)", () => {
+    expect(dashboardSource).toContain("ADD_MORE_DISCOVER_PEOPLE_MUTATION");
+    // Refreshes searches (count), company (totals), and people (pagination) in place.
+    expect(dashboardSource).toContain("await loadSearches({ pageIndex: historyPageIndex, after })");
+    expect(dashboardSource).toContain("await loadPeople({ companyId: search.company.id, category: activeCategory, pageIndex: 0, after: null })");
+    // No hard navigation / full reload.
+    expect(dashboardSource).not.toContain("window.location.reload");
+  });
+
+  it("keeps the People page size fixed at 10 (#8)", () => {
+    expect(dashboardSource).toContain("PEOPLE_PAGE_SIZE");
+    expect(readFileSync("src/components/prospects/prospect-graphql.ts", "utf8")).toContain("PEOPLE_PAGE_SIZE = 10");
   });
 });

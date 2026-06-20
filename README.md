@@ -869,6 +869,8 @@ Create a local `.env` file at the repo root with the values below. Secrets and s
 | `DISCOVER_QUOTA_EXEMPT_EMAILS` | Optional | Server-only, comma-separated, case-insensitive allowlist of accounts exempt from the **daily** Discover quota only. Resolved from the authenticated session; never trust a request body. Do **not** prefix with `NEXT_PUBLIC_`. |
 | `DISCOVER_SHARED_CACHE_TTL_DAYS` | Optional | Freshness window (days) for the shared cross-user Discover result cache. Identical canonical searches reuse cached results instead of calling Apify again. Defaults to `30`; absent/invalid falls back to `30`. |
 | `DISCOVER_SHARED_CACHE_VERSION` | Optional | Cache schema version included in the fingerprint. Bump to invalidate all existing entries. Defaults to `v1`. |
+| `DISCOVER_EXPANSION_BATCH_SIZE` | Optional | New unique people added per **Add 10 more** request. Defaults to `10`; the enforced product value stays `10`. |
+| `DISCOVER_EXPANSION_MAX_PROVIDER_PAGES` | Optional | Safety cap on provider continuation pages fetched in a single expansion. Defaults to `5`. Cached unused people are used before any provider call, and continuation resumes after previously fetched pages (never restarts at page 1). |
 | `PROSPECT_AI_ENABLED` | Optional | Enables the AI company/role/pattern steps. Defaults to `true`. |
 | `PROSPECT_AI_MODEL` | Optional | Override the prospect AI model. Blank uses the per-task defaults (company/role: `gpt-5`; AI email-format web search: `gpt-5.5`). |
 | `PROSPECT_AI_REASONING_EFFORT` | Optional | Reasoning effort for prospect AI calls. Defaults to `low`. Supported values are `none`, `low`, `medium`, `high`, and `xhigh`; legacy `minimal` is coerced to `low` for GPT-5.5 compatibility. |
@@ -963,6 +965,38 @@ Company
   └── Position category (SOFTWARE_ENGINEERING, HUMAN_RESOURCES, …)
         └── People (with an inferred — never verified — business email)
 ```
+
+### Add 10 more (search expansion)
+
+A READY search can be extended in place with **Add 10 more** (the `UserPlus`
+action by the People heading; GraphQL `addMoreDiscoverPeople(searchId, idempotencyKey)`).
+Each request appends **up to 10 new unique people** to the **same** search — it
+never creates a new Search History row, never resets or reorders existing
+people, and the People table stays at **10 rows per page** (new people appear on
+later pages). Key behavior:
+
+- **One daily slot per request.** Each Add More uses one Discover daily slot
+  (the same quota as an initial search), reusing the existing quota service. A
+  cached expansion still consumes a slot; **retries are idempotent** (keyed on a
+  client-generated `idempotencyKey` → the expansion id), so a double-click,
+  network retry, or retry of a failed expansion never charges a second slot. The
+  internal/unlimited exemption is unchanged.
+- **Cache before provider.** Unused people already in the shared cache for the
+  exact canonical query (company + normalized roles + normalized locations) are
+  materialized first; Apify is only called when more are still needed.
+- **Provider continuation.** When the provider is needed it **resumes after the
+  pages already fetched** (the actor's `startPage`), persisting the next page,
+  pages fetched, and an exhausted flag on the shared cache entry — it never
+  restarts at page 1. A configurable safety cap
+  (`DISCOVER_EXPANSION_MAX_PROVIDER_PAGES`, default 5) bounds one expansion.
+- **Deduplicated by stable identity** (provider profile id → normalized LinkedIn
+  URL, never by name), enforced server-side, so the same person is never added
+  twice and two different people who share a name are never merged.
+- **Exhaustion.** Once the shared results are exhausted the button is hidden and
+  the search reports `exhausted: true`; the provider is not called again.
+- New people go through the **same** role classification and the existing
+  company-level email format (no email-format AI re-run); inferred emails are
+  never marked verified.
 
 ### AI usage (strictly bounded)
 

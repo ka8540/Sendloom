@@ -141,6 +141,22 @@ describe("results steps (#11, #12, #13)", () => {
     const requiredIds = steps.filter((step) => !step.optional).map((step) => step.id);
     expect(requiredIds).toEqual(expect.arrayContaining(["company-summary", "inferred-warning", "people-table"]));
   });
+
+  it("adds a single optional Add-more step shown only when the button exists (#12 frontend)", () => {
+    const addMore = steps.find((step) => step.id === "add-more-people");
+    expect(addMore).toBeDefined();
+    expect(addMore?.optional).toBe(true); // only rendered when the target is present
+    expect(addMore?.selector).toBe('[data-discover-tour="add-more-people"]');
+    expect(addMore?.title).toBe("Add more unique people");
+    expect(addMore?.body).toMatch(/up to 10 additional people/i);
+    expect(addMore?.body).toMatch(/one daily Discover search/i);
+
+    // Skipped when the button is absent; included when present.
+    const without = filterAvailableManualSteps(steps, (selector) => selector !== '[data-discover-tour="add-more-people"]');
+    expect(without.map((step) => step.id)).not.toContain("add-more-people");
+    const withButton = filterAvailableManualSteps(steps, () => true);
+    expect(withButton.map((step) => step.id)).toContain("add-more-people");
+  });
 });
 
 describe("discoverStepsForStage routing", () => {

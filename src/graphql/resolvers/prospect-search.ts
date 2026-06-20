@@ -6,7 +6,10 @@ import { badInputError, requireUser } from "@/graphql/errors";
 import { buildConnection, cursorArgs, decodeCursor, resolveFirst } from "@/graphql/pagination";
 import { asStringArray, mapProspectError } from "@/graphql/resolvers/helpers";
 import { getDiscoverQuotaStatus } from "@/lib/discover-quota";
+import { PersonIdentitySet } from "@/services/prospects/discover-person-identity";
 import { createProspectSearchSchema, type CreateProspectSearchInput } from "@/services/prospects/prospect-validation";
+
+const MAX_IDEMPOTENCY_KEY_LENGTH = 200;
 
 export const prospectSearchQueries = {
   /**
@@ -73,6 +76,30 @@ export const prospectSearchMutations = {
     } catch (error) {
       mapProspectError(error);
     }
+  },
+
+  async addMoreDiscoverPeople(
+    _root: unknown,
+    args: { searchId: string; idempotencyKey: string },
+    context: GraphQLContext
+  ) {
+    const user = requireUser(context);
+    const idempotencyKey = (args.idempotencyKey ?? "").trim();
+    if (!idempotencyKey || idempotencyKey.length > MAX_IDEMPOTENCY_KEY_LENGTH) {
+      throw badInputError("A valid idempotency key is required.");
+    }
+    try {
+      // The quota email is taken from the authenticated session user only — a
+      // request body / GraphQL input can never grant the exemption.
+      return await context.services.discoverExpansion.addMorePeople({
+        userId: user.id,
+        actorEmail: user.email,
+        searchId: args.searchId,
+        idempotencyKey
+      });
+    } catch (error) {
+      mapProspectError(error);
+    }
   }
 };
 
@@ -88,5 +115,36 @@ export const ProspectSearch = {
   },
   peopleCount(parent: ProspectSearchRow) {
     return parent.totalProcessed;
+  },
+  /**
+   * Whether no more unique people can be added to this search. True only when the
+   * shared provider results for this canonical query are exhausted AND the user
+   * already has every cached person — so "Add 10 more" should be hidden. Cheap in
+   * the common case (one indexed cache lookup that short-circuits to false).
+   */
+  async exhausted(parent: ProspectSearchRow, _args: unknown, context: GraphQLContext) {
+    const user = requireUser(context);
+    if (parent.status !== "READY" || !parent.cacheFingerprint || !parent.companyId) {
+      return false;
+    }
+    const cache = await context.prisma.discoverSearchCache.findUnique({
+      where: { fingerprint: parent.cacheFingerprint }
+    });
+    if (!cache || !cache.providerExhausted) {
+      return false;
+    }
+    const cachePeople = await context.prisma.discoverSearchCachePerson.findMany({
+      where: { cacheId: cache.id },
+      select: { sourceProfileId: true, linkedinUrl: true }
+    });
+    if (cachePeople.length === 0) {
+      return false;
+    }
+    const userPeople = await context.prisma.prospectPerson.findMany({
+      where: { userId: user.id, companyId: parent.companyId },
+      select: { sourceProfileId: true, linkedinUrl: true }
+    });
+    const known = new PersonIdentitySet(userPeople);
+    return cachePeople.every((person) => known.has(person));
   }
 };

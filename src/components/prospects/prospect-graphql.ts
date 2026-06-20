@@ -81,9 +81,25 @@ export type ProspectSearchNode = {
   errorCode: string | null;
   errorMessage: string | null;
   peopleCount: number;
+  /** True when no more unique people can be added (drives the Add-more button). */
+  exhausted: boolean;
   createdAt: string;
   completedAt: string | null;
   company: CompanySummary | null;
+};
+
+export type DiscoverExpansionStatus = "PENDING" | "PROCESSING" | "READY" | "FAILED";
+
+export type DiscoverSearchExpansion = {
+  id: string;
+  searchId: string;
+  status: DiscoverExpansionStatus;
+  requestedCount: number;
+  addedCount: number;
+  totalPeopleCount: number;
+  quotaRemaining: number;
+  exhausted: boolean;
+  message: string | null;
 };
 
 export type PositionNode = {
@@ -241,6 +257,7 @@ export const PROSPECT_SEARCHES_QUERY = /* GraphQL */ `
           errorCode
           errorMessage
           peopleCount
+          exhausted
           createdAt
           completedAt
           company {
@@ -386,6 +403,22 @@ export const CANCEL_SEARCH_MUTATION = /* GraphQL */ `
     cancelProspectSearch(id: $id) {
       id
       status
+    }
+  }
+`;
+
+export const ADD_MORE_DISCOVER_PEOPLE_MUTATION = /* GraphQL */ `
+  mutation AddMoreDiscoverPeople($searchId: ID!, $idempotencyKey: String!) {
+    addMoreDiscoverPeople(searchId: $searchId, idempotencyKey: $idempotencyKey) {
+      id
+      searchId
+      status
+      requestedCount
+      addedCount
+      totalPeopleCount
+      quotaRemaining
+      exhausted
+      message
     }
   }
 `;
@@ -660,7 +693,9 @@ const SAFE_GRAPHQL_ERROR_CODES = new Set([
   "FORBIDDEN",
   "NOT_FOUND",
   "UNAUTHENTICATED",
-  "DISCOVER_DAILY_LIMIT_REACHED"
+  "DISCOVER_DAILY_LIMIT_REACHED",
+  "DISCOVER_EXPANSION_ALREADY_RUNNING",
+  "DISCOVER_EXPANSION_FAILED"
 ]);
 
 function safeGraphqlErrorMessage(errors: NonNullable<RawGraphQLResponse<unknown>["errors"]>): string {

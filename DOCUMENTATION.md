@@ -1206,6 +1206,42 @@ provider/AI failures are persisted as a structured `FAILED` search (with
 `errorCode`) rather than crashing the request. A timeout bounds the synchronous
 run.
 
+### 23.2.2 Add 10 more (search expansion)
+
+`addMoreDiscoverPeople(searchId, idempotencyKey)` extends an existing **READY**
+search with up to `DISCOVER_EXPANSION_BATCH_SIZE` (10) **new unique** people.
+`DiscoverExpansionService` runs the workflow (the resolver stays thin): load +
+own the search → confirm READY with canonical company/roles/locations → create an
+idempotent `DiscoverSearchExpansion` record → reserve **one** daily Discover slot
+(the existing quota service, idempotent on the expansion id) → materialize unused
+people from the shared cache **before** any provider call → if still short and not
+exhausted, continue Apify from the saved `providerNextPage` → dedupe → add only
+new people to the same search → extend the shared cache → update the search People
+count. Order, idempotency, and concurrency guarantees:
+
+- **No new history row.** It extends the selected search; existing people,
+  selections, and pagination (10/page) are untouched — new people land on later
+  pages.
+- **Quota.** One slot per request (cached or not). Retries reuse the expansion id
+  so they never double-charge; a failed expansion can be retried without another
+  charge. The internal/unlimited exemption is unchanged.
+- **Provider continuation.** Continuation state (`providerNextPage`,
+  `providerPagesFetched`, `providerExhausted`, `lastProviderFetchAt`) lives on the
+  shared `DiscoverSearchCache` entry. Add More never restarts at page 1; a
+  `DISCOVER_EXPANSION_MAX_PROVIDER_PAGES` (5) cap bounds one expansion. Provider
+  people are appended to the cache (not capped at 10) for reuse by other users.
+- **Identity / dedupe.** Stable identity is the normalized provider profile id,
+  then the normalized LinkedIn URL (never the name), enforced server-side by the
+  `ProspectPerson (userId, sourceProfileId)` unique key.
+- **Concurrency.** A per-search lock (`discover:expansion:{searchId}`) allows one
+  active expansion per search; the existing per-fingerprint shared-cache lock
+  ensures at most one provider continuation runs for an identical canonical query,
+  and the cache is re-checked after the lock is acquired.
+- **Exhaustion.** When the provider confirms no further pages/unique results,
+  `providerExhausted` is persisted; the search reports `exhausted: true` and the
+  UI hides Add 10 more. New people use the existing role classification and the
+  company-level email format (no email-format AI re-run); emails stay inferred.
+
 ### 23.2.1 Email-format discovery (GPT-5.5 web search)
 
 The primary email-format discovery path is **AI web search**. When

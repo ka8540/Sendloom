@@ -111,6 +111,13 @@ const envSchema = z
     // exempt from the daily Discover quota. Never prefix with NEXT_PUBLIC_ and
     // never expose to the client.
     DISCOVER_QUOTA_EXEMPT_EMAILS: z.string().optional(),
+    // --- Discover "Add 10 more" expansion ---
+    // New people materialized per expansion. The enforced product value is 10;
+    // the override exists for operations only.
+    DISCOVER_EXPANSION_BATCH_SIZE: z.coerce.number().int().positive().max(50).default(10),
+    // Safety cap on provider continuation pages fetched in a single expansion so
+    // a sparse query can never trigger an unbounded/expensive provider loop.
+    DISCOVER_EXPANSION_MAX_PROVIDER_PAGES: z.coerce.number().int().positive().max(20).default(5),
     // --- Shared Discover result cache ---
     // How long a shared provider-result dataset stays fresh before Apify is
     // called again. Absent/blank/invalid/<=0 falls back to 30.
@@ -221,6 +228,8 @@ function readRawEnv() {
     DISCOVER_RESULTS_PER_SEARCH: process.env.DISCOVER_RESULTS_PER_SEARCH,
     DISCOVER_DAILY_SEARCH_LIMIT: process.env.DISCOVER_DAILY_SEARCH_LIMIT,
     DISCOVER_QUOTA_EXEMPT_EMAILS: process.env.DISCOVER_QUOTA_EXEMPT_EMAILS,
+    DISCOVER_EXPANSION_BATCH_SIZE: process.env.DISCOVER_EXPANSION_BATCH_SIZE,
+    DISCOVER_EXPANSION_MAX_PROVIDER_PAGES: process.env.DISCOVER_EXPANSION_MAX_PROVIDER_PAGES,
     DISCOVER_SHARED_CACHE_TTL_DAYS: process.env.DISCOVER_SHARED_CACHE_TTL_DAYS,
     DISCOVER_SHARED_CACHE_VERSION: process.env.DISCOVER_SHARED_CACHE_VERSION
   };

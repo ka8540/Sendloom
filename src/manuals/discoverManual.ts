@@ -203,6 +203,14 @@ export function discoverResultsSteps(): ManualStep[] {
       placement: "top"
     },
     {
+      id: "add-more-people",
+      title: "Add more unique people",
+      body: "Request up to 10 additional people for this search. Existing people will not be repeated, and the request uses one daily Discover search.",
+      selector: sel("add-more-people"),
+      placement: "bottom",
+      optional: true
+    },
+    {
       id: "copy-email",
       title: "Copy an email",
       body: "Copy an available inferred email. The copy action does not send a message or create a sequence.",

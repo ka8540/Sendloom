@@ -21,11 +21,13 @@ import {
   Search,
   Sparkles,
   Trash2,
+  UserPlus,
   Users,
   X
 } from "lucide-react";
 
 import {
+  ADD_MORE_DISCOVER_PEOPLE_MUTATION,
   CANCEL_SEARCH_MUTATION,
   COMPANY_DETAIL_QUERY,
   CREATE_PROSPECT_IMPORT_MUTATION,
@@ -49,6 +51,7 @@ import {
   type ConfidenceLevel,
   type Connection,
   type DiscoverQuota,
+  type DiscoverSearchExpansion,
   type PersonNode,
   type PositionCategory,
   type PreparedProspectExport,
@@ -68,6 +71,13 @@ import {
   PROSPECT_FINDER_UNAVAILABLE_TITLE,
   type Badge,
   type BadgeTone,
+  ADD_MORE_CANCEL_LABEL,
+  ADD_MORE_CONFIRM_LABEL,
+  ADD_MORE_DIALOG_BODY,
+  ADD_MORE_DIALOG_TITLE,
+  ADD_MORE_LOADING_LABEL,
+  ADD_MORE_PEOPLE_LABEL,
+  addMoreDisabledReason,
   confidenceBadge,
   buildProspectSelectionInput,
   createEmptyProspectSelection,
@@ -90,6 +100,7 @@ import {
   resolveProspectPageState,
   resolveSelectedSearchView,
   selectAllMatchingProspects,
+  shouldShowAddMore,
   statusBadge,
   togglePageProspectSelection,
   toggleProspectSelection,
@@ -197,6 +208,12 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
   const [form, setForm] = useState<CreateForm>(EMPTY_FORM);
   const [creating, setCreating] = useState(false);
   const [processingId, setProcessingId] = useState<string | null>(null);
+  // "Add 10 more" expansion: which search is expanding, a confirm dialog, and the
+  // set of searches confirmed exhausted this session (server `exhausted` is the
+  // persisted source of truth; this is an immediate client signal).
+  const [expandingSearchId, setExpandingSearchId] = useState<string | null>(null);
+  const [showAddMoreDialog, setShowAddMoreDialog] = useState(false);
+  const [exhaustedSearchIds, setExhaustedSearchIds] = useState<Set<string>>(() => new Set());
   const [deletingCompanyId, setDeletingCompanyId] = useState<string | null>(null);
   const [refreshingFormatId, setRefreshingFormatId] = useState<string | null>(null);
   const [formatSourceUrl, setFormatSourceUrl] = useState("");
@@ -498,6 +515,72 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
     })();
   }, [activeCategory, historyPageIndex, loadCompany, loadPeople, loadSearches, selectedSearch]);
 
+  const handleAddMore = useCallback(async () => {
+    const search = selectedSearch;
+    if (!search || search.status !== "READY" || !search.company || expandingSearchId) {
+      return;
+    }
+    // A fresh idempotency key per confirmed click: retries of THIS request reuse
+    // it server-side, so a double submit never charges a second slot.
+    const idempotencyKey =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `${search.id}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+    setShowAddMoreDialog(false);
+    setExpandingSearchId(search.id);
+    setActionError(null);
+    setActionNotice(null);
+
+    const result = await prospectGraphql<{ addMoreDiscoverPeople: DiscoverSearchExpansion }>(
+      ADD_MORE_DISCOVER_PEOPLE_MUTATION,
+      { searchId: search.id, idempotencyKey }
+    );
+    setExpandingSearchId(null);
+    // An expansion consumes a daily slot — refresh the indicator immediately.
+    void loadQuota();
+
+    if (result.disabled) {
+      setDisabled(true);
+      return;
+    }
+    if (result.error || !result.data) {
+      // Daily-limit / already-running errors carry a user-ready message (the
+      // daily-limit one includes the exact reset day + time).
+      setActionError(result.error ?? "Could not add more people. Please try again.");
+      return;
+    }
+
+    const expansion = result.data.addMoreDiscoverPeople;
+    if (expansion.exhausted) {
+      setExhaustedSearchIds((prev) => {
+        const next = new Set(prev);
+        next.add(search.id);
+        return next;
+      });
+    }
+    setActionNotice({ message: expansion.message ?? `${expansion.addedCount} new people were added.` });
+
+    // Refresh counts + people in place, keeping the current search and category
+    // (new people land on later pages) — same approach as the manual refresh.
+    const after = historyAfterCursors.current[historyPageIndex] ?? null;
+    await loadSearches({ pageIndex: historyPageIndex, after });
+    if (search.company) {
+      peopleAfterCursors.current = [null];
+      await loadCompany(search.company.id);
+      await loadPeople({ companyId: search.company.id, category: activeCategory, pageIndex: 0, after: null });
+    }
+  }, [
+    activeCategory,
+    expandingSearchId,
+    historyPageIndex,
+    loadCompany,
+    loadPeople,
+    loadQuota,
+    loadSearches,
+    selectedSearch
+  ]);
+
   const handleCreate = useCallback(
     async (event: FormEvent) => {
       event.preventDefault();
@@ -737,6 +820,23 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
   const peoplePageCount = resolvePageCount(peopleTotal, PEOPLE_PAGE_SIZE);
   const historyOffset = historyPageIndex * SEARCHES_PAGE_SIZE;
   const historyPageCount = resolvePageCount(searchesTotal, SEARCHES_PAGE_SIZE);
+
+  // "Add 10 more" visibility/state. Shown for a READY search with results that is
+  // not exhausted (server `exhausted` or this session's confirmed signal); only
+  // disabled while it runs or when the daily allowance is spent.
+  const isExpanding = Boolean(selectedSearch && expandingSearchId === selectedSearch.id);
+  const searchExhausted = Boolean(
+    selectedSearch && (selectedSearch.exhausted || exhaustedSearchIds.has(selectedSearch.id))
+  );
+  const showAddMore =
+    selectedSearch !== null &&
+    shouldShowAddMore({
+      view: selectedView,
+      status: selectedSearch.status,
+      hasResults: (company?.peopleCount ?? selectedSearch.peopleCount) > 0,
+      exhausted: searchExhausted
+    });
+  const addMoreDisabled = addMoreDisabledReason(quota, isExpanding);
   const selectionScope = useMemo(
     () => ({ companyId: company?.id ?? "", positionCategory: activeCategory }),
     [activeCategory, company?.id]
@@ -1049,6 +1149,24 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
                       <h2 className={styles.panelTitle}>People</h2>
                       <p className={styles.panelSubtitle}>{PEOPLE_PAGE_SIZE} per page</p>
                     </div>
+                    {showAddMore && (
+                      <button
+                        type="button"
+                        className={styles.secondaryButton}
+                        data-discover-tour="add-more-people"
+                        onClick={() => setShowAddMoreDialog(true)}
+                        disabled={addMoreDisabled !== null}
+                        title={addMoreDisabled ?? undefined}
+                        aria-label={ADD_MORE_PEOPLE_LABEL}
+                      >
+                        {isExpanding ? (
+                          <LoaderCircle className={styles.spin} aria-hidden="true" />
+                        ) : (
+                          <UserPlus aria-hidden="true" />
+                        )}
+                        <span>{isExpanding ? ADD_MORE_LOADING_LABEL : ADD_MORE_PEOPLE_LABEL}</span>
+                      </button>
+                    )}
                   </div>
 
                   <div className={styles.categoryRail} role="tablist" aria-label="Role groups" data-discover-tour="role-filters">
@@ -1196,6 +1314,14 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
         }}
         onDownload={handleDownloadSelected}
         onImport={handleCreateImport}
+      />
+      <AddMorePeopleDialog
+        open={showAddMoreDialog}
+        peopleCount={company?.peopleCount ?? selectedSearch?.peopleCount ?? 0}
+        quota={quota}
+        expanding={isExpanding}
+        onConfirm={handleAddMore}
+        onClose={() => setShowAddMoreDialog(false)}
       />
     </div>
   );
@@ -1852,6 +1978,69 @@ function PeopleTable({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function AddMorePeopleDialog({
+  open,
+  peopleCount,
+  quota,
+  expanding,
+  onConfirm,
+  onClose
+}: {
+  open: boolean;
+  peopleCount: number;
+  quota: DiscoverQuota | null;
+  expanding: boolean;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  if (!open) {
+    return null;
+  }
+  return (
+    <div className={styles.modalOverlay} role="presentation">
+      <div
+        className={`card ${styles.modalCard}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="discover-add-more-title"
+      >
+        <div className={styles.panelHeader}>
+          <div>
+            <h2 id="discover-add-more-title" className={styles.panelTitle}>
+              {ADD_MORE_DIALOG_TITLE}
+            </h2>
+            <p className={styles.panelSubtitle}>{ADD_MORE_DIALOG_BODY}</p>
+          </div>
+          <button type="button" className={styles.iconButton} onClick={onClose} aria-label="Close" disabled={expanding}>
+            <X aria-hidden="true" />
+          </button>
+        </div>
+
+        <dl className={styles.reviewGrid}>
+          <div>
+            <dt>Current people</dt>
+            <dd>{Math.max(0, peopleCount)}</dd>
+          </div>
+          <div>
+            <dt>Searches remaining today</dt>
+            <dd>{quota && !quota.unlimited ? quota.searchesRemaining : "Unlimited"}</dd>
+          </div>
+        </dl>
+
+        <div className={styles.modalActions}>
+          <button type="button" className={styles.ghostButton} onClick={onClose} disabled={expanding}>
+            {ADD_MORE_CANCEL_LABEL}
+          </button>
+          <button type="button" className={styles.primaryButton} onClick={onConfirm} disabled={expanding}>
+            {expanding ? <LoaderCircle aria-hidden="true" className={styles.spin} /> : <UserPlus aria-hidden="true" />}
+            <span>{expanding ? ADD_MORE_LOADING_LABEL : ADD_MORE_CONFIRM_LABEL}</span>
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
