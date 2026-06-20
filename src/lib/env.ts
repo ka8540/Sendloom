@@ -110,7 +110,20 @@ const envSchema = z
     // Server-only allowlist (comma-separated, case-insensitive) of accounts
     // exempt from the daily Discover quota. Never prefix with NEXT_PUBLIC_ and
     // never expose to the client.
-    DISCOVER_QUOTA_EXEMPT_EMAILS: z.string().optional()
+    DISCOVER_QUOTA_EXEMPT_EMAILS: z.string().optional(),
+    // --- Shared Discover result cache ---
+    // How long a shared provider-result dataset stays fresh before Apify is
+    // called again. Absent/blank/invalid/<=0 falls back to 30.
+    DISCOVER_SHARED_CACHE_TTL_DAYS: z.preprocess((value) => {
+      const parsed = typeof value === "string" ? Number(value) : value;
+      return typeof parsed === "number" && Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : undefined;
+    }, z.number().int().positive().default(30)),
+    // Bumping the cache schema version invalidates every existing entry (it is
+    // part of the fingerprint). Absent/blank falls back to "v1".
+    DISCOVER_SHARED_CACHE_VERSION: z.preprocess(
+      (value) => (value === undefined || value === "" ? "v1" : String(value).trim()),
+      z.string().min(1)
+    )
   })
   .superRefine((value, ctx) => {
     if (value.OBJECT_STORAGE_MODE === "r2") {
@@ -207,7 +220,9 @@ function readRawEnv() {
     PROSPECT_EMAIL_FORMAT_AI_HOURLY_LIMIT: process.env.PROSPECT_EMAIL_FORMAT_AI_HOURLY_LIMIT,
     DISCOVER_RESULTS_PER_SEARCH: process.env.DISCOVER_RESULTS_PER_SEARCH,
     DISCOVER_DAILY_SEARCH_LIMIT: process.env.DISCOVER_DAILY_SEARCH_LIMIT,
-    DISCOVER_QUOTA_EXEMPT_EMAILS: process.env.DISCOVER_QUOTA_EXEMPT_EMAILS
+    DISCOVER_QUOTA_EXEMPT_EMAILS: process.env.DISCOVER_QUOTA_EXEMPT_EMAILS,
+    DISCOVER_SHARED_CACHE_TTL_DAYS: process.env.DISCOVER_SHARED_CACHE_TTL_DAYS,
+    DISCOVER_SHARED_CACHE_VERSION: process.env.DISCOVER_SHARED_CACHE_VERSION
   };
 }
 

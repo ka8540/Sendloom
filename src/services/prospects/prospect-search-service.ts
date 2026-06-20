@@ -21,6 +21,14 @@ import {
 } from "@/services/prospects/apify-profile-search";
 import { CompanyResolutionService, type CompanyResolution } from "@/services/prospects/company-resolution-service";
 import {
+  DiscoverSearchCacheService,
+  resolveSharedCacheVersion,
+  type DiscoverCachePort,
+  type ResolvedCachePerson,
+  type ResolvedDataset
+} from "@/services/prospects/discover-cache-service";
+import { computeDiscoverFingerprint } from "@/services/prospects/discover-cache-fingerprint";
+import {
   EmailDomainService,
   isAllowedBusinessEmailDomain,
   makeManualEmailDomainEvidence
@@ -137,6 +145,8 @@ export type ProspectSearchServiceDeps = {
   emailFormatRateLimiter?: EmailFormatRateLimiter;
   /** Injectable for tests; defaults to the Redis-backed atomic daily quota. */
   discoverQuota?: DiscoverQuotaReserver;
+  /** Injectable for tests; defaults to the shared 30-day result cache. */
+  discoverCache?: DiscoverCachePort;
 };
 
 /** Options for processSearch — the actor email is resolved from the session. */
@@ -154,6 +164,7 @@ export class ProspectSearchService {
   private readonly pipelineTimeoutMs: number;
   private readonly emailFormatRateLimiter: EmailFormatRateLimiter;
   private readonly discoverQuota: DiscoverQuotaReserver;
+  private readonly discoverCache: DiscoverCachePort;
 
   constructor(deps: ProspectSearchServiceDeps) {
     this.prisma = deps.prisma;
@@ -164,6 +175,7 @@ export class ProspectSearchService {
     this.pipelineTimeoutMs = deps.pipelineTimeoutMs ?? DEFAULT_PIPELINE_TIMEOUT_MS;
     this.emailFormatRateLimiter = deps.emailFormatRateLimiter ?? defaultEmailFormatRateLimiter;
     this.discoverQuota = deps.discoverQuota ?? reserveDiscoverSearchSlot;
+    this.discoverCache = deps.discoverCache ?? new DiscoverSearchCacheService({ prisma: deps.prisma });
   }
 
   async createSearch(userId: string, input: ValidatedCreateProspectSearch): Promise<ProspectSearch> {
@@ -285,7 +297,9 @@ export class ProspectSearchService {
   }
 
   private async runPipeline(userId: string, search: ProspectSearch, budget: AiCallBudget): Promise<ProspectSearch> {
-    // 1) Resolve the company.
+    // 1) Resolve the company. This runs before the cache check because the
+    // canonical fingerprint is keyed on the RESOLVED company identity (so
+    // "Apple"/"Apple Inc." share a cache entry) — not the raw typed name.
     await this.setStatus(search.id, "RESOLVING_COMPANY", { errorCode: null, errorMessage: null });
     const resolution = await this.companyResolution.resolve({
       companyName: search.requestedCompany,
@@ -305,9 +319,105 @@ export class ProspectSearchService {
     const company = await this.upsertCompany(userId, resolution);
     await this.prisma.prospectSearch.update({ where: { id: search.id }, data: { companyId: company.id } });
 
-    // 2) Discover people via Apify. The result count is always the server-fixed
-    // value (never search.maxResults), so re-processing an old record — even one
-    // persisted with a larger historical maxResults — runs a 10-person search.
+    // 2) Build the canonical fingerprint for the shared 30-day result cache.
+    const { input: fingerprintInput, fingerprint } = computeDiscoverFingerprint({
+      company: {
+        linkedinCompanyUrl: resolution.linkedinCompanyUrl,
+        officialWebsiteDomain: resolution.officialWebsiteDomain,
+        officialDomain: resolution.officialDomain,
+        normalizedName: resolution.normalizedName
+      },
+      roles: this.asStringArray(search.requestedTitles),
+      locations: this.asStringArray(search.requestedLocations),
+      resultLimit: resolveResultsPerSearch(),
+      cacheVersion: resolveSharedCacheVersion()
+    });
+
+    // 3) Reuse a fresh shared dataset, or run Apify behind the stampede lock and
+    // refresh the shared cache. The provider closure performs the real Apify +
+    // classification + email inference and returns a normalized dataset.
+    const startedAt = Date.now();
+    let cacheResult;
+    try {
+      cacheResult = await this.discoverCache.getOrRefresh({
+        fingerprint,
+        fingerprintInput,
+        company: {
+          name: resolution.officialName,
+          domain: resolution.officialWebsiteDomain ?? resolution.officialDomain,
+          linkedinUrl: resolution.linkedinCompanyUrl
+        },
+        provider: () => this.runProviderDataset(userId, search, company, resolution, budget)
+      });
+    } catch (error) {
+      logDiscoverCacheEvent({
+        event: "DISCOVER_CACHE_REFRESH_FAILED",
+        searchId: search.id,
+        userId,
+        fingerprint,
+        cacheHit: false,
+        cacheAgeDays: null,
+        resultCount: 0,
+        providerCalled: true,
+        processingLatencyMs: Date.now() - startedAt
+      });
+      throw error;
+    }
+
+    // 4) Materialize the shared dataset into THIS user's own records. The shared
+    // cache only holds normalized public data — the user-owned company/people/
+    // search records (and their ownership, exports, suppression) stay private.
+    const processed = await this.materializeDataset(userId, company, cacheResult.dataset);
+
+    const cacheHit = cacheResult.source === "CACHE";
+    logDiscoverCacheEvent({
+      event: cacheHit
+        ? "DISCOVER_CACHE_HIT"
+        : cacheResult.refreshedStale
+          ? "DISCOVER_CACHE_REFRESHED"
+          : "DISCOVER_CACHE_MISS",
+      searchId: search.id,
+      userId,
+      fingerprint,
+      cacheHit,
+      cacheAgeDays: discoverCacheAgeDays(cacheResult.fetchedAt, startedAt),
+      resultCount: processed,
+      providerCalled: !cacheHit,
+      processingLatencyMs: Date.now() - startedAt
+    });
+
+    // 5) Done — record internal result provenance (never exposed via GraphQL).
+    return this.prisma.prospectSearch.update({
+      where: { id: search.id },
+      data: {
+        status: "READY",
+        totalProcessed: processed,
+        completedAt: new Date(),
+        errorCode: null,
+        errorMessage: null,
+        resultSource: cacheResult.source,
+        sharedCacheId: cacheResult.cacheId,
+        cacheFingerprint: fingerprint,
+        cacheFetchedAt: cacheResult.fetchedAt
+      }
+    });
+  }
+
+  /**
+   * Run the real provider pipeline (Apify + classification + email inference) and
+   * return a normalized, shareable dataset. This performs NO user-owned writes
+   * other than progress/metadata on the user's own search row — the caller writes
+   * the dataset to the shared cache and materializes the user's records.
+   */
+  private async runProviderDataset(
+    userId: string,
+    search: ProspectSearch,
+    company: ProspectCompany,
+    resolution: CompanyResolution,
+    budget: AiCallBudget
+  ): Promise<ResolvedDataset> {
+    // Discover people via Apify. The result count is always the server-fixed
+    // value (never search.maxResults).
     await this.setStatus(search.id, "SEARCHING_PEOPLE");
     const maxResults = resolveResultsPerSearch();
     const searchResult = await this.apify.searchProfiles({
@@ -327,16 +437,14 @@ export class ProspectSearchService {
       }
     });
 
-    // 3) Classify unique titles and build position nodes.
+    // Classify unique titles (the global title-classification cache is reused).
     await this.setStatus(search.id, "CLASSIFYING_POSITIONS");
-    const { positionMap, classifications } = await this.classifyAndUpsertPositions(
-      company.id,
-      searchResult.profiles,
-      budget,
-      search.id
-    );
+    const rawTitles = searchResult.profiles
+      .map((profile) => profile.currentTitle)
+      .filter((title): title is string => Boolean(title));
+    const classifications = await this.roleClassifier.classify(rawTitles, { budget, searchId: search.id });
 
-    // 4) Infer ONE company email domain + pattern from evidence.
+    // Infer ONE evidence-backed company email domain + pattern.
     await this.setStatus(search.id, "INFERRING_EMAIL_PATTERN");
     const inference = await this.emailDomain.infer({
       userId,
@@ -349,34 +457,141 @@ export class ProspectSearchService {
       searchId: search.id
     });
 
+    const emailFormat = {
+      emailDomain: inference.selectedEmailDomain,
+      emailDomainConfidence: inference.emailDomainConfidence,
+      emailDomainEvidence: inference.emailDomainEvidence,
+      emailPattern: inference.selectedPattern,
+      patternConfidence: inference.patternConfidence,
+      patternEvidence: inference.patternEvidence,
+      emailFormatReason: inference.reasonSummary ?? null
+    };
+
+    // Generate candidate emails deterministically and build the normalized
+    // dataset shared across users.
+    const allowLowConfidence = env.PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS;
+    const candidateConfidence = combinedEmailConfidence(emailFormat.emailDomainConfidence, emailFormat.patternConfidence);
+    const people: ResolvedCachePerson[] = searchResult.profiles.map((profile) => {
+      const category = this.categoryForProfile(profile, classifications);
+      const candidate = resolveCandidateEmail({
+        firstName: profile.firstName,
+        lastName: profile.lastName,
+        domain: emailFormat.emailDomain,
+        pattern: emailFormat.emailPattern,
+        patternConfidence: candidateConfidence,
+        allowLowConfidence
+      });
+      return {
+        sourceProfileId: profile.sourceProfileId,
+        firstName: profile.firstName,
+        lastName: profile.lastName,
+        fullName: profile.fullName,
+        currentTitle: profile.currentTitle,
+        normalizedTitle: profile.normalizedTitle,
+        positionCategory: category,
+        location: profile.location,
+        country: profile.country,
+        state: profile.state,
+        city: profile.city,
+        linkedinUrl: profile.linkedinUrl,
+        inferredEmail: candidate.email,
+        emailStatus: candidate.status,
+        emailConfidence: candidate.confidence,
+        emailPattern: candidate.email ? emailFormat.emailPattern : null,
+        emailSource: candidate.email ? "PATTERN" : null
+      };
+    });
+
+    return { emailFormat, people };
+  }
+
+  /**
+   * Copy a normalized dataset (from the shared cache or a fresh provider run)
+   * into the requesting user's own company/position/people records. Shared by
+   * both the cache-hit and provider paths so behavior is identical. No AI runs
+   * here; categories and emails are already resolved in the dataset.
+   */
+  private async materializeDataset(
+    userId: string,
+    company: ProspectCompany,
+    dataset: ResolvedDataset
+  ): Promise<number> {
     const updatedCompany = await this.prisma.prospectCompany.update({
       where: { id: company.id },
       data: {
-        emailDomain: inference.selectedEmailDomain,
-        emailDomainConfidence: inference.emailDomainConfidence,
-        emailDomainEvidence: inference.emailDomainEvidence,
-        emailPattern: inference.selectedPattern,
-        patternConfidence: inference.patternConfidence,
-        patternEvidence: inference.patternEvidence,
-        emailFormatReason: inference.reasonSummary ?? null,
+        emailDomain: dataset.emailFormat.emailDomain,
+        emailDomainConfidence: dataset.emailFormat.emailDomainConfidence,
+        emailDomainEvidence: dataset.emailFormat.emailDomainEvidence as never,
+        emailPattern: dataset.emailFormat.emailPattern,
+        patternConfidence: dataset.emailFormat.patternConfidence,
+        patternEvidence: dataset.emailFormat.patternEvidence as never,
+        emailFormatReason: dataset.emailFormat.emailFormatReason,
         emailFormatDiscoveredAt: new Date()
       }
     });
 
-    // 5) Generate candidate emails deterministically + persist people.
-    const processed = await this.upsertPeople(userId, updatedCompany, searchResult.profiles, positionMap, classifications);
-
-    // 6) Done.
-    return this.prisma.prospectSearch.update({
-      where: { id: search.id },
-      data: {
-        status: "READY",
-        totalProcessed: processed,
-        completedAt: new Date(),
-        errorCode: null,
-        errorMessage: null
+    // One position node per category that has people.
+    const rawTitlesByCategory = new Map<PositionCategory, Set<string>>();
+    for (const person of dataset.people) {
+      const category = coercePositionCategory(person.positionCategory);
+      if (!rawTitlesByCategory.has(category)) {
+        rawTitlesByCategory.set(category, new Set());
       }
-    });
+      if (person.currentTitle) {
+        rawTitlesByCategory.get(category)!.add(person.currentTitle);
+      }
+    }
+
+    const positionMap = new Map<PositionCategory, string>();
+    for (const [category, titles] of rawTitlesByCategory) {
+      const position = await this.prisma.prospectCompanyPosition.upsert({
+        where: { companyId_category: { companyId: updatedCompany.id, category } },
+        create: {
+          companyId: updatedCompany.id,
+          category,
+          displayName: displayNameForCategory(category),
+          rawTitles: Array.from(titles)
+        },
+        update: { displayName: displayNameForCategory(category), rawTitles: Array.from(titles) }
+      });
+      positionMap.set(category, position.id);
+    }
+
+    let processed = 0;
+    for (const person of dataset.people) {
+      const category = coercePositionCategory(person.positionCategory);
+      const positionId = positionMap.get(category) ?? positionMap.get("OTHER");
+      if (!positionId) {
+        continue;
+      }
+      const fields = {
+        companyId: updatedCompany.id,
+        positionId,
+        firstName: person.firstName,
+        lastName: person.lastName,
+        fullName: person.fullName,
+        currentTitle: person.currentTitle,
+        normalizedTitle: person.normalizedTitle,
+        location: person.location,
+        country: person.country,
+        state: person.state,
+        city: person.city,
+        linkedinUrl: person.linkedinUrl,
+        inferredEmail: person.inferredEmail,
+        emailStatus: person.emailStatus,
+        emailConfidence: person.emailConfidence,
+        emailPattern: person.emailPattern,
+        emailSource: person.emailSource
+      };
+      await this.prisma.prospectPerson.upsert({
+        where: { userId_sourceProfileId: { userId, sourceProfileId: person.sourceProfileId } },
+        create: { userId, sourceProfileId: person.sourceProfileId, ...fields },
+        update: fields
+      });
+      processed += 1;
+    }
+
+    return processed;
   }
 
   private asStringArray(value: unknown): string[] {
@@ -411,55 +626,6 @@ export class ProspectSearchService {
     });
   }
 
-  /**
-   * Classify the profiles' unique titles, upsert one position node per category
-   * that has people, and return a map of category -> positionId.
-   */
-  private async classifyAndUpsertPositions(
-    companyId: string,
-    profiles: NormalizedProfile[],
-    budget: AiCallBudget,
-    searchId: string
-  ): Promise<{ positionMap: Map<PositionCategory, string>; classifications: Map<string, { category: PositionCategory }> }> {
-    const rawTitles = profiles
-      .map((profile) => profile.currentTitle)
-      .filter((title): title is string => Boolean(title));
-
-    const classifications = await this.roleClassifier.classify(rawTitles, { budget, searchId });
-
-    // Group the original titles by their resolved category.
-    const rawTitlesByCategory = new Map<PositionCategory, Set<string>>();
-    for (const profile of profiles) {
-      const category = this.categoryForProfile(profile, classifications);
-      if (!rawTitlesByCategory.has(category)) {
-        rawTitlesByCategory.set(category, new Set());
-      }
-      if (profile.currentTitle) {
-        rawTitlesByCategory.get(category)!.add(profile.currentTitle);
-      }
-    }
-
-    const positionMap = new Map<PositionCategory, string>();
-    for (const [category, titles] of rawTitlesByCategory) {
-      const position = await this.prisma.prospectCompanyPosition.upsert({
-        where: { companyId_category: { companyId, category } },
-        create: {
-          companyId,
-          category,
-          displayName: displayNameForCategory(category),
-          rawTitles: Array.from(titles)
-        },
-        update: {
-          displayName: displayNameForCategory(category),
-          rawTitles: Array.from(titles)
-        }
-      });
-      positionMap.set(category, position.id);
-    }
-
-    return { positionMap, classifications };
-  }
-
   private categoryForProfile(
     profile: NormalizedProfile,
     classifications: Map<string, { category: PositionCategory }>
@@ -467,79 +633,6 @@ export class ProspectSearchService {
     const normalized = profile.normalizedTitle ?? (profile.currentTitle ? normalizeTitle(profile.currentTitle) : "");
     const classification = normalized ? classifications.get(normalized) : undefined;
     return classification ? coercePositionCategory(classification.category) : "OTHER";
-  }
-
-  private async upsertPeople(
-    userId: string,
-    company: ProspectCompany,
-    profiles: NormalizedProfile[],
-    positionMap: Map<PositionCategory, string>,
-    classifications: Map<string, { category: PositionCategory }>
-  ): Promise<number> {
-    const allowLowConfidence = env.PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS;
-    const candidateConfidence = combinedEmailConfidence(company.emailDomainConfidence, company.patternConfidence);
-    let processed = 0;
-
-    for (const profile of profiles) {
-      const category = this.categoryForProfile(profile, classifications);
-      const positionId = positionMap.get(category) ?? positionMap.get("OTHER");
-      if (!positionId) {
-        continue;
-      }
-
-      const candidate = resolveCandidateEmail({
-        firstName: profile.firstName,
-        lastName: profile.lastName,
-        domain: company.emailDomain,
-        pattern: company.emailPattern,
-        patternConfidence: candidateConfidence,
-        allowLowConfidence
-      });
-
-      await this.prisma.prospectPerson.upsert({
-        where: { userId_sourceProfileId: { userId, sourceProfileId: profile.sourceProfileId } },
-        create: {
-          userId,
-          companyId: company.id,
-          positionId,
-          sourceProfileId: profile.sourceProfileId,
-          firstName: profile.firstName,
-          lastName: profile.lastName,
-          fullName: profile.fullName,
-          currentTitle: profile.currentTitle,
-          normalizedTitle: profile.normalizedTitle,
-          location: profile.location,
-          country: profile.country,
-          state: profile.state,
-          city: profile.city,
-          linkedinUrl: profile.linkedinUrl,
-          inferredEmail: candidate.email,
-          emailStatus: candidate.status,
-          emailConfidence: candidate.confidence,
-          emailPattern: candidate.email ? company.emailPattern : null,
-          emailSource: candidate.email ? "PATTERN" : null
-        },
-        update: {
-          companyId: company.id,
-          positionId,
-          currentTitle: profile.currentTitle,
-          normalizedTitle: profile.normalizedTitle,
-          location: profile.location,
-          country: profile.country,
-          state: profile.state,
-          city: profile.city,
-          linkedinUrl: profile.linkedinUrl,
-          inferredEmail: candidate.email,
-          emailStatus: candidate.status,
-          emailConfidence: candidate.confidence,
-          emailPattern: candidate.email ? company.emailPattern : null,
-          emailSource: candidate.email ? "PATTERN" : null
-        }
-      });
-      processed += 1;
-    }
-
-    return processed;
   }
 
   /** Re-run classification for an existing company's people. */
@@ -785,4 +878,35 @@ function combinedEmailConfidence(
     return "MEDIUM";
   }
   return "HIGH";
+}
+
+function discoverCacheAgeDays(fetchedAt: Date | null, nowMs: number): number | null {
+  if (!fetchedAt) {
+    return null;
+  }
+  return Math.max(0, Math.round((nowMs - fetchedAt.getTime()) / (24 * 60 * 60 * 1000)));
+}
+
+type DiscoverCacheLogEvent = {
+  event: "DISCOVER_CACHE_HIT" | "DISCOVER_CACHE_MISS" | "DISCOVER_CACHE_REFRESHED" | "DISCOVER_CACHE_REFRESH_FAILED";
+  searchId: string;
+  userId: string;
+  fingerprint: string;
+  cacheHit: boolean;
+  cacheAgeDays: number | null;
+  resultCount: number;
+  providerCalled: boolean;
+  processingLatencyMs: number;
+};
+
+/**
+ * Structured, privacy-safe observability for the shared cache. Logs only safe
+ * metadata (a fingerprint hash prefix, never full people lists, generated
+ * emails, provider payloads, requester email, or prompts). Silent in tests.
+ */
+function logDiscoverCacheEvent(event: DiscoverCacheLogEvent): void {
+  if (process.env.NODE_ENV === "test") {
+    return;
+  }
+  console.info(`[discover-cache] ${JSON.stringify({ ...event, fingerprint: event.fingerprint.slice(0, 16) })}`);
 }

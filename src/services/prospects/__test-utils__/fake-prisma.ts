@@ -11,9 +11,24 @@ function nextId(prefix: string): string {
 
 type Row = Record<string, any>;
 
+function toComparable(value: unknown): number | unknown {
+  return value instanceof Date ? value.getTime() : value;
+}
+
 function valueMatches(actual: unknown, expected: unknown): boolean {
-  if (expected && typeof expected === "object" && "in" in (expected as Row)) {
-    return ((expected as Row).in as unknown[]).includes(actual);
+  if (expected && typeof expected === "object" && !(expected instanceof Date)) {
+    const operators = expected as Row;
+    if ("in" in operators) {
+      return (operators.in as unknown[]).includes(actual);
+    }
+    if ("lt" in operators || "lte" in operators || "gt" in operators || "gte" in operators) {
+      const a = toComparable(actual) as number;
+      if ("lt" in operators && !(a < (toComparable(operators.lt) as number))) return false;
+      if ("lte" in operators && !(a <= (toComparable(operators.lte) as number))) return false;
+      if ("gt" in operators && !(a > (toComparable(operators.gt) as number))) return false;
+      if ("gte" in operators && !(a >= (toComparable(operators.gte) as number))) return false;
+      return true;
+    }
   }
   return actual === expected;
 }
@@ -26,6 +41,8 @@ export function createFakePrisma() {
   const people: Row[] = [];
   const searches: Row[] = [];
   const titleCache: Row[] = [];
+  const discoverCache: Row[] = [];
+  const discoverCachePeople: Row[] = [];
 
   const companyById = (id: string) => companies.find((row) => row.id === id);
 
@@ -83,9 +100,75 @@ export function createFakePrisma() {
 
   const now = () => new Date();
 
-  return {
+  const client = {
     // Direct access for assertions in tests.
-    _state: { companies, positions, people, searches, titleCache },
+    _state: { companies, positions, people, searches, titleCache, discoverCache, discoverCachePeople },
+
+    // Interactive transaction: the fake mutates shared arrays synchronously, so
+    // passing the same client back gives the same all-or-nothing visibility the
+    // cache service relies on for atomic refreshes.
+    $transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => fn(client),
+
+    discoverSearchCache: {
+      findUnique: async ({ where }: { where: Row }) => {
+        const row = where.fingerprint
+          ? discoverCache.find((r) => r.fingerprint === where.fingerprint)
+          : discoverCache.find((r) => r.id === where.id);
+        return row ? { ...row } : null;
+      },
+      findMany: async ({ where }: { where?: Row } = {}) =>
+        discoverCache.filter((r) => matchGeneric(r, where ?? {})).map((r) => ({ ...r })),
+      count: async ({ where }: { where?: Row } = {}) =>
+        discoverCache.filter((r) => matchGeneric(r, where ?? {})).length,
+      upsert: async ({ where, create, update }: { where: Row; create: Row; update: Row }) => {
+        let row = discoverCache.find((r) => r.fingerprint === where.fingerprint);
+        if (row) {
+          Object.assign(row, update, { updatedAt: now() });
+        } else {
+          row = { id: nextId("dcache"), createdAt: now(), updatedAt: now(), ...create };
+          discoverCache.push(row);
+        }
+        return { ...row };
+      },
+      update: async ({ where, data }: { where: Row; data: Row }) => {
+        const row = where.fingerprint
+          ? discoverCache.find((r) => r.fingerprint === where.fingerprint)
+          : discoverCache.find((r) => r.id === where.id);
+        Object.assign(row!, data, { updatedAt: now() });
+        return { ...row };
+      },
+      delete: async ({ where }: { where: Row }) => {
+        const index = discoverCache.findIndex((r) => r.id === where.id);
+        const row = discoverCache[index];
+        discoverCache.splice(index, 1);
+        deleteRows(discoverCachePeople, (p) => p.cacheId === row.id);
+        return { ...row };
+      },
+      deleteMany: async ({ where }: { where?: Row } = {}) => {
+        const removed = discoverCache.filter((r) => matchGeneric(r, where ?? {}));
+        for (const row of removed) {
+          deleteRows(discoverCachePeople, (p) => p.cacheId === row.id);
+        }
+        const count = deleteRows(discoverCache, (r) => matchGeneric(r, where ?? {}));
+        return { count };
+      }
+    },
+
+    discoverSearchCachePerson: {
+      create: async ({ data }: { data: Row }) => {
+        const row = { id: nextId("dperson"), createdAt: now(), updatedAt: now(), ...data };
+        discoverCachePeople.push(row);
+        return { ...row };
+      },
+      findMany: async ({ where }: { where?: Row } = {}) =>
+        discoverCachePeople.filter((r) => matchGeneric(r, where ?? {})).map((r) => ({ ...r })),
+      count: async ({ where }: { where?: Row } = {}) =>
+        discoverCachePeople.filter((r) => matchGeneric(r, where ?? {})).length,
+      deleteMany: async ({ where }: { where?: Row } = {}) => {
+        const count = deleteRows(discoverCachePeople, (r) => matchGeneric(r, where ?? {}));
+        return { count };
+      }
+    },
 
     prospectSearch: {
       create: async ({ data }: { data: Row }) => {
@@ -217,4 +300,6 @@ export function createFakePrisma() {
       }
     }
   };
+
+  return client;
 }

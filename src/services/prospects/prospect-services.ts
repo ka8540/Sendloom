@@ -2,6 +2,7 @@ import type { PrismaClient } from "@prisma/client";
 
 import { ApifyProfileSearchService } from "@/services/prospects/apify-profile-search";
 import { CompanyResolutionService } from "@/services/prospects/company-resolution-service";
+import { DiscoverSearchCacheService } from "@/services/prospects/discover-cache-service";
 import { CompositeEmailEvidenceProvider, EmailDomainService } from "@/services/prospects/email-domain-service";
 import { EmailFormatDiscoveryService } from "@/services/prospects/email-format-discovery-service";
 import { OpenAIEmailFormatDiscoveryService } from "@/services/prospects/openai-email-format-discovery";
@@ -32,13 +33,15 @@ export function createProspectServices(prisma: PrismaClient, aiClient?: AiClient
     new EmailFormatDiscoveryService({ warnWhenUnconfigured: false })
   ]);
   const emailDomain = new EmailDomainService(prisma, ai, emailEvidence);
+  const discoverCache = new DiscoverSearchCacheService({ prisma });
 
   const prospectSearch = new ProspectSearchService({
     prisma,
     apify,
     companyResolution,
     roleClassifier,
-    emailDomain
+    emailDomain,
+    discoverCache
   });
 
   return { prospectSearch, companyResolution, roleClassifier, emailDomain };

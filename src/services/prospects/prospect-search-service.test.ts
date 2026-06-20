@@ -13,8 +13,45 @@ import { ProspectSearchService } from "@/services/prospects/prospect-search-serv
 import { RoleClassificationService } from "@/services/prospects/role-classification-service";
 import type { ValidatedCreateProspectSearch } from "@/services/prospects/prospect-validation";
 import type { DiscoverQuotaReserver, DiscoverQuotaStatus } from "@/lib/discover-quota";
+import {
+  DiscoverSearchCacheService,
+  type DiscoverCacheLock,
+  type DiscoverCachePort,
+  type GetOrRefreshParams,
+  type ResolvedDataset
+} from "@/services/prospects/discover-cache-service";
 import { createFakePrisma, type FakePrisma } from "@/services/prospects/__test-utils__/fake-prisma";
 import { createMockAi } from "@/services/prospects/__test-utils__/mock-ai";
+
+// A passthrough cache that always runs the provider — keeps non-cache tests
+// behaving exactly like the un-cached pipeline.
+const passthroughCache: DiscoverCachePort = {
+  async getOrRefresh({ provider }: GetOrRefreshParams) {
+    const dataset = await provider();
+    return { dataset, source: "PROVIDER", cacheId: null, fetchedAt: null, refreshedStale: false };
+  }
+};
+
+function makeFakeCacheLock(): DiscoverCacheLock {
+  const held = new Map<string, string>();
+  let counter = 0;
+  return {
+    async acquire(key) {
+      if (held.has(key)) {
+        return null;
+      }
+      counter += 1;
+      const token = `tok-${counter}`;
+      held.set(key, token);
+      return token;
+    },
+    async release(key, token) {
+      if (held.get(key) === token) {
+        held.delete(key);
+      }
+    }
+  };
+}
 
 const QUOTA_RESET = new Date("2026-06-20T00:00:00.000Z");
 
@@ -126,7 +163,8 @@ function buildService(
   runner: ApifyRunner,
   aiResponses: Parameters<typeof createMockAi>[0],
   evidenceProvider?: EmailEvidenceProvider,
-  discoverQuota: DiscoverQuotaReserver = allowAllQuota
+  discoverQuota: DiscoverQuotaReserver = allowAllQuota,
+  discoverCache: DiscoverCachePort = passthroughCache
 ) {
   const ai = createMockAi(aiResponses);
   const apify = new ApifyProfileSearchService({ token: "t", actorId: "actor", runner });
@@ -136,7 +174,8 @@ function buildService(
     companyResolution: new CompanyResolutionService(ai.client),
     roleClassifier: new RoleClassificationService(prisma as unknown as PrismaClient, ai.client),
     emailDomain: new EmailDomainService(prisma as unknown as PrismaClient, ai.client, evidenceProvider),
-    discoverQuota
+    discoverQuota,
+    discoverCache
   });
   return { service, ai };
 }
@@ -902,5 +941,253 @@ describe("Discover daily quota enforcement", () => {
       code: "NOT_FOUND"
     });
     expect(quota.calls).toHaveLength(0);
+  });
+});
+
+describe("Discover shared cache integration", () => {
+  // A cache HIT never runs the provider, so the AI responses are unused here.
+  const ROLE_ONLY_AI = { responses: { role_classification: { classifications: [] } } };
+
+  function amatRunner() {
+    const run = vi.fn<ApifyRunner["run"]>(async () => ({
+      runId: "run-c",
+      datasetId: "ds-c",
+      items: [profile("am1", "Jane", "Doe", "Software Engineer", "Applied Materials")]
+    }));
+    return { run, runner: { run } as ApifyRunner };
+  }
+
+  const AMAT_AI = {
+    responses: {
+      role_classification: {
+        classifications: [
+          { rawTitle: "Software Engineer", normalizedTitle: "software engineer", category: "SOFTWARE_ENGINEERING", displayName: "Software Engineering", confidence: "HIGH" }
+        ]
+      },
+      email_pattern: {
+        selectedEmailDomain: "amat.com",
+        selectedPattern: "first_last",
+        confidence: "HIGH",
+        reasonSummary: "Evidence indicates amat.com with first_last.",
+        evidenceIndexesUsed: [0, 1]
+      }
+    }
+  };
+
+  function amatEvidence(): EmailEvidenceProvider {
+    return {
+      async findEvidence() {
+        return {
+          domainEvidence: [
+            {
+              emailDomain: "amat.com",
+              sourceName: "Applied Materials email format page",
+              sourceUrl: "https://example.test/amat",
+              sourceType: "public_format_page",
+              observedPattern: "first_last",
+              percentage: 91,
+              confidence: "HIGH",
+              observedAt: "2026-06-18T00:00:00.000Z"
+            }
+          ],
+          patternEvidence: [
+            {
+              pattern: "first_last",
+              emailDomain: "amat.com",
+              percentage: 91,
+              sourceName: "Applied Materials email format page",
+              sourceUrl: "https://example.test/amat",
+              sourceType: "public_format_page",
+              confidence: "HIGH",
+              observedAt: "2026-06-18T00:00:00.000Z"
+            }
+          ]
+        };
+      }
+    };
+  }
+
+  function cacheDataset(): ResolvedDataset {
+    return {
+      emailFormat: {
+        emailDomain: "amat.com",
+        emailDomainConfidence: "HIGH",
+        emailDomainEvidence: [{ sourceName: "public" }],
+        emailPattern: "first_last",
+        patternConfidence: "HIGH",
+        patternEvidence: [{ pattern: "first_last" }],
+        emailFormatReason: "format"
+      },
+      people: [
+        {
+          sourceProfileId: "cp1",
+          firstName: "Jane",
+          lastName: "Doe",
+          fullName: "Jane Doe",
+          currentTitle: "Software Engineer",
+          normalizedTitle: "software engineer",
+          positionCategory: "SOFTWARE_ENGINEERING",
+          location: "United States",
+          country: "United States",
+          state: null,
+          city: null,
+          linkedinUrl: "https://www.linkedin.com/in/cp1",
+          inferredEmail: "jane_doe@amat.com",
+          emailStatus: "INFERRED_HIGH",
+          emailConfidence: "HIGH",
+          emailPattern: "first_last",
+          emailSource: "PATTERN"
+        }
+      ]
+    };
+  }
+
+  function cacheHitPort(dataset: ResolvedDataset) {
+    const calls: GetOrRefreshParams[] = [];
+    const port: DiscoverCachePort = {
+      async getOrRefresh(params: GetOrRefreshParams) {
+        calls.push(params);
+        return {
+          dataset,
+          source: "CACHE",
+          cacheId: "cache_1",
+          fetchedAt: new Date("2026-06-10T00:00:00.000Z"),
+          refreshedStale: false
+        };
+      }
+    };
+    return { port, calls };
+  }
+
+  it("reuses a fresh cache hit without calling Apify and still consumes a quota slot (#1, #3, #4)", async () => {
+    const runner = amatRunner();
+    const { port } = cacheHitPort(cacheDataset());
+    const quota = makeQuotaReserver();
+    const { service } = buildService(prisma, runner.runner, ROLE_ONLY_AI, undefined, quota.reserve, port);
+
+    const created = await service.createSearch(USER_ID, APPLIED_MATERIALS);
+    const result = await service.processSearch(USER_ID, created.id, { actorEmail: "u@test.dev" });
+
+    expect(result.status).toBe("READY");
+    expect(result.resultSource).toBe("CACHE");
+    expect(result.sharedCacheId).toBe("cache_1");
+    expect(runner.run).not.toHaveBeenCalled();
+    expect(quota.consumed.size).toBe(1);
+  });
+
+  it("materializes user-owned records from the cache hit (#2)", async () => {
+    const runner = amatRunner();
+    const { port } = cacheHitPort(cacheDataset());
+    const { service } = buildService(prisma, runner.runner, ROLE_ONLY_AI, undefined, undefined, port);
+
+    const created = await service.createSearch(USER_ID, APPLIED_MATERIALS);
+    await service.processSearch(USER_ID, created.id, { actorEmail: "u@test.dev" });
+
+    const company = prisma._state.companies[0];
+    expect(company.userId).toBe(USER_ID);
+    expect(company.emailDomain).toBe("amat.com");
+    expect(company.emailPattern).toBe("first_last");
+    const person = prisma._state.people[0];
+    expect(person.userId).toBe(USER_ID);
+    expect(person.inferredEmail).toBe("jane_doe@amat.com");
+    expect(person.emailStatus).toBe("INFERRED_HIGH");
+  });
+
+  it("never passes requester identity to the shared cache (#5)", async () => {
+    const runner = amatRunner();
+    const { port, calls } = cacheHitPort(cacheDataset());
+    const { service } = buildService(prisma, runner.runner, ROLE_ONLY_AI, undefined, undefined, port);
+
+    const created = await service.createSearch(USER_ID, APPLIED_MATERIALS);
+    await service.processSearch(USER_ID, created.id, { actorEmail: "u@test.dev" });
+
+    expect(calls).toHaveLength(1);
+    expect(JSON.stringify(calls[0])).not.toMatch(/userId|u@test\.dev/i);
+  });
+
+  it("records PROVIDER as the result source on a cache miss", async () => {
+    const runner = amatRunner();
+    const { service } = buildService(prisma, runner.runner, AMAT_AI, amatEvidence());
+    const created = await service.createSearch(USER_ID, APPLIED_MATERIALS);
+    const result = await service.processSearch(USER_ID, created.id, { actorEmail: "u@test.dev" });
+
+    expect(result.status).toBe("READY");
+    expect(result.resultSource).toBe("PROVIDER");
+    expect(runner.run).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets a second user reuse one shared cache entry with separate user-owned records (#14, #15, #16)", async () => {
+    const cache = new DiscoverSearchCacheService({
+      prisma: prisma as unknown as PrismaClient,
+      lock: makeFakeCacheLock(),
+      now: () => new Date(),
+      ttlDays: 30,
+      waitTimeoutMs: 500,
+      pollIntervalMs: 5,
+      cleanupOnRefresh: false
+    });
+    const runnerA = amatRunner();
+    const runnerB = amatRunner();
+    const quotaA = makeQuotaReserver();
+    const quotaB = makeQuotaReserver();
+    const { service: serviceA } = buildService(prisma, runnerA.runner, AMAT_AI, amatEvidence(), quotaA.reserve, cache);
+    const { service: serviceB } = buildService(prisma, runnerB.runner, AMAT_AI, amatEvidence(), quotaB.reserve, cache);
+
+    const a = await serviceA.createSearch("user_A", APPLIED_MATERIALS);
+    const resA = await serviceA.processSearch("user_A", a.id, { actorEmail: "a@test.dev" });
+    const b = await serviceB.createSearch("user_B", APPLIED_MATERIALS);
+    const resB = await serviceB.processSearch("user_B", b.id, { actorEmail: "b@test.dev" });
+
+    expect(resA.resultSource).toBe("PROVIDER");
+    expect(resB.resultSource).toBe("CACHE");
+    expect(runnerA.run).toHaveBeenCalledTimes(1);
+    expect(runnerB.run).not.toHaveBeenCalled();
+
+    // Separate user-owned records.
+    const aCompany = prisma._state.companies.find((c) => c.userId === "user_A");
+    const bCompany = prisma._state.companies.find((c) => c.userId === "user_B");
+    expect(aCompany?.id).toBeTruthy();
+    expect(bCompany?.id).toBeTruthy();
+    expect(aCompany?.id).not.toBe(bCompany?.id);
+    expect(prisma._state.people.filter((p) => p.userId === "user_A").length).toBeGreaterThan(0);
+    expect(prisma._state.people.filter((p) => p.userId === "user_B").length).toBeGreaterThan(0);
+
+    // Both consumed their own quota slot.
+    expect(quotaA.consumed.size).toBe(1);
+    expect(quotaB.consumed.size).toBe(1);
+
+    // Exactly one shared entry, holding no requester identity.
+    expect(prisma._state.discoverCache).toHaveLength(1);
+    expect(JSON.stringify(prisma._state.discoverCache[0])).not.toMatch(/user_A|user_B|userId/);
+  });
+
+  it("runs Apify only once for concurrent identical misses (#concurrency 1, 2)", async () => {
+    const cache = new DiscoverSearchCacheService({
+      prisma: prisma as unknown as PrismaClient,
+      lock: makeFakeCacheLock(),
+      now: () => new Date(),
+      ttlDays: 30,
+      waitTimeoutMs: 1000,
+      pollIntervalMs: 5,
+      cleanupOnRefresh: false
+    });
+    const runnerA = amatRunner();
+    const runnerB = amatRunner();
+    const { service: serviceA } = buildService(prisma, runnerA.runner, AMAT_AI, amatEvidence(), makeQuotaReserver().reserve, cache);
+    const { service: serviceB } = buildService(prisma, runnerB.runner, AMAT_AI, amatEvidence(), makeQuotaReserver().reserve, cache);
+
+    const a = await serviceA.createSearch("user_A", APPLIED_MATERIALS);
+    const b = await serviceB.createSearch("user_B", APPLIED_MATERIALS);
+    const [resA, resB] = await Promise.all([
+      serviceA.processSearch("user_A", a.id, { actorEmail: "a@test.dev" }),
+      serviceB.processSearch("user_B", b.id, { actorEmail: "b@test.dev" })
+    ]);
+
+    // Exactly one of the two Apify runners is called; both users get results.
+    const apifyCalls = runnerA.run.mock.calls.length + runnerB.run.mock.calls.length;
+    expect(apifyCalls).toBe(1);
+    expect(resA.status).toBe("READY");
+    expect(resB.status).toBe("READY");
+    expect([resA.resultSource, resB.resultSource].sort()).toEqual(["CACHE", "PROVIDER"]);
   });
 });

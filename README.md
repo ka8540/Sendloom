@@ -867,6 +867,8 @@ Create a local `.env` file at the repo root with the values below. Secrets and s
 | `DISCOVER_RESULTS_PER_SEARCH` | Optional | Fixed people per processed Discover search (users cannot choose this). Defaults to `10`; enforced server-side. |
 | `DISCOVER_DAILY_SEARCH_LIMIT` | Optional | Processed Discover searches allowed per user per daily (UTC) window. Defaults to `4` (so ordinary users request at most 40 people/day). |
 | `DISCOVER_QUOTA_EXEMPT_EMAILS` | Optional | Server-only, comma-separated, case-insensitive allowlist of accounts exempt from the **daily** Discover quota only. Resolved from the authenticated session; never trust a request body. Do **not** prefix with `NEXT_PUBLIC_`. |
+| `DISCOVER_SHARED_CACHE_TTL_DAYS` | Optional | Freshness window (days) for the shared cross-user Discover result cache. Identical canonical searches reuse cached results instead of calling Apify again. Defaults to `30`; absent/invalid falls back to `30`. |
+| `DISCOVER_SHARED_CACHE_VERSION` | Optional | Cache schema version included in the fingerprint. Bump to invalidate all existing entries. Defaults to `v1`. |
 | `PROSPECT_AI_ENABLED` | Optional | Enables the AI company/role/pattern steps. Defaults to `true`. |
 | `PROSPECT_AI_MODEL` | Optional | Override the prospect AI model. Blank uses the per-task defaults (company/role: `gpt-5`; AI email-format web search: `gpt-5.5`). |
 | `PROSPECT_AI_REASONING_EFFORT` | Optional | Reasoning effort for prospect AI calls. Defaults to `low`. Supported values are `none`, `low`, `medium`, `high`, and `xhigh`; legacy `minimal` is coerced to `low` for GPT-5.5 compatibility. |
@@ -1114,6 +1116,40 @@ limit only — they still use the fixed per-search count and remain subject to
 authentication, ownership, CSRF, and normal rate limiting. Historical search
 records keep their old `maxResults` value, but re-processing any search uses the
 fixed server-side count.
+
+#### Shared 30-day result cache
+
+To cut Apify cost, identical Discover searches share an internal cross-user
+result cache. When a search is processed, the backend builds a canonical
+fingerprint from the **resolved company identity** (LinkedIn slug → official
+domain → normalized name), the **normalized + sorted role set**, the
+**normalized + sorted location set**, the fixed 10-result limit, and a cache
+version. If a fresh (≤ `DISCOVER_SHARED_CACHE_TTL_DAYS`, default 30 days) entry
+matches that exact fingerprint, its normalized people are reused and **Apify is
+not called**; otherwise Apify runs behind an atomic per-fingerprint lock (so ten
+simultaneous identical searches trigger only one Apify run — the rest wait and
+reuse the populated entry) and the shared entry is refreshed transactionally
+(old rows are never dropped before new results are ready, and a failed refresh
+preserves the previous rows and never marks stale data fresh). Stale entries
+(`expiresAt ≤ now`) are refreshed on the next search; abandoned entries are
+cleaned up opportunistically.
+
+Matching is exact: `Apple + Software Engineer + United States` does **not** match
+`Apple + Recruiter + United States`, `Apple + Software Engineer + California`, or
+`Microsoft + …` (no broad company/role/geographic equivalence). Role order,
+duplicates, and casing never create separate entries.
+
+The cache is an **internal provider-result cache, not a search-history page**. It
+stores only the normalized public professional dataset plus evidence-backed
+company email-format metadata — never a requester's user id, search history,
+selections, exports, imports, manual email-format overrides, or suppression
+decisions. Each requesting user still gets their **own** user-owned company,
+people, and `ProspectSearch` records (materialized separately from the shared
+data), their own exports/imports, and their own per-user suppression applied at
+export time. Every processed search — cache hit or provider call — still
+consumes one of the user's daily Discover quota slots, and retrying the same
+search id never consumes another. The result source (`CACHE`/`PROVIDER`) is
+recorded internally on the search and is not surfaced in the UI.
 
 Both tables paginate **server-side at exactly 10 rows per page** with independent
 state (paging one never moves the other), using compact chevron (`‹` / `›`)

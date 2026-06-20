@@ -1308,6 +1308,66 @@ runs alongside) normal API rate limiting:
   subject to authentication, ownership, CSRF, suppression, and normal rate
   limiting. `kush.ahir2024@gmail.com` is the configured owner account.
 
+### 23.2.3 Shared 30-day result cache
+
+To avoid paying Apify for the same search many times, identical canonical
+Discover searches share an internal cross-user result cache
+(`DiscoverSearchCache` + `DiscoverSearchCachePerson`,
+`src/services/prospects/discover-cache-service.ts`).
+
+- **Canonical fingerprint** (`discover-cache-fingerprint.ts`). The cache key is a
+  SHA-256 of `{ companyKey, roles, locations, resultLimit, cacheVersion }`.
+  `companyKey` prefers the resolved LinkedIn company slug, then the official
+  domain, then the normalized name — so "Apple"/"Apple Inc."/"APPLE" share an
+  entry once resolution confirms the same identity, but similarly-named different
+  companies never merge. Roles use the same `normalizeTitle` normalization used
+  elsewhere; locations are trimmed/casefolded; both are de-duplicated and sorted
+  before hashing, so order and duplicates never split entries. `resultLimit` (10)
+  and `cacheVersion` (`DISCOVER_SHARED_CACHE_VERSION`, default `v1`) are part of
+  the key. Matching is exact: a different company, role, or location — including
+  `California` vs `United States` — is a different entry. No broad fuzzy or
+  geographic equivalence is applied.
+- **Lifecycle.** `DiscoverSearchCacheService.getOrRefresh` returns a fresh
+  (`status = READY`, `expiresAt > now`) entry without calling Apify, or runs the
+  provider behind an atomic lock. Freshness is computed from the entry's own
+  `fetchedAt`/`expiresAt` (= `fetchedAt + DISCOVER_SHARED_CACHE_TTL_DAYS`,
+  default 30), never the requester's search date. `cleanupExpired` drops entries
+  abandoned more than one TTL past expiry (cascade-removing their people); it is
+  called opportunistically after a provider refresh and is safe to wire to a
+  cron.
+- **Stampede prevention.** A Redis lock (`discover:shared-cache-lock:{fingerprint}`,
+  `SET … NX EX`, owner-token release in `finally`, TTL-bounded so a crashed
+  worker can't block forever) ensures only the lock owner calls Apify. Other
+  concurrent requests poll (bounded) for the entry to become `READY` and reuse
+  it; if the holder never finishes, the waiter falls back to running the provider
+  so the request never hangs.
+- **Atomic refresh.** New rows are written inside a transaction that upserts the
+  entry (`status = READY`, new `fetchedAt`/`expiresAt`/`resultCount`) and
+  replaces the people rows, so readers never see an empty cache mid-refresh. A
+  provider failure marks the entry `FAILED` with a safe `lastErrorCode`, **keeps
+  the previous rows**, and never marks stale data fresh; the user's search then
+  fails through the normal provider-failure path.
+- **Privacy / tenancy.** The shared rows hold only normalized public people data
+  and evidence-backed company email-format metadata — no requester user id, no
+  search history, selections, exports, imports, manual overrides, or suppression.
+  On every search the resolved dataset (cache or provider) is **materialized**
+  into the requesting user's own `ProspectCompany`/`ProspectCompanyPosition`/
+  `ProspectPerson` records (deduped by the existing `userId + sourceProfileId`
+  rule), and the user's `ProspectSearch` records the provenance
+  (`resultSource = CACHE | PROVIDER`, `sharedCacheId`, `cacheFingerprint`,
+  `cacheFetchedAt` — internal, never in the GraphQL schema). Per-user suppression
+  continues to be applied at export time, so one user's suppression never affects
+  another's cached result.
+- **Quota.** The daily quota slot is reserved in `processSearch` **before** the
+  cache check, so a cache hit, a provider call, and a wait-then-reuse all consume
+  exactly one slot; retrying the same search id stays idempotent (it never
+  consumes another). The cache cannot be used to get a free search.
+- **Observability.** `processProspectSearch` emits structured, privacy-safe logs
+  (`DISCOVER_CACHE_HIT` / `_MISS` / `_REFRESHED` / `_REFRESH_FAILED`) with only
+  safe metadata (search id, user id, fingerprint-hash prefix, `cacheHit`,
+  `cacheAgeDays`, `resultCount`, `providerCalled`, latency) — never people lists,
+  generated emails, provider payloads, the requester email, or prompts.
+
 ### 23.3 AI responsibilities and cost controls
 
 AI is used only for company resolution (≤1 call, skipped when a website domain is

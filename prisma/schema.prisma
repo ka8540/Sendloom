@@ -509,6 +509,13 @@ model ProspectSearch {
   errorMessage       String?
   totalFound         Int       @default(0)
   totalProcessed     Int       @default(0)
+  // Internal result provenance for the shared Discover cache. Never exposed via
+  // GraphQL. resultSource is CACHE (reused a shared dataset) or PROVIDER (called
+  // Apify); the remaining fields record which shared cache entry was used.
+  resultSource       String?
+  sharedCacheId      String?
+  cacheFingerprint   String?
+  cacheFetchedAt     DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
   completedAt        DateTime?
@@ -518,6 +525,83 @@ model ProspectSearch {
 
   @@index([userId, createdAt])
   @@index([status])
+}
+
+// Shared, cross-user 30-day cache of normalized Discover provider results. This
+// is an INTERNAL provider-result cache — never a public search-history surface.
+// It stores only the normalized public professional dataset and evidence-backed
+// company email-format metadata required to reuse a search without calling Apify
+// again. It deliberately holds NO requester identity (no userId), no user
+// selections/exports/imports, and no raw provider payloads. Each requesting user
+// still gets their own user-owned ProspectCompany/Person/Search materialized
+// from this data. Match is by an exact canonical fingerprint (see
+// discover-cache-fingerprint).
+model DiscoverSearchCache {
+  id                  String   @id @default(cuid())
+  fingerprint         String   @unique
+  cacheVersion        String
+  companyKey          String
+  companyName         String
+  companyDomain       String?
+  companyLinkedinUrl  String?
+  normalizedRoles     Json
+  normalizedLocations Json
+  resultLimit         Int
+  // READY (fresh/usable) | REFRESHING (a holder is repopulating) | FAILED.
+  status              String   @default("REFRESHING")
+  fetchedAt           DateTime?
+  expiresAt           DateTime?
+  refreshStartedAt    DateTime?
+  lastErrorCode       String?
+  resultCount         Int      @default(0)
+  // Evidence-backed company email-format metadata (safe to share). A manual
+  // per-user override is never written here.
+  emailDomain           String?
+  emailDomainConfidence String  @default("UNAVAILABLE")
+  emailDomainEvidence   Json?
+  emailPattern          String?
+  patternConfidence     String  @default("UNAVAILABLE")
+  patternEvidence       Json?
+  emailFormatReason     String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  people DiscoverSearchCachePerson[]
+
+  @@index([companyKey])
+  @@index([expiresAt])
+  @@index([status])
+}
+
+// One normalized, public professional record inside a shared cache entry. No
+// userId, no requester identity, no raw biography/photo/phone/personal email.
+model DiscoverSearchCachePerson {
+  id               String   @id @default(cuid())
+  cacheId          String
+  sourceProfileId  String
+  firstName        String
+  lastName         String
+  fullName         String
+  currentTitle     String?
+  normalizedTitle  String?
+  positionCategory String?
+  location         String?
+  country          String?
+  state            String?
+  city             String?
+  linkedinUrl      String
+  inferredEmail    String?
+  emailStatus      String   @default("UNAVAILABLE")
+  emailConfidence  String   @default("UNAVAILABLE")
+  emailPattern     String?
+  emailSource      String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  cache DiscoverSearchCache @relation(fields: [cacheId], references: [id], onDelete: Cascade)
+
+  @@unique([cacheId, sourceProfileId])
+  @@index([cacheId, positionCategory])
 }
 
 // Global, AI-result cache so the same normalized title is never re-classified by
