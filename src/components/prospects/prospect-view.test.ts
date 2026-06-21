@@ -427,9 +427,23 @@ describe("Discover detail-page People table layout contracts", () => {
   it("gives People rows horizontal edge padding so content never touches the card border (#4, #5, #6)", () => {
     const rowBlock = css.match(/\n\.row\s*\{[^}]*\}/s)?.[0] ?? "";
     // Padding shorthand is `vertical horizontal` — the horizontal value must be > 0.
-    expect(rowBlock).toMatch(/padding:\s*0\.85rem\s+0\.5rem/);
+    expect(rowBlock).toMatch(/padding:\s*0\.85rem\s+0\.9rem/);
     expect(css).toMatch(/\.cellSelect\s*\{[^}]*padding-left/s);
     expect(css).toMatch(/\.cellLink\s*\{[^}]*padding-right/s);
+    // The LinkedIn header/column gets its own right padding so it is never flush.
+    expect(css).toMatch(/\.linkedinHead\s*\{[^}]*padding-right/s);
+  });
+
+  it("wraps long People text instead of truncating with an ellipsis (no '…', no scroll)", () => {
+    for (const cls of [".personName", ".cellTitle", ".emailText"]) {
+      const block = css.match(new RegExp(`\\n\\${cls}\\s*\\{[^}]*\\}`, "s"))?.[0] ?? "";
+      expect(block).not.toContain("text-overflow: ellipsis");
+      expect(block).not.toContain("white-space: nowrap");
+      expect(block).toContain("overflow-wrap: anywhere");
+    }
+    // Text columns use minmax(0, …) so they shrink + wrap rather than overflow.
+    const rowBlock = css.match(/\n\.row\s*\{[^}]*\}/s)?.[0] ?? "";
+    expect(rowBlock).toContain("minmax(0,");
   });
 
   it("keeps pagination outside the table shell and uses compact chevrons (#8 layout)", () => {
