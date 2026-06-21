@@ -1,7 +1,7 @@
 import type { ManualConfig } from "@/components/manual/manualTypes";
 import { campaignDetailManual } from "@/manuals/campaignDetailManual";
 import { campaignsManual } from "@/manuals/campaignsManual";
-import { discoverManual } from "@/manuals/discoverManual";
+import { discoverDetailManual, discoverListManual } from "@/manuals/discoverManual";
 import { finderManual } from "@/manuals/finderManual";
 import { importsManual } from "@/manuals/importsManual";
 import { templatesManual } from "@/manuals/templatesManual";
@@ -13,12 +13,18 @@ const routeManuals: Record<string, ManualConfig> = {
   "/imports": importsManual,
   "/templates": templatesManual,
   "/campaigns": campaignsManual,
-  "/prospects": discoverManual
+  "/prospects": discoverListManual
 };
 
 export function getManualForPathname(pathname: string): ManualConfig | null {
   if (/^\/(?:campaigns|sequences)\/[^/]+$/.test(pathname)) {
     return campaignDetailManual;
+  }
+
+  // Discover detail workspace (/prospects/[searchId]) gets the search-specific
+  // results guide; the bare /prospects list page gets the Search History guide.
+  if (/^\/prospects\/[^/]+$/.test(pathname)) {
+    return discoverDetailManual;
   }
 
   return routeManuals[pathname] ?? null;

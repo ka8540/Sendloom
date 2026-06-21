@@ -1,7 +1,14 @@
 import type { ProspectCompany } from "@prisma/client";
 
 import type { GraphQLContext } from "@/graphql/context";
-import { badInputError, discoverDailyLimitError, forbiddenError, notFoundError } from "@/graphql/errors";
+import {
+  badInputError,
+  discoverDailyLimitError,
+  discoverExpansionFailedError,
+  discoverExpansionRunningError,
+  forbiddenError,
+  notFoundError
+} from "@/graphql/errors";
 import { ProspectError } from "@/services/prospects/prospect-search-service";
 
 export function asStringArray(value: unknown): string[] {
@@ -30,6 +37,10 @@ export function mapProspectError(error: unknown): never {
         throw forbiddenError(error.message);
       case "DISCOVER_DAILY_LIMIT_REACHED":
         throw discoverDailyLimitError(error.message);
+      case "DISCOVER_EXPANSION_ALREADY_RUNNING":
+        throw discoverExpansionRunningError(error.message);
+      case "DISCOVER_EXPANSION_FAILED":
+        throw discoverExpansionFailedError(error.message);
       default:
         break;
     }

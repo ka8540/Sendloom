@@ -462,8 +462,23 @@ export function formatQuotaRemaining(quota: DiscoverQuota | null): string | null
   return `${quota.searchesRemaining} of ${quota.dailySearchLimit} searches remaining today`;
 }
 
-/** "Resets at 12:00 AM" rendered in the viewer's local timezone. */
-export function formatQuotaReset(quota: Pick<DiscoverQuota, "resetAt"> | null): string | null {
+/** Difference in whole local calendar days between two dates (to - from). */
+function localCalendarDayDiff(from: Date, to: Date): number {
+  const a = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  const b = new Date(to.getFullYear(), to.getMonth(), to.getDate());
+  return Math.round((b.getTime() - a.getTime()) / 86_400_000);
+}
+
+/**
+ * Reset label in the viewer's local timezone, ALWAYS qualified with the day so a
+ * bare time is never ambiguous — e.g. "Resets tomorrow at 5:00 PM" (the daily
+ * window resets at the next UTC midnight, which is rarely the local midnight, so
+ * "Resets at 5:00 PM" alone read as today-vs-next-day was confusing).
+ */
+export function formatQuotaReset(
+  quota: Pick<DiscoverQuota, "resetAt"> | null,
+  now: Date = new Date()
+): string | null {
   if (!quota?.resetAt) {
     return null;
   }
@@ -471,7 +486,16 @@ export function formatQuotaReset(quota: Pick<DiscoverQuota, "resetAt"> | null): 
   if (Number.isNaN(date.getTime())) {
     return null;
   }
-  return `Resets at ${date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
+  const time = date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const dayDiff = localCalendarDayDiff(now, date);
+  if (dayDiff <= 0) {
+    return `Resets today at ${time}`;
+  }
+  if (dayDiff === 1) {
+    return `Resets tomorrow at ${time}`;
+  }
+  const dayLabel = date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  return `Resets ${dayLabel} at ${time}`;
 }
 
 /**
@@ -488,4 +512,59 @@ export function isProcessQuotaBlocked(
     return false;
   }
   return status === "DRAFT" && quota.searchesRemaining <= 0;
+}
+
+// ---------------------------------------------------------------------------
+// "Add 10 more people" presentation helpers.
+// ---------------------------------------------------------------------------
+
+export const ADD_MORE_PEOPLE_LABEL = "Add 10 more";
+export const ADD_MORE_DIALOG_TITLE = "Add more people?";
+export const ADD_MORE_DIALOG_BODY =
+  "Discover will add up to 10 new people matching this company, role, and location. Existing people will not be repeated. This uses 1 of your daily Discover searches.";
+export const ADD_MORE_CONFIRM_LABEL = "Add up to 10 people";
+export const ADD_MORE_CANCEL_LABEL = "Cancel";
+export const ADD_MORE_LOADING_LABEL = "Adding new people…";
+export const ADD_MORE_EXHAUSTED_MESSAGE = "No more unique people are available for this search.";
+
+/**
+ * Whether the "Add 10 more" button should be shown at all: a READY search with
+ * existing results that is not confirmed exhausted. Quota / in-flight state only
+ * DISABLE the button (so the user still sees it) — see addMoreDisabledReason.
+ */
+export function shouldShowAddMore(args: {
+  view: SelectedSearchView;
+  status: ProspectSearchStatus;
+  hasResults: boolean;
+  exhausted: boolean;
+}): boolean {
+  return args.view === "ready" && args.status === "READY" && args.hasResults && !args.exhausted;
+}
+
+/**
+ * A reason the visible "Add 10 more" button is disabled, or null when it is
+ * actionable. Disabled while an expansion runs (prevents duplicate requests) and
+ * when the daily Discover allowance is spent (exempt accounts are never blocked).
+ */
+export function addMoreDisabledReason(quota: DiscoverQuota | null, expanding: boolean): string | null {
+  if (expanding) {
+    return ADD_MORE_LOADING_LABEL;
+  }
+  if (quota && !quota.unlimited && quota.searchesRemaining <= 0) {
+    return "You've used today's Discover searches.";
+  }
+  return null;
+}
+
+/** "Searches remaining today: 3", or "Unlimited" for an exempt account. */
+export function formatSearchesRemainingLine(quota: DiscoverQuota | null): string {
+  if (!quota || quota.unlimited) {
+    return "Searches remaining today: Unlimited";
+  }
+  return `Searches remaining today: ${quota.searchesRemaining}`;
+}
+
+/** "Current people: 10" for the confirmation dialog. */
+export function formatCurrentPeopleLine(peopleCount: number): string {
+  return `Current people: ${Math.max(0, peopleCount)}`;
 }

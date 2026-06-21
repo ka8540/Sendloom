@@ -47,6 +47,13 @@ describe("buildActorInput", () => {
     const input = buildActorInput({ companyName: "X", jobTitles: ["a"], locations: [], maxResults: 10 });
     expect(input.currentCompanies).toBeUndefined();
   });
+
+  it("defaults startPage to 1 but honors a continuation page for Add 10 more (#14)", () => {
+    expect(buildActorInput({ companyName: "X", jobTitles: ["a"], locations: [], maxResults: 25 }).startPage).toBe(1);
+    expect(buildActorInput({ companyName: "X", jobTitles: ["a"], locations: [], maxResults: 25, startPage: 3 }).startPage).toBe(3);
+    // Never below 1, always an integer.
+    expect(buildActorInput({ companyName: "X", jobTitles: ["a"], locations: [], maxResults: 25, startPage: 0 }).startPage).toBe(1);
+  });
 });
 
 describe("normalizeProfile", () => {

@@ -81,9 +81,25 @@ export type ProspectSearchNode = {
   errorCode: string | null;
   errorMessage: string | null;
   peopleCount: number;
+  /** True when no more unique people can be added (drives the Add-more button). */
+  exhausted: boolean;
   createdAt: string;
   completedAt: string | null;
   company: CompanySummary | null;
+};
+
+export type DiscoverExpansionStatus = "PENDING" | "PROCESSING" | "READY" | "FAILED";
+
+export type DiscoverSearchExpansion = {
+  id: string;
+  searchId: string;
+  status: DiscoverExpansionStatus;
+  requestedCount: number;
+  addedCount: number;
+  totalPeopleCount: number;
+  quotaRemaining: number;
+  exhausted: boolean;
+  message: string | null;
 };
 
 export type PositionNode = {
@@ -241,6 +257,7 @@ export const PROSPECT_SEARCHES_QUERY = /* GraphQL */ `
           errorCode
           errorMessage
           peopleCount
+          exhausted
           createdAt
           completedAt
           company {
@@ -261,6 +278,39 @@ export const PROSPECT_SEARCHES_QUERY = /* GraphQL */ `
         endCursor
       }
       totalCount
+    }
+  }
+`;
+
+// Load a single user-owned search by id for the detail page. Uses the existing
+// prospectSearch(id) resolver; resolves null when the id is unknown or owned by
+// another user (the detail page then shows a safe not-found state).
+export const PROSPECT_SEARCH_BY_ID_QUERY = /* GraphQL */ `
+  query ProspectSearch($id: ID!) {
+    prospectSearch(id: $id) {
+      id
+      requestedCompany
+      requestedTitles
+      requestedLocations
+      maxResults
+      status
+      errorCode
+      errorMessage
+      peopleCount
+      exhausted
+      createdAt
+      completedAt
+      company {
+        id
+        name
+        officialDomain
+        officialWebsiteDomain
+        emailDomain
+        emailDomainConfidence
+        emailPattern
+        patternConfidence
+        peopleCount
+      }
     }
   }
 `;
@@ -386,6 +436,22 @@ export const CANCEL_SEARCH_MUTATION = /* GraphQL */ `
     cancelProspectSearch(id: $id) {
       id
       status
+    }
+  }
+`;
+
+export const ADD_MORE_DISCOVER_PEOPLE_MUTATION = /* GraphQL */ `
+  mutation AddMoreDiscoverPeople($searchId: ID!, $idempotencyKey: String!) {
+    addMoreDiscoverPeople(searchId: $searchId, idempotencyKey: $idempotencyKey) {
+      id
+      searchId
+      status
+      requestedCount
+      addedCount
+      totalPeopleCount
+      quotaRemaining
+      exhausted
+      message
     }
   }
 `;
@@ -660,7 +726,9 @@ const SAFE_GRAPHQL_ERROR_CODES = new Set([
   "FORBIDDEN",
   "NOT_FOUND",
   "UNAUTHENTICATED",
-  "DISCOVER_DAILY_LIMIT_REACHED"
+  "DISCOVER_DAILY_LIMIT_REACHED",
+  "DISCOVER_EXPANSION_ALREADY_RUNNING",
+  "DISCOVER_EXPANSION_FAILED"
 ]);
 
 function safeGraphqlErrorMessage(errors: NonNullable<RawGraphQLResponse<unknown>["errors"]>): string {

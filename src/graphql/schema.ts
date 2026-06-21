@@ -143,8 +143,32 @@ export const typeDefs = /* GraphQL */ `
     errorCode: String
     errorMessage: String
     peopleCount: Int!
+    # True when no more unique people can be added to this search (the shared
+    # results are exhausted). Drives whether "Add 10 more" is offered.
+    exhausted: Boolean!
     createdAt: DateTime!
     completedAt: DateTime
+  }
+
+  enum DiscoverExpansionStatus {
+    PENDING
+    PROCESSING
+    READY
+    FAILED
+  }
+
+  # The outcome of one "Add 10 more" request against a READY search. Carries only
+  # safe counters and a user-ready message — never people, emails, or internals.
+  type DiscoverSearchExpansion {
+    id: ID!
+    searchId: ID!
+    status: DiscoverExpansionStatus!
+    requestedCount: Int!
+    addedCount: Int!
+    totalPeopleCount: Int!
+    quotaRemaining: Int!
+    exhausted: Boolean!
+    message: String
   }
 
   type PageInfo {
@@ -254,6 +278,10 @@ export const typeDefs = /* GraphQL */ `
     createProspectSearch(input: CreateProspectSearchInput!): ProspectSearch!
     processProspectSearch(id: ID!): ProspectSearch!
     cancelProspectSearch(id: ID!): ProspectSearch!
+    # Add up to 10 more unique people to an existing READY search. idempotencyKey
+    # is client-generated so retries/double-clicks never charge a second slot or
+    # add a second batch.
+    addMoreDiscoverPeople(searchId: ID!, idempotencyKey: String!): DiscoverSearchExpansion!
     reclassifyCompanyPositions(companyId: ID!): Company!
     reinferCompanyEmailPattern(companyId: ID!): Company!
     refreshCompanyEmailFormat(companyId: ID!, sourceUrl: String): Company!

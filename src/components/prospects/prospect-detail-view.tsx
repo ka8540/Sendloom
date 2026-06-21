@@ -1,10 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+// Discover DETAIL page (/prospects/[searchId]). The dedicated workspace for one
+// user-owned search: summary cards, company + email-format details and evidence,
+// Add 10 More, role filters, the People table with selection/export/import, and
+// pagination. It loads entirely from the route searchId (never from list-page
+// React state), so it works on direct load, refresh, or a new tab.
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   AlertCircle,
+  ArrowLeft,
   AtSign,
-  Ban,
   Building2,
   Check,
   ChevronLeft,
@@ -13,23 +21,21 @@ import {
   Download,
   ExternalLink,
   FileSpreadsheet,
-  Inbox,
   LoaderCircle,
   MapPin,
-  Plus,
-  RefreshCw,
   Search,
   Sparkles,
   Trash2,
+  UserPlus,
   Users,
   X
 } from "lucide-react";
 
 import {
+  ADD_MORE_DISCOVER_PEOPLE_MUTATION,
   CANCEL_SEARCH_MUTATION,
   COMPANY_DETAIL_QUERY,
   CREATE_PROSPECT_IMPORT_MUTATION,
-  CREATE_SEARCH_MUTATION,
   DELETE_COMPANY_MUTATION,
   DISCOVER_COMPANY_EMAIL_FORMAT_MUTATION,
   DISCOVER_QUOTA_QUERY,
@@ -37,18 +43,17 @@ import {
   PEOPLE_QUERY,
   PREPARE_PROSPECT_EXPORT_MUTATION,
   PROCESS_SEARCH_MUTATION,
-  PROSPECT_SEARCHES_QUERY,
-  REVIEW_PROSPECT_SELECTION_MUTATION,
+  PROSPECT_SEARCH_BY_ID_QUERY,
   REFRESH_COMPANY_EMAIL_FORMAT_MUTATION,
-  SEARCHES_PAGE_SIZE,
+  REVIEW_PROSPECT_SELECTION_MUTATION,
   SET_COMPANY_EMAIL_INFERENCE_OVERRIDE_MUTATION,
   buildPeopleVariables,
-  buildSearchesVariables,
   prospectGraphql,
   type CompanyDetail,
   type ConfidenceLevel,
   type Connection,
   type DiscoverQuota,
+  type DiscoverSearchExpansion,
   type PersonNode,
   type PositionCategory,
   type PreparedProspectExport,
@@ -58,116 +63,87 @@ import {
   type ProspectSearchNode
 } from "@/components/prospects/prospect-graphql";
 import {
+  ADD_MORE_CANCEL_LABEL,
+  ADD_MORE_CONFIRM_LABEL,
+  ADD_MORE_DIALOG_BODY,
+  ADD_MORE_DIALOG_TITLE,
+  ADD_MORE_LOADING_LABEL,
+  ADD_MORE_PEOPLE_LABEL,
   EXTERNAL_LINK_REL,
   EXTERNAL_LINK_TARGET,
   INFERRED_EMAIL_NOTICE,
-  PROSPECT_FINDER_SUBTITLE,
-  PROSPECT_FINDER_TAGLINE,
-  PROSPECT_FINDER_TITLE,
-  PROSPECT_FINDER_UNAVAILABLE_BODY,
-  PROSPECT_FINDER_UNAVAILABLE_TITLE,
-  type Badge,
-  type BadgeTone,
-  confidenceBadge,
+  addMoreDisabledReason,
   buildProspectSelectionInput,
+  confidenceBadge,
   createEmptyProspectSelection,
-  discoverPerSearchSentence,
   emailStatusBadge,
   filterPeopleByText,
   formatDateTime,
   formatPageLabel,
-  formatQuotaRemaining,
   formatQuotaReset,
   formatSearchError,
   formatShowingLabel,
-  isEmailCopyable,
-  isProcessQuotaBlocked,
   getPageSelectionState,
   getProspectSelectionCount,
+  isEmailCopyable,
+  isProcessQuotaBlocked,
   isProspectSelected,
   personLocation,
   resolvePageCount,
-  resolveProspectPageState,
   resolveSelectedSearchView,
   selectAllMatchingProspects,
+  shouldShowAddMore,
   statusBadge,
   togglePageProspectSelection,
   toggleProspectSelection,
   type PageSelectionState,
   type ProspectSelectionState
 } from "@/components/prospects/prospect-view";
+import {
+  BadgePill,
+  DisabledState,
+  EmptyState,
+  EMAIL_PATTERN_OPTIONS,
+  QuotaIndicator,
+  type ActionNotice,
+  type ReviewIntent
+} from "@/components/prospects/prospects-shared";
 import { useManual } from "@/components/manual/ManualProvider";
 import styles from "@/components/prospects/prospects-dashboard.module.css";
 
-const TONE_CLASS: Record<BadgeTone, string> = {
-  verified: styles.toneVerified,
-  inferred: styles.toneInferred,
-  neutral: styles.toneNeutral,
-  warning: styles.toneWarning,
-  muted: styles.toneMuted,
-  blocked: styles.toneBlocked
-};
+type DetailStage = "ready" | "draft" | "processing" | "failed";
 
-function BadgePill({ badge }: { badge: Badge }) {
-  return (
-    <span className={`${styles.badge} ${TONE_CLASS[badge.tone]}`} title={badge.hint}>
-      {badge.label}
-    </span>
-  );
+function resolveDetailStage(search: ProspectSearchNode | null): DetailStage | null {
+  if (!search) {
+    return null;
+  }
+  if (search.status === "READY") {
+    return "ready";
+  }
+  if (search.status === "DRAFT") {
+    return "draft";
+  }
+  if (search.status === "FAILED") {
+    return "failed";
+  }
+  if (search.status === "CANCELED") {
+    return null;
+  }
+  return "processing";
 }
 
-type CreateForm = {
-  companyName: string;
-  jobTitles: string;
-  locations: string;
-};
-
-type ActionNotice = {
-  message: string;
-  href?: string;
-  label?: string;
-};
-
-type ReviewIntent = "download" | "import";
-
-const EMPTY_FORM: CreateForm = { companyName: "", jobTitles: "", locations: "" };
-const EMAIL_PATTERN_OPTIONS = [
-  "first",
-  "last",
-  "firstlast",
-  "first.last",
-  "first_last",
-  "flast",
-  "f.last",
-  "f_last",
-  "firstl",
-  "first.l",
-  "lastf",
-  "last.first"
-];
-
-export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean }) {
+export function ProspectDetailView({ searchId, featureEnabled }: { searchId: string; featureEnabled: boolean }) {
+  const router = useRouter();
   const [disabled, setDisabled] = useState(!featureEnabled);
 
-  const [searches, setSearches] = useState<ProspectSearchNode[]>([]);
-  const [searchesLoading, setSearchesLoading] = useState(true);
-  const [searchesError, setSearchesError] = useState<string | null>(null);
-  const [searchesHasNext, setSearchesHasNext] = useState(false);
-  const [searchesEndCursor, setSearchesEndCursor] = useState<string | null>(null);
-  const [searchesTotal, setSearchesTotal] = useState(0);
-  // Search-history pagination state — fully independent from the people table.
-  const [historyPageIndex, setHistoryPageIndex] = useState(0);
-  const historyAfterCursors = useRef<(string | null)[]>([null]);
-  const searchesReq = useRef(0);
-
-  // The selected search is tracked independently of the current history page so
-  // paging the history table never blanks the company/people sections below.
-  const [selectedSearchId, setSelectedSearchId] = useState<string | null>(null);
-  const [selectedSearch, setSelectedSearch] = useState<ProspectSearchNode | null>(null);
-  const selectedSearchIdRef = useRef<string | null>(null);
+  const [search, setSearch] = useState<ProspectSearchNode | null>(null);
+  const [searchLoading, setSearchLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
+  const searchReq = useRef(0);
 
   const [company, setCompany] = useState<CompanyDetail | null>(null);
   const [companyLoading, setCompanyLoading] = useState(false);
+  const companyReq = useRef(0);
 
   const [activeCategory, setActiveCategory] = useState<PositionCategory | null>(null);
 
@@ -179,6 +155,7 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
   const [peopleEndCursor, setPeopleEndCursor] = useState<string | null>(null);
   const [peoplePageIndex, setPeoplePageIndex] = useState(0);
   const peopleAfterCursors = useRef<(string | null)[]>([null]);
+  const peopleReq = useRef(0);
 
   const [peopleFilter, setPeopleFilter] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -192,13 +169,12 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
   const [creatingImport, setCreatingImport] = useState(false);
 
   const [quota, setQuota] = useState<DiscoverQuota | null>(null);
-
-  const [showNewSearch, setShowNewSearch] = useState(false);
-  const [form, setForm] = useState<CreateForm>(EMPTY_FORM);
-  const [creating, setCreating] = useState(false);
-  const [processingId, setProcessingId] = useState<string | null>(null);
-  const [deletingCompanyId, setDeletingCompanyId] = useState<string | null>(null);
-  const [refreshingFormatId, setRefreshingFormatId] = useState<string | null>(null);
+  const [processing, setProcessing] = useState(false);
+  const [expanding, setExpanding] = useState(false);
+  const [showAddMoreDialog, setShowAddMoreDialog] = useState(false);
+  const [sessionExhausted, setSessionExhausted] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [refreshingFormat, setRefreshingFormat] = useState(false);
   const [formatSourceUrl, setFormatSourceUrl] = useState("");
   const [showFormatSource, setShowFormatSource] = useState(false);
   const [showManualFormat, setShowManualFormat] = useState(false);
@@ -208,14 +184,8 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<ActionNotice | null>(null);
 
-  const peopleReq = useRef(0);
-  const companyReq = useRef(0);
+  const selectedView = resolveSelectedSearchView(search);
 
-  const selectedView = resolveSelectedSearchView(selectedSearch);
-  const pageState = resolveProspectPageState({ disabled, loading: searchesLoading, searchCount: searchesTotal });
-
-  // Contextual onboarding (reuses the shared Sendloom manual/help system). The
-  // dashboard drives stage selection because it knows the real load/search state.
   const { manual: discoverManual, isOpen: manualOpen, openManualStage, isStageComplete } = useManual();
   const autoTourStagesRef = useRef<Set<string>>(new Set());
 
@@ -288,137 +258,60 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
     setPeopleFilter("");
   }, []);
 
-  const selectSearch = useCallback(
-    (search: ProspectSearchNode) => {
-      selectedSearchIdRef.current = search.id;
-      setSelectedSearchId(search.id);
-      setSelectedSearch(search);
-      setActiveCategory(null);
-      setActionError(null);
-      setActionNotice(null);
-      setCompany(null);
-      setFormatSourceUrl("");
-      setShowFormatSource(false);
-      setShowManualFormat(false);
-      setManualEmailDomain("");
-      setManualEmailPattern("first.last");
-      setManualConfidence("HIGH");
-      setSelection(createEmptyProspectSelection());
-      setReview(null);
-      setReviewError(null);
-      resetPeopleState();
-      if (search.status === "READY" && search.company) {
-        void loadCompany(search.company.id);
-        void loadPeople({ companyId: search.company.id, category: null, pageIndex: 0, after: null });
-      }
-    },
-    [loadCompany, loadPeople, resetPeopleState]
-  );
-
-  const loadSearches = useCallback(
-    async (options: { pageIndex?: number; after?: string | null; autoSelect?: boolean; selectId?: string } = {}) => {
-      const pageIndex = options.pageIndex ?? 0;
-      const after = options.after ?? null;
-      const req = ++searchesReq.current;
-      setSearchesLoading(true);
-      setSearchesError(null);
-      const result = await prospectGraphql<{ prospectSearches: Connection<ProspectSearchNode> }>(
-        PROSPECT_SEARCHES_QUERY,
-        buildSearchesVariables({ after })
-      );
-      // Ignore a stale page response that a faster later request superseded.
-      if (req !== searchesReq.current) {
+  // Load the search by route id, then its company + people when it is READY.
+  // Preserves the active category on a silent refresh (keeps the current view).
+  const loadDetail = useCallback(
+    async (options: { category?: PositionCategory | null } = {}) => {
+      const category = options.category ?? null;
+      const req = ++searchReq.current;
+      setSearchLoading(true);
+      const result = await prospectGraphql<{ prospectSearch: ProspectSearchNode | null }>(PROSPECT_SEARCH_BY_ID_QUERY, {
+        id: searchId
+      });
+      if (req !== searchReq.current) {
         return;
       }
       if (result.disabled) {
         setDisabled(true);
-        setSearchesLoading(false);
+        setSearchLoading(false);
         return;
       }
-      // Backend reachable and enabled — clear any stale server-rendered hint.
       setDisabled(false);
-      if (result.error || !result.data) {
-        setSearchesError(result.error ?? "Could not load searches.");
-        setSearchesLoading(false);
+      const node = result.data?.prospectSearch ?? null;
+      if (!node) {
+        setNotFound(true);
+        setSearch(null);
+        setSearchLoading(false);
         return;
       }
-      const connection = result.data.prospectSearches;
-      const nodes = connection.edges.map((edge) => edge.node);
-      setSearches(nodes);
-      setSearchesHasNext(connection.pageInfo.hasNextPage);
-      setSearchesEndCursor(connection.pageInfo.endCursor);
-      setSearchesTotal(connection.totalCount);
-      setHistoryPageIndex(pageIndex);
-      setSearchesLoading(false);
-
-      // Keep the selected search's status/company fresh when it appears on the
-      // freshly loaded page, without disturbing the selection otherwise.
-      const currentSelectedId = selectedSearchIdRef.current;
-      if (currentSelectedId) {
-        const fresh = nodes.find((node) => node.id === currentSelectedId);
-        if (fresh) {
-          setSelectedSearch(fresh);
-        }
-      }
-
-      if (options.selectId) {
-        const node = nodes.find((item) => item.id === options.selectId);
-        if (node) {
-          selectSearch(node);
-        }
-      } else if (options.autoSelect && !currentSelectedId && nodes.length > 0) {
-        const preferred = nodes.find((node) => node.status === "READY" && node.company) ?? nodes[0];
-        selectSearch(preferred);
+      setNotFound(false);
+      setSearch(node);
+      setSearchLoading(false);
+      if (node.status === "READY" && node.company) {
+        peopleAfterCursors.current = [null];
+        await loadCompany(node.company.id);
+        await loadPeople({ companyId: node.company.id, category, pageIndex: 0, after: null });
+      } else {
+        setCompany(null);
+        resetPeopleState();
       }
     },
-    [selectSearch]
+    [loadCompany, loadPeople, resetPeopleState, searchId]
   );
 
-  const handleHistoryNext = useCallback(() => {
-    if (!searchesHasNext || searchesLoading) {
-      return;
-    }
-    const after = searchesEndCursor;
-    historyAfterCursors.current[historyPageIndex + 1] = after;
-    void loadSearches({ pageIndex: historyPageIndex + 1, after });
-  }, [historyPageIndex, loadSearches, searchesEndCursor, searchesHasNext, searchesLoading]);
-
-  const handleHistoryPrev = useCallback(() => {
-    if (historyPageIndex === 0 || searchesLoading) {
-      return;
-    }
-    const after = historyAfterCursors.current[historyPageIndex - 1] ?? null;
-    void loadSearches({ pageIndex: historyPageIndex - 1, after });
-  }, [historyPageIndex, loadSearches, searchesLoading]);
-
   useEffect(() => {
-    // Always verify against the live endpoint rather than trusting the
-    // server-rendered `featureEnabled` hint alone. If that hint is stale (e.g. a
-    // dev server that cached an older env) but the backend is actually enabled,
-    // this recovers instead of stranding the user on the disabled card. A
-    // genuinely disabled backend returns 404 and loadSearches re-sets `disabled`.
-    void loadSearches({ autoSelect: true });
+    void loadDetail();
     void loadQuota();
-    // Run once on mount.
+    // Reload whenever the route's searchId changes (e.g. client-side nav).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [searchId]);
 
-  // State-aware onboarding: auto-open the relevant guide once per stage for a
-  // first-time user. Starter (empty), draft (a draft is selected), and results
-  // (a READY search is open) each persist independently, never auto-repeat once
-  // completed/dismissed, and never launch over a modal or an in-flight process.
+  // Auto-open the detail guide once per stage when the page is settled.
   useEffect(() => {
-    if (!discoverManual || manualOpen || showNewSearch || reviewOpen || processingId) {
+    if (!discoverManual || manualOpen || searchLoading || notFound || reviewOpen || showAddMoreDialog || processing) {
       return;
     }
-    let stage: "starter" | "draft" | "results" | null = null;
-    if (pageState === "empty") {
-      stage = "starter";
-    } else if (selectedView === "ready") {
-      stage = "results";
-    } else if (selectedSearch?.status === "DRAFT") {
-      stage = "draft";
-    }
+    const stage = resolveDetailStage(search);
     if (!stage || autoTourStagesRef.current.has(stage)) {
       return;
     }
@@ -430,12 +323,12 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
   }, [
     discoverManual,
     manualOpen,
-    showNewSearch,
+    searchLoading,
+    notFound,
     reviewOpen,
-    processingId,
-    pageState,
-    selectedView,
-    selectedSearch?.status,
+    showAddMoreDialog,
+    processing,
+    search,
     openManualStage,
     isStageComplete
   ]);
@@ -486,107 +379,53 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
   const refreshAll = useCallback(() => {
     setActionError(null);
     setActionNotice(null);
-    void (async () => {
-      // Reload the current history page (not page 1) so a refresh doesn't move
-      // the user away from the page they were on.
-      await loadSearches({ pageIndex: historyPageIndex, after: historyAfterCursors.current[historyPageIndex] ?? null });
-      if (selectedSearch?.status === "READY" && selectedSearch.company) {
-        peopleAfterCursors.current = [null];
-        await loadCompany(selectedSearch.company.id);
-        await loadPeople({ companyId: selectedSearch.company.id, category: activeCategory, pageIndex: 0, after: null });
-      }
-    })();
-  }, [activeCategory, historyPageIndex, loadCompany, loadPeople, loadSearches, selectedSearch]);
+    void loadDetail({ category: activeCategory });
+    void loadQuota();
+  }, [activeCategory, loadDetail, loadQuota]);
 
-  const handleCreate = useCallback(
-    async (event: FormEvent) => {
-      event.preventDefault();
-      const jobTitles = form.jobTitles.split(",").map((value) => value.trim()).filter(Boolean);
-      const locations = form.locations.split(",").map((value) => value.trim()).filter(Boolean);
-      if (!form.companyName.trim() || jobTitles.length === 0) {
-        setActionError("Enter a company name and at least one job title.");
-        return;
-      }
-      setCreating(true);
-      setActionError(null);
-      setActionNotice(null);
-      // The result count is fixed server-side, so the client never sends one.
-      const result = await prospectGraphql<{ createProspectSearch: { id: string } }>(CREATE_SEARCH_MUTATION, {
-        input: {
-          companyName: form.companyName.trim(),
-          jobTitles,
-          locations
-        }
-      });
-      setCreating(false);
-      if (result.disabled) {
-        setDisabled(true);
-        return;
-      }
-      if (result.error || !result.data) {
-        setActionError(result.error ?? "Could not create the search.");
-        return;
-      }
-      const newId = result.data.createProspectSearch.id;
-      setForm(EMPTY_FORM);
-      setShowNewSearch(false);
-      setActionNotice({ message: "Draft search created. Process it to fetch people." });
-      // A new draft is the most recent search, so jump history back to page 1
-      // and select it.
-      historyAfterCursors.current = [null];
-      await loadSearches({ pageIndex: 0, after: null, selectId: newId });
-    },
-    [form, loadSearches]
-  );
+  const handleProcess = useCallback(async () => {
+    if (!search) {
+      return;
+    }
+    setProcessing(true);
+    setActionError(null);
+    setActionNotice(null);
+    const result = await prospectGraphql<{ processProspectSearch: { id: string; status: string } }>(
+      PROCESS_SEARCH_MUTATION,
+      { id: search.id }
+    );
+    setProcessing(false);
+    if (result.disabled) {
+      setDisabled(true);
+      return;
+    }
+    void loadQuota();
+    if (result.error || !result.data) {
+      setActionError(result.error ?? "Processing failed. Try again later.");
+      await loadDetail({ category: activeCategory });
+      return;
+    }
+    await loadDetail({ category: activeCategory });
+  }, [activeCategory, loadDetail, loadQuota, search]);
 
-  const handleProcess = useCallback(
-    async (search: ProspectSearchNode) => {
-      setProcessingId(search.id);
-      setActionError(null);
-      setActionNotice(null);
-      const result = await prospectGraphql<{ processProspectSearch: { id: string; status: string } }>(
-        PROCESS_SEARCH_MUTATION,
-        { id: search.id }
-      );
-      setProcessingId(null);
-      const after = historyAfterCursors.current[historyPageIndex] ?? null;
-      if (result.disabled) {
-        setDisabled(true);
-        return;
-      }
-      // A processed search consumes a daily slot — refresh the remaining count
-      // immediately so the indicator and Process gating update without a reload.
-      void loadQuota();
-      if (result.error || !result.data) {
-        setActionError(result.error ?? "Processing failed. Try again later.");
-        await loadSearches({ pageIndex: historyPageIndex, after });
-        return;
-      }
-      // Reload the search's current page and re-select it so the updated status,
-      // company, and people render in place.
-      await loadSearches({ pageIndex: historyPageIndex, after, selectId: result.data.processProspectSearch.id });
-    },
-    [historyPageIndex, loadQuota, loadSearches]
-  );
-
-  const handleCancel = useCallback(
-    async (search: ProspectSearchNode) => {
-      setActionError(null);
-      const result = await prospectGraphql<{ cancelProspectSearch: { id: string } }>(CANCEL_SEARCH_MUTATION, {
-        id: search.id
-      });
-      if (result.disabled) {
-        setDisabled(true);
-        return;
-      }
-      if (result.error) {
-        setActionError(result.error);
-        return;
-      }
-      await loadSearches({ pageIndex: historyPageIndex, after: historyAfterCursors.current[historyPageIndex] ?? null });
-    },
-    [historyPageIndex, loadSearches]
-  );
+  const handleCancel = useCallback(async () => {
+    if (!search) {
+      return;
+    }
+    setActionError(null);
+    const result = await prospectGraphql<{ cancelProspectSearch: { id: string } }>(CANCEL_SEARCH_MUTATION, {
+      id: search.id
+    });
+    if (result.disabled) {
+      setDisabled(true);
+      return;
+    }
+    if (result.error) {
+      setActionError(result.error);
+      return;
+    }
+    await loadDetail({ category: activeCategory });
+  }, [activeCategory, loadDetail, search]);
 
   const handleDeleteCompany = useCallback(
     async (target: CompanyDetail) => {
@@ -596,14 +435,12 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
       if (!confirmed) {
         return;
       }
-
-      setDeletingCompanyId(target.id);
+      setDeleting(true);
       setActionError(null);
-      setActionNotice(null);
       const result = await prospectGraphql<{ deleteCompany: boolean }>(DELETE_COMPANY_MUTATION, {
         companyId: target.id
       });
-      setDeletingCompanyId(null);
+      setDeleting(false);
       if (result.disabled) {
         setDisabled(true);
         return;
@@ -612,21 +449,9 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
         setActionError(result.error ?? "Could not delete this company.");
         return;
       }
-
-      selectedSearchIdRef.current = null;
-      setSelectedSearchId(null);
-      setSelectedSearch(null);
-      setCompany(null);
-      setActiveCategory(null);
-      setSelection(createEmptyProspectSelection());
-      setReview(null);
-      setReviewError(null);
-      resetPeopleState();
-      setActionNotice({ message: "Company deleted." });
-      historyAfterCursors.current = [null];
-      await loadSearches({ pageIndex: 0, after: null, autoSelect: true });
+      router.push("/prospects");
     },
-    [loadSearches, resetPeopleState]
+    [router]
   );
 
   const reloadCompanyPeople = useCallback(
@@ -634,21 +459,65 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
       setCompany(updatedCompany);
       peopleAfterCursors.current = [null];
       await loadPeople({ companyId: updatedCompany.id, category: activeCategory, pageIndex: 0, after: null });
-      await loadSearches({ pageIndex: historyPageIndex, after: historyAfterCursors.current[historyPageIndex] ?? null });
     },
-    [activeCategory, historyPageIndex, loadPeople, loadSearches]
+    [activeCategory, loadPeople]
   );
+
+  const handleAddMore = useCallback(async () => {
+    if (!search || search.status !== "READY" || !search.company || expanding) {
+      return;
+    }
+    const idempotencyKey =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `${search.id}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+    setShowAddMoreDialog(false);
+    setExpanding(true);
+    setActionError(null);
+    setActionNotice(null);
+
+    const result = await prospectGraphql<{ addMoreDiscoverPeople: DiscoverSearchExpansion }>(
+      ADD_MORE_DISCOVER_PEOPLE_MUTATION,
+      { searchId: search.id, idempotencyKey }
+    );
+    setExpanding(false);
+    void loadQuota();
+
+    if (result.disabled) {
+      setDisabled(true);
+      return;
+    }
+    if (result.error || !result.data) {
+      setActionError(result.error ?? "Could not add more people. Please try again.");
+      return;
+    }
+
+    const expansion = result.data.addMoreDiscoverPeople;
+    if (expansion.exhausted) {
+      setSessionExhausted(true);
+    }
+    setActionNotice({ message: expansion.message ?? `${expansion.addedCount} new people were added.` });
+
+    // Refresh counts + people in place (new people land on later pages).
+    if (search.company) {
+      peopleAfterCursors.current = [null];
+      await loadCompany(search.company.id);
+      await loadPeople({ companyId: search.company.id, category: activeCategory, pageIndex: 0, after: null });
+    }
+    await loadDetail({ category: activeCategory });
+  }, [activeCategory, expanding, loadCompany, loadDetail, loadPeople, loadQuota, search]);
 
   const handleRefreshEmailFormat = useCallback(
     async (target: CompanyDetail, sourceUrl?: string | null) => {
-      setRefreshingFormatId(target.id);
+      setRefreshingFormat(true);
       setActionError(null);
       setActionNotice(null);
       const result = await prospectGraphql<{ refreshCompanyEmailFormat: CompanyDetail }>(
         REFRESH_COMPANY_EMAIL_FORMAT_MUTATION,
         { companyId: target.id, sourceUrl: sourceUrl?.trim() || null }
       );
-      setRefreshingFormatId(null);
+      setRefreshingFormat(false);
       if (result.disabled) {
         setDisabled(true);
         return;
@@ -670,20 +539,19 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
 
   const handleDiscoverEmailFormat = useCallback(
     async (target: CompanyDetail, force = false) => {
-      setRefreshingFormatId(target.id);
+      setRefreshingFormat(true);
       setActionError(null);
       setActionNotice(null);
       const result = await prospectGraphql<{ discoverCompanyEmailFormat: CompanyDetail }>(
         DISCOVER_COMPANY_EMAIL_FORMAT_MUTATION,
         { companyId: target.id, force }
       );
-      setRefreshingFormatId(null);
+      setRefreshingFormat(false);
       if (result.disabled) {
         setDisabled(true);
         return;
       }
       if (result.error || !result.data) {
-        // FORBIDDEN messages (rate limit / not configured) pass through safely.
         setActionError(result.error ?? "Could not find the email format with AI.");
         return;
       }
@@ -700,7 +568,7 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
 
   const handleManualEmailFormat = useCallback(
     async (target: CompanyDetail) => {
-      setRefreshingFormatId(target.id);
+      setRefreshingFormat(true);
       setActionError(null);
       setActionNotice(null);
       const result = await prospectGraphql<{ setCompanyEmailInferenceOverride: CompanyDetail }>(
@@ -713,7 +581,7 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
           reason: "Manual correction from prospect dashboard"
         }
       );
-      setRefreshingFormatId(null);
+      setRefreshingFormat(false);
       if (result.disabled) {
         setDisabled(true);
         return;
@@ -735,8 +603,18 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
   );
   const peopleOffset = peoplePageIndex * PEOPLE_PAGE_SIZE;
   const peoplePageCount = resolvePageCount(peopleTotal, PEOPLE_PAGE_SIZE);
-  const historyOffset = historyPageIndex * SEARCHES_PAGE_SIZE;
-  const historyPageCount = resolvePageCount(searchesTotal, SEARCHES_PAGE_SIZE);
+
+  const searchExhausted = Boolean(search && (search.exhausted || sessionExhausted));
+  const showAddMore =
+    search !== null &&
+    shouldShowAddMore({
+      view: selectedView,
+      status: search.status,
+      hasResults: (company?.peopleCount ?? search.peopleCount) > 0,
+      exhausted: searchExhausted
+    });
+  const addMoreDisabled = addMoreDisabledReason(quota, expanding);
+
   const selectionScope = useMemo(
     () => ({ companyId: company?.id ?? "", positionCategory: activeCategory }),
     [activeCategory, company?.id]
@@ -895,41 +773,79 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
 
   // ---- Render -------------------------------------------------------------
 
+  if (disabled) {
+    return (
+      <div className={styles.page}>
+        <DisabledState />
+      </div>
+    );
+  }
+
+  if (notFound) {
+    return (
+      <div className={styles.page}>
+        <EmptyState
+          icon={<Building2 aria-hidden="true" />}
+          title="This Discover search is no longer available."
+          body="It may have been deleted, or the link is no longer valid."
+          action={
+            <Link href="/prospects" className={styles.primaryButton}>
+              <ArrowLeft aria-hidden="true" />
+              <span>Back to Discover</span>
+            </Link>
+          }
+        />
+      </div>
+    );
+  }
+
+  if (searchLoading && !search) {
+    return (
+      <div className={styles.page}>
+        <DetailSkeleton />
+      </div>
+    );
+  }
+
+  if (!search) {
+    return <div className={styles.page} />;
+  }
+
+  const roleLabel = search.requestedTitles.length > 0 ? search.requestedTitles.join(", ") : "Any role";
+  const locationLabel = search.requestedLocations[0] ?? "Any location";
+  const headerPeopleCount = company?.peopleCount ?? search.peopleCount;
+  const detailStage = resolveDetailStage(search);
+
   return (
     <div className={styles.page}>
-      <header className={styles.header} data-discover-tour="page-intro">
-        <div className={styles.headerCopy}>
+      <header
+        className={styles.detailHeader}
+        data-discover-tour="detail-header"
+        data-discover-detail-stage={detailStage ?? "none"}
+      >
+        <div className={styles.detailHeaderCopy}>
           <p className={styles.eyebrow}>
-            <Users aria-hidden="true" /> {PROSPECT_FINDER_TAGLINE}
+            <Users aria-hidden="true" /> Search
           </p>
-          <h1>{PROSPECT_FINDER_TITLE}</h1>
-          <p className={styles.subtitle}>{PROSPECT_FINDER_SUBTITLE}</p>
-        </div>
-        {!disabled && (
-          <div className={styles.headerActions}>
-            <QuotaIndicator quota={quota} />
-            <button
-              type="button"
-              className={styles.refreshButton}
-              onClick={refreshAll}
-              disabled={searchesLoading}
-              title="Refresh"
-              data-discover-tour="refresh"
-            >
-              <RefreshCw aria-hidden="true" className={searchesLoading ? styles.spin : undefined} />
-              <span>Refresh</span>
-            </button>
-            <button
-              type="button"
-              className={styles.primaryButton}
-              onClick={() => setShowNewSearch(true)}
-              data-discover-tour="new-search"
-            >
-              <Plus aria-hidden="true" />
-              <span>New search</span>
-            </button>
+          <h1 className={styles.detailHeaderTitle}>{search.company?.name ?? search.requestedCompany}</h1>
+          <p className={styles.subtitle}>
+            {roleLabel} · {locationLabel}
+          </p>
+          <div className={styles.detailHeaderMeta}>
+            <BadgePill badge={statusBadge(search.status)} />
+            <span className={styles.detailHeaderMetaItem}>
+              <Users aria-hidden="true" /> {headerPeopleCount} {headerPeopleCount === 1 ? "person" : "people"}
+            </span>
+            <span className={styles.detailHeaderMetaItem}>
+              {selectedView === "ready" && search.completedAt
+                ? `Completed ${formatDateTime(search.completedAt)}`
+                : `Created ${formatDateTime(search.createdAt)}`}
+            </span>
           </div>
-        )}
+        </div>
+        <div className={styles.headerActions}>
+          <QuotaIndicator quota={quota} />
+        </div>
       </header>
 
       {actionError && (
@@ -961,226 +877,190 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
         </div>
       )}
 
-      {pageState === "disabled" && <DisabledState />}
+      <SummaryCards search={search} company={company} view={selectedView} />
 
-      {pageState === "loading" && <SearchesSkeleton />}
-
-      {pageState === "empty" && (
-        <EmptyState
-          icon={<Inbox aria-hidden="true" />}
-          title="No searches yet"
-          body="Create your first search to discover people at a company and review their inferred work emails."
-          action={
-            <button type="button" className={styles.primaryButton} onClick={() => setShowNewSearch(true)}>
-              <Plus aria-hidden="true" />
-              <span>New search</span>
-            </button>
-          }
+      {(selectedView === "processing" || selectedView === "canceled" || selectedView === "failed") && (
+        <StatusCard
+          search={search}
+          quota={quota}
+          processing={processing}
+          onProcess={handleProcess}
+          onCancel={handleCancel}
         />
       )}
 
-      {pageState === "ready" && (
+      {selectedView === "ready" && (
         <>
-          <SummaryCards search={selectedSearch} company={company} view={selectedView} />
-
-          <SearchHistoryTable
-            searches={searches}
-            total={searchesTotal}
-            selectedId={selectedSearchId}
-            loading={searchesLoading}
-            error={searchesError}
-            pageIndex={historyPageIndex}
-            pageCount={historyPageCount}
-            offset={historyOffset}
-            hasNext={searchesHasNext}
-            onSelect={selectSearch}
-            onPrev={handleHistoryPrev}
-            onNext={handleHistoryNext}
+          <CompanyCard
+            company={company}
+            loading={companyLoading}
+            deleting={Boolean(company && deleting)}
+            refreshingFormat={Boolean(company && refreshingFormat)}
+            formatSourceUrl={formatSourceUrl}
+            showFormatSource={showFormatSource}
+            showManualFormat={showManualFormat}
+            manualEmailDomain={manualEmailDomain}
+            manualEmailPattern={manualEmailPattern}
+            manualConfidence={manualConfidence}
+            onFormatSourceUrlChange={setFormatSourceUrl}
+            onToggleFormatSource={() => setShowFormatSource((value) => !value)}
+            onToggleManualFormat={() => setShowManualFormat((value) => !value)}
+            onManualEmailDomainChange={setManualEmailDomain}
+            onManualEmailPatternChange={setManualEmailPattern}
+            onManualConfidenceChange={setManualConfidence}
+            onRefreshEmailFormat={handleRefreshEmailFormat}
+            onDiscoverEmailFormat={handleDiscoverEmailFormat}
+            onManualEmailFormat={handleManualEmailFormat}
+            onDelete={handleDeleteCompany}
           />
 
-          {selectedView === "none" && (
-            <EmptyState
-              icon={<Building2 aria-hidden="true" />}
-              title="Select a search"
-              body="Choose a search above to review its company, role groups, and people."
-            />
-          )}
-
-          {(selectedView === "processing" || selectedView === "canceled" || selectedView === "failed") &&
-            selectedSearch && (
-              <StatusCard
-                search={selectedSearch}
-                quota={quota}
-                processing={processingId === selectedSearch.id}
-                onProcess={() => handleProcess(selectedSearch)}
-                onCancel={() => handleCancel(selectedSearch)}
-              />
-            )}
-
-          {selectedView === "ready" && (
-            <>
-              <CompanyCard
-                company={company}
-                loading={companyLoading}
-                deleting={Boolean(company && deletingCompanyId === company.id)}
-                refreshingFormat={Boolean(company && refreshingFormatId === company.id)}
-                formatSourceUrl={formatSourceUrl}
-                showFormatSource={showFormatSource}
-                showManualFormat={showManualFormat}
-                manualEmailDomain={manualEmailDomain}
-                manualEmailPattern={manualEmailPattern}
-                manualConfidence={manualConfidence}
-                onFormatSourceUrlChange={setFormatSourceUrl}
-                onToggleFormatSource={() => setShowFormatSource((value) => !value)}
-                onToggleManualFormat={() => setShowManualFormat((value) => !value)}
-                onManualEmailDomainChange={setManualEmailDomain}
-                onManualEmailPatternChange={setManualEmailPattern}
-                onManualConfidenceChange={setManualConfidence}
-                onRefreshEmailFormat={handleRefreshEmailFormat}
-                onDiscoverEmailFormat={handleDiscoverEmailFormat}
-                onManualEmailFormat={handleManualEmailFormat}
-                onDelete={handleDeleteCompany}
-              />
-
-              {company && (
-                <div className={`card ${styles.peopleSection}`}>
-                  <div className={styles.panelHeader}>
-                    <div>
-                      <h2 className={styles.panelTitle}>People</h2>
-                      <p className={styles.panelSubtitle}>{PEOPLE_PAGE_SIZE} per page</p>
-                    </div>
-                  </div>
-
-                  <div className={styles.categoryRail} role="tablist" aria-label="Role groups" data-discover-tour="role-filters">
-                    <button
-                      type="button"
-                      role="tab"
-                      aria-selected={activeCategory === null}
-                      className={`${styles.categoryChip} ${activeCategory === null ? styles.categoryChipActive : ""}`}
-                      onClick={() => handleSelectCategory(null)}
-                    >
-                      All people <span className={styles.categoryCount}>{company.peopleCount}</span>
-                    </button>
-                    {visibleCategories.map((position) => (
-                      <button
-                        key={position.id}
-                        type="button"
-                        role="tab"
-                        aria-selected={activeCategory === position.category}
-                        className={`${styles.categoryChip} ${
-                          activeCategory === position.category ? styles.categoryChipActive : ""
-                        }`}
-                        onClick={() => handleSelectCategory(position.category)}
-                        title={position.rawTitles.join(", ")}
-                      >
-                        {position.displayName} <span className={styles.categoryCount}>{position.peopleCount}</span>
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className={styles.noticeBanner} role="note" data-discover-tour="inferred-warning">
-                    <AlertCircle aria-hidden="true" />
-                    <span>{INFERRED_EMAIL_NOTICE}</span>
-                  </div>
-
-                  <div className={styles.peopleToolbar}>
-                    <div className={styles.filterField} data-discover-tour="people-filter">
-                      <Search aria-hidden="true" />
-                      <input
-                        type="search"
-                        value={peopleFilter}
-                        placeholder="Filter this page by name, title, or email"
-                        onChange={(event) => setPeopleFilter(event.target.value)}
-                        aria-label="Filter people on this page"
-                      />
-                    </div>
-                  </div>
-
-                  {selectedCount > 0 && (
-                    <BulkSelectionToolbar
-                      selectedCount={selectedCount}
-                      preparingExport={preparingExport}
-                      creatingImport={creatingImport}
-                      onDownload={() => openReviewDialog("download")}
-                      onImport={() => openReviewDialog("import")}
-                      onClear={clearSelection}
-                    />
-                  )}
-
-                  {canSelectAllMatching && (
-                    <SelectAllMatchingBanner
-                      pageCount={selectedPageCount}
-                      totalCount={peopleTotal}
-                      categoryName={
-                        activeCategory
-                          ? company.positions.find((position) => position.category === activeCategory)?.displayName ?? "this role group"
-                          : null
-                      }
-                      onSelectAll={handleSelectAllMatching}
-                    />
-                  )}
-
-                  <div className={styles.peopleTableShell} data-discover-tour="people-table">
-                    <PeopleTable
-                      people={visiblePeople}
-                      loading={peopleLoading}
-                      error={peopleError}
-                      copiedId={copiedId}
-                      pageSelectionState={pageSelectionState}
-                      selectionScope={selectionScope}
-                      selection={selection}
-                      onTogglePage={handleTogglePageSelection}
-                      onTogglePerson={handleTogglePersonSelection}
-                      onCopy={handleCopyEmail}
-                    />
-                  </div>
-
-                  <div className={styles.paginationRow} data-discover-tour="people-pagination">
-                    <span className={styles.peopleShowing}>
-                      {formatShowingLabel({ offset: peopleOffset, pageCount: people.length, totalCount: peopleTotal })}
-                    </span>
-                    <div className={styles.pager}>
-                      <button
-                        type="button"
-                        className={styles.pagerButton}
-                        onClick={handlePeoplePrev}
-                        disabled={peoplePageIndex === 0 || peopleLoading}
-                        aria-label="Previous page"
-                        title="Previous page"
-                      >
-                        <ChevronLeft aria-hidden="true" />
-                      </button>
-                      <span className={styles.pageInfo}>
-                        {formatPageLabel({ pageIndex: peoplePageIndex, pageCount: peoplePageCount })}
-                      </span>
-                      <button
-                        type="button"
-                        className={styles.pagerButton}
-                        onClick={handlePeopleNext}
-                        disabled={!peopleHasNext || peopleLoading}
-                        aria-label="Next page"
-                        title="Next page"
-                      >
-                        <ChevronRight aria-hidden="true" />
-                      </button>
-                    </div>
-                  </div>
+          {company && (
+            <div className={`card ${styles.peopleSection}`}>
+              <div className={styles.panelHeader}>
+                <div>
+                  <h2 className={styles.panelTitle}>People</h2>
+                  <p className={styles.panelSubtitle}>{PEOPLE_PAGE_SIZE} per page</p>
                 </div>
+                {showAddMore && (
+                  <button
+                    type="button"
+                    className={styles.secondaryButton}
+                    data-discover-tour="add-more-people"
+                    onClick={() => setShowAddMoreDialog(true)}
+                    disabled={addMoreDisabled !== null}
+                    title={addMoreDisabled ?? undefined}
+                    aria-label={ADD_MORE_PEOPLE_LABEL}
+                  >
+                    {expanding ? (
+                      <LoaderCircle className={styles.spin} aria-hidden="true" />
+                    ) : (
+                      <UserPlus aria-hidden="true" />
+                    )}
+                    <span>{expanding ? ADD_MORE_LOADING_LABEL : ADD_MORE_PEOPLE_LABEL}</span>
+                  </button>
+                )}
+              </div>
+
+              <div className={styles.categoryRail} role="tablist" aria-label="Role groups" data-discover-tour="role-filters">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeCategory === null}
+                  className={`${styles.categoryChip} ${activeCategory === null ? styles.categoryChipActive : ""}`}
+                  onClick={() => handleSelectCategory(null)}
+                >
+                  All people <span className={styles.categoryCount}>{company.peopleCount}</span>
+                </button>
+                {visibleCategories.map((position) => (
+                  <button
+                    key={position.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={activeCategory === position.category}
+                    className={`${styles.categoryChip} ${
+                      activeCategory === position.category ? styles.categoryChipActive : ""
+                    }`}
+                    onClick={() => handleSelectCategory(position.category)}
+                    title={position.rawTitles.join(", ")}
+                  >
+                    {position.displayName} <span className={styles.categoryCount}>{position.peopleCount}</span>
+                  </button>
+                ))}
+              </div>
+
+              <div className={styles.noticeBanner} role="note" data-discover-tour="inferred-warning">
+                <AlertCircle aria-hidden="true" />
+                <span>{INFERRED_EMAIL_NOTICE}</span>
+              </div>
+
+              <div className={styles.peopleToolbar}>
+                <div className={styles.filterField} data-discover-tour="people-filter">
+                  <Search aria-hidden="true" />
+                  <input
+                    type="search"
+                    value={peopleFilter}
+                    placeholder="Filter this page by name, title, or email"
+                    onChange={(event) => setPeopleFilter(event.target.value)}
+                    aria-label="Filter people on this page"
+                  />
+                </div>
+              </div>
+
+              {selectedCount > 0 && (
+                <BulkSelectionToolbar
+                  selectedCount={selectedCount}
+                  preparingExport={preparingExport}
+                  creatingImport={creatingImport}
+                  onDownload={() => openReviewDialog("download")}
+                  onImport={() => openReviewDialog("import")}
+                  onClear={clearSelection}
+                />
               )}
-            </>
+
+              {canSelectAllMatching && (
+                <SelectAllMatchingBanner
+                  pageCount={selectedPageCount}
+                  totalCount={peopleTotal}
+                  categoryName={
+                    activeCategory
+                      ? company.positions.find((position) => position.category === activeCategory)?.displayName ??
+                        "this role group"
+                      : null
+                  }
+                  onSelectAll={handleSelectAllMatching}
+                />
+              )}
+
+              <div className={styles.peopleTableShell} data-discover-tour="people-table">
+                <PeopleTable
+                  people={visiblePeople}
+                  loading={peopleLoading}
+                  error={peopleError}
+                  copiedId={copiedId}
+                  pageSelectionState={pageSelectionState}
+                  selectionScope={selectionScope}
+                  selection={selection}
+                  onTogglePage={handleTogglePageSelection}
+                  onTogglePerson={handleTogglePersonSelection}
+                  onCopy={handleCopyEmail}
+                />
+              </div>
+
+              <div className={styles.paginationRow} data-discover-tour="people-pagination">
+                <span className={styles.peopleShowing}>
+                  {formatShowingLabel({ offset: peopleOffset, pageCount: people.length, totalCount: peopleTotal })}
+                </span>
+                <div className={styles.pager}>
+                  <button
+                    type="button"
+                    className={styles.pagerButton}
+                    onClick={handlePeoplePrev}
+                    disabled={peoplePageIndex === 0 || peopleLoading}
+                    aria-label="Previous page"
+                    title="Previous page"
+                  >
+                    <ChevronLeft aria-hidden="true" />
+                  </button>
+                  <span className={styles.pageInfo}>
+                    {formatPageLabel({ pageIndex: peoplePageIndex, pageCount: peoplePageCount })}
+                  </span>
+                  <button
+                    type="button"
+                    className={styles.pagerButton}
+                    onClick={handlePeopleNext}
+                    disabled={!peopleHasNext || peopleLoading}
+                    aria-label="Next page"
+                    title="Next page"
+                  >
+                    <ChevronRight aria-hidden="true" />
+                  </button>
+                </div>
+              </div>
+            </div>
           )}
         </>
       )}
 
-      <NewSearchModal
-        open={showNewSearch}
-        form={form}
-        creating={creating}
-        quota={quota}
-        onChange={setForm}
-        onSubmit={handleCreate}
-        onClose={() => setShowNewSearch(false)}
-      />
       <ProspectReviewDialog
         open={reviewOpen}
         intent={reviewIntent}
@@ -1197,12 +1077,20 @@ export function ProspectsDashboard({ featureEnabled }: { featureEnabled: boolean
         onDownload={handleDownloadSelected}
         onImport={handleCreateImport}
       />
+      <AddMorePeopleDialog
+        open={showAddMoreDialog}
+        peopleCount={company?.peopleCount ?? search.peopleCount ?? 0}
+        quota={quota}
+        expanding={expanding}
+        onConfirm={handleAddMore}
+        onClose={() => setShowAddMoreDialog(false)}
+      />
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Sub-components
+// Detail sub-components
 // ---------------------------------------------------------------------------
 
 function SummaryCards({
@@ -1244,7 +1132,9 @@ function SummaryCards({
           <Users aria-hidden="true" /> People found
         </span>
         <span className={styles.summaryValue}>{peopleCount}</span>
-        <span className={styles.summaryMeta}>{positionCount > 0 ? `${positionCount} position groups` : "Position groups appear when ready"}</span>
+        <span className={styles.summaryMeta}>
+          {positionCount > 0 ? `${positionCount} position groups` : "Position groups appear when ready"}
+        </span>
       </div>
 
       <div className={`card ${styles.summaryCard}`} data-discover-tour="email-format-summary">
@@ -1257,7 +1147,11 @@ function SummaryCards({
         </span>
         {emailDomain && pattern ? (
           <span className={styles.summaryWarn}>
-            Inferred · {confidenceBadge(emailDomainConfidence === "UNAVAILABLE" ? patternConfidence : emailDomainConfidence).label.toLowerCase()} confidence, not verified
+            Inferred ·{" "}
+            {confidenceBadge(
+              emailDomainConfidence === "UNAVAILABLE" ? patternConfidence : emailDomainConfidence
+            ).label.toLowerCase()}{" "}
+            confidence, not verified
           </span>
         ) : (
           <span className={styles.summaryMeta}>Email inference unavailable</span>
@@ -1265,13 +1159,15 @@ function SummaryCards({
         {domainDiffers && <span className={styles.summaryMeta}>Website differs from email domain</span>}
       </div>
 
-      <div className={`card ${styles.summaryCard}`} data-discover-tour="search-status">
+      <div className={`card ${styles.summaryCard}`} data-discover-tour="status-summary">
         <span className={styles.summaryLabel}>
           <Sparkles aria-hidden="true" /> Search status
         </span>
         <span className={styles.summaryValue}>{status ? <BadgePill badge={status} /> : "—"}</span>
         <span className={styles.summaryMeta}>
-          {view === "ready" && search?.completedAt ? `Completed ${formatDateTime(search.completedAt)}` : `Created ${formatDateTime(search?.createdAt ?? null)}`}
+          {view === "ready" && search?.completedAt
+            ? `Completed ${formatDateTime(search.completedAt)}`
+            : `Created ${formatDateTime(search?.createdAt ?? null)}`}
         </span>
       </div>
     </div>
@@ -1366,7 +1262,7 @@ function CompanyCard({
           onClick={() => onDelete(company)}
           disabled={deleting}
           title="Delete company graph"
-          data-discover-tour="delete"
+          data-discover-tour="delete-search"
         >
           {deleting ? <LoaderCircle aria-hidden="true" className={styles.spin} /> : <Trash2 aria-hidden="true" />}
           <span>Delete</span>
@@ -1556,8 +1452,6 @@ function StatusCard({
   const canceled = search.status === "CANCELED";
   const error = failed ? formatSearchError(search) : null;
   const perSearch = quota?.resultsPerSearch ?? 10;
-  // Only a brand-new draft consumes a slot; retrying a started/failed search is
-  // idempotent and stays enabled.
   const quotaBlocked = isProcessQuotaBlocked(quota, search.status);
   const resetLabel = formatQuotaReset(quota);
   return (
@@ -1579,7 +1473,7 @@ function StatusCard({
         <p className={styles.statusBody}>This search was canceled. Create a new one to discover people.</p>
       ) : quotaBlocked ? (
         <p className={styles.statusBody}>
-          You've used today's {quota?.dailySearchLimit ?? 4} Discover searches.
+          You&apos;ve used today&apos;s {quota?.dailySearchLimit ?? 4} Discover searches.
           {resetLabel ? ` ${resetLabel}.` : ""}
         </p>
       ) : (
@@ -1771,7 +1665,7 @@ function PeopleTable({
   return (
     <div className={styles.table} role="table" aria-label="People">
       <div className={`${styles.row} ${styles.headRow}`} role="row">
-        <span role="columnheader" className={styles.cellSelect} data-discover-tour="selection">
+        <span role="columnheader" className={styles.cellSelect} data-discover-tour="people-selection">
           <SelectionCheckbox
             checked={pageSelectionState === "checked"}
             indeterminate={pageSelectionState === "indeterminate"}
@@ -1804,8 +1698,9 @@ function PeopleTable({
               />
             </span>
             <span className={styles.cellName} role="cell" data-label="Person">
-              <span className={styles.personName}>{person.fullName}</span>
-              <span className={styles.personConfidence}>{confidenceBadge(person.emailConfidence).label} confidence</span>
+              <span className={styles.personName} title={person.fullName}>
+                {person.fullName}
+              </span>
             </span>
             <span className={styles.cellTitle} role="cell" data-label="Role" title={person.currentTitle ?? undefined}>
               {person.currentTitle ?? "—"}
@@ -1852,6 +1747,64 @@ function PeopleTable({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function AddMorePeopleDialog({
+  open,
+  peopleCount,
+  quota,
+  expanding,
+  onConfirm,
+  onClose
+}: {
+  open: boolean;
+  peopleCount: number;
+  quota: DiscoverQuota | null;
+  expanding: boolean;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  if (!open) {
+    return null;
+  }
+  return (
+    <div className={styles.modalOverlay} role="presentation">
+      <div className={`card ${styles.modalCard}`} role="dialog" aria-modal="true" aria-labelledby="discover-add-more-title">
+        <div className={styles.panelHeader}>
+          <div>
+            <h2 id="discover-add-more-title" className={styles.panelTitle}>
+              {ADD_MORE_DIALOG_TITLE}
+            </h2>
+            <p className={styles.panelSubtitle}>{ADD_MORE_DIALOG_BODY}</p>
+          </div>
+          <button type="button" className={styles.iconButton} onClick={onClose} aria-label="Close" disabled={expanding}>
+            <X aria-hidden="true" />
+          </button>
+        </div>
+
+        <dl className={styles.reviewGrid}>
+          <div>
+            <dt>Current people</dt>
+            <dd>{Math.max(0, peopleCount)}</dd>
+          </div>
+          <div>
+            <dt>Searches remaining today</dt>
+            <dd>{quota && !quota.unlimited ? quota.searchesRemaining : "Unlimited"}</dd>
+          </div>
+        </dl>
+
+        <div className={styles.modalActions}>
+          <button type="button" className={styles.ghostButton} onClick={onClose} disabled={expanding}>
+            {ADD_MORE_CANCEL_LABEL}
+          </button>
+          <button type="button" className={styles.primaryButton} onClick={onConfirm} disabled={expanding}>
+            {expanding ? <LoaderCircle aria-hidden="true" className={styles.spin} /> : <UserPlus aria-hidden="true" />}
+            <span>{expanding ? ADD_MORE_LOADING_LABEL : ADD_MORE_CONFIRM_LABEL}</span>
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1957,344 +1910,13 @@ function ProspectReviewDialog({
   );
 }
 
-function SearchHistoryTable({
-  searches,
-  total,
-  selectedId,
-  loading,
-  error,
-  pageIndex,
-  pageCount,
-  offset,
-  hasNext,
-  onSelect,
-  onPrev,
-  onNext
-}: {
-  searches: ProspectSearchNode[];
-  total: number;
-  selectedId: string | null;
-  loading: boolean;
-  error: string | null;
-  pageIndex: number;
-  pageCount: number;
-  offset: number;
-  hasNext: boolean;
-  onSelect: (search: ProspectSearchNode) => void;
-  onPrev: () => void;
-  onNext: () => void;
-}) {
-  return (
-    <section className={`card ${styles.historyPanel}`} aria-label="Search history" data-discover-tour="search-history">
-      <div className={styles.panelHeader}>
-        <div>
-          <h2 className={styles.panelTitle}>Search history</h2>
-          <p className={styles.panelSubtitle}>
-            {total} {total === 1 ? "search" : "searches"}
-          </p>
-        </div>
-      </div>
-      {error && <p className={styles.errorText}>{error}</p>}
-      <div className={styles.tableScroll}>
-        {loading ? (
-          <div className={styles.tableSkeleton}>
-            {Array.from({ length: 10 }).map((_, index) => (
-              <div key={index} className={styles.skeletonRow} />
-            ))}
-          </div>
-        ) : searches.length === 0 ? (
-          <EmptyState
-            icon={<Inbox aria-hidden="true" />}
-            title="No prospect searches yet"
-            body="Create a search to start discovering relevant people."
-            compact
-          />
-        ) : (
-          <div className={styles.historyTable} role="table" aria-label="Searches">
-            <div className={styles.historyHeadRow} role="row">
-              <span role="columnheader">Company</span>
-              <span role="columnheader">Requested roles</span>
-              <span role="columnheader">Location</span>
-              <span role="columnheader">People</span>
-              <span role="columnheader">Status</span>
-              <span role="columnheader">Created</span>
-              <span role="columnheader" aria-label="Actions" />
-            </div>
-            {searches.map((search) => {
-              const active = search.id === selectedId;
-              const roles = search.requestedTitles;
-              const location = search.requestedLocations[0] ?? null;
-              const domain = search.company?.officialWebsiteDomain ?? search.company?.officialDomain ?? null;
-              return (
-                <button
-                  key={search.id}
-                  type="button"
-                  className={`${styles.historyRow} ${active ? styles.historyRowActive : ""}`}
-                  onClick={() => onSelect(search)}
-                  aria-current={active ? "true" : undefined}
-                >
-                  <span className={styles.historyCompanyCell} data-label="Company">
-                    <span className={styles.historyCompanyName}>{search.company?.name ?? search.requestedCompany}</span>
-                    {domain && <span className={styles.historyCompanyDomain}>{domain}</span>}
-                  </span>
-                  <span className={styles.historyRolesCell} data-label="Roles">
-                    {roles.length === 0 ? (
-                      <span className={styles.historyMutedText}>—</span>
-                    ) : (
-                      <>
-                        {roles.slice(0, 2).map((role) => (
-                          <span key={role} className={styles.historyRoleTag} title={role}>
-                            {role}
-                          </span>
-                        ))}
-                        {roles.length > 2 && <span className={styles.historyRoleTag}>+{roles.length - 2} more</span>}
-                      </>
-                    )}
-                  </span>
-                  <span className={styles.historyLocationCell} data-label="Location" title={location ?? undefined}>
-                    {location ?? "Any location"}
-                  </span>
-                  <span className={styles.historyPeopleCell} data-label="People">
-                    {search.peopleCount}
-                  </span>
-                  <span data-label="Status">
-                    <BadgePill badge={statusBadge(search.status)} />
-                  </span>
-                  <span className={styles.historyCreatedCell} data-label="Created">
-                    {formatDateTime(search.createdAt)}
-                  </span>
-                  <span className={styles.historyViewCell} aria-hidden="true">
-                    <ChevronRight />
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
-      <div className={styles.paginationRow}>
-        <span className={styles.peopleShowing}>
-          {formatShowingLabel({ offset, pageCount: searches.length, totalCount: total })}
-        </span>
-        <div className={styles.pager}>
-          <button
-            type="button"
-            className={styles.pagerButton}
-            onClick={onPrev}
-            disabled={pageIndex === 0 || loading}
-            aria-label="Previous page"
-            title="Previous page"
-          >
-            <ChevronLeft aria-hidden="true" />
-          </button>
-          <span className={styles.pageInfo}>{formatPageLabel({ pageIndex, pageCount })}</span>
-          <button
-            type="button"
-            className={styles.pagerButton}
-            onClick={onNext}
-            disabled={!hasNext || loading}
-            aria-label="Next page"
-            title="Next page"
-          >
-            <ChevronRight aria-hidden="true" />
-          </button>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function NewSearchModal({
-  open,
-  form,
-  creating,
-  quota,
-  onChange,
-  onSubmit,
-  onClose
-}: {
-  open: boolean;
-  form: CreateForm;
-  creating: boolean;
-  quota: DiscoverQuota | null;
-  onChange: (form: CreateForm) => void;
-  onSubmit: (event: FormEvent) => void;
-  onClose: () => void;
-}) {
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
-  if (!open) {
-    return null;
-  }
-
-  return (
-    <div
-      className={styles.modalOverlay}
-      role="dialog"
-      aria-modal="true"
-      aria-label="Create discovery search"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) {
-          onClose();
-        }
-      }}
-    >
-      <form className={`card ${styles.modalCard}`} onSubmit={onSubmit}>
-        <div className={styles.panelHeader}>
-          <div>
-            <h2 className={styles.panelTitle}>Create discovery search</h2>
-            <p className={styles.panelSubtitle}>Creates a draft. Process it to fetch people.</p>
-          </div>
-          <button type="button" className={styles.ghostButton} onClick={onClose} aria-label="Close">
-            <X aria-hidden="true" />
-          </button>
-        </div>
-        <label className={styles.field}>
-          <span className={styles.fieldLabel}>Company name</span>
-          <input
-            className={styles.input}
-            value={form.companyName}
-            onChange={(event) => onChange({ ...form, companyName: event.target.value })}
-            placeholder="Stripe"
-            required
-            autoFocus
-          />
-          <span className={styles.fieldHint}>Enter the company whose professionals you want to find.</span>
-        </label>
-        <label className={styles.field}>
-          <span className={styles.fieldLabel}>Job titles</span>
-          <input
-            className={styles.input}
-            value={form.jobTitles}
-            onChange={(event) => onChange({ ...form, jobTitles: event.target.value })}
-            placeholder="Software Engineer, Recruiter"
-          />
-          <span className={styles.fieldHint}>
-            Add one or more roles separated by commas, such as Software Engineer, Recruiter, or Data Analyst.
-          </span>
-        </label>
-        <label className={styles.field}>
-          <span className={styles.fieldLabel}>Locations</span>
-          <input
-            className={styles.input}
-            value={form.locations}
-            onChange={(event) => onChange({ ...form, locations: event.target.value })}
-            placeholder="United States"
-          />
-          <span className={styles.fieldHint}>Enter a country, state, city, or professional region to narrow the search.</span>
-        </label>
-        <DiscoverUsagePanel quota={quota} />
-        <div className={styles.modalActions}>
-          <button type="button" className={styles.secondaryButton} onClick={onClose}>
-            Cancel
-          </button>
-          <button type="submit" className={styles.primaryButton} disabled={creating}>
-            {creating ? <LoaderCircle aria-hidden="true" className={styles.spin} /> : <Plus aria-hidden="true" />}
-            Create draft search
-          </button>
-        </div>
-      </form>
-    </div>
-  );
-}
-
-/** Compact remaining-count chip near the New search action. */
-function QuotaIndicator({ quota }: { quota: DiscoverQuota | null }) {
-  if (!quota) {
-    return null;
-  }
-  if (quota.unlimited) {
-    return (
-      <span
-        className={`${styles.quotaIndicator} ${styles.quotaIndicatorUnlimited}`}
-        data-discover-tour="quota"
-        data-discover-quota="unlimited"
-      >
-        Unlimited Discover access
-      </span>
-    );
-  }
-  return (
-    <span className={styles.quotaIndicator} data-discover-tour="quota" data-discover-quota="limited">
-      {formatQuotaRemaining(quota)}
-    </span>
-  );
-}
-
-/** The usage helper shown inside the New search modal. */
-function DiscoverUsagePanel({ quota }: { quota: DiscoverQuota | null }) {
-  const remaining = formatQuotaRemaining(quota);
-  const resetLabel = formatQuotaReset(quota);
-  return (
-    <div className={styles.usagePanel}>
-      <span className={styles.usagePanelStrong}>{discoverPerSearchSentence(quota)}</span>
-      {quota?.unlimited ? (
-        <span className={styles.usagePanelRow}>Unlimited Discover access</span>
-      ) : remaining ? (
-        <>
-          <span className={styles.usagePanelRow}>{remaining}</span>
-          {resetLabel && <span className={styles.usagePanelRow}>{resetLabel}</span>}
-        </>
-      ) : (
-        <span className={styles.usagePanelRow}>
-          {quota?.dailySearchLimit ?? 4} Discover searches available per day.
-        </span>
-      )}
-    </div>
-  );
-}
-
-function EmptyState({
-  icon,
-  title,
-  body,
-  compact = false,
-  action
-}: {
-  icon: ReactNode;
-  title: string;
-  body: string;
-  compact?: boolean;
-  action?: ReactNode;
-}) {
-  return (
-    <div className={`${styles.emptyState} ${compact ? styles.emptyStateCompact : "card"}`}>
-      <span className={styles.emptyIcon} aria-hidden="true">
-        {icon}
-      </span>
-      <h2 className={styles.emptyTitle}>{title}</h2>
-      <p className={styles.emptyBody}>{body}</p>
-      {action && <div className={styles.emptyAction}>{action}</div>}
-    </div>
-  );
-}
-
-function DisabledState() {
-  return (
-    <div className={`card ${styles.disabledCard}`}>
-      <span className={styles.disabledIcon} aria-hidden="true">
-        <Ban />
-      </span>
-      <h2 className={styles.emptyTitle}>{PROSPECT_FINDER_UNAVAILABLE_TITLE}</h2>
-      <p className={styles.emptyBody}>{PROSPECT_FINDER_UNAVAILABLE_BODY}</p>
-    </div>
-  );
-}
-
-function SearchesSkeleton() {
+function DetailSkeleton() {
   return (
     <>
+      <div className={`card ${styles.companyCard}`}>
+        <div className={styles.skeletonLine} style={{ width: "32%" }} />
+        <div className={styles.skeletonLine} style={{ width: "55%" }} />
+      </div>
       <div className={styles.summaryGrid}>
         {Array.from({ length: 4 }).map((_, index) => (
           <div key={index} className={`card ${styles.summaryCard}`}>
@@ -2305,7 +1927,7 @@ function SearchesSkeleton() {
       </div>
       <div className={`card ${styles.peopleSection}`}>
         <div className={styles.tableSkeleton}>
-          {Array.from({ length: 6 }).map((_, index) => (
+          {Array.from({ length: 10 }).map((_, index) => (
             <div key={index} className={styles.skeletonRow} />
           ))}
         </div>

@@ -520,11 +520,46 @@ model ProspectSearch {
   updatedAt          DateTime  @updatedAt
   completedAt        DateTime?
 
-  user    User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  company ProspectCompany? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  user       User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company    ProspectCompany?          @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  expansions DiscoverSearchExpansion[]
 
   @@index([userId, createdAt])
   @@index([status])
+}
+
+// One "Add 10 more" request against a READY ProspectSearch. This is the durable
+// idempotency + audit record for an expansion: a generated idempotencyKey makes
+// double clicks / network retries reuse the same row (so they never consume a
+// second daily quota slot, launch a second provider run, or add a second batch),
+// and the stored counts let a retry of a completed/failed expansion return the
+// same result without redoing any paid work. One active (PENDING/PROCESSING)
+// expansion may exist per search at a time. Holds only safe counters — never
+// people lists, emails, or raw provider payloads.
+model DiscoverSearchExpansion {
+  id               String    @id @default(cuid())
+  searchId         String
+  userId           String
+  idempotencyKey   String
+  requestedCount   Int       @default(10)
+  addedCount       Int       @default(0)
+  cacheCount       Int       @default(0)
+  providerCount    Int       @default(0)
+  totalPeopleCount Int       @default(0)
+  // PENDING | PROCESSING | READY | FAILED (validated against the GraphQL enum).
+  status           String    @default("PENDING")
+  quotaReserved    Boolean   @default(false)
+  exhausted        Boolean   @default(false)
+  errorCode        String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  completedAt      DateTime?
+
+  search ProspectSearch @relation(fields: [searchId], references: [id], onDelete: Cascade)
+
+  @@unique([searchId, idempotencyKey])
+  @@index([searchId, status])
+  @@index([searchId, createdAt])
 }
 
 // Shared, cross-user 30-day cache of normalized Discover provider results. This
@@ -554,6 +589,15 @@ model DiscoverSearchCache {
   refreshStartedAt    DateTime?
   lastErrorCode       String?
   resultCount         Int      @default(0)
+  // Provider continuation state for "Add 10 more". An expansion never restarts
+  // the provider at page 1: providerNextPage is the next page to fetch,
+  // providerPagesFetched counts pages already pulled into this entry, and
+  // providerExhausted is set once the provider confirms there are no further
+  // pages / no new unique people. lastProviderFetchAt records the last fetch.
+  providerNextPage    Int      @default(1)
+  providerPagesFetched Int     @default(0)
+  providerExhausted   Boolean  @default(false)
+  lastProviderFetchAt DateTime?
   // Evidence-backed company email-format metadata (safe to share). A manual
   // per-user override is never written here.
   emailDomain           String?
@@ -578,6 +622,9 @@ model DiscoverSearchCache {
 model DiscoverSearchCachePerson {
   id               String   @id @default(cuid())
   cacheId          String
+  // Deterministic provider order within the entry (page 1 first, then each
+  // appended continuation page). Drives stable "first 10 / next 10" batching.
+  sortIndex        Int      @default(0)
   sourceProfileId  String
   firstName        String
   lastName         String
@@ -602,6 +649,7 @@ model DiscoverSearchCachePerson {
 
   @@unique([cacheId, sourceProfileId])
   @@index([cacheId, positionCategory])
+  @@index([cacheId, sortIndex])
 }
 
 // Global, AI-result cache so the same normalized title is never re-classified by

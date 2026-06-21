@@ -102,6 +102,54 @@ export interface DiscoverCachePort {
   getOrRefresh(params: GetOrRefreshParams): Promise<DiscoverCacheResult>;
 }
 
+// Continuation state for an "Add 10 more" expansion: the entry's people (in
+// stable provider order) plus where the provider left off.
+export type DiscoverCacheExpansionState = {
+  cacheId: string;
+  providerNextPage: number;
+  providerPagesFetched: number;
+  providerExhausted: boolean;
+  /** The shared evidence-backed email format stored on the entry. */
+  emailFormat: ResolvedEmailFormat;
+  people: ResolvedCachePerson[];
+};
+
+export type AppendProviderPeopleParams = {
+  fingerprint: string;
+  fingerprintInput: DiscoverFingerprintInput;
+  company: DiscoverCacheCompany;
+  emailFormat: ResolvedEmailFormat;
+  /** Newly fetched normalized people for one or more continuation pages. */
+  people: ResolvedCachePerson[];
+  /** The next provider page to fetch after this append. */
+  nextPage: number;
+  /** Pages fetched in this expansion (added to the running total). */
+  pagesFetched: number;
+  /** Whether the provider confirmed it has no further pages / unique results. */
+  exhausted: boolean;
+};
+
+/**
+ * The cache surface a Discover expansion depends on. Kept separate from the
+ * initial-search port so each can be injected/stubbed independently in tests.
+ */
+export interface DiscoverCacheExpansionPort {
+  /** Current continuation state + cached people (sorted), or null if no entry. */
+  getExpansionState(fingerprint: string): Promise<DiscoverCacheExpansionState | null>;
+  /** Atomically append net-new cached people and advance continuation state. */
+  appendProviderPeople(params: AppendProviderPeopleParams): Promise<DiscoverCacheExpansionState>;
+  /** Persist provider exhaustion so future expansions stop calling the provider. */
+  markProviderExhausted(fingerprint: string): Promise<void>;
+  /**
+   * Run `fn` while holding the per-fingerprint stampede lock so at most one
+   * provider continuation runs for an identical canonical query at a time. The
+   * caller must re-check `getExpansionState` inside `fn` (another holder may have
+   * just appended results). Best-effort: if the lock cannot be acquired within
+   * the wait window (a crashed holder), `fn` still runs and the lock TTL frees it.
+   */
+  runWithProviderLock<T>(fingerprint: string, fn: () => Promise<T>): Promise<T>;
+}
+
 // A short-lived, owner-token lock. Only the owner may release it, and it always
 // expires so a crashed worker can never block future refreshes permanently.
 export interface DiscoverCacheLock {
@@ -170,7 +218,7 @@ export type DiscoverSearchCacheServiceDeps = {
  *   users never observe an empty cache, and a failed refresh preserves the
  *   previous rows and never marks stale data fresh.
  */
-export class DiscoverSearchCacheService implements DiscoverCachePort {
+export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCacheExpansionPort {
   private readonly prisma: PrismaClient;
   private readonly lock: DiscoverCacheLock;
   private readonly now: () => Date;
@@ -254,6 +302,134 @@ export class DiscoverSearchCacheService implements DiscoverCachePort {
     return await this.runProviderAndStore(params, false);
   }
 
+  // -- Expansion ("Add 10 more") continuation surface --------------------------
+
+  async getExpansionState(fingerprint: string): Promise<DiscoverCacheExpansionState | null> {
+    const entry = (await this.prisma.discoverSearchCache.findUnique({
+      where: { fingerprint }
+    })) as ContinuationRow | null;
+    if (!entry) {
+      return null;
+    }
+    const peopleRows = (await this.prisma.discoverSearchCachePerson.findMany({
+      where: { cacheId: entry.id }
+    })) as ResolvedCachePersonRow[];
+    return {
+      cacheId: entry.id,
+      providerNextPage: entry.providerNextPage ?? 1,
+      providerPagesFetched: entry.providerPagesFetched ?? 0,
+      providerExhausted: Boolean(entry.providerExhausted),
+      emailFormat: rowToEmailFormat(entry),
+      people: sortCachePeople(peopleRows).map(cachePersonRowToResolved)
+    };
+  }
+
+  async appendProviderPeople(params: AppendProviderPeopleParams): Promise<DiscoverCacheExpansionState> {
+    const now = this.now();
+    const fp = params.fingerprintInput;
+    return this.prisma.$transaction(async (tx) => {
+      let entry = (await tx.discoverSearchCache.findUnique({
+        where: { fingerprint: params.fingerprint }
+      })) as ContinuationRow | null;
+      if (!entry) {
+        // Defensive: a continuation without a prior entry seeds one as READY so
+        // the newly fetched people are still shared with other users.
+        const expiresAt = new Date(now.getTime() + this.ttlDays * DAY_MS);
+        entry = (await tx.discoverSearchCache.upsert({
+          where: { fingerprint: params.fingerprint },
+          create: {
+            fingerprint: params.fingerprint,
+            cacheVersion: fp.cacheVersion,
+            companyKey: fp.companyKey,
+            companyName: params.company.name,
+            companyDomain: params.company.domain,
+            companyLinkedinUrl: params.company.linkedinUrl,
+            normalizedRoles: fp.roles,
+            normalizedLocations: fp.locations,
+            resultLimit: fp.resultLimit,
+            status: DISCOVER_CACHE_STATUS.READY,
+            fetchedAt: now,
+            expiresAt,
+            resultCount: 0,
+            ...emailFormatColumns(params.emailFormat)
+          },
+          update: {}
+        })) as ContinuationRow;
+      }
+
+      const existing = (await tx.discoverSearchCachePerson.findMany({
+        where: { cacheId: entry.id }
+      })) as ResolvedCachePersonRow[];
+      // Dedupe within the cache by sourceProfileId so a provider page that
+      // repeats earlier results never appends a second copy.
+      const existingIds = new Set(existing.map((row) => row.sourceProfileId));
+      let sortIndex = existing.reduce((max, row) => Math.max(max, (row.sortIndex ?? 0) + 1), 0);
+      let appended = 0;
+      for (const person of params.people) {
+        if (existingIds.has(person.sourceProfileId)) {
+          continue;
+        }
+        existingIds.add(person.sourceProfileId);
+        await tx.discoverSearchCachePerson.create({ data: { cacheId: entry.id, sortIndex, ...person } });
+        sortIndex += 1;
+        appended += 1;
+      }
+
+      const pagesFetched = (entry.providerPagesFetched ?? 0) + params.pagesFetched;
+      await tx.discoverSearchCache.update({
+        where: { id: entry.id },
+        data: {
+          resultCount: existing.length + appended,
+          providerNextPage: params.nextPage,
+          providerPagesFetched: pagesFetched,
+          providerExhausted: params.exhausted,
+          lastProviderFetchAt: now,
+          status: DISCOVER_CACHE_STATUS.READY
+        }
+      });
+
+      const allRows = (await tx.discoverSearchCachePerson.findMany({
+        where: { cacheId: entry.id }
+      })) as ResolvedCachePersonRow[];
+      return {
+        cacheId: entry.id,
+        providerNextPage: params.nextPage,
+        providerPagesFetched: pagesFetched,
+        providerExhausted: params.exhausted,
+        emailFormat: rowToEmailFormat(entry),
+        people: sortCachePeople(allRows).map(cachePersonRowToResolved)
+      };
+    });
+  }
+
+  async markProviderExhausted(fingerprint: string): Promise<void> {
+    try {
+      await this.prisma.discoverSearchCache.update({
+        where: { fingerprint },
+        data: { providerExhausted: true, lastProviderFetchAt: this.now() }
+      });
+    } catch {
+      // Best effort: a follow-up expansion re-detects exhaustion if this fails.
+    }
+  }
+
+  async runWithProviderLock<T>(fingerprint: string, fn: () => Promise<T>): Promise<T> {
+    const key = this.lockKey(fingerprint);
+    const deadline = this.now().getTime() + this.waitTimeoutMs;
+    let token = await this.lock.acquire(key);
+    while (!token && this.now().getTime() < deadline) {
+      await delay(this.pollIntervalMs);
+      token = await this.lock.acquire(key);
+    }
+    try {
+      return await fn();
+    } finally {
+      if (token) {
+        await this.lock.release(key, token);
+      }
+    }
+  }
+
   private async runProviderAndStore(params: GetOrRefreshParams, refreshedStale: boolean): Promise<DiscoverCacheResult> {
     let dataset: ResolvedDataset;
     try {
@@ -293,6 +469,13 @@ export class DiscoverSearchCacheService implements DiscoverCachePort {
       refreshStartedAt: null,
       lastErrorCode: null,
       resultCount: dataset.people.length,
+      // The initial pipeline (and a stale refresh) always fetches provider page
+      // 1, so continuation for a later "Add 10 more" starts at page 2. A refresh
+      // resets continuation (clears any prior exhaustion).
+      providerNextPage: 2,
+      providerPagesFetched: 1,
+      providerExhausted: false,
+      lastProviderFetchAt: fetchedAt,
       ...emailFormatColumns(dataset.emailFormat)
     };
 
@@ -304,9 +487,12 @@ export class DiscoverSearchCacheService implements DiscoverCachePort {
       });
       // Replace people atomically: old rows are removed and new rows inserted in
       // the same transaction so a concurrent reader never sees an empty cache.
+      // sortIndex preserves provider order so batching stays deterministic.
       await tx.discoverSearchCachePerson.deleteMany({ where: { cacheId: entry.id } });
+      let sortIndex = 0;
       for (const person of dataset.people) {
-        await tx.discoverSearchCachePerson.create({ data: { cacheId: entry.id, ...person } });
+        await tx.discoverSearchCachePerson.create({ data: { cacheId: entry.id, sortIndex, ...person } });
+        sortIndex += 1;
       }
       return entry.id;
     });
@@ -376,38 +562,60 @@ export class DiscoverSearchCacheService implements DiscoverCachePort {
   }
 }
 
-type ResolvedCachePersonRow = ResolvedCachePerson & { positionCategory: string | null };
+// A continuation read includes the provider-pagination columns the expansion
+// surface needs (the base CacheRow only carries the email-format fields).
+type ContinuationRow = CacheRow & {
+  providerNextPage?: number | null;
+  providerPagesFetched?: number | null;
+  providerExhausted?: boolean | null;
+};
+
+type ResolvedCachePersonRow = ResolvedCachePerson & { positionCategory: string | null; sortIndex?: number | null };
+
+/** Order cached people by their stable provider sort index (then insertion). */
+function sortCachePeople<T extends { sortIndex?: number | null }>(rows: T[]): T[] {
+  return [...rows].sort((a, b) => (a.sortIndex ?? 0) - (b.sortIndex ?? 0));
+}
+
+/** Map one cache-person row to the shared normalized shape. */
+function cachePersonRowToResolved(row: ResolvedCachePersonRow): ResolvedCachePerson {
+  return {
+    sourceProfileId: row.sourceProfileId,
+    firstName: row.firstName,
+    lastName: row.lastName,
+    fullName: row.fullName,
+    currentTitle: row.currentTitle,
+    normalizedTitle: row.normalizedTitle,
+    positionCategory: row.positionCategory ?? "OTHER",
+    location: row.location,
+    country: row.country,
+    state: row.state,
+    city: row.city,
+    linkedinUrl: row.linkedinUrl,
+    inferredEmail: row.inferredEmail,
+    emailStatus: row.emailStatus,
+    emailConfidence: row.emailConfidence,
+    emailPattern: row.emailPattern,
+    emailSource: row.emailSource
+  };
+}
+
+function rowToEmailFormat(entry: CacheRow): ResolvedEmailFormat {
+  return {
+    emailDomain: entry.emailDomain,
+    emailDomainConfidence: entry.emailDomainConfidence,
+    emailDomainEvidence: entry.emailDomainEvidence ?? null,
+    emailPattern: entry.emailPattern,
+    patternConfidence: entry.patternConfidence,
+    patternEvidence: entry.patternEvidence ?? null,
+    emailFormatReason: entry.emailFormatReason
+  };
+}
 
 function rowToDataset(entry: CacheRow, peopleRows: ResolvedCachePersonRow[]): ResolvedDataset {
   return {
-    emailFormat: {
-      emailDomain: entry.emailDomain,
-      emailDomainConfidence: entry.emailDomainConfidence,
-      emailDomainEvidence: entry.emailDomainEvidence ?? null,
-      emailPattern: entry.emailPattern,
-      patternConfidence: entry.patternConfidence,
-      patternEvidence: entry.patternEvidence ?? null,
-      emailFormatReason: entry.emailFormatReason
-    },
-    people: peopleRows.map((row) => ({
-      sourceProfileId: row.sourceProfileId,
-      firstName: row.firstName,
-      lastName: row.lastName,
-      fullName: row.fullName,
-      currentTitle: row.currentTitle,
-      normalizedTitle: row.normalizedTitle,
-      positionCategory: row.positionCategory ?? "OTHER",
-      location: row.location,
-      country: row.country,
-      state: row.state,
-      city: row.city,
-      linkedinUrl: row.linkedinUrl,
-      inferredEmail: row.inferredEmail,
-      emailStatus: row.emailStatus,
-      emailConfidence: row.emailConfidence,
-      emailPattern: row.emailPattern,
-      emailSource: row.emailSource
-    }))
+    emailFormat: rowToEmailFormat(entry),
+    people: sortCachePeople(peopleRows).map(cachePersonRowToResolved)
   };
 }
 

@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 
 import type { DiscoverQuota, PersonNode, ProspectSearchNode } from "@/components/prospects/prospect-graphql";
 import {
+  ADD_MORE_DIALOG_BODY,
+  ADD_MORE_PEOPLE_LABEL,
   EXTERNAL_LINK_REL,
   EXTERNAL_LINK_TARGET,
   INFERRED_EMAIL_NOTICE,
@@ -12,7 +14,11 @@ import {
   PROSPECT_FINDER_TITLE,
   PROSPECT_FINDER_UNAVAILABLE_BODY,
   PROSPECT_FINDER_UNAVAILABLE_TITLE,
+  addMoreDisabledReason,
   confidenceBadge,
+  formatCurrentPeopleLine,
+  formatSearchesRemainingLine,
+  shouldShowAddMore,
   buildProspectSelectionInput,
   createEmptyProspectSelection,
   discoverPerSearchCopy,
@@ -86,6 +92,7 @@ function search(overrides: Partial<ProspectSearchNode> = {}): ProspectSearchNode
     errorCode: null,
     errorMessage: null,
     peopleCount: 3,
+    exhausted: false,
     createdAt: "2026-06-18T00:00:00.000Z",
     completedAt: "2026-06-18T00:01:00.000Z",
     company: {
@@ -405,21 +412,47 @@ describe("external links are hardened (#12)", () => {
   });
 });
 
-describe("prospect dashboard layout contracts", () => {
-  const dashboardSource = readFileSync("src/components/prospects/prospects-dashboard.tsx", "utf8");
-  const dashboardCss = readFileSync("src/components/prospects/prospects-dashboard.module.css", "utf8");
+describe("Discover detail-page People table layout contracts", () => {
+  const detailSource = readFileSync("src/components/prospects/prospect-detail-view.tsx", "utf8");
+  const css = readFileSync("src/components/prospects/prospects-dashboard.module.css", "utf8");
 
-  it("uses a natural-flow People table shell, not the horizontal history scroller", () => {
-    expect(dashboardSource).toContain("styles.peopleTableShell");
-    expect(dashboardSource).not.toContain("<div className={styles.tableScroll}>\n                    <PeopleTable");
-    expect(dashboardCss).toMatch(/\.peopleTableShell\s*\{[^}]*overflow:\s*visible/s);
+  it("uses a natural-flow People table shell with no internal vertical scroll (#7 layout)", () => {
+    expect(detailSource).toContain("styles.peopleTableShell");
+    expect(css).toMatch(/\.peopleTableShell\s*\{[^}]*overflow:\s*visible/s);
+    // The People shell must not introduce vertical scrolling / fixed heights.
+    const shellBlock = css.match(/\.peopleTableShell\s*\{[^}]*\}/s)?.[0] ?? "";
+    expect(shellBlock).not.toMatch(/overflow-y|max-height|height:\s*\d|calc\(100vh/);
   });
 
-  it("renders compact chevron pagination without Previous or Next text buttons", () => {
-    expect(dashboardSource).toContain("<ChevronLeft");
-    expect(dashboardSource).toContain("<ChevronRight");
-    expect(dashboardSource).not.toContain(">Previous<");
-    expect(dashboardSource).not.toContain(">Next<");
+  it("gives People rows horizontal edge padding so content never touches the card border (#4, #5, #6)", () => {
+    const rowBlock = css.match(/\n\.row\s*\{[^}]*\}/s)?.[0] ?? "";
+    // Padding shorthand is `vertical horizontal` — the horizontal value must be > 0.
+    expect(rowBlock).toMatch(/padding:\s*0\.85rem\s+0\.9rem/);
+    expect(css).toMatch(/\.cellSelect\s*\{[^}]*padding-left/s);
+    expect(css).toMatch(/\.cellLink\s*\{[^}]*padding-right/s);
+    // The LinkedIn header/column gets its own right padding so it is never flush.
+    expect(css).toMatch(/\.linkedinHead\s*\{[^}]*padding-right/s);
+  });
+
+  it("wraps long People text instead of truncating with an ellipsis (no '…', no scroll)", () => {
+    for (const cls of [".personName", ".cellTitle", ".emailText"]) {
+      const block = css.match(new RegExp(`\\n\\${cls}\\s*\\{[^}]*\\}`, "s"))?.[0] ?? "";
+      expect(block).not.toContain("text-overflow: ellipsis");
+      expect(block).not.toContain("white-space: nowrap");
+      expect(block).toContain("overflow-wrap: anywhere");
+    }
+    // Text columns use minmax(0, …) so they shrink + wrap rather than overflow.
+    const rowBlock = css.match(/\n\.row\s*\{[^}]*\}/s)?.[0] ?? "";
+    expect(rowBlock).toContain("minmax(0,");
+  });
+
+  it("keeps pagination outside the table shell and uses compact chevrons (#8 layout)", () => {
+    expect(detailSource).toContain("<ChevronLeft");
+    expect(detailSource).toContain("<ChevronRight");
+    expect(detailSource).not.toContain(">Previous<");
+    expect(detailSource).not.toContain(">Next<");
+    // The pagination row is a sibling of the table shell, not nested inside it.
+    expect(detailSource).not.toContain('peopleTableShell" data-discover-tour="people-table">\n                <div className={styles.paginationRow}');
   });
 });
 
@@ -444,8 +477,20 @@ describe("Discover quota presentation helpers", () => {
     expect(formatQuotaRemaining(null)).toBeNull();
   });
 
-  it("renders a reset-time label (#4)", () => {
-    expect(formatQuotaReset(quota())).toMatch(/^Resets at /);
+  it("renders a day-qualified reset label so a bare time is never ambiguous (#4)", () => {
+    // Local-component dates keep the calendar-day diff stable across machine
+    // timezones (the formatter also renders in local time).
+    const now = new Date(2026, 5, 20, 9, 0, 0);
+    const todayReset = new Date(2026, 5, 20, 17, 0, 0);
+    const tomorrowReset = new Date(2026, 5, 21, 17, 0, 0);
+    const laterReset = new Date(2026, 5, 25, 17, 0, 0);
+
+    expect(formatQuotaReset({ resetAt: todayReset.toISOString() }, now)).toMatch(/^Resets today at .+\d/);
+    expect(formatQuotaReset({ resetAt: tomorrowReset.toISOString() }, now)).toMatch(/^Resets tomorrow at .+\d/);
+    expect(formatQuotaReset({ resetAt: laterReset.toISOString() }, now)).toMatch(/^Resets \w.* at .+\d/);
+    // Never the old ambiguous "Resets at <time>" with no day.
+    expect(formatQuotaReset({ resetAt: tomorrowReset.toISOString() }, now)).not.toMatch(/^Resets at /);
+
     expect(formatQuotaReset(null)).toBeNull();
     expect(formatQuotaReset({ resetAt: "not-a-date" })).toBeNull();
   });
@@ -466,25 +511,139 @@ describe("Discover quota presentation helpers", () => {
   });
 });
 
-describe("Discover create modal contracts", () => {
-  const dashboardSource = readFileSync("src/components/prospects/prospects-dashboard.tsx", "utf8");
+describe("Add 10 more presentation helpers", () => {
+  it("shows the button only for a READY search with results that is not exhausted (#1, #2, #10)", () => {
+    // READY + results + not exhausted → shown (#1).
+    expect(shouldShowAddMore({ view: "ready", status: "READY", hasResults: true, exhausted: false })).toBe(true);
+    // DRAFT / PROCESSING / FAILED → hidden (#2).
+    expect(shouldShowAddMore({ view: "none", status: "DRAFT", hasResults: false, exhausted: false })).toBe(false);
+    expect(shouldShowAddMore({ view: "processing", status: "SEARCHING_PEOPLE", hasResults: false, exhausted: false })).toBe(false);
+    expect(shouldShowAddMore({ view: "failed", status: "FAILED", hasResults: false, exhausted: false })).toBe(false);
+    // READY but no results yet → hidden.
+    expect(shouldShowAddMore({ view: "ready", status: "READY", hasResults: false, exhausted: false })).toBe(false);
+    // Exhausted → hidden (#10).
+    expect(shouldShowAddMore({ view: "ready", status: "READY", hasResults: true, exhausted: true })).toBe(false);
+  });
+
+  it("disables the button while expanding or when the daily allowance is spent (#5)", () => {
+    expect(addMoreDisabledReason(quota({ searchesRemaining: 3 }), false)).toBeNull();
+    // Disabled (with a reason) while an expansion runs (#5).
+    expect(addMoreDisabledReason(quota({ searchesRemaining: 3 }), true)).toBe("Adding new people…");
+    // Disabled when no daily quota remains.
+    expect(addMoreDisabledReason(quota({ searchesRemaining: 0 }), false)).toMatch(/used today's Discover searches/);
+    // Exempt accounts are never blocked by quota.
+    expect(addMoreDisabledReason(quota({ unlimited: true, searchesRemaining: 0 }), false)).toBeNull();
+  });
+
+  it("renders the current people count and remaining quota for the dialog (#4)", () => {
+    expect(formatCurrentPeopleLine(10)).toBe("Current people: 10");
+    expect(formatSearchesRemainingLine(quota({ searchesRemaining: 3 }))).toBe("Searches remaining today: 3");
+    expect(formatSearchesRemainingLine(quota({ unlimited: true }))).toBe("Searches remaining today: Unlimited");
+  });
+
+  it("explains in the dialog that one daily slot is used (#3)", () => {
+    expect(ADD_MORE_DIALOG_BODY).toContain("1 of your daily Discover searches");
+    expect(ADD_MORE_DIALOG_BODY).toContain("Existing people will not be repeated");
+    expect(ADD_MORE_PEOPLE_LABEL).toBe("Add 10 more");
+  });
+});
+
+describe("Discover create modal contracts (list page)", () => {
+  const listSource = readFileSync("src/components/prospects/prospects-list-view.tsx", "utf8");
 
   it("removes the Max results input (#1)", () => {
-    expect(dashboardSource).not.toContain("Max results");
-    expect(dashboardSource).not.toContain('type="number"');
+    expect(listSource).not.toContain("Max results");
+    expect(listSource).not.toContain('type="number"');
   });
 
   it("does not let the client choose or send a result count (#8)", () => {
-    expect(dashboardSource).not.toContain("maxResults");
+    expect(listSource).not.toContain("maxResults");
   });
 
   it("renders the fixed-count helper and quota panel in the modal", () => {
-    expect(dashboardSource).toContain("DiscoverUsagePanel");
-    expect(dashboardSource).toContain("discoverPerSearchSentence");
+    expect(listSource).toContain("DiscoverUsagePanel");
+    expect(listSource).toContain("discoverPerSearchSentence");
   });
 
-  it("refreshes the quota after processing begins (#7)", () => {
-    expect(dashboardSource).toContain("loadQuota");
-    expect(dashboardSource).toContain("DISCOVER_QUOTA_QUERY");
+  it("refreshes the quota on the list page (#7)", () => {
+    expect(listSource).toContain("loadQuota");
+    expect(listSource).toContain("DISCOVER_QUOTA_QUERY");
+  });
+});
+
+describe("Add 10 more detail-page wiring", () => {
+  const detailSource = readFileSync("src/components/prospects/prospect-detail-view.tsx", "utf8");
+  const listSource = readFileSync("src/components/prospects/prospects-list-view.tsx", "utf8");
+
+  it("renders the Add-more button only on the detail page with a stable help target (existing #1)", () => {
+    expect(detailSource).toContain('data-discover-tour="add-more-people"');
+    expect(detailSource).toContain("UserPlus");
+    expect(detailSource).toContain("showAddMore");
+    // The list page never renders Add 10 more.
+    expect(listSource).not.toContain("add-more-people");
+    expect(listSource).not.toContain("ADD_MORE_DISCOVER_PEOPLE_MUTATION");
+  });
+
+  it("disables the button while an expansion runs so rapid clicks cannot duplicate (existing #5)", () => {
+    expect(detailSource).toContain("setExpanding(true)");
+    expect(detailSource).toContain("disabled={addMoreDisabled !== null}");
+  });
+
+  it("opens a confirmation dialog before expanding", () => {
+    expect(detailSource).toContain("AddMorePeopleDialog");
+    expect(detailSource).toContain("setShowAddMoreDialog(true)");
+  });
+
+  it("updates counts + people in place without a full-page reload (existing #6, #7, #9)", () => {
+    expect(detailSource).toContain("ADD_MORE_DISCOVER_PEOPLE_MUTATION");
+    // Refreshes company (totals), people (pagination), and the search in place.
+    expect(detailSource).toContain("await loadPeople({ companyId: search.company.id, category: activeCategory, pageIndex: 0, after: null })");
+    expect(detailSource).toContain("await loadDetail({ category: activeCategory })");
+    // No hard navigation / full reload.
+    expect(detailSource).not.toContain("window.location.reload");
+  });
+
+  it("keeps the People page size fixed at 10 (existing #8)", () => {
+    expect(detailSource).toContain("PEOPLE_PAGE_SIZE");
+    expect(readFileSync("src/components/prospects/prospect-graphql.ts", "utf8")).toContain("PEOPLE_PAGE_SIZE = 10");
+  });
+});
+
+describe("Discover list/detail split contracts", () => {
+  const listSource = readFileSync("src/components/prospects/prospects-list-view.tsx", "utf8");
+  const detailSource = readFileSync("src/components/prospects/prospect-detail-view.tsx", "utf8");
+
+  it("list page shows Search History but not the People table or company details (#2, #3 routing)", () => {
+    expect(listSource).toContain('data-discover-tour="search-history"');
+    expect(listSource).not.toContain("PeopleTable");
+    expect(listSource).not.toContain("CompanyCard");
+    expect(listSource).not.toContain("SummaryCards");
+  });
+
+  it("list rows navigate to the detail route (#4 routing)", () => {
+    expect(listSource).toContain("href={`/prospects/${search.id}`");
+    // The first row carries the search-row tour target (set dynamically).
+    expect(listSource).toContain('"search-row"');
+  });
+
+  it("detail page renders summary cards, company details, and the People table (#1, #2, #3 layout)", () => {
+    expect(detailSource).toContain("SummaryCards");
+    expect(detailSource).toContain("CompanyCard");
+    expect(detailSource).toContain("PeopleTable");
+  });
+
+  it("detail recovers to Discover (not Overview) and adds no second in-page back button (#7 routing)", () => {
+    // The not-found state links back to the Discover list, never to Overview.
+    expect(detailSource).toContain('href="/prospects"');
+    expect(detailSource).not.toContain('href="/workspace"');
+    // Back navigation reuses the app shell's global back button — the detail page
+    // must not render its own duplicate back control.
+    expect(detailSource).not.toContain("BackToDiscover");
+    expect(detailSource).not.toContain('data-discover-tour="back-to-list"');
+  });
+
+  it("detail page loads the search from the route id and handles not-found safely (#5, #6, #8 routing)", () => {
+    expect(detailSource).toContain("PROSPECT_SEARCH_BY_ID_QUERY");
+    expect(detailSource).toContain("This Discover search is no longer available.");
   });
 });

@@ -27,6 +27,16 @@ export function discoverDailyLimitError(message: string): GraphQLError {
   return new GraphQLError(message, { extensions: { code: "DISCOVER_DAILY_LIMIT_REACHED" } });
 }
 
+/** Another "Add 10 more" is already running for this search. */
+export function discoverExpansionRunningError(message: string): GraphQLError {
+  return new GraphQLError(message, { extensions: { code: "DISCOVER_EXPANSION_ALREADY_RUNNING" } });
+}
+
+/** An "Add 10 more" expansion failed; existing people are preserved and it can be retried. */
+export function discoverExpansionFailedError(message: string): GraphQLError {
+  return new GraphQLError(message, { extensions: { code: "DISCOVER_EXPANSION_FAILED" } });
+}
+
 /**
  * Resolve the authenticated, eligible user for a request or throw. Every
  * prospect resolver must call this before touching data — there is no weaker

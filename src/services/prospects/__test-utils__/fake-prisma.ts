@@ -43,6 +43,7 @@ export function createFakePrisma() {
   const titleCache: Row[] = [];
   const discoverCache: Row[] = [];
   const discoverCachePeople: Row[] = [];
+  const expansions: Row[] = [];
 
   const companyById = (id: string) => companies.find((row) => row.id === id);
 
@@ -102,7 +103,7 @@ export function createFakePrisma() {
 
   const client = {
     // Direct access for assertions in tests.
-    _state: { companies, positions, people, searches, titleCache, discoverCache, discoverCachePeople },
+    _state: { companies, positions, people, searches, titleCache, discoverCache, discoverCachePeople, expansions },
 
     // Interactive transaction: the fake mutates shared arrays synchronously, so
     // passing the same client back gives the same all-or-nothing visibility the
@@ -167,6 +168,41 @@ export function createFakePrisma() {
       deleteMany: async ({ where }: { where?: Row } = {}) => {
         const count = deleteRows(discoverCachePeople, (r) => matchGeneric(r, where ?? {}));
         return { count };
+      }
+    },
+
+    discoverSearchExpansion: {
+      create: async ({ data }: { data: Row }) => {
+        const row = {
+          id: nextId("expansion"),
+          createdAt: now(),
+          updatedAt: now(),
+          requestedCount: 10,
+          addedCount: 0,
+          cacheCount: 0,
+          providerCount: 0,
+          totalPeopleCount: 0,
+          quotaReserved: false,
+          exhausted: false,
+          errorCode: null,
+          completedAt: null,
+          ...data
+        };
+        expansions.push(row);
+        return { ...row };
+      },
+      findFirst: async ({ where }: { where: Row }) => {
+        const row = expansions.find((r) => matchGeneric(r, where));
+        return row ? { ...row } : null;
+      },
+      findMany: async ({ where }: { where?: Row } = {}) =>
+        expansions.filter((r) => matchGeneric(r, where ?? {})).map((r) => ({ ...r })),
+      count: async ({ where }: { where?: Row } = {}) =>
+        expansions.filter((r) => matchGeneric(r, where ?? {})).length,
+      update: async ({ where, data }: { where: Row; data: Row }) => {
+        const row = expansions.find((r) => r.id === where.id);
+        Object.assign(row!, data, { updatedAt: now() });
+        return { ...row };
       }
     },
 
@@ -245,6 +281,15 @@ export function createFakePrisma() {
         }
         return { ...row };
       },
+      findFirst: async ({ where }: { where: Row }) => {
+        const composite = where.companyId_category;
+        if (composite) {
+          const row = positions.find((r) => r.companyId === composite.companyId && r.category === composite.category);
+          return row ? { ...row } : null;
+        }
+        const row = positions.find((r) => matchPosition(r, where ?? {}));
+        return row ? { ...row } : null;
+      },
       findMany: async ({ where }: { where: Row }) => positions.filter((r) => matchPosition(r, where ?? {})).map((r) => ({ ...r })),
       deleteMany: async ({ where }: { where: Row }) => {
         const count = deleteRows(positions, (r) => matchPosition(r, where ?? {}));
@@ -268,6 +313,10 @@ export function createFakePrisma() {
         const row = people.find((r) => r.id === where.id);
         Object.assign(row!, data, { updatedAt: now() });
         return { ...row };
+      },
+      findFirst: async ({ where }: { where: Row }) => {
+        const row = people.find((r) => matchPerson(r, where ?? {}));
+        return row ? { ...row } : null;
       },
       findMany: async ({ where }: { where: Row }) => people.filter((r) => matchPerson(r, where ?? {})).map((r) => ({ ...r })),
       count: async ({ where }: { where: Row }) => people.filter((r) => matchPerson(r, where ?? {})).length,

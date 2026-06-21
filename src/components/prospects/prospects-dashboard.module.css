@@ -50,6 +50,53 @@
   line-height: 1.5;
 }
 
+/* ---- Detail page header -------------------------------------------------- */
+/* Back navigation reuses the app shell's global back button (top toolbar); the
+   detail page intentionally adds no second in-page back control. */
+
+.detailHeader {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.detailHeaderCopy {
+  display: grid;
+  gap: 0.5rem;
+  min-width: 0;
+  max-width: 52rem;
+}
+
+.detailHeaderTitle {
+  margin: 0;
+  font-size: 1.7rem;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.detailHeaderMeta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.55rem 0.9rem;
+  margin-top: 0.15rem;
+}
+
+.detailHeaderMetaItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.detailHeaderMetaItem svg {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
 .headerActions {
   display: inline-flex;
   align-items: center;
@@ -973,18 +1020,24 @@
 
 .row {
   display: grid;
+  /* Text columns use minmax(0, fr) so they shrink and WRAP instead of
+     overflowing — no horizontal scroll and no "…" truncation ever. Confidence
+     keeps a readable min for its pill; the LinkedIn column is wide enough for the
+     header word and the icon, with right padding so neither touches the edge. */
   grid-template-columns:
-    2rem minmax(8.5rem, 1.25fr) minmax(7.5rem, 1.12fr) minmax(7.5rem, 1fr)
-    minmax(9.5rem, 1.2fr) minmax(7.5rem, 0.85fr) 2.35rem;
-  gap: clamp(0.45rem, 1vw, 0.85rem);
+    2.25rem minmax(0, 1.1fr) minmax(0, 1.25fr) minmax(0, 1fr)
+    minmax(0, 1.5fr) minmax(6.25rem, 0.75fr) 5rem;
+  gap: clamp(0.6rem, 1.2cqi, 1.1rem);
   align-items: center;
-  padding: 0.85rem 0.2rem;
+  /* Comfortable horizontal breathing room so the first/last columns never sit
+     against the card border (combined with the card's own padding). */
+  padding: 0.85rem 0.9rem;
   border-bottom: 1px solid var(--line);
   min-width: 0;
 }
 
 .headRow {
-  padding: 0.4rem 0 0.7rem;
+  padding: 0.4rem 0.9rem 0.7rem;
   border-bottom: 1px solid var(--line);
 }
 
@@ -998,12 +1051,14 @@
 
 .linkedinHead {
   text-align: right;
+  padding-right: 0.55rem;
 }
 
 .cellSelect {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+  padding-left: 0.15rem;
   min-width: 0;
 }
 
@@ -1022,9 +1077,8 @@
 
 .personName {
   font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* Wrap long names instead of truncating with an ellipsis. */
+  overflow-wrap: anywhere;
 }
 
 .personConfidence {
@@ -1035,9 +1089,8 @@
 .cellTitle {
   min-width: 0;
   color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* Long roles wrap to a second line rather than being cut with "…". */
+  overflow-wrap: anywhere;
 }
 
 .cellLocation {
@@ -1058,7 +1111,7 @@
 }
 
 .cellEmail {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 0.5rem;
   min-width: 0;
@@ -1067,9 +1120,8 @@
 .emailText {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.86rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* Wrap the full address across lines instead of truncating it with "…". */
+  overflow-wrap: anywhere;
   min-width: 0;
 }
 
@@ -1119,6 +1171,7 @@
 .cellLink {
   display: flex;
   justify-content: flex-end;
+  padding-right: 0.55rem;
 }
 
 .linkButton {
@@ -1360,16 +1413,11 @@
 /* ---- Responsive --------------------------------------------------------- */
 
 @container (max-width: 980px) {
+  /* The base grid already uses minmax(0, fr) text columns, so it shrinks and
+     wraps down to the stacked breakpoint without a fixed-min override (which
+     would force horizontal overflow). Only nudge type down a touch here. */
   .row {
-    grid-template-columns:
-      2rem minmax(7.25rem, 1.2fr) minmax(6.75rem, 1fr) minmax(6.5rem, 0.9fr)
-      minmax(8.5rem, 1.1fr) minmax(6.5rem, 0.8fr) 2.25rem;
-    gap: 0.5rem;
-  }
-
-  .badge {
-    white-space: normal;
-    line-height: 1.15;
+    gap: 0.6rem;
   }
 
   .emailText {
