@@ -68,7 +68,11 @@ export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean 
   const [showNewSearch, setShowNewSearch] = useState(false);
   const [form, setForm] = useState<CreateForm>(EMPTY_FORM);
   const [creating, setCreating] = useState(false);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  // In-app delete confirmation state (replaces the native window.confirm).
+  const [searchPendingDeletion, setSearchPendingDeletion] = useState<ProspectSearchNode | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const deleteTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<ActionNotice | null>(null);
 
@@ -147,56 +151,68 @@ export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean 
     void loadQuota();
   }, [historyPageIndex, loadQuota, loadSearches]);
 
-  // Delete a single Search History row. Reuses the shared GraphQL client (so the
-  // same CSRF/auth handling as every other Discover mutation applies) and the
-  // project's standard destructive confirm. The deleted row is removed in place
-  // (no full reload); deleting the last row on a later page steps back a page.
-  const handleDelete = useCallback(
-    async (search: ProspectSearchNode) => {
-      if (deletingId) {
-        return;
-      }
-      const companyName = search.company?.name ?? search.requestedCompany;
-      const confirmed = window.confirm(
-        `Delete this search?\n\nThis removes the "${companyName}" search from your Search History. Imports or sequences you created separately will not be removed.`
-      );
-      if (!confirmed) {
-        return;
-      }
-      setDeletingId(search.id);
-      setActionError(null);
-      setActionNotice(null);
-      const result = await prospectGraphql<{ deleteProspectSearch: boolean }>(DELETE_SEARCH_MUTATION, {
-        id: search.id
+  // Open the in-app delete confirmation for a row. Never deletes here and never
+  // navigates to the detail page; it just records which search is pending (and the
+  // trigger button so focus can return to it on cancel).
+  const handleRequestDelete = useCallback((search: ProspectSearchNode, trigger: HTMLButtonElement | null) => {
+    deleteTriggerRef.current = trigger;
+    setDeleteError(null);
+    setSearchPendingDeletion(search);
+  }, []);
+
+  const handleCancelDelete = useCallback(() => {
+    if (deleting) {
+      return;
+    }
+    setSearchPendingDeletion(null);
+    setDeleteError(null);
+    // Return focus to the trash icon that opened the dialog.
+    deleteTriggerRef.current?.focus();
+  }, [deleting]);
+
+  // Runs ONLY when the user confirms in the dialog. Reuses the shared GraphQL
+  // client (same CSRF/auth as every Discover mutation). The row + count update and
+  // the success toast appear only after the backend confirms; on failure the dialog
+  // stays open with a safe message and the row is preserved.
+  const handleConfirmDelete = useCallback(async () => {
+    const search = searchPendingDeletion;
+    if (!search || deleting) {
+      return;
+    }
+    setDeleting(true);
+    setDeleteError(null);
+    const result = await prospectGraphql<{ deleteProspectSearch: boolean }>(DELETE_SEARCH_MUTATION, {
+      id: search.id
+    });
+    if (result.disabled) {
+      setDeleting(false);
+      setSearchPendingDeletion(null);
+      setDisabled(true);
+      return;
+    }
+    if (result.error || !result.data?.deleteProspectSearch) {
+      // Keep the dialog open with a safe product message — never a raw backend error.
+      setDeleting(false);
+      setDeleteError("This search could not be deleted. Please try again.");
+      return;
+    }
+    // Success: remove the row + update the count, then surface the toast.
+    const remaining = searches.filter((item) => item.id !== search.id);
+    setSearches(remaining);
+    setSearchesTotal((total) => Math.max(0, total - 1));
+    setDeleting(false);
+    setSearchPendingDeletion(null);
+    setActionError(null);
+    setActionNotice({ message: "Search deleted." });
+    // Pagination edge: if that emptied a page beyond the first, step back.
+    const next = resolveHistoryPageAfterDelete({ remainingOnPage: remaining.length, pageIndex: historyPageIndex });
+    if (next.goToPreviousPage) {
+      void loadSearches({
+        pageIndex: next.pageIndex,
+        after: historyAfterCursors.current[next.pageIndex] ?? null
       });
-      if (result.disabled) {
-        setDisabled(true);
-        setDeletingId(null);
-        return;
-      }
-      if (result.error || !result.data?.deleteProspectSearch) {
-        // Never surface raw backend/GraphQL detail — a safe product message only.
-        setActionError("This search could not be deleted. Please try again.");
-        setDeletingId(null);
-        return;
-      }
-      // Remove the row + update the count immediately (no page reload).
-      const remaining = searches.filter((item) => item.id !== search.id);
-      setSearches(remaining);
-      setSearchesTotal((total) => Math.max(0, total - 1));
-      setDeletingId(null);
-      setActionNotice({ message: "Search deleted." });
-      // Pagination edge: if that emptied a page beyond the first, step back.
-      const next = resolveHistoryPageAfterDelete({ remainingOnPage: remaining.length, pageIndex: historyPageIndex });
-      if (next.goToPreviousPage) {
-        void loadSearches({
-          pageIndex: next.pageIndex,
-          after: historyAfterCursors.current[next.pageIndex] ?? null
-        });
-      }
-    },
-    [deletingId, historyPageIndex, loadSearches, searches]
-  );
+    }
+  }, [deleting, historyPageIndex, loadSearches, searches, searchPendingDeletion]);
 
   const handleCreate = useCallback(
     async (event: FormEvent) => {
@@ -343,8 +359,7 @@ export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean 
           pageCount={historyPageCount}
           offset={historyOffset}
           hasNext={searchesHasNext}
-          deletingId={deletingId}
-          onDelete={handleDelete}
+          onRequestDelete={handleRequestDelete}
           onPrev={handleHistoryPrev}
           onNext={handleHistoryNext}
         />
@@ -358,6 +373,14 @@ export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean 
         onChange={setForm}
         onSubmit={handleCreate}
         onClose={() => setShowNewSearch(false)}
+      />
+
+      <DeleteSearchDialog
+        search={searchPendingDeletion}
+        deleting={deleting}
+        error={deleteError}
+        onCancel={handleCancelDelete}
+        onConfirm={handleConfirmDelete}
       />
     </div>
   );
@@ -376,8 +399,7 @@ function SearchHistoryTable({
   pageCount,
   offset,
   hasNext,
-  deletingId,
-  onDelete,
+  onRequestDelete,
   onPrev,
   onNext
 }: {
@@ -389,8 +411,7 @@ function SearchHistoryTable({
   pageCount: number;
   offset: number;
   hasNext: boolean;
-  deletingId: string | null;
-  onDelete: (search: ProspectSearchNode) => void;
+  onRequestDelete: (search: ProspectSearchNode, trigger: HTMLButtonElement | null) => void;
   onPrev: () => void;
   onNext: () => void;
 }) {
@@ -435,7 +456,6 @@ function SearchHistoryTable({
               const location = search.requestedLocations[0] ?? null;
               const domain = search.company?.officialWebsiteDomain ?? search.company?.officialDomain ?? null;
               const companyName = search.company?.name ?? search.requestedCompany;
-              const isDeleting = deletingId === search.id;
               return (
                 // The whole row navigates via a stretched <Link> overlay, so the row
                 // stays a real anchor (cmd/middle-click still open in a new tab) while
@@ -487,19 +507,15 @@ function SearchHistoryTable({
                       className={`${styles.iconButton} ${styles.historyDeleteButton}`}
                       aria-label={`Delete ${companyName} search`}
                       title="Delete search"
-                      disabled={isDeleting}
                       onClick={(event) => {
-                        // Keep the row's stretched link from navigating.
+                        // Keep the row's stretched link from navigating (covers mouse
+                        // and keyboard activation), then open the in-app dialog.
                         event.preventDefault();
                         event.stopPropagation();
-                        onDelete(search);
+                        onRequestDelete(search, event.currentTarget);
                       }}
                     >
-                      {isDeleting ? (
-                        <LoaderCircle aria-hidden="true" className={styles.spin} />
-                      ) : (
-                        <Trash2 aria-hidden="true" />
-                      )}
+                      <Trash2 aria-hidden="true" />
                     </button>
                     <ChevronRight aria-hidden="true" className={styles.historyActionsChevron} />
                   </span>
@@ -538,6 +554,112 @@ function SearchHistoryTable({
         </div>
       </div>
     </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Delete confirmation dialog (in-app, replaces the native window.confirm).
+// ---------------------------------------------------------------------------
+
+function DeleteSearchDialog({
+  search,
+  deleting,
+  error,
+  onCancel,
+  onConfirm
+}: {
+  search: ProspectSearchNode | null;
+  deleting: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  // Escape closes the dialog, but never while a delete is in flight.
+  useEffect(() => {
+    if (!search) {
+      return;
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !deleting) {
+        onCancel();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [search, deleting, onCancel]);
+
+  // Move focus into the dialog when it opens. The destructive action is NOT
+  // auto-focused; the Cancel button is, so Enter never deletes by accident.
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (search) {
+      cancelRef.current?.focus();
+    }
+  }, [search]);
+
+  if (!search) {
+    return null;
+  }
+
+  const companyName = search.company?.name ?? search.requestedCompany;
+  const titleId = "discover-delete-title";
+  const descId = "discover-delete-desc";
+
+  return (
+    <div
+      className={styles.modalOverlay}
+      role="presentation"
+      onMouseDown={(event) => {
+        // Backdrop click closes — never while deleting, never from inside the card.
+        if (event.target === event.currentTarget && !deleting) {
+          onCancel();
+        }
+      }}
+    >
+      <div
+        className={`card ${styles.modalCard} ${styles.confirmCard}`}
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={descId}
+      >
+        <span className={styles.confirmIcon} aria-hidden="true">
+          <Trash2 />
+        </span>
+        <h2 id={titleId} className={styles.panelTitle}>
+          Delete this search?
+        </h2>
+        <p id={descId} className={styles.confirmBody}>
+          {`This will remove the “${companyName}” search and its saved Discover results. Imports or sequences created separately will not be deleted.`}
+        </p>
+        {error && (
+          <div className={`${styles.inlineAlert} ${styles.inlineAlertError}`} role="alert">
+            <AlertCircle aria-hidden="true" />
+            <span>{error}</span>
+          </div>
+        )}
+        <div className={styles.modalActions}>
+          <button
+            ref={cancelRef}
+            type="button"
+            className={styles.secondaryButton}
+            onClick={onCancel}
+            disabled={deleting}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className={styles.dangerButton}
+            onClick={onConfirm}
+            disabled={deleting}
+          >
+            {deleting ? <LoaderCircle aria-hidden="true" className={styles.spin} /> : <Trash2 aria-hidden="true" />}
+            {deleting ? "Deleting…" : "Delete search"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

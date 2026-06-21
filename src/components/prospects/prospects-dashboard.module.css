@@ -622,6 +622,42 @@
   margin-top: 0.25rem;
 }
 
+/* The shared danger button left-aligns itself in the detail card; inside the
+   modal action row it should sit grouped at the right beside Cancel. */
+.modalActions .dangerButton {
+  margin-left: 0;
+}
+
+/* Compact destructive confirmation dialog (reuses .card + .modalCard surface). */
+.confirmCard {
+  max-width: 27rem;
+}
+
+.confirmIcon {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 0.85rem;
+  border: 1px solid var(--error-toast-border);
+  background: var(--error-toast-icon-bg);
+  color: var(--error-toast-icon-color);
+}
+
+.confirmIcon svg {
+  width: 1.3rem;
+  height: 1.3rem;
+}
+
+.confirmBody {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
 .iconButton {
   display: inline-flex;
   align-items: center;

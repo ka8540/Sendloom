@@ -499,42 +499,87 @@ describe("resolveHistoryPageAfterDelete", () => {
   });
 });
 
-describe("Discover Search History delete action", () => {
+describe("Discover Search History delete action + confirmation dialog", () => {
   const listSource = readFileSync("src/components/prospects/prospects-list-view.tsx", "utf8");
+  const css = readFileSync("src/components/prospects/prospects-dashboard.module.css", "utf8");
 
-  it("renders an icon-only Trash delete button with a company-specific label + tooltip (#1, #3)", () => {
+  it("renders an icon-only Trash delete button with a company-specific label + tooltip (#1-dialog, #3)", () => {
     expect(listSource).toContain('<Trash2 aria-hidden="true" />');
     expect(listSource).toContain("aria-label={`Delete ${companyName} search`}");
     expect(listSource).toContain('title="Delete search"');
   });
 
-  it("shows no permanently visible Delete/Remove text in the row (#2)", () => {
-    expect(listSource).not.toMatch(/>\s*Delete search\s*</);
-    expect(listSource).not.toMatch(/>\s*Delete\s*</);
-    expect(listSource).not.toMatch(/>\s*Remove\s*</);
+  it("never uses native browser dialogs for this action (#1, #4)", () => {
+    expect(listSource).not.toContain("window.confirm(");
+    expect(listSource).not.toContain("window.alert(");
+    expect(listSource).not.toContain("window.prompt(");
   });
 
-  it("keeps the row a real link and blocks the trash click from navigating (#4, #5)", () => {
-    expect(listSource).toContain("styles.historyRowLink");
+  it("opens the in-app dialog on trash click without navigating or deleting (#2, #5, #13)", () => {
+    // The trash button blocks row navigation and only requests the dialog.
     expect(listSource).toContain("event.preventDefault();");
     expect(listSource).toContain("event.stopPropagation();");
+    expect(listSource).toContain("onRequestDelete(search, event.currentTarget)");
+    // Requesting just records state — no mutation runs here.
+    expect(listSource).toContain("setSearchPendingDeletion(search)");
+    expect(listSource).toContain("<DeleteSearchDialog");
   });
 
-  it("reuses the shared mutation + confirm, then removes the row + count in place (#6, #8, #9, #10)", () => {
-    expect(listSource).toContain("window.confirm(");
+  it("derives the company name from state (not the DOM) and never shows technical detail (#3, #4)", () => {
+    expect(listSource).toContain("const companyName = search.company?.name ?? search.requestedCompany");
+    expect(listSource).toContain("its saved Discover results");
+    // Company name comes from the pending-search object, never scraped from the DOM.
+    expect(listSource).not.toContain("document.querySelector");
+  });
+
+  it("renders a Sendloom alertdialog with accessible title + description (#14)", () => {
+    expect(listSource).toContain('role="alertdialog"');
+    expect(listSource).toContain('aria-labelledby={titleId}');
+    expect(listSource).toContain('aria-describedby={descId}');
+    expect(listSource).toContain("Delete this search?");
+    // Reuses the existing modal surface + adds the compact confirm classes.
+    expect(listSource).toContain("styles.modalOverlay");
+    expect(listSource).toContain("styles.confirmCard");
+    expect(css).toMatch(/\.confirmCard\s*\{/);
+    expect(css).toMatch(/\.confirmIcon\s*\{/);
+  });
+
+  it("only deletes on explicit confirm, then removes the row + count + toast after success (#6, #8, #10, #11)", () => {
+    // Confirm is the only place the mutation runs.
+    expect(listSource).toContain("const handleConfirmDelete = useCallback(async () => {");
     expect(listSource).toContain("DELETE_SEARCH_MUTATION");
+    expect(listSource).toContain("if (!search || deleting)");
     expect(listSource).toContain("setSearches(remaining)");
     expect(listSource).toContain("setSearchesTotal((total) => Math.max(0, total - 1))");
+    // Success path: close + toast happen only after a confirmed deletion.
+    expect(listSource).toContain('setActionNotice({ message: "Search deleted." })');
   });
 
-  it("disables the button while deleting and uses safe product messaging (#11, #12)", () => {
-    expect(listSource).toContain("disabled={isDeleting}");
-    expect(listSource).toContain("This search could not be deleted. Please try again.");
-    expect(listSource).toContain('{ message: "Search deleted." }');
+  it("cancel/escape/backdrop close without deleting and never while in flight (#6, #7, #9)", () => {
+    // Cancel clears state + returns focus to the trigger; gated while deleting.
+    expect(listSource).toContain("const handleCancelDelete = useCallback(() => {");
+    expect(listSource).toContain("setSearchPendingDeletion(null)");
+    expect(listSource).toContain("deleteTriggerRef.current?.focus()");
+    // Escape + backdrop are both disabled mid-delete.
+    expect(listSource).toContain('event.key === "Escape" && !deleting');
+    expect(listSource).toContain("event.target === event.currentTarget && !deleting");
   });
 
-  it("delegates the pagination edge case to the shared helper (#13)", () => {
+  it("shows a disabling Delete control with a Deleting… state and a safe failure message (#9, #12)", () => {
+    expect(listSource).toContain('disabled={deleting}');
+    expect(listSource).toContain('"Deleting…"');
+    expect(listSource).toContain('"Delete search"');
+    // Failure keeps the dialog open with a safe message — never a raw backend error.
+    expect(listSource).toContain('setDeleteError("This search could not be deleted. Please try again.")');
+  });
+
+  it("keeps the existing pagination edge handling (#15)", () => {
     expect(listSource).toContain("resolveHistoryPageAfterDelete");
+  });
+
+  it("keeps the Search History row itself icon-only (no visible Delete/Remove text node)", () => {
+    expect(listSource).not.toMatch(/>\s*Delete search\s*</);
+    expect(listSource).not.toMatch(/>\s*Remove\s*</);
   });
 });
 
