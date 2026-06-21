@@ -1369,6 +1369,41 @@ company. When the backend is off, the GraphQL route returns 404 and the page
 shows a clean "Discover is not available right now." card instead of erroring or
 exposing backend terms.
 
+### Retrying a failed search & safe error handling
+
+A `FAILED` Discover search can be **retried**, and a retry re-runs the real
+backend pipeline against the **same** search record:
+
+- **It actually re-runs.** `FAILED` is not a terminal status, so the retry reruns
+  company resolution and calls the provider again when there is no valid reusable
+  result. It never just re-renders the previous error. Company resolution is
+  re-evaluated each time (there is no negative-resolution cache), and a
+  company-resolution failure is **never** cached for 30 days — only successful
+  normalized results are.
+- **Failed / empty / stale cache never blocks a retry.** A shared-cache entry
+  short-circuits the provider only when it is `READY`, unexpired, **and has at
+  least one person**; a `FAILED`/`REFRESHING`/expired/zero-result entry is ignored
+  so the retry re-runs the provider. A valid non-empty cache is still reused. The
+  shared-cache Redis lock is TTL-bounded with owner-token release in `finally`, so
+  an abandoned lock self-heals and a later retry re-acquires it. Discover
+  processing is synchronous (no queue/job id that could block a retry).
+- **Idempotent & quota-safe.** Each run is a tracked processing attempt
+  (`attemptCount`/`lastAttemptId`/… on `ProspectSearch`, internal only). A
+  deliberate Retry click sends a fresh `idempotencyKey` (a new attempt); a
+  network replay of the same key reuses the attempt. The daily quota stays
+  idempotent per search id, so a retry never consumes a second slot, and the
+  per-fingerprint lock means two rapid clicks trigger at most one provider run.
+  Retrying never creates a duplicate Search History row or company/person.
+- **Users never see internal errors.** Codes like `COMPANY_UNRESOLVED`,
+  `PROVIDER_TIMEOUT`, or `APIFY_RUN_FAILED`, plus provider names, stack traces,
+  cache keys, and queue details are never shown. `src/lib/discover-public-error.ts`
+  maps every internal code to a safe public category (`COMPANY_NOT_FOUND`,
+  `TRY_AGAIN_LATER`, `INVALID_SEARCH`, `LIMIT_REACHED`, `NOT_AVAILABLE`,
+  `UNKNOWN`) with a clean title/message and a `retryable` flag; the failed card
+  shows that copy plus **Retry search** / **Back to Discover**. The raw internal
+  code stays in the database, server logs (`[discover-process]`), and audit
+  events (`discover.retry_*`) for engineers only.
+
 ### GraphiQL examples
 
 Check your Discover quota (read-only; never consumes a slot):

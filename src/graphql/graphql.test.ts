@@ -9,7 +9,7 @@ import { typeDefs } from "@/graphql/schema";
 import { createDepthLimitRule } from "@/graphql/security";
 import { prospectSchema, resolveGraphiqlEnabled } from "@/graphql/server";
 import { createFakePrisma, type FakePrisma } from "@/services/prospects/__test-utils__/fake-prisma";
-import { ProspectError } from "@/services/prospects/prospect-search-service";
+import { ProspectError, ProspectSearchService } from "@/services/prospects/prospect-search-service";
 
 function makeContext(options: {
   user: User | null;
@@ -471,7 +471,10 @@ describe("Discover quota GraphQL surface", () => {
     expect(result.errors?.[0]?.extensions?.code).toBe("DISCOVER_DAILY_LIMIT_REACHED");
     expect(result.errors?.[0]?.message).toContain("Discover searches");
     // The authenticated session email is what reaches the service — never input.
-    expect(processSearch).toHaveBeenCalledWith("user_A", "s1", { actorEmail: "a@example.com" });
+    expect(processSearch).toHaveBeenCalledWith("user_A", "s1", {
+      actorEmail: "a@example.com",
+      idempotencyKey: null
+    });
   });
 
   it("requires authentication for the discoverQuota query", async () => {
@@ -489,6 +492,73 @@ describe("Discover quota GraphQL surface", () => {
     expect(typeDefs).toContain("type DiscoverQuota");
     const inputBlock = typeDefs.match(/input CreateProspectSearchInput \{[^}]*\}/)?.[0] ?? "";
     expect(inputBlock).not.toContain("email");
+  });
+});
+
+describe("Discover failure surface is sanitized", () => {
+  it("maps a FAILED search's raw internal code to a safe public category + copy (#error-1, #error-2)", async () => {
+    const prisma = createFakePrisma();
+    prisma._state.searches.push({
+      id: "s1",
+      userId: "user_A",
+      requestedCompany: "Totally Unknown Co",
+      requestedTitles: ["Software Engineer"],
+      requestedLocations: ["United States"],
+      maxResults: 10,
+      status: "FAILED",
+      // The raw internal code + technical instructions live only in the DB.
+      errorCode: "COMPANY_UNRESOLVED",
+      errorMessage:
+        "Could not resolve this company well enough to run a targeted profile search. Add a company website domain or LinkedIn company URL and try again.",
+      totalProcessed: 0,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+
+    const result = await graphql({
+      schema: prospectSchema,
+      source: `{ prospectSearch(id: "s1") { status errorCode errorTitle errorMessage retryable } }`,
+      contextValue: makeContext({ user: FAKE_USER, prisma })
+    });
+
+    const search = result.data?.prospectSearch as Record<string, unknown> | null;
+    expect(search?.status).toBe("FAILED");
+    expect(search?.errorCode).toBe("COMPANY_NOT_FOUND");
+    expect(search?.errorTitle).toBe("We couldn't identify this company");
+    expect(search?.retryable).toBe(true);
+    // The raw internal code + technical instructions never reach the client.
+    const serialized = JSON.stringify(search);
+    expect(serialized).not.toContain("COMPANY_UNRESOLVED");
+    expect(serialized).not.toMatch(/LinkedIn company URL|website domain/i);
+  });
+
+  it("exposes no error fields for a non-FAILED search", async () => {
+    const prisma = createFakePrisma();
+    prisma._state.searches.push({
+      id: "s2",
+      userId: "user_A",
+      requestedCompany: "Apple",
+      requestedTitles: ["Software Engineer"],
+      requestedLocations: ["United States"],
+      maxResults: 10,
+      status: "DRAFT",
+      errorCode: null,
+      errorMessage: null,
+      totalProcessed: 0,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+
+    const result = await graphql({
+      schema: prospectSchema,
+      source: `{ prospectSearch(id: "s2") { status errorCode errorTitle errorMessage retryable } }`,
+      contextValue: makeContext({ user: FAKE_USER, prisma })
+    });
+
+    const search = result.data?.prospectSearch as Record<string, unknown> | null;
+    expect(search?.errorCode).toBeNull();
+    expect(search?.errorTitle).toBeNull();
+    expect(search?.retryable).toBe(false);
   });
 });
 
@@ -617,5 +687,67 @@ describe("addMoreDiscoverPeople expansion mutation", () => {
 
     expect(result.errors).toBeUndefined();
     expect(result.data?.prospectSearch).toMatchObject({ id: "s1", exhausted: true });
+  });
+});
+
+describe("deleteProspectSearch mutation", () => {
+  // deleteSearch only touches prisma; the other deps are never exercised here.
+  function realProspectService(prisma: FakePrisma) {
+    return new ProspectSearchService({
+      prisma: prisma as unknown as PrismaClient,
+      apify: {} as never,
+      companyResolution: {} as never,
+      roleClassifier: {} as never,
+      emailDomain: {} as never
+    });
+  }
+
+  function seed(prisma: FakePrisma, id: string, userId: string) {
+    prisma._state.searches.push({
+      id,
+      userId,
+      requestedCompany: "Apple",
+      requestedTitles: [],
+      requestedLocations: [],
+      maxResults: 10,
+      status: "READY",
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+  }
+
+  it("deletes the owner's search but refuses another user's id (#8, #14)", async () => {
+    const prisma = createFakePrisma();
+    seed(prisma, "mine", "user_A");
+    seed(prisma, "theirs", "user_B");
+    const services = { prospectSearch: realProspectService(prisma) } as unknown as GraphQLContext["services"];
+
+    const ok = await graphql({
+      schema: prospectSchema,
+      source: `mutation { deleteProspectSearch(id: "mine") }`,
+      contextValue: makeContext({ user: FAKE_USER, prisma, services })
+    });
+    expect(ok.errors).toBeUndefined();
+    expect(ok.data?.deleteProspectSearch).toBe(true);
+    expect(prisma._state.searches.map((row) => row.id)).toEqual(["theirs"]);
+
+    const denied = await graphql({
+      schema: prospectSchema,
+      source: `mutation { deleteProspectSearch(id: "theirs") }`,
+      contextValue: makeContext({ user: FAKE_USER, prisma, services })
+    });
+    // A non-owned id reads as not-found and is never deleted.
+    expect(denied.errors?.[0]?.extensions?.code).toBe("NOT_FOUND");
+    expect(prisma._state.searches.map((row) => row.id)).toEqual(["theirs"]);
+  });
+
+  it("requires authentication", async () => {
+    const result = await graphql({
+      schema: prospectSchema,
+      source: `mutation { deleteProspectSearch(id: "s1") }`,
+      contextValue: makeContext({ user: null })
+    });
+    expect(result.data?.deleteProspectSearch ?? null).toBeNull();
+    expect(result.errors?.[0]?.extensions?.code).toBe("UNAUTHENTICATED");
   });
 });

@@ -241,7 +241,17 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
     return `${LOCK_KEY_PREFIX}:${fingerprint}`;
   }
 
-  /** A fresh, READY, unexpired dataset for this fingerprint, or null. */
+  /**
+   * A fresh, READY, unexpired dataset for this fingerprint that has at least one
+   * reusable person, or null.
+   *
+   * Only a genuinely successful, reusable result short-circuits the provider. A
+   * FAILED / REFRESHING entry (status check), an expired entry (TTL check), or a
+   * zero-result entry (a query that returned nobody is NOT a reusable success)
+   * all return null so an explicit retry — or any later processing run — re-runs
+   * company resolution and the provider instead of being permanently blocked by a
+   * negative/empty cache record.
+   */
   async getFreshDataset(fingerprint: string, now: Date = this.now()): Promise<CachedEntry | null> {
     const entry = (await this.prisma.discoverSearchCache.findUnique({ where: { fingerprint } })) as CacheRow | null;
     if (!entry || entry.status !== DISCOVER_CACHE_STATUS.READY || !entry.expiresAt) {
@@ -251,6 +261,9 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
       return null;
     }
     const peopleRows = await this.prisma.discoverSearchCachePerson.findMany({ where: { cacheId: entry.id } });
+    if (peopleRows.length === 0) {
+      return null;
+    }
     return {
       id: entry.id,
       fetchedAt: entry.fetchedAt ? new Date(entry.fetchedAt) : null,

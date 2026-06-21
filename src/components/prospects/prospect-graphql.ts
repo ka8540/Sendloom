@@ -78,8 +78,12 @@ export type ProspectSearchNode = {
   requestedLocations: string[];
   maxResults: number;
   status: ProspectSearchStatus;
+  // Always sanitized by the server: errorCode is a safe product category, and
+  // errorTitle/errorMessage are safe copy. Never a raw internal code.
   errorCode: string | null;
+  errorTitle: string | null;
   errorMessage: string | null;
+  retryable: boolean;
   peopleCount: number;
   /** True when no more unique people can be added (drives the Add-more button). */
   exhausted: boolean;
@@ -255,7 +259,9 @@ export const PROSPECT_SEARCHES_QUERY = /* GraphQL */ `
           maxResults
           status
           errorCode
+          errorTitle
           errorMessage
+          retryable
           peopleCount
           exhausted
           createdAt
@@ -295,7 +301,9 @@ export const PROSPECT_SEARCH_BY_ID_QUERY = /* GraphQL */ `
       maxResults
       status
       errorCode
+      errorTitle
       errorMessage
+      retryable
       peopleCount
       exhausted
       createdAt
@@ -410,12 +418,14 @@ export const CREATE_SEARCH_MUTATION = /* GraphQL */ `
 `;
 
 export const PROCESS_SEARCH_MUTATION = /* GraphQL */ `
-  mutation ProcessProspectSearch($id: ID!) {
-    processProspectSearch(id: $id) {
+  mutation ProcessProspectSearch($id: ID!, $idempotencyKey: String) {
+    processProspectSearch(id: $id, idempotencyKey: $idempotencyKey) {
       id
       status
       errorCode
+      errorTitle
       errorMessage
+      retryable
       company {
         id
         name
@@ -437,6 +447,14 @@ export const CANCEL_SEARCH_MUTATION = /* GraphQL */ `
       id
       status
     }
+  }
+`;
+
+// Delete a single Search History entry. Ownership is enforced server-side; the
+// detail page's company delete remains the way to remove a company + its people.
+export const DELETE_SEARCH_MUTATION = /* GraphQL */ `
+  mutation DeleteProspectSearch($id: ID!) {
+    deleteProspectSearch(id: $id)
   }
 `;
 

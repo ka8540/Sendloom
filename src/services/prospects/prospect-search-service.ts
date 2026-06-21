@@ -1,5 +1,9 @@
+import { randomUUID } from "node:crypto";
+
 import type { PrismaClient, ProspectCompany, ProspectSearch } from "@prisma/client";
 
+import { type RecordAuditEventArgs } from "@/lib/audit";
+import { discoverPublicErrorCategory } from "@/lib/discover-public-error";
 import {
   formatDiscoverLimitMessage,
   resolveResultsPerSearch,
@@ -137,6 +141,10 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, onTimeout: () => 
   }
 }
 
+/** Safe audit sink (defaults to a no-op so unit tests never touch the audit DB). */
+export type ProspectAuditFn = (args: RecordAuditEventArgs) => Promise<void> | void;
+const noopAudit: ProspectAuditFn = () => undefined;
+
 export type ProspectSearchServiceDeps = {
   prisma: PrismaClient;
   apify: ApifyProfileSearchService;
@@ -150,12 +158,31 @@ export type ProspectSearchServiceDeps = {
   discoverQuota?: DiscoverQuotaReserver;
   /** Injectable for tests; defaults to the shared 30-day result cache. */
   discoverCache?: DiscoverCachePort;
+  /** Audit sink; defaults to a no-op (production wires recordAuditEvent). */
+  audit?: ProspectAuditFn;
+  /** Injectable clock for deterministic attempt timestamps in tests. */
+  now?: () => Date;
 };
 
 /** Options for processSearch — the actor email is resolved from the session. */
 export type ProcessSearchOptions = {
   /** Authenticated account email (session-resolved) for the quota exemption. */
   actorEmail?: string | null;
+  /**
+   * Client-generated idempotency key. A fresh key per deliberate Retry click is a
+   * NEW processing attempt; a network/browser replay of the SAME key reuses the
+   * current attempt (so it is never double-counted). Omitted callers get a
+   * server-generated per-call attempt id.
+   */
+  idempotencyKey?: string | null;
+};
+
+/** Internal, privacy-safe outcome of one processing run (never returned to the API). */
+type RunPipelineResult = {
+  search: ProspectSearch;
+  providerCalled: boolean;
+  resultCount: number;
+  cacheHit: boolean;
 };
 
 export class ProspectSearchService {
@@ -168,6 +195,8 @@ export class ProspectSearchService {
   private readonly emailFormatRateLimiter: EmailFormatRateLimiter;
   private readonly discoverQuota: DiscoverQuotaReserver;
   private readonly discoverCache: DiscoverCachePort;
+  private readonly audit: ProspectAuditFn;
+  private readonly now: () => Date;
 
   constructor(deps: ProspectSearchServiceDeps) {
     this.prisma = deps.prisma;
@@ -179,6 +208,8 @@ export class ProspectSearchService {
     this.emailFormatRateLimiter = deps.emailFormatRateLimiter ?? defaultEmailFormatRateLimiter;
     this.discoverQuota = deps.discoverQuota ?? reserveDiscoverSearchSlot;
     this.discoverCache = deps.discoverCache ?? new DiscoverSearchCacheService({ prisma: deps.prisma });
+    this.audit = deps.audit ?? noopAudit;
+    this.now = deps.now ?? (() => new Date());
   }
 
   async createSearch(userId: string, input: ValidatedCreateProspectSearch): Promise<ProspectSearch> {
@@ -240,6 +271,20 @@ export class ProspectSearchService {
   }
 
   /**
+   * Delete a single Search History entry the user owns. This removes ONLY the
+   * ProspectSearch row (its expansion records cascade via the DB FK); the
+   * materialized company/people remain and stay removable from the detail page's
+   * company delete. Ownership is enforced first, and the delete is additionally
+   * scoped to `{ id, userId }`, so a user can never delete another user's search
+   * (a non-owned id reads as not-found, never revealing it exists).
+   */
+  async deleteSearch(userId: string, searchId: string): Promise<boolean> {
+    await this.requireOwnedSearch(userId, searchId);
+    await this.prisma.prospectSearch.deleteMany({ where: { id: searchId, userId } });
+    return true;
+  }
+
+  /**
    * Run the full discovery pipeline for a search. Ownership / not-found errors
    * throw; provider/AI failures are persisted as a FAILED search and returned so
    * the caller can surface a structured failure (status + errorCode).
@@ -259,10 +304,14 @@ export class ProspectSearchService {
     if (search.status === "READY") {
       return search;
     }
+    // A FAILED search is intentionally NOT terminal — retrying it re-runs the
+    // whole pipeline against the SAME record (no duplicate Search History row).
     if (TERMINAL_STATUSES.has(search.status)) {
       throw new ProspectError("INVALID_STATE", `A ${search.status} search cannot be processed.`);
     }
 
+    // Quota is reserved before the paid pipeline and is idempotent per search id:
+    // retrying a FAILED search (or a network replay) never consumes a second slot.
     const reservation = await this.discoverQuota({
       userId,
       email: options.actorEmail ?? null,
@@ -272,34 +321,149 @@ export class ProspectSearchService {
       throw new ProspectError("DISCOVER_DAILY_LIMIT_REACHED", formatDiscoverLimitMessage(reservation.status));
     }
 
+    // Processing-attempt bookkeeping. A genuine user-triggered retry (a fresh
+    // idempotency key, or no key) becomes a NEW attempt; a replay of the same key
+    // reuses the in-flight attempt so a duplicated network request is never
+    // counted (or processed) twice.
+    const previousStatus = search.status;
+    const isRetry = previousStatus === "FAILED";
+    const requestedKey = options.idempotencyKey?.trim() || null;
+    const isReplay = requestedKey !== null && search.lastAttemptId === requestedKey;
+    const attemptId = isReplay ? search.lastAttemptId! : requestedKey ?? randomUUID();
+    const attemptNumber = isReplay ? search.attemptCount ?? 0 : (search.attemptCount ?? 0) + 1;
+    const startedAtMs = this.now().getTime();
+
+    if (!isReplay) {
+      await this.prisma.prospectSearch.update({
+        where: { id: search.id },
+        data: {
+          attemptCount: attemptNumber,
+          lastAttemptId: attemptId,
+          lastAttemptStartedAt: this.now(),
+          lastAttemptCompletedAt: null
+        }
+      });
+    }
+
+    await this.safeAudit(isRetry ? "discover.retry_started" : "discover.search_started", userId, options.actorEmail, search.id, {
+      attemptId,
+      attemptNumber,
+      previousStatus,
+      isReplay
+    });
+
     const budget = createAiBudget();
 
     try {
-      return await withTimeout(
+      const outcome = await withTimeout(
         this.runPipeline(userId, search, budget),
         this.pipelineTimeoutMs,
         () => new ProspectError("PROVIDER_TIMEOUT", "The profile search timed out. Try again in a moment.")
       );
+      const completed = await this.prisma.prospectSearch.update({
+        where: { id: search.id },
+        data: { lastAttemptCompletedAt: this.now() }
+      });
+      this.logProcessingEvent({
+        searchId: search.id,
+        userId,
+        attemptId,
+        attemptNumber,
+        previousStatus,
+        newStatus: "READY",
+        cacheHit: outcome.cacheHit,
+        providerCalled: outcome.providerCalled,
+        providerResultCount: outcome.resultCount,
+        errorCategory: null,
+        retryable: false,
+        durationMs: this.now().getTime() - startedAtMs
+      });
+      await this.safeAudit(isRetry ? "discover.retry_completed" : "discover.search_completed", userId, options.actorEmail, search.id, {
+        attemptId,
+        attemptNumber,
+        previousStatus,
+        newStatus: "READY",
+        providerCalled: outcome.providerCalled,
+        resultCount: outcome.resultCount
+      });
+      return completed;
     } catch (error) {
+      // The raw internal code/message is persisted for server-side diagnostics
+      // only — the GraphQL layer maps it to a safe public category before it ever
+      // reaches a user.
       const code = error instanceof ProspectError ? error.code : "PROVIDER_ERROR";
       const message = error instanceof Error ? error.message : "Prospect search failed.";
-      return this.prisma.prospectSearch.update({
+      const failureCategory = discoverPublicErrorCategory(code);
+      const failed = await this.prisma.prospectSearch.update({
         where: { id: search.id },
         data: {
           status: "FAILED",
           errorCode: code,
           errorMessage: message.slice(0, 500),
-          completedAt: new Date()
+          completedAt: this.now(),
+          lastAttemptCompletedAt: this.now()
         }
       });
+      this.logProcessingEvent({
+        searchId: search.id,
+        userId,
+        attemptId,
+        attemptNumber,
+        previousStatus,
+        newStatus: "FAILED",
+        cacheHit: false,
+        providerCalled: null,
+        providerResultCount: 0,
+        errorCategory: failureCategory,
+        retryable: true,
+        durationMs: this.now().getTime() - startedAtMs
+      });
+      await this.safeAudit(isRetry ? "discover.retry_failed" : "discover.search_failed", userId, options.actorEmail, search.id, {
+        attemptId,
+        attemptNumber,
+        previousStatus,
+        newStatus: "FAILED",
+        failureCategory
+      });
+      return failed;
     }
+  }
+
+  /**
+   * Best-effort, privacy-safe audit event for one processing attempt. Stores only
+   * safe counters/categories (never people, emails, raw provider payloads, or raw
+   * internal error text). Never throws — auditing must not break a search.
+   */
+  private async safeAudit(
+    action: string,
+    userId: string,
+    actorEmail: string | null | undefined,
+    searchId: string,
+    metadata: Record<string, unknown>
+  ): Promise<void> {
+    try {
+      await this.audit({
+        actor: { id: userId, email: actorEmail ?? "unknown" },
+        action,
+        category: "SYSTEM",
+        target: { type: "ProspectSearch", id: searchId },
+        metadata: { searchId, ...metadata }
+      });
+    } catch {
+      // Audit is best-effort and must never break processing.
+    }
+  }
+
+  /** Structured, privacy-safe per-attempt diagnostics (server logs only). */
+  private logProcessingEvent(event: DiscoverProcessingLogEvent): void {
+    logDiscoverProcessingEvent(event);
   }
 
   private async setStatus(searchId: string, status: string, data: Record<string, unknown> = {}): Promise<void> {
     await this.prisma.prospectSearch.update({ where: { id: searchId }, data: { status, ...data } });
   }
 
-  private async runPipeline(userId: string, search: ProspectSearch, budget: AiCallBudget): Promise<ProspectSearch> {
+  private async runPipeline(userId: string, search: ProspectSearch, budget: AiCallBudget): Promise<RunPipelineResult> {
     // 1) Resolve the company. This runs before the cache check because the
     // canonical fingerprint is keyed on the RESOLVED company identity (so
     // "Apple"/"Apple Inc." share a cache entry) — not the raw typed name.
@@ -390,7 +554,7 @@ export class ProspectSearchService {
     });
 
     // 5) Done — record internal result provenance (never exposed via GraphQL).
-    return this.prisma.prospectSearch.update({
+    const updated = await this.prisma.prospectSearch.update({
       where: { id: search.id },
       data: {
         status: "READY",
@@ -404,6 +568,7 @@ export class ProspectSearchService {
         cacheFetchedAt: cacheResult.fetchedAt
       }
     });
+    return { search: updated, providerCalled: !cacheHit, resultCount: processed, cacheHit };
   }
 
   /**
@@ -890,4 +1055,34 @@ function logDiscoverCacheEvent(event: DiscoverCacheLogEvent): void {
     return;
   }
   console.info(`[discover-cache] ${JSON.stringify({ ...event, fingerprint: event.fingerprint.slice(0, 16) })}`);
+}
+
+type DiscoverProcessingLogEvent = {
+  searchId: string;
+  userId: string;
+  attemptId: string;
+  attemptNumber: number;
+  previousStatus: string;
+  newStatus: "READY" | "FAILED";
+  cacheHit: boolean;
+  /** Whether the paid provider ran (null when the attempt failed before the cache stage). */
+  providerCalled: boolean | null;
+  providerResultCount: number;
+  /** Safe public category (never a raw internal code) when the attempt failed. */
+  errorCategory: string | null;
+  retryable: boolean;
+  durationMs: number;
+};
+
+/**
+ * Structured, privacy-safe observability for one processing attempt. Proves
+ * whether the provider was actually called on a retry and records the safe
+ * failure category — never raw provider payloads, people lists, generated emails,
+ * API keys, or the raw internal error text. Silent in tests.
+ */
+function logDiscoverProcessingEvent(event: DiscoverProcessingLogEvent): void {
+  if (process.env.NODE_ENV === "test") {
+    return;
+  }
+  console.info(`[discover-process] ${JSON.stringify(event)}`);
 }

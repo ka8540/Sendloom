@@ -1404,6 +1404,50 @@ Discover searches share an internal cross-user result cache
   `cacheAgeDays`, `resultCount`, `providerCalled`, latency) — never people lists,
   generated emails, provider payloads, the requester email, or prompts.
 
+### 23.2.4 Retrying a failed search and safe error handling
+
+A `FAILED` Discover search can be **retried**, and a retry runs the **real
+backend pipeline again** against the **same** user-owned `ProspectSearch` record
+— it never re-renders the old failure, never creates a duplicate Search History
+row, and never creates a duplicate company/person.
+
+- **A retry is a real run.** `FAILED` is deliberately *not* a terminal status, so
+  `processSearch` re-runs company resolution and (when there is no valid reusable
+  result) calls the provider again. Company resolution is re-evaluated every time
+  — there is no negative-resolution cache, and `COMPANY_UNRESOLVED` is never
+  written to the 30-day shared cache (only successful normalized results are).
+- **Failed / negative / empty cache never blocks a retry.** Only a genuinely
+  successful, reusable entry short-circuits the provider:
+  `getFreshDataset` returns a hit only when the entry is `READY`, unexpired, **and
+  has at least one person**. A `FAILED`/`REFRESHING` entry, an expired entry, or a
+  **zero-result** entry all return `null`, so the retry re-runs the provider. A
+  valid non-empty cache is still reused (a retry does not waste a provider call).
+- **Stale processing state self-heals.** The shared-cache Redis lock is
+  TTL-bounded with owner-token release in `finally`; a crashed holder's lock
+  expires and a later retry re-acquires it (waiters fall back to running the
+  provider so a request never hangs). Discover processing is **synchronous** —
+  there is no queue/job id that could permanently deduplicate a retry.
+- **Processing attempts + idempotency.** Each run is a tracked attempt on the
+  search (`attemptCount`, `lastAttemptId`, `lastAttemptStartedAt`,
+  `lastAttemptCompletedAt` — internal only, never in the GraphQL schema). A
+  deliberate Retry click sends a fresh `idempotencyKey` (a **new** attempt); a
+  browser/network replay of the same key reuses the current attempt (so it is
+  never double-counted). The daily quota stays idempotent per search id, so a
+  retry — click, replay, or refresh — never consumes a second slot, and the
+  per-fingerprint lock means two rapid clicks still trigger at most one provider
+  run.
+- **Users only ever see safe product errors.** Internal codes
+  (`COMPANY_UNRESOLVED`, `PROVIDER_TIMEOUT`, `APIFY_RUN_FAILED`,
+  `CACHE_REFRESH_FAILED`, …), provider names, stack traces, cache keys, and queue
+  details are **never** returned to the client. `src/lib/discover-public-error.ts`
+  is the single source of truth that maps a raw internal code to a safe public
+  category (`COMPANY_NOT_FOUND`, `TRY_AGAIN_LATER`, `INVALID_SEARCH`,
+  `LIMIT_REACHED`, `NOT_AVAILABLE`, `UNKNOWN`) plus a clean title/message and a
+  `retryable` flag. The GraphQL `ProspectSearch.errorCode`/`errorTitle`/
+  `errorMessage`/`retryable` fields are resolved through this mapper; the **raw**
+  internal code stays in the database, server logs (`[discover-process]`), and
+  audit events (`discover.retry_started`/`_completed`/`_failed`) for engineers.
+
 ### 23.3 AI responsibilities and cost controls
 
 AI is used only for company resolution (≤1 call, skipped when a website domain is

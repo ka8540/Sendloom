@@ -140,8 +140,14 @@ export const typeDefs = /* GraphQL */ `
     requestedLocations: [String!]!
     maxResults: Int!
     status: ProspectSearchStatus!
+    # Failure surface is ALWAYS sanitized: errorCode is a safe product category
+    # (e.g. COMPANY_NOT_FOUND, TRY_AGAIN_LATER) — never a raw internal code — and
+    # errorTitle/errorMessage are safe copy. The raw internal cause stays in
+    # server logs / admin tooling only.
     errorCode: String
+    errorTitle: String
     errorMessage: String
+    retryable: Boolean!
     peopleCount: Int!
     # True when no more unique people can be added to this search (the shared
     # results are exhausted). Drives whether "Add 10 more" is offered.
@@ -276,8 +282,14 @@ export const typeDefs = /* GraphQL */ `
 
   type Mutation {
     createProspectSearch(input: CreateProspectSearchInput!): ProspectSearch!
-    processProspectSearch(id: ID!): ProspectSearch!
+    # idempotencyKey is client-generated: a fresh key per deliberate Retry is a new
+    # processing attempt, while a network/browser replay of the same key reuses the
+    # current attempt (so it never double-processes or double-charges quota).
+    processProspectSearch(id: ID!, idempotencyKey: String): ProspectSearch!
     cancelProspectSearch(id: ID!): ProspectSearch!
+    # Delete a single Search History entry the user owns (ownership enforced
+    # server-side). Removes only that ProspectSearch row, not the company/people.
+    deleteProspectSearch(id: ID!): Boolean!
     # Add up to 10 more unique people to an existing READY search. idempotencyKey
     # is client-generated so retries/double-clicks never charge a second slot or
     # add a second batch.

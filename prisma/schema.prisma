@@ -516,6 +516,14 @@ model ProspectSearch {
   sharedCacheId      String?
   cacheFingerprint   String?
   cacheFetchedAt     DateTime?
+  // Processing-attempt instrumentation. A user-triggered retry starts a NEW
+  // attempt (attemptCount increments, lastAttemptId rotates); a network replay of
+  // the same client idempotency key reuses the current attempt so it is never
+  // double-counted. Internal diagnostics only — never exposed via GraphQL.
+  attemptCount           Int       @default(0)
+  lastAttemptId          String?
+  lastAttemptStartedAt   DateTime?
+  lastAttemptCompletedAt DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
   completedAt        DateTime?

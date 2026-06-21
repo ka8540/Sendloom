@@ -37,6 +37,7 @@ import {
   isProspectSelected,
   isVerifiedStatus,
   personLocation,
+  resolveHistoryPageAfterDelete,
   resolvePageCount,
   resolveProspectPageState,
   resolveSelectedSearchView,
@@ -90,7 +91,9 @@ function search(overrides: Partial<ProspectSearchNode> = {}): ProspectSearchNode
     maxResults: 20,
     status: "READY",
     errorCode: null,
+    errorTitle: null,
     errorMessage: null,
+    retryable: false,
     peopleCount: 3,
     exhausted: false,
     createdAt: "2026-06-18T00:00:00.000Z",
@@ -209,15 +212,32 @@ describe("selected-search view state", () => {
 });
 
 describe("failed-search error formatting is safe", () => {
-  it("uses the curated code and message when present", () => {
-    const result = formatSearchError({ errorCode: "PROVIDER_TIMEOUT", errorMessage: "The profile search timed out." });
-    expect(result.code).toBe("PROVIDER_TIMEOUT");
-    expect(result.message).toMatch(/timed out/i);
+  it("uses the server-sanitized safe title + message when present (#fe-2)", () => {
+    const result = formatSearchError({
+      errorCode: "COMPANY_NOT_FOUND",
+      errorTitle: "We couldn't identify this company",
+      errorMessage: "Check the company name and try again. Using the company's full legal name may help.",
+      retryable: true
+    });
+    expect(result.title).toBe("We couldn't identify this company");
+    expect(result.message).toMatch(/company name/i);
+    expect(result.retryable).toBe(true);
   });
 
-  it("falls back to a friendly message when none is provided", () => {
-    const result = formatSearchError({ errorCode: null, errorMessage: null });
-    expect(result.code).toBe("ERROR");
+  it("never renders a raw internal code, even if one leaks into errorCode (#fe-1)", () => {
+    const result = formatSearchError({
+      errorCode: "COMPANY_UNRESOLVED",
+      errorTitle: null,
+      errorMessage: null,
+      retryable: true
+    });
+    expect(`${result.title} ${result.message}`).not.toContain("COMPANY_UNRESOLVED");
+    expect(result.title).toBe("We couldn't identify this company");
+  });
+
+  it("falls back to a generic safe message when nothing is provided (#fe-2)", () => {
+    const result = formatSearchError({ errorCode: null, errorTitle: null, errorMessage: null, retryable: false });
+    expect(result.title).toBe("Search unavailable");
     expect(result.message.length).toBeGreaterThan(0);
   });
 });
@@ -453,6 +473,148 @@ describe("Discover detail-page People table layout contracts", () => {
     expect(detailSource).not.toContain(">Next<");
     // The pagination row is a sibling of the table shell, not nested inside it.
     expect(detailSource).not.toContain('peopleTableShell" data-discover-tour="people-table">\n                <div className={styles.paginationRow}');
+  });
+});
+
+describe("resolveHistoryPageAfterDelete", () => {
+  it("steps back to the previous page when a later page is emptied (#13)", () => {
+    expect(resolveHistoryPageAfterDelete({ remainingOnPage: 0, pageIndex: 2 })).toEqual({
+      goToPreviousPage: true,
+      pageIndex: 1
+    });
+  });
+
+  it("stays on the first page even when emptied (the empty state takes over)", () => {
+    expect(resolveHistoryPageAfterDelete({ remainingOnPage: 0, pageIndex: 0 })).toEqual({
+      goToPreviousPage: false,
+      pageIndex: 0
+    });
+  });
+
+  it("stays on the current page when rows remain (#15)", () => {
+    expect(resolveHistoryPageAfterDelete({ remainingOnPage: 6, pageIndex: 3 })).toEqual({
+      goToPreviousPage: false,
+      pageIndex: 3
+    });
+  });
+});
+
+describe("Discover Search History delete action + confirmation dialog", () => {
+  const listSource = readFileSync("src/components/prospects/prospects-list-view.tsx", "utf8");
+  const css = readFileSync("src/components/prospects/prospects-dashboard.module.css", "utf8");
+
+  it("renders an icon-only Trash delete button with a company-specific label + tooltip (#1-dialog, #3)", () => {
+    expect(listSource).toContain('<Trash2 aria-hidden="true" />');
+    expect(listSource).toContain("aria-label={`Delete ${companyName} search`}");
+    expect(listSource).toContain('title="Delete search"');
+  });
+
+  it("never uses native browser dialogs for this action (#1, #4)", () => {
+    expect(listSource).not.toContain("window.confirm(");
+    expect(listSource).not.toContain("window.alert(");
+    expect(listSource).not.toContain("window.prompt(");
+  });
+
+  it("opens the in-app dialog on trash click without navigating or deleting (#2, #5, #13)", () => {
+    // The trash button blocks row navigation and only requests the dialog.
+    expect(listSource).toContain("event.preventDefault();");
+    expect(listSource).toContain("event.stopPropagation();");
+    expect(listSource).toContain("onRequestDelete(search, event.currentTarget)");
+    // Requesting just records state — no mutation runs here.
+    expect(listSource).toContain("setSearchPendingDeletion(search)");
+    expect(listSource).toContain("<DeleteSearchDialog");
+  });
+
+  it("derives the company name from state (not the DOM) and never shows technical detail (#3, #4)", () => {
+    expect(listSource).toContain("const companyName = search.company?.name ?? search.requestedCompany");
+    expect(listSource).toContain("its saved Discover results");
+    // Company name comes from the pending-search object, never scraped from the DOM.
+    expect(listSource).not.toContain("document.querySelector");
+  });
+
+  it("renders a Sendloom alertdialog with accessible title + description (#14)", () => {
+    expect(listSource).toContain('role="alertdialog"');
+    expect(listSource).toContain('aria-labelledby={titleId}');
+    expect(listSource).toContain('aria-describedby={descId}');
+    expect(listSource).toContain("Delete this search?");
+    // Reuses the existing modal surface + adds the compact confirm classes.
+    expect(listSource).toContain("styles.modalOverlay");
+    expect(listSource).toContain("styles.confirmCard");
+    expect(css).toMatch(/\.confirmCard\s*\{/);
+    expect(css).toMatch(/\.confirmIcon\s*\{/);
+  });
+
+  it("only deletes on explicit confirm, then removes the row + count + toast after success (#6, #8, #10, #11)", () => {
+    // Confirm is the only place the mutation runs.
+    expect(listSource).toContain("const handleConfirmDelete = useCallback(async () => {");
+    expect(listSource).toContain("DELETE_SEARCH_MUTATION");
+    expect(listSource).toContain("if (!search || deleting)");
+    expect(listSource).toContain("setSearches(remaining)");
+    expect(listSource).toContain("setSearchesTotal((total) => Math.max(0, total - 1))");
+    // Success path: close + toast happen only after a confirmed deletion.
+    expect(listSource).toContain('setActionNotice({ message: "Search deleted." })');
+  });
+
+  it("cancel/escape/backdrop close without deleting and never while in flight (#6, #7, #9)", () => {
+    // Cancel clears state + returns focus to the trigger; gated while deleting.
+    expect(listSource).toContain("const handleCancelDelete = useCallback(() => {");
+    expect(listSource).toContain("setSearchPendingDeletion(null)");
+    expect(listSource).toContain("deleteTriggerRef.current?.focus()");
+    // Escape + backdrop are both disabled mid-delete.
+    expect(listSource).toContain('event.key === "Escape" && !deleting');
+    expect(listSource).toContain("event.target === event.currentTarget && !deleting");
+  });
+
+  it("shows a disabling Delete control with a Deleting… state and a safe failure message (#9, #12)", () => {
+    expect(listSource).toContain('disabled={deleting}');
+    expect(listSource).toContain('"Deleting…"');
+    expect(listSource).toContain('"Delete search"');
+    // Failure keeps the dialog open with a safe message — never a raw backend error.
+    expect(listSource).toContain('setDeleteError("This search could not be deleted. Please try again.")');
+  });
+
+  it("keeps the existing pagination edge handling (#15)", () => {
+    expect(listSource).toContain("resolveHistoryPageAfterDelete");
+  });
+
+  it("keeps the Search History row itself icon-only (no visible Delete/Remove text node)", () => {
+    expect(listSource).not.toMatch(/>\s*Delete search\s*</);
+    expect(listSource).not.toMatch(/>\s*Remove\s*</);
+  });
+});
+
+describe("Discover failed-state UI is safe and retryable", () => {
+  const detailSource = readFileSync("src/components/prospects/prospect-detail-view.tsx", "utf8");
+
+  it("never renders the raw error code chip (#fe-1, #fe-2)", () => {
+    // The old failed card rendered `{error?.code}` inside a styles.errorCode chip.
+    expect(detailSource).not.toContain("styles.errorCode");
+    expect(detailSource).not.toContain("error?.code");
+    // It renders the safe title + message instead.
+    expect(detailSource).toContain("{error?.title}");
+    expect(detailSource).toContain("{error?.message}");
+  });
+
+  it("shows a disabling Retry button with a 'Retrying search…' label (#fe-3, #fe-4, #fe-5)", () => {
+    expect(detailSource).toContain("Retrying search…");
+    expect(detailSource).toContain("Retry search");
+    // The button disables while processing (guards double-clicks).
+    expect(detailSource).toContain("disabled={processing || quotaBlocked}");
+  });
+
+  it("offers a Back to Discover action on the failed card (#fe-2)", () => {
+    expect(detailSource).toContain("Back to Discover");
+  });
+
+  it("sends a per-click idempotency key and guards re-entry (#fe-3, #retry-16, #retry-17)", () => {
+    expect(detailSource).toContain("crypto.randomUUID()");
+    expect(detailSource).toContain("{ id: search.id, idempotencyKey }");
+    // Re-entry guard so a second click never fires a second mutation.
+    expect(detailSource).toContain("if (!search || processing)");
+  });
+
+  it("does not reload the whole page on retry (uses the in-place loader) (#fe-7)", () => {
+    expect(detailSource).not.toContain("window.location.reload");
   });
 });
 

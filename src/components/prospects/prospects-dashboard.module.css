@@ -308,7 +308,7 @@
 .historyRow {
   display: grid;
   grid-template-columns:
-    minmax(0, 1.6fr) minmax(0, 1.5fr) minmax(0, 1.1fr) 3.5rem minmax(0, auto) minmax(0, 0.9fr) 1.75rem;
+    minmax(0, 1.6fr) minmax(0, 1.5fr) minmax(0, 1.1fr) 3.5rem minmax(0, auto) minmax(0, 0.9fr) 4rem;
   gap: 1rem;
   align-items: center;
   padding: 0.8rem 0.4rem;
@@ -329,6 +329,7 @@
 }
 
 .historyRow {
+  position: relative;
   width: 100%;
   text-align: left;
   background: transparent;
@@ -338,6 +339,15 @@
   border-radius: 0.5rem;
   cursor: pointer;
   transition: background 140ms ease, box-shadow 140ms ease;
+}
+
+/* Stretched click target: covers the whole row so it stays a real anchor, while
+   the delete button (raised above it) is a sibling rather than a nested button. */
+.historyRowLink {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
 }
 
 .historyRow:hover {
@@ -417,6 +427,49 @@
 .historyViewCell svg {
   width: 1.05rem;
   height: 1.05rem;
+}
+
+/* Actions cell: compact delete icon + the open chevron, right-aligned. Stays at
+   the row's base stacking level so the chevron taps through to the row link. */
+.historyActionsCell {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.historyActionsChevron {
+  width: 1.05rem;
+  height: 1.05rem;
+  flex: none;
+  color: var(--muted);
+}
+
+/* Icon-only delete button: neutral by default, restrained red tint on hover/focus.
+   Raised above the stretched row link so only it (not the row) handles the click. */
+.historyDeleteButton {
+  position: relative;
+  z-index: 2;
+  width: 1.95rem;
+  height: 1.95rem;
+}
+
+.historyDeleteButton:hover:not(:disabled),
+.historyDeleteButton:focus-visible {
+  border-color: var(--error-toast-border);
+  background: var(--error-toast-icon-bg);
+  color: var(--error-toast-icon-color);
+}
+
+.historyDeleteButton:focus-visible {
+  outline: 2px solid var(--field-focus);
+  outline-offset: 2px;
+}
+
+.historyDeleteButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .panelHeader {
@@ -567,6 +620,42 @@
   gap: 0.65rem;
   flex-wrap: wrap;
   margin-top: 0.25rem;
+}
+
+/* The shared danger button left-aligns itself in the detail card; inside the
+   modal action row it should sit grouped at the right beside Cancel. */
+.modalActions .dangerButton {
+  margin-left: 0;
+}
+
+/* Compact destructive confirmation dialog (reuses .card + .modalCard surface). */
+.confirmCard {
+  max-width: 27rem;
+}
+
+.confirmIcon {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 0.85rem;
+  border: 1px solid var(--error-toast-border);
+  background: var(--error-toast-icon-bg);
+  color: var(--error-toast-icon-color);
+}
+
+.confirmIcon svg {
+  width: 1.3rem;
+  height: 1.3rem;
+}
+
+.confirmBody {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.5;
 }
 
 .iconButton {
@@ -1489,6 +1578,21 @@
 
   .historyViewCell {
     display: none;
+  }
+
+  /* Keep the delete action reachable on mobile; only the redundant open chevron
+     (the whole card taps through to the search) is hidden. */
+  .historyActionsChevron {
+    display: none;
+  }
+
+  .historyActionsCell {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .historyActionsCell::before {
+    flex-basis: 100%;
   }
 
   .row,

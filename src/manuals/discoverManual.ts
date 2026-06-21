@@ -362,8 +362,8 @@ export function discoverFailedSteps(): ManualStep[] {
     },
     {
       id: "process-action",
-      title: "Retry processing",
-      body: "Retry the search when you are ready. Retrying the same search does not use another daily slot.",
+      title: "Retry this search",
+      body: "Retry runs the company search again using the same company, role, and location. Retrying this failed search does not create another Search History entry.",
       selector: sel("process-action"),
       placement: "top",
       optional: true

@@ -302,6 +302,64 @@ describe("createRedisCacheLock", () => {
   });
 });
 
+describe("DiscoverSearchCacheService never reuses a non-successful entry", () => {
+  function seedEntry(overrides: Record<string, unknown>) {
+    prisma._state.discoverCache.push({
+      id: "dc_seed",
+      fingerprint: FINGERPRINT,
+      status: "READY",
+      fetchedAt: new Date(nowMs - DAY_MS),
+      expiresAt: new Date(nowMs + 29 * DAY_MS),
+      resultCount: 0,
+      emailDomain: "apple.com",
+      emailDomainConfidence: "MEDIUM",
+      emailDomainEvidence: null,
+      emailPattern: "flast",
+      patternConfidence: "MEDIUM",
+      patternEvidence: null,
+      emailFormatReason: null,
+      createdAt: new Date(nowMs),
+      updatedAt: new Date(nowMs),
+      ...overrides
+    });
+  }
+
+  it("runs the provider when the only entry is READY but has zero people (#cache-empty)", async () => {
+    seedEntry({ status: "READY", resultCount: 0 }); // no person rows seeded
+    const provider = vi.fn(async () => dataset([cachePerson("9")]));
+    const result = await buildService().getOrRefresh(params(FINGERPRINT, provider));
+    expect(provider).toHaveBeenCalledTimes(1);
+    expect(result.source).toBe("PROVIDER");
+    expect(result.dataset.people).toHaveLength(1);
+  });
+
+  it("runs the provider when the entry is FAILED, even with stale people preserved (#retry-7)", async () => {
+    seedEntry({ status: "FAILED" });
+    prisma._state.discoverCachePeople.push({ id: "p_old", cacheId: "dc_seed", sortIndex: 0, ...cachePerson("old") });
+    const provider = vi.fn(async () => dataset([cachePerson("9")]));
+    const result = await buildService().getOrRefresh(params(FINGERPRINT, provider));
+    expect(provider).toHaveBeenCalledTimes(1);
+    expect(result.source).toBe("PROVIDER");
+  });
+
+  it("runs the provider when the entry has expired (#retry-9)", async () => {
+    seedEntry({ status: "READY", expiresAt: new Date(nowMs - DAY_MS) });
+    prisma._state.discoverCachePeople.push({ id: "p_exp", cacheId: "dc_seed", sortIndex: 0, ...cachePerson("exp") });
+    const provider = vi.fn(async () => dataset([cachePerson("9")]));
+    const result = await buildService().getOrRefresh(params(FINGERPRINT, provider));
+    expect(provider).toHaveBeenCalledTimes(1);
+    expect(result.source).toBe("PROVIDER");
+  });
+
+  it("runs the provider when an abandoned entry is stuck REFRESHING (#retry-10)", async () => {
+    seedEntry({ status: "REFRESHING" });
+    const provider = vi.fn(async () => dataset([cachePerson("9")]));
+    const result = await buildService().getOrRefresh(params(FINGERPRINT, provider));
+    expect(provider).toHaveBeenCalledTimes(1);
+    expect(result.source).toBe("PROVIDER");
+  });
+});
+
 afterEach(() => {
   vi.useRealTimers();
 });

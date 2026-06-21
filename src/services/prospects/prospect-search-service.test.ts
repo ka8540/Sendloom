@@ -1191,3 +1191,238 @@ describe("Discover shared cache integration", () => {
     expect([resA.resultSource, resB.resultSource].sort()).toEqual(["CACHE", "PROVIDER"]);
   });
 });
+
+describe("Discover retry", () => {
+  const RETRY_AI = {
+    responses: {
+      role_classification: {
+        classifications: [
+          {
+            rawTitle: "Software Engineer",
+            normalizedTitle: "software engineer",
+            category: "SOFTWARE_ENGINEERING",
+            displayName: "Software Engineering",
+            confidence: "HIGH"
+          }
+        ]
+      },
+      email_pattern: {
+        selectedEmailDomain: "amat.com",
+        selectedPattern: "first_last",
+        confidence: "HIGH",
+        reasonSummary: "format",
+        evidenceIndexesUsed: [0, 1]
+      }
+    }
+  };
+
+  function retryEvidence(): EmailEvidenceProvider {
+    return {
+      async findEvidence() {
+        return {
+          domainEvidence: [
+            {
+              emailDomain: "amat.com",
+              sourceName: "format page",
+              sourceUrl: "https://example.test/amat",
+              sourceType: "public_format_page",
+              observedPattern: "first_last",
+              percentage: 91,
+              confidence: "HIGH",
+              observedAt: "2026-06-18T00:00:00.000Z"
+            }
+          ],
+          patternEvidence: [
+            {
+              pattern: "first_last",
+              emailDomain: "amat.com",
+              percentage: 91,
+              sourceName: "format page",
+              sourceUrl: "https://example.test/amat",
+              sourceType: "public_format_page",
+              confidence: "HIGH",
+              observedAt: "2026-06-18T00:00:00.000Z"
+            }
+          ]
+        };
+      }
+    };
+  }
+
+  const item = () => [profile("am1", "Jane", "Doe", "Software Engineer", "Applied Materials")];
+
+  function realCache() {
+    return new DiscoverSearchCacheService({
+      prisma: prisma as unknown as PrismaClient,
+      lock: makeFakeCacheLock(),
+      now: () => new Date(),
+      ttlDays: 30,
+      waitTimeoutMs: 1000,
+      pollIntervalMs: 5,
+      cleanupOnRefresh: false
+    });
+  }
+
+  it("re-runs the provider on retry and records a new attempt, reusing the same search (#retry-1,2,3,5,14,15,18,19)", async () => {
+    let calls = 0;
+    const run = vi.fn<ApifyRunner["run"]>(async () => {
+      calls += 1;
+      if (calls === 1) {
+        throw new Error("temporary apify failure");
+      }
+      return { runId: "r2", datasetId: "d2", items: item() };
+    });
+    const quota = makeQuotaReserver();
+    const { service } = buildService(prisma, { run } as ApifyRunner, RETRY_AI, retryEvidence(), quota.reserve, passthroughCache);
+
+    const created = await service.createSearch(USER_ID, APPLIED_MATERIALS);
+    const first = await service.processSearch(USER_ID, created.id, { actorEmail: "u@test.dev" });
+    expect(first.status).toBe("FAILED");
+    expect(first.attemptCount).toBe(1);
+    expect(run).toHaveBeenCalledTimes(1);
+
+    const retried = await service.processSearch(USER_ID, created.id, {
+      actorEmail: "u@test.dev",
+      idempotencyKey: "click-2"
+    });
+
+    expect(retried.status).toBe("READY"); // FAILED -> PROCESSING -> READY
+    expect(retried.attemptCount).toBe(2); // a new processing attempt
+    expect(retried.id).toBe(created.id); // same Search History row
+    expect(run).toHaveBeenCalledTimes(2); // the provider really ran again
+    expect(retried.totalProcessed).toBe(1);
+    expect(retried.requestedCompany).toBe("Applied Materials"); // input preserved
+    expect(prisma._state.searches).toHaveLength(1); // no duplicate search
+    expect(prisma._state.companies).toHaveLength(1); // no duplicate company
+    expect(quota.consumed.size).toBe(1); // retry did not consume a second slot
+  });
+
+  it("returns a FAILED search with a raw internal code for the boundary to sanitize (#retry-20)", async () => {
+    const run = vi.fn<ApifyRunner["run"]>(async () => {
+      throw new Error("provider exploded");
+    });
+    const { service } = buildService(prisma, { run } as ApifyRunner, { enabled: false }, undefined, allowAllQuota, passthroughCache);
+
+    const created = await service.createSearch(USER_ID, APPLIED_MATERIALS);
+    const result = await service.processSearch(USER_ID, created.id);
+    // The service persists the RAW code (the GraphQL layer maps it to a safe
+    // public category); it must never invent a fake "success".
+    expect(result.status).toBe("FAILED");
+    expect(result.errorCode).toBe("PROVIDER_ERROR");
+    expect(result.attemptCount).toBe(1);
+  });
+
+  it("counts a replayed idempotency key as one attempt but a fresh key as a new attempt (#retry-16,17)", async () => {
+    const run = vi.fn<ApifyRunner["run"]>(async () => {
+      throw new Error("still failing");
+    });
+    const { service } = buildService(prisma, { run } as ApifyRunner, { enabled: false }, undefined, allowAllQuota, passthroughCache);
+    const created = await service.createSearch(USER_ID, APPLIED_MATERIALS);
+
+    const a1 = await service.processSearch(USER_ID, created.id, { idempotencyKey: "net-1" });
+    expect(a1.status).toBe("FAILED");
+    expect(a1.attemptCount).toBe(1);
+
+    // Browser/network replay of the SAME request — same attempt.
+    const a2 = await service.processSearch(USER_ID, created.id, { idempotencyKey: "net-1" });
+    expect(a2.attemptCount).toBe(1);
+
+    // A deliberate, fresh Retry click — a new attempt.
+    const a3 = await service.processSearch(USER_ID, created.id, { idempotencyKey: "net-2" });
+    expect(a3.attemptCount).toBe(2);
+  });
+
+  it("does not reuse a zero-result cache entry — a later search re-runs the provider (#retry-7,9)", async () => {
+    const cache = realCache();
+    let calls = 0;
+    const run = vi.fn<ApifyRunner["run"]>(async () => {
+      calls += 1;
+      return { runId: `r${calls}`, datasetId: `d${calls}`, items: calls === 1 ? [] : item() };
+    });
+    const { service } = buildService(prisma, { run } as ApifyRunner, RETRY_AI, retryEvidence(), makeQuotaReserver().reserve, cache);
+
+    const s1 = await service.createSearch(USER_ID, APPLIED_MATERIALS);
+    const r1 = await service.processSearch(USER_ID, s1.id, { actorEmail: "u@test.dev" });
+    expect(r1.status).toBe("READY");
+    expect(r1.totalProcessed).toBe(0); // a genuine zero-result run
+
+    const s2 = await service.createSearch(USER_ID, APPLIED_MATERIALS);
+    const r2 = await service.processSearch(USER_ID, s2.id, { actorEmail: "u@test.dev" });
+    // The empty cache entry must NOT short-circuit the provider.
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(r2.totalProcessed).toBe(1);
+  });
+
+  it("still reuses a fresh non-empty cache without calling the provider again (#retry-6)", async () => {
+    const cache = realCache();
+    const run = vi.fn<ApifyRunner["run"]>(async () => ({ runId: "r1", datasetId: "d1", items: item() }));
+    const { service } = buildService(prisma, { run } as ApifyRunner, RETRY_AI, retryEvidence(), makeQuotaReserver().reserve, cache);
+
+    const s1 = await service.createSearch(USER_ID, APPLIED_MATERIALS);
+    await service.processSearch(USER_ID, s1.id, { actorEmail: "u@test.dev" });
+    const s2 = await service.createSearch(USER_ID, APPLIED_MATERIALS);
+    const r2 = await service.processSearch(USER_ID, s2.id, { actorEmail: "u@test.dev" });
+
+    expect(run).toHaveBeenCalledTimes(1); // the second search reused the cache
+    expect(r2.resultSource).toBe("CACHE");
+    expect(r2.totalProcessed).toBe(1);
+  });
+});
+
+describe("Discover search deletion", () => {
+  function seedSearch(id: string, overrides: Record<string, unknown> = {}) {
+    prisma._state.searches.push({
+      id,
+      userId: USER_ID,
+      requestedCompany: "Apple",
+      requestedTitles: [],
+      requestedLocations: [],
+      maxResults: 10,
+      status: "READY",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      ...overrides
+    });
+  }
+
+  it("deletes only the owned search row, keeping the company, people, and sibling searches (#delete)", async () => {
+    prisma._state.companies.push({ id: "c1", userId: USER_ID, name: "Apple", normalizedName: "apple", createdAt: new Date(), updatedAt: new Date() });
+    seedSearch("s1", { companyId: "c1" });
+    seedSearch("s2", { companyId: "c1" });
+    prisma._state.people.push({ id: "p1", userId: USER_ID, companyId: "c1", sourceProfileId: "x1", firstName: "Jane", lastName: "Doe" });
+    const { service } = buildService(prisma, { run: vi.fn() } as ApifyRunner, { enabled: false });
+
+    const ok = await service.deleteSearch(USER_ID, "s1");
+
+    expect(ok).toBe(true);
+    expect(prisma._state.searches.map((row) => row.id)).toEqual(["s2"]); // only s1 removed
+    expect(prisma._state.companies).toHaveLength(1); // company preserved
+    expect(prisma._state.people).toHaveLength(1); // people preserved
+  });
+
+  it("deletes a FAILED, company-less search row (#delete-failed)", async () => {
+    seedSearch("failed1", { status: "FAILED", companyId: null, errorCode: "COMPANY_UNRESOLVED" });
+    const { service } = buildService(prisma, { run: vi.fn() } as ApifyRunner, { enabled: false });
+
+    await expect(service.deleteSearch(USER_ID, "failed1")).resolves.toBe(true);
+    expect(prisma._state.searches).toHaveLength(0);
+  });
+
+  it("refuses to delete a search owned by another user (#14)", async () => {
+    prisma._state.searches.push({
+      id: "s1",
+      userId: "user_OTHER",
+      requestedCompany: "Stripe",
+      requestedTitles: [],
+      requestedLocations: [],
+      maxResults: 10,
+      status: "READY",
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+    const { service } = buildService(prisma, { run: vi.fn() } as ApifyRunner, { enabled: false });
+
+    await expect(service.deleteSearch(USER_ID, "s1")).rejects.toThrow(/not found/i);
+    expect(prisma._state.searches).toHaveLength(1); // untouched
+  });
+});

@@ -384,15 +384,24 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
   }, [activeCategory, loadDetail, loadQuota]);
 
   const handleProcess = useCallback(async () => {
-    if (!search) {
+    // Guard against a double-click launching a second processing run — the
+    // backend is also idempotent (idempotency key + per-fingerprint lock + quota),
+    // but this keeps the UI from firing a second request at all.
+    if (!search || processing) {
       return;
     }
+    // A fresh key per deliberate click = a new processing attempt; a browser/
+    // network replay of this same request reuses the key (same attempt).
+    const idempotencyKey =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `${search.id}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     setProcessing(true);
     setActionError(null);
     setActionNotice(null);
     const result = await prospectGraphql<{ processProspectSearch: { id: string; status: string } }>(
       PROCESS_SEARCH_MUTATION,
-      { id: search.id }
+      { id: search.id, idempotencyKey }
     );
     setProcessing(false);
     if (result.disabled) {
@@ -401,12 +410,12 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     }
     void loadQuota();
     if (result.error || !result.data) {
-      setActionError(result.error ?? "Processing failed. Try again later.");
+      setActionError(result.error ?? "We couldn't start the search. Please try again.");
       await loadDetail({ category: activeCategory });
       return;
     }
     await loadDetail({ category: activeCategory });
-  }, [activeCategory, loadDetail, loadQuota, search]);
+  }, [activeCategory, loadDetail, loadQuota, processing, search]);
 
   const handleCancel = useCallback(async () => {
     if (!search) {
@@ -1466,9 +1475,12 @@ function StatusCard({
           the company, search people, and infer the email domain and pattern.
         </p>
       ) : failed ? (
-        <p className={styles.statusBody}>
-          <span className={styles.errorCode}>{error?.code}</span> {error?.message}
-        </p>
+        <>
+          <p className={styles.statusBody}>
+            <strong>{error?.title}</strong>
+          </p>
+          <p className={styles.statusBody}>{error?.message}</p>
+        </>
       ) : canceled ? (
         <p className={styles.statusBody}>This search was canceled. Create a new one to discover people.</p>
       ) : quotaBlocked ? (
@@ -1491,8 +1503,19 @@ function StatusCard({
             data-discover-tour="process-action"
           >
             {processing ? <LoaderCircle aria-hidden="true" className={styles.spin} /> : null}
-            {failed ? "Retry processing" : "Process search"}
+            {failed
+              ? processing
+                ? "Retrying search…"
+                : "Retry search"
+              : processing
+                ? "Processing…"
+                : "Process search"}
           </button>
+        )}
+        {failed && (
+          <Link href="/prospects" className={styles.secondaryButton}>
+            Back to Discover
+          </Link>
         )}
         {!canceled && !failed && (
           <button type="button" className={styles.secondaryButton} onClick={onCancel} disabled={processing}>
