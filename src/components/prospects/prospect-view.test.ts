@@ -412,21 +412,33 @@ describe("external links are hardened (#12)", () => {
   });
 });
 
-describe("prospect dashboard layout contracts", () => {
-  const dashboardSource = readFileSync("src/components/prospects/prospects-dashboard.tsx", "utf8");
-  const dashboardCss = readFileSync("src/components/prospects/prospects-dashboard.module.css", "utf8");
+describe("Discover detail-page People table layout contracts", () => {
+  const detailSource = readFileSync("src/components/prospects/prospect-detail-view.tsx", "utf8");
+  const css = readFileSync("src/components/prospects/prospects-dashboard.module.css", "utf8");
 
-  it("uses a natural-flow People table shell, not the horizontal history scroller", () => {
-    expect(dashboardSource).toContain("styles.peopleTableShell");
-    expect(dashboardSource).not.toContain("<div className={styles.tableScroll}>\n                    <PeopleTable");
-    expect(dashboardCss).toMatch(/\.peopleTableShell\s*\{[^}]*overflow:\s*visible/s);
+  it("uses a natural-flow People table shell with no internal vertical scroll (#7 layout)", () => {
+    expect(detailSource).toContain("styles.peopleTableShell");
+    expect(css).toMatch(/\.peopleTableShell\s*\{[^}]*overflow:\s*visible/s);
+    // The People shell must not introduce vertical scrolling / fixed heights.
+    const shellBlock = css.match(/\.peopleTableShell\s*\{[^}]*\}/s)?.[0] ?? "";
+    expect(shellBlock).not.toMatch(/overflow-y|max-height|height:\s*\d|calc\(100vh/);
   });
 
-  it("renders compact chevron pagination without Previous or Next text buttons", () => {
-    expect(dashboardSource).toContain("<ChevronLeft");
-    expect(dashboardSource).toContain("<ChevronRight");
-    expect(dashboardSource).not.toContain(">Previous<");
-    expect(dashboardSource).not.toContain(">Next<");
+  it("gives People rows horizontal edge padding so content never touches the card border (#4, #5, #6)", () => {
+    const rowBlock = css.match(/\n\.row\s*\{[^}]*\}/s)?.[0] ?? "";
+    // Padding shorthand is `vertical horizontal` — the horizontal value must be > 0.
+    expect(rowBlock).toMatch(/padding:\s*0\.85rem\s+0\.5rem/);
+    expect(css).toMatch(/\.cellSelect\s*\{[^}]*padding-left/s);
+    expect(css).toMatch(/\.cellLink\s*\{[^}]*padding-right/s);
+  });
+
+  it("keeps pagination outside the table shell and uses compact chevrons (#8 layout)", () => {
+    expect(detailSource).toContain("<ChevronLeft");
+    expect(detailSource).toContain("<ChevronRight");
+    expect(detailSource).not.toContain(">Previous<");
+    expect(detailSource).not.toContain(">Next<");
+    // The pagination row is a sibling of the table shell, not nested inside it.
+    expect(detailSource).not.toContain('peopleTableShell" data-discover-tour="people-table">\n                <div className={styles.paginationRow}');
   });
 });
 
@@ -522,59 +534,98 @@ describe("Add 10 more presentation helpers", () => {
   });
 });
 
-describe("Discover create modal contracts", () => {
-  const dashboardSource = readFileSync("src/components/prospects/prospects-dashboard.tsx", "utf8");
+describe("Discover create modal contracts (list page)", () => {
+  const listSource = readFileSync("src/components/prospects/prospects-list-view.tsx", "utf8");
 
   it("removes the Max results input (#1)", () => {
-    expect(dashboardSource).not.toContain("Max results");
-    expect(dashboardSource).not.toContain('type="number"');
+    expect(listSource).not.toContain("Max results");
+    expect(listSource).not.toContain('type="number"');
   });
 
   it("does not let the client choose or send a result count (#8)", () => {
-    expect(dashboardSource).not.toContain("maxResults");
+    expect(listSource).not.toContain("maxResults");
   });
 
   it("renders the fixed-count helper and quota panel in the modal", () => {
-    expect(dashboardSource).toContain("DiscoverUsagePanel");
-    expect(dashboardSource).toContain("discoverPerSearchSentence");
+    expect(listSource).toContain("DiscoverUsagePanel");
+    expect(listSource).toContain("discoverPerSearchSentence");
   });
 
-  it("refreshes the quota after processing begins (#7)", () => {
-    expect(dashboardSource).toContain("loadQuota");
-    expect(dashboardSource).toContain("DISCOVER_QUOTA_QUERY");
+  it("refreshes the quota on the list page (#7)", () => {
+    expect(listSource).toContain("loadQuota");
+    expect(listSource).toContain("DISCOVER_QUOTA_QUERY");
   });
 });
 
-describe("Add 10 more dashboard wiring", () => {
-  const dashboardSource = readFileSync("src/components/prospects/prospects-dashboard.tsx", "utf8");
+describe("Add 10 more detail-page wiring", () => {
+  const detailSource = readFileSync("src/components/prospects/prospect-detail-view.tsx", "utf8");
+  const listSource = readFileSync("src/components/prospects/prospects-list-view.tsx", "utf8");
 
-  it("renders the Add-more button with a stable help target", () => {
-    expect(dashboardSource).toContain('data-discover-tour="add-more-people"');
-    expect(dashboardSource).toContain("UserPlus");
-    expect(dashboardSource).toContain("showAddMore");
+  it("renders the Add-more button only on the detail page with a stable help target (existing #1)", () => {
+    expect(detailSource).toContain('data-discover-tour="add-more-people"');
+    expect(detailSource).toContain("UserPlus");
+    expect(detailSource).toContain("showAddMore");
+    // The list page never renders Add 10 more.
+    expect(listSource).not.toContain("add-more-people");
+    expect(listSource).not.toContain("ADD_MORE_DISCOVER_PEOPLE_MUTATION");
   });
 
-  it("disables the button while an expansion runs so rapid clicks cannot duplicate (#5)", () => {
-    expect(dashboardSource).toContain("expandingSearchId");
-    expect(dashboardSource).toContain("disabled={addMoreDisabled !== null}");
+  it("disables the button while an expansion runs so rapid clicks cannot duplicate (existing #5)", () => {
+    expect(detailSource).toContain("setExpanding(true)");
+    expect(detailSource).toContain("disabled={addMoreDisabled !== null}");
   });
 
   it("opens a confirmation dialog before expanding", () => {
-    expect(dashboardSource).toContain("AddMorePeopleDialog");
-    expect(dashboardSource).toContain("setShowAddMoreDialog(true)");
+    expect(detailSource).toContain("AddMorePeopleDialog");
+    expect(detailSource).toContain("setShowAddMoreDialog(true)");
   });
 
-  it("updates counts + people in place without a full-page reload (#6, #7, #9)", () => {
-    expect(dashboardSource).toContain("ADD_MORE_DISCOVER_PEOPLE_MUTATION");
-    // Refreshes searches (count), company (totals), and people (pagination) in place.
-    expect(dashboardSource).toContain("await loadSearches({ pageIndex: historyPageIndex, after })");
-    expect(dashboardSource).toContain("await loadPeople({ companyId: search.company.id, category: activeCategory, pageIndex: 0, after: null })");
+  it("updates counts + people in place without a full-page reload (existing #6, #7, #9)", () => {
+    expect(detailSource).toContain("ADD_MORE_DISCOVER_PEOPLE_MUTATION");
+    // Refreshes company (totals), people (pagination), and the search in place.
+    expect(detailSource).toContain("await loadPeople({ companyId: search.company.id, category: activeCategory, pageIndex: 0, after: null })");
+    expect(detailSource).toContain("await loadDetail({ category: activeCategory })");
     // No hard navigation / full reload.
-    expect(dashboardSource).not.toContain("window.location.reload");
+    expect(detailSource).not.toContain("window.location.reload");
   });
 
-  it("keeps the People page size fixed at 10 (#8)", () => {
-    expect(dashboardSource).toContain("PEOPLE_PAGE_SIZE");
+  it("keeps the People page size fixed at 10 (existing #8)", () => {
+    expect(detailSource).toContain("PEOPLE_PAGE_SIZE");
     expect(readFileSync("src/components/prospects/prospect-graphql.ts", "utf8")).toContain("PEOPLE_PAGE_SIZE = 10");
+  });
+});
+
+describe("Discover list/detail split contracts", () => {
+  const listSource = readFileSync("src/components/prospects/prospects-list-view.tsx", "utf8");
+  const detailSource = readFileSync("src/components/prospects/prospect-detail-view.tsx", "utf8");
+
+  it("list page shows Search History but not the People table or company details (#2, #3 routing)", () => {
+    expect(listSource).toContain('data-discover-tour="search-history"');
+    expect(listSource).not.toContain("PeopleTable");
+    expect(listSource).not.toContain("CompanyCard");
+    expect(listSource).not.toContain("SummaryCards");
+  });
+
+  it("list rows navigate to the detail route (#4 routing)", () => {
+    expect(listSource).toContain("href={`/prospects/${search.id}`");
+    // The first row carries the search-row tour target (set dynamically).
+    expect(listSource).toContain('"search-row"');
+  });
+
+  it("detail page renders summary cards, company details, and the People table (#1, #2, #3 layout)", () => {
+    expect(detailSource).toContain("SummaryCards");
+    expect(detailSource).toContain("CompanyCard");
+    expect(detailSource).toContain("PeopleTable");
+  });
+
+  it("detail back navigation returns to Discover, never Overview (#7 routing)", () => {
+    expect(detailSource).toContain('href="/prospects"');
+    expect(detailSource).toContain('data-discover-tour="back-to-list"');
+    expect(detailSource).not.toContain('href="/workspace"');
+  });
+
+  it("detail page loads the search from the route id and handles not-found safely (#5, #6, #8 routing)", () => {
+    expect(detailSource).toContain("PROSPECT_SEARCH_BY_ID_QUERY");
+    expect(detailSource).toContain("This Discover search is no longer available.");
   });
 });

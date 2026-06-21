@@ -1,4 +1,4 @@
-import { ProspectsDashboard } from "@/components/prospects/prospects-dashboard";
+import { ProspectsListView } from "@/components/prospects/prospects-list-view";
 import { requireUser } from "@/lib/auth";
 
 // Auth uses cookies(), so this route is always dynamic and never statically
@@ -13,5 +13,5 @@ export default async function ProspectsPage() {
   await requireUser();
   const featureEnabled = (process.env.PROSPECT_GRAPH_ENABLED ?? "").trim().toLowerCase() === "true";
 
-  return <ProspectsDashboard featureEnabled={featureEnabled} />;
+  return <ProspectsListView featureEnabled={featureEnabled} />;
 }

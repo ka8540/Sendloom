@@ -3,195 +3,219 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import { filterAvailableManualSteps } from "@/components/manual/manualSteps";
+import type { ManualStep } from "@/components/manual/manualTypes";
 import { getManualForPathname } from "@/manuals";
 import {
+  discoverDetailManual,
+  discoverDetailStepsForStage,
   discoverDraftSteps,
-  discoverManual,
-  discoverResultsSteps,
+  discoverFailedSteps,
+  discoverListManual,
+  discoverListStepsForStage,
+  discoverPopulatedListSteps,
+  discoverProcessingSteps,
+  discoverReadySteps,
   discoverStarterSteps,
-  discoverStepsForStage,
-  resolveDiscoverStage
+  resolveDiscoverListStage
 } from "@/manuals/discoverManual";
 
 const DISCOVER_SOURCE = readFileSync("src/manuals/discoverManual.ts", "utf8");
 
-function ids(steps: { id: string }[]): string[] {
+function ids(steps: ManualStep[]): string[] {
   return steps.map((step) => step.id);
 }
 
-function selectors(steps: { selector?: string }[]): string[] {
+function selectors(steps: ManualStep[]): string[] {
   return steps.map((step) => step.selector ?? "").filter(Boolean);
 }
 
-describe("Discover manual registration (#1, #2)", () => {
-  it("registers the Discover manual for the /prospects route", () => {
-    expect(getManualForPathname("/prospects")).toBe(discoverManual);
+describe("Discover manual registration (list + detail)", () => {
+  it("registers the list guide for /prospects and the detail guide for /prospects/[id]", () => {
+    expect(getManualForPathname("/prospects")).toBe(discoverListManual);
+    expect(getManualForPathname("/prospects/abc123")).toBe(discoverDetailManual);
+    expect(getManualForPathname("/prospects/abc123/extra")).toBeNull();
   });
 
-  it("uses the Discover-specific help label and tooltip", () => {
-    expect(discoverManual.helpLabel).toBe("Help with Discover");
-    expect(discoverManual.helpTooltip).toBe("Discover guide");
-  });
-
-  it("lets the dashboard drive auto-open and is versioned", () => {
-    expect(discoverManual.autoOpen).toBe(false);
-    expect(discoverManual.version).toBe("v1");
+  it("uses the Discover help label/tooltip and bumps the version for the new structure", () => {
+    for (const manual of [discoverListManual, discoverDetailManual]) {
+      expect(manual.helpLabel).toBe("Help with Discover");
+      expect(manual.helpTooltip).toBe("Discover guide");
+      expect(manual.autoOpen).toBe(false);
+      expect(manual.version).toBe("v2");
+    }
+    // The two guides are distinct persisted ids.
+    expect(discoverListManual.id).toBe("discover-list");
+    expect(discoverDetailManual.id).toBe("discover-detail");
   });
 
   it("does not change other route manuals", () => {
     expect(getManualForPathname("/finder")?.id).toBe("finder");
-    expect(getManualForPathname("/workspace")?.id).toBe("workspace");
-    expect(getManualForPathname("/unknown-route")).toBeNull();
+    expect(getManualForPathname("/campaigns")?.id).toBe("campaigns");
+    expect(getManualForPathname("/campaigns/abc")?.id).toBe("campaign-detail");
+    expect(getManualForPathname("/unknown")).toBeNull();
   });
 });
 
-describe("resolveDiscoverStage (#3, #8, #10)", () => {
-  it("is the starter stage for a first-time empty dashboard", () => {
-    expect(resolveDiscoverStage({ hasResults: false, hasSearches: false })).toBe("starter");
+describe("list stage resolution + steps", () => {
+  it("is starter when there are no searches and list when there are", () => {
+    expect(resolveDiscoverListStage({ hasSearches: false })).toBe("starter");
+    expect(resolveDiscoverListStage({ hasSearches: true })).toBe("list");
   });
 
-  it("is the draft stage once searches exist but no results are open", () => {
-    expect(resolveDiscoverStage({ hasResults: false, hasSearches: true })).toBe("draft");
-  });
-
-  it("is the results stage when a ready search is open", () => {
-    expect(resolveDiscoverStage({ hasResults: true, hasSearches: true })).toBe("results");
-  });
-});
-
-describe("starter steps (#7)", () => {
-  it("explains the dashboard, New search, and Refresh", () => {
+  it("starter steps cover intro, quota, new search, and the empty state", () => {
     const steps = discoverStarterSteps({ unlimited: false });
-    expect(ids(steps)).toEqual(["page-intro", "quota", "new-search", "refresh", "starter-final"]);
-    expect(selectors(steps)).toContain('[data-discover-tour="new-search"]');
-    expect(selectors(steps)).toContain('[data-discover-tour="refresh"]');
-    expect(steps[0].body).toMatch(/find professionals/i);
+    expect(ids(steps)).toEqual(["page-intro", "quota", "refresh", "new-search", "empty-state"]);
+    expect(selectors(steps)).toContain('[data-discover-tour="empty-state"]');
   });
 
-  it("shows the ordinary daily allowance for limited accounts", () => {
-    const quota = discoverStarterSteps({ unlimited: false }).find((step) => step.id === "quota");
-    expect(quota?.body).toMatch(/up to 10 people/i);
-    expect(quota?.body).toMatch(/4 Discover searches per day/i);
+  it("populated list steps explain Search History, status, opening a row, and paging", () => {
+    const steps = discoverPopulatedListSteps({ unlimited: false });
+    expect(ids(steps)).toEqual([
+      "page-intro",
+      "quota",
+      "refresh",
+      "new-search",
+      "search-history",
+      "search-status",
+      "search-row",
+      "history-pagination"
+    ]);
+    const open = steps.find((step) => step.id === "search-row");
+    expect(open?.body).toMatch(/dedicated results page/i);
   });
 
-  it("shows unlimited copy for exempt accounts without exposing limits", () => {
+  it("never references the People table on the list page", () => {
+    const all = [...discoverStarterSteps({ unlimited: false }), ...discoverPopulatedListSteps({ unlimited: false })];
+    expect(selectors(all)).not.toContain('[data-discover-tour="people-table"]');
+    expect(selectors(all)).not.toContain('[data-discover-tour="company-details"]');
+  });
+
+  it("routes list stages to the matching builder", () => {
+    expect(ids(discoverListStepsForStage("list", { unlimited: false }))).toEqual(ids(discoverPopulatedListSteps({ unlimited: false })));
+    expect(ids(discoverListStepsForStage(null, { unlimited: false }))).toEqual(ids(discoverStarterSteps({ unlimited: false })));
+  });
+
+  it("shows unlimited quota copy without exposing limits", () => {
     const quota = discoverStarterSteps({ unlimited: true }).find((step) => step.id === "quota");
     expect(quota?.body).toMatch(/unlimited Discover access/i);
-    expect(quota?.body).not.toMatch(/4 Discover searches per day/i);
-  });
-
-  it("never claims emails are verified or names providers", () => {
-    const text = discoverStarterSteps({ unlimited: false })
-      .map((step) => `${step.title} ${step.body}`)
-      .join(" ");
-    expect(text).not.toMatch(/verified/i);
-    expect(text).not.toMatch(/apify|openai|graphql|scrap/i);
+    expect(quota?.body).not.toMatch(/up to 10 people/i);
   });
 });
 
-describe("draft steps (#9)", () => {
-  it("explains the draft, processing, and statuses", () => {
-    const steps = discoverDraftSteps();
-    expect(ids(steps)).toContain("draft-row");
-    expect(ids(steps)).toContain("process");
-    expect(ids(steps)).toContain("draft-status");
+describe("detail stage steps", () => {
+  it("ready steps walk the workspace end to end", () => {
+    const steps = discoverReadySteps();
+    expect(ids(steps)).toEqual(
+      expect.arrayContaining([
+        "back-to-list",
+        "detail-header",
+        "company-summary",
+        "people-summary",
+        "email-format-summary",
+        "status-summary",
+        "company-details",
+        "role-filters",
+        "inferred-warning",
+        "people-table",
+        "people-pagination"
+      ])
+    );
   });
 
-  it("explains that processing consumes a daily search and retries do not", () => {
-    const process = discoverDraftSteps().find((step) => step.id === "process");
-    expect(process?.body).toMatch(/daily Discover searches/i);
-    expect(process?.body).toMatch(/does not use another daily slot/i);
-  });
-
-  it("uses only real statuses and a safe cached-results note", () => {
-    const status = discoverDraftSteps().find((step) => step.id === "draft-status");
-    expect(status?.body).toMatch(/Draft/);
-    expect(status?.body).toMatch(/Processing/);
-    expect(status?.body).toMatch(/Ready/);
-    expect(status?.body).toMatch(/Failed/);
-    const cached = discoverDraftSteps().find((step) => step.id === "draft-cached");
-    expect(cached?.body).not.toMatch(/cache|fingerprint|another user|provider/i);
-  });
-});
-
-describe("results steps (#11, #12, #13)", () => {
-  const steps = discoverResultsSteps();
-
-  it("explains the summary cards", () => {
-    expect(ids(steps)).toEqual(expect.arrayContaining(["company-summary", "people-summary", "email-format-summary", "results-status"]));
-  });
-
-  it("includes the inferred-not-verified warning", () => {
-    const warning = steps.find((step) => step.id === "inferred-warning");
-    expect(warning?.title).toMatch(/inferred/i);
-    expect(warning?.body).toMatch(/verify them before using/i);
-  });
-
-  it("explains role filters and pagination", () => {
-    expect(ids(steps)).toContain("role-filters");
-    expect(ids(steps)).toContain("people-pagination");
-  });
-
-  it("marks state-dependent controls optional so they are skipped when absent (#14, #15)", () => {
-    const optionalIds = steps.filter((step) => step.optional).map((step) => step.id);
-    for (const id of ["refresh-ai", "source-url", "manual-format", "copy-email", "profile-link", "selection", "bulk-actions"]) {
-      expect(optionalIds).toContain(id);
+  it("marks state-dependent detail controls optional (#11 help)", () => {
+    const optional = discoverReadySteps()
+      .filter((step) => step.optional)
+      .map((step) => step.id);
+    for (const id of [
+      "email-evidence",
+      "refresh-ai",
+      "source-url",
+      "manual-format",
+      "add-more-people",
+      "people-filter",
+      "people-selection",
+      "copy-email",
+      "profile-link",
+      "bulk-actions",
+      "delete-search"
+    ]) {
+      expect(optional).toContain(id);
     }
-    // Core review steps are always present (rendered centered if a target is missing).
-    const requiredIds = steps.filter((step) => !step.optional).map((step) => step.id);
-    expect(requiredIds).toEqual(expect.arrayContaining(["company-summary", "inferred-warning", "people-table"]));
   });
 
-  it("adds a single optional Add-more step shown only when the button exists (#12 frontend)", () => {
-    const addMore = steps.find((step) => step.id === "add-more-people");
-    expect(addMore).toBeDefined();
-    expect(addMore?.optional).toBe(true); // only rendered when the target is present
-    expect(addMore?.selector).toBe('[data-discover-tour="add-more-people"]');
-    expect(addMore?.title).toBe("Add more unique people");
-    expect(addMore?.body).toMatch(/up to 10 additional people/i);
-    expect(addMore?.body).toMatch(/one daily Discover search/i);
+  it("draft steps avoid result controls and explain processing cost", () => {
+    const steps = discoverDraftSteps({ unlimited: false });
+    expect(ids(steps)).toEqual(["back-to-list", "detail-header", "status-summary", "process-action", "quota"]);
+    expect(selectors(steps)).not.toContain('[data-discover-tour="people-table"]');
+    const process = steps.find((step) => step.id === "process-action");
+    expect(process?.body).toMatch(/one daily Discover search/i);
+    expect(process?.body).toMatch(/does not use another slot/i);
+  });
 
-    // Skipped when the button is absent; included when present.
-    const without = filterAvailableManualSteps(steps, (selector) => selector !== '[data-discover-tour="add-more-people"]');
-    expect(without.map((step) => step.id)).not.toContain("add-more-people");
-    const withButton = filterAvailableManualSteps(steps, () => true);
-    expect(withButton.map((step) => step.id)).toContain("add-more-people");
+  it("processing steps explain the wait without result controls", () => {
+    const steps = discoverProcessingSteps();
+    expect(ids(steps)).toEqual(["back-to-list", "detail-header", "status-summary"]);
+    expect(steps.find((step) => step.id === "status-summary")?.body).toMatch(/collecting and preparing/i);
+  });
+
+  it("failed steps explain status and a safe retry, never provider details", () => {
+    const steps = discoverFailedSteps();
+    expect(ids(steps)).toContain("status-summary");
+    const text = steps.map((step) => `${step.title} ${step.body}`).join(" ");
+    expect(text).not.toMatch(/apify|openai|stack/i);
+  });
+
+  it("routes detail stages, defaulting unknown to a minimal safe guide", () => {
+    expect(ids(discoverDetailStepsForStage("ready"))).toEqual(ids(discoverReadySteps()));
+    expect(ids(discoverDetailStepsForStage("draft"))).toEqual(ids(discoverDraftSteps({ unlimited: false })));
+    expect(ids(discoverDetailStepsForStage("processing"))).toEqual(ids(discoverProcessingSteps()));
+    expect(ids(discoverDetailStepsForStage("failed"))).toEqual(ids(discoverFailedSteps()));
+    expect(ids(discoverDetailStepsForStage(null))).toEqual(["back-to-list", "detail-header", "status-summary"]);
+  });
+
+  it("Add 10 More and bulk actions are explained only when their targets exist", () => {
+    const steps = discoverReadySteps();
+    // No add-more / bulk targets present → those optional steps are skipped.
+    const present = new Set([
+      '[data-discover-tour="back-to-list"]',
+      '[data-discover-tour="detail-header"]',
+      '[data-discover-tour="company-summary"]',
+      '[data-discover-tour="people-summary"]',
+      '[data-discover-tour="email-format-summary"]',
+      '[data-discover-tour="status-summary"]',
+      '[data-discover-tour="company-details"]',
+      '[data-discover-tour="role-filters"]',
+      '[data-discover-tour="inferred-warning"]',
+      '[data-discover-tour="people-table"]',
+      '[data-discover-tour="people-pagination"]'
+    ]);
+    const filtered = filterAvailableManualSteps(steps, (selector) => present.has(selector)).map((step) => step.id);
+    expect(filtered).not.toContain("add-more-people");
+    expect(filtered).not.toContain("bulk-actions");
+    expect(filtered).toContain("people-table");
+    // With every target present, the optional steps are included.
+    const all = filterAvailableManualSteps(steps, () => true).map((step) => step.id);
+    expect(all).toContain("add-more-people");
+    expect(all).toContain("bulk-actions");
   });
 });
 
-describe("discoverStepsForStage routing", () => {
-  it("maps stage ids to the matching builders, defaulting to starter", () => {
-    expect(ids(discoverStepsForStage("results", { unlimited: false }))).toEqual(ids(discoverResultsSteps()));
-    expect(ids(discoverStepsForStage("draft", { unlimited: false }))).toEqual(ids(discoverDraftSteps()));
-    expect(ids(discoverStepsForStage(null, { unlimited: false }))).toEqual(ids(discoverStarterSteps({ unlimited: false })));
-  });
-});
-
-describe("availability filtering (#14, #15)", () => {
-  it("skips optional steps whose targets are absent without throwing", () => {
-    const steps = discoverResultsSteps();
-    // Simulate a ready search with NO people rows and no optional buttons.
-    const present = new Set(['[data-discover-tour="company-summary"]', '[data-discover-tour="people-table"]', '[data-discover-tour="inferred-warning"]']);
-    const filtered = filterAvailableManualSteps(steps, (selector) => present.has(selector));
-    const filteredIds = filtered.map((step) => step.id);
-    expect(filteredIds).toContain("people-table");
-    expect(filteredIds).toContain("inferred-warning");
-    expect(filteredIds).not.toContain("copy-email");
-    expect(filteredIds).not.toContain("bulk-actions");
+describe("privacy + safety", () => {
+  it("never names providers or claims inferred emails are verified", () => {
+    const allSteps = [
+      ...discoverStarterSteps({ unlimited: false }),
+      ...discoverPopulatedListSteps({ unlimited: false }),
+      ...discoverReadySteps(),
+      ...discoverDraftSteps({ unlimited: false }),
+      ...discoverProcessingSteps(),
+      ...discoverFailedSteps()
+    ];
+    const text = allSteps.map((step) => `${step.title} ${step.body}`).join(" ");
+    expect(text).not.toMatch(/apify|openai|graphql|scrap/i);
+    // "inferred ... until verified" wording is fine; a bare "verified" claim is not.
+    expect(text).not.toMatch(/\bare verified\b|\bis verified\b/i);
   });
 
-  it("keeps optional steps when their targets are present", () => {
-    const steps = discoverResultsSteps();
-    const filtered = filterAvailableManualSteps(steps, () => true);
-    expect(filtered.map((step) => step.id)).toContain("copy-email");
-  });
-
-  it("never returns an empty tour", () => {
-    expect(filterAvailableManualSteps(discoverStarterSteps({ unlimited: false }), () => false).length).toBeGreaterThan(0);
-  });
-});
-
-describe("privacy + safety (#24)", () => {
   it("opening the tour triggers no backend calls", () => {
     expect(DISCOVER_SOURCE).not.toMatch(/fetch\(|prospectGraphql|graphql|apify|openai/i);
   });

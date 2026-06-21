@@ -282,6 +282,39 @@ export const PROSPECT_SEARCHES_QUERY = /* GraphQL */ `
   }
 `;
 
+// Load a single user-owned search by id for the detail page. Uses the existing
+// prospectSearch(id) resolver; resolves null when the id is unknown or owned by
+// another user (the detail page then shows a safe not-found state).
+export const PROSPECT_SEARCH_BY_ID_QUERY = /* GraphQL */ `
+  query ProspectSearch($id: ID!) {
+    prospectSearch(id: $id) {
+      id
+      requestedCompany
+      requestedTitles
+      requestedLocations
+      maxResults
+      status
+      errorCode
+      errorMessage
+      peopleCount
+      exhausted
+      createdAt
+      completedAt
+      company {
+        id
+        name
+        officialDomain
+        officialWebsiteDomain
+        emailDomain
+        emailDomainConfidence
+        emailPattern
+        patternConfidence
+        peopleCount
+      }
+    }
+  }
+`;
+
 export const COMPANY_DETAIL_QUERY = /* GraphQL */ `
   query CompanyDetail($id: ID!) {
     company(id: $id) {
