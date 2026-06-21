@@ -168,11 +168,17 @@ describe("detail stage steps", () => {
     expect(steps.find((step) => step.id === "status-summary")?.body).toMatch(/collecting and preparing/i);
   });
 
-  it("failed steps explain status and a safe retry, never provider details", () => {
+  it("failed steps explain status and a safe retry, never provider details (#fe-10)", () => {
     const steps = discoverFailedSteps();
     expect(ids(steps)).toContain("status-summary");
+    const retry = steps.find((step) => step.id === "process-action");
+    expect(retry?.title).toBe("Retry this search");
+    // Explains that the same search is reused (no new Search History entry)...
+    expect(retry?.body).toMatch(/same company, role, and location/i);
+    expect(retry?.body).toMatch(/does not create another Search History entry/i);
+    // ...and never leaks any internal/provider terminology.
     const text = steps.map((step) => `${step.title} ${step.body}`).join(" ");
-    expect(text).not.toMatch(/apify|openai|stack/i);
+    expect(text).not.toMatch(/apify|openai|redis|cache|stack|provider|error code|company_unresolved/i);
   });
 
   it("routes detail stages, defaulting unknown to a minimal safe guide", () => {

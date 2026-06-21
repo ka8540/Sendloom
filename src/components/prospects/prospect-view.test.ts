@@ -90,7 +90,9 @@ function search(overrides: Partial<ProspectSearchNode> = {}): ProspectSearchNode
     maxResults: 20,
     status: "READY",
     errorCode: null,
+    errorTitle: null,
     errorMessage: null,
+    retryable: false,
     peopleCount: 3,
     exhausted: false,
     createdAt: "2026-06-18T00:00:00.000Z",
@@ -209,15 +211,32 @@ describe("selected-search view state", () => {
 });
 
 describe("failed-search error formatting is safe", () => {
-  it("uses the curated code and message when present", () => {
-    const result = formatSearchError({ errorCode: "PROVIDER_TIMEOUT", errorMessage: "The profile search timed out." });
-    expect(result.code).toBe("PROVIDER_TIMEOUT");
-    expect(result.message).toMatch(/timed out/i);
+  it("uses the server-sanitized safe title + message when present (#fe-2)", () => {
+    const result = formatSearchError({
+      errorCode: "COMPANY_NOT_FOUND",
+      errorTitle: "We couldn't identify this company",
+      errorMessage: "Check the company name and try again. Using the company's full legal name may help.",
+      retryable: true
+    });
+    expect(result.title).toBe("We couldn't identify this company");
+    expect(result.message).toMatch(/company name/i);
+    expect(result.retryable).toBe(true);
   });
 
-  it("falls back to a friendly message when none is provided", () => {
-    const result = formatSearchError({ errorCode: null, errorMessage: null });
-    expect(result.code).toBe("ERROR");
+  it("never renders a raw internal code, even if one leaks into errorCode (#fe-1)", () => {
+    const result = formatSearchError({
+      errorCode: "COMPANY_UNRESOLVED",
+      errorTitle: null,
+      errorMessage: null,
+      retryable: true
+    });
+    expect(`${result.title} ${result.message}`).not.toContain("COMPANY_UNRESOLVED");
+    expect(result.title).toBe("We couldn't identify this company");
+  });
+
+  it("falls back to a generic safe message when nothing is provided (#fe-2)", () => {
+    const result = formatSearchError({ errorCode: null, errorTitle: null, errorMessage: null, retryable: false });
+    expect(result.title).toBe("Search unavailable");
     expect(result.message.length).toBeGreaterThan(0);
   });
 });
@@ -453,6 +472,41 @@ describe("Discover detail-page People table layout contracts", () => {
     expect(detailSource).not.toContain(">Next<");
     // The pagination row is a sibling of the table shell, not nested inside it.
     expect(detailSource).not.toContain('peopleTableShell" data-discover-tour="people-table">\n                <div className={styles.paginationRow}');
+  });
+});
+
+describe("Discover failed-state UI is safe and retryable", () => {
+  const detailSource = readFileSync("src/components/prospects/prospect-detail-view.tsx", "utf8");
+
+  it("never renders the raw error code chip (#fe-1, #fe-2)", () => {
+    // The old failed card rendered `{error?.code}` inside a styles.errorCode chip.
+    expect(detailSource).not.toContain("styles.errorCode");
+    expect(detailSource).not.toContain("error?.code");
+    // It renders the safe title + message instead.
+    expect(detailSource).toContain("{error?.title}");
+    expect(detailSource).toContain("{error?.message}");
+  });
+
+  it("shows a disabling Retry button with a 'Retrying search…' label (#fe-3, #fe-4, #fe-5)", () => {
+    expect(detailSource).toContain("Retrying search…");
+    expect(detailSource).toContain("Retry search");
+    // The button disables while processing (guards double-clicks).
+    expect(detailSource).toContain("disabled={processing || quotaBlocked}");
+  });
+
+  it("offers a Back to Discover action on the failed card (#fe-2)", () => {
+    expect(detailSource).toContain("Back to Discover");
+  });
+
+  it("sends a per-click idempotency key and guards re-entry (#fe-3, #retry-16, #retry-17)", () => {
+    expect(detailSource).toContain("crypto.randomUUID()");
+    expect(detailSource).toContain("{ id: search.id, idempotencyKey }");
+    // Re-entry guard so a second click never fires a second mutation.
+    expect(detailSource).toContain("if (!search || processing)");
+  });
+
+  it("does not reload the whole page on retry (uses the in-place loader) (#fe-7)", () => {
+    expect(detailSource).not.toContain("window.location.reload");
   });
 });
 

@@ -471,7 +471,10 @@ describe("Discover quota GraphQL surface", () => {
     expect(result.errors?.[0]?.extensions?.code).toBe("DISCOVER_DAILY_LIMIT_REACHED");
     expect(result.errors?.[0]?.message).toContain("Discover searches");
     // The authenticated session email is what reaches the service — never input.
-    expect(processSearch).toHaveBeenCalledWith("user_A", "s1", { actorEmail: "a@example.com" });
+    expect(processSearch).toHaveBeenCalledWith("user_A", "s1", {
+      actorEmail: "a@example.com",
+      idempotencyKey: null
+    });
   });
 
   it("requires authentication for the discoverQuota query", async () => {
@@ -489,6 +492,73 @@ describe("Discover quota GraphQL surface", () => {
     expect(typeDefs).toContain("type DiscoverQuota");
     const inputBlock = typeDefs.match(/input CreateProspectSearchInput \{[^}]*\}/)?.[0] ?? "";
     expect(inputBlock).not.toContain("email");
+  });
+});
+
+describe("Discover failure surface is sanitized", () => {
+  it("maps a FAILED search's raw internal code to a safe public category + copy (#error-1, #error-2)", async () => {
+    const prisma = createFakePrisma();
+    prisma._state.searches.push({
+      id: "s1",
+      userId: "user_A",
+      requestedCompany: "Totally Unknown Co",
+      requestedTitles: ["Software Engineer"],
+      requestedLocations: ["United States"],
+      maxResults: 10,
+      status: "FAILED",
+      // The raw internal code + technical instructions live only in the DB.
+      errorCode: "COMPANY_UNRESOLVED",
+      errorMessage:
+        "Could not resolve this company well enough to run a targeted profile search. Add a company website domain or LinkedIn company URL and try again.",
+      totalProcessed: 0,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+
+    const result = await graphql({
+      schema: prospectSchema,
+      source: `{ prospectSearch(id: "s1") { status errorCode errorTitle errorMessage retryable } }`,
+      contextValue: makeContext({ user: FAKE_USER, prisma })
+    });
+
+    const search = result.data?.prospectSearch as Record<string, unknown> | null;
+    expect(search?.status).toBe("FAILED");
+    expect(search?.errorCode).toBe("COMPANY_NOT_FOUND");
+    expect(search?.errorTitle).toBe("We couldn't identify this company");
+    expect(search?.retryable).toBe(true);
+    // The raw internal code + technical instructions never reach the client.
+    const serialized = JSON.stringify(search);
+    expect(serialized).not.toContain("COMPANY_UNRESOLVED");
+    expect(serialized).not.toMatch(/LinkedIn company URL|website domain/i);
+  });
+
+  it("exposes no error fields for a non-FAILED search", async () => {
+    const prisma = createFakePrisma();
+    prisma._state.searches.push({
+      id: "s2",
+      userId: "user_A",
+      requestedCompany: "Apple",
+      requestedTitles: ["Software Engineer"],
+      requestedLocations: ["United States"],
+      maxResults: 10,
+      status: "DRAFT",
+      errorCode: null,
+      errorMessage: null,
+      totalProcessed: 0,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+
+    const result = await graphql({
+      schema: prospectSchema,
+      source: `{ prospectSearch(id: "s2") { status errorCode errorTitle errorMessage retryable } }`,
+      contextValue: makeContext({ user: FAKE_USER, prisma })
+    });
+
+    const search = result.data?.prospectSearch as Record<string, unknown> | null;
+    expect(search?.errorCode).toBeNull();
+    expect(search?.errorTitle).toBeNull();
+    expect(search?.retryable).toBe(false);
   });
 });
 

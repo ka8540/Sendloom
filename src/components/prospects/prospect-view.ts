@@ -12,6 +12,7 @@ import type {
   ProspectSearchNode,
   ProspectSearchStatus
 } from "@/components/prospects/prospect-graphql";
+import { mapDiscoverPublicError } from "@/lib/discover-public-error";
 
 // External links to LinkedIn always open in a new tab with a hardened rel so we
 // never leak the opener or referrer.
@@ -169,16 +170,22 @@ export function isProcessingStatus(status: ProspectSearchStatus): boolean {
   );
 }
 
-/** A safe, user-facing error for a FAILED search (never raw transport errors). */
-export function formatSearchError(search: Pick<ProspectSearchNode, "errorCode" | "errorMessage">): {
-  code: string;
-  message: string;
-} {
-  const code = search.errorCode?.trim() || "ERROR";
-  const message =
-    search.errorMessage?.trim() ||
-    "The search could not be completed. Try processing it again with fewer results.";
-  return { code, message };
+/**
+ * A safe, user-facing error for a FAILED search. The backend already sanitizes
+ * the failure (errorCode is a product-safe category; errorTitle/errorMessage are
+ * safe copy). As defense-in-depth this re-maps through the shared public-error
+ * mapper, so even a raw internal code from an older payload can never reach the
+ * UI — the user only ever sees a clean title + message and a retryable flag.
+ */
+export function formatSearchError(
+  search: Pick<ProspectSearchNode, "errorCode" | "errorTitle" | "errorMessage" | "retryable">
+): { title: string; message: string; retryable: boolean } {
+  const mapped = mapDiscoverPublicError(search.errorCode);
+  return {
+    title: search.errorTitle?.trim() || mapped.title,
+    message: search.errorMessage?.trim() || mapped.message,
+    retryable: typeof search.retryable === "boolean" ? search.retryable : mapped.retryable
+  };
 }
 
 // ---------------------------------------------------------------------------

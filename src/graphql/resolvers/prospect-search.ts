@@ -5,6 +5,7 @@ import type { GraphQLContext } from "@/graphql/context";
 import { badInputError, requireUser } from "@/graphql/errors";
 import { buildConnection, cursorArgs, decodeCursor, resolveFirst } from "@/graphql/pagination";
 import { asStringArray, mapProspectError } from "@/graphql/resolvers/helpers";
+import { discoverPublicErrorCategory, mapDiscoverPublicError } from "@/lib/discover-public-error";
 import { getDiscoverQuotaStatus } from "@/lib/discover-quota";
 import { PersonIdentitySet } from "@/services/prospects/discover-person-identity";
 import { createProspectSearchSchema, type CreateProspectSearchInput } from "@/services/prospects/prospect-validation";
@@ -56,13 +57,18 @@ export const prospectSearchMutations = {
     return context.services.prospectSearch.createSearch(user.id, validated);
   },
 
-  async processProspectSearch(_root: unknown, args: { id: string }, context: GraphQLContext) {
+  async processProspectSearch(
+    _root: unknown,
+    args: { id: string; idempotencyKey?: string | null },
+    context: GraphQLContext
+  ) {
     const user = requireUser(context);
     try {
       // The quota email is taken from the authenticated session user only — a
       // request body / GraphQL input email can never grant the exemption.
       return await context.services.prospectSearch.processSearch(user.id, args.id, {
-        actorEmail: user.email
+        actorEmail: user.email,
+        idempotencyKey: args.idempotencyKey ?? null
       });
     } catch (error) {
       mapProspectError(error);
@@ -112,6 +118,22 @@ export const ProspectSearch = {
   },
   requestedLocations(parent: ProspectSearchRow) {
     return asStringArray(parent.requestedLocations);
+  },
+  // Failure surface is sanitized at the boundary: the stored raw internal code
+  // (e.g. COMPANY_UNRESOLVED, PROVIDER_TIMEOUT) is mapped to a safe product
+  // category + copy here and NEVER returned verbatim. A non-FAILED search exposes
+  // no error at all.
+  errorCode(parent: ProspectSearchRow) {
+    return parent.status === "FAILED" ? discoverPublicErrorCategory(parent.errorCode) : null;
+  },
+  errorTitle(parent: ProspectSearchRow) {
+    return parent.status === "FAILED" ? mapDiscoverPublicError(parent.errorCode).title : null;
+  },
+  errorMessage(parent: ProspectSearchRow) {
+    return parent.status === "FAILED" ? mapDiscoverPublicError(parent.errorCode).message : null;
+  },
+  retryable(parent: ProspectSearchRow) {
+    return parent.status === "FAILED" ? mapDiscoverPublicError(parent.errorCode).retryable : false;
   },
   peopleCount(parent: ProspectSearchRow) {
     return parent.totalProcessed;
