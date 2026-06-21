@@ -646,7 +646,7 @@ sequenceDiagram
         Exp->>Cache: append new normalized people + advance page / mark exhausted
     end
     Exp->>Exp: dedupe by sourceProfileId / normalized LinkedIn URL
-    Exp->>DB: add only new people; bump search.totalProcessed
+    Exp->>DB: add only new people, bump search.totalProcessed
     Exp-->>UI: addedCount, totalPeopleCount, exhausted, quotaRemaining
 ```
 
