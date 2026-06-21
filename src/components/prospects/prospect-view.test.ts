@@ -37,6 +37,7 @@ import {
   isProspectSelected,
   isVerifiedStatus,
   personLocation,
+  resolveHistoryPageAfterDelete,
   resolvePageCount,
   resolveProspectPageState,
   resolveSelectedSearchView,
@@ -472,6 +473,68 @@ describe("Discover detail-page People table layout contracts", () => {
     expect(detailSource).not.toContain(">Next<");
     // The pagination row is a sibling of the table shell, not nested inside it.
     expect(detailSource).not.toContain('peopleTableShell" data-discover-tour="people-table">\n                <div className={styles.paginationRow}');
+  });
+});
+
+describe("resolveHistoryPageAfterDelete", () => {
+  it("steps back to the previous page when a later page is emptied (#13)", () => {
+    expect(resolveHistoryPageAfterDelete({ remainingOnPage: 0, pageIndex: 2 })).toEqual({
+      goToPreviousPage: true,
+      pageIndex: 1
+    });
+  });
+
+  it("stays on the first page even when emptied (the empty state takes over)", () => {
+    expect(resolveHistoryPageAfterDelete({ remainingOnPage: 0, pageIndex: 0 })).toEqual({
+      goToPreviousPage: false,
+      pageIndex: 0
+    });
+  });
+
+  it("stays on the current page when rows remain (#15)", () => {
+    expect(resolveHistoryPageAfterDelete({ remainingOnPage: 6, pageIndex: 3 })).toEqual({
+      goToPreviousPage: false,
+      pageIndex: 3
+    });
+  });
+});
+
+describe("Discover Search History delete action", () => {
+  const listSource = readFileSync("src/components/prospects/prospects-list-view.tsx", "utf8");
+
+  it("renders an icon-only Trash delete button with a company-specific label + tooltip (#1, #3)", () => {
+    expect(listSource).toContain('<Trash2 aria-hidden="true" />');
+    expect(listSource).toContain("aria-label={`Delete ${companyName} search`}");
+    expect(listSource).toContain('title="Delete search"');
+  });
+
+  it("shows no permanently visible Delete/Remove text in the row (#2)", () => {
+    expect(listSource).not.toMatch(/>\s*Delete search\s*</);
+    expect(listSource).not.toMatch(/>\s*Delete\s*</);
+    expect(listSource).not.toMatch(/>\s*Remove\s*</);
+  });
+
+  it("keeps the row a real link and blocks the trash click from navigating (#4, #5)", () => {
+    expect(listSource).toContain("styles.historyRowLink");
+    expect(listSource).toContain("event.preventDefault();");
+    expect(listSource).toContain("event.stopPropagation();");
+  });
+
+  it("reuses the shared mutation + confirm, then removes the row + count in place (#6, #8, #9, #10)", () => {
+    expect(listSource).toContain("window.confirm(");
+    expect(listSource).toContain("DELETE_SEARCH_MUTATION");
+    expect(listSource).toContain("setSearches(remaining)");
+    expect(listSource).toContain("setSearchesTotal((total) => Math.max(0, total - 1))");
+  });
+
+  it("disables the button while deleting and uses safe product messaging (#11, #12)", () => {
+    expect(listSource).toContain("disabled={isDeleting}");
+    expect(listSource).toContain("This search could not be deleted. Please try again.");
+    expect(listSource).toContain('{ message: "Search deleted." }');
+  });
+
+  it("delegates the pagination edge case to the shared helper (#13)", () => {
+    expect(listSource).toContain("resolveHistoryPageAfterDelete");
   });
 });
 

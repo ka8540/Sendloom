@@ -84,6 +84,17 @@ export const prospectSearchMutations = {
     }
   },
 
+  async deleteProspectSearch(_root: unknown, args: { id: string }, context: GraphQLContext) {
+    const user = requireUser(context);
+    try {
+      // Ownership is enforced server-side from the session user — the client id is
+      // never trusted on its own.
+      return await context.services.prospectSearch.deleteSearch(user.id, args.id);
+    } catch (error) {
+      mapProspectError(error);
+    }
+  },
+
   async addMoreDiscoverPeople(
     _root: unknown,
     args: { searchId: string; idempotencyKey: string },

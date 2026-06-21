@@ -9,10 +9,11 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { AlertCircle, ChevronLeft, ChevronRight, Inbox, LoaderCircle, Plus, RefreshCw, Sparkles, Users, X } from "lucide-react";
+import { AlertCircle, ChevronLeft, ChevronRight, Inbox, LoaderCircle, Plus, RefreshCw, Sparkles, Trash2, Users, X } from "lucide-react";
 
 import {
   CREATE_SEARCH_MUTATION,
+  DELETE_SEARCH_MUTATION,
   DISCOVER_QUOTA_QUERY,
   PROSPECT_SEARCHES_QUERY,
   SEARCHES_PAGE_SIZE,
@@ -32,6 +33,7 @@ import {
   formatQuotaRemaining,
   formatQuotaReset,
   formatShowingLabel,
+  resolveHistoryPageAfterDelete,
   resolvePageCount,
   resolveProspectPageState,
   statusBadge
@@ -66,6 +68,7 @@ export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean 
   const [showNewSearch, setShowNewSearch] = useState(false);
   const [form, setForm] = useState<CreateForm>(EMPTY_FORM);
   const [creating, setCreating] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<ActionNotice | null>(null);
 
@@ -143,6 +146,57 @@ export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean 
     void loadSearches({ pageIndex: historyPageIndex, after: historyAfterCursors.current[historyPageIndex] ?? null });
     void loadQuota();
   }, [historyPageIndex, loadQuota, loadSearches]);
+
+  // Delete a single Search History row. Reuses the shared GraphQL client (so the
+  // same CSRF/auth handling as every other Discover mutation applies) and the
+  // project's standard destructive confirm. The deleted row is removed in place
+  // (no full reload); deleting the last row on a later page steps back a page.
+  const handleDelete = useCallback(
+    async (search: ProspectSearchNode) => {
+      if (deletingId) {
+        return;
+      }
+      const companyName = search.company?.name ?? search.requestedCompany;
+      const confirmed = window.confirm(
+        `Delete this search?\n\nThis removes the "${companyName}" search from your Search History. Imports or sequences you created separately will not be removed.`
+      );
+      if (!confirmed) {
+        return;
+      }
+      setDeletingId(search.id);
+      setActionError(null);
+      setActionNotice(null);
+      const result = await prospectGraphql<{ deleteProspectSearch: boolean }>(DELETE_SEARCH_MUTATION, {
+        id: search.id
+      });
+      if (result.disabled) {
+        setDisabled(true);
+        setDeletingId(null);
+        return;
+      }
+      if (result.error || !result.data?.deleteProspectSearch) {
+        // Never surface raw backend/GraphQL detail — a safe product message only.
+        setActionError("This search could not be deleted. Please try again.");
+        setDeletingId(null);
+        return;
+      }
+      // Remove the row + update the count immediately (no page reload).
+      const remaining = searches.filter((item) => item.id !== search.id);
+      setSearches(remaining);
+      setSearchesTotal((total) => Math.max(0, total - 1));
+      setDeletingId(null);
+      setActionNotice({ message: "Search deleted." });
+      // Pagination edge: if that emptied a page beyond the first, step back.
+      const next = resolveHistoryPageAfterDelete({ remainingOnPage: remaining.length, pageIndex: historyPageIndex });
+      if (next.goToPreviousPage) {
+        void loadSearches({
+          pageIndex: next.pageIndex,
+          after: historyAfterCursors.current[next.pageIndex] ?? null
+        });
+      }
+    },
+    [deletingId, historyPageIndex, loadSearches, searches]
+  );
 
   const handleCreate = useCallback(
     async (event: FormEvent) => {
@@ -289,6 +343,8 @@ export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean 
           pageCount={historyPageCount}
           offset={historyOffset}
           hasNext={searchesHasNext}
+          deletingId={deletingId}
+          onDelete={handleDelete}
           onPrev={handleHistoryPrev}
           onNext={handleHistoryNext}
         />
@@ -320,6 +376,8 @@ function SearchHistoryTable({
   pageCount,
   offset,
   hasNext,
+  deletingId,
+  onDelete,
   onPrev,
   onNext
 }: {
@@ -331,6 +389,8 @@ function SearchHistoryTable({
   pageCount: number;
   offset: number;
   hasNext: boolean;
+  deletingId: string | null;
+  onDelete: (search: ProspectSearchNode) => void;
   onPrev: () => void;
   onNext: () => void;
 }) {
@@ -368,21 +428,31 @@ function SearchHistoryTable({
               <span role="columnheader">People</span>
               <span role="columnheader">Status</span>
               <span role="columnheader">Created</span>
-              <span role="columnheader" aria-label="Open" />
+              <span role="columnheader" aria-label="Actions" />
             </div>
             {searches.map((search, index) => {
               const roles = search.requestedTitles;
               const location = search.requestedLocations[0] ?? null;
               const domain = search.company?.officialWebsiteDomain ?? search.company?.officialDomain ?? null;
+              const companyName = search.company?.name ?? search.requestedCompany;
+              const isDeleting = deletingId === search.id;
               return (
-                <Link
+                // The whole row navigates via a stretched <Link> overlay, so the row
+                // stays a real anchor (cmd/middle-click still open in a new tab) while
+                // the delete control is a sibling button raised above it — never a
+                // <button> nested inside an <a>.
+                <div
                   key={search.id}
-                  href={`/prospects/${search.id}` as Route}
                   className={styles.historyRow}
                   data-discover-tour={index === 0 ? "search-row" : undefined}
                 >
+                  <Link
+                    href={`/prospects/${search.id}` as Route}
+                    className={styles.historyRowLink}
+                    aria-label={`Open ${companyName} search`}
+                  />
                   <span className={styles.historyCompanyCell} data-label="Company">
-                    <span className={styles.historyCompanyName}>{search.company?.name ?? search.requestedCompany}</span>
+                    <span className={styles.historyCompanyName}>{companyName}</span>
                     {domain && <span className={styles.historyCompanyDomain}>{domain}</span>}
                   </span>
                   <span className={styles.historyRolesCell} data-label="Roles">
@@ -411,10 +481,29 @@ function SearchHistoryTable({
                   <span className={styles.historyCreatedCell} data-label="Created">
                     {formatDateTime(search.createdAt)}
                   </span>
-                  <span className={styles.historyViewCell} aria-hidden="true">
-                    <ChevronRight />
+                  <span className={styles.historyActionsCell} data-label="Actions">
+                    <button
+                      type="button"
+                      className={`${styles.iconButton} ${styles.historyDeleteButton}`}
+                      aria-label={`Delete ${companyName} search`}
+                      title="Delete search"
+                      disabled={isDeleting}
+                      onClick={(event) => {
+                        // Keep the row's stretched link from navigating.
+                        event.preventDefault();
+                        event.stopPropagation();
+                        onDelete(search);
+                      }}
+                    >
+                      {isDeleting ? (
+                        <LoaderCircle aria-hidden="true" className={styles.spin} />
+                      ) : (
+                        <Trash2 aria-hidden="true" />
+                      )}
+                    </button>
+                    <ChevronRight aria-hidden="true" className={styles.historyActionsChevron} />
                   </span>
-                </Link>
+                </div>
               );
             })}
           </div>

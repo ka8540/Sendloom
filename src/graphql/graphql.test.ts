@@ -9,7 +9,7 @@ import { typeDefs } from "@/graphql/schema";
 import { createDepthLimitRule } from "@/graphql/security";
 import { prospectSchema, resolveGraphiqlEnabled } from "@/graphql/server";
 import { createFakePrisma, type FakePrisma } from "@/services/prospects/__test-utils__/fake-prisma";
-import { ProspectError } from "@/services/prospects/prospect-search-service";
+import { ProspectError, ProspectSearchService } from "@/services/prospects/prospect-search-service";
 
 function makeContext(options: {
   user: User | null;
@@ -687,5 +687,67 @@ describe("addMoreDiscoverPeople expansion mutation", () => {
 
     expect(result.errors).toBeUndefined();
     expect(result.data?.prospectSearch).toMatchObject({ id: "s1", exhausted: true });
+  });
+});
+
+describe("deleteProspectSearch mutation", () => {
+  // deleteSearch only touches prisma; the other deps are never exercised here.
+  function realProspectService(prisma: FakePrisma) {
+    return new ProspectSearchService({
+      prisma: prisma as unknown as PrismaClient,
+      apify: {} as never,
+      companyResolution: {} as never,
+      roleClassifier: {} as never,
+      emailDomain: {} as never
+    });
+  }
+
+  function seed(prisma: FakePrisma, id: string, userId: string) {
+    prisma._state.searches.push({
+      id,
+      userId,
+      requestedCompany: "Apple",
+      requestedTitles: [],
+      requestedLocations: [],
+      maxResults: 10,
+      status: "READY",
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+  }
+
+  it("deletes the owner's search but refuses another user's id (#8, #14)", async () => {
+    const prisma = createFakePrisma();
+    seed(prisma, "mine", "user_A");
+    seed(prisma, "theirs", "user_B");
+    const services = { prospectSearch: realProspectService(prisma) } as unknown as GraphQLContext["services"];
+
+    const ok = await graphql({
+      schema: prospectSchema,
+      source: `mutation { deleteProspectSearch(id: "mine") }`,
+      contextValue: makeContext({ user: FAKE_USER, prisma, services })
+    });
+    expect(ok.errors).toBeUndefined();
+    expect(ok.data?.deleteProspectSearch).toBe(true);
+    expect(prisma._state.searches.map((row) => row.id)).toEqual(["theirs"]);
+
+    const denied = await graphql({
+      schema: prospectSchema,
+      source: `mutation { deleteProspectSearch(id: "theirs") }`,
+      contextValue: makeContext({ user: FAKE_USER, prisma, services })
+    });
+    // A non-owned id reads as not-found and is never deleted.
+    expect(denied.errors?.[0]?.extensions?.code).toBe("NOT_FOUND");
+    expect(prisma._state.searches.map((row) => row.id)).toEqual(["theirs"]);
+  });
+
+  it("requires authentication", async () => {
+    const result = await graphql({
+      schema: prospectSchema,
+      source: `mutation { deleteProspectSearch(id: "s1") }`,
+      contextValue: makeContext({ user: null })
+    });
+    expect(result.data?.deleteProspectSearch ?? null).toBeNull();
+    expect(result.errors?.[0]?.extensions?.code).toBe("UNAUTHENTICATED");
   });
 });

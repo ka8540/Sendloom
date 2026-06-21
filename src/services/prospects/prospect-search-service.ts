@@ -271,6 +271,20 @@ export class ProspectSearchService {
   }
 
   /**
+   * Delete a single Search History entry the user owns. This removes ONLY the
+   * ProspectSearch row (its expansion records cascade via the DB FK); the
+   * materialized company/people remain and stay removable from the detail page's
+   * company delete. Ownership is enforced first, and the delete is additionally
+   * scoped to `{ id, userId }`, so a user can never delete another user's search
+   * (a non-owned id reads as not-found, never revealing it exists).
+   */
+  async deleteSearch(userId: string, searchId: string): Promise<boolean> {
+    await this.requireOwnedSearch(userId, searchId);
+    await this.prisma.prospectSearch.deleteMany({ where: { id: searchId, userId } });
+    return true;
+  }
+
+  /**
    * Run the full discovery pipeline for a search. Ownership / not-found errors
    * throw; provider/AI failures are persisted as a FAILED search and returned so
    * the caller can surface a structured failure (status + errorCode).

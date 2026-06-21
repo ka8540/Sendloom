@@ -287,6 +287,9 @@ export const typeDefs = /* GraphQL */ `
     # current attempt (so it never double-processes or double-charges quota).
     processProspectSearch(id: ID!, idempotencyKey: String): ProspectSearch!
     cancelProspectSearch(id: ID!): ProspectSearch!
+    # Delete a single Search History entry the user owns (ownership enforced
+    # server-side). Removes only that ProspectSearch row, not the company/people.
+    deleteProspectSearch(id: ID!): Boolean!
     # Add up to 10 more unique people to an existing READY search. idempotencyKey
     # is client-generated so retries/double-clicks never charge a second slot or
     # add a second batch.

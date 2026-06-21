@@ -450,6 +450,14 @@ export const CANCEL_SEARCH_MUTATION = /* GraphQL */ `
   }
 `;
 
+// Delete a single Search History entry. Ownership is enforced server-side; the
+// detail page's company delete remains the way to remove a company + its people.
+export const DELETE_SEARCH_MUTATION = /* GraphQL */ `
+  mutation DeleteProspectSearch($id: ID!) {
+    deleteProspectSearch(id: $id)
+  }
+`;
+
 export const ADD_MORE_DISCOVER_PEOPLE_MUTATION = /* GraphQL */ `
   mutation AddMoreDiscoverPeople($searchId: ID!, $idempotencyKey: String!) {
     addMoreDiscoverPeople(searchId: $searchId, idempotencyKey: $idempotencyKey) {

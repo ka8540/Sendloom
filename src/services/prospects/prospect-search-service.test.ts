@@ -1368,3 +1368,61 @@ describe("Discover retry", () => {
     expect(r2.totalProcessed).toBe(1);
   });
 });
+
+describe("Discover search deletion", () => {
+  function seedSearch(id: string, overrides: Record<string, unknown> = {}) {
+    prisma._state.searches.push({
+      id,
+      userId: USER_ID,
+      requestedCompany: "Apple",
+      requestedTitles: [],
+      requestedLocations: [],
+      maxResults: 10,
+      status: "READY",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      ...overrides
+    });
+  }
+
+  it("deletes only the owned search row, keeping the company, people, and sibling searches (#delete)", async () => {
+    prisma._state.companies.push({ id: "c1", userId: USER_ID, name: "Apple", normalizedName: "apple", createdAt: new Date(), updatedAt: new Date() });
+    seedSearch("s1", { companyId: "c1" });
+    seedSearch("s2", { companyId: "c1" });
+    prisma._state.people.push({ id: "p1", userId: USER_ID, companyId: "c1", sourceProfileId: "x1", firstName: "Jane", lastName: "Doe" });
+    const { service } = buildService(prisma, { run: vi.fn() } as ApifyRunner, { enabled: false });
+
+    const ok = await service.deleteSearch(USER_ID, "s1");
+
+    expect(ok).toBe(true);
+    expect(prisma._state.searches.map((row) => row.id)).toEqual(["s2"]); // only s1 removed
+    expect(prisma._state.companies).toHaveLength(1); // company preserved
+    expect(prisma._state.people).toHaveLength(1); // people preserved
+  });
+
+  it("deletes a FAILED, company-less search row (#delete-failed)", async () => {
+    seedSearch("failed1", { status: "FAILED", companyId: null, errorCode: "COMPANY_UNRESOLVED" });
+    const { service } = buildService(prisma, { run: vi.fn() } as ApifyRunner, { enabled: false });
+
+    await expect(service.deleteSearch(USER_ID, "failed1")).resolves.toBe(true);
+    expect(prisma._state.searches).toHaveLength(0);
+  });
+
+  it("refuses to delete a search owned by another user (#14)", async () => {
+    prisma._state.searches.push({
+      id: "s1",
+      userId: "user_OTHER",
+      requestedCompany: "Stripe",
+      requestedTitles: [],
+      requestedLocations: [],
+      maxResults: 10,
+      status: "READY",
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+    const { service } = buildService(prisma, { run: vi.fn() } as ApifyRunner, { enabled: false });
+
+    await expect(service.deleteSearch(USER_ID, "s1")).rejects.toThrow(/not found/i);
+    expect(prisma._state.searches).toHaveLength(1); // untouched
+  });
+});

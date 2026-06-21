@@ -258,6 +258,21 @@ export function formatShowingLabel(input: { offset: number; pageCount: number; t
   return `Showing ${start}–${end} of ${input.totalCount}`;
 }
 
+/**
+ * Decide where Search History should land after deleting a row. If the deleted
+ * row was the only one left on a page beyond the first, step back to the previous
+ * page (never strand the user on an empty page); otherwise stay put.
+ */
+export function resolveHistoryPageAfterDelete(input: {
+  remainingOnPage: number;
+  pageIndex: number;
+}): { goToPreviousPage: boolean; pageIndex: number } {
+  if (input.remainingOnPage <= 0 && input.pageIndex > 0) {
+    return { goToPreviousPage: true, pageIndex: input.pageIndex - 1 };
+  }
+  return { goToPreviousPage: false, pageIndex: input.pageIndex };
+}
+
 export function formatDateTime(iso: string | null): string {
   if (!iso) {
     return "—";
