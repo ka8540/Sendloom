@@ -776,7 +776,6 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
   if (disabled) {
     return (
       <div className={styles.page}>
-        <BackToDiscover />
         <DisabledState />
       </div>
     );
@@ -785,7 +784,6 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
   if (notFound) {
     return (
       <div className={styles.page}>
-        <BackToDiscover />
         <EmptyState
           icon={<Building2 aria-hidden="true" />}
           title="This Discover search is no longer available."
@@ -804,18 +802,13 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
   if (searchLoading && !search) {
     return (
       <div className={styles.page}>
-        <BackToDiscover />
         <DetailSkeleton />
       </div>
     );
   }
 
   if (!search) {
-    return (
-      <div className={styles.page}>
-        <BackToDiscover />
-      </div>
-    );
+    return <div className={styles.page} />;
   }
 
   const roleLabel = search.requestedTitles.length > 0 ? search.requestedTitles.join(", ") : "Any role";
@@ -825,8 +818,6 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
 
   return (
     <div className={styles.page}>
-      <BackToDiscover />
-
       <header
         className={styles.detailHeader}
         data-discover-tour="detail-header"
@@ -1101,22 +1092,6 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
 // ---------------------------------------------------------------------------
 // Detail sub-components
 // ---------------------------------------------------------------------------
-
-function BackToDiscover() {
-  return (
-    <div className={styles.detailTopBar}>
-      <Link
-        href="/prospects"
-        className={styles.backLink}
-        data-discover-tour="back-to-list"
-        aria-label="Back to Discover searches"
-      >
-        <ArrowLeft aria-hidden="true" />
-        <span>Back to Discover</span>
-      </Link>
-    </div>
-  );
-}
 
 function SummaryCards({
   search,

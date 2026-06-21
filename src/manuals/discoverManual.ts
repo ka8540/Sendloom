@@ -135,16 +135,6 @@ export function discoverListStepsForStage(stage: string | null, options: { unlim
 // Detail page (/prospects/[searchId])
 // ---------------------------------------------------------------------------
 
-function detailBackStep(): ManualStep {
-  return {
-    id: "back-to-list",
-    title: "Back to Discover",
-    body: "Return to Search History without deleting or changing this search.",
-    selector: sel("back-to-list"),
-    placement: "bottom"
-  };
-}
-
 function detailHeaderStep(): ManualStep {
   return {
     id: "detail-header",
@@ -158,7 +148,6 @@ function detailHeaderStep(): ManualStep {
 /** Stage — a READY search. The full results workspace. */
 export function discoverReadySteps(): ManualStep[] {
   return [
-    detailBackStep(),
     detailHeaderStep(),
     {
       id: "company-summary",
@@ -317,7 +306,6 @@ export function discoverReadySteps(): ManualStep[] {
 /** Stage — a DRAFT search. No result-specific steps before people exist. */
 export function discoverDraftSteps(options: { unlimited: boolean }): ManualStep[] {
   return [
-    detailBackStep(),
     detailHeaderStep(),
     {
       id: "status-summary",
@@ -350,7 +338,6 @@ export function discoverDraftSteps(options: { unlimited: boolean }): ManualStep[
 /** Stage — a PROCESSING search. Explains the wait; no result controls. */
 export function discoverProcessingSteps(): ManualStep[] {
   return [
-    detailBackStep(),
     detailHeaderStep(),
     {
       id: "status-summary",
@@ -365,7 +352,6 @@ export function discoverProcessingSteps(): ManualStep[] {
 /** Stage — a FAILED search. Status, safe retry, back. No provider details. */
 export function discoverFailedSteps(): ManualStep[] {
   return [
-    detailBackStep(),
     detailHeaderStep(),
     {
       id: "status-summary",
@@ -400,7 +386,6 @@ export function discoverDetailStepsForStage(stage: string | null): ManualStep[] 
   }
   // Unknown / canceled: a minimal safe guide that never references absent results.
   return [
-    detailBackStep(),
     detailHeaderStep(),
     {
       id: "status-summary",

@@ -107,7 +107,6 @@ describe("detail stage steps", () => {
     const steps = discoverReadySteps();
     expect(ids(steps)).toEqual(
       expect.arrayContaining([
-        "back-to-list",
         "detail-header",
         "company-summary",
         "people-summary",
@@ -120,6 +119,17 @@ describe("detail stage steps", () => {
         "people-pagination"
       ])
     );
+  });
+
+  it("does not add an in-page back step — back navigation reuses the app shell button", () => {
+    for (const steps of [
+      discoverReadySteps(),
+      discoverDraftSteps({ unlimited: false }),
+      discoverProcessingSteps(),
+      discoverFailedSteps()
+    ]) {
+      expect(ids(steps)).not.toContain("back-to-list");
+    }
   });
 
   it("marks state-dependent detail controls optional (#11 help)", () => {
@@ -145,7 +155,7 @@ describe("detail stage steps", () => {
 
   it("draft steps avoid result controls and explain processing cost", () => {
     const steps = discoverDraftSteps({ unlimited: false });
-    expect(ids(steps)).toEqual(["back-to-list", "detail-header", "status-summary", "process-action", "quota"]);
+    expect(ids(steps)).toEqual(["detail-header", "status-summary", "process-action", "quota"]);
     expect(selectors(steps)).not.toContain('[data-discover-tour="people-table"]');
     const process = steps.find((step) => step.id === "process-action");
     expect(process?.body).toMatch(/one daily Discover search/i);
@@ -154,7 +164,7 @@ describe("detail stage steps", () => {
 
   it("processing steps explain the wait without result controls", () => {
     const steps = discoverProcessingSteps();
-    expect(ids(steps)).toEqual(["back-to-list", "detail-header", "status-summary"]);
+    expect(ids(steps)).toEqual(["detail-header", "status-summary"]);
     expect(steps.find((step) => step.id === "status-summary")?.body).toMatch(/collecting and preparing/i);
   });
 
@@ -170,14 +180,13 @@ describe("detail stage steps", () => {
     expect(ids(discoverDetailStepsForStage("draft"))).toEqual(ids(discoverDraftSteps({ unlimited: false })));
     expect(ids(discoverDetailStepsForStage("processing"))).toEqual(ids(discoverProcessingSteps()));
     expect(ids(discoverDetailStepsForStage("failed"))).toEqual(ids(discoverFailedSteps()));
-    expect(ids(discoverDetailStepsForStage(null))).toEqual(["back-to-list", "detail-header", "status-summary"]);
+    expect(ids(discoverDetailStepsForStage(null))).toEqual(["detail-header", "status-summary"]);
   });
 
   it("Add 10 More and bulk actions are explained only when their targets exist", () => {
     const steps = discoverReadySteps();
     // No add-more / bulk targets present → those optional steps are skipped.
     const present = new Set([
-      '[data-discover-tour="back-to-list"]',
       '[data-discover-tour="detail-header"]',
       '[data-discover-tour="company-summary"]',
       '[data-discover-tour="people-summary"]',

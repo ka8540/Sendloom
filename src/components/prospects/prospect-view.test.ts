@@ -632,10 +632,14 @@ describe("Discover list/detail split contracts", () => {
     expect(detailSource).toContain("PeopleTable");
   });
 
-  it("detail back navigation returns to Discover, never Overview (#7 routing)", () => {
+  it("detail recovers to Discover (not Overview) and adds no second in-page back button (#7 routing)", () => {
+    // The not-found state links back to the Discover list, never to Overview.
     expect(detailSource).toContain('href="/prospects"');
-    expect(detailSource).toContain('data-discover-tour="back-to-list"');
     expect(detailSource).not.toContain('href="/workspace"');
+    // Back navigation reuses the app shell's global back button — the detail page
+    // must not render its own duplicate back control.
+    expect(detailSource).not.toContain("BackToDiscover");
+    expect(detailSource).not.toContain('data-discover-tour="back-to-list"');
   });
 
   it("detail page loads the search from the route id and handles not-found safely (#5, #6, #8 routing)", () => {
