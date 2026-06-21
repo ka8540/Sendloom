@@ -309,12 +309,14 @@ reputation, but does not guarantee Gmail will never rate-limit.
 flowchart TD
     UI["Next.js App Router UI"] --> API["Route handlers in src/app/api"]
     UI --> SSR["Server-rendered product pages"]
+    UI --> GraphQL["GraphQL endpoint /api/graphql (Discover)"]
     API --> Services["Business logic in src/services"]
     SSR --> Services
+    GraphQL --> Services
     Services --> Lib["Shared helpers in src/lib"]
     Services --> Prisma["Prisma ORM"]
     Prisma --> Postgres["PostgreSQL"]
-    Services --> Redis["Redis"]
+    Services --> Redis["Redis (rate limits, Discover quota + cache locks)"]
     Redis --> Workers["BullMQ workers and scheduler"]
     Services --> Storage["Object storage helper (src/lib/storage.ts)"]
     Storage --> Local["Local uploads directory (development)"]
@@ -324,6 +326,7 @@ flowchart TD
     Services --> Google["Google OAuth + Gmail send/reply sync"]
     Services --> Hunter["Hunter API"]
     Services --> OpenAI["OpenAI Responses API"]
+    Services --> Apify["Apify LinkedIn profile-search actor (Discover)"]
     Cron["/api/cron/campaigns"] --> Services
 ```
 
@@ -582,6 +585,71 @@ sequenceDiagram
     API-->>Cron: Summary of runs, jobs, and replies
 ```
 
+### Process a Discover search
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant UI as Discover detail page
+    participant GQL as POST /api/graphql
+    participant Svc as ProspectSearchService
+    participant Quota as Redis (daily quota)
+    participant Cache as DiscoverSearchCache
+    participant Apify as Apify actor
+    participant OpenAI as OpenAI (roles + email format)
+    participant DB as PostgreSQL
+    User->>UI: Process a draft search
+    UI->>GQL: processProspectSearch(id)
+    GQL->>Svc: processSearch(userId, id)
+    Svc->>Quota: reserve one daily slot (idempotent per search id)
+    Quota-->>Svc: allowed
+    Svc->>Svc: resolve company + build canonical fingerprint
+    Svc->>Cache: getOrRefresh(fingerprint)
+    alt Fresh shared-cache hit
+        Cache-->>Svc: normalized people (no Apify call)
+    else Miss or stale
+        Cache->>Apify: run actor page 1 behind per-fingerprint lock
+        Apify-->>Cache: raw profiles
+        Cache->>OpenAI: classify roles + infer email domain/pattern
+        OpenAI-->>Cache: categories + evidence-backed format
+        Cache->>DB: store shared entry (people + continuation state)
+    end
+    Svc->>DB: materialize user-owned Company / Positions / People
+    Svc-->>UI: status READY + people count
+```
+
+### Add 10 more people to a search
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant UI as Discover detail page
+    participant GQL as POST /api/graphql
+    participant Exp as DiscoverExpansionService
+    participant Quota as Redis (daily quota)
+    participant Cache as DiscoverSearchCache
+    participant Apify as Apify actor
+    participant DB as PostgreSQL
+    User->>UI: Click "Add 10 more"
+    UI->>GQL: addMoreDiscoverPeople(searchId, idempotencyKey)
+    GQL->>Exp: addMorePeople(...)
+    Exp->>DB: load + verify owned READY search
+    Exp->>DB: upsert idempotent DiscoverSearchExpansion (per idempotencyKey)
+    Exp->>Quota: reserve one slot (idempotent per expansion id)
+    Quota-->>Exp: allowed
+    Exp->>Cache: unused cached people for this fingerprint
+    alt Cache already has enough unused
+        Cache-->>Exp: next 10 unused (no Apify call)
+    else Need more
+        Exp->>Apify: continue from saved page (startPage), behind lock
+        Apify-->>Exp: next page of profiles
+        Exp->>Cache: append new normalized people + advance page / mark exhausted
+    end
+    Exp->>Exp: dedupe by sourceProfileId / normalized LinkedIn URL
+    Exp->>DB: add only new people; bump search.totalProcessed
+    Exp-->>UI: addedCount, totalPeopleCount, exhausted, quotaRemaining
+```
+
 ## Tech Stack
 
 | Layer | Technology | Why it is here |
@@ -621,7 +689,8 @@ sequenceDiagram
 | --- | --- |
 | `/workspace` | Overview dashboard / operator command center |
 | `/finder` | Finder and domain search |
-| `/prospects` | **Prospect Finder** — review discovered people, role groups, and inferred work emails (feature-flagged, read-only) |
+| `/prospects` | **Discover** — Search History list: create searches and open one (feature-flagged) |
+| `/prospects/[searchId]` | **Discover** search detail — company, email format, people, and Add 10 more for one search |
 | `/imports` | Audience upload and mapping workflow |
 | `/templates` | Template editor and preview workspace |
 | `/campaigns` | Main sequence list and builder |
@@ -1060,23 +1129,107 @@ message and the manual/source-URL paths still work.
 ### Architecture
 
 ```text
-GraphQL resolver
+GraphQL resolvers (thin)
    → ProspectSearchService            (src/services/prospects/prospect-search-service.ts)
-       → CompanyResolutionService     (AI task 1)
-       → ApifyProfileSearchService    (Apify actor + normalization)
-       → RoleClassificationService    (deterministic map + cache + AI task 2)
-       → EmailDomainService           (evidence collection + validation + selection)
-           → OpenAIEmailFormatDiscoveryService   (GPT-5.5 + web_search, AI task 3)
-           → EmailFormatDiscoveryService         (source-URL / legacy scraper fallback)
-       → email-generation-service     (deterministic, no AI)
+   |   → CompanyResolutionService     (AI task 1)
+   |   → ApifyProfileSearchService    (Apify actor + normalization, supports startPage)
+   |   → RoleClassificationService    (deterministic map + cache + AI task 2)
+   |   → EmailDomainService           (evidence collection + validation + selection)
+   |       → OpenAIEmailFormatDiscoveryService   (GPT-5.5 + web_search, AI task 3)
+   |       → EmailFormatDiscoveryService         (source-URL / legacy scraper fallback)
+   |   → email-generation-service     (deterministic, no AI)
+   |   → DiscoverSearchCacheService   (shared 30-day result cache + per-fingerprint lock)
+   |   → discover-quota               (Redis daily slot reservation, idempotent)
+   → DiscoverExpansionService         ("Add 10 more": src/services/prospects/discover-expansion-service.ts)
+       → discover-quota               (one slot per expansion, idempotent on expansion id)
+       → DiscoverSearchCacheService   (reuse unused cached people, then provider continuation)
+       → ApifyProfileSearchService    (continue from saved startPage; never page 1)
+       → RoleClassificationService    (classify newly fetched people)
 ```
 
 - GraphQL is the Sendloom backend API layer; it **calls** Apify/OpenAI, it does
   not replace them.
 - Resolvers never call providers directly — all business logic lives in services
-  so it can later move to BullMQ / the existing cron.
+  so it can later move to BullMQ / the existing cron. The `addMoreDiscoverPeople`
+  resolver delegates entirely to `DiscoverExpansionService`.
 - `src/graphql/` holds the schema, context, DataLoaders, resolvers, and security
   rules; `src/app/api/graphql/route.ts` is the Yoga endpoint.
+
+#### Discover data model (UML)
+
+User-owned records (`ProspectSearch` → `ProspectCompany` → positions/people) are
+materialized per user. The shared cache (`DiscoverSearchCache` /
+`DiscoverSearchCachePerson`) holds no requester identity and is matched by a
+canonical fingerprint, not a foreign key. `DiscoverSearchExpansion` is the
+durable idempotency/audit record for each "Add 10 more" request.
+
+```mermaid
+classDiagram
+    class ProspectSearch {
+        +id
+        +userId
+        +companyId
+        +requestedTitles
+        +requestedLocations
+        +status
+        +totalProcessed
+        +cacheFingerprint
+    }
+    class ProspectCompany {
+        +id
+        +userId
+        +normalizedName
+        +emailDomain
+        +emailPattern
+        +emailDomainConfidence
+        +patternConfidence
+    }
+    class ProspectCompanyPosition {
+        +id
+        +companyId
+        +category
+        +displayName
+    }
+    class ProspectPerson {
+        +id
+        +userId
+        +companyId
+        +positionId
+        +sourceProfileId
+        +inferredEmail
+        +emailStatus
+    }
+    class DiscoverSearchExpansion {
+        +id
+        +searchId
+        +userId
+        +idempotencyKey
+        +status
+        +addedCount
+        +exhausted
+        +quotaReserved
+    }
+    class DiscoverSearchCache {
+        +id
+        +fingerprint
+        +providerNextPage
+        +providerExhausted
+        +resultCount
+    }
+    class DiscoverSearchCachePerson {
+        +id
+        +cacheId
+        +sortIndex
+        +sourceProfileId
+    }
+    ProspectSearch "*" --> "0..1" ProspectCompany : companyId
+    ProspectSearch "1" --> "*" DiscoverSearchExpansion : expansions
+    ProspectCompany "1" --> "*" ProspectCompanyPosition : positions
+    ProspectCompany "1" --> "*" ProspectPerson : people
+    ProspectCompanyPosition "1" --> "*" ProspectPerson : people
+    DiscoverSearchCache "1" --> "*" DiscoverSearchCachePerson : people
+    ProspectSearch ..> DiscoverSearchCache : matched by fingerprint
+```
 
 ### Security controls
 
@@ -1115,19 +1268,32 @@ once so the cookie is present.
 
 ### Prospect Finder dashboard
 
-The page at **`/prospects`** is the user-facing **Prospect Finder** — a Sendloom
-dashboard for reviewing discovered people and inferred work emails (no
-backend/debug status such as "Prospect Graph" or "Graph enabled" is shown to
-users). It consumes the same `POST /api/graphql` endpoint from the client —
-reusing the global CSRF fetch patch, so no CSRF protection is bypassed — and lets
-you:
+**Discover** uses a master/detail flow across two routes (no backend/debug status
+such as "Prospect Graph" is shown to users). Both consume the same
+`POST /api/graphql` endpoint from the client — reusing the global CSRF fetch
+patch, so no CSRF protection is bypassed.
 
-- browse previous searches in a full-width, **server-paginated history table** (10 per page) and select a `READY` one,
-- open **New search** in a modal (the single primary action; it is never permanently open in the page). The modal has **no "Max results" field** — every search returns up to 10 people — and shows a compact usage panel ("Up to 10 people per search", remaining searches, and the reset time),
-- review compact summary cards (company, email format, people found, status) above a full-width people table,
-- filter people by role group, and copy individual inferred emails.
-- **Find with AI** — discover the email format with GPT-5.5 web search, paste a specific public source URL, or fix it manually; the card shows the email domain, pattern, confidence, evidence source, and a reason summary.
-- delete an owned company and its related searches.
+**List page — `/prospects`** is the entry point. It shows only:
+
+- the Discover header, the **daily quota** chip, **Refresh**, and **New search**,
+- a full-width, **server-paginated Search History table** (10 per page) — company, requested roles, location, people count, status, created date — where each row links to that search's detail page,
+- a premium empty state when you have no searches.
+- **New search** opens in a modal (the single primary action). The modal has **no "Max results" field** — every search returns up to 10 people — and shows a compact usage panel ("Up to 10 people per search", remaining searches, and the reset time). Creating a draft opens its detail page so you can process it there.
+
+**Detail page — `/prospects/[searchId]`** is the dedicated workspace for one
+user-owned search. It loads entirely from the route id (direct load, refresh, and
+new tab all work; an unknown/non-owned id shows a safe "no longer available"
+state) and lets you:
+
+- review compact **summary cards** (company, people found, email format, status) and the full company + email-format details/evidence,
+- **Add 10 more** unique people to this exact search (see [Add 10 more](#add-10-more-search-expansion)),
+- filter people by role group, filter the visible page, select people, and copy individual inferred emails,
+- **Find with AI** — discover the email format with GPT-5.5 web search, paste a specific public source URL, or fix it manually; the card shows the email domain, pattern, confidence, evidence source, and a reason summary,
+- export the selection to Excel or add it to Imports,
+- delete the owned company and its related searches.
+
+Back navigation reuses the app shell's global back button (it returns to the
+Search History list); the detail page adds no second in-page back control.
 
 #### Daily usage limits
 
@@ -1185,20 +1351,23 @@ consumes one of the user's daily Discover quota slots, and retrying the same
 search id never consumes another. The result source (`CACHE`/`PROVIDER`) is
 recorded internally on the search and is not surfaced in the UI.
 
-Both tables paginate **server-side at exactly 10 rows per page** with independent
-state (paging one never moves the other), using compact chevron (`‹` / `›`)
-controls that show `Showing 1–10 of N` and `Page X of Y`. The people table keeps
-its 10-per-page size for **every** role group, and the selected company stays put
-even when you page the history table. Every address is clearly labelled **inferred, not
-verified** (only a real `VERIFIED` status uses the green badge), and a persistent
-banner reinforces that generated emails are inferred from the selected email
-domain and pattern. The layout is a single responsive column that holds up with
-the app sidebar open or closed, in dark and light themes; it handles loading
-(skeletons), processing/failed/canceled searches, and empty states gracefully —
-and it **never** creates sequences, imports, or sends anything. Deleting a
-company only removes the local prospect rows for that company. When the backend
-is off, the GraphQL route returns 404 and the page shows a clean "Prospect Finder
-is not available right now." card instead of erroring or exposing backend terms.
+Both the Search History table (list page) and the People table (detail page)
+paginate **server-side at exactly 10 rows per page**, using compact chevron
+(`‹` / `›`) controls that show `Showing 1–10 of N` and `Page X of Y`. The people
+table keeps its 10-per-page size for **every** role group. Its columns are
+container-aware: long names, roles, and inferred emails **wrap** instead of being
+truncated with `…` or forcing a horizontal scrollbar, and the selection and
+LinkedIn columns keep clear edge spacing. Every address is clearly labelled
+**inferred, not verified** (only a real `VERIFIED` status uses the green badge),
+and a persistent banner reinforces that generated emails are inferred from the
+selected email domain and pattern. Each page is a single responsive column that
+holds up with the app sidebar open or closed, in dark and light themes; it
+handles loading (skeletons), processing/failed/canceled searches, and empty
+states gracefully — and it **never** creates sequences, imports, or sends
+anything. Deleting a company only removes the local prospect rows for that
+company. When the backend is off, the GraphQL route returns 404 and the page
+shows a clean "Discover is not available right now." card instead of erroring or
+exposing backend terms.
 
 ### GraphiQL examples
 
@@ -1244,6 +1413,24 @@ mutation ($id: ID!) {
       emailDomainConfidence
       patternConfidence
     }
+  }
+}
+```
+
+Add 10 more unique people to a READY search (`idempotencyKey` is a client-generated
+UUID; resending the same key never charges a second daily slot or adds a second
+batch):
+
+```graphql
+mutation AddMoreDiscoverPeople($searchId: ID!, $idempotencyKey: String!) {
+  addMoreDiscoverPeople(searchId: $searchId, idempotencyKey: $idempotencyKey) {
+    id
+    status
+    addedCount
+    totalPeopleCount
+    quotaRemaining
+    exhausted
+    message
   }
 }
 ```
