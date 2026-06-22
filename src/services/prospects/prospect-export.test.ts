@@ -11,15 +11,23 @@ import {
 } from "@/services/prospects/prospect-export";
 
 vi.mock("@/services/imports", () => ({
-  createImport: vi.fn(async (fileName: string, fileType: string, content: Buffer, userId: string) => ({
-    id: "import_1",
-    fileName,
-    fileType,
-    storagePath: `users/${userId}/imports/import_1/${fileName}`,
-    status: "PROCESSED",
-    rowCount: read(content, { type: "buffer" }).Sheets.Prospects ? 1 : 0,
-    columns: []
-  }))
+  createImport: vi.fn(
+    async (
+      fileName: string,
+      fileType: string,
+      content: Buffer,
+      userId: string,
+      options: { pendingFieldSelection?: boolean } = {}
+    ) => ({
+      id: "import_1",
+      fileName,
+      fileType,
+      storagePath: `users/${userId}/imports/import_1/${fileName}`,
+      status: options.pendingFieldSelection ? "UPLOADING" : "PROCESSED",
+      rowCount: read(content, { type: "buffer" }).Sheets.Prospects ? 1 : 0,
+      columns: []
+    })
+  )
 }));
 
 function makePrisma() {
@@ -251,7 +259,7 @@ describe("prospect import creation", () => {
     vi.clearAllMocks();
   });
 
-  it("reuses the existing import service and does not create a sequence", async () => {
+  it("stages exactly one pending import, reuses the import service, and creates no sequence", async () => {
     const imports = await import("@/services/imports");
     const { prisma } = makePrisma();
     seedCompany(prisma);
@@ -263,14 +271,19 @@ describe("prospect import creation", () => {
       selectedIds: ["person_1"]
     });
 
+    // Exactly one import record, staged as pending field selection.
     expect(imports.createImport).toHaveBeenCalledTimes(1);
     expect(imports.createImport).toHaveBeenCalledWith(
       expect.stringMatching(/sendloom-esri-all-prospects-\d{4}-\d{2}-\d{2}\.xlsx/),
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       expect.any(Buffer),
-      "user_1"
+      "user_1",
+      { pendingFieldSelection: true }
     );
     expect(result).toMatchObject({ importId: "import_1", rowCount: 1 });
+    // The user is routed to the Imports page with the pending import preselected.
+    expect(result.viewUrl).toContain("/imports?pendingImportId=import_1");
+    // No sequence is created as part of adding to imports.
     expect((prisma._state as Record<string, unknown>).campaigns).toBeUndefined();
   });
 });

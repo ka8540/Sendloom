@@ -44,10 +44,14 @@ function formatColumnLabel(column: MappingColumn) {
     : `${column.sourceName} (${column.normalized})`;
 }
 
-export function TemplateFieldPicker(props: { imports: TemplateFieldItem[] }) {
+export function TemplateFieldPicker(props: { imports: TemplateFieldItem[]; initialImportId?: string }) {
   const router = useRouter();
   const [state, setState] = useState<{ pending: boolean; error?: string }>({ pending: false });
-  const [selectedImportId, setSelectedImportId] = useState("");
+  const [selectedImportId, setSelectedImportId] = useState(() =>
+    props.initialImportId && props.imports.some((entry) => entry.importId === props.initialImportId)
+      ? props.initialImportId
+      : ""
+  );
   const [selectedByImport, setSelectedByImport] = useState<Record<string, string[]>>(() =>
     Object.fromEntries(props.imports.map((entry) => [entry.importId, entry.selectedColumns]))
   );

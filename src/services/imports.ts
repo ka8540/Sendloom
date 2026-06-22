@@ -34,9 +34,28 @@ async function getOwnedImport(importId: string, userId: string) {
   });
 }
 
-export async function createImport(fileName: string, fileType: string, content: Buffer, userId: string) {
+type CreateImportOptions = {
+  /**
+   * When true the import is staged as pending field selection (status
+   * `UPLOADING`) with no template columns pre-activated. The operator must
+   * choose fields and run {@link saveTemplateFields} to finalize it. Used by the
+   * Discover "Add to Imports" flow so a generated audience behaves like an
+   * uploaded spreadsheet awaiting review rather than an immediately processed
+   * import.
+   */
+  pendingFieldSelection?: boolean;
+};
+
+export async function createImport(
+  fileName: string,
+  fileType: string,
+  content: Buffer,
+  userId: string,
+  options: CreateImportOptions = {}
+) {
   const parsed = parseSpreadsheet(fileName, content);
   const normalizedColumns = parsed.columns.map((column) => normalizeHeader(column));
+  const pendingFieldSelection = options.pendingFieldSelection ?? false;
 
   const importId = randomUUID();
   const storageKey = buildImportKey(userId, importId, fileName);
@@ -56,7 +75,7 @@ export async function createImport(fileName: string, fileType: string, content: 
         fileName,
         fileType,
         storagePath: storageKey,
-        status: "PROCESSED",
+        status: pendingFieldSelection ? "UPLOADING" : "PROCESSED",
         rowCount: parsed.rows.length,
         sampleRows: parsed.sampleRows as Prisma.InputJsonValue,
         columns: {
@@ -93,7 +112,11 @@ export async function createImport(fileName: string, fileType: string, content: 
       company: detectColumn(normalizedColumns, ["company", "organization", "org"])
     };
 
-    const variableMap = createVariableMap(normalizedColumns, reservedFieldMap);
+    // Pending imports must not auto-activate any template columns — the operator
+    // selects fields during review. Storing an empty variableMap (with the
+    // mapping created up front) keeps the import in the Template fields picker
+    // until saveTemplateFields updates it, finalizing the import.
+    const variableMap = pendingFieldSelection ? {} : createVariableMap(normalizedColumns, reservedFieldMap);
 
     await prisma.mapping.create({
       data: {
@@ -242,5 +265,18 @@ export async function saveTemplateFields(importId: string, userId: string, selec
     };
   const variableMap = Object.fromEntries(Array.from(new Set(selectedColumns)).map((column) => [column, column]));
 
-  return saveMapping(importId, userId, reservedFieldMap, variableMap);
+  const mapping = await saveMapping(importId, userId, reservedFieldMap, variableMap);
+
+  // Finalize a pending import once its template fields are chosen. The
+  // status-guarded updateMany only flips UPLOADING -> PROCESSED, so re-saving
+  // fields on an already-processed import (the "Edit fields" flow) is a no-op
+  // and repeated requests never duplicate work.
+  if (importRecord.status === "UPLOADING") {
+    await prisma.import.updateMany({
+      where: { id: importId, userId, status: "UPLOADING" },
+      data: { status: "PROCESSED" }
+    });
+  }
+
+  return mapping;
 }

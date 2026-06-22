@@ -438,13 +438,19 @@ export async function deleteProspectExport(exportId: string) {
 export async function createProspectImport(prisma: PrismaClient, userId: string, input: ProspectSelectionInput) {
   const resolved = await resolveProspectSelection(prisma, userId, input);
   const content = buildProspectExportWorkbook(resolved.rows);
-  const importRecord = await createImport(resolved.fileName, EXPORT_MIME_TYPE, content, userId);
+  // Stage as pending field selection: the import lands in the Imports page
+  // Template fields picker only and is not finalized until the operator saves
+  // fields. It is never marked PROCESSED here, and no sequence is created.
+  const importRecord = await createImport(resolved.fileName, EXPORT_MIME_TYPE, content, userId, {
+    pendingFieldSelection: true
+  });
 
+  const baseUrl = env.APP_BASE_URL.replace(/\/+$/, "");
   return {
     importId: importRecord.id,
     fileName: importRecord.fileName,
     rowCount: importRecord.rowCount,
-    viewUrl: `${env.APP_BASE_URL.replace(/\/+$/, "")}/imports`,
+    viewUrl: `${baseUrl}/imports?pendingImportId=${encodeURIComponent(importRecord.id)}`,
     review: resolved.review
   };
 }

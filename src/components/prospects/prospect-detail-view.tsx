@@ -766,17 +766,18 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
       return;
     }
     if (result.error || !result.data) {
-      setReviewError(result.error ?? "Could not create the import.");
+      setReviewError(result.error ?? "The selected contacts could not be prepared for import. Please try again.");
       return;
     }
     const importResult = result.data.createProspectImport;
     setReview(importResult.review);
     setReviewOpen(false);
     clearSelection();
+    const readyCount = importResult.review.exportableCount;
     setActionNotice({
-      message: `${importResult.review.exportableCount} prospects were added to Imports.`,
-      href: "/imports",
-      label: "View import"
+      message: `${readyCount} ${readyCount === 1 ? "contact is" : "contacts are"} ready for field selection.`,
+      href: `/imports?pendingImportId=${encodeURIComponent(importResult.importId)}`,
+      label: "Review fields"
     });
   }, [buildCurrentSelectionInput, clearSelection, creatingImport, preparingExport]);
 

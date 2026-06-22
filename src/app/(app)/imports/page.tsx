@@ -2,9 +2,18 @@ import { UploadImportForm } from "@/components/forms";
 import { MappingLibrary, TemplateFieldPicker } from "@/components/mapping-library";
 import { requireOperatorUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { importIsFinalized, importNeedsFieldSelection } from "@/lib/imports-view";
 
-export default async function ImportsPage() {
+export default async function ImportsPage({
+  searchParams
+}: {
+  searchParams?: Promise<{ pendingImportId?: string | string[] }>;
+}) {
   const user = await requireOperatorUser();
+  const resolvedSearchParams = (await searchParams) ?? {};
+  const pendingImportIdParam = Array.isArray(resolvedSearchParams.pendingImportId)
+    ? resolvedSearchParams.pendingImportId[0]
+    : resolvedSearchParams.pendingImportId;
   const [imports, mappings] = await Promise.all([
     prisma.import.findMany({
       where: { userId: user.id },
@@ -35,9 +44,8 @@ export default async function ImportsPage() {
 
   const templateFieldItems = imports.flatMap((entry) => {
     const mapping = latestMappings.get(entry.id);
-    const hasBeenConfigured = mapping ? mapping.updatedAt.getTime() !== mapping.createdAt.getTime() : false;
 
-    if (hasBeenConfigured) {
+    if (!importNeedsFieldSelection(entry.status, mapping)) {
       return [];
     }
 
@@ -52,7 +60,12 @@ export default async function ImportsPage() {
     }];
   });
 
-  const mappingItems = imports.map((entry) => {
+  const pendingImportId =
+    pendingImportIdParam && templateFieldItems.some((item) => item.importId === pendingImportIdParam)
+      ? pendingImportIdParam
+      : undefined;
+
+  const mappingItems = imports.filter((entry) => importIsFinalized(entry.status)).map((entry) => {
     const mapping = latestMappings.get(entry.id);
 
     return {
@@ -91,7 +104,7 @@ export default async function ImportsPage() {
         <article className="card">
           <h2 style={{ marginTop: 0 }}>Template fields</h2>
           <p className="muted">Choose fields for newly reviewed imports here. Anything already saved can be edited in the imports list below.</p>
-          <TemplateFieldPicker imports={templateFieldItems} />
+          <TemplateFieldPicker imports={templateFieldItems} initialImportId={pendingImportId} />
         </article>
       </section>
 
