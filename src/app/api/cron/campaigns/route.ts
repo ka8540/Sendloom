@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { sanitizeDatabaseError } from "@/lib/db-error";
 import { env } from "@/lib/env";
 import { processPendingCampaignWork } from "@/services/campaigns";
 import { syncConnectedSenderReplies } from "@/services/replies";
@@ -44,7 +45,9 @@ async function handleCron(request: Request) {
         errors: [
           {
             scope: "campaign-processing",
-            message: error instanceof Error ? error.message : String(error)
+            message:
+              sanitizeDatabaseError(error, { operation: "CRON /api/cron/campaigns#processing" }) ??
+              (error instanceof Error ? error.message : String(error))
           }
         ]
       },
@@ -65,7 +68,9 @@ async function handleCron(request: Request) {
     console.error("[campaign-cron] Reply sync failed.", error);
     errors.push({
       scope: "reply-sync",
-      message: error instanceof Error ? error.message : String(error)
+      message:
+        sanitizeDatabaseError(error, { operation: "CRON /api/cron/campaigns#reply-sync" }) ??
+        (error instanceof Error ? error.message : String(error))
     });
   }
 

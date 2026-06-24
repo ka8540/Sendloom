@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { requireApiUser } from "@/lib/api-auth";
+import { sanitizeDatabaseError } from "@/lib/db-error";
 import { saveTemplateFields } from "@/services/imports";
 
 const schema = z.object({
@@ -21,7 +22,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const mapping = await saveTemplateFields(id, auth.user.id, payload.selectedColumns);
     return NextResponse.json(mapping);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not save template fields.";
+    const dbMessage = sanitizeDatabaseError(error, {
+      operation: "POST /api/imports/[id]/template-fields",
+      userId: auth.user.id
+    });
+    const message = dbMessage ?? (error instanceof Error ? error.message : "Could not save template fields.");
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

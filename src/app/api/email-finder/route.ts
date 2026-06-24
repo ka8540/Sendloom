@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { requireApiUser } from "@/lib/api-auth";
 import { recordAuditEvent } from "@/lib/audit";
+import { sanitizeDatabaseError } from "@/lib/db-error";
 import { HunterApiError, findHunterEmail } from "@/lib/hunter";
 import { createRateLimitResponse, rateLimit } from "@/lib/rate-limit";
 import { getDecryptedHunterKeyForUser } from "@/services/hunter-keys";
@@ -56,7 +57,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ results });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Email finder request failed.";
+    const dbMessage = sanitizeDatabaseError(error, { operation: "POST /api/email-finder", userId: auth.user.id });
+    const message = dbMessage ?? (error instanceof Error ? error.message : "Email finder request failed.");
     const status = error instanceof HunterApiError ? error.status : 400;
     return NextResponse.json({ error: message }, { status });
   }

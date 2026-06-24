@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { requireApiUser } from "@/lib/api-auth";
 import { recordAuditEvent } from "@/lib/audit";
+import { sanitizeDatabaseError } from "@/lib/db-error";
 import { HunterApiError, searchHunterDomain } from "@/lib/hunter";
 import { createRateLimitResponse, rateLimit } from "@/lib/rate-limit";
 import { saveHunterDomainSearchForUser } from "@/services/hunter-domain-searches";
@@ -57,7 +58,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ results, savedSearch });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Domain search failed.";
+    const dbMessage = sanitizeDatabaseError(error, { operation: "POST /api/domain-search", userId: auth.user.id });
+    const message = dbMessage ?? (error instanceof Error ? error.message : "Domain search failed.");
     const status = error instanceof HunterApiError ? error.status : 400;
     return NextResponse.json({ error: message }, { status });
   }

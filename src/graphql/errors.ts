@@ -19,6 +19,15 @@ export function badInputError(message: string): GraphQLError {
 }
 
 /**
+ * A generic, user-safe server error. Used to sanitize unexpected failures (most
+ * importantly raw database/Prisma errors) so SQL, table, and column internals
+ * never reach the client — independent of the Yoga error-masking default.
+ */
+export function internalError(message = "Something went wrong. Please try again."): GraphQLError {
+  return new GraphQLError(message, { extensions: { code: "INTERNAL_SERVER_ERROR" } });
+}
+
+/**
  * The daily Discover usage quota is exhausted. The message is already
  * user-safe (it carries only the limit and reset time, never internal counters,
  * keys, or user ids); the code lets the client render a clean product state.

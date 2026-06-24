@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { requireApiUser } from "@/lib/api-auth";
 import { recordAuditEvent } from "@/lib/audit";
+import { sanitizeDatabaseError } from "@/lib/db-error";
 import { createRateLimitResponse, rateLimit } from "@/lib/rate-limit";
 import { TEMPLATE_FORMATS } from "@/lib/templates";
 import { listTemplates, upsertTemplate } from "@/services/templates";
@@ -53,9 +54,12 @@ export async function POST(request: Request) {
 
     return NextResponse.json(template);
   } catch (error) {
+    // Sanitize Prisma/database errors so table, column, and constraint internals
+    // never reach the client; app-authored validation messages still pass through.
+    const dbMessage = sanitizeDatabaseError(error, { operation: "POST /api/templates", userId: auth.user.id });
     return NextResponse.json(
       {
-        error: error instanceof Error ? error.message : "Template save failed."
+        error: dbMessage ?? (error instanceof Error ? error.message : "Template save failed.")
       },
       { status: 400 }
     );

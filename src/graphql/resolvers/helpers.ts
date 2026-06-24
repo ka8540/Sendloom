@@ -7,8 +7,10 @@ import {
   discoverExpansionFailedError,
   discoverExpansionRunningError,
   forbiddenError,
+  internalError,
   notFoundError
 } from "@/graphql/errors";
+import { isDatabaseError, logDatabaseError } from "@/lib/db-error";
 import { ProspectError } from "@/services/prospects/prospect-search-service";
 
 export function asStringArray(value: unknown): string[] {
@@ -44,6 +46,13 @@ export function mapProspectError(error: unknown): never {
       default:
         break;
     }
+  }
+  // Raw database errors must never reach the client (they carry table/column/SQL
+  // internals). Yoga also masks unexpected errors, but this makes the guarantee
+  // explicit and independent of that configuration.
+  if (isDatabaseError(error)) {
+    logDatabaseError(error, { operation: "graphql.resolver" });
+    throw internalError();
   }
   throw error;
 }

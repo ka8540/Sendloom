@@ -1597,3 +1597,181 @@ Behavior:
 - Matches the dashboard theme (glass panels, green/teal accents, dark/light) and
   is responsive with the sidebar open or collapsed (the people table collapses to
   stacked cards on narrow viewports).
+
+## 24. SQL Injection Protection & Database Hardening
+
+Sendloom's database access is built on Prisma. This section documents the
+controls that keep user-controlled input from ever changing SQL structure, and
+the guardrails that keep it that way. It is deliberately honest: the goal is a
+defensible, layered posture — not a claim that attack is impossible.
+
+### 24.1 Audit summary
+
+A full-repository audit covered every database touchpoint: Next.js API routes,
+GraphQL resolvers/services, background workers, the cron processor, auth/session
+lookups, Discover/Import/Sequence/Template/Admin services, search/filter/sort
+utilities, audit-log and reporting queries, Prisma scripts, and migrations.
+
+Findings classification:
+
+- **`SAFE_ORM`** — the overwhelming majority. All reads/writes go through Prisma
+  Client methods (`findUnique`, `findMany`, `create`, `update`, `$transaction`,
+  …). User input is only ever passed as **values** inside `where`/`data`
+  objects, which Prisma parameterizes. Every query is scoped to the
+  authenticated `userId` (tenant ownership).
+- **`SAFE_PARAMETERIZED_RAW`** — two `$queryRaw` tagged-template calls, both with
+  **no user input**: a `SELECT 1` health probe (`src/lib/system-health.ts`) and a
+  static `information_schema` existence check
+  (`src/services/hunter-domain-searches.ts`).
+- **`UNSAFE_RAW`** — none. There are **zero** occurrences of `$queryRawUnsafe` or
+  `$executeRawUnsafe`, no string-concatenated SQL, no direct `pg`/`mysql`/`knex`
+  client, and no stored procedures/`SECURITY DEFINER` functions in migrations.
+- **`DYNAMIC_IDENTIFIER_REQUIRES_ALLOWLIST`** — none reachable from user input.
+  Every `orderBy` uses static literal keys; sort direction is never taken from a
+  request.
+
+What was hardened in this pass (defense-in-depth, since no live injection hole
+was found): **database-error sanitization** at the REST/GraphQL boundary, a
+**static guardrail** preventing reintroduction of unsafe raw methods, and a
+focused **SQL-injection regression test suite**.
+
+### 24.2 Rules of the codebase
+
+1. **Prefer Prisma ORM.** Express queries with Prisma Client methods and pass
+   user values inside `where`/`data`. Do not hand-build SQL when the ORM can
+   express it.
+2. **Raw SQL must be parameterized tagged templates.** Use `` prisma.$queryRaw`…${value}…` `` /
+   `$executeRaw` or `Prisma.sql`. User-controlled data only ever flows through
+   `${…}` placeholders — never concatenated into the SQL text, and never into an
+   identifier.
+3. **`$queryRawUnsafe` and `$executeRawUnsafe` are prohibited** in production
+   code. This is enforced by an automated check (§24.5).
+4. **Dynamic identifiers use server-owned allow-lists.** Table names, column
+   names, sort fields, sort directions, and operators are never taken from the
+   request. Sorting is fixed server-side or chosen from a `satisfies Record<…,
+   Prisma.*OrderByWithRelationInput>` map; directions are limited to `asc`/`desc`.
+5. **Inputs are validated at the boundary** with Zod (REST) or typed
+   GraphQL args + service-side validation. Validation is defense-in-depth, **not**
+   a substitute for parameterization. We do **not** blacklist words like `SELECT`,
+   `DROP`, or `OR` — legitimate content may contain them; parameterization is the
+   real protection.
+
+### 24.3 GraphQL boundary
+
+- Clients **cannot** send raw `where`, `orderBy`, `sort`, or SQL objects: the
+  schema exposes only typed scalars/enums and explicit inputs (`id`, `first`,
+  `after`, `companyId`, `positionCategory`, `CreateProspectSearchInput`). The
+  server maps approved inputs into Prisma objects itself.
+- The authenticated ownership condition (`userId`) is always server-generated
+  and never comes from the client.
+- Pagination is bounded (`first` ≤ 100) and cursors are validated — an invalid
+  cursor returns a safe `BAD_USER_INPUT` error, never a database error.
+- Depth and field-count limits apply; introspection is disabled in production.
+
+### 24.4 Database error sanitization
+
+Raw Prisma/PostgreSQL errors carry table names, column names, constraint
+internals, SQL fragments, and sometimes query parameters. They must never reach a
+user. The single source of truth is **`src/lib/db-error.ts`**:
+
+- `isDatabaseError(error)` / `databaseErrorCode(error)` classify Prisma errors.
+- `sanitizeDatabaseError(error, { operation, userId })` returns a generic,
+  user-safe message (`PUBLIC_DATABASE_ERROR_MESSAGE`) for any database error and
+  `null` for everything else — so app-authored domain messages still pass
+  through. It also logs **safe** diagnostics only (operation, user id, Prisma
+  code, error class name) — never the raw message, the failing query, the
+  parameters, or any user payload.
+
+REST routes that previously returned `error.message` verbatim now run the error
+through this helper first (`templates`, `imports/template-fields`,
+`domain-search`, `email-finder`, `templates/enhance`, `cron/campaigns`). On the
+GraphQL side, `mapProspectError` maps any database error to a generic
+`INTERNAL_SERVER_ERROR` (in addition to Yoga's default error masking), so schema
+internals cannot leak even if masking were ever disabled.
+
+### 24.5 Guardrail against regressions
+
+`scripts/check-unsafe-sql.ts` statically scans `src/` and fails if it finds:
+
+- `$queryRawUnsafe` / `$executeRawUnsafe` (prohibited), or
+- `$queryRaw(` / `$executeRaw(` used as a **string call** instead of a tagged
+  template.
+
+Run it directly with **`npm run lint:sql`**. The same scan also runs inside the
+test suite (`src/security/no-unsafe-raw-sql.test.ts`), so `npm test` (and CI)
+reject any newly introduced unsafe raw query. Test files are excluded from the
+scan; the guardrail script itself is allow-listed because it names the banned
+strings as data.
+
+If a genuinely unavoidable raw query is ever required, it must: live in one
+reviewed server-only module, use parameterized placeholders, accept **no**
+user-controlled identifiers, carry a security comment explaining why an ORM/safe
+API cannot be used, and ship with tests.
+
+### 24.6 Regression tests
+
+Focused tests live under `src/security/` and `src/lib/db-error.test.ts`:
+
+- Representative injection payloads (`' OR '1'='1`, `'; DROP TABLE users; --`,
+  `' UNION SELECT NULL--`, URL-encoded, backslash, and Unicode variants, …) are
+  asserted to land **only in value positions** in the Prisma call — the query
+  structure, sort field/direction, and page size are identical regardless of
+  payload.
+- Tenant ownership (`userId`) is asserted present on filtered queries; a
+  malicious record id stays scoped to the owner and deletes nothing when it does
+  not match.
+- Malicious pagination is clamped to the server maximum; malicious cursors are
+  passed as values (never SQL) or rejected with a safe validation error.
+- Database errors are asserted to be replaced with the generic public message,
+  and the raw message/internals are asserted **absent** from both the response
+  and the logs.
+- SQL-like text is asserted to round-trip as ordinary stored content.
+
+These tests use a mocked Prisma client and never call Gmail, Apify, OpenAI, or a
+real database.
+
+### 24.7 Database least privilege
+
+The **runtime** application role (`DATABASE_URL`) should hold only the privileges
+Sendloom needs and nothing more. The **migration** role (`DATABASE_URL_UNPOOLED`,
+Prisma `directUrl`) is the only credential that needs DDL. Inspect your hosting
+setup before changing production grants; the example below is a safe starting
+point (substitute your own role names and never commit real credentials):
+
+```sql
+-- Runtime role: DML only, no DDL, no role management, no database/schema creation.
+REVOKE ALL ON DATABASE sendloom FROM sendloom_app;
+GRANT CONNECT ON DATABASE sendloom TO sendloom_app;
+GRANT USAGE ON SCHEMA public TO sendloom_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO sendloom_app;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO sendloom_app;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO sendloom_app;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT USAGE, SELECT ON SEQUENCES TO sendloom_app;
+
+-- The runtime role must NOT be a superuser, must NOT own the database, and must
+-- NOT have CREATE/DROP/ALTER, CREATEDB, CREATEROLE, or schema-creation rights.
+-- Run `prisma migrate deploy` with a separate, more privileged migration role.
+```
+
+Both URLs are **server-only**: never prefix a database URL with `NEXT_PUBLIC_`
+and never expose either credential to the browser.
+
+### 24.8 Tenant ownership is not optional
+
+SQL-injection hardening does not replace authorization. Every data query carries
+the authenticated ownership condition (`userId`, or the relevant nested
+`company.userId`). Refactors in this pass preserved every existing ownership
+check; cross-user access remains impossible by construction.
+
+### 24.9 Honest scope notes
+
+- This pass found no live SQL-injection vulnerability; the work is hardening,
+  sanitization, regression coverage, and a regression guardrail.
+- Parameterization protects query **structure**. It does not, by itself, enforce
+  authorization, rate limiting, or CSRF — those remain separate, already-present
+  controls.
+- The static guardrail catches the known dangerous patterns (`*Unsafe`, raw
+  string calls). It is a high-signal tripwire, not a full taint analyzer; code
+  review of any future `$queryRaw`/`Prisma.sql` usage is still required.

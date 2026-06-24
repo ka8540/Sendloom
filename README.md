@@ -960,6 +960,30 @@ Create a local `.env` file at the repo root with the values below. Secrets and s
 - Confirm response security headers are returned by the deployed host (HSTS, CSP, X-Frame-Options, etc. are emitted by `next.config.mjs`).
 - Admin privileges are sourced from the DB `users.isAdmin` flag only. Use `ADMIN_EMAIL` + `ADMIN_PASSWORD` to bootstrap the first admin via the seed; later changes must go through DB-level updates.
 
+### Database & SQL injection safety
+
+Full details in [`DOCUMENTATION.md` §24](./DOCUMENTATION.md). Checklist:
+
+- **Prisma ORM is the default.** User input is passed as values in
+  `where`/`data`; never build SQL strings by hand when the ORM can express it.
+- **Raw SQL must be parameterized tagged templates** (`` $queryRaw`…${value}…` ``
+  / `Prisma.sql`). User values flow only through `${…}` placeholders, never into
+  SQL text or identifiers.
+- **`$queryRawUnsafe` / `$executeRawUnsafe` are prohibited.** `npm run lint:sql`
+  (and the test suite) fail the build if either is reintroduced.
+- **Dynamic identifiers are server-owned allow-lists.** Sort fields are fixed
+  server-side; sort direction is only `asc`/`desc`; no table/column/operator ever
+  comes from a request.
+- **Inputs are validated at the boundary** (Zod / typed GraphQL args). Clients
+  cannot send raw `where`/`orderBy`. Validation is defense-in-depth, not a
+  substitute for parameterization — words like `SELECT`/`DROP` are not blacklisted.
+- **Database errors are sanitized** (`src/lib/db-error.ts`): users get a generic
+  message; SQL/table/column/Prisma internals stay in safe server-side logs only.
+- **Every query is tenant-scoped** to the authenticated `userId`.
+- **Least privilege:** the runtime DB role (`DATABASE_URL`) is DML-only; migrations
+  use the separate `DATABASE_URL_UNPOOLED` role. Both URLs are server-only — never
+  `NEXT_PUBLIC_`.
+
 ## Local Development
 
 ### Prerequisites

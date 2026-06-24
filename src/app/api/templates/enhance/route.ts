@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/api-auth";
 import { recordAuditEvent } from "@/lib/audit";
+import { sanitizeDatabaseError } from "@/lib/db-error";
 import { env } from "@/lib/env";
 import { createRateLimitResponse, rateLimit } from "@/lib/rate-limit";
 import { enhanceTemplateRequestSchema, type SpamAnalysisPayload } from "@/lib/template-enhancement-request";
@@ -287,7 +288,8 @@ export async function POST(request: Request) {
       enhancedText
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "AI enhancement failed.";
+    const dbMessage = sanitizeDatabaseError(error, { operation: "POST /api/templates/enhance" });
+    const message = dbMessage ?? (error instanceof Error ? error.message : "AI enhancement failed.");
     return NextResponse.json(
       {
         error: message
