@@ -153,16 +153,50 @@ export function resolveAdminSectionFromDom(): AdminSection | null {
   return null;
 }
 
+// Step ids that belong to each admin section, ordered, so "Quick start" can
+// return the first couple for the visible section while "Full page tour"
+// returns them all.
+const SECTION_STEP_IDS: Record<AdminSection, string[]> = {
+  overview: ["overview", "metrics", "footprint"],
+  users: ["users", "users-pagination"],
+  restrictions: ["restrictions"],
+  "system-health": ["system-health", "system-health-recheck"],
+  activity: [
+    "activity",
+    "activity-user-search",
+    "activity-filters",
+    "activity-daterange",
+    "activity-event-search",
+    "activity-refresh"
+  ]
+};
+
+export function adminStepsForStage(stage: string | null): ManualStep[] {
+  if (stage === "full") {
+    return adminSteps;
+  }
+  // Quick start: the first couple of steps for the section that is on screen.
+  const section = resolveAdminSectionFromDom();
+  if (!section) {
+    return adminSteps;
+  }
+  const quickIds = SECTION_STEP_IDS[section].slice(0, 2);
+  return adminSteps.filter((step) => quickIds.includes(step.id));
+}
+
 export const adminManual: ManualConfig = {
   id: "admin",
   routeLabel: "Admin",
   helpLabel: "Help with Admin",
   helpTooltip: "Admin guide",
   helpVariant: "premium",
+  helpQuickStart: true,
+  quickStartStage: "quick",
+  fullTourStage: "full",
   version: "v1",
   steps: adminSteps,
-  // Report the current admin section so the first-time guide auto-opens once per
-  // admin route; the steps themselves are filtered to the visible section.
-  resolveStage: () => resolveAdminSectionFromDom(),
-  resolveSteps: () => adminSteps
+  // First-time auto-open shows the short quick start; the menu's Full page tour
+  // walks every control in the visible admin section.
+  resolveStage: () => "quick",
+  resolveSteps: (stage) => adminStepsForStage(stage)
 };

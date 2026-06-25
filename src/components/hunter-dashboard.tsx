@@ -296,6 +296,23 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
     return updated ? `Saved key ••••${keyStatus.last4 ?? "----"} updated ${updated}` : `Saved key ••••${keyStatus.last4 ?? "----"}`;
   }, [displayTimeZone, keyStatus]);
 
+  // Publish the help "What changed" marker once a result exists, so the Finder
+  // guide menu can offer a short tour of the result controls. Layout-neutral.
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return;
+    }
+    const root = document.documentElement;
+    if (results.length > 0) {
+      root.dataset.tourChangedStage = "changed";
+    } else {
+      delete root.dataset.tourChangedStage;
+    }
+    return () => {
+      delete document.documentElement.dataset.tourChangedStage;
+    };
+  }, [results.length]);
+
   const applyDomainSearchResults = useCallback(
     (domain: string, nextResults: HunterResultRow[], savedSearchId?: string | null) => {
       setSearchDomain(domain);
@@ -725,7 +742,7 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
   return (
     <>
       <div className={styles.page}>
-        <section className={`hero ${styles.hero}`}>
+        <section className={`hero ${styles.hero}`} data-finder-tour="page-intro">
           <div className={styles.heroCopy}>
             <p className={styles.eyebrow}>Prospecting workspace</p>
             <h1>Email Finder</h1>
@@ -735,11 +752,11 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
             </p>
           </div>
           <div className={styles.heroActions}>
-            <div className={styles.keyStatus}>
+            <div className={styles.keyStatus} data-finder-tour="status">
               <span className={`${styles.keyDot} ${keyStatus.configured ? styles.keyDotReady : styles.keyDotMissing}`} aria-hidden="true" />
               <span>{statusCopy}</span>
             </div>
-            <button className="button secondary" type="button" onClick={() => setIsSettingsOpen(true)}>
+            <button className="button secondary" type="button" onClick={() => setIsSettingsOpen(true)} data-finder-tour="settings">
               <Settings2 aria-hidden="true" />
               Hunter settings
             </button>
@@ -747,11 +764,12 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
         </section>
 
         <section className={`card ${styles.workspace}`}>
-          <div className={styles.tabRow} role="tablist" aria-label="Hunter search modes">
+          <div className={styles.tabRow} role="tablist" aria-label="Hunter search modes" data-finder-tour="mode-tabs">
             <button
               type="button"
               role="tab"
               aria-selected={activeTab === "finder"}
+              data-finder-tour="find-email-tab"
               className={`${styles.tabButton} ${activeTab === "finder" ? styles.tabButtonActive : ""}`}
               onClick={() => {
                 setActiveTab("finder");
@@ -765,6 +783,7 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
               type="button"
               role="tab"
               aria-selected={activeTab === "domain"}
+              data-finder-tour="domain-search-tab"
               className={`${styles.tabButton} ${activeTab === "domain" ? styles.tabButtonActive : ""}`}
               onClick={() => {
                 setActiveTab("domain");
@@ -777,7 +796,7 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
           </div>
 
           {!keyStatus.configured ? (
-            <div className={styles.callout}>
+            <div className={styles.callout} data-finder-tour="setup-callout">
               <div>
                 <strong>Add your Hunter API key to get started.</strong>
                 <p className="muted">The key is stored server-side in encrypted form and never exposed to the frontend.</p>
@@ -804,6 +823,7 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
                       <label htmlFor="finder-full-name">Full name</label>
                       <input
                         id="finder-full-name"
+                        data-finder-tour="full-name"
                         placeholder="Alexis Ohanian"
                         value={fullName}
                         onChange={(event) => setFullName(event.target.value)}
@@ -813,12 +833,13 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
                       <label htmlFor="finder-domain">Domain</label>
                       <input
                         id="finder-domain"
+                        data-finder-tour="domain"
                         placeholder="reddit.com"
                         value={finderDomain}
                         onChange={(event) => setFinderDomain(event.target.value)}
                       />
                     </div>
-                    <button className="button" type="button" onClick={handleFindEmail} disabled={searchDisabled}>
+                    <button className="button" type="button" onClick={handleFindEmail} disabled={searchDisabled} data-finder-tour="submit">
                       {pending ? <LoaderCircle className={styles.spinner} aria-hidden="true" /> : <Mail aria-hidden="true" />}
                       Find Email
                     </button>
@@ -851,7 +872,7 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
               )}
 
               {savedDomainSearches.length ? (
-                <section className={styles.savedSearchSection} aria-label="Saved domain searches">
+                <section className={styles.savedSearchSection} aria-label="Saved domain searches" data-finder-tour="history">
                   <div className={styles.savedSearchHeader}>
                     <div className={styles.savedSearchHeaderCopy}>
                       <strong>Saved domain searches</strong>
@@ -928,7 +949,7 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
               ) : null}
             </article>
 
-            <article className={styles.resultsPanel}>
+            <article className={styles.resultsPanel} data-finder-tour="results">
               <div className={styles.panelHeader}>
                 <div className={styles.resultsPanelHeader}>
                   <div>
@@ -1060,8 +1081,12 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
                               </div>
 
                               <div className={styles.resultsList}>
-                                {activeDomainGroup.visibleRows.map((row) => (
-                                  <article key={`${activeDomainGroup.category}-${row.email}-${row.source}`} className={styles.resultCard}>
+                                {activeDomainGroup.visibleRows.map((row, rowIndex) => (
+                                  <article
+                                    key={`${activeDomainGroup.category}-${row.email}-${row.source}`}
+                                    className={styles.resultCard}
+                                    data-finder-tour={rowIndex === 0 ? "result-card" : undefined}
+                                  >
                                     <div className={styles.resultHeader}>
                                       <div className={styles.resultSelection}>
                                         <label className={styles.resultCheckboxLabel}>
@@ -1089,6 +1114,7 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
                                         className={styles.copyButtonSecondary}
                                         onClick={() => handleCopy(row.email)}
                                         aria-label={`Copy ${row.email}`}
+                                        data-finder-tour={rowIndex === 0 ? "copy" : undefined}
                                       >
                                         {copiedEmail === row.email ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
                                         {copiedEmail === row.email ? "Copied" : "Copy email"}

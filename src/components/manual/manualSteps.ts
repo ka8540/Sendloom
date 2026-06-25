@@ -1,6 +1,17 @@
 import type { ManualStep } from "@/components/manual/manualTypes";
 
 /**
+ * Build a `resolveSteps` for a manual that has one ordered step list: the menu's
+ * "Full page tour" ("full") returns every step, while "Quick start" ("starter",
+ * the default) returns just the first `quickCount` — a genuinely shorter
+ * first-time guide, never a duplicate of the full tour.
+ */
+export function quickAndFullSteps(steps: ManualStep[], quickCount: number) {
+  return (stage: string | null): ManualStep[] =>
+    stage === "full" ? steps : steps.slice(0, Math.max(1, Math.min(quickCount, steps.length)));
+}
+
+/**
  * Keep every non-optional step (these render centered when their target is
  * missing, matching the default manual behavior) and keep an optional step only
  * when its target is present. If filtering removes everything, fall back to the

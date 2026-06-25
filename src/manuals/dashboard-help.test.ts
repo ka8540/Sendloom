@@ -66,8 +66,10 @@ describe("Shared dashboard Help button reaches every authenticated route (#1, #2
   it("uses one shared premium button component, not a per-page engine (#4, #5)", () => {
     expect(BUTTON_SOURCE).toContain("DashboardHelpButton");
     expect(BUTTON_SOURCE).toContain("overviewHelpRoot");
-    // Direct-start when there is nothing extra to offer; menu only otherwise.
-    expect(BUTTON_SOURCE).toMatch(/if \(hasQuickStart \|\| marker\)/);
+    // Clicking always opens the guide menu (never immediately starts a tour).
+    expect(BUTTON_SOURCE).toMatch(/handleTrigger[\s\S]{0,200}setMenuOpen\(true\)/);
+    expect(BUTTON_SOURCE).toContain("Quick start");
+    expect(BUTTON_SOURCE).toContain("Full page tour");
   });
 
   it("opening help never triggers a backend mutation (#19)", () => {
@@ -103,9 +105,12 @@ describe("Admin guide is route-adaptive and safely worded (#17, admin coverage)"
     expect(shown).not.toContain("overview");
   });
 
-  it("resolves the current admin section from the DOM marker (per-route auto-open)", () => {
+  it("resolves the current admin section from the DOM marker for quick steps", () => {
     expect(typeof resolveAdminSectionFromDom).toBe("function");
-    expect(ADMIN_SOURCE).toMatch(/resolveStage:\s*\(\)\s*=>\s*resolveAdminSectionFromDom\(\)/);
+    // Quick start picks the visible section's first steps; Full page tour shows all.
+    expect(ADMIN_SOURCE).toContain("resolveAdminSectionFromDom()");
+    expect(ADMIN_SOURCE).toMatch(/quickStartStage:\s*"quick"/);
+    expect(ADMIN_SOURCE).toMatch(/fullTourStage:\s*"full"/);
   });
 
   it("never exposes credentials, tokens, secrets, or stack traces", () => {

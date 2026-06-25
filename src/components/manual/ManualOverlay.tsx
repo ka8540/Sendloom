@@ -19,6 +19,8 @@ type OverlayGeometry = {
   popoverSize: PopoverSize;
   targetRect: HighlightRect | null;
   viewport: ViewportSize;
+  /** Left edge of the usable content region (right of the docked sidebar). */
+  contentLeft: number;
 };
 
 const SPOTLIGHT_PADDING = 8;
@@ -42,6 +44,25 @@ function getViewportSize(): ViewportSize {
     height: window.innerHeight,
     width: document.documentElement.clientWidth || window.innerWidth
   };
+}
+
+// Left edge of the dashboard content region — the right edge of the docked
+// sidebar (plus a small gap). The coachmark is kept to the right of this so it
+// never covers the sidebar. Returns 0 when the sidebar is absent or off-canvas
+// (e.g. mobile), so narrow layouts use the full viewport.
+function getContentLeft(): number {
+  if (typeof document === "undefined") {
+    return 0;
+  }
+  const sidebar = document.querySelector("aside.sidebar");
+  if (!(sidebar instanceof HTMLElement)) {
+    return 0;
+  }
+  const rect = sidebar.getBoundingClientRect();
+  if (rect.width <= 0 || rect.left > 4 || rect.right <= 0) {
+    return 0;
+  }
+  return rect.right + 8;
 }
 
 function getTargetElement(selector?: string): HTMLElement | null {
@@ -150,7 +171,8 @@ function areGeometriesEqual(left: OverlayGeometry, right: OverlayGeometry) {
     left.viewport.height === right.viewport.height &&
     left.viewport.width === right.viewport.width &&
     left.popoverSize.height === right.popoverSize.height &&
-    left.popoverSize.width === right.popoverSize.width
+    left.popoverSize.width === right.popoverSize.width &&
+    left.contentLeft === right.contentLeft
   );
 }
 
@@ -201,7 +223,8 @@ export function ManualOverlay() {
         width: roundNumber(popoverRect?.width || DEFAULT_POPOVER_SIZE.width)
       },
       targetRect: normalizeRect(getElementRect(step?.selector)),
-      viewport: getViewportSize()
+      viewport: getViewportSize(),
+      contentLeft: roundNumber(getContentLeft())
     };
 
     const previousGeometry = lastGeometryRef.current;
@@ -349,7 +372,7 @@ export function ManualOverlay() {
     controlledScrollRef.current = true;
     lastGeometryRef.current = null;
     setGeometry(null);
-    scrollTargetIntoView(step.selector, manual?.scrollBlock ?? "center");
+    scrollTargetIntoView(step.selector, manual?.scrollBlock ?? "nearest");
 
     const stopWaiting = waitForTargetToSettle(step.selector, () => {
       controlledScrollRef.current = false;
@@ -385,7 +408,13 @@ export function ManualOverlay() {
   const popoverStyle = useMemo(() => {
     const viewport = geometry?.viewport ?? getViewportSize();
 
-    return getPopoverStyle(geometry?.targetRect ?? null, step?.placement, viewport, geometry?.popoverSize ?? DEFAULT_POPOVER_SIZE);
+    return getPopoverStyle(
+      geometry?.targetRect ?? null,
+      step?.placement,
+      viewport,
+      geometry?.popoverSize ?? DEFAULT_POPOVER_SIZE,
+      geometry?.contentLeft ?? 0
+    );
   }, [geometry, step?.placement]);
 
   if (!manual || !step || !isOpen || typeof document === "undefined") {

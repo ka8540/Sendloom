@@ -70,7 +70,11 @@ export function hasRoom(
   rect: HighlightRect,
   placement: Exclude<ManualPlacement, "center">,
   viewport: ViewportSize,
-  popoverSize: PopoverSize
+  popoverSize: PopoverSize,
+  // Left edge of the usable content region (e.g. right of the sidebar). A
+  // "left" placement must fit to the right of this, so the coachmark is not
+  // pushed over the sidebar. Defaults to the plain viewport gutter.
+  minLeft: number = VIEWPORT_GUTTER
 ) {
   if (placement === "bottom") {
     return rect.bottom + TARGET_GAP + popoverSize.height <= viewport.height - VIEWPORT_GUTTER;
@@ -84,7 +88,7 @@ export function hasRoom(
     return rect.right + TARGET_GAP + popoverSize.width <= viewport.width - VIEWPORT_GUTTER;
   }
 
-  return rect.left - TARGET_GAP - popoverSize.width >= VIEWPORT_GUTTER;
+  return rect.left - TARGET_GAP - popoverSize.width >= minLeft;
 }
 
 /**
@@ -96,20 +100,23 @@ export function resolvePlacement(
   rect: HighlightRect,
   placement: ManualPlacement | undefined,
   viewport: ViewportSize,
-  popoverSize: PopoverSize
+  popoverSize: PopoverSize,
+  minLeft: number = VIEWPORT_GUTTER
 ): Exclude<ManualPlacement, "center"> {
   const placementOrder = getPlacementOrder(placement);
 
   return (
     placementOrder.find(
       (item): item is Exclude<ManualPlacement, "center"> =>
-        item !== "center" && hasRoom(rect, item, viewport, popoverSize)
+        item !== "center" && hasRoom(rect, item, viewport, popoverSize, minLeft)
     ) ?? (placementOrder[0] === "center" ? "bottom" : placementOrder[0])
   );
 }
 
-function centeredLeft(viewport: ViewportSize, popoverSize: PopoverSize, maxLeft: number) {
-  return clamp((viewport.width - popoverSize.width) / 2, VIEWPORT_GUTTER, maxLeft);
+function centeredLeft(viewport: ViewportSize, popoverSize: PopoverSize, maxLeft: number, minLeft: number) {
+  // Centre within the usable content region (minLeft..maxLeft) so the card is
+  // centred over the dashboard content rather than the sidebar.
+  return clamp((minLeft + maxLeft + popoverSize.width) / 2 - popoverSize.width / 2, minLeft, maxLeft);
 }
 
 /**
@@ -123,9 +130,10 @@ function detachedFallback(
   viewport: ViewportSize,
   popoverSize: PopoverSize,
   maxLeft: number,
-  maxTop: number
+  maxTop: number,
+  minLeft: number
 ): PopoverPosition {
-  const left = centeredLeft(viewport, popoverSize, maxLeft);
+  const left = centeredLeft(viewport, popoverSize, maxLeft, minLeft);
   const bottomBand = clamp(viewport.height - popoverSize.height - VIEWPORT_GUTTER, VIEWPORT_GUTTER, maxTop);
   const topBand = clamp(VIEWPORT_GUTTER, VIEWPORT_GUTTER, maxTop);
   const targetMidY = (rect.top + rect.bottom) / 2;
@@ -153,28 +161,34 @@ export function getPopoverStyle(
   rect: HighlightRect | null,
   placement: ManualPlacement | undefined,
   viewport: ViewportSize,
-  popoverSize: PopoverSize
+  popoverSize: PopoverSize,
+  // Left edge of the usable content region (right of the sidebar). The coachmark
+  // is kept to the right of this whenever a placement allows, so it does not
+  // cover the sidebar. Defaults to the plain viewport gutter.
+  minLeft: number = VIEWPORT_GUTTER
 ): PopoverPosition {
-  const maxLeft = Math.max(VIEWPORT_GUTTER, viewport.width - popoverSize.width - VIEWPORT_GUTTER);
+  const safeLeft = Math.max(VIEWPORT_GUTTER, minLeft);
+  const maxLeft = Math.max(safeLeft, viewport.width - popoverSize.width - VIEWPORT_GUTTER);
   const maxTop = Math.max(VIEWPORT_GUTTER, viewport.height - popoverSize.height - VIEWPORT_GUTTER);
 
   if (!rect || placement === "center") {
     return {
-      left: centeredLeft(viewport, popoverSize, maxLeft),
+      left: centeredLeft(viewport, popoverSize, maxLeft, safeLeft),
       top: clamp((viewport.height - popoverSize.height) / 2, VIEWPORT_GUTTER, maxTop)
     };
   }
 
   // Only place beside the target on a side that genuinely fits (target + gap +
-  // popover within the viewport). A side that merely "exists" but would clamp
-  // the popover back over the target is rejected in favour of the fallback.
+  // popover within the viewport / content region). A side that merely "exists"
+  // but would clamp the popover back over the target or sidebar is rejected in
+  // favour of the fallback.
   const fittingPlacement = getPlacementOrder(placement).find(
     (item): item is Exclude<ManualPlacement, "center"> =>
-      item !== "center" && hasRoom(rect, item, viewport, popoverSize)
+      item !== "center" && hasRoom(rect, item, viewport, popoverSize, safeLeft)
   );
 
   if (!fittingPlacement) {
-    return detachedFallback(rect, viewport, popoverSize, maxLeft, maxTop);
+    return detachedFallback(rect, viewport, popoverSize, maxLeft, maxTop, safeLeft);
   }
 
   let left = rect.left + rect.width / 2 - popoverSize.width / 2;
@@ -191,7 +205,7 @@ export function getPopoverStyle(
   }
 
   return {
-    left: clamp(left, VIEWPORT_GUTTER, maxLeft),
+    left: clamp(left, safeLeft, maxLeft),
     top: clamp(top, VIEWPORT_GUTTER, maxTop)
   };
 }

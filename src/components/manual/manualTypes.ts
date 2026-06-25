@@ -35,11 +35,15 @@ export type ManualConfig = {
    */
   helpVariant?: "premium" | "overview" | "simple";
   /**
-   * When true, the page provides a short first-time "quick start" guide as a
-   * `starter` stage, so the help menu offers a "Quick start" entry and the
-   * button breathes until that starter guide is completed/dismissed.
+   * When true, the page provides a short first-time "quick start" guide, so the
+   * help menu offers a "Quick start" entry and the button breathes until that
+   * guide is completed/dismissed.
    */
   helpQuickStart?: boolean;
+  /** Stage the menu's "Quick start" opens (default "starter"). */
+  quickStartStage?: string;
+  /** Stage the menu's "Full page tour" opens (default "full"). */
+  fullTourStage?: string;
   /**
    * `scrollIntoView` block alignment used when revealing a target. Defaults to
    * "center" (the original behavior) for every existing manual. The Overview

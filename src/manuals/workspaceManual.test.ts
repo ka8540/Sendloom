@@ -169,9 +169,9 @@ describe("Overview manual registration + redesigned Help button (#1, #2, #4)", (
 
 describe("Premium button motion + accessibility (#5, #21, #22, #23, #24, #25)", () => {
   it("breathes only until the beginner guide is complete and stops on interaction", () => {
-    // Quick-start manuals breathe until their "starter" stage is complete.
+    // Quick-start manuals breathe until their quick-start stage is complete.
     expect(BUTTON_SOURCE).toContain("hasQuickStart");
-    expect(BUTTON_SOURCE).toMatch(/hasQuickStart \? "starter"/);
+    expect(BUTTON_SOURCE).toMatch(/hasQuickStart \? quickStartStage/);
     expect(BUTTON_SOURCE).toContain("overviewHelpButtonAttention");
     expect(CSS_SOURCE).toMatch(/\.overviewHelpButtonAttention::after[\s\S]*animation:\s*overview-help-breathe/);
   });
@@ -376,9 +376,9 @@ describe("Optional targets are filtered safely (#11, #12, #16, #19, #20)", () =>
   it("a manual Help click resolves to the complete current-state tour (#11)", () => {
     expect(workspaceManual.resolveStage?.()).toBe("full");
     expect(ids(overviewStepsForStage("full"))).toEqual(ids(overviewFullSteps()));
-    // The premium menu's "Full page tour" replays it.
+    // The premium menu's "Full page tour" replays it via the configured stage.
     expect(BUTTON_SOURCE).toContain("Full page tour");
-    expect(BUTTON_SOURCE).toMatch(/startStage\(null\)/);
+    expect(BUTTON_SOURCE).toMatch(/startStage\(fullTourStage\)/);
   });
 
   it("drops sequence-only targets on an empty dashboard (#12)", () => {

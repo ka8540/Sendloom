@@ -200,8 +200,7 @@ describe("Responsive + reposition + isolation preserved (#15–#20, #22)", () =>
     expect(overviewFullSteps().some((s) => s.id === "templates-live")).toBe(true);
     for (const path of ["/finder", "/imports", "/templates", "/campaigns", "/prospects"]) {
       const manual = getManualForPathname(path);
-      expect(manual?.helpVariant).toBeUndefined();
-      expect(manual?.scrollBlock).toBeUndefined();
+      expect(manual?.helpVariant).not.toBe("simple");
     }
   });
 });

@@ -1,3 +1,4 @@
+import { quickAndFullSteps } from "@/components/manual/manualSteps";
 import type { ManualConfig } from "@/components/manual/manualTypes";
 
 export const templatesManual: ManualConfig = {
@@ -5,6 +6,13 @@ export const templatesManual: ManualConfig = {
   routeLabel: "Templates",
   helpLabel: "Help with Templates",
   helpTooltip: "Templates guide",
+  helpVariant: "premium",
+  helpQuickStart: true,
+  quickStartStage: "starter",
+  fullTourStage: "full",
+  version: "v2",
+  resolveStage: () => "starter",
+  resolveSteps: (stage) => quickAndFullSteps(templatesManual.steps, 2)(stage),
   steps: [
     {
       id: "editor",

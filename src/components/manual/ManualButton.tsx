@@ -50,8 +50,10 @@ export function ManualButton() {
  * dashboard route; only the label/tooltip and available menu options change.
  */
 function DashboardHelpButton({ label, tooltip, manual }: { label: string; tooltip: string; manual: ManualConfig }) {
-  const { openManual, openManualStage, isStageComplete } = useManual();
+  const { openManualStage, isStageComplete } = useManual();
   const hasQuickStart = Boolean(manual.helpQuickStart);
+  const quickStartStage = manual.quickStartStage ?? "starter";
+  const fullTourStage = manual.fullTourStage ?? "full";
   const [menuOpen, setMenuOpen] = useState(false);
   const [changedStage, setChangedStage] = useState<string | null>(null);
   // Read completion only after mount so SSR and the first client render agree
@@ -62,9 +64,9 @@ function DashboardHelpButton({ label, tooltip, manual }: { label: string; toolti
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    const primaryStage = hasQuickStart ? "starter" : manual.resolveStage ? manual.resolveStage() : null;
+    const primaryStage = hasQuickStart ? quickStartStage : manual.resolveStage ? manual.resolveStage() : null;
     setPrimaryComplete(isStageComplete(primaryStage));
-  }, [hasQuickStart, isStageComplete, manual]);
+  }, [hasQuickStart, isStageComplete, manual, quickStartStage]);
 
   const closeMenu = useCallback((returnFocus: boolean) => {
     setMenuOpen(false);
@@ -81,21 +83,17 @@ function DashboardHelpButton({ label, tooltip, manual }: { label: string; toolti
     return marker ? marker : null;
   }, []);
 
+  // Clicking the button always opens the guide menu (Quick start / Full page
+  // tour / What changed) — it never immediately starts a tour, so the
+  // experience is identical on every dashboard.
   const handleTrigger = useCallback(() => {
     if (menuOpen) {
       closeMenu(false);
       return;
     }
-    const marker = readChangedStage();
-    setChangedStage(marker);
-    // Only show the menu when there is more than the single full-tour action;
-    // otherwise start the full tour directly (consistent with simpler pages).
-    if (hasQuickStart || marker) {
-      setMenuOpen(true);
-    } else {
-      openManual();
-    }
-  }, [closeMenu, hasQuickStart, menuOpen, openManual, readChangedStage]);
+    setChangedStage(readChangedStage());
+    setMenuOpen(true);
+  }, [closeMenu, menuOpen, readChangedStage]);
 
   // Close the menu on Escape or an outside pointer press while it is open.
   useEffect(() => {
@@ -137,15 +135,11 @@ function DashboardHelpButton({ label, tooltip, manual }: { label: string; toolti
   }, [menuOpen, closeMenu]);
 
   const startStage = useCallback(
-    (stage: string | null) => {
+    (stage: string) => {
       closeMenu(false);
-      if (stage) {
-        openManualStage(stage);
-      } else {
-        openManual();
-      }
+      openManualStage(stage);
     },
-    [closeMenu, openManual, openManualStage]
+    [closeMenu, openManualStage]
   );
 
   return (
@@ -164,7 +158,7 @@ function DashboardHelpButton({ label, tooltip, manual }: { label: string; toolti
               className={styles.overviewMenuItem}
               type="button"
               role="menuitem"
-              onClick={() => startStage("starter")}
+              onClick={() => startStage(quickStartStage)}
             >
               <GraduationCap aria-hidden="true" />
               <span>
@@ -177,12 +171,12 @@ function DashboardHelpButton({ label, tooltip, manual }: { label: string; toolti
             className={styles.overviewMenuItem}
             type="button"
             role="menuitem"
-            onClick={() => startStage(null)}
+            onClick={() => startStage(fullTourStage)}
           >
             <Compass aria-hidden="true" />
             <span>
               <strong>Full page tour</strong>
-              <small>Walk every visible card and control</small>
+              <small>Walk every visible section and control</small>
             </span>
           </button>
           {changedStage ? (

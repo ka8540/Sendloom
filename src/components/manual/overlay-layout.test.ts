@@ -77,13 +77,10 @@ describe("Coachmark renders in a body portal, isolated from the dashboard (#1, #
 });
 
 describe("Reveal uses a minimal, motion-aware scroll (#14, #17)", () => {
-  it("the Overview guide scrolls with block: nearest, others keep center", () => {
+  it("reveals targets with block: nearest by default so headings are never clipped", () => {
     expect(workspaceManual.scrollBlock).toBe("nearest");
-    // Other manuals do not opt in, so the overlay default (center) is preserved.
-    expect(getManualForPathname("/finder")?.scrollBlock).toBeUndefined();
-    expect(getManualForPathname("/prospects")?.scrollBlock).toBeUndefined();
-    expect(getManualForPathname("/campaigns")?.scrollBlock).toBeUndefined();
-    expect(OVERLAY_SOURCE).toContain('manual?.scrollBlock ?? "center"');
+    // The shared default is now "nearest" for every route (center clipped headings).
+    expect(OVERLAY_SOURCE).toContain('manual?.scrollBlock ?? "nearest"');
   });
 
   it("honours prefers-reduced-motion for scrolling and disables decorative motion", () => {
@@ -177,11 +174,10 @@ describe("Mobile fallback + design preserved (#16, #18, #20)", () => {
     expect(overviewFullSteps().some((step) => step.id === "sequence-health")).toBe(true);
   });
 
-  it("does not change any other route's guide (#20)", () => {
+  it("keeps every route on the shared premium button (never the simple fallback) (#20)", () => {
     for (const path of ["/finder", "/imports", "/templates", "/campaigns", "/prospects"]) {
       const manual = getManualForPathname(path);
-      expect(manual?.helpVariant).toBeUndefined();
-      expect(manual?.scrollBlock).toBeUndefined();
+      expect(manual?.helpVariant).not.toBe("simple");
     }
   });
 });
