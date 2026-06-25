@@ -19,7 +19,7 @@ import styles from "./overview-command-center.module.css";
 
 export function ActivityFeed({ items }: { items: ActivityItem[] }) {
   return (
-    <section className={styles.activitySection}>
+    <section className={styles.activitySection} data-overview-tour="live-system">
       <div className={styles.sectionTop}>
         <div>
           <span className={styles.sectionKicker}>Live system</span>
@@ -34,12 +34,16 @@ export function ActivityFeed({ items }: { items: ActivityItem[] }) {
 
       {items.length ? (
         <ol className={styles.activityList} aria-label="Recent activity timeline">
-          {items.map((item) => {
+          {items.map((item, index) => {
             const Icon = getActivityIcon(item);
             const visualTone = getActivityTone(item);
 
             return (
-              <li key={item.id} className={styles.activityTimelineEntry}>
+              <li
+                key={item.id}
+                className={styles.activityTimelineEntry}
+                data-overview-tour={index === 0 ? "activity-row" : undefined}
+              >
                 <Link href={item.href} className={styles.activityItem}>
                   <span className={styles.activityTimelineMark} aria-hidden="true">
                     <span className={`${styles.activityIcon} ${styles[`activityIcon${capitalize(visualTone)}`]}`}>

@@ -18,6 +18,7 @@ import { prisma } from "@/lib/db";
 import { ActivityFeed } from "@/components/dashboard/activity-feed";
 import { formatCompactNumber, formatRelativeTime, buildTrend, humanizeEnum } from "@/components/dashboard/formatters";
 import { OverviewSummary, type SendWindowSender, type TemplateFormatSlice } from "@/components/dashboard/overview-summary";
+import { OverviewTourLauncher } from "@/components/dashboard/overview-tour-launcher";
 import { SequencePanel } from "@/components/dashboard/sequence-panel";
 import type {
   ActivityItem,
@@ -589,9 +590,30 @@ export default async function OverviewCommandCenter() {
     updatedThisWeek: templateCountThisWeek
   };
 
+  // Snapshot of what is currently rendered, derived only from data already
+  // loaded above, so the contextual help tours never hit the backend. Drives
+  // which one-time onboarding phase (if any) auto-opens for this visit.
+  const gmailNearOrBlocked =
+    userSendWindow.isBlocked ||
+    (userSendWindow.limit > 0 && userSendWindow.sentLast24h >= Math.max(1, Math.floor(userSendWindow.limit * 0.8)));
+  const hasFlaggedSequence = sequenceRows.some(
+    (row) => row.needsAttention || row.isPausedRun || Boolean(row.dailyLimitBlock)
+  );
+  const tourState = {
+    hasImports: processedImportCount > 0,
+    hasTemplates: templateCount > 0,
+    hasSequences: campaignCount > 0,
+    hasActiveSequences: activeSequenceCount > 0,
+    hasRecentSequences: sequenceRows.length > 0,
+    hasActivity: activityItems.length > 0,
+    hasAttentionItems: needsAttentionCount > 0 || gmailNearOrBlocked || hasFlaggedSequence,
+    hasGmailSenders: sendWindowSenders.some((sender) => sender.connected),
+    hasMultipleSequencePages: sequenceRows.length > 5
+  };
+
   return (
     <div className={styles.page}>
-      <section className={styles.hero}>
+      <section className={styles.hero} data-overview-tour="page-intro">
         <div className={styles.heroContent}>
           <span className={styles.heroEyebrow}>
             <span className={styles.heroPulse} />
@@ -613,7 +635,7 @@ export default async function OverviewCommandCenter() {
               <strong className={styles.heroHighlightValue}>{formatCompactNumber(sentLastDayCount)}</strong>
               <span className={styles.heroHighlightMeta}>{sentTrend.label}</span>
             </div>
-            <div className={styles.heroHighlight}>
+            <div className={styles.heroHighlight} data-overview-tour="needs-attention">
               <span className={styles.heroHighlightLabel}>Needs attention</span>
               <strong className={styles.heroHighlightValue}>{formatCompactNumber(needsAttentionCount)}</strong>
               <span className={styles.heroHighlightMeta}>{needsAttentionCount ? "Review required" : "All clear"}</span>
@@ -639,7 +661,7 @@ export default async function OverviewCommandCenter() {
               <strong>{formatCompactNumber(validatedSequenceCount)} validated</strong>
               <span>{sentTrend.label}</span>
             </div>
-            <div className={styles.heroInsights} aria-label="Workspace analytics summary">
+            <div className={styles.heroInsights} aria-label="Workspace analytics summary" data-overview-tour="workspace-health">
               <div className={styles.insightTitleRow}>
                 <span>
                   <BarChart3 aria-hidden="true" />
@@ -648,7 +670,7 @@ export default async function OverviewCommandCenter() {
                 <strong>{formatCompactNumber(runTotals.recipients)} targeted</strong>
               </div>
 
-              <div className={styles.deliveryInsight}>
+              <div className={styles.deliveryInsight} data-overview-tour="delivery-issues">
                 <div
                   className={styles.deliveryDonut}
                   style={{ "--chart-background": deliveryMix.gradient } as CSSProperties}
@@ -696,7 +718,7 @@ export default async function OverviewCommandCenter() {
                 ))}
               </div>
 
-              <div className={styles.healthChart}>
+              <div className={styles.healthChart} data-overview-tour="sequence-health">
                 <div className={styles.healthHeader}>
                   <span>
                     <PieChart aria-hidden="true" />
@@ -740,7 +762,7 @@ export default async function OverviewCommandCenter() {
       />
 
       <section className={styles.mainGrid}>
-        <div className={styles.sequenceSection}>
+        <div className={styles.sequenceSection} data-overview-tour="recent-sequences">
           <div className={styles.sectionTop}>
             <div>
               <span className={styles.sectionKicker}>Recent sequences</span>
@@ -750,7 +772,7 @@ export default async function OverviewCommandCenter() {
               </p>
             </div>
             <div className={styles.sectionTopMeta}>
-              <Link href="/campaigns" className={styles.sectionLink}>
+              <Link href="/campaigns" className={styles.sectionLink} data-overview-tour="view-all-sequences">
                 View all sequences
                 <ArrowRight aria-hidden="true" />
               </Link>
@@ -775,6 +797,8 @@ export default async function OverviewCommandCenter() {
 
         <ActivityFeed items={activityItems} />
       </section>
+
+      <OverviewTourLauncher state={tourState} />
     </div>
   );
 }

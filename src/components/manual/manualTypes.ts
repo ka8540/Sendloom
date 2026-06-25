@@ -27,6 +27,13 @@ export type ManualConfig = {
   helpLabel?: string;
   /** Tooltip text for the floating help button (default "Help"). */
   helpTooltip?: string;
+  /**
+   * Optional page-specific presentation for the floating help button. Manuals
+   * that omit this keep the default compact circular control, so every other
+   * route is byte-for-byte unchanged. "overview" opts into the premium
+   * hover-expanding pill + guide menu used by the Overview dashboard.
+   */
+  helpVariant?: "default" | "overview";
   /** When false, the provider never auto-opens this manual (a host page drives it). */
   autoOpen?: boolean;
   /** Appended to the completion storage key so the manual can be re-versioned. */
