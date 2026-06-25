@@ -28,12 +28,18 @@ export type ManualConfig = {
   /** Tooltip text for the floating help button (default "Help"). */
   helpTooltip?: string;
   /**
-   * Optional page-specific presentation for the floating help button. Manuals
-   * that omit this keep the default compact circular control, so every other
-   * route is byte-for-byte unchanged. "overview" opts into the premium
-   * hover-expanding pill + guide menu used by the Overview dashboard.
+   * Optional presentation override for the floating help button. Every
+   * dashboard manual now uses the premium hover-expanding pill + guide menu by
+   * default; set "simple" only to fall back to the plain circular control.
+   * ("overview" is kept as a back-compat alias for the premium button.)
    */
-  helpVariant?: "default" | "overview";
+  helpVariant?: "premium" | "overview" | "simple";
+  /**
+   * When true, the page provides a short first-time "quick start" guide as a
+   * `starter` stage, so the help menu offers a "Quick start" entry and the
+   * button breathes until that starter guide is completed/dismissed.
+   */
+  helpQuickStart?: boolean;
   /**
    * `scrollIntoView` block alignment used when revealing a target. Defaults to
    * "center" (the original behavior) for every existing manual. The Overview

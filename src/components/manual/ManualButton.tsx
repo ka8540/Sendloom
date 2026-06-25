@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CircleHelp, Compass, GraduationCap, Sparkles } from "lucide-react";
 
+import type { ManualConfig } from "@/components/manual/manualTypes";
 import { useManual } from "@/components/manual/ManualProvider";
 import styles from "@/components/manual/manual.module.css";
 
@@ -16,48 +17,54 @@ export function ManualButton() {
   const label = manual.helpLabel ?? "Help";
   const tooltip = manual.helpTooltip ?? "Help";
 
-  if (manual.helpVariant === "overview") {
-    return <OverviewHelpButton label={label} tooltip={tooltip} />;
+  // Every dashboard route now uses the premium hover-expanding pill + menu; a
+  // manual can opt back to the plain circular control with helpVariant "simple".
+  if (manual.helpVariant === "simple") {
+    return (
+      <button
+        className={styles.helpButton}
+        type="button"
+        onClick={openManual}
+        aria-label={label}
+        data-manual-help-button="true"
+      >
+        <CircleHelp aria-hidden="true" />
+        <span className={styles.helpTooltip} aria-hidden="true">
+          {tooltip}
+        </span>
+      </button>
+    );
   }
 
-  return (
-    <button
-      className={styles.helpButton}
-      type="button"
-      onClick={openManual}
-      aria-label={label}
-      data-manual-help-button="true"
-    >
-      <CircleHelp aria-hidden="true" />
-      <span className={styles.helpTooltip} aria-hidden="true">
-        {tooltip}
-      </span>
-    </button>
-  );
+  return <DashboardHelpButton label={label} tooltip={tooltip} manual={manual} />;
 }
 
 /**
- * Premium Overview-only variant: a compact glass icon button that expands into a
- * "Overview guide" pill on hover/focus and opens a small guide menu on click.
- * The expansion is purely visual (the button is fixed-position, so nothing on
- * the page shifts), and a restrained breathing accent runs only until the
- * beginner guide has been completed. All decorative motion is disabled under
- * `prefers-reduced-motion` via the stylesheet.
+ * Premium dashboard help button: a compact glass icon that expands into a
+ * "<Page> guide" pill on hover/focus and opens a small guide menu on click (or
+ * starts the full tour directly when no extra options apply). The expansion is
+ * purely visual — the button is fixed-position, so nothing on the page shifts —
+ * and a restrained breathing accent runs only until the page's first-time guide
+ * has been completed. All decorative motion is disabled under
+ * `prefers-reduced-motion` via the stylesheet. Reused on every authenticated
+ * dashboard route; only the label/tooltip and available menu options change.
  */
-function OverviewHelpButton({ label, tooltip }: { label: string; tooltip: string }) {
+function DashboardHelpButton({ label, tooltip, manual }: { label: string; tooltip: string; manual: ManualConfig }) {
   const { openManual, openManualStage, isStageComplete } = useManual();
+  const hasQuickStart = Boolean(manual.helpQuickStart);
   const [menuOpen, setMenuOpen] = useState(false);
   const [changedStage, setChangedStage] = useState<string | null>(null);
   // Read completion only after mount so SSR and the first client render agree
   // (localStorage is unavailable on the server). The button remounts whenever a
-  // tour closes, so this re-reads after the beginner guide is finished.
-  const [beginnerComplete, setBeginnerComplete] = useState(false);
+  // tour closes, so this re-reads after the first-time guide is finished.
+  const [primaryComplete, setPrimaryComplete] = useState(false);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    setBeginnerComplete(isStageComplete("starter"));
-  }, [isStageComplete]);
+    const primaryStage = hasQuickStart ? "starter" : manual.resolveStage ? manual.resolveStage() : null;
+    setPrimaryComplete(isStageComplete(primaryStage));
+  }, [hasQuickStart, isStageComplete, manual]);
 
   const closeMenu = useCallback((returnFocus: boolean) => {
     setMenuOpen(false);
@@ -66,19 +73,29 @@ function OverviewHelpButton({ label, tooltip }: { label: string; tooltip: string
     }
   }, []);
 
-  const toggleMenu = useCallback(() => {
-    setMenuOpen((open) => {
-      if (open) {
-        return false;
-      }
-      // Read the "what changed" marker the Overview page publishes so the menu
-      // can offer a replay of the newly relevant contextual guide when present.
-      const marker =
-        typeof document === "undefined" ? "" : document.documentElement.dataset.overviewChangedStage ?? "";
-      setChangedStage(marker ? marker : null);
-      return true;
-    });
+  // Read the "what changed" marker a page may publish so the menu can offer a
+  // replay of the newly relevant contextual guide when present.
+  const readChangedStage = useCallback(() => {
+    const marker =
+      typeof document === "undefined" ? "" : document.documentElement.dataset.tourChangedStage ?? "";
+    return marker ? marker : null;
   }, []);
+
+  const handleTrigger = useCallback(() => {
+    if (menuOpen) {
+      closeMenu(false);
+      return;
+    }
+    const marker = readChangedStage();
+    setChangedStage(marker);
+    // Only show the menu when there is more than the single full-tour action;
+    // otherwise start the full tour directly (consistent with simpler pages).
+    if (hasQuickStart || marker) {
+      setMenuOpen(true);
+    } else {
+      openManual();
+    }
+  }, [closeMenu, hasQuickStart, menuOpen, openManual, readChangedStage]);
 
   // Close the menu on Escape or an outside pointer press while it is open.
   useEffect(() => {
@@ -138,10 +155,24 @@ function OverviewHelpButton({ label, tooltip }: { label: string; tooltip: string
           ref={menuRef}
           className={styles.overviewMenu}
           role="menu"
-          aria-label="Overview guide options"
-          data-overview-help-menu="true"
+          aria-label={`${tooltip} options`}
+          data-tour-help-menu="true"
         >
-          <p className={styles.overviewMenuTitle}>Overview guide</p>
+          <p className={styles.overviewMenuTitle}>{tooltip}</p>
+          {hasQuickStart ? (
+            <button
+              className={styles.overviewMenuItem}
+              type="button"
+              role="menuitem"
+              onClick={() => startStage("starter")}
+            >
+              <GraduationCap aria-hidden="true" />
+              <span>
+                <strong>Quick start</strong>
+                <small>Replay the first-time walkthrough</small>
+              </span>
+            </button>
+          ) : null}
           <button
             className={styles.overviewMenuItem}
             type="button"
@@ -150,7 +181,7 @@ function OverviewHelpButton({ label, tooltip }: { label: string; tooltip: string
           >
             <Compass aria-hidden="true" />
             <span>
-              <strong>Start full tour</strong>
+              <strong>Full page tour</strong>
               <small>Walk every visible card and control</small>
             </span>
           </button>
@@ -163,33 +194,21 @@ function OverviewHelpButton({ label, tooltip }: { label: string; tooltip: string
             >
               <Sparkles aria-hidden="true" />
               <span>
-                <strong>Learn what changed</strong>
+                <strong>What changed</strong>
                 <small>See the newly relevant sections</small>
               </span>
             </button>
           ) : null}
-          <button
-            className={styles.overviewMenuItem}
-            type="button"
-            role="menuitem"
-            onClick={() => startStage("starter")}
-          >
-            <GraduationCap aria-hidden="true" />
-            <span>
-              <strong>Restart beginner tips</strong>
-              <small>Replay the new-user walkthrough</small>
-            </span>
-          </button>
         </div>
       ) : null}
 
       <button
         ref={triggerRef}
         className={`${styles.overviewHelpButton}${
-          beginnerComplete ? "" : ` ${styles.overviewHelpButtonAttention}`
+          primaryComplete ? "" : ` ${styles.overviewHelpButtonAttention}`
         }`}
         type="button"
-        onClick={toggleMenu}
+        onClick={handleTrigger}
         aria-label={label}
         aria-haspopup="menu"
         aria-expanded={menuOpen}

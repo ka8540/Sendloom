@@ -2,7 +2,9 @@ import type { ManualConfig } from "@/components/manual/manualTypes";
 
 export const campaignsManual: ManualConfig = {
   id: "campaigns",
-  routeLabel: "Campaigns",
+  routeLabel: "Sequences",
+  helpLabel: "Help with Sequences",
+  helpTooltip: "Sequences guide",
   steps: [
     {
       id: "builder",

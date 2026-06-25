@@ -131,17 +131,19 @@ describe("Overview manual registration + redesigned Help button (#1, #2, #4)", (
     expect(getManualForPathname("/unknown")).toBeNull();
   });
 
-  it("uses the Overview label, tooltip, premium variant, and a re-versioned key", () => {
+  it("uses the Overview label, tooltip, premium variant, quick-start, and a re-versioned key", () => {
     expect(workspaceManual.helpLabel).toBe("Help with Overview");
     expect(workspaceManual.helpTooltip).toBe("Overview guide");
-    expect(workspaceManual.helpVariant).toBe("overview");
+    expect(workspaceManual.helpVariant).toBe("premium");
+    expect(workspaceManual.helpQuickStart).toBe(true);
     expect(workspaceManual.autoOpen).toBe(false);
     expect(workspaceManual.version).toBe("v3");
   });
 
-  it("renders a dedicated premium Help button only for the overview variant (#1)", () => {
-    expect(BUTTON_SOURCE).toContain('manual.helpVariant === "overview"');
-    expect(BUTTON_SOURCE).toContain("OverviewHelpButton");
+  it("renders the shared premium dashboard Help button (#1)", () => {
+    expect(BUTTON_SOURCE).toContain("DashboardHelpButton");
+    // Premium is the default; only "simple" falls back to the plain control.
+    expect(BUTTON_SOURCE).toContain('manual.helpVariant === "simple"');
     // Keeps the accessible label + focus-return hook on the real <button>.
     expect(BUTTON_SOURCE).toContain('aria-label={label}');
     expect(BUTTON_SOURCE).toContain('data-manual-help-button="true"');
@@ -167,7 +169,9 @@ describe("Overview manual registration + redesigned Help button (#1, #2, #4)", (
 
 describe("Premium button motion + accessibility (#5, #21, #22, #23, #24, #25)", () => {
   it("breathes only until the beginner guide is complete and stops on interaction", () => {
-    expect(BUTTON_SOURCE).toContain('isStageComplete("starter")');
+    // Quick-start manuals breathe until their "starter" stage is complete.
+    expect(BUTTON_SOURCE).toContain("hasQuickStart");
+    expect(BUTTON_SOURCE).toMatch(/hasQuickStart \? "starter"/);
     expect(BUTTON_SOURCE).toContain("overviewHelpButtonAttention");
     expect(CSS_SOURCE).toMatch(/\.overviewHelpButtonAttention::after[\s\S]*animation:\s*overview-help-breathe/);
   });
@@ -293,7 +297,7 @@ describe("State-aware auto-open phases (#8, #9, #10, #13, #14, #17)", () => {
   it("waits for a settled layout and never opens over an existing tour/menu", () => {
     expect(LAUNCHER_SOURCE).toContain("AUTO_OPEN_DELAY_MS");
     expect(LAUNCHER_SOURCE).toContain("[data-manual-popover='true']");
-    expect(LAUNCHER_SOURCE).toContain("[data-overview-help-menu='true']");
+    expect(LAUNCHER_SOURCE).toContain("[data-tour-help-menu='true']");
     expect(LAUNCHER_SOURCE).toMatch(/if \(!manual \|\| isOpen \|\| launchedRef\.current\)/);
   });
 });
@@ -372,8 +376,8 @@ describe("Optional targets are filtered safely (#11, #12, #16, #19, #20)", () =>
   it("a manual Help click resolves to the complete current-state tour (#11)", () => {
     expect(workspaceManual.resolveStage?.()).toBe("full");
     expect(ids(overviewStepsForStage("full"))).toEqual(ids(overviewFullSteps()));
-    // The premium menu's "Start full tour" replays it.
-    expect(BUTTON_SOURCE).toContain("Start full tour");
+    // The premium menu's "Full page tour" replays it.
+    expect(BUTTON_SOURCE).toContain("Full page tour");
     expect(BUTTON_SOURCE).toMatch(/startStage\(null\)/);
   });
 
@@ -457,10 +461,10 @@ describe("'Learn what changed' marker (#11)", () => {
   });
 
   it("the launcher publishes the marker the Help menu reads", () => {
-    expect(LAUNCHER_SOURCE).toContain("overviewChangedStage");
+    expect(LAUNCHER_SOURCE).toContain("tourChangedStage");
     expect(LAUNCHER_SOURCE).toContain("resolveOverviewChangedStage(state)");
-    expect(BUTTON_SOURCE).toContain("overviewChangedStage");
-    expect(BUTTON_SOURCE).toContain("Learn what changed");
+    expect(BUTTON_SOURCE).toContain("tourChangedStage");
+    expect(BUTTON_SOURCE).toContain("What changed");
   });
 });
 

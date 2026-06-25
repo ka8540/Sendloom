@@ -513,7 +513,8 @@ export const workspaceManual: ManualConfig = {
   routeLabel: "Overview",
   helpLabel: "Help with Overview",
   helpTooltip: "Overview guide",
-  helpVariant: "overview",
+  helpVariant: "premium",
+  helpQuickStart: true,
   // Reveal targets with the minimum scroll (block: "nearest") instead of the
   // default "center", so highlighting an in-hero visual like Sequence health
   // never re-centres the page into a stretched-looking reframe.

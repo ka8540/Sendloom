@@ -3,6 +3,8 @@ import type { ManualConfig } from "@/components/manual/manualTypes";
 export const finderManual: ManualConfig = {
   id: "finder",
   routeLabel: "Finder",
+  helpLabel: "Help with Finder",
+  helpTooltip: "Finder guide",
   steps: [
     {
       id: "search-mode",

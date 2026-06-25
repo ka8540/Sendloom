@@ -34,12 +34,12 @@ export function OverviewTourLauncher({ state }: { state: OverviewTourState }) {
     const root = document.documentElement;
     const changed = resolveOverviewChangedStage(state);
     if (changed) {
-      root.dataset.overviewChangedStage = changed;
+      root.dataset.tourChangedStage = changed;
     } else {
-      delete root.dataset.overviewChangedStage;
+      delete root.dataset.tourChangedStage;
     }
     return () => {
-      delete document.documentElement.dataset.overviewChangedStage;
+      delete document.documentElement.dataset.tourChangedStage;
     };
   }, [state]);
 
@@ -59,7 +59,7 @@ export function OverviewTourLauncher({ state }: { state: OverviewTourState }) {
       // A tour or the Help menu may have opened during the settle delay; if so,
       // stay out of the way rather than stacking another tour on top.
       const tourOpen = document.querySelector("[data-manual-popover='true']");
-      const menuOpen = document.querySelector("[data-overview-help-menu='true']");
+      const menuOpen = document.querySelector("[data-tour-help-menu='true']");
       if (!tourOpen && !menuOpen) {
         openManualStage(next);
       }

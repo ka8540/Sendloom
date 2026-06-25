@@ -3,6 +3,8 @@ import type { ManualConfig } from "@/components/manual/manualTypes";
 export const templatesManual: ManualConfig = {
   id: "templates",
   routeLabel: "Templates",
+  helpLabel: "Help with Templates",
+  helpTooltip: "Templates guide",
   steps: [
     {
       id: "editor",

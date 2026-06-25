@@ -3,6 +3,8 @@ import type { ManualConfig } from "@/components/manual/manualTypes";
 export const importsManual: ManualConfig = {
   id: "imports",
   routeLabel: "Imports",
+  helpLabel: "Help with Imports",
+  helpTooltip: "Imports guide",
   steps: [
     {
       id: "upload",
