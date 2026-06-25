@@ -146,7 +146,9 @@
 .primaryButton {
   background: linear-gradient(135deg, var(--accent), var(--accent-strong));
   border-color: transparent;
-  color: #04130d;
+  /* Theme-aware: white on the deep-green light-mode button, near-black on the
+     bright-green dark-mode button. Fixes the low-contrast label in light mode. */
+  color: var(--accent-contrast);
 }
 
 .primaryButton:hover:not(:disabled) {
@@ -1651,7 +1653,9 @@
 }
 
 .quotaIndicatorUnlimited {
-  color: var(--accent);
+  /* --accent-strong is a deeper green in light mode (better contrast on the
+     near-white header) and a brighter mint in dark mode — legible in both. */
+  color: var(--accent-strong);
 }
 
 .usagePanel {

@@ -15,6 +15,9 @@
   --muted: #66758f;
   --accent: #167c5a;
   --accent-strong: #106347;
+  /* Text/icon color that sits ON the green accent (e.g. the primary button).
+     Light mode: the accent is a deep green, so use white for high contrast. */
+  --accent-contrast: #ffffff;
   --accent-soft: rgba(22, 124, 90, 0.08);
   --accent-soft-strong: rgba(22, 124, 90, 0.16);
   --line: rgba(20, 32, 51, 0.1);
@@ -88,6 +91,8 @@
   --muted: #97a9c6;
   --accent: #2fc48a;
   --accent-strong: #8be7bf;
+  /* Dark mode: the accent is a bright mint, so use near-black for contrast. */
+  --accent-contrast: #04130d;
   --accent-soft: rgba(47, 196, 138, 0.12);
   --accent-soft-strong: rgba(47, 196, 138, 0.2);
   --line: rgba(151, 169, 198, 0.16);
@@ -158,6 +163,8 @@
     --muted: #97a9c6;
     --accent: #2fc48a;
     --accent-strong: #8be7bf;
+    /* Dark mode: the accent is a bright mint, so use near-black for contrast. */
+    --accent-contrast: #04130d;
     --accent-soft: rgba(47, 196, 138, 0.12);
     --accent-soft-strong: rgba(47, 196, 138, 0.2);
     --line: rgba(151, 169, 198, 0.16);
