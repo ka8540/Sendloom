@@ -16,7 +16,15 @@ const HEALTH_TONE_CLASS: Record<SequenceHealthTone, string> = {
   idle: styles.sequenceHealthIdle
 };
 
-export function SequenceRow({ sequence, onRelaunch }: { sequence: SequenceRowData; onRelaunch: () => void }) {
+export function SequenceRow({
+  sequence,
+  onRelaunch,
+  tourTarget = false
+}: {
+  sequence: SequenceRowData;
+  onRelaunch: () => void;
+  tourTarget?: boolean;
+}) {
   const router = useRouter();
 
   function navigate() {
@@ -38,6 +46,7 @@ export function SequenceRow({ sequence, onRelaunch }: { sequence: SequenceRowDat
       onClick={navigate}
       onKeyDown={handleKeyDown}
       aria-label={`Open ${sequence.name}`}
+      data-overview-tour={tourTarget ? "recent-sequence-card" : undefined}
     >
       <div className={styles.sequenceMain}>
         <div className={styles.sequenceIdentity}>

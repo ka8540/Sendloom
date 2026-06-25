@@ -27,6 +27,30 @@ export type ManualConfig = {
   helpLabel?: string;
   /** Tooltip text for the floating help button (default "Help"). */
   helpTooltip?: string;
+  /**
+   * Optional presentation override for the floating help button. Every
+   * dashboard manual now uses the premium hover-expanding pill + guide menu by
+   * default; set "simple" only to fall back to the plain circular control.
+   * ("overview" is kept as a back-compat alias for the premium button.)
+   */
+  helpVariant?: "premium" | "overview" | "simple";
+  /**
+   * When true, the page provides a short first-time "quick start" guide, so the
+   * help menu offers a "Quick start" entry and the button breathes until that
+   * guide is completed/dismissed.
+   */
+  helpQuickStart?: boolean;
+  /** Stage the menu's "Quick start" opens (default "starter"). */
+  quickStartStage?: string;
+  /** Stage the menu's "Full page tour" opens (default "full"). */
+  fullTourStage?: string;
+  /**
+   * `scrollIntoView` block alignment used when revealing a target. Defaults to
+   * "center" (the original behavior) for every existing manual. The Overview
+   * guide uses "nearest" so revealing a target inside the tall hero/analytics
+   * card never yanks the page into a jarring, stretched-looking reframe.
+   */
+  scrollBlock?: ScrollLogicalPosition;
   /** When false, the provider never auto-opens this manual (a host page drives it). */
   autoOpen?: boolean;
   /** Appended to the completion storage key so the manual can be re-versioned. */

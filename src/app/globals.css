@@ -222,6 +222,22 @@
   box-sizing: border-box;
 }
 
+/*
+ * Guided-tour targets: keep a safe gap above/below when the help overlay scrolls
+ * one into view, so a page heading is never clipped against the viewport top.
+ * scroll-margin only affects scrollIntoView — it has no layout impact.
+ */
+[data-overview-tour],
+[data-finder-tour],
+[data-discover-tour],
+[data-imports-tour],
+[data-templates-tour],
+[data-sequences-tour],
+[data-admin-tour] {
+  scroll-margin-top: 28px;
+  scroll-margin-bottom: 28px;
+}
+
 body {
   margin: 0;
   color: var(--text);

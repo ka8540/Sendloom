@@ -482,7 +482,7 @@ export function AdminActivityWorkspace({
   const selectedEmail = summary?.email ?? selectedUser?.email ?? null;
 
   return (
-    <div className={styles.workspace}>
+    <div className={styles.workspace} data-admin-tour="activity">
       {/* ── Left rail: search + selected user ── */}
       <aside className={styles.userRail}>
         <div className={`${styles.userSearchCard} card`}>

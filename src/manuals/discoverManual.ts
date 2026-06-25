@@ -124,8 +124,30 @@ export function resolveDiscoverListStage(flags: { hasSearches: boolean }): Disco
   return flags.hasSearches ? "list" : "starter";
 }
 
+/** Short Quick start — purpose + create a search + where searches land. */
+export function discoverListQuickSteps(options: { unlimited: boolean }): ManualStep[] {
+  return [
+    listIntroStep(),
+    listQuotaStep(options),
+    listNewSearchStep(),
+    {
+      id: "search-history",
+      title: "Your searches land here",
+      body: "Each search appears in Search History with its company, roles, location, people count, and status. Open a Ready search to review its results.",
+      selector: hasTarget("search-history") ? sel("search-history") : sel("empty-state"),
+      placement: "top",
+      optional: true
+    }
+  ];
+}
+
 export function discoverListStepsForStage(stage: string | null, options: { unlimited: boolean }): ManualStep[] {
-  if (stage === "list") {
+  if (stage === "quick") {
+    return discoverListQuickSteps(options);
+  }
+  // "full" and the populated "list" stage both walk the complete list guide;
+  // an empty workspace still gets the starter walk-through.
+  if (stage === "list" || (stage === "full" && hasTarget("search-history"))) {
     return discoverPopulatedListSteps(options);
   }
   return discoverStarterSteps(options);
@@ -371,7 +393,45 @@ export function discoverFailedSteps(): ManualStep[] {
   ];
 }
 
+/** Short Quick start for one search workspace — what this page is + key actions. */
+export function discoverDetailQuickSteps(): ManualStep[] {
+  return [
+    detailHeaderStep(),
+    {
+      id: "status-summary",
+      title: "Search status",
+      body: "Shows whether this search is ready, processing, still a draft, or needs attention.",
+      selector: sel("status-summary"),
+      placement: "bottom",
+      optional: true
+    },
+    {
+      id: "people-table",
+      title: "Discovered people",
+      body: "Ready searches list the people found here with their role, location, and an inferred work email. Inferred addresses are not verified — review them before outreach.",
+      selector: sel("people-table"),
+      placement: "top",
+      optional: true
+    },
+    {
+      id: "bulk-actions",
+      title: "Use the contacts",
+      body: "Select people to export them or add them to Imports for a sequence.",
+      selector: sel("bulk-actions"),
+      placement: "bottom",
+      optional: true
+    }
+  ];
+}
+
 export function discoverDetailStepsForStage(stage: string | null): ManualStep[] {
+  if (stage === "quick") {
+    return discoverDetailQuickSteps();
+  }
+  // The full tour walks whichever state this search is actually in.
+  if (stage === "full") {
+    return discoverDetailStepsForStage(resolveDetailStageFromDom());
+  }
   if (stage === "ready") {
     return discoverReadySteps();
   }
@@ -436,6 +496,10 @@ export const discoverListManual: ManualConfig = {
   routeLabel: "Discover",
   helpLabel: "Help with Discover",
   helpTooltip: "Discover guide",
+  helpVariant: "premium",
+  helpQuickStart: true,
+  quickStartStage: "quick",
+  fullTourStage: "full",
   autoOpen: false,
   version: "v2",
   steps: discoverStarterSteps({ unlimited: false }),
@@ -448,6 +512,10 @@ export const discoverDetailManual: ManualConfig = {
   routeLabel: "Discover",
   helpLabel: "Help with Discover",
   helpTooltip: "Discover guide",
+  helpVariant: "premium",
+  helpQuickStart: true,
+  quickStartStage: "quick",
+  fullTourStage: "full",
   autoOpen: false,
   version: "v2",
   steps: discoverReadySteps(),

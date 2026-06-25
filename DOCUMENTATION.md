@@ -1597,3 +1597,93 @@ Behavior:
 - Matches the dashboard theme (glass panels, green/teal accents, dark/light) and
   is responsive with the sidebar open or collapsed (the people table collapses to
   stacked cards on narrow viewports).
+
+## 24. Dashboard Help System (in-app guided tours)
+
+Every authenticated dashboard route shares one premium Help button and one
+tested coachmark engine. There is **no** per-page tour engine — pages only
+register a config and add stable target attributes.
+
+### 24.1 Architecture
+
+```
+Authenticated layout (ManualProvider, mounted once in src/app/layout.tsx)
+  → ManualButton          floating premium Help button (route-aware label)
+  → ManualOverlay         spotlight + coachmark, rendered via createPortal(document.body)
+  → getManualForPathname  resolves the current route to a ManualConfig
+  → overlayPosition       pure, collision-aware fixed positioning (unit-tested)
+```
+
+- `src/components/manual/` — shared engine: `ManualProvider` (context, persistence,
+  scroll-lock, focus return), `ManualButton` (premium pill + guide menu),
+  `ManualOverlay` (body-portal spotlight + coachmark), `overlayPosition.ts` (pure
+  placement math), `manualSteps.ts` (`filterAvailableManualSteps`), `manual.module.css`.
+- `src/manuals/` — one `ManualConfig` per route area plus the registry in
+  `src/manuals/index.ts` (`getManualForPathname`).
+
+### 24.2 Route registry
+
+`getManualForPathname(pathname)` returns the config for: `/workspace` (Overview),
+`/finder`, `/imports`, `/templates`, `/campaigns` (Sequences), `/campaigns|/sequences/[id]`
+(Sequence detail), `/prospects` + `/prospects/[id]` (Discover list/detail), and every
+`/admin*` route (one adaptive admin guide). Public/auth/legal routes return `null`,
+so the button never appears off the dashboard.
+
+### 24.3 Premium Help button
+
+`ManualButton` renders the premium variant for every config (set
+`helpVariant: "simple"` to opt back to the plain circular control). It is a
+fixed-position glass icon that expands into a "&lt;Page&gt; guide" pill on
+hover/focus and exposes `aria-label="Help with &lt;Page&gt;"`. Clicking opens a
+guide menu when there is more than one action (Quick start when
+`helpQuickStart` is set, Full page tour, and What changed when a page publishes
+`document.documentElement.dataset.tourChangedStage`); otherwise it starts the full
+tour directly. A restrained breathing accent runs until the page's first-time
+guide is complete and is disabled under `prefers-reduced-motion`.
+
+### 24.4 Coachmark (layout-safe, non-negotiable)
+
+The spotlight + coachmark render through `createPortal(…, document.body)` — never
+inside a card, grid, table, or the target — so opening a guide has **zero layout
+impact**. The overlay only reads the target's `getBoundingClientRect()` and scrolls
+it with `block: "nearest"`; it never mutates the target. `overlayPosition.ts`
+places the card beside the target on the first side with genuine room (≥16px gap),
+clamps it ≥20px inside the viewport (`document.documentElement.clientWidth`,
+scrollbar-safe), and drops to a detached top/bottom-centre fallback when no side
+fits — never covering the target when a clear spot exists. The card is a flex
+column (`min(25rem, calc(100vw - 40px))`, `box-sizing: border-box`) whose body is
+the only scroll region, so text wraps and the close/Skip/Next controls are always
+visible. Placement re-runs on resize, scroll, and a `ResizeObserver` (sidebar
+toggle, font load, content reflow); observers are cleaned up on close.
+
+### 24.5 State-aware steps + contextual phases
+
+Steps mark state-dependent targets `optional: true`; `filterAvailableManualSteps`
+drops any whose target is missing/hidden, so a tour never points at an absent
+control (empty states skip data-only steps; pagination/selection steps appear only
+when present). Configs may add `resolveStage`/`resolveSteps` to vary the guide by
+page state (Overview, Discover, Admin). Contextual phases (e.g. Overview's
+foundations / first-sequence / attention) auto-open once when new data appears,
+driven by a small client launcher that reads already-loaded page state — Help
+never issues backend requests.
+
+### 24.6 Persistence + accessibility
+
+Completion is stored in `localStorage` under
+`sendloom.manual.completed.{id}[.{stage}][.{version}]` — booleans only, no PII,
+metrics, or API data. Manual Help clicks always replay the current guide. The
+coachmark is a `role="dialog"`; Escape closes it, focus moves into it on open and
+returns to the Help button on close.
+
+### 24.7 Adding Help to a new dashboard route
+
+```
+1. Register the route → ManualConfig in src/manuals/index.ts
+2. Define page state (reuse data already loaded; no new backend calls)
+3. Add stable targets: data-<area>-tour="..." (never Tailwind/text/nth-child selectors)
+4. Add quick-start steps (helpQuickStart + a "starter" stage) — keep it short
+5. Add full-tour steps (mark state-dependent ones optional)
+6. Add contextual phases if new data unlocks controls
+7. Add focused tests (registration, label, step builders, optional filtering)
+8. Verify zero layout shift (the shared portal guarantees it)
+```

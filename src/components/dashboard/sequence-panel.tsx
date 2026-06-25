@@ -226,11 +226,19 @@ export function SequencePanel({ rows }: { rows: SequenceRowData[] }) {
       {filteredRows.length ? (
         <>
           <div className={styles.sequenceList}>
-            {pagedRows.map((sequence) => (
-              <SequenceRow key={sequence.id} sequence={sequence} onRelaunch={startRefreshWindow} />
+            {pagedRows.map((sequence, index) => (
+              <SequenceRow
+                key={sequence.id}
+                sequence={sequence}
+                onRelaunch={startRefreshWindow}
+                tourTarget={index === 0}
+              />
             ))}
           </div>
-          <div className={styles.sequencePagination}>
+          <div
+            className={styles.sequencePagination}
+            data-overview-tour={totalPages > 1 ? "recent-sequences-pagination" : undefined}
+          >
             <div className={styles.sequencePaginationControls}>
               <button
                 type="button"

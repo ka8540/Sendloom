@@ -125,7 +125,7 @@ function ActiveCard({ data }: { data: ActiveSummary }) {
   const statusTone: StatusTone = data.running > 0 ? "accent" : data.queued > 0 ? "info" : "muted";
 
   return (
-    <Link href={"/campaigns" as Route} className={styles.card} data-kind="active">
+    <Link href={"/campaigns" as Route} className={styles.card} data-kind="active" data-overview-tour="active-sequences">
       <CardHead icon={Activity} status={status} statusTone={statusTone} pulse={data.running > 0} />
       <Stat label="Active sequences" value={formatCompactNumber(moving)} unit="active now" />
 
@@ -170,7 +170,7 @@ function ListsCard({ data }: { data: ListsSummary }) {
   const statusTone: StatusTone = !hasData ? "muted" : data.needsMapping > 0 ? "warning" : "accent";
 
   return (
-    <Link href={"/imports" as Route} className={styles.card} data-kind="lists">
+    <Link href={"/imports" as Route} className={styles.card} data-kind="lists" data-overview-tour="lists-ready">
       <CardHead icon={FileSpreadsheet} status={status} statusTone={statusTone} />
       <Stat label="Lists ready" value={formatCompactNumber(data.processed)} unit="processed imports" />
 
@@ -216,7 +216,7 @@ function TemplatesCard({ data }: { data: TemplatesSummary }) {
       : "Playable email assets";
 
   return (
-    <Link href={"/templates" as Route} className={styles.card} data-kind="templates">
+    <Link href={"/templates" as Route} className={styles.card} data-kind="templates" data-overview-tour="templates-live">
       <CardHead icon={LayoutTemplate} status={status} statusTone={statusTone} />
       <Stat label="Templates live" value={formatCompactNumber(data.total)} unit="email templates" />
 
@@ -283,7 +283,7 @@ function SendWindowCardCompact({ combined, senders }: { combined: DailySendWindo
     : null;
 
   return (
-    <Link href={"/workspace" as Route} className={styles.card} data-kind="send">
+    <Link href={"/workspace" as Route} className={styles.card} data-kind="send" data-overview-tour="gmail-send-window">
       <CardHead icon={Gauge} status={SEND_STATUS[tone].label} statusTone={SEND_STATUS[tone].tone} />
 
       {combined.ledgerAvailable ? (
@@ -297,7 +297,7 @@ function SendWindowCardCompact({ combined, senders }: { combined: DailySendWindo
             <span className={styles.statUnit}>sent · rolling 24h</span>
           </div>
 
-          <div className={styles.visual}>
+          <div className={styles.visual} data-overview-tour="gmail-progress">
             <div
               className={styles.meter}
               data-tone={meterTone}
@@ -340,18 +340,19 @@ function SendWindowCardCompact({ combined, senders }: { combined: DailySendWindo
         <CardFoot
           text={primary.senderName || primary.senderEmail}
           badge={extraSenders > 0 ? `+${extraSenders} sender${extraSenders === 1 ? "" : "s"}` : undefined}
+          tourId="sender-breakdown"
         />
       ) : (
-        <CardFoot text="Connect a Gmail sender to send" />
+        <CardFoot text="Connect a Gmail sender to send" tourId="sender-breakdown" />
       )}
     </Link>
   );
 }
 
 // ---- Shared footer ------------------------------------------------------------
-function CardFoot({ text, badge }: { text: string; badge?: string }) {
+function CardFoot({ text, badge, tourId }: { text: string; badge?: string; tourId?: string }) {
   return (
-    <div className={styles.cardFoot}>
+    <div className={styles.cardFoot} data-overview-tour={tourId}>
       <span className={styles.cardFootText} title={text}>
         {text}
       </span>

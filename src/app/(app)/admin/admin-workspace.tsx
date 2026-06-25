@@ -120,9 +120,9 @@ export function AdminOverviewSection({
   ];
 
   return (
-    <div className={styles.adminSection}>
+    <div className={styles.adminSection} data-admin-tour="overview">
       {/* Metric cards */}
-      <section className={styles.metrics} aria-label="Key metrics">
+      <section className={styles.metrics} aria-label="Key metrics" data-admin-tour="metrics">
         {metricItems.map(({ label, value }) => (
           <article key={label} className={`${styles.metricCard} card`}>
             <p className={styles.metricLabel}>{label}</p>
@@ -303,7 +303,7 @@ export function AdminUsersSection({
     : [];
 
   return (
-    <div className={styles.adminSection}>
+    <div className={styles.adminSection} data-admin-tour="users">
       <div className={styles.managementSection}>
         <div className={styles.managementGrid}>
           {/* Table card */}
@@ -559,7 +559,7 @@ export function AdminRestrictionsSection({
   const selectedUser = users.find((u) => u.id === selectedUserId) ?? null;
 
   return (
-    <div className={styles.adminSection}>
+    <div className={styles.adminSection} data-admin-tour="restrictions">
       <div className={styles.restrictionsLayout}>
         {/* User picker */}
         <div className={`${styles.restrictionsUserPickerCard} card`}>
@@ -687,7 +687,7 @@ export function AdminSystemHealthSection({ systemHealth }: { systemHealth: Syste
   ];
 
   return (
-    <div className={styles.adminSection}>
+    <div className={styles.adminSection} data-admin-tour="system-health">
       <div className={styles.healthTabHeader}>
         <div>
           <p className={styles.sectionKicker}>Infrastructure</p>

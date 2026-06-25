@@ -65,6 +65,206 @@
   outline: none;
 }
 
+/* ---- Overview premium variant ---------------------------------------------
+   A compact glass icon button that expands into an "Overview guide" pill on
+   hover/focus and opens a guide menu on click. Scoped to the Overview manual
+   only, so every other route keeps the default `.helpButton` above. */
+.overviewHelpRoot {
+  position: fixed;
+  right: 1.15rem;
+  bottom: 1.15rem;
+  z-index: 72;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.6rem;
+}
+
+.overviewHelpButton {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 3rem;
+  height: 3rem;
+  min-height: 3rem;
+  padding-inline: 0.94rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-strong) 96%, transparent), color-mix(in srgb, var(--surface-muted) 92%, transparent));
+  color: var(--text);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  backdrop-filter: blur(22px) saturate(1.12);
+  -webkit-backdrop-filter: blur(22px) saturate(1.12);
+  transition: transform 200ms ease, border-color 200ms ease, background-color 200ms ease, box-shadow 200ms ease;
+}
+
+.overviewHelpIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.overviewHelpIcon svg {
+  width: 1.12rem;
+  height: 1.12rem;
+  color: var(--accent);
+}
+
+.overviewHelpLabel {
+  display: inline-block;
+  max-width: 0;
+  margin-left: 0;
+  overflow: hidden;
+  color: color-mix(in srgb, var(--text) 90%, var(--muted));
+  font-size: 0.86rem;
+  font-weight: 850;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  opacity: 0;
+  transform: translateX(-0.2rem);
+  white-space: nowrap;
+  transition: max-width 240ms ease, opacity 200ms ease, margin-left 240ms ease, transform 240ms ease;
+}
+
+.overviewHelpButton:hover,
+.overviewHelpButton:focus-visible {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+  box-shadow: 0 22px 42px rgba(28, 42, 70, 0.18);
+  outline: none;
+}
+
+.overviewHelpButton:focus-visible {
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--accent) 32%, transparent),
+    0 22px 42px rgba(28, 42, 70, 0.18);
+}
+
+/* Only expand on devices that genuinely hover (desktop mouse/keyboard); touch
+   devices keep a compact icon button and rely on the aria-label + menu title. */
+@media (hover: hover) and (pointer: fine) {
+  .overviewHelpButton:hover .overviewHelpLabel,
+  .overviewHelpButton:focus-visible .overviewHelpLabel,
+  .overviewHelpButton[data-open="true"] .overviewHelpLabel {
+    max-width: 9rem;
+    margin-left: 0.5rem;
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Restrained breathing accent, shown only until the beginner guide is done. */
+.overviewHelpButtonAttention::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent) 42%, transparent);
+  opacity: 0;
+  pointer-events: none;
+  animation: overview-help-breathe 3.4s ease-in-out infinite;
+}
+
+.overviewHelpButtonAttention:hover::after,
+.overviewHelpButtonAttention[data-open="true"]::after {
+  animation: none;
+  opacity: 0;
+}
+
+.overviewMenu {
+  display: grid;
+  gap: 0.2rem;
+  width: min(17.5rem, calc(100vw - 2rem));
+  padding: 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 16%, var(--line));
+  border-radius: 18px;
+  background:
+    linear-gradient(145deg, color-mix(in srgb, white 8%, transparent), transparent),
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-strong) 98%, transparent), color-mix(in srgb, var(--surface-muted) 94%, transparent));
+  box-shadow:
+    0 24px 60px rgba(7, 15, 26, 0.22),
+    inset 0 1px 0 color-mix(in srgb, white 10%, transparent);
+  backdrop-filter: blur(26px) saturate(1.16);
+  -webkit-backdrop-filter: blur(26px) saturate(1.16);
+  animation: manual-pop 160ms ease both;
+}
+
+.overviewMenuTitle {
+  margin: 0;
+  padding: 0.35rem 0.55rem 0.25rem;
+  color: var(--accent-strong);
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.1em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.overviewMenuItem {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.5rem 0.55rem;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition: transform 150ms ease, border-color 150ms ease, background-color 150ms ease;
+}
+
+.overviewMenuItem svg {
+  flex-shrink: 0;
+  width: 1.05rem;
+  height: 1.05rem;
+  color: var(--accent);
+}
+
+.overviewMenuItem span {
+  display: grid;
+  gap: 0.12rem;
+}
+
+.overviewMenuItem strong {
+  font-size: 0.9rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.overviewMenuItem small {
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.3;
+}
+
+.overviewMenuItem:hover,
+.overviewMenuItem:focus-visible {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent) 18%, transparent);
+  background: color-mix(in srgb, var(--accent-soft) 82%, transparent);
+  outline: none;
+}
+
+@keyframes overview-help-breathe {
+  0% {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+
+  45% {
+    opacity: 0.5;
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(1.16);
+  }
+}
+
 .ambientLayer {
   position: fixed;
   inset: 0;
@@ -91,13 +291,20 @@
 .popover {
   position: fixed;
   z-index: 73;
-  display: grid;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
   gap: 1rem;
-  width: min(21.75rem, calc(100vw - 2rem));
-  max-height: calc(100vh - 2.25rem);
-  overflow-y: auto;
+  /* Predictable width that never derives from the target/dashboard, always
+     leaving a 20px viewport gutter on each side. */
+  width: min(25rem, calc(100vw - 40px));
+  max-width: calc(100vw - 40px);
+  max-height: calc(100vh - 40px);
+  /* The card never scrolls or clips horizontally; its body scrolls instead, so
+     the header + footer (close, Skip, Next) stay fully visible. */
+  overflow: hidden;
   overscroll-behavior: contain;
-  padding: 1rem;
+  padding: 1.25rem;
   border: 1px solid color-mix(in srgb, var(--accent) 16%, var(--line));
   border-radius: 24px;
   background:
@@ -114,6 +321,7 @@
 }
 
 .popoverTop {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -164,9 +372,17 @@
   outline: none;
 }
 
+/* Scrollable body: the only region that scrolls, and only vertically when the
+   content is taller than the viewport. Never wraps to nowrap or clips text. */
 .copy {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
   display: grid;
   gap: 0.5rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
 }
 
 .copy h2 {
@@ -174,7 +390,8 @@
   font-size: 1.24rem;
   line-height: 1.1;
   letter-spacing: -0.045em;
-  overflow-wrap: anywhere;
+  white-space: normal;
+  overflow-wrap: break-word;
 }
 
 .copy p {
@@ -182,11 +399,21 @@
   color: var(--muted);
   font-size: 0.96rem;
   line-height: 1.62;
-  overflow-wrap: anywhere;
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+
+/* Header + footer never scroll and never shrink, so the close button and the
+   Skip / Next controls are always fully visible inside the card. */
+.popoverFooter {
+  flex-shrink: 0;
+  display: grid;
+  gap: 1rem;
 }
 
 .progressRow {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.36rem;
 }
@@ -213,6 +440,7 @@
 
 .skipButton,
 .nextButton {
+  flex-shrink: 0;
   display: inline-flex;
   min-height: 2.65rem;
   align-items: center;
@@ -288,7 +516,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .ambientLayer,
-  .popover {
+  .popover,
+  .overviewMenu {
     animation: none;
   }
 
@@ -300,13 +529,29 @@
   .iconButton,
   .skipButton,
   .nextButton,
-  .progressDot {
+  .progressDot,
+  .overviewHelpButton,
+  .overviewHelpLabel,
+  .overviewMenuItem {
     transition: none;
+  }
+
+  /* No breathing accent and no sliding pill expansion under reduced motion —
+     the label simply appears/disappears with opacity only. */
+  .overviewHelpButtonAttention::after {
+    animation: none;
+    opacity: 0;
+  }
+
+  .overviewHelpLabel {
+    transition: opacity 120ms ease;
+    transform: none;
   }
 }
 
 @media (max-width: 760px) {
-  .helpButton {
+  .helpButton,
+  .overviewHelpRoot {
     right: 0.8rem;
     bottom: 0.8rem;
   }

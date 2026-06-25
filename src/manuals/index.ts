@@ -1,4 +1,5 @@
 import type { ManualConfig } from "@/components/manual/manualTypes";
+import { adminManual } from "@/manuals/adminManual";
 import { campaignDetailManual } from "@/manuals/campaignDetailManual";
 import { campaignsManual } from "@/manuals/campaignsManual";
 import { discoverDetailManual, discoverListManual } from "@/manuals/discoverManual";
@@ -19,6 +20,12 @@ const routeManuals: Record<string, ManualConfig> = {
 export function getManualForPathname(pathname: string): ManualConfig | null {
   if (/^\/(?:campaigns|sequences)\/[^/]+$/.test(pathname)) {
     return campaignDetailManual;
+  }
+
+  // Every admin route (overview, users, restrictions, system-health, activity)
+  // shares one adaptive guide; its steps are filtered to the visible section.
+  if (pathname === "/admin" || pathname.startsWith("/admin/")) {
+    return adminManual;
   }
 
   // Discover detail workspace (/prospects/[searchId]) gets the search-specific

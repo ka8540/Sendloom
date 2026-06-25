@@ -1,8 +1,18 @@
+import { quickAndFullSteps } from "@/components/manual/manualSteps";
 import type { ManualConfig } from "@/components/manual/manualTypes";
 
 export const campaignsManual: ManualConfig = {
   id: "campaigns",
-  routeLabel: "Campaigns",
+  routeLabel: "Sequences",
+  helpLabel: "Help with Sequences",
+  helpTooltip: "Sequences guide",
+  helpVariant: "premium",
+  helpQuickStart: true,
+  quickStartStage: "starter",
+  fullTourStage: "full",
+  version: "v2",
+  resolveStage: () => "starter",
+  resolveSteps: (stage) => quickAndFullSteps(campaignsManual.steps, 2)(stage),
   steps: [
     {
       id: "builder",
