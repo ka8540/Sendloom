@@ -514,6 +514,10 @@ export const workspaceManual: ManualConfig = {
   helpLabel: "Help with Overview",
   helpTooltip: "Overview guide",
   helpVariant: "overview",
+  // Reveal targets with the minimum scroll (block: "nearest") instead of the
+  // default "center", so highlighting an in-hero visual like Sequence health
+  // never re-centres the page into a stretched-looking reframe.
+  scrollBlock: "nearest",
   // The Overview page drives the progressive auto-open phases itself (so it can
   // wait for data + a settled layout), so the generic provider auto-open is off.
   autoOpen: false,

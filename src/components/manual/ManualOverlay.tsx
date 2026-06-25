@@ -2,31 +2,18 @@
 
 import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ArrowRight, Check, X } from "lucide-react";
 
 import { renderBrandText } from "@/components/brand-text";
-import type { ManualPlacement } from "@/components/manual/manualTypes";
 import { useManual } from "@/components/manual/ManualProvider";
+import {
+  getPopoverStyle,
+  type HighlightRect,
+  type PopoverSize,
+  type ViewportSize
+} from "@/components/manual/overlayPosition";
 import styles from "@/components/manual/manual.module.css";
-
-type HighlightRect = {
-  bottom: number;
-  height: number;
-  left: number;
-  right: number;
-  top: number;
-  width: number;
-};
-
-type ViewportSize = {
-  height: number;
-  width: number;
-};
-
-type PopoverSize = {
-  height: number;
-  width: number;
-};
 
 type OverlayGeometry = {
   popoverSize: PopoverSize;
@@ -35,8 +22,6 @@ type OverlayGeometry = {
 };
 
 const SPOTLIGHT_PADDING = 8;
-const VIEWPORT_GUTTER = 18;
-const TARGET_GAP = 16;
 const TARGET_REFRESH_DELAY_MS = 90;
 const SCROLL_MIN_SETTLE_MS = 160;
 const SCROLL_SETTLE_TIMEOUT_MS = 950;
@@ -45,10 +30,6 @@ const DEFAULT_POPOVER_SIZE: PopoverSize = {
   height: 244,
   width: 348
 };
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max);
-}
 
 function getTargetElement(selector?: string): HTMLElement | null {
   if (!selector) {
@@ -106,16 +87,29 @@ function normalizeRect(rect: HighlightRect | null): HighlightRect | null {
   };
 }
 
-function scrollTargetIntoView(selector?: string) {
+function prefersReducedMotion() {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  );
+}
+
+function scrollTargetIntoView(selector: string | undefined, block: ScrollLogicalPosition) {
   const target = getTargetElement(selector);
 
   if (!target) {
     return false;
   }
 
+  // `block: "nearest"` (the Overview default) reveals the target with the
+  // minimum scroll instead of yanking it to the viewport centre — the latter
+  // pushed tall in-card targets (e.g. Sequence health) into a jarring reframe
+  // that looked like the dashboard had stretched. Reduced motion skips the
+  // smooth animation. Scrolling never resizes the page or any card.
   target.scrollIntoView({
-    behavior: "smooth",
-    block: "center",
+    behavior: prefersReducedMotion() ? "auto" : "smooth",
+    block,
     inline: "nearest"
   });
 
@@ -145,79 +139,6 @@ function areGeometriesEqual(left: OverlayGeometry, right: OverlayGeometry) {
     left.popoverSize.height === right.popoverSize.height &&
     left.popoverSize.width === right.popoverSize.width
   );
-}
-
-function getPlacementOrder(placement: ManualPlacement | undefined) {
-  const preferred = placement ?? "bottom";
-
-  if (preferred === "center") {
-    return ["center"] as const;
-  }
-
-  const fallbacks = {
-    bottom: ["bottom", "top", "right", "left"],
-    top: ["top", "bottom", "right", "left"],
-    right: ["right", "left", "bottom", "top"],
-    left: ["left", "right", "bottom", "top"]
-  } as const;
-
-  return fallbacks[preferred];
-}
-
-function hasRoom(rect: HighlightRect, placement: Exclude<ManualPlacement, "center">, viewport: ViewportSize, popoverSize: PopoverSize) {
-  if (placement === "bottom") {
-    return rect.bottom + TARGET_GAP + popoverSize.height <= viewport.height - VIEWPORT_GUTTER;
-  }
-
-  if (placement === "top") {
-    return rect.top - TARGET_GAP - popoverSize.height >= VIEWPORT_GUTTER;
-  }
-
-  if (placement === "right") {
-    return rect.right + TARGET_GAP + popoverSize.width <= viewport.width - VIEWPORT_GUTTER;
-  }
-
-  return rect.left - TARGET_GAP - popoverSize.width >= VIEWPORT_GUTTER;
-}
-
-function getPopoverStyle(
-  rect: HighlightRect | null,
-  placement: ManualPlacement | undefined,
-  viewport: ViewportSize,
-  popoverSize: PopoverSize
-): CSSProperties {
-  const maxLeft = Math.max(VIEWPORT_GUTTER, viewport.width - popoverSize.width - VIEWPORT_GUTTER);
-  const maxTop = Math.max(VIEWPORT_GUTTER, viewport.height - popoverSize.height - VIEWPORT_GUTTER);
-
-  if (!rect || placement === "center") {
-    return {
-      left: clamp((viewport.width - popoverSize.width) / 2, VIEWPORT_GUTTER, maxLeft),
-      top: clamp((viewport.height - popoverSize.height) / 2, VIEWPORT_GUTTER, maxTop)
-    };
-  }
-
-  const placementOrder = getPlacementOrder(placement);
-  const resolvedPlacement =
-    placementOrder.find((item): item is Exclude<ManualPlacement, "center"> => item !== "center" && hasRoom(rect, item, viewport, popoverSize)) ??
-    (placementOrder[0] === "center" ? "bottom" : placementOrder[0]);
-
-  let left = rect.left + rect.width / 2 - popoverSize.width / 2;
-  let top = rect.bottom + TARGET_GAP;
-
-  if (resolvedPlacement === "top") {
-    top = rect.top - popoverSize.height - TARGET_GAP;
-  } else if (resolvedPlacement === "right") {
-    left = rect.right + TARGET_GAP;
-    top = rect.top + rect.height / 2 - popoverSize.height / 2;
-  } else if (resolvedPlacement === "left") {
-    left = rect.left - popoverSize.width - TARGET_GAP;
-    top = rect.top + rect.height / 2 - popoverSize.height / 2;
-  }
-
-  return {
-    left: clamp(left, VIEWPORT_GUTTER, maxLeft),
-    top: clamp(top, VIEWPORT_GUTTER, maxTop)
-  };
 }
 
 export function ManualOverlay() {
@@ -397,7 +318,7 @@ export function ManualOverlay() {
     controlledScrollRef.current = true;
     lastGeometryRef.current = null;
     setGeometry(null);
-    scrollTargetIntoView(step.selector);
+    scrollTargetIntoView(step.selector, manual?.scrollBlock ?? "center");
 
     const stopWaiting = waitForTargetToSettle(step.selector, () => {
       controlledScrollRef.current = false;
@@ -413,7 +334,7 @@ export function ManualOverlay() {
       controlledScrollRef.current = false;
       stopWaiting();
     };
-  }, [cancelScrollSettle, currentStepIndex, isOpen, scheduleGeometryUpdate, step, updateGeometry, waitForTargetToSettle]);
+  }, [cancelScrollSettle, currentStepIndex, isOpen, manual?.scrollBlock, scheduleGeometryUpdate, step, updateGeometry, waitForTargetToSettle]);
 
   const spotlightStyle = useMemo<CSSProperties | undefined>(() => {
     const targetRect = geometry?.targetRect ?? null;
@@ -439,11 +360,15 @@ export function ManualOverlay() {
     return getPopoverStyle(geometry?.targetRect ?? null, step?.placement, viewport, geometry?.popoverSize ?? DEFAULT_POPOVER_SIZE);
   }, [geometry, step?.placement]);
 
-  if (!manual || !step || !isOpen) {
+  if (!manual || !step || !isOpen || typeof document === "undefined") {
     return null;
   }
 
-  return (
+  // Render the spotlight + coachmark in a body-level portal, fully outside the
+  // dashboard's document flow. They are `position: fixed` (viewport-relative)
+  // and never become a child of the highlighted target or the Overview grid, so
+  // opening/advancing/closing the tour cannot resize or move any dashboard card.
+  return createPortal(
     <>
       <div className={styles.ambientLayer} aria-hidden="true" />
       {spotlightStyle ? <div className={styles.spotlight} style={spotlightStyle} aria-hidden="true" /> : null}
@@ -508,6 +433,7 @@ export function ManualOverlay() {
           </button>
         </div>
       </section>
-    </>
+    </>,
+    document.body
   );
 }

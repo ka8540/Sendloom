@@ -34,6 +34,13 @@ export type ManualConfig = {
    * hover-expanding pill + guide menu used by the Overview dashboard.
    */
   helpVariant?: "default" | "overview";
+  /**
+   * `scrollIntoView` block alignment used when revealing a target. Defaults to
+   * "center" (the original behavior) for every existing manual. The Overview
+   * guide uses "nearest" so revealing a target inside the tall hero/analytics
+   * card never yanks the page into a jarring, stretched-looking reframe.
+   */
+  scrollBlock?: ScrollLogicalPosition;
   /** When false, the provider never auto-opens this manual (a host page drives it). */
   autoOpen?: boolean;
   /** Appended to the completion storage key so the manual can be re-versioned. */
