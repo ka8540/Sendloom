@@ -291,13 +291,20 @@
 .popover {
   position: fixed;
   z-index: 73;
-  display: grid;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
   gap: 1rem;
-  width: min(21.75rem, calc(100vw - 2rem));
-  max-height: calc(100vh - 2.25rem);
-  overflow-y: auto;
+  /* Predictable width that never derives from the target/dashboard, always
+     leaving a 20px viewport gutter on each side. */
+  width: min(25rem, calc(100vw - 40px));
+  max-width: calc(100vw - 40px);
+  max-height: calc(100vh - 40px);
+  /* The card never scrolls or clips horizontally; its body scrolls instead, so
+     the header + footer (close, Skip, Next) stay fully visible. */
+  overflow: hidden;
   overscroll-behavior: contain;
-  padding: 1rem;
+  padding: 1.25rem;
   border: 1px solid color-mix(in srgb, var(--accent) 16%, var(--line));
   border-radius: 24px;
   background:
@@ -314,6 +321,7 @@
 }
 
 .popoverTop {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -364,9 +372,17 @@
   outline: none;
 }
 
+/* Scrollable body: the only region that scrolls, and only vertically when the
+   content is taller than the viewport. Never wraps to nowrap or clips text. */
 .copy {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
   display: grid;
   gap: 0.5rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
 }
 
 .copy h2 {
@@ -374,7 +390,8 @@
   font-size: 1.24rem;
   line-height: 1.1;
   letter-spacing: -0.045em;
-  overflow-wrap: anywhere;
+  white-space: normal;
+  overflow-wrap: break-word;
 }
 
 .copy p {
@@ -382,11 +399,21 @@
   color: var(--muted);
   font-size: 0.96rem;
   line-height: 1.62;
-  overflow-wrap: anywhere;
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+
+/* Header + footer never scroll and never shrink, so the close button and the
+   Skip / Next controls are always fully visible inside the card. */
+.popoverFooter {
+  flex-shrink: 0;
+  display: grid;
+  gap: 1rem;
 }
 
 .progressRow {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.36rem;
 }
@@ -413,6 +440,7 @@
 
 .skipButton,
 .nextButton {
+  flex-shrink: 0;
   display: inline-flex;
   min-height: 2.65rem;
   align-items: center;

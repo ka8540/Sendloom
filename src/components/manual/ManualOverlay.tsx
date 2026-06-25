@@ -27,9 +27,22 @@ const SCROLL_MIN_SETTLE_MS = 160;
 const SCROLL_SETTLE_TIMEOUT_MS = 950;
 const SCROLL_STABLE_FRAME_COUNT = 4;
 const DEFAULT_POPOVER_SIZE: PopoverSize = {
-  height: 244,
-  width: 348
+  height: 300,
+  width: 400
 };
+
+// Viewport width from the document element excludes the classic scrollbar, so a
+// clamped coachmark never tucks under it; height uses innerHeight. Falls back to
+// the default popover box only during SSR (where the overlay never renders).
+function getViewportSize(): ViewportSize {
+  if (typeof window === "undefined" || typeof document === "undefined") {
+    return { height: DEFAULT_POPOVER_SIZE.height, width: DEFAULT_POPOVER_SIZE.width };
+  }
+  return {
+    height: window.innerHeight,
+    width: document.documentElement.clientWidth || window.innerWidth
+  };
+}
 
 function getTargetElement(selector?: string): HTMLElement | null {
   if (!selector) {
@@ -188,10 +201,7 @@ export function ManualOverlay() {
         width: roundNumber(popoverRect?.width || DEFAULT_POPOVER_SIZE.width)
       },
       targetRect: normalizeRect(getElementRect(step?.selector)),
-      viewport: {
-        height: window.innerHeight,
-        width: window.innerWidth
-      }
+      viewport: getViewportSize()
     };
 
     const previousGeometry = lastGeometryRef.current;
@@ -296,6 +306,26 @@ export function ManualOverlay() {
     window.addEventListener("resize", scheduleGeometryUpdate, { passive: true });
     window.addEventListener("scroll", handleScroll, { capture: true, passive: true });
 
+    // A ResizeObserver catches layout changes that fire no scroll/resize event —
+    // the sidebar collapsing/expanding (cards resize), the coachmark's own height
+    // changing as content/fonts settle, and responsive breakpoint switches — and
+    // re-runs placement so the card stays beside its target and inside the viewport.
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined") {
+      resizeObserver = new ResizeObserver(() => {
+        if (!controlledScrollRef.current) {
+          scheduleGeometryUpdate();
+        }
+      });
+      const targetElement = getTargetElement(step.selector);
+      if (targetElement) {
+        resizeObserver.observe(targetElement);
+      }
+      if (popoverRef.current) {
+        resizeObserver.observe(popoverRef.current);
+      }
+    }
+
     return () => {
       if (frameRef.current != null) {
         window.cancelAnimationFrame(frameRef.current);
@@ -303,6 +333,7 @@ export function ManualOverlay() {
       }
       window.removeEventListener("resize", scheduleGeometryUpdate);
       window.removeEventListener("scroll", handleScroll, true);
+      resizeObserver?.disconnect();
     };
   }, [isOpen, scheduleGeometryUpdate, step]);
 
@@ -352,10 +383,7 @@ export function ManualOverlay() {
   }, [geometry?.targetRect]);
 
   const popoverStyle = useMemo(() => {
-    const viewport = geometry?.viewport ?? {
-      height: typeof window === "undefined" ? DEFAULT_POPOVER_SIZE.height : window.innerHeight,
-      width: typeof window === "undefined" ? DEFAULT_POPOVER_SIZE.width : window.innerWidth
-    };
+    const viewport = geometry?.viewport ?? getViewportSize();
 
     return getPopoverStyle(geometry?.targetRect ?? null, step?.placement, viewport, geometry?.popoverSize ?? DEFAULT_POPOVER_SIZE);
   }, [geometry, step?.placement]);
@@ -400,37 +428,39 @@ export function ManualOverlay() {
           <p>{renderBrandText(step.body)}</p>
         </div>
 
-        <div className={styles.progressRow} aria-label={`Step ${currentStepIndex + 1} of ${steps.length}`}>
-          {steps.map((manualStep, index) => (
-            <span
-              key={manualStep.id}
-              className={`${styles.progressDot}${index <= currentStepIndex ? ` ${styles.progressDotActive}` : ""}`}
-            />
-          ))}
-        </div>
+        <div className={styles.popoverFooter}>
+          <div className={styles.progressRow} aria-label={`Step ${currentStepIndex + 1} of ${steps.length}`}>
+            {steps.map((manualStep, index) => (
+              <span
+                key={manualStep.id}
+                className={`${styles.progressDot}${index <= currentStepIndex ? ` ${styles.progressDotActive}` : ""}`}
+              />
+            ))}
+          </div>
 
-        <div className={styles.actions}>
-          <button className={styles.skipButton} type="button" onClick={skipManual} data-manual-control="true">
-            Skip
-          </button>
-          <button
-            className={styles.nextButton}
-            type="button"
-            onClick={isFinalStep ? finishManual : nextStep}
-            data-manual-control="true"
-          >
-            {isFinalStep ? (
-              <>
-                Finish
-                <Check aria-hidden="true" />
-              </>
-            ) : (
-              <>
-                Next
-                <ArrowRight aria-hidden="true" />
-              </>
-            )}
-          </button>
+          <div className={styles.actions}>
+            <button className={styles.skipButton} type="button" onClick={skipManual} data-manual-control="true">
+              Skip
+            </button>
+            <button
+              className={styles.nextButton}
+              type="button"
+              onClick={isFinalStep ? finishManual : nextStep}
+              data-manual-control="true"
+            >
+              {isFinalStep ? (
+                <>
+                  Finish
+                  <Check aria-hidden="true" />
+                </>
+              ) : (
+                <>
+                  Next
+                  <ArrowRight aria-hidden="true" />
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </section>
     </>,
