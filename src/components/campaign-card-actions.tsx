@@ -5,21 +5,18 @@ import { ArrowUpRight, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { useErrorToastEffect } from "@/components/error-toast-provider";
+import { AppConfirmDialog } from "@/components/app-confirm-dialog";
+
+const DELETE_SEQUENCE_ERROR = "This sequence could not be deleted. Please try again.";
 
 export function CampaignCardActions(props: { campaignId: string; campaignName: string }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  useErrorToastEffect(error, "Sequence delete failed");
 
-  async function deleteCampaign() {
+  async function confirmDelete() {
     if (pending) {
-      return;
-    }
-
-    const confirmed = window.confirm(`Delete "${props.campaignName}"? This will remove the sequence and all of its runs.`);
-    if (!confirmed) {
       return;
     }
 
@@ -32,17 +29,19 @@ export function CampaignCardActions(props: { campaignId: string; campaignName: s
       });
 
       if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        setError(payload.error ?? "Could not delete the sequence.");
+        setError(DELETE_SEQUENCE_ERROR);
         setPending(false);
         return;
       }
-
-      router.refresh();
     } catch {
-      setError("Could not delete the sequence.");
+      setError(DELETE_SEQUENCE_ERROR);
       setPending(false);
+      return;
     }
+
+    setPending(false);
+    setConfirmOpen(false);
+    router.refresh();
   }
 
   return (
@@ -59,12 +58,32 @@ export function CampaignCardActions(props: { campaignId: string; campaignName: s
         type="button"
         className="field-icon-button campaign-card-action campaign-card-action--delete field-icon-button--danger"
         data-tooltip="Delete sequence"
-        onClick={() => void deleteCampaign()}
+        onClick={() => {
+          setError(null);
+          setConfirmOpen(true);
+        }}
         disabled={pending}
         aria-label={`Delete sequence ${props.campaignName}`}
       >
         <Trash2 aria-hidden="true" />
       </button>
+
+      <AppConfirmDialog
+        open={confirmOpen}
+        title="Delete this sequence?"
+        description={`Deleting “${props.campaignName}” will remove the sequence and all of its runs. This action cannot be undone.`}
+        confirmLabel="Delete sequence"
+        loadingLabel="Deleting…"
+        destructive
+        loading={pending}
+        error={error}
+        onConfirm={() => void confirmDelete()}
+        onCancel={() => {
+          if (!pending) {
+            setConfirmOpen(false);
+          }
+        }}
+      />
     </div>
   );
 }

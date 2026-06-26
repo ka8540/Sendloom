@@ -3,8 +3,11 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
+import { AppConfirmDialog } from "@/components/app-confirm-dialog";
 import { useErrorToastEffect } from "@/components/error-toast-provider";
 import styles from "@/app/(app)/admin/page.module.css";
+
+const DELETE_USER_ERROR = "This user could not be deleted. Please try again.";
 
 type AdminUserControlsProps = {
   userId: string;
@@ -27,6 +30,8 @@ export function AdminUserControls(props: AdminUserControlsProps) {
   const [isDeleting, startDeleting] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [controls, setControls] = useState(props.initialControls);
   useErrorToastEffect(error, "Admin action failed");
 
@@ -69,17 +74,9 @@ export function AdminUserControls(props: AdminUserControlsProps) {
     });
   }
 
-  function deleteUser() {
-    const confirmed = window.confirm(
-      `Delete ${props.email} and wipe all imports, templates, campaigns, suppressions, senders, and stored files?`
-    );
-
-    if (!confirmed) {
-      return;
-    }
-
+  function confirmDeleteUser() {
     setMessage(null);
-    setError(null);
+    setDeleteError(null);
 
     startDeleting(async () => {
       try {
@@ -87,16 +84,18 @@ export function AdminUserControls(props: AdminUserControlsProps) {
           method: "DELETE"
         });
 
-        const payload = (await response.json().catch(() => ({}))) as { error?: string };
         if (!response.ok) {
-          throw new Error(payload.error || "Could not delete this user.");
+          setDeleteError(DELETE_USER_ERROR);
+          return;
         }
-
-        setMessage("User deleted.");
-        router.refresh();
-      } catch (requestError) {
-        setError(requestError instanceof Error ? requestError.message : "Could not delete this user.");
+      } catch {
+        setDeleteError(DELETE_USER_ERROR);
+        return;
       }
+
+      setDeleteConfirmOpen(false);
+      setMessage("User deleted.");
+      router.refresh();
     });
   }
 
@@ -148,13 +147,38 @@ export function AdminUserControls(props: AdminUserControlsProps) {
         >
           End session
         </button>
-        <button className={styles.deleteButton} type="button" onClick={deleteUser} disabled={isSaving || isDeleting}>
+        <button
+          className={styles.deleteButton}
+          type="button"
+          onClick={() => {
+            setDeleteError(null);
+            setDeleteConfirmOpen(true);
+          }}
+          disabled={isSaving || isDeleting}
+        >
           {isDeleting ? "Deleting..." : "Delete all user data"}
         </button>
       </div>
 
       {message ? <p className={styles.successText}>{message}</p> : null}
       {error ? <p className={styles.errorText}>{error}</p> : null}
+
+      <AppConfirmDialog
+        open={deleteConfirmOpen}
+        title="Delete this user?"
+        description={`Deleting ${props.email} permanently wipes all of their imports, templates, sequences, suppressions, senders, and stored files. This action cannot be undone.`}
+        confirmLabel="Delete user"
+        loadingLabel="Deleting…"
+        destructive
+        loading={isDeleting}
+        error={deleteError}
+        onConfirm={confirmDeleteUser}
+        onCancel={() => {
+          if (!isDeleting) {
+            setDeleteConfirmOpen(false);
+          }
+        }}
+      />
     </div>
   );
 }

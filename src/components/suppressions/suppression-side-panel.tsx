@@ -1,5 +1,4 @@
-import { X } from "lucide-react";
-
+import { CircularCloseButton } from "@/components/circular-close-button";
 import { LocalDateTime } from "@/components/local-date-time";
 import { formatSuppressionSource, SUPPRESSION_REASON_LABELS } from "@/components/suppressions/suppression-badge";
 import type { SuppressionRecord } from "@/components/suppressions/types";
@@ -23,9 +22,7 @@ export function SuppressionSidePanel(props: SuppressionSidePanelProps) {
           <h3 className={styles.sidePanelTitle}>{props.suppression.email}</h3>
         </div>
 
-        <button className={styles.iconButton} type="button" onClick={props.onClose} aria-label="Close details">
-          <X aria-hidden="true" />
-        </button>
+        <CircularCloseButton label="Close details" onClick={props.onClose} />
       </div>
 
       <dl className={styles.sidePanelMeta}>

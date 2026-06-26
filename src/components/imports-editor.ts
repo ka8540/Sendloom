@@ -10,6 +10,21 @@
  * removes it from the active template variables, never the stored import data.
  */
 
+/** Safe, user-facing message for a failed import deletion (never backend detail). */
+export const DELETE_IMPORT_ERROR_MESSAGE = "This import could not be deleted. Please try again.";
+
+/**
+ * Plain-language warning shown in the import delete confirmation, with correct
+ * singular/plural for any linked sequences. Pure so the wording is unit-testable.
+ */
+export function describeImportDeletion(item: { fileName: string; linkedCampaignCount: number }): string {
+  if (item.linkedCampaignCount > 0) {
+    const count = item.linkedCampaignCount;
+    return `Deleting “${item.fileName}” will also delete ${count} linked sequence${count === 1 ? "" : "s"}. This action cannot be undone.`;
+  }
+  return `Deleting “${item.fileName}” will permanently remove this imported audience. This action cannot be undone.`;
+}
+
 export const MAX_TEMPLATE_COLUMNS = 10;
 /** Mirrors the rename API/input cap (`z.string().max(120)`). */
 export const IMPORT_NAME_MAX_LENGTH = 120;

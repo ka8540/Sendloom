@@ -1,13 +1,16 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, Loader2, PencilLine, Trash2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, PencilLine, Trash2 } from "lucide-react";
 import { useEffect, useId, useMemo, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 
 import { useErrorToast, useErrorToastEffect } from "@/components/error-toast-provider";
+import { AppConfirmDialog } from "@/components/app-confirm-dialog";
+import { CircularCloseButton } from "@/components/circular-close-button";
 import editorStyles from "@/components/import-editor-dialog.module.css";
 import {
+  DELETE_IMPORT_ERROR_MESSAGE,
   EDIT_IMPORT_CANCEL_LABEL,
   EDIT_IMPORT_ERROR_MESSAGE,
   EDIT_IMPORT_FIELDS_HINT,
@@ -19,6 +22,7 @@ import {
   EDIT_IMPORT_TITLE,
   IMPORT_NAME_MAX_LENGTH,
   MAX_TEMPLATE_COLUMNS,
+  describeImportDeletion,
   editImportLabel,
   planImportEdit,
   toggleTemplateColumn
@@ -218,6 +222,8 @@ export function TemplateFieldPicker(props: { imports: TemplateFieldItem[]; initi
 export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
   const router = useRouter();
   const [deletingImportId, setDeletingImportId] = useState<string | null>(null);
+  const [pendingDeletion, setPendingDeletion] = useState<MappingLibraryItem | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [editingImportId, setEditingImportId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [error, setError] = useState<string | null>(null);
@@ -257,26 +263,31 @@ export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
     }
   }, [editingImportId, props.items]);
 
-  async function deleteImportItem(item: MappingLibraryItem) {
-    const extraMessage = item.linkedCampaignCount
-      ? ` This will also delete ${item.linkedCampaignCount} linked sequence${item.linkedCampaignCount === 1 ? "" : "s"}.`
-      : "";
-
-    if (!window.confirm(`Delete "${item.fileName}"?${extraMessage}`)) {
+  // Run the actual deletion only after the in-app confirmation is accepted. The
+  // mutation runs once; failures keep the import and surface a safe message in
+  // the dialog (never raw backend detail).
+  async function confirmDeleteImport() {
+    const item = pendingDeletion;
+    if (!item || deletingImportId) {
       return;
     }
 
     setDeletingImportId(item.importId);
-    setError(null);
+    setDeleteError(null);
 
-    const response = await fetch(`/api/imports/${item.importId}`, {
-      method: "DELETE"
-    });
+    try {
+      const response = await fetch(`/api/imports/${item.importId}`, {
+        method: "DELETE"
+      });
 
-    if (!response.ok) {
-      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setDeletingImportId(null);
+        setDeleteError(DELETE_IMPORT_ERROR_MESSAGE);
+        return;
+      }
+    } catch {
       setDeletingImportId(null);
-      setError(payload.error ?? "Could not delete the import.");
+      setDeleteError(DELETE_IMPORT_ERROR_MESSAGE);
       return;
     }
 
@@ -284,8 +295,9 @@ export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
       setEditingImportId(null);
     }
 
-    router.refresh();
     setDeletingImportId(null);
+    setPendingDeletion(null);
+    router.refresh();
   }
 
   return (
@@ -357,8 +369,12 @@ export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
                   className="field-icon-button field-icon-button--danger"
                   data-tooltip="Delete import"
                   data-imports-tour={isTourAnchor ? "delete-import" : undefined}
-                  onClick={() => void deleteImportItem(item)}
+                  onClick={() => {
+                    setDeleteError(null);
+                    setPendingDeletion(item);
+                  }}
                   disabled={isDeleting}
+                  aria-label={`Delete ${item.fileName} import`}
                 >
                   <Trash2 aria-hidden="true" />
                 </button>
@@ -484,6 +500,25 @@ export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
       {editingItem ? (
         <ImportEditorDialog key={editingItem.importId} item={editingItem} onClose={() => setEditingImportId(null)} />
       ) : null}
+
+      <AppConfirmDialog
+        open={pendingDeletion !== null}
+        title="Delete this import?"
+        description={pendingDeletion ? describeImportDeletion(pendingDeletion) : null}
+        confirmLabel="Delete import"
+        loadingLabel="Deleting…"
+        destructive
+        loading={deletingImportId !== null}
+        error={deleteError}
+        onConfirm={() => void confirmDeleteImport()}
+        onCancel={() => {
+          if (deletingImportId) {
+            return;
+          }
+          setPendingDeletion(null);
+          setDeleteError(null);
+        }}
+      />
     </div>
   );
 }
@@ -627,15 +662,7 @@ function ImportEditorDialog({ item, onClose }: { item: MappingLibraryItem; onClo
               sequence associations stay attached to the same import.
             </p>
           </div>
-          <button
-            type="button"
-            className={editorStyles.closeButton}
-            onClick={onClose}
-            disabled={saving}
-            aria-label="Close editor"
-          >
-            <X aria-hidden="true" />
-          </button>
+          <CircularCloseButton label="Close Edit import" onClick={onClose} disabled={saving} />
         </header>
 
         <div className={editorStyles.body}>

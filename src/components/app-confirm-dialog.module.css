@@ -1,0 +1,204 @@
+/*
+ * Shared in-app confirmation dialog (AppConfirmDialog). Navy/glass surface,
+ * blurred backdrop, theme-aware tokens, pinned actions. Mirrors the existing
+ * Sendloom modal look so confirmations match the rest of the product.
+ */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: color-mix(in srgb, var(--background) 76%, transparent);
+  backdrop-filter: blur(12px);
+}
+
+.card {
+  width: min(30rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+  display: grid;
+  gap: 0.9rem;
+  padding: 1.4rem;
+  border-radius: 22px;
+  border: 1px solid var(--line);
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 9%, transparent), transparent 34%),
+    color-mix(in srgb, var(--surface) 94%, var(--surface-strong) 6%);
+  box-shadow: var(--shadow);
+  animation: app-confirm-enter 180ms ease-out;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line));
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.iconDestructive {
+  border-color: var(--error-toast-border);
+  background: var(--error-toast-icon-bg);
+  color: var(--error-toast-icon-color);
+}
+
+.icon svg {
+  width: 1.3rem;
+  height: 1.3rem;
+}
+
+.title {
+  margin: 0;
+  letter-spacing: -0.03em;
+  font-size: 1.2rem;
+  line-height: 1.2;
+}
+
+.body {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+  font-size: 0.95rem;
+  overflow-wrap: anywhere;
+}
+
+.body p {
+  margin: 0;
+}
+
+.error {
+  margin: 0;
+  padding: 0.7rem 0.85rem;
+  border-radius: 14px;
+  border: 1px solid var(--error-toast-border);
+  background: var(--error-toast-icon-bg);
+  color: var(--text);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+  margin-top: 0.2rem;
+}
+
+.button {
+  width: auto;
+  min-width: 8rem;
+  min-height: 2.8rem;
+  padding: 0.68rem 1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.confirm {
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
+  background: var(--accent);
+  color: var(--accent-contrast, #ffffff);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 140ms ease, box-shadow 160ms ease, background-color 160ms ease, border-color 160ms ease;
+}
+
+.confirm:hover:not(:disabled),
+.confirm:focus-visible {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 26px rgba(12, 18, 28, 0.16);
+  outline: none;
+}
+
+.confirm:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 34%, transparent);
+}
+
+/* Matches the app's existing tinted danger button so contrast is safe in both
+ * themes (dark mode's --error-toast-icon-color is a light salmon, so white text
+ * on a solid fill would clash). */
+.confirmDestructive {
+  border-color: var(--error-toast-border);
+  background: var(--error-toast-icon-bg);
+  color: var(--error-toast-icon-color);
+}
+
+.confirmDestructive:hover:not(:disabled),
+.confirmDestructive:focus-visible {
+  border-color: var(--error-toast-icon-color);
+}
+
+.confirmDestructive:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--error-toast-icon-color) 36%, transparent);
+}
+
+.button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.spin {
+  animation: app-confirm-spin 0.9s linear infinite;
+}
+
+@keyframes app-confirm-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes app-confirm-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.99);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card {
+    animation: none;
+  }
+
+  .spin {
+    animation-duration: 0s;
+  }
+}
+
+@media (max-width: 640px) {
+  .card {
+    border-radius: 20px;
+  }
+
+  .actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .button {
+    width: 100%;
+  }
+}

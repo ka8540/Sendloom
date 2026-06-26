@@ -979,6 +979,61 @@ html[data-sidebar-collapsed="true"] .sidebar .nav-footer-theme {
   cursor: not-allowed;
 }
 
+/*
+ * Shared circular close/dismiss control (see CircularCloseButton). One
+ * consistent style for every "X" whose action is to close or dismiss an overlay
+ * or notice — true circle, equal sides, theme-aware, with a visible focus ring.
+ * Action buttons that happen to use an X icon keep their own styling.
+ */
+.app-close-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--line) 88%, transparent);
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
+  color: var(--muted);
+  cursor: pointer;
+  transition: transform 140ms ease, border-color 160ms ease, background-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+
+.app-close-button svg {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
+.app-close-button:hover:not(:disabled),
+.app-close-button:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--line));
+  background: color-mix(in srgb, var(--accent-soft) 40%, var(--surface-strong));
+  color: var(--text);
+  transform: translateY(-1px);
+  outline: none;
+}
+
+.app-close-button:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.app-close-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.app-close-button--compact {
+  width: 2rem;
+  height: 2rem;
+}
+
+.app-close-button--compact svg {
+  width: 1rem;
+  height: 1rem;
+}
+
 .field-icon-button {
   display: inline-flex;
   align-items: center;

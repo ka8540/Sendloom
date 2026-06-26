@@ -151,9 +151,11 @@ describe("the processed card has ONE edit entry point — the pencil (#1, #2, #2
     expect(SOURCE).toMatch(/<button[\s\S]{0,600}aria-label=\{editImportLabel\(item\.fileName\)\}/);
   });
 
-  it("keeps the trash action and its existing confirm-based delete untouched (#23)", () => {
+  it("keeps the trash action, now gated by an in-app confirmation (no native dialog) (#23)", () => {
     expect(SOURCE).toContain('<Trash2 aria-hidden="true" />');
-    expect(SOURCE).toContain("window.confirm(");
+    // The native browser confirm is gone; the trash opens the shared in-app dialog.
+    expect(SOURCE).not.toContain("window.confirm(");
+    expect(SOURCE).toContain("<AppConfirmDialog");
     expect(SOURCE).toContain('method: "DELETE"');
   });
 

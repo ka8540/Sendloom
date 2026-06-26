@@ -62,37 +62,6 @@
   overflow-wrap: anywhere;
 }
 
-.closeButton {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  width: 2.4rem;
-  height: 2.4rem;
-  border-radius: 12px;
-  border: 1px solid color-mix(in srgb, var(--line) 92%, transparent);
-  background: color-mix(in srgb, var(--surface) 84%, transparent);
-  color: var(--muted);
-  cursor: pointer;
-  transition: border-color 160ms ease, color 160ms ease, background-color 160ms ease;
-}
-
-.closeButton:hover:not(:disabled),
-.closeButton:focus-visible {
-  border-color: color-mix(in srgb, var(--accent) 28%, var(--line));
-  color: var(--text);
-}
-
-.closeButton:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.closeButton svg {
-  width: 1.15rem;
-  height: 1.15rem;
-}
-
 .body {
   display: grid;
   gap: 1.2rem;

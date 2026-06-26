@@ -9,8 +9,9 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { AlertCircle, ChevronLeft, ChevronRight, Inbox, LoaderCircle, Plus, RefreshCw, Sparkles, Trash2, Users, X } from "lucide-react";
+import { AlertCircle, ChevronLeft, ChevronRight, Inbox, LoaderCircle, Plus, RefreshCw, Sparkles, Trash2, Users } from "lucide-react";
 
+import { CircularCloseButton } from "@/components/circular-close-button";
 import {
   CREATE_SEARCH_MUTATION,
   DELETE_SEARCH_MUTATION,
@@ -68,7 +69,7 @@ export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean 
   const [showNewSearch, setShowNewSearch] = useState(false);
   const [form, setForm] = useState<CreateForm>(EMPTY_FORM);
   const [creating, setCreating] = useState(false);
-  // In-app delete confirmation state (replaces the native window.confirm).
+  // In-app delete confirmation state (replaces the old native browser confirm).
   const [searchPendingDeletion, setSearchPendingDeletion] = useState<ProspectSearchNode | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -317,18 +318,14 @@ export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean 
         <div className={`${styles.inlineAlert} ${styles.inlineAlertError}`} role="alert">
           <AlertCircle aria-hidden="true" />
           <span>{actionError}</span>
-          <button type="button" onClick={() => setActionError(null)} aria-label="Dismiss">
-            <X aria-hidden="true" />
-          </button>
+          <CircularCloseButton compact label="Dismiss" onClick={() => setActionError(null)} />
         </div>
       )}
       {actionNotice && (
         <div className={styles.inlineAlert} role="status">
           <Sparkles aria-hidden="true" />
           <span>{actionNotice.message}</span>
-          <button type="button" onClick={() => setActionNotice(null)} aria-label="Dismiss">
-            <X aria-hidden="true" />
-          </button>
+          <CircularCloseButton compact label="Dismiss" onClick={() => setActionNotice(null)} />
         </div>
       )}
 
@@ -558,7 +555,7 @@ function SearchHistoryTable({
 }
 
 // ---------------------------------------------------------------------------
-// Delete confirmation dialog (in-app, replaces the native window.confirm).
+// Delete confirmation dialog (in-app, replaces the old native browser confirm).
 // ---------------------------------------------------------------------------
 
 function DeleteSearchDialog({
@@ -719,9 +716,7 @@ function NewSearchModal({
             <h2 className={styles.panelTitle}>Create discovery search</h2>
             <p className={styles.panelSubtitle}>Creates a draft. Process it to fetch people.</p>
           </div>
-          <button type="button" className={styles.ghostButton} onClick={onClose} aria-label="Close">
-            <X aria-hidden="true" />
-          </button>
+          <CircularCloseButton label="Close new search" onClick={onClose} />
         </div>
         <label className={styles.field}>
           <span className={styles.fieldLabel}>Company name</span>

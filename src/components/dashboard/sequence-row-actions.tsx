@@ -5,9 +5,12 @@ import { useRouter } from "next/navigation";
 import { useState, type MouseEvent } from "react";
 
 import { useErrorToast, useErrorToastEffect } from "@/components/error-toast-provider";
+import { AppConfirmDialog } from "@/components/app-confirm-dialog";
 import { PastScheduleRelaunchModal } from "@/components/past-schedule-relaunch-modal";
 import { PAST_SCHEDULE_CONFIRMATION_CODE } from "@/lib/campaign-scheduling";
 import styles from "./overview-command-center.module.css";
+
+const DELETE_SEQUENCE_ERROR = "This sequence could not be deleted. Please try again.";
 
 export function SequenceRowActions({
   href,
@@ -33,6 +36,8 @@ export function SequenceRowActions({
   const [error, setError] = useState<string | null>(null);
   const [pastScheduleConfirmOpen, setPastScheduleConfirmOpen] = useState(false);
   const [pastScheduleConverting, setPastScheduleConverting] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const { showSuccess } = useErrorToast();
   useErrorToastEffect(error, "Sequence action failed");
 
@@ -163,35 +168,39 @@ export function SequenceRowActions({
     }
   }
 
-  async function handleDelete(event: MouseEvent<HTMLButtonElement>) {
+  function handleRequestDelete(event: MouseEvent<HTMLButtonElement>) {
     event.stopPropagation();
     if (pendingAction) {
       return;
     }
+    setDeleteError(null);
+    setDeleteConfirmOpen(true);
+  }
 
-    const confirmed = window.confirm(`Delete "${campaignName}"? This removes the sequence and its run history.`);
-    if (!confirmed) {
+  async function confirmDelete() {
+    if (pendingAction) {
       return;
     }
 
     setPendingAction("delete");
-    setError(null);
+    setDeleteError(null);
 
     try {
       const response = await fetch(`/api/campaigns/${campaignId}`, { method: "DELETE" });
       if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        setError(payload.error ?? "Could not delete the sequence.");
+        setDeleteError(DELETE_SEQUENCE_ERROR);
         setPendingAction(null);
         return;
       }
-
-      router.refresh();
-      setPendingAction(null);
     } catch {
-      setError("Could not delete the sequence.");
+      setDeleteError(DELETE_SEQUENCE_ERROR);
       setPendingAction(null);
+      return;
     }
+
+    setDeleteConfirmOpen(false);
+    setPendingAction(null);
+    router.refresh();
   }
 
   return (
@@ -269,7 +278,7 @@ export function SequenceRowActions({
       <button
         type="button"
         className={`${styles.sequenceActionButton} ${styles.sequenceActionButtonDelete} ${styles.sequenceActionDanger}`}
-        onClick={(event) => void handleDelete(event)}
+        onClick={handleRequestDelete}
         disabled={Boolean(pendingAction)}
         aria-label={`Delete ${campaignName}`}
       >
@@ -284,6 +293,22 @@ export function SequenceRowActions({
       pending={pastScheduleConverting}
       onCancel={handleCancelPastScheduleConfirm}
       onConfirm={() => void handleConfirmConvertAndRelaunch()}
+    />
+    <AppConfirmDialog
+      open={deleteConfirmOpen}
+      title="Delete this sequence?"
+      description={`Deleting “${campaignName}” will remove the sequence and its run history. This action cannot be undone.`}
+      confirmLabel="Delete sequence"
+      loadingLabel="Deleting…"
+      destructive
+      loading={pendingAction === "delete"}
+      error={deleteError}
+      onConfirm={() => void confirmDelete()}
+      onCancel={() => {
+        if (pendingAction !== "delete") {
+          setDeleteConfirmOpen(false);
+        }
+      }}
     />
     </>
   );

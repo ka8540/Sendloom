@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect } from "react";
-import { Download, ExternalLink, FileText, X } from "lucide-react";
+import { Download, ExternalLink, FileText } from "lucide-react";
+
+import { CircularCloseButton } from "@/components/circular-close-button";
 
 import type { AttachmentPreviewKind } from "@/lib/attachments";
 import styles from "./attachment-preview.module.css";
@@ -100,9 +102,7 @@ export function AttachmentPreviewModal({
             <strong title={attachment.fileName}>{attachment.fileName}</strong>
             <span>{getPreviewLabel(attachment)}</span>
           </div>
-          <button type="button" className={styles.modalClose} onClick={onClose} aria-label="Close preview">
-            <X aria-hidden="true" />
-          </button>
+          <CircularCloseButton label="Close preview" onClick={onClose} />
         </div>
 
         {surface}

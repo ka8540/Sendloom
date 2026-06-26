@@ -3,7 +3,9 @@
 import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowRight, Check, X } from "lucide-react";
+import { ArrowRight, Check } from "lucide-react";
+
+import { CircularCloseButton } from "@/components/circular-close-button";
 
 import { renderBrandText } from "@/components/brand-text";
 import { useManual } from "@/components/manual/ManualProvider";
@@ -441,15 +443,7 @@ export function ManualOverlay() {
       >
         <div className={styles.popoverTop}>
           <span>{manual.routeLabel}</span>
-          <button
-            className={styles.iconButton}
-            type="button"
-            onClick={skipManual}
-            data-manual-control="true"
-            aria-label="Skip manual"
-          >
-            <X aria-hidden="true" />
-          </button>
+          <CircularCloseButton compact label="Skip manual" onClick={skipManual} data-manual-control="true" />
         </div>
 
         <div className={styles.copy}>

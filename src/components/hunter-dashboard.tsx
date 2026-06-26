@@ -15,9 +15,9 @@ import {
   Mail,
   Search,
   Settings2,
-  X,
   UserRound
 } from "lucide-react";
+import { CircularCloseButton } from "@/components/circular-close-button";
 import { useErrorToast, useErrorToastEffect } from "@/components/error-toast-provider";
 import styles from "@/components/hunter-dashboard.module.css";
 
@@ -1223,14 +1223,10 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
                   Save your own Hunter key once. It is encrypted on the server and only attached inside backend requests.
                 </p>
               </div>
-              <button
-                type="button"
-                className={styles.modalClose}
+              <CircularCloseButton
+                label="Close settings"
                 onClick={() => !settingsPending && setIsSettingsOpen(false)}
-                aria-label="Close settings"
-              >
-                <X aria-hidden="true" />
-              </button>
+              />
             </div>
 
             <div className={`${styles.modalBody} form`}>

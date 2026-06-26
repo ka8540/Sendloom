@@ -1,6 +1,8 @@
 "use client";
 
-import { Loader2, PencilLine, X } from "lucide-react";
+import { Loader2, PencilLine } from "lucide-react";
+
+import { CircularCloseButton } from "@/components/circular-close-button";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
@@ -327,15 +329,7 @@ export function CampaignScheduleEditor(props: {
                 <h2 id="edit-sequence-title">Edit sequence</h2>
                 <p>Update when this sequence should send.</p>
               </div>
-              <button
-                aria-label="Close edit sequence dialog"
-                className={styles.modalClose}
-                disabled={pending}
-                onClick={closeEditor}
-                type="button"
-              >
-                <X aria-hidden="true" />
-              </button>
+              <CircularCloseButton label="Close edit sequence dialog" disabled={pending} onClick={closeEditor} />
             </div>
 
             <form className={styles.modalForm} onSubmit={onSubmit}>

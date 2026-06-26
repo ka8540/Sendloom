@@ -27,9 +27,11 @@ import {
   Sparkles,
   Trash2,
   UserPlus,
-  Users,
-  X
+  Users
 } from "lucide-react";
+
+import { AppConfirmDialog } from "@/components/app-confirm-dialog";
+import { CircularCloseButton } from "@/components/circular-close-button";
 
 import {
   ADD_MORE_DISCOVER_PEOPLE_MUTATION,
@@ -111,6 +113,8 @@ import {
 import { useManual } from "@/components/manual/ManualProvider";
 import styles from "@/components/prospects/prospects-dashboard.module.css";
 
+const DELETE_COMPANY_ERROR = "This company could not be deleted. Please try again.";
+
 type DetailStage = "ready" | "draft" | "processing" | "failed";
 
 function resolveDetailStage(search: ProspectSearchNode | null): DetailStage | null {
@@ -174,6 +178,8 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
   const [showAddMoreDialog, setShowAddMoreDialog] = useState(false);
   const [sessionExhausted, setSessionExhausted] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [companyPendingDeletion, setCompanyPendingDeletion] = useState<CompanyDetail | null>(null);
+  const [deleteCompanyError, setDeleteCompanyError] = useState<string | null>(null);
   const [refreshingFormat, setRefreshingFormat] = useState(false);
   const [formatSourceUrl, setFormatSourceUrl] = useState("");
   const [showFormatSource, setShowFormatSource] = useState(false);
@@ -436,32 +442,35 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     await loadDetail({ category: activeCategory });
   }, [activeCategory, loadDetail, search]);
 
-  const handleDeleteCompany = useCallback(
-    async (target: CompanyDetail) => {
-      const confirmed = window.confirm(
-        `Delete ${target.name}? This removes the company, its inferred people, and related searches.`
-      );
-      if (!confirmed) {
-        return;
-      }
-      setDeleting(true);
-      setActionError(null);
-      const result = await prospectGraphql<{ deleteCompany: boolean }>(DELETE_COMPANY_MUTATION, {
-        companyId: target.id
-      });
+  // Opening only requests the in-app confirmation; the mutation runs on confirm.
+  const handleDeleteCompany = useCallback((target: CompanyDetail) => {
+    setDeleteCompanyError(null);
+    setCompanyPendingDeletion(target);
+  }, []);
+
+  const confirmDeleteCompany = useCallback(async () => {
+    const target = companyPendingDeletion;
+    if (!target || deleting) {
+      return;
+    }
+    setDeleting(true);
+    setDeleteCompanyError(null);
+    const result = await prospectGraphql<{ deleteCompany: boolean }>(DELETE_COMPANY_MUTATION, {
+      companyId: target.id
+    });
+    if (result.disabled) {
       setDeleting(false);
-      if (result.disabled) {
-        setDisabled(true);
-        return;
-      }
-      if (result.error || !result.data?.deleteCompany) {
-        setActionError(result.error ?? "Could not delete this company.");
-        return;
-      }
-      router.push("/prospects");
-    },
-    [router]
-  );
+      setCompanyPendingDeletion(null);
+      setDisabled(true);
+      return;
+    }
+    if (result.error || !result.data?.deleteCompany) {
+      setDeleting(false);
+      setDeleteCompanyError(DELETE_COMPANY_ERROR);
+      return;
+    }
+    router.push("/prospects");
+  }, [companyPendingDeletion, deleting, router]);
 
   const reloadCompanyPeople = useCallback(
     async (updatedCompany: CompanyDetail) => {
@@ -862,9 +871,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
         <div className={`${styles.inlineAlert} ${styles.inlineAlertError}`} role="alert">
           <AlertCircle aria-hidden="true" />
           <span>{actionError}</span>
-          <button type="button" onClick={() => setActionError(null)} aria-label="Dismiss">
-            <X aria-hidden="true" />
-          </button>
+          <CircularCloseButton compact label="Dismiss" onClick={() => setActionError(null)} />
         </div>
       )}
       {actionNotice && (
@@ -881,9 +888,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
               </>
             ) : null}
           </span>
-          <button type="button" onClick={() => setActionNotice(null)} aria-label="Dismiss">
-            <X aria-hidden="true" />
-          </button>
+          <CircularCloseButton compact label="Dismiss" onClick={() => setActionNotice(null)} />
         </div>
       )}
 
@@ -1094,6 +1099,27 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
         expanding={expanding}
         onConfirm={handleAddMore}
         onClose={() => setShowAddMoreDialog(false)}
+      />
+      <AppConfirmDialog
+        open={companyPendingDeletion !== null}
+        title="Delete this company?"
+        description={
+          companyPendingDeletion
+            ? `Deleting “${companyPendingDeletion.name}” will remove the company, its inferred people, and related searches. This action cannot be undone.`
+            : null
+        }
+        confirmLabel="Delete company"
+        loadingLabel="Deleting…"
+        destructive
+        loading={deleting}
+        error={deleteCompanyError}
+        onConfirm={() => void confirmDeleteCompany()}
+        onCancel={() => {
+          if (!deleting) {
+            setCompanyPendingDeletion(null);
+            setDeleteCompanyError(null);
+          }
+        }}
       />
     </div>
   );
@@ -1803,9 +1829,7 @@ function AddMorePeopleDialog({
             </h2>
             <p className={styles.panelSubtitle}>{ADD_MORE_DIALOG_BODY}</p>
           </div>
-          <button type="button" className={styles.iconButton} onClick={onClose} aria-label="Close" disabled={expanding}>
-            <X aria-hidden="true" />
-          </button>
+          <CircularCloseButton label="Close" onClick={onClose} disabled={expanding} />
         </div>
 
         <dl className={styles.reviewGrid}>
@@ -1874,9 +1898,7 @@ function ProspectReviewDialog({
             </h2>
             <p className={styles.panelSubtitle}>Suppressed records and records without usable email addresses will be skipped.</p>
           </div>
-          <button type="button" className={styles.iconButton} onClick={onClose} aria-label="Close" disabled={busy}>
-            <X aria-hidden="true" />
-          </button>
+          <CircularCloseButton label="Close" onClick={onClose} disabled={busy} />
         </div>
 
         {loading ? (
