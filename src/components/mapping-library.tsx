@@ -1,12 +1,29 @@
 "use client";
 
-import { Check, ChevronLeft, ChevronRight, PencilLine, Trash2, X } from "lucide-react";
-import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent } from "react";
+import { ChevronLeft, ChevronRight, Loader2, PencilLine, Trash2, X } from "lucide-react";
+import { useEffect, useId, useMemo, useState, type FormEvent } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 
-import { useErrorToastEffect } from "@/components/error-toast-provider";
+import { useErrorToast, useErrorToastEffect } from "@/components/error-toast-provider";
+import editorStyles from "@/components/import-editor-dialog.module.css";
+import {
+  EDIT_IMPORT_CANCEL_LABEL,
+  EDIT_IMPORT_ERROR_MESSAGE,
+  EDIT_IMPORT_FIELDS_HINT,
+  EDIT_IMPORT_FIELDS_LABEL,
+  EDIT_IMPORT_NAME_LABEL,
+  EDIT_IMPORT_SAVE_LABEL,
+  EDIT_IMPORT_SAVING_LABEL,
+  EDIT_IMPORT_SUCCESS_MESSAGE,
+  EDIT_IMPORT_TITLE,
+  IMPORT_NAME_MAX_LENGTH,
+  MAX_TEMPLATE_COLUMNS,
+  editImportLabel,
+  planImportEdit,
+  toggleTemplateColumn
+} from "@/components/imports-editor";
 
-const MAX_TEMPLATE_COLUMNS = 10;
 const IMPORTS_PAGE_SIZE = 5;
 
 type MappingColumn = {
@@ -134,6 +151,7 @@ export function TemplateFieldPicker(props: { imports: TemplateFieldItem[]; initi
         <select
           id="template-field-import"
           name="importId"
+          data-imports-tour="pending-selector"
           value={selectedImportId}
           onChange={(event) => {
             setSelectedImportId(event.target.value);
@@ -156,7 +174,7 @@ export function TemplateFieldPicker(props: { imports: TemplateFieldItem[]; initi
               {selectedColumns.length} / {MAX_TEMPLATE_COLUMNS} template fields selected
             </strong>
           </div>
-          <div className="checkbox-grid">
+          <div className="checkbox-grid" data-imports-tour="active-field-selection">
             {selectedImport.columns.map((column) => {
               const checked = selectedColumns.includes(column.normalized);
               const disableUnchecked = !checked && selectedColumns.length >= MAX_TEMPLATE_COLUMNS;
@@ -185,7 +203,12 @@ export function TemplateFieldPicker(props: { imports: TemplateFieldItem[]; initi
           </div>
         </>
       ) : null}
-      <button className="button" type="submit" disabled={state.pending || !selectedImport}>
+      <button
+        className="button"
+        type="submit"
+        data-imports-tour="save-template-fields"
+        disabled={state.pending || !selectedImport}
+      >
         {state.pending ? "Saving fields..." : "Save template fields"}
       </button>
     </form>
@@ -194,63 +217,45 @@ export function TemplateFieldPicker(props: { imports: TemplateFieldItem[]; initi
 
 export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
   const router = useRouter();
-  const [savingImportId, setSavingImportId] = useState<string | null>(null);
   const [deletingImportId, setDeletingImportId] = useState<string | null>(null);
-  const [savingTemplateFieldsImportId, setSavingTemplateFieldsImportId] = useState<string | null>(null);
   const [editingImportId, setEditingImportId] = useState<string | null>(null);
-  const [editingTemplateFieldsImportId, setEditingTemplateFieldsImportId] = useState<string | null>(null);
-  const [draftNames, setDraftNames] = useState<Record<string, string>>(() =>
-    Object.fromEntries(props.items.map((item) => [item.importId, item.fileName]))
-  );
-  const [templateFieldDrafts, setTemplateFieldDrafts] = useState<Record<string, string[]>>(() =>
-    Object.fromEntries(props.items.map((item) => [item.importId, item.selectedTemplateColumns]))
-  );
   const [page, setPage] = useState(1);
   const [error, setError] = useState<string | null>(null);
   useErrorToastEffect(error, "Import update failed");
   const totalPages = Math.max(1, Math.ceil(props.items.length / IMPORTS_PAGE_SIZE));
   const visibleItems = props.items.slice((page - 1) * IMPORTS_PAGE_SIZE, page * IMPORTS_PAGE_SIZE);
-
-  useEffect(() => {
-    setDraftNames(Object.fromEntries(props.items.map((item) => [item.importId, item.fileName])));
-  }, [props.items]);
-
-  useEffect(() => {
-    setTemplateFieldDrafts(Object.fromEntries(props.items.map((item) => [item.importId, item.selectedTemplateColumns])));
-  }, [props.items]);
+  const editingItem = editingImportId
+    ? props.items.find((item) => item.importId === editingImportId) ?? null
+    : null;
 
   useEffect(() => {
     setPage((current) => Math.min(current, Math.max(1, Math.ceil(props.items.length / IMPORTS_PAGE_SIZE))));
   }, [props.items.length]);
 
-  async function saveImportName(importId: string) {
-    setSavingImportId(importId);
-    setError(null);
-    const fileName = String(draftNames[importId] ?? "").trim();
-
-    if (!fileName) {
-      setSavingImportId(null);
-      setError("Import name cannot be empty.");
+  // Publish the "what changed" marker so the Help menu can offer a short tour of
+  // the processed-import card once the user has at least one. Layout-neutral.
+  useEffect(() => {
+    if (typeof document === "undefined") {
       return;
     }
-
-    const response = await fetch(`/api/imports/${importId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fileName })
-    });
-
-    if (!response.ok) {
-      const payload = await response.json();
-      setSavingImportId(null);
-      setError(payload.error ?? "Could not update the import name.");
-      return;
+    const root = document.documentElement;
+    if (props.items.length > 0) {
+      root.dataset.tourChangedStage = "changed";
+    } else {
+      delete root.dataset.tourChangedStage;
     }
+    return () => {
+      delete document.documentElement.dataset.tourChangedStage;
+    };
+  }, [props.items.length]);
 
-    setEditingImportId(null);
-    router.refresh();
-    setSavingImportId(null);
-  }
+  // If the import open in the editor disappears (deleted here or gone after a
+  // refresh), close the dialog rather than leaving it stranded.
+  useEffect(() => {
+    if (editingImportId && !props.items.some((item) => item.importId === editingImportId)) {
+      setEditingImportId(null);
+    }
+  }, [editingImportId, props.items]);
 
   async function deleteImportItem(item: MappingLibraryItem) {
     const extraMessage = item.linkedCampaignCount
@@ -283,78 +288,14 @@ export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
     setDeletingImportId(null);
   }
 
-  function toggleTemplateField(importId: string, column: string) {
-    setTemplateFieldDrafts((current) => {
-      const existing = current[importId] ?? [];
-      const next = existing.includes(column)
-        ? existing.filter((entry) => entry !== column)
-        : existing.length >= MAX_TEMPLATE_COLUMNS
-          ? existing
-          : [...existing, column];
-
-      return {
-        ...current,
-        [importId]: next
-      };
-    });
-  }
-
-  async function saveTemplateFields(importId: string) {
-    const selectedColumns = templateFieldDrafts[importId] ?? [];
-
-    if (selectedColumns.length === 0) {
-      setError("Choose at least one template field before saving.");
-      return;
-    }
-
-    setSavingTemplateFieldsImportId(importId);
-    setError(null);
-
-    const response = await fetch(`/api/imports/${importId}/template-fields`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        selectedColumns
-      })
-    });
-
-    if (!response.ok) {
-      const payload = await response.json().catch(() => ({}));
-      setSavingTemplateFieldsImportId(null);
-      setError(payload.error ?? "Could not save template fields.");
-      return;
-    }
-
-    setEditingTemplateFieldsImportId(null);
-    router.refresh();
-    setSavingTemplateFieldsImportId(null);
-  }
-
-  function handleNameKeyDown(event: KeyboardEvent<HTMLInputElement>, importId: string, originalName: string) {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      void saveImportName(importId);
-    }
-
-    if (event.key === "Escape") {
-      event.preventDefault();
-      setDraftNames((current) => ({
-        ...current,
-        [importId]: originalName
-      }));
-      setEditingImportId(null);
-    }
-  }
-
   return (
     <div className="imports-library">
-      {visibleItems.map((item) => {
-        const isEditing = editingImportId === item.importId;
-        const isSaving = savingImportId === item.importId;
+      {visibleItems.map((item, index) => {
+        // The first visible card carries the guided-tour targets, so the Imports
+        // help guide always finds an anchor when any processed import is shown.
+        const isTourAnchor = index === 0;
         const isDeleting = deletingImportId === item.importId;
-        const isEditingTemplateFields = editingTemplateFieldsImportId === item.importId;
-        const isSavingTemplateFields = savingTemplateFieldsImportId === item.importId;
-        const activeTemplateFields = templateFieldDrafts[item.importId] ?? item.selectedTemplateColumns;
+        const activeTemplateFields = item.selectedTemplateColumns;
         const selectedColumns = item.columns.filter((column) => activeTemplateFields.includes(column.normalized));
         const detectedOnlyColumns = item.columns.filter((column) => !activeTemplateFields.includes(column.normalized));
         const visibleSelectedColumns = selectedColumns.slice(0, 5);
@@ -365,28 +306,15 @@ export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
         const hiddenPreviewCount = Math.max(0, item.rowCount - visiblePreviewRows.length);
 
         return (
-          <article className="import-card" key={item.importId}>
+          <article
+            className="import-card"
+            key={item.importId}
+            data-imports-tour={isTourAnchor ? "import-card" : undefined}
+          >
             <div className="import-card__header">
               <div className="import-card__primary">
                 <div className="import-card__title-row">
-                  {isEditing ? (
-                    <input
-                      className="import-card__name-input"
-                      value={draftNames[item.importId] ?? item.fileName}
-                      maxLength={120}
-                      onChange={(event) =>
-                        setDraftNames((current) => ({
-                          ...current,
-                          [item.importId]: event.target.value
-                        }))
-                      }
-                      onKeyDown={(event) => handleNameKeyDown(event, item.importId, item.fileName)}
-                      aria-label={`Rename ${item.fileName}`}
-                      autoFocus
-                    />
-                  ) : (
-                    <strong className="import-card__title">{item.fileName}</strong>
-                  )}
+                  <strong className="import-card__title">{item.fileName}</strong>
 
                   <div className="import-card__meta">
                     <span className="badge">{item.status}</span>
@@ -409,58 +337,28 @@ export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
               </div>
 
               <div className="import-card__actions">
-                {isEditing ? (
-                  <>
-                    <button
-                      type="button"
-                      className="field-icon-button"
-                      data-tooltip="Save import name"
-                      onClick={() => void saveImportName(item.importId)}
-                      disabled={isSaving || isDeleting}
-                    >
-                      <Check aria-hidden="true" />
-                    </button>
-                    <button
-                      type="button"
-                      className="field-icon-button"
-                      data-tooltip="Cancel rename"
-                      onClick={() => {
-                        setDraftNames((current) => ({
-                          ...current,
-                          [item.importId]: item.fileName
-                        }));
-                        setEditingImportId(null);
-                      }}
-                      disabled={isSaving || isDeleting}
-                    >
-                      <X aria-hidden="true" />
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    type="button"
-                    className="field-icon-button"
-                    data-tooltip="Rename import"
-                    onClick={() => {
-                      setDraftNames((current) => ({
-                        ...current,
-                        [item.importId]: item.fileName
-                      }));
-                      setEditingImportId(item.importId);
-                      setError(null);
-                    }}
-                    disabled={isSaving || isDeleting}
-                  >
-                    <PencilLine aria-hidden="true" />
-                  </button>
-                )}
+                <button
+                  type="button"
+                  className="field-icon-button"
+                  data-tooltip="Edit import"
+                  data-imports-tour={isTourAnchor ? "edit-import" : undefined}
+                  onClick={() => {
+                    setEditingImportId(item.importId);
+                    setError(null);
+                  }}
+                  disabled={isDeleting}
+                  aria-label={editImportLabel(item.fileName)}
+                >
+                  <PencilLine aria-hidden="true" />
+                </button>
 
                 <button
                   type="button"
                   className="field-icon-button field-icon-button--danger"
                   data-tooltip="Delete import"
+                  data-imports-tour={isTourAnchor ? "delete-import" : undefined}
                   onClick={() => void deleteImportItem(item)}
-                  disabled={isSaving || isDeleting}
+                  disabled={isDeleting}
                 >
                   <Trash2 aria-hidden="true" />
                 </button>
@@ -468,7 +366,10 @@ export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
             </div>
 
             <div className="import-card__content">
-              <div className="import-card__section import-card__section--columns">
+              <div
+                className="import-card__section import-card__section--columns"
+                data-imports-tour={isTourAnchor ? "active-template-fields" : undefined}
+              >
                 <div className="import-card__section-head">
                   <div className="import-card__section-heading">
                     <span className="import-card__section-label">Template fields</span>
@@ -476,21 +377,6 @@ export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
                       {activeTemplateFields.length} of {item.columns.length} detected columns are active in templates.
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    className="button secondary import-card__section-button"
-                    onClick={() => {
-                      setTemplateFieldDrafts((current) => ({
-                        ...current,
-                        [item.importId]: item.selectedTemplateColumns
-                      }));
-                      setEditingTemplateFieldsImportId((current) => (current === item.importId ? null : item.importId));
-                      setError(null);
-                    }}
-                    disabled={isSaving || isDeleting || isSavingTemplateFields}
-                  >
-                    {isEditingTemplateFields ? "Close editor" : "Edit fields"}
-                  </button>
                 </div>
 
                 {visibleSelectedColumns.length ? (
@@ -513,7 +399,10 @@ export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
                 )}
 
                 {visibleDetectedColumns.length ? (
-                  <div className="import-card__detected-summary">
+                  <div
+                    className="import-card__detected-summary"
+                    data-imports-tour={isTourAnchor ? "other-detected-columns" : undefined}
+                  >
                     <span className="import-card__detected-label">Other detected columns</span>
                     <div className="import-card__field-pill-row import-card__field-pill-row--muted">
                       {visibleDetectedColumns.map((column) => (
@@ -533,7 +422,10 @@ export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
                 ) : null}
               </div>
 
-              <div className="import-card__section import-card__section--preview">
+              <div
+                className="import-card__section import-card__section--preview"
+                data-imports-tour={isTourAnchor ? "sample-contacts" : undefined}
+              >
                 <div className="import-card__section-head">
                   <div className="import-card__section-heading">
                     <span className="import-card__section-label">Sample contacts</span>
@@ -559,70 +451,12 @@ export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
                 ) : null}
               </div>
             </div>
-
-            {isEditingTemplateFields ? (
-              <div className="import-card__editor">
-                <div className="selection-summary">
-                  <strong>
-                    {activeTemplateFields.length} / {MAX_TEMPLATE_COLUMNS} template fields selected
-                  </strong>
-                  <span className="muted">Choose the fields you want available when building templates from this import.</span>
-                </div>
-
-                <div className="checkbox-grid import-card__checkbox-grid">
-                  {item.columns.map((column) => {
-                    const checked = activeTemplateFields.includes(column.normalized);
-                    const disableUnchecked = !checked && activeTemplateFields.length >= MAX_TEMPLATE_COLUMNS;
-
-                    return (
-                      <label
-                        key={`${item.importId}-${column.normalized}-picker`}
-                        className={`checkbox-card${checked ? " is-selected" : ""}${disableUnchecked ? " is-disabled" : ""}`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          disabled={disableUnchecked || isSavingTemplateFields}
-                          onChange={() => toggleTemplateField(item.importId, column.normalized)}
-                        />
-                        <span>{formatColumnLabel(column)}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-
-                <div className="import-card__editor-actions">
-                  <button
-                    type="button"
-                    className="button"
-                    onClick={() => void saveTemplateFields(item.importId)}
-                    disabled={isSavingTemplateFields || isSaving || isDeleting}
-                  >
-                    {isSavingTemplateFields ? "Saving fields..." : "Save template fields"}
-                  </button>
-                  <button
-                    type="button"
-                    className="button secondary"
-                    onClick={() => {
-                      setTemplateFieldDrafts((current) => ({
-                        ...current,
-                        [item.importId]: item.selectedTemplateColumns
-                      }));
-                      setEditingTemplateFieldsImportId(null);
-                    }}
-                    disabled={isSavingTemplateFields}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            ) : null}
           </article>
         );
       })}
 
       {props.items.length > IMPORTS_PAGE_SIZE ? (
-        <div className="imports-pagination">
+        <div className="imports-pagination" data-imports-tour="imports-pagination">
           <button
             type="button"
             className="imports-pagination__button"
@@ -647,6 +481,245 @@ export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
         </div>
       ) : null}
 
+      {editingItem ? (
+        <ImportEditorDialog key={editingItem.importId} item={editingItem} onClose={() => setEditingImportId(null)} />
+      ) : null}
     </div>
+  );
+}
+
+/**
+ * Unified editor for a processed import, opened by the card's pencil action.
+ * Renders through a body-level portal so it never alters the Import card's
+ * dimensions. One Save coordinates the two existing endpoints — rename
+ * (`PATCH /api/imports/:id`) and template-field selection
+ * (`POST /api/imports/:id/template-fields`) — running only the parts the user
+ * changed. No new import is created; contacts and sequence associations are
+ * untouched. Deselecting a column only drops it from the active template
+ * variables, never the stored import data.
+ */
+function ImportEditorDialog({ item, onClose }: { item: MappingLibraryItem; onClose: () => void }) {
+  const router = useRouter();
+  const { showSuccess } = useErrorToast();
+  const [mounted, setMounted] = useState(false);
+  const [draftName, setDraftName] = useState(item.fileName);
+  const [draftColumns, setDraftColumns] = useState<string[]>(() => [...item.selectedTemplateColumns]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const titleId = useId();
+  const subtitleId = useId();
+  const nameInputId = useId();
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Escape closes the editor, but never mid-save — closing while a partial
+  // update is in flight could hide that only one change persisted.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && !saving) {
+        onClose();
+      }
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [saving, onClose]);
+
+  function toggle(column: string) {
+    setDraftColumns((current) => toggleTemplateColumn(current, column));
+    setError(null);
+  }
+
+  async function handleSave() {
+    if (saving) {
+      // Re-entry guard: rapid clicks never fire a second set of updates.
+      return;
+    }
+
+    // Diff against the live item prop so a retry after a partial failure only
+    // re-sends the still-pending change (the succeeded part is now the baseline).
+    const plan = planImportEdit(
+      { name: item.fileName, selectedColumns: item.selectedTemplateColumns },
+      { name: draftName, selectedColumns: draftColumns }
+    );
+
+    if (plan.kind === "noop") {
+      onClose();
+      return;
+    }
+
+    if (plan.kind === "invalid") {
+      setError(plan.error);
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+
+    try {
+      if (plan.nameChanged) {
+        const response = await fetch(`/api/imports/${item.importId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fileName: plan.name })
+        });
+        if (!response.ok) {
+          throw new Error("rename-failed");
+        }
+      }
+
+      if (plan.fieldsChanged) {
+        const response = await fetch(`/api/imports/${item.importId}/template-fields`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ selectedColumns: plan.selectedColumns })
+        });
+        if (!response.ok) {
+          throw new Error("fields-failed");
+        }
+      }
+    } catch {
+      // Keep the dialog open and refetch the true state so the card (and this
+      // dialog's baseline) reflect whatever actually persisted. Never claim both
+      // changes saved when only one did; never surface backend detail.
+      setSaving(false);
+      setError(EDIT_IMPORT_ERROR_MESSAGE);
+      router.refresh();
+      return;
+    }
+
+    setSaving(false);
+    router.refresh();
+    showSuccess(EDIT_IMPORT_SUCCESS_MESSAGE);
+    onClose();
+  }
+
+  if (!mounted) {
+    return null;
+  }
+
+  return createPortal(
+    <div
+      className={editorStyles.backdrop}
+      role="presentation"
+      onMouseDown={() => {
+        if (!saving) {
+          onClose();
+        }
+      }}
+    >
+      <div
+        className={editorStyles.card}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={subtitleId}
+        data-imports-editor="true"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <header className={editorStyles.header}>
+          <div className={editorStyles.headerText}>
+            <h2 id={titleId}>{EDIT_IMPORT_TITLE}</h2>
+            <p id={subtitleId} className={editorStyles.headerSubtitle}>
+              Rename this import or change which detected columns are active template fields. Your contacts and existing
+              sequence associations stay attached to the same import.
+            </p>
+          </div>
+          <button
+            type="button"
+            className={editorStyles.closeButton}
+            onClick={onClose}
+            disabled={saving}
+            aria-label="Close editor"
+          >
+            <X aria-hidden="true" />
+          </button>
+        </header>
+
+        <div className={editorStyles.body}>
+          {error ? (
+            <p className={editorStyles.error} role="alert">
+              {error}
+            </p>
+          ) : null}
+
+          <div className={editorStyles.field}>
+            <label htmlFor={nameInputId}>{EDIT_IMPORT_NAME_LABEL}</label>
+            <input
+              id={nameInputId}
+              className={editorStyles.nameInput}
+              value={draftName}
+              maxLength={IMPORT_NAME_MAX_LENGTH}
+              onChange={(event) => {
+                setDraftName(event.target.value);
+                setError(null);
+              }}
+              disabled={saving}
+              autoFocus
+            />
+          </div>
+
+          <div className={editorStyles.field}>
+            <div className={editorStyles.fieldsHead}>
+              <span className={editorStyles.groupLabel}>{EDIT_IMPORT_FIELDS_LABEL}</span>
+              <p className={editorStyles.fieldsHint}>{EDIT_IMPORT_FIELDS_HINT}</p>
+            </div>
+            <span className={editorStyles.summary}>
+              {draftColumns.length} / {MAX_TEMPLATE_COLUMNS} active
+            </span>
+            <div className="checkbox-grid">
+              {item.columns.map((column) => {
+                const checked = draftColumns.includes(column.normalized);
+                const disableUnchecked = !checked && draftColumns.length >= MAX_TEMPLATE_COLUMNS;
+
+                return (
+                  <label
+                    key={`${item.importId}-${column.normalized}-editor`}
+                    className={`checkbox-card${checked ? " is-selected" : ""}${disableUnchecked ? " is-disabled" : ""}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={disableUnchecked || saving}
+                      onChange={() => toggle(column.normalized)}
+                    />
+                    <span>{formatColumnLabel(column)}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        <footer className={editorStyles.footer}>
+          <button
+            type="button"
+            className={`button secondary ${editorStyles.footerButton}`}
+            onClick={onClose}
+            disabled={saving}
+          >
+            {EDIT_IMPORT_CANCEL_LABEL}
+          </button>
+          <button
+            type="button"
+            className={`button ${editorStyles.footerButton}`}
+            onClick={() => void handleSave()}
+            disabled={saving}
+          >
+            {saving ? (
+              <>
+                <Loader2 aria-hidden="true" className={editorStyles.spin} />
+                {EDIT_IMPORT_SAVING_LABEL}
+              </>
+            ) : (
+              EDIT_IMPORT_SAVE_LABEL
+            )}
+          </button>
+        </footer>
+      </div>
+    </div>,
+    document.body
   );
 }

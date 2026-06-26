@@ -96,19 +96,19 @@ export default async function ImportsPage({
   return (
     <div className="stack">
       <section className="grid cols-2">
-        <article className="card">
+        <article className="card" data-imports-tour="upload">
           <h1 style={{ marginTop: 0 }}>Upload your people list</h1>
           <p className="muted">Upload a CSV or spreadsheet to create an audience.</p>
           <UploadImportForm />
         </article>
-        <article className="card">
+        <article className="card" data-imports-tour="template-fields">
           <h2 style={{ marginTop: 0 }}>Template fields</h2>
           <p className="muted">Choose fields for newly reviewed imports here. Anything already saved can be edited in the imports list below.</p>
           <TemplateFieldPicker imports={templateFieldItems} initialImportId={pendingImportId} />
         </article>
       </section>
 
-      <section className="card">
+      <section className="card" data-imports-tour="imports-list">
         <h2>Imports</h2>
         <p className="muted">Review, rename, reselect template fields, page through, or delete imported audiences in one place.</p>
         <MappingLibrary items={mappingItems} />

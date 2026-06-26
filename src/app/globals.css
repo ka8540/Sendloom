@@ -2021,36 +2021,6 @@ html[data-sidebar-collapsed="true"] .sidebar .theme-menu--footer .theme-menu__pa
   line-height: 1.45;
 }
 
-.import-card__section-button {
-  min-height: 2.1rem;
-  padding: 0.48rem 0.84rem;
-  border-radius: 14px;
-  border-color: color-mix(in srgb, var(--accent) 16%, var(--line));
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--surface-muted) 92%, transparent),
-    color-mix(in srgb, var(--button-secondary-bg) 88%, transparent)
-  );
-  color: var(--text);
-  font-size: 0.8rem;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  box-shadow: inset 0 1px 0 color-mix(in srgb, white 6%, transparent);
-  align-self: flex-start;
-}
-
-.import-card__section-button:hover:not(:disabled),
-.import-card__section-button:focus-visible {
-  border-color: color-mix(in srgb, var(--accent) 28%, var(--line));
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--surface-muted) 84%, transparent),
-    color-mix(in srgb, var(--accent-soft) 42%, var(--button-secondary-bg) 58%)
-  );
-  box-shadow: 0 10px 22px rgba(12, 18, 28, 0.1);
-  transform: translateY(-1px);
-}
-
 .import-card__section-count {
   display: inline-flex;
   align-items: center;
@@ -2198,25 +2168,6 @@ html[data-sidebar-collapsed="true"] .sidebar .theme-menu--footer .theme-menu__pa
   color: var(--muted);
   font-size: 0.86rem;
   font-weight: 600;
-}
-
-.import-card__editor {
-  display: grid;
-  gap: 0.85rem;
-  padding: 1rem;
-  border-radius: 18px;
-  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line));
-  background: color-mix(in srgb, var(--surface-soft) 92%, transparent);
-}
-
-.import-card__checkbox-grid {
-  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
-}
-
-.import-card__editor-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.7rem;
 }
 
 .imports-pagination {
