@@ -4,6 +4,8 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { useErrorToast } from "@/components/error-toast-provider";
+import { ErrorRecoveryPanel } from "@/components/incident/error-recovery-panel";
+import { useErrorRecovery } from "@/components/incident/use-error-recovery";
 import { PastScheduleRelaunchModal } from "@/components/past-schedule-relaunch-modal";
 import { PAST_SCHEDULE_CONFIRMATION_CODE } from "@/lib/campaign-scheduling";
 
@@ -12,10 +14,16 @@ import { PAST_SCHEDULE_CONFIRMATION_CODE } from "@/lib/campaign-scheduling";
  * a past "schedule once" sequence surfaces a confirmation modal (offering to switch it to
  * send right away) instead of a hard validation error. All other launch behavior and
  * validation blocking is unchanged — the server still owns eligibility decisions.
+ *
+ * Validation outcomes (409 past-schedule, launch-blocked, other 4xx) keep their existing
+ * toast/modal. Only operational failures (offline / timeout / 5xx) escalate to the shared
+ * ErrorRecoveryPanel, whose Retry simply re-runs this same launch call — the server's
+ * "already running" guard means a retry never creates a duplicate run.
  */
 export function CampaignLaunchButton(props: { campaignId: string; label: string; disabled: boolean }) {
   const router = useRouter();
   const { showError, showSuccess } = useErrorToast();
+  const recovery = useErrorRecovery({ feature: "Sequences", operation: "Launch sequence" });
   const [pending, setPending] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [converting, setConverting] = useState(false);
@@ -41,6 +49,7 @@ export function CampaignLaunchButton(props: { campaignId: string; label: string;
     }
 
     setPending(true);
+    recovery.clear();
 
     try {
       const response = await launch();
@@ -52,7 +61,12 @@ export function CampaignLaunchButton(props: { campaignId: string; label: string;
           return;
         }
 
-        showError(payload.error ?? "Could not launch the sequence.", { title: "Sequence launch blocked" });
+        // 5xx / service failures become a recoverable incident; validation 4xx
+        // keep their existing inline message.
+        const normalized = recovery.failFromResponse(response, payload);
+        if (!normalized) {
+          showError(payload.error ?? "Could not launch the sequence.", { title: "Sequence launch blocked" });
+        }
         setPending(false);
         return;
       }
@@ -60,8 +74,8 @@ export function CampaignLaunchButton(props: { campaignId: string; label: string;
       // The run is now active — refresh the server component so the page reflects it.
       // Keep `pending` true so the button stays disabled until the refresh unmounts it.
       router.refresh();
-    } catch {
-      showError("Could not launch the sequence.", { title: "Sequence launch blocked" });
+    } catch (error) {
+      recovery.failFromThrown(error);
       setPending(false);
     }
   }
@@ -97,6 +111,17 @@ export function CampaignLaunchButton(props: { campaignId: string; label: string;
       <button className="button" type="button" onClick={() => void handleLaunch()} disabled={props.disabled || pending}>
         {props.label}
       </button>
+
+      {recovery.error ? (
+        <ErrorRecoveryPanel
+          error={recovery.error}
+          variant="inline"
+          onRetry={async () => {
+            await handleLaunch();
+          }}
+        />
+      ) : null}
+
       <PastScheduleRelaunchModal
         open={confirmOpen}
         pending={converting}

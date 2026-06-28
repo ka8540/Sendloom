@@ -18,6 +18,7 @@ import {
   SendHorizontal,
   ShieldAlert,
   ShieldUser,
+  Siren,
   UserRoundSearch,
   Users,
 } from "lucide-react";
@@ -121,6 +122,7 @@ export function AppNav({ initialCollapsed = false, isAdmin = false }: { initialC
         { href: "/admin/restrictions" as Route, label: "Restrictions", icon: ShieldAlert },
         { href: "/admin/system-health" as Route, label: "System Health", icon: Activity },
         { href: "/admin/activity" as Route, label: "Activity Logs", icon: History },
+        { href: "/admin/incidents" as Route, label: "Incident Reports", icon: Siren },
       ]
     : [
         { href: "/workspace" as Route, label: "Overview", icon: House },

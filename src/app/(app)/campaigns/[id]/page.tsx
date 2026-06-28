@@ -19,6 +19,7 @@ import { CampaignSetupEditor } from "@/components/campaign-setup-editor";
 import { CampaignDetailDeleteButton } from "@/components/campaign-detail-delete-button";
 import { CampaignRetryFailedButton } from "@/components/campaign-retry-failed-button";
 import { ErrorToastOnMount } from "@/components/error-toast-provider";
+import { GmailReconnectNotice } from "@/components/incident/gmail-reconnect-notice";
 import { LocalDateTime } from "@/components/local-date-time";
 import { getAttachmentPreviewKind } from "@/lib/attachments";
 import { requireOperatorUser } from "@/lib/auth";
@@ -579,7 +580,7 @@ export default async function CampaignDetailPage({
   return (
     <div className={styles.page}>
       <ActiveRunRefresher active={isActiveRun} />
-      {gmailErrorMessage ? <ErrorToastOnMount message={gmailErrorMessage} title="Gmail connection failed" /> : null}
+      {gmailErrorMessage ? <GmailReconnectNotice reconnectHref={reconnectHref} /> : null}
       {launchError ? <ErrorToastOnMount message={launchError} title="Sequence launch blocked" /> : null}
       {gmailStatus === "connected" ? (
         <div className={styles.flashNotice}>

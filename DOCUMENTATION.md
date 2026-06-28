@@ -25,6 +25,8 @@
 - [21. Known Limitations](#21-known-limitations)
 - [22. Roadmap / Future Improvements](#22-roadmap--future-improvements)
 - [23. Prospect Graph Backend (Local GraphQL Prototype)](#23-prospect-graph-backend-local-graphql-prototype)
+- [24. Dashboard Help System (in-app guided tours)](#24-dashboard-help-system-in-app-guided-tours)
+- [25. Error Recovery and Incident Reporting](#25-error-recovery-and-incident-reporting)
 
 ## 1. Executive Summary
 
@@ -1687,3 +1689,117 @@ returns to the Help button on close.
 7. Add focused tests (registration, label, step builders, optional filtering)
 8. Verify zero layout shift (the shared portal guarantees it)
 ```
+
+## 25. Error Recovery and Incident Reporting
+
+A centralized system that turns unexpected operational failures into a polished, context-appropriate recovery experience and (only when the user chooses) a privacy-preserving incident report an admin can triage — without ever exposing the reporter's identity or any personal data.
+
+### Eligible error categories
+
+Normalized in `src/lib/incident/app-error.ts` (`AppErrorCategory`). Operational/unexpected failures are eligible incidents; normal validation is **not**.
+
+| Category | Example | Default recovery |
+| --- | --- | --- |
+| `NETWORK_OFFLINE` | browser offline | Try again (disabled while offline) + Report |
+| `NETWORK_REQUEST_FAILED` | fetch threw | Try again + Report |
+| `REQUEST_TIMEOUT` | aborted/timed out | Try again + Report |
+| `SERVER_ERROR` / `SERVICE_UNAVAILABLE` | HTTP 500–599 / 503 | Try again + Report |
+| `GMAIL_CONNECTION` / `GMAIL_AUTHORIZATION` | reconnect/refresh failed | Reconnect Gmail + Report |
+| `GMAIL_SEND` | send failed | Try again + Report |
+| `SEQUENCE_CREATE` / `SEQUENCE_LAUNCH` / `SEQUENCE_RELAUNCH` | run could not start | Try again + Report |
+| `IMPORT_PROCESSING`, `TEMPLATE_SAVE`, `DISCOVER_PROCESSING` | feature failed unexpectedly | Try again + Report |
+| `CLIENT_RENDER` | React render crash | Reload section + Report |
+| `UNKNOWN` | unclassified failure | Try again + Report |
+
+**Never an incident** (keep normal validation messages): empty/invalid input, lacking authorization, a record that genuinely does not exist, a documented limit reached, a prohibited duplicate, or a user cancellation. `categoryFromHttpStatus` returns `null` for all 4xx, and `isReportableCode` marks validation-shaped codes non-reportable.
+
+### Centralized error normalization
+
+`normalizeAppError()` always supplies the user-facing title/message from a hardcoded copy table — a raw backend message, stack, SQL, or provider name can never become the visible text. The client maps failures with `normalizeThrownError` / `normalizeResponseError` (`src/lib/incident/normalize-client-error.ts`). Reuse, never rebuild: this mirrors the existing `discover-public-error.ts` mapper pattern.
+
+### Retry integration rules
+
+- `ErrorRecoveryPanel` receives an `onRetry` callback that re-runs the caller's **existing idempotent** operation — the panel never contains business logic.
+- Retry is single-flight (disabled + "Retrying…" while running), and disabled while offline.
+- Retry must not create a duplicate run/import/template/report or re-send a Gmail message; rely on existing server-side idempotency/eligibility guards (e.g. the launch API's "already running" guard).
+- A successful retry clears the panel locally; it does **not** auto-resolve the admin report.
+
+### Report submission lifecycle
+
+1. An eligible failure auto-captures one sanitized `AppErrorEvent` (`POST /api/incidents/events`, deduped by fingerprint, guarded so re-renders don't recapture).
+2. Opening the report dialog creates **nothing**.
+3. Clicking **Send report** creates/dedupes an `IncidentReport` (`POST /api/incidents`) and returns `INC-XXXXXX`. The button then reads "Reported"; repeat clicks are no-ops (a per-open idempotency key also makes a double-submit idempotent server-side).
+4. Offline: Send is disabled with a clear "you need a connection" message — reporting is never faked.
+
+### Anonymous reporter pseudonyms
+
+`reporterPseudonym(userId) = HMAC_SHA256(userId, REPORT_PSEUDONYM_SECRET)`, shown as `U-7F2A-91C4`. Stable per user, different across users, not reversible without the secret, derived **server-side only**. Never the email, never a bare SHA-256, never the raw DB id. It is the only identity an admin sees.
+
+### Encrypted identity references
+
+If a reversible link is needed for internal follow-up, the raw user id is stored AES-256-GCM encrypted (`encryptReporterRef`, keyed by `REPORT_IDENTITY_ENCRYPTION_KEY`, unique IV + auth tag per row, cloning the `hunter-crypto.ts` pattern). The admin-facing DTOs in `src/services/incident-reports.ts` **omit** the `encryptedReporter*` columns entirely; there is no admin "reveal identity" action and plaintext ids are never logged.
+
+### Diagnostic allow-listing and redaction
+
+The stored `sanitizedContext` is **built** from an explicit allow-list (`buildSafeDiagnostics`), not scraped-then-cleaned. Free-text notes pass through `redactFreeText` (emails/phones/tokens removed, ≤1000 chars, no HTML) and a final `sanitizeAuditMetadata` pass. Stored fields are limited to: feature, operation, route pathname (query stripped), HTTP status, safe category/code, correlation id, app version, browser/OS family, online flag, retry count, `gmailConnected` boolean, allow-listed sequence state, sanitized feature flags, and fingerprints. **Never stored:** name, email, raw user id, Gmail address, tokens/cookies/headers, IP, contacts/recipients, subjects/bodies/attachments, raw request bodies, raw provider responses, or SQL.
+
+### Report deduplication
+
+A `diagnosticFingerprint` (category + feature + operation + internal code + route template + stack fingerprint + app version — no PII) groups occurrences. An identical failure from the same pseudonym within **15 minutes** updates the existing report (`occurrenceCount++`, `lastSeenAt` advances, `firstSeenAt` preserved, severity re-derived) instead of creating a new admin row.
+
+### Report rate limits
+
+Per pseudonym (never email/IP): **5 reports/hour, 20/day**; auto error-event capture has its own separate, looser limit. When limited the user sees "This issue has already been recorded. You do not need to submit it again." — no counters or keys are exposed.
+
+### Correlation IDs
+
+GraphQL already mints a per-request UUID (`src/graphql/context.ts`); REST error paths use `newRequestId()` (`req_…`, `src/lib/request-id.ts`). The safe id is returned to the client, captured into the normalized error, and stored on the report so an admin can find the matching server logs without seeing the user.
+
+### Admin incident workflow
+
+`/admin/incidents` (admin nav → "Incident Reports", `requireAdminUser`). The list + detail modal show only safe fields and the anonymous code. Statuses: `NEW → INVESTIGATING → RESOLVED → IGNORED` (reopen supported); admins can add internal notes (never returned to the reporter). Severity (`CRITICAL/HIGH/MEDIUM/LOW`) is derived server-side from category + occurrence count — the client cannot set it. Admin actions audit `incident.viewed`, `incident.status_changed`, `incident.note_added` via the existing `recordAuditEvent` (audit metadata excludes the encrypted reporter identity).
+
+### Privacy guarantees (summary)
+
+Admins never see name, email, username, phone, raw user id, Gmail address, imported-contact identity, IP/geolocation, tokens, message content, or the encrypted-identity columns. Reporter identity is HMAC-pseudonymized; any reversible reference is authenticated-encrypted, server-only, and omitted from every client response.
+
+### Developer integration
+
+Wire a feature's operational failures to the shared panel with the `useErrorRecovery` hook + `ErrorRecoveryPanel`. Validation/4xx keeps its own message; only offline/timeout/5xx escalate.
+
+```tsx
+const recovery = useErrorRecovery({ feature: "Sequences", operation: "Launch sequence" });
+
+async function launch() {
+  try {
+    const res = await fetch(`/api/campaigns/${id}/launch`, { method: "POST" });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      // 5xx → incident panel; 4xx stays your existing inline/toast message.
+      if (!recovery.failFromResponse(res, body)) {
+        showError(body.error ?? "Could not launch the sequence.");
+      }
+      return;
+    }
+    recovery.clear();
+    router.refresh();
+  } catch (error) {
+    recovery.failFromThrown(error); // offline / timeout / network
+  }
+}
+
+return (
+  <>
+    <button onClick={() => void launch()}>Launch</button>
+    {recovery.error ? <ErrorRecoveryPanel error={recovery.error} variant="inline" onRetry={launch} /> : null}
+  </>
+);
+```
+
+For Gmail authorization failures, render the panel (or `GmailReconnectNotice`) with `category: "GMAIL_AUTHORIZATION"` and pass a sender-specific `reconnectHref`. As a route-level fallback, the app + global error boundaries already render a Report option for `CLIENT_RENDER`.
+
+**Rule:** never pass raw request bodies, user emails, access/refresh tokens, recipient lists, or message content into `context`/`onRetry`. Provide only safe labels (feature, operation) — the backend derives identity, severity, correlation, and the encrypted reference.
+
+### Configuration
+
+`REPORT_PSEUDONYM_SECRET` and `REPORT_IDENTITY_ENCRYPTION_KEY` are server-only (never `NEXT_PUBLIC_`), required in production, and fall back to `SESSION_SECRET` in development. New Prisma models: `AppErrorEvent` and `IncidentReport` (migration `20260627120000_add_incident_reporting`).

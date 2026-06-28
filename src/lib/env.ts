@@ -35,6 +35,14 @@ const envSchema = z
     GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
     OPENAI_API_KEY: z.string().min(1).optional(),
     HUNTER_KEY_ENCRYPTION_SECRET: z.string().min(12).optional(),
+    // --- Incident reporting (server-only) ---
+    // Keys the anonymous reporter pseudonym (HMAC) and encrypts the reversible
+    // internal reporter reference (AES-256-GCM). Both are server-only and must
+    // never be prefixed with NEXT_PUBLIC_. In production both are required (see
+    // superRefine below); in dev they fall back to SESSION_SECRET so local
+    // bootstrapping stays painless, mirroring HUNTER_KEY_ENCRYPTION_SECRET.
+    REPORT_PSEUDONYM_SECRET: z.string().min(16).optional(),
+    REPORT_IDENTITY_ENCRYPTION_KEY: z.string().min(32).optional(),
     CRON_SECRET: z.string().min(1).optional(),
     RESEND_API_KEY: z.string().optional(),
     RESEND_WEBHOOK_SECRET: z.string().optional(),
@@ -157,7 +165,9 @@ const envSchema = z
       const requiredInProduction = [
         ["CRON_SECRET", value.CRON_SECRET],
         ["TRACKING_SECRET", value.TRACKING_SECRET],
-        ["HUNTER_KEY_ENCRYPTION_SECRET", value.HUNTER_KEY_ENCRYPTION_SECRET]
+        ["HUNTER_KEY_ENCRYPTION_SECRET", value.HUNTER_KEY_ENCRYPTION_SECRET],
+        ["REPORT_PSEUDONYM_SECRET", value.REPORT_PSEUDONYM_SECRET],
+        ["REPORT_IDENTITY_ENCRYPTION_KEY", value.REPORT_IDENTITY_ENCRYPTION_KEY]
       ] as const;
 
       for (const [key, val] of requiredInProduction) {
@@ -185,6 +195,8 @@ function readRawEnv() {
     GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
     HUNTER_KEY_ENCRYPTION_SECRET: process.env.HUNTER_KEY_ENCRYPTION_SECRET,
+    REPORT_PSEUDONYM_SECRET: process.env.REPORT_PSEUDONYM_SECRET,
+    REPORT_IDENTITY_ENCRYPTION_KEY: process.env.REPORT_IDENTITY_ENCRYPTION_KEY,
     CRON_SECRET: process.env.CRON_SECRET,
     RESEND_API_KEY: process.env.RESEND_API_KEY,
     RESEND_WEBHOOK_SECRET: process.env.RESEND_WEBHOOK_SECRET,

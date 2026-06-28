@@ -3,8 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   directUrl = env("DATABASE_URL_UNPOOLED")
 }
 
@@ -65,89 +65,89 @@ enum ProviderEventType {
 }
 
 model User {
-    id             String   @id @default(cuid())
-    email          String   @unique
-    passwordHash   String?
-    isAdmin        Boolean  @default(false)
-    hunterApiKeyEncrypted String?
-    hunterApiKeyLast4     String?
-    hunterApiKeyUpdatedAt DateTime?
-    apiAccessDisabled      Boolean  @default(false)
-    importsWriteDisabled   Boolean  @default(false)
-    templatesWriteDisabled Boolean  @default(false)
-    launchesDisabled       Boolean  @default(false)
-    aiEnhancementsDisabled Boolean  @default(false)
-    adultVerifiedAt        DateTime?
-    termsAcceptedAt        DateTime?
-    privacyAcceptedAt      DateTime?
-    antiAbuseAcceptedAt    DateTime?
-    policyVersion          String?
-    ageGateVersion         String?
-    eligibilityBlockedAt   DateTime?
-    eligibilityBlockedReason String?
-    restrictedAt           DateTime?
-    restrictedReason       String?
-    magicLinkToken String?
-    magicLinkExpiry DateTime?
-    lastLoginAt    DateTime?
-    lastSeenAt     DateTime?
-    sessionIssuedAt DateTime?
-    sessionExpiresAt DateTime?
-    createdAt      DateTime @default(now())
-    updatedAt      DateTime @updatedAt
-    senderProfiles SenderProfile[]
-  imports        Import[]
-  mappings       Mapping[]
-  templates      Template[]
-    campaigns      Campaign[]
-    suppressions   Suppression[]
-    hunterDomainSearches HunterDomainSearch[]
-    prospectCompanies    ProspectCompany[]
-    prospectPeople       ProspectPerson[]
-    prospectSearches     ProspectSearch[]
+  id                       String               @id @default(cuid())
+  email                    String               @unique
+  passwordHash             String?
+  isAdmin                  Boolean              @default(false)
+  hunterApiKeyEncrypted    String?
+  hunterApiKeyLast4        String?
+  hunterApiKeyUpdatedAt    DateTime?
+  apiAccessDisabled        Boolean              @default(false)
+  importsWriteDisabled     Boolean              @default(false)
+  templatesWriteDisabled   Boolean              @default(false)
+  launchesDisabled         Boolean              @default(false)
+  aiEnhancementsDisabled   Boolean              @default(false)
+  adultVerifiedAt          DateTime?
+  termsAcceptedAt          DateTime?
+  privacyAcceptedAt        DateTime?
+  antiAbuseAcceptedAt      DateTime?
+  policyVersion            String?
+  ageGateVersion           String?
+  eligibilityBlockedAt     DateTime?
+  eligibilityBlockedReason String?
+  restrictedAt             DateTime?
+  restrictedReason         String?
+  magicLinkToken           String?
+  magicLinkExpiry          DateTime?
+  lastLoginAt              DateTime?
+  lastSeenAt               DateTime?
+  sessionIssuedAt          DateTime?
+  sessionExpiresAt         DateTime?
+  createdAt                DateTime             @default(now())
+  updatedAt                DateTime             @updatedAt
+  senderProfiles           SenderProfile[]
+  imports                  Import[]
+  mappings                 Mapping[]
+  templates                Template[]
+  campaigns                Campaign[]
+  suppressions             Suppression[]
+  hunterDomainSearches     HunterDomainSearch[]
+  prospectCompanies        ProspectCompany[]
+  prospectPeople           ProspectPerson[]
+  prospectSearches         ProspectSearch[]
 
-    @@index([isAdmin])
-    @@index([sessionExpiresAt])
+  @@index([isAdmin])
+  @@index([sessionExpiresAt])
 }
 
 model SenderProfile {
-  id          String   @id @default(cuid())
-  userId      String?
-  name        String
-  fromEmail   String   @unique
-  provider    String
-  providerRef String?
-  oauthRefreshToken String?
-  oauthScope  String?
-  lastReplySyncAt DateTime?
+  id                 String         @id @default(cuid())
+  userId             String?
+  name               String
+  fromEmail          String         @unique
+  provider           String
+  providerRef        String?
+  oauthRefreshToken  String?
+  oauthScope         String?
+  lastReplySyncAt    DateTime?
   lastReplySyncError String?
-  metadata    Json?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
-  campaigns   Campaign[]
-  inboundReplies InboundReply[]
+  metadata           Json?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  user               User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  campaigns          Campaign[]
+  inboundReplies     InboundReply[]
 
   @@index([userId])
 }
 
 model Import {
-  id            String         @id @default(cuid())
-  userId        String?
-  fileName      String
-  fileType      String
-  storagePath   String
-  status        ImportStatus   @default(UPLOADING)
-  rowCount      Int            @default(0)
-  errorMessage  String?
-  sampleRows    Json?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  user          User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
-  columns       ImportColumn[]
-  rows          ImportRow[]
-  mappings      Mapping[]
-  campaigns     Campaign[]
+  id           String         @id @default(cuid())
+  userId       String?
+  fileName     String
+  fileType     String
+  storagePath  String
+  status       ImportStatus   @default(UPLOADING)
+  rowCount     Int            @default(0)
+  errorMessage String?
+  sampleRows   Json?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  user         User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  columns      ImportColumn[]
+  rows         ImportRow[]
+  mappings     Mapping[]
+  campaigns    Campaign[]
 
   @@index([userId])
 }
@@ -160,51 +160,51 @@ model ImportColumn {
   sampleType  String
   sampleValue String?
   createdAt   DateTime @default(now())
-  import      Import    @relation(fields: [importId], references: [id], onDelete: Cascade)
+  import      Import   @relation(fields: [importId], references: [id], onDelete: Cascade)
 }
 
 model ImportRow {
-  id          String   @id @default(cuid())
-  importId    String
-  rowIndex    Int
-  email       String?
-  payload     Json
-  normalized  Json
-  createdAt   DateTime @default(now())
-  import      Import    @relation(fields: [importId], references: [id], onDelete: Cascade)
+  id         String   @id @default(cuid())
+  importId   String
+  rowIndex   Int
+  email      String?
+  payload    Json
+  normalized Json
+  createdAt  DateTime @default(now())
+  import     Import   @relation(fields: [importId], references: [id], onDelete: Cascade)
 
   @@index([importId, rowIndex])
   @@index([importId, email])
 }
 
 model Mapping {
-  id                 String   @id @default(cuid())
-  userId             String?
-  importId           String
-  reservedFieldMap   Json
-  variableMap        Json
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
-  user               User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
-  import             Import    @relation(fields: [importId], references: [id], onDelete: Cascade)
-  campaigns          Campaign[]
+  id               String     @id @default(cuid())
+  userId           String?
+  importId         String
+  reservedFieldMap Json
+  variableMap      Json
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+  user             User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  import           Import     @relation(fields: [importId], references: [id], onDelete: Cascade)
+  campaigns        Campaign[]
 
   @@index([userId])
 }
 
 model Template {
-  id               String   @id @default(cuid())
+  id               String     @id @default(cuid())
   userId           String?
   name             String
   subject          String
-  format           String   @default("HTML")
+  format           String     @default("HTML")
   htmlBody         String
   variableManifest Json
   previewPayload   Json?
-  version          Int      @default(1)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-  user             User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  version          Int        @default(1)
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+  user             User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
   campaigns        Campaign[]
 
   @@index([userId])
@@ -239,26 +239,26 @@ model Campaign {
 }
 
 model CampaignRun {
-  id                  String      @id @default(cuid())
-  campaignId          String
-  status              RunStatus   @default(QUEUED)
-  launchType          String
-  scheduledFor        DateTime?
-  startedAt           DateTime?
-  completedAt         DateTime?
-  progressSnapshot    Json?
-  totalRecipients     Int         @default(0)
-  sentCount           Int         @default(0)
-  failedCount         Int         @default(0)
-  suppressedCount     Int         @default(0)
-  invalidCount        Int         @default(0)
-  openedCount         Int         @default(0)
-  clickedCount        Int         @default(0)
-  repliedCount        Int         @default(0)
-  createdAt           DateTime    @default(now())
-  updatedAt           DateTime    @updatedAt
-  campaign            Campaign    @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  recipientJobs       RecipientJob[]
+  id               String         @id @default(cuid())
+  campaignId       String
+  status           RunStatus      @default(QUEUED)
+  launchType       String
+  scheduledFor     DateTime?
+  startedAt        DateTime?
+  completedAt      DateTime?
+  progressSnapshot Json?
+  totalRecipients  Int            @default(0)
+  sentCount        Int            @default(0)
+  failedCount      Int            @default(0)
+  suppressedCount  Int            @default(0)
+  invalidCount     Int            @default(0)
+  openedCount      Int            @default(0)
+  clickedCount     Int            @default(0)
+  repliedCount     Int            @default(0)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  campaign         Campaign       @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  recipientJobs    RecipientJob[]
 
   @@index([campaignId, status])
 }
@@ -290,20 +290,20 @@ model RecipientJob {
 }
 
 model InboundReply {
-  id             String        @id @default(cuid())
+  id              String        @id @default(cuid())
   senderProfileId String
-  recipientJobId String?
-  gmailMessageId String        @unique
-  gmailThreadId  String?
-  fromEmail      String?
-  subject        String?
-  snippet        String?
-  receivedAt     DateTime
-  payload        Json?
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-  senderProfile  SenderProfile @relation(fields: [senderProfileId], references: [id], onDelete: Cascade)
-  recipientJob   RecipientJob? @relation(fields: [recipientJobId], references: [id], onDelete: SetNull)
+  recipientJobId  String?
+  gmailMessageId  String        @unique
+  gmailThreadId   String?
+  fromEmail       String?
+  subject         String?
+  snippet         String?
+  receivedAt      DateTime
+  payload         Json?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  senderProfile   SenderProfile @relation(fields: [senderProfileId], references: [id], onDelete: Cascade)
+  recipientJob    RecipientJob? @relation(fields: [recipientJobId], references: [id], onDelete: SetNull)
 
   @@index([senderProfileId, receivedAt])
   @@index([recipientJobId, receivedAt])
@@ -321,28 +321,28 @@ model ProviderEvent {
 }
 
 model Suppression {
-  id          String            @id @default(cuid())
-  userId      String?
-  email       String
-  reason      SuppressionReason
-  source      String
-  notes       String?
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
-  user        User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  id        String            @id @default(cuid())
+  userId    String?
+  email     String
+  reason    SuppressionReason
+  source    String
+  notes     String?
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  user      User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@unique([userId, email])
   @@index([userId])
 }
 
 model RateLimitWindow {
-  id           String   @id @default(cuid())
-  windowKey    String   @unique
-  sentCount    Int      @default(0)
-  windowStart  DateTime
-  windowEnd    DateTime
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id          String   @id @default(cuid())
+  windowKey   String   @unique
+  sentCount   Int      @default(0)
+  windowStart DateTime
+  windowEnd   DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 model SendLedger {
@@ -387,15 +387,91 @@ model AuditLog {
   @@index([severity, createdAt])
 }
 
+// --- Error recovery & incident reporting ------------------------------------
+// A sanitized technical record of an eligible operational failure, captured once
+// when it happens. It holds ONLY allow-listed, non-identifying diagnostics (no
+// name/email/user id/tokens/IP/contacts/message content). Status / severity /
+// category are stored as validated strings (mirroring the AuditLog convention),
+// not DB enums. The reversible reporter reference lives on IncidentReport, never
+// here.
+model AppErrorEvent {
+  id                     String   @id @default(cuid())
+  // Non-sequential public id (EVT-XXXXXX) so volume is never inferable.
+  publicEventId          String   @unique
+  category               String
+  feature                String
+  operation              String
+  internalCode           String?
+  httpStatus             Int?
+  correlationId          String?
+  // Pathname only — query string + values are stripped before persistence.
+  route                  String?
+  requestMethod          String?
+  appVersion             String?
+  browserFamily          String?
+  platform               String?
+  onlineStatus           Boolean?
+  retryable              Boolean  @default(false)
+  // Allow-list built diagnostic object (never an arbitrary scraped payload).
+  sanitizedContext       Json?
+  diagnosticFingerprint  String?
+  serverStackFingerprint String?
+  occurredAt             DateTime
+  createdAt              DateTime @default(now())
+
+  reports IncidentReport[]
+
+  @@index([category, createdAt])
+  @@index([diagnosticFingerprint])
+}
+
+// A user-submitted incident report. The affected account is represented only by
+// a stable HMAC pseudonym (reporterPseudonym, e.g. U-7F2A-91C4). A reversible
+// reference is stored AES-256-GCM encrypted (encryptedReporter*) for internal
+// follow-up only and is NEVER returned to any client (admin or reporter). Status
+// / severity are validated strings; severity is derived server-side.
+model IncidentReport {
+  id                    String   @id @default(cuid())
+  // Non-sequential public id (INC-XXXXXX), safe to show the reporter + admin.
+  publicReportId        String   @unique
+  errorEventId          String?
+  reporterPseudonym     String
+  // Authenticated-encryption ciphertext + IV + tag. Admin-facing DTOs OMIT these.
+  encryptedReporterRef  String?
+  encryptedReporterIv   String?
+  encryptedReporterTag  String?
+  // Optional free-text note, redacted (emails/phones/tokens) + length-capped.
+  userNote              String?
+  // NEW | INVESTIGATING | RESOLVED | IGNORED (validated at the API boundary).
+  status                String   @default("NEW")
+  // CRITICAL | HIGH | MEDIUM | LOW — derived server-side, never client supplied.
+  severity              String
+  occurrenceCount       Int      @default(1)
+  diagnosticFingerprint String?
+  firstSeenAt           DateTime
+  lastSeenAt            DateTime
+  // Internal triage notes — never returned to the reporting user.
+  adminNotes            String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  errorEvent AppErrorEvent? @relation(fields: [errorEventId], references: [id], onDelete: SetNull)
+
+  @@index([status, lastSeenAt])
+  @@index([severity, lastSeenAt])
+  @@index([reporterPseudonym, diagnosticFingerprint])
+  @@index([reporterPseudonym, lastSeenAt])
+}
+
 model HunterDomainSearch {
-  id         String   @id @default(cuid())
-  userId     String
-  domain     String
-  resultCount Int     @default(0)
-  results    Json
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id          String   @id @default(cuid())
+  userId      String
+  domain      String
+  resultCount Int      @default(0)
+  results     Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, domain])
   @@index([userId, updatedAt])
@@ -408,32 +484,32 @@ model HunterDomainSearch {
 // API boundary, never trusted directly from AI output.
 
 model ProspectCompany {
-  id                String   @id @default(cuid())
-  userId            String
-  name              String
-  normalizedName    String
-  officialName      String?
-  officialDomain    String?
-  officialWebsiteDomain String?
-  officialWebsite   String?
-  linkedinUrl       String?
-  domainConfidence  String   @default("UNAVAILABLE")
-  emailDomain       String?
-  emailDomainConfidence String @default("UNAVAILABLE")
-  emailDomainEvidence Json?
-  emailPattern      String?
-  patternConfidence String   @default("UNAVAILABLE")
-  patternEvidence   Json?
+  id                      String    @id @default(cuid())
+  userId                  String
+  name                    String
+  normalizedName          String
+  officialName            String?
+  officialDomain          String?
+  officialWebsiteDomain   String?
+  officialWebsite         String?
+  linkedinUrl             String?
+  domainConfidence        String    @default("UNAVAILABLE")
+  emailDomain             String?
+  emailDomainConfidence   String    @default("UNAVAILABLE")
+  emailDomainEvidence     Json?
+  emailPattern            String?
+  patternConfidence       String    @default("UNAVAILABLE")
+  patternEvidence         Json?
   // Short, human-readable summary of why this format was selected (from the AI
   // web-search discovery). Reset on every inference.
-  emailFormatReason String?
+  emailFormatReason       String?
   // When the email format was last discovered/inferred. Drives the cache that
   // avoids paying for AI web search again within the freshness window.
   emailFormatDiscoveredAt DateTime?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
 
-  user      User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
   positions ProspectCompanyPosition[]
   people    ProspectPerson[]
   searches  ProspectSearch[]
@@ -493,29 +569,29 @@ model ProspectPerson {
 }
 
 model ProspectSearch {
-  id                 String    @id @default(cuid())
-  userId             String
-  companyId          String?
-  requestedCompany   String
-  requestedDomain    String?
-  requestedLinkedin  String?
-  requestedTitles    Json
-  requestedLocations Json?
-  maxResults         Int
-  status             String    @default("DRAFT")
-  apifyRunId         String?
-  apifyDatasetId     String?
-  errorCode          String?
-  errorMessage       String?
-  totalFound         Int       @default(0)
-  totalProcessed     Int       @default(0)
+  id                     String    @id @default(cuid())
+  userId                 String
+  companyId              String?
+  requestedCompany       String
+  requestedDomain        String?
+  requestedLinkedin      String?
+  requestedTitles        Json
+  requestedLocations     Json?
+  maxResults             Int
+  status                 String    @default("DRAFT")
+  apifyRunId             String?
+  apifyDatasetId         String?
+  errorCode              String?
+  errorMessage           String?
+  totalFound             Int       @default(0)
+  totalProcessed         Int       @default(0)
   // Internal result provenance for the shared Discover cache. Never exposed via
   // GraphQL. resultSource is CACHE (reused a shared dataset) or PROVIDER (called
   // Apify); the remaining fields record which shared cache entry was used.
-  resultSource       String?
-  sharedCacheId      String?
-  cacheFingerprint   String?
-  cacheFetchedAt     DateTime?
+  resultSource           String?
+  sharedCacheId          String?
+  cacheFingerprint       String?
+  cacheFetchedAt         DateTime?
   // Processing-attempt instrumentation. A user-triggered retry starts a NEW
   // attempt (attemptCount increments, lastAttemptId rotates); a network replay of
   // the same client idempotency key reuses the current attempt so it is never
@@ -524,9 +600,9 @@ model ProspectSearch {
   lastAttemptId          String?
   lastAttemptStartedAt   DateTime?
   lastAttemptCompletedAt DateTime?
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
-  completedAt        DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  completedAt            DateTime?
 
   user       User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
   company    ProspectCompany?          @relation(fields: [companyId], references: [id], onDelete: SetNull)
@@ -580,43 +656,43 @@ model DiscoverSearchExpansion {
 // from this data. Match is by an exact canonical fingerprint (see
 // discover-cache-fingerprint).
 model DiscoverSearchCache {
-  id                  String   @id @default(cuid())
-  fingerprint         String   @unique
-  cacheVersion        String
-  companyKey          String
-  companyName         String
-  companyDomain       String?
-  companyLinkedinUrl  String?
-  normalizedRoles     Json
-  normalizedLocations Json
-  resultLimit         Int
+  id                    String    @id @default(cuid())
+  fingerprint           String    @unique
+  cacheVersion          String
+  companyKey            String
+  companyName           String
+  companyDomain         String?
+  companyLinkedinUrl    String?
+  normalizedRoles       Json
+  normalizedLocations   Json
+  resultLimit           Int
   // READY (fresh/usable) | REFRESHING (a holder is repopulating) | FAILED.
-  status              String   @default("REFRESHING")
-  fetchedAt           DateTime?
-  expiresAt           DateTime?
-  refreshStartedAt    DateTime?
-  lastErrorCode       String?
-  resultCount         Int      @default(0)
+  status                String    @default("REFRESHING")
+  fetchedAt             DateTime?
+  expiresAt             DateTime?
+  refreshStartedAt      DateTime?
+  lastErrorCode         String?
+  resultCount           Int       @default(0)
   // Provider continuation state for "Add 10 more". An expansion never restarts
   // the provider at page 1: providerNextPage is the next page to fetch,
   // providerPagesFetched counts pages already pulled into this entry, and
   // providerExhausted is set once the provider confirms there are no further
   // pages / no new unique people. lastProviderFetchAt records the last fetch.
-  providerNextPage    Int      @default(1)
-  providerPagesFetched Int     @default(0)
-  providerExhausted   Boolean  @default(false)
-  lastProviderFetchAt DateTime?
+  providerNextPage      Int       @default(1)
+  providerPagesFetched  Int       @default(0)
+  providerExhausted     Boolean   @default(false)
+  lastProviderFetchAt   DateTime?
   // Evidence-backed company email-format metadata (safe to share). A manual
   // per-user override is never written here.
   emailDomain           String?
-  emailDomainConfidence String  @default("UNAVAILABLE")
+  emailDomainConfidence String    @default("UNAVAILABLE")
   emailDomainEvidence   Json?
   emailPattern          String?
-  patternConfidence     String  @default("UNAVAILABLE")
+  patternConfidence     String    @default("UNAVAILABLE")
   patternEvidence       Json?
   emailFormatReason     String?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
   people DiscoverSearchCachePerson[]
 
