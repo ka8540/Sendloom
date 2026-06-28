@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { RefreshCw } from "lucide-react";
 
 import { renderBrandText } from "@/components/brand-text";
+import { ReportIssueDialog } from "@/components/incident/report-issue-dialog";
+import { normalizeAppError } from "@/lib/incident/app-error";
 
 const RECOVERY_WINDOW_MS = 60_000;
 const MAX_AUTO_RECOVERIES = 3;
@@ -33,6 +35,11 @@ export default function AppError({ reset }: { error: Error & { digest?: string }
   const router = useRouter();
   const recoveringRef = useRef(false);
   const [isRecovering, setIsRecovering] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reported, setReported] = useState(false);
+  // Read inside attemptAutoRecovery so an open report dialog is never reset away.
+  const reportOpenRef = useRef(false);
+  reportOpenRef.current = reportOpen;
 
   const runRecovery = useCallback(() => {
     if (recoveringRef.current) {
@@ -48,7 +55,7 @@ export default function AppError({ reset }: { error: Error & { digest?: string }
   }, [reset, router]);
 
   const attemptAutoRecovery = useCallback(() => {
-    if (recoveringRef.current) {
+    if (recoveringRef.current || reportOpenRef.current) {
       return;
     }
 
@@ -91,6 +98,12 @@ export default function AppError({ reset }: { error: Error & { digest?: string }
     };
   }, [attemptAutoRecovery]);
 
+  const normalizedError = normalizeAppError({
+    category: "CLIENT_RENDER",
+    feature: "Sendloom",
+    operation: "Render this section"
+  });
+
   return (
     <main className="not-found-shell">
       <section className="card not-found-card">
@@ -115,11 +128,29 @@ export default function AppError({ reset }: { error: Error & { digest?: string }
             {isRecovering ? <span className="button-spinner" aria-hidden="true" /> : null}
             {isRecovering ? "Reconnecting…" : "Try again"}
           </button>
+          <button
+            type="button"
+            className="button secondary"
+            onClick={() => setReportOpen(true)}
+            disabled={reported}
+          >
+            {reported ? "Reported" : "Report issue"}
+          </button>
           <Link className="button secondary" href="/workspace">
             Back to dashboard
           </Link>
         </div>
       </section>
+
+      <ReportIssueDialog
+        open={reportOpen}
+        error={normalizedError}
+        onClose={() => setReportOpen(false)}
+        onReported={() => {
+          setReported(true);
+          setReportOpen(false);
+        }}
+      />
     </main>
   );
 }

@@ -1,0 +1,147 @@
+/*
+ * ErrorRecoveryPanel. Restrained warning styling on the app's navy/glass surface,
+ * theme-aware via the shared tokens. Three variants: card (default bordered
+ * panel), inline (compact, no heavy chrome), and bare (content only, for
+ * embedding inside a dialog or boundary fallback).
+ */
+
+.panel {
+  position: relative;
+  display: grid;
+  gap: 1rem;
+}
+
+.card {
+  padding: 1.3rem;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--warning) 8%, transparent), transparent 36%),
+    color-mix(in srgb, var(--surface) 94%, var(--surface-strong) 6%);
+  box-shadow: var(--shadow);
+}
+
+.inline {
+  padding: 1rem 1.1rem;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+}
+
+.bare {
+  padding: 0;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 13px;
+  border: 1px solid color-mix(in srgb, var(--warning) 26%, var(--line));
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  color: var(--warning);
+}
+
+.icon svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.copy {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.title {
+  margin: 0;
+  letter-spacing: -0.02em;
+  font-size: 1.08rem;
+  line-height: 1.25;
+}
+
+.message {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+  font-size: 0.92rem;
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.button {
+  width: auto;
+  min-width: 8.5rem;
+  min-height: 2.7rem;
+  padding: 0.6rem 1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  text-decoration: none;
+}
+
+.button svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.reference {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+  overflow-wrap: anywhere;
+}
+
+.dismiss {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+}
+
+.spin {
+  animation: error-recovery-spin 0.9s linear infinite;
+}
+
+@keyframes error-recovery-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation-duration: 0s;
+  }
+}
+
+@media (max-width: 640px) {
+  .actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .button {
+    width: 100%;
+  }
+}
