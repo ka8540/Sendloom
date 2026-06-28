@@ -412,6 +412,9 @@ export async function prepareProspectExport(prisma: PrismaClient, userId: string
   return {
     id: exportId,
     fileName: resolved.fileName,
+    // Safe company name for activity logging only — not part of the GraphQL
+    // ProspectExport type, so it is never serialized to the client.
+    companyName: resolved.company.name,
     downloadUrl: `/api/prospects/exports/${exportId}`,
     review: resolved.review
   };

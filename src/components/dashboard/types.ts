@@ -62,6 +62,20 @@ export type SequenceRowData = {
   } | null;
 };
 
+// Precise activity type for the newer Discover/Finder events. Drives icon
+// selection deterministically (instead of fuzzy title/description matching) so
+// each action gets its own task-appropriate glyph. Internal only — never
+// rendered to the user. Existing run/import/template/suppression rows leave this
+// undefined and keep their original keyword-based icon behavior.
+export type ActivityEventType =
+  | "discover_search_created"
+  | "discover_search_ready"
+  | "discover_search_failed"
+  | "discover_people_added"
+  | "discover_results_exported"
+  | "finder_email_found"
+  | "finder_domain_search";
+
 export type ActivityItem = {
   id: string;
   href: Route;
@@ -69,6 +83,7 @@ export type ActivityItem = {
   description: string;
   timeLabel: string;
   timeValue: string;
-  kind: "run" | "import" | "template" | "suppression";
+  kind: "run" | "import" | "template" | "suppression" | "discover" | "finder";
   tone: "accent" | "success" | "warning" | "muted";
+  eventType?: ActivityEventType;
 };

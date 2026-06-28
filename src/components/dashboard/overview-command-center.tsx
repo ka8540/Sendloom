@@ -2,7 +2,7 @@ import type { CSSProperties } from "react";
 import type { Route } from "next";
 import Link from "next/link";
 import { after } from "next/server";
-import type { CampaignStatus, ImportStatus, RunStatus } from "@prisma/client";
+import type { CampaignStatus, RunStatus } from "@prisma/client";
 import {
   ArrowRight,
   BarChart3,
@@ -16,18 +16,19 @@ import { requireOperatorUser } from "@/lib/auth";
 import { getGmailDailySendWindow } from "@/lib/daily-send-limit";
 import { prisma } from "@/lib/db";
 import { ActivityFeed } from "@/components/dashboard/activity-feed";
+import { buildActivityItems } from "@/components/dashboard/activity-builder";
 import { formatCompactNumber, formatRelativeTime, buildTrend, humanizeEnum } from "@/components/dashboard/formatters";
 import { OverviewSummary, type SendWindowSender, type TemplateFormatSlice } from "@/components/dashboard/overview-summary";
 import { OverviewTourLauncher } from "@/components/dashboard/overview-tour-launcher";
 import { SequencePanel } from "@/components/dashboard/sequence-panel";
 import type {
-  ActivityItem,
   SequenceHealthTone,
   SequenceMetric,
   SequenceRowData,
   SequenceScheduleType
 } from "@/components/dashboard/types";
 import { processPendingCampaignWork, readDailyLimitPauseInfo, resumeCampaignRunsBlockedByDailyLimit } from "@/services/campaigns";
+import { listHunterDomainSearchesForUser } from "@/services/hunter-domain-searches";
 import styles from "./overview-command-center.module.css";
 
 const ACTIVE_RUN_STATUSES: RunStatus[] = ["QUEUED", "RUNNING"];
@@ -547,10 +548,91 @@ export default async function OverviewCommandCenter() {
     };
   });
 
+  // Discover + Finder activity sources. These are read defensively so a missing
+  // table or transient read error degrades the feed gracefully (empty) rather
+  // than breaking the whole Overview page. Each is scoped to the current user.
+  const [recentProspectSearchRows, recentDiscoverExpansionRows, recentDomainSearchSummaries, recentActivityAuditRows] =
+    await Promise.all([
+      prisma.prospectSearch
+        .findMany({
+          where: { userId: user.id },
+          take: 6,
+          orderBy: { updatedAt: "desc" },
+          select: {
+            id: true,
+            requestedCompany: true,
+            status: true,
+            totalProcessed: true,
+            requestedTitles: true,
+            requestedLocations: true,
+            updatedAt: true,
+            company: { select: { _count: { select: { positions: true } } } }
+          }
+        })
+        .catch(() => []),
+      prisma.discoverSearchExpansion
+        .findMany({
+          where: { userId: user.id, status: "READY", addedCount: { gt: 0 } },
+          take: 4,
+          orderBy: { updatedAt: "desc" },
+          select: {
+            id: true,
+            addedCount: true,
+            searchId: true,
+            updatedAt: true,
+            search: { select: { requestedCompany: true } }
+          }
+        })
+        .catch(() => []),
+      listHunterDomainSearchesForUser(user.id, 6).catch(() => []),
+      // Activities with no durable domain record: individual Finder lookups and
+      // prepared Discover exports. Only these two safe actions are read.
+      prisma.auditLog
+        .findMany({
+          where: {
+            actorUserId: user.id,
+            action: { in: ["hunter.email_search", "discover.results_exported"] }
+          },
+          take: 8,
+          orderBy: { createdAt: "desc" },
+          select: { id: true, action: true, metadata: true, createdAt: true }
+        })
+        .catch(() => [])
+    ]);
+
   const activityItems = buildActivityItems({
     recentRuns,
     recentImports,
-    recentTemplates
+    recentTemplates,
+    recentProspectSearches: recentProspectSearchRows.map((row) => ({
+      id: row.id,
+      company: row.requestedCompany,
+      status: row.status,
+      peopleCount: row.totalProcessed,
+      roleGroupCount: row.company?._count.positions ?? 0,
+      titles: parseActivityStringList(row.requestedTitles),
+      locations: parseActivityStringList(row.requestedLocations),
+      updatedAt: row.updatedAt
+    })),
+    recentDiscoverExpansions: recentDiscoverExpansionRows.map((row) => ({
+      id: row.id,
+      company: row.search.requestedCompany,
+      searchId: row.searchId,
+      addedCount: row.addedCount,
+      updatedAt: row.updatedAt
+    })),
+    recentDomainSearches: recentDomainSearchSummaries.map((summary) => ({
+      id: summary.id,
+      domain: summary.domain,
+      resultCount: summary.resultCount,
+      updatedAt: new Date(summary.updatedAt)
+    })),
+    recentActivityAuditEvents: recentActivityAuditRows.map((row) => ({
+      id: row.id,
+      action: row.action,
+      metadata: row.metadata,
+      createdAt: row.createdAt
+    }))
   });
   const sequenceHealth = buildSequenceHealth(sequenceRows);
 
@@ -1026,94 +1108,8 @@ function formatPercent(value: number, total: number) {
   return `${getPercent(value, total)}%`;
 }
 
-function buildActivityItems({
-  recentRuns,
-  recentImports,
-  recentTemplates
-}: {
-  recentRuns: Array<{
-    id: string;
-    status: RunStatus;
-    sentCount: number;
-    failedCount: number;
-    suppressedCount: number;
-    invalidCount: number;
-    totalRecipients: number;
-    updatedAt: Date;
-    campaign: {
-      id: string;
-      name: string;
-    };
-  }>;
-  recentImports: Array<{
-    id: string;
-    fileName: string;
-    rowCount: number;
-    status: ImportStatus;
-    updatedAt: Date;
-  }>;
-  recentTemplates: Array<{
-    id: string;
-    name: string;
-    format: string;
-    updatedAt: Date;
-  }>;
-}): ActivityItem[] {
-  const runItems: ActivityItem[] = recentRuns.map((run) => {
-    const issueCount = run.failedCount + run.suppressedCount + run.invalidCount;
-    return {
-      id: `run-${run.id}`,
-      href: `/sequences/${run.campaign.id}` as Route,
-      title:
-        run.status === "RUNNING"
-          ? `${run.campaign.name} is sending`
-          : run.status === "FAILED"
-            ? `${run.campaign.name} hit an issue`
-            : `${run.campaign.name} updated`,
-      description:
-        run.totalRecipients > 0
-          ? `${formatCompactNumber(run.sentCount)} sent, ${formatCompactNumber(issueCount)} issues across ${formatCompactNumber(run.totalRecipients)} recipients`
-          : `${humanizeEnum(run.status)} run activity recorded.`,
-      timeLabel: formatRelativeTime(run.updatedAt),
-      timeValue: run.updatedAt.toISOString(),
-      kind: "run",
-      tone: run.status === "FAILED" ? "warning" : run.status === "RUNNING" ? "accent" : "success"
-    };
-  });
-
-  const importItems: ActivityItem[] = recentImports.map((entry) => ({
-    id: `import-${entry.id}`,
-    href: "/imports",
-    title: `${entry.fileName} is ${entry.status === "PROCESSED" ? "ready" : humanizeEnum(entry.status).toLowerCase()}`,
-    description:
-      entry.status === "PROCESSED"
-        ? `${formatCompactNumber(entry.rowCount)} rows are ready for mapping and launch.`
-        : `Import status changed to ${humanizeEnum(entry.status).toLowerCase()}.`,
-    timeLabel: formatRelativeTime(entry.updatedAt),
-    timeValue: entry.updatedAt.toISOString(),
-    kind: "import",
-    tone: entry.status === "FAILED" ? "warning" : "muted"
-  }));
-
-  const templateItems: ActivityItem[] = recentTemplates.map((entry) => ({
-    id: `template-${entry.id}`,
-    href: "/templates",
-    title: `${entry.name} updated`,
-    description: `${entry.format.toUpperCase()} copy refreshed and ready to reuse.`,
-    timeLabel: formatRelativeTime(entry.updatedAt),
-    timeValue: entry.updatedAt.toISOString(),
-    kind: "template",
-    tone: "muted"
-  }));
-
-  const sortableItems = [
-    ...runItems.map((item, index) => ({ ...item, sortAt: recentRuns[index]?.updatedAt.getTime() ?? 0 })),
-    ...importItems.map((item, index) => ({ ...item, sortAt: recentImports[index]?.updatedAt.getTime() ?? 0 })),
-    ...templateItems.map((item, index) => ({ ...item, sortAt: recentTemplates[index]?.updatedAt.getTime() ?? 0 }))
-  ];
-
-  return sortableItems
-    .sort((left, right) => right.sortAt - left.sortAt)
-    .slice(0, 7)
-    .map(({ sortAt: _, ...item }) => item);
+// Safely coerce a Prisma JSON column (requestedTitles / requestedLocations) into
+// a string list for the activity builder, dropping any non-string entries.
+function parseActivityStringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
 }

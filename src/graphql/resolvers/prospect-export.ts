@@ -1,5 +1,6 @@
 import type { GraphQLContext } from "@/graphql/context";
 import { forbiddenError, requireUser } from "@/graphql/errors";
+import { recordAuditEvent } from "@/lib/audit";
 import { rateLimit } from "@/lib/rate-limit";
 import {
   createProspectImport,
@@ -38,7 +39,22 @@ export const prospectExportMutations = {
   ) {
     const user = requireUser(context);
     await enforceProspectActionLimit(user.id, "export");
-    return prepareProspectExport(context.prisma, user.id, args.input);
+    const result = await prepareProspectExport(context.prisma, user.id, args.input);
+
+    // Best-effort activity event for the Overview feed. recordAuditEvent never
+    // throws for non-critical events, so a logging failure cannot break the
+    // export. Only safe counters/labels are recorded — no emails, file names,
+    // or download URLs.
+    await recordAuditEvent({
+      actor: { id: user.id, email: user.email },
+      action: "discover.results_exported",
+      category: "SYSTEM",
+      target: { type: "ProspectExport", id: args.input.companyId, name: result.companyName },
+      message: `Exported ${result.review.selectedCount} selected Discover contacts.`,
+      metadata: { company: result.companyName, selectedCount: result.review.selectedCount }
+    });
+
+    return result;
   },
 
   async createProspectImport(
