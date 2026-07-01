@@ -222,6 +222,77 @@ describe("No secrets in responses (#25)", () => {
   });
 });
 
+describe("Company emailStatusCounts aggregate (Discover detail dashboard)", () => {
+  function seedPerson(prisma: FakePrisma, id: string, emailStatus: string, userId = "user_A") {
+    prisma._state.people.push({
+      id,
+      userId,
+      companyId: "comp_A",
+      positionId: "pos_1",
+      firstName: id,
+      lastName: "X",
+      fullName: `${id} X`,
+      linkedinUrl: `https://www.linkedin.com/in/${id}`,
+      emailStatus,
+      emailConfidence: "UNAVAILABLE",
+      createdAt: new Date()
+    });
+  }
+
+  it("returns user-scoped per-status counts for the company", async () => {
+    const prisma = createFakePrisma();
+    seedCompany(prisma, { id: "comp_A", userId: "user_A" });
+    for (const [index, status] of ["INFERRED_HIGH", "INFERRED_HIGH", "INFERRED_LOW", "UNAVAILABLE", "SUPPRESSED", "INVALID"].entries()) {
+      seedPerson(prisma, `person_${index}`, status);
+    }
+    // Another user's person against the same company id must never be counted.
+    seedPerson(prisma, "person_other", "INFERRED_HIGH", "user_B");
+
+    const result = await graphql({
+      schema: prospectSchema,
+      source: `{ company(id: "comp_A") { emailStatusCounts { status count } } }`,
+      contextValue: makeContext({ user: FAKE_USER, prisma, userId: "user_A" })
+    });
+
+    expect(result.errors).toBeUndefined();
+    const rows = (result.data?.company as { emailStatusCounts: Array<{ status: string; count: number }> })
+      .emailStatusCounts;
+    const counts = Object.fromEntries(rows.map((row) => [row.status, row.count]));
+    expect(counts).toEqual({ INFERRED_HIGH: 2, INFERRED_LOW: 1, UNAVAILABLE: 1, SUPPRESSED: 1, INVALID: 1 });
+  });
+
+  it("coerces an unknown stored status to UNAVAILABLE instead of breaking the enum", async () => {
+    const prisma = createFakePrisma();
+    seedCompany(prisma, { id: "comp_A", userId: "user_A" });
+    seedPerson(prisma, "person_legacy", "SOMETHING_LEGACY");
+
+    const result = await graphql({
+      schema: prospectSchema,
+      source: `{ company(id: "comp_A") { emailStatusCounts { status count } } }`,
+      contextValue: makeContext({ user: FAKE_USER, prisma, userId: "user_A" })
+    });
+
+    expect(result.errors).toBeUndefined();
+    const rows = (result.data?.company as { emailStatusCounts: Array<{ status: string; count: number }> })
+      .emailStatusCounts;
+    expect(rows).toEqual([{ status: "UNAVAILABLE", count: 1 }]);
+  });
+
+  it("returns an empty list for a company with no people", async () => {
+    const prisma = createFakePrisma();
+    seedCompany(prisma, { id: "comp_A", userId: "user_A" });
+
+    const result = await graphql({
+      schema: prospectSchema,
+      source: `{ company(id: "comp_A") { emailStatusCounts { status count } } }`,
+      contextValue: makeContext({ user: FAKE_USER, prisma, userId: "user_A" })
+    });
+
+    expect(result.errors).toBeUndefined();
+    expect((result.data?.company as { emailStatusCounts: unknown[] }).emailStatusCounts).toEqual([]);
+  });
+});
+
 describe("Company email inference API", () => {
   it("does not expose a stale pattern when email domain is unavailable", async () => {
     const prisma = createFakePrisma();

@@ -76,8 +76,11 @@ import {
   INFERRED_EMAIL_NOTICE,
   addMoreDisabledReason,
   buildProspectSelectionInput,
+  buildQualitySegments,
   confidenceBadge,
   createEmptyProspectSelection,
+  deriveDiscoverQualitySummary,
+  describeQualitySummary,
   emailStatusBadge,
   filterPeopleByText,
   formatDateTime,
@@ -91,6 +94,8 @@ import {
   isProcessQuotaBlocked,
   isProspectSelected,
   personLocation,
+  qualityPercent,
+  resolveNextEmailFormatMode,
   resolvePageCount,
   resolveSelectedSearchView,
   selectAllMatchingProspects,
@@ -98,8 +103,10 @@ import {
   statusBadge,
   togglePageProspectSelection,
   toggleProspectSelection,
+  type EmailFormatActionMode,
   type PageSelectionState,
-  type ProspectSelectionState
+  type ProspectSelectionState,
+  type QualitySegmentTone
 } from "@/components/prospects/prospect-view";
 import {
   BadgePill,
@@ -114,6 +121,7 @@ import { useManual } from "@/components/manual/ManualProvider";
 import styles from "@/components/prospects/prospects-dashboard.module.css";
 
 const DELETE_COMPANY_ERROR = "This company could not be deleted. Please try again.";
+const DEFAULT_MANUAL_PATTERN = "first.last";
 
 type DetailStage = "ready" | "draft" | "processing" | "failed";
 
@@ -181,11 +189,13 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
   const [companyPendingDeletion, setCompanyPendingDeletion] = useState<CompanyDetail | null>(null);
   const [deleteCompanyError, setDeleteCompanyError] = useState<string | null>(null);
   const [refreshingFormat, setRefreshingFormat] = useState(false);
+  // ONE exclusive correction mode drives the email-format editors. The editors
+  // render inside a single stable container, so repeated clicks can only swap
+  // the active editor — never append another form.
+  const [formatActionMode, setFormatActionMode] = useState<EmailFormatActionMode>("none");
   const [formatSourceUrl, setFormatSourceUrl] = useState("");
-  const [showFormatSource, setShowFormatSource] = useState(false);
-  const [showManualFormat, setShowManualFormat] = useState(false);
   const [manualEmailDomain, setManualEmailDomain] = useState("");
-  const [manualEmailPattern, setManualEmailPattern] = useState("first.last");
+  const [manualEmailPattern, setManualEmailPattern] = useState(DEFAULT_MANUAL_PATTERN);
   const [manualConfidence, setManualConfidence] = useState<ConfidenceLevel>("HIGH");
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<ActionNotice | null>(null);
@@ -306,6 +316,16 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
   );
 
   useEffect(() => {
+    // Never carry another company's correction editors, drafts, selection, or
+    // notices into this search — every route change starts from a clean slate.
+    setFormatActionMode("none");
+    setFormatSourceUrl("");
+    setManualEmailDomain("");
+    setManualEmailPattern(DEFAULT_MANUAL_PATTERN);
+    setManualConfidence("HIGH");
+    setActionError(null);
+    setActionNotice(null);
+    setSelection(createEmptyProspectSelection());
     void loadDetail();
     void loadQuota();
     // Reload whenever the route's searchId changes (e.g. client-side nav).
@@ -526,8 +546,24 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     await loadDetail({ category: activeCategory });
   }, [activeCategory, expanding, loadCompany, loadDetail, loadPeople, loadQuota, search]);
 
+  // Opens/closes the source-url or manual-fix editor. Pressing the active
+  // mode's button closes it; pressing the other swaps the single editor.
+  const handleToggleFormatMode = useCallback(
+    (requested: "source-url" | "manual-fix") => {
+      if (refreshingFormat) {
+        return;
+      }
+      setFormatActionMode((current) => resolveNextEmailFormatMode(current, requested));
+    },
+    [refreshingFormat]
+  );
+
   const handleRefreshEmailFormat = useCallback(
     async (target: CompanyDetail, sourceUrl?: string | null) => {
+      // Re-entry guard: one correction request at a time, never duplicated.
+      if (refreshingFormat) {
+        return;
+      }
       setRefreshingFormat(true);
       setActionError(null);
       setActionNotice(null);
@@ -541,9 +577,13 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
         return;
       }
       if (result.error || !result.data) {
+        // Failure keeps the source editor open for a retry — nothing is appended.
         setActionError(result.error ?? "Could not refresh the email format.");
         return;
       }
+      // Success closes the editor and refreshes the displayed evidence.
+      setFormatActionMode("none");
+      setFormatSourceUrl("");
       await reloadCompanyPeople(result.data.refreshCompanyEmailFormat);
       setActionNotice({
         message:
@@ -552,12 +592,18 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
             : "No evidence-backed email format found yet."
       });
     },
-    [reloadCompanyPeople]
+    [refreshingFormat, reloadCompanyPeople]
   );
 
   const handleDiscoverEmailFormat = useCallback(
     async (target: CompanyDetail, force = false) => {
+      if (refreshingFormat) {
+        return;
+      }
       setRefreshingFormat(true);
+      // AI refresh has no form: it closes any open editor and shows its
+      // progress state in the same single editor container.
+      setFormatActionMode("ai-refresh");
       setActionError(null);
       setActionNotice(null);
       const result = await prospectGraphql<{ discoverCompanyEmailFormat: CompanyDetail }>(
@@ -565,6 +611,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
         { companyId: target.id, force }
       );
       setRefreshingFormat(false);
+      setFormatActionMode("none");
       if (result.disabled) {
         setDisabled(true);
         return;
@@ -581,11 +628,14 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
             : "No public email-format evidence found yet. Paste a source URL or set it manually."
       });
     },
-    [reloadCompanyPeople]
+    [refreshingFormat, reloadCompanyPeople]
   );
 
   const handleManualEmailFormat = useCallback(
     async (target: CompanyDetail) => {
+      if (refreshingFormat) {
+        return;
+      }
       setRefreshingFormat(true);
       setActionError(null);
       setActionNotice(null);
@@ -605,13 +655,15 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
         return;
       }
       if (result.error || !result.data) {
+        // Failure keeps the manual editor open for a retry — nothing is appended.
         setActionError(result.error ?? "Could not apply the manual email format.");
         return;
       }
+      setFormatActionMode("none");
       await reloadCompanyPeople(result.data.setCompanyEmailInferenceOverride);
       setActionNotice({ message: "Manual email format applied." });
     },
-    [manualConfidence, manualEmailDomain, manualEmailPattern, reloadCompanyPeople]
+    [manualConfidence, manualEmailDomain, manualEmailPattern, refreshingFormat, reloadCompanyPeople]
   );
 
   const visiblePeople = useMemo(() => filterPeopleByText(people, peopleFilter), [people, peopleFilter]);
@@ -842,28 +894,67 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
         data-discover-tour="detail-header"
         data-discover-detail-stage={detailStage ?? "none"}
       >
-        <div className={styles.detailHeaderCopy}>
-          <p className={styles.eyebrow}>
-            <Users aria-hidden="true" /> Search
-          </p>
-          <h1 className={styles.detailHeaderTitle}>{search.company?.name ?? search.requestedCompany}</h1>
-          <p className={styles.subtitle}>
-            {roleLabel} · {locationLabel}
-          </p>
-          <div className={styles.detailHeaderMeta}>
-            <BadgePill badge={statusBadge(search.status)} />
-            <span className={styles.detailHeaderMetaItem}>
-              <Users aria-hidden="true" /> {headerPeopleCount} {headerPeopleCount === 1 ? "person" : "people"}
-            </span>
-            <span className={styles.detailHeaderMetaItem}>
-              {selectedView === "ready" && search.completedAt
-                ? `Completed ${formatDateTime(search.completedAt)}`
-                : `Created ${formatDateTime(search.createdAt)}`}
-            </span>
+        <div className={styles.detailHeaderIdentity}>
+          <div className={styles.headerCompanyIcon} aria-hidden="true">
+            <Building2 />
+          </div>
+          <div className={styles.detailHeaderCopy}>
+            <p className={styles.eyebrow}>
+              <Users aria-hidden="true" /> Search
+            </p>
+            <h1 className={styles.detailHeaderTitle}>{search.company?.name ?? search.requestedCompany}</h1>
+            <p className={styles.subtitle}>
+              {roleLabel} · {locationLabel}
+            </p>
+            <div className={styles.detailHeaderMeta}>
+              <BadgePill badge={statusBadge(search.status)} />
+              <span className={styles.detailHeaderMetaItem}>
+                <Users aria-hidden="true" /> {headerPeopleCount} {headerPeopleCount === 1 ? "person" : "people"}
+              </span>
+              <span className={styles.detailHeaderMetaItem}>
+                {selectedView === "ready" && search.completedAt
+                  ? `Completed ${formatDateTime(search.completedAt)}`
+                  : `Created ${formatDateTime(search.createdAt)}`}
+              </span>
+              {company?.officialWebsite && (
+                <a
+                  className={styles.detailHeaderLink}
+                  href={company.officialWebsite}
+                  target={EXTERNAL_LINK_TARGET}
+                  rel={EXTERNAL_LINK_REL}
+                >
+                  {company.officialWebsiteDomain ?? company.officialDomain ?? "Website"}{" "}
+                  <ExternalLink aria-hidden="true" />
+                </a>
+              )}
+              {company?.linkedinUrl && (
+                <a
+                  className={styles.detailHeaderLink}
+                  href={company.linkedinUrl}
+                  target={EXTERNAL_LINK_TARGET}
+                  rel={EXTERNAL_LINK_REL}
+                >
+                  LinkedIn <ExternalLink aria-hidden="true" />
+                </a>
+              )}
+            </div>
           </div>
         </div>
         <div className={styles.headerActions}>
           <QuotaIndicator quota={quota} />
+          {selectedView === "ready" && company && (
+            <button
+              type="button"
+              className={styles.dangerGhostButton}
+              onClick={() => handleDeleteCompany(company)}
+              disabled={deleting}
+              title="Delete this company and its saved results"
+              data-discover-tour="delete-search"
+            >
+              {deleting ? <LoaderCircle aria-hidden="true" className={styles.spin} /> : <Trash2 aria-hidden="true" />}
+              <span>Delete</span>
+            </button>
+          )}
         </div>
       </header>
 
@@ -892,8 +983,6 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
         </div>
       )}
 
-      <SummaryCards search={search} company={company} view={selectedView} />
-
       {(selectedView === "processing" || selectedView === "canceled" || selectedView === "failed") && (
         <StatusCard
           search={search}
@@ -906,27 +995,26 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
 
       {selectedView === "ready" && (
         <>
-          <CompanyCard
+          <ResultsQualityCard company={company} loading={companyLoading} />
+
+          <EmailFormatPanel
             company={company}
             loading={companyLoading}
-            deleting={Boolean(company && deleting)}
             refreshingFormat={Boolean(company && refreshingFormat)}
+            actionMode={formatActionMode}
             formatSourceUrl={formatSourceUrl}
-            showFormatSource={showFormatSource}
-            showManualFormat={showManualFormat}
             manualEmailDomain={manualEmailDomain}
             manualEmailPattern={manualEmailPattern}
             manualConfidence={manualConfidence}
             onFormatSourceUrlChange={setFormatSourceUrl}
-            onToggleFormatSource={() => setShowFormatSource((value) => !value)}
-            onToggleManualFormat={() => setShowManualFormat((value) => !value)}
+            onSelectMode={handleToggleFormatMode}
+            onCloseEditor={() => setFormatActionMode("none")}
             onManualEmailDomainChange={setManualEmailDomain}
             onManualEmailPatternChange={setManualEmailPattern}
             onManualConfidenceChange={setManualConfidence}
             onRefreshEmailFormat={handleRefreshEmailFormat}
             onDiscoverEmailFormat={handleDiscoverEmailFormat}
             onManualEmailFormat={handleManualEmailFormat}
-            onDelete={handleDeleteCompany}
           />
 
           {company && (
@@ -934,7 +1022,11 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
               <div className={styles.panelHeader}>
                 <div>
                   <h2 className={styles.panelTitle}>People</h2>
-                  <p className={styles.panelSubtitle}>{PEOPLE_PAGE_SIZE} per page</p>
+                  <p className={styles.panelSubtitle}>
+                    {visibleCategories.length > 0
+                      ? `${visibleCategories.length} role ${visibleCategories.length === 1 ? "group" : "groups"} · ${PEOPLE_PAGE_SIZE} per page`
+                      : `${PEOPLE_PAGE_SIZE} per page`}
+                  </p>
                 </div>
                 {showAddMore && (
                   <button
@@ -1129,129 +1221,191 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
 // Detail sub-components
 // ---------------------------------------------------------------------------
 
-function SummaryCards({
-  search,
-  company,
-  view
-}: {
-  search: ProspectSearchNode | null;
-  company: CompanyDetail | null;
-  view: ReturnType<typeof resolveSelectedSearchView>;
-}) {
-  const status = search ? statusBadge(search.status) : null;
-  const pattern = company?.emailPattern ?? search?.company?.emailPattern ?? null;
-  const patternConfidence = company?.patternConfidence ?? search?.company?.patternConfidence ?? "UNAVAILABLE";
-  const emailDomain = company?.emailDomain ?? search?.company?.emailDomain ?? null;
-  const emailDomainConfidence = company?.emailDomainConfidence ?? search?.company?.emailDomainConfidence ?? "UNAVAILABLE";
-  const websiteDomain =
-    company?.officialWebsiteDomain ??
-    company?.officialDomain ??
-    search?.company?.officialWebsiteDomain ??
-    search?.company?.officialDomain ??
-    null;
-  const peopleCount = company?.peopleCount ?? search?.company?.peopleCount ?? search?.peopleCount ?? 0;
-  const positionCount = company?.positions.filter((position) => position.peopleCount > 0).length ?? 0;
-  const domainDiffers = Boolean(websiteDomain && emailDomain && websiteDomain !== emailDomain);
+// Tone → CSS class for the quality stats, bar segments, and legend swatches.
+const QUALITY_TONE_CLASS: Record<QualitySegmentTone, string> = {
+  verified: styles.qualityToneVerified,
+  high: styles.qualityToneHigh,
+  medium: styles.qualityToneMedium,
+  review: styles.qualityToneReview,
+  unavailable: styles.qualityToneUnavailable,
+  invalid: styles.qualityToneInvalid,
+  suppressed: styles.qualityToneSuppressed
+};
+
+function ResultsQualityCard({ company, loading }: { company: CompanyDetail | null; loading: boolean }) {
+  if (loading && !company) {
+    return (
+      <div className={`card ${styles.qualityCard}`} data-discover-tour="quality-summary">
+        <div className={styles.skeletonLine} style={{ width: "30%" }} />
+        <div className={styles.skeletonLine} style={{ width: "100%" }} />
+        <div className={styles.skeletonLine} style={{ width: "55%" }} />
+      </div>
+    );
+  }
+  if (!company) {
+    return null;
+  }
+  const summary = deriveDiscoverQualitySummary(company.emailStatusCounts);
+  const segments = buildQualitySegments(company.emailStatusCounts);
+  const description = describeQualitySummary(summary);
+  const usablePercent = qualityPercent(summary.usable, summary.total);
+
+  const stats: Array<{ key: string; label: string; value: number; hint: string; tone?: QualitySegmentTone }> = [
+    { key: "total", label: "People found", value: summary.total, hint: "Everyone attached to this search." },
+    {
+      key: "usable",
+      label: "Usable",
+      value: summary.usable,
+      hint: "Have an inferred or verified address and are eligible for export and Imports.",
+      tone: "high"
+    },
+    {
+      key: "review",
+      label: "Needs review",
+      value: summary.needsReview,
+      hint: "Low-confidence addresses — counted in usable, review them before outreach.",
+      tone: "review"
+    },
+    {
+      key: "unavailable",
+      label: "Unavailable",
+      value: summary.unavailable,
+      hint: "No address could be inferred. These are skipped during export and Imports.",
+      tone: "unavailable"
+    },
+    {
+      key: "invalid",
+      label: "Invalid",
+      value: summary.invalid,
+      hint: "The address failed validation. These are skipped during export and Imports.",
+      tone: "invalid"
+    },
+    {
+      key: "suppressed",
+      label: "Suppressed",
+      value: summary.suppressed,
+      hint: "Explicitly excluded from outreach.",
+      tone: "suppressed"
+    }
+  ];
 
   return (
-    <div className={styles.summaryGrid}>
-      <div className={`card ${styles.summaryCard}`} data-discover-tour="company-summary">
-        <span className={styles.summaryLabel}>
-          <Building2 aria-hidden="true" /> Company
-        </span>
-        <span className={styles.summaryValue}>{company?.name ?? search?.company?.name ?? search?.requestedCompany ?? "—"}</span>
-        <span className={styles.summaryMeta}>Website: {websiteDomain ?? "unresolved"}</span>
-      </div>
-
-      <div className={`card ${styles.summaryCard}`} data-discover-tour="people-summary">
-        <span className={styles.summaryLabel}>
-          <Users aria-hidden="true" /> People found
-        </span>
-        <span className={styles.summaryValue}>{peopleCount}</span>
-        <span className={styles.summaryMeta}>
-          {positionCount > 0 ? `${positionCount} position groups` : "Position groups appear when ready"}
-        </span>
-      </div>
-
-      <div className={`card ${styles.summaryCard}`} data-discover-tour="email-format-summary">
-        <span className={styles.summaryLabel}>
-          <AtSign aria-hidden="true" /> Email format
-        </span>
-        <span className={styles.summaryValue}>{emailDomain ?? "Unavailable"}</span>
-        <span className={styles.summaryMeta}>
-          {pattern ? <code className={styles.patternCode}>{pattern}</code> : "Pattern unavailable"}
-        </span>
-        {emailDomain && pattern ? (
-          <span className={styles.summaryWarn}>
-            Inferred ·{" "}
-            {confidenceBadge(
-              emailDomainConfidence === "UNAVAILABLE" ? patternConfidence : emailDomainConfidence
-            ).label.toLowerCase()}{" "}
-            confidence, not verified
+    <section className={`card ${styles.qualityCard}`} data-discover-tour="quality-summary" aria-label="Results quality">
+      <div className={styles.qualityHead}>
+        <div>
+          <h2 className={styles.panelTitle}>Results quality</h2>
+          <p className={styles.panelSubtitle}>How much of this search is ready for outreach.</p>
+        </div>
+        {summary.total > 0 && (
+          <span className={styles.qualityHeadline} title={description}>
+            <strong className={styles.qualityHeadlineValue}>{usablePercent}%</strong> usable
           </span>
-        ) : (
-          <span className={styles.summaryMeta}>Email inference unavailable</span>
         )}
-        {domainDiffers && <span className={styles.summaryMeta}>Website differs from email domain</span>}
       </div>
 
-      <div className={`card ${styles.summaryCard}`} data-discover-tour="status-summary">
-        <span className={styles.summaryLabel}>
-          <Sparkles aria-hidden="true" /> Search status
-        </span>
-        <span className={styles.summaryValue}>{status ? <BadgePill badge={status} /> : "—"}</span>
-        <span className={styles.summaryMeta}>
-          {view === "ready" && search?.completedAt
-            ? `Completed ${formatDateTime(search.completedAt)}`
-            : `Created ${formatDateTime(search?.createdAt ?? null)}`}
-        </span>
-      </div>
-    </div>
+      <dl className={styles.qualityStats}>
+        {stats.map((stat) => (
+          <div key={stat.key} className={styles.qualityStat} title={stat.hint}>
+            <dt className={styles.qualityStatLabel}>
+              {stat.tone && (
+                <span className={`${styles.qualityDot} ${QUALITY_TONE_CLASS[stat.tone]}`} aria-hidden="true" />
+              )}
+              {stat.label}
+            </dt>
+            <dd className={styles.qualityStatValue}>{stat.value}</dd>
+          </div>
+        ))}
+      </dl>
+
+      {segments.length > 0 ? (
+        <div className={styles.qualityBreakdown} data-discover-tour="quality-breakdown">
+          <div className={styles.qualityBarTrack} role="img" aria-label={`Email quality distribution: ${description}`}>
+            {segments.map((segment) => (
+              <span
+                key={segment.status}
+                className={`${styles.qualitySegment} ${QUALITY_TONE_CLASS[segment.tone]}`}
+                style={{ width: `${segment.share}%` }}
+                title={`${segment.label}: ${segment.count} (${segment.percent}%)`}
+              />
+            ))}
+          </div>
+          <ul className={styles.qualityLegend}>
+            {segments.map((segment) => (
+              <li key={segment.status} className={styles.qualityLegendItem}>
+                <span className={`${styles.qualityDot} ${QUALITY_TONE_CLASS[segment.tone]}`} aria-hidden="true" />
+                <span>{segment.label}</span>
+                <span className={styles.qualityLegendCount}>
+                  {segment.count} · {segment.percent}%
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className={styles.qualityCaption}>
+            {summary.usable === 0 ? `No usable emails were generated for this result. ${description}` : description}
+          </p>
+        </div>
+      ) : (
+        <p className={styles.qualityEmpty} data-discover-tour="quality-breakdown">
+          Email-quality information will appear when people are added to this search.
+        </p>
+      )}
+    </section>
   );
 }
 
-function CompanyCard({
+const CONFIDENCE_TICKS: Record<ConfidenceLevel, number> = { HIGH: 3, MEDIUM: 2, LOW: 1, UNAVAILABLE: 0 };
+
+function ConfidenceIndicator({ level }: { level: ConfidenceLevel }) {
+  const badge = confidenceBadge(level);
+  const ticks = CONFIDENCE_TICKS[level] ?? 0;
+  return (
+    <span className={styles.confidenceIndicator}>
+      <BadgePill badge={badge} />
+      <span className={styles.confidenceTicks} aria-hidden="true">
+        {[0, 1, 2].map((index) => (
+          <span key={index} className={`${styles.confidenceTick} ${index < ticks ? styles.confidenceTickOn : ""}`} />
+        ))}
+      </span>
+    </span>
+  );
+}
+
+function EmailFormatPanel({
   company,
   loading,
-  deleting,
   refreshingFormat,
+  actionMode,
   formatSourceUrl,
-  showFormatSource,
-  showManualFormat,
   manualEmailDomain,
   manualEmailPattern,
   manualConfidence,
   onFormatSourceUrlChange,
-  onToggleFormatSource,
-  onToggleManualFormat,
+  onSelectMode,
+  onCloseEditor,
   onManualEmailDomainChange,
   onManualEmailPatternChange,
   onManualConfidenceChange,
   onRefreshEmailFormat,
   onDiscoverEmailFormat,
-  onManualEmailFormat,
-  onDelete
+  onManualEmailFormat
 }: {
   company: CompanyDetail | null;
   loading: boolean;
-  deleting: boolean;
   refreshingFormat: boolean;
+  actionMode: EmailFormatActionMode;
   formatSourceUrl: string;
-  showFormatSource: boolean;
-  showManualFormat: boolean;
   manualEmailDomain: string;
   manualEmailPattern: string;
   manualConfidence: ConfidenceLevel;
   onFormatSourceUrlChange: (value: string) => void;
-  onToggleFormatSource: () => void;
-  onToggleManualFormat: () => void;
+  onSelectMode: (mode: "source-url" | "manual-fix") => void;
+  onCloseEditor: () => void;
   onManualEmailDomainChange: (value: string) => void;
   onManualEmailPatternChange: (value: string) => void;
   onManualConfidenceChange: (value: ConfidenceLevel) => void;
   onRefreshEmailFormat: (company: CompanyDetail, sourceUrl?: string | null) => void;
   onDiscoverEmailFormat: (company: CompanyDetail, force?: boolean) => void;
   onManualEmailFormat: (company: CompanyDetail) => void;
-  onDelete: (company: CompanyDetail) => void;
 }) {
   if (loading && !company) {
     return (
@@ -1265,44 +1419,33 @@ function CompanyCard({
     return null;
   }
   const websiteDomain = company.officialWebsiteDomain ?? company.officialDomain;
-  const emailDomainConfidence = confidenceBadge(company.emailDomainConfidence);
-  const patternConfidence = confidenceBadge(company.patternConfidence);
   const domainDiffers = Boolean(websiteDomain && company.emailDomain && websiteDomain !== company.emailDomain);
   const firstDomainEvidence = company.emailDomainEvidence[0] ?? null;
   const firstPatternEvidence = company.patternEvidence[0] ?? null;
   const hasEmailFormat = Boolean(company.emailDomain && company.emailPattern);
+  const aiRunning = refreshingFormat && actionMode === "ai-refresh";
   return (
-    <div className={`card ${styles.companyCard}`} data-discover-tour="company-details">
-      <div className={styles.companyHeader}>
-        <div className={styles.companyIcon} aria-hidden="true">
-          <Building2 />
+    <section
+      className={`card ${styles.companyCard}`}
+      data-discover-tour="company-details"
+      aria-label="Email format intelligence"
+    >
+      <div className={styles.panelHeader}>
+        <div>
+          <h2 className={styles.panelTitle}>
+            <AtSign aria-hidden="true" className={styles.panelTitleIcon} /> Email format
+          </h2>
+          <p className={styles.panelSubtitle}>
+            {hasEmailFormat
+              ? "Selected from public evidence. Generated addresses stay inferred until verified."
+              : "No format selected yet — find it with AI web search, a public source URL, or set it manually."}
+          </p>
         </div>
-        <div className={styles.companyHeading}>
-          <h2 className={styles.companyName}>{company.name}</h2>
-          <div className={styles.companyLinks}>
-            {company.officialWebsite && (
-              <a href={company.officialWebsite} target={EXTERNAL_LINK_TARGET} rel={EXTERNAL_LINK_REL}>
-                {websiteDomain ?? "Website"} <ExternalLink aria-hidden="true" />
-              </a>
-            )}
-            {company.linkedinUrl && (
-              <a href={company.linkedinUrl} target={EXTERNAL_LINK_TARGET} rel={EXTERNAL_LINK_REL}>
-                LinkedIn <ExternalLink aria-hidden="true" />
-              </a>
-            )}
-          </div>
-        </div>
-        <button
-          type="button"
-          className={styles.dangerButton}
-          onClick={() => onDelete(company)}
-          disabled={deleting}
-          title="Delete company graph"
-          data-discover-tour="delete-search"
-        >
-          {deleting ? <LoaderCircle aria-hidden="true" className={styles.spin} /> : <Trash2 aria-hidden="true" />}
-          <span>Delete</span>
-        </button>
+        {hasEmailFormat && (
+          <span className={styles.inferredTag} title="Generated addresses are inferred until verified.">
+            <AlertCircle aria-hidden="true" /> Inferred · not verified
+          </span>
+        )}
       </div>
       <div className={styles.companyMetaGrid}>
         <div className={styles.metaItem}>
@@ -1322,16 +1465,18 @@ function CompanyCard({
         </div>
         <div className={styles.metaItem}>
           <span className={styles.metaLabel}>Email confidence</span>
-          <BadgePill badge={emailDomainConfidence} />
+          <ConfidenceIndicator level={company.emailDomainConfidence} />
         </div>
         <div className={styles.metaItem}>
           <span className={styles.metaLabel}>Pattern confidence</span>
-          <BadgePill badge={patternConfidence} />
+          <ConfidenceIndicator level={company.patternConfidence} />
         </div>
-        <div className={styles.metaItem}>
-          <span className={styles.metaLabel}>People</span>
-          <span className={styles.metaValue}>{company.peopleCount}</span>
-        </div>
+        {company.emailFormatDiscoveredAt && (
+          <div className={styles.metaItem}>
+            <span className={styles.metaLabel}>Last checked</span>
+            <span className={styles.metaValue}>{formatDateTime(company.emailFormatDiscoveredAt)}</span>
+          </div>
+        )}
       </div>
       <div className={styles.evidencePanel} data-discover-tour="email-evidence">
         <span className={styles.metaLabel}>Evidence</span>
@@ -1365,14 +1510,13 @@ function CompanyCard({
       </div>
       <div className={styles.formatActions}>
         <div className={styles.formatActionText}>
-          <span className={styles.metaLabel}>Email format discovery</span>
+          <span className={styles.metaLabel}>Email format controls</span>
           <span className={styles.metaHint}>
-            {hasEmailFormat
-              ? "Email format found from public evidence. Generated emails are inferred until verified."
-              : "Find the format with AI web search, paste a known public email-format page, or set it manually."}
+            One correction at a time — search public evidence with AI, parse a trusted source URL, or set the format
+            manually.
           </span>
         </div>
-        <div className={styles.formatButtonRow}>
+        <div className={styles.formatButtonRow} role="group" aria-label="Email format corrections">
           <button
             type="button"
             className={styles.secondaryButton}
@@ -1380,78 +1524,123 @@ function CompanyCard({
             disabled={refreshingFormat}
             data-discover-tour="refresh-ai"
           >
-            {refreshingFormat ? <LoaderCircle aria-hidden="true" className={styles.spin} /> : <Sparkles aria-hidden="true" />}
-            <span>{hasEmailFormat ? "Refresh with AI" : "Find with AI"}</span>
+            {aiRunning ? <LoaderCircle aria-hidden="true" className={styles.spin} /> : <Sparkles aria-hidden="true" />}
+            <span>{aiRunning ? "Refreshing…" : hasEmailFormat ? "Refresh with AI" : "Find with AI"}</span>
           </button>
-          <button type="button" className={styles.ghostButton} onClick={onToggleFormatSource} data-discover-tour="source-url">
+          <button
+            type="button"
+            className={`${styles.ghostButton} ${actionMode === "source-url" ? styles.modeButtonActive : ""}`}
+            onClick={() => onSelectMode("source-url")}
+            disabled={refreshingFormat}
+            aria-pressed={actionMode === "source-url"}
+            aria-expanded={actionMode === "source-url"}
+            data-discover-tour="source-url"
+          >
             Use source URL
           </button>
-          <button type="button" className={styles.ghostButton} onClick={onToggleManualFormat} data-discover-tour="manual-format">
+          <button
+            type="button"
+            className={`${styles.ghostButton} ${actionMode === "manual-fix" ? styles.modeButtonActive : ""}`}
+            onClick={() => onSelectMode("manual-fix")}
+            disabled={refreshingFormat}
+            aria-pressed={actionMode === "manual-fix"}
+            aria-expanded={actionMode === "manual-fix"}
+            data-discover-tour="manual-format"
+          >
             Fix manually
           </button>
         </div>
-        {showFormatSource && (
-          <div className={styles.sourceRefreshRow}>
-            <input
-              className={styles.input}
-              value={formatSourceUrl}
-              onChange={(event) => onFormatSourceUrlChange(event.target.value)}
-              placeholder="https://rocketreach.co/esri-email-format_b5c60d6df42e0c51"
-              aria-label="Specific public email-format source URL"
-            />
-            <button
-              type="button"
-              className={styles.primaryButton}
-              onClick={() => onRefreshEmailFormat(company, formatSourceUrl)}
-              disabled={refreshingFormat || !formatSourceUrl.trim()}
-            >
-              Parse source
-            </button>
-          </div>
-        )}
-        {showManualFormat && (
-          <div className={styles.manualFormatGrid}>
-            <input
-              className={styles.input}
-              value={manualEmailDomain}
-              onChange={(event) => onManualEmailDomainChange(event.target.value)}
-              placeholder="amat.com"
-              aria-label="Manual email domain"
-            />
-            <select
-              className={styles.input}
-              value={manualEmailPattern}
-              onChange={(event) => onManualEmailPatternChange(event.target.value)}
-              aria-label="Manual email pattern"
-            >
-              {EMAIL_PATTERN_OPTIONS.map((pattern) => (
-                <option key={pattern} value={pattern}>
-                  {pattern}
-                </option>
-              ))}
-            </select>
-            <select
-              className={styles.input}
-              value={manualConfidence}
-              onChange={(event) => onManualConfidenceChange(event.target.value as ConfidenceLevel)}
-              aria-label="Manual confidence"
-            >
-              <option value="HIGH">High</option>
-              <option value="MEDIUM">Medium</option>
-              <option value="LOW">Low</option>
-            </select>
-            <button
-              type="button"
-              className={styles.secondaryButton}
-              onClick={() => onManualEmailFormat(company)}
-              disabled={refreshingFormat || !manualEmailDomain.trim()}
-            >
-              Apply manual fix
-            </button>
-          </div>
-        )}
+        {/* ONE stable editor container — it swaps its contents by mode, so the
+            card can never accumulate a second form no matter how buttons are
+            clicked. */}
+        <div className={styles.editorShell} data-discover-action-mode={actionMode}>
+          {actionMode === "ai-refresh" && (
+            <div className={`${styles.editorPanel} ${styles.editorProgress}`} role="status">
+              <LoaderCircle aria-hidden="true" className={styles.spin} />
+              <span>Refreshing… checking public email-format sources.</span>
+            </div>
+          )}
+          {actionMode === "source-url" && (
+            <div className={styles.editorPanel}>
+              <div className={styles.editorHead}>
+                <span className={styles.metaLabel}>Parse a public source</span>
+                <CircularCloseButton compact label="Close source editor" onClick={onCloseEditor} disabled={refreshingFormat} />
+              </div>
+              <div className={styles.sourceRefreshRow}>
+                <input
+                  className={styles.input}
+                  value={formatSourceUrl}
+                  onChange={(event) => onFormatSourceUrlChange(event.target.value)}
+                  placeholder="https://rocketreach.co/esri-email-format_b5c60d6df42e0c51"
+                  aria-label="Specific public email-format source URL"
+                  disabled={refreshingFormat}
+                />
+                <button
+                  type="button"
+                  className={styles.primaryButton}
+                  onClick={() => onRefreshEmailFormat(company, formatSourceUrl)}
+                  disabled={refreshingFormat || !formatSourceUrl.trim()}
+                >
+                  {refreshingFormat ? <LoaderCircle aria-hidden="true" className={styles.spin} /> : null}
+                  <span>{refreshingFormat ? "Parsing…" : "Parse source"}</span>
+                </button>
+              </div>
+            </div>
+          )}
+          {actionMode === "manual-fix" && (
+            <div className={styles.editorPanel}>
+              <div className={styles.editorHead}>
+                <span className={styles.metaLabel}>Set the format manually</span>
+                <CircularCloseButton compact label="Close manual editor" onClick={onCloseEditor} disabled={refreshingFormat} />
+              </div>
+              <div className={styles.manualFormatGrid}>
+                <input
+                  className={styles.input}
+                  value={manualEmailDomain}
+                  onChange={(event) => onManualEmailDomainChange(event.target.value)}
+                  placeholder="amat.com"
+                  aria-label="Manual email domain"
+                  disabled={refreshingFormat}
+                />
+                <select
+                  className={styles.input}
+                  value={manualEmailPattern}
+                  onChange={(event) => onManualEmailPatternChange(event.target.value)}
+                  aria-label="Manual email pattern"
+                  disabled={refreshingFormat}
+                >
+                  {EMAIL_PATTERN_OPTIONS.map((pattern) => (
+                    <option key={pattern} value={pattern}>
+                      {pattern}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className={styles.input}
+                  value={manualConfidence}
+                  onChange={(event) => onManualConfidenceChange(event.target.value as ConfidenceLevel)}
+                  aria-label="Manual confidence"
+                  disabled={refreshingFormat}
+                >
+                  <option value="HIGH">High</option>
+                  <option value="MEDIUM">Medium</option>
+                  <option value="LOW">Low</option>
+                </select>
+                <button
+                  type="button"
+                  className={styles.secondaryButton}
+                  onClick={() => onManualEmailFormat(company)}
+                  disabled={refreshingFormat || !manualEmailDomain.trim()}
+                >
+                  {refreshingFormat ? <LoaderCircle aria-hidden="true" className={styles.spin} /> : null}
+                  <span>{refreshingFormat ? "Applying…" : "Apply manual fix"}</span>
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -1491,7 +1680,7 @@ function StatusCard({
   const quotaBlocked = isProcessQuotaBlocked(quota, search.status);
   const resetLabel = formatQuotaReset(quota);
   return (
-    <div className={`card ${styles.statusCard}`}>
+    <div className={`card ${styles.statusCard}`} data-discover-tour="status-summary">
       <div className={styles.statusHead}>
         <BadgePill badge={badge} />
         <h2 className={styles.panelTitle}>{search.company?.name ?? search.requestedCompany}</h2>
@@ -1959,17 +2148,14 @@ function ProspectReviewDialog({
 function DetailSkeleton() {
   return (
     <>
+      <div className={`card ${styles.qualityCard}`}>
+        <div className={styles.skeletonLine} style={{ width: "32%" }} />
+        <div className={styles.skeletonLine} style={{ width: "100%" }} />
+        <div className={styles.skeletonLine} style={{ width: "55%" }} />
+      </div>
       <div className={`card ${styles.companyCard}`}>
         <div className={styles.skeletonLine} style={{ width: "32%" }} />
         <div className={styles.skeletonLine} style={{ width: "55%" }} />
-      </div>
-      <div className={styles.summaryGrid}>
-        {Array.from({ length: 4 }).map((_, index) => (
-          <div key={index} className={`card ${styles.summaryCard}`}>
-            <div className={styles.skeletonLine} style={{ width: "40%" }} />
-            <div className={styles.skeletonLine} style={{ width: "70%" }} />
-          </div>
-        ))}
       </div>
       <div className={`card ${styles.peopleSection}`}>
         <div className={styles.tableSkeleton}>

@@ -325,12 +325,18 @@ export function createFakePrisma() {
         return { count };
       },
       groupBy: async ({ by, where }: { by: string[]; where: Row }) => {
-        const key = by[0];
-        const counts = new Map<string, number>();
+        // Supports composite keys (e.g. ["companyId", "emailStatus"]) like Prisma.
+        const groups = new Map<string, { values: Row; count: number }>();
         for (const row of people.filter((r) => matchPerson(r, where ?? {}))) {
-          counts.set(row[key], (counts.get(row[key]) ?? 0) + 1);
+          const key = by.map((field) => String(row[field])).join(" ");
+          const group = groups.get(key);
+          if (group) {
+            group.count += 1;
+          } else {
+            groups.set(key, { values: Object.fromEntries(by.map((field) => [field, row[field]])), count: 1 });
+          }
         }
-        return Array.from(counts.entries()).map(([value, count]) => ({ [key]: value, _count: { _all: count } }));
+        return Array.from(groups.values()).map(({ values, count }) => ({ ...values, _count: { _all: count } }));
       }
     },
 

@@ -134,9 +134,8 @@ describe("Stable tour targets exist on the correct Discover page", () => {
   const detailSource = `${DETAIL_SOURCE}\n${SHARED_SOURCE}`;
   const detailTargets = [
     "detail-header",
-    "company-summary",
-    "people-summary",
-    "email-format-summary",
+    "quality-summary",
+    "quality-breakdown",
     "status-summary",
     "company-details",
     "email-evidence",

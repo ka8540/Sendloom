@@ -788,9 +788,9 @@ describe("Discover list/detail split contracts", () => {
     expect(listSource).toContain('"search-row"');
   });
 
-  it("detail page renders summary cards, company details, and the People table (#1, #2, #3 layout)", () => {
-    expect(detailSource).toContain("SummaryCards");
-    expect(detailSource).toContain("CompanyCard");
+  it("detail page renders the quality summary, email-format panel, and the People table (#1, #2, #3 layout)", () => {
+    expect(detailSource).toContain("ResultsQualityCard");
+    expect(detailSource).toContain("EmailFormatPanel");
     expect(detailSource).toContain("PeopleTable");
   });
 

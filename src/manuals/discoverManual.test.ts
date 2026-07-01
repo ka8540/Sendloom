@@ -41,8 +41,11 @@ describe("Discover manual registration (list + detail)", () => {
       expect(manual.helpLabel).toBe("Help with Discover");
       expect(manual.helpTooltip).toBe("Discover guide");
       expect(manual.autoOpen).toBe(false);
-      expect(manual.version).toBe("v2");
     }
+    expect(discoverListManual.version).toBe("v2");
+    // The detail dashboard redesign (quality summary + consolidated email
+    // format panel) bumped only the detail guide.
+    expect(discoverDetailManual.version).toBe("v3");
     // The two guides are distinct persisted ids.
     expect(discoverListManual.id).toBe("discover-list");
     expect(discoverDetailManual.id).toBe("discover-detail");
@@ -103,15 +106,13 @@ describe("list stage resolution + steps", () => {
 });
 
 describe("detail stage steps", () => {
-  it("ready steps walk the workspace end to end", () => {
+  it("ready steps walk the redesigned workspace end to end", () => {
     const steps = discoverReadySteps();
     expect(ids(steps)).toEqual(
       expect.arrayContaining([
         "detail-header",
-        "company-summary",
-        "people-summary",
-        "email-format-summary",
-        "status-summary",
+        "quality-summary",
+        "quality-breakdown",
         "company-details",
         "role-filters",
         "inferred-warning",
@@ -119,6 +120,10 @@ describe("detail stage steps", () => {
         "people-pagination"
       ])
     );
+    // The removed duplicate summary cards are no longer referenced.
+    for (const removed of ["company-summary", "people-summary", "email-format-summary", "status-summary"]) {
+      expect(ids(steps)).not.toContain(removed);
+    }
   });
 
   it("does not add an in-page back step — back navigation reuses the app shell button", () => {
@@ -137,6 +142,7 @@ describe("detail stage steps", () => {
       .filter((step) => step.optional)
       .map((step) => step.id);
     for (const id of [
+      "quality-breakdown",
       "email-evidence",
       "refresh-ai",
       "source-url",
@@ -194,10 +200,8 @@ describe("detail stage steps", () => {
     // No add-more / bulk targets present → those optional steps are skipped.
     const present = new Set([
       '[data-discover-tour="detail-header"]',
-      '[data-discover-tour="company-summary"]',
-      '[data-discover-tour="people-summary"]',
-      '[data-discover-tour="email-format-summary"]',
-      '[data-discover-tour="status-summary"]',
+      '[data-discover-tour="quality-summary"]',
+      '[data-discover-tour="quality-breakdown"]',
       '[data-discover-tour="company-details"]',
       '[data-discover-tour="role-filters"]',
       '[data-discover-tour="inferred-warning"]',

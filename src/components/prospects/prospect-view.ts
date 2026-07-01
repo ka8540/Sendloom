@@ -129,6 +129,191 @@ export function isEmailCopyable(person: Pick<PersonNode, "inferredEmail" | "emai
 }
 
 // ---------------------------------------------------------------------------
+// Email-quality summary (Discover detail dashboard).
+// ---------------------------------------------------------------------------
+
+/**
+ * Whole-search quality rollup derived from the server-side per-status counts.
+ *
+ * Counting rules (aligned with the export/import eligibility in
+ * services/prospects/prospect-export.ts — EXPORTABLE_STATUSES):
+ *   - usable      = VERIFIED + INFERRED_HIGH + INFERRED_MEDIUM + INFERRED_LOW
+ *                   (an address exists and is eligible for export/Imports)
+ *   - needsReview = INFERRED_LOW — an explicitly overlapping indicator: these
+ *                   people are counted in `usable` but deserve review first.
+ *   - unavailable = UNAVAILABLE (no address could be inferred; skipped)
+ *   - invalid     = INVALID (failed validation; skipped)
+ *   - suppressed  = SUPPRESSED (explicitly excluded from outreach)
+ *   - verified    = VERIFIED — overlapping subset of `usable`.
+ * usable + unavailable + invalid + suppressed = total (mutually exclusive).
+ */
+export type DiscoverQualitySummary = {
+  total: number;
+  usable: number;
+  needsReview: number;
+  unavailable: number;
+  invalid: number;
+  suppressed: number;
+  verified: number;
+};
+
+const USABLE_EMAIL_STATUSES: ReadonlySet<EmailCandidateStatus> = new Set([
+  "VERIFIED",
+  "INFERRED_HIGH",
+  "INFERRED_MEDIUM",
+  "INFERRED_LOW"
+]);
+
+export function deriveDiscoverQualitySummary(
+  counts: ReadonlyArray<{ status: string; count: number }> | null | undefined
+): DiscoverQualitySummary {
+  const summary: DiscoverQualitySummary = {
+    total: 0,
+    usable: 0,
+    needsReview: 0,
+    unavailable: 0,
+    invalid: 0,
+    suppressed: 0,
+    verified: 0
+  };
+  for (const row of counts ?? []) {
+    const count = Number.isFinite(row.count) ? Math.max(0, Math.floor(row.count)) : 0;
+    if (count === 0) {
+      continue;
+    }
+    summary.total += count;
+    const status = row.status as EmailCandidateStatus;
+    if (USABLE_EMAIL_STATUSES.has(status)) {
+      summary.usable += count;
+      if (status === "INFERRED_LOW") {
+        summary.needsReview += count;
+      }
+      if (status === "VERIFIED") {
+        summary.verified += count;
+      }
+    } else if (status === "INVALID") {
+      summary.invalid += count;
+    } else if (status === "SUPPRESSED") {
+      summary.suppressed += count;
+    } else {
+      // UNAVAILABLE and any unknown legacy status: no usable address.
+      summary.unavailable += count;
+    }
+  }
+  return summary;
+}
+
+/** Zero-safe integer percentage — never NaN, even when the total is 0. */
+export function qualityPercent(count: number, total: number): number {
+  if (!Number.isFinite(count) || !Number.isFinite(total) || total <= 0 || count <= 0) {
+    return 0;
+  }
+  return Math.round((count / total) * 100);
+}
+
+export type QualitySegmentTone = "verified" | "high" | "medium" | "review" | "unavailable" | "invalid" | "suppressed";
+
+export type QualitySegment = {
+  status: EmailCandidateStatus;
+  label: string;
+  tone: QualitySegmentTone;
+  count: number;
+  percent: number;
+  /** Exact share used for the bar width so segments always fill the track. */
+  share: number;
+};
+
+// Fixed display order: usable outcomes first, then the skipped ones. Labels
+// mirror the People-table badge vocabulary so the page speaks one language.
+const QUALITY_SEGMENT_ORDER: ReadonlyArray<{ status: EmailCandidateStatus; label: string; tone: QualitySegmentTone }> = [
+  { status: "VERIFIED", label: "Verified", tone: "verified" },
+  { status: "INFERRED_HIGH", label: "Inferred · High", tone: "high" },
+  { status: "INFERRED_MEDIUM", label: "Inferred · Medium", tone: "medium" },
+  { status: "INFERRED_LOW", label: "Inferred · Low", tone: "review" },
+  { status: "UNAVAILABLE", label: "Unavailable", tone: "unavailable" },
+  { status: "INVALID", label: "Invalid", tone: "invalid" },
+  { status: "SUPPRESSED", label: "Suppressed", tone: "suppressed" }
+];
+
+/**
+ * Mutually exclusive bar segments from the raw per-status counts. Zero-count
+ * statuses are omitted (no empty legend rows), and with a zero total the result
+ * is an empty list — the caller renders its empty state instead of a bar.
+ */
+export function buildQualitySegments(
+  counts: ReadonlyArray<{ status: string; count: number }> | null | undefined
+): QualitySegment[] {
+  const byStatus = new Map<string, number>();
+  let total = 0;
+  for (const row of counts ?? []) {
+    const count = Number.isFinite(row.count) ? Math.max(0, Math.floor(row.count)) : 0;
+    if (count > 0) {
+      byStatus.set(row.status, (byStatus.get(row.status) ?? 0) + count);
+      total += count;
+    }
+  }
+  if (total === 0) {
+    return [];
+  }
+  return QUALITY_SEGMENT_ORDER.filter((entry) => (byStatus.get(entry.status) ?? 0) > 0).map((entry) => {
+    const count = byStatus.get(entry.status) ?? 0;
+    return {
+      status: entry.status,
+      label: entry.label,
+      tone: entry.tone,
+      count,
+      percent: qualityPercent(count, total),
+      share: (count / total) * 100
+    };
+  });
+}
+
+/**
+ * Plain-language summary of the rollup for screen readers and the visible
+ * caption, e.g. "32 usable, 5 unavailable, 2 invalid, and 1 suppressed out of
+ * 40 people."
+ */
+export function describeQualitySummary(summary: DiscoverQualitySummary): string {
+  if (summary.total <= 0) {
+    return "No people with email-quality information yet.";
+  }
+  const parts = [
+    `${summary.usable} usable`,
+    `${summary.unavailable} unavailable`,
+    `${summary.invalid} invalid`,
+    `${summary.suppressed} suppressed`
+  ];
+  const joined = `${parts.slice(0, -1).join(", ")}, and ${parts[parts.length - 1]}`;
+  const people = summary.total === 1 ? "person" : "people";
+  return `${joined} out of ${summary.total} ${people}.`;
+}
+
+// ---------------------------------------------------------------------------
+// Email-format correction modes (Discover detail dashboard).
+// ---------------------------------------------------------------------------
+
+/**
+ * The three correction actions are mutually exclusive modes over ONE editor
+ * container — never independent booleans. "ai-refresh" is the in-flight AI
+ * progress state (it has no form); "source-url" and "manual-fix" each render
+ * their single editor. Exactly one mode is ever active.
+ */
+export type EmailFormatActionMode = "none" | "ai-refresh" | "source-url" | "manual-fix";
+
+/**
+ * Resolve the next mode for a mode-button press: pressing the active mode's
+ * button closes it (back to "none"); pressing any other opens that mode and
+ * implicitly closes the previous one. Repeated presses can therefore never
+ * stack a second editor.
+ */
+export function resolveNextEmailFormatMode(
+  current: EmailFormatActionMode,
+  requested: Exclude<EmailFormatActionMode, "none">
+): EmailFormatActionMode {
+  return current === requested ? "none" : requested;
+}
+
+// ---------------------------------------------------------------------------
 // Search status presentation.
 // ---------------------------------------------------------------------------
 

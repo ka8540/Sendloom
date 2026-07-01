@@ -77,6 +77,14 @@ export const typeDefs = /* GraphQL */ `
     observedAt: DateTime
   }
 
+  # Read-only aggregate for the Discover detail dashboard: how many of this
+  # company's people sit in each email-candidate status. People paginate 10 per
+  # page, so the whole-company quality summary needs this server-side count.
+  type CompanyEmailStatusCount {
+    status: EmailCandidateStatus!
+    count: Int!
+  }
+
   type Company {
     id: ID!
     name: String!
@@ -96,6 +104,7 @@ export const typeDefs = /* GraphQL */ `
     emailFormatDiscoveredAt: DateTime
     positions: [CompanyPosition!]!
     peopleCount: Int!
+    emailStatusCounts: [CompanyEmailStatusCount!]!
     createdAt: DateTime!
     updatedAt: DateTime!
   }

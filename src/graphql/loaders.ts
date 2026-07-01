@@ -12,7 +12,10 @@ export type ProspectLoaders = {
   peopleByPositionId: DataLoader<string, ProspectPerson[]>;
   peopleCountByCompanyId: DataLoader<string, number>;
   peopleCountByPositionId: DataLoader<string, number>;
+  emailStatusCountsByCompanyId: DataLoader<string, EmailStatusCountRow[]>;
 };
+
+export type EmailStatusCountRow = { status: string; count: number };
 
 function groupBy<T, K extends string>(rows: T[], keyOf: (row: T) => K): Map<K, T[]> {
   const map = new Map<K, T[]>();
@@ -83,12 +86,25 @@ export function createLoaders(prisma: PrismaClient, userId: string): ProspectLoa
     return positionIds.map((id) => byId.get(id) ?? 0);
   });
 
+  const emailStatusCountsByCompanyId = new DataLoader<string, EmailStatusCountRow[]>(async (companyIds) => {
+    const rows = await prisma.prospectPerson.groupBy({
+      by: ["companyId", "emailStatus"],
+      where: { companyId: { in: [...companyIds] }, userId },
+      _count: { _all: true }
+    });
+    const grouped = groupBy(rows, (row) => row.companyId);
+    return companyIds.map(
+      (id) => grouped.get(id)?.map((row) => ({ status: row.emailStatus, count: row._count._all })) ?? []
+    );
+  });
+
   return {
     companyById,
     positionsByCompanyId,
     positionById,
     peopleByPositionId,
     peopleCountByCompanyId,
-    peopleCountByPositionId
+    peopleCountByPositionId,
+    emailStatusCountsByCompanyId
   };
 }

@@ -1,7 +1,7 @@
 import type { ProspectCompany, ProspectCompanyPosition } from "@prisma/client";
 
 import type { GraphQLContext } from "@/graphql/context";
-import { coerceConfidenceLevel } from "@/lib/prospect-enums";
+import { EMAIL_CANDIDATE_STATUSES, coerceConfidenceLevel } from "@/lib/prospect-enums";
 import { buildConnection, cursorArgs, decodeCursor, resolveFirst } from "@/graphql/pagination";
 import { asStringArray, mapProspectError } from "@/graphql/resolvers/helpers";
 import { notFoundError, requireUser } from "@/graphql/errors";
@@ -123,6 +123,15 @@ export const Company = {
   },
   peopleCount(parent: ProspectCompany, _args: unknown, context: GraphQLContext) {
     return context.loaders.peopleCountByCompanyId.load(parent.id);
+  },
+  async emailStatusCounts(parent: ProspectCompany, _args: unknown, context: GraphQLContext) {
+    const rows = await context.loaders.emailStatusCountsByCompanyId.load(parent.id);
+    // Coerce unknown stored statuses to UNAVAILABLE (mirrors the person default)
+    // so the enum contract can never be violated by a legacy row.
+    return rows.map((row) => ({
+      status: (EMAIL_CANDIDATE_STATUSES as readonly string[]).includes(row.status) ? row.status : "UNAVAILABLE",
+      count: row.count
+    }));
   },
   domainConfidence(parent: ProspectCompany) {
     return coerceConfidenceLevel(parent.domainConfidence);
