@@ -20,6 +20,8 @@ export const NON_RETRYABLE_FAILED_CODES: ReadonlySet<FailureCode> = new Set<Fail
   "DUPLICATE_RECIPIENT",
   "SUPPRESSED_RECIPIENT",
   "UNSUBSCRIBED_RECIPIENT",
+  // A confirmed permanent bounce must never expose a Retry action.
+  "HARD_BOUNCE_RECIPIENT",
   "MISSING_TEMPLATE_VARIABLE",
   "UNRESOLVED_TEMPLATE_VARIABLE",
   "EMPTY_TEMPLATE_SUBJECT",

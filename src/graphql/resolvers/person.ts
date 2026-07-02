@@ -2,7 +2,7 @@ import type { ProspectPerson as ProspectPersonRow } from "@prisma/client";
 
 import type { GraphQLContext } from "@/graphql/context";
 import { notFoundError, requireUser } from "@/graphql/errors";
-import { isPositionCategory } from "@/lib/prospect-enums";
+import { isPositionCategory, overlayEmailCandidateStatus } from "@/lib/prospect-enums";
 import { buildConnection, cursorArgs, decodeCursor, resolveFirst } from "@/graphql/pagination";
 import { loadCompanyOrThrow } from "@/graphql/resolvers/helpers";
 
@@ -37,6 +37,20 @@ export const personQueries = {
 };
 
 export const ProspectPerson = {
+  /**
+   * Live-overlaid email status: an address on the user's suppression list
+   * reads as FAILED / UNSUBSCRIBED / SUPPRESSED regardless of what generation
+   * stored — so a refreshed email pattern or "Add 10 more" can never resurrect
+   * a permanently failed address as usable. Same precedence as the company
+   * emailStatusCounts resolver, so the summary and the table always agree.
+   */
+  async emailStatus(parent: ProspectPersonRow, _args: unknown, context: GraphQLContext) {
+    if (!parent.inferredEmail) {
+      return overlayEmailCandidateStatus(parent.emailStatus, null);
+    }
+    const reason = await context.loaders.suppressionReasonByEmail.load(parent.inferredEmail.trim().toLowerCase());
+    return overlayEmailCandidateStatus(parent.emailStatus, reason);
+  },
   async company(parent: ProspectPersonRow, _args: unknown, context: GraphQLContext) {
     const company = await context.loaders.companyById.load(parent.companyId);
     if (!company) {

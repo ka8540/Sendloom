@@ -59,10 +59,43 @@ export const EMAIL_CANDIDATE_STATUSES = [
   "INFERRED_LOW",
   "UNAVAILABLE",
   "SUPPRESSED",
-  "INVALID"
+  "INVALID",
+  // Presentation-only statuses overlaid at read time from the user's
+  // suppression list (permanent delivery failures / unsubscribes). Person rows
+  // never store these values — regenerating an email can therefore never
+  // silently reset a failed address back to usable.
+  "FAILED",
+  "UNSUBSCRIBED"
 ] as const;
 
 export type EmailCandidateStatus = (typeof EMAIL_CANDIDATE_STATUSES)[number];
+
+export function isEmailCandidateStatus(value: unknown): value is EmailCandidateStatus {
+  return typeof value === "string" && (EMAIL_CANDIDATE_STATUSES as readonly string[]).includes(value);
+}
+
+/**
+ * Overlay a person's stored email status with the user's live suppression
+ * state. Precedence (mutually exclusive — one status per person):
+ *   1. UNSUBSCRIBED suppression       → UNSUBSCRIBED (never relabelled Failed)
+ *   2. COMPLAINT / MANUAL_BLOCK       → SUPPRESSED
+ *   3. HARD_BOUNCE / INVALID_EMAIL    → FAILED (permanent delivery failure)
+ *   4. otherwise                      → the stored status (unknown → UNAVAILABLE)
+ * Applied at read time only, so regenerating an inferred email never resets a
+ * failed address back to usable.
+ */
+export function overlayEmailCandidateStatus(stored: unknown, suppressionReason: string | null): EmailCandidateStatus {
+  if (suppressionReason === "UNSUBSCRIBED") {
+    return "UNSUBSCRIBED";
+  }
+  if (suppressionReason === "COMPLAINT" || suppressionReason === "MANUAL_BLOCK") {
+    return "SUPPRESSED";
+  }
+  if (suppressionReason === "HARD_BOUNCE" || suppressionReason === "INVALID_EMAIL") {
+    return "FAILED";
+  }
+  return isEmailCandidateStatus(stored) ? stored : "UNAVAILABLE";
+}
 
 export const CONFIDENCE_LEVELS = ["HIGH", "MEDIUM", "LOW", "UNAVAILABLE"] as const;
 

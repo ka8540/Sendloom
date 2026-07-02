@@ -44,6 +44,7 @@ export function createFakePrisma() {
   const discoverCache: Row[] = [];
   const discoverCachePeople: Row[] = [];
   const expansions: Row[] = [];
+  const suppressions: Row[] = [];
 
   const companyById = (id: string) => companies.find((row) => row.id === id);
 
@@ -103,7 +104,16 @@ export function createFakePrisma() {
 
   const client = {
     // Direct access for assertions in tests.
-    _state: { companies, positions, people, searches, titleCache, discoverCache, discoverCachePeople, expansions },
+    _state: { companies, positions, people, searches, titleCache, discoverCache, discoverCachePeople, expansions, suppressions },
+
+    // Minimal user-scoped suppression reads (the Discover overlay loader only
+    // issues findMany with { userId, email: { in: [...] } }).
+    suppression: {
+      findMany: async ({ where }: { where: Row }) =>
+        suppressions
+          .filter((row) => valueMatches(row.userId, where?.userId) && valueMatches(row.email, where?.email))
+          .map((row) => ({ ...row }))
+    },
 
     // Interactive transaction: the fake mutates shared arrays synchronously, so
     // passing the same client back gives the same all-or-nothing visibility the

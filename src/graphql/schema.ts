@@ -41,6 +41,11 @@ export const typeDefs = /* GraphQL */ `
     UNAVAILABLE
     SUPPRESSED
     INVALID
+    # Overlaid at read time from the user's suppression list — never stored on
+    # a person row. FAILED = permanent delivery failure (hard bounce/invalid
+    # recipient); UNSUBSCRIBED = recipient opted out.
+    FAILED
+    UNSUBSCRIBED
   }
 
   enum ConfidenceLevel {

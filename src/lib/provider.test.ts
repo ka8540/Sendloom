@@ -92,11 +92,11 @@ describe("gmail provider", () => {
     expect(mimeMessage).toContain("To: recipient@example.com");
     expect(mimeMessage).toContain("hello.txt");
 
-    expect(result).toEqual({
-      data: {
-        id: "gmail-message-id"
-      }
-    });
+    // The RFC Message-ID is generated at send time and embedded in the MIME
+    // message so later delivery-status notifications can be correlated.
+    expect(result.data?.id).toBe("gmail-message-id");
+    expect(result.data?.rfcMessageId).toMatch(/^<[^@]+@example\.com>$/);
+    expect(mimeMessage).toContain(`Message-ID: ${result.data?.rfcMessageId}`);
   });
 
   it("surfaces reconnect guidance when the refresh token is no longer valid", async () => {

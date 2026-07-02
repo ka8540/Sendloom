@@ -5,6 +5,7 @@ import {
   FilePenLine,
   FileSpreadsheet,
   MailSearch,
+  MailX,
   MessageSquareReply,
   Search,
   SendHorizontal,
@@ -29,7 +30,10 @@ const ACTIVITY_EVENT_ICONS: Record<ActivityEventType, LucideIcon> = {
   discover_people_added: UserRoundPlus,
   discover_results_exported: FileSpreadsheet,
   finder_email_found: MailSearch,
-  finder_domain_search: Building2
+  finder_domain_search: Building2,
+  // Note: delivery failures also match isFailureActivity, which intentionally
+  // takes precedence and renders the restrained warning glyph.
+  delivery_failure_recorded: MailX
 };
 
 export function getActivityIcon(item: ActivityItem): LucideIcon {

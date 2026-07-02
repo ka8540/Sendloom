@@ -15,8 +15,10 @@ import { CampaignCardActions } from "@/components/campaign-card-actions";
 import { CampaignBuilder } from "@/components/campaign-builder";
 import { ErrorToastOnMount } from "@/components/error-toast-provider";
 import { LocalDateTime } from "@/components/local-date-time";
+import { BounceMonitoringStatus } from "@/components/senders/bounce-monitoring-status";
 import { requireOperatorUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { resolveBounceMonitoringStatus } from "@/services/bounces";
 import { processPendingCampaignWork } from "@/services/campaigns";
 import { SequenceBoard } from "./sequence-board";
 import styles from "./page.module.css";
@@ -577,6 +579,11 @@ export default async function CampaignsPage({
                   <div>
                     <strong>{sender.name}</strong>
                     <div className="muted">{sender.fromEmail}</div>
+                    <BounceMonitoringStatus
+                      senderId={sender.id}
+                      status={resolveBounceMonitoringStatus(sender)}
+                      backfillCompleted={Boolean(sender.bounceBackfillCompletedAt)}
+                    />
                   </div>
                 </div>
               ))

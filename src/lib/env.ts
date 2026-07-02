@@ -44,6 +44,16 @@ const envSchema = z
     REPORT_PSEUDONYM_SECRET: z.string().min(16).optional(),
     REPORT_IDENTITY_ENCRYPTION_KEY: z.string().min(32).optional(),
     CRON_SECRET: z.string().min(1).optional(),
+    // --- Gmail bounce monitoring (mailbox watch + Pub/Sub push) ---
+    // Topic the Gmail watch publishes to (projects/<id>/topics/<name>). The
+    // webhook accepts a push request when EITHER the shared verification token
+    // matches (?token=...) OR the Pub/Sub OIDC bearer token validates against
+    // the configured audience/service account. With none configured the
+    // endpoint fails closed.
+    GMAIL_PUBSUB_TOPIC: z.string().min(1).optional(),
+    GMAIL_PUBSUB_VERIFICATION_TOKEN: z.string().min(16).optional(),
+    GMAIL_PUBSUB_AUDIENCE: z.string().min(1).optional(),
+    GMAIL_PUBSUB_SERVICE_ACCOUNT: z.string().email().optional(),
     RESEND_API_KEY: z.string().optional(),
     RESEND_WEBHOOK_SECRET: z.string().optional(),
     APP_BASE_URL: z.string().url(),
@@ -198,6 +208,10 @@ function readRawEnv() {
     REPORT_PSEUDONYM_SECRET: process.env.REPORT_PSEUDONYM_SECRET,
     REPORT_IDENTITY_ENCRYPTION_KEY: process.env.REPORT_IDENTITY_ENCRYPTION_KEY,
     CRON_SECRET: process.env.CRON_SECRET,
+    GMAIL_PUBSUB_TOPIC: process.env.GMAIL_PUBSUB_TOPIC,
+    GMAIL_PUBSUB_VERIFICATION_TOKEN: process.env.GMAIL_PUBSUB_VERIFICATION_TOKEN,
+    GMAIL_PUBSUB_AUDIENCE: process.env.GMAIL_PUBSUB_AUDIENCE,
+    GMAIL_PUBSUB_SERVICE_ACCOUNT: process.env.GMAIL_PUBSUB_SERVICE_ACCOUNT,
     RESEND_API_KEY: process.env.RESEND_API_KEY,
     RESEND_WEBHOOK_SECRET: process.env.RESEND_WEBHOOK_SECRET,
     APP_BASE_URL: process.env.APP_BASE_URL,

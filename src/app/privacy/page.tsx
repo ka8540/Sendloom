@@ -80,10 +80,12 @@ const sections = [
     bullets: [
       "To sign you into your Sendloom account when you choose Google sign-in.",
       "To connect a Gmail sender that you choose and send emails from that account inside the product.",
+      "To read replies to messages Sendloom sent for you, so sequences can stop following up after a response.",
+      "To read automated delivery-status notifications (bounce messages from Mail Delivery Subsystem) so failed addresses can be marked Failed and excluded from future sends. Sendloom inspects only messages that look like automated delivery reports, keeps only structured failure details (recipient address, failure code, category), and never stores the message body.",
       "To store the minimum Google account details needed to identify the connected sender and maintain your session."
     ],
     note:
-      "Sendloom does not use Google user data for advertising, does not sell Google user data, and does not use Google user data to train generalized AI or machine learning models."
+      "Sendloom does not read, store, or index your other mailbox content. Sendloom does not use Google user data for advertising, does not sell Google user data, and does not use Google user data (including mailbox content) to train generalized AI or machine learning models or to discover new contacts."
   },
   {
     id: "how-we-use-information",

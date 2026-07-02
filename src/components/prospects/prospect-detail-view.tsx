@@ -1229,7 +1229,9 @@ const QUALITY_TONE_CLASS: Record<QualitySegmentTone, string> = {
   review: styles.qualityToneReview,
   unavailable: styles.qualityToneUnavailable,
   invalid: styles.qualityToneInvalid,
-  suppressed: styles.qualityToneSuppressed
+  suppressed: styles.qualityToneSuppressed,
+  failed: styles.qualityToneFailed,
+  unsubscribed: styles.qualityToneUnsubscribed
 };
 
 function ResultsQualityCard({ company, loading }: { company: CompanyDetail | null; loading: boolean }) {
@@ -1267,6 +1269,13 @@ function ResultsQualityCard({ company, loading }: { company: CompanyDetail | nul
       tone: "review"
     },
     {
+      key: "failed",
+      label: "Failed",
+      value: summary.failed,
+      hint: "Previously returned a permanent delivery failure and will be skipped.",
+      tone: "failed"
+    },
+    {
       key: "unavailable",
       label: "Unavailable",
       value: summary.unavailable,
@@ -1280,13 +1289,30 @@ function ResultsQualityCard({ company, loading }: { company: CompanyDetail | nul
       hint: "The address failed validation. These are skipped during export and Imports.",
       tone: "invalid"
     },
-    {
-      key: "suppressed",
-      label: "Suppressed",
-      value: summary.suppressed,
-      hint: "Explicitly excluded from outreach.",
-      tone: "suppressed"
-    }
+    // Excluded-by-choice categories appear only when present, so the strip
+    // stays compact in the common case. Unsubscribed is never labelled Failed.
+    ...(summary.suppressed > 0
+      ? [
+          {
+            key: "suppressed",
+            label: "Suppressed",
+            value: summary.suppressed,
+            hint: "Explicitly excluded from outreach.",
+            tone: "suppressed" as QualitySegmentTone
+          }
+        ]
+      : []),
+    ...(summary.unsubscribed > 0
+      ? [
+          {
+            key: "unsubscribed",
+            label: "Unsubscribed",
+            value: summary.unsubscribed,
+            hint: "Opted out of outreach — excluded, but not a delivery failure.",
+            tone: "unsubscribed" as QualitySegmentTone
+          }
+        ]
+      : [])
   ];
 
   return (

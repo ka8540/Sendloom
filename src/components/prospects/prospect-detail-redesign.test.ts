@@ -114,7 +114,7 @@ describe("Discover quality segments (visualization)", () => {
 describe("Discover quality accessible summary", () => {
   it("describes the rollup in plain language", () => {
     expect(describeQualitySummary(deriveDiscoverQualitySummary(SAMPLE_COUNTS))).toBe(
-      "32 usable, 5 unavailable, 2 invalid, and 1 suppressed out of 40 people."
+      "32 usable, 0 failed, 5 unavailable, 2 invalid, and 1 suppressed out of 40 people."
     );
   });
 

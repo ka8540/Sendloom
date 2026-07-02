@@ -114,7 +114,19 @@ async function getAttachmentPayload(attachment: EmailAttachment) {
   };
 }
 
-async function buildRawGmailMessage(args: SendArgs) {
+/**
+ * Generate the RFC Message-ID for an outgoing message ourselves (instead of
+ * letting MailComposer invent one we never see). Delivery-status notifications
+ * reference this id, so storing it at send time gives bounce processing its
+ * strongest correlation key.
+ */
+function generateRfcMessageId(fromEmail: string) {
+  const domain = fromEmail.split("@")[1] || "sendloom.local";
+  const unique = `${Date.now().toString(36)}.${Math.random().toString(36).slice(2, 12)}`;
+  return `<${unique}@${domain}>`;
+}
+
+async function buildRawGmailMessage(args: SendArgs, rfcMessageId: string) {
   const attachments = args.attachments
     ? await Promise.all(args.attachments.map(getAttachmentPayload))
     : undefined;
@@ -124,6 +136,7 @@ async function buildRawGmailMessage(args: SendArgs) {
     to: args.to,
     subject: args.subject,
     html: args.html,
+    messageId: rfcMessageId,
     attachments
   });
 
@@ -192,12 +205,14 @@ export async function sendEmail(args: SendArgs) {
 
   try {
     const accessToken = await getGoogleAccessToken(args.sender);
-    const rawMessage = await buildRawGmailMessage(args);
+    const rfcMessageId = generateRfcMessageId(args.sender.fromEmail);
+    const rawMessage = await buildRawGmailMessage(args, rfcMessageId);
     const response = await sendGmailMessage(rawMessage, accessToken);
 
     return {
       data: {
-        id: response.id
+        id: response.id,
+        rfcMessageId
       }
     };
   } catch (error) {

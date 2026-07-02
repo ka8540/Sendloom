@@ -31,16 +31,10 @@ vi.mock("@/services/imports", () => ({
 }));
 
 function makePrisma() {
-  const prisma = createFakePrisma() as FakePrisma & {
-    suppression: { findMany: ReturnType<typeof vi.fn> };
-  };
-  const suppressions: Array<{ userId: string; email: string }> = [];
-  prisma.suppression = {
-    findMany: vi.fn(async ({ where }: { where: { userId: string; email?: { in?: string[] } } }) =>
-      suppressions.filter((row) => row.userId === where.userId && (where.email?.in ?? []).includes(row.email))
-    )
-  };
-  return { prisma, suppressions };
+  // FakePrisma now ships a real user-scoped suppression model (used by the
+  // Discover delivery-failure overlay); seed rows through its shared state.
+  const prisma = createFakePrisma();
+  return { prisma, suppressions: prisma._state.suppressions };
 }
 
 function seedCompany(prisma: FakePrisma) {

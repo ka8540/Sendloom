@@ -1803,3 +1803,89 @@ For Gmail authorization failures, render the panel (or `GmailReconnectNotice`) w
 ### Configuration
 
 `REPORT_PSEUDONYM_SECRET` and `REPORT_IDENTITY_ENCRYPTION_KEY` are server-only (never `NEXT_PUBLIC_`), required in production, and fall back to `SESSION_SECRET` in development. New Prisma models: `AppErrorEvent` and `IncidentReport` (migration `20260627120000_add_incident_reporting`).
+
+## 26. Automatic Delivery-Failure Detection (Gmail Bounce Monitoring)
+
+Gmail can accept a send and only later receive an asynchronous bounce from Mail Delivery Subsystem (e.g. `550 5.1.1 User Unknown`). This system detects those delivery-status notifications (DSNs) automatically, marks the recipient **Failed**, adds the address to suppression with a hard-bounce reason, and blocks every future send to it.
+
+### Gmail permission (incremental authorization)
+
+- Sending uses `gmail.send`; bounce detection additionally requires the mailbox-read scope `gmail.readonly` (already part of `GOOGLE_CONNECT_SCOPES`, shared with reply sync). `gmail.metadata` is not sufficient — DSN bodies (`message/delivery-status` parts) are unreadable in metadata format, and `https://mail.google.com/` is deliberately NOT requested.
+- Senders connected before the read scope keep sending normally. Their capability shows **Permission required** until they reconnect (`SenderProfile.oauthScope` records what was actually granted; `senderHasBounceReadScope` checks it).
+- Google verification/consent copy must state: Sendloom reads only automated delivery-failure notifications (and replies to messages it sent) — never other mailbox content. See the Privacy page (`/privacy`, "How we use Google user data").
+
+### Architecture
+
+```
+sender connects (scope granted)
+  → users.watch registered on INBOX → Pub/Sub topic (GMAIL_PUBSUB_TOPIC)
+  → push → POST /api/webhooks/gmail-pubsub (authenticated, acks in <1s, work runs after the response)
+  → history.list from the stored per-sender history id (messageAdded only)
+  → per-message DSN filtering (metadata headers only) → format=full fetch for likely DSNs
+  → parse → classify → correlate → persist → advance history id
+```
+
+Key modules: `src/lib/gmail-dsn.ts` (pure detection/parsing/classification), `src/lib/gmail.ts` (watch/history/message API calls), `src/services/bounces.ts` (orchestration), `src/app/api/webhooks/gmail-pubsub/route.ts` (push endpoint), `src/app/api/senders/[id]/sync-bounces/route.ts` (one-time backfill).
+
+Per-sender state on `SenderProfile`: `gmailWatchHistoryId` (last processed position), `gmailWatchExpiresAt`, `gmailWatchStatus` (`ACTIVE`/`PERMISSION_REQUIRED`/`RECONNECT_REQUIRED`/`RENEWAL_FAILED`), `gmailWatchError` (safe category), `bounceLastSyncedAt`, `bounceBackfillCompletedAt` (migration `20260701120000_gmail_bounce_monitoring`).
+
+### Watch renewal and cron fallback
+
+Gmail watches expire after ~7 days. The existing campaign cron (`/api/cron/campaigns`) calls `renewExpiringGmailWatches()` (re-registers watches missing or expiring within 24h — idempotent, no-ops when nothing is due) and `syncDueSenderBounces()` (history-based fallback sync every ≥10 min per sender, so missed pushes — or a deployment without Pub/Sub — still converge). Persistent authorization failures mark the sender `RECONNECT_REQUIRED`; transient registration failures mark `RENEWAL_FAILED` and are retried on the next tick. Bounce-monitoring failures never block sending.
+
+### Pub/Sub webhook security
+
+`POST /api/webhooks/gmail-pubsub` accepts a push only when the shared URL token matches (`GMAIL_PUBSUB_VERIFICATION_TOKEN`, constant-time compare) or the Pub/Sub OIDC bearer validates (`GMAIL_PUBSUB_AUDIENCE`, optional `GMAIL_PUBSUB_SERVICE_ACCOUNT`). With neither configured it rejects everything. The payload is untrusted: it only names a mailbox; the sender is resolved server-side by `fromEmail` and all reads use that sender's own token. Pub/Sub message ids are deduplicated in Redis; malformed-but-authenticated bodies are acked (204) and dropped so poison messages never loop. Mailbox addresses, tokens, and bodies are never logged.
+
+### History processing and bounded recovery
+
+`syncSenderBounces` pages `history.list` (messageAdded records only, capped at 200 messages/run) and advances `gmailWatchHistoryId` only after processing succeeds. A 404 (history id too old) triggers ONE bounded recovery pass: a narrow query (`from:mailer-daemon OR from:postmaster OR subject:"Delivery Status Notification" OR subject:Undeliverable`, `newer_than:7d`, ≤100 messages), then re-anchors at the current profile history id. There is never an unbounded mailbox scan.
+
+### DSN filtering and parsing
+
+A message is inspected further only with strong signals (`isLikelyDeliveryStatusMessage`): `multipart/report; report-type=delivery-status` alone qualifies; otherwise ≥2 of {mailer-daemon/postmaster sender address, DSN-like subject, `Auto-Submitted`, `X-Failed-Recipients`}. A display name alone never qualifies. Parsing (`parseDeliveryStatusFromGmailMessage`) works on Gmail's already-parsed MIME tree: structured `message/delivery-status` fields first (`Final-Recipient`, `Original-Recipient`, `Action`, `Status`, `Diagnostic-Code`, `Remote-MTA`, `Reporting-MTA`), Gmail text patterns ("Address not found", "User Unknown", …) only as fallback. Size limits: 1 MB per message, 64 KB per decoded part, ≤25 recipients, 500-char fields. Only bounded structured fields leave the parser — raw bodies are never returned or stored.
+
+### Classification (`classifyDeliveryFailure`)
+
+Categories: `HARD_BOUNCE_INVALID_RECIPIENT`, `HARD_BOUNCE_MAILBOX_NOT_FOUND`, `HARD_BOUNCE_DOMAIN_NOT_FOUND`, `HARD_BOUNCE_PERMANENT_MAILBOX_FAILURE`, `SOFT_BOUNCE_MAILBOX_FULL`, `SOFT_BOUNCE_TEMPORARY_FAILURE`, `POLICY_REJECTION`, `SPAM_REJECTION`, `SENDER_AUTHENTICATION_FAILURE`, `SENDER_QUOTA_FAILURE`, `UNKNOWN_DELIVERY_FAILURE`.
+
+- **Permanent recipient failures** (5.1.x, 5.2.1, clear "user unknown"/"domain not found" diagnostics): recipient marked `FAILED` (`HARD_BOUNCE_RECIPIENT` failure code — non-retryable), suppression upserted, queued sends skipped.
+- **Temporary (4.x.x, mailbox full incl. 5.2.2)**: never suppressed; the already-submitted Gmail message is never re-sent from bounce processing (the receiving server owns retries).
+- **Policy/spam (5.7.x)**: the attempt is marked failed with a safe reason; the address is NOT declared invalid and is not suppressed. Manual retry stays available.
+- **Sender problems (quota, SPF/DKIM/DMARC, auth)**: the recipient is never suppressed. Reconnect handling stays with the send path.
+- **Anything ambiguous**: `UNKNOWN_DELIVERY_FAILURE` — never auto-suppressed.
+
+### Correlation
+
+Matching order (always scoped to the reporting sender's own jobs, ≤30 days): ① original RFC `Message-ID` — Sendloom now generates it at send time (`provider.ts#generateRfcMessageId`, embedded via MailComposer) and stores it in `RecipientJob.metadata.rfcMessageId`; ② Gmail thread association (DSNs arrive in the sent message's thread; thread message ids ↔ `providerMessageId`); ③ normalized failed recipient + sender + bounded window. An unmatched bounce records a safe diagnostic event (no address in the payload) and changes no recipient state.
+
+### Persistence and idempotency
+
+- One DSN Gmail message = one `ProviderEvent` row (`provider: "gmail-dsn"`, `eventType: BOUNCED`, unique key) — the atomic processed-once gate.
+- `Suppression` gains structured failure detail: `enhancedStatusCode`, `failureCategory`, `firstFailedAt`, `lastFailedAt`, `failureCount`, `sourceGmailMessageId`. Reprocessing the same Gmail message never increments counts. An existing `UNSUBSCRIBED` record keeps its reason (never relabelled as a failure) while still recording the failure detail.
+
+### Failed vs Unsubscribed vs Suppressed
+
+- **Failed** = permanent delivery failure (`HARD_BOUNCE`, `INVALID_EMAIL` reasons). Suppression log shows "Failed · hard bounce".
+- **Unsubscribed** = opted out. Never shown as Failed.
+- **Suppressed** = manual block / complaint / other exclusions.
+
+### Future-send blocking
+
+Layers: sequence validation and queue creation (existing suppression checks), retry-failed re-check (existing), and a **mandatory final worker guard** in `processRecipientJob` — live suppression is re-checked immediately before the Gmail call; a suppressed recipient is marked `SUPPRESSED` with a reason, Gmail is never called, and no daily-cap or per-minute send capacity is consumed. Matching is normalized lowercase.
+
+### Discover integration
+
+Person email statuses are overlaid at read time (`overlayEmailCandidateStatus` precedence: UNSUBSCRIBED → SUPPRESSED → FAILED → stored status), in both the people list and `Company.emailStatusCounts`, so the quality summary and table always agree and re-generating an email can never resurrect a failed address. `FAILED`/`UNSUBSCRIBED` are presentation-only enum values — never stored on person rows. Failed people stay visible (transparency) with the badge hint "This address previously returned a permanent delivery failure and will be skipped", are never counted Usable, appear in the quality meter, and are skipped by export/Add-to-Imports through the existing suppression-aware review.
+
+### One-time recent sync
+
+"Sync recent delivery failures" (sender card on /campaigns → `POST /api/senders/[id]/sync-bounces`) scans only likely DSN messages from the last 30 days, capped at 200, idempotent per message, and marks `bounceBackfillCompletedAt` so it never rescans.
+
+### Troubleshooting
+
+- **Permission required** → the sender predates the read scope; reconnect Gmail.
+- **Reconnect required** → Google revoked/expired the refresh token; reconnect (sending shows the same state).
+- **Temporarily unavailable / RENEWAL_FAILED** → watch registration failing (check `GMAIL_PUBSUB_TOPIC` + topic IAM: grant `gmail-api-push@system.gserviceaccount.com` the Pub/Sub Publisher role). Cron retries automatically; sending continues.
+- **Bounces not appearing with Pub/Sub unconfigured** → the cron fallback still syncs every ~10 min per sender; check `/api/cron/campaigns` output (`watchRenewal`, `bounceSync`).
+- **Unmatched bounces** → recorded as `gmail-dsn` ProviderEvents with `matched: false` for investigation; no recipient state is changed.

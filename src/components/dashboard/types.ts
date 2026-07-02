@@ -74,7 +74,8 @@ export type ActivityEventType =
   | "discover_people_added"
   | "discover_results_exported"
   | "finder_email_found"
-  | "finder_domain_search";
+  | "finder_domain_search"
+  | "delivery_failure_recorded";
 
 export type ActivityItem = {
   id: string;

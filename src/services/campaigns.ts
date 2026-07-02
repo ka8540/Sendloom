@@ -1600,6 +1600,38 @@ async function processRecipientJob(recipientJob: RecipientJobWithContext) {
     };
     let activeReservationId: string | null = null;
 
+    // MANDATORY final guard: re-check live suppression immediately before the
+    // Gmail call. An address confirmed as a hard bounce (or unsubscribed/
+    // blocked) after this job was queued is skipped here — no Gmail request,
+    // no send-capacity consumed, no automatic retry.
+    if (scope.userId) {
+      const normalizedRecipient = latestJob.recipientEmail.trim().toLowerCase();
+      const liveSuppression = await prisma.suppression.findUnique({
+        where: { userId_email: { userId: scope.userId, email: normalizedRecipient } },
+        select: { reason: true }
+      });
+      if (liveSuppression) {
+        await prisma.recipientJob.update({
+          where: { id: latestJob.id },
+          data: {
+            status: "SUPPRESSED",
+            nextRetryAt: null,
+            lastError:
+              liveSuppression.reason === "UNSUBSCRIBED"
+                ? "Skipped — recipient unsubscribed."
+                : liveSuppression.reason === "HARD_BOUNCE" || liveSuppression.reason === "INVALID_EMAIL"
+                  ? "Skipped — this address previously returned a permanent delivery failure."
+                  : "Skipped — recipient on the suppression list."
+          }
+        });
+        await syncRunCounts(latestJob.campaignRunId);
+        return {
+          processed: true,
+          rateLimited: false
+        };
+      }
+    }
+
     try {
       const dailyReservation = await reserveSendCapacity(scope);
       if (!dailyReservation.allowed) {
@@ -1661,7 +1693,8 @@ async function processRecipientJob(recipientJob: RecipientJobWithContext) {
       await markRecipientAttempt({
         jobId: latestJob.id,
         status: "SENT",
-        providerMessageId: response.data?.id
+        providerMessageId: response.data?.id,
+        rfcMessageId: response.data?.rfcMessageId
       });
 
       await recordSendOnLedger({
@@ -1950,6 +1983,8 @@ export async function markRecipientAttempt(args: {
   jobId: string;
   status: "SENT" | "FAILED" | "RETRYING" | "INVALID";
   providerMessageId?: string;
+  /** RFC Message-ID generated at send time — the bounce-correlation key. */
+  rfcMessageId?: string;
   lastError?: string;
   failureCode?: FailureCode;
   failureSource?: FailureSource;
@@ -1992,6 +2027,7 @@ export async function markRecipientAttempt(args: {
       metadata: {
         ...currentMetadata,
         ...(args.status === "SENT" ? clearedFailureDetails : (args.failureDetails ?? {})),
+        ...(args.rfcMessageId ? { rfcMessageId: args.rfcMessageId } : {}),
         failureCode: args.status === "SENT" ? null : args.failureCode ?? null,
         failureSource: args.status === "SENT" ? null : args.failureSource ?? null,
         retryable: args.status === "SENT" ? false : retryable,

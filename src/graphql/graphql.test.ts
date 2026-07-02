@@ -293,6 +293,115 @@ describe("Company emailStatusCounts aggregate (Discover detail dashboard)", () =
   });
 });
 
+describe("Discover delivery-failure overlay (suppression-aware statuses)", () => {
+  function seedOverlayPerson(prisma: FakePrisma, id: string, inferredEmail: string | null, emailStatus = "INFERRED_HIGH") {
+    prisma._state.people.push({
+      id,
+      userId: "user_A",
+      companyId: "comp_A",
+      positionId: "pos_1",
+      firstName: id,
+      lastName: "X",
+      fullName: `${id} X`,
+      linkedinUrl: `https://www.linkedin.com/in/${id}`,
+      inferredEmail,
+      emailStatus,
+      emailConfidence: "HIGH",
+      createdAt: new Date()
+    });
+  }
+
+  const OVERLAY_QUERY = `{
+    company(id: "comp_A") { emailStatusCounts { status count } }
+    people(companyId: "comp_A", first: 10) { edges { node { id emailStatus } } }
+  }`;
+
+  it("a hard-bounced address reads FAILED everywhere and is never counted usable", async () => {
+    const prisma = createFakePrisma();
+    seedCompany(prisma, { id: "comp_A", userId: "user_A" });
+    seedOverlayPerson(prisma, "p_ok", "good@example.com");
+    seedOverlayPerson(prisma, "p_failed", "Bounced@Example.com");
+    prisma._state.suppressions.push({
+      id: "sup_1",
+      userId: "user_A",
+      email: "bounced@example.com",
+      reason: "HARD_BOUNCE",
+      source: "gmail-dsn"
+    });
+
+    const result = await graphql({
+      schema: prospectSchema,
+      source: OVERLAY_QUERY,
+      contextValue: makeContext({ user: FAKE_USER, prisma, userId: "user_A" })
+    });
+
+    expect(result.errors).toBeUndefined();
+    const counts = Object.fromEntries(
+      (result.data?.company as { emailStatusCounts: Array<{ status: string; count: number }> }).emailStatusCounts.map(
+        (row) => [row.status, row.count]
+      )
+    );
+    // The stored INFERRED_HIGH is overlaid to FAILED — no double counting.
+    expect(counts).toEqual({ INFERRED_HIGH: 1, FAILED: 1 });
+    const statuses = Object.fromEntries(
+      (result.data?.people as { edges: Array<{ node: { id: string; emailStatus: string } }> }).edges.map((edge) => [
+        edge.node.id,
+        edge.node.emailStatus
+      ])
+    );
+    expect(statuses).toEqual({ p_ok: "INFERRED_HIGH", p_failed: "FAILED" });
+  });
+
+  it("unsubscribed addresses are never mislabelled FAILED, and manual blocks read SUPPRESSED", async () => {
+    const prisma = createFakePrisma();
+    seedCompany(prisma, { id: "comp_A", userId: "user_A" });
+    seedOverlayPerson(prisma, "p_unsub", "optout@example.com");
+    seedOverlayPerson(prisma, "p_blocked", "blocked@example.com");
+    prisma._state.suppressions.push(
+      { id: "sup_1", userId: "user_A", email: "optout@example.com", reason: "UNSUBSCRIBED", source: "unsubscribe-link" },
+      { id: "sup_2", userId: "user_A", email: "blocked@example.com", reason: "MANUAL_BLOCK", source: "manual" }
+    );
+
+    const result = await graphql({
+      schema: prospectSchema,
+      source: OVERLAY_QUERY,
+      contextValue: makeContext({ user: FAKE_USER, prisma, userId: "user_A" })
+    });
+
+    expect(result.errors).toBeUndefined();
+    const statuses = (result.data?.people as { edges: Array<{ node: { emailStatus: string } }> }).edges.map(
+      (edge) => edge.node.emailStatus
+    );
+    expect(statuses.sort()).toEqual(["SUPPRESSED", "UNSUBSCRIBED"]);
+    expect(statuses).not.toContain("FAILED");
+  });
+
+  it("another user's failure record never affects this user's results", async () => {
+    const prisma = createFakePrisma();
+    seedCompany(prisma, { id: "comp_A", userId: "user_A" });
+    seedOverlayPerson(prisma, "p_1", "shared@example.com");
+    prisma._state.suppressions.push({
+      id: "sup_other",
+      userId: "user_B",
+      email: "shared@example.com",
+      reason: "HARD_BOUNCE",
+      source: "gmail-dsn"
+    });
+
+    const result = await graphql({
+      schema: prospectSchema,
+      source: OVERLAY_QUERY,
+      contextValue: makeContext({ user: FAKE_USER, prisma, userId: "user_A" })
+    });
+
+    expect(result.errors).toBeUndefined();
+    const statuses = (result.data?.people as { edges: Array<{ node: { emailStatus: string } }> }).edges.map(
+      (edge) => edge.node.emailStatus
+    );
+    expect(statuses).toEqual(["INFERRED_HIGH"]);
+  });
+});
+
 describe("Company email inference API", () => {
   it("does not expose a stale pattern when email domain is unavailable", async () => {
     const prisma = createFakePrisma();

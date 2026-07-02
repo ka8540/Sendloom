@@ -73,6 +73,15 @@ export type RecentDomainSearchInput = {
   updatedAt: Date;
 };
 
+// Confirmed permanent delivery failures recorded by Gmail bounce monitoring —
+// derived from the user's Suppression rows (source: gmail-dsn), so reprocessing
+// the same bounce updates the same row and never duplicates a feed entry. The
+// recipient address is deliberately NOT part of this input and never rendered.
+export type RecentDeliveryFailureInput = {
+  id: string;
+  updatedAt: Date;
+};
+
 // Audit-log rows for Finder/Discover actions that leave no durable domain record
 // (individual email lookups, prepared exports). Only safe counters/labels are
 // ever read from metadata — never email addresses or other contact details.
@@ -330,6 +339,21 @@ function buildAuditItems(events: RecentActivityAuditInput[]): SortableActivityIt
   return items;
 }
 
+function buildDeliveryFailureItems(failures: RecentDeliveryFailureInput[]): SortableActivityItem[] {
+  return failures.map((failure) => ({
+    id: `delivery-failure-${failure.id}`,
+    href: "/suppressions" as Route,
+    title: "Delivery failure recorded",
+    description: "An invalid recipient was marked Failed and excluded from future sends.",
+    timeLabel: formatRelativeTime(failure.updatedAt),
+    timeValue: failure.updatedAt.toISOString(),
+    kind: "suppression" as const,
+    tone: "warning" as const,
+    eventType: "delivery_failure_recorded" as const,
+    sortAt: failure.updatedAt.getTime()
+  }));
+}
+
 export function buildActivityItems({
   recentRuns,
   recentImports,
@@ -337,7 +361,8 @@ export function buildActivityItems({
   recentProspectSearches = [],
   recentDiscoverExpansions = [],
   recentDomainSearches = [],
-  recentActivityAuditEvents = []
+  recentActivityAuditEvents = [],
+  recentDeliveryFailures = []
 }: {
   recentRuns: RecentRunInput[];
   recentImports: RecentImportInput[];
@@ -346,6 +371,7 @@ export function buildActivityItems({
   recentDiscoverExpansions?: RecentDiscoverExpansionInput[];
   recentDomainSearches?: RecentDomainSearchInput[];
   recentActivityAuditEvents?: RecentActivityAuditInput[];
+  recentDeliveryFailures?: RecentDeliveryFailureInput[];
 }): ActivityItem[] {
   const sortableItems: SortableActivityItem[] = [
     ...buildRunItems(recentRuns),
@@ -354,7 +380,8 @@ export function buildActivityItems({
     ...buildDiscoverSearchItems(recentProspectSearches),
     ...buildDiscoverExpansionItems(recentDiscoverExpansions),
     ...buildDomainSearchItems(recentDomainSearches),
-    ...buildAuditItems(recentActivityAuditEvents)
+    ...buildAuditItems(recentActivityAuditEvents),
+    ...buildDeliveryFailureItems(recentDeliveryFailures)
   ];
 
   return sortableItems

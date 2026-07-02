@@ -1,10 +1,12 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { after } from "next/server";
 
 import { recordAuditEvent } from "@/lib/audit";
 import { getSessionUser } from "@/lib/auth";
 import { exchangeGoogleCode, fetchGoogleUserInfo, getGoogleRedirectUri } from "@/lib/google";
 import { getGmailConnectUserError } from "@/lib/user-facing-errors";
+import { ensureGmailWatch, syncSenderBounces } from "@/services/bounces";
 import { upsertGoogleSender } from "@/services/senders";
 
 const GOOGLE_STATE_COOKIE = "sendloom_google_oauth_state";
@@ -71,6 +73,21 @@ export async function GET(request: Request) {
       target: { type: "sender", id: sender.id, name: sender.fromEmail },
       message: `Connected Gmail sender ${sender.fromEmail}.`,
       request
+    });
+
+    // Bounce monitoring: register the mailbox watch (no-op without Pub/Sub
+    // config) and anchor the history position. Best-effort — a failure here
+    // never blocks connecting the sender; cron renewal retries later.
+    after(async () => {
+      try {
+        await ensureGmailWatch(sender.id);
+        await syncSenderBounces(sender.id, { force: true });
+      } catch (watchError) {
+        console.warn("[google-connect] Bounce monitoring setup failed.", {
+          senderId: sender.id,
+          error: watchError instanceof Error ? watchError.message.slice(0, 200) : "unknown"
+        });
+      }
     });
 
     return NextResponse.redirect(buildRedirectUrl(request.url, nextPath, { gmail: "connected" }));

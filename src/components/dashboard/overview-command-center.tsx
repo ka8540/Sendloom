@@ -551,7 +551,13 @@ export default async function OverviewCommandCenter() {
   // Discover + Finder activity sources. These are read defensively so a missing
   // table or transient read error degrades the feed gracefully (empty) rather
   // than breaking the whole Overview page. Each is scoped to the current user.
-  const [recentProspectSearchRows, recentDiscoverExpansionRows, recentDomainSearchSummaries, recentActivityAuditRows] =
+  const [
+    recentProspectSearchRows,
+    recentDiscoverExpansionRows,
+    recentDomainSearchSummaries,
+    recentActivityAuditRows,
+    recentDeliveryFailureRows
+  ] =
     await Promise.all([
       prisma.prospectSearch
         .findMany({
@@ -597,6 +603,16 @@ export default async function OverviewCommandCenter() {
           orderBy: { createdAt: "desc" },
           select: { id: true, action: true, metadata: true, createdAt: true }
         })
+        .catch(() => []),
+      // Confirmed permanent delivery failures recorded by Gmail bounce
+      // monitoring. Only the row id + timestamp are read — never the address.
+      prisma.suppression
+        .findMany({
+          where: { userId: user.id, source: "gmail-dsn", reason: { in: ["HARD_BOUNCE", "INVALID_EMAIL"] } },
+          take: 4,
+          orderBy: { updatedAt: "desc" },
+          select: { id: true, updatedAt: true }
+        })
         .catch(() => [])
     ]);
 
@@ -632,6 +648,10 @@ export default async function OverviewCommandCenter() {
       action: row.action,
       metadata: row.metadata,
       createdAt: row.createdAt
+    })),
+    recentDeliveryFailures: recentDeliveryFailureRows.map((row) => ({
+      id: row.id,
+      updatedAt: row.updatedAt
     }))
   });
   const sequenceHealth = buildSequenceHealth(sequenceRows);

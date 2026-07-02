@@ -4,11 +4,14 @@ import type { SuppressionReason } from "@/components/suppressions/types";
 
 import styles from "./suppressions.module.css";
 
+// Delivery failures read as "Failed" (with their cause); unsubscribe and
+// manual/compliance exclusions keep their own labels — an unsubscribed
+// recipient is suppressed but did NOT fail.
 export const SUPPRESSION_REASON_LABELS: Record<SuppressionReason, string> = {
   UNSUBSCRIBED: "Unsubscribed",
-  HARD_BOUNCE: "Hard bounce",
+  HARD_BOUNCE: "Failed · hard bounce",
   COMPLAINT: "Complaint",
-  INVALID_EMAIL: "Invalid email",
+  INVALID_EMAIL: "Failed · invalid email",
   MANUAL_BLOCK: "Manual block"
 };
 
@@ -23,7 +26,8 @@ const REASON_TONES: Record<SuppressionReason, string> = {
 const SOURCE_LABELS: Record<string, string> = {
   manual: "Manual",
   "unsubscribe-link": "Unsubscribe link",
-  "provider-webhook": "Provider webhook"
+  "provider-webhook": "Provider webhook",
+  "gmail-dsn": "Gmail delivery notification"
 };
 
 export function formatSuppressionSource(source: string) {

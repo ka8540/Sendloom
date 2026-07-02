@@ -188,3 +188,176 @@ export async function listGmailThreadMessageIds(args: { accessToken: string; thr
     .map((message) => normalizeMessageId(message.id))
     .filter((messageId): messageId is string => Boolean(messageId));
 }
+
+// ---------------------------------------------------------------------------
+// Bounce monitoring: mailbox watch + history + delivery-status candidates.
+// ---------------------------------------------------------------------------
+
+export type GmailWatchResult = {
+  historyId: string;
+  /** Watch expiration (Gmail returns epoch millis as a string). */
+  expiresAt: Date;
+};
+
+/**
+ * Register (or refresh) the mailbox watch that publishes change notifications
+ * to the configured Pub/Sub topic. Watching INBOX only — bounces land there —
+ * keeps the notification volume and the mailbox surface minimal.
+ */
+export async function registerGmailWatch(args: { accessToken: string; topicName: string }): Promise<GmailWatchResult> {
+  const response = await fetch(`${GMAIL_API_BASE_URL}/watch`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${args.accessToken}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      topicName: args.topicName,
+      labelIds: ["INBOX"],
+      labelFilterBehavior: "INCLUDE"
+    })
+  });
+
+  if (!response.ok) {
+    const payload = await response.text();
+    throw new Error(normalizeGoogleApiErrorMessage(payload || "Gmail watch registration failed."));
+  }
+
+  const payload = (await response.json()) as { historyId?: string; expiration?: string };
+  if (!payload.historyId || !payload.expiration) {
+    throw new Error("Gmail watch registration returned no history id.");
+  }
+
+  return {
+    historyId: payload.historyId,
+    expiresAt: new Date(Number.parseInt(payload.expiration, 10))
+  };
+}
+
+type GmailHistoryResponse = {
+  history?: Array<{
+    id?: string;
+    messagesAdded?: Array<{ message?: GmailMessageRef & { labelIds?: string[] } }>;
+  }>;
+  nextPageToken?: string;
+  historyId?: string;
+};
+
+export class GmailHistoryExpiredError extends Error {
+  constructor() {
+    super("Gmail history id is out of date.");
+    this.name = "GmailHistoryExpiredError";
+  }
+}
+
+/**
+ * List message ids ADDED to the mailbox since the stored history id. Only
+ * message-added records are considered (label changes are irrelevant here).
+ * Throws GmailHistoryExpiredError on a 404 so callers run the bounded
+ * recovery sync instead of failing.
+ */
+export async function listGmailHistoryMessageIds(args: {
+  accessToken: string;
+  startHistoryId: string;
+  maxMessages?: number;
+}): Promise<{ messageIds: string[]; latestHistoryId: string }> {
+  const maxMessages = args.maxMessages ?? 200;
+  const messageIds = new Set<string>();
+  let latestHistoryId = args.startHistoryId;
+  let nextPageToken: string | undefined;
+
+  do {
+    const url = new URL(`${GMAIL_API_BASE_URL}/history`);
+    url.searchParams.set("startHistoryId", args.startHistoryId);
+    url.searchParams.set("historyTypes", "messageAdded");
+    url.searchParams.set("maxResults", "100");
+    if (nextPageToken) {
+      url.searchParams.set("pageToken", nextPageToken);
+    }
+
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${args.accessToken}` }
+    });
+
+    if (response.status === 404) {
+      throw new GmailHistoryExpiredError();
+    }
+    if (!response.ok) {
+      const payload = await response.text();
+      throw new Error(normalizeGoogleApiErrorMessage(payload || "Gmail history request failed."));
+    }
+
+    const payload = (await response.json()) as GmailHistoryResponse;
+    for (const entry of payload.history ?? []) {
+      for (const added of entry.messagesAdded ?? []) {
+        if (added.message?.id) {
+          messageIds.add(added.message.id);
+        }
+      }
+    }
+    if (payload.historyId) {
+      latestHistoryId = payload.historyId;
+    }
+    nextPageToken = payload.nextPageToken;
+  } while (nextPageToken && messageIds.size < maxMessages);
+
+  return { messageIds: [...messageIds].slice(0, maxMessages), latestHistoryId };
+}
+
+/** Current mailbox history id (used to initialise/repair the stored position). */
+export async function getGmailProfileHistoryId(accessToken: string): Promise<string> {
+  const payload = await fetchGmailJson<{ historyId?: string }>(accessToken, `${GMAIL_API_BASE_URL}/profile`);
+  if (!payload.historyId) {
+    throw new Error("Gmail profile returned no history id.");
+  }
+  return payload.historyId;
+}
+
+/**
+ * Lightweight metadata for DSN filtering — only the headers needed to decide
+ * whether a message is a delivery-status notification. Never bodies.
+ */
+export async function fetchGmailDsnFilterMetadata(accessToken: string, messageId: string) {
+  const url = new URL(`${GMAIL_API_BASE_URL}/messages/${messageId}`);
+  url.searchParams.set("format", "metadata");
+  for (const header of ["From", "Subject", "Content-Type", "Auto-Submitted", "X-Failed-Recipients"]) {
+    url.searchParams.append("metadataHeaders", header);
+  }
+  return fetchGmailJson<GmailMessageResponse>(accessToken, url);
+}
+
+/** Full (Gmail-parsed) message payload for DSN parsing. */
+export async function fetchGmailMessageFull(accessToken: string, messageId: string) {
+  const url = new URL(`${GMAIL_API_BASE_URL}/messages/${messageId}`);
+  url.searchParams.set("format", "full");
+  return fetchGmailJson<Record<string, unknown>>(accessToken, url);
+}
+
+/**
+ * Bounded search for likely delivery-status messages (recovery + one-time
+ * backfill). The query narrows to automated failure senders/subjects within a
+ * limited window; per-message DSN filtering still applies afterwards.
+ */
+export async function listGmailDsnCandidateIds(args: {
+  accessToken: string;
+  newerThanDays: number;
+  maxResults: number;
+}): Promise<string[]> {
+  const messages: GmailMessageRef[] = [];
+  let nextPageToken: string | undefined;
+  const query = `(from:mailer-daemon OR from:postmaster OR subject:"Delivery Status Notification" OR subject:Undeliverable) newer_than:${Math.max(1, Math.floor(args.newerThanDays))}d`;
+
+  do {
+    const url = new URL(`${GMAIL_API_BASE_URL}/messages`);
+    url.searchParams.set("q", query);
+    url.searchParams.set("maxResults", String(Math.min(100, args.maxResults - messages.length)));
+    if (nextPageToken) {
+      url.searchParams.set("pageToken", nextPageToken);
+    }
+    const payload = await fetchGmailJson<GmailListResponse>(args.accessToken, url);
+    messages.push(...(payload.messages ?? []));
+    nextPageToken = payload.nextPageToken;
+  } while (nextPageToken && messages.length < args.maxResults);
+
+  return messages.slice(0, args.maxResults).map((message) => message.id);
+}

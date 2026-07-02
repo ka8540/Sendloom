@@ -12,10 +12,12 @@ export type ProspectLoaders = {
   peopleByPositionId: DataLoader<string, ProspectPerson[]>;
   peopleCountByCompanyId: DataLoader<string, number>;
   peopleCountByPositionId: DataLoader<string, number>;
-  emailStatusCountsByCompanyId: DataLoader<string, EmailStatusCountRow[]>;
+  emailStatusRowsByCompanyId: DataLoader<string, EmailStatusRow[]>;
+  /** User-scoped suppression reason per normalized email (null = not suppressed). */
+  suppressionReasonByEmail: DataLoader<string, string | null>;
 };
 
-export type EmailStatusCountRow = { status: string; count: number };
+export type EmailStatusRow = { inferredEmail: string | null; emailStatus: string };
 
 function groupBy<T, K extends string>(rows: T[], keyOf: (row: T) => K): Map<K, T[]> {
   const map = new Map<K, T[]>();
@@ -86,16 +88,28 @@ export function createLoaders(prisma: PrismaClient, userId: string): ProspectLoa
     return positionIds.map((id) => byId.get(id) ?? 0);
   });
 
-  const emailStatusCountsByCompanyId = new DataLoader<string, EmailStatusCountRow[]>(async (companyIds) => {
-    const rows = await prisma.prospectPerson.groupBy({
-      by: ["companyId", "emailStatus"],
+  // Per-person email + status rows (companies are bounded to tens of people).
+  // The Company.emailStatusCounts resolver overlays live suppression state on
+  // these before aggregating, so failed/unsubscribed addresses are never
+  // counted as usable.
+  const emailStatusRowsByCompanyId = new DataLoader<string, EmailStatusRow[]>(async (companyIds) => {
+    const rows = await prisma.prospectPerson.findMany({
       where: { companyId: { in: [...companyIds] }, userId },
-      _count: { _all: true }
+      select: { companyId: true, inferredEmail: true, emailStatus: true }
     });
     const grouped = groupBy(rows, (row) => row.companyId);
     return companyIds.map(
-      (id) => grouped.get(id)?.map((row) => ({ status: row.emailStatus, count: row._count._all })) ?? []
+      (id) => grouped.get(id)?.map((row) => ({ inferredEmail: row.inferredEmail, emailStatus: row.emailStatus })) ?? []
     );
+  });
+
+  const suppressionReasonByEmail = new DataLoader<string, string | null>(async (emails) => {
+    const rows = await prisma.suppression.findMany({
+      where: { userId, email: { in: [...emails] } },
+      select: { email: true, reason: true }
+    });
+    const byEmail = new Map(rows.map((row) => [row.email, row.reason as string]));
+    return emails.map((email) => byEmail.get(email) ?? null);
   });
 
   return {
@@ -105,6 +119,7 @@ export function createLoaders(prisma: PrismaClient, userId: string): ProspectLoa
     peopleByPositionId,
     peopleCountByCompanyId,
     peopleCountByPositionId,
-    emailStatusCountsByCompanyId
+    emailStatusRowsByCompanyId,
+    suppressionReasonByEmail
   };
 }
