@@ -328,6 +328,27 @@ describe("redesign regression contracts", () => {
     expect(DETAIL_SOURCE).toContain("buildQualitySegments(company.emailStatusCounts)");
   });
 
+  it("one hard-bounced address out of 38 flips the summary from 100% usable (missed-bounce regression)", () => {
+    // The server overlay reports the failed person as FAILED instead of its
+    // stored inferred status — the summary must follow without a new search.
+    const summary = deriveDiscoverQualitySummary([
+      { status: "INFERRED_HIGH", count: 37 },
+      { status: "FAILED", count: 1 }
+    ]);
+    expect(summary.total).toBe(38);
+    expect(summary.usable).toBe(37);
+    expect(summary.failed).toBe(1);
+    expect(qualityPercent(summary.usable, summary.total)).toBe(97);
+    expect(describeQualitySummary(summary)).toBe(
+      "37 usable, 1 failed, 0 unavailable, 0 invalid, and 0 suppressed out of 38 people."
+    );
+    const segments = buildQualitySegments([
+      { status: "INFERRED_HIGH", count: 37 },
+      { status: "FAILED", count: 1 }
+    ]);
+    expect(segments.map((segment) => segment.label)).toEqual(["Inferred · High", "Failed"]);
+  });
+
   it("selects emailStatusCounts in the detail query and every format mutation payload", () => {
     // 1 type declaration + 4 GraphQL documents (detail query + 3 corrections),
     // so the summary refreshes after every correction without extra requests.

@@ -24,7 +24,8 @@ const h = vi.hoisted(() => {
     senders: [] as Row[],
     suppressions: [] as Row[],
     providerEvents: [] as Row[],
-    recipientJobs: [] as Row[]
+    recipientJobs: [] as Row[],
+    inboundReplies: [] as Row[]
   };
 
   const calls = {
@@ -116,7 +117,34 @@ const h = vi.hoisted(() => {
         return { ...row };
       }
     },
+    inboundReply: {
+      findUnique: async ({ where }: Row) =>
+        state.inboundReplies.find((row) => row.gmailMessageId === where.gmailMessageId) ?? null,
+      delete: async ({ where }: Row) => {
+        const index = state.inboundReplies.findIndex((row) => row.id === where.id);
+        const [removed] = index >= 0 ? state.inboundReplies.splice(index, 1) : [null];
+        return removed;
+      },
+      findMany: async ({ where, take }: Row) =>
+        state.inboundReplies
+          .filter((row) => row.recipientJobId === where.recipientJobId)
+          .sort((a, b) => b.receivedAt.getTime() - a.receivedAt.getTime())
+          .slice(0, take ?? 100)
+          .map((row) => ({ ...row })),
+      count: async ({ where }: Row) =>
+        state.inboundReplies.filter((row) => row.recipientJobId === where.recipientJobId).length
+    },
     recipientJob: {
+      findUnique: async ({ where }: Row) => {
+        const row = state.recipientJobs.find((entry) => entry.id === where.id);
+        return row ? { ...row } : null;
+      },
+      update: async ({ where, data }: Row) => {
+        const row = state.recipientJobs.find((entry) => entry.id === where.id);
+        if (!row) throw new Error("job not found");
+        Object.assign(row, data);
+        return { ...row };
+      },
       findMany: async ({ where }: Row) => {
         let rows = state.recipientJobs;
         if (where?.status?.in) {
@@ -221,6 +249,7 @@ import {
   recordDeliveryFailureSuppression,
   renewExpiringGmailWatches,
   resolveBounceMonitoringStatus,
+  runRecentBounceBackfill,
   skipQueuedSendsForFailedAddress,
   syncSenderBounces
 } from "@/services/bounces";
@@ -325,6 +354,7 @@ beforeEach(() => {
   state.suppressions.length = 0;
   state.providerEvents.length = 0;
   state.recipientJobs.length = 0;
+  state.inboundReplies.length = 0;
   calls.markRecipientAttempt.length = 0;
   calls.syncRunCounts.length = 0;
   calls.refreshToken.length = 0;
@@ -376,7 +406,7 @@ describe("bounce processing", () => {
     impl.fetchMetadata = async () => bounceMetadata();
     impl.fetchFull = async () => bounceFull({ references: "<sendloom-abc123@techsmail.com>" });
 
-    const outcome = await processBounce(sender, [sent]);
+    const { outcome } = await processBounce(sender, [sent]);
 
     expect(outcome).toBe("processed");
     expect(state.suppressions).toHaveLength(1);
@@ -431,7 +461,7 @@ describe("bounce processing", () => {
     impl.fetchMetadata = async () => bounceMetadata();
     impl.fetchFull = async () => bounceFull({ recipient: "stranger@example.com" });
 
-    const outcome = await processBounce(sender, []);
+    const { outcome } = await processBounce(sender, []);
 
     expect(outcome).toBe("unmatched");
     expect(state.suppressions).toHaveLength(0);
@@ -449,7 +479,7 @@ describe("bounce processing", () => {
     impl.fetchMetadata = async () => bounceMetadata();
     impl.fetchFull = async () => bounceFull();
 
-    const outcome = await processBounce(sender, []);
+    const { outcome } = await processBounce(sender, []);
     expect(outcome).toBe("unmatched");
     expect(state.recipientJobs.find((row) => row.id === "other-user-job")?.status).toBe("SENT");
   });
@@ -460,8 +490,8 @@ describe("bounce processing", () => {
     impl.fetchMetadata = async () => bounceMetadata();
     impl.fetchFull = async () => bounceFull({ references: "<sendloom-abc123@techsmail.com>" });
 
-    expect(await processBounce(sender, [sent])).toBe("processed");
-    expect(await processBounce(sender, [sent])).toBe("duplicate");
+    expect((await processBounce(sender, [sent])).outcome).toBe("processed");
+    expect((await processBounce(sender, [sent])).outcome).toBe("duplicate");
     expect(state.suppressions).toHaveLength(1);
     expect(state.suppressions[0].failureCount).toBe(1);
     expect(calls.markRecipientAttempt).toHaveLength(1);
@@ -514,7 +544,7 @@ describe("bounce processing", () => {
       payload: { headers: [{ name: "From", value: "friend@example.com" }, { name: "Subject", value: "Lunch?" }] }
     });
 
-    expect(await processBounce(sender, [])).toBe("not-dsn");
+    expect((await processBounce(sender, [])).outcome).toBe("not-dsn");
     expect(calls.fullFetches).toHaveLength(0);
     expect(state.providerEvents).toHaveLength(0);
   });
@@ -664,6 +694,20 @@ describe("gmail watch lifecycle", () => {
     expect(sender.gmailWatchHistoryId).toBe("hist-profile");
   });
 
+  it("a failing token refresh during backfill degrades to reconnect-required, never a thrown provider error", async () => {
+    const sender = seedSender();
+    impl.refreshAccessToken = async () => {
+      // Google's token endpoint can answer with an unclassified 400 ("Bad
+      // Request") for a stale refresh token — exactly what production hit.
+      throw new Error("Bad Request");
+    };
+    const result = await runRecentBounceBackfill(sender.id);
+    expect(result.skipped).toBe("reconnect_required");
+    expect(sender.gmailWatchStatus).toBe("RECONNECT_REQUIRED");
+    // Not marked complete — a later successful attempt still runs.
+    expect(sender.bounceBackfillCompletedAt).toBeNull();
+  });
+
   it("revoked authorization during sync requests reconnect instead of throwing", async () => {
     const sender = seedSender({ gmailWatchHistoryId: "hist-1" });
     impl.refreshAccessToken = async () => {
@@ -672,5 +716,168 @@ describe("gmail watch lifecycle", () => {
     const result = await syncSenderBounces(sender.id, { force: true });
     expect(result.skipped).toBe("reconnect_required");
     expect(sender.gmailWatchStatus).toBe("RECONNECT_REQUIRED");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Missed-bounce regression — the real "550 5.1.0 Address Rejected" failure.
+// ---------------------------------------------------------------------------
+
+import { readFileSync } from "node:fs";
+
+describe("missed-bounce regression (550 5.1.0 Address Rejected)", () => {
+  function optumBounceFull() {
+    return bounceFull({
+      recipient: "mohshin.chowdhury@optum.com",
+      status: "5.1.0",
+      diagnostic: "550 5.1.0 Address Rejected",
+      references: "<sendloom-optum1@techsmail.com>"
+    });
+  }
+
+  it("first sync runs the bounded recent scan and catches a bounce that predates monitoring", async () => {
+    const sender = seedSender(); // no gmailWatchHistoryId — first sync
+    seedJob({
+      id: "optum-job",
+      recipientEmail: "mohshin.chowdhury@optum.com",
+      metadata: { rfcMessageId: "sendloom-optum1@techsmail.com" }
+    });
+    impl.listDsnCandidates = async () => ["dsn-1"];
+    impl.fetchMetadata = async () => bounceMetadata();
+    impl.fetchFull = async () => optumBounceFull();
+
+    const result = await syncSenderBounces(sender.id, { force: true });
+
+    // The cursor is anchored AND the recent DSN scan ran with a bounded window.
+    expect(sender.gmailWatchHistoryId).toBe("hist-profile");
+    expect(calls.dsnCandidateArgs).toHaveLength(1);
+    expect(calls.dsnCandidateArgs[0]).toMatchObject({ newerThanDays: 7, maxResults: 100 });
+    expect(result.processedBounces).toBe(1);
+    expect(result.permanentFailures).toBe(1);
+    // The pre-existing bounce produced a real suppression — not skipped forever.
+    expect(state.suppressions[0]).toMatchObject({
+      email: "mohshin.chowdhury@optum.com",
+      reason: "HARD_BOUNCE",
+      enhancedStatusCode: "5.1.0"
+    });
+    expect(calls.markRecipientAttempt[0]).toMatchObject({
+      jobId: "optum-job",
+      status: "FAILED",
+      failureCode: "HARD_BOUNCE_RECIPIENT"
+    });
+  });
+
+  it("a DSN previously stored as a human reply is healed when the bounce is processed", async () => {
+    const sender = seedSender();
+    const job = seedJob({
+      id: "optum-job",
+      recipientEmail: "mohshin.chowdhury@optum.com",
+      metadata: { rfcMessageId: "sendloom-optum1@techsmail.com" },
+      replyCount: 1,
+      repliedAt: new Date("2026-07-03T21:37:00Z")
+    });
+    // The exact production symptom: repliesStored: 1 for the bounce message.
+    state.inboundReplies.push({
+      id: "bogus-reply",
+      gmailMessageId: "dsn-1",
+      recipientJobId: job.id,
+      receivedAt: new Date("2026-07-03T21:37:00Z")
+    });
+    impl.fetchMetadata = async () => bounceMetadata();
+    impl.fetchFull = async () => optumBounceFull();
+
+    const { outcome } = await processBounce(sender, [job]);
+
+    expect(outcome).toBe("processed");
+    // The bogus reply is gone and the job's reply counters are corrected.
+    expect(state.inboundReplies).toHaveLength(0);
+    expect(job.replyCount).toBe(0);
+    expect(job.repliedAt).toBeNull();
+    expect(calls.syncRunCounts).toContain(job.campaignRunId);
+    // And the bounce itself was still recorded as a permanent failure.
+    expect(state.suppressions).toHaveLength(1);
+  });
+
+  it("healing never touches genuine replies on the same job", async () => {
+    const sender = seedSender();
+    const job = seedJob({
+      id: "optum-job",
+      metadata: { rfcMessageId: "sendloom-optum1@techsmail.com" },
+      replyCount: 2,
+      repliedAt: new Date("2026-07-03T22:00:00Z")
+    });
+    state.inboundReplies.push(
+      { id: "real-reply", gmailMessageId: "real-1", recipientJobId: job.id, receivedAt: new Date("2026-07-03T22:00:00Z") },
+      { id: "bogus-reply", gmailMessageId: "dsn-1", recipientJobId: job.id, receivedAt: new Date("2026-07-03T21:37:00Z") }
+    );
+    impl.fetchMetadata = async () => bounceMetadata();
+    impl.fetchFull = async () => optumBounceFull();
+
+    await processBounce(sender, [job]);
+
+    expect(state.inboundReplies.map((row) => row.id)).toEqual(["real-reply"]);
+    expect(job.replyCount).toBe(1);
+    expect(job.repliedAt).toEqual(new Date("2026-07-03T22:00:00Z"));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Orchestration + cursor-independence contracts (source assertions).
+// ---------------------------------------------------------------------------
+
+describe("bounce/reply orchestration contracts", () => {
+  const cronSource = readFileSync("src/app/api/cron/campaigns/route.ts", "utf8");
+  const repliesSource = readFileSync("src/services/replies.ts", "utf8");
+  const bouncesSource = readFileSync("src/services/bounces.ts", "utf8");
+  const gmailSource = readFileSync("src/lib/gmail.ts", "utf8");
+
+  it("the campaign cron invokes bounce sync and watch renewal in their own try/catch", () => {
+    expect(cronSource).toContain("syncDueSenderBounces()");
+    expect(cronSource).toContain("renewExpiringGmailWatches()");
+    // Reply-sync failure cannot prevent bounce sync (separate catch blocks).
+    expect(cronSource).toMatch(/catch[\s\S]*reply-sync[\s\S]*try[\s\S]*renewExpiringGmailWatches/);
+    expect(cronSource).toMatch(/catch[\s\S]*gmail-watch-renewal[\s\S]*try[\s\S]*syncDueSenderBounces/);
+  });
+
+  it("the cron fallback never depends on Pub/Sub configuration", () => {
+    const fallback = bouncesSource.slice(
+      bouncesSource.indexOf("export async function syncDueSenderBounces"),
+      bouncesSource.indexOf("export async function handleGmailPushNotification")
+    );
+    expect(fallback.length).toBeGreaterThan(0);
+    expect(fallback).not.toContain("GMAIL_PUBSUB_TOPIC");
+  });
+
+  it("reply sync and bounce sync keep fully independent cursors", () => {
+    // Reply sync windows on lastReplySyncAt timestamps; bounce sync advances a
+    // Gmail history id. Neither reads or writes the other's cursor, so one can
+    // never consume mailbox events the other still needs.
+    expect(repliesSource).not.toContain("gmailWatchHistoryId");
+    expect(bouncesSource).not.toContain("lastReplySyncAt");
+  });
+
+  it("reply candidates exclude delivery notifications before matching", () => {
+    expect(gmailSource).toContain("looksLikeDeliveryNotification");
+    // The exclusion happens inside mapReplyCandidate, before references are read.
+    const mapper = gmailSource.slice(
+      gmailSource.indexOf("function mapReplyCandidate"),
+      gmailSource.indexOf("export async function listGmailReplyCandidates")
+    );
+    expect(mapper.indexOf("looksLikeDeliveryNotification")).toBeGreaterThan(-1);
+    expect(mapper.indexOf("looksLikeDeliveryNotification")).toBeLessThan(mapper.indexOf("extractMessageIds"));
+    // The metadata fetch requests the headers the exclusion needs.
+    expect(gmailSource).toContain('"Auto-Submitted"');
+    expect(gmailSource).toContain('"X-Failed-Recipients"');
+  });
+
+  it("bounce sync emits the safe operational summary (no recipient addresses)", () => {
+    expect(bouncesSource).toContain("[bounce-sync] Processed Gmail delivery notifications.");
+    expect(bouncesSource).toContain("[bounce-sync] Permanent delivery failure recorded.");
+    expect(bouncesSource).toContain("[bounce-sync] Delivery notification could not be correlated.");
+    const logBlock = bouncesSource.slice(
+      bouncesSource.indexOf("function logBounceSyncSummary"),
+      bouncesSource.indexOf("export async function syncSenderBounces")
+    );
+    expect(logBlock).not.toMatch(/email/i);
   });
 });

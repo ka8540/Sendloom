@@ -38,6 +38,11 @@ const BOUNCE_SYNC_MIN_INTERVAL_MS = 10 * 60_000;
 const BOUNCE_HISTORY_MAX_MESSAGES = 200;
 const BOUNCE_RECOVERY_WINDOW_DAYS = 7;
 const BOUNCE_RECOVERY_MAX_MESSAGES = 100;
+// First sync must NOT just anchor the cursor at "now" — a bounce that arrived
+// before monitoring started (the exact production failure) would be silently
+// skipped forever. It also runs one bounded recent DSN scan.
+const BOUNCE_FIRST_SYNC_WINDOW_DAYS = 7;
+const BOUNCE_FIRST_SYNC_MAX_MESSAGES = 100;
 const BOUNCE_BACKFILL_WINDOW_DAYS = 30;
 const BOUNCE_BACKFILL_MAX_MESSAGES = 200;
 const BOUNCE_CORRELATION_WINDOW_MS = 30 * 24 * 60 * 60_000;
@@ -349,11 +354,58 @@ async function correlateBounceToJob(args: {
   return byEmail[0] ?? null;
 }
 
+/**
+ * Heal a delivery-status notification that an earlier reply sync stored as a
+ * human "reply" (bounces arrive in the sent thread with References headers, so
+ * before DSN exclusion existed they matched the reply heuristics). Removes the
+ * bogus InboundReply and recomputes the job's reply count/timestamp from its
+ * remaining real replies.
+ */
+export async function removeDeliveryNotificationStoredAsReply(gmailMessageId: string): Promise<boolean> {
+  const reply = await prisma.inboundReply.findUnique({
+    where: { gmailMessageId },
+    select: { id: true, recipientJobId: true }
+  });
+  if (!reply) {
+    return false;
+  }
+
+  await prisma.inboundReply.delete({ where: { id: reply.id } });
+
+  if (reply.recipientJobId) {
+    const remaining = await prisma.inboundReply.findMany({
+      where: { recipientJobId: reply.recipientJobId },
+      orderBy: { receivedAt: "desc" },
+      take: 1,
+      select: { receivedAt: true }
+    });
+    const remainingCount = await prisma.inboundReply.count({ where: { recipientJobId: reply.recipientJobId } });
+    const job = await prisma.recipientJob.update({
+      where: { id: reply.recipientJobId },
+      data: {
+        replyCount: remainingCount,
+        repliedAt: remaining[0]?.receivedAt ?? null
+      },
+      select: { campaignRunId: true }
+    });
+    await syncRunCounts(job.campaignRunId);
+  }
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // DSN processing.
 // ---------------------------------------------------------------------------
 
 type BounceProcessOutcome = "processed" | "duplicate" | "not-dsn" | "unmatched" | "ignored";
+
+type BounceProcessResult = {
+  outcome: BounceProcessOutcome;
+  /** True when the message parsed as a real DSN (any outcome past filtering). */
+  parsed: boolean;
+  permanentFailures: number;
+  temporaryFailures: number;
+};
 
 const JOB_STATUSES_UPDATABLE_BY_BOUNCE = new Set(["PENDING", "RETRYING", "SENT"]);
 
@@ -388,7 +440,17 @@ export async function processPotentialBounceMessage(args: {
   gmailMessageId: string;
   jobs: CandidateJob[];
   threadCache: Map<string, string[]>;
-}): Promise<BounceProcessOutcome> {
+}): Promise<BounceProcessResult> {
+  const done = (
+    outcome: BounceProcessOutcome,
+    detail: Partial<Omit<BounceProcessResult, "outcome">> = {}
+  ): BounceProcessResult => ({
+    outcome,
+    parsed: detail.parsed ?? false,
+    permanentFailures: detail.permanentFailures ?? 0,
+    temporaryFailures: detail.temporaryFailures ?? 0
+  });
+
   const existing = await prisma.providerEvent.findUnique({
     where: {
       provider_providerMessageId_eventType: {
@@ -400,7 +462,7 @@ export async function processPotentialBounceMessage(args: {
     select: { id: true }
   });
   if (existing) {
-    return "duplicate";
+    return done("duplicate", { parsed: true });
   }
 
   // Cheap metadata pass first — ordinary personal mail is dismissed here
@@ -415,17 +477,32 @@ export async function processPotentialBounceMessage(args: {
     hasFailedRecipientsHeader: Boolean(getGmailHeader(headers, "X-Failed-Recipients"))
   });
   if (!likely) {
-    return "not-dsn";
+    return done("not-dsn");
   }
 
   const full = (await fetchGmailMessageFull(args.accessToken, args.gmailMessageId)) as GmailFullMessage;
   const parsed = parseDeliveryStatusFromGmailMessage(full);
   if (!parsed) {
-    return "not-dsn";
+    return done("not-dsn");
+  }
+
+  // A confirmed DSN must not linger as a stored "reply". Earlier reply syncs
+  // (before DSN exclusion) matched bounces through the sent thread's
+  // References headers — remove the bogus reply and fix the job's counters.
+  try {
+    await removeDeliveryNotificationStoredAsReply(args.gmailMessageId);
+  } catch (error) {
+    console.warn("[bounce-sync] Could not remove delivery notification stored as reply.", {
+      senderId: args.sender.id,
+      gmailMessageId: args.gmailMessageId,
+      error: error instanceof Error ? error.message.slice(0, 160) : "unknown"
+    });
   }
 
   const results: Array<Record<string, unknown>> = [];
   let matchedAny = false;
+  let permanentFailures = 0;
+  let temporaryFailures = 0;
 
   for (const recipient of parsed.recipients) {
     const classification = classifyDeliveryFailure(recipient);
@@ -453,11 +530,18 @@ export async function processPotentialBounceMessage(args: {
     if (!job) {
       // Unmatched bounce: recorded (below) for internal investigation, but a
       // recipient state is never changed on an ambiguous match.
+      console.warn("[bounce-sync] Delivery notification could not be correlated.", {
+        senderId: args.sender.id,
+        gmailMessageId: args.gmailMessageId,
+        category: classification.category,
+        enhancedStatusCode: recipient.status
+      });
       continue;
     }
     matchedAny = true;
 
     if (classification.suppressRecipient && classification.permanence === "permanent") {
+      permanentFailures += 1;
       const reason = safeDeliveryFailureReason(classification.category);
       if (args.sender.userId) {
         await recordDeliveryFailureSuppression({
@@ -489,6 +573,13 @@ export async function processPotentialBounceMessage(args: {
           reason: `${reason} — this address previously returned a permanent delivery failure.`
         });
       }
+      console.info("[bounce-sync] Permanent delivery failure recorded.", {
+        senderId: args.sender.id,
+        gmailMessageId: args.gmailMessageId,
+        recipientJobId: job.id,
+        category: classification.category,
+        enhancedStatusCode: recipient.status
+      });
     } else if (
       (classification.category === "POLICY_REJECTION" || classification.category === "SPAM_REJECTION") &&
       JOB_STATUSES_UPDATABLE_BY_BOUNCE.has(job.status)
@@ -503,6 +594,8 @@ export async function processPotentialBounceMessage(args: {
         failureSource: "GMAIL",
         failureDetails: { failureCategory: classification.category, enhancedStatusCode: recipient.status }
       });
+    } else if (classification.permanence === "temporary") {
+      temporaryFailures += 1;
     }
     // Temporary and sender-account failures: record the event only. The
     // receiving server (or the send path's own retry policy) owns retries —
@@ -515,9 +608,9 @@ export async function processPotentialBounceMessage(args: {
   });
 
   if (!created) {
-    return "duplicate";
+    return done("duplicate", { parsed: true });
   }
-  return matchedAny ? "processed" : "unmatched";
+  return done(matchedAny ? "processed" : "unmatched", { parsed: true, permanentFailures, temporaryFailures });
 }
 
 // ---------------------------------------------------------------------------
@@ -547,38 +640,77 @@ async function markSenderWatchState(
 
 export type BounceSyncResult = {
   checkedMessages: number;
+  bouncesParsed: number;
   processedBounces: number;
   unmatchedBounces: number;
+  permanentFailures: number;
+  temporaryFailures: number;
   recovered: boolean;
   skipped?: string;
 };
+
+type BounceBatchStats = Omit<BounceSyncResult, "recovered" | "skipped">;
 
 async function processMessageIds(
   sender: SenderBounceCandidate,
   accessToken: string,
   messageIds: string[]
-): Promise<Omit<BounceSyncResult, "recovered">> {
+): Promise<BounceBatchStats> {
   const jobs = await loadCandidateJobs(sender.id);
   const threadCache = new Map<string, string[]>();
-  let processedBounces = 0;
-  let unmatchedBounces = 0;
+  const stats: BounceBatchStats = {
+    checkedMessages: messageIds.length,
+    bouncesParsed: 0,
+    processedBounces: 0,
+    unmatchedBounces: 0,
+    permanentFailures: 0,
+    temporaryFailures: 0
+  };
 
   for (const gmailMessageId of messageIds) {
-    const outcome = await processPotentialBounceMessage({
+    const result = await processPotentialBounceMessage({
       sender,
       accessToken,
       gmailMessageId,
       jobs,
       threadCache
     });
-    if (outcome === "processed") {
-      processedBounces += 1;
-    } else if (outcome === "unmatched") {
-      unmatchedBounces += 1;
+    if (result.parsed) {
+      stats.bouncesParsed += 1;
     }
+    if (result.outcome === "processed") {
+      stats.processedBounces += 1;
+    } else if (result.outcome === "unmatched") {
+      stats.unmatchedBounces += 1;
+    }
+    stats.permanentFailures += result.permanentFailures;
+    stats.temporaryFailures += result.temporaryFailures;
   }
 
-  return { checkedMessages: messageIds.length, processedBounces, unmatchedBounces };
+  return stats;
+}
+
+const EMPTY_BATCH_STATS: BounceBatchStats = {
+  checkedMessages: 0,
+  bouncesParsed: 0,
+  processedBounces: 0,
+  unmatchedBounces: 0,
+  permanentFailures: 0,
+  temporaryFailures: 0
+};
+
+function logBounceSyncSummary(senderId: string, stats: BounceBatchStats, context: string) {
+  // Safe operational summary — counts and ids only, never recipient addresses.
+  console.info("[bounce-sync] Processed Gmail delivery notifications.", {
+    senderId,
+    context,
+    messagesScanned: stats.checkedMessages,
+    bouncesParsed: stats.bouncesParsed,
+    bouncesMatched: stats.processedBounces,
+    permanentFailures: stats.permanentFailures,
+    temporaryFailures: stats.temporaryFailures,
+    unmatchedBounces: stats.unmatchedBounces
+  });
 }
 
 /**
@@ -592,9 +724,7 @@ export async function syncSenderBounces(
   options: { force?: boolean } = {}
 ): Promise<BounceSyncResult> {
   const skipped = (reason: string): BounceSyncResult => ({
-    checkedMessages: 0,
-    processedBounces: 0,
-    unmatchedBounces: 0,
+    ...EMPTY_BATCH_STATS,
     recovered: false,
     skipped: reason
   });
@@ -631,15 +761,24 @@ export async function syncSenderBounces(
     }
 
     if (!sender.gmailWatchHistoryId) {
-      // First sync: anchor at the current mailbox position. Older messages are
-      // only reachable through the explicit bounded backfill action.
+      // First sync: anchor at the current mailbox position AND run one bounded
+      // scan of recent likely delivery-failure messages. Anchoring alone would
+      // permanently skip any bounce that arrived before monitoring started —
+      // exactly how the real "550 5.1.0 Address Rejected" bounce was missed.
       const historyId = await getGmailProfileHistoryId(accessToken);
+      const candidateIds = await listGmailDsnCandidateIds({
+        accessToken,
+        newerThanDays: BOUNCE_FIRST_SYNC_WINDOW_DAYS,
+        maxResults: BOUNCE_FIRST_SYNC_MAX_MESSAGES
+      });
+      const stats = await processMessageIds(sender, accessToken, candidateIds);
       await markSenderWatchState(sender.id, {
         gmailWatchHistoryId: historyId,
         bounceLastSyncedAt: new Date(),
         gmailWatchError: null
       });
-      return { checkedMessages: 0, processedBounces: 0, unmatchedBounces: 0, recovered: false };
+      logBounceSyncSummary(sender.id, stats, "first-sync");
+      return { ...stats, recovered: false };
     }
 
     try {
@@ -654,6 +793,7 @@ export async function syncSenderBounces(
         bounceLastSyncedAt: new Date(),
         gmailWatchError: null
       });
+      logBounceSyncSummary(sender.id, stats, "history");
       return { ...stats, recovered: false };
     } catch (error) {
       if (!(error instanceof GmailHistoryExpiredError)) {
@@ -674,6 +814,7 @@ export async function syncSenderBounces(
         bounceLastSyncedAt: new Date(),
         gmailWatchError: null
       });
+      logBounceSyncSummary(sender.id, stats, "recovery");
       return { ...stats, recovered: true };
     }
   });
@@ -692,20 +833,30 @@ export async function runRecentBounceBackfill(
 ): Promise<BounceSyncResult> {
   const sender = await loadSenderForBounceSync(senderId);
   if (!sender || !sender.oauthRefreshToken || !senderHasBounceReadScope(sender)) {
-    return { checkedMessages: 0, processedBounces: 0, unmatchedBounces: 0, recovered: false, skipped: "unavailable" };
+    return { ...EMPTY_BATCH_STATS, recovered: false, skipped: "unavailable" };
   }
   if (sender.bounceBackfillCompletedAt && !options.force) {
-    return {
-      checkedMessages: 0,
-      processedBounces: 0,
-      unmatchedBounces: 0,
-      recovered: false,
-      skipped: "already_completed"
-    };
+    return { ...EMPTY_BATCH_STATS, recovered: false, skipped: "already_completed" };
   }
 
-  const result = await withBounceSyncLock(`${sender.id}:backfill`, async () => {
-    const accessToken = (await refreshGoogleAccessToken(sender.oauthRefreshToken as string)).access_token;
+  const result = await withBounceSyncLock(`${sender.id}:backfill`, async (): Promise<BounceSyncResult> => {
+    let accessToken: string;
+    try {
+      accessToken = (await refreshGoogleAccessToken(sender.oauthRefreshToken as string)).access_token;
+    } catch (error) {
+      // Any refresh failure here (invalid_grant, or an unclassified 400 from
+      // the token endpoint) means the mailbox is unreadable — surface the safe
+      // reconnect state instead of letting a provider error escape as a 500.
+      await markSenderWatchState(sender.id, {
+        gmailWatchStatus: "RECONNECT_REQUIRED",
+        gmailWatchError: "authorization_expired"
+      });
+      console.warn("[bounce-sync] Backfill could not refresh Gmail authorization.", {
+        senderId: sender.id,
+        reconnectLike: isGmailReconnectError(error)
+      });
+      return { ...EMPTY_BATCH_STATS, recovered: false, skipped: "reconnect_required" };
+    }
     const candidateIds = await listGmailDsnCandidateIds({
       accessToken,
       newerThanDays: BOUNCE_BACKFILL_WINDOW_DAYS,
@@ -716,12 +867,11 @@ export async function runRecentBounceBackfill(
       bounceBackfillCompletedAt: new Date(),
       bounceLastSyncedAt: new Date()
     });
+    logBounceSyncSummary(sender.id, stats, "backfill");
     return { ...stats, recovered: false };
   });
 
-  return (
-    result ?? { checkedMessages: 0, processedBounces: 0, unmatchedBounces: 0, recovered: false, skipped: "locked" }
-  );
+  return result ?? { ...EMPTY_BATCH_STATS, recovered: false, skipped: "locked" };
 }
 
 // ---------------------------------------------------------------------------
@@ -872,7 +1022,7 @@ export async function handleGmailPushNotification(args: { emailAddress: string }
     select: { id: true }
   });
   if (!sender) {
-    return { checkedMessages: 0, processedBounces: 0, unmatchedBounces: 0, recovered: false, skipped: "unknown_sender" };
+    return { ...EMPTY_BATCH_STATS, recovered: false, skipped: "unknown_sender" };
   }
   return syncSenderBounces(sender.id, { force: true });
 }

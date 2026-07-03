@@ -4,6 +4,7 @@ import {
   DSN_MAX_MESSAGE_BYTES,
   classifyDeliveryFailure,
   isLikelyDeliveryStatusMessage,
+  looksLikeDeliveryNotification,
   parseDeliveryStatusFromGmailMessage,
   safeDeliveryFailureReason,
   type GmailFullMessage,
@@ -286,5 +287,142 @@ describe("delivery-failure classification", () => {
     expect(safeDeliveryFailureReason("HARD_BOUNCE_INVALID_RECIPIENT")).toBe("Invalid recipient");
     expect(safeDeliveryFailureReason("SOFT_BOUNCE_TEMPORARY_FAILURE")).toBe("Temporary delivery problem");
     expect(safeDeliveryFailureReason("SENDER_QUOTA_FAILURE")).toBe("Sender needs attention");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Regression: the real missed production bounce (550 5.1.0 Address Rejected).
+// ---------------------------------------------------------------------------
+
+describe("real Gmail bounce: 550 5.1.0 Address Rejected", () => {
+  // Sanitized fixture mirroring the actual Mail Delivery Subsystem message.
+  const OPTUM_TEXT = [
+    "Address not found",
+    "",
+    "Your message wasn't delivered to",
+    "mohshin.chowdhury@optum.com",
+    "because the address couldn't be found, or is unable to receive mail.",
+    "",
+    "The response from the remote server was:",
+    "",
+    "550 5.1.0 Address Rejected"
+  ].join("\n");
+
+  it("text fallback extracts the recipient, 5.1.0 status, and diagnostic", () => {
+    const parsed = parseDeliveryStatusFromGmailMessage(
+      gmailBounceMessage({
+        payload: {
+          mimeType: "multipart/related",
+          headers: [
+            { name: "From", value: "Mail Delivery Subsystem <mailer-daemon@googlemail.com>" },
+            { name: "Subject", value: "Delivery Status Notification (Failure)" }
+          ],
+          parts: [textPart(OPTUM_TEXT)]
+        }
+      })
+    );
+    expect(parsed).not.toBeNull();
+    expect(parsed?.recipients).toHaveLength(1);
+    expect(parsed?.recipients[0]).toMatchObject({
+      email: "mohshin.chowdhury@optum.com",
+      action: "failed",
+      status: "5.1.0"
+    });
+    expect(parsed?.recipients[0]?.diagnosticCode).toContain("550 5.1.0 Address Rejected");
+  });
+
+  it("structured 5.1.0 with an address-rejected diagnostic classifies as permanent Failed", () => {
+    const result = classifyDeliveryFailure({
+      action: "failed",
+      status: "5.1.0",
+      diagnosticCode: "smtp; 550 5.1.0 Address Rejected"
+    });
+    expect(result.permanence).toBe("permanent");
+    expect(result.suppressRecipient).toBe(true);
+    expect(safeDeliveryFailureReason(result.category)).toBe("Address not found");
+  });
+
+  it("the text-fallback fields classify the same way end to end", () => {
+    const parsed = parseDeliveryStatusFromGmailMessage(
+      gmailBounceMessage({
+        payload: {
+          mimeType: "multipart/related",
+          headers: [{ name: "From", value: "mailer-daemon@googlemail.com" }],
+          parts: [textPart(OPTUM_TEXT)]
+        }
+      })
+    );
+    const result = classifyDeliveryFailure(parsed!.recipients[0]);
+    expect(result.permanence).toBe("permanent");
+    expect(result.suppressRecipient).toBe(true);
+  });
+
+  it("a bare 5.1.0 with no recipient-fault diagnostic is never auto-suppressed", () => {
+    const result = classifyDeliveryFailure({ action: "failed", status: "5.1.0", diagnosticCode: null });
+    expect(result.category).toBe("UNKNOWN_DELIVERY_FAILURE");
+    expect(result.suppressRecipient).toBe(false);
+  });
+
+  it("sender-address codes 5.1.7/5.1.8 never suppress the recipient", () => {
+    for (const status of ["5.1.7", "5.1.8"]) {
+      const result = classifyDeliveryFailure({ action: "failed", status, diagnosticCode: "bad sender address syntax" });
+      expect(result.suppressRecipient).toBe(false);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Reply exclusion — a DSN must never look like a human reply.
+// ---------------------------------------------------------------------------
+
+describe("looksLikeDeliveryNotification (reply exclusion)", () => {
+  it("flags the real bounce by any single automated-delivery signal", () => {
+    // Sender address alone.
+    expect(
+      looksLikeDeliveryNotification({
+        fromHeader: "mailer-daemon@googlemail.com",
+        subject: null,
+        contentType: null,
+        autoSubmitted: null
+      })
+    ).toBe(true);
+    // Display name alone (fine for EXCLUDING from replies, unlike bounce intake).
+    expect(
+      looksLikeDeliveryNotification({
+        fromHeader: "Mail Delivery Subsystem <mailer-daemon@googlemail.com>",
+        subject: null,
+        contentType: null,
+        autoSubmitted: null
+      })
+    ).toBe(true);
+    // DSN subject alone.
+    expect(
+      looksLikeDeliveryNotification({
+        fromHeader: "someone@example.com",
+        subject: "Delivery Status Notification (Failure)",
+        contentType: null,
+        autoSubmitted: null
+      })
+    ).toBe(true);
+    // multipart/report alone.
+    expect(
+      looksLikeDeliveryNotification({
+        fromHeader: null,
+        subject: null,
+        contentType: 'multipart/report; report-type=delivery-status; boundary="x"',
+        autoSubmitted: null
+      })
+    ).toBe(true);
+  });
+
+  it("never flags a genuine human reply", () => {
+    expect(
+      looksLikeDeliveryNotification({
+        fromHeader: "Mohshin Chowdhury <mohshin.personal@gmail.com>",
+        subject: "Re: Could my healthcare backend experience contribute?",
+        contentType: "multipart/alternative",
+        autoSubmitted: null
+      })
+    ).toBe(false);
   });
 });

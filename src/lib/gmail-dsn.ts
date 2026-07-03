@@ -79,6 +79,33 @@ const DSN_SUBJECT_PATTERN =
   /delivery status notification|undeliver|returned mail|failure notice|delivery (has )?failed|delivery incomplete|message not delivered/i;
 
 /**
+ * Single-signal automated-delivery check used to EXCLUDE messages from reply
+ * storage. Human replies never come from mailer-daemon/postmaster, never carry
+ * a delivery-status report type, and never use DSN subjects — any one of those
+ * disqualifies a "reply". Deliberately broader than the two-signal bounce
+ * filter below: over-excluding an automated message from the reply feed is
+ * harmless, while storing a bounce as a human reply corrupts reply metrics and
+ * silently swallows the delivery failure.
+ */
+export function looksLikeDeliveryNotification(input: DsnDetectionInput): boolean {
+  const fromAddress = extractEmailAddress(input.fromHeader);
+  if (fromAddress && DSN_SENDER_ADDRESS_PATTERN.test(fromAddress)) {
+    return true;
+  }
+  if (input.fromHeader && DSN_SENDER_NAME_PATTERN.test(input.fromHeader)) {
+    return true;
+  }
+  if (input.subject && DSN_SUBJECT_PATTERN.test(input.subject)) {
+    return true;
+  }
+  const contentType = input.contentType?.toLowerCase() ?? "";
+  if (contentType.includes("multipart/report")) {
+    return true;
+  }
+  return Boolean(input.hasFailedRecipientsHeader);
+}
+
+/**
  * A message is inspected further only when it carries strong delivery-status
  * signals. `multipart/report; report-type=delivery-status` alone is decisive
  * (it is the machine format for DSNs); anything else needs at least two
@@ -466,6 +493,9 @@ export function classifyDeliveryFailure(input: {
   // Permanent recipient failures (5.x.x or a clear textual reason).
   const enhanced = status;
   if (/^5\.1\.(1|3|6|10)$/.test(enhanced) || (statusClass === 5 && MAILBOX_NOT_FOUND_PATTERN.test(diagnostic))) {
+    // Covers the real Gmail wordings "550 5.1.1 User Unknown" and
+    // "550 5.1.0 Address Rejected" / "Address not found" — the 5.1.0 case
+    // qualifies through the recipient-fault diagnostic, never the code alone.
     return permanentFailure(
       DOMAIN_NOT_FOUND_PATTERN.test(diagnostic) ? "HARD_BOUNCE_DOMAIN_NOT_FOUND" : "HARD_BOUNCE_MAILBOX_NOT_FOUND"
     );
@@ -473,9 +503,11 @@ export function classifyDeliveryFailure(input: {
   if (/^5\.1\.2$/.test(enhanced) || (statusClass === 5 && DOMAIN_NOT_FOUND_PATTERN.test(diagnostic))) {
     return permanentFailure("HARD_BOUNCE_DOMAIN_NOT_FOUND");
   }
-  if (/^5\.1\.\d+$/.test(enhanced)) {
-    return permanentFailure("HARD_BOUNCE_INVALID_RECIPIENT");
-  }
+  // Remaining 5.1.x codes are NOT recipient faults by code alone: 5.1.0 is
+  // "other address status" (ambiguous without a diagnostic — handled above when
+  // recipient-fault evidence exists) and 5.1.7/5.1.8 are SENDER-address
+  // problems. Without corroborating diagnostics they fall through to UNKNOWN
+  // below and never suppress a possibly-valid address.
   if (/^5\.2\.1$/.test(enhanced)) {
     // Mailbox disabled — permanent recipient failure.
     return permanentFailure("HARD_BOUNCE_PERMANENT_MAILBOX_FAILURE");

@@ -1,3 +1,4 @@
+import { looksLikeDeliveryNotification } from "@/lib/gmail-dsn";
 import { normalizeGoogleApiErrorMessage } from "@/lib/google";
 
 const GMAIL_API_BASE_URL = "https://gmail.googleapis.com/gmail/v1/users/me";
@@ -124,6 +125,12 @@ async function fetchGmailMessageMetadata(accessToken: string, messageId: string)
   url.searchParams.append("metadataHeaders", "Date");
   url.searchParams.append("metadataHeaders", "In-Reply-To");
   url.searchParams.append("metadataHeaders", "References");
+  // Delivery-notification signals: a bounce sits in the sent thread WITH
+  // References headers, so without these headers it would masquerade as a
+  // human reply (see mapReplyCandidate).
+  url.searchParams.append("metadataHeaders", "Content-Type");
+  url.searchParams.append("metadataHeaders", "Auto-Submitted");
+  url.searchParams.append("metadataHeaders", "X-Failed-Recipients");
 
   return fetchGmailJson<GmailMessageResponse>(accessToken, url);
 }
@@ -141,6 +148,24 @@ async function fetchGmailMessageMetadataBatch(accessToken: string, messages: Gma
 
 function mapReplyCandidate(message: GmailMessageResponse): GmailReplyCandidate | null {
   const headers = message.payload?.headers;
+
+  // A delivery-status notification arrives in the SAME THREAD as the original
+  // send and carries In-Reply-To/References — exactly what this matcher looks
+  // for. It must never be stored as a human reply: it belongs to the bounce
+  // processor, and counting it as a reply both corrupts reply metrics and
+  // hides the delivery failure.
+  if (
+    looksLikeDeliveryNotification({
+      fromHeader: getHeader(headers, "From"),
+      subject: getHeader(headers, "Subject"),
+      contentType: getHeader(headers, "Content-Type"),
+      autoSubmitted: getHeader(headers, "Auto-Submitted"),
+      hasFailedRecipientsHeader: Boolean(getHeader(headers, "X-Failed-Recipients"))
+    })
+  ) {
+    return null;
+  }
+
   const references = [
     ...extractMessageIds(getHeader(headers, "In-Reply-To")),
     ...extractMessageIds(getHeader(headers, "References"))

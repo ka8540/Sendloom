@@ -43,6 +43,14 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   }
 
   const result = await runRecentBounceBackfill(sender.id);
+  if (result.skipped === "reconnect_required") {
+    // The stored authorization no longer refreshes — safe reconnect guidance,
+    // never the provider's error body.
+    return NextResponse.json(
+      { error: "Reconnect Gmail to detect delivery failures automatically.", status: "RECONNECT_REQUIRED" },
+      { status: 409 }
+    );
+  }
   return NextResponse.json({
     status,
     checkedMessages: result.checkedMessages,

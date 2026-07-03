@@ -1837,9 +1837,17 @@ Gmail watches expire after ~7 days. The existing campaign cron (`/api/cron/campa
 
 `POST /api/webhooks/gmail-pubsub` accepts a push only when the shared URL token matches (`GMAIL_PUBSUB_VERIFICATION_TOKEN`, constant-time compare) or the Pub/Sub OIDC bearer validates (`GMAIL_PUBSUB_AUDIENCE`, optional `GMAIL_PUBSUB_SERVICE_ACCOUNT`). With neither configured it rejects everything. The payload is untrusted: it only names a mailbox; the sender is resolved server-side by `fromEmail` and all reads use that sender's own token. Pub/Sub message ids are deduplicated in Redis; malformed-but-authenticated bodies are acked (204) and dropped so poison messages never loop. Mailbox addresses, tokens, and bodies are never logged.
 
-### History processing and bounded recovery
+### History processing, first sync, and bounded recovery
 
 `syncSenderBounces` pages `history.list` (messageAdded records only, capped at 200 messages/run) and advances `gmailWatchHistoryId` only after processing succeeds. A 404 (history id too old) triggers ONE bounded recovery pass: a narrow query (`from:mailer-daemon OR from:postmaster OR subject:"Delivery Status Notification" OR subject:Undeliverable`, `newer_than:7d`, ≤100 messages), then re-anchors at the current profile history id. There is never an unbounded mailbox scan.
+
+**First sync** anchors the cursor at the current profile history id AND runs the same bounded recent DSN scan (7 days, ≤100 messages). Anchor-only initialisation would permanently skip any bounce that arrived before monitoring started — that is exactly how a real `550 5.1.0 Address Rejected` bounce was missed in production. Every branch emits the `[bounce-sync] Processed Gmail delivery notifications.` summary (counts + sender id only, never recipient addresses).
+
+### Reply sync vs bounce sync (independent, never competing)
+
+The two mailbox consumers use fully independent cursors — reply sync windows on `lastReplySyncAt` timestamps (Gmail `q=after:` queries), bounce sync advances the Gmail history id — so neither can consume mailbox events the other still needs, in either execution order. A source-assertion test enforces this.
+
+A bounce arrives in the SAME thread as the original send and carries `References` headers, so it looks exactly like a reply to the reply matcher. `mapReplyCandidate` therefore excludes anything matching `looksLikeDeliveryNotification` (single-signal: mailer-daemon/postmaster sender, Mail-Delivery-Subsystem display name, DSN subject, `multipart/report`, `Auto-Submitted`, or `X-Failed-Recipients`) BEFORE reading references — a DSN is never stored as a human reply. For DSNs that an older deploy already stored as replies, the bounce processor heals them: `removeDeliveryNotificationStoredAsReply` deletes the bogus `InboundReply` and recomputes the job's `replyCount`/`repliedAt` from its remaining genuine replies.
 
 ### DSN filtering and parsing
 
@@ -1849,7 +1857,7 @@ A message is inspected further only with strong signals (`isLikelyDeliveryStatus
 
 Categories: `HARD_BOUNCE_INVALID_RECIPIENT`, `HARD_BOUNCE_MAILBOX_NOT_FOUND`, `HARD_BOUNCE_DOMAIN_NOT_FOUND`, `HARD_BOUNCE_PERMANENT_MAILBOX_FAILURE`, `SOFT_BOUNCE_MAILBOX_FULL`, `SOFT_BOUNCE_TEMPORARY_FAILURE`, `POLICY_REJECTION`, `SPAM_REJECTION`, `SENDER_AUTHENTICATION_FAILURE`, `SENDER_QUOTA_FAILURE`, `UNKNOWN_DELIVERY_FAILURE`.
 
-- **Permanent recipient failures** (5.1.x, 5.2.1, clear "user unknown"/"domain not found" diagnostics): recipient marked `FAILED` (`HARD_BOUNCE_RECIPIENT` failure code — non-retryable), suppression upserted, queued sends skipped.
+- **Permanent recipient failures** (5.1.1/5.1.2/5.1.3/5.1.6/5.1.10 by code; 5.2.1; or a permanent 5.x.x WITH a recipient-fault diagnostic such as "user unknown", "address not found", "address rejected", "domain not found" — this is how Gmail's `550 5.1.0 Address Rejected` qualifies): recipient marked `FAILED` (`HARD_BOUNCE_RECIPIENT` failure code — non-retryable), suppression upserted, queued sends skipped. A bare `5.1.0` without a diagnostic, and the sender-address codes `5.1.7`/`5.1.8`, never suppress.
 - **Temporary (4.x.x, mailbox full incl. 5.2.2)**: never suppressed; the already-submitted Gmail message is never re-sent from bounce processing (the receiving server owns retries).
 - **Policy/spam (5.7.x)**: the attempt is marked failed with a safe reason; the address is NOT declared invalid and is not suppressed. Manual retry stays available.
 - **Sender problems (quota, SPF/DKIM/DMARC, auth)**: the recipient is never suppressed. Reconnect handling stays with the send path.
@@ -1888,4 +1896,6 @@ Person email statuses are overlaid at read time (`overlayEmailCandidateStatus` p
 - **Reconnect required** → Google revoked/expired the refresh token; reconnect (sending shows the same state).
 - **Temporarily unavailable / RENEWAL_FAILED** → watch registration failing (check `GMAIL_PUBSUB_TOPIC` + topic IAM: grant `gmail-api-push@system.gserviceaccount.com` the Pub/Sub Publisher role). Cron retries automatically; sending continues.
 - **Bounces not appearing with Pub/Sub unconfigured** → the cron fallback still syncs every ~10 min per sender; check `/api/cron/campaigns` output (`watchRenewal`, `bounceSync`).
-- **Unmatched bounces** → recorded as `gmail-dsn` ProviderEvents with `matched: false` for investigation; no recipient state is changed.
+- **Unmatched bounces** → recorded as `gmail-dsn` ProviderEvents with `matched: false` and logged as `[bounce-sync] Delivery notification could not be correlated.`; no recipient state is changed.
+- **No `[bounce-sync]` logs at all** → the sync never ran: check that the deployed environment actually executes `/api/cron/campaigns` (Vercel cron runs only on the production deployment — a branch preview gets no cron), or trigger "Sync recent delivery failures" on the sender card.
+- **A bounce shows as a reply** (recipient marked replied) → predates the DSN exclusion; reprocessing the message through any bounce sync heals the stored reply automatically.
