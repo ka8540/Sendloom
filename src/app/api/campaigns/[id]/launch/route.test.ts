@@ -53,9 +53,22 @@ vi.mock("@/services/campaigns", () => {
   };
 });
 
+vi.mock("@/services/sequence-limits", () => {
+  class SequenceConcurrencyLimitError extends Error {
+    code = "SEQUENCE_CONCURRENCY_LIMIT_REACHED";
+    activeCount: number;
+    constructor(activeCount: number) {
+      super("All sequence slots are busy.");
+      this.activeCount = activeCount;
+    }
+  }
+  return { SequenceConcurrencyLimitError };
+});
+
 import { PAST_SCHEDULE_CONFIRMATION_CODE } from "@/lib/campaign-scheduling";
 import type { CampaignValidationReport } from "@/lib/types";
 import { CampaignLaunchBlockedError, PastScheduleConfirmationRequiredError } from "@/services/campaigns";
+import { SequenceConcurrencyLimitError } from "@/services/sequence-limits";
 
 import { POST } from "./route";
 
@@ -140,5 +153,16 @@ describe("POST /api/campaigns/[id]/launch", () => {
     expect(res.status).toBe(409);
     expect(json.code).toBeUndefined();
     expect(json.validation).toMatchObject({ validRecipients: 0, issues: [] });
+  });
+
+  it("returns the structured concurrency code without starting work", async () => {
+    launchCampaignMock.mockRejectedValueOnce(new SequenceConcurrencyLimitError(10));
+
+    const res = await callPost();
+    const json = await res.json();
+
+    expect(res.status).toBe(409);
+    expect(json.code).toBe("SEQUENCE_CONCURRENCY_LIMIT_REACHED");
+    expect(processPendingCampaignWorkMock).not.toHaveBeenCalled();
   });
 });

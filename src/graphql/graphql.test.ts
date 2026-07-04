@@ -931,3 +931,167 @@ describe("deleteProspectSearch mutation", () => {
     expect(result.errors?.[0]?.extensions?.code).toBe("UNAUTHENTICATED");
   });
 });
+
+describe("Grouped Search History GraphQL surface", () => {
+  it("requires authentication for discoverCompanyGroups (#47)", async () => {
+    const result = await graphql({
+      schema: prospectSchema,
+      source: `{ discoverCompanyGroups { totalCount } }`,
+      contextValue: makeContext({ user: null })
+    });
+    expect(result.data?.discoverCompanyGroups ?? null).toBeNull();
+    expect(result.errors?.[0]?.extensions?.code).toBe("UNAUTHENTICATED");
+  });
+
+  it("exposes the grouped connection, search categories, and company searches in the schema", () => {
+    expect(typeDefs).toContain("discoverCompanyGroups(first: Int = 20, after: String): DiscoverCompanyGroupConnection!");
+    expect(typeDefs).toContain("type DiscoverCompanyGroup");
+    expect(typeDefs).toContain("positionCategories: [PositionCategory!]!");
+    expect(typeDefs).toContain("searches: [ProspectSearch!]!");
+  });
+
+  it("groups the user's role searches into one company entry with a UNIQUE allocated people count (#18, #21, #22, #23)", async () => {
+    const prisma = createFakePrisma();
+    const COMPANY_ID = "comp_walmart";
+    seedCompany(prisma, { id: COMPANY_ID, userId: "user_A", name: "Walmart Inc." });
+    prisma._state.positions.push({
+      id: "pos_se",
+      companyId: COMPANY_ID,
+      category: "SOFTWARE_ENGINEERING",
+      displayName: "Software Engineering",
+      rawTitles: ["Software Engineer"],
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+    const mkSearch = (id: string, titles: string[], createdAt: Date) => {
+      prisma._state.searches.push({
+        id,
+        userId: "user_A",
+        companyId: COMPANY_ID,
+        requestedCompany: "Walmart",
+        requestedTitles: titles,
+        requestedLocations: ["United States"],
+        maxResults: 10,
+        status: "READY",
+        totalProcessed: 2,
+        totalFound: 2,
+        createdAt,
+        updatedAt: createdAt
+      });
+    };
+    mkSearch("s_engineer", ["Software Engineer"], new Date("2026-07-04T10:00:00.000Z"));
+    mkSearch("s_recruiter", ["Recruiter"], new Date("2026-07-04T09:00:00.000Z"));
+    const mkPerson = (id: string, sourceProfileId: string) => {
+      prisma._state.people.push({
+        id,
+        userId: "user_A",
+        companyId: COMPANY_ID,
+        positionId: "pos_se",
+        sourceProfileId,
+        firstName: "P",
+        lastName: id,
+        fullName: `P ${id}`,
+        linkedinUrl: `https://www.linkedin.com/in/${id}`,
+        currentTitle: "Software Engineer",
+        normalizedTitle: "software engineer",
+        inferredEmail: null,
+        emailStatus: "UNAVAILABLE",
+        emailConfidence: "UNAVAILABLE",
+        emailPattern: null,
+        emailSource: null,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      });
+    };
+    mkPerson("p1", "sp1");
+    mkPerson("p2", "sp2");
+    mkPerson("p3", "sp3");
+    // p2 is allocated by BOTH role searches — the grouped count must be 3, not 4.
+    const grant = (searchId: string, personId: string, order: number) =>
+      prisma._state.searchPeople.push({
+        id: `g_${searchId}_${personId}`,
+        searchId,
+        personId,
+        userId: "user_A",
+        allocationOrder: order,
+        allocationSource: "CACHE",
+        allocatedAt: new Date()
+      });
+    grant("s_engineer", "p1", 0);
+    grant("s_engineer", "p2", 1);
+    grant("s_recruiter", "p2", 0);
+    grant("s_recruiter", "p3", 1);
+
+    const result = await graphql({
+      schema: prospectSchema,
+      source: `{
+        discoverCompanyGroups {
+          totalCount
+          edges {
+            node {
+              id
+              displayName
+              requestedRoles
+              peopleCount
+              searches { id }
+              company { id name }
+            }
+          }
+        }
+      }`,
+      contextValue: makeContext({ user: FAKE_USER, prisma })
+    });
+
+    expect(result.errors).toBeUndefined();
+    const connection = result.data?.discoverCompanyGroups as {
+      totalCount: number;
+      edges: Array<{
+        node: {
+          id: string;
+          requestedRoles: string[];
+          peopleCount: number;
+          searches: Array<{ id: string }>;
+          company: { id: string; name: string } | null;
+        };
+      }>;
+    };
+    // ONE grouped entry (pagination counts groups), holding BOTH child searches.
+    expect(connection.totalCount).toBe(1);
+    expect(connection.edges).toHaveLength(1);
+    const node = connection.edges[0].node;
+    expect(node.company?.id).toBe("comp_walmart");
+    expect(node.requestedRoles).toEqual(["Software Engineer", "Recruiter"]);
+    expect(node.searches.map((child) => child.id).sort()).toEqual(["s_engineer", "s_recruiter"]);
+    // Unique union of the user's allocations: p1, p2, p3 → 3 (p2 counted once).
+    expect(node.peopleCount).toBe(3);
+  });
+
+  it("never exposes another user's searches through the grouped query (#42, #47)", async () => {
+    const prisma = createFakePrisma();
+    const OTHER_COMPANY_ID = "comp_other";
+    seedCompany(prisma, { id: OTHER_COMPANY_ID, userId: "user_B", name: "Walmart Inc." });
+    prisma._state.searches.push({
+      id: "s_other",
+      userId: "user_B",
+      companyId: OTHER_COMPANY_ID,
+      requestedCompany: "Walmart",
+      requestedTitles: ["Software Engineer"],
+      requestedLocations: ["United States"],
+      maxResults: 10,
+      status: "READY",
+      totalProcessed: 10,
+      totalFound: 10,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+
+    const result = await graphql({
+      schema: prospectSchema,
+      source: `{ discoverCompanyGroups { totalCount edges { node { id } } } }`,
+      contextValue: makeContext({ user: FAKE_USER, prisma })
+    });
+
+    expect(result.errors).toBeUndefined();
+    expect((result.data?.discoverCompanyGroups as { totalCount: number }).totalCount).toBe(0);
+  });
+});

@@ -10,6 +10,7 @@ export type SequenceStatusTone =
   | "completed"
   | "failed"
   | "scheduled"
+  | "waiting"
   | "paused"
   | "draft";
 

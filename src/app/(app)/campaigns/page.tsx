@@ -20,6 +20,7 @@ import { requireOperatorUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { resolveBounceMonitoringStatus } from "@/services/bounces";
 import { processPendingCampaignWork } from "@/services/campaigns";
+import { formatSequenceStatus } from "@/lib/sequence-status";
 import { SequenceBoard } from "./sequence-board";
 import styles from "./page.module.css";
 
@@ -119,7 +120,7 @@ function hasKnownRunMetrics(
     return false;
   }
 
-  return !["QUEUED", "RUNNING"].includes(run.status ?? "") || processedCount > 0;
+  return !["QUEUED", "WAITING_FOR_SLOT", "RUNNING"].includes(run.status ?? "") || processedCount > 0;
 }
 
 function getPercent(value: number, total: number) {
@@ -190,7 +191,7 @@ function formatDeliveryLabel(scheduleType?: string | null, scheduleConfig?: Sche
 
 const PAGE_SIZE = 10;
 
-const ACTIVE_RUN_STATUSES = new Set(["QUEUED", "RUNNING", "PAUSED"]);
+const ACTIVE_RUN_STATUSES = new Set(["QUEUED", "WAITING_FOR_SLOT", "RUNNING", "PAUSED"]);
 const COMPLETED_RUN_STATUSES = new Set(["COMPLETED", "FAILED", "CANCELLED"]);
 
 type RunSummary = {
@@ -288,7 +289,7 @@ export default async function CampaignsPage({
     campaigns.some(
       (campaign) =>
         campaign.status === "RUNNING" ||
-        campaign.runs.some((run) => ["QUEUED", "RUNNING"].includes(run.status))
+        campaign.runs.some((run) => ["QUEUED", "WAITING_FOR_SLOT", "RUNNING"].includes(run.status))
     )
   ) {
     after(async () => {
@@ -301,9 +302,11 @@ export default async function CampaignsPage({
   const activeSequences = campaigns.filter(
     (campaign) =>
       campaign.status === "RUNNING" ||
-      campaign.runs.some((run) => ["QUEUED", "RUNNING"].includes(run.status))
+      campaign.runs.some(
+        (run) => ["QUEUED", "RUNNING"].includes(run.status) && Boolean(run.executionSlotClaimedAt)
+      )
   ).length;
-  const hasLiveActivity = activeSequences > 0;
+  const hasLiveActivity = activeSequences > 0 || campaigns.some((campaign) => campaign.status === "WAITING_FOR_SLOT");
   const scheduledSequences = campaigns.filter((campaign) => campaign.scheduleType !== "immediate").length;
   const validatedSequences = campaigns.filter((campaign) => Boolean(campaign.lastValidatedAt)).length;
 
@@ -431,7 +434,9 @@ export default async function CampaignsPage({
                     <h3 className={styles.sequenceTitle} title={campaign.name}>
                       {campaign.name}
                     </h3>
-                    <span className="badge">{humanize(campaign.status)}</span>
+                    <span className="badge" title={campaign.status === "WAITING_FOR_SLOT" ? "This sequence will start automatically when an execution slot becomes available." : undefined}>
+                      {formatSequenceStatus(campaign.status)}
+                    </span>
                   </div>
 
                   <div className={styles.sequenceMetaRow}>
@@ -486,7 +491,7 @@ export default async function CampaignsPage({
 
             <div className={styles.detailItem}>
               <span>Latest run</span>
-              <strong>{latestRun ? humanize(latestRun.status) : "Waiting to launch"}</strong>
+              <strong>{latestRun ? formatSequenceStatus(latestRun.status) : "Waiting to launch"}</strong>
               <small>{latestRunValue ? <LocalDateTime value={latestRunValue} /> : "No delivery activity yet"}</small>
             </div>
 

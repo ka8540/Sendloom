@@ -1411,6 +1411,66 @@ Discover searches share an internal cross-user result cache
   `cacheAgeDays`, `resultCount`, `providerCalled`, latency) — never people lists,
   generated emails, provider payloads, the requester email, or prompts.
 
+### 23.2.3.1 User-specific allocation and the grouped company dashboard
+
+Four concepts are deliberately separate:
+
+- **Shared candidate cache** — the internal cross-user pool above
+  (`DiscoverSearchCache*`). It is a cost-saving store only and may hold far more
+  candidates for a company/role/location than any one user is entitled to
+  (other users' "Add 10 more" expansions accumulate there). It is never exposed
+  through GraphQL, pagination, counts, export, or Imports.
+- **Search action** — one user-triggered company + role + location request (one
+  `ProspectSearch` row). Every successful action consumes **one** daily usage
+  unit — including a same-company different-role search, a cache hit, and an
+  Add 10 More — because usage is action-based (keyed by search/expansion id),
+  never company-, domain-, or cache-key-based. Two Walmart role searches =
+  "2 of 4 searches remaining today".
+- **User allocation** (`ProspectSearchPerson`). The grant of one person to one
+  user-owned search. An initial search allocates **at most `maxResults`
+  (10)** people from the resolved dataset in stable provider order — a new user
+  hitting a 30-person cached pool receives exactly 10, and the backend never
+  materializes (so can never return) the unallocated remainder. Each Add 10
+  More allocates at most one more batch to the TARGET search only. Grants
+  record `allocationOrder` and `allocationSource`
+  (`CACHE | PROVIDER | ADD_MORE_CACHE | ADD_MORE_PROVIDER | BACKFILL`), are
+  unique per `(searchId, personId)` (concurrent duplicates converge), and
+  cascade away with their search or person. Retrying a search keeps its
+  existing grants and only tops up to the cap. Usage reservation stays
+  idempotent per search id, so a failed allocation can be retried without a
+  second charge.
+- **Grouped company dashboard** (read model only). `discoverCompanyGroups`
+  consolidates the current user's searches into one Search History entry per
+  resolved company (`companyId`; company resolution already normalizes
+  "Walmart"/"Walmart Inc."/walmart.com to one user-owned `ProspectCompany`,
+  and unrelated domains never merge). Grouping changes NOTHING underneath: the
+  child `ProspectSearch` rows keep their own roles, location, status, usage
+  events, allocations, and Add-More history. The grouped `peopleCount` is the
+  **unique union** of the user's allocated people across the group (a person
+  granted by two role searches counts once); the group status derives as
+  Processing → Needs attention (one child failed while another is usable) →
+  Ready → Failed (all failed) → Draft; the timestamp is the latest `updatedAt`
+  across children. Pagination counts groups. Deleting a grouped entry runs the
+  existing user-scoped `deleteCompany` (that user's searches + allocations +
+  materialized people only — never the shared cache or another user).
+
+Role-targeted **Add 10 more**: the grouped detail page resolves which child
+search the button extends. An active role tab pins the child search whose
+allocated people include that category (`ProspectSearch.positionCategories`);
+"All people" with several role searches requires an explicit choice in the
+dialog — the backend always receives one owned search id and never fans a batch
+out to every role search.
+
+**Legacy repair**: pre-allocation searches were backfilled by the
+`discover_search_person_allocations` migration (every materialized company
+person granted to each of that user's searches for the company — exactly the
+old company-scoped behavior, nothing lost). A search that clearly received the
+full cached pool (READY, `resultSource = CACHE`, no expansions, more grants
+than `maxResults`) can be trimmed to its first 10 with
+`npx tsx scripts/repair-discover-allocations.ts --searches <ids> [--apply]` —
+explicit ids only, dry-run by default, keeps people granted elsewhere, and
+never touches the shared cache or another user.
+
 ### 23.2.4 Retrying a failed search and safe error handling
 
 A `FAILED` Discover search can be **retried**, and a retry runs the **real
@@ -1488,6 +1548,7 @@ New Prisma models (migration
 | `ProspectCompanyPosition` | One node per position category under a company. Unique per `(companyId, category)`. |
 | `ProspectPerson` | A discovered professional, assigned to one position node, with inferred-email metadata. Unique per `(userId, sourceProfileId)`. |
 | `ProspectSearch` | A discovery request, its status, Apify run references, and counts. |
+| `ProspectSearchPerson` | The allocation grant of one person to one user-owned search (order + source). Unique per `(searchId, personId)`; the boundary between the shared cache pool and what a user's search actually received (see 23.2.3.1). |
 | `ProspectTitleClassification` | Global cache of title→category classifications. |
 
 Category, status, and confidence values are stored as strings (mirroring the

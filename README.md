@@ -123,6 +123,40 @@ Current sequence behavior includes:
 - recipient-level activity with pagination
 - replies, delivery state, opens, and failures on the detail screen
 
+#### Free sequence limits and waiting queue
+
+- Ordinary free accounts may retain up to **50** sequences and may have up to
+  **10** sequences concurrently entering or using the send pipeline. The
+  centralized server-only entitlement helper preserves the application-owner
+  exemption; no browser-provided email or owner id is trusted.
+- Retained-sequence enforcement runs under a per-user PostgreSQL advisory lock
+  in the same transaction as `Campaign.create`. Drafts and completed sequences
+  count; hard-deleted sequences do not. Attachment uploads are deferred until
+  the gate passes, so a rejected create leaves no draft, upload, or worker job.
+- A run consumes a slot only when its status is `QUEUED` or `RUNNING` **and** it
+  owns a durable `executionSlotClaimedAt`. Future scheduled runs, `PAUSED`,
+  `WAITING_FOR_SLOT`, completed, failed, and cancelled runs consume no slot.
+- `WAITING_FOR_SLOT` means the user requested execution but capacity is full. It
+  is separate from manual `PAUSED`, stores a stable `waitingForSlotAt`, sends no
+  email, and is promoted FIFO by `waitingForSlotAt ASC, id ASC`.
+- Completion, manual/system pause, and deletion clear the slot claim and trigger
+  promotion. Due one-time/recurring schedules acquire a slot atomically; when
+  full they keep their original schedule metadata and enter the waiting queue.
+  Resume and retry actions use the same gate.
+- The scheduler reconciles waiting users in bounded batches every normal cron
+  tick. Promotion rechecks ownership, status, processed import state, and sender
+  connectivity, is idempotent, and uses the same per-user lock as launches.
+- The final polling processor and BullMQ workers both require a durable claim
+  before creating/sending recipient work. This is the last line of defense
+  against direct API or stale-job bypasses.
+- Limit dialogs appear only after an attempted over-limit action. There are no
+  permanent quota counters or quota cards.
+
+Operational troubleshooting: inspect the run's `status`, `waitingForSlotAt`,
+and `executionSlotClaimedAt`; confirm the campaign owner and connected sender;
+then run the normal campaign cron once. Never change a waiting run to `PAUSED`
+to repair it—manual pauses intentionally do not auto-start.
+
 ### Admin
 
 Admin users access a dedicated control center through sidebar sub-navigation that appears automatically when signed in as an admin. The admin area is split into four focused sub-pages:
@@ -741,6 +775,10 @@ sequenceDiagram
 - `DELETE /api/campaigns/[id]`
 - `POST /api/campaigns/[id]/validate`
 - `POST /api/campaigns/[id]/launch`
+- `POST /api/campaigns/[id]/wait-for-slot`
+- `POST /api/campaigns/[id]/pause`
+- `POST /api/campaigns/[id]/resume`
+- `POST /api/campaigns/[id]/retry-failed`
 - `GET /api/campaigns/[id]/status`
 - `GET /api/campaigns/[id]/attachments/[attachmentIndex]`
 

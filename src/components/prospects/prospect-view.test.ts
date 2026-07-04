@@ -15,10 +15,17 @@ import {
   PROSPECT_FINDER_UNAVAILABLE_BODY,
   PROSPECT_FINDER_UNAVAILABLE_TITLE,
   addMoreDisabledReason,
+  addMoreSearchLabel,
   confidenceBadge,
   formatCurrentPeopleLine,
+  formatGroupCountLabel,
   formatSearchesRemainingLine,
+  groupStatusBadge,
+  groupedRoleLabels,
+  resolveAddMoreTarget,
+  resolveGroupOpenTarget,
   shouldShowAddMore,
+  type AddMoreCandidateSearch,
   buildProspectSelectionInput,
   createEmptyProspectSelection,
   discoverPerSearchCopy,
@@ -575,8 +582,8 @@ describe("Discover Search History delete action + confirmation dialog", () => {
 
   it("renders an icon-only Trash delete button with a company-specific label + tooltip (#1-dialog, #3)", () => {
     expect(listSource).toContain('<Trash2 aria-hidden="true" />');
-    expect(listSource).toContain("aria-label={`Delete ${companyName} search`}");
-    expect(listSource).toContain('title="Delete search"');
+    expect(listSource).toContain("aria-label={`Delete ${companyName} from Discover`}");
+    expect(listSource).toContain('title="Delete from Discover"');
   });
 
   it("never uses native browser dialogs for this action (#1, #4)", () => {
@@ -589,16 +596,18 @@ describe("Discover Search History delete action + confirmation dialog", () => {
     // The trash button blocks row navigation and only requests the dialog.
     expect(listSource).toContain("event.preventDefault();");
     expect(listSource).toContain("event.stopPropagation();");
-    expect(listSource).toContain("onRequestDelete(search, event.currentTarget)");
+    expect(listSource).toContain("onRequestDelete(group, event.currentTarget)");
     // Requesting just records state — no mutation runs here.
-    expect(listSource).toContain("setSearchPendingDeletion(search)");
+    expect(listSource).toContain("setSearchPendingDeletion(group)");
     expect(listSource).toContain("<DeleteSearchDialog");
   });
 
   it("derives the company name from state (not the DOM) and never shows technical detail (#3, #4)", () => {
-    expect(listSource).toContain("const companyName = search.company?.name ?? search.requestedCompany");
-    expect(listSource).toContain("its saved Discover results");
-    // Company name comes from the pending-search object, never scraped from the DOM.
+    expect(listSource).toContain("const companyName = search.company?.name ?? search.displayName");
+    expect(listSource).toContain("allocated Discover results");
+    // The dialog is explicit that the shared cross-user cache is untouched.
+    expect(listSource).toContain("Shared cached company data and other users’ searches are not affected.");
+    // Company name comes from the pending-group object, never scraped from the DOM.
     expect(listSource).not.toContain("document.querySelector");
   });
 
@@ -606,7 +615,7 @@ describe("Discover Search History delete action + confirmation dialog", () => {
     expect(listSource).toContain('role="alertdialog"');
     expect(listSource).toContain('aria-labelledby={titleId}');
     expect(listSource).toContain('aria-describedby={descId}');
-    expect(listSource).toContain("Delete this search?");
+    expect(listSource).toContain("{`Delete ${companyName} from Discover?`}");
     // Reuses the existing modal surface + adds the compact confirm classes.
     expect(listSource).toContain("styles.modalOverlay");
     expect(listSource).toContain("styles.confirmCard");
@@ -615,14 +624,17 @@ describe("Discover Search History delete action + confirmation dialog", () => {
   });
 
   it("only deletes on explicit confirm, then removes the row + count + toast after success (#6, #8, #10, #11)", () => {
-    // Confirm is the only place the mutation runs.
+    // Confirm is the only place the mutations run: a grouped company entry
+    // deletes the user's whole company (all role searches + allocations); an
+    // unresolved single-search entry deletes just that search.
     expect(listSource).toContain("const handleConfirmDelete = useCallback(async () => {");
+    expect(listSource).toContain("DELETE_COMPANY_MUTATION");
     expect(listSource).toContain("DELETE_SEARCH_MUTATION");
-    expect(listSource).toContain("if (!search || deleting)");
+    expect(listSource).toContain("if (!group || deleting)");
     expect(listSource).toContain("setSearches(remaining)");
     expect(listSource).toContain("setSearchesTotal((total) => Math.max(0, total - 1))");
     // Success path: close + toast happen only after a confirmed deletion.
-    expect(listSource).toContain('setActionNotice({ message: "Search deleted." })');
+    expect(listSource).toContain("was removed from Discover.");
   });
 
   it("cancel/escape/backdrop close without deleting and never while in flight (#6, #7, #9)", () => {
@@ -638,9 +650,8 @@ describe("Discover Search History delete action + confirmation dialog", () => {
   it("shows a disabling Delete control with a Deleting… state and a safe failure message (#9, #12)", () => {
     expect(listSource).toContain('disabled={deleting}');
     expect(listSource).toContain('"Deleting…"');
-    expect(listSource).toContain('"Delete search"');
     // Failure keeps the dialog open with a safe message — never a raw backend error.
-    expect(listSource).toContain('setDeleteError("This search could not be deleted. Please try again.")');
+    expect(listSource).toContain('setDeleteError("This company could not be deleted. Please try again.")');
   });
 
   it("keeps the existing pagination edge handling (#15)", () => {
@@ -853,7 +864,9 @@ describe("Discover list/detail split contracts", () => {
   });
 
   it("list rows navigate to the detail route (#4 routing)", () => {
-    expect(listSource).toContain("href={`/prospects/${search.id}`");
+    // A grouped company row opens the detail page of its best child search.
+    expect(listSource).toContain("href={`/prospects/${openTarget.id}`");
+    expect(listSource).toContain("resolveGroupOpenTarget(group.searches)");
     // The first row carries the search-row tour target (set dynamically).
     expect(listSource).toContain('"search-row"');
   });
@@ -877,5 +890,126 @@ describe("Discover list/detail split contracts", () => {
   it("detail page loads the search from the route id and handles not-found safely (#5, #6, #8 routing)", () => {
     expect(detailSource).toContain("PROSPECT_SEARCH_BY_ID_QUERY");
     expect(detailSource).toContain("This Discover search is no longer available.");
+  });
+});
+
+describe("grouped Search History helpers", () => {
+  it("derives Processing when any child search is running (#26)", () => {
+    expect(groupStatusBadge(["READY", "SEARCHING_PEOPLE"]).label).toBe("Processing");
+    expect(groupStatusBadge(["FAILED", "INFERRING_EMAIL_PATTERN"]).label).toBe("Processing");
+  });
+
+  it("derives Needs attention when one role search failed while another is usable (#26)", () => {
+    const badge = groupStatusBadge(["READY", "FAILED"]);
+    expect(badge.label).toBe("Needs attention");
+    expect(badge.tone).toBe("warning");
+  });
+
+  it("derives Ready when at least one child is ready and none failed or run (#26)", () => {
+    expect(groupStatusBadge(["READY"]).label).toBe("Ready");
+    expect(groupStatusBadge(["READY", "CANCELED"]).label).toBe("Ready");
+  });
+
+  it("derives Failed only when every non-canceled child failed (#26)", () => {
+    expect(groupStatusBadge(["FAILED", "FAILED"]).label).toBe("Failed");
+    expect(groupStatusBadge(["FAILED", "CANCELED"]).label).toBe("Failed");
+  });
+
+  it("derives Draft for an all-draft group (#26)", () => {
+    expect(groupStatusBadge(["DRAFT"]).label).toBe("Draft");
+  });
+
+  it("opens the newest READY child, else the newest actionable child (#28)", () => {
+    const searches = [
+      { id: "s_old_ready", status: "READY" as const, createdAt: "2026-07-01T00:00:00.000Z" },
+      { id: "s_failed", status: "FAILED" as const, createdAt: "2026-07-04T00:00:00.000Z" },
+      { id: "s_new_ready", status: "READY" as const, createdAt: "2026-07-03T00:00:00.000Z" }
+    ];
+    expect(resolveGroupOpenTarget(searches)?.id).toBe("s_new_ready");
+    expect(
+      resolveGroupOpenTarget([
+        { id: "s_failed", status: "FAILED" as const, createdAt: "2026-07-04T00:00:00.000Z" },
+        { id: "s_canceled", status: "CANCELED" as const, createdAt: "2026-07-05T00:00:00.000Z" }
+      ])?.id
+    ).toBe("s_failed");
+    expect(resolveGroupOpenTarget([])).toBeNull();
+  });
+
+  it("labels the grouped panel by companies, not raw searches (#23)", () => {
+    expect(formatGroupCountLabel(1)).toBe("1 company");
+    expect(formatGroupCountLabel(3)).toBe("3 companies");
+  });
+
+  it("collects distinct role labels across a company's child searches", () => {
+    expect(
+      groupedRoleLabels([
+        { requestedTitles: ["Software Engineer"] },
+        { requestedTitles: ["software engineer", "Recruiter"] }
+      ])
+    ).toEqual(["Software Engineer", "Recruiter"]);
+  });
+});
+
+describe("role-targeted Add 10 more (#35-#38)", () => {
+  function candidate(overrides: Partial<AddMoreCandidateSearch> & { id: string }): AddMoreCandidateSearch {
+    return {
+      status: "READY",
+      requestedTitles: ["Software Engineer"],
+      positionCategories: ["SOFTWARE_ENGINEERING"],
+      createdAt: "2026-07-04T10:00:00.000Z",
+      ...overrides
+    };
+  }
+
+  const engineer = candidate({ id: "s_engineer" });
+  const recruiter = candidate({
+    id: "s_recruiter",
+    requestedTitles: ["Recruiter"],
+    positionCategories: ["RECRUITING"],
+    createdAt: "2026-07-04T09:00:00.000Z"
+  });
+
+  it("targets the single ready search directly", () => {
+    const target = resolveAddMoreTarget({ activeCategory: null, searches: [engineer], currentSearchId: "s_engineer" });
+    expect(target).toEqual({ kind: "search", search: engineer });
+  });
+
+  it("an active role tab pins the matching child search (#35, #37)", () => {
+    const target = resolveAddMoreTarget({
+      activeCategory: "RECRUITING",
+      searches: [engineer, recruiter],
+      currentSearchId: "s_engineer"
+    });
+    expect(target.kind).toBe("search");
+    expect(target.kind === "search" && target.search.id).toBe("s_recruiter");
+  });
+
+  it("All people with several role searches requires an explicit choice — never adds to every role (#38)", () => {
+    const target = resolveAddMoreTarget({
+      activeCategory: null,
+      searches: [engineer, recruiter],
+      currentSearchId: "s_engineer"
+    });
+    expect(target.kind).toBe("choose");
+    expect(target.kind === "choose" && target.options.map((option) => option.id).sort()).toEqual([
+      "s_engineer",
+      "s_recruiter"
+    ]);
+  });
+
+  it("ignores non-READY siblings and prefers the current page's search on a tie", () => {
+    const draft = candidate({ id: "s_draft", status: "DRAFT", positionCategories: [] });
+    const otherEngineer = candidate({ id: "s_engineer_2", createdAt: "2026-07-05T10:00:00.000Z" });
+    const target = resolveAddMoreTarget({
+      activeCategory: "SOFTWARE_ENGINEERING",
+      searches: [engineer, otherEngineer, draft],
+      currentSearchId: "s_engineer"
+    });
+    expect(target.kind === "search" && target.search.id).toBe("s_engineer");
+  });
+
+  it("labels chooser options by their requested roles", () => {
+    expect(addMoreSearchLabel(recruiter)).toBe("Recruiter");
+    expect(addMoreSearchLabel({ requestedTitles: [] })).toBe("Any role");
   });
 });

@@ -753,3 +753,112 @@ describe("expansionMessage", () => {
     expect(expansionMessage(0, 10, false)).toBe(NO_MORE_PEOPLE_MESSAGE);
   });
 });
+
+describe("DiscoverExpansionService allocation grants (role-targeted Add 10 more)", () => {
+  const OTHER_SEARCH_ID = "search_recruiter";
+
+  /** Grant the seeded initial people to a search (the post-allocation shape). */
+  function seedGrants(searchId: string, personIds: string[]) {
+    personIds.forEach((personId, index) => {
+      prisma._state.searchPeople.push({
+        id: `grant_${searchId}_${index}`,
+        searchId,
+        personId,
+        userId: USER_ID,
+        allocationOrder: index,
+        allocationSource: "CACHE",
+        allocatedAt: new Date()
+      });
+    });
+  }
+
+  it("adds grants to the TARGET search only — a sibling role search is untouched (#target-1, #target-2)", async () => {
+    seedCompany();
+    seedSearch();
+    // A sibling recruiter search for the SAME company with its own allocation.
+    prisma._state.searches.push({
+      id: OTHER_SEARCH_ID,
+      userId: USER_ID,
+      companyId: COMPANY_ID,
+      requestedCompany: "Apple",
+      requestedTitles: ["Recruiter"],
+      requestedLocations: LOCATIONS,
+      maxResults: 10,
+      status: "READY",
+      totalProcessed: 1,
+      totalFound: 1,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+    seedExistingPeople(10);
+    seedGrants(SEARCH_ID, Array.from({ length: 10 }, (_, i) => `person_${i + 1}`));
+    seedGrants(OTHER_SEARCH_ID, ["person_1"]);
+    seedCache(cachePeople("cache", 20));
+    const { service, runner } = buildService();
+
+    const result = await service.addMorePeople({
+      userId: USER_ID,
+      actorEmail: "user@example.com",
+      searchId: SEARCH_ID,
+      idempotencyKey: "key-grants"
+    });
+
+    expect(result.status).toBe("READY");
+    expect(result.addedCount).toBe(10);
+    expect(runner.run).not.toHaveBeenCalled();
+    // The target search now holds 20 grants, all batch-ordered and cache-sourced.
+    const targetGrants = prisma._state.searchPeople.filter((row) => row.searchId === SEARCH_ID);
+    expect(targetGrants).toHaveLength(20);
+    const added = targetGrants.filter((row) => row.allocationSource === "ADD_MORE_CACHE");
+    expect(added).toHaveLength(10);
+    expect([...added.map((row) => row.allocationOrder)].sort((a, b) => a - b)).toEqual([
+      10, 11, 12, 13, 14, 15, 16, 17, 18, 19
+    ]);
+    // The recruiter search's allocation is exactly as it was.
+    expect(prisma._state.searchPeople.filter((row) => row.searchId === OTHER_SEARCH_ID)).toHaveLength(1);
+  });
+
+  it("excludes only THIS search's grants, and never duplicates a person the user already owns (#target-3)", async () => {
+    seedCompany();
+    seedSearch({ totalProcessed: 1 });
+    // The user owns cache person #1 via the sibling recruiter search only, and
+    // cache person #11 via THIS search; both sit in the same cached pool.
+    prisma._state.searches.push({
+      id: OTHER_SEARCH_ID,
+      userId: USER_ID,
+      companyId: COMPANY_ID,
+      requestedCompany: "Apple",
+      requestedTitles: ["Recruiter"],
+      requestedLocations: LOCATIONS,
+      maxResults: 10,
+      status: "READY",
+      totalProcessed: 1,
+      totalFound: 1,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+    const cached = cachePeople("cache", 11);
+    seedExistingFromCache([cached[0], cached[10]]); // person_1 = cache_1, person_2 = cache_11
+    seedGrants(OTHER_SEARCH_ID, ["person_1"]);
+    seedGrants(SEARCH_ID, ["person_2"]);
+    seedCache(cached);
+    const { service } = buildService();
+
+    const result = await service.addMorePeople({
+      userId: USER_ID,
+      actorEmail: "user@example.com",
+      searchId: SEARCH_ID,
+      idempotencyKey: "key-overlap"
+    });
+
+    // Only THIS search's grant (cache person #11) is excluded — the sibling's
+    // person is still granted here (it belongs to both role searches now)…
+    expect(result.addedCount).toBe(10);
+    expect(prisma._state.searchPeople.filter((row) => row.searchId === SEARCH_ID)).toHaveLength(11);
+    // …but the user-owned person row is never duplicated (grouped union counts
+    // the person once).
+    expect(
+      prisma._state.people.filter((person) => person.sourceProfileId === cached[0].sourceProfileId)
+    ).toHaveLength(1);
+  });
+});

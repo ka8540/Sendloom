@@ -1,9 +1,11 @@
+import { after } from "next/server";
 import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/api-auth";
 import { recordAuditEvent } from "@/lib/audit";
 import { createRateLimitResponse, rateLimit } from "@/lib/rate-limit";
-import { resumeCampaign } from "@/services/campaigns";
+import { processPendingCampaignWork, resumeCampaign } from "@/services/campaigns";
+import { SequenceConcurrencyLimitError } from "@/services/sequence-limits";
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const auth = await requireApiUser();
@@ -17,9 +19,20 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   }
 
   const { id } = await context.params;
-  const run = await resumeCampaign(id, auth.user.id);
+  let run;
+  try {
+    run = await resumeCampaign(id, auth.user.id);
+  } catch (error) {
+    if (error instanceof SequenceConcurrencyLimitError) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: 409 });
+    }
+    throw error;
+  }
 
   if (run) {
+    after(async () => {
+      await processPendingCampaignWork({ runId: run.id, maxDurationMs: 55_000 });
+    });
     await recordAuditEvent({
       actor: { id: auth.user.id, email: auth.user.email },
       action: "sequence.resumed",

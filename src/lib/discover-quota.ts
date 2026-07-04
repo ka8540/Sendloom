@@ -1,5 +1,6 @@
 import { env } from "@/lib/env";
 import { getRedis } from "@/lib/redis";
+import { isApplicationOwner, normalizeEntitlementEmail } from "@/lib/account-entitlements";
 
 /**
  * Discover daily usage limits.
@@ -50,7 +51,7 @@ export function resolveDailySearchLimit(): number {
 
 /** Trim + lowercase an email for case-insensitive comparison. */
 export function normalizeEmail(email: string | null | undefined): string {
-  return (email ?? "").trim().toLowerCase();
+  return normalizeEntitlementEmail(email);
 }
 
 /**
@@ -77,7 +78,7 @@ export function isDiscoverQuotaExempt(email: string | null | undefined): boolean
   if (!normalized) {
     return false;
   }
-  return getDiscoverQuotaExemptEmails().has(normalized);
+  return isApplicationOwner({ email: normalized }) || getDiscoverQuotaExemptEmails().has(normalized);
 }
 
 export type DiscoverQuotaStatus = {

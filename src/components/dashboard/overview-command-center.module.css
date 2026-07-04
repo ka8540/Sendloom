@@ -853,6 +853,12 @@
   border-color: color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
+.sequenceStatusWaiting {
+  background: color-mix(in srgb, var(--accent-soft) 72%, transparent);
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
 .sequenceStatusCompleted {
   background: color-mix(in srgb, var(--success) 14%, transparent);
   color: var(--success);

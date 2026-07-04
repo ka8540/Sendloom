@@ -14,15 +14,16 @@ import { AlertCircle, ChevronLeft, ChevronRight, Inbox, LoaderCircle, Plus, Refr
 import { CircularCloseButton } from "@/components/circular-close-button";
 import {
   CREATE_SEARCH_MUTATION,
+  DELETE_COMPANY_MUTATION,
   DELETE_SEARCH_MUTATION,
+  DISCOVER_COMPANY_GROUPS_QUERY,
   DISCOVER_QUOTA_QUERY,
-  PROSPECT_SEARCHES_QUERY,
   SEARCHES_PAGE_SIZE,
   buildSearchesVariables,
   prospectGraphql,
   type Connection,
-  type DiscoverQuota,
-  type ProspectSearchNode
+  type DiscoverCompanyGroupNode,
+  type DiscoverQuota
 } from "@/components/prospects/prospect-graphql";
 import {
   PROSPECT_FINDER_SUBTITLE,
@@ -30,14 +31,16 @@ import {
   PROSPECT_FINDER_TITLE,
   discoverPerSearchSentence,
   formatDateTime,
+  formatGroupCountLabel,
   formatPageLabel,
   formatQuotaRemaining,
   formatQuotaReset,
   formatShowingLabel,
+  groupStatusBadge,
+  resolveGroupOpenTarget,
   resolveHistoryPageAfterDelete,
   resolvePageCount,
-  resolveProspectPageState,
-  statusBadge
+  resolveProspectPageState
 } from "@/components/prospects/prospect-view";
 import {
   BadgePill,
@@ -55,7 +58,8 @@ export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean 
   const router = useRouter();
   const [disabled, setDisabled] = useState(!featureEnabled);
 
-  const [searches, setSearches] = useState<ProspectSearchNode[]>([]);
+  // One row per company: the grouped Search History read model.
+  const [searches, setSearches] = useState<DiscoverCompanyGroupNode[]>([]);
   const [searchesLoading, setSearchesLoading] = useState(true);
   const [searchesError, setSearchesError] = useState<string | null>(null);
   const [searchesHasNext, setSearchesHasNext] = useState(false);
@@ -70,7 +74,7 @@ export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean 
   const [form, setForm] = useState<CreateForm>(EMPTY_FORM);
   const [creating, setCreating] = useState(false);
   // In-app delete confirmation state (replaces the old native browser confirm).
-  const [searchPendingDeletion, setSearchPendingDeletion] = useState<ProspectSearchNode | null>(null);
+  const [searchPendingDeletion, setSearchPendingDeletion] = useState<DiscoverCompanyGroupNode | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const deleteTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -101,8 +105,8 @@ export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean 
     const req = ++searchesReq.current;
     setSearchesLoading(true);
     setSearchesError(null);
-    const result = await prospectGraphql<{ prospectSearches: Connection<ProspectSearchNode> }>(
-      PROSPECT_SEARCHES_QUERY,
+    const result = await prospectGraphql<{ discoverCompanyGroups: Connection<DiscoverCompanyGroupNode> }>(
+      DISCOVER_COMPANY_GROUPS_QUERY,
       buildSearchesVariables({ after })
     );
     if (req !== searchesReq.current) {
@@ -119,7 +123,7 @@ export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean 
       setSearchesLoading(false);
       return;
     }
-    const connection = result.data.prospectSearches;
+    const connection = result.data.discoverCompanyGroups;
     setSearches(connection.edges.map((edge) => edge.node));
     setSearchesHasNext(connection.pageInfo.hasNextPage);
     setSearchesEndCursor(connection.pageInfo.endCursor);
@@ -153,12 +157,12 @@ export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean 
   }, [historyPageIndex, loadQuota, loadSearches]);
 
   // Open the in-app delete confirmation for a row. Never deletes here and never
-  // navigates to the detail page; it just records which search is pending (and the
-  // trigger button so focus can return to it on cancel).
-  const handleRequestDelete = useCallback((search: ProspectSearchNode, trigger: HTMLButtonElement | null) => {
+  // navigates to the detail page; it just records which company group is pending
+  // (and the trigger button so focus can return to it on cancel).
+  const handleRequestDelete = useCallback((group: DiscoverCompanyGroupNode, trigger: HTMLButtonElement | null) => {
     deleteTriggerRef.current = trigger;
     setDeleteError(null);
-    setSearchPendingDeletion(search);
+    setSearchPendingDeletion(group);
   }, []);
 
   const handleCancelDelete = useCallback(() => {
@@ -172,39 +176,49 @@ export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean 
   }, [deleting]);
 
   // Runs ONLY when the user confirms in the dialog. Reuses the shared GraphQL
-  // client (same CSRF/auth as every Discover mutation). The row + count update and
-  // the success toast appear only after the backend confirms; on failure the dialog
-  // stays open with a safe message and the row is preserved.
+  // client (same CSRF/auth as every Discover mutation). A resolved company group
+  // deletes THIS USER's whole company entry (all of their role searches +
+  // allocated results — never the shared cache or another user's data); an
+  // unresolved single-search entry deletes just that search. The row + count
+  // update and the success toast appear only after the backend confirms; on
+  // failure the dialog stays open with a safe message and the row is preserved.
   const handleConfirmDelete = useCallback(async () => {
-    const search = searchPendingDeletion;
-    if (!search || deleting) {
+    const group = searchPendingDeletion;
+    if (!group || deleting) {
       return;
     }
     setDeleting(true);
     setDeleteError(null);
-    const result = await prospectGraphql<{ deleteProspectSearch: boolean }>(DELETE_SEARCH_MUTATION, {
-      id: search.id
-    });
+    const result = group.company
+      ? await prospectGraphql<{ deleteCompany: boolean }>(DELETE_COMPANY_MUTATION, {
+          companyId: group.company.id
+        })
+      : await prospectGraphql<{ deleteProspectSearch: boolean }>(DELETE_SEARCH_MUTATION, {
+          id: group.searches[0]?.id ?? group.id
+        });
     if (result.disabled) {
       setDeleting(false);
       setSearchPendingDeletion(null);
       setDisabled(true);
       return;
     }
-    if (result.error || !result.data?.deleteProspectSearch) {
+    const confirmed = group.company
+      ? Boolean((result.data as { deleteCompany?: boolean } | null)?.deleteCompany)
+      : Boolean((result.data as { deleteProspectSearch?: boolean } | null)?.deleteProspectSearch);
+    if (result.error || !confirmed) {
       // Keep the dialog open with a safe product message — never a raw backend error.
       setDeleting(false);
-      setDeleteError("This search could not be deleted. Please try again.");
+      setDeleteError("This company could not be deleted. Please try again.");
       return;
     }
     // Success: remove the row + update the count, then surface the toast.
-    const remaining = searches.filter((item) => item.id !== search.id);
+    const remaining = searches.filter((item) => item.id !== group.id);
     setSearches(remaining);
     setSearchesTotal((total) => Math.max(0, total - 1));
     setDeleting(false);
     setSearchPendingDeletion(null);
     setActionError(null);
-    setActionNotice({ message: "Search deleted." });
+    setActionNotice({ message: `${group.company?.name ?? group.displayName} was removed from Discover.` });
     // Pagination edge: if that emptied a page beyond the first, step back.
     const next = resolveHistoryPageAfterDelete({ remainingOnPage: remaining.length, pageIndex: historyPageIndex });
     if (next.goToPreviousPage) {
@@ -384,7 +398,10 @@ export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean 
 }
 
 // ---------------------------------------------------------------------------
-// Search History table (list-only). Rows are links to the detail page.
+// Search History table (list-only). One row per COMPANY: all of the user's role
+// searches for the same resolved company render as a single consolidated entry
+// (role chips + unique allocated people count). Rows link to the detail page of
+// the group's newest ready child search.
 // ---------------------------------------------------------------------------
 
 function SearchHistoryTable({
@@ -400,7 +417,7 @@ function SearchHistoryTable({
   onPrev,
   onNext
 }: {
-  searches: ProspectSearchNode[];
+  searches: DiscoverCompanyGroupNode[];
   total: number;
   loading: boolean;
   error: string | null;
@@ -408,7 +425,7 @@ function SearchHistoryTable({
   pageCount: number;
   offset: number;
   hasNext: boolean;
-  onRequestDelete: (search: ProspectSearchNode, trigger: HTMLButtonElement | null) => void;
+  onRequestDelete: (group: DiscoverCompanyGroupNode, trigger: HTMLButtonElement | null) => void;
   onPrev: () => void;
   onNext: () => void;
 }) {
@@ -417,9 +434,7 @@ function SearchHistoryTable({
       <div className={styles.panelHeader}>
         <div>
           <h2 className={styles.panelTitle}>Search history</h2>
-          <p className={styles.panelSubtitle}>
-            {total} {total === 1 ? "search" : "searches"}
-          </p>
+          <p className={styles.panelSubtitle}>{formatGroupCountLabel(total)}</p>
         </div>
       </div>
       {error && <p className={styles.errorText}>{error}</p>}
@@ -445,29 +460,32 @@ function SearchHistoryTable({
               <span role="columnheader">Location</span>
               <span role="columnheader">People</span>
               <span role="columnheader">Status</span>
-              <span role="columnheader">Created</span>
+              <span role="columnheader">Updated</span>
               <span role="columnheader" aria-label="Actions" />
             </div>
-            {searches.map((search, index) => {
-              const roles = search.requestedTitles;
-              const location = search.requestedLocations[0] ?? null;
-              const domain = search.company?.officialWebsiteDomain ?? search.company?.officialDomain ?? null;
-              const companyName = search.company?.name ?? search.requestedCompany;
+            {searches.map((group, index) => {
+              const roles = group.requestedRoles;
+              const location = group.locations[0] ?? null;
+              const domain = group.company?.officialWebsiteDomain ?? group.company?.officialDomain ?? null;
+              const companyName = group.company?.name ?? group.displayName;
+              const openTarget = resolveGroupOpenTarget(group.searches);
               return (
                 // The whole row navigates via a stretched <Link> overlay, so the row
                 // stays a real anchor (cmd/middle-click still open in a new tab) while
                 // the delete control is a sibling button raised above it — never a
                 // <button> nested inside an <a>.
                 <div
-                  key={search.id}
+                  key={group.id}
                   className={styles.historyRow}
                   data-discover-tour={index === 0 ? "search-row" : undefined}
                 >
-                  <Link
-                    href={`/prospects/${search.id}` as Route}
-                    className={styles.historyRowLink}
-                    aria-label={`Open ${companyName} search`}
-                  />
+                  {openTarget && (
+                    <Link
+                      href={`/prospects/${openTarget.id}` as Route}
+                      className={styles.historyRowLink}
+                      aria-label={`Open ${companyName} search`}
+                    />
+                  )}
                   <span className={styles.historyCompanyCell} data-label="Company">
                     <span className={styles.historyCompanyName}>{companyName}</span>
                     {domain && <span className={styles.historyCompanyDomain}>{domain}</span>}
@@ -490,26 +508,26 @@ function SearchHistoryTable({
                     {location ?? "Any location"}
                   </span>
                   <span className={styles.historyPeopleCell} data-label="People">
-                    {search.peopleCount}
+                    {group.peopleCount}
                   </span>
                   <span data-label="Status" data-discover-tour={index === 0 ? "search-status" : undefined}>
-                    <BadgePill badge={statusBadge(search.status)} />
+                    <BadgePill badge={groupStatusBadge(group.searches.map((search) => search.status))} />
                   </span>
-                  <span className={styles.historyCreatedCell} data-label="Created">
-                    {formatDateTime(search.createdAt)}
+                  <span className={styles.historyCreatedCell} data-label="Updated">
+                    {formatDateTime(group.latestActivityAt)}
                   </span>
                   <span className={styles.historyActionsCell} data-label="Actions">
                     <button
                       type="button"
                       className={`${styles.iconButton} ${styles.historyDeleteButton}`}
-                      aria-label={`Delete ${companyName} search`}
-                      title="Delete search"
+                      aria-label={`Delete ${companyName} from Discover`}
+                      title="Delete from Discover"
                       onClick={(event) => {
                         // Keep the row's stretched link from navigating (covers mouse
                         // and keyboard activation), then open the in-app dialog.
                         event.preventDefault();
                         event.stopPropagation();
-                        onRequestDelete(search, event.currentTarget);
+                        onRequestDelete(group, event.currentTarget);
                       }}
                     >
                       <Trash2 aria-hidden="true" />
@@ -565,7 +583,7 @@ function DeleteSearchDialog({
   onCancel,
   onConfirm
 }: {
-  search: ProspectSearchNode | null;
+  search: DiscoverCompanyGroupNode | null;
   deleting: boolean;
   error: string | null;
   onCancel: () => void;
@@ -598,7 +616,7 @@ function DeleteSearchDialog({
     return null;
   }
 
-  const companyName = search.company?.name ?? search.requestedCompany;
+  const companyName = search.company?.name ?? search.displayName;
   const titleId = "discover-delete-title";
   const descId = "discover-delete-desc";
 
@@ -624,10 +642,10 @@ function DeleteSearchDialog({
           <Trash2 />
         </span>
         <h2 id={titleId} className={styles.panelTitle}>
-          Delete this search?
+          {`Delete ${companyName} from Discover?`}
         </h2>
         <p id={descId} className={styles.confirmBody}>
-          {`This will remove the “${companyName}” search and its saved Discover results. Imports or sequences created separately will not be deleted.`}
+          {`This removes your ${companyName} search history and allocated Discover results. Shared cached company data and other users’ searches are not affected. Imports or sequences created separately will not be deleted.`}
         </p>
         {error && (
           <div className={`${styles.inlineAlert} ${styles.inlineAlertError}`} role="alert">
@@ -652,7 +670,7 @@ function DeleteSearchDialog({
             disabled={deleting}
           >
             {deleting ? <LoaderCircle aria-hidden="true" className={styles.spin} /> : <Trash2 aria-hidden="true" />}
-            {deleting ? "Deleting…" : "Delete search"}
+            {deleting ? "Deleting…" : "Delete"}
           </button>
         </div>
       </div>

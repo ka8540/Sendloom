@@ -1,9 +1,10 @@
+import { after } from "next/server";
 import { NextResponse } from "next/server";
 
 import { requireApiUser } from "@/lib/api-auth";
 import { recordAuditEvent } from "@/lib/audit";
 import { createRateLimitResponse, rateLimit } from "@/lib/rate-limit";
-import { pauseCampaign } from "@/services/campaigns";
+import { pauseCampaign, processPendingCampaignWork } from "@/services/campaigns";
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const auth = await requireApiUser();
@@ -20,6 +21,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const run = await pauseCampaign(id, auth.user.id);
 
   if (run) {
+    after(async () => {
+      await processPendingCampaignWork({ maxDurationMs: 55_000 });
+    });
     await recordAuditEvent({
       actor: { id: auth.user.id, email: auth.user.email },
       action: "sequence.paused",

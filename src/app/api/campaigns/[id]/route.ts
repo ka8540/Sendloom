@@ -1,3 +1,4 @@
+import { after } from "next/server";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -9,7 +10,7 @@ import { buildAttachmentKey, uploadObject } from "@/lib/storage";
 import { recordAuditEvent } from "@/lib/audit";
 import { prisma } from "@/lib/db";
 import type { ScheduleRule } from "@/lib/types";
-import { deleteCampaign, updateCampaignSchedule, updateCampaignSetup } from "@/services/campaigns";
+import { deleteCampaign, processPendingCampaignWork, updateCampaignSchedule, updateCampaignSetup } from "@/services/campaigns";
 
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
@@ -240,6 +241,9 @@ export async function DELETE(request: Request, context: { params: Promise<{ id: 
 
   const { id } = await context.params;
   const result = await deleteCampaign(id, auth.user.id);
+  after(async () => {
+    await processPendingCampaignWork({ maxDurationMs: 55_000 });
+  });
   await recordAuditEvent({
     actor: { id: auth.user.id, email: auth.user.email },
     action: "sequence.deleted",

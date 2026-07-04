@@ -11,6 +11,7 @@ import {
   PastScheduleConfirmationRequiredError,
   processPendingCampaignWork
 } from "@/services/campaigns";
+import { SequenceConcurrencyLimitError } from "@/services/sequence-limits";
 
 export const maxDuration = 60;
 
@@ -46,6 +47,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   try {
     run = await launchCampaign(id, auth.user.id, { convertPastScheduleToImmediate });
   } catch (error) {
+    if (error instanceof SequenceConcurrencyLimitError) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: 409 });
+    }
+
     if (error instanceof PastScheduleConfirmationRequiredError) {
       return NextResponse.json(
         {

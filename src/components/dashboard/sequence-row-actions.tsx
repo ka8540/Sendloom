@@ -7,7 +7,9 @@ import { useState, type MouseEvent } from "react";
 import { useErrorToast, useErrorToastEffect } from "@/components/error-toast-provider";
 import { AppConfirmDialog } from "@/components/app-confirm-dialog";
 import { PastScheduleRelaunchModal } from "@/components/past-schedule-relaunch-modal";
+import { SequenceLimitDialog } from "@/components/sequence-limit-dialog";
 import { PAST_SCHEDULE_CONFIRMATION_CODE } from "@/lib/campaign-scheduling";
+import { SEQUENCE_CONCURRENCY_LIMIT_CODE } from "@/lib/sequence-limit-codes";
 import styles from "./overview-command-center.module.css";
 
 const DELETE_SEQUENCE_ERROR = "This sequence could not be deleted. Please try again.";
@@ -38,6 +40,9 @@ export function SequenceRowActions({
   const [pastScheduleConverting, setPastScheduleConverting] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [limitOpen, setLimitOpen] = useState(false);
+  const [queueing, setQueueing] = useState(false);
+  const [queueError, setQueueError] = useState<string | null>(null);
   const { showSuccess } = useErrorToast();
   useErrorToastEffect(error, "Sequence action failed");
 
@@ -59,6 +64,11 @@ export function SequenceRowActions({
         if (response.status === 409 && payload.code === PAST_SCHEDULE_CONFIRMATION_CODE) {
           setPendingAction(null);
           setPastScheduleConfirmOpen(true);
+          return;
+        }
+        if (response.status === 409 && payload.code === SEQUENCE_CONCURRENCY_LIMIT_CODE) {
+          setPendingAction(null);
+          setLimitOpen(true);
           return;
         }
 
@@ -93,6 +103,12 @@ export function SequenceRowActions({
 
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
+        if (response.status === 409 && payload.code === SEQUENCE_CONCURRENCY_LIMIT_CODE) {
+          setPastScheduleConfirmOpen(false);
+          setPastScheduleConverting(false);
+          setLimitOpen(true);
+          return;
+        }
         setError(payload.error ?? "Could not relaunch the sequence.");
         setPastScheduleConverting(false);
         return;
@@ -142,6 +158,32 @@ export function SequenceRowActions({
     }
   }
 
+  async function waitForSlot() {
+    if (queueing) return;
+    setQueueing(true);
+    setQueueError(null);
+    try {
+      const response = await fetch(`/api/campaigns/${campaignId}/wait-for-slot`, { method: "POST" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setQueueError(payload.error ?? "Could not queue this sequence.");
+        setQueueing(false);
+        return;
+      }
+      setLimitOpen(false);
+      setQueueing(false);
+      showSuccess(
+        payload.status === "STARTED"
+          ? "A slot became available and the sequence started."
+          : "Sequence queued. It will start automatically when a slot becomes available."
+      );
+      router.refresh();
+    } catch {
+      setQueueError("Could not queue this sequence.");
+      setQueueing(false);
+    }
+  }
+
   async function handleResume(event: MouseEvent<HTMLButtonElement>) {
     event.stopPropagation();
     if (pendingAction) {
@@ -155,6 +197,11 @@ export function SequenceRowActions({
       const response = await fetch(`/api/campaigns/${campaignId}/resume`, { method: "POST" });
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
+        if (response.status === 409 && payload.code === SEQUENCE_CONCURRENCY_LIMIT_CODE) {
+          setPendingAction(null);
+          setLimitOpen(true);
+          return;
+        }
         setError(payload.error ?? "Could not resume the sequence.");
         setPendingAction(null);
         return;
@@ -308,6 +355,16 @@ export function SequenceRowActions({
         if (pendingAction !== "delete") {
           setDeleteConfirmOpen(false);
         }
+      }}
+    />
+    <SequenceLimitDialog
+      open={limitOpen}
+      kind="concurrency"
+      loading={queueing}
+      error={queueError}
+      onWaitForSlot={waitForSlot}
+      onClose={() => {
+        if (!queueing) setLimitOpen(false);
       }}
     />
     </>

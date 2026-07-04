@@ -570,7 +570,16 @@ export class ProspectSearchService {
     // 4) Materialize the shared dataset into THIS user's own records. The shared
     // cache only holds normalized public data — the user-owned company/people/
     // search records (and their ownership, exports, suppression) stay private.
-    const processed = await this.materializeDataset(userId, company, cacheResult.dataset);
+    // Allocation is CAPPED: the shared pool may hold many more candidates (other
+    // users' expansions accumulate there), but this search only ever receives
+    // its own `maxResults` batch, recorded as ProspectSearchPerson grants.
+    const processed = await this.materializeDataset(
+      userId,
+      search,
+      company,
+      cacheResult.dataset,
+      cacheResult.source === "CACHE" ? "CACHE" : "PROVIDER"
+    );
 
     const cacheHit = cacheResult.source === "CACHE";
     logDiscoverCacheEvent({
@@ -714,11 +723,21 @@ export class ProspectSearchService {
    * into the requesting user's own company/position/people records. Shared by
    * both the cache-hit and provider paths so behavior is identical. No AI runs
    * here; categories and emails are already resolved in the dataset.
+   *
+   * The user only ever receives their own allocation: at most `maxResults`
+   * people in stable provider order, each recorded as a ProspectSearchPerson
+   * grant. The shared pool may hold far more candidates (other users' "Add 10
+   * more" expansions accumulate there) — those are never materialized here, so
+   * the backend cannot return unallocated global candidates. Re-running the
+   * same search (a retry) keeps its existing grants and only tops up to the
+   * cap, so retries never inflate an allocation.
    */
   private async materializeDataset(
     userId: string,
+    search: ProspectSearch,
     company: ProspectCompany,
-    dataset: ResolvedDataset
+    dataset: ResolvedDataset,
+    allocationSource: "CACHE" | "PROVIDER"
   ): Promise<number> {
     const updatedCompany = await this.prisma.prospectCompany.update({
       where: { id: company.id },
@@ -734,9 +753,27 @@ export class ProspectSearchService {
       }
     });
 
-    // One position node per category that has people.
+    // Existing grants for THIS search (a retry after a partial failure keeps
+    // them) — they count against the cap and are never allocated twice.
+    const existingAllocations = await this.prisma.prospectSearchPerson.findMany({
+      where: { searchId: search.id }
+    });
+    const allocatedPersonIds = existingAllocations.map((row) => row.personId);
+    const allocatedPeople =
+      allocatedPersonIds.length > 0
+        ? await this.prisma.prospectPerson.findMany({ where: { id: { in: allocatedPersonIds } } })
+        : [];
+    const allocatedProfileIds = new Set(allocatedPeople.map((person) => person.sourceProfileId));
+
+    const limit = search.maxResults > 0 ? search.maxResults : resolveResultsPerSearch();
+    const capacity = Math.max(0, limit - existingAllocations.length);
+    const selected = dataset.people
+      .filter((person) => !allocatedProfileIds.has(person.sourceProfileId))
+      .slice(0, capacity);
+
+    // One position node per category that has allocated people.
     const rawTitlesByCategory = new Map<PositionCategory, Set<string>>();
-    for (const person of dataset.people) {
+    for (const person of selected) {
       const category = coercePositionCategory(person.positionCategory);
       if (!rawTitlesByCategory.has(category)) {
         rawTitlesByCategory.set(category, new Set());
@@ -761,8 +798,9 @@ export class ProspectSearchService {
       positionMap.set(category, position.id);
     }
 
-    let processed = 0;
-    for (const person of dataset.people) {
+    let processed = existingAllocations.length;
+    let allocationOrder = existingAllocations.length;
+    for (const person of selected) {
       const category = coercePositionCategory(person.positionCategory);
       const positionId = positionMap.get(category) ?? positionMap.get("OTHER");
       if (!positionId) {
@@ -787,11 +825,25 @@ export class ProspectSearchService {
         emailPattern: person.emailPattern,
         emailSource: person.emailSource
       };
-      await this.prisma.prospectPerson.upsert({
+      const materialized = await this.prisma.prospectPerson.upsert({
         where: { userId_sourceProfileId: { userId, sourceProfileId: person.sourceProfileId } },
         create: { userId, sourceProfileId: person.sourceProfileId, ...fields },
         update: fields
       });
+      // The grant itself. The (searchId, personId) unique key makes a concurrent
+      // duplicate write converge instead of double-allocating.
+      await this.prisma.prospectSearchPerson.upsert({
+        where: { searchId_personId: { searchId: search.id, personId: materialized.id } },
+        create: {
+          searchId: search.id,
+          personId: materialized.id,
+          userId,
+          allocationOrder,
+          allocationSource
+        },
+        update: {}
+      });
+      allocationOrder += 1;
       processed += 1;
     }
 

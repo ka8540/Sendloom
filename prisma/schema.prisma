@@ -18,6 +18,7 @@ enum CampaignStatus {
   DRAFT
   VALIDATED
   SCHEDULED
+  WAITING_FOR_SLOT
   RUNNING
   PAUSED
   COMPLETED
@@ -27,6 +28,7 @@ enum CampaignStatus {
 
 enum RunStatus {
   QUEUED
+  WAITING_FOR_SLOT
   RUNNING
   PAUSED
   COMPLETED
@@ -246,31 +248,36 @@ model Campaign {
   runs               CampaignRun[]
 
   @@index([userId])
+  @@index([userId, status])
 }
 
 model CampaignRun {
-  id               String         @id @default(cuid())
-  campaignId       String
-  status           RunStatus      @default(QUEUED)
-  launchType       String
-  scheduledFor     DateTime?
-  startedAt        DateTime?
-  completedAt      DateTime?
-  progressSnapshot Json?
-  totalRecipients  Int            @default(0)
-  sentCount        Int            @default(0)
-  failedCount      Int            @default(0)
-  suppressedCount  Int            @default(0)
-  invalidCount     Int            @default(0)
-  openedCount      Int            @default(0)
-  clickedCount     Int            @default(0)
-  repliedCount     Int            @default(0)
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
-  campaign         Campaign       @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  recipientJobs    RecipientJob[]
+  id                     String         @id @default(cuid())
+  campaignId             String
+  status                 RunStatus      @default(QUEUED)
+  launchType             String
+  scheduledFor           DateTime?
+  waitingForSlotAt       DateTime?
+  executionSlotClaimedAt DateTime?
+  startedAt              DateTime?
+  completedAt            DateTime?
+  progressSnapshot       Json?
+  totalRecipients        Int            @default(0)
+  sentCount              Int            @default(0)
+  failedCount            Int            @default(0)
+  suppressedCount        Int            @default(0)
+  invalidCount           Int            @default(0)
+  openedCount            Int            @default(0)
+  clickedCount           Int            @default(0)
+  repliedCount           Int            @default(0)
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
+  campaign               Campaign       @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  recipientJobs          RecipientJob[]
 
   @@index([campaignId, status])
+  @@index([status, executionSlotClaimedAt])
+  @@index([status, waitingForSlotAt, id])
 }
 
 model RecipientJob {
@@ -578,13 +585,41 @@ model ProspectPerson {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  user     User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  company  ProspectCompany         @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  position ProspectCompanyPosition @relation(fields: [positionId], references: [id], onDelete: Restrict)
+  user        User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company     ProspectCompany         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  position    ProspectCompanyPosition @relation(fields: [positionId], references: [id], onDelete: Restrict)
+  allocations ProspectSearchPerson[]
 
   @@unique([userId, sourceProfileId])
   @@index([companyId, positionId])
   @@index([userId, emailStatus])
+}
+
+// One person GRANTED to one user-owned search action. This is the ownership
+// boundary between the shared cross-user Discover cache (which may hold far more
+// candidates than any one user is entitled to) and what a user actually
+// receives: an initial search allocates at most `maxResults` people, and each
+// "Add 10 more" expansion allocates at most one more batch. Every user-facing
+// count (grouped dashboard people, role tabs, exports) derives from these rows —
+// never from the shared cache pool size. allocationSource records how the grant
+// happened (CACHE | PROVIDER | ADD_MORE_CACHE | ADD_MORE_PROVIDER | BACKFILL)
+// and allocationOrder preserves the deterministic batch order for repair.
+model ProspectSearchPerson {
+  id               String   @id @default(cuid())
+  searchId         String
+  personId         String
+  userId           String
+  allocationOrder  Int      @default(0)
+  allocationSource String   @default("CACHE")
+  allocatedAt      DateTime @default(now())
+
+  search ProspectSearch @relation(fields: [searchId], references: [id], onDelete: Cascade)
+  person ProspectPerson @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  @@unique([searchId, personId])
+  @@index([personId])
+  @@index([searchId, allocationOrder])
+  @@index([userId, searchId])
 }
 
 model ProspectSearch {
@@ -623,9 +658,10 @@ model ProspectSearch {
   updatedAt              DateTime  @updatedAt
   completedAt            DateTime?
 
-  user       User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  company    ProspectCompany?          @relation(fields: [companyId], references: [id], onDelete: SetNull)
-  expansions DiscoverSearchExpansion[]
+  user        User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company     ProspectCompany?          @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  expansions  DiscoverSearchExpansion[]
+  allocations ProspectSearchPerson[]
 
   @@index([userId, createdAt])
   @@index([status])

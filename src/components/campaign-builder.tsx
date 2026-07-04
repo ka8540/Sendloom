@@ -4,9 +4,14 @@ import { FilePlus2, FileText, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
-import { useErrorToastEffect } from "@/components/error-toast-provider";
+import { useErrorToast, useErrorToastEffect } from "@/components/error-toast-provider";
+import { SequenceLimitDialog } from "@/components/sequence-limit-dialog";
 import { mergeAttachmentFiles } from "@/lib/campaign-attachments";
 import { convertScheduledLocalInputToUtc, fallbackTimeZones } from "@/lib/schedule";
+import {
+  SEQUENCE_CONCURRENCY_LIMIT_CODE,
+  SEQUENCE_STORAGE_LIMIT_CODE
+} from "@/lib/sequence-limit-codes";
 import styles from "./campaign-builder.module.css";
 
 type Option = {
@@ -48,6 +53,7 @@ export function CampaignBuilder(props: {
 }) {
   const router = useRouter();
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
+  const { showSuccess } = useErrorToast();
   const [state, setState] = useState<{ pending: boolean; error?: string }>({ pending: false });
   const [attachments, setAttachments] = useState<File[]>([]);
   const [selectedImportId, setSelectedImportId] = useState(props.imports[0]?.id ?? "");
@@ -56,6 +62,10 @@ export function CampaignBuilder(props: {
   const [selectedWeekdays, setSelectedWeekdays] = useState<number[]>([1]);
   const [browserTimeZone, setBrowserTimeZone] = useState(DEFAULT_BROWSER_TIME_ZONE);
   const [selectedTimeZone, setSelectedTimeZone] = useState(DEFAULT_BROWSER_TIME_ZONE);
+  const [limitDialog, setLimitDialog] = useState<"concurrency" | "storage" | null>(null);
+  const [limitCampaignId, setLimitCampaignId] = useState<string | null>(null);
+  const [queueing, setQueueing] = useState(false);
+  const [queueError, setQueueError] = useState<string | null>(null);
   const [selectedMappingId, setSelectedMappingId] = useState(() => {
     const firstImportId = props.imports[0]?.id;
     return props.mappings.find((mapping) => mapping.importId === firstImportId)?.id ?? "";
@@ -209,6 +219,20 @@ export function CampaignBuilder(props: {
 
     if (!response.ok) {
       const payload = await response.json();
+      if (payload.code === SEQUENCE_STORAGE_LIMIT_CODE) {
+        setLimitDialog("storage");
+        setState({ pending: false });
+        return;
+      }
+      if (payload.code === SEQUENCE_CONCURRENCY_LIMIT_CODE && typeof payload.campaignId === "string") {
+        form.reset();
+        setAttachments([]);
+        setLimitCampaignId(payload.campaignId);
+        setLimitDialog("concurrency");
+        setState({ pending: false });
+        router.refresh();
+        return;
+      }
       setState({ pending: false, error: payload.error ?? "Campaign creation failed." });
       return;
     }
@@ -229,6 +253,32 @@ export function CampaignBuilder(props: {
     setState({ pending: false });
   }
 
+  async function waitForSlot() {
+    if (!limitCampaignId || queueing) return;
+    setQueueing(true);
+    setQueueError(null);
+    try {
+      const response = await fetch(`/api/campaigns/${limitCampaignId}/wait-for-slot`, { method: "POST" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setQueueError(payload.error ?? "Could not queue this sequence.");
+        setQueueing(false);
+        return;
+      }
+      setLimitDialog(null);
+      setQueueing(false);
+      showSuccess(
+        payload.status === "STARTED"
+          ? "A slot became available and the sequence started."
+          : "Sequence queued. It will start automatically when a slot becomes available."
+      );
+      router.refresh();
+    } catch {
+      setQueueError("Could not queue this sequence.");
+      setQueueing(false);
+    }
+  }
+
   const renderOptions = (options: Option[]) =>
     options.map((option) => (
       <option key={option.id} value={option.id}>
@@ -243,6 +293,7 @@ export function CampaignBuilder(props: {
   const needsReconnect = !hasSenders && (props.disconnectedSenderCount ?? 0) > 0;
 
   return (
+    <>
     <form className="form" onSubmit={onSubmit}>
       <div className="field">
         <label htmlFor="campaign-name">Sequence name</label>
@@ -476,5 +527,19 @@ export function CampaignBuilder(props: {
         <p className="muted">Finish the personalization fields for this list on the Imports page before creating the sequence.</p>
       ) : null}
     </form>
+    <SequenceLimitDialog
+      open={limitDialog !== null}
+      kind={limitDialog ?? "storage"}
+      loading={queueing}
+      error={queueError}
+      onWaitForSlot={waitForSlot}
+      onClose={() => {
+        if (!queueing) {
+          setLimitDialog(null);
+          setQueueError(null);
+        }
+      }}
+    />
+    </>
   );
 }

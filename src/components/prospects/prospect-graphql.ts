@@ -96,6 +96,35 @@ export type ProspectSearchNode = {
   company: CompanySummary | null;
 };
 
+// One consolidated Search History entry: every search the current user ran for
+// the same resolved company, grouped for display only. peopleCount is the
+// unique union of the user's allocated people — never the shared cache size.
+export type DiscoverGroupSearchNode = {
+  id: string;
+  requestedTitles: string[];
+  requestedLocations: string[];
+  status: ProspectSearchStatus;
+  peopleCount: number;
+  createdAt: string;
+  completedAt: string | null;
+};
+
+export type DiscoverCompanyGroupNode = {
+  id: string;
+  displayName: string;
+  requestedRoles: string[];
+  locations: string[];
+  peopleCount: number;
+  latestActivityAt: string;
+  company: {
+    id: string;
+    name: string;
+    officialDomain: string | null;
+    officialWebsiteDomain: string | null;
+  } | null;
+  searches: DiscoverGroupSearchNode[];
+};
+
 export type DiscoverExpansionStatus = "PENDING" | "PROCESSING" | "READY" | "FAILED";
 
 export type DiscoverSearchExpansion = {
@@ -147,6 +176,19 @@ export type CompanyEmailStatusCount = {
   count: number;
 };
 
+// One of the current user's own searches for a company (grouped detail data:
+// role chips + role-targeted "Add 10 more"). positionCategories reflects only
+// the people ALLOCATED to that search.
+export type CompanySearchNode = {
+  id: string;
+  status: ProspectSearchStatus;
+  requestedTitles: string[];
+  requestedLocations: string[];
+  positionCategories: PositionCategory[];
+  peopleCount: number;
+  createdAt: string;
+};
+
 export type CompanyDetail = {
   id: string;
   name: string;
@@ -167,6 +209,7 @@ export type CompanyDetail = {
   emailStatusCounts: CompanyEmailStatusCount[];
   patternEvidence: PatternEvidenceNode[];
   positions: PositionNode[];
+  searches: CompanySearchNode[];
 };
 
 export type PersonNode = {
@@ -300,6 +343,46 @@ export const PROSPECT_SEARCHES_QUERY = /* GraphQL */ `
   }
 `;
 
+// Grouped Search History: one row per company for the current user. Pagination
+// counts GROUPS (three Walmart role searches = one entry).
+export const DISCOVER_COMPANY_GROUPS_QUERY = /* GraphQL */ `
+  query DiscoverCompanyGroups($first: Int!, $after: String) {
+    discoverCompanyGroups(first: $first, after: $after) {
+      edges {
+        cursor
+        node {
+          id
+          displayName
+          requestedRoles
+          locations
+          peopleCount
+          latestActivityAt
+          company {
+            id
+            name
+            officialDomain
+            officialWebsiteDomain
+          }
+          searches {
+            id
+            requestedTitles
+            requestedLocations
+            status
+            peopleCount
+            createdAt
+            completedAt
+          }
+        }
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      totalCount
+    }
+  }
+`;
+
 // Load a single user-owned search by id for the detail page. Uses the existing
 // prospectSearch(id) resolver; resolves null when the id is unknown or owned by
 // another user (the detail page then shows a safe not-found state).
@@ -383,6 +466,15 @@ export const COMPANY_DETAIL_QUERY = /* GraphQL */ `
         displayName
         rawTitles
         peopleCount
+      }
+      searches {
+        id
+        status
+        requestedTitles
+        requestedLocations
+        positionCategories
+        peopleCount
+        createdAt
       }
     }
   }
@@ -544,6 +636,15 @@ export const REFRESH_COMPANY_EMAIL_FORMAT_MUTATION = /* GraphQL */ `
         rawTitles
         peopleCount
       }
+      searches {
+        id
+        status
+        requestedTitles
+        requestedLocations
+        positionCategories
+        peopleCount
+        createdAt
+      }
     }
   }
 `;
@@ -595,6 +696,15 @@ export const DISCOVER_COMPANY_EMAIL_FORMAT_MUTATION = /* GraphQL */ `
         displayName
         rawTitles
         peopleCount
+      }
+      searches {
+        id
+        status
+        requestedTitles
+        requestedLocations
+        positionCategories
+        peopleCount
+        createdAt
       }
     }
   }
@@ -659,6 +769,15 @@ export const SET_COMPANY_EMAIL_INFERENCE_OVERRIDE_MUTATION = /* GraphQL */ `
         displayName
         rawTitles
         peopleCount
+      }
+      searches {
+        id
+        status
+        requestedTitles
+        requestedLocations
+        positionCategories
+        peopleCount
+        createdAt
       }
     }
   }
