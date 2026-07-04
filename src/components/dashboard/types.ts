@@ -13,7 +13,7 @@ export type SequenceStatusTone =
   | "paused"
   | "draft";
 
-export type SequenceHealthTone = "clean" | "issues" | "syncing" | "idle";
+export type SequenceHealthTone = "clean" | "issues" | "skipped" | "syncing" | "idle";
 
 // How the sequence was scheduled. Mirrors Campaign.scheduleType in the DB
 // ("immediate" | "once" | "recurring"); legacy/missing values normalize to
@@ -48,6 +48,8 @@ export type SequenceRowData = {
   health: {
     label: string;
     tone: SequenceHealthTone;
+    hint?: string;
+    ariaLabel?: string;
   };
   lastActivityLabel: string;
   lastActivityAt: string;
@@ -74,7 +76,9 @@ export type ActivityEventType =
   | "discover_people_added"
   | "discover_results_exported"
   | "finder_email_found"
-  | "finder_domain_search";
+  | "finder_domain_search"
+  | "sequence_run_skipped"
+  | "delivery_failure_recorded";
 
 export type ActivityItem = {
   id: string;

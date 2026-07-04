@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-// Configure the AI web-search discovery gate before the env is first read.
 process.env.OPENAI_API_KEY = "sk-test";
 process.env.PROSPECT_AI_ENABLED = "true";
 process.env.PROSPECT_AI_MODEL = "";
@@ -9,65 +8,71 @@ process.env.PROSPECT_EMAIL_FORMAT_WEB_SEARCH_ENABLED = "true";
 
 import {
   DEFAULT_PROSPECT_EMAIL_FORMAT_MODEL,
+  EMAIL_FORMAT_MAX_OUTPUT_TOKENS,
+  OPENAI_EMAIL_FORMAT_INSTRUCTIONS,
   OPENAI_EMAIL_FORMAT_JSON_SCHEMA,
   OpenAIEmailFormatDiscoveryService,
   OpenAIWebSearchCaller,
+  buildEmailFormatDiscoveryInput,
   type EmailFormatWebSearchCaller,
   discoveryResultToEvidenceBundle,
-  normalizeDiscoveryPattern,
   validateDiscoveryResult
 } from "@/services/prospects/openai-email-format-discovery";
 import { createAiBudget } from "@/services/prospects/prospect-ai";
 
 const APPLIED_MATERIALS_RAW = {
-  companyName: "Applied Materials, Inc.",
-  websiteDomain: "appliedmaterials.com",
   selectedEmailDomain: "amat.com",
   selectedPattern: "first_last",
-  confidence: "HIGH",
-  reasonSummary: "Public evidence shows first_last on amat.com.",
-  evidence: [
+  domainConfidence: "HIGH",
+  patternConfidence: "HIGH",
+  supportingSources: [
     {
-      sourceName: "RocketReach",
-      sourceUrl: "https://rocketreach.co/applied-materials-email-format",
+      label: "RocketReach",
+      url: "https://rocketreach.co/applied-materials-email-format",
       sourceType: "rocketreach",
-      patternRaw: "[first]_[last]",
-      normalizedPattern: "first_last",
-      exampleEmail: "jane_doe@amat.com",
-      emailDomain: "amat.com",
+      claimedDomain: "amat.com",
+      claimedPattern: "first_last",
       percentage: 84.7,
-      quote: "most common"
+      exampleEmail: "jane_doe@amat.com"
     }
-  ]
-};
+  ],
+  conflictingSourceCount: 0,
+  decisionCode: "VERIFIED_EXAMPLE"
+} as const;
 
 const ESRI_RAW = {
-  companyName: "Esri",
-  websiteDomain: "esri.com",
   selectedEmailDomain: "esri.com",
   selectedPattern: "flast",
-  confidence: "HIGH",
-  reasonSummary: "RocketReach shows flast on esri.com.",
-  evidence: [
+  domainConfidence: "HIGH",
+  patternConfidence: "HIGH",
+  supportingSources: [
     {
-      sourceName: "RocketReach",
-      sourceUrl: "https://rocketreach.co/esri-email-format",
+      label: "RocketReach",
+      url: "https://rocketreach.co/esri-email-format",
       sourceType: "rocketreach",
-      patternRaw: "[first_initial][last]",
-      normalizedPattern: "flast",
-      exampleEmail: "jdoe@esri.com",
-      emailDomain: "esri.com",
+      claimedDomain: "esri.com",
+      claimedPattern: "flast",
       percentage: 84.7,
-      quote: "most common"
+      exampleEmail: "jdoe@esri.com"
     }
-  ]
-};
+  ],
+  conflictingSourceCount: 0,
+  decisionCode: "VERIFIED_EXAMPLE"
+} as const;
 
-function fakeCaller(response: unknown): EmailFormatWebSearchCaller & { search: ReturnType<typeof vi.fn> } {
+function fakeCaller(...responses: unknown[]): EmailFormatWebSearchCaller & { search: ReturnType<typeof vi.fn> } {
+  let index = 0;
   return {
     enabled: true,
     model: "gpt-5.5",
-    search: vi.fn(async () => response)
+    search: vi.fn(async () => {
+      const response = responses[Math.min(index, responses.length - 1)];
+      index += 1;
+      if (response instanceof Error) {
+        throw response;
+      }
+      return response;
+    })
   };
 }
 
@@ -77,17 +82,20 @@ afterEach(() => {
 });
 
 describe("OpenAIWebSearchCaller", () => {
-  it("calls the Responses API with the web_search tool and the configured model (#1, #2)", async () => {
+  it("uses strict structured output, web search, usage metrics, and a small output cap", async () => {
     const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => ({
       ok: true,
-      json: async () => ({ output_text: JSON.stringify(ESRI_RAW) })
+      json: async () => ({
+        output_text: JSON.stringify(ESRI_RAW),
+        usage: { input_tokens: 102, output_tokens: 74 }
+      })
     }));
     vi.stubGlobal("fetch", fetchMock);
 
     const caller = new OpenAIWebSearchCaller({ apiKey: "sk-test", model: "gpt-5.5", enabled: true });
     const result = await caller.search({
-      instructions: "Find the format.",
-      input: "{}",
+      instructions: OPENAI_EMAIL_FORMAT_INSTRUCTIONS,
+      input: JSON.stringify(buildEmailFormatDiscoveryInput({ companyName: "Esri", websiteDomain: "esri.com" })),
       schemaName: "email_format_discovery",
       jsonSchema: OPENAI_EMAIL_FORMAT_JSON_SCHEMA as unknown as Record<string, unknown>
     });
@@ -95,116 +103,132 @@ describe("OpenAIWebSearchCaller", () => {
     const body = JSON.parse(String(fetchMock.mock.calls[0][1]!.body)) as {
       model: string;
       tools: Array<{ type: string }>;
-      text: { format: { type: string } };
+      max_output_tokens: number;
+      instructions: string;
+      input: string;
+      text: { format: { type: string; strict: boolean; schema: Record<string, unknown> } };
     };
     expect(body.tools).toEqual([{ type: "web_search" }]);
     expect(body.model).toBe("gpt-5.5");
-    expect(body.text.format.type).toBe("json_schema");
-    // #3: structured output is parsed back into an object.
-    expect(result).toMatchObject({ companyName: "Esri", selectedEmailDomain: "esri.com" });
+    expect(body.max_output_tokens).toBe(EMAIL_FORMAT_MAX_OUTPUT_TOKENS);
+    expect(body.max_output_tokens).toBeLessThanOrEqual(400);
+    expect(body.text.format).toMatchObject({ type: "json_schema", strict: true });
+    expect(JSON.stringify(body.text.format.schema)).not.toMatch(/reasonSummary|rationale|quote|snippet/i);
+    expect(body.instructions).toContain("Do not return quotes, snippets, prose, rationale");
+    expect(body.input).not.toMatch(/linkedin|targetRoles|employee list|<html/i);
+    expect(result).toMatchObject({ selectedEmailDomain: "esri.com", selectedPattern: "flast" });
+    expect(caller.getLastUsage()).toEqual({ inputTokens: 102, outputTokens: 74 });
   });
 
   it("defaults to GPT-5.5 when PROSPECT_AI_MODEL is unset", () => {
     const caller = new OpenAIWebSearchCaller({ apiKey: "sk-test", enabled: true });
     expect(caller.model).toBe(DEFAULT_PROSPECT_EMAIL_FORMAT_MODEL);
-    expect(caller.model).toBe("gpt-5.5");
-  });
-});
-
-describe("normalizeDiscoveryPattern", () => {
-  it("prefers a supported normalizedPattern", () => {
-    expect(normalizeDiscoveryPattern({ normalizedPattern: "first_last" })).toBe("first_last");
-  });
-
-  it("maps bracket syntax from patternRaw", () => {
-    expect(normalizeDiscoveryPattern({ patternRaw: "[first_initial][last]" })).toBe("flast");
-  });
-
-  it("rejects unsupported pattern tokens (#4)", () => {
-    expect(normalizeDiscoveryPattern({ normalizedPattern: "weird", patternRaw: "weird" })).toBeNull();
   });
 });
 
 describe("validateDiscoveryResult", () => {
-  it("keeps a sourced, quantified Applied Materials result at HIGH (#7)", () => {
-    const result = validateDiscoveryResult(APPLIED_MATERIALS_RAW, { websiteDomain: "appliedmaterials.com" });
+  it("keeps website and sourced employee email domains distinct", () => {
+    const input = buildEmailFormatDiscoveryInput({
+      companyName: "Applied Materials",
+      websiteDomain: "appliedmaterials.com"
+    });
+    const result = validateDiscoveryResult(APPLIED_MATERIALS_RAW);
+    expect(input.websiteDomain).toBe("appliedmaterials.com");
     expect(result.selectedEmailDomain).toBe("amat.com");
     expect(result.selectedPattern).toBe("first_last");
-    expect(result.confidence).toBe("HIGH");
-    // Website domain and email domain stay separate.
-    expect(result.websiteDomain).toBe("appliedmaterials.com");
-    expect(result.selectedEmailDomain).not.toBe(result.websiteDomain);
+    expect(result.domainConfidence).toBe("HIGH");
   });
 
-  it("rejects an unsupported selected pattern (#4)", () => {
-    const result = validateDiscoveryResult({
-      ...APPLIED_MATERIALS_RAW,
-      selectedPattern: "weird_pattern",
-      evidence: [{ ...APPLIED_MATERIALS_RAW.evidence[0], normalizedPattern: "weird_pattern", patternRaw: "weird" }]
-    });
-    expect(result.selectedPattern).toBeNull();
+  it("rejects unsupported patterns, extra narrative fields, and selections absent from evidence", () => {
+    expect(() =>
+      validateDiscoveryResult({ ...APPLIED_MATERIALS_RAW, selectedPattern: "weird_pattern" })
+    ).toThrow();
+    expect(() =>
+      validateDiscoveryResult({ ...APPLIED_MATERIALS_RAW, rationale: "A long explanation." })
+    ).toThrow();
+    expect(() =>
+      validateDiscoveryResult({ ...APPLIED_MATERIALS_RAW, selectedEmailDomain: "example.com" })
+    ).toThrow(/absent/i);
   });
 
-  it("rejects a selected domain that is absent from the evidence (#5)", () => {
-    const result = validateDiscoveryResult({
-      ...ESRI_RAW,
-      selectedEmailDomain: "amat.com" // not present in the esri.com evidence
-    });
-    expect(result.selectedEmailDomain).toBeNull();
+  it("rejects personal domains rather than converting them", () => {
+    expect(() =>
+      validateDiscoveryResult({
+        ...APPLIED_MATERIALS_RAW,
+        selectedEmailDomain: "gmail.com",
+        supportingSources: [
+          {
+            ...APPLIED_MATERIALS_RAW.supportingSources[0],
+            claimedDomain: "gmail.com",
+            exampleEmail: "jane.doe@gmail.com"
+          }
+        ]
+      })
+    ).toThrow();
   });
 
-  it("rejects personal email domains in evidence and selection (#6)", () => {
-    const result = validateDiscoveryResult({
-      companyName: "Personal Co",
-      websiteDomain: "personalco.com",
-      selectedEmailDomain: "gmail.com",
-      selectedPattern: "first_last",
-      confidence: "HIGH",
-      reasonSummary: "x",
-      evidence: [
-        {
-          sourceName: "Blog",
-          sourceUrl: "https://example.test/post",
-          sourceType: "other",
-          patternRaw: null,
-          normalizedPattern: null,
-          exampleEmail: "jane.doe@gmail.com",
-          emailDomain: "gmail.com",
-          percentage: 99,
-          quote: null
-        }
-      ]
-    });
-    expect(result.selectedEmailDomain).toBeNull();
-    const bundle = discoveryResultToEvidenceBundle(result);
-    expect(bundle.domainEvidence).toHaveLength(0);
-  });
-
-  it("truncates over-long quotes", () => {
-    const longQuote = "x".repeat(500);
+  it("deduplicates canonical source claims and lowers confidence when sources conflict", () => {
     const result = validateDiscoveryResult({
       ...ESRI_RAW,
-      evidence: [{ ...ESRI_RAW.evidence[0], quote: longQuote }]
+      supportingSources: [
+        ESRI_RAW.supportingSources[0],
+        { ...ESRI_RAW.supportingSources[0], url: "https://rocketreach.co/esri-email-format#format" }
+      ],
+      conflictingSourceCount: 1
     });
-    expect((result.evidence[0].quote ?? "").length).toBeLessThanOrEqual(281);
+    expect(result.supportingSources).toHaveLength(1);
+    expect(result.domainConfidence).toBe("MEDIUM");
+    expect(result.patternConfidence).toBe("MEDIUM");
   });
 });
 
 describe("discoveryResultToEvidenceBundle", () => {
-  it("maps the Esri result onto domain + pattern evidence (#8)", () => {
-    const result = validateDiscoveryResult(ESRI_RAW, { websiteDomain: "esri.com" });
-    const bundle = discoveryResultToEvidenceBundle(result, { now: () => new Date("2026-06-18T00:00:00.000Z") });
+  it("maps compact structured claims without storing a narrative", () => {
+    const bundle = discoveryResultToEvidenceBundle(validateDiscoveryResult(ESRI_RAW), {
+      now: () => new Date("2026-06-18T00:00:00.000Z")
+    });
     expect(bundle.domainEvidence?.[0]).toMatchObject({
       emailDomain: "esri.com",
       observedPattern: "flast",
       sourceType: "public_format_page"
     });
     expect(bundle.patternEvidence?.[0]).toMatchObject({ pattern: "flast", emailDomain: "esri.com" });
+    expect(bundle.decision).toEqual({
+      decisionCode: "VERIFIED_EXAMPLE",
+      supportingSourceCount: 1,
+      conflictingSourceCount: 0
+    });
+    expect(bundle).not.toHaveProperty("reasonSummary");
   });
 });
 
 describe("OpenAIEmailFormatDiscoveryService", () => {
-  it("runs the web search once per company and consumes the email_pattern budget (#9)", async () => {
+  it("logs only safe resolution metadata and real token usage", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const caller: EmailFormatWebSearchCaller = {
+      enabled: true,
+      model: "gpt-5.5",
+      search: vi.fn(async () => APPLIED_MATERIALS_RAW),
+      getLastUsage: () => ({ inputTokens: 120, outputTokens: 80 })
+    };
+    const service = new OpenAIEmailFormatDiscoveryService({ caller });
+
+    await service.findEvidence({ companyName: "Applied Materials", officialWebsiteDomain: "appliedmaterials.com" });
+    const logEntry = info.mock.calls.find((call) => call[0] === "[email-format-ai] Resolution completed.")?.[1];
+    expect(logEntry).toEqual({
+      operation: "web_search_resolution",
+      model: "gpt-5.5",
+      sourceCount: 1,
+      cacheHit: false,
+      aiUsed: true,
+      decisionCode: "VERIFIED_EXAMPLE",
+      inputTokens: 120,
+      outputTokens: 80
+    });
+  });
+
+  it("runs once, consumes the shared budget, and sends only the compact identity payload", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => {});
     const caller = fakeCaller(APPLIED_MATERIALS_RAW);
     const service = new OpenAIEmailFormatDiscoveryService({ caller });
     const budget = createAiBudget();
@@ -212,51 +236,70 @@ describe("OpenAIEmailFormatDiscoveryService", () => {
     const bundle = await service.findEvidence({
       companyName: "Applied Materials, Inc.",
       officialWebsiteDomain: "appliedmaterials.com",
+      knownLinkedinUrl: "https://linkedin.com/company/applied-materials",
+      targetRoles: ["Engineer", "Employee One", "Employee Two"],
       budget
     });
 
     expect(caller.search).toHaveBeenCalledTimes(1);
+    const request = caller.search.mock.calls[0][0];
+    expect(Object.keys(JSON.parse(request.input))).toEqual(["company", "websiteDomain", "suggestedQueries"]);
+    expect(request.input).not.toContain("linkedin.com");
+    expect(request.input).not.toContain("Employee One");
+    expect(request.maxOutputTokens).toBeLessThanOrEqual(400);
     expect(bundle.domainEvidence?.[0]).toMatchObject({ emailDomain: "amat.com", observedPattern: "first_last" });
-    // The budget is now exhausted so the deterministic selector — not a second
-    // model call — chooses the final format.
     expect(budget.canCall("email_pattern")).toBe(false);
 
-    const second = await service.findEvidence({
+    await service.findEvidence({
       companyName: "Applied Materials, Inc.",
       officialWebsiteDomain: "appliedmaterials.com",
       budget
     });
     expect(caller.search).toHaveBeenCalledTimes(1);
-    expect(second.domainEvidence ?? []).toHaveLength(0);
   });
 
-  it("does not run a web search when a source URL is pasted", async () => {
-    const caller = fakeCaller(ESRI_RAW);
-    const service = new OpenAIEmailFormatDiscoveryService({ caller });
-
-    const bundle = await service.findEvidence({
-      companyName: "Esri",
-      officialWebsiteDomain: "esri.com",
-      sourceUrl: "https://rocketreach.co/esri-email-format"
-    });
-
-    expect(caller.search).not.toHaveBeenCalled();
-    expect(bundle).toEqual({});
-  });
-
-  it("degrades to an empty bundle when the web search throws", async () => {
-    vi.spyOn(console, "warn").mockImplementation(() => {});
+  it("retries invalid JSON once using the same compact payload", async () => {
     vi.spyOn(console, "info").mockImplementation(() => {});
-    const caller: EmailFormatWebSearchCaller = {
-      enabled: true,
-      model: "gpt-5.5",
-      search: vi.fn(async () => {
-        throw new Error("rate limited");
-      })
-    };
+    const caller = fakeCaller({ bad: true }, ESRI_RAW);
     const service = new OpenAIEmailFormatDiscoveryService({ caller });
 
     const bundle = await service.findEvidence({ companyName: "Esri", officialWebsiteDomain: "esri.com" });
-    expect(bundle).toEqual({});
+    expect(caller.search).toHaveBeenCalledTimes(2);
+    expect(caller.search.mock.calls[0][0].input).toBe(caller.search.mock.calls[1][0].input);
+    expect(caller.search.mock.calls[1][0].instructions).toContain("corrected JSON only");
+    expect(bundle.patternEvidence?.[0]?.pattern).toBe("flast");
+  });
+
+  it("stops after one retry and falls back safely", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    const caller = fakeCaller({ bad: true }, { stillBad: true });
+    const service = new OpenAIEmailFormatDiscoveryService({ caller });
+
+    await expect(service.findEvidence({ companyName: "Esri", officialWebsiteDomain: "esri.com" }))
+      .resolves.toEqual({});
+    expect(caller.search).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not retry transport failures as though they were invalid JSON", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    const caller = fakeCaller(new Error("rate limited"));
+    const service = new OpenAIEmailFormatDiscoveryService({ caller });
+
+    await expect(service.findEvidence({ companyName: "Esri", officialWebsiteDomain: "esri.com" }))
+      .resolves.toEqual({});
+    expect(caller.search).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not run web search for a pasted source URL", async () => {
+    const caller = fakeCaller(ESRI_RAW);
+    const service = new OpenAIEmailFormatDiscoveryService({ caller });
+    await expect(service.findEvidence({
+      companyName: "Esri",
+      officialWebsiteDomain: "esri.com",
+      sourceUrl: "https://rocketreach.co/esri-email-format"
+    })).resolves.toEqual({});
+    expect(caller.search).not.toHaveBeenCalled();
   });
 });

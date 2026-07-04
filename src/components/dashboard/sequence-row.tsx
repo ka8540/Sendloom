@@ -12,6 +12,7 @@ import styles from "./overview-command-center.module.css";
 const HEALTH_TONE_CLASS: Record<SequenceHealthTone, string> = {
   clean: styles.sequenceHealthClean,
   issues: styles.sequenceHealthIssues,
+  skipped: styles.sequenceHealthSkipped,
   syncing: styles.sequenceHealthSyncing,
   idle: styles.sequenceHealthIdle
 };
@@ -98,7 +99,12 @@ export function SequenceRow({
               ) : null}
             </p>
           ) : (
-            <p className={`${styles.sequenceHealth} ${HEALTH_TONE_CLASS[sequence.health.tone]}`}>
+            <p
+              className={`${styles.sequenceHealth} ${HEALTH_TONE_CLASS[sequence.health.tone]}`}
+              title={sequence.health.hint}
+              aria-label={sequence.health.ariaLabel}
+              tabIndex={sequence.health.hint ? 0 : undefined}
+            >
               <span className={styles.sequenceHealthDot} aria-hidden="true" />
               {sequence.health.label}
             </p>

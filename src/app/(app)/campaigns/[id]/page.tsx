@@ -743,7 +743,10 @@ export default async function CampaignDetailPage({
           </div>
           <span className={styles.metricLabel}>Audience size</span>
           <strong className={styles.metricValue}>{displayRun?.totalRecipients ?? campaign.import.rowCount ?? 0}</strong>
-          <span className={styles.metricMeta}>{isFromPreviousRun ? "Last run" : "This run"}</span>
+          <span className={styles.metricMeta}>
+            {isFromPreviousRun ? "Last run" : "This run"}
+            {(displayRun?.suppressedCount ?? 0) > 0 ? ` · ${displayRun?.suppressedCount} skipped` : ""}
+          </span>
         </article>
         <article className={styles.metricCard}>
           <div className={styles.metricIcon}>

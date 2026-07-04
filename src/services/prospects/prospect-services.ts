@@ -29,11 +29,11 @@ export function createProspectServices(prisma: PrismaClient, aiClient?: AiClient
   const apify = new ApifyProfileSearchService();
   const companyResolution = new CompanyResolutionService(ai);
   const roleClassifier = new RoleClassificationService(prisma, ai);
-  // Primary email-format evidence comes from GPT web search; the deterministic
-  // source-URL parser remains as the manual/paste fallback.
+  // Parse deterministic public/source-URL evidence first. AI web search is the
+  // fallback only when those structured claims cannot select a format safely.
   const emailEvidence = new CompositeEmailEvidenceProvider([
-    new OpenAIEmailFormatDiscoveryService(),
-    new EmailFormatDiscoveryService({ warnWhenUnconfigured: false })
+    new EmailFormatDiscoveryService({ warnWhenUnconfigured: false }),
+    new OpenAIEmailFormatDiscoveryService()
   ]);
   const emailDomain = new EmailDomainService(prisma, ai, emailEvidence);
   const discoverCache = new DiscoverSearchCacheService({ prisma });

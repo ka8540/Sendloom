@@ -1251,42 +1251,47 @@ The primary email-format discovery path is **AI web search**. When
 `PROSPECT_EMAIL_FORMAT_WEB_SEARCH_ENABLED=true`, `PROSPECT_AI_ENABLED=true`, and
 `OPENAI_API_KEY` is set, `OpenAIEmailFormatDiscoveryService` calls **GPT-5.5 via
 the OpenAI Responses API with the built-in `web_search` tool** (model overridable
-with `PROSPECT_AI_MODEL`; defaults to `gpt-5.5`). It is the only place an OpenAI
-HTTP request is made for this feature — never inside a resolver, never via Chat
-Completions, and no Serper/Brave/Google CSE is added for it.
+with `PROSPECT_AI_MODEL`; defaults to `gpt-5.5`). Ambiguous stored/source-URL
+claims may instead use the compact structured resolver. Neither path uses Chat
+Completions, and no Serper/Brave/Google CSE is added to the primary path.
 
-The model is asked to find PUBLIC work email-format evidence and return strict
-structured JSON only (`OPENAI_EMAIL_FORMAT_JSON_SCHEMA`): a `selectedEmailDomain`,
-`selectedPattern`, `confidence`, `reasonSummary`, and an `evidence[]` array of
-`{ sourceName, sourceUrl, sourceType, patternRaw, normalizedPattern, exampleEmail,
-emailDomain, percentage, quote }`. The developer prompt instructs it to extract
-the email domain from example work emails (not assume the website domain), prefer
-RocketReach/Hunter-style format pages, never fabricate a percentage or URL, never
-return personal domains, and never mark anything verified. It runs **once per
-company**, never per person.
+The pipeline is deterministic first. Existing/public-source evidence is reduced
+to structured claims (company, website domain, claimed email domain, supported
+normalized pattern, percentage, one example when available, source URL, and
+label), deduplicated, and ranked in normal TypeScript. Clear consensus, a strong
+dominant source, or a matching example is resolved without an AI call. Raw HTML,
+page boilerplate, navigation, employee lists, and previously generated prose are
+never included in the resolver payload.
 
-`validateDiscoveryResult` then validates the model output before it is trusted:
-public pattern notation is normalized (`[first_initial][last]` → `flast`,
-`[first]_[last]` → `first_last`), the example email domain wins over the website
-domain, unsupported patterns and personal/aggregator domains (gmail, yahoo,
-outlook, icloud, rocketreach.co, hunter.io, linkedin.com, …) are dropped, a
-selected domain/pattern must actually appear in the evidence, and `HIGH`
-confidence requires a sourced row that also has a percentage or example email.
-The cleaned evidence is mapped to the standard evidence bundle and the existing
-deterministic selector in `EmailDomainService` makes the final choice — so Esri
-resolves to `flast@esri.com` and Applied Materials to `first_last@amat.com`
-(website `appliedmaterials.com`, email domain `amat.com`) when public evidence
-supports it.
+AI is used only when structured evidence is unavailable or genuinely ambiguous.
+The web-search response and ambiguity resolver both use strict JSON schemas with
+supported pattern enums, confidence enums, source counts, and a decision code;
+they do not request or store a `reasonSummary`, narrative, quote, rationale, or
+chain-of-thought. Resolver input is capped at five unique structured sources,
+web-search output is capped at 400 tokens, and ambiguity-resolution output at 300
+tokens. Invalid structured output receives at most one JSON-only correction
+attempt using the same compact payload; transport failures are not retried as
+validation failures. A second invalid response becomes insufficient evidence /
+Needs review.
 
-Cost controls: the web search consumes the per-search `email_pattern` AI budget
-(so the deterministic selector, not a second model call, decides), HIGH-confidence
-results are cached on `ProspectCompany.emailFormatDiscoveredAt` for 7 days (the
-"Find with AI" path skips re-paying unless `force` is set), and each user is rate
-limited per hour and per day (`PROSPECT_EMAIL_FORMAT_AI_HOURLY_LIMIT` /
-`PROSPECT_EMAIL_FORMAT_AI_DAILY_LIMIT`, default 5/20). Logs record only safe
-metadata (company id/name, model, `webSearchUsed`, evidence count, selected
-domain/pattern, confidence, latency) — never the API key, prompt, raw page
-content, tokens, generated people, or personal emails.
+`validateDiscoveryResult` rejects unsupported patterns, personal/aggregator
+domains (gmail, yahoo, outlook, icloud, rocketreach.co, hunter.io, linkedin.com,
+…), extra narrative fields, and any selection absent from its source claims.
+Conflicting evidence lowers confidence. Website and employee email domains stay
+separate, so Applied Materials can resolve to website `appliedmaterials.com`,
+email domain `amat.com`, and pattern `first_last`. Inferred addresses are never
+marked verified.
+
+High-confidence structured results are cached for 30 days using normalized
+company/domain identity plus a discovery version. Browser refreshes, navigation,
+people selection, export, and Imports reuse the stored result. Explicit **Refresh
+with AI** is coalesced per company and reuses fresh stored source claims when
+available; stale/missing evidence may run one new web search. Safe logs include
+only operation, model, actual token counts when supplied by the SDK, source count,
+cache hit/miss, whether AI ran, and decision code — never prompts, source-page
+content, private people data, generated email lists, or credentials. Per-user
+hour/day limits remain (`PROSPECT_EMAIL_FORMAT_AI_HOURLY_LIMIT` /
+`PROSPECT_EMAIL_FORMAT_AI_DAILY_LIMIT`, default 5/20).
 
 **Fallbacks.** Pasting a specific public **source URL** routes to the deterministic
 `EmailFormatDiscoveryService` parser (no web search runs); a **manual override**
@@ -1585,7 +1590,8 @@ Behavior:
   `https://rocketreach.co/esri-email-format_b5c60d6df42e0c51` calls
   `refreshCompanyEmailFormat`, parses the source deterministically with no web
   search), and **Fix manually**. On success the card shows the email domain,
-  pattern, confidence, evidence source, and a reason summary; when unavailable it
+  pattern, confidence, source chips, and a compact agreement/conflict count; no
+  generated evidence narrative is displayed or requested. When unavailable it
   shows "No email format found yet. Use AI web search, paste a public source URL,
   or set it manually." All three paths regenerate existing people emails as
   inferred (never `VERIFIED`). Rate-limit / not-configured errors surface as safe
@@ -1803,3 +1809,124 @@ For Gmail authorization failures, render the panel (or `GmailReconnectNotice`) w
 ### Configuration
 
 `REPORT_PSEUDONYM_SECRET` and `REPORT_IDENTITY_ENCRYPTION_KEY` are server-only (never `NEXT_PUBLIC_`), required in production, and fall back to `SESSION_SECRET` in development. New Prisma models: `AppErrorEvent` and `IncidentReport` (migration `20260627120000_add_incident_reporting`).
+
+## 26. Automatic Delivery-Failure Detection (Gmail Bounce Monitoring)
+
+Gmail can accept a send and only later receive an asynchronous bounce from Mail Delivery Subsystem (e.g. `550 5.1.1 User Unknown`). This system detects those delivery-status notifications (DSNs) automatically, records the permanent failure evidence, marks the recipient **Skipped** (`SUPPRESSED`), adds the address to suppression with a hard-bounce reason, and blocks every future send to it.
+
+### Gmail permission (incremental authorization)
+
+- Sending uses `gmail.send`; bounce detection additionally requires the mailbox-read scope `gmail.readonly` (already part of `GOOGLE_CONNECT_SCOPES`, shared with reply sync). `gmail.metadata` is not sufficient — DSN bodies (`message/delivery-status` parts) are unreadable in metadata format, and `https://mail.google.com/` is deliberately NOT requested.
+- Senders connected before the read scope keep sending normally. Their capability shows **Permission required** until they reconnect (`SenderProfile.oauthScope` records what was actually granted; `senderHasBounceReadScope` checks it).
+- Google verification/consent copy must state: Sendloom reads only automated delivery-failure notifications (and replies to messages it sent) — never other mailbox content. See the Privacy page (`/privacy`, "How we use Google user data").
+
+### Architecture
+
+```
+sender connects (scope granted)
+  → users.watch registered on INBOX → Pub/Sub topic (GMAIL_PUBSUB_TOPIC)
+  → push → POST /api/webhooks/gmail-pubsub (authenticated, acks in <1s, work runs after the response)
+  → history.list from the stored per-sender history id (messageAdded only)
+  → per-message DSN filtering (metadata headers only) → format=full fetch for likely DSNs
+  → parse → classify → correlate → persist → advance history id
+```
+
+Key modules: `src/lib/gmail-dsn.ts` (pure detection/parsing/classification), `src/lib/gmail.ts` (watch/history/message API calls), `src/services/bounces.ts` (orchestration), `src/app/api/webhooks/gmail-pubsub/route.ts` (push endpoint), `src/app/api/senders/[id]/sync-bounces/route.ts` (one-time backfill).
+
+Per-sender state on `SenderProfile`: `gmailWatchHistoryId` (last processed position), `gmailWatchExpiresAt`, `gmailWatchStatus` (`ACTIVE`/`PERMISSION_REQUIRED`/`RECONNECT_REQUIRED`/`RENEWAL_FAILED`), `gmailWatchError` (safe category), `bounceLastSyncedAt`, `bounceBackfillCompletedAt` (migration `20260701120000_gmail_bounce_monitoring`).
+
+### Watch renewal and cron fallback
+
+Gmail watches expire after ~7 days. The existing campaign cron (`/api/cron/campaigns`) calls `renewExpiringGmailWatches()` (re-registers watches missing or expiring within 24h — idempotent, no-ops when nothing is due) and `syncDueSenderBounces()` (history-based fallback sync every ≥10 min per sender, so missed pushes — or a deployment without Pub/Sub — still converge). Persistent authorization failures mark the sender `RECONNECT_REQUIRED`; transient registration failures mark `RENEWAL_FAILED` and are retried on the next tick. Bounce-monitoring failures never block sending.
+
+### Pub/Sub webhook security
+
+`POST /api/webhooks/gmail-pubsub` accepts a push only when the shared URL token matches (`GMAIL_PUBSUB_VERIFICATION_TOKEN`, constant-time compare) or the Pub/Sub OIDC bearer validates (`GMAIL_PUBSUB_AUDIENCE`, optional `GMAIL_PUBSUB_SERVICE_ACCOUNT`). With neither configured it rejects everything. The payload is untrusted: it only names a mailbox; the sender is resolved server-side by `fromEmail` and all reads use that sender's own token. Pub/Sub message ids are deduplicated in Redis; malformed-but-authenticated bodies are acked (204) and dropped so poison messages never loop. Mailbox addresses, tokens, and bodies are never logged.
+
+### History processing, first sync, and bounded recovery
+
+`syncSenderBounces` pages `history.list` (messageAdded records only, capped at 200 messages/run) and advances `gmailWatchHistoryId` only after processing succeeds. A 404 (history id too old) triggers ONE bounded recovery pass: a narrow query (`from:mailer-daemon OR from:postmaster OR subject:"Delivery Status Notification" OR subject:Undeliverable`, `newer_than:7d`, ≤100 messages), then re-anchors at the current profile history id. There is never an unbounded mailbox scan.
+
+**First sync** anchors the cursor at the current profile history id AND runs the same bounded recent DSN scan (7 days, ≤100 messages). Anchor-only initialisation would permanently skip any bounce that arrived before monitoring started — that is exactly how a real `550 5.1.0 Address Rejected` bounce was missed in production. Every branch emits the `[bounce-sync] Processed Gmail delivery notifications.` summary (counts + sender id only, never recipient addresses).
+
+### Reply sync vs bounce sync (independent, never competing)
+
+The two mailbox consumers use fully independent cursors — reply sync windows on `lastReplySyncAt` timestamps (Gmail `q=after:` queries), bounce sync advances the Gmail history id — so neither can consume mailbox events the other still needs, in either execution order. A source-assertion test enforces this.
+
+A bounce arrives in the SAME thread as the original send and carries `References` headers, so it looks exactly like a reply to the reply matcher. `mapReplyCandidate` therefore excludes anything matching `looksLikeDeliveryNotification` (single-signal: mailer-daemon/postmaster sender, Mail-Delivery-Subsystem display name, DSN subject, `multipart/report`, `Auto-Submitted`, or `X-Failed-Recipients`) BEFORE reading references — a DSN is never stored as a human reply. For DSNs that an older deploy already stored as replies, the bounce processor heals them: `removeDeliveryNotificationStoredAsReply` deletes the bogus `InboundReply` and recomputes the job's `replyCount`/`repliedAt` from its remaining genuine replies.
+
+### DSN filtering and parsing
+
+A message is inspected further only with strong signals (`isLikelyDeliveryStatusMessage`): `multipart/report; report-type=delivery-status` alone qualifies; otherwise ≥2 of {mailer-daemon/postmaster sender address, DSN-like subject, `Auto-Submitted`, `X-Failed-Recipients`}. A display name alone never qualifies. Parsing (`parseDeliveryStatusFromGmailMessage`) works on Gmail's already-parsed MIME tree: structured `message/delivery-status` fields first (`Final-Recipient`, `Original-Recipient`, `Action`, `Status`, `Diagnostic-Code`, `Remote-MTA`, `Reporting-MTA`), Gmail text patterns ("Address not found", "User Unknown", …) only as fallback. Size limits: 1 MB per message, 64 KB per decoded part, ≤25 recipients, 500-char fields. Only bounded structured fields leave the parser — raw bodies are never returned or stored.
+
+### Classification (`classifyDeliveryFailure`)
+
+Categories: `HARD_BOUNCE_INVALID_RECIPIENT`, `HARD_BOUNCE_MAILBOX_NOT_FOUND`, `HARD_BOUNCE_DOMAIN_NOT_FOUND`, `HARD_BOUNCE_PERMANENT_MAILBOX_FAILURE`, `SOFT_BOUNCE_MAILBOX_FULL`, `SOFT_BOUNCE_TEMPORARY_FAILURE`, `POLICY_REJECTION`, `SPAM_REJECTION`, `SENDER_AUTHENTICATION_FAILURE`, `SENDER_QUOTA_FAILURE`, `UNKNOWN_DELIVERY_FAILURE`.
+
+- **Permanent recipient failures** (5.1.1/5.1.2/5.1.3/5.1.6/5.1.10 by code; 5.2.1; or a permanent 5.x.x WITH a recipient-fault diagnostic such as "user unknown", "address not found", "address rejected", "domain not found" — this is how Gmail's `550 5.1.0 Address Rejected` qualifies): recipient marked `SUPPRESSED` and displayed as **Skipped** (`HARD_BOUNCE_RECIPIENT` failure code — non-retryable), suppression upserted, queued sends skipped. A bare `5.1.0` without a diagnostic, and the sender-address codes `5.1.7`/`5.1.8`, never suppress.
+- **Temporary (4.x.x, mailbox full incl. 5.2.2)**: never suppressed; the already-submitted Gmail message is never re-sent from bounce processing (the receiving server owns retries).
+- **Policy/spam (5.7.x)**: the attempt is marked failed with a safe reason; the address is NOT declared invalid and is not suppressed. Manual retry stays available.
+- **Sender problems (quota, SPF/DKIM/DMARC, auth)**: the recipient is never suppressed. Reconnect handling stays with the send path.
+- **Anything ambiguous**: `UNKNOWN_DELIVERY_FAILURE` — never auto-suppressed.
+
+### Correlation
+
+Matching order (always scoped to the reporting sender's own jobs, ≤30 days): ① original RFC `Message-ID` — Sendloom now generates it at send time (`provider.ts#generateRfcMessageId`, embedded via MailComposer) and stores it in `RecipientJob.metadata.rfcMessageId`; ② Gmail thread association (DSNs arrive in the sent message's thread; thread message ids ↔ `providerMessageId`); ③ normalized failed recipient + sender + bounded window. An unmatched bounce records a safe diagnostic event (no address in the payload) and changes no recipient state.
+
+### Persistence and idempotency
+
+- One DSN Gmail message = one `ProviderEvent` row (`provider: "gmail-dsn"`, `eventType: BOUNCED`, unique key) — the atomic processed-once gate.
+- `Suppression` gains structured failure detail: `enhancedStatusCode`, `failureCategory`, `firstFailedAt`, `lastFailedAt`, `failureCount`, `sourceGmailMessageId`. Reprocessing the same Gmail message never increments counts. An existing `UNSUBSCRIBED` record keeps its reason (never relabelled as a failure) while still recording the failure detail.
+
+### Skipped vs Invalid vs Failed (the semantic model)
+
+A hard bounce means the ADDRESS is bad — Sendloom worked correctly and learned the recipient can't be contacted. It is never presented as an application failure:
+
+```
+Hard bounce / invalid recipient
+→ internal delivery outcome: permanent recipient failure (metadata
+  failureCode HARD_BOUNCE_RECIPIENT + failureCategory, ProviderEvent,
+  suppression detail — the evidence is never rewritten)
+→ sequence disposition: Skipped · Address not found (status SUPPRESSED;
+  calm neutral row, no Retry, excluded from Needs attention/Delivered)
+→ Overview: Skipped (neutral icon/tone, excluded from Issues and Needs
+  attention)
+→ Discover quality: Invalid (never counted Usable)
+→ future sends: blocked at validation, queue creation, and the final
+  worker guard — no Gmail call, no send capacity consumed
+```
+
+```
+Sendloom/Gmail operational problem (auth expired, queue/server error,
+temporary send failure)
+→ sequence disposition: Failed / Action required
+→ Overview: Needs attention / Issue with a warning icon; Retry or
+  Reconnect stays available per existing behavior
+```
+
+- **Unsubscribed** = opted out. Shown as "Skipped · Unsubscribed" in sequences; never merged into invalid-address statistics.
+- **Suppressed** (manual block / complaint) = "Skipped · On the suppression list".
+- Suppression remains the internal enforcement mechanism for all of these; reasons stay distinguishable in the suppression log ("Hard bounce", "Invalid address", "Unsubscribed", …).
+- `buildRecipientActivityItem`, `classifyRecipientOverviewDisposition`, and `isPermanentRecipientAddressFailure` share the same permanent-address rule. Rows written as FAILED by the pre-Skipped implementation are normalized at read time, and `repairHardBouncedRecipientDispositions` (run on every cron tick, idempotent) converts them durably so run counts agree.
+
+### Future-send blocking
+
+Layers: sequence validation and queue creation (existing suppression checks), retry-failed re-check (existing), and a **mandatory final worker guard** in `processRecipientJob` — live suppression is re-checked immediately before the Gmail call; a suppressed recipient is marked `SUPPRESSED` with a reason, Gmail is never called, and no daily-cap or per-minute send capacity is consumed. Matching is normalized lowercase.
+
+### Discover integration
+
+Person email statuses are overlaid at read time (`overlayEmailCandidateStatus` precedence: UNSUBSCRIBED → SUPPRESSED → FAILED → stored status), in both the people list and `Company.emailStatusCounts`, so the quality summary and table always agree and re-generating an email can never resurrect a failed address. `FAILED`/`UNSUBSCRIBED` are presentation-only enum values — never stored on person rows. Failed people stay visible (transparency) with the badge hint "This address previously returned a permanent delivery failure and will be skipped", are never counted Usable, appear in the quality meter, and are skipped by export/Add-to-Imports through the existing suppression-aware review.
+
+### One-time recent sync
+
+"Sync recent delivery failures" (sender card on /campaigns → `POST /api/senders/[id]/sync-bounces`) scans only likely DSN messages from the last 30 days, capped at 200, idempotent per message, and marks `bounceBackfillCompletedAt` so it never rescans.
+
+### Troubleshooting
+
+- **Permission required** → the sender predates the read scope; reconnect Gmail.
+- **Reconnect required** → Google revoked/expired the refresh token; reconnect (sending shows the same state).
+- **Temporarily unavailable / RENEWAL_FAILED** → watch registration failing (check `GMAIL_PUBSUB_TOPIC` + topic IAM: grant `gmail-api-push@system.gserviceaccount.com` the Pub/Sub Publisher role). Cron retries automatically; sending continues.
+- **Bounces not appearing with Pub/Sub unconfigured** → the cron fallback still syncs every ~10 min per sender; check `/api/cron/campaigns` output (`watchRenewal`, `bounceSync`).
+- **Unmatched bounces** → recorded as `gmail-dsn` ProviderEvents with `matched: false` and logged as `[bounce-sync] Delivery notification could not be correlated.`; no recipient state is changed.
+- **No `[bounce-sync]` logs at all** → the sync never ran: check that the deployed environment actually executes `/api/cron/campaigns` (Vercel cron runs only on the production deployment — a branch preview gets no cron), or trigger "Sync recent delivery failures" on the sender card.
+- **A bounce shows as a reply** (recipient marked replied) → predates the DSN exclusion; reprocessing the message through any bounce sync heals the stored reply automatically.

@@ -86,4 +86,92 @@ describe("recipient activity", () => {
     expect(item.detailLabel).toBe("Action required");
     expect(item.retryable).toBe(false);
   });
+
+
+  // -------------------------------------------------------------------------
+  // Permanent invalid addresses read as Skipped — never a Sendloom failure.
+  // -------------------------------------------------------------------------
+
+  it("shows a confirmed hard bounce as Skipped · Address not found (never Failed)", () => {
+    const item = buildRecipientActivityItem({
+      ...BASE_JOB,
+      status: "SUPPRESSED",
+      lastError: "Address not found",
+      metadata: {
+        failureCode: "HARD_BOUNCE_RECIPIENT",
+        failureCategory: "HARD_BOUNCE_MAILBOX_NOT_FOUND"
+      }
+    });
+
+    expect(item.statusLabel).toBe("Skipped");
+    expect(item.message).toBe("Address not found");
+    expect(item.statusLabel).not.toBe("Failed");
+    // Calm styling: not an issue, so the red detail strip ("PERMANENT",
+    // attempt metadata) never renders, and there is no Retry.
+    expect(item.isIssue).toBe(false);
+    expect(item.retryable).toBe(false);
+    expect(item.tone).toBe("neutral");
+    expect(item.detailLabel).toBeNull();
+    // The fuller explanation lives in the accessible hint, not the row copy.
+    expect(item.hint).toContain("permanent recipient error");
+    expect(item.message).not.toContain("permanent delivery failure");
+  });
+
+  it("normalizes legacy hard-bounce rows still stored as FAILED to the same Skipped disposition", () => {
+    const item = buildRecipientActivityItem({
+      ...BASE_JOB,
+      status: "FAILED",
+      lastError: "The address returned a permanent delivery failure and is excluded from future sends.",
+      metadata: {
+        failureCode: "HARD_BOUNCE_RECIPIENT",
+        failureCategory: "HARD_BOUNCE_INVALID_RECIPIENT"
+      }
+    });
+
+    expect(item.statusLabel).toBe("Skipped");
+    expect(item.message).toBe("Invalid address");
+    expect(item.isIssue).toBe(false);
+    expect(item.retryable).toBe(false);
+  });
+
+  it("keeps real system and Gmail failures as Failed / action required", () => {
+    const gmailAuth = buildRecipientActivityItem({
+      ...BASE_JOB,
+      status: "FAILED",
+      lastError: "This Gmail sender needs to be reconnected.",
+      metadata: { failureCode: "GMAIL_PROFILE_DISCONNECTED" }
+    });
+    expect(gmailAuth.statusLabel).toBe("Action required");
+    expect(gmailAuth.isIssue).toBe(true);
+
+    const serverError = buildRecipientActivityItem({
+      ...BASE_JOB,
+      status: "FAILED",
+      lastError: "Queue processing failed.",
+      metadata: { failureCode: "QUEUE_PROCESSING_FAILED" }
+    });
+    expect(serverError.statusLabel).toBe("Failed");
+    expect(serverError.isIssue).toBe(true);
+  });
+
+  it("compacts every skipped row to a short reason with the explanation in the hint", () => {
+    const unsubscribed = buildRecipientActivityItem({
+      ...BASE_JOB,
+      status: "SUPPRESSED",
+      lastError: "Skipped — recipient unsubscribed.",
+      metadata: {}
+    });
+    expect(unsubscribed.statusLabel).toBe("Skipped");
+    expect(unsubscribed.message).toBe("Unsubscribed");
+    expect(unsubscribed.isIssue).toBe(false);
+
+    const legacyVerbose = buildRecipientActivityItem({
+      ...BASE_JOB,
+      status: "SUPPRESSED",
+      lastError: "Address not found — this address previously returned a permanent delivery failure.",
+      metadata: {}
+    });
+    expect(legacyVerbose.message).toBe("Address not found");
+    expect(legacyVerbose.hint).toBeTruthy();
+  });
 });

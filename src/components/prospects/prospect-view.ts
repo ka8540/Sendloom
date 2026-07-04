@@ -5,7 +5,9 @@
 import type {
   ConfidenceLevel,
   DiscoverQuota,
+  EmailDomainEvidenceNode,
   EmailCandidateStatus,
+  PatternEvidenceNode,
   PersonNode,
   PositionCategory,
   ProspectSelectionInput,
@@ -13,6 +15,7 @@ import type {
   ProspectSearchStatus
 } from "@/components/prospects/prospect-graphql";
 import { mapDiscoverPublicError } from "@/lib/discover-public-error";
+import { parseEmailFormatDecisionMetadata } from "@/lib/email-format-decision";
 
 // External links to LinkedIn always open in a new tab with a hardened rel so we
 // never leak the opener or referrer.
@@ -93,7 +96,13 @@ export function emailStatusBadge(status: EmailCandidateStatus): Badge {
     case "SUPPRESSED":
       return { label: "Suppressed", tone: "blocked", hint: "Suppressed — excluded from outreach." };
     case "INVALID":
-      return { label: "Invalid", tone: "blocked", hint: "The address failed validation." };
+      return {
+        label: "Invalid",
+        tone: "blocked",
+        hint: "Address not found or failed validation. This contact will be skipped."
+      };
+    case "UNSUBSCRIBED":
+      return { label: "Unsubscribed", tone: "muted", hint: "Recipient opted out — excluded from outreach." };
     case "UNAVAILABLE":
     default:
       return { label: "Unavailable", tone: "muted", hint: "No address could be inferred." };
@@ -119,6 +128,64 @@ export function confidenceBadge(level: ConfidenceLevel): Badge {
   }
 }
 
+type EmailFormatEvidenceSummaryInput = {
+  emailFormatReason: string | null;
+  emailDomainConfidence: ConfidenceLevel;
+  patternConfidence: ConfidenceLevel;
+  selectedEmailDomain: string | null;
+  selectedPattern: string | null;
+  domainEvidence: EmailDomainEvidenceNode[];
+  patternEvidence: PatternEvidenceNode[];
+};
+
+function compactEvidenceSourceKey(row: { sourceUrl: string | null; sourceName: string }): string {
+  if (row.sourceUrl) {
+    try {
+      const url = new URL(row.sourceUrl);
+      return `${url.hostname.toLowerCase()}${url.pathname.replace(/\/$/, "")}`;
+    } catch {
+      // Fall through to the stable source label for historical malformed URLs.
+    }
+  }
+  return row.sourceName.trim().toLowerCase();
+}
+
+/** Compact, deterministic agreement copy. Historical AI prose is never used. */
+export function emailFormatEvidenceSummary(input: EmailFormatEvidenceSummaryInput): string {
+  const metadata = parseEmailFormatDecisionMetadata(input.emailFormatReason);
+  const selectedEvidence = [
+    ...input.domainEvidence.filter((row) => row.emailDomain === input.selectedEmailDomain),
+    ...input.patternEvidence.filter(
+      (row) =>
+        row.pattern === input.selectedPattern &&
+        (!input.selectedEmailDomain || !row.emailDomain || row.emailDomain === input.selectedEmailDomain)
+    )
+  ];
+  const derivedSupportingCount = new Set(selectedEvidence.map(compactEvidenceSourceKey)).size;
+  const supportingCount = metadata?.supportingSourceCount ?? derivedSupportingCount;
+  const conflictingCount = metadata?.conflictingSourceCount ?? 0;
+  const limited =
+    !input.selectedEmailDomain ||
+    !input.selectedPattern ||
+    input.emailDomainConfidence === "LOW" ||
+    input.emailDomainConfidence === "UNAVAILABLE" ||
+    input.patternConfidence === "LOW" ||
+    input.patternConfidence === "UNAVAILABLE" ||
+    metadata?.decisionCode === "INSUFFICIENT_EVIDENCE" ||
+    supportingCount === 0;
+
+  if (limited) {
+    return "Limited evidence · review before sending";
+  }
+
+  const supportCopy = supportingCount === 1 ? "1 supporting source" : `${supportingCount} sources agree`;
+  if (conflictingCount === 0) {
+    return supportCopy;
+  }
+  const conflictCopy = conflictingCount === 1 ? "1 source conflicts" : `${conflictingCount} sources conflict`;
+  return `${supportCopy} · ${conflictCopy}`;
+}
+
 /**
  * Whether a copy-email control should render for this person. Only when an
  * inferred email is actually present — an UNAVAILABLE/empty email is never
@@ -126,6 +193,216 @@ export function confidenceBadge(level: ConfidenceLevel): Badge {
  */
 export function isEmailCopyable(person: Pick<PersonNode, "inferredEmail" | "emailStatus">): boolean {
   return Boolean(person.inferredEmail && person.inferredEmail.trim().length > 0);
+}
+
+// ---------------------------------------------------------------------------
+// Email-quality summary (Discover detail dashboard).
+// ---------------------------------------------------------------------------
+
+/**
+ * Whole-search quality rollup derived from the server-side per-status counts
+ * (which already overlay the user's live suppression list, so a hard-bounced
+ * or unsubscribed address is never reported under its stored status).
+ *
+ * Counting rules (aligned with the export/import eligibility in
+ * services/prospects/prospect-export.ts — EXPORTABLE_STATUSES):
+ *   - usable       = VERIFIED + INFERRED_HIGH + INFERRED_MEDIUM + INFERRED_LOW
+ *                    (an address exists and is eligible for export/Imports)
+ *   - needsReview  = INFERRED_LOW — an explicitly overlapping indicator: these
+ *                    people are counted in `usable` but deserve review first.
+ *   - unavailable  = UNAVAILABLE (no address could be inferred; skipped)
+ *   - invalid      = INVALID (failed validation OR proven bad by a permanent
+ *                    delivery failure; skipped). An invalid address is an
+ *                    email-quality outcome, never an app "Failed" state.
+ *   - suppressed   = SUPPRESSED (manually blocked/complaint; excluded)
+ *   - unsubscribed = UNSUBSCRIBED (opted out — excluded, but NOT invalid)
+ *   - verified     = VERIFIED — overlapping subset of `usable`.
+ * usable + unavailable + invalid + suppressed + unsubscribed = total
+ * (mutually exclusive; the server-side overlay precedence is documented in
+ * lib/prospect-enums.ts#overlayEmailCandidateStatus).
+ */
+export type DiscoverQualitySummary = {
+  total: number;
+  usable: number;
+  needsReview: number;
+  unavailable: number;
+  invalid: number;
+  suppressed: number;
+  unsubscribed: number;
+  verified: number;
+};
+
+const USABLE_EMAIL_STATUSES: ReadonlySet<EmailCandidateStatus> = new Set([
+  "VERIFIED",
+  "INFERRED_HIGH",
+  "INFERRED_MEDIUM",
+  "INFERRED_LOW"
+]);
+
+export function deriveDiscoverQualitySummary(
+  counts: ReadonlyArray<{ status: string; count: number }> | null | undefined
+): DiscoverQualitySummary {
+  const summary: DiscoverQualitySummary = {
+    total: 0,
+    usable: 0,
+    needsReview: 0,
+    unavailable: 0,
+    invalid: 0,
+    suppressed: 0,
+    unsubscribed: 0,
+    verified: 0
+  };
+  for (const row of counts ?? []) {
+    const count = Number.isFinite(row.count) ? Math.max(0, Math.floor(row.count)) : 0;
+    if (count === 0) {
+      continue;
+    }
+    summary.total += count;
+    const status = row.status as EmailCandidateStatus;
+    if (USABLE_EMAIL_STATUSES.has(status)) {
+      summary.usable += count;
+      if (status === "INFERRED_LOW") {
+        summary.needsReview += count;
+      }
+      if (status === "VERIFIED") {
+        summary.verified += count;
+      }
+    } else if (status === "INVALID") {
+      summary.invalid += count;
+    } else if (status === "SUPPRESSED") {
+      summary.suppressed += count;
+    } else if (status === "UNSUBSCRIBED") {
+      summary.unsubscribed += count;
+    } else {
+      // UNAVAILABLE and any unknown legacy status: no usable address.
+      summary.unavailable += count;
+    }
+  }
+  return summary;
+}
+
+/** Zero-safe integer percentage — never NaN, even when the total is 0. */
+export function qualityPercent(count: number, total: number): number {
+  if (!Number.isFinite(count) || !Number.isFinite(total) || total <= 0 || count <= 0) {
+    return 0;
+  }
+  return Math.round((count / total) * 100);
+}
+
+export type QualitySegmentTone =
+  | "verified"
+  | "high"
+  | "medium"
+  | "review"
+  | "unavailable"
+  | "invalid"
+  | "suppressed"
+  | "unsubscribed";
+
+export type QualitySegment = {
+  status: EmailCandidateStatus;
+  label: string;
+  tone: QualitySegmentTone;
+  count: number;
+  percent: number;
+  /** Exact share used for the bar width so segments always fill the track. */
+  share: number;
+};
+
+// Fixed display order: usable outcomes first, then the skipped ones. Labels
+// mirror the People-table badge vocabulary so the page speaks one language.
+// INVALID covers both validation failures and addresses proven bad by a
+// permanent delivery failure; UNSUBSCRIBED stays distinct from SUPPRESSED —
+// an unsubscribe is excluded but the address did not fail.
+const QUALITY_SEGMENT_ORDER: ReadonlyArray<{ status: EmailCandidateStatus; label: string; tone: QualitySegmentTone }> = [
+  { status: "VERIFIED", label: "Verified", tone: "verified" },
+  { status: "INFERRED_HIGH", label: "Inferred · High", tone: "high" },
+  { status: "INFERRED_MEDIUM", label: "Inferred · Medium", tone: "medium" },
+  { status: "INFERRED_LOW", label: "Inferred · Low", tone: "review" },
+  { status: "UNAVAILABLE", label: "Unavailable", tone: "unavailable" },
+  { status: "INVALID", label: "Invalid", tone: "invalid" },
+  { status: "SUPPRESSED", label: "Suppressed", tone: "suppressed" },
+  { status: "UNSUBSCRIBED", label: "Unsubscribed", tone: "unsubscribed" }
+];
+
+/**
+ * Mutually exclusive bar segments from the raw per-status counts. Zero-count
+ * statuses are omitted (no empty legend rows), and with a zero total the result
+ * is an empty list — the caller renders its empty state instead of a bar.
+ */
+export function buildQualitySegments(
+  counts: ReadonlyArray<{ status: string; count: number }> | null | undefined
+): QualitySegment[] {
+  const byStatus = new Map<string, number>();
+  let total = 0;
+  for (const row of counts ?? []) {
+    const count = Number.isFinite(row.count) ? Math.max(0, Math.floor(row.count)) : 0;
+    if (count > 0) {
+      byStatus.set(row.status, (byStatus.get(row.status) ?? 0) + count);
+      total += count;
+    }
+  }
+  if (total === 0) {
+    return [];
+  }
+  return QUALITY_SEGMENT_ORDER.filter((entry) => (byStatus.get(entry.status) ?? 0) > 0).map((entry) => {
+    const count = byStatus.get(entry.status) ?? 0;
+    return {
+      status: entry.status,
+      label: entry.label,
+      tone: entry.tone,
+      count,
+      percent: qualityPercent(count, total),
+      share: (count / total) * 100
+    };
+  });
+}
+
+/**
+ * Plain-language summary of the rollup for screen readers and the visible
+ * caption, e.g. "32 usable, 5 unavailable, 2 invalid, and 1 suppressed out of
+ * 40 people." Unsubscribed appears only when present so the common case stays
+ * short.
+ */
+export function describeQualitySummary(summary: DiscoverQualitySummary): string {
+  if (summary.total <= 0) {
+    return "No people with email-quality information yet.";
+  }
+  const parts = [
+    `${summary.usable} usable`,
+    `${summary.unavailable} unavailable`,
+    `${summary.invalid} invalid`,
+    ...(summary.unsubscribed > 0 ? [`${summary.unsubscribed} unsubscribed`] : []),
+    `${summary.suppressed} suppressed`
+  ];
+  const joined = `${parts.slice(0, -1).join(", ")}, and ${parts[parts.length - 1]}`;
+  const people = summary.total === 1 ? "person" : "people";
+  return `${joined} out of ${summary.total} ${people}.`;
+}
+
+// ---------------------------------------------------------------------------
+// Email-format correction modes (Discover detail dashboard).
+// ---------------------------------------------------------------------------
+
+/**
+ * The three correction actions are mutually exclusive modes over ONE editor
+ * container — never independent booleans. "ai-refresh" is the in-flight AI
+ * progress state (it has no form); "source-url" and "manual-fix" each render
+ * their single editor. Exactly one mode is ever active.
+ */
+export type EmailFormatActionMode = "none" | "ai-refresh" | "source-url" | "manual-fix";
+
+/**
+ * Resolve the next mode for a mode-button press: pressing the active mode's
+ * button closes it (back to "none"); pressing any other opens that mode and
+ * implicitly closes the previous one. Repeated presses can therefore never
+ * stack a second editor.
+ */
+export function resolveNextEmailFormatMode(
+  current: EmailFormatActionMode,
+  requested: Exclude<EmailFormatActionMode, "none">
+): EmailFormatActionMode {
+  return current === requested ? "none" : requested;
 }
 
 // ---------------------------------------------------------------------------

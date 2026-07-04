@@ -161,7 +161,7 @@ function detailHeaderStep(): ManualStep {
   return {
     id: "detail-header",
     title: "This search workspace",
-    body: "Review one company, its search filters, current status, people count, and available actions on this dedicated page.",
+    body: "The header shows the company, requested roles and location, current status, people count, website links, your Discover allowance, and the Delete action.",
     selector: sel("detail-header"),
     placement: "bottom"
   };
@@ -172,37 +172,24 @@ export function discoverReadySteps(): ManualStep[] {
   return [
     detailHeaderStep(),
     {
-      id: "company-summary",
-      title: "Selected company",
-      body: "Shows the resolved company and public website for this search.",
-      selector: sel("company-summary"),
+      id: "quality-summary",
+      title: "Results quality at a glance",
+      body: "See how many people were found and how many have usable addresses, need review, are unavailable, are invalid, or are suppressed. Unavailable, invalid, and suppressed contacts are skipped during export and Imports.",
+      selector: sel("quality-summary"),
       placement: "bottom"
     },
     {
-      id: "people-summary",
-      title: "People found",
-      body: "Shows the total people currently attached to this search and their role groups.",
-      selector: sel("people-summary"),
-      placement: "bottom"
-    },
-    {
-      id: "email-format-summary",
-      title: "Company email format",
-      body: "Shows the work email domain and naming pattern used to generate inferred email addresses.",
-      selector: sel("email-format-summary"),
-      placement: "bottom"
-    },
-    {
-      id: "status-summary",
-      title: "Search status",
-      body: "Shows whether this search is ready, processing, still a draft, or needs attention.",
-      selector: sel("status-summary"),
-      placement: "bottom"
+      id: "quality-breakdown",
+      title: "Email-quality breakdown",
+      body: "The status meter shows the share of each email outcome with counts and percentages, so you can judge how much of this result is ready for outreach.",
+      selector: sel("quality-breakdown"),
+      placement: "bottom",
+      optional: true
     },
     {
       id: "company-details",
-      title: "Review company details",
-      body: "Review the website, work email domain, email pattern, confidence levels, people count, and professional-profile link.",
+      title: "Email format",
+      body: "Review the company website, the work email domain and naming pattern, and how confident Discover is in each. Generated addresses remain inferred until verified.",
       selector: sel("company-details"),
       placement: "top"
     },
@@ -225,7 +212,7 @@ export function discoverReadySteps(): ManualStep[] {
     {
       id: "source-url",
       title: "Use a public source",
-      body: "Provide a trusted public company email-format page that Discover should evaluate.",
+      body: "Provide a trusted public company email-format page that Discover should evaluate. Only one correction editor is open at a time.",
       selector: sel("source-url"),
       placement: "top",
       optional: true
@@ -319,7 +306,7 @@ export function discoverReadySteps(): ManualStep[] {
       title: "Delete this search",
       body: "Deletes this Discover search and its user-owned results. It does not remove Imports or sequences created separately.",
       selector: sel("delete-search"),
-      placement: "left",
+      placement: "bottom",
       optional: true
     }
   ];
@@ -400,8 +387,16 @@ export function discoverDetailQuickSteps(): ManualStep[] {
     {
       id: "status-summary",
       title: "Search status",
-      body: "Shows whether this search is ready, processing, still a draft, or needs attention.",
+      body: "Shows whether this search is processing, still a draft, or needs attention.",
       selector: sel("status-summary"),
+      placement: "bottom",
+      optional: true
+    },
+    {
+      id: "quality-summary",
+      title: "Results quality",
+      body: "Shows how many of the discovered people have usable addresses and how many will be skipped as unavailable, invalid, or suppressed.",
+      selector: sel("quality-summary"),
       placement: "bottom",
       optional: true
     },
@@ -517,7 +512,9 @@ export const discoverDetailManual: ManualConfig = {
   quickStartStage: "quick",
   fullTourStage: "full",
   autoOpen: false,
-  version: "v2",
+  // v3 — the redesigned detail dashboard (quality summary + consolidated email
+  // format panel) replaced the four summary cards, so the tour replays once.
+  version: "v3",
   steps: discoverReadySteps(),
   resolveStage: () => resolveDetailStageFromDom(),
   resolveSteps: (stage) => discoverDetailStepsForStage(stage)

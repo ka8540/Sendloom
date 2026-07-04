@@ -1447,6 +1447,7 @@ async function ensureRecipientJobs(campaignId: string, runId: string) {
   );
 
   const suppressedEmails = await getSuppressedEmailsForUser(campaign.userId);
+  const suppressionReasons = await getSuppressionReasonsForUser(campaign.userId);
   const templateSnapshot = campaign.templateSnapshot as CampaignTemplateSnapshot;
   const subjectTemplate = templateSnapshot.subject;
   const templateFormat = templateSnapshot.format ?? "HTML";
@@ -1499,6 +1500,11 @@ async function ensureRecipientJobs(campaignId: string, runId: string) {
     }
 
     if (suppressedEmails.has(email)) {
+      // Compact per-reason skip copy; an invalid address carries the bounce
+      // failure code so every surface reads it as "Skipped · Address not
+      // found" instead of a Sendloom failure.
+      const suppressionReason = suppressionReasons.get(email) ?? null;
+      const isInvalidAddress = suppressionReason === "HARD_BOUNCE" || suppressionReason === "INVALID_EMAIL";
       await createRecipientJobIgnoringDuplicate({
         campaignRunId: runId,
         importRowId: row.id,
@@ -1508,7 +1514,18 @@ async function ensureRecipientJobs(campaignId: string, runId: string) {
         htmlBody: renderTemplateContent(templateFormat, htmlTemplate, payload),
         dedupeKey: shaKey([runId, email]),
         status: "SUPPRESSED",
-        metadata: metadata as Prisma.InputJsonValue
+        lastError:
+          suppressionReason === "UNSUBSCRIBED"
+            ? "Unsubscribed"
+            : suppressionReason === "HARD_BOUNCE"
+              ? "Address not found"
+              : suppressionReason === "INVALID_EMAIL"
+                ? "Invalid address"
+                : "On the suppression list",
+        metadata: {
+          ...metadata,
+          ...(isInvalidAddress ? { failureCode: "HARD_BOUNCE_RECIPIENT" } : {})
+        } as Prisma.InputJsonValue
       });
       continue;
     }
@@ -1600,6 +1617,59 @@ async function processRecipientJob(recipientJob: RecipientJobWithContext) {
     };
     let activeReservationId: string | null = null;
 
+    // MANDATORY final guard: re-check live suppression immediately before the
+    // Gmail call. An address confirmed as a hard bounce (or unsubscribed/
+    // blocked) after this job was queued is skipped here — no Gmail request,
+    // no send-capacity consumed, no automatic retry.
+    if (scope.userId) {
+      const normalizedRecipient = latestJob.recipientEmail.trim().toLowerCase();
+      const liveSuppression = await prisma.suppression.findUnique({
+        where: { userId_email: { userId: scope.userId, email: normalizedRecipient } },
+        select: { reason: true, failureCategory: true }
+      });
+      if (liveSuppression) {
+        // Compact skip reasons — the recipient row reads "Skipped · <reason>".
+        // A permanently invalid address is an address problem, never a
+        // Sendloom failure, so the wording stays calm and short.
+        const isInvalidAddress =
+          liveSuppression.reason === "HARD_BOUNCE" || liveSuppression.reason === "INVALID_EMAIL";
+        const skipReason =
+          liveSuppression.reason === "UNSUBSCRIBED"
+            ? "Unsubscribed"
+            : isInvalidAddress
+              ? liveSuppression.failureCategory === "HARD_BOUNCE_DOMAIN_NOT_FOUND"
+                ? "Domain not found"
+                : liveSuppression.failureCategory === "HARD_BOUNCE_PERMANENT_MAILBOX_FAILURE"
+                  ? "Mailbox unavailable"
+                  : liveSuppression.reason === "INVALID_EMAIL" && !liveSuppression.failureCategory
+                    ? "Invalid address"
+                    : "Address not found"
+              : "On the suppression list";
+        await prisma.recipientJob.update({
+          where: { id: latestJob.id },
+          data: {
+            status: "SUPPRESSED",
+            nextRetryAt: null,
+            lastError: skipReason,
+            ...(isInvalidAddress
+              ? {
+                  metadata: {
+                    ...((latestJob.metadata as Record<string, unknown> | null) ?? {}),
+                    failureCode: "HARD_BOUNCE_RECIPIENT",
+                    failureCategory: liveSuppression.failureCategory ?? null
+                  } as Prisma.InputJsonValue
+                }
+              : {})
+          }
+        });
+        await syncRunCounts(latestJob.campaignRunId);
+        return {
+          processed: true,
+          rateLimited: false
+        };
+      }
+    }
+
     try {
       const dailyReservation = await reserveSendCapacity(scope);
       if (!dailyReservation.allowed) {
@@ -1661,7 +1731,8 @@ async function processRecipientJob(recipientJob: RecipientJobWithContext) {
       await markRecipientAttempt({
         jobId: latestJob.id,
         status: "SENT",
-        providerMessageId: response.data?.id
+        providerMessageId: response.data?.id,
+        rfcMessageId: response.data?.rfcMessageId
       });
 
       await recordSendOnLedger({
@@ -1948,8 +2019,15 @@ export async function processCampaignRun(
 
 export async function markRecipientAttempt(args: {
   jobId: string;
-  status: "SENT" | "FAILED" | "RETRYING" | "INVALID";
+  /**
+   * SUPPRESSED is the "Skipped" disposition: used when a recipient is excluded
+   * (e.g. a confirmed permanently-invalid address) rather than when Sendloom
+   * itself failed. The bounce evidence stays in metadata/failureDetails.
+   */
+  status: "SENT" | "FAILED" | "RETRYING" | "INVALID" | "SUPPRESSED";
   providerMessageId?: string;
+  /** RFC Message-ID generated at send time — the bounce-correlation key. */
+  rfcMessageId?: string;
   lastError?: string;
   failureCode?: FailureCode;
   failureSource?: FailureSource;
@@ -1992,6 +2070,7 @@ export async function markRecipientAttempt(args: {
       metadata: {
         ...currentMetadata,
         ...(args.status === "SENT" ? clearedFailureDetails : (args.failureDetails ?? {})),
+        ...(args.rfcMessageId ? { rfcMessageId: args.rfcMessageId } : {}),
         failureCode: args.status === "SENT" ? null : args.failureCode ?? null,
         failureSource: args.status === "SENT" ? null : args.failureSource ?? null,
         retryable: args.status === "SENT" ? false : retryable,
@@ -2413,7 +2492,15 @@ export async function processProviderEvent(args: {
     if (recipientJob.campaignRun.campaign.userId) {
       await suppressEmail(recipientJob.campaignRun.campaign.userId, recipientJob.recipientEmail, "HARD_BOUNCE", "provider-webhook");
     }
-    return markRecipientAttempt({ jobId: recipientJob.id, status: "FAILED", lastError: "Hard bounce" });
+    // A hard bounce is an invalid ADDRESS, not a Sendloom failure — the
+    // recipient's disposition is Skipped, with the bounce kept as evidence.
+    return markRecipientAttempt({
+      jobId: recipientJob.id,
+      status: "SUPPRESSED",
+      lastError: "Address not found",
+      failureCode: "HARD_BOUNCE_RECIPIENT",
+      failureSource: "GMAIL"
+    });
   }
 
   if (args.eventType === "COMPLAINED") {

@@ -2,6 +2,13 @@ import type { PrismaClient } from "@prisma/client";
 import { z } from "zod";
 
 import {
+  buildEmailFormatCacheKey,
+  EMAIL_FORMAT_DECISION_CODES,
+  EMAIL_FORMAT_DISCOVERY_VERSION,
+  type EmailFormatDecisionCode,
+  type EmailFormatDecisionMetadata
+} from "@/lib/email-format-decision";
+import {
   CONFIDENCE_LEVELS,
   EMAIL_PATTERNS,
   type ConfidenceLevel,
@@ -49,8 +56,10 @@ export type EmailPatternEvidence = {
 export type EmailEvidenceBundle = {
   domainEvidence?: EmailDomainEvidence[];
   patternEvidence?: EmailPatternEvidence[];
-  /** Short, human-readable summary of the selection (from AI web-search). */
-  reasonSummary?: string | null;
+  decision?: Pick<
+    EmailFormatDecisionMetadata,
+    "decisionCode" | "supportingSourceCount" | "conflictingSourceCount"
+  > | null;
 };
 
 export type EmailEvidenceProviderInput = {
@@ -76,7 +85,7 @@ export type CompanyEmailInferenceResult = {
   selectedPattern: EmailPattern | null;
   patternConfidence: ConfidenceLevel;
   patternEvidence: EmailPatternEvidence[];
-  reasonSummary: string | null;
+  decision: EmailFormatDecisionMetadata;
 };
 
 export type InferCompanyEmailInput = {
@@ -88,6 +97,8 @@ export type InferCompanyEmailInput = {
   knownLinkedinUrl?: string | null;
   targetRoles?: string[];
   extraEvidence?: EmailEvidenceBundle;
+  skipProvider?: boolean;
+  forceAiResolution?: boolean;
   budget: AiCallBudget;
   searchId?: string | null;
 };
@@ -137,26 +148,29 @@ const CONFIDENCE_RANK: Record<ConfidenceLevel, number> = {
   HIGH: 3
 };
 
-const AI_EMAIL_INFERENCE_JSON_SCHEMA = {
+export const EMAIL_FORMAT_RESOLVER_MAX_OUTPUT_TOKENS = 300;
+export const EMAIL_FORMAT_MAX_AI_SOURCES = 5;
+
+export const AI_EMAIL_INFERENCE_JSON_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["selectedEmailDomain", "selectedPattern", "confidence", "reasonSummary", "evidenceIndexesUsed"],
+  required: ["selectedEmailDomain", "selectedPattern", "confidence", "decisionCode", "evidenceIndexesUsed"],
   properties: {
     selectedEmailDomain: { type: ["string", "null"] },
     selectedPattern: { type: ["string", "null"], enum: [...EMAIL_PATTERNS, null] },
     confidence: { type: "string", enum: [...CONFIDENCE_LEVELS] },
-    reasonSummary: { type: ["string", "null"] },
+    decisionCode: { type: "string", enum: [...EMAIL_FORMAT_DECISION_CODES] },
     evidenceIndexesUsed: { type: "array", items: { type: "number" } }
   }
 } as const;
 
 const aiEmailInferenceSchema = z.object({
   selectedEmailDomain: z.string().nullable(),
-  selectedPattern: z.string().nullable(),
-  confidence: z.enum(CONFIDENCE_LEVELS as unknown as [string, ...string[]]),
-  reasonSummary: z.string().nullable(),
+  selectedPattern: z.enum(EMAIL_PATTERNS).nullable(),
+  confidence: z.enum(CONFIDENCE_LEVELS),
+  decisionCode: z.enum(EMAIL_FORMAT_DECISION_CODES),
   evidenceIndexesUsed: z.array(z.number())
-});
+}).strict();
 
 const AI_INSTRUCTIONS = [
   "You rank evidence for a company's employee email domain and local-part email pattern.",
@@ -169,6 +183,7 @@ const AI_INSTRUCTIONS = [
   "Never fabricate percentages.",
   "Never mark inferred emails as verified.",
   `selectedPattern must be one of: ${EMAIL_PATTERNS.join(", ")}.`,
+  "Do not return prose, a rationale, a summary, source snippets, or employee information.",
   "Return strict JSON only."
 ].join(" ");
 
@@ -176,6 +191,36 @@ class NoopEmailEvidenceProvider implements EmailEvidenceProvider {
   async findEvidence(): Promise<EmailEvidenceBundle> {
     return {};
   }
+}
+
+function mergeEvidenceBundles(bundles: EmailEvidenceBundle[]): EmailEvidenceBundle {
+  return {
+    domainEvidence: bundles.flatMap((bundle) => bundle.domainEvidence ?? []),
+    patternEvidence: bundles.flatMap((bundle) => bundle.patternEvidence ?? []),
+    decision: bundles.map((bundle) => bundle.decision).find((decision) => Boolean(decision)) ?? null
+  };
+}
+
+function evidenceBundleHasDeterministicSelection(bundle: EmailEvidenceBundle): boolean {
+  const domainEvidence = dedupeDomainEvidence(normalizeDomainEvidence(bundle.domainEvidence ?? []));
+  const patternEvidence = dedupePatternEvidence(normalizePatternEvidence(bundle.patternEvidence ?? []));
+  const result = deterministicSelection(domainEvidence, patternEvidence, {
+    companyName: "evidence-check",
+    websiteDomain: null
+  });
+  const conflictCount = Math.max(
+    result.decision.conflictingSourceCount,
+    bundle.decision?.conflictingSourceCount ?? 0
+  );
+  return Boolean(
+    result.selectedEmailDomain &&
+    result.selectedPattern &&
+    result.emailDomainConfidence !== "LOW" &&
+    result.emailDomainConfidence !== "UNAVAILABLE" &&
+    result.patternConfidence !== "LOW" &&
+    result.patternConfidence !== "UNAVAILABLE" &&
+    conflictCount === 0
+  );
 }
 
 /**
@@ -188,22 +233,22 @@ export class CompositeEmailEvidenceProvider implements EmailEvidenceProvider {
   constructor(private readonly providers: EmailEvidenceProvider[]) {}
 
   async findEvidence(input: EmailEvidenceProviderInput): Promise<EmailEvidenceBundle> {
-    const bundles = await Promise.all(
-      this.providers.map((provider) =>
-        provider.findEvidence(input).catch((error) => {
-          console.warn(
-            "[prospect-email-evidence] provider failed",
-            error instanceof Error ? error.message : error
-          );
-          return {} as EmailEvidenceBundle;
-        })
-      )
-    );
-    return {
-      domainEvidence: bundles.flatMap((bundle) => bundle.domainEvidence ?? []),
-      patternEvidence: bundles.flatMap((bundle) => bundle.patternEvidence ?? []),
-      reasonSummary: bundles.map((bundle) => bundle.reasonSummary).find((reason) => Boolean(reason)) ?? null
-    };
+    const bundles: EmailEvidenceBundle[] = [];
+    for (const provider of this.providers) {
+      const bundle = await provider.findEvidence(input).catch((error) => {
+        console.warn(
+          "[prospect-email-evidence] provider failed",
+          error instanceof Error ? error.message : error
+        );
+        return {} as EmailEvidenceBundle;
+      });
+      bundles.push(bundle);
+      const combined = mergeEvidenceBundles(bundles);
+      if (evidenceBundleHasDeterministicSelection(combined)) {
+        return combined;
+      }
+    }
+    return mergeEvidenceBundles(bundles);
   }
 }
 
@@ -504,25 +549,122 @@ function bestByKey<T extends string>(
   return { key: bestKey, rows: bestRows, confidence: confidenceForEvidence(bestRows) };
 }
 
-function selectEvidenceForDomain(domain: string | null, evidence: EmailDomainEvidence[]): EmailDomainEvidence[] {
-  return domain ? evidence.filter((row) => row.emailDomain === domain) : [];
+function evidenceSourceKey(row: Pick<RankedEvidence, "sourceName" | "sourceUrl" | "sourceType">) {
+  if (row.sourceUrl) {
+    try {
+      const url = new URL(row.sourceUrl);
+      return `${url.hostname.toLowerCase()}${url.pathname.replace(/\/$/, "")}`;
+    } catch {
+      // Fall through to the stable source label.
+    }
+  }
+  return `${row.sourceType}:${row.sourceName.trim().toLowerCase()}`;
 }
 
-function selectEvidenceForPattern(
-  pattern: EmailPattern | null,
-  domain: string | null,
-  evidence: EmailPatternEvidence[]
-): EmailPatternEvidence[] {
-  if (!pattern) {
-    return [];
+function evidenceAgreement(
+  ranked: RankedEvidence[],
+  selectedDomain: string | null,
+  selectedPattern: EmailPattern | null
+) {
+  const bySource = new Map<string, RankedEvidence[]>();
+  for (const row of ranked) {
+    const key = evidenceSourceKey(row);
+    bySource.set(key, [...(bySource.get(key) ?? []), row]);
   }
-  const direct = evidence.filter((row) => row.pattern === pattern && (!domain || !row.emailDomain || row.emailDomain === domain));
-  return direct.length > 0 ? direct : evidence.filter((row) => row.pattern === pattern);
+
+  let supportingSourceCount = 0;
+  let conflictingSourceCount = 0;
+  for (const rows of bySource.values()) {
+    const supportingRows = rows.filter(
+      (row) =>
+        (selectedDomain !== null && row.emailDomain === selectedDomain) ||
+        (selectedPattern !== null && row.pattern === selectedPattern)
+    );
+    const conflictingRows = rows.filter(
+      (row) =>
+        (selectedDomain !== null && row.emailDomain !== null && row.emailDomain !== selectedDomain) ||
+        (selectedPattern !== null && row.pattern !== null && row.pattern !== selectedPattern)
+    );
+    const strongestSupportingPercentage = Math.max(
+      ...supportingRows.map((row) => row.percentage ?? -1),
+      -1
+    );
+    const strongestConflictingPercentage = Math.max(
+      ...conflictingRows.map((row) => row.percentage ?? -1),
+      -1
+    );
+    const clearDominantClaim =
+      strongestSupportingPercentage >= 75 &&
+      strongestSupportingPercentage - strongestConflictingPercentage >= 20;
+
+    if (conflictingRows.length > 0 && !clearDominantClaim) {
+      conflictingSourceCount += 1;
+    } else if (supportingRows.length > 0) {
+      supportingSourceCount += 1;
+    }
+  }
+  return { supportingSourceCount, conflictingSourceCount };
+}
+
+function deterministicDecisionCode(
+  ranked: RankedEvidence[],
+  selectedDomain: string | null,
+  selectedPattern: EmailPattern | null,
+  supportingSourceCount: number
+): EmailFormatDecisionCode {
+  if (!selectedDomain || !selectedPattern) {
+    return "INSUFFICIENT_EVIDENCE";
+  }
+  if (ranked.some((row) => row.sourceType === "verified_email_sample")) {
+    return "VERIFIED_EXAMPLE";
+  }
+  if (supportingSourceCount >= 2) {
+    return "SOURCE_MAJORITY";
+  }
+  if (ranked.some((row) => row.emailDomain === selectedDomain && row.pattern === selectedPattern)) {
+    return "EXACT_COMPANY_MATCH";
+  }
+  if (ranked.filter((row) => row.emailDomain === selectedDomain).length >= 2) {
+    return "DOMAIN_CONSENSUS";
+  }
+  if (ranked.filter((row) => row.pattern === selectedPattern).length >= 2) {
+    return "PATTERN_CONSENSUS";
+  }
+  return "EXACT_COMPANY_MATCH";
+}
+
+function buildDecisionMetadata(input: {
+  ranked: RankedEvidence[];
+  selectedDomain: string | null;
+  selectedPattern: EmailPattern | null;
+  companyName: string;
+  websiteDomain: string | null;
+  decisionCode?: EmailFormatDecisionCode;
+}): EmailFormatDecisionMetadata {
+  const agreement = evidenceAgreement(input.ranked, input.selectedDomain, input.selectedPattern);
+  return {
+    version: EMAIL_FORMAT_DISCOVERY_VERSION,
+    decisionCode:
+      input.decisionCode ??
+      deterministicDecisionCode(
+        input.ranked,
+        input.selectedDomain,
+        input.selectedPattern,
+        agreement.supportingSourceCount
+      ),
+    ...agreement,
+    cacheKey: buildEmailFormatCacheKey({
+      companyName: input.companyName,
+      websiteDomain: input.websiteDomain,
+      emailDomain: input.selectedDomain
+    })
+  };
 }
 
 function deterministicSelection(
   domainEvidence: EmailDomainEvidence[],
-  patternEvidence: EmailPatternEvidence[]
+  patternEvidence: EmailPatternEvidence[],
+  identity: { companyName: string; websiteDomain: string | null }
 ): CompanyEmailInferenceResult {
   const ranked = buildRankedEvidence(domainEvidence, patternEvidence);
   const domain = bestByKey(ranked, (row) => row.emailDomain);
@@ -533,25 +675,94 @@ function deterministicSelection(
     return {
       selectedEmailDomain: domain.key,
       emailDomainConfidence: domain.confidence,
-      emailDomainEvidence: selectEvidenceForDomain(domain.key, domainEvidence),
+      emailDomainEvidence: domainEvidence,
       selectedPattern: null,
       patternConfidence: "UNAVAILABLE",
-      patternEvidence: [],
-      reasonSummary: domain.key
-        ? "Email domain evidence was found, but no supported email pattern was evidence-backed."
-        : "No evidence-backed employee email domain was found."
+      patternEvidence,
+      decision: buildDecisionMetadata({
+        ranked,
+        selectedDomain: domain.key,
+        selectedPattern: null,
+        companyName: identity.companyName,
+        websiteDomain: identity.websiteDomain,
+        decisionCode: "INSUFFICIENT_EVIDENCE"
+      })
     };
   }
 
+  const agreement = evidenceAgreement(ranked, domain.key, pattern.key);
+  const capForConflict = (confidence: ConfidenceLevel) =>
+    agreement.conflictingSourceCount > 0 && confidence === "HIGH" ? "MEDIUM" : confidence;
+
   return {
     selectedEmailDomain: domain.key,
-    emailDomainConfidence: domain.confidence,
-    emailDomainEvidence: selectEvidenceForDomain(domain.key, domainEvidence),
+    emailDomainConfidence: capForConflict(domain.confidence),
+    emailDomainEvidence: domainEvidence,
     selectedPattern: pattern.key,
-    patternConfidence: pattern.confidence,
-    patternEvidence: selectEvidenceForPattern(pattern.key, domain.key, patternEvidence),
-    reasonSummary: "Selected from ranked evidence."
+    patternConfidence: capForConflict(pattern.confidence),
+    patternEvidence,
+    decision: buildDecisionMetadata({
+      ranked,
+      selectedDomain: domain.key,
+      selectedPattern: pattern.key,
+      companyName: identity.companyName,
+      websiteDomain: identity.websiteDomain
+    })
   };
+}
+
+function requiresAiResolution(result: CompanyEmailInferenceResult) {
+  return (
+    Boolean(result.selectedEmailDomain && result.selectedPattern) &&
+    result.decision.conflictingSourceCount > 0
+  );
+}
+
+export function buildCompactEmailFormatAiPayload(input: {
+  companyName: string;
+  websiteDomain: string | null;
+  domainEvidence: EmailDomainEvidence[];
+  patternEvidence: EmailPatternEvidence[];
+}) {
+  const ranked = buildRankedEvidence(input.domainEvidence, input.patternEvidence);
+  const bySource = new Map<string, RankedEvidence>();
+  for (const row of ranked) {
+    const key = evidenceSourceKey(row);
+    const current = bySource.get(key);
+    if (!current) {
+      bySource.set(key, row);
+      continue;
+    }
+    const preferred = scoreEvidence([row]) > scoreEvidence([current]) ? row : current;
+    const fallback = preferred === row ? current : row;
+    bySource.set(key, {
+      ...preferred,
+      emailDomain: preferred.emailDomain ?? fallback.emailDomain,
+      pattern: preferred.pattern ?? fallback.pattern,
+      percentage:
+        preferred.percentage === null
+          ? fallback.percentage
+          : fallback.percentage === null
+            ? preferred.percentage
+            : Math.max(preferred.percentage, fallback.percentage)
+    });
+  }
+
+  const sources = [...bySource.values()]
+    .sort((left, right) => scoreEvidence([right]) - scoreEvidence([left]))
+    .slice(0, EMAIL_FORMAT_MAX_AI_SOURCES)
+    .map((row) => ({
+      index: row.index,
+      label: row.sourceName.slice(0, 120),
+      url: row.sourceUrl,
+      sourceType: row.sourceType,
+      domain: row.emailDomain,
+      pattern: row.pattern,
+      percentage: row.percentage,
+      confidence: row.confidence
+    }));
+
+  return { company: input.companyName, websiteDomain: input.websiteDomain, sources };
 }
 
 function domainAppearsInEvidence(domain: string, rows: RankedEvidence[]): boolean {
@@ -592,17 +803,18 @@ export class EmailDomainService {
 
   async infer(input: InferCompanyEmailInput): Promise<CompanyEmailInferenceResult> {
     const officialWebsiteDomain = normalizeDomain(input.officialWebsiteDomain);
-    const providerEvidence = await this.evidenceProvider.findEvidence({
-      companyName: input.companyName,
-      officialWebsiteDomain,
-      sourceUrl: input.sourceUrl ?? null,
-      companyId: input.companyId ?? null,
-      searchId: input.searchId ?? null,
-      knownLinkedinUrl: input.knownLinkedinUrl ?? null,
-      targetRoles: input.targetRoles ?? [],
-      budget: input.budget
-    });
-    const providerReason = typeof providerEvidence.reasonSummary === "string" ? providerEvidence.reasonSummary : null;
+    const providerEvidence = input.skipProvider
+      ? {}
+      : await this.evidenceProvider.findEvidence({
+          companyName: input.companyName,
+          officialWebsiteDomain,
+          sourceUrl: input.sourceUrl ?? null,
+          companyId: input.companyId ?? null,
+          searchId: input.searchId ?? null,
+          knownLinkedinUrl: input.knownLinkedinUrl ?? null,
+          targetRoles: input.targetRoles ?? [],
+          budget: input.budget
+        });
     const hunterEvidence = await this.collectHunterEvidence(input.userId, officialWebsiteDomain);
 
     const domainEvidence = dedupeDomainEvidence(
@@ -620,47 +832,97 @@ export class EmailDomainService {
       ])
     );
 
-    const deterministic = deterministicSelection(domainEvidence, patternEvidence);
-    // Prefer the AI web-search reason when a real domain+pattern was selected.
-    if (providerReason && deterministic.selectedEmailDomain && deterministic.selectedPattern) {
-      deterministic.reasonSummary = providerReason;
+    const deterministic = deterministicSelection(domainEvidence, patternEvidence, {
+      companyName: input.companyName,
+      websiteDomain: officialWebsiteDomain
+    });
+    if (providerEvidence.decision) {
+      deterministic.decision = {
+        ...deterministic.decision,
+        ...providerEvidence.decision
+      };
+      if (providerEvidence.decision.conflictingSourceCount > 0) {
+        deterministic.emailDomainConfidence =
+          deterministic.emailDomainConfidence === "HIGH" ? "MEDIUM" : deterministic.emailDomainConfidence;
+        deterministic.patternConfidence =
+          deterministic.patternConfidence === "HIGH" ? "MEDIUM" : deterministic.patternConfidence;
+      }
     }
     const ranked = buildRankedEvidence(domainEvidence, patternEvidence);
 
-    if (ranked.length === 0 || !this.ai.enabled || !input.budget.canCall("email_pattern")) {
+    if (
+      ranked.length === 0 ||
+      (!input.forceAiResolution && !requiresAiResolution(deterministic)) ||
+      !this.ai.enabled ||
+      !input.budget.canCall("email_pattern")
+    ) {
       this.logInferenceResult(input, ranked, deterministic);
       return deterministic;
     }
 
     input.budget.record("email_pattern");
+    const compactPayload = buildCompactEmailFormatAiPayload({
+      companyName: input.companyName,
+      websiteDomain: officialWebsiteDomain,
+      domainEvidence,
+      patternEvidence
+    });
+    let aiInputTokens = 0;
+    let aiOutputTokens = 0;
+    let hasAiUsage = false;
     try {
-      const raw = await this.ai.complete({
-        taskType: "email_pattern",
-        instructions: AI_INSTRUCTIONS,
-        input: JSON.stringify({
-          company: input.companyName,
-          officialWebsiteDomain,
-          evidence: ranked,
-          allowedPatterns: EMAIL_PATTERNS
-        }),
-        schemaName: "company_email_inference",
-        jsonSchema: AI_EMAIL_INFERENCE_JSON_SCHEMA as unknown as Record<string, unknown>,
-        inputItemCount: ranked.length,
-        searchId: input.searchId,
-        maxOutputTokens: 500
-      });
-
-      const parsed = aiEmailInferenceSchema.parse(raw);
+      let parsed: z.infer<typeof aiEmailInferenceSchema> | null = null;
+      let lastError: unknown = null;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const raw = await this.ai.complete({
+          taskType: "email_pattern",
+          instructions:
+            attempt === 0
+              ? AI_INSTRUCTIONS
+              : `${AI_INSTRUCTIONS} The previous response was invalid. Return corrected JSON only.`,
+          input: JSON.stringify(compactPayload),
+          schemaName: "company_email_inference",
+          jsonSchema: AI_EMAIL_INFERENCE_JSON_SCHEMA as unknown as Record<string, unknown>,
+          inputItemCount: compactPayload.sources.length,
+          searchId: input.searchId,
+          maxOutputTokens: EMAIL_FORMAT_RESOLVER_MAX_OUTPUT_TOKENS
+        });
+        const usage = this.ai.getLastUsage?.();
+        if (usage) {
+          hasAiUsage = true;
+          aiInputTokens += usage.inputTokens;
+          aiOutputTokens += usage.outputTokens;
+        }
+        try {
+          const candidate = aiEmailInferenceSchema.parse(raw);
+          const candidateDomain = normalizeDomain(candidate.selectedEmailDomain);
+          const candidatePattern = isEmailPattern(candidate.selectedPattern) ? candidate.selectedPattern : null;
+          if (!candidateDomain || isBlockedEmailDomain(candidateDomain) || !domainAppearsInEvidence(candidateDomain, ranked)) {
+            throw new Error("The selected email domain is absent from the supplied evidence.");
+          }
+          if (!candidatePattern || !patternAppearsInEvidence(candidatePattern, ranked)) {
+            throw new Error("The selected email pattern is absent from the supplied evidence.");
+          }
+          const candidateRows = candidate.evidenceIndexesUsed
+            .map((index) => ranked.find((row) => row.index === index))
+            .filter((row): row is RankedEvidence => Boolean(row));
+          if (candidate.confidence === "HIGH" && !highConfidenceAllowed(candidateRows)) {
+            throw new Error("The supplied evidence does not support high confidence.");
+          }
+          parsed = candidate;
+          break;
+        } catch (error) {
+          lastError = error;
+        }
+      }
+      if (!parsed) {
+        throw lastError ?? new Error("Email-format resolver returned invalid JSON.");
+      }
       const selectedDomain = normalizeDomain(parsed.selectedEmailDomain);
       const selectedPattern = isEmailPattern(parsed.selectedPattern) ? parsed.selectedPattern : null;
-
-      if (!selectedDomain || isBlockedEmailDomain(selectedDomain) || !domainAppearsInEvidence(selectedDomain, ranked)) {
-        this.logInferenceResult(input, ranked, deterministic);
-        return deterministic;
-      }
-      if (!selectedPattern || !patternAppearsInEvidence(selectedPattern, ranked)) {
-        this.logInferenceResult(input, ranked, deterministic);
-        return deterministic;
+      // Semantic validation in the retry loop guarantees both values exist.
+      if (!selectedDomain || !selectedPattern) {
+        throw new Error("Email-format resolver returned an incomplete selection.");
       }
 
       const usedRows = parsed.evidenceIndexesUsed
@@ -669,34 +931,79 @@ export class EmailDomainService {
       const selectedRows = usedRows.length > 0
         ? usedRows
         : ranked.filter((row) => row.emailDomain === selectedDomain || row.pattern === selectedPattern);
-      if (parsed.confidence === "HIGH" && !highConfidenceAllowed(selectedRows)) {
-        this.logInferenceResult(input, ranked, deterministic);
-        return deterministic;
-      }
-
       const aiConfidence = coerceConfidenceLevel(parsed.confidence);
-      const domainConfidence = minConfidence(aiConfidence, confidenceForEvidence(ranked.filter((row) => row.emailDomain === selectedDomain)));
+      const conflictCap: ConfidenceLevel = deterministic.decision.conflictingSourceCount > 0 ? "MEDIUM" : "HIGH";
+      const domainConfidence = minConfidence(
+        aiConfidence,
+        conflictCap,
+        confidenceForEvidence(ranked.filter((row) => row.emailDomain === selectedDomain))
+      );
       const patternConfidence = minConfidence(
         aiConfidence,
+        conflictCap,
         confidenceForEvidence(ranked.filter((row) => row.pattern === selectedPattern))
       );
 
       const result = {
         selectedEmailDomain: selectedDomain,
         emailDomainConfidence: domainConfidence,
-        emailDomainEvidence: selectEvidenceForDomain(selectedDomain, domainEvidence),
+        emailDomainEvidence: domainEvidence,
         selectedPattern,
         patternConfidence,
-        patternEvidence: selectEvidenceForPattern(selectedPattern, selectedDomain, patternEvidence),
-        reasonSummary: providerReason ?? parsed.reasonSummary
+        patternEvidence,
+        decision: buildDecisionMetadata({
+          ranked,
+          selectedDomain,
+          selectedPattern,
+          companyName: input.companyName,
+          websiteDomain: officialWebsiteDomain,
+          decisionCode: parsed.decisionCode
+        })
       };
+      this.logAiResolution({
+        sourceCount: compactPayload.sources.length,
+        decisionCode: result.decision.decisionCode,
+        usage: hasAiUsage ? { inputTokens: aiInputTokens, outputTokens: aiOutputTokens } : null
+      });
       this.logInferenceResult(input, ranked, result);
       return result;
     } catch (error) {
       console.warn("[prospect] email inference AI failed", error instanceof Error ? error.message : error);
-      this.logInferenceResult(input, ranked, deterministic);
-      return deterministic;
+      const needsReview: CompanyEmailInferenceResult = {
+        ...deterministic,
+        selectedPattern: null,
+        patternConfidence: "UNAVAILABLE",
+        decision: {
+          ...deterministic.decision,
+          decisionCode: "INSUFFICIENT_EVIDENCE"
+        }
+      };
+      this.logAiResolution({
+        sourceCount: compactPayload.sources.length,
+        decisionCode: needsReview.decision.decisionCode,
+        usage: hasAiUsage ? { inputTokens: aiInputTokens, outputTokens: aiOutputTokens } : null
+      });
+      this.logInferenceResult(input, ranked, needsReview);
+      return needsReview;
     }
+  }
+
+  private logAiResolution(entry: {
+    sourceCount: number;
+    decisionCode: EmailFormatDecisionCode;
+    usage: { inputTokens: number; outputTokens: number } | null;
+  }) {
+    console.info("[email-format-ai] Resolution completed.", {
+      operation: "resolve_ambiguous_evidence",
+      model: this.ai.model,
+      sourceCount: entry.sourceCount,
+      cacheHit: false,
+      aiUsed: true,
+      decisionCode: entry.decisionCode,
+      ...(entry.usage
+        ? { inputTokens: entry.usage.inputTokens, outputTokens: entry.usage.outputTokens }
+        : {})
+    });
   }
 
   private async collectHunterEvidence(userId: string, officialWebsiteDomain: string | null): Promise<EmailEvidenceBundle> {

@@ -5,6 +5,7 @@ import {
   FilePenLine,
   FileSpreadsheet,
   MailSearch,
+  MailX,
   MessageSquareReply,
   Search,
   SendHorizontal,
@@ -29,11 +30,25 @@ const ACTIVITY_EVENT_ICONS: Record<ActivityEventType, LucideIcon> = {
   discover_people_added: UserRoundPlus,
   discover_results_exported: FileSpreadsheet,
   finder_email_found: MailSearch,
-  finder_domain_search: Building2
+  finder_domain_search: Building2,
+  sequence_run_skipped: MailX,
+  delivery_failure_recorded: MailX
 };
+
+const SKIPPED_ACTIVITY_TYPES: ReadonlySet<ActivityEventType> = new Set([
+  "sequence_run_skipped",
+  "delivery_failure_recorded"
+]);
 
 export function getActivityIcon(item: ActivityItem): LucideIcon {
   const activityText = `${item.title} ${item.description}`.toLowerCase();
+  const eventIcon = item.eventType ? ACTIVITY_EVENT_ICONS[item.eventType] : undefined;
+
+  // Explicit skipped events stay neutral even when their explanation contains
+  // historical words such as "invalid" or "failure".
+  if (item.eventType && SKIPPED_ACTIVITY_TYPES.has(item.eventType) && eventIcon) {
+    return eventIcon;
+  }
 
   // Failures always use the warning glyph, ahead of any per-type mapping, so the
   // feed's existing restrained error styling is preserved.
@@ -43,7 +58,6 @@ export function getActivityIcon(item: ActivityItem): LucideIcon {
 
   // Newer Discover/Finder rows carry an explicit event type for a deterministic
   // icon; everything else falls back to the original keyword/kind heuristics.
-  const eventIcon = item.eventType ? ACTIVITY_EVENT_ICONS[item.eventType] : undefined;
   if (eventIcon) {
     return eventIcon;
   }
@@ -113,6 +127,10 @@ export function getActivityIcon(item: ActivityItem): LucideIcon {
 
 export function getActivityTone(item: ActivityItem): ActivityItem["tone"] {
   const activityText = `${item.title} ${item.description}`.toLowerCase();
+
+  if (item.eventType && SKIPPED_ACTIVITY_TYPES.has(item.eventType)) {
+    return "muted";
+  }
 
   if (isFailureActivity(item, activityText)) {
     return "warning";

@@ -1094,30 +1094,24 @@ pattern evidence is missing or conflicting, the result stays `LOW` or
 
 #### Email-format discovery with GPT-5.5 web search (primary path)
 
-The primary way the employee email format is found is **AI web search**. When
-`PROSPECT_EMAIL_DISCOVERY_PROVIDER=openai_web_search` (the default) and
-`OPENAI_API_KEY` is set, `EmailDomainService` calls **GPT-5.5 via the OpenAI
-Responses API with the built-in `web_search` tool** (`PROSPECT_AI_MODEL`
-overrides the model). The model searches public sources such as
-RocketReach/Hunter-style email-format pages and returns **structured evidence
-only** — `{ sourceUrl, sourceType, patternRaw, normalizedPattern, exampleEmail,
-emailDomain, percentage }` rows plus a proposed selection. It runs **once per
-company**, never per person.
+The pipeline extracts and ranks structured source claims first. Clear consensus,
+a dominant percentage, or a matching example is resolved deterministically with
+no AI call. When evidence is missing or genuinely ambiguous, GPT-5.5 uses the
+OpenAI Responses API with `web_search` and returns strict JSON only: selected
+domain/pattern, confidence enums, up to five supporting sources, conflict count,
+and a decision code. Unsupported patterns, personal/aggregator domains, extra
+narrative fields, and selections absent from evidence are rejected. Website and
+employee email domains remain separate, and inferred addresses are never marked
+`VERIFIED`.
 
-The backend then validates that evidence before trusting it: unsupported
-patterns, personal/aggregator domains (gmail, rocketreach.co, hunter.io,
-linkedin.com, …), and any selection not actually present in the evidence are
-rejected; `HIGH` confidence requires a sourced, quantified row; and the example
-email domain wins over the website domain. So Esri resolves to `flast@esri.com`
-and Applied Materials resolves to `first_last@amat.com` (website
-`appliedmaterials.com`, email domain `amat.com`) **when public evidence supports
-it**. Inferred addresses are never marked `VERIFIED`.
-
-Cost is controlled: the web search consumes the same per-search `email_pattern`
-AI budget (so the deterministic selector — not a second model call — makes the
-final choice), high-confidence results are cached on the company for 7 days, and
-each user is rate limited (`PROSPECT_EMAIL_FORMAT_AI_HOURLY_LIMIT` /
-`PROSPECT_EMAIL_FORMAT_AI_DAILY_LIMIT`).
+The ambiguity resolver receives only deduplicated structured claims—never raw
+HTML, page boilerplate, employee lists, or generated evidence prose. Output is
+capped at 300–400 tokens; invalid JSON is retried once with the same compact
+payload, while transport failures are not duplicated. High-confidence results
+are cached for 30 days using normalized company/domain identity plus a discovery
+version. Explicit **Refresh with AI** reuses fresh source claims where possible
+and simultaneous refreshes are coalesced. Safe logs include actual token counts
+only when supplied by the SDK, plus model/source/cache/decision metadata.
 
 Fallbacks remain: pasting a specific public **source URL** parses that page
 deterministically (no web search), a **manual override** sets the format by
@@ -1288,7 +1282,7 @@ state) and lets you:
 - review compact **summary cards** (company, people found, email format, status) and the full company + email-format details/evidence,
 - **Add 10 more** unique people to this exact search (see [Add 10 more](#add-10-more-search-expansion)),
 - filter people by role group, filter the visible page, select people, and copy individual inferred emails,
-- **Find with AI** — discover the email format with GPT-5.5 web search, paste a specific public source URL, or fix it manually; the card shows the email domain, pattern, confidence, evidence source, and a reason summary,
+- **Find with AI** — discover the email format with GPT-5.5 web search, paste a specific public source URL, or fix it manually; the card shows domain, pattern, confidence, source chips, and a compact agreement/conflict count with no generated evidence narrative,
 - export the selection to Excel or add it to Imports,
 - delete the owned company and its related searches.
 

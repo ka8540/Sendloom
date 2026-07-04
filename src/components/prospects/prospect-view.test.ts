@@ -23,6 +23,7 @@ import {
   createEmptyProspectSelection,
   discoverPerSearchCopy,
   discoverPerSearchSentence,
+  emailFormatEvidenceSummary,
   emailStatusBadge,
   filterPeopleByText,
   formatPageLabel,
@@ -46,6 +47,14 @@ import {
   togglePageProspectSelection,
   toggleProspectSelection
 } from "@/components/prospects/prospect-view";
+
+const STRUCTURED_EMAIL_DECISION = JSON.stringify({
+  version: "structured-v2",
+  decisionCode: "SOURCE_MAJORITY",
+  supportingSourceCount: 3,
+  conflictingSourceCount: 0,
+  cacheKey: "structured-v2|walmart inc|walmart.com|walmart.com"
+});
 
 function quota(overrides: Partial<DiscoverQuota> = {}): DiscoverQuota {
   return {
@@ -112,6 +121,67 @@ function search(overrides: Partial<ProspectSearchNode> = {}): ProspectSearchNode
     ...overrides
   };
 }
+
+describe("compact email-format evidence summary", () => {
+  const base = {
+    emailFormatReason: STRUCTURED_EMAIL_DECISION,
+    emailDomainConfidence: "HIGH" as const,
+    patternConfidence: "HIGH" as const,
+    selectedEmailDomain: "walmart.com",
+    selectedPattern: "first.last",
+    domainEvidence: [
+      {
+        emailDomain: "walmart.com",
+        sourceUrl: "https://addtocrm.test/walmart",
+        sourceName: "AddToCRM",
+        sourceType: "public_format_page",
+        observedPattern: "first.last",
+        percentage: 51.8,
+        confidence: "HIGH" as const,
+        observedAt: "2026-07-04T00:00:00.000Z"
+      }
+    ],
+    patternEvidence: [
+      {
+        pattern: "first.last",
+        emailDomain: "walmart.com",
+        sourceUrl: "https://addtocrm.test/walmart",
+        sourceName: "AddToCRM",
+        sourceType: "public_format_page",
+        percentage: 51.8,
+        confidence: "HIGH" as const,
+        observedAt: "2026-07-04T00:00:00.000Z"
+      }
+    ]
+  };
+
+  it("renders agreement and conflict counts from structured metadata", () => {
+    expect(emailFormatEvidenceSummary(base)).toBe("3 sources agree");
+    expect(emailFormatEvidenceSummary({
+      ...base,
+      emailFormatReason: JSON.stringify({
+        ...JSON.parse(STRUCTURED_EMAIL_DECISION),
+        supportingSourceCount: 2,
+        conflictingSourceCount: 1
+      })
+    })).toBe("2 sources agree · 1 source conflicts");
+  });
+
+  it("ignores historical prose and derives a compact single-source label", () => {
+    expect(emailFormatEvidenceSummary({
+      ...base,
+      emailFormatReason: "Multiple public email-format pages identify Walmart's dominant format..."
+    })).toBe("1 supporting source");
+  });
+
+  it("shows a deterministic review message for insufficient evidence", () => {
+    expect(emailFormatEvidenceSummary({
+      ...base,
+      patternConfidence: "LOW",
+      emailFormatReason: null
+    })).toBe("Limited evidence · review before sending");
+  });
+});
 
 describe("email status badges — inferred is never verified", () => {
   it("labels inferred-high as Inferred and not the verified tone", () => {
@@ -788,9 +858,9 @@ describe("Discover list/detail split contracts", () => {
     expect(listSource).toContain('"search-row"');
   });
 
-  it("detail page renders summary cards, company details, and the People table (#1, #2, #3 layout)", () => {
-    expect(detailSource).toContain("SummaryCards");
-    expect(detailSource).toContain("CompanyCard");
+  it("detail page renders the quality summary, email-format panel, and the People table (#1, #2, #3 layout)", () => {
+    expect(detailSource).toContain("ResultsQualityCard");
+    expect(detailSource).toContain("EmailFormatPanel");
     expect(detailSource).toContain("PeopleTable");
   });
 

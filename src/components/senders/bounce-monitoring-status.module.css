@@ -1,0 +1,88 @@
+.root {
+  display: grid;
+  gap: 0.3rem;
+  margin-top: 0.35rem;
+  min-width: 0;
+}
+
+.statusLine {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.statusLine svg {
+  width: 0.95rem;
+  height: 0.95rem;
+  flex: none;
+}
+
+.iconActive {
+  color: var(--success);
+}
+
+.iconWarning {
+  color: var(--warning);
+}
+
+.iconMuted {
+  color: var(--muted);
+}
+
+.detail {
+  font-size: 0.78rem;
+  color: var(--muted);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.syncButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  justify-self: start;
+  padding: 0.4rem 0.7rem;
+  border-radius: 0.7rem;
+  border: 1px solid var(--line);
+  background: var(--surface-strong);
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+
+.syncButton:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--field-focus);
+}
+
+.syncButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.syncButton svg {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
+.spin {
+  animation: bounce-status-spin 0.8s linear infinite;
+}
+
+@keyframes bounce-status-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .syncButton {
+    transition: none;
+  }
+}

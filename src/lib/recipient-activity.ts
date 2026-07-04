@@ -1,4 +1,9 @@
-import { FAILURE_CODES, getHumanReadableFailureMessage, type FailureCode } from "@/lib/failures";
+import {
+  FAILURE_CODES,
+  getHumanReadableFailureMessage,
+  isPermanentRecipientAddressFailure,
+  type FailureCode
+} from "@/lib/failures";
 
 export const RECIPIENT_ACTIVITY_PAGE_SIZE = 10;
 
@@ -16,6 +21,9 @@ export type RecipientActivityItem = {
   isIssue: boolean;
   retryable: boolean;
   detailLabel: string | null;
+  /** Optional fuller explanation for tooltips/screen readers — never repeated
+   *  as permanently visible row copy. */
+  hint: string | null;
   attemptCount: number;
   lastAttemptAt: string;
   nextRetryAt: string | null;
@@ -95,6 +103,66 @@ function getFailureCode(metadata: unknown): FailureCode | null {
 
   const code = (metadata as { failureCode?: unknown }).failureCode;
   return typeof code === "string" && FAILURE_CODES.includes(code as FailureCode) ? (code as FailureCode) : null;
+}
+
+function getFailureCategory(metadata: unknown): string | null {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return null;
+  }
+  const category = (metadata as { failureCategory?: unknown }).failureCategory;
+  return typeof category === "string" ? category : null;
+}
+
+/** Concise visible reason for a permanently invalid address. */
+function invalidAddressReason(failureCategory: string | null): string {
+  if (failureCategory === "HARD_BOUNCE_DOMAIN_NOT_FOUND") {
+    return "Domain not found";
+  }
+  if (failureCategory === "HARD_BOUNCE_PERMANENT_MAILBOX_FAILURE") {
+    return "Mailbox unavailable";
+  }
+  if (failureCategory === "HARD_BOUNCE_INVALID_RECIPIENT") {
+    return "Invalid address";
+  }
+  return "Address not found";
+}
+
+export const SKIPPED_INVALID_ADDRESS_HINT =
+  "This address previously returned a permanent recipient error and will be skipped in future sends.";
+
+// Compact the visible reason for skipped rows. Older records carry verbose
+// sentences ("Address not found — this address previously returned a permanent
+// delivery failure.", "Skipped — recipient unsubscribed.") — the row shows only
+// the short reason; the fuller explanation lives in the hint.
+function compactSkipReason(lastError: string | null): string {
+  const normalized = lastError?.toLowerCase() ?? "";
+  if (!normalized) {
+    return "On the suppression list";
+  }
+  if (normalized.includes("unsubscribed")) {
+    return "Unsubscribed";
+  }
+  if (normalized.includes("domain not found")) {
+    return "Domain not found";
+  }
+  if (normalized.includes("mailbox unavailable")) {
+    return "Mailbox unavailable";
+  }
+  if (normalized.includes("address not found")) {
+    return "Address not found";
+  }
+  if (normalized.includes("invalid")) {
+    return "Invalid address";
+  }
+  if (normalized.includes("permanent delivery failure") || normalized.includes("permanently rejected")) {
+    return "Address not found";
+  }
+  if (normalized.includes("suppression list") || normalized.includes("suppressed")) {
+    return "On the suppression list";
+  }
+  const trimmed = lastError?.trim() ?? "";
+  // Strip trailing explanations after an em-dash so rows stay one line.
+  return trimmed.split(" — ")[0] || "On the suppression list";
 }
 
 function inferFailureCode(lastError: string | null): FailureCode | null {
@@ -199,7 +267,36 @@ function resolveMessage(status: string, isIssue: boolean, failureCode: FailureCo
 export function buildRecipientActivityItem(job: RecipientJobInput): RecipientActivityItem {
   const isIssue = ISSUE_STATUSES.has(job.status);
   const failureCode = getFailureCode(job.metadata) ?? inferFailureCode(job.lastError);
+  const failureCategory = getFailureCategory(job.metadata);
   const systemBlock = job.status === "PENDING" ? getSystemBlock(job.metadata) : null;
+
+  // A confirmed permanently-invalid ADDRESS is not a Sendloom failure — the
+  // send worked and the mailbox does not exist. Regardless of the stored
+  // status (new rows are SUPPRESSED; rows written before this mapping may
+  // still be FAILED/BOUNCED), the disposition reads as a calm Skipped row with
+  // a concise reason. It never counts as an issue and can never be retried.
+  if (
+    isPermanentRecipientAddressFailure({ failureCode, failureCategory }) &&
+    (job.status === "FAILED" || job.status === "SUPPRESSED" || job.status === "BOUNCED")
+  ) {
+    return {
+      id: job.id,
+      email: job.recipientEmail,
+      name: job.recipientName?.trim() ? job.recipientName.trim() : null,
+      status: job.status,
+      statusLabel: "Skipped",
+      tone: "neutral",
+      engaged: false,
+      message: invalidAddressReason(failureCategory),
+      isIssue: false,
+      retryable: false,
+      detailLabel: null,
+      hint: SKIPPED_INVALID_ADDRESS_HINT,
+      attemptCount: job.retryCount,
+      lastAttemptAt: toIso(job.updatedAt),
+      nextRetryAt: null
+    };
+  }
 
   if (systemBlock) {
     // Per-minute pacing is normal throttling, not something the user must act
@@ -218,9 +315,32 @@ export function buildRecipientActivityItem(job: RecipientJobInput): RecipientAct
       isIssue: !isPacing,
       retryable: true,
       detailLabel: isPacing ? "Queued" : "Paused",
+      hint: null,
       attemptCount: job.retryCount,
       lastAttemptAt: toIso(job.updatedAt),
       nextRetryAt: systemBlock.blockedUntil
+    };
+  }
+
+  // Every excluded recipient reads "Skipped · <short reason>" — the fuller
+  // explanation belongs to the hint, never permanently visible row copy.
+  if (job.status === "SUPPRESSED") {
+    return {
+      id: job.id,
+      email: job.recipientEmail,
+      name: job.recipientName?.trim() ? job.recipientName.trim() : null,
+      status: job.status,
+      statusLabel: "Skipped",
+      tone: "neutral",
+      engaged: false,
+      message: compactSkipReason(job.lastError),
+      isIssue: false,
+      retryable: false,
+      detailLabel: null,
+      hint: "This recipient is excluded from sending. Future sequences skip the address automatically.",
+      attemptCount: job.retryCount,
+      lastAttemptAt: toIso(job.updatedAt),
+      nextRetryAt: null
     };
   }
 
@@ -238,6 +358,7 @@ export function buildRecipientActivityItem(job: RecipientJobInput): RecipientAct
     isIssue,
     retryable,
     detailLabel: failureCode && ACTION_REQUIRED_FAILURES.has(failureCode) ? "Action required" : retryable ? "Retrying" : null,
+    hint: null,
     attemptCount: job.retryCount,
     lastAttemptAt: toIso(job.updatedAt),
     nextRetryAt: job.nextRetryAt ? toIso(job.nextRetryAt) : null

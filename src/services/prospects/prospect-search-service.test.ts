@@ -191,7 +191,7 @@ const AI_RESPONSES = {
       selectedEmailDomain: "apple.com",
       selectedPattern: "flast",
       confidence: "MEDIUM",
-      reasonSummary: "format",
+      decisionCode: "SOURCE_MAJORITY",
       evidenceIndexesUsed: [0, 1]
     }
   }
@@ -271,12 +271,12 @@ describe("ProspectSearchService pipeline", () => {
     expect(jane.emailStatus).toBe("INFERRED_MEDIUM");
     expect(prisma._state.people.every((p) => p.emailStatus !== "VERIFIED")).toBe(true);
 
-    // AI is used at most once per task, never per person (#18, #16):
-    // company resolved deterministically (0), roles batched (1), pattern (1).
+    // AI is used only where deterministic code cannot decide: company and
+    // format resolve without AI, while roles are still classified once.
     expect(ai.callsOfType("company_resolution")).toHaveLength(0);
     expect(ai.callsOfType("role_classification")).toHaveLength(1);
-    expect(ai.callsOfType("email_pattern")).toHaveLength(1);
-    expect(ai.calls).toHaveLength(2);
+    expect(ai.callsOfType("email_pattern")).toHaveLength(0);
+    expect(ai.calls).toHaveLength(1);
   });
 
   it("keeps Applied Materials website and email domain separate when evidence supports amat.com", async () => {
@@ -327,7 +327,7 @@ describe("ProspectSearchService pipeline", () => {
             selectedEmailDomain: "amat.com",
             selectedPattern: "first_last",
             confidence: "HIGH",
-            reasonSummary: "Evidence indicates amat.com with first_last local parts.",
+            decisionCode: "SOURCE_MAJORITY",
             evidenceIndexesUsed: [0, 1]
           }
         }
@@ -446,7 +446,7 @@ describe("ProspectSearchService pipeline", () => {
           selectedEmailDomain: "esri.com",
           selectedPattern: "flast",
           confidence: "HIGH",
-          reasonSummary: "RocketReach evidence indicates flast at esri.com.",
+          decisionCode: "SOURCE_MAJORITY",
           evidenceIndexesUsed: [0, 1]
         }
       }
@@ -460,7 +460,9 @@ describe("ProspectSearchService pipeline", () => {
         prisma as unknown as PrismaClient,
         ai.client,
         new EmailFormatDiscoveryService({ searchProvider: null, fetchPage })
-      )
+      ),
+      discoverQuota: allowAllQuota,
+      discoverCache: passthroughCache
     });
 
     const created = await service.createSearch(USER_ID, ESRI);
@@ -624,47 +626,43 @@ describe("ProspectSearchService pipeline", () => {
 });
 
 const APPLIED_MATERIALS_RAW = {
-  companyName: "Applied Materials, Inc.",
-  websiteDomain: "appliedmaterials.com",
   selectedEmailDomain: "amat.com",
   selectedPattern: "first_last",
-  confidence: "HIGH",
-  reasonSummary: "Public evidence shows first_last on amat.com.",
-  evidence: [
+  domainConfidence: "HIGH",
+  patternConfidence: "HIGH",
+  supportingSources: [
     {
-      sourceName: "RocketReach",
-      sourceUrl: "https://rocketreach.co/applied-materials-email-format",
+      label: "RocketReach",
+      url: "https://rocketreach.co/applied-materials-email-format",
       sourceType: "rocketreach",
-      patternRaw: "[first]_[last]",
-      normalizedPattern: "first_last",
-      exampleEmail: "jane_doe@amat.com",
-      emailDomain: "amat.com",
+      claimedDomain: "amat.com",
+      claimedPattern: "first_last",
       percentage: 84.7,
-      quote: "most common"
+      exampleEmail: "jane_doe@amat.com",
     }
-  ]
+  ],
+  conflictingSourceCount: 0,
+  decisionCode: "VERIFIED_EXAMPLE"
 };
 
 const ESRI_RAW = {
-  companyName: "Esri",
-  websiteDomain: "esri.com",
   selectedEmailDomain: "esri.com",
   selectedPattern: "flast",
-  confidence: "HIGH",
-  reasonSummary: "RocketReach shows flast on esri.com.",
-  evidence: [
+  domainConfidence: "HIGH",
+  patternConfidence: "HIGH",
+  supportingSources: [
     {
-      sourceName: "RocketReach",
-      sourceUrl: "https://rocketreach.co/esri-email-format",
+      label: "RocketReach",
+      url: "https://rocketreach.co/esri-email-format",
       sourceType: "rocketreach",
-      patternRaw: "[first_initial][last]",
-      normalizedPattern: "flast",
-      exampleEmail: "jdoe@esri.com",
-      emailDomain: "esri.com",
+      claimedDomain: "esri.com",
+      claimedPattern: "flast",
       percentage: 84.7,
-      quote: "most common"
+      exampleEmail: "jdoe@esri.com",
     }
-  ]
+  ],
+  conflictingSourceCount: 0,
+  decisionCode: "VERIFIED_EXAMPLE"
 };
 
 function discoveryCaller(response: unknown): EmailFormatWebSearchCaller & { search: ReturnType<typeof vi.fn> } {
@@ -676,12 +674,18 @@ function buildDiscoverService(
   options: {
     caller?: EmailFormatWebSearchCaller | null;
     rateLimiter?: (userId: string) => Promise<{ allowed: boolean; retryAfterSeconds: number }>;
+    aiResponse?: unknown;
   } = {}
 ) {
-  const ai = createMockAi({ responses: { role_classification: { classifications: [] } } });
+  const ai = createMockAi({
+    responses: {
+      role_classification: { classifications: [] },
+      ...(options.aiResponse === undefined ? {} : { email_pattern: options.aiResponse })
+    }
+  });
   const runner: ApifyRunner = { run: vi.fn(async () => ({ runId: null, datasetId: null, items: [] })) };
   const evidence = options.caller ? new OpenAIEmailFormatDiscoveryService({ caller: options.caller }) : undefined;
-  return new ProspectSearchService({
+  const service = new ProspectSearchService({
     prisma: prismaState as unknown as PrismaClient,
     apify: new ApifyProfileSearchService({ token: "t", actorId: "actor", runner }),
     companyResolution: new CompanyResolutionService(ai.client),
@@ -689,6 +693,7 @@ function buildDiscoverService(
     emailDomain: new EmailDomainService(prismaState as unknown as PrismaClient, ai.client, evidence),
     emailFormatRateLimiter: options.rateLimiter ?? (async () => ({ allowed: true, retryAfterSeconds: 0 }))
   });
+  return { service, ai };
 }
 
 function seedDiscoverCompany(prismaState: FakePrisma, overrides: Record<string, unknown> = {}) {
@@ -748,7 +753,7 @@ describe("ProspectSearchService AI email-format discovery", () => {
     seedPerson(prisma, company.id, "p1", "Jane", "Doe");
     seedPerson(prisma, company.id, "p2", "John", "Smith");
     const caller = discoveryCaller(APPLIED_MATERIALS_RAW);
-    const service = buildDiscoverService(prisma, { caller });
+    const { service } = buildDiscoverService(prisma, { caller });
 
     await service.discoverCompanyEmailFormat(USER_ID, company.id);
 
@@ -756,7 +761,12 @@ describe("ProspectSearchService AI email-format discovery", () => {
     expect(updated.emailDomain).toBe("amat.com");
     expect(updated.emailPattern).toBe("first_last");
     expect(updated.officialWebsiteDomain).toBe("appliedmaterials.com"); // website domain unchanged
-    expect(updated.emailFormatReason).toContain("amat.com");
+    expect(JSON.parse(String(updated.emailFormatReason))).toMatchObject({
+      version: "structured-v2",
+      decisionCode: "VERIFIED_EXAMPLE",
+      supportingSourceCount: 1,
+      conflictingSourceCount: 0
+    });
     expect(updated.emailFormatDiscoveredAt).toBeInstanceOf(Date);
 
     const jane = prisma._state.people.find((p) => p.firstName === "Jane")!;
@@ -778,7 +788,7 @@ describe("ProspectSearchService AI email-format discovery", () => {
       officialWebsiteDomain: "esri.com"
     });
     seedPerson(prisma, company.id, "p1", "Jane", "Doe");
-    const service = buildDiscoverService(prisma, { caller: discoveryCaller(ESRI_RAW) });
+    const { service } = buildDiscoverService(prisma, { caller: discoveryCaller(ESRI_RAW) });
 
     await service.discoverCompanyEmailFormat(USER_ID, company.id);
 
@@ -793,11 +803,11 @@ describe("ProspectSearchService AI email-format discovery", () => {
       emailDomainConfidence: "HIGH",
       emailPattern: "first_last",
       patternConfidence: "HIGH",
-      emailFormatDiscoveredAt: new Date()
+      emailFormatDiscoveredAt: new Date(Date.now() - 20 * 24 * 60 * 60 * 1_000)
     });
     seedPerson(prisma, company.id, "p1", "Jane", "Doe");
     const caller = discoveryCaller(APPLIED_MATERIALS_RAW);
-    const service = buildDiscoverService(prisma, { caller });
+    const { service } = buildDiscoverService(prisma, { caller });
 
     await service.discoverCompanyEmailFormat(USER_ID, company.id);
     // Cached: no model call, but new people still get their emails generated.
@@ -809,11 +819,89 @@ describe("ProspectSearchService AI email-format discovery", () => {
     expect(caller.search).toHaveBeenCalledTimes(1);
   });
 
+  it("treats structured evidence older than 30 days as stale", async () => {
+    const company = seedDiscoverCompany(prisma, {
+      emailDomain: "amat.com",
+      emailDomainConfidence: "HIGH",
+      emailPattern: "first_last",
+      patternConfidence: "HIGH",
+      emailFormatDiscoveredAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1_000)
+    });
+    const caller = discoveryCaller(APPLIED_MATERIALS_RAW);
+    const { service } = buildDiscoverService(prisma, { caller });
+
+    await service.discoverCompanyEmailFormat(USER_ID, company.id);
+    expect(caller.search).toHaveBeenCalledTimes(1);
+  });
+
+  it("explicit refresh reuses fresh structured evidence and calls the resolver once", async () => {
+    const observedAt = new Date().toISOString();
+    const company = seedDiscoverCompany(prisma, {
+      emailDomain: "amat.com",
+      emailDomainConfidence: "HIGH",
+      emailDomainEvidence: [
+        {
+          emailDomain: "amat.com",
+          sourceName: "RocketReach",
+          sourceUrl: "https://rocketreach.co/applied-materials-email-format",
+          sourceType: "public_format_page",
+          observedPattern: "first_last",
+          percentage: 84.7,
+          confidence: "HIGH",
+          observedAt
+        }
+      ],
+      emailPattern: "first_last",
+      patternConfidence: "HIGH",
+      patternEvidence: [
+        {
+          pattern: "first_last",
+          emailDomain: "amat.com",
+          sourceName: "RocketReach",
+          sourceUrl: "https://rocketreach.co/applied-materials-email-format",
+          sourceType: "public_format_page",
+          percentage: 84.7,
+          confidence: "HIGH",
+          observedAt
+        }
+      ],
+      emailFormatDiscoveredAt: new Date()
+    });
+    const caller = discoveryCaller(APPLIED_MATERIALS_RAW);
+    const { service, ai } = buildDiscoverService(prisma, {
+      caller,
+      aiResponse: {
+        selectedEmailDomain: "amat.com",
+        selectedPattern: "first_last",
+        confidence: "HIGH",
+        decisionCode: "VERIFIED_EXAMPLE",
+        evidenceIndexesUsed: [0, 1]
+      }
+    });
+
+    await service.discoverCompanyEmailFormat(USER_ID, company.id, { force: true });
+    expect(caller.search).not.toHaveBeenCalled();
+    expect(ai.callsOfType("email_pattern")).toHaveLength(1);
+    expect(ai.callsOfType("email_pattern")[0]?.maxOutputTokens).toBeLessThanOrEqual(400);
+  });
+
+  it("coalesces simultaneous discovery requests into one AI web search", async () => {
+    const company = seedDiscoverCompany(prisma);
+    const caller = discoveryCaller(APPLIED_MATERIALS_RAW);
+    const { service } = buildDiscoverService(prisma, { caller });
+
+    await Promise.all([
+      service.discoverCompanyEmailFormat(USER_ID, company.id),
+      service.discoverCompanyEmailFormat(USER_ID, company.id)
+    ]);
+    expect(caller.search).toHaveBeenCalledTimes(1);
+  });
+
   it("rate limits repeated AI discovery and never calls the model when blocked (#11)", async () => {
     const company = seedDiscoverCompany(prisma);
     seedPerson(prisma, company.id, "p1", "Jane", "Doe");
     const caller = discoveryCaller(APPLIED_MATERIALS_RAW);
-    const service = buildDiscoverService(prisma, {
+    const { service } = buildDiscoverService(prisma, {
       caller,
       rateLimiter: async () => ({ allowed: false, retryAfterSeconds: 1800 })
     });
@@ -824,7 +912,7 @@ describe("ProspectSearchService AI email-format discovery", () => {
 
   it("rejects AI discovery for a company owned by another user (#13)", async () => {
     const company = seedDiscoverCompany(prisma);
-    const service = buildDiscoverService(prisma, { caller: discoveryCaller(APPLIED_MATERIALS_RAW) });
+    const { service } = buildDiscoverService(prisma, { caller: discoveryCaller(APPLIED_MATERIALS_RAW) });
 
     await expect(service.discoverCompanyEmailFormat("someone_else", company.id)).rejects.toThrow(/company not found/i);
   });
@@ -968,7 +1056,7 @@ describe("Discover shared cache integration", () => {
         selectedEmailDomain: "amat.com",
         selectedPattern: "first_last",
         confidence: "HIGH",
-        reasonSummary: "Evidence indicates amat.com with first_last.",
+        decisionCode: "SOURCE_MAJORITY",
         evidenceIndexesUsed: [0, 1]
       }
     }
@@ -1210,7 +1298,7 @@ describe("Discover retry", () => {
         selectedEmailDomain: "amat.com",
         selectedPattern: "first_last",
         confidence: "HIGH",
-        reasonSummary: "format",
+        decisionCode: "SOURCE_MAJORITY",
         evidenceIndexesUsed: [0, 1]
       }
     }

@@ -1,7 +1,7 @@
 import type { ProspectCompany, ProspectCompanyPosition } from "@prisma/client";
 
 import type { GraphQLContext } from "@/graphql/context";
-import { coerceConfidenceLevel } from "@/lib/prospect-enums";
+import { coerceConfidenceLevel, overlayEmailCandidateStatus } from "@/lib/prospect-enums";
 import { buildConnection, cursorArgs, decodeCursor, resolveFirst } from "@/graphql/pagination";
 import { asStringArray, mapProspectError } from "@/graphql/resolvers/helpers";
 import { notFoundError, requireUser } from "@/graphql/errors";
@@ -123,6 +123,26 @@ export const Company = {
   },
   peopleCount(parent: ProspectCompany, _args: unknown, context: GraphQLContext) {
     return context.loaders.peopleCountByCompanyId.load(parent.id);
+  },
+  async emailStatusCounts(parent: ProspectCompany, _args: unknown, context: GraphQLContext) {
+    const rows = await context.loaders.emailStatusRowsByCompanyId.load(parent.id);
+    // Overlay the user's live suppression state (failed / unsubscribed /
+    // blocked) before aggregating, using the same precedence as the per-person
+    // resolver — the summary and the table always agree. Unknown stored
+    // statuses coerce to UNAVAILABLE so the enum contract holds for legacy rows.
+    const reasons = await Promise.all(
+      rows.map((row) =>
+        row.inferredEmail
+          ? context.loaders.suppressionReasonByEmail.load(row.inferredEmail.trim().toLowerCase())
+          : Promise.resolve(null)
+      )
+    );
+    const counts = new Map<string, number>();
+    rows.forEach((row, index) => {
+      const status = overlayEmailCandidateStatus(row.emailStatus, reasons[index]);
+      counts.set(status, (counts.get(status) ?? 0) + 1);
+    });
+    return [...counts.entries()].map(([status, count]) => ({ status, count }));
   },
   domainConfidence(parent: ProspectCompany) {
     return coerceConfidenceLevel(parent.domainConfidence);

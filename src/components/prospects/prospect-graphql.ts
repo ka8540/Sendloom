@@ -50,7 +50,11 @@ export type EmailCandidateStatus =
   | "INFERRED_LOW"
   | "UNAVAILABLE"
   | "SUPPRESSED"
-  | "INVALID";
+  | "INVALID"
+  // Overlaid at read time from the user's suppression list — hard-bounced
+  // addresses read INVALID (an address-quality outcome); UNSUBSCRIBED is an
+  // opt-out.
+  | "UNSUBSCRIBED";
 
 export type ConfidenceLevel = "HIGH" | "MEDIUM" | "LOW" | "UNAVAILABLE";
 export type ProspectSelectionMode = "EXPLICIT" | "ALL_MATCHING";
@@ -136,6 +140,13 @@ export type EmailDomainEvidenceNode = {
   observedAt: string | null;
 };
 
+/** Whole-company count per email-candidate status (people paginate 10/page, so
+ *  the detail page's quality summary reads this server-side aggregate). */
+export type CompanyEmailStatusCount = {
+  status: EmailCandidateStatus;
+  count: number;
+};
+
 export type CompanyDetail = {
   id: string;
   name: string;
@@ -153,6 +164,7 @@ export type CompanyDetail = {
   emailFormatReason: string | null;
   emailFormatDiscoveredAt: string | null;
   peopleCount: number;
+  emailStatusCounts: CompanyEmailStatusCount[];
   patternEvidence: PatternEvidenceNode[];
   positions: PositionNode[];
 };
@@ -351,6 +363,10 @@ export const COMPANY_DETAIL_QUERY = /* GraphQL */ `
       emailFormatReason
       emailFormatDiscoveredAt
       peopleCount
+      emailStatusCounts {
+        status
+        count
+      }
       patternEvidence {
         pattern
         emailDomain
@@ -507,6 +523,10 @@ export const REFRESH_COMPANY_EMAIL_FORMAT_MUTATION = /* GraphQL */ `
       emailFormatReason
       emailFormatDiscoveredAt
       peopleCount
+      emailStatusCounts {
+        status
+        count
+      }
       patternEvidence {
         pattern
         emailDomain
@@ -555,6 +575,10 @@ export const DISCOVER_COMPANY_EMAIL_FORMAT_MUTATION = /* GraphQL */ `
       emailFormatReason
       emailFormatDiscoveredAt
       peopleCount
+      emailStatusCounts {
+        status
+        count
+      }
       patternEvidence {
         pattern
         emailDomain
@@ -615,6 +639,10 @@ export const SET_COMPANY_EMAIL_INFERENCE_OVERRIDE_MUTATION = /* GraphQL */ `
       emailFormatReason
       emailFormatDiscoveredAt
       peopleCount
+      emailStatusCounts {
+        status
+        count
+      }
       patternEvidence {
         pattern
         emailDomain

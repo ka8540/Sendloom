@@ -3,6 +3,7 @@ import {
   Building2,
   FilePenLine,
   FileSpreadsheet,
+  MailX,
   MailSearch,
   Search,
   SendHorizontal,
@@ -106,5 +107,44 @@ describe("activity icons — existing rows still map unchanged (#feed-15 regress
     const clean = item({ kind: "run", eventType: undefined, title: "Camp updated", description: "20 sent, 0 issues across 20 recipients", tone: "success" });
     expect(getActivityIcon(clean)).not.toBe(TriangleAlert);
     expect(getActivityTone(clean)).toBe("success");
+  });
+
+  it("uses a neutral MailX icon for a skipped-only run", () => {
+    const skipped = item({
+      kind: "run",
+      eventType: "sequence_run_skipped",
+      title: "Camp updated",
+      description: "10 sent, 28 skipped across 38 recipients",
+      tone: "muted"
+    });
+
+    expect(getActivityIcon(skipped)).toBe(MailX);
+    expect(getActivityIcon(skipped)).not.toBe(TriangleAlert);
+    expect(getActivityTone(skipped)).toBe("muted");
+  });
+
+  it("keeps genuine Needs attention run activity on the warning path", () => {
+    const attention = item({
+      kind: "run",
+      title: "Camp hit an issue",
+      description: "10 sent, 8 need attention across 18 recipients",
+      tone: "warning"
+    });
+
+    expect(getActivityIcon(attention)).toBe(TriangleAlert);
+    expect(getActivityTone(attention)).toBe("warning");
+  });
+
+  it("keeps invalid-recipient suppression activity neutral", () => {
+    const skipped = item({
+      kind: "suppression",
+      eventType: "delivery_failure_recorded",
+      title: "Recipient safely skipped",
+      description: "An invalid recipient address was detected and future sends are blocked.",
+      tone: "muted"
+    });
+
+    expect(getActivityIcon(skipped)).toBe(MailX);
+    expect(getActivityTone(skipped)).toBe("muted");
   });
 });

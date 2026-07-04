@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 
 import { env } from "@/lib/env";
+import {
+  renewExpiringGmailWatches,
+  repairHardBouncedRecipientDispositions,
+  syncDueSenderBounces
+} from "@/services/bounces";
 import { processPendingCampaignWork } from "@/services/campaigns";
 import { syncConnectedSenderReplies } from "@/services/replies";
 
@@ -69,11 +74,50 @@ async function handleCron(request: Request) {
     });
   }
 
+  // Gmail bounce monitoring: keep mailbox watches alive (they expire ~weekly;
+  // this no-ops when nothing is due) and run the incremental history sync as a
+  // fallback for missed Pub/Sub pushes. Failures here never block sending.
+  let watchRenewal = { sendersChecked: 0, renewed: 0, failed: 0 };
+  let bounceSync = { sendersChecked: 0, processedBounces: 0, sendersFailed: 0 };
+  try {
+    watchRenewal = await renewExpiringGmailWatches();
+  } catch (error) {
+    console.error("[campaign-cron] Gmail watch renewal failed.", error);
+    errors.push({
+      scope: "gmail-watch-renewal",
+      message: error instanceof Error ? error.message : String(error)
+    });
+  }
+  try {
+    bounceSync = await syncDueSenderBounces();
+  } catch (error) {
+    console.error("[campaign-cron] Bounce sync failed.", error);
+    errors.push({
+      scope: "bounce-sync",
+      message: error instanceof Error ? error.message : String(error)
+    });
+  }
+  // Idempotent disposition repair: recipients recorded as FAILED by the older
+  // bounce mapping become Skipped (SUPPRESSED). No-ops once converged.
+  let dispositionRepair = { repairedCount: 0 };
+  try {
+    dispositionRepair = await repairHardBouncedRecipientDispositions();
+  } catch (error) {
+    console.error("[campaign-cron] Bounce disposition repair failed.", error);
+    errors.push({
+      scope: "bounce-disposition-repair",
+      message: error instanceof Error ? error.message : String(error)
+    });
+  }
+
   return NextResponse.json({
     ...result,
     repliesSynced: replySync.repliesStored,
     errors,
-    replySync
+    replySync,
+    watchRenewal,
+    bounceSync,
+    dispositionRepair
   });
 }
 

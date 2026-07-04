@@ -2,7 +2,7 @@ import type { CSSProperties } from "react";
 import type { Route } from "next";
 import Link from "next/link";
 import { after } from "next/server";
-import type { CampaignStatus, RunStatus } from "@prisma/client";
+import type { CampaignStatus, RecipientJobStatus, RunStatus } from "@prisma/client";
 import {
   ArrowRight,
   BarChart3,
@@ -21,19 +21,30 @@ import { formatCompactNumber, formatRelativeTime, buildTrend, humanizeEnum } fro
 import { OverviewSummary, type SendWindowSender, type TemplateFormatSlice } from "@/components/dashboard/overview-summary";
 import { OverviewTourLauncher } from "@/components/dashboard/overview-tour-launcher";
 import { SequencePanel } from "@/components/dashboard/sequence-panel";
+import { buildSequenceOutcomePresentation } from "@/components/dashboard/sequence-outcome";
 import type {
-  SequenceHealthTone,
   SequenceMetric,
   SequenceRowData,
   SequenceScheduleType
 } from "@/components/dashboard/types";
 import { processPendingCampaignWork, readDailyLimitPauseInfo, resumeCampaignRunsBlockedByDailyLimit } from "@/services/campaigns";
 import { listHunterDomainSearchesForUser } from "@/services/hunter-domain-searches";
+import {
+  summarizeOverviewRun,
+  type RecipientOverviewInput
+} from "@/lib/recipient-overview-disposition";
 import styles from "./overview-command-center.module.css";
 
 const ACTIVE_RUN_STATUSES: RunStatus[] = ["QUEUED", "RUNNING"];
 const DONE_RUN_STATUSES = new Set<RunStatus>(["COMPLETED", "FAILED", "CANCELLED"]);
-const FAILURE_RUN_STATUSES: RunStatus[] = ["FAILED"];
+const OVERVIEW_OUTCOME_STATUSES: RecipientJobStatus[] = [
+  "FAILED",
+  "RETRYING",
+  "SUPPRESSED",
+  "INVALID",
+  "BOUNCED",
+  "COMPLAINED"
+];
 
 function getDeliveredCount(run?: {
   sentCount?: number | null;
@@ -41,14 +52,6 @@ function getDeliveredCount(run?: {
   clickedCount?: number | null;
 } | null) {
   return (run?.sentCount ?? 0) + (run?.openedCount ?? 0) + (run?.clickedCount ?? 0);
-}
-
-function getIssueCount(run?: {
-  failedCount?: number | null;
-  suppressedCount?: number | null;
-  invalidCount?: number | null;
-} | null) {
-  return (run?.failedCount ?? 0) + (run?.suppressedCount ?? 0) + (run?.invalidCount ?? 0);
 }
 
 function getProcessedCount(run?: {
@@ -59,7 +62,12 @@ function getProcessedCount(run?: {
   suppressedCount?: number | null;
   invalidCount?: number | null;
 } | null) {
-  return getDeliveredCount(run) + getIssueCount(run);
+  return (
+    getDeliveredCount(run) +
+    (run?.failedCount ?? 0) +
+    (run?.suppressedCount ?? 0) +
+    (run?.invalidCount ?? 0)
+  );
 }
 
 function hasKnownRunMetrics(
@@ -98,7 +106,6 @@ export default async function OverviewCommandCenter() {
     templateFormatGroups,
     activeSequenceCount,
     validatedSequenceCount,
-    needsAttentionCount,
     sentPreviousDay,
     recentCampaigns,
     recentRuns,
@@ -165,12 +172,6 @@ export default async function OverviewCommandCenter() {
         lastValidatedAt: {
           not: null
         }
-      }
-    }),
-    prisma.campaign.count({
-      where: {
-        userId: user.id,
-        OR: [{ status: "FAILED" }, { runs: { some: { status: { in: FAILURE_RUN_STATUSES } } } }]
       }
     }),
     prisma.campaignRun.aggregate({
@@ -244,6 +245,14 @@ export default async function OverviewCommandCenter() {
           select: {
             id: true,
             name: true
+          }
+        },
+        recipientJobs: {
+          where: { status: { in: OVERVIEW_OUTCOME_STATUSES } },
+          select: {
+            status: true,
+            metadata: true,
+            lastError: true
           }
         }
       }
@@ -344,23 +353,40 @@ export default async function OverviewCommandCenter() {
     const info = campaignDisplayRunInfo.get(campaign.id);
     return info?.displayRun ? [info.displayRun.id] : [];
   });
-  const latestRunCountRows = latestRunIds.length
-    ? await prisma.recipientJob.groupBy({
-        by: ["campaignRunId", "status"],
-        where: {
-          campaignRunId: {
-            in: latestRunIds
+  const [latestRunCountRows, latestRunRecipientRows] = latestRunIds.length
+    ? await Promise.all([
+        prisma.recipientJob.groupBy({
+          by: ["campaignRunId", "status"],
+          where: { campaignRunId: { in: latestRunIds } },
+          _count: true
+        }),
+        prisma.recipientJob.findMany({
+          where: {
+            campaignRunId: { in: latestRunIds },
+            status: { in: OVERVIEW_OUTCOME_STATUSES }
+          },
+          select: {
+            campaignRunId: true,
+            status: true,
+            metadata: true,
+            lastError: true
           }
-        },
-        _count: true
-      })
-    : [];
+        })
+      ])
+    : [[], []];
   const latestRunCounts = new Map<string, Record<string, number>>();
+  const latestRunRecipients = new Map<string, RecipientOverviewInput[]>();
 
   for (const row of latestRunCountRows) {
     const counts = latestRunCounts.get(row.campaignRunId) ?? {};
     counts[row.status] = row._count;
     latestRunCounts.set(row.campaignRunId, counts);
+  }
+
+  for (const row of latestRunRecipientRows) {
+    const recipients = latestRunRecipients.get(row.campaignRunId) ?? [];
+    recipients.push(row);
+    latestRunRecipients.set(row.campaignRunId, recipients);
   }
 
   const overviewCampaigns = recentCampaigns.map((campaign) => {
@@ -370,6 +396,18 @@ export default async function OverviewCommandCenter() {
       isFromPreviousRun: false
     };
     const latestRunCountsByStatus = displayRun ? latestRunCounts.get(displayRun.id) : null;
+    const overviewDispositionCounts = displayRun
+      ? summarizeOverviewRun({
+          recipientJobs: latestRunRecipients.get(displayRun.id),
+          totalRecipients: displayRun.totalRecipients,
+          sentCount: displayRun.sentCount,
+          openedCount: displayRun.openedCount,
+          clickedCount: displayRun.clickedCount,
+          failedCount: displayRun.failedCount,
+          suppressedCount: displayRun.suppressedCount,
+          invalidCount: displayRun.invalidCount
+        })
+      : null;
     const displayRunSnapshot = displayRun
       ? {
           ...displayRun,
@@ -378,7 +416,8 @@ export default async function OverviewCommandCenter() {
           clickedCount: latestRunCountsByStatus ? (latestRunCountsByStatus.CLICKED ?? 0) : displayRun.clickedCount,
           failedCount: latestRunCountsByStatus ? (latestRunCountsByStatus.FAILED ?? 0) : displayRun.failedCount,
           suppressedCount: latestRunCountsByStatus ? (latestRunCountsByStatus.SUPPRESSED ?? 0) : displayRun.suppressedCount,
-          invalidCount: latestRunCountsByStatus ? (latestRunCountsByStatus.INVALID ?? 0) : displayRun.invalidCount
+          invalidCount: latestRunCountsByStatus ? (latestRunCountsByStatus.INVALID ?? 0) : displayRun.invalidCount,
+          overviewDispositionCounts
         }
       : null;
 
@@ -410,25 +449,23 @@ export default async function OverviewCommandCenter() {
       }
 
       totals.delivered += getDeliveredCount(latestRun);
-      totals.failed += latestRun.failedCount;
-      totals.invalid += latestRun.invalidCount;
-      totals.suppressed += latestRun.suppressedCount;
+      totals.needsAttention += latestRun.overviewDispositionCounts?.needsAttention ?? 0;
+      totals.skipped += latestRun.overviewDispositionCounts?.skipped ?? 0;
       totals.recipients += latestRun.totalRecipients;
 
       return totals;
     },
     {
       delivered: 0,
-      failed: 0,
-      invalid: 0,
-      suppressed: 0,
+      needsAttention: 0,
+      skipped: 0,
       recipients: 0
     }
   );
-  const analyticsIssueCount = runTotals.failed + runTotals.invalid;
+  const analyticsIssueCount = runTotals.needsAttention;
   const eligibleRecipientCount = Math.max(
     0,
-    Math.max(runTotals.recipients - runTotals.suppressed, runTotals.delivered + analyticsIssueCount)
+    Math.max(runTotals.recipients - runTotals.skipped, runTotals.delivered + analyticsIssueCount)
   );
   const deliveryMix = buildDeliveryMix({
     delivered: runTotals.delivered,
@@ -457,9 +494,16 @@ export default async function OverviewCommandCenter() {
         : actualProcessedCount < actualTotalRecipients
       : false;
     const deliveredCount = getDeliveredCount(latestRun);
-    const processedCount = getProcessedCount(latestRun);
+    const dispositionCounts = latestRun?.overviewDispositionCounts ?? {
+      sent: 0,
+      skipped: 0,
+      needsAttention: 0,
+      pending: 0
+    };
+    const processedCount = latestRun
+      ? deliveredCount + dispositionCounts.skipped + dispositionCounts.needsAttention
+      : 0;
     const totalRecipients = latestRun?.totalRecipients ?? 0;
-    const issueCount = getIssueCount(latestRun);
     const isRunWaitingForDailyLimit =
       hasActualRecipientWorkRemaining && (dailyLimitPauseStillBlocked || (isActiveRun && isSenderBlocked));
     const dailyLimitBlock =
@@ -489,19 +533,19 @@ export default async function OverviewCommandCenter() {
       : totalRecipients > 0
         ? `${formatCompactNumber(processedCount)}/${formatCompactNumber(totalRecipients)}`
         : formatCompactNumber(processedCount);
-    const hasIssues = metricsKnown && issueCount > 0;
+    const outcome = buildSequenceOutcomePresentation(dispositionCounts);
     const metrics: SequenceMetric[] = [
       { key: "processed", label: "Processed", value: processedValue },
       { key: "delivered", label: "Delivered", value: metricNumber(deliveredCount) },
       { key: "opened", label: "Opened", value: metricNumber(latestRun?.openedCount ?? 0) },
       {
-        key: "issues",
-        label: "Issues",
-        value: metricsKnown ? formatCompactNumber(issueCount) : "—",
-        tone: hasIssues ? "issues" : undefined
+        key: outcome.metric.key,
+        label: outcome.metric.label,
+        value: metricsKnown ? formatCompactNumber(outcome.metric.count) : "—",
+        tone: metricsKnown ? outcome.metric.tone : undefined
       }
     ];
-    const health: { label: string; tone: SequenceHealthTone } = dailyLimitBlock
+    const health: SequenceRowData["health"] = dailyLimitBlock
       ? { label: "Safety pause", tone: "idle" }
       : isSyncing
         ? { label: "Syncing metrics", tone: "syncing" }
@@ -509,9 +553,19 @@ export default async function OverviewCommandCenter() {
           ? campaign.lastValidatedAt
             ? { label: "Ready to launch", tone: "idle" }
             : { label: "Needs validation", tone: "idle" }
-          : hasIssues
-            ? { label: `${formatCompactNumber(issueCount)} ${issueCount === 1 ? "issue" : "issues"}`, tone: "issues" }
-            : { label: "Clean delivery", tone: "clean" };
+          : status.tone === "failed" && dispositionCounts.needsAttention === 0
+            ? {
+                label: "Needs attention",
+                tone: "issues",
+                ariaLabel: "This sequence requires attention."
+              }
+            : {
+                ...outcome.health,
+                label:
+                  outcome.health.tone === "clean"
+                    ? outcome.health.label
+                    : outcome.health.label.replace(/^\d+/, (count) => formatCompactNumber(Number(count)))
+              };
     const lastActivityAt = latestRun?.updatedAt ?? campaign.updatedAt;
     const isPausedRun = actualRunStatus === "PAUSED" || Boolean(dailyLimitBlock);
     // Exclude PAUSED and daily-limit blocked — those don't get a Relaunch action.
@@ -540,18 +594,25 @@ export default async function OverviewCommandCenter() {
       lastActivityAt: lastActivityAt.toISOString(),
       updatedAtValue: lastActivityAt.getTime(),
       isValidated: Boolean(campaign.lastValidatedAt),
-      needsAttention: status.tone === "failed",
+      needsAttention: status.tone === "failed" || dispositionCounts.needsAttention > 0,
       canRelaunch,
       isActiveRun,
       isPausedRun,
       dailyLimitBlock
     };
   });
+  const needsAttentionCount = sequenceRows.filter((row) => row.needsAttention).length;
 
   // Discover + Finder activity sources. These are read defensively so a missing
   // table or transient read error degrades the feed gracefully (empty) rather
   // than breaking the whole Overview page. Each is scoped to the current user.
-  const [recentProspectSearchRows, recentDiscoverExpansionRows, recentDomainSearchSummaries, recentActivityAuditRows] =
+  const [
+    recentProspectSearchRows,
+    recentDiscoverExpansionRows,
+    recentDomainSearchSummaries,
+    recentActivityAuditRows,
+    recentDeliveryFailureRows
+  ] =
     await Promise.all([
       prisma.prospectSearch
         .findMany({
@@ -597,6 +658,16 @@ export default async function OverviewCommandCenter() {
           orderBy: { createdAt: "desc" },
           select: { id: true, action: true, metadata: true, createdAt: true }
         })
+        .catch(() => []),
+      // Confirmed permanent delivery failures recorded by Gmail bounce
+      // monitoring. Only the row id + timestamp are read — never the address.
+      prisma.suppression
+        .findMany({
+          where: { userId: user.id, source: "gmail-dsn", reason: { in: ["HARD_BOUNCE", "INVALID_EMAIL"] } },
+          take: 4,
+          orderBy: { updatedAt: "desc" },
+          select: { id: true, updatedAt: true }
+        })
         .catch(() => [])
     ]);
 
@@ -632,6 +703,10 @@ export default async function OverviewCommandCenter() {
       action: row.action,
       metadata: row.metadata,
       createdAt: row.createdAt
+    })),
+    recentDeliveryFailures: recentDeliveryFailureRows.map((row) => ({
+      id: row.id,
+      updatedAt: row.updatedAt
     }))
   });
   const sequenceHealth = buildSequenceHealth(sequenceRows);

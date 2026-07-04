@@ -254,7 +254,7 @@ function needsAttentionStep(): ManualStep {
   return {
     id: "needs-attention",
     title: "Items that need attention",
-    body: "This highlights failed, invalid, paused, or review-required items that may prevent a workflow from completing normally. When it reads zero, nothing currently needs your review.",
+    body: "This highlights Gmail authorization, retryable delivery, queue, server, configuration, paused, or other review-required problems. Invalid, unsubscribed, and suppressed recipients are safely skipped instead. When it reads zero, nothing currently needs your review.",
     selector: sel("needs-attention"),
     placement: "bottom"
   };
@@ -264,7 +264,7 @@ function deliveryIssuesStep(): ManualStep {
   return {
     id: "delivery-issues",
     title: "Delivery success and issues",
-    body: "The success ring and the issues figure summarize delivery across your sequences. Issues count failed or invalid recipients: some can be retried automatically, while others need your review before the workflow can finish. A high number does not guarantee every retry will succeed.",
+    body: "The success ring and issues figure summarize delivery across your sequences. Issues include only operational failures that may need a retry, reconnect, or review. Permanent invalid addresses, unsubscribes, and suppressions are shown separately as Skipped and do not use warning styling.",
     selector: sel("delivery-issues"),
     placement: "left",
     optional: true
@@ -419,7 +419,7 @@ export function overviewFirstSequenceSteps(): ManualStep[] {
 }
 
 /**
- * Phase 4 — attention-related data has appeared (failures, invalid recipients,
+ * Phase 4 — attention-related data has appeared (operational failures,
  * paused work, or Gmail capacity pressure). Explains the attention surfaces and
  * what retryable versus action-required means, without overpromising.
  */
@@ -429,7 +429,7 @@ export function overviewAttentionSteps(): ManualStep[] {
     {
       id: "delivery-issues",
       title: "Retryable versus action required",
-      body: "Issues here group failed and invalid recipients. Retryable items can be attempted again automatically; action-required items need your review; invalid recipients have unusable destination data. The counts summarize across your sequences, and not every retry will succeed.",
+      body: "Issues here include only operational problems: retryable failures may be attempted again, while action-required Gmail authorization, queue, server, or configuration problems may need your review. Not every retry will succeed. Permanent invalid addresses, unsubscribes, and suppressions appear as Skipped and require no warning icon.",
       selector: sel("delivery-issues"),
       placement: "left",
       optional: true
