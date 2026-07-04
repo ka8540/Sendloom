@@ -66,6 +66,7 @@ import {
 } from "@/components/prospects/prospect-graphql";
 import {
   ADD_MORE_CANCEL_LABEL,
+  ADD_MORE_CHOOSE_ROLE_HINT,
   ADD_MORE_CONFIRM_LABEL,
   ADD_MORE_DIALOG_BODY,
   ADD_MORE_DIALOG_TITLE,
@@ -75,6 +76,7 @@ import {
   EXTERNAL_LINK_TARGET,
   INFERRED_EMAIL_NOTICE,
   addMoreDisabledReason,
+  addMoreSearchLabel,
   buildProspectSelectionInput,
   buildQualitySegments,
   confidenceBadge,
@@ -91,11 +93,13 @@ import {
   formatShowingLabel,
   getPageSelectionState,
   getProspectSelectionCount,
+  groupedRoleLabels,
   isEmailCopyable,
   isProcessQuotaBlocked,
   isProspectSelected,
   personLocation,
   qualityPercent,
+  resolveAddMoreTarget,
   resolveNextEmailFormatMode,
   resolvePageCount,
   resolveSelectedSearchView,
@@ -104,6 +108,8 @@ import {
   statusBadge,
   togglePageProspectSelection,
   toggleProspectSelection,
+  type AddMoreCandidateSearch,
+  type AddMoreTarget,
   type EmailFormatActionMode,
   type PageSelectionState,
   type ProspectSelectionState,
@@ -502,14 +508,17 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     [activeCategory, loadPeople]
   );
 
-  const handleAddMore = useCallback(async () => {
-    if (!search || search.status !== "READY" || !search.company || expanding) {
+  // Extends ONE user-owned child search — the one resolved from the active role
+  // tab (or explicitly chosen in the dialog). Never adds a batch to every role
+  // search of the grouped company at once.
+  const handleAddMore = useCallback(async (targetSearchId: string) => {
+    if (!search || search.status !== "READY" || !search.company || expanding || !targetSearchId) {
       return;
     }
     const idempotencyKey =
       typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
         ? crypto.randomUUID()
-        : `${search.id}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        : `${targetSearchId}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
     setShowAddMoreDialog(false);
     setExpanding(true);
@@ -518,7 +527,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
 
     const result = await prospectGraphql<{ addMoreDiscoverPeople: DiscoverSearchExpansion }>(
       ADD_MORE_DISCOVER_PEOPLE_MUTATION,
-      { searchId: search.id, idempotencyKey }
+      { searchId: targetSearchId, idempotencyKey }
     );
     setExpanding(false);
     void loadQuota();
@@ -533,7 +542,9 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     }
 
     const expansion = result.data.addMoreDiscoverPeople;
-    if (expansion.exhausted) {
+    // Exhaustion is per child search — only mirror it locally when it applies
+    // to the search this page is routed on.
+    if (expansion.exhausted && expansion.searchId === search.id) {
       setSessionExhausted(true);
     }
     setActionNotice({ message: expansion.message ?? `${expansion.addedCount} new people were added.` });
@@ -685,6 +696,43 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
       exhausted: searchExhausted
     });
   const addMoreDisabled = addMoreDisabledReason(quota, expanding);
+
+  // The grouped company's child searches (this user's only). Falls back to the
+  // routed search so a company payload without siblings still targets itself.
+  const companySearches = useMemo<AddMoreCandidateSearch[]>(() => {
+    if (company?.searches && company.searches.length > 0) {
+      return company.searches.map((child) => ({
+        id: child.id,
+        status: child.status,
+        requestedTitles: child.requestedTitles,
+        positionCategories: child.positionCategories,
+        createdAt: child.createdAt
+      }));
+    }
+    if (!search) {
+      return [];
+    }
+    return [
+      {
+        id: search.id,
+        status: search.status,
+        requestedTitles: search.requestedTitles,
+        positionCategories: [],
+        createdAt: search.createdAt
+      }
+    ];
+  }, [company, search]);
+
+  // Which child search "Add 10 more" extends (or whether the user must choose).
+  const addMoreTarget = useMemo<AddMoreTarget>(
+    () =>
+      resolveAddMoreTarget({
+        activeCategory,
+        searches: companySearches,
+        currentSearchId: search?.id ?? ""
+      }),
+    [activeCategory, companySearches, search?.id]
+  );
 
   const selectionScope = useMemo(
     () => ({ companyId: company?.id ?? "", positionCategory: activeCategory }),
@@ -883,7 +931,16 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     return <div className={styles.page} />;
   }
 
-  const roleLabel = search.requestedTitles.length > 0 ? search.requestedTitles.join(", ") : "Any role";
+  // Grouped header: distinct requested roles across ALL of this user's searches
+  // for the company (one Walmart page covers Software Engineer + Recruiter).
+  // The people count is the company query's unique union of allocated people.
+  const groupedRoles = company ? groupedRoleLabels(company.searches ?? []) : [];
+  const roleLabel =
+    groupedRoles.length > 0
+      ? groupedRoles.join(", ")
+      : search.requestedTitles.length > 0
+        ? search.requestedTitles.join(", ")
+        : "Any role";
   const locationLabel = search.requestedLocations[0] ?? "Any location";
   const headerPeopleCount = company?.peopleCount ?? search.peopleCount;
   const detailStage = resolveDetailStage(search);
@@ -1190,6 +1247,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
         peopleCount={company?.peopleCount ?? search.peopleCount ?? 0}
         quota={quota}
         expanding={expanding}
+        target={addMoreTarget}
         onConfirm={handleAddMore}
         onClose={() => setShowAddMoreDialog(false)}
       />
@@ -2029,6 +2087,7 @@ function AddMorePeopleDialog({
   peopleCount,
   quota,
   expanding,
+  target,
   onConfirm,
   onClose
 }: {
@@ -2036,12 +2095,27 @@ function AddMorePeopleDialog({
   peopleCount: number;
   quota: DiscoverQuota | null;
   expanding: boolean;
-  onConfirm: () => void;
+  target: AddMoreTarget;
+  onConfirm: (targetSearchId: string) => void;
   onClose: () => void;
 }) {
+  // When several role searches exist and no role tab pins the target, the user
+  // must explicitly choose which search to extend — we never guess, and we
+  // never add a batch to every role at once.
+  const [chosenSearchId, setChosenSearchId] = useState<string>("");
+  useEffect(() => {
+    if (open) {
+      setChosenSearchId(target.kind === "choose" ? target.options[0]?.id ?? "" : "");
+    }
+  }, [open, target]);
+
   if (!open) {
     return null;
   }
+
+  const resolvedSearchId =
+    target.kind === "search" ? target.search.id : target.kind === "choose" ? chosenSearchId : "";
+
   return (
     <div className={styles.modalOverlay} role="presentation">
       <div className={`card ${styles.modalCard}`} role="dialog" aria-modal="true" aria-labelledby="discover-add-more-title">
@@ -2054,6 +2128,34 @@ function AddMorePeopleDialog({
           </div>
           <CircularCloseButton label="Close" onClick={onClose} disabled={expanding} />
         </div>
+
+        {target.kind === "choose" && (
+          <label className={styles.field}>
+            <span className={styles.fieldLabel}>Role group</span>
+            <select
+              className={styles.input}
+              value={chosenSearchId}
+              onChange={(event) => setChosenSearchId(event.target.value)}
+              disabled={expanding}
+              aria-label="Role group to extend"
+            >
+              {target.options.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {addMoreSearchLabel(option)}
+                </option>
+              ))}
+            </select>
+            <span className={styles.fieldHint}>{ADD_MORE_CHOOSE_ROLE_HINT}</span>
+          </label>
+        )}
+        {target.kind === "search" && (
+          <dl className={styles.reviewGrid}>
+            <div>
+              <dt>Role group</dt>
+              <dd>{addMoreSearchLabel(target.search)}</dd>
+            </div>
+          </dl>
+        )}
 
         <dl className={styles.reviewGrid}>
           <div>
@@ -2070,7 +2172,12 @@ function AddMorePeopleDialog({
           <button type="button" className={styles.ghostButton} onClick={onClose} disabled={expanding}>
             {ADD_MORE_CANCEL_LABEL}
           </button>
-          <button type="button" className={styles.primaryButton} onClick={onConfirm} disabled={expanding}>
+          <button
+            type="button"
+            className={styles.primaryButton}
+            onClick={() => resolvedSearchId && onConfirm(resolvedSearchId)}
+            disabled={expanding || !resolvedSearchId}
+          >
             {expanding ? <LoaderCircle aria-hidden="true" className={styles.spin} /> : <UserPlus aria-hidden="true" />}
             <span>{expanding ? ADD_MORE_LOADING_LABEL : ADD_MORE_CONFIRM_LABEL}</span>
           </button>

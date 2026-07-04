@@ -45,6 +45,7 @@ export function createFakePrisma() {
   const discoverCachePeople: Row[] = [];
   const expansions: Row[] = [];
   const suppressions: Row[] = [];
+  const searchPeople: Row[] = [];
 
   const companyById = (id: string) => companies.find((row) => row.id === id);
 
@@ -104,7 +105,7 @@ export function createFakePrisma() {
 
   const client = {
     // Direct access for assertions in tests.
-    _state: { companies, positions, people, searches, titleCache, discoverCache, discoverCachePeople, expansions, suppressions },
+    _state: { companies, positions, people, searches, titleCache, discoverCache, discoverCachePeople, expansions, suppressions, searchPeople },
 
     // Minimal user-scoped suppression reads (the Discover overlay loader only
     // issues findMany with { userId, email: { in: [...] } }).
@@ -229,6 +230,11 @@ export function createFakePrisma() {
       findMany: async ({ where }: { where: Row }) => searches.filter((r) => matchGeneric(r, where)).map((r) => ({ ...r })),
       count: async ({ where }: { where: Row }) => searches.filter((r) => matchGeneric(r, where)).length,
       deleteMany: async ({ where }: { where: Row }) => {
+        // Emulates the DB's ON DELETE CASCADE for allocations.
+        const removed = searches.filter((r) => matchGeneric(r, where ?? {}));
+        for (const row of removed) {
+          deleteRows(searchPeople, (a) => a.searchId === row.id);
+        }
         const count = deleteRows(searches, (r) => matchGeneric(r, where ?? {}));
         return { count };
       },
@@ -236,6 +242,39 @@ export function createFakePrisma() {
         const row = searches.find((r) => r.id === where.id);
         Object.assign(row!, data, { updatedAt: now() });
         return { ...row };
+      }
+    },
+
+    prospectSearchPerson: {
+      create: async ({ data }: { data: Row }) => {
+        const row = { id: nextId("allocation"), allocatedAt: now(), allocationOrder: 0, allocationSource: "CACHE", ...data };
+        searchPeople.push(row);
+        return { ...row };
+      },
+      upsert: async ({ where, create, update }: { where: Row; create: Row; update: Row }) => {
+        const composite = where.searchId_personId;
+        let row = composite
+          ? searchPeople.find((r) => r.searchId === composite.searchId && r.personId === composite.personId)
+          : searchPeople.find((r) => r.id === where.id);
+        if (row) {
+          Object.assign(row, update);
+        } else {
+          row = { id: nextId("allocation"), allocatedAt: now(), allocationOrder: 0, allocationSource: "CACHE", ...create };
+          searchPeople.push(row);
+        }
+        return { ...row };
+      },
+      findFirst: async ({ where }: { where: Row }) => {
+        const row = searchPeople.find((r) => matchGeneric(r, where ?? {}));
+        return row ? { ...row } : null;
+      },
+      findMany: async ({ where }: { where?: Row } = {}) =>
+        searchPeople.filter((r) => matchGeneric(r, where ?? {})).map((r) => ({ ...r })),
+      count: async ({ where }: { where?: Row } = {}) =>
+        searchPeople.filter((r) => matchGeneric(r, where ?? {})).length,
+      deleteMany: async ({ where }: { where?: Row } = {}) => {
+        const count = deleteRows(searchPeople, (r) => matchGeneric(r, where ?? {}));
+        return { count };
       }
     },
 
@@ -331,6 +370,11 @@ export function createFakePrisma() {
       findMany: async ({ where }: { where: Row }) => people.filter((r) => matchPerson(r, where ?? {})).map((r) => ({ ...r })),
       count: async ({ where }: { where: Row }) => people.filter((r) => matchPerson(r, where ?? {})).length,
       deleteMany: async ({ where }: { where: Row }) => {
+        // Emulates the DB's ON DELETE CASCADE for allocations.
+        const removed = people.filter((r) => matchPerson(r, where ?? {}));
+        for (const row of removed) {
+          deleteRows(searchPeople, (a) => a.personId === row.id);
+        }
         const count = deleteRows(people, (r) => matchPerson(r, where ?? {}));
         return { count };
       },

@@ -121,6 +121,20 @@ export const Company = {
   positions(parent: ProspectCompany, _args: unknown, context: GraphQLContext) {
     return context.loaders.positionsByCompanyId.load(parent.id);
   },
+  /**
+   * The authenticated user's OWN searches for this company, newest first. The
+   * userId filter comes from the session (never the client), so one user's
+   * grouped detail can never enumerate another user's searches.
+   */
+  async searches(parent: ProspectCompany, _args: unknown, context: GraphQLContext) {
+    const user = requireUser(context);
+    const rows = await context.prisma.prospectSearch.findMany({
+      where: { companyId: parent.id, userId: user.id }
+    });
+    return rows.sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime() || (a.id < b.id ? 1 : -1)
+    );
+  },
   peopleCount(parent: ProspectCompany, _args: unknown, context: GraphQLContext) {
     return context.loaders.peopleCountByCompanyId.load(parent.id);
   },

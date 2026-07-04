@@ -157,6 +157,31 @@ describe("reserveDiscoverSearchSlot (#6, #7, #8, #10, #11)", () => {
     expect((await reserveDiscoverSearchSlot({ userId: "u1", email: "x@test.dev", searchId: "s2" })).allowed).toBe(true);
     expect((await reserveDiscoverSearchSlot({ userId: "u1", email: "x@test.dev", searchId: "s3" })).allowed).toBe(false);
   });
+
+  it("counts two role searches for the SAME company as two usage actions (#usage-1, #usage-2)", async () => {
+    // Usage is ACTION-based, keyed only by the search id — never deduplicated by
+    // company, domain, cache key, or the grouped dashboard entry. Walmart +
+    // Recruiter and Walmart + Software Engineer are two search actions.
+    installQuotaStore();
+    const recruiter = await reserveDiscoverSearchSlot({
+      userId: "u1",
+      email: "u1@test.dev",
+      searchId: "walmart-recruiter"
+    });
+    const engineer = await reserveDiscoverSearchSlot({
+      userId: "u1",
+      email: "u1@test.dev",
+      searchId: "walmart-software-engineer"
+    });
+    expect(recruiter.allowed).toBe(true);
+    expect(engineer.allowed).toBe(true);
+    expect(engineer.status.searchesUsed).toBe(2);
+    // "2 of 4 searches remaining today" after two successful searches.
+    expect(engineer.status.searchesRemaining).toBe(2);
+    const readBack = await getDiscoverQuotaStatus("u1", "u1@test.dev");
+    expect(readBack.searchesUsed).toBe(2);
+    expect(readBack.searchesRemaining).toBe(2);
+  });
 });
 
 describe("owner exemption bypasses the daily quota (#14, #15)", () => {

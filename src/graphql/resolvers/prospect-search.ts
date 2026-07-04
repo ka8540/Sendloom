@@ -7,6 +7,11 @@ import { buildConnection, cursorArgs, decodeCursor, resolveFirst } from "@/graph
 import { asStringArray, mapProspectError } from "@/graphql/resolvers/helpers";
 import { discoverPublicErrorCategory, mapDiscoverPublicError } from "@/lib/discover-public-error";
 import { getDiscoverQuotaStatus } from "@/lib/discover-quota";
+import { coercePositionCategory } from "@/lib/prospect-enums";
+import {
+  buildDiscoverCompanyGroups,
+  type DiscoverCompanyGroupNode
+} from "@/services/prospects/discover-company-groups";
 import { PersonIdentitySet } from "@/services/prospects/discover-person-identity";
 import { createProspectSearchSchema, type CreateProspectSearchInput } from "@/services/prospects/prospect-validation";
 
@@ -39,6 +44,64 @@ export const prospectSearchQueries = {
     ]);
 
     return buildConnection(rows, first, totalCount);
+  },
+
+  /**
+   * Grouped Search History: the current user's searches consolidated into one
+   * entry per resolved company (display-only — child search records, usage
+   * events, and allocations are untouched). Pagination operates on GROUPS, so
+   * three Walmart role searches count as one entry. Owner-scoped: only the
+   * session user's searches are ever read.
+   */
+  async discoverCompanyGroups(
+    _root: unknown,
+    args: { first?: number | null; after?: string | null },
+    context: GraphQLContext
+  ) {
+    const user = requireUser(context);
+    const first = resolveFirst(args.first, 20);
+    const afterId = decodeCursor(args.after);
+
+    const rows = await context.prisma.prospectSearch.findMany({ where: { userId: user.id } });
+    const groups = buildDiscoverCompanyGroups(user.id, rows as ProspectSearchRow[]);
+
+    const start = afterId ? groups.findIndex((group) => group.id === afterId) + 1 : 0;
+    if (afterId && start === 0) {
+      throw badInputError("Invalid pagination cursor.");
+    }
+    return buildConnection(groups.slice(start, start + first + 1), first, groups.length);
+  }
+};
+
+type DiscoverCompanyGroupParent = DiscoverCompanyGroupNode<ProspectSearchRow>;
+
+export const DiscoverCompanyGroup = {
+  company(parent: DiscoverCompanyGroupParent, _args: unknown, context: GraphQLContext) {
+    // The loader is user-scoped, so a group can never hydrate another user's
+    // company row.
+    return parent.companyId ? context.loaders.companyById.load(parent.companyId) : null;
+  },
+  /**
+   * The UNIQUE union of people allocated to this user across the group's
+   * searches — a person granted by two role searches counts once, and shared
+   * cached candidates that were never allocated are invisible here. A fully
+   * legacy group without allocation rows falls back to the user's materialized
+   * company people (its exact pre-allocation count).
+   */
+  async peopleCount(parent: DiscoverCompanyGroupParent, _args: unknown, context: GraphQLContext) {
+    const allocations = await context.prisma.prospectSearchPerson.findMany({
+      where: { searchId: { in: parent.searches.map((search) => search.id) } },
+      select: { personId: true }
+    });
+    if (allocations.length > 0) {
+      return new Set(allocations.map((row) => row.personId)).size;
+    }
+    if (parent.companyId) {
+      return context.prisma.prospectPerson.count({
+        where: { userId: parent.userId, companyId: parent.companyId }
+      });
+    }
+    return parent.searches.reduce((sum, search) => sum + (search.totalProcessed ?? 0), 0);
   }
 };
 
@@ -150,10 +213,46 @@ export const ProspectSearch = {
     return parent.totalProcessed;
   },
   /**
+   * Distinct role-group categories among the people ALLOCATED to this search
+   * (never the shared cache), sorted for determinism. A legacy pre-allocation
+   * search falls back to the user's materialized company people. Drives the
+   * grouped detail page's role-targeted "Add 10 more".
+   */
+  async positionCategories(parent: ProspectSearchRow, _args: unknown, context: GraphQLContext) {
+    const user = requireUser(context);
+    const allocations = await context.prisma.prospectSearchPerson.findMany({
+      where: { searchId: parent.id },
+      select: { personId: true }
+    });
+    let people: Array<{ positionId: string }>;
+    if (allocations.length > 0) {
+      people = await context.prisma.prospectPerson.findMany({
+        where: { userId: user.id, id: { in: allocations.map((row) => row.personId) } },
+        select: { positionId: true }
+      });
+    } else if (parent.companyId) {
+      people = await context.prisma.prospectPerson.findMany({
+        where: { userId: user.id, companyId: parent.companyId },
+        select: { positionId: true }
+      });
+    } else {
+      return [];
+    }
+    if (people.length === 0) {
+      return [];
+    }
+    const positions = await context.prisma.prospectCompanyPosition.findMany({
+      where: { id: { in: [...new Set(people.map((person) => person.positionId))] } }
+    });
+    return [...new Set(positions.map((position) => coercePositionCategory(position.category)))].sort();
+  },
+  /**
    * Whether no more unique people can be added to this search. True only when the
-   * shared provider results for this canonical query are exhausted AND the user
-   * already has every cached person — so "Add 10 more" should be hidden. Cheap in
-   * the common case (one indexed cache lookup that short-circuits to false).
+   * shared provider results for this canonical query are exhausted AND this
+   * search's own allocation already contains every cached person — so "Add 10
+   * more" should be hidden. Cheap in the common case (one indexed cache lookup
+   * that short-circuits to false). A legacy pre-allocation search (no grants)
+   * falls back to the user's company-scoped people, its pre-allocation behavior.
    */
   async exhausted(parent: ProspectSearchRow, _args: unknown, context: GraphQLContext) {
     const user = requireUser(context);
@@ -173,8 +272,15 @@ export const ProspectSearch = {
     if (cachePeople.length === 0) {
       return false;
     }
+    const allocations = await context.prisma.prospectSearchPerson.findMany({
+      where: { searchId: parent.id },
+      select: { personId: true }
+    });
     const userPeople = await context.prisma.prospectPerson.findMany({
-      where: { userId: user.id, companyId: parent.companyId },
+      where:
+        allocations.length > 0
+          ? { userId: user.id, id: { in: allocations.map((row) => row.personId) } }
+          : { userId: user.id, companyId: parent.companyId },
       select: { sourceProfileId: true, linkedinUrl: true }
     });
     const known = new PersonIdentitySet(userPeople);

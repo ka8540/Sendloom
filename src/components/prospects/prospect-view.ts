@@ -447,6 +447,76 @@ export function isProcessingStatus(status: ProspectSearchStatus): boolean {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Grouped Search History (one entry per company).
+// ---------------------------------------------------------------------------
+
+/** Actively running (a DRAFT is waiting on the user, not running). */
+function isActivelyProcessing(status: ProspectSearchStatus): boolean {
+  return isProcessingStatus(status) && status !== "DRAFT";
+}
+
+/**
+ * Derived status for a consolidated company entry, from its child search
+ * statuses. Documented priority:
+ *   1. Processing — any child is still running.
+ *   2. Needs attention — a child failed while another is usable/pending (the
+ *      group is NOT marked failed because one role search failed).
+ *   3. Ready — at least one child is ready, none running or failed.
+ *   4. Failed — every (non-canceled) child failed.
+ *   5. Draft, then Canceled.
+ */
+export function groupStatusBadge(statuses: ProspectSearchStatus[]): Badge {
+  const active = statuses.filter((status) => status !== "CANCELED");
+  const considered = active.length > 0 ? active : statuses;
+  if (considered.length === 0) {
+    return { label: "Draft", tone: "muted", hint: "No searches yet." };
+  }
+  if (considered.some(isActivelyProcessing)) {
+    return { label: "Processing", tone: "inferred", hint: "A search for this company is still running." };
+  }
+  const failedCount = considered.filter((status) => status === "FAILED").length;
+  if (failedCount === considered.length && failedCount > 0) {
+    return statusBadge("FAILED");
+  }
+  if (failedCount > 0) {
+    return { label: "Needs attention", tone: "warning", hint: "One of this company's searches failed. Open it to retry." };
+  }
+  if (considered.some((status) => status === "READY")) {
+    return statusBadge("READY");
+  }
+  if (considered.some((status) => status === "DRAFT")) {
+    return { label: statusLabel("DRAFT"), tone: "muted", hint: "Draft search — open it to fetch people." };
+  }
+  return statusBadge("CANCELED");
+}
+
+/**
+ * Which child search a grouped row opens: the newest READY child (the detail
+ * page renders the whole company from any ready child), else the newest child
+ * that still needs the user (draft/processing/failed), else the newest overall.
+ */
+export function resolveGroupOpenTarget<T extends { id: string; status: ProspectSearchStatus; createdAt: string }>(
+  searches: T[]
+): T | null {
+  if (searches.length === 0) {
+    return null;
+  }
+  const newestFirst = [...searches].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime() || (a.id < b.id ? 1 : -1)
+  );
+  return (
+    newestFirst.find((search) => search.status === "READY") ??
+    newestFirst.find((search) => search.status !== "CANCELED") ??
+    newestFirst[0]
+  );
+}
+
+/** "3 companies" subtitle for the grouped Search History panel. */
+export function formatGroupCountLabel(totalCount: number): string {
+  return `${totalCount} ${totalCount === 1 ? "company" : "companies"}`;
+}
+
 /**
  * A safe, user-facing error for a FAILED search. The backend already sanitizes
  * the failure (errorCode is a product-safe category; errorTitle/errorMessage are
@@ -866,4 +936,84 @@ export function formatSearchesRemainingLine(quota: DiscoverQuota | null): string
 /** "Current people: 10" for the confirmation dialog. */
 export function formatCurrentPeopleLine(peopleCount: number): string {
   return `Current people: ${Math.max(0, peopleCount)}`;
+}
+
+// ---------------------------------------------------------------------------
+// Role-targeted "Add 10 more" for the grouped company detail.
+// ---------------------------------------------------------------------------
+
+export const ADD_MORE_CHOOSE_ROLE_HINT =
+  "This company has several role searches. Choose which role group to extend.";
+
+export type AddMoreCandidateSearch = {
+  id: string;
+  status: ProspectSearchStatus;
+  requestedTitles: string[];
+  positionCategories: PositionCategory[];
+  createdAt: string;
+};
+
+/**
+ * Which child search an "Add 10 more" applies to. The backend only ever
+ * extends ONE user-owned search, so the target must be unambiguous:
+ *  - one ready search → that search;
+ *  - an active role tab → the search whose allocated people include that role
+ *    group (the current page's search wins a tie, else the newest match);
+ *  - "All people" with several role searches (or an unmatchable tab) → the
+ *    user must choose — we never guess and never add to every role at once.
+ */
+export type AddMoreTarget =
+  | { kind: "search"; search: AddMoreCandidateSearch }
+  | { kind: "choose"; options: AddMoreCandidateSearch[] }
+  | { kind: "none" };
+
+export function resolveAddMoreTarget(input: {
+  activeCategory: PositionCategory | null;
+  searches: AddMoreCandidateSearch[];
+  currentSearchId: string;
+}): AddMoreTarget {
+  const ready = input.searches
+    .filter((search) => search.status === "READY")
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime() || (a.id < b.id ? 1 : -1));
+  if (ready.length === 0) {
+    return { kind: "none" };
+  }
+  if (ready.length === 1) {
+    return { kind: "search", search: ready[0] };
+  }
+  if (input.activeCategory) {
+    const matching = ready.filter((search) => search.positionCategories.includes(input.activeCategory!));
+    if (matching.length > 0) {
+      return {
+        kind: "search",
+        search: matching.find((search) => search.id === input.currentSearchId) ?? matching[0]
+      };
+    }
+  }
+  return { kind: "choose", options: ready };
+}
+
+/** User-facing label for one child search in the role chooser. */
+export function addMoreSearchLabel(search: Pick<AddMoreCandidateSearch, "requestedTitles">): string {
+  return search.requestedTitles.length > 0 ? search.requestedTitles.join(", ") : "Any role";
+}
+
+/**
+ * Distinct requested role labels across a company's child searches (first-seen
+ * casing preserved) for the grouped detail header.
+ */
+export function groupedRoleLabels(searches: Array<{ requestedTitles: string[] }>): string[] {
+  const seen = new Set<string>();
+  const labels: string[] = [];
+  for (const search of searches) {
+    for (const title of search.requestedTitles) {
+      const key = title.trim().toLowerCase();
+      if (!key || seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      labels.push(title.trim());
+    }
+  }
+  return labels;
 }

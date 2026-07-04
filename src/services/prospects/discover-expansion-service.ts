@@ -194,9 +194,10 @@ export class DiscoverExpansionService {
         linkedinUrl: company.linkedinUrl
       };
 
-      // 8. Determine which people already belong to this search (company-scoped,
-      // by stable identity) so they are never repeated.
-      const identities = await this.loadExistingIdentities(userId, company.id);
+      // 8. Determine which people already belong to THIS search (its allocation
+      // grants, by stable identity) so they are never repeated. Another role
+      // search for the same company keeps its own separate allocation.
+      const { identities, allocatedCount } = await this.loadExistingIdentities(userId, search.id, company.id);
 
       // 9. Look at the fresh shared cache for unused matching people.
       const cacheState = await this.cache.getExpansionState(fingerprint);
@@ -270,7 +271,10 @@ export class DiscoverExpansionService {
         throw new ProspectError("DISCOVER_EXPANSION_FAILED", "We couldn't add more people right now. Please try again.");
       }
 
-      const addedCount = await this.materializePeople(userId, company, toAdd);
+      const addedCount = await this.materializePeople(userId, search, company, toAdd, {
+        cacheCount,
+        allocationOrderBase: allocatedCount
+      });
       const totalPeopleCount = search.totalProcessed + addedCount;
 
       // 15. Update the search People count (extends the same search row).
@@ -335,11 +339,30 @@ export class DiscoverExpansionService {
     });
   }
 
-  private async loadExistingIdentities(userId: string, companyId: string): Promise<PersonIdentitySet> {
-    const people = await this.prisma.prospectPerson.findMany({ where: { userId, companyId } });
-    return new PersonIdentitySet(
-      people.map((person) => ({ sourceProfileId: person.sourceProfileId, linkedinUrl: person.linkedinUrl }))
-    );
+  /**
+   * The stable identities already GRANTED to this search (its allocation rows),
+   * so an expansion never repeats them. A pre-allocation legacy search (no
+   * grants) falls back to the old company-scoped set, which preserves the exact
+   * pre-allocation behavior instead of re-adding people the user already sees.
+   */
+  private async loadExistingIdentities(
+    userId: string,
+    searchId: string,
+    companyId: string
+  ): Promise<{ identities: PersonIdentitySet; allocatedCount: number }> {
+    const allocations = await this.prisma.prospectSearchPerson.findMany({ where: { searchId } });
+    const people =
+      allocations.length > 0
+        ? await this.prisma.prospectPerson.findMany({
+            where: { userId, id: { in: allocations.map((row) => row.personId) } }
+          })
+        : await this.prisma.prospectPerson.findMany({ where: { userId, companyId } });
+    return {
+      identities: new PersonIdentitySet(
+        people.map((person) => ({ sourceProfileId: person.sourceProfileId, linkedinUrl: person.linkedinUrl }))
+      ),
+      allocatedCount: allocations.length
+    };
   }
 
   /**
@@ -521,13 +544,19 @@ export class DiscoverExpansionService {
   /**
    * Add the collected new people to the user's own records (positions + people),
    * regenerating each email from the user's selected company format (so a manual
-   * override is honored). Returns how many were genuinely added. Uniqueness is
-   * enforced server-side by the ProspectPerson (userId, sourceProfileId) key.
+   * override is honored), and record each one as an allocation grant on the
+   * TARGET search only — an expansion never adds people to the user's other role
+   * searches for the same company. Returns how many grants were genuinely added.
+   * Uniqueness is enforced server-side by the ProspectPerson
+   * (userId, sourceProfileId) key and the ProspectSearchPerson
+   * (searchId, personId) key.
    */
   private async materializePeople(
     userId: string,
+    search: ProspectSearch,
     company: ProspectCompany,
-    people: ResolvedCachePerson[]
+    people: ResolvedCachePerson[],
+    allocation: { cacheCount: number; allocationOrderBase: number }
   ): Promise<number> {
     if (people.length === 0) {
       return 0;
@@ -567,7 +596,7 @@ export class DiscoverExpansionService {
     const candidateConfidence = combinedEmailConfidence(company.emailDomainConfidence, company.patternConfidence);
 
     let added = 0;
-    for (const person of people) {
+    for (const [index, person] of people.entries()) {
       const category = coercePositionCategory(person.positionCategory);
       const positionId = positionMap.get(category) ?? positionMap.get("OTHER");
       if (!positionId) {
@@ -582,9 +611,6 @@ export class DiscoverExpansionService {
         pattern: company.emailPattern,
         patternConfidence: candidateConfidence,
         allowLowConfidence
-      });
-      const existing = await this.prisma.prospectPerson.findFirst({
-        where: { userId, sourceProfileId: person.sourceProfileId }
       });
       const fields = {
         companyId: company.id,
@@ -605,12 +631,28 @@ export class DiscoverExpansionService {
         emailPattern: candidate.email ? company.emailPattern : null,
         emailSource: candidate.email ? "PATTERN" : null
       };
-      await this.prisma.prospectPerson.upsert({
+      const materialized = await this.prisma.prospectPerson.upsert({
         where: { userId_sourceProfileId: { userId, sourceProfileId: person.sourceProfileId } },
         create: { userId, sourceProfileId: person.sourceProfileId, ...fields },
         update: fields
       });
-      if (!existing) {
+      // Grant the person to the TARGET search. `added` counts new grants, so a
+      // concurrent duplicate (converged by the unique key) is never counted twice.
+      const existingGrant = await this.prisma.prospectSearchPerson.findFirst({
+        where: { searchId: search.id, personId: materialized.id }
+      });
+      await this.prisma.prospectSearchPerson.upsert({
+        where: { searchId_personId: { searchId: search.id, personId: materialized.id } },
+        create: {
+          searchId: search.id,
+          personId: materialized.id,
+          userId,
+          allocationOrder: allocation.allocationOrderBase + index,
+          allocationSource: index < allocation.cacheCount ? "ADD_MORE_CACHE" : "ADD_MORE_PROVIDER"
+        },
+        update: {}
+      });
+      if (!existingGrant) {
         added += 1;
       }
     }

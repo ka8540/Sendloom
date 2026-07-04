@@ -109,6 +109,10 @@ export const typeDefs = /* GraphQL */ `
     positions: [CompanyPosition!]!
     peopleCount: Int!
     emailStatusCounts: [CompanyEmailStatusCount!]!
+    # The authenticated user's OWN searches for this company (newest first).
+    # Powers the grouped company detail (role chips + role-targeted Add 10 more)
+    # without merging the underlying search records.
+    searches: [ProspectSearch!]!
     createdAt: DateTime!
     updatedAt: DateTime!
   }
@@ -165,8 +169,40 @@ export const typeDefs = /* GraphQL */ `
     # True when no more unique people can be added to this search (the shared
     # results are exhausted). Drives whether "Add 10 more" is offered.
     exhausted: Boolean!
+    # Distinct role-group categories among the people ALLOCATED to this search.
+    # Lets the grouped company detail target "Add 10 more" at the child search
+    # that owns the active role tab.
+    positionCategories: [PositionCategory!]!
     createdAt: DateTime!
     completedAt: DateTime
+  }
+
+  # One consolidated Search History entry: all of the authenticated user's
+  # searches for the same resolved company, grouped for display only. The child
+  # ProspectSearch records (and their usage events, allocations, and Add-More
+  # history) are never merged. peopleCount is the UNIQUE union of people
+  # allocated to this user across the group's searches — never the shared
+  # cross-user cache pool size.
+  type DiscoverCompanyGroup {
+    id: ID!
+    company: Company
+    displayName: String!
+    requestedRoles: [String!]!
+    locations: [String!]!
+    searches: [ProspectSearch!]!
+    peopleCount: Int!
+    latestActivityAt: DateTime!
+  }
+
+  type DiscoverCompanyGroupEdge {
+    node: DiscoverCompanyGroup!
+    cursor: String!
+  }
+
+  type DiscoverCompanyGroupConnection {
+    edges: [DiscoverCompanyGroupEdge!]!
+    pageInfo: PageInfo!
+    totalCount: Int!
   }
 
   enum DiscoverExpansionStatus {
@@ -281,6 +317,9 @@ export const typeDefs = /* GraphQL */ `
     discoverQuota: DiscoverQuota!
     prospectSearch(id: ID!): ProspectSearch
     prospectSearches(first: Int = 20, after: String): ProspectSearchConnection!
+    # Grouped Search History: one entry per resolved company for the current
+    # user (unresolved searches stay single-entry). Pagination counts GROUPS.
+    discoverCompanyGroups(first: Int = 20, after: String): DiscoverCompanyGroupConnection!
 
     company(id: ID!): Company
     companies(first: Int = 20, after: String): CompanyConnection!

@@ -1514,3 +1514,143 @@ describe("Discover search deletion", () => {
     expect(prisma._state.searches).toHaveLength(1); // untouched
   });
 });
+
+describe("Discover user-specific allocation cap (shared cache exposure)", () => {
+  // Cache hits never run the provider, so role-classification AI is unused.
+  const ROLE_ONLY_AI = { responses: { role_classification: { classifications: [] } } };
+
+  /** A shared cached pool far larger than any single user's entitlement. */
+  function pooledDataset(count: number): ResolvedDataset {
+    return {
+      emailFormat: {
+        emailDomain: "amat.com",
+        emailDomainConfidence: "HIGH",
+        emailDomainEvidence: [{ sourceName: "public" }],
+        emailPattern: "first_last",
+        patternConfidence: "HIGH",
+        patternEvidence: [{ pattern: "first_last" }],
+        emailFormatReason: "format"
+      },
+      people: Array.from({ length: count }, (_, index) => ({
+        sourceProfileId: `pool_${index + 1}`,
+        firstName: "Pool",
+        lastName: `Person${index + 1}`,
+        fullName: `Pool Person${index + 1}`,
+        currentTitle: index % 3 === 2 ? "Recruiter" : "Software Engineer",
+        normalizedTitle: index % 3 === 2 ? "recruiter" : "software engineer",
+        positionCategory: index % 3 === 2 ? "RECRUITING" : "SOFTWARE_ENGINEERING",
+        location: "United States",
+        country: "United States",
+        state: null,
+        city: null,
+        linkedinUrl: `https://www.linkedin.com/in/pool_${index + 1}`,
+        inferredEmail: `pool_person${index + 1}@amat.com`,
+        emailStatus: "INFERRED_HIGH",
+        emailConfidence: "HIGH",
+        emailPattern: "first_last",
+        emailSource: "PATTERN"
+      }))
+    };
+  }
+
+  function pooledCachePort(dataset: ResolvedDataset): DiscoverCachePort {
+    return {
+      async getOrRefresh() {
+        return {
+          dataset,
+          source: "CACHE",
+          cacheId: "cache_pool",
+          fetchedAt: new Date("2026-06-10T00:00:00.000Z"),
+          refreshedStale: false
+        };
+      }
+    };
+  }
+
+  it("a new user receives only the 10-person allocation from a 30-person cached pool (#alloc-1, #alloc-3, #alloc-5)", async () => {
+    const runner = { run: vi.fn() } as unknown as ApifyRunner;
+    const dataset = pooledDataset(30);
+    const { service } = buildService(prisma, runner, ROLE_ONLY_AI, undefined, undefined, pooledCachePort(dataset));
+
+    const created = await service.createSearch("user_B", APPLIED_MATERIALS);
+    const result = await service.processSearch("user_B", created.id, { actorEmail: "b@test.dev" });
+
+    expect(result.status).toBe("READY");
+    // The search's own count is the ALLOCATED batch, not the pool size.
+    expect(result.totalProcessed).toBe(10);
+    // No provider call — the fresh cache covered the batch (#4).
+    expect((runner as { run: ReturnType<typeof vi.fn> }).run).not.toHaveBeenCalled();
+    // Only the allocated 10 were ever materialized for this user: the remaining
+    // 20 cached candidates are not reachable through any user-scoped read.
+    const materialized = prisma._state.people.filter((person) => person.userId === "user_B");
+    expect(materialized).toHaveLength(10);
+    expect(materialized.map((person) => person.sourceProfileId).sort()).toEqual(
+      dataset.people.slice(0, 10).map((person) => person.sourceProfileId).sort()
+    );
+    // Each grant is recorded with its source and stable order.
+    const grants = prisma._state.searchPeople.filter((row) => row.searchId === created.id);
+    expect(grants).toHaveLength(10);
+    expect(grants.every((row) => row.allocationSource === "CACHE")).toBe(true);
+    expect([...grants.map((row) => row.allocationOrder)].sort((a, b) => a - b)).toEqual([
+      0, 1, 2, 3, 4, 5, 6, 7, 8, 9
+    ]);
+  });
+
+  it("retrying the same search never inflates its allocation (#alloc-2)", async () => {
+    const runner = { run: vi.fn() } as unknown as ApifyRunner;
+    const { service } = buildService(prisma, runner, ROLE_ONLY_AI, undefined, undefined, pooledCachePort(pooledDataset(30)));
+
+    const created = await service.createSearch("user_B", APPLIED_MATERIALS);
+    await service.processSearch("user_B", created.id, { actorEmail: "b@test.dev" });
+
+    // Simulate a failure after a completed materialization, then a user retry.
+    const row = prisma._state.searches.find((search) => search.id === created.id)!;
+    row.status = "FAILED";
+    const retried = await service.processSearch("user_B", created.id, { actorEmail: "b@test.dev" });
+
+    expect(retried.status).toBe("READY");
+    expect(retried.totalProcessed).toBe(10);
+    expect(prisma._state.searchPeople.filter((r) => r.searchId === created.id)).toHaveLength(10);
+    expect(prisma._state.people.filter((person) => person.userId === "user_B")).toHaveLength(10);
+  });
+
+  it("two role searches for one company consume two usage slots and keep two child records (#usage-1, #group-1)", async () => {
+    const runner = { run: vi.fn() } as unknown as ApifyRunner;
+    const quota = makeQuotaReserver();
+    const { service } = buildService(prisma, runner, ROLE_ONLY_AI, undefined, quota.reserve, pooledCachePort(pooledDataset(30)));
+
+    const engineer = await service.createSearch(USER_ID, APPLIED_MATERIALS);
+    await service.processSearch(USER_ID, engineer.id, { actorEmail: "u@test.dev" });
+    const recruiter = await service.createSearch(USER_ID, { ...APPLIED_MATERIALS, jobTitles: ["Recruiter"] });
+    await service.processSearch(USER_ID, recruiter.id, { actorEmail: "u@test.dev" });
+
+    // Two distinct usage actions — same company grouping never dedupes usage.
+    expect(quota.consumed.size).toBe(2);
+    expect(new Set(quota.calls.map((call) => call.searchId)).size).toBe(2);
+    // Two child search records remain, resolved onto ONE user-owned company (the
+    // grouped dashboard consolidates them for display only).
+    expect(prisma._state.searches).toHaveLength(2);
+    expect(prisma._state.companies).toHaveLength(1);
+    // Each search holds its own 10-person grant; the shared people rows dedupe,
+    // so the grouped unique union stays at 10 — never 20.
+    expect(prisma._state.searchPeople.filter((row) => row.searchId === engineer.id)).toHaveLength(10);
+    expect(prisma._state.searchPeople.filter((row) => row.searchId === recruiter.id)).toHaveLength(10);
+    expect(prisma._state.people.filter((person) => person.userId === USER_ID)).toHaveLength(10);
+    expect(new Set(prisma._state.searchPeople.map((row) => row.personId)).size).toBe(10);
+  });
+
+  it("deleting the company removes the user's searches, grants, and people together (#delete-group)", async () => {
+    const runner = { run: vi.fn() } as unknown as ApifyRunner;
+    const { service } = buildService(prisma, runner, ROLE_ONLY_AI, undefined, undefined, pooledCachePort(pooledDataset(30)));
+
+    const created = await service.createSearch(USER_ID, APPLIED_MATERIALS);
+    await service.processSearch(USER_ID, created.id, { actorEmail: "u@test.dev" });
+    const companyId = prisma._state.companies[0].id as string;
+
+    await service.deleteCompany(USER_ID, companyId);
+
+    expect(prisma._state.searches).toHaveLength(0);
+    expect(prisma._state.people.filter((person) => person.userId === USER_ID)).toHaveLength(0);
+    expect(prisma._state.searchPeople).toHaveLength(0);
+  });
+});
