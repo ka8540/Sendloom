@@ -441,14 +441,10 @@
   background: color-mix(in srgb, var(--muted) 55%, transparent);
 }
 
-/* Failed (permanent delivery failure) carries the strongest red; invalid is a
-   muted red so the two remain distinguishable. Labels always accompany color. */
-.qualityToneFailed {
-  background: #e5484d;
-}
-
+/* Invalid covers validation failures AND addresses proven bad by a permanent
+   delivery failure. Labels always accompany color. */
 .qualityToneInvalid {
-  background: color-mix(in srgb, #e5484d 55%, var(--muted));
+  background: #e5484d;
 }
 
 .qualityToneUnsubscribed {

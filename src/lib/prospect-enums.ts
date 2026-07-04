@@ -60,11 +60,11 @@ export const EMAIL_CANDIDATE_STATUSES = [
   "UNAVAILABLE",
   "SUPPRESSED",
   "INVALID",
-  // Presentation-only statuses overlaid at read time from the user's
-  // suppression list (permanent delivery failures / unsubscribes). Person rows
-  // never store these values — regenerating an email can therefore never
-  // silently reset a failed address back to usable.
-  "FAILED",
+  // Presentation-only status overlaid at read time from the user's
+  // suppression list (unsubscribes). Hard-bounced addresses overlay to INVALID
+  // — a bad address is an email-quality problem, not an app failure. Person
+  // rows never store overlaid values, so regenerating an email can never
+  // silently reset a bounced address back to usable.
   "UNSUBSCRIBED"
 ] as const;
 
@@ -77,12 +77,13 @@ export function isEmailCandidateStatus(value: unknown): value is EmailCandidateS
 /**
  * Overlay a person's stored email status with the user's live suppression
  * state. Precedence (mutually exclusive — one status per person):
- *   1. UNSUBSCRIBED suppression       → UNSUBSCRIBED (never relabelled Failed)
+ *   1. UNSUBSCRIBED suppression       → UNSUBSCRIBED (never an address problem)
  *   2. COMPLAINT / MANUAL_BLOCK       → SUPPRESSED
- *   3. HARD_BOUNCE / INVALID_EMAIL    → FAILED (permanent delivery failure)
+ *   3. HARD_BOUNCE / INVALID_EMAIL    → INVALID (the address is proven bad —
+ *      an email-quality outcome, never presented as an app failure)
  *   4. otherwise                      → the stored status (unknown → UNAVAILABLE)
  * Applied at read time only, so regenerating an inferred email never resets a
- * failed address back to usable.
+ * bounced address back to usable.
  */
 export function overlayEmailCandidateStatus(stored: unknown, suppressionReason: string | null): EmailCandidateStatus {
   if (suppressionReason === "UNSUBSCRIBED") {
@@ -92,7 +93,7 @@ export function overlayEmailCandidateStatus(stored: unknown, suppressionReason: 
     return "SUPPRESSED";
   }
   if (suppressionReason === "HARD_BOUNCE" || suppressionReason === "INVALID_EMAIL") {
-    return "FAILED";
+    return "INVALID";
   }
   return isEmailCandidateStatus(stored) ? stored : "UNAVAILABLE";
 }

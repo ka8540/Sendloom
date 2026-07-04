@@ -344,7 +344,7 @@ function buildDeliveryFailureItems(failures: RecentDeliveryFailureInput[]): Sort
     id: `delivery-failure-${failure.id}`,
     href: "/suppressions" as Route,
     title: "Delivery failure recorded",
-    description: "An invalid recipient was marked Failed and excluded from future sends.",
+    description: "An invalid recipient address was detected and will be skipped in future sends.",
     timeLabel: formatRelativeTime(failure.updatedAt),
     timeValue: failure.updatedAt.toISOString(),
     kind: "suppression" as const,

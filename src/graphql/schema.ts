@@ -42,9 +42,8 @@ export const typeDefs = /* GraphQL */ `
     SUPPRESSED
     INVALID
     # Overlaid at read time from the user's suppression list — never stored on
-    # a person row. FAILED = permanent delivery failure (hard bounce/invalid
-    # recipient); UNSUBSCRIBED = recipient opted out.
-    FAILED
+    # a person row. Hard-bounced addresses overlay to INVALID; UNSUBSCRIBED =
+    # recipient opted out.
     UNSUBSCRIBED
   }
 

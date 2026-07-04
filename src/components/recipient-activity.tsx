@@ -33,6 +33,12 @@ const STATUS_ICONS: Record<string, ComponentType<{ "aria-hidden"?: boolean }>> =
 };
 
 function getStatusIcon(item: RecipientActivityItem) {
+  // The disposition wins over the raw stored status: a permanently invalid
+  // address reads as Skipped (with the skip glyph) even when the underlying
+  // row predates the Skipped mapping and still stores FAILED/BOUNCED.
+  if (item.statusLabel === "Skipped") {
+    return CircleSlash;
+  }
   return STATUS_ICONS[item.status] ?? Clock;
 }
 
@@ -130,7 +136,10 @@ export function RecipientActivity({
                   >
                     {item.statusLabel}
                   </span>
-                  <p className={styles.message}>{item.message}</p>
+                  <p className={styles.message} title={item.hint ?? undefined}>
+                    {item.message}
+                    {item.hint ? <span className={styles.srOnly}> {item.hint}</span> : null}
+                  </p>
                 </div>
 
                 {item.isIssue ? (

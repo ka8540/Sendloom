@@ -4,14 +4,14 @@ import type { SuppressionReason } from "@/components/suppressions/types";
 
 import styles from "./suppressions.module.css";
 
-// Delivery failures read as "Failed" (with their cause); unsubscribe and
-// manual/compliance exclusions keep their own labels — an unsubscribed
-// recipient is suppressed but did NOT fail.
+// A hard bounce means the ADDRESS is bad — an email-quality outcome, never a
+// Sendloom "Failed" operation. Unsubscribe and manual/compliance exclusions
+// keep their own labels; reasons stay distinguishable.
 export const SUPPRESSION_REASON_LABELS: Record<SuppressionReason, string> = {
   UNSUBSCRIBED: "Unsubscribed",
-  HARD_BOUNCE: "Failed · hard bounce",
+  HARD_BOUNCE: "Hard bounce",
   COMPLAINT: "Complaint",
-  INVALID_EMAIL: "Failed · invalid email",
+  INVALID_EMAIL: "Invalid address",
   MANUAL_BLOCK: "Manual block"
 };
 

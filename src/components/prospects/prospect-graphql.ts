@@ -51,9 +51,9 @@ export type EmailCandidateStatus =
   | "UNAVAILABLE"
   | "SUPPRESSED"
   | "INVALID"
-  // Overlaid at read time from the user's suppression list — FAILED is a
-  // confirmed permanent delivery failure, UNSUBSCRIBED an opt-out.
-  | "FAILED"
+  // Overlaid at read time from the user's suppression list — hard-bounced
+  // addresses read INVALID (an address-quality outcome); UNSUBSCRIBED is an
+  // opt-out.
   | "UNSUBSCRIBED";
 
 export type ConfidenceLevel = "HIGH" | "MEDIUM" | "LOW" | "UNAVAILABLE";

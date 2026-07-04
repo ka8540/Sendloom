@@ -145,10 +145,17 @@ const h = vi.hoisted(() => {
         Object.assign(row, data);
         return { ...row };
       },
-      findMany: async ({ where }: Row) => {
+      findMany: async ({ where, take }: Row) => {
         let rows = state.recipientJobs;
+        if (typeof where?.status === "string") {
+          rows = rows.filter((row) => row.status === where.status);
+        }
         if (where?.status?.in) {
           rows = rows.filter((row) => where.status.in.includes(row.status));
+        }
+        if (where?.metadata?.path) {
+          const key = where.metadata.path[0];
+          rows = rows.filter((row) => (row.metadata as Row | null)?.[key] === where.metadata.equals);
         }
         if (where?.recipientEmail?.equals) {
           rows = rows.filter((row) => row.recipientEmail.toLowerCase() === where.recipientEmail.equals.toLowerCase());
@@ -162,7 +169,7 @@ const h = vi.hoisted(() => {
         if (where?.providerMessageId?.not === null) {
           rows = rows.filter((row) => row.providerMessageId);
         }
-        return rows.map((row) => ({ ...row }));
+        return rows.slice(0, take ?? rows.length).map((row) => ({ ...row }));
       },
       updateMany: async ({ where, data }: Row) => {
         const ids: string[] = where.id.in;
@@ -248,6 +255,7 @@ import {
   processPotentialBounceMessage,
   recordDeliveryFailureSuppression,
   renewExpiringGmailWatches,
+  repairHardBouncedRecipientDispositions,
   resolveBounceMonitoringStatus,
   runRecentBounceBackfill,
   skipQueuedSendsForFailedAddress,
@@ -399,7 +407,7 @@ describe("bounce-monitoring capability", () => {
 // ---------------------------------------------------------------------------
 
 describe("bounce processing", () => {
-  it("permanent 5.1.1 bounce suppresses, fails the matched job, and skips queued sends", async () => {
+  it("permanent 5.1.1 bounce suppresses, SKIPS the matched job, and skips queued sends", async () => {
     const sender = seedSender();
     const sent = seedJob();
     const queued = seedJob({ id: "queued-1", status: "PENDING", providerMessageId: null, campaignRunId: "run-2" });
@@ -421,15 +429,17 @@ describe("bounce processing", () => {
       sourceGmailMessageId: "dsn-1"
     });
     expect(calls.markRecipientAttempt).toHaveLength(1);
+    // The disposition is Skipped (SUPPRESSED) — a bad ADDRESS is never
+    // presented as a Sendloom failure. The bounce evidence stays in metadata.
     expect(calls.markRecipientAttempt[0]).toMatchObject({
       jobId: sent.id,
-      status: "FAILED",
+      status: "SUPPRESSED",
       failureCode: "HARD_BOUNCE_RECIPIENT",
       lastError: "Address not found"
     });
-    // Queued future attempts to the same address are skipped, not sent.
+    // Queued future attempts carry the same concise reason.
     expect(queued.status).toBe("SUPPRESSED");
-    expect(String(queued.lastError)).toContain("permanent delivery failure");
+    expect(queued.lastError).toBe("Address not found");
     // Already-sent history is untouched.
     expect(sent.status).toBe("SENT");
   });
@@ -762,7 +772,7 @@ describe("missed-bounce regression (550 5.1.0 Address Rejected)", () => {
     });
     expect(calls.markRecipientAttempt[0]).toMatchObject({
       jobId: "optum-job",
-      status: "FAILED",
+      status: "SUPPRESSED",
       failureCode: "HARD_BOUNCE_RECIPIENT"
     });
   });
@@ -879,5 +889,60 @@ describe("bounce/reply orchestration contracts", () => {
       bouncesSource.indexOf("export async function syncSenderBounces")
     );
     expect(logBlock).not.toMatch(/email/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Disposition repair — recipients recorded as FAILED by the older mapping.
+// ---------------------------------------------------------------------------
+
+describe("hard-bounce disposition repair", () => {
+  it("converts only permanent hard-bounce FAILED rows to Skipped, keeping the evidence", async () => {
+    const bounced = seedJob({
+      id: "old-bounce",
+      status: "FAILED",
+      lastError: "The address returned a permanent delivery failure and is excluded from future sends.",
+      metadata: { failureCode: "HARD_BOUNCE_RECIPIENT", failureCategory: "HARD_BOUNCE_MAILBOX_NOT_FOUND" }
+    });
+    const serverError = seedJob({
+      id: "server-error",
+      status: "FAILED",
+      lastError: "Couldn't send the email right now.",
+      metadata: { failureCode: "QUEUE_PROCESSING_FAILED" }
+    });
+    const authError = seedJob({
+      id: "auth-error",
+      status: "FAILED",
+      metadata: { failureCode: "GMAIL_PROFILE_DISCONNECTED" }
+    });
+    const temporary = seedJob({ id: "temp", status: "RETRYING", metadata: { failureCode: "GMAIL_RATE_LIMITED" } });
+
+    const result = await repairHardBouncedRecipientDispositions();
+
+    expect(result.repairedCount).toBe(1);
+    // The invalid ADDRESS reads as Skipped with a concise reason…
+    expect(bounced.status).toBe("SUPPRESSED");
+    expect(bounced.lastError).toBe("Address not found");
+    // …while the bounce evidence stays untouched in metadata.
+    expect(bounced.metadata).toMatchObject({
+      failureCode: "HARD_BOUNCE_RECIPIENT",
+      failureCategory: "HARD_BOUNCE_MAILBOX_NOT_FOUND"
+    });
+    // Real operational failures keep their Failed status.
+    expect(serverError.status).toBe("FAILED");
+    expect(authError.status).toBe("FAILED");
+    expect(temporary.status).toBe("RETRYING");
+    // Run counts were recalculated for the touched run.
+    expect(calls.syncRunCounts).toContain(bounced.campaignRunId);
+  });
+
+  it("is idempotent — a second pass finds nothing to repair", async () => {
+    seedJob({
+      id: "old-bounce",
+      status: "FAILED",
+      metadata: { failureCode: "HARD_BOUNCE_RECIPIENT", failureCategory: "HARD_BOUNCE_INVALID_RECIPIENT" }
+    });
+    expect((await repairHardBouncedRecipientDispositions()).repairedCount).toBe(1);
+    expect((await repairHardBouncedRecipientDispositions()).repairedCount).toBe(0);
   });
 });

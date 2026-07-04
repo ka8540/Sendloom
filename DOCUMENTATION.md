@@ -1872,11 +1872,33 @@ Matching order (always scoped to the reporting sender's own jobs, ≤30 days): �
 - One DSN Gmail message = one `ProviderEvent` row (`provider: "gmail-dsn"`, `eventType: BOUNCED`, unique key) — the atomic processed-once gate.
 - `Suppression` gains structured failure detail: `enhancedStatusCode`, `failureCategory`, `firstFailedAt`, `lastFailedAt`, `failureCount`, `sourceGmailMessageId`. Reprocessing the same Gmail message never increments counts. An existing `UNSUBSCRIBED` record keeps its reason (never relabelled as a failure) while still recording the failure detail.
 
-### Failed vs Unsubscribed vs Suppressed
+### Skipped vs Invalid vs Failed (the semantic model)
 
-- **Failed** = permanent delivery failure (`HARD_BOUNCE`, `INVALID_EMAIL` reasons). Suppression log shows "Failed · hard bounce".
-- **Unsubscribed** = opted out. Never shown as Failed.
-- **Suppressed** = manual block / complaint / other exclusions.
+A hard bounce means the ADDRESS is bad — Sendloom worked correctly and learned the recipient can't be contacted. It is never presented as an application failure:
+
+```
+Hard bounce / invalid recipient
+→ internal delivery outcome: permanent recipient failure (metadata
+  failureCode HARD_BOUNCE_RECIPIENT + failureCategory, ProviderEvent,
+  suppression detail — the evidence is never rewritten)
+→ sequence disposition: Skipped · Address not found (status SUPPRESSED;
+  calm neutral row, no Retry, excluded from Needs attention/Delivered)
+→ Discover quality: Invalid (never counted Usable)
+→ future sends: blocked at validation, queue creation, and the final
+  worker guard — no Gmail call, no send capacity consumed
+```
+
+```
+Sendloom/Gmail operational problem (auth expired, queue/server error,
+temporary send failure)
+→ sequence disposition: Failed / Action required — counted in Needs
+  attention; Retry or Reconnect stays available per existing behavior
+```
+
+- **Unsubscribed** = opted out. Shown as "Skipped · Unsubscribed" in sequences; never merged into invalid-address statistics.
+- **Suppressed** (manual block / complaint) = "Skipped · On the suppression list".
+- Suppression remains the internal enforcement mechanism for all of these; reasons stay distinguishable in the suppression log ("Hard bounce", "Invalid address", "Unsubscribed", …).
+- `buildRecipientActivityItem` + `isPermanentRecipientAddressFailure` (lib/failures.ts) are the ONE user-facing mapper — rows written as FAILED by the pre-Skipped implementation are normalized at read time, and `repairHardBouncedRecipientDispositions` (run on every cron tick, idempotent) converts them durably so run counts agree.
 
 ### Future-send blocking
 

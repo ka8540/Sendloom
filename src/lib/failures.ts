@@ -122,7 +122,7 @@ const HUMAN_READABLE_FAILURE_MESSAGES: Record<FailureCode, string> = {
   DUPLICATE_RECIPIENT: "The import contains duplicate recipients.",
   SUPPRESSED_RECIPIENT: "One or more recipients are suppressed.",
   UNSUBSCRIBED_RECIPIENT: "One or more recipients have unsubscribed.",
-  HARD_BOUNCE_RECIPIENT: "The address returned a permanent delivery failure and is excluded from future sends.",
+  HARD_BOUNCE_RECIPIENT: "Address not found",
   MISSING_TEMPLATE: "The campaign template is missing.",
   EMPTY_TEMPLATE_SUBJECT: "The template subject is empty.",
   EMPTY_TEMPLATE_BODY: "The template body is empty.",
@@ -154,6 +154,22 @@ const HUMAN_READABLE_FAILURE_MESSAGES: Record<FailureCode, string> = {
 
 export function getFailureSeverity(code: FailureCode) {
   return FAILURE_SEVERITY_BY_CODE[code];
+}
+
+/**
+ * THE canonical test for "this recipient's address is permanently bad".
+ *
+ * A confirmed hard bounce is an address-quality outcome, not a Sendloom
+ * malfunction: the send worked and Gmail reported that the mailbox does not
+ * exist. Every surface (bounce processor, recipient activity, sequence
+ * summaries, Discover quality, worker guard) uses this ONE helper so the same
+ * recipient can never read as "Failed" in one place and "Skipped" in another.
+ */
+export function isPermanentRecipientAddressFailure(input: {
+  failureCode?: string | null;
+  failureCategory?: string | null;
+}): boolean {
+  return input.failureCode === "HARD_BOUNCE_RECIPIENT" || Boolean(input.failureCategory?.startsWith("HARD_BOUNCE"));
 }
 
 export function getHumanReadableFailureMessage(code: FailureCode) {

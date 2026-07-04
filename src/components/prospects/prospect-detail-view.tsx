@@ -1230,7 +1230,6 @@ const QUALITY_TONE_CLASS: Record<QualitySegmentTone, string> = {
   unavailable: styles.qualityToneUnavailable,
   invalid: styles.qualityToneInvalid,
   suppressed: styles.qualityToneSuppressed,
-  failed: styles.qualityToneFailed,
   unsubscribed: styles.qualityToneUnsubscribed
 };
 
@@ -1269,13 +1268,6 @@ function ResultsQualityCard({ company, loading }: { company: CompanyDetail | nul
       tone: "review"
     },
     {
-      key: "failed",
-      label: "Failed",
-      value: summary.failed,
-      hint: "Previously returned a permanent delivery failure and will be skipped.",
-      tone: "failed"
-    },
-    {
       key: "unavailable",
       label: "Unavailable",
       value: summary.unavailable,
@@ -1286,7 +1278,7 @@ function ResultsQualityCard({ company, loading }: { company: CompanyDetail | nul
       key: "invalid",
       label: "Invalid",
       value: summary.invalid,
-      hint: "The address failed validation. These are skipped during export and Imports.",
+      hint: "Address not found or failed validation. These contacts are skipped during sending, export, and Imports.",
       tone: "invalid"
     },
     // Excluded-by-choice categories appear only when present, so the strip

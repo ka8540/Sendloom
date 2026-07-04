@@ -114,7 +114,7 @@ describe("Discover quality segments (visualization)", () => {
 describe("Discover quality accessible summary", () => {
   it("describes the rollup in plain language", () => {
     expect(describeQualitySummary(deriveDiscoverQualitySummary(SAMPLE_COUNTS))).toBe(
-      "32 usable, 0 failed, 5 unavailable, 2 invalid, and 1 suppressed out of 40 people."
+      "32 usable, 5 unavailable, 2 invalid, and 1 suppressed out of 40 people."
     );
   });
 
@@ -328,25 +328,28 @@ describe("redesign regression contracts", () => {
     expect(DETAIL_SOURCE).toContain("buildQualitySegments(company.emailStatusCounts)");
   });
 
-  it("one hard-bounced address out of 38 flips the summary from 100% usable (missed-bounce regression)", () => {
-    // The server overlay reports the failed person as FAILED instead of its
-    // stored inferred status — the summary must follow without a new search.
+  it("one hard-bounced address out of 38 reads Invalid, never a Sendloom failure (missed-bounce regression)", () => {
+    // The server overlay reports the hard-bounced person as INVALID (a bad
+    // ADDRESS, not an app failure) — the summary follows without a new search.
     const summary = deriveDiscoverQualitySummary([
       { status: "INFERRED_HIGH", count: 37 },
-      { status: "FAILED", count: 1 }
+      { status: "INVALID", count: 1 }
     ]);
     expect(summary.total).toBe(38);
     expect(summary.usable).toBe(37);
-    expect(summary.failed).toBe(1);
+    expect(summary.invalid).toBe(1);
     expect(qualityPercent(summary.usable, summary.total)).toBe(97);
     expect(describeQualitySummary(summary)).toBe(
-      "37 usable, 1 failed, 0 unavailable, 0 invalid, and 0 suppressed out of 38 people."
+      "37 usable, 0 unavailable, 1 invalid, and 0 suppressed out of 38 people."
     );
     const segments = buildQualitySegments([
       { status: "INFERRED_HIGH", count: 37 },
-      { status: "FAILED", count: 1 }
+      { status: "INVALID", count: 1 }
     ]);
-    expect(segments.map((segment) => segment.label)).toEqual(["Inferred · High", "Failed"]);
+    expect(segments.map((segment) => segment.label)).toEqual(["Inferred · High", "Invalid"]);
+    // The person-level vocabulary has no "Failed" — that word is reserved for
+    // Discover searches that themselves failed to process.
+    expect(segments.some((segment) => segment.label === "Failed")).toBe(false);
   });
 
   it("selects emailStatusCounts in the detail query and every format mutation payload", () => {

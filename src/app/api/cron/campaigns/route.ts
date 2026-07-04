@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 
 import { env } from "@/lib/env";
-import { renewExpiringGmailWatches, syncDueSenderBounces } from "@/services/bounces";
+import {
+  renewExpiringGmailWatches,
+  repairHardBouncedRecipientDispositions,
+  syncDueSenderBounces
+} from "@/services/bounces";
 import { processPendingCampaignWork } from "@/services/campaigns";
 import { syncConnectedSenderReplies } from "@/services/replies";
 
@@ -93,6 +97,18 @@ async function handleCron(request: Request) {
       message: error instanceof Error ? error.message : String(error)
     });
   }
+  // Idempotent disposition repair: recipients recorded as FAILED by the older
+  // bounce mapping become Skipped (SUPPRESSED). No-ops once converged.
+  let dispositionRepair = { repairedCount: 0 };
+  try {
+    dispositionRepair = await repairHardBouncedRecipientDispositions();
+  } catch (error) {
+    console.error("[campaign-cron] Bounce disposition repair failed.", error);
+    errors.push({
+      scope: "bounce-disposition-repair",
+      message: error instanceof Error ? error.message : String(error)
+    });
+  }
 
   return NextResponse.json({
     ...result,
@@ -100,7 +116,8 @@ async function handleCron(request: Request) {
     errors,
     replySync,
     watchRenewal,
-    bounceSync
+    bounceSync,
+    dispositionRepair
   });
 }
 

@@ -247,6 +247,53 @@ export async function skipQueuedSendsForFailedAddress(args: { userId: string; em
   return { skippedCount: queued.length };
 }
 
+/**
+ * One-off, idempotent repair for recipients recorded before the Skipped
+ * disposition existed: rows stored as FAILED whose OWN metadata proves a
+ * permanent recipient-address failure (HARD_BOUNCE_RECIPIENT) become
+ * SUPPRESSED with a concise reason. Nothing else converts — server errors,
+ * Gmail auth problems, temporary and policy failures all keep their FAILED
+ * status, and the bounce evidence in metadata stays untouched. Safe to run on
+ * every cron tick: repaired rows no longer match the filter.
+ */
+export async function repairHardBouncedRecipientDispositions(): Promise<{ repairedCount: number }> {
+  const jobs = await prisma.recipientJob.findMany({
+    where: {
+      status: "FAILED",
+      metadata: { path: ["failureCode"], equals: "HARD_BOUNCE_RECIPIENT" }
+    },
+    select: { id: true, campaignRunId: true, metadata: true },
+    take: 500
+  });
+
+  if (jobs.length === 0) {
+    return { repairedCount: 0 };
+  }
+
+  for (const job of jobs) {
+    const metadata =
+      job.metadata && typeof job.metadata === "object" && !Array.isArray(job.metadata)
+        ? (job.metadata as Record<string, unknown>)
+        : {};
+    const category = typeof metadata.failureCategory === "string" ? metadata.failureCategory : null;
+    await prisma.recipientJob.update({
+      where: { id: job.id },
+      data: {
+        status: "SUPPRESSED",
+        nextRetryAt: null,
+        lastError: safeDeliveryFailureReason((category as DeliveryFailureCategory) ?? "HARD_BOUNCE_MAILBOX_NOT_FOUND")
+      }
+    });
+  }
+
+  for (const runId of new Set(jobs.map((job) => job.campaignRunId))) {
+    await syncRunCounts(runId);
+  }
+
+  console.info("[bounce-sync] Repaired hard-bounced recipient dispositions.", { repairedCount: jobs.length });
+  return { repairedCount: jobs.length };
+}
+
 // ---------------------------------------------------------------------------
 // Correlation — match a DSN to the original Sendloom send.
 // ---------------------------------------------------------------------------
@@ -554,9 +601,13 @@ export async function processPotentialBounceMessage(args: {
         });
       }
       if (JOB_STATUSES_UPDATABLE_BY_BOUNCE.has(job.status)) {
+        // The ADDRESS is bad, not Sendloom: the recipient's disposition is
+        // Skipped (SUPPRESSED), never a system failure. The immutable bounce
+        // evidence (category, enhanced code, failure code) stays in metadata,
+        // the ProviderEvent row, and the suppression record.
         await markRecipientAttempt({
           jobId: job.id,
-          status: "FAILED",
+          status: "SUPPRESSED",
           lastError: reason,
           failureCode: "HARD_BOUNCE_RECIPIENT",
           failureSource: "GMAIL",
@@ -570,7 +621,7 @@ export async function processPotentialBounceMessage(args: {
         await skipQueuedSendsForFailedAddress({
           userId: args.sender.userId,
           email: recipient.email,
-          reason: `${reason} — this address previously returned a permanent delivery failure.`
+          reason
         });
       }
       console.info("[bounce-sync] Permanent delivery failure recorded.", {

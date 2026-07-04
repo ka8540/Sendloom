@@ -93,12 +93,10 @@ export function emailStatusBadge(status: EmailCandidateStatus): Badge {
     case "SUPPRESSED":
       return { label: "Suppressed", tone: "blocked", hint: "Suppressed — excluded from outreach." };
     case "INVALID":
-      return { label: "Invalid", tone: "blocked", hint: "The address failed validation." };
-    case "FAILED":
       return {
-        label: "Failed",
+        label: "Invalid",
         tone: "blocked",
-        hint: "This address previously returned a permanent delivery failure and will be skipped."
+        hint: "Address not found or failed validation. This contact will be skipped."
       };
     case "UNSUBSCRIBED":
       return { label: "Unsubscribed", tone: "muted", hint: "Recipient opted out — excluded from outreach." };
@@ -142,8 +140,8 @@ export function isEmailCopyable(person: Pick<PersonNode, "inferredEmail" | "emai
 
 /**
  * Whole-search quality rollup derived from the server-side per-status counts
- * (which already overlay the user's live suppression list, so a permanently
- * failed or unsubscribed address is never reported under its stored status).
+ * (which already overlay the user's live suppression list, so a hard-bounced
+ * or unsubscribed address is never reported under its stored status).
  *
  * Counting rules (aligned with the export/import eligibility in
  * services/prospects/prospect-export.ts — EXPORTABLE_STATUSES):
@@ -151,14 +149,14 @@ export function isEmailCopyable(person: Pick<PersonNode, "inferredEmail" | "emai
  *                    (an address exists and is eligible for export/Imports)
  *   - needsReview  = INFERRED_LOW — an explicitly overlapping indicator: these
  *                    people are counted in `usable` but deserve review first.
- *   - failed       = FAILED (permanent delivery failure — hard bounce/invalid
- *                    recipient; skipped everywhere)
  *   - unavailable  = UNAVAILABLE (no address could be inferred; skipped)
- *   - invalid      = INVALID (failed validation; skipped)
+ *   - invalid      = INVALID (failed validation OR proven bad by a permanent
+ *                    delivery failure; skipped). An invalid address is an
+ *                    email-quality outcome, never an app "Failed" state.
  *   - suppressed   = SUPPRESSED (manually blocked/complaint; excluded)
- *   - unsubscribed = UNSUBSCRIBED (opted out — excluded, but NOT a failure)
+ *   - unsubscribed = UNSUBSCRIBED (opted out — excluded, but NOT invalid)
  *   - verified     = VERIFIED — overlapping subset of `usable`.
- * usable + failed + unavailable + invalid + suppressed + unsubscribed = total
+ * usable + unavailable + invalid + suppressed + unsubscribed = total
  * (mutually exclusive; the server-side overlay precedence is documented in
  * lib/prospect-enums.ts#overlayEmailCandidateStatus).
  */
@@ -166,7 +164,6 @@ export type DiscoverQualitySummary = {
   total: number;
   usable: number;
   needsReview: number;
-  failed: number;
   unavailable: number;
   invalid: number;
   suppressed: number;
@@ -188,7 +185,6 @@ export function deriveDiscoverQualitySummary(
     total: 0,
     usable: 0,
     needsReview: 0,
-    failed: 0,
     unavailable: 0,
     invalid: 0,
     suppressed: 0,
@@ -210,8 +206,6 @@ export function deriveDiscoverQualitySummary(
       if (status === "VERIFIED") {
         summary.verified += count;
       }
-    } else if (status === "FAILED") {
-      summary.failed += count;
     } else if (status === "INVALID") {
       summary.invalid += count;
     } else if (status === "SUPPRESSED") {
@@ -242,7 +236,6 @@ export type QualitySegmentTone =
   | "unavailable"
   | "invalid"
   | "suppressed"
-  | "failed"
   | "unsubscribed";
 
 export type QualitySegment = {
@@ -257,14 +250,14 @@ export type QualitySegment = {
 
 // Fixed display order: usable outcomes first, then the skipped ones. Labels
 // mirror the People-table badge vocabulary so the page speaks one language.
-// FAILED (permanent delivery failure) and UNSUBSCRIBED are distinct from
-// SUPPRESSED — an unsubscribe is excluded but did not fail.
+// INVALID covers both validation failures and addresses proven bad by a
+// permanent delivery failure; UNSUBSCRIBED stays distinct from SUPPRESSED —
+// an unsubscribe is excluded but the address did not fail.
 const QUALITY_SEGMENT_ORDER: ReadonlyArray<{ status: EmailCandidateStatus; label: string; tone: QualitySegmentTone }> = [
   { status: "VERIFIED", label: "Verified", tone: "verified" },
   { status: "INFERRED_HIGH", label: "Inferred · High", tone: "high" },
   { status: "INFERRED_MEDIUM", label: "Inferred · Medium", tone: "medium" },
   { status: "INFERRED_LOW", label: "Inferred · Low", tone: "review" },
-  { status: "FAILED", label: "Failed", tone: "failed" },
   { status: "UNAVAILABLE", label: "Unavailable", tone: "unavailable" },
   { status: "INVALID", label: "Invalid", tone: "invalid" },
   { status: "SUPPRESSED", label: "Suppressed", tone: "suppressed" },
@@ -306,9 +299,9 @@ export function buildQualitySegments(
 
 /**
  * Plain-language summary of the rollup for screen readers and the visible
- * caption, e.g. "32 usable, 1 failed, 5 unavailable, 2 invalid, and 1
- * suppressed out of 40 people." Unsubscribed appears only when present so the
- * common case stays short.
+ * caption, e.g. "32 usable, 5 unavailable, 2 invalid, and 1 suppressed out of
+ * 40 people." Unsubscribed appears only when present so the common case stays
+ * short.
  */
 export function describeQualitySummary(summary: DiscoverQualitySummary): string {
   if (summary.total <= 0) {
@@ -316,7 +309,6 @@ export function describeQualitySummary(summary: DiscoverQualitySummary): string 
   }
   const parts = [
     `${summary.usable} usable`,
-    `${summary.failed} failed`,
     `${summary.unavailable} unavailable`,
     `${summary.invalid} invalid`,
     ...(summary.unsubscribed > 0 ? [`${summary.unsubscribed} unsubscribed`] : []),

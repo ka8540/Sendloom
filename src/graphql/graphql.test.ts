@@ -316,7 +316,7 @@ describe("Discover delivery-failure overlay (suppression-aware statuses)", () =>
     people(companyId: "comp_A", first: 10) { edges { node { id emailStatus } } }
   }`;
 
-  it("a hard-bounced address reads FAILED everywhere and is never counted usable", async () => {
+  it("a hard-bounced address reads INVALID everywhere (an address problem, not an app failure) and is never counted usable", async () => {
     const prisma = createFakePrisma();
     seedCompany(prisma, { id: "comp_A", userId: "user_A" });
     seedOverlayPerson(prisma, "p_ok", "good@example.com");
@@ -341,18 +341,18 @@ describe("Discover delivery-failure overlay (suppression-aware statuses)", () =>
         (row) => [row.status, row.count]
       )
     );
-    // The stored INFERRED_HIGH is overlaid to FAILED — no double counting.
-    expect(counts).toEqual({ INFERRED_HIGH: 1, FAILED: 1 });
+    // The stored INFERRED_HIGH is overlaid to INVALID — no double counting.
+    expect(counts).toEqual({ INFERRED_HIGH: 1, INVALID: 1 });
     const statuses = Object.fromEntries(
       (result.data?.people as { edges: Array<{ node: { id: string; emailStatus: string } }> }).edges.map((edge) => [
         edge.node.id,
         edge.node.emailStatus
       ])
     );
-    expect(statuses).toEqual({ p_ok: "INFERRED_HIGH", p_failed: "FAILED" });
+    expect(statuses).toEqual({ p_ok: "INFERRED_HIGH", p_failed: "INVALID" });
   });
 
-  it("unsubscribed addresses are never mislabelled FAILED, and manual blocks read SUPPRESSED", async () => {
+  it("unsubscribed addresses are never mislabelled INVALID, and manual blocks read SUPPRESSED", async () => {
     const prisma = createFakePrisma();
     seedCompany(prisma, { id: "comp_A", userId: "user_A" });
     seedOverlayPerson(prisma, "p_unsub", "optout@example.com");
@@ -373,7 +373,7 @@ describe("Discover delivery-failure overlay (suppression-aware statuses)", () =>
       (edge) => edge.node.emailStatus
     );
     expect(statuses.sort()).toEqual(["SUPPRESSED", "UNSUBSCRIBED"]);
-    expect(statuses).not.toContain("FAILED");
+    expect(statuses).not.toContain("INVALID");
   });
 
   it("another user's failure record never affects this user's results", async () => {
