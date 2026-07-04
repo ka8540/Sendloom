@@ -7,7 +7,9 @@ import { useErrorToast } from "@/components/error-toast-provider";
 import { ErrorRecoveryPanel } from "@/components/incident/error-recovery-panel";
 import { useErrorRecovery } from "@/components/incident/use-error-recovery";
 import { PastScheduleRelaunchModal } from "@/components/past-schedule-relaunch-modal";
+import { SequenceLimitDialog } from "@/components/sequence-limit-dialog";
 import { PAST_SCHEDULE_CONFIRMATION_CODE } from "@/lib/campaign-scheduling";
+import { SEQUENCE_CONCURRENCY_LIMIT_CODE } from "@/lib/sequence-limit-codes";
 
 /**
  * Launch / relaunch action on the sequence detail page. Routes through the launch API so
@@ -27,6 +29,9 @@ export function CampaignLaunchButton(props: { campaignId: string; label: string;
   const [pending, setPending] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [converting, setConverting] = useState(false);
+  const [limitOpen, setLimitOpen] = useState(false);
+  const [queueing, setQueueing] = useState(false);
+  const [queueError, setQueueError] = useState<string | null>(null);
 
   async function launch(options?: { convertPastScheduleToImmediate?: boolean }) {
     const convert = options?.convertPastScheduleToImmediate === true;
@@ -60,6 +65,11 @@ export function CampaignLaunchButton(props: { campaignId: string; label: string;
           setConfirmOpen(true);
           return;
         }
+        if (response.status === 409 && payload.code === SEQUENCE_CONCURRENCY_LIMIT_CODE) {
+          setPending(false);
+          setLimitOpen(true);
+          return;
+        }
 
         // 5xx / service failures become a recoverable incident; validation 4xx
         // keep their existing inline message.
@@ -91,6 +101,12 @@ export function CampaignLaunchButton(props: { campaignId: string; label: string;
       const response = await launch({ convertPastScheduleToImmediate: true });
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
+        if (response.status === 409 && payload.code === SEQUENCE_CONCURRENCY_LIMIT_CODE) {
+          setConfirmOpen(false);
+          setConverting(false);
+          setLimitOpen(true);
+          return;
+        }
         showError(payload.error ?? "Could not launch the sequence.", { title: "Sequence launch blocked" });
         setConverting(false);
         return;
@@ -103,6 +119,32 @@ export function CampaignLaunchButton(props: { campaignId: string; label: string;
     } catch {
       showError("Could not launch the sequence.", { title: "Sequence launch blocked" });
       setConverting(false);
+    }
+  }
+
+  async function handleWaitForSlot() {
+    if (queueing) return;
+    setQueueing(true);
+    setQueueError(null);
+    try {
+      const response = await fetch(`/api/campaigns/${props.campaignId}/wait-for-slot`, { method: "POST" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setQueueError(payload.error ?? "Could not queue this sequence.");
+        setQueueing(false);
+        return;
+      }
+      setLimitOpen(false);
+      setQueueing(false);
+      showSuccess(
+        payload.status === "STARTED"
+          ? "A slot became available and the sequence started."
+          : "Sequence queued. It will start automatically when a slot becomes available."
+      );
+      router.refresh();
+    } catch {
+      setQueueError("Could not queue this sequence.");
+      setQueueing(false);
     }
   }
 
@@ -131,6 +173,16 @@ export function CampaignLaunchButton(props: { campaignId: string; label: string;
           }
         }}
         onConfirm={() => void handleConfirmConvertAndRelaunch()}
+      />
+      <SequenceLimitDialog
+        open={limitOpen}
+        kind="concurrency"
+        loading={queueing}
+        error={queueError}
+        onWaitForSlot={handleWaitForSlot}
+        onClose={() => {
+          if (!queueing) setLimitOpen(false);
+        }}
       />
     </>
   );

@@ -27,6 +27,7 @@ import {
   pauseCampaignRunForSenderLimit
 } from "@/services/campaigns";
 import { recordSendOnLedger } from "@/services/send-ledger";
+import { activateClaimedSequenceRun, isSequenceConsumingExecutionSlot } from "@/services/sequence-limits";
 
 const connection = getRedis() as unknown as ConnectionOptions;
 const GMAIL_RATE_LIMIT_PAUSE_MS = 60 * 60 * 1000;
@@ -69,13 +70,8 @@ const launchWorker = new Worker(
   "launch",
   async (job) => {
     const { campaignId, runId } = job.data as { campaignId: string; runId: string };
-    await prisma.campaignRun.update({
-      where: { id: runId },
-      data: {
-        status: "RUNNING",
-        startedAt: new Date()
-      }
-    });
+    const activated = await activateClaimedSequenceRun(runId);
+    if (!activated) return;
     await enqueueRecipientJobs(campaignId, runId);
   },
   { connection }
@@ -104,13 +100,22 @@ const sendWorker = new Worker(
       return;
     }
 
+    if (!isSequenceConsumingExecutionSlot(recipientJob.campaignRun)) {
+      return;
+    }
+
     // Not yet due: a future nextRetryAt means a backoff retry or a job deferred
     // for per-minute pacing. Leave it queued for its scheduled time.
     if (recipientJob.nextRetryAt && recipientJob.nextRetryAt > new Date()) {
       return;
     }
 
-    if (recipientJob.campaignRun.status === "PAUSED" || recipientJob.campaignRun.campaign.status === "PAUSED") {
+    if (
+      recipientJob.campaignRun.status === "PAUSED" ||
+      recipientJob.campaignRun.status === "WAITING_FOR_SLOT" ||
+      recipientJob.campaignRun.campaign.status === "PAUSED" ||
+      recipientJob.campaignRun.campaign.status === "WAITING_FOR_SLOT"
+    ) {
       return;
     }
 

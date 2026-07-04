@@ -2,7 +2,7 @@ import { getNextRunDate } from "@/lib/schedule";
 import type { ScheduleRule } from "@/lib/types";
 
 export const SCHEDULABLE_CAMPAIGN_STATUSES = new Set(["DRAFT", "VALIDATED", "SCHEDULED", "COMPLETED"]);
-export const ACTIVE_RUN_STATUSES = new Set(["QUEUED", "RUNNING", "PAUSED"]);
+export const ACTIVE_RUN_STATUSES = new Set(["QUEUED", "WAITING_FOR_SLOT", "RUNNING", "PAUSED"]);
 
 /**
  * Structured response code returned by the launch endpoint when a relaunch targets a

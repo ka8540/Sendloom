@@ -4,7 +4,9 @@ import { RotateCcw } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { useErrorToastEffect } from "@/components/error-toast-provider";
+import { useErrorToast, useErrorToastEffect } from "@/components/error-toast-provider";
+import { SequenceLimitDialog } from "@/components/sequence-limit-dialog";
+import { SEQUENCE_CONCURRENCY_LIMIT_CODE } from "@/lib/sequence-limit-codes";
 
 export function CampaignRetryFailedButton(props: {
   campaignId: string;
@@ -14,6 +16,10 @@ export function CampaignRetryFailedButton(props: {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [limitOpen, setLimitOpen] = useState(false);
+  const [queueing, setQueueing] = useState(false);
+  const [queueError, setQueueError] = useState<string | null>(null);
+  const { showSuccess } = useErrorToast();
   useErrorToastEffect(error, "Retry failed");
 
   async function handleRetry() {
@@ -31,6 +37,11 @@ export function CampaignRetryFailedButton(props: {
 
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
+        if (payload.code === SEQUENCE_CONCURRENCY_LIMIT_CODE) {
+          setLimitOpen(true);
+          setPending(false);
+          return;
+        }
         setError(payload.error ?? "Could not retry failed recipients.");
         setPending(false);
         return;
@@ -46,10 +57,41 @@ export function CampaignRetryFailedButton(props: {
     }
   }
 
+  async function waitForSlot() {
+    if (queueing) return;
+    setQueueing(true);
+    setQueueError(null);
+    try {
+      const response = await fetch(`/api/campaigns/${props.campaignId}/retry-failed`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ waitForSlot: true })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setQueueError(payload.error ?? "Could not queue this retry.");
+        setQueueing(false);
+        return;
+      }
+      setLimitOpen(false);
+      setQueueing(false);
+      showSuccess(
+        payload.status === "STARTED"
+          ? "A slot became available and the retry started."
+          : "Sequence queued. It will start automatically when a slot becomes available."
+      );
+      router.refresh();
+    } catch {
+      setQueueError("Could not queue this retry.");
+      setQueueing(false);
+    }
+  }
+
   const label =
     props.failedCount > 0 ? `Retry ${props.failedCount} failed` : "Retry failed recipients";
 
   return (
+    <>
     <form
       className={props.className}
       onSubmit={(event) => {
@@ -62,5 +104,16 @@ export function CampaignRetryFailedButton(props: {
         <span>{pending ? "Retrying..." : label}</span>
       </button>
     </form>
+    <SequenceLimitDialog
+      open={limitOpen}
+      kind="concurrency"
+      loading={queueing}
+      error={queueError}
+      onWaitForSlot={waitForSlot}
+      onClose={() => {
+        if (!queueing) setLimitOpen(false);
+      }}
+    />
+    </>
   );
 }

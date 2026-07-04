@@ -10,6 +10,7 @@ import { GMAIL_RECONNECT_ERROR } from "@/lib/provider";
 import { createRateLimitResponse, rateLimit } from "@/lib/rate-limit";
 import { buildAttachmentKey, uploadObject } from "@/lib/storage";
 import { CampaignLaunchBlockedError, createCampaignDraft, launchCampaign, processPendingCampaignWork } from "@/services/campaigns";
+import { SequenceConcurrencyLimitError, SequenceStorageLimitError } from "@/services/sequence-limits";
 
 export const maxDuration = 60;
 
@@ -116,36 +117,44 @@ export async function POST(request: Request) {
       }[]
     | undefined;
 
-  if (attachmentFiles.length) {
-    attachments = [];
-
-    for (const attachment of attachmentFiles) {
-      if (attachment.size > MAX_ATTACHMENT_BYTES) {
-        return NextResponse.json({ error: "Attachments must be 10 MB or smaller." }, { status: 400 });
-      }
-
-      const buffer = Buffer.from(await attachment.arrayBuffer());
-      const upload = await uploadObject({
-        bucket: "attachments",
-        key: buildAttachmentKey(auth.user.id, attachment.name),
-        body: buffer,
-        contentType: attachment.type || undefined
-      });
-      attachments.push({
-        fileName: attachment.name,
-        storagePath: upload.key,
-        contentType: attachment.type || null
-      });
+  for (const attachment of attachmentFiles) {
+    if (attachment.size > MAX_ATTACHMENT_BYTES) {
+      return NextResponse.json({ error: "Attachments must be 10 MB or smaller." }, { status: 400 });
     }
   }
 
-  const campaign = await createCampaignDraft(
-    {
-      ...payload,
-      attachments
-    },
-    auth.user.id
-  );
+  let campaign;
+  try {
+    campaign = await createCampaignDraft(
+      {
+        ...payload,
+        prepareAttachments: async () => {
+          attachments = [];
+          for (const attachment of attachmentFiles) {
+            const buffer = Buffer.from(await attachment.arrayBuffer());
+            const upload = await uploadObject({
+              bucket: "attachments",
+              key: buildAttachmentKey(auth.user.id, attachment.name),
+              body: buffer,
+              contentType: attachment.type || undefined
+            });
+            attachments.push({
+              fileName: attachment.name,
+              storagePath: upload.key,
+              contentType: attachment.type || null
+            });
+          }
+          return attachments;
+        }
+      },
+      auth.user.id
+    );
+  } catch (error) {
+    if (error instanceof SequenceStorageLimitError) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: 409 });
+    }
+    throw error;
+  }
 
   await recordAuditEvent({
     actor: { id: auth.user.id, email: auth.user.email },
@@ -175,6 +184,12 @@ export async function POST(request: Request) {
     try {
       run = await launchCampaign(campaign.id, auth.user.id);
     } catch (error) {
+      if (error instanceof SequenceConcurrencyLimitError) {
+        return NextResponse.json(
+          { error: error.message, code: error.code, campaignId: campaign.id },
+          { status: 409 }
+        );
+      }
       if (error instanceof CampaignLaunchBlockedError) {
         return NextResponse.json(
           {

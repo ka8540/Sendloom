@@ -1,4 +1,4 @@
-import { Prisma, type CampaignStatus } from "@prisma/client";
+import { Prisma, type CampaignRun, type CampaignStatus } from "@prisma/client";
 
 import { recordAuditEvent } from "@/lib/audit";
 import { CAMPAIGN_SETUP_LOCKED_RUN_STATUSES, isCampaignSetupLocked } from "@/lib/campaign-setup-lock";
@@ -48,6 +48,17 @@ import {
 } from "@/lib/validation";
 import { markSenderRequiresReconnect } from "@/services/senders";
 import { getSuppressedEmailSet, suppressEmail } from "@/services/suppressions";
+import {
+  SequenceConcurrencyLimitError,
+  activateClaimedSequenceRun,
+  acquireDueSequenceExecutionSlots,
+  claimSequenceExecutionSlot,
+  promoteWaitingSequencesForUser,
+  reconcileWaitingSequenceSlots,
+  isSequenceConsumingExecutionSlot,
+  withSequenceCreationCapacity,
+  withSequenceUserLock
+} from "@/services/sequence-limits";
 
 function campaignOwnershipFilter(campaignId: string, userId?: string) {
   return {
@@ -289,19 +300,18 @@ async function finalizeRunIfComplete(runId: string) {
 
   const counts = await syncRunCounts(runId);
 
-  await prisma.campaignRun.update({
-    where: { id: runId },
-    data: {
-      status: "COMPLETED",
-      completedAt: run.completedAt ?? new Date()
-    }
-  });
-
-  await prisma.campaign.update({
-    where: { id: run.campaignId },
-    data: {
-      status: "COMPLETED"
-    }
+  if (!run.campaign.userId) return false;
+  await withSequenceUserLock(run.campaign.userId, async (tx) => {
+    await tx.campaignRun.update({
+      where: { id: runId },
+      data: {
+        status: "COMPLETED",
+        completedAt: run.completedAt ?? new Date(),
+        executionSlotClaimedAt: null,
+        waitingForSlotAt: null
+      }
+    });
+    await tx.campaign.update({ where: { id: run.campaignId }, data: { status: "COMPLETED" } });
   });
 
   // Aggregate send outcome for the admin audit timeline, attributed to the
@@ -326,19 +336,14 @@ async function finalizeRunIfComplete(runId: string) {
     });
   }
 
+  await promoteWaitingSequencesForUser(run.campaign.userId);
   await ensureNextRecurringRun(run.campaignId);
 
   return true;
 }
 
 async function ensureRunIsStarted(runId: string) {
-  await prisma.campaignRun.update({
-    where: { id: runId },
-    data: {
-      status: "RUNNING",
-      startedAt: new Date()
-    }
-  });
+  return activateClaimedSequenceRun(runId);
 }
 
 export function hasLaunchBlockingValidationIssues(report: CampaignValidationReport) {
@@ -376,62 +381,49 @@ export async function createCampaignDraft(input: {
   senderProfileId: string;
   scheduleRule: ScheduleRule;
   attachments?: CampaignAttachmentSnapshot[];
+  prepareAttachments?: () => Promise<CampaignAttachmentSnapshot[]>;
 }, userId: string) {
   const scheduleRule = normalizeScheduleRule(input.scheduleRule);
-  const [importRecord, template, mapping, senderProfile] = await Promise.all([
-    prisma.import.findFirstOrThrow({
-      where: {
-        id: input.importId,
-        userId
-      }
-    }),
-    prisma.template.findFirstOrThrow({
-      where: {
-        id: input.templateId,
-        userId
-      }
-    }),
-    prisma.mapping.findFirstOrThrow({
-      where: {
-        id: input.mappingId,
-        importId: input.importId,
-        userId
-      }
-    }),
-    prisma.senderProfile.findFirstOrThrow({
-      where: {
-        id: input.senderProfileId,
-        userId
-      }
-    })
-  ]);
+  return withSequenceCreationCapacity(userId, async (tx) => {
+    const [importRecord, template, mapping, senderProfile] = await Promise.all([
+      tx.import.findFirstOrThrow({ where: { id: input.importId, userId } }),
+      tx.template.findFirstOrThrow({ where: { id: input.templateId, userId } }),
+      tx.mapping.findFirstOrThrow({ where: { id: input.mappingId, importId: input.importId, userId } }),
+      tx.senderProfile.findFirstOrThrow({ where: { id: input.senderProfileId, userId } })
+    ]);
+    // This callback runs only after the atomic retained-sequence gate passes,
+    // so a rejected 51st sequence never uploads or stores attachments.
+    const attachments = input.prepareAttachments
+      ? await input.prepareAttachments()
+      : (input.attachments ?? []);
 
-  return prisma.campaign.create({
-    data: {
-      userId,
-      name: input.name,
-      importId: importRecord.id,
-      mappingId: mapping.id,
-      templateId: input.templateId,
-      senderProfileId: input.senderProfileId,
-      scheduleType: input.scheduleRule.type,
-      scheduleConfig: scheduleRule,
-      templateSnapshot: {
-        subject: template.subject,
-        format: (template.format as TemplateFormat | null) ?? "HTML",
-        htmlBody: template.htmlBody,
-        variableManifest: template.variableManifest,
-        attachments: input.attachments ?? []
-      },
-      mappingSnapshot: {
-        reservedFieldMap: mapping.reservedFieldMap,
-        variableMap: mapping.variableMap
-      },
-      senderSnapshot: {
-        fromEmail: senderProfile.fromEmail,
-        name: senderProfile.name
+    return tx.campaign.create({
+      data: {
+        userId,
+        name: input.name,
+        importId: importRecord.id,
+        mappingId: mapping.id,
+        templateId: input.templateId,
+        senderProfileId: input.senderProfileId,
+        scheduleType: input.scheduleRule.type,
+        scheduleConfig: scheduleRule,
+        templateSnapshot: {
+          subject: template.subject,
+          format: (template.format as TemplateFormat | null) ?? "HTML",
+          htmlBody: template.htmlBody,
+          variableManifest: template.variableManifest,
+          attachments
+        },
+        mappingSnapshot: {
+          reservedFieldMap: mapping.reservedFieldMap,
+          variableMap: mapping.variableMap
+        },
+        senderSnapshot: {
+          fromEmail: senderProfile.fromEmail,
+          name: senderProfile.name
+        }
       }
-    }
+    });
   });
 }
 
@@ -527,13 +519,19 @@ export async function deleteCampaign(campaignId: string, userId?: string) {
   const campaign = await prisma.campaign.findFirstOrThrow({
     where: campaignOwnershipFilter(campaignId, userId),
     select: {
-      id: true
+      id: true,
+      userId: true
     }
   });
 
-  await prisma.campaign.delete({
-    where: { id: campaign.id }
+  if (!campaign.userId) {
+    throw new Error("Sequence owner is missing.");
+  }
+
+  await withSequenceUserLock(campaign.userId, async (tx) => {
+    await tx.campaign.delete({ where: { id: campaign.id } });
   });
+  await promoteWaitingSequencesForUser(campaign.userId);
 
   return { id: campaign.id, deleted: true };
 }
@@ -843,7 +841,7 @@ export async function launchCampaign(
           }
         : {}),
       status: {
-        in: ["QUEUED", "RUNNING"]
+        in: ["QUEUED", "WAITING_FOR_SLOT", "RUNNING"]
       }
     },
     orderBy: { createdAt: "desc" }
@@ -892,72 +890,85 @@ export async function launchCampaign(
   }
 
   const launchedRun = await withRedisLock(`sendloom:campaign-launch:${campaignId}`, RUN_LOCK_TTL_SECONDS, async () => {
-    const campaign = await prisma.campaign.findFirstOrThrow({
+    const owner = await prisma.campaign.findFirstOrThrow({
       where: campaignOwnershipFilter(campaignId, userId),
-      include: {
-        import: {
-          include: {
-            rows: true
-          }
-        }
+      select: { userId: true }
+    });
+    if (!owner.userId) {
+      throw new Error("Sequence owner is missing.");
+    }
+    const ownerId = owner.userId;
+
+    // Existing FIFO waiters get first claim on newly available capacity. The
+    // subsequent launch transaction re-counts under the same per-user lock.
+    await promoteWaitingSequencesForUser(ownerId);
+    return withSequenceUserLock(ownerId, async (tx) => {
+      const campaign = await tx.campaign.findFirstOrThrow({
+        where: campaignOwnershipFilter(campaignId, userId),
+        include: { import: { select: { id: true } } }
+      });
+      const activeRun = await tx.campaignRun.findFirst({
+        where: {
+          campaignId,
+          status: { in: ["QUEUED", "WAITING_FOR_SLOT", "RUNNING", "PAUSED"] }
+        },
+        orderBy: { createdAt: "desc" }
+      });
+
+      if (activeRun && activeRun.status !== "PAUSED") {
+        return activeRun;
       }
-    });
 
-    const activeRun = await prisma.campaignRun.findFirst({
-      where: {
-        campaignId,
-        status: {
-          in: ["QUEUED", "RUNNING", "PAUSED"]
+      const now = new Date();
+      if (activeRun?.status === "PAUSED") {
+        const claim = await claimSequenceExecutionSlot(tx, {
+          userId: ownerId,
+          runId: activeRun.id,
+          now
+        });
+        if (!claim.acquired) {
+          throw new SequenceConcurrencyLimitError(claim.activeCount);
         }
-      },
-      orderBy: { createdAt: "desc" }
-    });
-
-    if (activeRun) {
-      if (activeRun.status === "PAUSED") {
-        const resumedRun = await prisma.campaignRun.update({
+        const resumedRun = await tx.campaignRun.update({
           where: { id: activeRun.id },
-          data: {
-            status: "QUEUED",
-            scheduledFor: new Date()
-          }
+          data: { scheduledFor: now }
         });
-
-        await prisma.campaign.update({
-          where: { id: campaignId },
-          data: {
-            status: "RUNNING"
-          }
-        });
-
+        await tx.campaign.update({ where: { id: campaignId }, data: { status: "RUNNING" } });
         return resumedRun;
       }
 
-      return activeRun;
-    }
+      const rule = campaign.scheduleConfig as ScheduleRule;
+      const scheduledFor = getNextRunDate(rule);
+      const totalRecipients = await tx.importRow.count({ where: { importId: campaign.importId } });
+      const isDue = rule.type === "immediate" || scheduledFor <= now;
+      const run = await tx.campaignRun.create({
+        data: {
+          campaignId,
+          status: "QUEUED",
+          launchType: rule.type,
+          scheduledFor,
+          totalRecipients
+        }
+      });
 
-    const rule = campaign.scheduleConfig as ScheduleRule;
-    const scheduledFor = getNextRunDate(rule);
-    const totalRecipients = campaign.import.rows.length;
-
-    const run = await prisma.campaignRun.create({
-      data: {
-        campaignId,
-        status: "QUEUED",
-        launchType: rule.type,
-        scheduledFor,
-        totalRecipients
+      if (isDue) {
+        const claim = await claimSequenceExecutionSlot(tx, {
+          userId: ownerId,
+          runId: run.id,
+          now
+        });
+        if (!claim.acquired) {
+          throw new SequenceConcurrencyLimitError(claim.activeCount);
+        }
       }
-    });
 
-    await prisma.campaign.update({
-      where: { id: campaignId },
-      data: {
-        status: rule.type === "immediate" ? "RUNNING" : "SCHEDULED"
-      }
-    });
+      await tx.campaign.update({
+        where: { id: campaignId },
+        data: { status: isDue ? "RUNNING" : "SCHEDULED" }
+      });
 
-    return run;
+      return tx.campaignRun.findUniqueOrThrow({ where: { id: run.id } });
+    });
   });
 
   if (launchedRun) {
@@ -968,7 +979,7 @@ export async function launchCampaign(
     where: {
       campaignId,
       status: {
-        in: ["QUEUED", "RUNNING", "PAUSED"]
+        in: ["QUEUED", "WAITING_FOR_SLOT", "RUNNING", "PAUSED"]
       }
     },
     orderBy: { createdAt: "desc" }
@@ -981,42 +992,131 @@ export async function launchCampaign(
   throw new Error("This sequence launch is already being prepared. Try again in a moment.");
 }
 
+export type SequenceWaitForSlotResult =
+  | { status: "STARTED"; run: CampaignRun }
+  | { status: "WAITING_FOR_SLOT"; run: CampaignRun };
+
+/** Persist the user's explicit choice to wait, or start immediately if capacity freed. */
+export async function enqueueCampaignForExecutionSlot(
+  campaignId: string,
+  userId: string
+): Promise<SequenceWaitForSlotResult> {
+  try {
+    const run = await launchCampaign(campaignId, userId);
+    return {
+      status: run.status === "WAITING_FOR_SLOT" ? "WAITING_FOR_SLOT" : "STARTED",
+      run
+    };
+  } catch (error) {
+    if (!(error instanceof SequenceConcurrencyLimitError)) throw error;
+  }
+
+  const queued = await withRedisLock(`sendloom:campaign-launch:${campaignId}`, RUN_LOCK_TTL_SECONDS, async () =>
+    withSequenceUserLock(userId, async (tx) => {
+      const campaign = await tx.campaign.findFirstOrThrow({
+        where: { id: campaignId, userId },
+        select: { id: true, importId: true, scheduleConfig: true }
+      });
+      const now = new Date();
+      let run = await tx.campaignRun.findFirst({
+        where: {
+          campaignId,
+          status: { in: ["QUEUED", "WAITING_FOR_SLOT", "RUNNING", "PAUSED"] }
+        },
+        orderBy: { createdAt: "desc" }
+      });
+
+      if (run?.status === "QUEUED" || run?.status === "RUNNING") {
+        return { status: "STARTED" as const, run };
+      }
+
+      if (!run) {
+        const rule = campaign.scheduleConfig as ScheduleRule;
+        const totalRecipients = await tx.importRow.count({ where: { importId: campaign.importId } });
+        run = await tx.campaignRun.create({
+          data: {
+            campaignId,
+            status: "WAITING_FOR_SLOT",
+            launchType: rule.type,
+            scheduledFor: now,
+            waitingForSlotAt: now,
+            totalRecipients
+          }
+        });
+      } else if (run.status !== "WAITING_FOR_SLOT") {
+        run = await tx.campaignRun.update({
+          where: { id: run.id },
+          data: {
+            status: "WAITING_FOR_SLOT",
+            scheduledFor: now,
+            waitingForSlotAt: now,
+            executionSlotClaimedAt: null
+          }
+        });
+      }
+
+      const claim = await claimSequenceExecutionSlot(tx, { userId, runId: run.id, now });
+      if (claim.acquired) {
+        await tx.campaign.update({ where: { id: campaignId }, data: { status: "RUNNING" } });
+        const startedRun = await tx.campaignRun.findUniqueOrThrow({ where: { id: run.id } });
+        return { status: "STARTED" as const, run: startedRun };
+      }
+
+      await tx.campaignRun.update({
+        where: { id: run.id },
+        data: {
+          status: "WAITING_FOR_SLOT",
+          waitingForSlotAt: run.waitingForSlotAt ?? now,
+          executionSlotClaimedAt: null
+        }
+      });
+      await tx.campaign.update({ where: { id: campaignId }, data: { status: "WAITING_FOR_SLOT" } });
+      const waitingRun = await tx.campaignRun.findUniqueOrThrow({ where: { id: run.id } });
+      return { status: "WAITING_FOR_SLOT" as const, run: waitingRun };
+    })
+  );
+
+  if (queued) return queued;
+
+  const existing = await prisma.campaignRun.findFirstOrThrow({
+    where: { campaignId, campaign: { userId }, status: { in: ["QUEUED", "WAITING_FOR_SLOT", "RUNNING"] } },
+    orderBy: { createdAt: "desc" }
+  });
+  return {
+    status: existing.status === "WAITING_FOR_SLOT" ? "WAITING_FOR_SLOT" : "STARTED",
+    run: existing
+  };
+}
+
 export async function pauseCampaign(campaignId: string, userId?: string) {
   const campaign = await prisma.campaign.findFirstOrThrow({
     where: campaignOwnershipFilter(campaignId, userId),
     select: {
-      id: true
+      id: true,
+      userId: true
     }
   });
 
-  const activeRun = await prisma.campaignRun.findFirst({
-    where: {
-      campaignId,
-      status: {
-        in: ["QUEUED", "RUNNING"]
+  if (!campaign.userId) throw new Error("Sequence owner is missing.");
+  const pausedRun = await withSequenceUserLock(campaign.userId, async (tx) => {
+    const activeRun = await tx.campaignRun.findFirst({
+      where: { campaignId, status: { in: ["QUEUED", "WAITING_FOR_SLOT", "RUNNING"] } },
+      orderBy: { createdAt: "desc" }
+    });
+    if (!activeRun) return null;
+
+    const updated = await tx.campaignRun.update({
+      where: { id: activeRun.id },
+      data: {
+        status: "PAUSED",
+        waitingForSlotAt: null,
+        executionSlotClaimedAt: null
       }
-    },
-    orderBy: { createdAt: "desc" }
+    });
+    await tx.campaign.update({ where: { id: campaign.id }, data: { status: "PAUSED" } });
+    return updated;
   });
-
-  if (!activeRun) {
-    return null;
-  }
-
-  const pausedRun = await prisma.campaignRun.update({
-    where: { id: activeRun.id },
-    data: {
-      status: "PAUSED"
-    }
-  });
-
-  await prisma.campaign.update({
-    where: { id: campaign.id },
-    data: {
-      status: "PAUSED"
-    }
-  });
-
+  await promoteWaitingSequencesForUser(campaign.userId);
   return pausedRun;
 }
 
@@ -1035,21 +1135,10 @@ export async function resumeCampaign(campaignId: string, userId?: string) {
     select: {
       id: true,
       scheduleType: true,
-      scheduleConfig: true
+      scheduleConfig: true,
+      userId: true
     }
   });
-
-  const pausedRun = await prisma.campaignRun.findFirst({
-    where: {
-      campaignId,
-      status: "PAUSED"
-    },
-    orderBy: { createdAt: "desc" }
-  });
-
-  if (!pausedRun) {
-    return null;
-  }
 
   const rule = campaign.scheduleConfig as ScheduleRule;
   const now = new Date();
@@ -1073,30 +1162,48 @@ export async function resumeCampaign(campaignId: string, userId?: string) {
     nextCampaignStatus = "RUNNING";
   }
 
-  const resumedRun = await prisma.campaignRun.update({
-    where: { id: pausedRun.id },
-    data: {
-      status: "QUEUED",
-      scheduledFor
+  if (!campaign.userId) throw new Error("Sequence owner is missing.");
+  await promoteWaitingSequencesForUser(campaign.userId);
+  return withSequenceUserLock(campaign.userId, async (tx) => {
+    const pausedRun = await tx.campaignRun.findFirst({
+      where: { campaignId, status: "PAUSED" },
+      orderBy: { createdAt: "desc" }
+    });
+    if (!pausedRun) return null;
+
+    if (nextCampaignStatus === "RUNNING") {
+      const claim = await claimSequenceExecutionSlot(tx, {
+        userId: campaign.userId!,
+        runId: pausedRun.id,
+        now
+      });
+      if (!claim.acquired) throw new SequenceConcurrencyLimitError(claim.activeCount);
     }
-  });
 
-  await prisma.campaign.update({
-    where: { id: campaign.id },
-    data: { status: nextCampaignStatus }
+    const resumedRun = await tx.campaignRun.update({
+      where: { id: pausedRun.id },
+      data: {
+        status: "QUEUED",
+        scheduledFor,
+        waitingForSlotAt: null,
+        ...(nextCampaignStatus === "SCHEDULED" ? { executionSlotClaimedAt: null } : {})
+      }
+    });
+    await tx.campaign.update({ where: { id: campaign.id }, data: { status: nextCampaignStatus } });
+    return resumedRun;
   });
-
-  return resumedRun;
 }
 
 export type RetryFailedRecipientsResult =
   | { status: "ok"; retried: number; run: { id: string; status: string } }
+  | { status: "waiting"; retried: number; run: { id: string; status: string } }
   | { status: "not_found" }
   | { status: "no_failures" }
   | { status: "run_active" }
   | { status: "paused" }
   | { status: "sender_disconnected" }
   | { status: "daily_limit"; resumeAt: string | null }
+  | { status: "concurrency_limit"; activeCount: number }
   | { status: "locked" };
 
 /**
@@ -1111,7 +1218,8 @@ export type RetryFailedRecipientsResult =
  */
 export async function retryFailedRecipients(
   campaignId: string,
-  userId: string
+  userId: string,
+  options: { waitForSlot?: boolean } = {}
 ): Promise<RetryFailedRecipientsResult> {
   const outcome = await withRedisLock(
     `sendloom:campaign-retry-failed:${campaignId}`,
@@ -1141,7 +1249,10 @@ export async function retryFailedRecipients(
       }
 
       // Never reopen a run that is still sending, or one that the user paused.
-      if (["QUEUED", "RUNNING"].includes(latestRun.status) || ["RUNNING", "QUEUED"].includes(campaign.status)) {
+      if (
+        ["QUEUED", "WAITING_FOR_SLOT", "RUNNING"].includes(latestRun.status) ||
+        ["RUNNING", "WAITING_FOR_SLOT", "QUEUED"].includes(campaign.status)
+      ) {
         return { status: "run_active" };
       }
       if (latestRun.status === "PAUSED" || campaign.status === "PAUSED") {
@@ -1159,63 +1270,73 @@ export async function retryFailedRecipients(
         return { status: "daily_limit", resumeAt: sendWindow.resetAt };
       }
 
-      const failedJobs = await prisma.recipientJob.findMany({
-        where: { campaignRunId: latestRun.id, status: "FAILED" },
-        select: { id: true, status: true, recipientEmail: true, metadata: true }
-      });
-      if (failedJobs.length === 0) {
-        return { status: "no_failures" };
-      }
-
       const suppressedEmails = await getSuppressedEmailsForUser(campaign.userId);
-      const eligibleIds = failedJobs
-        .filter(
-          (job) =>
-            isManuallyRetriableFailedJob(job) && !suppressedEmails.has(job.recipientEmail.toLowerCase())
-        )
-        .map((job) => job.id);
+      await promoteWaitingSequencesForUser(userId);
+      const retryResult = await withSequenceUserLock(userId, async (tx): Promise<RetryFailedRecipientsResult> => {
+        const currentRun = await tx.campaignRun.findFirst({
+          where: { id: latestRun.id, campaign: { userId }, status: { in: ["COMPLETED", "FAILED", "CANCELLED"] } },
+          select: { id: true, status: true, startedAt: true }
+        });
+        if (!currentRun) return { status: "run_active" };
 
-      if (eligibleIds.length === 0) {
-        return { status: "no_failures" };
-      }
+        const failedJobs = await tx.recipientJob.findMany({
+          where: { campaignRunId: latestRun.id, status: "FAILED" },
+          select: { id: true, status: true, recipientEmail: true, metadata: true }
+        });
+        const eligibleIds = failedJobs
+          .filter(
+            (job) =>
+              isManuallyRetriableFailedJob(job) && !suppressedEmails.has(job.recipientEmail.toLowerCase())
+          )
+          .map((job) => job.id);
+        if (eligibleIds.length === 0) return { status: "no_failures" };
 
-      await prisma.$transaction([
-        // Reset only the eligible failed jobs back to PENDING with a fresh retry
-        // budget. Other recipients in the run keep their terminal state, so
-        // successful sends are never resent. Stale failure metadata is harmless
-        // on a PENDING job and is overwritten on the next attempt.
-        prisma.recipientJob.updateMany({
-          where: { id: { in: eligibleIds } },
-          data: {
-            status: "PENDING",
-            lastError: null,
-            nextRetryAt: null,
-            retryCount: 0
+        const now = new Date();
+        const claim = await claimSequenceExecutionSlot(tx, { userId, runId: latestRun.id, now });
+        if (!claim.acquired) {
+          if (options.waitForSlot) {
+            await tx.recipientJob.updateMany({
+              where: { id: { in: eligibleIds } },
+              data: { status: "PENDING", lastError: null, nextRetryAt: null, retryCount: 0 }
+            });
+            await tx.campaignRun.update({
+              where: { id: latestRun.id },
+              data: {
+                status: "WAITING_FOR_SLOT",
+                waitingForSlotAt: now,
+                executionSlotClaimedAt: null,
+                scheduledFor: now,
+                completedAt: null
+              }
+            });
+            await tx.campaign.update({ where: { id: campaignId }, data: { status: "WAITING_FOR_SLOT" } });
+            return {
+              status: "waiting",
+              retried: eligibleIds.length,
+              run: { id: latestRun.id, status: "WAITING_FOR_SLOT" }
+            };
           }
-        }),
-        prisma.campaignRun.update({
+          return { status: "concurrency_limit", activeCount: claim.activeCount };
+        }
+
+        await tx.recipientJob.updateMany({
+          where: { id: { in: eligibleIds } },
+          data: { status: "PENDING", lastError: null, nextRetryAt: null, retryCount: 0 }
+        });
+        await tx.campaignRun.update({
           where: { id: latestRun.id },
           data: {
-            status: "QUEUED",
-            scheduledFor: new Date(),
-            startedAt: latestRun.startedAt ?? new Date(),
+            scheduledFor: now,
+            startedAt: latestRun.startedAt ?? now,
             completedAt: null
           }
-        }),
-        prisma.campaign.update({
-          where: { id: campaignId },
-          data: { status: "RUNNING" }
-        })
-      ]);
-
-      await syncRunCounts(latestRun.id);
-
-      const refreshed = await prisma.campaignRun.findUniqueOrThrow({
-        where: { id: latestRun.id },
-        select: { id: true, status: true }
+        });
+        await tx.campaign.update({ where: { id: campaignId }, data: { status: "RUNNING" } });
+        return { status: "ok", retried: eligibleIds.length, run: { id: latestRun.id, status: "QUEUED" } };
       });
 
-      return { status: "ok", retried: eligibleIds.length, run: refreshed };
+      if (retryResult.status === "ok" || retryResult.status === "waiting") await syncRunCounts(latestRun.id);
+      return retryResult;
     }
   );
 
@@ -1916,6 +2037,14 @@ export async function processCampaignRun(
       };
     }
 
+    if (!isSequenceConsumingExecutionSlot(run)) {
+      return {
+        processedJobs: 0,
+        hasRemainingWork: true,
+        rateLimited: false
+      };
+    }
+
     const isDue = !run.scheduledFor || run.scheduledFor <= new Date();
     if (!isDue) {
       return {
@@ -1926,7 +2055,10 @@ export async function processCampaignRun(
     }
 
     if (run.status === "QUEUED") {
-      await ensureRunIsStarted(run.id);
+      const activated = await ensureRunIsStarted(run.id);
+      if (!activated) {
+        return { processedJobs: 0, hasRemainingWork: true, rateLimited: false };
+      }
       await prisma.campaign.update({
         where: { id: run.campaignId },
         data: {
@@ -2138,7 +2270,13 @@ export async function pauseCampaignRunForSenderLimit(args: {
   resumeAt?: Date | null;
   failureDetails?: Record<string, unknown>;
 }) {
-  await prisma.$transaction(async (tx) => {
+  const owner = await prisma.campaignRun.findUniqueOrThrow({
+    where: { id: args.runId },
+    select: { campaign: { select: { userId: true } } }
+  });
+  if (!owner.campaign.userId) throw new Error("Sequence owner is missing.");
+
+  await withSequenceUserLock(owner.campaign.userId, async (tx) => {
     const pausedAt = new Date();
 
     if (args.jobId) {
@@ -2184,6 +2322,8 @@ export async function pauseCampaignRunForSenderLimit(args: {
       where: { id: args.runId },
       data: {
         status: "PAUSED",
+        executionSlotClaimedAt: null,
+        waitingForSlotAt: null,
         progressSnapshot: {
           ...existingSnapshot,
           pauseReason: "GMAIL_SENDER_LIMIT",
@@ -2206,6 +2346,7 @@ export async function pauseCampaignRunForSenderLimit(args: {
   });
 
   await syncRunCounts(args.runId);
+  await promoteWaitingSequencesForUser(owner.campaign.userId);
 }
 
 /**
@@ -2224,7 +2365,14 @@ export async function pauseCampaignRunForDailyLimit(args: {
   resumeAt: Date | null;
   scope: { userId?: string | null; senderProfileId?: string | null };
 }) {
-  await prisma.$transaction(async (tx) => {
+  const owner = await prisma.campaignRun.findUniqueOrThrow({
+    where: { id: args.runId },
+    select: { campaign: { select: { userId: true } } }
+  });
+  const ownerId = owner.campaign.userId ?? args.scope.userId;
+  if (!ownerId) throw new Error("Sequence owner is missing.");
+
+  await withSequenceUserLock(ownerId, async (tx) => {
     if (args.jobId) {
       const job = await tx.recipientJob.findUniqueOrThrow({
         where: { id: args.jobId },
@@ -2265,6 +2413,8 @@ export async function pauseCampaignRunForDailyLimit(args: {
       where: { id: args.runId },
       data: {
         status: "PAUSED",
+        executionSlotClaimedAt: null,
+        waitingForSlotAt: null,
         progressSnapshot: {
           ...existingSnapshot,
           pauseReason: "DAILY_SEND_LIMIT",
@@ -2286,6 +2436,7 @@ export async function pauseCampaignRunForDailyLimit(args: {
   });
 
   await syncRunCounts(args.runId);
+  await promoteWaitingSequencesForUser(ownerId);
 
   // Surface the safety pause on the owner's audit timeline. Best-effort —
   // recordAuditEvent never throws for non-critical events.
@@ -2364,6 +2515,7 @@ export async function resumeCampaignRunsBlockedByDailyLimit(now = new Date()) {
   });
 
   let resumedCount = 0;
+  let waitingCount = 0;
   for (const candidate of candidates) {
     const info = readDailyLimitPauseInfo(candidate.progressSnapshot);
     if (!info) {
@@ -2396,19 +2548,43 @@ export async function resumeCampaignRunsBlockedByDailyLimit(now = new Date()) {
     delete clearedSnapshot.pausedSenderProfileId;
     delete clearedSnapshot.pausedUserId;
 
-    await prisma.$transaction(async (tx) => {
+    if (!candidate.campaign.userId) continue;
+    const outcome = await withSequenceUserLock(candidate.campaign.userId, async (tx) => {
+      const current = await tx.campaignRun.findFirst({
+        where: { id: candidate.id, status: "PAUSED", campaign: { userId: candidate.campaign.userId } },
+        select: { id: true }
+      });
+      if (!current) return "skipped" as const;
+
+      const claim = await claimSequenceExecutionSlot(tx, {
+        userId: candidate.campaign.userId!,
+        runId: candidate.id,
+        now
+      });
+      if (claim.acquired) {
+        await tx.campaignRun.update({
+          where: { id: candidate.id },
+          data: { scheduledFor: now, progressSnapshot: clearedSnapshot as Prisma.InputJsonValue }
+        });
+        await tx.campaign.update({ where: { id: candidate.campaignId }, data: { status: "RUNNING" } });
+        return "resumed" as const;
+      }
+
       await tx.campaignRun.update({
         where: { id: candidate.id },
         data: {
-          status: "QUEUED",
+          status: "WAITING_FOR_SLOT",
           scheduledFor: now,
+          waitingForSlotAt: now,
+          executionSlotClaimedAt: null,
           progressSnapshot: clearedSnapshot as Prisma.InputJsonValue
         }
       });
       await tx.campaign.update({
         where: { id: candidate.campaignId },
-        data: { status: "RUNNING" }
+        data: { status: "WAITING_FOR_SLOT" }
       });
+      return "waiting" as const;
     });
 
     await prisma.recipientJob.updateMany({
@@ -2421,10 +2597,11 @@ export async function resumeCampaignRunsBlockedByDailyLimit(now = new Date()) {
       }
     });
 
-    resumedCount += 1;
+    if (outcome === "resumed") resumedCount += 1;
+    if (outcome === "waiting") waitingCount += 1;
   }
 
-  return { resumedCount };
+  return { resumedCount, waitingCount };
 }
 
 export async function getCampaignStatus(campaignId: string, userId?: string) {
@@ -2545,9 +2722,21 @@ export async function processPendingCampaignWork(args: ProcessCampaignWorkArgs =
   }
 
   try {
+    await reconcileWaitingSequenceSlots();
+  } catch (error) {
+    console.error("[campaign-cron] Waiting-sequence reconciliation failed.", error);
+  }
+
+  try {
     await resumeCampaignRunsBlockedByDailyLimit();
   } catch (error) {
     console.error("[campaign-cron] Daily-limit auto-resume failed.", error);
+  }
+
+  try {
+    await acquireDueSequenceExecutionSlots();
+  } catch (error) {
+    console.error("[campaign-cron] Due sequence slot acquisition failed.", error);
   }
 
   const deadline = getDeadline(args.maxDurationMs);
@@ -2573,6 +2762,7 @@ export async function processPendingCampaignWork(args: ProcessCampaignWorkArgs =
         }
       }
     },
+    executionSlotClaimedAt: { not: null },
     OR: [
       {
         status: "RUNNING"

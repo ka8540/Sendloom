@@ -18,6 +18,7 @@ enum CampaignStatus {
   DRAFT
   VALIDATED
   SCHEDULED
+  WAITING_FOR_SLOT
   RUNNING
   PAUSED
   COMPLETED
@@ -27,6 +28,7 @@ enum CampaignStatus {
 
 enum RunStatus {
   QUEUED
+  WAITING_FOR_SLOT
   RUNNING
   PAUSED
   COMPLETED
@@ -246,31 +248,36 @@ model Campaign {
   runs               CampaignRun[]
 
   @@index([userId])
+  @@index([userId, status])
 }
 
 model CampaignRun {
-  id               String         @id @default(cuid())
-  campaignId       String
-  status           RunStatus      @default(QUEUED)
-  launchType       String
-  scheduledFor     DateTime?
-  startedAt        DateTime?
-  completedAt      DateTime?
-  progressSnapshot Json?
-  totalRecipients  Int            @default(0)
-  sentCount        Int            @default(0)
-  failedCount      Int            @default(0)
-  suppressedCount  Int            @default(0)
-  invalidCount     Int            @default(0)
-  openedCount      Int            @default(0)
-  clickedCount     Int            @default(0)
-  repliedCount     Int            @default(0)
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
-  campaign         Campaign       @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  recipientJobs    RecipientJob[]
+  id                     String         @id @default(cuid())
+  campaignId             String
+  status                 RunStatus      @default(QUEUED)
+  launchType             String
+  scheduledFor           DateTime?
+  waitingForSlotAt       DateTime?
+  executionSlotClaimedAt DateTime?
+  startedAt              DateTime?
+  completedAt            DateTime?
+  progressSnapshot       Json?
+  totalRecipients        Int            @default(0)
+  sentCount              Int            @default(0)
+  failedCount            Int            @default(0)
+  suppressedCount        Int            @default(0)
+  invalidCount           Int            @default(0)
+  openedCount            Int            @default(0)
+  clickedCount           Int            @default(0)
+  repliedCount           Int            @default(0)
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
+  campaign               Campaign       @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  recipientJobs          RecipientJob[]
 
   @@index([campaignId, status])
+  @@index([status, executionSlotClaimedAt])
+  @@index([status, waitingForSlotAt, id])
 }
 
 model RecipientJob {

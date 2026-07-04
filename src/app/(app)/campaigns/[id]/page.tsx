@@ -1,6 +1,5 @@
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
-import { redirect } from "next/navigation";
 import {
   CalendarClock,
   Eye,
@@ -14,6 +13,7 @@ import {
 
 import { ActiveRunRefresher } from "@/components/active-run-refresher";
 import { CampaignLaunchButton } from "@/components/campaign-launch-button";
+import { CampaignPauseResumeButton } from "@/components/campaign-pause-resume-button";
 import { CampaignScheduleEditor } from "@/components/campaign-schedule-editor";
 import { CampaignSetupEditor } from "@/components/campaign-setup-editor";
 import { CampaignDetailDeleteButton } from "@/components/campaign-detail-delete-button";
@@ -28,18 +28,11 @@ import { SCHEDULE_EDIT_DISABLED_MESSAGE, canEditCampaignSchedule } from "@/lib/c
 import { isCampaignSetupLocked } from "@/lib/campaign-setup-lock";
 import { prisma } from "@/lib/db";
 import { getGmailDailySendWindow } from "@/lib/daily-send-limit";
-import { GMAIL_RECONNECT_ERROR } from "@/lib/provider";
 import { RECIPIENT_ACTIVITY_PAGE_SIZE, buildRecipientActivityItem } from "@/lib/recipient-activity";
 import { canShowRetryFailedAction, isManuallyRetriableFailedJob } from "@/lib/retry-eligibility";
+import { formatSequenceStatus } from "@/lib/sequence-status";
 import { RecipientActivity } from "@/components/recipient-activity";
-import {
-  CampaignLaunchBlockedError,
-  launchCampaign,
-  pauseCampaign,
-  processPendingCampaignWork,
-  readDailyLimitPauseInfo,
-  validateCampaign
-} from "@/services/campaigns";
+import { processPendingCampaignWork, readDailyLimitPauseInfo, validateCampaign } from "@/services/campaigns";
 import { syncRepliesForSenderProfile } from "@/services/replies";
 import styles from "./page.module.css";
 
@@ -181,70 +174,6 @@ async function validate(campaignId: string) {
   revalidatePath("/campaigns");
 }
 
-async function togglePause(campaignId: string) {
-  "use server";
-
-  const user = await requireOperatorUser();
-  const campaign = await prisma.campaign.findFirstOrThrow({
-    where: {
-      id: campaignId,
-      userId: user.id
-    },
-    include: {
-      runs: {
-        orderBy: { createdAt: "desc" },
-        take: 1
-      },
-      senderProfile: {
-        select: {
-          fromEmail: true,
-          oauthRefreshToken: true
-        }
-      }
-    }
-  });
-
-  const latestRun = campaign.runs[0] ?? null;
-  const isPaused = latestRun?.status === "PAUSED" || campaign.status === "PAUSED";
-
-  if (isPaused) {
-    if (!campaign.senderProfile.oauthRefreshToken) {
-      const params = new URLSearchParams({
-        gmail_error: GMAIL_RECONNECT_ERROR,
-        gmail_sender: campaign.senderProfile.fromEmail
-      });
-      redirect(`/campaigns/${campaignId}?${params.toString()}`);
-    }
-
-    let run;
-    try {
-      run = await launchCampaign(campaignId, user.id);
-    } catch (error) {
-      if (error instanceof CampaignLaunchBlockedError) {
-        const params = new URLSearchParams({
-          launch_error: error.message
-        });
-        redirect(`/campaigns/${campaignId}?${params.toString()}`);
-      }
-
-      throw error;
-    }
-    revalidatePath(`/campaigns/${campaignId}`);
-    revalidatePath("/campaigns");
-    after(async () => {
-      await processPendingCampaignWork({
-        runId: run.id,
-        maxDurationMs: 55_000
-      });
-    });
-    return;
-  }
-
-  await pauseCampaign(campaignId, user.id);
-  revalidatePath(`/campaigns/${campaignId}`);
-  revalidatePath("/campaigns");
-}
-
 function getSearchParam(
   searchParams: Record<string, string | string[] | undefined>,
   key: string
@@ -302,7 +231,7 @@ export default async function CampaignDetailPage({
 
   // Determine which run to pull metrics from. If the latest run is queued/unstarted
   // and a previous completed run exists, show that completed run's data instead of zeros.
-  const ACTIVE_STATUSES = new Set(["QUEUED", "RUNNING", "PAUSED"]);
+  const ACTIVE_STATUSES = new Set(["QUEUED", "WAITING_FOR_SLOT", "RUNNING", "PAUSED"]);
   const DONE_STATUSES = new Set(["COMPLETED", "FAILED", "CANCELLED"]);
   const latestActiveRun = campaign.runs.find((r) => ACTIVE_STATUSES.has(r.status)) ?? null;
   const latestCompletedRun = campaign.runs.find((r) => DONE_STATUSES.has(r.status)) ?? null;
@@ -412,7 +341,8 @@ export default async function CampaignDetailPage({
   ]);
 
   const senderNeedsReconnect = !campaign.senderProfile.oauthRefreshToken;
-  const isActiveRun = latestRun ? ["QUEUED", "RUNNING"].includes(latestRun.status) : false;
+  const isActiveRun = latestRun ? ["QUEUED", "WAITING_FOR_SLOT", "RUNNING"].includes(latestRun.status) : false;
+  const isWaitingForSlot = latestRun?.status === "WAITING_FOR_SLOT" || campaign.status === "WAITING_FOR_SLOT";
   const isPausedRun = latestRun?.status === "PAUSED" || campaign.status === "PAUSED";
   const dailyLimitPauseInfo = readDailyLimitPauseInfo(latestRun?.progressSnapshot ?? null);
   const senderSendWindow = await getGmailDailySendWindow({
@@ -435,6 +365,8 @@ export default async function CampaignDetailPage({
   const deliveredCount = getDeliveredCount(displayRun);
   const launchButtonLabel = dailyLimitActive
     ? "Waiting for Gmail safety window"
+    : isWaitingForSlot
+      ? "Waiting for slot"
     : isActiveRun
       ? "Run is processing"
       : isPausedRun
@@ -650,9 +582,13 @@ export default async function CampaignDetailPage({
             </div>
           ) : null}
           <div className={styles.statusWrap}>
-            <span className="badge">{humanize(campaign.status)}</span>
+            <span className="badge" title={campaign.status === "WAITING_FOR_SLOT" ? "This sequence will start automatically when an execution slot becomes available." : undefined}>
+              {formatSequenceStatus(campaign.status)}
+            </span>
             <span className={styles.statusNote}>
-              {isActiveRun ? (
+              {isWaitingForSlot ? (
+                "This sequence will start automatically when an execution slot becomes available."
+              ) : isActiveRun ? (
                 "Auto-refreshing every 8 seconds while this run is active."
               ) : latestRunValue ? (
                 <>
@@ -683,7 +619,7 @@ export default async function CampaignDetailPage({
               <SendHorizontal aria-hidden="true" />
               <div>
                 <span>Current run</span>
-                <strong>{latestRun ? humanize(latestRun.status) : "Not launched yet"}</strong>
+                <strong>{latestRun ? formatSequenceStatus(latestRun.status) : "Not launched yet"}</strong>
               </div>
             </div>
           </div>
@@ -696,11 +632,12 @@ export default async function CampaignDetailPage({
                 </button>
               </form>
               {latestRun && (isActiveRun || isPausedRun) ? (
-                <form action={togglePause.bind(null, campaign.id)} className={styles.actionSecondaryItem}>
-                  <button className="button secondary" type="submit">
-                    {pauseButtonLabel}
-                  </button>
-                </form>
+                <CampaignPauseResumeButton
+                  campaignId={campaign.id}
+                  isPaused={isPausedRun}
+                  label={pauseButtonLabel}
+                  className={styles.actionSecondaryItem}
+                />
               ) : null}
               <CampaignScheduleEditor
                 campaignId={campaign.id}

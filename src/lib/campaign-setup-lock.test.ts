@@ -7,6 +7,12 @@ describe("isCampaignSetupLocked", () => {
     expect(isCampaignSetupLocked({ campaignStatus: "SCHEDULED", latestRunStatus: "QUEUED" })).toBe(true);
   });
 
+  it("locks launch-critical setup while a run waits for a slot", () => {
+    expect(
+      isCampaignSetupLocked({ campaignStatus: "WAITING_FOR_SLOT", latestRunStatus: "WAITING_FOR_SLOT" })
+    ).toBe(true);
+  });
+
   it("locks setup while a run is running", () => {
     expect(isCampaignSetupLocked({ campaignStatus: "RUNNING", latestRunStatus: "RUNNING" })).toBe(true);
   });

@@ -35,7 +35,8 @@ import {
 } from "@/lib/recipient-overview-disposition";
 import styles from "./overview-command-center.module.css";
 
-const ACTIVE_RUN_STATUSES: RunStatus[] = ["QUEUED", "RUNNING"];
+const PROCESSING_RUN_STATUSES: RunStatus[] = ["QUEUED", "RUNNING"];
+const OPEN_RUN_STATUSES: RunStatus[] = ["QUEUED", "WAITING_FOR_SLOT", "RUNNING"];
 const DONE_RUN_STATUSES = new Set<RunStatus>(["COMPLETED", "FAILED", "CANCELLED"]);
 const OVERVIEW_OUTCOME_STATUSES: RecipientJobStatus[] = [
   "FAILED",
@@ -84,7 +85,7 @@ function hasKnownRunMetrics(
     return false;
   }
 
-  return !ACTIVE_RUN_STATUSES.includes(run.status ?? "COMPLETED") || processedCount > 0;
+  return !OPEN_RUN_STATUSES.includes(run.status ?? "COMPLETED") || processedCount > 0;
 }
 
 export default async function OverviewCommandCenter() {
@@ -163,7 +164,17 @@ export default async function OverviewCommandCenter() {
     prisma.campaign.count({
       where: {
         userId: user.id,
-        OR: [{ status: "RUNNING" }, { runs: { some: { status: { in: ACTIVE_RUN_STATUSES } } } }]
+        OR: [
+          { status: "RUNNING" },
+          {
+            runs: {
+              some: {
+                status: { in: PROCESSING_RUN_STATUSES },
+                executionSlotClaimedAt: { not: null }
+              }
+            }
+          }
+        ]
       }
     }),
     prisma.campaign.count({
@@ -331,7 +342,7 @@ export default async function OverviewCommandCenter() {
     { displayRun: (typeof recentCampaigns)[0]["runs"][0] | null; isFromPreviousRun: boolean }
   >();
   for (const campaign of recentCampaigns) {
-    const activeRun = campaign.runs.find((r) => ACTIVE_RUN_STATUSES.includes(r.status)) ?? null;
+    const activeRun = campaign.runs.find((r) => OPEN_RUN_STATUSES.includes(r.status)) ?? null;
     const completedRun = campaign.runs.find((r) => DONE_RUN_STATUSES.has(r.status)) ?? null;
     let displayRun: (typeof campaign.runs)[0] | null = null;
     let isFromPreviousRun = false;
@@ -429,7 +440,10 @@ export default async function OverviewCommandCenter() {
     };
   });
 
-  if (activeSequenceCount > 0) {
+  if (
+    activeSequenceCount > 0 ||
+    recentCampaigns.some((campaign) => campaign.runs.some((run) => run.status === "WAITING_FOR_SLOT"))
+  ) {
     after(async () => {
       await processPendingCampaignWork({
         maxDurationMs: 20_000
@@ -484,7 +498,7 @@ export default async function OverviewCommandCenter() {
     const dailyLimitInfo = readDailyLimitPauseInfo(actualLatestRun?.progressSnapshot ?? null);
     const senderResumesAt = blockedResumeBySenderProfileId.get(campaign.senderProfileId) ?? null;
     const isSenderBlocked = blockedSenderProfileIds.has(campaign.senderProfileId);
-    const isActiveRun = ACTIVE_RUN_STATUSES.includes(actualRunStatus ?? "COMPLETED");
+    const isActiveRun = OPEN_RUN_STATUSES.includes(actualRunStatus ?? "COMPLETED");
     const actualProcessedCount = getProcessedCount(actualLatestRun);
     const actualTotalRecipients = actualLatestRun?.totalRecipients ?? 0;
     const dailyLimitPauseStillBlocked = Boolean(dailyLimitInfo) && isSenderBlocked;
@@ -545,7 +559,13 @@ export default async function OverviewCommandCenter() {
         tone: metricsKnown ? outcome.metric.tone : undefined
       }
     ];
-    const health: SequenceRowData["health"] = dailyLimitBlock
+    const health: SequenceRowData["health"] = actualRunStatus === "WAITING_FOR_SLOT"
+      ? {
+          label: "Starts automatically",
+          tone: "idle",
+          hint: "This sequence will start automatically when an execution slot becomes available."
+        }
+      : dailyLimitBlock
       ? { label: "Safety pause", tone: "idle" }
       : isSyncing
         ? { label: "Syncing metrics", tone: "syncing" }
@@ -571,7 +591,7 @@ export default async function OverviewCommandCenter() {
     // Exclude PAUSED and daily-limit blocked — those don't get a Relaunch action.
     const canRelaunch =
       Boolean(campaign.lastValidatedAt) &&
-      !ACTIVE_RUN_STATUSES.includes(actualRunStatus ?? "COMPLETED") &&
+      !OPEN_RUN_STATUSES.includes(actualRunStatus ?? "COMPLETED") &&
       !isPausedRun;
 
     return {
@@ -1011,6 +1031,9 @@ function normalizeScheduleType(scheduleType: string | null | undefined): Sequenc
 }
 
 function deriveSequenceStatus(campaignStatus: CampaignStatus, runStatus?: RunStatus | null) {
+  if (runStatus === "WAITING_FOR_SLOT" || campaignStatus === "WAITING_FOR_SLOT") {
+    return { label: "Waiting for slot", tone: "waiting" as const };
+  }
   if (runStatus === "RUNNING" || runStatus === "QUEUED") {
     return {
       label: runStatus === "QUEUED" ? "Queued" : "Running",
