@@ -50,6 +50,12 @@ describe("overview activity loader — feed structure is preserved", () => {
     expect(BUILDER).toContain("const ACTIVITY_LIMIT = 7");
     expect((LOADER.match(/<ActivityFeed\b/g) ?? []).length).toBe(1);
   });
+
+  it("classifies current sequence cards and activity from recipient state", () => {
+    expect(LOADER).toContain("summarizeOverviewRun");
+    expect(LOADER).toMatch(/recipientJobs:\s*\{[\s\S]{0,180}status:\s*true,[\s\S]{0,180}metadata:\s*true/);
+    expect(LOADER).toContain("latestRunRecipients");
+  });
 });
 
 describe("Discover export emission (#discover-9) is privacy-safe", () => {

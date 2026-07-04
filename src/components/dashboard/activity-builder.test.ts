@@ -297,8 +297,95 @@ describe("activity builder — existing rows unchanged", () => {
     const items = build({ recentRuns: [run] });
     expect(items[0].kind).toBe("run");
     expect(items[0].title).toBe("Kyndryl SDE List updated");
-    expect(items[0].description).toBe("20 sent, 0 issues across 20 recipients");
+    expect(items[0].description).toBe("20 sent across 20 recipients");
     expect(items[0].eventType).toBeUndefined();
+  });
+
+  it("renders invalid-address exclusions as skipped with neutral activity semantics", () => {
+    const items = build({
+      recentRuns: [
+        {
+          ...run,
+          sentCount: 10,
+          failedCount: 28,
+          totalRecipients: 38,
+          recipientJobs: [
+            ...Array.from({ length: 10 }, () => ({ status: "SENT" })),
+            ...Array.from({ length: 28 }, () => ({
+              status: "FAILED",
+              metadata: { failureCode: "HARD_BOUNCE_RECIPIENT" }
+            }))
+          ]
+        }
+      ]
+    });
+
+    expect(items).toHaveLength(1);
+    expect(items[0].description).toBe("10 sent, 28 skipped across 38 recipients");
+    expect(items[0].description).not.toContain("issues");
+    expect(items[0].tone).toBe("muted");
+    expect(items[0].eventType).toBe("sequence_run_skipped");
+  });
+
+  it("keeps skipped and genuine action-required counts separate", () => {
+    const items = build({
+      recentRuns: [
+        {
+          ...run,
+          sentCount: 10,
+          failedCount: 8,
+          suppressedCount: 20,
+          totalRecipients: 38,
+          recipientJobs: [
+            ...Array.from({ length: 10 }, () => ({ status: "SENT" })),
+            ...Array.from({ length: 20 }, () => ({ status: "SUPPRESSED" })),
+            ...Array.from({ length: 8 }, () => ({
+              status: "FAILED",
+              metadata: { failureCode: "QUEUE_PROCESSING_FAILED" }
+            }))
+          ]
+        }
+      ]
+    });
+
+    expect(items[0].description).toBe("10 sent, 20 skipped, 8 need attention across 38 recipients");
+    expect(items[0].tone).toBe("warning");
+    expect(items[0].eventType).toBeUndefined();
+  });
+
+  it("uses singular Needs attention grammar", () => {
+    const items = build({
+      recentRuns: [
+        {
+          ...run,
+          sentCount: 1,
+          failedCount: 1,
+          totalRecipients: 2,
+          recipientJobs: [
+            { status: "SENT" },
+            { status: "FAILED", metadata: { failureCode: "GMAIL_PROFILE_DISCONNECTED" } }
+          ]
+        }
+      ]
+    });
+
+    expect(items[0].description).toBe("1 sent, 1 needs attention across 2 recipients");
+  });
+
+  it("does not create a duplicate event when only display classification changes", () => {
+    const skippedRun = {
+      ...run,
+      sentCount: 10,
+      suppressedCount: 28,
+      totalRecipients: 38,
+      recipientJobs: Array.from({ length: 28 }, () => ({ status: "SUPPRESSED" }))
+    };
+
+    const first = build({ recentRuns: [skippedRun] });
+    const second = build({ recentRuns: [skippedRun] });
+    expect(first).toHaveLength(1);
+    expect(second).toHaveLength(1);
+    expect(first[0].id).toBe(second[0].id);
   });
 
   it("keeps existing import activity wording (#feed-1)", () => {

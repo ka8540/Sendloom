@@ -3,6 +3,10 @@ import type { ImportStatus, RunStatus } from "@prisma/client";
 
 import { formatCompactNumber, formatRelativeTime, humanizeEnum } from "@/components/dashboard/formatters";
 import type { ActivityItem } from "@/components/dashboard/types";
+import {
+  summarizeOverviewRun,
+  type RecipientOverviewInput
+} from "@/lib/recipient-overview-disposition";
 
 // How many rows the Recent Activity feed renders. Unchanged from the original
 // inline builder — all sources (existing and new) compete for these slots in
@@ -20,6 +24,7 @@ export type RecentRunInput = {
   invalidCount: number;
   totalRecipients: number;
   updatedAt: Date;
+  recipientJobs?: RecipientOverviewInput[];
   campaign: {
     id: string;
     name: string;
@@ -114,24 +119,43 @@ function metadataNumber(meta: Record<string, unknown>, key: string): number {
 
 function buildRunItems(recentRuns: RecentRunInput[]): SortableActivityItem[] {
   return recentRuns.map((run) => {
-    const issueCount = run.failedCount + run.suppressedCount + run.invalidCount;
+    const dispositionCounts = summarizeOverviewRun({
+      recipientJobs: run.recipientJobs,
+      totalRecipients: run.totalRecipients,
+      sentCount: run.sentCount,
+      failedCount: run.failedCount,
+      suppressedCount: run.suppressedCount,
+      invalidCount: run.invalidCount
+    });
+    const hasActionableIssue = run.status === "FAILED" || dispositionCounts.needsAttention > 0;
+    const descriptionParts = [`${formatCompactNumber(run.sentCount)} sent`];
+    if (dispositionCounts.skipped > 0) {
+      descriptionParts.push(`${formatCompactNumber(dispositionCounts.skipped)} skipped`);
+    }
+    if (dispositionCounts.needsAttention > 0) {
+      descriptionParts.push(
+        `${formatCompactNumber(dispositionCounts.needsAttention)} ${dispositionCounts.needsAttention === 1 ? "needs" : "need"} attention`
+      );
+    }
+
     return {
       id: `run-${run.id}`,
       href: `/sequences/${run.campaign.id}` as Route,
       title:
         run.status === "RUNNING"
           ? `${run.campaign.name} is sending`
-          : run.status === "FAILED"
+          : hasActionableIssue
             ? `${run.campaign.name} hit an issue`
             : `${run.campaign.name} updated`,
       description:
         run.totalRecipients > 0
-          ? `${formatCompactNumber(run.sentCount)} sent, ${formatCompactNumber(issueCount)} issues across ${formatCompactNumber(run.totalRecipients)} recipients`
+          ? `${descriptionParts.join(", ")} across ${formatCompactNumber(run.totalRecipients)} recipients`
           : `${humanizeEnum(run.status)} run activity recorded.`,
       timeLabel: formatRelativeTime(run.updatedAt),
       timeValue: run.updatedAt.toISOString(),
       kind: "run",
-      tone: run.status === "FAILED" ? "warning" : run.status === "RUNNING" ? "accent" : "success",
+      tone: hasActionableIssue ? "warning" : dispositionCounts.skipped > 0 ? "muted" : run.status === "RUNNING" ? "accent" : "success",
+      eventType: !hasActionableIssue && dispositionCounts.skipped > 0 ? "sequence_run_skipped" : undefined,
       sortAt: run.updatedAt.getTime()
     };
   });
@@ -343,12 +367,12 @@ function buildDeliveryFailureItems(failures: RecentDeliveryFailureInput[]): Sort
   return failures.map((failure) => ({
     id: `delivery-failure-${failure.id}`,
     href: "/suppressions" as Route,
-    title: "Delivery failure recorded",
-    description: "An invalid recipient address was detected and will be skipped in future sends.",
+    title: "Recipient safely skipped",
+    description: "An invalid recipient address was detected and future sends are blocked.",
     timeLabel: formatRelativeTime(failure.updatedAt),
     timeValue: failure.updatedAt.toISOString(),
     kind: "suppression" as const,
-    tone: "warning" as const,
+    tone: "muted" as const,
     eventType: "delivery_failure_recorded" as const,
     sortAt: failure.updatedAt.getTime()
   }));

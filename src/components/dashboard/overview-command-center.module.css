@@ -949,6 +949,10 @@
   color: var(--warning);
 }
 
+.sequenceHealthSkipped {
+  color: var(--muted);
+}
+
 .sequenceHealthSyncing {
   color: color-mix(in srgb, var(--accent) 70%, var(--muted) 30%);
 }

@@ -1806,7 +1806,7 @@ For Gmail authorization failures, render the panel (or `GmailReconnectNotice`) w
 
 ## 26. Automatic Delivery-Failure Detection (Gmail Bounce Monitoring)
 
-Gmail can accept a send and only later receive an asynchronous bounce from Mail Delivery Subsystem (e.g. `550 5.1.1 User Unknown`). This system detects those delivery-status notifications (DSNs) automatically, marks the recipient **Failed**, adds the address to suppression with a hard-bounce reason, and blocks every future send to it.
+Gmail can accept a send and only later receive an asynchronous bounce from Mail Delivery Subsystem (e.g. `550 5.1.1 User Unknown`). This system detects those delivery-status notifications (DSNs) automatically, records the permanent failure evidence, marks the recipient **Skipped** (`SUPPRESSED`), adds the address to suppression with a hard-bounce reason, and blocks every future send to it.
 
 ### Gmail permission (incremental authorization)
 
@@ -1857,7 +1857,7 @@ A message is inspected further only with strong signals (`isLikelyDeliveryStatus
 
 Categories: `HARD_BOUNCE_INVALID_RECIPIENT`, `HARD_BOUNCE_MAILBOX_NOT_FOUND`, `HARD_BOUNCE_DOMAIN_NOT_FOUND`, `HARD_BOUNCE_PERMANENT_MAILBOX_FAILURE`, `SOFT_BOUNCE_MAILBOX_FULL`, `SOFT_BOUNCE_TEMPORARY_FAILURE`, `POLICY_REJECTION`, `SPAM_REJECTION`, `SENDER_AUTHENTICATION_FAILURE`, `SENDER_QUOTA_FAILURE`, `UNKNOWN_DELIVERY_FAILURE`.
 
-- **Permanent recipient failures** (5.1.1/5.1.2/5.1.3/5.1.6/5.1.10 by code; 5.2.1; or a permanent 5.x.x WITH a recipient-fault diagnostic such as "user unknown", "address not found", "address rejected", "domain not found" — this is how Gmail's `550 5.1.0 Address Rejected` qualifies): recipient marked `FAILED` (`HARD_BOUNCE_RECIPIENT` failure code — non-retryable), suppression upserted, queued sends skipped. A bare `5.1.0` without a diagnostic, and the sender-address codes `5.1.7`/`5.1.8`, never suppress.
+- **Permanent recipient failures** (5.1.1/5.1.2/5.1.3/5.1.6/5.1.10 by code; 5.2.1; or a permanent 5.x.x WITH a recipient-fault diagnostic such as "user unknown", "address not found", "address rejected", "domain not found" — this is how Gmail's `550 5.1.0 Address Rejected` qualifies): recipient marked `SUPPRESSED` and displayed as **Skipped** (`HARD_BOUNCE_RECIPIENT` failure code — non-retryable), suppression upserted, queued sends skipped. A bare `5.1.0` without a diagnostic, and the sender-address codes `5.1.7`/`5.1.8`, never suppress.
 - **Temporary (4.x.x, mailbox full incl. 5.2.2)**: never suppressed; the already-submitted Gmail message is never re-sent from bounce processing (the receiving server owns retries).
 - **Policy/spam (5.7.x)**: the attempt is marked failed with a safe reason; the address is NOT declared invalid and is not suppressed. Manual retry stays available.
 - **Sender problems (quota, SPF/DKIM/DMARC, auth)**: the recipient is never suppressed. Reconnect handling stays with the send path.
@@ -1883,6 +1883,8 @@ Hard bounce / invalid recipient
   suppression detail — the evidence is never rewritten)
 → sequence disposition: Skipped · Address not found (status SUPPRESSED;
   calm neutral row, no Retry, excluded from Needs attention/Delivered)
+→ Overview: Skipped (neutral icon/tone, excluded from Issues and Needs
+  attention)
 → Discover quality: Invalid (never counted Usable)
 → future sends: blocked at validation, queue creation, and the final
   worker guard — no Gmail call, no send capacity consumed
@@ -1891,14 +1893,15 @@ Hard bounce / invalid recipient
 ```
 Sendloom/Gmail operational problem (auth expired, queue/server error,
 temporary send failure)
-→ sequence disposition: Failed / Action required — counted in Needs
-  attention; Retry or Reconnect stays available per existing behavior
+→ sequence disposition: Failed / Action required
+→ Overview: Needs attention / Issue with a warning icon; Retry or
+  Reconnect stays available per existing behavior
 ```
 
 - **Unsubscribed** = opted out. Shown as "Skipped · Unsubscribed" in sequences; never merged into invalid-address statistics.
 - **Suppressed** (manual block / complaint) = "Skipped · On the suppression list".
 - Suppression remains the internal enforcement mechanism for all of these; reasons stay distinguishable in the suppression log ("Hard bounce", "Invalid address", "Unsubscribed", …).
-- `buildRecipientActivityItem` + `isPermanentRecipientAddressFailure` (lib/failures.ts) are the ONE user-facing mapper — rows written as FAILED by the pre-Skipped implementation are normalized at read time, and `repairHardBouncedRecipientDispositions` (run on every cron tick, idempotent) converts them durably so run counts agree.
+- `buildRecipientActivityItem`, `classifyRecipientOverviewDisposition`, and `isPermanentRecipientAddressFailure` share the same permanent-address rule. Rows written as FAILED by the pre-Skipped implementation are normalized at read time, and `repairHardBouncedRecipientDispositions` (run on every cron tick, idempotent) converts them durably so run counts agree.
 
 ### Future-send blocking
 
