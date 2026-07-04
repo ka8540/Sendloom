@@ -296,6 +296,24 @@ describe("redesigned detail layout contracts", () => {
   });
 });
 
+describe("compact email-format evidence UI", () => {
+  it("keeps source chips and agreement status but never renders stored evidence prose", () => {
+    expect(DETAIL_SOURCE).toContain("<EvidenceItem");
+    expect(DETAIL_SOURCE).toContain("emailFormatEvidenceSummary({");
+    expect(DETAIL_SOURCE).toContain("styles.evidenceAgreement");
+    expect(DETAIL_SOURCE).not.toContain("{company.emailFormatReason}");
+    expect(DETAIL_SOURCE).not.toContain('title="Why this format was selected"');
+  });
+
+  it("uses concise refresh results and lets the card shrink naturally", () => {
+    expect(DETAIL_SOURCE).toContain('"Email format refreshed."');
+    expect(DETAIL_SOURCE).toContain('"Evidence remains inconclusive. Review the format manually."');
+    expect(CSS).toContain(".evidenceAgreement");
+    const evidencePanel = CSS.match(/\.evidencePanel\s*\{[^}]*\}/s)?.[0] ?? "";
+    expect(evidencePanel).not.toContain("min-height");
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Regression — existing behavior the redesign must not break.
 // ---------------------------------------------------------------------------

@@ -3,6 +3,11 @@ import { randomUUID } from "node:crypto";
 import type { PrismaClient, ProspectCompany, ProspectSearch } from "@prisma/client";
 
 import { type RecordAuditEventArgs } from "@/lib/audit";
+import {
+  buildEmailFormatCacheKey,
+  parseEmailFormatDecisionMetadata,
+  serializeEmailFormatDecisionMetadata
+} from "@/lib/email-format-decision";
 import { discoverPublicErrorCategory } from "@/lib/discover-public-error";
 import {
   formatDiscoverLimitMessage,
@@ -34,12 +39,17 @@ import {
 import { computeDiscoverFingerprint } from "@/services/prospects/discover-cache-fingerprint";
 import {
   EmailDomainService,
+  type EmailDomainEvidence,
+  type EmailPatternEvidence,
   isAllowedBusinessEmailDomain,
   makeManualEmailDomainEvidence
 } from "@/services/prospects/email-domain-service";
 import { resolveCandidateEmail } from "@/services/prospects/email-generation-service";
 import { combinedEmailConfidence } from "@/services/prospects/prospect-email-confidence";
-import { isOpenAIEmailFormatDiscoveryConfigured } from "@/services/prospects/openai-email-format-discovery";
+import {
+  DEFAULT_PROSPECT_EMAIL_FORMAT_MODEL,
+  isOpenAIEmailFormatDiscoveryConfigured
+} from "@/services/prospects/openai-email-format-discovery";
 import { AiCallBudget, createAiBudget } from "@/services/prospects/prospect-ai";
 import { normalizeDomain, normalizeTitle } from "@/services/prospects/prospect-normalization";
 import { rateLimit } from "@/lib/rate-limit";
@@ -70,9 +80,9 @@ export class ProspectError extends Error {
 
 const TERMINAL_STATUSES = new Set(["READY", "CANCELED"]);
 const DEFAULT_PIPELINE_TIMEOUT_MS = 120_000;
-// Cache window: skip a fresh AI web search when a HIGH-confidence format was
-// discovered within the last 7 days (unless the user forces a refresh).
-const EMAIL_FORMAT_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+// Company-level structured email-format evidence stays fresh for 30 days.
+const EMAIL_FORMAT_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const EMAIL_FORMAT_REFRESH_IN_FLIGHT = new Map<string, Promise<ProspectCompany>>();
 
 function hasConfiguredEmailFormatSearchProvider(): boolean {
   if (env.WEB_SEARCH_PROVIDER === "serper") {
@@ -101,7 +111,33 @@ function isFreshHighConfidenceFormat(company: ProspectCompany): boolean {
   if (!discoveredAt) {
     return false;
   }
-  return Date.now() - new Date(discoveredAt).getTime() < EMAIL_FORMAT_CACHE_TTL_MS;
+  if (Date.now() - new Date(discoveredAt).getTime() >= EMAIL_FORMAT_CACHE_TTL_MS) {
+    return false;
+  }
+  const metadata = parseEmailFormatDecisionMetadata(company.emailFormatReason);
+  if (!metadata) {
+    // Historical cached results remain compatible; new structured results also
+    // validate their normalized identity below.
+    return true;
+  }
+  return metadata.cacheKey === buildEmailFormatCacheKey({
+    companyName: company.officialName ?? company.name,
+    websiteDomain: company.officialWebsiteDomain ?? company.officialDomain,
+    emailDomain: company.emailDomain
+  });
+}
+
+function hasFreshStoredEmailEvidence(company: ProspectCompany) {
+  if (!company.emailFormatDiscoveredAt) {
+    return false;
+  }
+  if (Date.now() - new Date(company.emailFormatDiscoveredAt).getTime() >= EMAIL_FORMAT_CACHE_TTL_MS) {
+    return false;
+  }
+  return (
+    (Array.isArray(company.emailDomainEvidence) && company.emailDomainEvidence.length > 0) ||
+    (Array.isArray(company.patternEvidence) && company.patternEvidence.length > 0)
+  );
 }
 
 export type EmailFormatRateLimit = { allowed: boolean; retryAfterSeconds: number };
@@ -632,7 +668,7 @@ export class ProspectSearchService {
       emailPattern: inference.selectedPattern,
       patternConfidence: inference.patternConfidence,
       patternEvidence: inference.patternEvidence,
-      emailFormatReason: inference.reasonSummary ?? null
+      emailFormatReason: serializeEmailFormatDecisionMetadata(inference.decision)
     };
 
     // Generate candidate emails deterministically and build the normalized
@@ -873,7 +909,7 @@ export class ProspectSearchService {
 
   /**
    * Discover a company's email format with AI web search (the "Find with AI"
-   * path). High-confidence results are cached for 7 days to avoid paying for the
+   * path). High-confidence results are cached for 30 days to avoid paying for the
    * search again, and each user is rate limited. Pass `force` to refresh anyway.
    */
   async discoverCompanyEmailFormat(
@@ -893,20 +929,49 @@ export class ProspectSearchService {
     // Cache: reuse a fresh HIGH-confidence format and only regenerate emails for
     // any new people, unless the user explicitly forced a refresh.
     if (!options.force && isFreshHighConfidenceFormat(company)) {
+      const metadata = parseEmailFormatDecisionMetadata(company.emailFormatReason);
+      console.info("[email-format-ai] Resolution completed.", {
+        operation: "company_format_cache",
+        model: env.PROSPECT_AI_MODEL ?? DEFAULT_PROSPECT_EMAIL_FORMAT_MODEL,
+        sourceCount: metadata?.supportingSourceCount ?? 0,
+        cacheHit: true,
+        aiUsed: false,
+        decisionCode: metadata?.decisionCode ?? "SOURCE_MAJORITY"
+      });
       await this.regenerateCompanyEmails(userId, company);
       return this.requireOwnedCompany(userId, companyId);
     }
 
-    const limit = await this.emailFormatRateLimiter(userId);
-    if (!limit.allowed) {
-      const minutes = Math.max(1, Math.ceil(limit.retryAfterSeconds / 60));
-      throw new ProspectError(
-        "RATE_LIMITED",
-        `You've reached the AI email-format search limit. Try again in about ${minutes} minute${minutes === 1 ? "" : "s"}.`
-      );
+    const refreshKey = `${userId}:${companyId}:email-format`;
+    const existing = EMAIL_FORMAT_REFRESH_IN_FLIGHT.get(refreshKey);
+    if (existing) {
+      return existing;
     }
 
-    return this.inferAndApplyEmailFormat(userId, company, { sourceUrl: null });
+    const refresh = (async () => {
+      const limit = await this.emailFormatRateLimiter(userId);
+      if (!limit.allowed) {
+        const minutes = Math.max(1, Math.ceil(limit.retryAfterSeconds / 60));
+        throw new ProspectError(
+          "RATE_LIMITED",
+          `You've reached the AI email-format search limit. Try again in about ${minutes} minute${minutes === 1 ? "" : "s"}.`
+        );
+      }
+
+      const reuseStoredEvidence = Boolean(options.force && hasFreshStoredEmailEvidence(company));
+      return this.inferAndApplyEmailFormat(userId, company, {
+        sourceUrl: null,
+        reuseStoredEvidence
+      });
+    })();
+    EMAIL_FORMAT_REFRESH_IN_FLIGHT.set(refreshKey, refresh);
+    try {
+      return await refresh;
+    } finally {
+      if (EMAIL_FORMAT_REFRESH_IN_FLIGHT.get(refreshKey) === refresh) {
+        EMAIL_FORMAT_REFRESH_IN_FLIGHT.delete(refreshKey);
+      }
+    }
   }
 
   /**
@@ -917,7 +982,7 @@ export class ProspectSearchService {
   private async inferAndApplyEmailFormat(
     userId: string,
     company: ProspectCompany,
-    opts: { sourceUrl?: string | null }
+    opts: { sourceUrl?: string | null; reuseStoredEvidence?: boolean }
   ): Promise<ProspectCompany> {
     const budget = createAiBudget();
 
@@ -928,6 +993,18 @@ export class ProspectSearchService {
       officialWebsiteDomain: company.officialWebsiteDomain ?? company.officialDomain,
       knownLinkedinUrl: company.linkedinUrl,
       sourceUrl: opts.sourceUrl ?? null,
+      skipProvider: opts.reuseStoredEvidence,
+      forceAiResolution: opts.reuseStoredEvidence,
+      extraEvidence: opts.reuseStoredEvidence
+        ? {
+            domainEvidence: Array.isArray(company.emailDomainEvidence)
+              ? (company.emailDomainEvidence as unknown as EmailDomainEvidence[])
+              : [],
+            patternEvidence: Array.isArray(company.patternEvidence)
+              ? (company.patternEvidence as unknown as EmailPatternEvidence[])
+              : []
+          }
+        : undefined,
       budget,
       searchId: null
     });
@@ -941,7 +1018,7 @@ export class ProspectSearchService {
         emailPattern: inference.selectedPattern,
         patternConfidence: inference.patternConfidence,
         patternEvidence: inference.patternEvidence,
-        emailFormatReason: inference.reasonSummary ?? null,
+        emailFormatReason: serializeEmailFormatDecisionMetadata(inference.decision),
         emailFormatDiscoveredAt: new Date()
       }
     });

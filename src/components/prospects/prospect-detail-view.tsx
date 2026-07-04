@@ -81,6 +81,7 @@ import {
   createEmptyProspectSelection,
   deriveDiscoverQualitySummary,
   describeQualitySummary,
+  emailFormatEvidenceSummary,
   emailStatusBadge,
   filterPeopleByText,
   formatDateTime,
@@ -588,8 +589,8 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
       setActionNotice({
         message:
           result.data.refreshCompanyEmailFormat.emailDomain && result.data.refreshCompanyEmailFormat.emailPattern
-            ? "Email format refreshed from public evidence."
-            : "No evidence-backed email format found yet."
+            ? "Email format refreshed."
+            : "Evidence remains inconclusive. Review the format manually."
       });
     },
     [refreshingFormat, reloadCompanyPeople]
@@ -624,8 +625,8 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
       setActionNotice({
         message:
           result.data.discoverCompanyEmailFormat.emailDomain && result.data.discoverCompanyEmailFormat.emailPattern
-            ? "Email format found with AI web search."
-            : "No public email-format evidence found yet. Paste a source URL or set it manually."
+            ? "Email format refreshed."
+            : "Evidence remains inconclusive. Review the format manually."
       });
     },
     [refreshingFormat, reloadCompanyPeople]
@@ -1438,9 +1439,28 @@ function EmailFormatPanel({
   }
   const websiteDomain = company.officialWebsiteDomain ?? company.officialDomain;
   const domainDiffers = Boolean(websiteDomain && company.emailDomain && websiteDomain !== company.emailDomain);
-  const firstDomainEvidence = company.emailDomainEvidence[0] ?? null;
-  const firstPatternEvidence = company.patternEvidence[0] ?? null;
+  const firstDomainEvidence =
+    company.emailDomainEvidence.find((row) => row.emailDomain === company.emailDomain) ??
+    company.emailDomainEvidence[0] ??
+    null;
+  const firstPatternEvidence =
+    company.patternEvidence.find(
+      (row) =>
+        row.pattern === company.emailPattern &&
+        (!company.emailDomain || !row.emailDomain || row.emailDomain === company.emailDomain)
+    ) ??
+    company.patternEvidence[0] ??
+    null;
   const hasEmailFormat = Boolean(company.emailDomain && company.emailPattern);
+  const evidenceSummary = emailFormatEvidenceSummary({
+    emailFormatReason: company.emailFormatReason,
+    emailDomainConfidence: company.emailDomainConfidence,
+    patternConfidence: company.patternConfidence,
+    selectedEmailDomain: company.emailDomain,
+    selectedPattern: company.emailPattern,
+    domainEvidence: company.emailDomainEvidence,
+    patternEvidence: company.patternEvidence
+  });
   const aiRunning = refreshingFormat && actionMode === "ai-refresh";
   return (
     <section
@@ -1520,11 +1540,7 @@ function EmailFormatPanel({
             No email format found yet. Use AI web search, paste a public source URL, or set it manually.
           </span>
         )}
-        {company.emailFormatReason && (
-          <span className={styles.metaHint} title="Why this format was selected">
-            {company.emailFormatReason}
-          </span>
-        )}
+        <span className={styles.evidenceAgreement}>{evidenceSummary}</span>
       </div>
       <div className={styles.formatActions}>
         <div className={styles.formatActionText}>

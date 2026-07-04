@@ -16,14 +16,19 @@
 // for this path. A pasted source URL (handled by email-format-discovery-service)
 // remains the manual fallback and short-circuits the web search.
 
+import { z } from "zod";
+
 import { env } from "@/lib/env";
+import {
+  EMAIL_FORMAT_DECISION_CODES,
+  type EmailFormatDecisionCode
+} from "@/lib/email-format-decision";
 import {
   CONFIDENCE_LEVELS,
   EMAIL_PATTERNS,
   type ConfidenceLevel,
   type EmailPattern,
-  coerceConfidenceLevel,
-  isEmailPattern
+  coerceConfidenceLevel
 } from "@/lib/prospect-enums";
 import {
   type EmailDomainEvidence,
@@ -34,14 +39,13 @@ import {
   type EmailPatternEvidence,
   isAllowedBusinessEmailDomain
 } from "@/services/prospects/email-domain-service";
-import { normalizePublicEmailPattern } from "@/services/prospects/email-format-discovery-service";
 import { normalizeDomain } from "@/services/prospects/prospect-normalization";
 
 // The discovery model defaults to GPT-5.5; override with PROSPECT_AI_MODEL.
 export const DEFAULT_PROSPECT_EMAIL_FORMAT_MODEL = "gpt-5.5";
 
-const MAX_QUOTE_LENGTH = 280;
-const MAX_EVIDENCE_ROWS = 12;
+export const EMAIL_FORMAT_MAX_OUTPUT_TOKENS = 400;
+export const EMAIL_FORMAT_MAX_SOURCES = 5;
 
 // AI-facing source categories (kept separate from the internal evidence source
 // weights so the model has a small, well-defined vocabulary).
@@ -57,25 +61,23 @@ export const DISCOVERY_SOURCE_TYPES = [
 export type DiscoverySourceType = (typeof DISCOVERY_SOURCE_TYPES)[number];
 
 export type EmailFormatEvidenceItem = {
-  sourceName: string;
-  sourceUrl: string | null;
+  label: string;
+  url: string;
   sourceType: DiscoverySourceType;
-  patternRaw: string | null;
-  normalizedPattern: EmailPattern | null;
-  exampleEmail: string | null;
-  emailDomain: string | null;
+  claimedDomain: string | null;
+  claimedPattern: EmailPattern | null;
   percentage: number | null;
-  quote: string | null;
+  exampleEmail: string | null;
 };
 
 export type EmailFormatDiscoveryResult = {
-  companyName: string;
-  websiteDomain: string | null;
   selectedEmailDomain: string | null;
   selectedPattern: EmailPattern | null;
-  confidence: ConfidenceLevel;
-  reasonSummary: string;
-  evidence: EmailFormatEvidenceItem[];
+  domainConfidence: ConfidenceLevel;
+  patternConfidence: ConfidenceLevel;
+  supportingSources: EmailFormatEvidenceItem[];
+  conflictingSourceCount: number;
+  decisionCode: EmailFormatDecisionCode;
 };
 
 // Strict JSON schema for the Responses API structured output. Every property is
@@ -85,62 +87,79 @@ export const OPENAI_EMAIL_FORMAT_JSON_SCHEMA = {
   type: "object",
   additionalProperties: false,
   required: [
-    "companyName",
-    "websiteDomain",
     "selectedEmailDomain",
     "selectedPattern",
-    "confidence",
-    "reasonSummary",
-    "evidence"
+    "domainConfidence",
+    "patternConfidence",
+    "supportingSources",
+    "conflictingSourceCount",
+    "decisionCode"
   ],
   properties: {
-    companyName: { type: "string" },
-    websiteDomain: { type: ["string", "null"] },
     selectedEmailDomain: { type: ["string", "null"] },
     selectedPattern: { type: ["string", "null"], enum: [...EMAIL_PATTERNS, null] },
-    confidence: { type: "string", enum: [...CONFIDENCE_LEVELS] },
-    reasonSummary: { type: "string" },
-    evidence: {
+    domainConfidence: { type: "string", enum: [...CONFIDENCE_LEVELS] },
+    patternConfidence: { type: "string", enum: [...CONFIDENCE_LEVELS] },
+    supportingSources: {
       type: "array",
+      maxItems: EMAIL_FORMAT_MAX_SOURCES,
       items: {
         type: "object",
         additionalProperties: false,
         required: [
-          "sourceName",
-          "sourceUrl",
+          "label",
+          "url",
           "sourceType",
-          "patternRaw",
-          "normalizedPattern",
-          "exampleEmail",
-          "emailDomain",
+          "claimedDomain",
+          "claimedPattern",
           "percentage",
-          "quote"
+          "exampleEmail"
         ],
         properties: {
-          sourceName: { type: "string" },
-          sourceUrl: { type: ["string", "null"] },
+          label: { type: "string" },
+          url: { type: "string" },
           sourceType: { type: "string", enum: [...DISCOVERY_SOURCE_TYPES] },
-          patternRaw: { type: ["string", "null"] },
-          normalizedPattern: { type: ["string", "null"], enum: [...EMAIL_PATTERNS, null] },
+          claimedDomain: { type: ["string", "null"] },
+          claimedPattern: { type: ["string", "null"], enum: [...EMAIL_PATTERNS, null] },
+          percentage: { type: ["number", "null"], minimum: 0, maximum: 100 },
           exampleEmail: { type: ["string", "null"] },
-          emailDomain: { type: ["string", "null"] },
-          percentage: { type: ["number", "null"] },
-          quote: { type: ["string", "null"] }
         }
       }
-    }
+    },
+    conflictingSourceCount: { type: "integer", minimum: 0 },
+    decisionCode: { type: "string", enum: [...EMAIL_FORMAT_DECISION_CODES] }
   }
 } as const;
+
+const discoverySourceSchema = z.object({
+  label: z.string().trim().min(1).max(120),
+  url: z.string().url(),
+  sourceType: z.enum(DISCOVERY_SOURCE_TYPES),
+  claimedDomain: z.string().nullable(),
+  claimedPattern: z.enum(EMAIL_PATTERNS).nullable(),
+  percentage: z.number().min(0).max(100).nullable(),
+  exampleEmail: z.string().nullable()
+}).strict();
+
+const discoveryResultSchema = z.object({
+  selectedEmailDomain: z.string().nullable(),
+  selectedPattern: z.enum(EMAIL_PATTERNS).nullable(),
+  domainConfidence: z.enum(CONFIDENCE_LEVELS),
+  patternConfidence: z.enum(CONFIDENCE_LEVELS),
+  supportingSources: z.array(discoverySourceSchema).max(EMAIL_FORMAT_MAX_SOURCES),
+  conflictingSourceCount: z.number().int().nonnegative(),
+  decisionCode: z.enum(EMAIL_FORMAT_DECISION_CODES)
+}).strict();
 
 export const OPENAI_EMAIL_FORMAT_INSTRUCTIONS = [
   "You are finding a company's public work email format.",
   "Rules:",
-  "1. Search the web for public email-format evidence.",
+  "1. Search the web only when the supplied structured evidence is insufficient.",
   "2. Prefer public email-format pages such as RocketReach/Hunter-style format pages.",
   "3. Extract the email domain from example work emails.",
   "4. Do not assume the website domain is the email domain.",
   "5. Website domain and employee email domain can differ (e.g. website appliedmaterials.com, email domain amat.com).",
-  "6. Select the highest-confidence pattern only when evidence supports it.",
+  "6. Select the highest-confidence supported pattern only when sources support it.",
   "7. Never fabricate a percentage.",
   "8. Never fabricate a source URL.",
   "9. Never mark inferred emails as verified.",
@@ -148,15 +167,15 @@ export const OPENAI_EMAIL_FORMAT_INSTRUCTIONS = [
   "11. Do not collect phone numbers.",
   "12. Do not collect personal email domains.",
   "13. Do not return Gmail/Yahoo/Outlook/iCloud personal domains.",
-  "14. selectedPattern must be one of: " + EMAIL_PATTERNS.join(", ") + ".",
-  "15. Return structured JSON only."
+  "14. selectedPattern and claimedPattern must be one of: " + EMAIL_PATTERNS.join(", ") + ".",
+  "15. Return at most 5 unique useful sources.",
+  "16. Do not return quotes, snippets, prose, rationale, summaries, employee lists, or repeated claims.",
+  "17. Return strict JSON only."
 ].join("\n");
 
 export type EmailFormatDiscoveryInput = {
   companyName: string;
   websiteDomain: string | null;
-  knownLinkedinUrl: string | null;
-  targetRoles: string[];
 };
 
 // Suggested public-source queries handed to the model as hints. The model is
@@ -179,12 +198,9 @@ export function buildEmailFormatDiscoveryQueries(companyName: string, websiteDom
 
 export function buildEmailFormatDiscoveryInput(input: EmailFormatDiscoveryInput): Record<string, unknown> {
   return {
-    companyName: input.companyName,
+    company: input.companyName,
     websiteDomain: input.websiteDomain,
-    knownLinkedinUrl: input.knownLinkedinUrl,
-    targetRoles: input.targetRoles,
-    suggestedQueries: buildEmailFormatDiscoveryQueries(input.companyName, input.websiteDomain),
-    note: "websiteDomain may differ from the employee email domain — extract the email domain from example work emails."
+    suggestedQueries: buildEmailFormatDiscoveryQueries(input.companyName, input.websiteDomain).slice(0, 4)
   };
 }
 
@@ -212,201 +228,101 @@ function emailDomainOf(email: string | null): string | null {
   return normalizeDomain(email.slice(at + 1));
 }
 
-export function normalizeDiscoveryPattern(item: {
-  normalizedPattern?: unknown;
-  patternRaw?: unknown;
-}): EmailPattern | null {
-  if (isEmailPattern(item.normalizedPattern)) {
-    return item.normalizedPattern;
-  }
-  if (typeof item.patternRaw === "string" && item.patternRaw.trim()) {
-    return normalizePublicEmailPattern(item.patternRaw);
-  }
-  return null;
-}
-
-function clampPercentage(value: unknown): number | null {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    return null;
-  }
-  if (value < 0 || value > 100) {
-    return null;
-  }
-  return value;
-}
-
-function truncateQuote(value: unknown): string | null {
-  if (typeof value !== "string") {
-    return null;
-  }
-  const trimmed = value.replace(/\s+/g, " ").trim();
-  if (!trimmed) {
-    return null;
-  }
-  return trimmed.length > MAX_QUOTE_LENGTH ? `${trimmed.slice(0, MAX_QUOTE_LENGTH)}…` : trimmed;
-}
-
 function rowConfidence(
   percentage: number | null,
-  quote: string | null,
   sourceType: EmailEvidenceSourceType,
-  hasUrl: boolean
+  hasExample: boolean
 ): ConfidenceLevel {
   if (percentage !== null && percentage >= 75) {
     return "HIGH";
   }
-  if (quote && /\b(most common|highest percentage|most used|primary)\b/i.test(quote)) {
+  if (hasExample && (sourceType === "hunter" || sourceType === "public_format_page")) {
     return "HIGH";
   }
   if (percentage !== null && percentage >= 35) {
     return "MEDIUM";
   }
-  if ((sourceType === "hunter" || sourceType === "public_format_page") && hasUrl) {
+  if (sourceType === "hunter" || sourceType === "public_format_page") {
     return "MEDIUM";
   }
   return "LOW";
 }
 
-type CleanEvidenceRow = {
-  item: EmailFormatEvidenceItem;
-  emailDomain: string | null;
-  pattern: EmailPattern | null;
-  sourceType: EmailEvidenceSourceType;
-  confidence: ConfidenceLevel;
-};
+/**
+ * Strictly validate and clean the compact model response. Invalid structure,
+ * unsupported patterns, personal domains, duplicate sources, and selections
+ * absent from evidence are rejected so the caller can retry once, then fall
+ * back safely.
+ */
+export function validateDiscoveryResult(raw: unknown): EmailFormatDiscoveryResult {
+  const parsed = discoveryResultSchema.parse(raw);
+  const seen = new Set<string>();
+  const supportingSources = parsed.supportingSources.flatMap((source) => {
+    const exampleEmail = source.exampleEmail?.trim().toLowerCase() || null;
+    const exampleDomain = emailDomainOf(exampleEmail);
+    const claimedDomain = normalizeDomain(source.claimedDomain);
+    const domain = exampleDomain ?? claimedDomain;
+    if (domain && !isAllowedBusinessEmailDomain(domain)) {
+      return [];
+    }
 
-function cleanEvidenceItem(raw: unknown): CleanEvidenceRow | null {
-  if (!raw || typeof raw !== "object") {
-    return null;
-  }
-  const row = raw as Record<string, unknown>;
-
-  const sourceType: DiscoverySourceType = DISCOVERY_SOURCE_TYPES.includes(row.sourceType as DiscoverySourceType)
-    ? (row.sourceType as DiscoverySourceType)
-    : "other";
-  const sourceUrl = typeof row.sourceUrl === "string" && /^https?:\/\//i.test(row.sourceUrl.trim())
-    ? row.sourceUrl.trim()
-    : null;
-  const exampleEmail = typeof row.exampleEmail === "string" ? row.exampleEmail.trim().toLowerCase() : null;
-
-  // Rule 3/6: trust the example work email's domain over a stated emailDomain.
-  const exampleDomain = emailDomainOf(exampleEmail);
-  const statedDomain = normalizeDomain(typeof row.emailDomain === "string" ? row.emailDomain : null);
-  const emailDomain = exampleDomain ?? statedDomain;
-  // Rule 12/13: drop personal/aggregator domains entirely.
-  const allowedDomain = emailDomain && isAllowedBusinessEmailDomain(emailDomain) ? emailDomain : null;
-
-  const pattern = normalizeDiscoveryPattern({
-    normalizedPattern: row.normalizedPattern,
-    patternRaw: row.patternRaw
+    const canonicalUrl = new URL(source.url);
+    canonicalUrl.hash = "";
+    const item: EmailFormatEvidenceItem = {
+      label: source.label,
+      url: canonicalUrl.toString(),
+      sourceType: source.sourceType,
+      claimedDomain: domain,
+      claimedPattern: source.claimedPattern,
+      percentage: source.percentage,
+      exampleEmail: exampleDomain ? exampleEmail : null
+    };
+    const key = `${canonicalUrl.hostname.toLowerCase()}${canonicalUrl.pathname.replace(/\/$/, "")}|${domain ?? ""}|${source.claimedPattern ?? ""}`;
+    if (seen.has(key)) {
+      return [];
+    }
+    seen.add(key);
+    return [item];
   });
 
-  // Keep a row only if it contributes a usable domain or pattern.
-  if (!allowedDomain && !pattern) {
-    return null;
+  const selectedEmailDomain = normalizeDomain(parsed.selectedEmailDomain);
+  if (selectedEmailDomain && !isAllowedBusinessEmailDomain(selectedEmailDomain)) {
+    throw new Error("The selected email domain is not a business domain.");
+  }
+  if (
+    selectedEmailDomain &&
+    !supportingSources.some((source) => source.claimedDomain === selectedEmailDomain)
+  ) {
+    throw new Error("The selected email domain is absent from supporting evidence.");
+  }
+  if (
+    parsed.selectedPattern &&
+    !supportingSources.some((source) => source.claimedPattern === parsed.selectedPattern)
+  ) {
+    throw new Error("The selected email pattern is absent from supporting evidence.");
   }
 
-  const percentage = clampPercentage(row.percentage);
-  const quote = truncateQuote(row.quote);
-  const internal = internalSourceType(sourceType);
-  const sourceName =
-    typeof row.sourceName === "string" && row.sourceName.trim()
-      ? row.sourceName.trim().slice(0, 120)
-      : "Public email-format source";
+  let domainConfidence = coerceConfidenceLevel(parsed.domainConfidence);
+  let patternConfidence = coerceConfidenceLevel(parsed.patternConfidence);
+  if (!selectedEmailDomain) {
+    domainConfidence = "UNAVAILABLE";
+  }
+  if (!parsed.selectedPattern) {
+    patternConfidence = "UNAVAILABLE";
+  }
+  if (parsed.conflictingSourceCount > 0) {
+    domainConfidence = domainConfidence === "HIGH" ? "MEDIUM" : domainConfidence;
+    patternConfidence = patternConfidence === "HIGH" ? "MEDIUM" : patternConfidence;
+  }
 
   return {
-    item: {
-      sourceName,
-      sourceUrl,
-      sourceType,
-      patternRaw: typeof row.patternRaw === "string" ? row.patternRaw.trim().slice(0, 80) || null : null,
-      normalizedPattern: pattern,
-      exampleEmail: exampleDomain ? exampleEmail : null,
-      emailDomain: allowedDomain,
-      percentage,
-      quote
-    },
-    emailDomain: allowedDomain,
-    pattern,
-    sourceType: internal,
-    confidence: rowConfidence(percentage, quote, internal, Boolean(sourceUrl))
-  };
-}
-
-/**
- * Validate and clean a raw model response into a trustworthy discovery result.
- * The backend never trusts the model directly: unsupported patterns, personal
- * domains, and selections that are not actually present in the evidence are all
- * rejected, and HIGH confidence requires a sourced, quantified row.
- */
-export function validateDiscoveryResult(
-  raw: unknown,
-  options: { companyName?: string; websiteDomain?: string | null } = {}
-): EmailFormatDiscoveryResult {
-  const obj = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
-  const companyName =
-    typeof obj.companyName === "string" && obj.companyName.trim()
-      ? obj.companyName.trim()
-      : options.companyName ?? "";
-  const websiteDomain = normalizeDomain(
-    typeof obj.websiteDomain === "string" ? obj.websiteDomain : options.websiteDomain ?? null
-  );
-
-  const rawEvidence = Array.isArray(obj.evidence) ? obj.evidence : [];
-  const cleaned = rawEvidence
-    .map(cleanEvidenceItem)
-    .filter((row): row is CleanEvidenceRow => Boolean(row))
-    .slice(0, MAX_EVIDENCE_ROWS);
-
-  const evidenceDomains = new Set(cleaned.map((row) => row.emailDomain).filter((d): d is string => Boolean(d)));
-  const evidencePatterns = new Set(cleaned.map((row) => row.pattern).filter((p): p is EmailPattern => Boolean(p)));
-
-  // Validate the model's proposed selection against the evidence.
-  let selectedEmailDomain = normalizeDomain(
-    typeof obj.selectedEmailDomain === "string" ? obj.selectedEmailDomain : null
-  );
-  if (!selectedEmailDomain || !isAllowedBusinessEmailDomain(selectedEmailDomain) || !evidenceDomains.has(selectedEmailDomain)) {
-    selectedEmailDomain = null;
-  }
-
-  let selectedPattern = isEmailPattern(obj.selectedPattern) ? obj.selectedPattern : null;
-  if (selectedPattern && !evidencePatterns.has(selectedPattern)) {
-    selectedPattern = null;
-  }
-
-  let confidence = coerceConfidenceLevel(obj.confidence);
-  if (!selectedEmailDomain || !selectedPattern) {
-    // Without a validated domain + pattern there is nothing to be confident in.
-    confidence = cleaned.length > 0 ? "LOW" : "UNAVAILABLE";
-  } else if (confidence === "HIGH") {
-    // Rule 5: HIGH needs at least one sourced row that also carries a percentage
-    // or an example email for the selected domain/pattern.
-    const strong = cleaned.some(
-      (row) =>
-        row.emailDomain === selectedEmailDomain &&
-        Boolean(row.item.sourceUrl) &&
-        (row.item.percentage !== null || Boolean(row.item.exampleEmail))
-    );
-    if (!strong) {
-      confidence = "MEDIUM";
-    }
-  }
-
-  const reasonSummary =
-    typeof obj.reasonSummary === "string" && obj.reasonSummary.trim()
-      ? obj.reasonSummary.trim().slice(0, 400)
-      : selectedEmailDomain && selectedPattern
-        ? `Public evidence indicates ${selectedPattern} on ${selectedEmailDomain}.`
-        : "No conclusive public email-format evidence was found.";
-
-  return {
-    companyName,
-    websiteDomain,
     selectedEmailDomain,
-    selectedPattern,
-    confidence,
-    reasonSummary,
-    evidence: cleaned.map((row) => row.item)
+    selectedPattern: parsed.selectedPattern,
+    domainConfidence,
+    patternConfidence,
+    supportingSources,
+    conflictingSourceCount: parsed.conflictingSourceCount,
+    decisionCode: parsed.decisionCode
   };
 }
 
@@ -423,28 +339,28 @@ export function discoveryResultToEvidenceBundle(
   const domainEvidence: EmailDomainEvidence[] = [];
   const patternEvidence: EmailPatternEvidence[] = [];
 
-  for (const item of result.evidence) {
+  for (const item of result.supportingSources) {
     const internal = internalSourceType(item.sourceType);
-    const confidence = rowConfidence(item.percentage, item.quote, internal, Boolean(item.sourceUrl));
-    if (item.emailDomain) {
+    const confidence = rowConfidence(item.percentage, internal, Boolean(item.exampleEmail));
+    if (item.claimedDomain) {
       domainEvidence.push({
-        emailDomain: item.emailDomain,
-        sourceName: item.sourceName,
-        sourceUrl: item.sourceUrl,
+        emailDomain: item.claimedDomain,
+        sourceName: item.label,
+        sourceUrl: item.url,
         sourceType: internal,
-        observedPattern: item.normalizedPattern,
+        observedPattern: item.claimedPattern,
         percentage: item.percentage,
         confidence,
         observedAt: observedAtIso
       });
     }
-    if (item.normalizedPattern) {
+    if (item.claimedPattern) {
       patternEvidence.push({
-        pattern: item.normalizedPattern,
-        emailDomain: item.emailDomain,
+        pattern: item.claimedPattern,
+        emailDomain: item.claimedDomain,
         percentage: item.percentage,
-        sourceName: item.sourceName,
-        sourceUrl: item.sourceUrl,
+        sourceName: item.label,
+        sourceUrl: item.url,
         sourceType: internal,
         confidence,
         observedAt: observedAtIso
@@ -452,7 +368,15 @@ export function discoveryResultToEvidenceBundle(
     }
   }
 
-  return { domainEvidence, patternEvidence, reasonSummary: result.reasonSummary };
+  return {
+    domainEvidence,
+    patternEvidence,
+    decision: {
+      decisionCode: result.decisionCode,
+      supportingSourceCount: result.supportingSources.length,
+      conflictingSourceCount: result.conflictingSourceCount
+    }
+  };
 }
 
 export function isOpenAIEmailFormatDiscoveryConfigured(): boolean {
@@ -481,12 +405,14 @@ export interface EmailFormatWebSearchCaller {
   readonly model: string;
   /** Returns the parsed (but not yet validated) JSON object from the model. */
   search(request: WebSearchRequest): Promise<unknown>;
+  getLastUsage?(): { inputTokens: number; outputTokens: number } | null;
 }
 
 type OpenAIResponse = {
   output_text?: string;
   output?: Array<{ type?: string; content?: Array<{ type?: string; text?: string }> }>;
   error?: { message?: string };
+  usage?: { input_tokens?: number; output_tokens?: number };
 };
 
 function extractOutputText(response: OpenAIResponse): string {
@@ -516,6 +442,7 @@ export class OpenAIWebSearchCaller implements EmailFormatWebSearchCaller {
   private readonly apiKey?: string;
   private readonly reasoningEffort: string;
   private readonly enabledOverride?: boolean;
+  private lastUsage: { inputTokens: number; outputTokens: number } | null = null;
 
   constructor(options?: { apiKey?: string; model?: string; reasoningEffort?: string; enabled?: boolean }) {
     this.apiKey = options?.apiKey ?? env.OPENAI_API_KEY;
@@ -531,10 +458,15 @@ export class OpenAIWebSearchCaller implements EmailFormatWebSearchCaller {
     return Boolean(env.PROSPECT_AI_ENABLED && this.apiKey);
   }
 
+  getLastUsage() {
+    return this.lastUsage;
+  }
+
   async search(request: WebSearchRequest): Promise<unknown> {
     if (!this.enabled) {
       throw new Error("Prospect AI is disabled or OPENAI_API_KEY is missing.");
     }
+    this.lastUsage = null;
 
     const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
@@ -548,7 +480,7 @@ export class OpenAIWebSearchCaller implements EmailFormatWebSearchCaller {
         instructions: request.instructions,
         input: request.input,
         tools: [{ type: "web_search" }],
-        max_output_tokens: request.maxOutputTokens ?? 2000,
+        max_output_tokens: request.maxOutputTokens ?? EMAIL_FORMAT_MAX_OUTPUT_TOKENS,
         text: {
           format: {
             type: "json_schema",
@@ -563,6 +495,16 @@ export class OpenAIWebSearchCaller implements EmailFormatWebSearchCaller {
     const payload = (await response.json()) as OpenAIResponse;
     if (!response.ok) {
       throw new Error(payload.error?.message ?? "Email-format web search failed.");
+    }
+
+    if (
+      typeof payload.usage?.input_tokens === "number" &&
+      typeof payload.usage?.output_tokens === "number"
+    ) {
+      this.lastUsage = {
+        inputTokens: payload.usage.input_tokens,
+        outputTokens: payload.usage.output_tokens
+      };
     }
 
     const text = extractOutputText(payload);
@@ -613,38 +555,56 @@ export class OpenAIEmailFormatDiscoveryService implements EmailEvidenceProvider 
     }
     budget?.record("email_pattern");
 
-    const startedAt = Date.now();
     const websiteDomain = normalizeDomain(input.officialWebsiteDomain);
+    const compactInput = JSON.stringify(
+      buildEmailFormatDiscoveryInput({
+        companyName: input.companyName,
+        websiteDomain
+      })
+    );
 
-    let result: EmailFormatDiscoveryResult;
+    let result: EmailFormatDiscoveryResult | null = null;
+    let lastError: unknown = null;
+    let inputTokens = 0;
+    let outputTokens = 0;
+    let hasUsage = false;
     try {
-      const raw = await caller.search({
-        instructions: OPENAI_EMAIL_FORMAT_INSTRUCTIONS,
-        input: JSON.stringify(
-          buildEmailFormatDiscoveryInput({
-            companyName: input.companyName,
-            websiteDomain,
-            knownLinkedinUrl: input.knownLinkedinUrl ?? null,
-            targetRoles: input.targetRoles ?? []
-          })
-        ),
-        schemaName: "email_format_discovery",
-        jsonSchema: OPENAI_EMAIL_FORMAT_JSON_SCHEMA as unknown as Record<string, unknown>,
-        maxOutputTokens: 2000
-      });
-      result = validateDiscoveryResult(raw, { companyName: input.companyName, websiteDomain });
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const raw = await caller.search({
+          instructions:
+            attempt === 0
+              ? OPENAI_EMAIL_FORMAT_INSTRUCTIONS
+              : `${OPENAI_EMAIL_FORMAT_INSTRUCTIONS}\nThe previous response was invalid. Return corrected JSON only.`,
+          input: compactInput,
+          schemaName: "email_format_discovery",
+          jsonSchema: OPENAI_EMAIL_FORMAT_JSON_SCHEMA as unknown as Record<string, unknown>,
+          maxOutputTokens: EMAIL_FORMAT_MAX_OUTPUT_TOKENS
+        });
+        const usage = caller.getLastUsage?.();
+        if (usage) {
+          hasUsage = true;
+          inputTokens += usage.inputTokens;
+          outputTokens += usage.outputTokens;
+        }
+        try {
+          result = validateDiscoveryResult(raw);
+          break;
+        } catch (error) {
+          lastError = error;
+        }
+      }
+      if (!result) {
+        throw lastError ?? new Error("Email-format web search returned invalid JSON.");
+      }
     } catch (error) {
       this.log({
-        companyId: input.companyId ?? null,
-        companyName: input.companyName,
+        operation: "web_search_resolution",
         model: caller.model,
-        webSearchUsed: false,
-        evidenceCount: 0,
-        selectedEmailDomain: null,
-        selectedPattern: null,
-        confidence: "UNAVAILABLE",
-        latencyMs: Date.now() - startedAt,
-        success: false
+        sourceCount: 0,
+        cacheHit: false,
+        aiUsed: true,
+        decisionCode: "INSUFFICIENT_EVIDENCE",
+        ...(hasUsage ? { inputTokens, outputTokens } : {})
       });
       console.warn(
         "[prospect-email-format-discovery] web search failed",
@@ -655,16 +615,13 @@ export class OpenAIEmailFormatDiscoveryService implements EmailEvidenceProvider 
 
     const bundle = discoveryResultToEvidenceBundle(result, { now: this.now });
     this.log({
-      companyId: input.companyId ?? null,
-      companyName: input.companyName,
+      operation: "web_search_resolution",
       model: caller.model,
-      webSearchUsed: true,
-      evidenceCount: result.evidence.length,
-      selectedEmailDomain: result.selectedEmailDomain,
-      selectedPattern: result.selectedPattern,
-      confidence: result.confidence,
-      latencyMs: Date.now() - startedAt,
-      success: true
+      sourceCount: result.supportingSources.length,
+      cacheHit: false,
+      aiUsed: true,
+      decisionCode: result.decisionCode,
+      ...(hasUsage ? { inputTokens, outputTokens } : {})
     });
     return bundle;
   }
@@ -672,17 +629,15 @@ export class OpenAIEmailFormatDiscoveryService implements EmailEvidenceProvider 
   // Safe telemetry only — never the API key, prompt, raw page content, tokens,
   // generated people, or personal emails.
   private log(entry: {
-    companyId: string | null;
-    companyName: string;
+    operation: "web_search_resolution";
     model: string;
-    webSearchUsed: boolean;
-    evidenceCount: number;
-    selectedEmailDomain: string | null;
-    selectedPattern: EmailPattern | null;
-    confidence: ConfidenceLevel;
-    latencyMs: number;
-    success: boolean;
+    sourceCount: number;
+    cacheHit: boolean;
+    aiUsed: boolean;
+    decisionCode: EmailFormatDecisionCode;
+    inputTokens?: number;
+    outputTokens?: number;
   }) {
-    console.info("[prospect-email-format-discovery]", JSON.stringify(entry));
+    console.info("[email-format-ai] Resolution completed.", entry);
   }
 }

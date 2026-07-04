@@ -28,6 +28,7 @@ export interface AiClient {
   readonly model: string;
   /** Returns the parsed (but not yet domain-validated) JSON object. */
   complete(request: AiCompletionRequest): Promise<unknown>;
+  getLastUsage?(): { inputTokens: number; outputTokens: number } | null;
 }
 
 type OpenAIResponse = {
@@ -37,6 +38,7 @@ type OpenAIResponse = {
     content?: Array<{ type?: string; text?: string }>;
   }>;
   error?: { message?: string };
+  usage?: { input_tokens?: number; output_tokens?: number };
 };
 
 function extractOutputText(response: OpenAIResponse): string {
@@ -74,6 +76,7 @@ export class OpenAiProspectClient implements AiClient {
   readonly reasoningEffort: ProspectReasoningEffort;
   private readonly apiKey?: string;
   private readonly enabledOverride?: boolean;
+  private lastUsage: { inputTokens: number; outputTokens: number } | null = null;
 
   constructor(options?: { apiKey?: string; model?: string; reasoningEffort?: ProspectReasoningEffort; enabled?: boolean }) {
     this.apiKey = options?.apiKey ?? env.OPENAI_API_KEY;
@@ -89,6 +92,10 @@ export class OpenAiProspectClient implements AiClient {
     return Boolean(env.PROSPECT_AI_ENABLED && this.apiKey);
   }
 
+  getLastUsage() {
+    return this.lastUsage;
+  }
+
   async complete(request: AiCompletionRequest): Promise<unknown> {
     if (!this.enabled) {
       throw new Error("Prospect AI is disabled or OPENAI_API_KEY is missing.");
@@ -96,6 +103,7 @@ export class OpenAiProspectClient implements AiClient {
 
     const startedAt = Date.now();
     let success = false;
+    this.lastUsage = null;
     try {
       const response = await fetch("https://api.openai.com/v1/responses", {
         method: "POST",
@@ -123,6 +131,15 @@ export class OpenAiProspectClient implements AiClient {
       const payload = (await response.json()) as OpenAIResponse;
       if (!response.ok) {
         throw new Error(payload.error?.message ?? "Prospect AI request failed.");
+      }
+      if (
+        typeof payload.usage?.input_tokens === "number" &&
+        typeof payload.usage?.output_tokens === "number"
+      ) {
+        this.lastUsage = {
+          inputTokens: payload.usage.input_tokens,
+          outputTokens: payload.usage.output_tokens
+        };
       }
 
       const text = extractOutputText(payload);

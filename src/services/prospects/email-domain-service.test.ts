@@ -1,8 +1,11 @@
 import type { PrismaClient } from "@prisma/client";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
+  EMAIL_FORMAT_MAX_AI_SOURCES,
+  CompositeEmailEvidenceProvider,
   EmailDomainService,
+  buildCompactEmailFormatAiPayload,
   type EmailEvidenceProvider,
   inferPatternFromEmailSample
 } from "@/services/prospects/email-domain-service";
@@ -47,19 +50,106 @@ function evidenceProvider(): EmailEvidenceProvider {
   };
 }
 
-describe("EmailDomainService.infer", () => {
-  it("selects an evidence-backed email domain and pattern", async () => {
-    const ai = createMockAi({
-      responses: {
-        email_pattern: {
-          selectedEmailDomain: "amat.com",
-          selectedPattern: "first_last",
-          confidence: "HIGH",
-          reasonSummary: "Evidence indicates amat.com and first_last.",
-          evidenceIndexesUsed: [0, 1]
-        }
-      }
+function conflictingEvidenceProvider(): EmailEvidenceProvider {
+  return {
+    async findEvidence() {
+      return {
+        domainEvidence: [
+          {
+            emailDomain: "amat.com",
+            sourceName: "Source A",
+            sourceUrl: "https://source-a.test/format",
+            sourceType: "public_format_page" as const,
+            observedPattern: "first_last" as const,
+            percentage: 60,
+            confidence: "MEDIUM" as const,
+            observedAt: "2026-06-18T00:00:00.000Z"
+          },
+          {
+            emailDomain: "amat.com",
+            sourceName: "Source B",
+            sourceUrl: "https://source-b.test/format",
+            sourceType: "public_format_page" as const,
+            observedPattern: "first.last" as const,
+            percentage: 55,
+            confidence: "MEDIUM" as const,
+            observedAt: "2026-06-18T00:00:00.000Z"
+          }
+        ],
+        patternEvidence: [
+          {
+            pattern: "first_last" as const,
+            emailDomain: "amat.com",
+            sourceName: "Source A",
+            sourceUrl: "https://source-a.test/format",
+            sourceType: "public_format_page" as const,
+            percentage: 60,
+            confidence: "MEDIUM" as const,
+            observedAt: "2026-06-18T00:00:00.000Z"
+          },
+          {
+            pattern: "first.last" as const,
+            emailDomain: "amat.com",
+            sourceName: "Source B",
+            sourceUrl: "https://source-b.test/format",
+            sourceType: "public_format_page" as const,
+            percentage: 55,
+            confidence: "MEDIUM" as const,
+            observedAt: "2026-06-18T00:00:00.000Z"
+          }
+        ]
+      };
+    }
+  };
+}
+
+describe("CompositeEmailEvidenceProvider", () => {
+  it("stops before the AI fallback when deterministic evidence is sufficient", async () => {
+    const fallback = { findEvidence: vi.fn(async () => ({})) };
+    const provider = new CompositeEmailEvidenceProvider([evidenceProvider(), fallback]);
+
+    const result = await provider.findEvidence({
+      companyName: "Applied Materials",
+      officialWebsiteDomain: "appliedmaterials.com"
     });
+    expect(result.domainEvidence?.[0]?.emailDomain).toBe("amat.com");
+    expect(fallback.findEvidence).not.toHaveBeenCalled();
+  });
+
+  it("continues to the fallback when deterministic evidence is weak", async () => {
+    const weak: EmailEvidenceProvider = {
+      async findEvidence() {
+        return {
+          domainEvidence: [{
+            emailDomain: "example.com",
+            sourceName: "Search snippet",
+            sourceType: "search_snippet",
+            observedPattern: "first.last",
+            confidence: "LOW",
+            observedAt: "2026-06-18T00:00:00.000Z"
+          }],
+          patternEvidence: [{
+            pattern: "first.last",
+            emailDomain: "example.com",
+            sourceName: "Search snippet",
+            sourceType: "search_snippet",
+            confidence: "LOW",
+            observedAt: "2026-06-18T00:00:00.000Z"
+          }]
+        };
+      }
+    };
+    const fallback = { findEvidence: vi.fn(async () => ({})) };
+    const provider = new CompositeEmailEvidenceProvider([weak, fallback]);
+
+    await provider.findEvidence({ companyName: "Example", officialWebsiteDomain: "example.com" });
+    expect(fallback.findEvidence).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("EmailDomainService.infer", () => {
+  it("resolves clear evidence deterministically without calling AI", async () => {
+    const ai = createMockAi();
     const service = new EmailDomainService(createFakePrisma() as unknown as PrismaClient, ai.client, evidenceProvider());
 
     const result = await service.infer({
@@ -73,7 +163,8 @@ describe("EmailDomainService.infer", () => {
     expect(result.selectedPattern).toBe("first_last");
     expect(result.emailDomainConfidence).toBe("HIGH");
     expect(result.patternConfidence).toBe("HIGH");
-    expect(ai.callsOfType("email_pattern")).toHaveLength(1);
+    expect(result.decision.decisionCode).toBe("EXACT_COMPANY_MATCH");
+    expect(ai.callsOfType("email_pattern")).toHaveLength(0);
   });
 
   it("does not call AI or guess when no evidence exists", async () => {
@@ -93,19 +184,21 @@ describe("EmailDomainService.infer", () => {
     expect(ai.calls).toHaveLength(0);
   });
 
-  it("rejects an AI-selected domain that is not present in evidence", async () => {
-    const ai = createMockAi({
-      responses: {
-        email_pattern: {
-          selectedEmailDomain: "appliedmaterials.com",
-          selectedPattern: "first_last",
-          confidence: "HIGH",
-          reasonSummary: "Bad guess",
-          evidenceIndexesUsed: [0, 1]
-        }
+  it("lowers deterministic confidence when structured source metadata reports a conflict", async () => {
+    const ai = createMockAi({ enabled: false });
+    const baseProvider = evidenceProvider();
+    const service = new EmailDomainService(createFakePrisma() as unknown as PrismaClient, ai.client, {
+      async findEvidence(input) {
+        return {
+          ...(await baseProvider.findEvidence(input)),
+          decision: {
+            decisionCode: "SOURCE_MAJORITY",
+            supportingSourceCount: 2,
+            conflictingSourceCount: 1
+          }
+        };
       }
     });
-    const service = new EmailDomainService(createFakePrisma() as unknown as PrismaClient, ai.client, evidenceProvider());
 
     const result = await service.infer({
       userId: "user_1",
@@ -113,24 +206,28 @@ describe("EmailDomainService.infer", () => {
       officialWebsiteDomain: "appliedmaterials.com",
       budget: budget()
     });
-
-    expect(result.selectedEmailDomain).toBe("amat.com");
-    expect(result.selectedPattern).toBe("first_last");
+    expect(result.emailDomainConfidence).toBe("MEDIUM");
+    expect(result.patternConfidence).toBe("MEDIUM");
+    expect(result.decision.conflictingSourceCount).toBe(1);
   });
 
-  it("rejects an AI-selected pattern that is not present in evidence", async () => {
+  it("calls AI once when credible sources conflict", async () => {
     const ai = createMockAi({
       responses: {
         email_pattern: {
           selectedEmailDomain: "amat.com",
-          selectedPattern: "first.last",
-          confidence: "HIGH",
-          reasonSummary: "Bad guess",
-          evidenceIndexesUsed: [0]
+          selectedPattern: "first_last",
+          confidence: "MEDIUM",
+          decisionCode: "SOURCE_MAJORITY",
+          evidenceIndexesUsed: [0, 2]
         }
       }
     });
-    const service = new EmailDomainService(createFakePrisma() as unknown as PrismaClient, ai.client, evidenceProvider());
+    const service = new EmailDomainService(
+      createFakePrisma() as unknown as PrismaClient,
+      ai.client,
+      conflictingEvidenceProvider()
+    );
 
     const result = await service.infer({
       userId: "user_1",
@@ -141,6 +238,65 @@ describe("EmailDomainService.infer", () => {
 
     expect(result.selectedEmailDomain).toBe("amat.com");
     expect(result.selectedPattern).toBe("first_last");
+    expect(result.patternConfidence).toBe("MEDIUM");
+    expect(result.decision.conflictingSourceCount).toBe(1);
+    expect(ai.callsOfType("email_pattern")).toHaveLength(1);
+  });
+
+  it("retries invalid AI JSON once, then falls back to Needs review", async () => {
+    const ai = createMockAi({
+      handler() {
+        return {
+          selectedEmailDomain: "amat.com",
+          selectedPattern: "unsupported_pattern",
+          confidence: "HIGH",
+          decisionCode: "SOURCE_MAJORITY",
+          evidenceIndexesUsed: [0]
+        };
+      }
+    });
+    const service = new EmailDomainService(
+      createFakePrisma() as unknown as PrismaClient,
+      ai.client,
+      conflictingEvidenceProvider()
+    );
+
+    const result = await service.infer({
+      userId: "user_1",
+      companyName: "Applied Materials",
+      officialWebsiteDomain: "appliedmaterials.com",
+      budget: budget()
+    });
+
+    expect(result.selectedEmailDomain).toBe("amat.com");
+    expect(result.selectedPattern).toBeNull();
+    expect(result.patternConfidence).toBe("UNAVAILABLE");
+    expect(result.decision.decisionCode).toBe("INSUFFICIENT_EVIDENCE");
+    expect(ai.callsOfType("email_pattern")).toHaveLength(2);
+    expect(ai.callsOfType("email_pattern")[1]?.instructions).toContain("corrected JSON only");
+  });
+
+  it("does not retry a provider transport failure", async () => {
+    const ai = createMockAi({
+      handler() {
+        throw new Error("provider unavailable");
+      }
+    });
+    const service = new EmailDomainService(
+      createFakePrisma() as unknown as PrismaClient,
+      ai.client,
+      conflictingEvidenceProvider()
+    );
+
+    const result = await service.infer({
+      userId: "user_1",
+      companyName: "Applied Materials",
+      officialWebsiteDomain: "appliedmaterials.com",
+      budget: budget()
+    });
+    expect(result.selectedPattern).toBeNull();
+    expect(result.decision.decisionCode).toBe("INSUFFICIENT_EVIDENCE");
+    expect(ai.callsOfType("email_pattern")).toHaveLength(1);
   });
 
   it("rejects personal email domains from evidence", async () => {
@@ -247,6 +403,8 @@ describe("EmailDomainService.infer", () => {
     expect(result.selectedEmailDomain).toBe("esri.com");
     expect(result.selectedPattern).toBe("flast");
     expect(result.patternConfidence).toBe("HIGH");
+    expect(result.decision.conflictingSourceCount).toBe(0);
+    expect(ai.callsOfType("email_pattern")).toHaveLength(0);
   });
 
   it("uses the public example email domain over the website domain", async () => {
@@ -262,6 +420,46 @@ describe("EmailDomainService.infer", () => {
 
     expect(result.selectedEmailDomain).toBe("amat.com");
     expect(result.selectedPattern).toBe("first_last");
+  });
+});
+
+describe("buildCompactEmailFormatAiPayload", () => {
+  it("deduplicates and caps structured source claims without page content", () => {
+    const base = {
+      emailDomain: "example.com",
+      sourceType: "public_format_page" as const,
+      observedPattern: "first.last" as const,
+      percentage: 80,
+      confidence: "HIGH" as const,
+      observedAt: "2026-06-18T00:00:00.000Z"
+    };
+    const domainEvidence = Array.from({ length: 8 }, (_, index) => ({
+      ...base,
+      sourceName: `Source ${index}`,
+      sourceUrl: `https://source-${index}.test/format`
+    }));
+    domainEvidence.push({ ...base, sourceName: "Duplicate", sourceUrl: "https://source-0.test/format" });
+
+    const payload = buildCompactEmailFormatAiPayload({
+      companyName: "Example Co",
+      websiteDomain: "example.test",
+      domainEvidence,
+      patternEvidence: []
+    });
+    expect(payload.sources).toHaveLength(EMAIL_FORMAT_MAX_AI_SOURCES);
+    expect(new Set(payload.sources.map((source) => source.url)).size).toBe(payload.sources.length);
+    expect(Object.keys(payload)).toEqual(["company", "websiteDomain", "sources"]);
+    expect(Object.keys(payload.sources[0] ?? {})).toEqual([
+      "index",
+      "label",
+      "url",
+      "sourceType",
+      "domain",
+      "pattern",
+      "percentage",
+      "confidence"
+    ]);
+    expect(JSON.stringify(payload)).not.toMatch(/<html|navigation|employee list|snippet/i);
   });
 });
 

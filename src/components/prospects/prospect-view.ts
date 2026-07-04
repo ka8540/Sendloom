@@ -5,7 +5,9 @@
 import type {
   ConfidenceLevel,
   DiscoverQuota,
+  EmailDomainEvidenceNode,
   EmailCandidateStatus,
+  PatternEvidenceNode,
   PersonNode,
   PositionCategory,
   ProspectSelectionInput,
@@ -13,6 +15,7 @@ import type {
   ProspectSearchStatus
 } from "@/components/prospects/prospect-graphql";
 import { mapDiscoverPublicError } from "@/lib/discover-public-error";
+import { parseEmailFormatDecisionMetadata } from "@/lib/email-format-decision";
 
 // External links to LinkedIn always open in a new tab with a hardened rel so we
 // never leak the opener or referrer.
@@ -123,6 +126,64 @@ export function confidenceBadge(level: ConfidenceLevel): Badge {
     default:
       return { label: "Unknown", tone: "muted", hint: "Confidence unavailable." };
   }
+}
+
+type EmailFormatEvidenceSummaryInput = {
+  emailFormatReason: string | null;
+  emailDomainConfidence: ConfidenceLevel;
+  patternConfidence: ConfidenceLevel;
+  selectedEmailDomain: string | null;
+  selectedPattern: string | null;
+  domainEvidence: EmailDomainEvidenceNode[];
+  patternEvidence: PatternEvidenceNode[];
+};
+
+function compactEvidenceSourceKey(row: { sourceUrl: string | null; sourceName: string }): string {
+  if (row.sourceUrl) {
+    try {
+      const url = new URL(row.sourceUrl);
+      return `${url.hostname.toLowerCase()}${url.pathname.replace(/\/$/, "")}`;
+    } catch {
+      // Fall through to the stable source label for historical malformed URLs.
+    }
+  }
+  return row.sourceName.trim().toLowerCase();
+}
+
+/** Compact, deterministic agreement copy. Historical AI prose is never used. */
+export function emailFormatEvidenceSummary(input: EmailFormatEvidenceSummaryInput): string {
+  const metadata = parseEmailFormatDecisionMetadata(input.emailFormatReason);
+  const selectedEvidence = [
+    ...input.domainEvidence.filter((row) => row.emailDomain === input.selectedEmailDomain),
+    ...input.patternEvidence.filter(
+      (row) =>
+        row.pattern === input.selectedPattern &&
+        (!input.selectedEmailDomain || !row.emailDomain || row.emailDomain === input.selectedEmailDomain)
+    )
+  ];
+  const derivedSupportingCount = new Set(selectedEvidence.map(compactEvidenceSourceKey)).size;
+  const supportingCount = metadata?.supportingSourceCount ?? derivedSupportingCount;
+  const conflictingCount = metadata?.conflictingSourceCount ?? 0;
+  const limited =
+    !input.selectedEmailDomain ||
+    !input.selectedPattern ||
+    input.emailDomainConfidence === "LOW" ||
+    input.emailDomainConfidence === "UNAVAILABLE" ||
+    input.patternConfidence === "LOW" ||
+    input.patternConfidence === "UNAVAILABLE" ||
+    metadata?.decisionCode === "INSUFFICIENT_EVIDENCE" ||
+    supportingCount === 0;
+
+  if (limited) {
+    return "Limited evidence · review before sending";
+  }
+
+  const supportCopy = supportingCount === 1 ? "1 supporting source" : `${supportingCount} sources agree`;
+  if (conflictingCount === 0) {
+    return supportCopy;
+  }
+  const conflictCopy = conflictingCount === 1 ? "1 source conflicts" : `${conflictingCount} sources conflict`;
+  return `${supportCopy} · ${conflictCopy}`;
 }
 
 /**

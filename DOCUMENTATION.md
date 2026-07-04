@@ -1251,42 +1251,47 @@ The primary email-format discovery path is **AI web search**. When
 `PROSPECT_EMAIL_FORMAT_WEB_SEARCH_ENABLED=true`, `PROSPECT_AI_ENABLED=true`, and
 `OPENAI_API_KEY` is set, `OpenAIEmailFormatDiscoveryService` calls **GPT-5.5 via
 the OpenAI Responses API with the built-in `web_search` tool** (model overridable
-with `PROSPECT_AI_MODEL`; defaults to `gpt-5.5`). It is the only place an OpenAI
-HTTP request is made for this feature — never inside a resolver, never via Chat
-Completions, and no Serper/Brave/Google CSE is added for it.
+with `PROSPECT_AI_MODEL`; defaults to `gpt-5.5`). Ambiguous stored/source-URL
+claims may instead use the compact structured resolver. Neither path uses Chat
+Completions, and no Serper/Brave/Google CSE is added to the primary path.
 
-The model is asked to find PUBLIC work email-format evidence and return strict
-structured JSON only (`OPENAI_EMAIL_FORMAT_JSON_SCHEMA`): a `selectedEmailDomain`,
-`selectedPattern`, `confidence`, `reasonSummary`, and an `evidence[]` array of
-`{ sourceName, sourceUrl, sourceType, patternRaw, normalizedPattern, exampleEmail,
-emailDomain, percentage, quote }`. The developer prompt instructs it to extract
-the email domain from example work emails (not assume the website domain), prefer
-RocketReach/Hunter-style format pages, never fabricate a percentage or URL, never
-return personal domains, and never mark anything verified. It runs **once per
-company**, never per person.
+The pipeline is deterministic first. Existing/public-source evidence is reduced
+to structured claims (company, website domain, claimed email domain, supported
+normalized pattern, percentage, one example when available, source URL, and
+label), deduplicated, and ranked in normal TypeScript. Clear consensus, a strong
+dominant source, or a matching example is resolved without an AI call. Raw HTML,
+page boilerplate, navigation, employee lists, and previously generated prose are
+never included in the resolver payload.
 
-`validateDiscoveryResult` then validates the model output before it is trusted:
-public pattern notation is normalized (`[first_initial][last]` → `flast`,
-`[first]_[last]` → `first_last`), the example email domain wins over the website
-domain, unsupported patterns and personal/aggregator domains (gmail, yahoo,
-outlook, icloud, rocketreach.co, hunter.io, linkedin.com, …) are dropped, a
-selected domain/pattern must actually appear in the evidence, and `HIGH`
-confidence requires a sourced row that also has a percentage or example email.
-The cleaned evidence is mapped to the standard evidence bundle and the existing
-deterministic selector in `EmailDomainService` makes the final choice — so Esri
-resolves to `flast@esri.com` and Applied Materials to `first_last@amat.com`
-(website `appliedmaterials.com`, email domain `amat.com`) when public evidence
-supports it.
+AI is used only when structured evidence is unavailable or genuinely ambiguous.
+The web-search response and ambiguity resolver both use strict JSON schemas with
+supported pattern enums, confidence enums, source counts, and a decision code;
+they do not request or store a `reasonSummary`, narrative, quote, rationale, or
+chain-of-thought. Resolver input is capped at five unique structured sources,
+web-search output is capped at 400 tokens, and ambiguity-resolution output at 300
+tokens. Invalid structured output receives at most one JSON-only correction
+attempt using the same compact payload; transport failures are not retried as
+validation failures. A second invalid response becomes insufficient evidence /
+Needs review.
 
-Cost controls: the web search consumes the per-search `email_pattern` AI budget
-(so the deterministic selector, not a second model call, decides), HIGH-confidence
-results are cached on `ProspectCompany.emailFormatDiscoveredAt` for 7 days (the
-"Find with AI" path skips re-paying unless `force` is set), and each user is rate
-limited per hour and per day (`PROSPECT_EMAIL_FORMAT_AI_HOURLY_LIMIT` /
-`PROSPECT_EMAIL_FORMAT_AI_DAILY_LIMIT`, default 5/20). Logs record only safe
-metadata (company id/name, model, `webSearchUsed`, evidence count, selected
-domain/pattern, confidence, latency) — never the API key, prompt, raw page
-content, tokens, generated people, or personal emails.
+`validateDiscoveryResult` rejects unsupported patterns, personal/aggregator
+domains (gmail, yahoo, outlook, icloud, rocketreach.co, hunter.io, linkedin.com,
+…), extra narrative fields, and any selection absent from its source claims.
+Conflicting evidence lowers confidence. Website and employee email domains stay
+separate, so Applied Materials can resolve to website `appliedmaterials.com`,
+email domain `amat.com`, and pattern `first_last`. Inferred addresses are never
+marked verified.
+
+High-confidence structured results are cached for 30 days using normalized
+company/domain identity plus a discovery version. Browser refreshes, navigation,
+people selection, export, and Imports reuse the stored result. Explicit **Refresh
+with AI** is coalesced per company and reuses fresh stored source claims when
+available; stale/missing evidence may run one new web search. Safe logs include
+only operation, model, actual token counts when supplied by the SDK, source count,
+cache hit/miss, whether AI ran, and decision code — never prompts, source-page
+content, private people data, generated email lists, or credentials. Per-user
+hour/day limits remain (`PROSPECT_EMAIL_FORMAT_AI_HOURLY_LIMIT` /
+`PROSPECT_EMAIL_FORMAT_AI_DAILY_LIMIT`, default 5/20).
 
 **Fallbacks.** Pasting a specific public **source URL** routes to the deterministic
 `EmailFormatDiscoveryService` parser (no web search runs); a **manual override**
@@ -1585,7 +1590,8 @@ Behavior:
   `https://rocketreach.co/esri-email-format_b5c60d6df42e0c51` calls
   `refreshCompanyEmailFormat`, parses the source deterministically with no web
   search), and **Fix manually**. On success the card shows the email domain,
-  pattern, confidence, evidence source, and a reason summary; when unavailable it
+  pattern, confidence, source chips, and a compact agreement/conflict count; no
+  generated evidence narrative is displayed or requested. When unavailable it
   shows "No email format found yet. Use AI web search, paste a public source URL,
   or set it manually." All three paths regenerate existing people emails as
   inferred (never `VERIFIED`). Rate-limit / not-configured errors surface as safe

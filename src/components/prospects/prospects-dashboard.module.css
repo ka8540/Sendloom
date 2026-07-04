@@ -1069,6 +1069,12 @@
   gap: 0.55rem;
 }
 
+.evidenceAgreement {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
 .evidenceItem {
   display: inline-flex;
   align-items: center;
