@@ -3,7 +3,8 @@ import {
   buildFullName,
   normalizeCompanyName,
   normalizeTitle,
-  parseLocation
+  parseLocation,
+  stripDiacritics
 } from "@/services/prospects/prospect-normalization";
 
 // Minimal normalized profile. We deliberately discard everything Sendloom does
@@ -44,6 +45,8 @@ export type ApifyProfileSearchResult = {
   runId: string | null;
   datasetId: string | null;
   totalFound: number;
+  /** Per-stage ingestion counters (safe counts only, for diagnostics/logging). */
+  diagnostics: ApifyIngestionDiagnostics;
 };
 
 // The shape we actually run the Apify actor with. `currentCompanies` is only
@@ -82,7 +85,7 @@ export function buildActorInput(input: ApifyProfileSearchInput): ApifyActorInput
   return actorInput;
 }
 
-type RawProfile = Record<string, unknown>;
+export type RawProfile = Record<string, unknown>;
 
 function asString(value: unknown): string | null {
   if (typeof value === "string") {
@@ -193,24 +196,100 @@ function companyUrlSlug(url: string | null | undefined): string | null {
   return match ? match[1].toLowerCase() : null;
 }
 
+// LinkedIn serves the same company page under punctuation-variant vanity slugs
+// (e.g. "jpmorgan-chase" and "jpmorganchase"), so slugs are compared on their
+// alphanumeric identity, never raw string equality.
+function normalizedCompanySlug(url: string | null | undefined): string | null {
+  const slug = companyUrlSlug(url);
+  if (!slug) {
+    return null;
+  }
+  const normalized = slug.replace(/[^a-z0-9]/g, "");
+  return normalized || null;
+}
+
+// Tokens that carry no employer identity when comparing name aliases
+// ("JPMorgan Chase & Co." normalizes with a lone "and" from the ampersand).
+const COMPANY_ALIAS_STOPWORDS = new Set(["and", "the"]);
+// A squashed-name prefix shorter than this can never claim an alias match
+// ("GE" must not swallow every company starting with those letters).
+const MIN_ALIAS_PREFIX_LENGTH = 4;
+
+// Insert spaces at camelCase transitions so "JPMorganChase" tokenizes like
+// "JPMorgan Chase" before normalization.
+function expandCamelCase(name: string): string {
+  return stripDiacritics(name).replace(/([a-z0-9])([A-Z])/g, "$1 $2");
+}
+
+type CompanyAliasKey = {
+  squashed: string;
+  /** Cumulative token-end offsets within `squashed` (word boundaries). */
+  boundaries: Set<number>;
+};
+
+function companyAliasKey(name: string): CompanyAliasKey {
+  const tokens = normalizeCompanyName(expandCamelCase(name))
+    .split(" ")
+    .filter((token) => token && !COMPANY_ALIAS_STOPWORDS.has(token));
+  const squashed = tokens.join("");
+  const boundaries = new Set<number>();
+  let length = 0;
+  for (const token of tokens) {
+    length += token.length;
+    boundaries.add(length);
+  }
+  return { squashed, boundaries };
+}
+
+/**
+ * Alias-tolerant employer-name comparison. Accepts the same employer written
+ * with different punctuation, corporate suffixes, spacing, or a shortened form
+ * that stops at a word boundary ("JPMorgan" for "JPMorgan Chase & Co."), while
+ * still rejecting lookalike prefixes of an unrelated single-word name
+ * ("Apple" never matches "Applebee's").
+ */
+export function companyNamesAliasMatch(a: string, b: string): boolean {
+  const keyA = companyAliasKey(a);
+  const keyB = companyAliasKey(b);
+  if (!keyA.squashed || !keyB.squashed) {
+    return false;
+  }
+  if (keyA.squashed === keyB.squashed) {
+    return true;
+  }
+  const [short, long] = keyA.squashed.length <= keyB.squashed.length ? [keyA, keyB] : [keyB, keyA];
+  return (
+    short.squashed.length >= MIN_ALIAS_PREFIX_LENGTH &&
+    long.squashed.startsWith(short.squashed) &&
+    long.boundaries.has(short.squashed.length)
+  );
+}
+
 /**
  * Decide whether a profile's current employer matches the resolved company.
  * If neither a company URL nor a company name can be compared, the profile is
  * excluded. Prospect searches should never fill a graph from a broad title-only
  * scrape when we cannot verify the current employer.
+ *
+ * A LinkedIn company-URL identity match is the strongest signal (the actor was
+ * already queried by that URL). Slugs are compared on their normalized
+ * alphanumeric form because LinkedIn aliases punctuation-variant slugs to the
+ * same company. When slugs are unavailable or disagree, the employer NAME is
+ * still compared alias-tolerantly — a slug alias the normalizer cannot relate
+ * must not reject an employee whose employer name plainly matches.
  */
 export function currentCompanyMatches(
   profile: NormalizedProfile,
   target: { companyName: string; linkedinCompanyUrl?: string | null }
 ): boolean {
-  const targetSlug = companyUrlSlug(target.linkedinCompanyUrl);
-  const profileSlug = companyUrlSlug(profile.currentCompanyUrl);
-  if (targetSlug && profileSlug) {
-    return targetSlug === profileSlug;
+  const targetSlug = normalizedCompanySlug(target.linkedinCompanyUrl);
+  const profileSlug = normalizedCompanySlug(profile.currentCompanyUrl);
+  if (targetSlug && profileSlug && targetSlug === profileSlug) {
+    return true;
   }
 
   if (profile.currentCompanyName && target.companyName) {
-    return normalizeCompanyName(profile.currentCompanyName) === normalizeCompanyName(target.companyName);
+    return companyNamesAliasMatch(profile.currentCompanyName, target.companyName);
   }
 
   return false;
@@ -231,6 +310,94 @@ export function dedupeProfiles(profiles: NormalizedProfile[]): NormalizedProfile
   return result;
 }
 
+/**
+ * Privacy-safe, per-stage ingestion counters for one dataset. Counts only —
+ * never names, emails, URLs, or raw items — so they are safe to log and audit.
+ */
+export type ApifyIngestionDiagnostics = {
+  itemsReturned: number;
+  parsedCandidates: number;
+  rejectedBySchema: number;
+  duplicateItems: number;
+  companyMatched: number;
+  rejectedByCompany: number;
+};
+
+export type ProcessedDatasetItems = {
+  profiles: NormalizedProfile[];
+  diagnostics: ApifyIngestionDiagnostics;
+};
+
+/**
+ * Normalize, dedupe, and company-filter raw dataset items. One malformed item
+ * only increments a rejection counter — it never fails the batch. Shared by the
+ * live search path and stored-dataset reprocessing so both apply identical
+ * eligibility rules.
+ */
+export function processDatasetItems(
+  items: RawProfile[],
+  target: { companyName: string; linkedinCompanyUrl?: string | null },
+  maxResults: number
+): ProcessedDatasetItems {
+  const normalized: NormalizedProfile[] = [];
+  let rejectedBySchema = 0;
+  for (const item of items) {
+    let profile: NormalizedProfile | null = null;
+    try {
+      profile = normalizeProfile(item);
+    } catch {
+      profile = null;
+    }
+    if (profile) {
+      normalized.push(profile);
+    } else {
+      rejectedBySchema += 1;
+    }
+  }
+
+  const deduped = dedupeProfiles(normalized);
+  const matched = deduped.filter((profile) => currentCompanyMatches(profile, target));
+
+  return {
+    profiles: matched.slice(0, Math.max(1, Math.floor(maxResults))),
+    diagnostics: {
+      itemsReturned: items.length,
+      parsedCandidates: normalized.length,
+      rejectedBySchema,
+      duplicateItems: normalized.length - deduped.length,
+      companyMatched: matched.length,
+      rejectedByCompany: deduped.length - matched.length
+    }
+  };
+}
+
+/**
+ * Read dataset items with a small bounded retry. Immediately after a run
+ * reports SUCCEEDED, the dataset read can transiently return zero items while
+ * Apify reaches consistency — a few short exponential backoffs avoid finalizing
+ * a search (or wasting a paid re-run) on that empty read. Never loops forever.
+ */
+export async function readDatasetItemsWithRetry(
+  read: () => Promise<RawProfile[]>,
+  options: { attempts?: number; baseDelayMs?: number; sleep?: (ms: number) => Promise<void> } = {}
+): Promise<RawProfile[]> {
+  const attempts = Math.max(1, options.attempts ?? 4);
+  const baseDelayMs = options.baseDelayMs ?? 500;
+  const sleep = options.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
+
+  let items: RawProfile[] = [];
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    items = await read();
+    if (items.length > 0) {
+      return items;
+    }
+    if (attempt < attempts - 1) {
+      await sleep(baseDelayMs * 2 ** attempt);
+    }
+  }
+  return items;
+}
+
 // Abstraction over the raw Apify run so the service logic (normalization,
 // filtering, dedupe) is testable without the network or the apify-client SDK.
 export interface ApifyRunner {
@@ -243,6 +410,13 @@ export interface ApifyRunner {
     /** Actor status message (e.g. "free user run limit reached"). */
     statusMessage?: string | null;
   }>;
+  /**
+   * Read the items of an ALREADY-STORED dataset by its dataset id (never a run
+   * id). Used by zero-result reprocessing so a successful past run can be
+   * repaired without paying for a new actor run. Optional so lightweight test
+   * runners are unaffected.
+   */
+  fetchDatasetItems?(datasetId: string): Promise<RawProfile[]>;
 }
 
 const APIFY_SUCCESS_STATUS = "SUCCEEDED";
@@ -281,21 +455,39 @@ export function assertApifyRunUsable(run: { status?: string | null; statusMessag
 class ApifyClientRunner implements ApifyRunner {
   constructor(private readonly token: string) {}
 
-  async run(actorId: string, input: ApifyActorInput) {
+  private async client() {
     // Imported lazily so test environments and the disabled feature path never
     // need the SDK loaded.
     const { ApifyClient } = await import("apify-client");
-    const client = new ApifyClient({ token: this.token });
+    return new ApifyClient({ token: this.token });
+  }
+
+  async run(actorId: string, input: ApifyActorInput) {
+    const client = await this.client();
     const run = await client.actor(actorId).call(input);
+    // Always the run's OWN default dataset — never a run id, never a previous
+    // run's dataset.
     const datasetId = run.defaultDatasetId ?? null;
-    const items = datasetId ? (await client.dataset(datasetId).listItems()).items : [];
+    let items: RawProfile[] = [];
+    if (datasetId) {
+      const read = async () => (await client.dataset(datasetId).listItems()).items as RawProfile[];
+      // Only a SUCCEEDED run earns the consistency retry: it should have items,
+      // so an empty first read is likely a transient propagation delay. A failed
+      // run's empty dataset is genuine and is surfaced immediately.
+      items = run.status === APIFY_SUCCESS_STATUS ? await readDatasetItemsWithRetry(read) : await read();
+    }
     return {
       runId: run.id ?? null,
       datasetId,
-      items: items as RawProfile[],
+      items,
       status: run.status ?? null,
       statusMessage: run.statusMessage ?? null
     };
+  }
+
+  async fetchDatasetItems(datasetId: string): Promise<RawProfile[]> {
+    const client = await this.client();
+    return readDatasetItemsWithRetry(async () => (await client.dataset(datasetId).listItems()).items as RawProfile[]);
   }
 }
 
@@ -337,23 +529,32 @@ export class ApifyProfileSearchService {
     const { runId, datasetId, items, status, statusMessage } = await this.runner.run(this.actorId, actorInput);
     assertApifyRunUsable({ status, statusMessage, itemCount: items.length });
 
-    const normalized = items
-      .map((item) => normalizeProfile(item))
-      .filter((profile): profile is NormalizedProfile => profile !== null);
-
-    const deduped = dedupeProfiles(normalized);
-    const matched = deduped.filter((profile) =>
-      currentCompanyMatches(profile, {
+    const processed = processDatasetItems(
+      items,
+      {
         companyName: input.companyName,
         linkedinCompanyUrl: input.companyLinkedinUrl ?? input.linkedinCompanyUrl ?? null
-      })
+      },
+      input.maxResults
     );
 
     return {
-      profiles: matched.slice(0, Math.max(1, Math.floor(input.maxResults))),
+      profiles: processed.profiles,
       runId,
       datasetId,
-      totalFound: items.length
+      totalFound: items.length,
+      diagnostics: processed.diagnostics
     };
+  }
+
+  /**
+   * Read a stored dataset's items for zero-result reprocessing. Reuses the
+   * already-paid dataset — this NEVER starts a new actor run.
+   */
+  async fetchStoredDatasetItems(datasetId: string): Promise<RawProfile[]> {
+    if (!this.runner?.fetchDatasetItems) {
+      throw new Error("APIFY_API_TOKEN is not configured.");
+    }
+    return this.runner.fetchDatasetItems(datasetId);
   }
 }

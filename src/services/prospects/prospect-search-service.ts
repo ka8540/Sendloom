@@ -26,6 +26,8 @@ import {
 } from "@/lib/prospect-enums";
 import {
   ApifyProfileSearchService,
+  processDatasetItems,
+  type ApifyIngestionDiagnostics,
   type NormalizedProfile
 } from "@/services/prospects/apify-profile-search";
 import { CompanyResolutionService, type CompanyResolution } from "@/services/prospects/company-resolution-service";
@@ -659,6 +661,16 @@ export class ProspectSearchService {
       }
     });
 
+    // Per-stage counters proving exactly where provider items were accepted or
+    // rejected — a successful run can never silently lose its dataset again.
+    logDiscoverIngestionEvent({
+      searchId: search.id,
+      userId,
+      source: "PROVIDER",
+      ...searchResult.diagnostics,
+      eligiblePeople: searchResult.profiles.length
+    });
+
     // Classify unique titles (the global title-classification cache is reused).
     await this.setStatus(search.id, "CLASSIFYING_POSITIONS");
     const rawTitles = searchResult.profiles
@@ -705,9 +717,25 @@ export class ProspectSearchService {
 
     // Generate candidate emails deterministically and build the normalized
     // dataset shared across users.
+    const people = this.buildDatasetPeople(searchResult.profiles, classifications, emailFormat);
+
+    return { emailFormat, people };
+  }
+
+  /**
+   * Deterministically map normalized profiles + role classifications + ONE
+   * company-level email format into dataset people. No AI, no network — one
+   * centralized generation path shared by the live provider run and
+   * stored-dataset reprocessing.
+   */
+  private buildDatasetPeople(
+    profiles: NormalizedProfile[],
+    classifications: Map<string, { category: PositionCategory }>,
+    emailFormat: ResolvedDataset["emailFormat"]
+  ): ResolvedCachePerson[] {
     const allowLowConfidence = env.PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS;
     const candidateConfidence = combinedEmailConfidence(emailFormat.emailDomainConfidence, emailFormat.patternConfidence);
-    const people: ResolvedCachePerson[] = searchResult.profiles.map((profile) => {
+    return profiles.map((profile) => {
       const category = this.categoryForProfile(profile, classifications);
       const candidate = resolveCandidateEmail({
         firstName: profile.firstName,
@@ -737,8 +765,87 @@ export class ProspectSearchService {
         emailSource: candidate.email ? "PATTERN" : null
       };
     });
+  }
 
-    return { emailFormat, people };
+  /**
+   * Rebuild a search's people from its ALREADY-STORED Apify dataset.
+   *
+   * This is the zero-result repair path for searches whose provider run
+   * succeeded but whose ingestion lost the items (e.g. the pre-fix strict
+   * company-slug rejection). Guarantees:
+   *
+   *  - reuses the stored dataset by dataset id — NEVER starts a new actor run;
+   *  - never touches the daily Discover quota (no reservation is made);
+   *  - never runs AI email-format discovery — people inherit the company's
+   *    CURRENT canonical format (a manual override applies immediately);
+   *  - idempotent: existing allocations are kept and only topped up to the
+   *    search's own cap via the same (searchId, personId) grant upserts.
+   */
+  async reprocessSearchFromStoredDataset(userId: string, searchId: string): Promise<ProspectSearch> {
+    const search = await this.requireOwnedSearch(userId, searchId);
+    if (!search.apifyDatasetId) {
+      throw new ProspectError("INVALID_STATE", "This search has no stored provider dataset to reprocess.");
+    }
+    if (!search.companyId) {
+      throw new ProspectError("INVALID_STATE", "This search has no resolved company to reprocess against.");
+    }
+    const company = await this.requireOwnedCompany(userId, search.companyId);
+
+    const items = await this.apify.fetchStoredDatasetItems(search.apifyDatasetId);
+    if (items.length === 0) {
+      throw new ProspectError("PROVIDER_ERROR", "The stored provider dataset is no longer available.");
+    }
+
+    const maxResults = search.maxResults > 0 ? search.maxResults : resolveResultsPerSearch();
+    const processedItems = processDatasetItems(
+      items,
+      {
+        companyName: company.officialName ?? company.name,
+        linkedinCompanyUrl: company.linkedinUrl ?? search.requestedLinkedin
+      },
+      maxResults
+    );
+
+    logDiscoverIngestionEvent({
+      searchId: search.id,
+      userId,
+      source: "REPROCESS",
+      ...processedItems.diagnostics,
+      eligiblePeople: processedItems.profiles.length
+    });
+
+    const budget = createAiBudget();
+    const rawTitles = processedItems.profiles
+      .map((profile) => profile.currentTitle)
+      .filter((title): title is string => Boolean(title));
+    const classifications = await this.roleClassifier.classify(rawTitles, { budget, searchId: search.id });
+
+    // The company's current canonical format is authoritative here; if it is
+    // not usable yet, candidates stay UNAVAILABLE until the user resolves one.
+    const emailFormat = {
+      emailDomain: company.emailDomain,
+      emailDomainConfidence: company.emailDomainConfidence,
+      emailDomainEvidence: company.emailDomainEvidence,
+      emailPattern: company.emailPattern,
+      patternConfidence: company.patternConfidence,
+      patternEvidence: company.patternEvidence,
+      emailFormatReason: company.emailFormatReason
+    };
+    const people = this.buildDatasetPeople(processedItems.profiles, classifications, emailFormat);
+
+    const processed = await this.materializeDataset(userId, search, company, { emailFormat, people }, "PROVIDER");
+
+    return this.prisma.prospectSearch.update({
+      where: { id: search.id },
+      data: {
+        status: "READY",
+        totalProcessed: processed,
+        totalFound: items.length,
+        completedAt: this.now(),
+        errorCode: null,
+        errorMessage: null
+      }
+    });
   }
 
   /**
@@ -1355,4 +1462,31 @@ function logDiscoverProcessingEvent(event: DiscoverProcessingLogEvent): void {
     return;
   }
   console.info(`[discover-process] ${JSON.stringify(event)}`);
+}
+
+type DiscoverIngestionLogEvent = ApifyIngestionDiagnostics & {
+  searchId: string;
+  userId: string;
+  /** Live provider run vs stored-dataset reprocessing. */
+  source: "PROVIDER" | "REPROCESS";
+  eligiblePeople: number;
+};
+
+/**
+ * Structured, privacy-safe per-stage ingestion counters for one provider
+ * dataset (counts only — never names, emails, LinkedIn URLs, raw items, or
+ * tokens). When the provider returned items but every one was rejected, the
+ * event is logged as a warning so a "Ready · 0 people" outcome is always
+ * diagnosable. Silent in tests.
+ */
+function logDiscoverIngestionEvent(event: DiscoverIngestionLogEvent): void {
+  if (process.env.NODE_ENV === "test") {
+    return;
+  }
+  const line = `[discover-ingestion] Processed provider dataset. ${JSON.stringify(event)}`;
+  if (event.itemsReturned > 0 && event.eligiblePeople === 0) {
+    console.warn(line);
+  } else {
+    console.info(line);
+  }
 }

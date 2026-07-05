@@ -1199,10 +1199,11 @@ company graph cleanup (see 23.8).
 ### 23.2 Pipeline
 
 `createProspectSearch` → resolve company website identity → run Apify actor →
-normalize + de-duplicate profiles → exclude current-company mismatches →
-classify unique titles into position categories → upsert position nodes and
-assign people → infer the employee email domain and email pattern from evidence
-→ generate each person's email deterministically → mark search `READY`.
+normalize + de-duplicate profiles → exclude current-company mismatches
+(alias-tolerant; see 23.2.5) → classify unique titles into position categories
+→ upsert position nodes and assign people → infer the employee email domain and
+email pattern from evidence → generate each person's email deterministically →
+mark search `READY`.
 Ownership/not-found errors throw;
 provider/AI failures are persisted as a structured `FAILED` search (with
 `errorCode`) rather than crashing the request. A timeout bounds the synchronous
@@ -1540,6 +1541,65 @@ row, and never creates a duplicate company/person.
   `errorMessage`/`retryable` fields are resolved through this mapper; the **raw**
   internal code stays in the database, server logs (`[discover-process]`), and
   audit events (`discover.retry_started`/`_completed`/`_failed`) for engineers.
+
+### 23.2.5 Provider ingestion integrity and zero-result repair
+
+The Apify layer (`src/services/prospects/apify-profile-search.ts`) guarantees a
+successful provider run can never be silently lost between the actor's dataset
+and the user's search allocation.
+
+- **Run id vs dataset id.** The actor run id (`apifyRunId`) and the run's
+  `defaultDatasetId` (`apifyDatasetId`) are stored separately on the search.
+  Items are always read from the run's **own** default dataset — never from a
+  run id and never from an older run's dataset.
+- **Dataset consistency retry.** Immediately after a run reports `SUCCEEDED`,
+  the dataset read can transiently return zero items. `readDatasetItemsWithRetry`
+  re-reads a bounded number of times (4 attempts, 500ms → 1s → 2s backoff)
+  before accepting an empty result. It never re-runs the actor and never polls
+  forever; a failed run's empty dataset is surfaced immediately.
+- **Current parser schema.** `normalizeProfile` reads the harvestapi
+  dataset-item shape (`currentPosition[0].position`/`companyName`/
+  `companyLinkedinUrl`, object `location.linkedinText`) plus the documented
+  aliases (`profileUrl`/`url`, `fullName`/`name`, `positions`/`experience`,
+  headline fallback). A malformed item increments a rejection counter and never
+  fails the batch; everything Sendloom does not need is discarded at this
+  boundary.
+- **Alias-tolerant company matching.** The actor is queried by the canonical
+  LinkedIn company URL, so `currentCompanyMatches` must not re-reject its
+  results on cosmetic differences. Slugs are compared on their alphanumeric
+  identity (LinkedIn serves `jpmorgan-chase` and `jpmorganchase` as the same
+  company); when slugs are absent or disagree, `companyNamesAliasMatch` compares
+  employer names tolerantly (punctuation, corporate suffixes, camelCase,
+  `&`/`and`, and word-boundary shortenings like "JPMorgan" for "JPMorgan Chase
+  & Co."), while lookalike prefixes of unrelated names ("Apple" vs
+  "Applebee's") and unrelated companies stay rejected. Location filtering is
+  delegated to the actor's `locations` input; profile locations are parsed and
+  stored, never used to re-reject a returned profile.
+- **Ingestion diagnostics.** Every processed dataset logs one privacy-safe
+  `[discover-ingestion]` line (counts only: `itemsReturned`, `parsedCandidates`,
+  `rejectedBySchema`, `duplicateItems`, `companyMatched`, `rejectedByCompany`,
+  `eligiblePeople`) — logged as a **warning** when the provider returned items
+  but zero survived, so a legitimate `READY` with zero people is always
+  diagnosable and an ingestion bug can never hide. Internal only; never exposed
+  to users.
+- **Ready-status invariant.** `READY` with zero people is legitimate only when
+  the provider genuinely returned nothing or every item was rejected for a
+  counted eligibility reason. An ingestion **failure** (parse/persist/allocate
+  exception) still becomes a retryable `FAILED` search (23.2.4) — never a
+  quiet `READY · 0`.
+- **Zero-result reprocessing.**
+  `ProspectSearchService.reprocessSearchFromStoredDataset(userId, searchId)`
+  rebuilds a search's people from its **stored** dataset: it re-reads the saved
+  `apifyDatasetId`, re-runs the corrected normalization/eligibility/
+  materialization, and tops the allocation up to the search's own cap through
+  the same `(searchId, personId)` grant upserts. It never starts a new actor
+  run, never consumes a Discover quota slot, never runs email-format AI (people
+  inherit the company's **current** canonical format, so a manual override
+  applies immediately), and is idempotent. Operators run it via
+  `npx tsx scripts/reprocess-discover-datasets.ts (--scan | --searches <ids>)
+  [--apply]` — `--scan` is bounded (newest 50 `READY` searches with a stored
+  dataset, recorded provider items > 0, and zero allocations) and dry-run is
+  the default.
 
 ### 23.3 AI responsibilities and cost controls
 

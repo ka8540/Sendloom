@@ -1778,3 +1778,159 @@ describe("Discover user-specific allocation cap (shared cache exposure)", () => 
     expect(prisma._state.searchPeople).toHaveLength(0);
   });
 });
+
+describe("Discover zero-result reprocessing (stored dataset repair)", () => {
+  const REPAIR_AI = {
+    responses: {
+      role_classification: {
+        classifications: [
+          {
+            rawTitle: "Software Engineer III",
+            normalizedTitle: "software engineer iii",
+            category: "SOFTWARE_ENGINEERING",
+            displayName: "Software Engineering",
+            confidence: "HIGH"
+          }
+        ]
+      }
+    }
+  };
+
+  // Items in the CURRENT harvestapi dataset shape whose employer slug is a
+  // LinkedIn punctuation alias of the queried one — the exact production shape
+  // that used to be rejected wholesale.
+  function storedItem(index: number, firstName: string) {
+    return {
+      id: `stored-${index}`,
+      publicIdentifier: `person-${index}`,
+      linkedinUrl: `https://www.linkedin.com/in/person-${index}`,
+      firstName,
+      lastName: "Doe",
+      headline: "Software engineer",
+      location: { linkedinText: "Plano, Texas, United States" },
+      currentPosition: [
+        {
+          position: "Software Engineer III",
+          companyName: "Applied Materials, Inc.",
+          companyLinkedinUrl: "https://www.linkedin.com/company/appliedmaterials/"
+        }
+      ]
+    };
+  }
+  const STORED_ITEMS = [storedItem(0, "Alice"), storedItem(1, "Bob"), storedItem(2, "Cara")];
+
+  function buildRepairSetup() {
+    // The live run stored a dataset id but surfaced zero items (the lost-data
+    // production case); the stored dataset itself still holds the people.
+    const run = vi.fn(async () => ({
+      runId: "run-1",
+      datasetId: "stored-ds",
+      items: [],
+      status: "SUCCEEDED",
+      statusMessage: null
+    }));
+    const fetchDatasetItems = vi.fn(async (datasetId: string) => (datasetId === "stored-ds" ? STORED_ITEMS : []));
+    const quota = makeQuotaReserver();
+    const { service, ai } = buildService(
+      prisma,
+      { run, fetchDatasetItems } as ApifyRunner,
+      REPAIR_AI,
+      undefined,
+      quota.reserve
+    );
+    return { service, ai, run, fetchDatasetItems, quota };
+  }
+
+  async function seedZeroResultSearch(service: ProspectSearchService) {
+    const created = await service.createSearch(USER_ID, APPLIED_MATERIALS);
+    const ready = await service.processSearch(USER_ID, created.id, { actorEmail: "u@test.dev" });
+    expect(ready.status).toBe("READY");
+    expect(ready.totalProcessed).toBe(0);
+    expect(prisma._state.searchPeople).toHaveLength(0);
+    return ready;
+  }
+
+  it("repairs a zero-people search from its stored dataset without a new run or quota charge (#repair-36..39)", async () => {
+    const { service, run, fetchDatasetItems, quota } = buildRepairSetup();
+    const ready = await seedZeroResultSearch(service);
+    const quotaCallsAfterProcess = quota.calls.length;
+
+    // A manual correction that arrived BEFORE the people must apply to them.
+    const companyId = prisma._state.companies[0].id as string;
+    await service.setCompanyEmailInferenceOverride(USER_ID, {
+      companyId,
+      emailDomain: "amat.com",
+      emailPattern: "first.last",
+      confidence: "HIGH"
+    });
+
+    const repaired = await service.reprocessSearchFromStoredDataset(USER_ID, ready.id);
+
+    expect(repaired.status).toBe("READY");
+    expect(repaired.totalProcessed).toBe(3); // provider items became visible people (#33)
+    expect(repaired.totalFound).toBe(3);
+    expect(prisma._state.searchPeople).toHaveLength(3); // grants created (#29)
+
+    // The stored dataset was reused — never a second actor run, never quota.
+    expect(fetchDatasetItems).toHaveBeenCalledWith("stored-ds");
+    expect(run).toHaveBeenCalledTimes(1); // only the original live run (#38)
+    expect(quota.calls.length).toBe(quotaCallsAfterProcess); // (#39)
+
+    // People inherited the manual canonical format deterministically (#51,53).
+    const alice = prisma._state.people.find((person) => person.firstName === "Alice")!;
+    expect(alice.inferredEmail).toBe("alice.doe@amat.com");
+    expect(alice.emailStatus).toBe("INFERRED_HIGH"); // inferred, never VERIFIED (#16)
+    expect(prisma._state.people.every((person) => person.emailStatus !== "VERIFIED")).toBe(true);
+
+    // The company-level format was not degraded by the repair (#47).
+    const company = prisma._state.companies.find((row) => row.id === companyId)!;
+    expect(company.emailDomain).toBe("amat.com");
+    expect(company.emailPattern).toBe("first.last");
+    expect(company.emailFormatAuthority).toBe("MANUAL");
+  });
+
+  it("is idempotent — a second repair never duplicates people or allocations (#repair-40,41)", async () => {
+    const { service } = buildRepairSetup();
+    const ready = await seedZeroResultSearch(service);
+
+    await service.reprocessSearchFromStoredDataset(USER_ID, ready.id);
+    const repairedAgain = await service.reprocessSearchFromStoredDataset(USER_ID, ready.id);
+
+    expect(repairedAgain.totalProcessed).toBe(3);
+    expect(prisma._state.searchPeople).toHaveLength(3);
+    expect(prisma._state.people.filter((person) => person.userId === USER_ID)).toHaveLength(3);
+  });
+
+  it("never makes an email-format AI call during repair (#repair-52)", async () => {
+    const { service, ai } = buildRepairSetup();
+    const ready = await seedZeroResultSearch(service);
+
+    await service.reprocessSearchFromStoredDataset(USER_ID, ready.id);
+
+    expect(ai.callsOfType("email_pattern")).toHaveLength(0);
+  });
+
+  it("refuses to reprocess a search without a stored dataset id", async () => {
+    const { service, fetchDatasetItems } = buildRepairSetup();
+    const created = await service.createSearch(USER_ID, APPLIED_MATERIALS);
+
+    await expect(service.reprocessSearchFromStoredDataset(USER_ID, created.id)).rejects.toMatchObject({
+      code: "INVALID_STATE"
+    });
+    expect(fetchDatasetItems).not.toHaveBeenCalled();
+  });
+
+  it("fails safely when the stored dataset is no longer available", async () => {
+    const { service } = buildRepairSetup();
+    const ready = await seedZeroResultSearch(service);
+    // Point the stored search at a dataset the provider no longer has.
+    const row = prisma._state.searches.find((search) => search.id === ready.id)!;
+    row.apifyDatasetId = "gone-ds";
+
+    await expect(service.reprocessSearchFromStoredDataset(USER_ID, ready.id)).rejects.toMatchObject({
+      code: "PROVIDER_ERROR"
+    });
+    // The search was not falsely finalized with people it does not have.
+    expect(prisma._state.searchPeople).toHaveLength(0);
+  });
+});
