@@ -8,6 +8,7 @@ import { env } from "@/lib/env";
 import { getRedis } from "@/lib/redis";
 import { createImport } from "@/services/imports";
 import { displayNameForCategory, isPositionCategory, type PositionCategory } from "@/lib/prospect-enums";
+import { resolveProspectPersonEmail } from "@/services/prospects/prospect-person-email";
 
 export const PROSPECT_EXPORT_MAX_ROWS = Number.parseInt(process.env.PROSPECT_EXPORT_MAX_ROWS ?? "5000", 10);
 export const PROSPECT_EXPORT_TTL_SECONDS = 15 * 60;
@@ -257,7 +258,19 @@ export async function resolveProspectSelection(
 
   const company = await loadOwnedCompany(prisma, userId, input.companyId);
   const selectedPeople = await resolveSelectedPeople(prisma, userId, input);
-  const selectedWithPositions = await attachPositions(prisma, userId, selectedPeople);
+  const storedSuppressedEmails = await loadSuppressedEmails(
+    prisma,
+    userId,
+    selectedPeople.map((person) => normalizeEmail(person.inferredEmail)).filter(Boolean)
+  );
+  const derivedPeople = selectedPeople.map((person) => ({
+    ...person,
+    ...resolveProspectPersonEmail(person, company, {
+      allowLowConfidence: env.PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS,
+      suppressed: Boolean(person.inferredEmail && storedSuppressedEmails.has(normalizeEmail(person.inferredEmail)))
+    })
+  }));
+  const selectedWithPositions = await attachPositions(prisma, userId, derivedPeople);
   const normalizedEmails = selectedWithPositions.map((person) => normalizeEmail(person.inferredEmail)).filter(Boolean);
   const suppressedEmails = await loadSuppressedEmails(prisma, userId, normalizedEmails);
 

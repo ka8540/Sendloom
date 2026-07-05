@@ -2,9 +2,11 @@ import type { ProspectPerson as ProspectPersonRow } from "@prisma/client";
 
 import type { GraphQLContext } from "@/graphql/context";
 import { notFoundError, requireUser } from "@/graphql/errors";
+import { env } from "@/lib/env";
 import { isPositionCategory, overlayEmailCandidateStatus } from "@/lib/prospect-enums";
 import { buildConnection, cursorArgs, decodeCursor, resolveFirst } from "@/graphql/pagination";
 import { loadCompanyOrThrow } from "@/graphql/resolvers/helpers";
+import { resolveProspectPersonEmail } from "@/services/prospects/prospect-person-email";
 
 export const personQueries = {
   async people(
@@ -14,7 +16,7 @@ export const personQueries = {
   ) {
     const user = requireUser(context);
     // Ownership check — throws if the company is not the caller's.
-    await loadCompanyOrThrow(context, args.companyId);
+    const company = await loadCompanyOrThrow(context, args.companyId);
 
     const first = resolveFirst(args.first, 50);
     const afterId = decodeCursor(args.after);
@@ -32,7 +34,22 @@ export const personQueries = {
       context.prisma.prospectPerson.count({ where })
     ]);
 
-    return buildConnection(rows, first, totalCount);
+    const derivedRows = await Promise.all(
+      rows.map(async (person) => {
+        const suppressionReason = person.inferredEmail
+          ? await context.loaders.suppressionReasonByEmail.load(person.inferredEmail.trim().toLowerCase())
+          : null;
+        return {
+          ...person,
+          ...resolveProspectPersonEmail(person, company, {
+            allowLowConfidence: env.PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS,
+            suppressed: Boolean(suppressionReason)
+          })
+        };
+      })
+    );
+
+    return buildConnection(derivedRows, first, totalCount);
   }
 };
 

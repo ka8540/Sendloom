@@ -2,9 +2,11 @@ import type { ProspectCompany, ProspectCompanyPosition } from "@prisma/client";
 
 import type { GraphQLContext } from "@/graphql/context";
 import { coerceConfidenceLevel, overlayEmailCandidateStatus } from "@/lib/prospect-enums";
+import { env } from "@/lib/env";
 import { buildConnection, cursorArgs, decodeCursor, resolveFirst } from "@/graphql/pagination";
 import { asStringArray, mapProspectError } from "@/graphql/resolvers/helpers";
 import { notFoundError, requireUser } from "@/graphql/errors";
+import { resolveProspectPersonEmail } from "@/services/prospects/prospect-person-email";
 
 type EvidenceRow = {
   emailDomain?: unknown;
@@ -144,16 +146,29 @@ export const Company = {
     // blocked) before aggregating, using the same precedence as the per-person
     // resolver — the summary and the table always agree. Unknown stored
     // statuses coerce to UNAVAILABLE so the enum contract holds for legacy rows.
-    const reasons = await Promise.all(
+    const storedReasons = await Promise.all(
       rows.map((row) =>
         row.inferredEmail
           ? context.loaders.suppressionReasonByEmail.load(row.inferredEmail.trim().toLowerCase())
           : Promise.resolve(null)
       )
     );
+    const derivedRows = rows.map((row, index) =>
+      resolveProspectPersonEmail(row, parent, {
+        allowLowConfidence: env.PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS,
+        suppressed: Boolean(storedReasons[index])
+      })
+    );
+    const derivedReasons = await Promise.all(
+      derivedRows.map((row) =>
+        row.inferredEmail
+          ? context.loaders.suppressionReasonByEmail.load(row.inferredEmail.trim().toLowerCase())
+          : Promise.resolve(null)
+      )
+    );
     const counts = new Map<string, number>();
-    rows.forEach((row, index) => {
-      const status = overlayEmailCandidateStatus(row.emailStatus, reasons[index]);
+    derivedRows.forEach((row, index) => {
+      const status = overlayEmailCandidateStatus(row.emailStatus, derivedReasons[index]);
       counts.set(status, (counts.get(status) ?? 0) + 1);
     });
     return [...counts.entries()].map(([status, count]) => ({ status, count }));
@@ -222,8 +237,28 @@ export const CompanyPosition = {
   rawTitles(parent: ProspectCompanyPosition) {
     return asStringArray(parent.rawTitles);
   },
-  people(parent: ProspectCompanyPosition, _args: unknown, context: GraphQLContext) {
-    return context.loaders.peopleByPositionId.load(parent.id);
+  async people(parent: ProspectCompanyPosition, _args: unknown, context: GraphQLContext) {
+    const [company, people] = await Promise.all([
+      context.loaders.companyById.load(parent.companyId),
+      context.loaders.peopleByPositionId.load(parent.id)
+    ]);
+    if (!company) {
+      throw notFoundError("Company not found.");
+    }
+    return Promise.all(
+      people.map(async (person) => {
+        const reason = person.inferredEmail
+          ? await context.loaders.suppressionReasonByEmail.load(person.inferredEmail.trim().toLowerCase())
+          : null;
+        return {
+          ...person,
+          ...resolveProspectPersonEmail(person, company, {
+            allowLowConfidence: env.PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS,
+            suppressed: Boolean(reason)
+          })
+        };
+      })
+    );
   },
   peopleCount(parent: ProspectCompanyPosition, _args: unknown, context: GraphQLContext) {
     return context.loaders.peopleCountByPositionId.load(parent.id);

@@ -1304,6 +1304,32 @@ text/HTML responses are parsed. If AI discovery is unavailable (no key or the
 flag is off), the UI surfaces a clear message and the manual/source-URL paths
 still work.
 
+**Canonical ownership and regeneration.** The authoritative employee email
+domain/pattern belongs to the user's canonical company (`ProspectCompany`), not
+to an individual role search. `canonicalKey` prefers the normalized resolved
+domain and falls back to normalized identity only while no domain is known, so
+Walmart / Walmart Inc. searches on `walmart.com` share one format while similar
+names on different domains stay isolated. Update precedence is manual correction
+→ trusted parsed source → AI/public evidence → existing valid format → unresolved;
+null, stale shared-cache, and lower-confidence role-search snapshots cannot erase
+a valid company format. Source, manual, and AI mutations regenerate all eligible
+people for that canonical company and the detail UI refetches the company plus
+the active role page immediately.
+
+AI resolves a company format at most once when genuinely needed. Individual
+addresses are generated deterministically from structured first/last name,
+supported pattern, and current company domain; no per-person AI call occurs.
+GraphQL people reads, export, and Add to Imports use this same derivation, so a
+stale persisted `UNAVAILABLE` value cannot outrank a currently valid company
+format. Verified/non-pattern-source addresses and invalid, suppressed,
+unsubscribed, or hard-bounced candidates are preserved. The shared cross-user
+cache is intentionally not rewritten by a private correction; materialization
+always overlays the user's canonical company format, which makes stale cache
+snapshots harmless. Migration `20260704200000_canonical_company_email_format`
+repairs true same-user/same-domain duplicate companies by repointing searches and
+people before removing duplicate company/position rows; it never deletes people
+or searches and does not merge different domains.
+
 ### 23.2.2 Daily usage limits (Discover quota)
 
 Discover enforces a fixed, server-side product quota that is independent of (and
@@ -1544,7 +1570,7 @@ New Prisma models (migration
 
 | Model | Purpose |
 | --- | --- |
-| `ProspectCompany` | Resolved company node. `officialWebsiteDomain`/`officialDomain` track the public website, while `emailDomain`, `emailDomainEvidence`, `emailPattern`, and `patternEvidence` are evidence-backed employee email inference fields. Unique per `(userId, normalizedName)`. |
+| `ProspectCompany` | Canonical user-owned company node. `canonicalKey` is domain-first (name fallback); `officialWebsiteDomain`/`officialDomain` track the public website, while `emailDomain`, `emailDomainEvidence`, `emailPattern`, and `patternEvidence` are evidence-backed employee email inference fields. Unique per `(userId, canonicalKey)`. |
 | `ProspectCompanyPosition` | One node per position category under a company. Unique per `(companyId, category)`. |
 | `ProspectPerson` | A discovered professional, assigned to one position node, with inferred-email metadata. Unique per `(userId, sourceProfileId)`. |
 | `ProspectSearch` | A discovery request, its status, Apify run references, and counts. |

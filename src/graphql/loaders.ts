@@ -17,7 +17,16 @@ export type ProspectLoaders = {
   suppressionReasonByEmail: DataLoader<string, string | null>;
 };
 
-export type EmailStatusRow = { inferredEmail: string | null; emailStatus: string };
+export type EmailStatusRow = Pick<
+  ProspectPerson,
+  | "firstName"
+  | "lastName"
+  | "inferredEmail"
+  | "emailStatus"
+  | "emailConfidence"
+  | "emailPattern"
+  | "emailSource"
+>;
 
 function groupBy<T, K extends string>(rows: T[], keyOf: (row: T) => K): Map<K, T[]> {
   const map = new Map<K, T[]>();
@@ -95,11 +104,29 @@ export function createLoaders(prisma: PrismaClient, userId: string): ProspectLoa
   const emailStatusRowsByCompanyId = new DataLoader<string, EmailStatusRow[]>(async (companyIds) => {
     const rows = await prisma.prospectPerson.findMany({
       where: { companyId: { in: [...companyIds] }, userId },
-      select: { companyId: true, inferredEmail: true, emailStatus: true }
+      select: {
+        companyId: true,
+        firstName: true,
+        lastName: true,
+        inferredEmail: true,
+        emailStatus: true,
+        emailConfidence: true,
+        emailPattern: true,
+        emailSource: true
+      }
     });
     const grouped = groupBy(rows, (row) => row.companyId);
     return companyIds.map(
-      (id) => grouped.get(id)?.map((row) => ({ inferredEmail: row.inferredEmail, emailStatus: row.emailStatus })) ?? []
+      (id) =>
+        grouped.get(id)?.map((row) => ({
+          firstName: row.firstName,
+          lastName: row.lastName,
+          inferredEmail: row.inferredEmail,
+          emailStatus: row.emailStatus,
+          emailConfidence: row.emailConfidence,
+          emailPattern: row.emailPattern,
+          emailSource: row.emailSource
+        })) ?? []
     );
   });
 

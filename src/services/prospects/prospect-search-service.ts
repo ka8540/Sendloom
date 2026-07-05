@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import type { PrismaClient, ProspectCompany, ProspectSearch } from "@prisma/client";
+import { Prisma, type PrismaClient, type ProspectCompany, type ProspectSearch } from "@prisma/client";
 
 import { type RecordAuditEventArgs } from "@/lib/audit";
 import {
@@ -29,6 +29,14 @@ import {
   type NormalizedProfile
 } from "@/services/prospects/apify-profile-search";
 import { CompanyResolutionService, type CompanyResolution } from "@/services/prospects/company-resolution-service";
+import { getCanonicalCompanyKey } from "@/services/prospects/canonical-company";
+import {
+  companyEmailFormatData,
+  hasUsableCompanyEmailFormat,
+  resolveCompanyEmailFormatUpdate,
+  type CompanyEmailFormatAuthority,
+  type CompanyEmailFormatRecord
+} from "@/services/prospects/company-email-format";
 import {
   DiscoverSearchCacheService,
   resolveSharedCacheVersion,
@@ -46,6 +54,7 @@ import {
 } from "@/services/prospects/email-domain-service";
 import { resolveCandidateEmail } from "@/services/prospects/email-generation-service";
 import { combinedEmailConfidence } from "@/services/prospects/prospect-email-confidence";
+import { resolveProspectPersonEmail } from "@/services/prospects/prospect-person-email";
 import {
   DEFAULT_PROSPECT_EMAIL_FORMAT_MODEL,
   isOpenAIEmailFormatDiscoveryConfigured
@@ -657,28 +666,42 @@ export class ProspectSearchService {
       .filter((title): title is string => Boolean(title));
     const classifications = await this.roleClassifier.classify(rawTitles, { budget, searchId: search.id });
 
-    // Infer ONE evidence-backed company email domain + pattern.
+    // Resolve ONE evidence-backed company email domain + pattern. A fresh
+    // canonical company format is reused across role searches, so a Recruiter
+    // search never pays to rediscover what Software Engineering already knows.
     await this.setStatus(search.id, "INFERRING_EMAIL_PATTERN");
-    const inference = await this.emailDomain.infer({
-      userId,
-      companyId: company.id,
-      companyName: resolution.officialName,
-      officialWebsiteDomain: company.officialWebsiteDomain ?? company.officialDomain,
-      knownLinkedinUrl: company.linkedinUrl,
-      targetRoles: this.asStringArray(search.requestedTitles),
-      budget,
-      searchId: search.id
-    });
-
-    const emailFormat = {
-      emailDomain: inference.selectedEmailDomain,
-      emailDomainConfidence: inference.emailDomainConfidence,
-      emailDomainEvidence: inference.emailDomainEvidence,
-      emailPattern: inference.selectedPattern,
-      patternConfidence: inference.patternConfidence,
-      patternEvidence: inference.patternEvidence,
-      emailFormatReason: serializeEmailFormatDecisionMetadata(inference.decision)
-    };
+    let emailFormat;
+    if (isFreshHighConfidenceFormat(company)) {
+      emailFormat = {
+        emailDomain: company.emailDomain,
+        emailDomainConfidence: company.emailDomainConfidence,
+        emailDomainEvidence: company.emailDomainEvidence,
+        emailPattern: company.emailPattern,
+        patternConfidence: company.patternConfidence,
+        patternEvidence: company.patternEvidence,
+        emailFormatReason: company.emailFormatReason
+      };
+    } else {
+      const inference = await this.emailDomain.infer({
+        userId,
+        companyId: company.id,
+        companyName: resolution.officialName,
+        officialWebsiteDomain: company.officialWebsiteDomain ?? company.officialDomain,
+        knownLinkedinUrl: company.linkedinUrl,
+        targetRoles: this.asStringArray(search.requestedTitles),
+        budget,
+        searchId: search.id
+      });
+      emailFormat = {
+        emailDomain: inference.selectedEmailDomain,
+        emailDomainConfidence: inference.emailDomainConfidence,
+        emailDomainEvidence: inference.emailDomainEvidence,
+        emailPattern: inference.selectedPattern,
+        patternConfidence: inference.patternConfidence,
+        patternEvidence: inference.patternEvidence,
+        emailFormatReason: serializeEmailFormatDecisionMetadata(inference.decision)
+      };
+    }
 
     // Generate candidate emails deterministically and build the normalized
     // dataset shared across users.
@@ -739,19 +762,15 @@ export class ProspectSearchService {
     dataset: ResolvedDataset,
     allocationSource: "CACHE" | "PROVIDER"
   ): Promise<number> {
-    const updatedCompany = await this.prisma.prospectCompany.update({
-      where: { id: company.id },
-      data: {
-        emailDomain: dataset.emailFormat.emailDomain,
-        emailDomainConfidence: dataset.emailFormat.emailDomainConfidence,
-        emailDomainEvidence: dataset.emailFormat.emailDomainEvidence as never,
-        emailPattern: dataset.emailFormat.emailPattern,
-        patternConfidence: dataset.emailFormat.patternConfidence,
-        patternEvidence: dataset.emailFormat.patternEvidence as never,
-        emailFormatReason: dataset.emailFormat.emailFormatReason,
+    const updatedCompany = await this.applyCanonicalCompanyEmailFormat(
+      userId,
+      company.id,
+      {
+        ...dataset.emailFormat,
         emailFormatDiscoveredAt: new Date()
-      }
-    });
+      },
+      "SHARED_CACHE"
+    );
 
     // Existing grants for THIS search (a retry after a partial failure keeps
     // them) — they count against the cap and are never allocated twice.
@@ -770,6 +789,26 @@ export class ProspectSearchService {
     const selected = dataset.people
       .filter((person) => !allocatedProfileIds.has(person.sourceProfileId))
       .slice(0, capacity);
+
+    const existingPeople = selected.length
+      ? await this.prisma.prospectPerson.findMany({
+          where: { userId, sourceProfileId: { in: selected.map((person) => person.sourceProfileId) } }
+        })
+      : [];
+    const existingByProfileId = new Map(existingPeople.map((person) => [person.sourceProfileId, person]));
+    const suppressions = existingPeople.length
+      ? await this.prisma.suppression.findMany({
+          where: {
+            userId,
+            email: {
+              in: existingPeople
+                .map((person) => person.inferredEmail?.trim().toLowerCase())
+                .filter((email): email is string => Boolean(email))
+            }
+          }
+        })
+      : [];
+    const suppressedEmails = new Set(suppressions.map((row) => row.email.trim().toLowerCase()));
 
     // One position node per category that has allocated people.
     const rawTitlesByCategory = new Map<PositionCategory, Set<string>>();
@@ -800,12 +839,22 @@ export class ProspectSearchService {
 
     let processed = existingAllocations.length;
     let allocationOrder = existingAllocations.length;
+    const allowLowConfidence = env.PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS;
     for (const person of selected) {
       const category = coercePositionCategory(person.positionCategory);
       const positionId = positionMap.get(category) ?? positionMap.get("OTHER");
       if (!positionId) {
         continue;
       }
+      const existingPerson = existingByProfileId.get(person.sourceProfileId);
+      const currentEmail = existingPerson ?? person;
+      const emailFields = resolveProspectPersonEmail(currentEmail, updatedCompany, {
+        allowLowConfidence,
+        regenerateExistingInferred: true,
+        suppressed: Boolean(
+          existingPerson?.inferredEmail && suppressedEmails.has(existingPerson.inferredEmail.trim().toLowerCase())
+        )
+      });
       const fields = {
         companyId: updatedCompany.id,
         positionId,
@@ -819,11 +868,7 @@ export class ProspectSearchService {
         state: person.state,
         city: person.city,
         linkedinUrl: person.linkedinUrl,
-        inferredEmail: person.inferredEmail,
-        emailStatus: person.emailStatus,
-        emailConfidence: person.emailConfidence,
-        emailPattern: person.emailPattern,
-        emailSource: person.emailSource
+        ...emailFields
       };
       const materialized = await this.prisma.prospectPerson.upsert({
         where: { userId_sourceProfileId: { userId, sourceProfileId: person.sourceProfileId } },
@@ -855,10 +900,42 @@ export class ProspectSearchService {
   }
 
   private async upsertCompany(userId: string, resolution: CompanyResolution): Promise<ProspectCompany> {
+    const canonicalKey = getCanonicalCompanyKey({
+      officialWebsiteDomain: resolution.officialWebsiteDomain,
+      officialDomain: resolution.officialDomain,
+      normalizedName: resolution.normalizedName
+    });
+    const update = {
+      canonicalKey,
+      name: resolution.officialName,
+      officialName: resolution.officialName,
+      officialDomain: resolution.officialWebsiteDomain,
+      officialWebsiteDomain: resolution.officialWebsiteDomain,
+      officialWebsite: resolution.officialWebsite,
+      linkedinUrl: resolution.linkedinCompanyUrl,
+      domainConfidence: resolution.domainConfidence
+    };
+
+    const canonicalMatch = await this.prisma.prospectCompany.findFirst({ where: { userId, canonicalKey } });
+    if (canonicalMatch) {
+      return this.prisma.prospectCompany.update({ where: { id: canonicalMatch.id }, data: update });
+    }
+
+    // Promote a previously unresolved name-only company when a later search
+    // resolves its domain. Never reuse a same-name row that already owns a
+    // different domain key.
+    const unresolvedNameMatch = await this.prisma.prospectCompany.findFirst({
+      where: { userId, normalizedName: resolution.normalizedName }
+    });
+    if (unresolvedNameMatch && getCanonicalCompanyKey(unresolvedNameMatch).startsWith("name:")) {
+      return this.prisma.prospectCompany.update({ where: { id: unresolvedNameMatch.id }, data: update });
+    }
+
     return this.prisma.prospectCompany.upsert({
-      where: { userId_normalizedName: { userId, normalizedName: resolution.normalizedName } },
+      where: { userId_canonicalKey: { userId, canonicalKey } },
       create: {
         userId,
+        canonicalKey,
         name: resolution.officialName,
         normalizedName: resolution.normalizedName,
         officialName: resolution.officialName,
@@ -868,17 +945,10 @@ export class ProspectSearchService {
         linkedinUrl: resolution.linkedinCompanyUrl,
         domainConfidence: resolution.domainConfidence,
         emailDomainConfidence: "UNAVAILABLE",
-        patternConfidence: "UNAVAILABLE"
+        patternConfidence: "UNAVAILABLE",
+        emailFormatAuthority: "UNRESOLVED"
       },
-      update: {
-        name: resolution.officialName,
-        officialName: resolution.officialName,
-        officialDomain: resolution.officialWebsiteDomain,
-        officialWebsiteDomain: resolution.officialWebsiteDomain,
-        officialWebsite: resolution.officialWebsite,
-        linkedinUrl: resolution.linkedinCompanyUrl,
-        domainConfidence: resolution.domainConfidence
-      }
+      update
     });
   }
 
@@ -1061,9 +1131,10 @@ export class ProspectSearchService {
       searchId: null
     });
 
-    const updatedCompany = await this.prisma.prospectCompany.update({
-      where: { id: company.id },
-      data: {
+    return this.applyCanonicalCompanyEmailFormat(
+      userId,
+      company.id,
+      {
         emailDomain: inference.selectedEmailDomain,
         emailDomainConfidence: inference.emailDomainConfidence,
         emailDomainEvidence: inference.emailDomainEvidence,
@@ -1072,11 +1143,9 @@ export class ProspectSearchService {
         patternEvidence: inference.patternEvidence,
         emailFormatReason: serializeEmailFormatDecisionMetadata(inference.decision),
         emailFormatDiscoveredAt: new Date()
-      }
-    });
-
-    await this.regenerateCompanyEmails(userId, updatedCompany);
-    return this.requireOwnedCompany(userId, company.id);
+      },
+      opts.sourceUrl ? "SOURCE" : "AI"
+    );
   }
 
   async setCompanyEmailInferenceOverride(
@@ -1109,9 +1178,10 @@ export class ProspectSearchService {
       reason: input.reason
     });
 
-    const updatedCompany = await this.prisma.prospectCompany.update({
-      where: { id: input.companyId },
-      data: {
+    return this.applyCanonicalCompanyEmailFormat(
+      userId,
+      input.companyId,
+      {
         emailDomain,
         emailDomainConfidence: input.confidence,
         emailDomainEvidence: [manualEvidence.domainEvidence],
@@ -1120,36 +1190,107 @@ export class ProspectSearchService {
         patternEvidence: [manualEvidence.patternEvidence],
         emailFormatReason: input.reason?.trim() || "Manual override",
         emailFormatDiscoveredAt: new Date()
-      }
-    });
-
-    await this.regenerateCompanyEmails(userId, updatedCompany);
-    return this.requireOwnedCompany(userId, input.companyId);
+      },
+      "MANUAL"
+    );
   }
 
-  private async regenerateCompanyEmails(userId: string, updatedCompany: ProspectCompany): Promise<void> {
+  /**
+   * Merge one format candidate against the strongest existing format for this
+   * user's canonical company family, propagate the winner to legacy duplicate
+   * rows, and repair eligible person candidates atomically. Serializable
+   * isolation prevents two role searches from committing conflicting formats.
+   */
+  private async applyCanonicalCompanyEmailFormat(
+    userId: string,
+    companyId: string,
+    candidate: CompanyEmailFormatRecord,
+    authority: CompanyEmailFormatAuthority
+  ): Promise<ProspectCompany> {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        return await this.prisma.$transaction(
+          async (tx) => {
+            const target = await tx.prospectCompany.findFirst({ where: { id: companyId, userId } });
+            if (!target) {
+              throw new ProspectError("NOT_FOUND", "Company not found.");
+            }
+
+            const canonicalKey = getCanonicalCompanyKey(target);
+            const ownedCompanies = await tx.prospectCompany.findMany({ where: { userId } });
+            const family = ownedCompanies.filter((row) => getCanonicalCompanyKey(row) === canonicalKey);
+
+            let strongest: CompanyEmailFormatRecord = family[0] ?? target;
+            for (const row of family.slice(1)) {
+              strongest = resolveCompanyEmailFormatUpdate(strongest, row);
+            }
+            const resolved = resolveCompanyEmailFormatUpdate(
+              strongest,
+              { ...candidate, emailFormatAuthority: authority },
+              authority
+            );
+            const data = companyEmailFormatData(resolved) as Prisma.ProspectCompanyUpdateInput;
+
+            let updatedTarget: ProspectCompany | null = null;
+            for (const row of family) {
+              const updated = await tx.prospectCompany.update({ where: { id: row.id }, data });
+              await this.regenerateCompanyEmails(userId, updated, tx);
+              if (updated.id === companyId) {
+                updatedTarget = updated;
+              }
+            }
+            return updatedTarget ?? target;
+          },
+          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+        );
+      } catch (error) {
+        if (
+          attempt < 2 &&
+          typeof error === "object" &&
+          error !== null &&
+          "code" in error &&
+          error.code === "P2034"
+        ) {
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    // The loop either returns or throws; this is only for exhaustive typing.
+    throw new ProspectError("INVALID_STATE", "Could not update the company email format.");
+  }
+
+  private async regenerateCompanyEmails(
+    userId: string,
+    updatedCompany: ProspectCompany,
+    db: Pick<Prisma.TransactionClient, "prospectPerson" | "suppression"> = this.prisma
+  ): Promise<void> {
     const allowLowConfidence = env.PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS;
-    const candidateConfidence = combinedEmailConfidence(updatedCompany.emailDomainConfidence, updatedCompany.patternConfidence);
-    const people = await this.prisma.prospectPerson.findMany({ where: { companyId: updatedCompany.id, userId } });
+    const people = await db.prospectPerson.findMany({ where: { companyId: updatedCompany.id, userId } });
+    const suppressions = await db.suppression.findMany({
+      where: {
+        userId,
+        email: {
+          in: people
+            .map((person) => person.inferredEmail?.trim().toLowerCase())
+            .filter((email): email is string => Boolean(email))
+        }
+      }
+    });
+    const suppressedEmails = new Set(suppressions.map((row) => row.email.trim().toLowerCase()));
 
     for (const person of people) {
-      const candidate = resolveCandidateEmail({
-        firstName: person.firstName,
-        lastName: person.lastName,
-        domain: updatedCompany.emailDomain,
-        pattern: updatedCompany.emailPattern,
-        patternConfidence: candidateConfidence,
-        allowLowConfidence
+      const emailFields = resolveProspectPersonEmail(person, updatedCompany, {
+        allowLowConfidence,
+        regenerateExistingInferred: true,
+        suppressed: Boolean(
+          person.inferredEmail && suppressedEmails.has(person.inferredEmail.trim().toLowerCase())
+        )
       });
-      await this.prisma.prospectPerson.update({
+      await db.prospectPerson.update({
         where: { id: person.id },
-        data: {
-          inferredEmail: candidate.email,
-          emailStatus: candidate.status,
-          emailConfidence: candidate.confidence,
-          emailPattern: candidate.email ? updatedCompany.emailPattern : null,
-          emailSource: candidate.email ? "PATTERN" : null
-        }
+        data: emailFields
       });
     }
   }

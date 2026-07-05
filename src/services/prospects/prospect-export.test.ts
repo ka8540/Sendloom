@@ -148,7 +148,7 @@ describe("prospect export selection resolution", () => {
     expect(resolved.rows.map((row) => row.email)).toEqual(["eng_1@esri.com"]);
   });
 
-  it("skips suppressed, unavailable, invalid, and duplicate emails", async () => {
+  it("repairs stale unavailable rows while skipping suppressed, invalid, and duplicate emails", async () => {
     const { prisma, suppressions } = makePrisma();
     seedCompany(prisma);
     seedPerson(prisma, { id: "ok", inferredEmail: "ok@esri.com" });
@@ -166,13 +166,38 @@ describe("prospect export selection resolution", () => {
 
     expect(resolved.review).toMatchObject({
       selectedCount: 6,
-      exportableCount: 1,
-      unavailableEmailCount: 2,
+      exportableCount: 2,
+      unavailableEmailCount: 1,
       suppressedCount: 2,
       duplicateEmailCount: 1
     });
-    expect(resolved.rows).toHaveLength(1);
-    expect(resolved.rows[0].email).toBe("ok@esri.com");
+    expect(resolved.rows.map((row) => row.email)).toEqual(["ok@esri.com", "ada.lovelace@esri.com"]);
+  });
+
+  it("uses the canonical company format for stale recruiter exports", async () => {
+    const { prisma } = makePrisma();
+    seedCompany(prisma);
+    seedPerson(prisma, {
+      id: "christy",
+      positionId: "pos_hr",
+      firstName: "Christy",
+      lastName: "Stouffer",
+      fullName: "Christy Stouffer",
+      inferredEmail: null,
+      emailStatus: "UNAVAILABLE",
+      emailConfidence: "UNAVAILABLE",
+      emailPattern: null,
+      emailSource: null
+    });
+
+    const resolved = await resolveProspectSelection(prisma as unknown as PrismaClient, "user_1", {
+      companyId: "company_1",
+      mode: "ALL_MATCHING",
+      positionCategory: "HUMAN_RESOURCES"
+    });
+
+    expect(resolved.rows[0]?.email).toBe("christy.stouffer@esri.com");
+    expect(resolved.rows[0]?.emailStatus).toBe("INFERRED_HIGH");
   });
 
   it("enforces the 5000-row export maximum", async () => {

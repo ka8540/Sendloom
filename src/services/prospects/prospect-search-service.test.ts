@@ -1181,6 +1181,130 @@ describe("Discover shared cache integration", () => {
     expect(person.emailStatus).toBe("INFERRED_HIGH");
   });
 
+  it("shares Walmart's canonical format across Software Engineer and Recruiter searches", async () => {
+    const softwareDataset: ResolvedDataset = {
+      emailFormat: {
+        emailDomain: "walmart.com",
+        emailDomainConfidence: "HIGH",
+        emailDomainEvidence: [{ sourceType: "public_format_page" }],
+        emailPattern: "first.last",
+        patternConfidence: "HIGH",
+        patternEvidence: [{ pattern: "first.last", sourceType: "public_format_page" }],
+        emailFormatReason: "Walmart public format"
+      },
+      people: [
+        {
+          sourceProfileId: "walmart-sde",
+          firstName: "Mohit",
+          lastName: "Kumra",
+          fullName: "Mohit Kumra",
+          currentTitle: "Staff Software Engineer",
+          normalizedTitle: "staff software engineer",
+          positionCategory: "SOFTWARE_ENGINEERING",
+          location: "United States",
+          country: "United States",
+          state: null,
+          city: null,
+          linkedinUrl: "https://www.linkedin.com/in/walmart-sde",
+          inferredEmail: "mohit.kumra@walmart.com",
+          emailStatus: "INFERRED_HIGH",
+          emailConfidence: "HIGH",
+          emailPattern: "first.last",
+          emailSource: "PATTERN"
+        }
+      ]
+    };
+    const recruiterDataset: ResolvedDataset = {
+      emailFormat: {
+        emailDomain: null,
+        emailDomainConfidence: "UNAVAILABLE",
+        emailDomainEvidence: [],
+        emailPattern: null,
+        patternConfidence: "UNAVAILABLE",
+        patternEvidence: [],
+        emailFormatReason: "Unresolved"
+      },
+      people: [
+        {
+          sourceProfileId: "walmart-recruiter",
+          firstName: "Christy",
+          lastName: "Stouffer",
+          fullName: "Christy Stouffer",
+          currentTitle: "Executive Recruiter",
+          normalizedTitle: "executive recruiter",
+          positionCategory: "RECRUITING",
+          location: "United States",
+          country: "United States",
+          state: null,
+          city: null,
+          linkedinUrl: "https://www.linkedin.com/in/walmart-recruiter",
+          inferredEmail: null,
+          emailStatus: "UNAVAILABLE",
+          emailConfidence: "UNAVAILABLE",
+          emailPattern: null,
+          emailSource: null
+        }
+      ]
+    };
+    let cacheCall = 0;
+    const cache: DiscoverCachePort = {
+      async getOrRefresh() {
+        const dataset = cacheCall++ === 0 ? softwareDataset : recruiterDataset;
+        return { dataset, source: "CACHE", cacheId: `walmart-cache-${cacheCall}`, fetchedAt: new Date(), refreshedStale: false };
+      }
+    };
+    const runner = amatRunner();
+    const { service, ai } = buildService(prisma, runner.runner, ROLE_ONLY_AI, undefined, undefined, cache);
+
+    const softwareSearch = await service.createSearch(USER_ID, {
+      ...APPLIED_MATERIALS,
+      companyName: "Walmart",
+      companyDomain: "walmart.com",
+      jobTitles: ["Software Engineer"]
+    });
+    await service.processSearch(USER_ID, softwareSearch.id);
+    const recruiterSearch = await service.createSearch(USER_ID, {
+      ...APPLIED_MATERIALS,
+      companyName: "Walmart Inc.",
+      companyDomain: "walmart.com",
+      jobTitles: ["Recruiter"]
+    });
+    await service.processSearch(USER_ID, recruiterSearch.id);
+
+    expect(prisma._state.companies).toHaveLength(1);
+    expect(prisma._state.companies[0]).toMatchObject({
+      canonicalKey: "domain:walmart.com",
+      emailDomain: "walmart.com",
+      emailPattern: "first.last"
+    });
+    expect(prisma._state.searches.map((search) => search.companyId)).toEqual([
+      prisma._state.companies[0].id,
+      prisma._state.companies[0].id
+    ]);
+    expect(prisma._state.people.find((person) => person.firstName === "Mohit")?.inferredEmail).toBe(
+      "mohit.kumra@walmart.com"
+    );
+    expect(prisma._state.people.find((person) => person.firstName === "Christy")?.inferredEmail).toBe(
+      "christy.stouffer@walmart.com"
+    );
+
+    await service.setCompanyEmailInferenceOverride(USER_ID, {
+      companyId: prisma._state.companies[0].id,
+      emailDomain: "walmart.com",
+      emailPattern: "first_last",
+      confidence: "HIGH",
+      reason: "Manual correction"
+    });
+    expect(prisma._state.people.find((person) => person.firstName === "Mohit")?.inferredEmail).toBe(
+      "mohit_kumra@walmart.com"
+    );
+    expect(prisma._state.people.find((person) => person.firstName === "Christy")?.inferredEmail).toBe(
+      "christy_stouffer@walmart.com"
+    );
+    expect(runner.run).not.toHaveBeenCalled();
+    expect(ai.calls.filter((call) => call.taskType === "email_pattern")).toHaveLength(0);
+  });
+
   it("never passes requester identity to the shared cache (#5)", async () => {
     const runner = amatRunner();
     const { port, calls } = cacheHitPort(cacheDataset());

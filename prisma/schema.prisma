@@ -512,6 +512,9 @@ model HunterDomainSearch {
 model ProspectCompany {
   id                      String    @id @default(cuid())
   userId                  String
+  // Tenant-local canonical identity. Resolved domains are authoritative;
+  // normalized company names are only a fallback while a domain is unknown.
+  canonicalKey            String
   name                    String
   normalizedName          String
   officialName            String?
@@ -526,6 +529,9 @@ model ProspectCompany {
   emailPattern            String?
   patternConfidence       String    @default("UNAVAILABLE")
   patternEvidence         Json?
+  // MANUAL | SOURCE | AI | SHARED_CACHE | UNRESOLVED. The canonical merge
+  // policy uses this to prevent lower-authority updates from erasing evidence.
+  emailFormatAuthority    String    @default("UNRESOLVED")
   // Short, human-readable summary of why this format was selected (from the AI
   // web-search discovery). Reset on every inference.
   emailFormatReason       String?
@@ -540,7 +546,8 @@ model ProspectCompany {
   people    ProspectPerson[]
   searches  ProspectSearch[]
 
-  @@unique([userId, normalizedName])
+  @@unique([userId, canonicalKey])
+  @@index([userId, normalizedName])
   @@index([userId, officialDomain])
   @@index([userId, emailDomain])
 }

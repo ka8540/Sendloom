@@ -280,10 +280,13 @@ export function createFakePrisma() {
 
     prospectCompany: {
       upsert: async ({ where, create, update }: { where: Row; create: Row; update: Row }) => {
-        const composite = where.userId_normalizedName;
-        let row = composite
-          ? companies.find((r) => r.userId === composite.userId && r.normalizedName === composite.normalizedName)
-          : companies.find((r) => r.id === where.id);
+        const canonical = where.userId_canonicalKey;
+        const legacy = where.userId_normalizedName;
+        let row = canonical
+          ? companies.find((r) => r.userId === canonical.userId && r.canonicalKey === canonical.canonicalKey)
+          : legacy
+            ? companies.find((r) => r.userId === legacy.userId && r.normalizedName === legacy.normalizedName)
+            : companies.find((r) => r.id === where.id);
         if (row) {
           Object.assign(row, update, { updatedAt: now() });
         } else {

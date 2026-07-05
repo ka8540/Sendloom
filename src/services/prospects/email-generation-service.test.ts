@@ -18,6 +18,15 @@ describe("generateEmail (deterministic)", () => {
     expect(generateEmail({ ...base, pattern: "f.last" })).toBe("j.doe@apple.com");
   });
 
+  it("generates recruiter addresses from the same company pattern", () => {
+    expect(
+      generateEmail({ firstName: "Christy", lastName: "Stouffer", domain: "walmart.com", pattern: "first.last" })
+    ).toBe("christy.stouffer@walmart.com");
+    expect(
+      generateEmail({ firstName: "Abel", lastName: "Garcia", domain: "walmart.com", pattern: "first.last" })
+    ).toBe("abel.garcia@walmart.com");
+  });
+
   it("normalizes unicode and punctuation in names", () => {
     expect(generateEmail({ firstName: "José", lastName: "García", domain: "apple.com", pattern: "flast" })).toBe(
       "jgarcia@apple.com"

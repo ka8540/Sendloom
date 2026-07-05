@@ -28,6 +28,7 @@ import { resolveCandidateEmail } from "@/services/prospects/email-generation-ser
 import { AiCallBudget, createAiBudget } from "@/services/prospects/prospect-ai";
 import { combinedEmailConfidence } from "@/services/prospects/prospect-email-confidence";
 import { normalizeTitle } from "@/services/prospects/prospect-normalization";
+import { resolveProspectPersonEmail } from "@/services/prospects/prospect-person-email";
 import { ProspectError } from "@/services/prospects/prospect-search-service";
 import { RoleClassificationService } from "@/services/prospects/role-classification-service";
 
@@ -593,7 +594,21 @@ export class DiscoverExpansionService {
     }
 
     const allowLowConfidence = env.PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS;
-    const candidateConfidence = combinedEmailConfidence(company.emailDomainConfidence, company.patternConfidence);
+    const existingPeople = await this.prisma.prospectPerson.findMany({
+      where: { userId, sourceProfileId: { in: people.map((person) => person.sourceProfileId) } }
+    });
+    const existingByProfileId = new Map(existingPeople.map((person) => [person.sourceProfileId, person]));
+    const suppressions = await this.prisma.suppression.findMany({
+      where: {
+        userId,
+        email: {
+          in: existingPeople
+            .map((person) => person.inferredEmail?.trim().toLowerCase())
+            .filter((email): email is string => Boolean(email))
+        }
+      }
+    });
+    const suppressedEmails = new Set(suppressions.map((row) => row.email.trim().toLowerCase()));
 
     let added = 0;
     for (const [index, person] of people.entries()) {
@@ -602,15 +617,15 @@ export class DiscoverExpansionService {
       if (!positionId) {
         continue;
       }
-      // 25. New people receive the existing inferred-email processing: the
-      // selected company domain + pattern, deterministic, never VERIFIED.
-      const candidate = resolveCandidateEmail({
-        firstName: person.firstName,
-        lastName: person.lastName,
-        domain: company.emailDomain,
-        pattern: company.emailPattern,
-        patternConfidence: candidateConfidence,
-        allowLowConfidence
+      // New/eligible people use the canonical company format. Existing
+      // verified, trusted, invalid, or suppressed addresses are preserved.
+      const existingPerson = existingByProfileId.get(person.sourceProfileId);
+      const emailFields = resolveProspectPersonEmail(existingPerson ?? person, company, {
+        allowLowConfidence,
+        regenerateExistingInferred: true,
+        suppressed: Boolean(
+          existingPerson?.inferredEmail && suppressedEmails.has(existingPerson.inferredEmail.trim().toLowerCase())
+        )
       });
       const fields = {
         companyId: company.id,
@@ -625,11 +640,7 @@ export class DiscoverExpansionService {
         state: person.state,
         city: person.city,
         linkedinUrl: person.linkedinUrl,
-        inferredEmail: candidate.email,
-        emailStatus: candidate.status,
-        emailConfidence: candidate.confidence,
-        emailPattern: candidate.email ? company.emailPattern : null,
-        emailSource: candidate.email ? "PATTERN" : null
+        ...emailFields
       };
       const materialized = await this.prisma.prospectPerson.upsert({
         where: { userId_sourceProfileId: { userId, sourceProfileId: person.sourceProfileId } },

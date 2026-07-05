@@ -258,7 +258,9 @@ describe("Company emailStatusCounts aggregate (Discover detail dashboard)", () =
     const rows = (result.data?.company as { emailStatusCounts: Array<{ status: string; count: number }> })
       .emailStatusCounts;
     const counts = Object.fromEntries(rows.map((row) => [row.status, row.count]));
-    expect(counts).toEqual({ INFERRED_HIGH: 2, INFERRED_LOW: 1, UNAVAILABLE: 1, SUPPRESSED: 1, INVALID: 1 });
+    // Legacy rows with no persisted address are repaired from the current
+    // company format; the weakest company confidence is MEDIUM.
+    expect(counts).toEqual({ INFERRED_MEDIUM: 4, SUPPRESSED: 1, INVALID: 1 });
   });
 
   it("coerces an unknown stored status to UNAVAILABLE instead of breaking the enum", async () => {
