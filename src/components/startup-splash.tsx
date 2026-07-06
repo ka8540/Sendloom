@@ -2,34 +2,50 @@
 
 import { type CSSProperties } from "react";
 
-import { renderBrandText } from "@/components/brand-text";
 import {
+  BRAND_LEAD,
+  BRAND_TAIL,
   PARTICLE_TOTAL,
-  SPLASH_HEADLINE,
+  SPLASH_STAGES,
   SPLASH_STATUS_LABEL,
-  SPLASH_SUBTEXT
+  WORKFLOW_STEPS
 } from "@/components/startup-splash-core";
 import { useStartupReadiness } from "@/components/use-startup-readiness";
 import styles from "@/components/startup-splash.module.css";
 
-type Particle = { x: string; y: string; size: string; duration: string; delay: string; driftX: string; peak: number };
+// ---------------------------------------------------------------------------
+// Deterministic particle field (index-based) so the server render and the first
+// client render agree — no hydration mismatch, no resize listener. CSS
+// breakpoints cap how many actually drift on smaller viewports.
+// ---------------------------------------------------------------------------
 
-// Deterministic field (index-based) so the server render and the first client
-// render agree — no hydration mismatch, no resize listener. CSS breakpoints cap
-// how many actually drift on smaller viewports.
+type Particle = {
+  x: string;
+  y: string;
+  size: string;
+  duration: string;
+  delay: string;
+  driftX: string;
+  peak: number;
+  variant: "point" | "square" | "streak" | "bright";
+};
+
 function buildParticles(): Particle[] {
   const particles: Particle[] = [];
   for (let index = 0; index < PARTICLE_TOTAL; index += 1) {
     const golden = (index * 0.61803398875) % 1;
-    const alt = (index * 0.7548776662 + 0.29) % 1;
+    const alt = (index * 0.7548776662 + 0.19) % 1;
+    const variant: Particle["variant"] =
+      index % 9 === 4 ? "bright" : index % 11 === 3 ? "streak" : index % 5 === 0 ? "square" : "point";
     particles.push({
-      x: `${Math.round(6 + golden * 88)}%`,
-      y: `${Math.round(10 + alt * 80)}%`,
-      size: `${3 + (index % 3)}px`,
-      duration: `${9 + (index % 5) * 1.5}s`,
-      delay: `${(index % 6) * 0.7}s`,
-      driftX: `${(index % 2 === 0 ? 1 : -1) * (6 + (index % 4) * 3)}px`,
-      peak: 0.3 + (index % 3) * 0.1
+      x: `${Math.round(4 + golden * 92)}%`,
+      y: `${Math.round(6 + alt * 88)}%`,
+      size: `${2 + (index % 4)}px`,
+      duration: `${11 + (index % 6) * 1.6}s`,
+      delay: `${(index % 7) * 0.6}s`,
+      driftX: `${(index % 2 === 0 ? 1 : -1) * (8 + (index % 5) * 4)}px`,
+      peak: 0.22 + (index % 4) * 0.13,
+      variant
     });
   }
   return particles;
@@ -37,39 +53,117 @@ function buildParticles(): Particle[] {
 
 const PARTICLES = buildParticles();
 
-// The Signal Loom mark: four scattered signals (company, person, email,
-// outreach) woven into one clean outreach line.
-const STRANDS = [
-  "M6,12 C30,12 40,28 58,36",
-  "M6,28 C28,28 44,33 58,36",
-  "M6,44 C28,44 44,39 58,36",
-  "M6,60 C30,60 40,44 58,36"
-] as const;
-const STRAND_NODES = [12, 28, 44, 60] as const;
+// ---------------------------------------------------------------------------
+// Signal system. A few scattered signals (company, person, email, message,
+// reply) flow along curved paths and weave together under the wordmark; one
+// clean outbound path continues past it. Geometry is in a 1440×900 canvas that
+// is sliced to fill any viewport.
+// ---------------------------------------------------------------------------
+
+type SignalKind = "company" | "person" | "email" | "message" | "reply";
+
+const SIGNALS: { d: string; node: [number, number]; kind: SignalKind; index: number }[] = [
+  { d: "M150,140 C360,300 520,380 720,470", node: [150, 140], kind: "company", index: 0 },
+  { d: "M1300,180 C1050,300 880,382 720,470", node: [1300, 180], kind: "person", index: 1 },
+  { d: "M110,470 C330,470 520,470 720,470", node: [110, 470], kind: "email", index: 2 },
+  { d: "M250,790 C440,660 560,560 720,470", node: [250, 790], kind: "message", index: 3 },
+  { d: "M1210,770 C1000,650 860,560 720,470", node: [1210, 770], kind: "reply", index: 4 }
+];
+const OUTBOUND = "M720,470 C900,470 1070,430 1330,352";
+
+function SignalSymbol({ kind }: { kind: SignalKind }) {
+  switch (kind) {
+    case "company":
+      return <rect x={-5} y={-5} width={10} height={10} rx={1.5} className={styles.symbolStroke} />;
+    case "person":
+      return (
+        <>
+          <circle cx={0} cy={-3} r={3} className={styles.symbolStroke} />
+          <path d="M-5,6 C-5,1 5,1 5,6" className={styles.symbolStroke} />
+        </>
+      );
+    case "email":
+      return (
+        <>
+          <rect x={-6} y={-4} width={12} height={9} rx={1.5} className={styles.symbolStroke} />
+          <path d="M-6,-3 L0,2 L6,-3" className={styles.symbolStroke} />
+        </>
+      );
+    case "message":
+      return (
+        <>
+          <rect x={-6} y={-5} width={12} height={9} rx={2.5} className={styles.symbolStroke} />
+          <path d="M-2,4 L-2,8 L2,4" className={styles.symbolStroke} />
+        </>
+      );
+    case "reply":
+    default:
+      return <circle cx={0} cy={0} r={3.5} className={styles.symbolFill} />;
+  }
+}
+
+// SEND reads solid; LOOM reads constructed/outlined. Split into letter spans for
+// a kinetic, staggered reveal.
+function Wordmark() {
+  const lead = BRAND_LEAD.split("");
+  const tail = BRAND_TAIL.split("");
+  let cursor = 0;
+  return (
+    <div className={styles.wordmark} aria-hidden="true">
+      <svg className={styles.threads} viewBox="0 0 620 40" preserveAspectRatio="none" aria-hidden="true">
+        <path className={styles.thread} d="M8,20 H612" pathLength={100} />
+        <path className={styles.thread} d="M40,10 H580" pathLength={100} style={{ animationDelay: "0.15s" } as CSSProperties} />
+        <path className={styles.thread} d="M40,30 H580" pathLength={100} style={{ animationDelay: "0.3s" } as CSSProperties} />
+      </svg>
+      <span className={styles.word}>
+        {lead.map((letter, i) => {
+          const style = { "--i": cursor++ } as CSSProperties;
+          return (
+            <span key={`lead-${i}`} className={styles.lead} style={style}>
+              {letter}
+            </span>
+          );
+        })}
+        {tail.map((letter, i) => {
+          const style = { "--i": cursor++ } as CSSProperties;
+          return (
+            <span key={`tail-${i}`} className={styles.tail} style={style} data-letter={letter}>
+              {letter}
+            </span>
+          );
+        })}
+      </span>
+      <span className={styles.sweep} />
+    </div>
+  );
+}
 
 export function StartupSplash() {
-  const phase = useStartupReadiness();
+  const { phase, stage } = useStartupReadiness();
 
   if (phase === "done") {
     return null;
   }
 
+  const stageLabel = SPLASH_STAGES[stage] ?? SPLASH_STAGES[0];
+
   return (
-    <div
-      className={styles.overlay}
-      data-loader-overlay=""
-      data-phase={phase}
-      role="status"
-      aria-live="polite"
-      aria-busy={phase === "loading"}
-    >
+    <div className={styles.overlay} data-loader-overlay="" data-phase={phase} aria-busy={phase === "loading"}>
+      {/* Layered backdrop — all decorative, hidden from assistive tech. */}
       <div className={styles.backdrop} aria-hidden="true">
+        <div className={styles.glow} />
         <div className={styles.grid} />
+        <svg className={styles.weave} viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
+          <path d="M-100,700 C300,520 700,880 1560,540" className={styles.weaveArc} pathLength={100} />
+          <path d="M-100,540 C420,760 900,360 1560,700" className={styles.weaveArc} pathLength={100} />
+          <path d="M-100,320 C380,180 980,520 1560,240" className={styles.weaveArc} pathLength={100} />
+        </svg>
         <div className={styles.particles}>
           {PARTICLES.map((particle, index) => (
             <span
               key={index}
               className={styles.particle}
+              data-variant={particle.variant}
               style={
                 {
                   "--x": particle.x,
@@ -84,40 +178,81 @@ export function StartupSplash() {
             />
           ))}
         </div>
+        <div className={styles.vignette} />
       </div>
 
-      <div className={styles.composition}>
-        <svg className={styles.mark} viewBox="0 0 96 72" aria-hidden="true" focusable="false">
-          <defs>
-            <radialGradient id="splashCoreGradient" cx="35%" cy="30%" r="80%">
-              <stop offset="0%" stopColor="var(--accent-strong)" />
-              <stop offset="100%" stopColor="var(--accent)" />
-            </radialGradient>
-          </defs>
+      {/* Signal system. */}
+      <svg className={styles.signals} viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+        <defs>
+          <radialGradient id="splashNodeGradient" cx="35%" cy="30%" r="80%">
+            <stop offset="0%" stopColor="var(--accent-strong)" />
+            <stop offset="100%" stopColor="var(--accent)" />
+          </radialGradient>
+        </defs>
 
-          {STRANDS.map((d, index) => (
-            <path key={`strand-${index}`} className={styles.glyphStrand} d={d} />
-          ))}
-          <path className={styles.glyphMerge} d="M58,36 L90,36" />
+        <path className={styles.wire} d={OUTBOUND} />
+        <path className={styles.wireDraw} d={OUTBOUND} pathLength={100} style={{ "--delay": "0.55s" } as CSSProperties} />
+        <path className={styles.pulse} d={OUTBOUND} pathLength={100} style={{ "--delay": "0.9s" } as CSSProperties} />
 
-          {STRAND_NODES.map((y, index) => (
-            <circle key={`node-${index}`} className={styles.glyphNode} cx={6} cy={y} r={3} />
-          ))}
-          <circle className={styles.glyphNodeEnd} cx={90} cy={36} r={3.5} />
+        {SIGNALS.map((signal) => {
+          const delay = `${0.05 + signal.index * 0.08}s`;
+          const pulseDelay = `${0.35 + signal.index * 0.12}s`;
+          return (
+            <g key={signal.kind}>
+              <path className={styles.wire} d={signal.d} />
+              <path className={styles.wireDraw} d={signal.d} pathLength={100} style={{ "--delay": delay } as CSSProperties} />
+              <path className={styles.pulse} d={signal.d} pathLength={100} style={{ "--delay": pulseDelay } as CSSProperties} />
+            </g>
+          );
+        })}
 
-          <circle className={styles.glyphCoreRing} cx={58} cy={36} r={7} />
-          <circle className={styles.glyphCore} cx={58} cy={36} r={7} />
-        </svg>
+        {/* Convergence core under the wordmark. */}
+        <circle className={styles.coreHalo} cx={720} cy={470} r={26} />
+        <circle className={styles.core} cx={720} cy={470} r={9} />
 
-        <h1 className={styles.headline}>{renderBrandText(SPLASH_HEADLINE)}</h1>
-        <p className={styles.subtext}>{SPLASH_SUBTEXT}</p>
+        {SIGNALS.map((signal) => (
+          <g
+            key={`node-${signal.kind}`}
+            className={styles.node}
+            transform={`translate(${signal.node[0]}, ${signal.node[1]})`}
+            style={{ "--delay": `${signal.index * 0.09}s` } as CSSProperties}
+          >
+            <circle className={styles.nodeDisc} r={13} />
+            <SignalSymbol kind={signal.kind} />
+          </g>
+        ))}
+        <circle className={styles.replyNode} cx={1330} cy={352} r={5} />
+      </svg>
 
-        <div className={styles.progress} aria-hidden="true">
-          <span className={styles.progressBar} />
+      {/* Focal wordmark. */}
+      <div className={styles.stage}>
+        <Wordmark />
+
+        {/* Segmented readiness readout + rotating stage copy. */}
+        <div className={styles.readout} aria-hidden="true">
+          <div className={styles.track}>
+            {Array.from({ length: 5 }).map((_, i) => (
+              <span key={i} className={styles.segment} style={{ "--i": i } as CSSProperties} />
+            ))}
+            <span className={styles.readPulse} />
+          </div>
         </div>
-
-        <span className={styles.srOnly}>{SPLASH_STATUS_LABEL}</span>
+        <p className={styles.stageCopy} role="status" aria-live="polite">
+          {stageLabel}
+        </p>
       </div>
+
+      {/* Brand workflow labels distributed across the composition. */}
+      <div className={styles.workflow} aria-hidden="true">
+        {WORKFLOW_STEPS.map((step, i) => (
+          <span key={step} className={styles.step} data-step={step.toLowerCase()} style={{ "--i": i } as CSSProperties}>
+            <span className={styles.stepDot} />
+            {step}
+          </span>
+        ))}
+      </div>
+
+      <span className={styles.srOnly}>{SPLASH_STATUS_LABEL}</span>
     </div>
   );
 }

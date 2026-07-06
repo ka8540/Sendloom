@@ -1,42 +1,33 @@
 /*
- * Sendloom startup splash — "Signal Loom".
+ * Sendloom startup splash — "The Outreach Loom".
  *
- * A light, theme-aware boot overlay. All colour comes from the shared
- * globals.css tokens (no hardcoded hex), so dark/light resolve automatically and
- * the synchronous theme boot script means no theme flash. Motion is transform/
- * opacity only, capped, and disabled under prefers-reduced-motion. Nothing here
- * decides dismissal — that is readiness-driven in useStartupReadiness.
+ * A cinematic boot overlay: scattered company/people/message signals flow along
+ * curved paths, weave together beneath a large kinetic SENDLOOM wordmark, and one
+ * clean path continues out (TRACK). All colour comes from globals.css tokens (no
+ * hardcoded hex) so dark/light resolve automatically with no theme flash. Motion
+ * is transform/opacity/stroke-dashoffset only, capped, and disabled under
+ * prefers-reduced-motion. Nothing here decides dismissal — that is readiness +
+ * wall-clock driven in useStartupReadiness.
  */
 
 .overlay {
   --splash-accent: var(--accent);
   --splash-accent-strong: var(--accent-strong);
-  --splash-muted-line: color-mix(in srgb, var(--text) 20%, transparent);
+  --splash-line: color-mix(in srgb, var(--text) 16%, transparent);
+  --splash-wire: color-mix(in srgb, var(--text) 12%, transparent);
 
   position: fixed;
   inset: 0;
   z-index: 9999;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: max(1.5rem, env(safe-area-inset-top)) 1.5rem max(1.5rem, env(safe-area-inset-bottom));
   overflow: hidden;
   background:
-    radial-gradient(90% 70% at 18% 12%, var(--bg-glow-green), transparent 60%),
-    radial-gradient(90% 80% at 88% 16%, var(--bg-glow-blue), transparent 62%),
-    linear-gradient(180deg, var(--bg-start) 0%, var(--bg-end) 100%);
-  opacity: 1;
-  transition: opacity 320ms ease;
+    radial-gradient(120% 90% at 50% 8%, color-mix(in srgb, var(--bg-start) 60%, transparent), transparent 70%),
+    linear-gradient(165deg, var(--bg-start) 0%, var(--bg-end) 62%, color-mix(in srgb, var(--bg-end) 88%, black) 100%);
+  transition: opacity 420ms ease;
   will-change: opacity;
 }
 
-/* Exit: fade out and stop intercepting clicks immediately. */
-.overlay[data-phase="exiting"] {
-  opacity: 0;
-  pointer-events: none;
-}
-
-/* ---- Decorative backdrop -------------------------------------------------- */
+/* ---- Backdrop layers ------------------------------------------------------ */
 
 .backdrop {
   position: absolute;
@@ -44,17 +35,72 @@
   pointer-events: none;
 }
 
+.glow {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(48% 40% at 50% 52%, var(--bg-glow-green), transparent 70%),
+    radial-gradient(60% 50% at 82% 20%, var(--bg-glow-blue), transparent 72%);
+  opacity: 0.9;
+  animation: splashGlow 6s ease-in-out infinite alternate;
+}
+
+@keyframes splashGlow {
+  from {
+    opacity: 0.7;
+    transform: scale(1);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+}
+
 .grid {
   position: absolute;
-  inset: -1px;
+  inset: -2px;
   background-image:
     linear-gradient(to right, var(--loader-grid) 1px, transparent 1px),
     linear-gradient(to bottom, var(--loader-grid) 1px, transparent 1px);
-  background-size: 46px 46px;
-  mask-image: radial-gradient(115% 90% at 50% 42%, black, transparent 76%);
-  -webkit-mask-image: radial-gradient(115% 90% at 50% 42%, black, transparent 76%);
-  opacity: 0.55;
+  background-size: 52px 52px;
+  mask-image: radial-gradient(120% 92% at 50% 46%, black 20%, transparent 82%);
+  -webkit-mask-image: radial-gradient(120% 92% at 50% 46%, black 20%, transparent 82%);
+  opacity: 0.5;
 }
+
+.weave {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.weaveArc {
+  fill: none;
+  stroke: color-mix(in srgb, var(--splash-accent) 22%, transparent);
+  stroke-width: 1.2;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  opacity: 0.5;
+  animation: splashDraw 2.4s ease-out forwards;
+}
+
+.weaveArc:nth-child(2) {
+  animation-delay: 0.2s;
+  stroke: color-mix(in srgb, var(--text) 12%, transparent);
+}
+
+.weaveArc:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+.vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(130% 110% at 50% 46%, transparent 54%, color-mix(in srgb, var(--bg-end) 84%, black) 100%);
+}
+
+/* ---- Particles ------------------------------------------------------------ */
 
 .particles {
   position: absolute;
@@ -74,54 +120,359 @@
   animation: splashDrift var(--duration) ease-in-out var(--delay) infinite;
 }
 
-/* Responsive caps — mirror resolveParticleCount (tablet ~10, mobile ~6). */
+.particle[data-variant="square"] {
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--text) 55%, transparent);
+}
+
+.particle[data-variant="streak"] {
+  width: calc(var(--size) * 6);
+  height: 1px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--splash-accent) 60%, transparent), transparent);
+}
+
+.particle[data-variant="bright"] {
+  background: radial-gradient(circle at 40% 40%, var(--splash-accent-strong), transparent 66%);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--splash-accent) 55%, transparent);
+}
+
 @media (max-width: 1023px) {
-  .particle:nth-child(n + 11) {
+  .particle:nth-child(n + 13) {
     display: none;
   }
 }
 
 @media (max-width: 639px) {
-  .particle:nth-child(n + 7) {
+  .particle:nth-child(n + 8) {
     display: none;
   }
 }
 
 @keyframes splashDrift {
   0% {
-    transform: translate3d(0, 10px, 0) scale(0.7);
+    transform: translate3d(0, 12px, 0) scale(0.7);
     opacity: 0;
   }
-  25% {
+  22% {
     opacity: var(--peak, 0.4);
   }
-  75% {
+  78% {
     opacity: var(--peak, 0.4);
   }
   100% {
-    transform: translate3d(var(--drift-x, 0), -24px, 0) scale(1);
+    transform: translate3d(var(--drift-x, 0), -30px, 0) scale(1);
     opacity: 0;
   }
 }
 
-/* ---- Composition ---------------------------------------------------------- */
+/* ---- Signal system -------------------------------------------------------- */
 
-.composition {
-  position: relative;
+.signals {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   z-index: 1;
+}
+
+.wire {
+  fill: none;
+  stroke: var(--splash-wire);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+.wireDraw {
+  fill: none;
+  stroke: color-mix(in srgb, var(--splash-accent) 70%, transparent);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  animation: splashDraw 0.85s cubic-bezier(0.5, 0, 0.2, 1) var(--delay, 0s) forwards;
+}
+
+.pulse {
+  fill: none;
+  stroke: var(--splash-accent-strong);
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-dasharray: 2 98;
+  stroke-dashoffset: 100;
+  opacity: 0.9;
+  animation: splashPulse 2.3s linear var(--delay, 0s) infinite;
+}
+
+@keyframes splashDraw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes splashPulse {
+  0% {
+    stroke-dashoffset: 100;
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  88% {
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+}
+
+.coreHalo {
+  fill: var(--splash-accent);
+  opacity: 0.14;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: splashCoreHalo 2.8s ease-in-out infinite;
+}
+
+.core {
+  fill: url(#splashNodeGradient);
+  stroke: color-mix(in srgb, var(--splash-accent) 40%, transparent);
+  stroke-width: 1;
+}
+
+@keyframes splashCoreHalo {
+  0%,
+  100% {
+    transform: scale(0.85);
+    opacity: 0.1;
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 0.2;
+  }
+}
+
+.node {
+  opacity: 0;
+  animation: splashNodeIn 0.5s ease-out var(--delay, 0s) forwards;
+}
+
+.nodeDisc {
+  fill: color-mix(in srgb, var(--surface-strong) 80%, transparent);
+  stroke: color-mix(in srgb, var(--splash-accent) 52%, var(--splash-line));
+  stroke-width: 1.6;
+}
+
+.symbolStroke {
+  fill: none;
+  stroke: var(--splash-accent);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.symbolFill {
+  fill: var(--splash-accent);
+}
+
+.replyNode {
+  fill: var(--splash-accent-strong);
+  opacity: 0;
+  animation: splashNodeIn 0.5s ease-out 1s forwards;
+}
+
+@keyframes splashNodeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* ---- Focal stage / wordmark ---------------------------------------------- */
+
+.stage {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1.35rem;
-  text-align: center;
-  max-width: 30rem;
-  animation: splashRise 520ms cubic-bezier(0.22, 1, 0.36, 1);
+  justify-content: center;
+  gap: clamp(1.5rem, 4vh, 2.75rem);
+  padding: 1.5rem;
 }
 
-@keyframes splashRise {
+.wordmark {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  overflow: hidden;
+  padding: 0.1em 0.15em;
+}
+
+.threads {
+  position: absolute;
+  inset: 12% 0;
+  width: 100%;
+  height: 76%;
+  opacity: 0.7;
+}
+
+.thread {
+  fill: none;
+  stroke: color-mix(in srgb, var(--splash-accent) 45%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  animation: splashDraw 1s ease-out 0.35s forwards;
+}
+
+.word {
+  display: inline-flex;
+  font-family: var(--font-loader-body), ui-sans-serif, system-ui, sans-serif;
+  font-weight: 700;
+  font-size: clamp(3rem, 12.5vw, 9.5rem);
+  line-height: 0.9;
+  letter-spacing: -0.02em;
+}
+
+.lead,
+.tail {
+  display: inline-block;
+  opacity: 0;
+  transform: translateY(0.42em);
+  animation: splashLetterIn 0.62s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation-delay: calc(0.08s + var(--i) * 0.055s);
+}
+
+.lead {
+  color: var(--text);
+}
+
+/* LOOM reads constructed: an accent outline rather than a solid fill. */
+.tail {
+  color: transparent;
+  -webkit-text-stroke: 1.6px var(--splash-accent);
+  text-shadow: 0 0 22px color-mix(in srgb, var(--splash-accent) 30%, transparent);
+}
+
+@keyframes splashLetterIn {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(0.42em) scale(0.96);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+/* The accent travelling through the word. */
+.sweep {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 38%,
+    color-mix(in srgb, var(--splash-accent-strong) 55%, transparent) 50%,
+    transparent 62%
+  );
+  transform: translateX(-120%);
+  animation: splashSweep 1.5s cubic-bezier(0.5, 0, 0.2, 1) 0.45s;
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+
+@keyframes splashSweep {
+  to {
+    transform: translateX(120%);
+  }
+}
+
+/* ---- Readout -------------------------------------------------------------- */
+
+.readout {
+  display: flex;
+  justify-content: center;
+}
+
+.track {
+  position: relative;
+  display: flex;
+  gap: 6px;
+  padding: 3px;
+  border-radius: 999px;
+}
+
+.segment {
+  width: clamp(26px, 5vw, 46px);
+  height: 3px;
+  border-radius: 999px;
+  background: var(--splash-line);
+  overflow: hidden;
+  opacity: 0.4;
+  animation: splashSegment 0.5s ease-out forwards;
+  animation-delay: calc(0.35s + var(--i) * 0.16s);
+}
+
+@keyframes splashSegment {
+  to {
+    opacity: 1;
+    background: linear-gradient(90deg, var(--splash-accent), var(--splash-accent-strong));
+  }
+}
+
+.readPulse {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--splash-accent-strong);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--splash-accent) 70%, transparent);
+  animation: splashRead 1.5s ease-in-out infinite;
+}
+
+@keyframes splashRead {
+  0% {
+    transform: translateX(0);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(240px);
+    opacity: 0;
+  }
+}
+
+.stageCopy {
+  margin: 0;
+  font-family: var(--font-loader-body), ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.82rem;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+  animation: splashFadeUp 0.5s ease-out both;
+}
+
+@keyframes splashFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
   }
   to {
     opacity: 1;
@@ -129,134 +480,88 @@
   }
 }
 
-/* ---- Signal Loom mark ----------------------------------------------------- */
+/* ---- Workflow labels ------------------------------------------------------ */
 
-.mark {
-  width: clamp(108px, 26vw, 132px);
-  height: auto;
-  overflow: visible;
-}
-
-.glyphStrand {
-  fill: none;
-  stroke: var(--splash-muted-line);
-  stroke-width: 2;
-  stroke-linecap: round;
-}
-
-.glyphMerge {
-  fill: none;
-  stroke: var(--splash-accent);
-  stroke-width: 2.6;
-  stroke-linecap: round;
-  stroke-dasharray: 6 8;
-  animation: splashFlow 1.5s linear infinite;
-}
-
-@keyframes splashFlow {
-  to {
-    stroke-dashoffset: -28;
-  }
-}
-
-.glyphNode {
-  fill: var(--surface-strong);
-  stroke: var(--splash-muted-line);
-  stroke-width: 1.6;
-}
-
-.glyphNodeEnd {
-  fill: var(--splash-accent);
-  stroke: none;
-}
-
-.glyphCore {
-  fill: url(#splashCoreGradient);
-  stroke: color-mix(in srgb, var(--splash-accent) 45%, transparent);
-  stroke-width: 1;
-}
-
-.glyphCoreRing {
-  fill: none;
-  stroke: var(--splash-accent);
-  transform-box: fill-box;
-  transform-origin: center;
-  opacity: 0;
-  animation: splashPing 2.1s ease-out infinite;
-}
-
-@keyframes splashPing {
-  0% {
-    transform: scale(0.6);
-    opacity: 0.5;
-  }
-  70% {
-    opacity: 0;
-  }
-  100% {
-    transform: scale(1.7);
-    opacity: 0;
-  }
-}
-
-/* ---- Copy ----------------------------------------------------------------- */
-
-.headline {
-  margin: 0;
-  font-family: var(--font-loader-body), ui-sans-serif, system-ui, sans-serif;
-  font-size: clamp(1.35rem, 3.6vw, 1.7rem);
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  color: var(--text);
-}
-
-/* BrandText renders the "loom" of Sendloom in the accent. */
-.headline :global(.word) {
-  color: inherit;
-}
-
-.subtext {
-  margin: 0;
-  font-family: var(--font-loader-body), ui-sans-serif, system-ui, sans-serif;
-  font-size: 0.95rem;
-  line-height: 1.5;
-  color: var(--muted);
-}
-
-/* ---- Indeterminate progress ---------------------------------------------- */
-
-.progress {
-  position: relative;
-  width: min(220px, 70vw);
-  height: 3px;
-  margin-top: 0.35rem;
-  border-radius: 999px;
-  background: var(--splash-muted-line);
-  overflow: hidden;
-}
-
-.progressBar {
+.workflow {
   position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 40%;
-  border-radius: 999px;
-  background: linear-gradient(90deg, transparent, var(--splash-accent), var(--splash-accent-strong));
-  transform: translateX(-120%);
-  animation: splashIndeterminate 1.4s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
 }
 
-@keyframes splashIndeterminate {
-  0% {
-    transform: translateX(-120%);
+.step {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-loader-body), ui-monospace, monospace;
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.28em;
+  color: color-mix(in srgb, var(--text) 62%, transparent);
+  opacity: 0;
+  animation: splashStepIn 0.6s ease-out forwards;
+  animation-delay: calc(0.5s + var(--i) * 0.14s);
+}
+
+.stepDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--splash-accent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--splash-accent) 60%, transparent);
+}
+
+.step[data-step="find"] {
+  top: 17%;
+  left: 9%;
+}
+
+.step[data-step="personalize"] {
+  top: 62%;
+  left: 6%;
+}
+
+.step[data-step="send"] {
+  top: 71%;
+  left: 50%;
+  transform: translateX(-50%);
+  letter-spacing: 0.34em;
+  color: color-mix(in srgb, var(--text) 78%, transparent);
+}
+
+.step[data-step="track"] {
+  top: 29%;
+  right: 8%;
+}
+
+@keyframes splashStepIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
   }
-  100% {
-    transform: translateX(320%);
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
-/* ---- Accessibility helper ------------------------------------------------- */
+.step[data-step="send"] {
+  animation-name: splashStepInCentered;
+}
+
+@keyframes splashStepInCentered {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+/* ---- Screen-reader helper ------------------------------------------------- */
 
 .srOnly {
   position: absolute;
@@ -270,49 +575,148 @@
   border: 0;
 }
 
+/* ---- Exit ----------------------------------------------------------------- */
+
+.overlay[data-phase="exiting"] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.overlay[data-phase="exiting"] .stage {
+  transform: scale(1.03);
+  transition: transform 420ms cubic-bezier(0.5, 0, 0.2, 1);
+}
+
+.overlay[data-phase="exiting"] .glow {
+  transform: scale(1.4);
+  opacity: 0;
+  transition: transform 420ms ease-out, opacity 420ms ease-out;
+}
+
+.overlay[data-phase="exiting"] .signals {
+  opacity: 0;
+  transform: scale(1.05);
+  transition: opacity 320ms ease-out, transform 420ms ease-out;
+}
+
 /* ---- Responsive ----------------------------------------------------------- */
 
-@media (max-width: 640px) {
-  .composition {
-    gap: 1.1rem;
-    max-width: 22rem;
+@media (max-width: 1024px) {
+  .step[data-step="find"] {
+    top: 14%;
+    left: 7%;
   }
-
-  .grid {
-    background-size: 36px 36px;
+  .step[data-step="track"] {
+    top: 24%;
+    right: 6%;
   }
 }
 
-/* ---- Reduced motion: calm, static, still polished ------------------------- */
+@media (max-width: 640px) {
+  .stage {
+    gap: 1.4rem;
+    padding: 1.25rem;
+  }
+
+  .word {
+    font-size: clamp(2.1rem, 16vw, 3.9rem);
+    letter-spacing: -0.015em;
+  }
+
+  .tail {
+    -webkit-text-stroke-width: 1.2px;
+  }
+
+  .grid {
+    background-size: 38px 38px;
+  }
+
+  /* Keep only the two labels that stay clear of the wordmark. */
+  .step[data-step="personalize"],
+  .step[data-step="track"] {
+    display: none;
+  }
+
+  .step[data-step="find"] {
+    top: 12%;
+    left: 8%;
+  }
+
+  .step[data-step="send"] {
+    top: auto;
+    bottom: 16%;
+  }
+
+  .stage {
+    padding-bottom: calc(1.25rem + env(safe-area-inset-bottom));
+  }
+}
+
+/* ---- Reduced motion: full premium composition, no travel ------------------ */
 
 @media (prefers-reduced-motion: reduce) {
-  .composition,
-  .glyphMerge,
-  .glyphCoreRing,
-  .progressBar,
-  .particle {
+  .glow,
+  .weaveArc,
+  .particle,
+  .wireDraw,
+  .pulse,
+  .coreHalo,
+  .node,
+  .replyNode,
+  .lead,
+  .tail,
+  .thread,
+  .sweep,
+  .segment,
+  .readPulse,
+  .stageCopy,
+  .step {
     animation: none !important;
   }
 
-  .particle {
-    opacity: 0.22;
+  /* Everything resolves to its finished, crisp state immediately. */
+  .lead,
+  .tail,
+  .node,
+  .replyNode,
+  .step {
+    opacity: 1;
     transform: none;
   }
 
-  .glyphMerge {
-    stroke-dasharray: none;
+  .wireDraw,
+  .weaveArc,
+  .thread {
+    stroke-dashoffset: 0;
   }
 
-  /* A static, centered hint instead of a sweeping bar. */
-  .progressBar {
-    position: absolute;
-    left: 50%;
-    width: 34%;
-    transform: translateX(-50%);
-    opacity: 0.85;
+  .pulse {
+    display: none;
   }
 
-  .overlay {
-    transition: none;
+  .sweep {
+    display: none;
+  }
+
+  .segment {
+    opacity: 1;
+    background: linear-gradient(90deg, var(--splash-accent), var(--splash-accent-strong));
+  }
+
+  .readPulse {
+    display: none;
+  }
+
+  .particle {
+    opacity: 0.2;
+    transform: none;
+  }
+
+  .overlay,
+  .overlay[data-phase="exiting"] .stage,
+  .overlay[data-phase="exiting"] .glow,
+  .overlay[data-phase="exiting"] .signals {
+    transition: opacity 300ms ease;
+    transform: none;
   }
 }
