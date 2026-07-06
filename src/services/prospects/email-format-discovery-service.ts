@@ -202,12 +202,167 @@ function makeRowsFromMatches(text: string, sourceUrl: string | null): ParsedForm
   return rows;
 }
 
+// Role / functional mailboxes that carry no personal name structure — never a
+// basis for inferring a first/last email pattern.
+const ROLE_LOCAL_PARTS = new Set([
+  "info",
+  "sales",
+  "support",
+  "help",
+  "contact",
+  "admin",
+  "hr",
+  "careers",
+  "jobs",
+  "press",
+  "media",
+  "team",
+  "hello",
+  "hi",
+  "office",
+  "billing",
+  "accounts",
+  "legal",
+  "privacy",
+  "security",
+  "marketing",
+  "noreply",
+  "no-reply",
+  "donotreply",
+  "webmaster",
+  "postmaster",
+  "abuse"
+]);
+
+// Extract candidate work-email addresses from RAW page input (before tag
+// stripping) so `mailto:` hrefs are captured alongside visible-text examples.
+export function extractCandidateEmails(rawInput: string): string[] {
+  const decoded = decodeHtmlEntities(rawInput);
+  const emailRe = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi;
+  const seen = new Set<string>();
+  for (const match of decoded.matchAll(emailRe)) {
+    const email = match[0].trim().toLowerCase().replace(/^mailto:/, "");
+    seen.add(email);
+  }
+  return [...seen];
+}
+
+// Structural pattern of ONE example local part, using an explicit separator only
+// (`.` or `_`). Separatorless forms (jsmith vs johnsmith) are intentionally not
+// inferred — they are ambiguous without the person's real name.
+function structuralPatternForLocalPart(localPart: string): EmailPattern | null {
+  const match = localPart.match(/^([a-z]+)([._])([a-z]+)$/);
+  if (!match) {
+    return null;
+  }
+  const [, first, separator, last] = match;
+  if (separator === ".") {
+    if (first.length >= 2 && last.length >= 2) {
+      return "first.last";
+    }
+    if (first.length === 1 && last.length >= 2) {
+      return "f.last";
+    }
+    if (first.length >= 2 && last.length === 1) {
+      return "first.l";
+    }
+    return null;
+  }
+  // separator === "_"
+  if (first.length >= 2 && last.length >= 2) {
+    return "first_last";
+  }
+  if (first.length === 1 && last.length >= 2) {
+    return "f_last";
+  }
+  return null;
+}
+
+/**
+ * Infer a company email domain + supported pattern from two or more consistent
+ * PUBLIC work-email examples (e.g. a contact/team page with
+ * `jane.doe@acme.com` and `john.smith@acme.com`), when no explicit
+ * bracket-style format table is present. Deterministic, no AI:
+ *
+ *  - only business domains are considered (personal mailboxes are rejected);
+ *  - only separator-based structures are inferred (never ambiguous `flast`);
+ *  - role mailboxes (info@, careers@, …) are excluded;
+ *  - at least two DISTINCT local parts must agree on the same domain + pattern;
+ *  - confidence is MEDIUM (raised to HIGH with three or more agreeing examples).
+ */
+export function inferPatternFromExampleEmails(
+  emails: string[],
+  options: { sourceUrl?: string | null } = {}
+): ParsedFormatRow | null {
+  const byDomain = new Map<string, Map<EmailPattern, Set<string>>>();
+  for (const email of emails) {
+    const at = email.indexOf("@");
+    if (at <= 0) {
+      continue;
+    }
+    const localPart = email.slice(0, at);
+    if (ROLE_LOCAL_PARTS.has(localPart)) {
+      continue;
+    }
+    const domain = normalizeDomain(email.slice(at + 1));
+    if (!domain || !isAllowedBusinessEmailDomain(domain)) {
+      continue;
+    }
+    const pattern = structuralPatternForLocalPart(localPart);
+    if (!pattern) {
+      continue;
+    }
+    if (!byDomain.has(domain)) {
+      byDomain.set(domain, new Map());
+    }
+    const patterns = byDomain.get(domain)!;
+    if (!patterns.has(pattern)) {
+      patterns.set(pattern, new Set());
+    }
+    patterns.get(pattern)!.add(localPart);
+  }
+
+  let best: { domain: string; pattern: EmailPattern; count: number } | null = null;
+  for (const [domain, patterns] of byDomain) {
+    for (const [pattern, localParts] of patterns) {
+      const count = localParts.size;
+      if (count >= 2 && (!best || count > best.count)) {
+        best = { domain, pattern, count };
+      }
+    }
+  }
+  if (!best) {
+    return null;
+  }
+
+  return {
+    sourceName: sourceNameForUrl(options.sourceUrl ?? null),
+    sourceUrl: options.sourceUrl ?? null,
+    patternRaw: best.pattern,
+    pattern: best.pattern,
+    example: `${best.pattern}@${best.domain}`,
+    emailDomain: best.domain,
+    percentage: null,
+    confidence: best.count >= 3 ? "HIGH" : "MEDIUM"
+  };
+}
+
 export function parsePublicEmailFormatEvidence(
   input: string,
   options: { sourceUrl?: string | null } = {}
 ): EmailEvidenceBundle & { rows: ParsedFormatRow[] } {
   const text = htmlToVisibleText(input);
-  const rows = makeRowsFromMatches(text, options.sourceUrl ?? null);
+  let rows = makeRowsFromMatches(text, options.sourceUrl ?? null);
+  // Fallback: when a page has no explicit bracket-style format table, infer the
+  // format from consistent public work-email examples (visible text + mailto:).
+  if (rows.length === 0) {
+    const inferred = inferPatternFromExampleEmails(extractCandidateEmails(input), {
+      sourceUrl: options.sourceUrl ?? null
+    });
+    if (inferred) {
+      rows = [inferred];
+    }
+  }
   const observedAtIso = new Date().toISOString();
 
   const domainEvidence: EmailDomainEvidence[] = rows.map((row) => ({

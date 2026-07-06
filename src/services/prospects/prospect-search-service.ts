@@ -1238,21 +1238,37 @@ export class ProspectSearchService {
       searchId: null
     });
 
-    return this.applyCanonicalCompanyEmailFormat(
+    const candidate: CompanyEmailFormatRecord = {
+      emailDomain: inference.selectedEmailDomain,
+      emailDomainConfidence: inference.emailDomainConfidence,
+      emailDomainEvidence: inference.emailDomainEvidence,
+      emailPattern: inference.selectedPattern,
+      patternConfidence: inference.patternConfidence,
+      patternEvidence: inference.patternEvidence,
+      emailFormatReason: serializeEmailFormatDecisionMetadata(inference.decision),
+      emailFormatDiscoveredAt: new Date()
+    };
+    const candidateUsable = hasUsableCompanyEmailFormat(candidate);
+    const updated = await this.applyCanonicalCompanyEmailFormat(
       userId,
       company.id,
-      {
-        emailDomain: inference.selectedEmailDomain,
-        emailDomainConfidence: inference.emailDomainConfidence,
-        emailDomainEvidence: inference.emailDomainEvidence,
-        emailPattern: inference.selectedPattern,
-        patternConfidence: inference.patternConfidence,
-        patternEvidence: inference.patternEvidence,
-        emailFormatReason: serializeEmailFormatDecisionMetadata(inference.decision),
-        emailFormatDiscoveredAt: new Date()
-      },
+      candidate,
       opts.sourceUrl ? "SOURCE" : "AI"
     );
+    // Privacy-safe outcome: whether THIS action produced a usable format, and
+    // whether the persisted company now has one (a prior valid format is
+    // preserved even when a re-check finds nothing). Counts/booleans only.
+    logDiscoverEmailFormatEvent({
+      companyId: company.id,
+      userId,
+      action: opts.sourceUrl ? "SOURCE_URL" : "AI",
+      providerConfigured: opts.sourceUrl ? true : hasConfiguredEmailFormatDiscovery(),
+      resultStatus: candidateUsable ? "UPDATED" : "NO_EVIDENCE",
+      domainFound: Boolean(inference.selectedEmailDomain),
+      patternFound: Boolean(inference.selectedPattern),
+      companyHasUsableFormat: hasUsableCompanyEmailFormat(updated)
+    });
+    return updated;
   }
 
   async setCompanyEmailInferenceOverride(
@@ -1285,7 +1301,7 @@ export class ProspectSearchService {
       reason: input.reason
     });
 
-    return this.applyCanonicalCompanyEmailFormat(
+    const updated = await this.applyCanonicalCompanyEmailFormat(
       userId,
       input.companyId,
       {
@@ -1300,6 +1316,17 @@ export class ProspectSearchService {
       },
       "MANUAL"
     );
+    logDiscoverEmailFormatEvent({
+      companyId: input.companyId,
+      userId,
+      action: "MANUAL",
+      providerConfigured: true,
+      resultStatus: "UPDATED",
+      domainFound: true,
+      patternFound: true,
+      companyHasUsableFormat: hasUsableCompanyEmailFormat(updated)
+    });
+    return updated;
   }
 
   /**
@@ -1336,7 +1363,19 @@ export class ProspectSearchService {
               { ...candidate, emailFormatAuthority: authority },
               authority
             );
-            const data = companyEmailFormatData(resolved) as Prisma.ProspectCompanyUpdateInput;
+            // Freshness invariant: a failed/empty discovery must NEVER look like a
+            // completed "last checked" result. Only a genuinely USABLE resolved
+            // format may advance `emailFormatDiscoveredAt`; otherwise the company's
+            // prior marker is preserved (null for a never-resolved company). This
+            // is the single choke point for all three write paths — initial search
+            // materialization, Find with AI, and Use source URL — so an empty
+            // provider/AI/source result can no longer poison the company with a
+            // bogus fresh timestamp, block a later retry, or make people look
+            // "checked" while they remain Unavailable.
+            const resolvedForWrite: CompanyEmailFormatRecord = hasUsableCompanyEmailFormat(resolved)
+              ? resolved
+              : { ...resolved, emailFormatDiscoveredAt: target.emailFormatDiscoveredAt ?? null };
+            const data = companyEmailFormatData(resolvedForWrite) as Prisma.ProspectCompanyUpdateInput;
 
             let updatedTarget: ProspectCompany | null = null;
             for (const row of family) {
@@ -1485,6 +1524,39 @@ function logDiscoverIngestionEvent(event: DiscoverIngestionLogEvent): void {
   }
   const line = `[discover-ingestion] Processed provider dataset. ${JSON.stringify(event)}`;
   if (event.itemsReturned > 0 && event.eligiblePeople === 0) {
+    console.warn(line);
+  } else {
+    console.info(line);
+  }
+}
+
+type DiscoverEmailFormatLogEvent = {
+  companyId: string;
+  userId: string;
+  action: "AI" | "SOURCE_URL" | "MANUAL";
+  /** Whether the required discovery provider is configured (never the key). */
+  providerConfigured: boolean;
+  resultStatus: "UPDATED" | "NO_EVIDENCE";
+  domainFound: boolean;
+  patternFound: boolean;
+  /** Whether the persisted company has a usable format after the action. */
+  companyHasUsableFormat: boolean;
+  regeneratedPeople?: number;
+};
+
+/**
+ * Structured, privacy-safe observability for one email-format correction. Logs
+ * only safe booleans/counts — never raw emails, person names, model output,
+ * source-page contents, API keys, or full source URLs. A NO_EVIDENCE outcome
+ * is logged as a warning so a "found nothing" result is diagnosable and can
+ * never be mistaken for a successful format update. Silent in tests.
+ */
+function logDiscoverEmailFormatEvent(event: DiscoverEmailFormatLogEvent): void {
+  if (process.env.NODE_ENV === "test") {
+    return;
+  }
+  const line = `[discover-email-format] ${JSON.stringify(event)}`;
+  if (event.resultStatus === "NO_EVIDENCE" && !event.companyHasUsableFormat) {
     console.warn(line);
   } else {
     console.info(line);

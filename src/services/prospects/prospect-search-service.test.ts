@@ -1934,3 +1934,126 @@ describe("Discover zero-result reprocessing (stored dataset repair)", () => {
     expect(prisma._state.searchPeople).toHaveLength(0);
   });
 });
+
+describe("Discover email-format failure handling (no poisoning)", () => {
+  const AMAT_PROFILE = () => [profile("am1", "Jane", "Doe", "Software Engineer", "Applied Materials")];
+
+  // A source page whose fetch yields NO usable work-email evidence.
+  function emptyPageProvider() {
+    const fetchPage = vi.fn(async () => "<html><body>No email information on this page.</body></html>");
+    return { provider: new EmailFormatDiscoveryService({ searchProvider: null, fetchPage }), fetchPage };
+  }
+
+  // A plain public team page exposing consistent mailto: examples (no bracket table).
+  function mailtoPageProvider() {
+    const fetchPage = vi.fn(async () =>
+      `<ul>
+         <li><a href="mailto:jane.doe@amat.com">Jane Doe</a></li>
+         <li><a href="mailto:john.smith@amat.com">John Smith</a></li>
+       </ul>`
+    );
+    return { provider: new EmailFormatDiscoveryService({ searchProvider: null, fetchPage }), fetchPage };
+  }
+
+  async function seedSearchWithPeople(evidenceProvider?: EmailEvidenceProvider) {
+    const runner: ApifyRunner = { run: vi.fn(async () => ({ runId: "r", datasetId: "d", items: AMAT_PROFILE() })) };
+    const { service } = buildService(
+      prisma,
+      runner,
+      { responses: { role_classification: { classifications: [] } } },
+      evidenceProvider
+    );
+    const created = await service.createSearch(USER_ID, APPLIED_MATERIALS);
+    await service.processSearch(USER_ID, created.id);
+    return service;
+  }
+
+  it("an initial search that finds no email format does not stamp a freshness marker (Rippling repro)", async () => {
+    await seedSearchWithPeople();
+    const company = prisma._state.companies[0];
+    // The core poison: an empty discovery must NOT look like a completed check.
+    expect(company.emailDomain).toBeNull();
+    expect(company.emailPattern).toBeNull();
+    expect(company.emailFormatDiscoveredAt ?? null).toBeNull();
+    const jane = prisma._state.people.find((p) => p.firstName === "Jane")!;
+    expect(jane.emailStatus).toBe("UNAVAILABLE");
+  });
+
+  it("a source-URL refresh with no evidence stays inconclusive and never poisons freshness", async () => {
+    const service = await seedSearchWithPeople();
+    const company = prisma._state.companies[0];
+    const { provider, fetchPage } = emptyPageProvider();
+    // Rebuild a service that shares the SAME prisma state but uses the empty page.
+    const runner: ApifyRunner = { run: vi.fn(async () => ({ runId: "r", datasetId: "d", items: [] })) };
+    const { service: refresher } = buildService(
+      prisma,
+      runner,
+      { responses: { role_classification: { classifications: [] } } },
+      provider
+    );
+
+    const updated = await refresher.refreshCompanyEmailFormat(USER_ID, company.id, "https://acme.test/team");
+
+    expect(fetchPage).toHaveBeenCalled();
+    expect(updated.emailDomain).toBeNull();
+    expect(updated.emailPattern).toBeNull();
+    expect(updated.emailFormatDiscoveredAt ?? null).toBeNull(); // no false "last checked"
+    expect(prisma._state.people.find((p) => p.firstName === "Jane")!.emailStatus).toBe("UNAVAILABLE");
+    void service;
+  });
+
+  it("a source-URL refresh that infers first.last from mailto examples updates the company and regenerates people", async () => {
+    const service = await seedSearchWithPeople();
+    const company = prisma._state.companies[0];
+    const { provider, fetchPage } = mailtoPageProvider();
+    const runner: ApifyRunner = { run: vi.fn(async () => ({ runId: "r", datasetId: "d", items: [] })) };
+    const { service: refresher } = buildService(
+      prisma,
+      runner,
+      { responses: { role_classification: { classifications: [] } } },
+      provider
+    );
+
+    const updated = await refresher.refreshCompanyEmailFormat(USER_ID, company.id, "https://amat.test/team");
+
+    expect(fetchPage).toHaveBeenCalled();
+    expect(updated.emailDomain).toBe("amat.com");
+    expect(updated.emailPattern).toBe("first.last");
+    expect(updated.emailFormatDiscoveredAt).toBeInstanceOf(Date); // a genuine success stamps freshness
+    const jane = prisma._state.people.find((p) => p.firstName === "Jane")!;
+    expect(jane.inferredEmail).toBe("jane.doe@amat.com");
+    expect(jane.emailStatus).not.toBe("VERIFIED");
+    void service;
+  });
+
+  it("an empty source-URL refresh never overwrites an existing manual override", async () => {
+    const service = await seedSearchWithPeople();
+    const company = prisma._state.companies[0];
+    // Manual override first — the one flow the user confirmed works.
+    await service.setCompanyEmailInferenceOverride(USER_ID, {
+      companyId: company.id,
+      emailDomain: "amat.com",
+      emailPattern: "first_last",
+      confidence: "HIGH"
+    });
+    const afterManual = prisma._state.companies[0];
+    expect(afterManual.emailDomain).toBe("amat.com");
+    expect(afterManual.emailFormatAuthority).toBe("MANUAL");
+
+    // A later empty AI/source attempt must preserve the manual format entirely.
+    const { provider } = emptyPageProvider();
+    const runner: ApifyRunner = { run: vi.fn(async () => ({ runId: "r", datasetId: "d", items: [] })) };
+    const { service: refresher } = buildService(
+      prisma,
+      runner,
+      { responses: { role_classification: { classifications: [] } } },
+      provider
+    );
+    const updated = await refresher.refreshCompanyEmailFormat(USER_ID, company.id, "https://acme.test/none");
+
+    expect(updated.emailDomain).toBe("amat.com");
+    expect(updated.emailPattern).toBe("first_last");
+    expect(updated.emailFormatAuthority).toBe("MANUAL");
+    expect(prisma._state.people.find((p) => p.firstName === "Jane")!.inferredEmail).toBe("jane_doe@amat.com");
+  });
+});

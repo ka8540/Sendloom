@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   EmailFormatDiscoveryService,
+  extractCandidateEmails,
+  inferPatternFromExampleEmails,
   normalizePublicEmailPattern,
   parsePublicEmailFormatEvidence
 } from "@/services/prospects/email-format-discovery-service";
@@ -65,6 +67,68 @@ describe("parsePublicEmailFormatEvidence", () => {
     const bundle = parsePublicEmailFormatEvidence("[first]_[last] | jane_doe@gmail.com | 99%");
     expect(bundle.rows).toHaveLength(0);
     expect(bundle.domainEvidence).toHaveLength(0);
+  });
+
+  it("infers first.last from consistent mailto: work-email examples on a plain page", () => {
+    const html = `
+      <html><body>
+        <ul>
+          <li><a href="mailto:jane.doe@acme.com">Jane Doe</a></li>
+          <li><a href="mailto:john.smith@acme.com">John Smith</a></li>
+          <li><a href="mailto:maria.lee@acme.com">Maria Lee</a></li>
+        </ul>
+        <a href="mailto:careers@acme.com">Careers</a>
+      </body></html>`;
+    const bundle = parsePublicEmailFormatEvidence(html, { sourceUrl: "https://acme.com/team" });
+
+    expect(bundle.rows).toHaveLength(1);
+    expect(bundle.rows[0]).toMatchObject({ pattern: "first.last", emailDomain: "acme.com", confidence: "HIGH" });
+    expect(bundle.patternEvidence?.[0]).toMatchObject({ pattern: "first.last", emailDomain: "acme.com" });
+  });
+
+  it("prefers an explicit bracket table over example inference when both exist", () => {
+    const bundle = parsePublicEmailFormatEvidence(
+      `${ESRI_ROCKETREACH_TEXT}\n<a href="mailto:jane.doe@esri.com">x</a>\n<a href="mailto:john.smith@esri.com">y</a>`,
+      { sourceUrl: "https://rocketreach.co/esri-email-format" }
+    );
+    // The stated table (flast) wins; inference is only a fallback.
+    expect(bundle.rows[0]).toMatchObject({ pattern: "flast", emailDomain: "esri.com" });
+  });
+});
+
+describe("extractCandidateEmails", () => {
+  it("captures mailto hrefs and visible-text emails, de-duplicated and lowercased", () => {
+    const emails = extractCandidateEmails(
+      `<a href="mailto:Jane.Doe@Acme.com">Jane</a> contact john.smith@acme.com or JANE.DOE@ACME.COM`
+    );
+    expect(emails.sort()).toEqual(["jane.doe@acme.com", "john.smith@acme.com"]);
+  });
+});
+
+describe("inferPatternFromExampleEmails", () => {
+  it("requires two distinct agreeing examples on the same business domain", () => {
+    expect(inferPatternFromExampleEmails(["jane.doe@acme.com"])).toBeNull();
+    expect(
+      inferPatternFromExampleEmails(["jane.doe@acme.com", "john.smith@acme.com"])
+    ).toMatchObject({ pattern: "first.last", emailDomain: "acme.com", confidence: "MEDIUM" });
+  });
+
+  it("infers separator variants (f.last, first_last)", () => {
+    expect(
+      inferPatternFromExampleEmails(["j.doe@acme.com", "m.smith@acme.com"])
+    ).toMatchObject({ pattern: "f.last" });
+    expect(
+      inferPatternFromExampleEmails(["jane_doe@acme.com", "john_smith@acme.com"])
+    ).toMatchObject({ pattern: "first_last" });
+  });
+
+  it("never infers ambiguous separatorless forms, personal domains, or role mailboxes", () => {
+    // jsmith / johnsmith are ambiguous without names → no inference.
+    expect(inferPatternFromExampleEmails(["jsmith@acme.com", "mdoe@acme.com"])).toBeNull();
+    // personal domains excluded.
+    expect(inferPatternFromExampleEmails(["jane.doe@gmail.com", "john.smith@gmail.com"])).toBeNull();
+    // role mailboxes carry no name structure.
+    expect(inferPatternFromExampleEmails(["info@acme.com", "sales@acme.com"])).toBeNull();
   });
 });
 

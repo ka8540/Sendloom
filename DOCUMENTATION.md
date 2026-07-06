@@ -1331,6 +1331,44 @@ repairs true same-user/same-domain duplicate companies by repointing searches an
 people before removing duplicate company/position rows; it never deletes people
 or searches and does not merge different domains.
 
+**Failed / empty discovery must never poison the company (freshness invariant).**
+A `Find with AI`, `Use source URL`, or initial-search email-format resolution
+that finds no usable evidence must NOT look like a completed result.
+`applyCanonicalCompanyEmailFormat` is the single choke point for all three write
+paths, and it only advances `emailFormatDiscoveredAt` (the "last checked"
+freshness marker) when the *resolved* format is genuinely usable
+(`hasUsableCompanyEmailFormat`). An empty result therefore: preserves any
+existing valid format, leaves `emailFormatDiscoveredAt` untouched (null for a
+never-resolved company, so the UI never shows a bogus "last checked" date on an
+`Unavailable` format), never blocks a later retry, and never marks people as a
+completed `UNAVAILABLE` state. Each correction emits one privacy-safe
+`[discover-email-format]` log line (action, `providerConfigured`,
+`resultStatus` `UPDATED`/`NO_EVIDENCE`, and safe booleans — never emails, names,
+model output, page contents, or keys); a `NO_EVIDENCE` outcome that leaves the
+company without a format is logged as a warning so it is diagnosable. AI that is
+not configured (no `OPENAI_API_KEY`, provider `none`, or the web-search flag
+off) returns `NOT_CONFIGURED` in-app rather than silently persisting
+`Unavailable`; `Use source URL` and manual override never depend on AI.
+
+**Source-URL parser.** `Use source URL` fetches the page server-side (the same
+conservative SSRF-guarded fetcher) and first parses explicit bracket-style
+format tables (RocketReach/Hunter style). When a page has no such table, it
+falls back to inferring the domain + pattern from two or more consistent public
+work-email examples drawn from visible text and `mailto:` hrefs — separator-based
+structures only (`first.last`, `first_last`, `f.last`, `f_last`, `first.l`; the
+ambiguous separatorless `flast`/`firstlast` are never inferred), personal
+mailboxes and role accounts (`info@`, `careers@`, …) excluded, at MEDIUM
+confidence (HIGH with three or more agreeing examples). If nothing usable is
+found it reports "No supported email format was found on that page" and persists
+nothing.
+
+**Repairing already-poisoned companies.** `scripts/repair-email-format-freshness.ts`
+(`--scan` bounded to the newest 100, or explicit `--companies <ids>`; dry-run by
+default, `--apply` to write) clears only the false-positive
+`emailFormatDiscoveredAt`/authority markers on companies that have people but no
+usable format. It never invents a domain/pattern, never reruns Apify, never
+consumes Discover quota, never touches people rows, and is idempotent.
+
 ### 23.2.2 Daily usage limits (Discover quota)
 
 Discover enforces a fixed, server-side product quota that is independent of (and
