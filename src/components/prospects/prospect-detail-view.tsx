@@ -32,7 +32,6 @@ import {
 
 import { AppConfirmDialog } from "@/components/app-confirm-dialog";
 import { CircularCloseButton } from "@/components/circular-close-button";
-import { ProspectProcessingExperience } from "@/components/prospects/prospect-processing-experience";
 
 import {
   ADD_MORE_DISCOVER_PEOPLE_MUTATION,
@@ -47,7 +46,6 @@ import {
   PREPARE_PROSPECT_EXPORT_MUTATION,
   PROCESS_SEARCH_MUTATION,
   PROSPECT_SEARCH_BY_ID_QUERY,
-  PROSPECT_SEARCH_STATUS_QUERY,
   REFRESH_COMPANY_EMAIL_FORMAT_MUTATION,
   REVIEW_PROSPECT_SELECTION_MUTATION,
   SET_COMPANY_EMAIL_INFERENCE_OVERRIDE_MUTATION,
@@ -418,56 +416,6 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     void loadQuota();
   }, [activeCategory, loadDetail, loadQuota]);
 
-  // Authoritative, low-cost status reconcile for the processing experience's
-  // background poller. It ONLY reads status (never starts/restarts work), so
-  // returning to the tab, refocusing, or reconnecting can safely call it. On the
-  // transition to READY it triggers the full detail/company/people load once.
-  // Returns true on a clean sync and false on a transient failure (drives the
-  // poller's backoff); it never marks the operation failed and never throws.
-  const syncSearchStatus = useCallback(async (): Promise<boolean> => {
-    const result = await prospectGraphql<{
-      prospectSearch: Pick<
-        ProspectSearchNode,
-        "id" | "status" | "errorCode" | "errorTitle" | "errorMessage" | "retryable"
-      > | null;
-    }>(PROSPECT_SEARCH_STATUS_QUERY, { id: searchId });
-
-    if (result.disabled) {
-      setDisabled(true);
-      return true;
-    }
-    if (result.error || !result.data) {
-      // A transient network/offline blip — never a job failure. Signal the
-      // poller to back off; the operation keeps running server-side.
-      return false;
-    }
-    const node = result.data.prospectSearch;
-    if (!node) {
-      setNotFound(true);
-      return true;
-    }
-
-    const becameReady = node.status === "READY";
-    setSearch((prev) =>
-      prev
-        ? {
-            ...prev,
-            status: node.status,
-            errorCode: node.errorCode,
-            errorTitle: node.errorTitle,
-            errorMessage: node.errorMessage,
-            retryable: node.retryable
-          }
-        : prev
-    );
-    if (becameReady) {
-      // Load the company + people exactly once, on completion.
-      await loadDetail({ category: activeCategory });
-      void loadQuota();
-    }
-    return true;
-  }, [activeCategory, loadDetail, loadQuota, searchId]);
-
   const handleProcess = useCallback(async () => {
     // Guard against a double-click launching a second processing run — the
     // backend is also idempotent (idempotency key + per-fingerprint lock + quota),
@@ -484,14 +432,9 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     setProcessing(true);
     setActionError(null);
     setActionNotice(null);
-    // keepalive lets the browser finish this request even if the tab is closed
-    // or the user navigates away, so the server-side pipeline runs to
-    // completion. The live progress is driven by the status poller, not by this
-    // response — so leaving the tab never stops or restarts the operation.
     const result = await prospectGraphql<{ processProspectSearch: { id: string; status: string } }>(
       PROCESS_SEARCH_MUTATION,
-      { id: search.id, idempotencyKey },
-      { keepalive: true }
+      { id: search.id, idempotencyKey }
     );
     setProcessing(false);
     if (result.disabled) {
@@ -1106,19 +1049,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
         </div>
       )}
 
-      {(selectedView === "processing" || selectedView === "failed") && (
-        <ProspectProcessingExperience
-          search={search}
-          quota={quota}
-          starting={processing}
-          companyName={search.company?.name ?? null}
-          onStart={handleProcess}
-          onCancel={handleCancel}
-          reconcile={syncSearchStatus}
-        />
-      )}
-
-      {selectedView === "canceled" && (
+      {(selectedView === "processing" || selectedView === "canceled" || selectedView === "failed") && (
         <StatusCard
           search={search}
           quota={quota}
