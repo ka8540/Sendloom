@@ -1252,7 +1252,9 @@ The primary email-format discovery path is **AI web search**. When
 `PROSPECT_EMAIL_FORMAT_WEB_SEARCH_ENABLED=true`, `PROSPECT_AI_ENABLED=true`, and
 `OPENAI_API_KEY` is set, `OpenAIEmailFormatDiscoveryService` calls **GPT-5.5 via
 the OpenAI Responses API with the built-in `web_search` tool** (model overridable
-with `PROSPECT_AI_MODEL`; defaults to `gpt-5.5`). Ambiguous stored/source-URL
+with `PROSPECT_AI_MODEL`; defaults to `gpt-5.5`). The request sets
+`tool_choice: "required"`, and diagnostics verify that a `web_search_call`
+output item actually occurred. Ambiguous stored/source-URL
 claims may instead use the compact structured resolver. Neither path uses Chat
 Completions, and no Serper/Brave/Google CSE is added to the primary path.
 
@@ -1269,11 +1271,12 @@ The web-search response and ambiguity resolver both use strict JSON schemas with
 supported pattern enums, confidence enums, source counts, and a decision code;
 they do not request or store a `reasonSummary`, narrative, quote, rationale, or
 chain-of-thought. Resolver input is capped at five unique structured sources,
-web-search output is capped at 400 tokens, and ambiguity-resolution output at 300
-tokens. Invalid structured output receives at most one JSON-only correction
+web-search output is capped at 1,600 tokens (enough for the evidence schema
+without truncating JSON), and ambiguity-resolution output at 300 tokens. Invalid
+structured output receives at most one JSON-only correction
 attempt using the same compact payload; transport failures are not retried as
-validation failures. A second invalid response becomes insufficient evidence /
-Needs review.
+validation failures. Provider/configuration/auth/rate-limit/network/response/
+parser outcomes remain typed and are never collapsed into an empty object.
 
 `validateDiscoveryResult` rejects unsupported patterns, personal/aggregator
 domains (gmail, yahoo, outlook, icloud, rocketreach.co, hunter.io, linkedin.com,
@@ -1293,6 +1296,14 @@ cache hit/miss, whether AI ran, and decision code — never prompts, source-page
 content, private people data, generated email lists, or credentials. Per-user
 hour/day limits remain (`PROSPECT_EMAIL_FORMAT_AI_HOURLY_LIMIT` /
 `PROSPECT_EMAIL_FORMAT_AI_DAILY_LIMIT`, default 5/20).
+
+People-search caching and email-format caching are independent. A fresh shared
+people cache entry may be reused without Apify, but a missing, stale, or
+transiently-failed format still runs format discovery before user records are
+materialized. `FOUND` is cached for 30 days, genuine `NO_EVIDENCE` for one day,
+and configuration/auth/rate-limit/network/provider/parser failures are not
+reusable negative cache hits. Retrying format discovery neither starts Apify nor
+consumes another Discover quota slot.
 
 **Fallbacks.** Pasting a specific public **source URL** routes to the deterministic
 `EmailFormatDiscoveryService` parser (no web search runs); a **manual override**
@@ -1343,12 +1354,14 @@ never-resolved company, so the UI never shows a bogus "last checked" date on an
 `Unavailable` format), never blocks a later retry, and never marks people as a
 completed `UNAVAILABLE` state. Each correction emits one privacy-safe
 `[discover-email-format]` log line (action, `providerConfigured`,
-`resultStatus` `UPDATED`/`NO_EVIDENCE`, and safe booleans — never emails, names,
+the typed `resultStatus`, and safe booleans — never emails, names,
 model output, page contents, or keys); a `NO_EVIDENCE` outcome that leaves the
 company without a format is logged as a warning so it is diagnosable. AI that is
 not configured (no `OPENAI_API_KEY`, provider `none`, or the web-search flag
 off) returns `NOT_CONFIGURED` in-app rather than silently persisting
 `Unavailable`; `Use source URL` and manual override never depend on AI.
+The company GraphQL surface exposes the typed discovery status/reason so the UI
+distinguishes genuine no-evidence from provider/configuration/parser failures.
 
 **Source-URL parser.** `Use source URL` fetches the page server-side (the same
 conservative SSRF-guarded fetcher) and first parses explicit bracket-style

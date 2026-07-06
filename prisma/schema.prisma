@@ -538,6 +538,11 @@ model ProspectCompany {
   // When the email format was last discovered/inferred. Drives the cache that
   // avoids paying for AI web search again within the freshness window.
   emailFormatDiscoveredAt DateTime?
+  // Typed outcome of the most recent automatic/source/manual discovery. This
+  // keeps provider/config/parser failures distinct from genuine no-evidence.
+  emailFormatDiscoveryStatus String   @default("NOT_ATTEMPTED")
+  emailFormatDiscoveryReason String?
+  emailFormatDiscoveryAt     DateTime?
   createdAt               DateTime  @default(now())
   updatedAt               DateTime  @updatedAt
 
@@ -753,6 +758,12 @@ model DiscoverSearchCache {
   patternConfidence     String    @default("UNAVAILABLE")
   patternEvidence       Json?
   emailFormatReason     String?
+  // Email-format discovery has its own state/TTL; people-cache freshness must
+  // never suppress a missing/stale/transiently-failed format retry.
+  emailFormatDiscoveryStatus    String   @default("NOT_ATTEMPTED")
+  emailFormatDiscoveryReason    String?
+  emailFormatDiscoveryAt        DateTime?
+  emailFormatDiscoveryExpiresAt DateTime?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
@@ -761,6 +772,7 @@ model DiscoverSearchCache {
   @@index([companyKey])
   @@index([expiresAt])
   @@index([status])
+  @@index([emailFormatDiscoveryStatus])
 }
 
 // One normalized, public professional record inside a shared cache entry. No

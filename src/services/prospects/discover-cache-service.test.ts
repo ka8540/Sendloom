@@ -160,6 +160,49 @@ describe("DiscoverSearchCacheService cache behavior", () => {
     expect(result.dataset.people[0].sourceProfileId).toBe("1");
   });
 
+  it("updates email-format state without rerunning or replacing cached people", async () => {
+    const provider = vi.fn(async () => dataset([cachePerson("1"), cachePerson("2")]));
+    const service = buildService();
+    const seeded = await service.getOrRefresh(params(FINGERPRINT, provider));
+
+    await service.updateEmailFormat({
+      cacheId: seeded.cacheId!,
+      format: {
+        ...seeded.dataset.emailFormat,
+        emailDomain: null,
+        emailPattern: null,
+        emailFormatDiscoveryStatus: "NO_EVIDENCE",
+        emailFormatDiscoveryReason: "No public email-format evidence was found.",
+        emailFormatDiscoveryAt: new Date(nowMs)
+      }
+    });
+
+    expect(provider).toHaveBeenCalledTimes(1);
+    expect(prisma._state.discoverCachePeople).toHaveLength(2);
+    expect(prisma._state.discoverCache[0].emailFormatDiscoveryStatus).toBe("NO_EVIDENCE");
+    expect(prisma._state.discoverCache[0].emailFormatDiscoveryExpiresAt.getTime() - nowMs).toBe(DAY_MS);
+  });
+
+  it("does not cache a transient provider failure as no evidence", async () => {
+    const service = buildService();
+    const seeded = await service.getOrRefresh(params(FINGERPRINT, async () => dataset([cachePerson("1")])));
+
+    await service.updateEmailFormat({
+      cacheId: seeded.cacheId!,
+      format: {
+        ...seeded.dataset.emailFormat,
+        emailDomain: null,
+        emailPattern: null,
+        emailFormatDiscoveryStatus: "RATE_LIMITED",
+        emailFormatDiscoveryReason: "The provider is temporarily rate-limited.",
+        emailFormatDiscoveryAt: new Date(nowMs)
+      }
+    });
+
+    expect(prisma._state.discoverCache[0].emailFormatDiscoveryStatus).toBe("RATE_LIMITED");
+    expect(prisma._state.discoverCache[0].emailFormatDiscoveryExpiresAt).toBeNull();
+  });
+
   it("refreshes through the provider when the cache is stale (#9) and replaces rows atomically (#10)", async () => {
     const service = buildService();
     await service.getOrRefresh(params(FINGERPRINT, async () => dataset([cachePerson("1"), cachePerson("2")])));

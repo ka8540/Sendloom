@@ -18,6 +18,23 @@ describe("generateEmail (deterministic)", () => {
     expect(generateEmail({ ...base, pattern: "f.last" })).toBe("j.doe@apple.com");
   });
 
+  it.each([
+    ["first", "jane@apple.com"],
+    ["last", "doe@apple.com"],
+    ["firstlast", "janedoe@apple.com"],
+    ["first.last", "jane.doe@apple.com"],
+    ["first_last", "jane_doe@apple.com"],
+    ["flast", "jdoe@apple.com"],
+    ["f.last", "j.doe@apple.com"],
+    ["f_last", "j_doe@apple.com"],
+    ["firstl", "janed@apple.com"],
+    ["first.l", "jane.d@apple.com"],
+    ["lastf", "doej@apple.com"],
+    ["last.first", "doe.jane@apple.com"]
+  ])("supports canonical pattern %s", (pattern, expected) => {
+    expect(generateEmail({ firstName: "Jane", lastName: "Doe", domain: "apple.com", pattern })).toBe(expected);
+  });
+
   it("generates recruiter addresses from the same company pattern", () => {
     expect(
       generateEmail({ firstName: "Christy", lastName: "Stouffer", domain: "walmart.com", pattern: "first.last" })

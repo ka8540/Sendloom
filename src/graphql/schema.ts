@@ -54,6 +54,18 @@ export const typeDefs = /* GraphQL */ `
     UNAVAILABLE
   }
 
+  enum EmailFormatDiscoveryStatus {
+    NOT_ATTEMPTED
+    FOUND
+    NO_EVIDENCE
+    NOT_CONFIGURED
+    AUTH_ERROR
+    RATE_LIMITED
+    NETWORK_ERROR
+    BAD_PROVIDER_RESPONSE
+    PARSER_REJECTED_RESPONSE
+  }
+
   enum ProspectSelectionMode {
     EXPLICIT
     ALL_MATCHING
@@ -106,6 +118,9 @@ export const typeDefs = /* GraphQL */ `
     patternEvidence: [EmailPatternEvidence!]!
     emailFormatReason: String
     emailFormatDiscoveredAt: DateTime
+    emailFormatDiscoveryStatus: EmailFormatDiscoveryStatus!
+    emailFormatDiscoveryReason: String
+    emailFormatDiscoveryAt: DateTime
     positions: [CompanyPosition!]!
     peopleCount: Int!
     emailStatusCounts: [CompanyEmailStatusCount!]!

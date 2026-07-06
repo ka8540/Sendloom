@@ -1,6 +1,7 @@
 import { type ConfidenceLevel, isEmailPattern } from "@/lib/prospect-enums";
 import {
   isAllowedBusinessEmailDomain,
+  EMAIL_FORMAT_DISCOVERY_STATUSES,
   type EmailDomainEvidence,
   type EmailPatternEvidence
 } from "@/services/prospects/email-domain-service";
@@ -19,6 +20,9 @@ export type CompanyEmailFormatRecord = {
   emailFormatReason: string | null;
   emailFormatAuthority?: string | null;
   emailFormatDiscoveredAt?: Date | null;
+  emailFormatDiscoveryStatus?: string | null;
+  emailFormatDiscoveryReason?: string | null;
+  emailFormatDiscoveryAt?: Date | string | null;
 };
 
 const AUTHORITY_RANK: Record<CompanyEmailFormatAuthority, number> = {
@@ -99,7 +103,22 @@ export function resolveCompanyEmailFormatUpdate(
   const candidateUsable = hasUsableCompanyEmailFormat(candidate);
 
   if (!candidateUsable) {
-    return currentUsable ? current : candidate;
+    if (!currentUsable) {
+      return candidate;
+    }
+    const hasTypedOutcome = Boolean(
+      candidate.emailFormatDiscoveryStatus ||
+        candidate.emailFormatDiscoveryReason ||
+        candidate.emailFormatDiscoveryAt
+    );
+    return hasTypedOutcome
+      ? {
+          ...current,
+          emailFormatDiscoveryStatus: candidate.emailFormatDiscoveryStatus ?? current.emailFormatDiscoveryStatus,
+          emailFormatDiscoveryReason: candidate.emailFormatDiscoveryReason ?? null,
+          emailFormatDiscoveryAt: candidate.emailFormatDiscoveryAt ?? current.emailFormatDiscoveryAt
+        }
+      : current;
   }
   if (!currentUsable) {
     return candidate;
@@ -134,6 +153,15 @@ export function companyEmailFormatData(format: CompanyEmailFormatRecord) {
     patternEvidence: (format.patternEvidence ?? null) as EmailPatternEvidence[] | null,
     emailFormatReason: format.emailFormatReason,
     emailFormatAuthority: inferCompanyEmailFormatAuthority(format),
-    emailFormatDiscoveredAt: format.emailFormatDiscoveredAt ?? null
+    emailFormatDiscoveredAt: format.emailFormatDiscoveredAt ?? null,
+    emailFormatDiscoveryStatus:
+      format.emailFormatDiscoveryStatus === "NOT_ATTEMPTED" ||
+      (EMAIL_FORMAT_DISCOVERY_STATUSES as readonly string[]).includes(format.emailFormatDiscoveryStatus ?? "")
+        ? format.emailFormatDiscoveryStatus
+        : hasUsableCompanyEmailFormat(format)
+          ? "FOUND"
+          : "NOT_ATTEMPTED",
+    emailFormatDiscoveryReason: format.emailFormatDiscoveryReason ?? null,
+    emailFormatDiscoveryAt: format.emailFormatDiscoveryAt ? new Date(format.emailFormatDiscoveryAt) : null
   };
 }

@@ -596,13 +596,17 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
       // Success closes the editor and refreshes the displayed evidence.
       setFormatActionMode("none");
       setFormatSourceUrl("");
-      await reloadCompanyPeople(result.data.refreshCompanyEmailFormat);
-      setActionNotice({
-        message:
-          result.data.refreshCompanyEmailFormat.emailDomain && result.data.refreshCompanyEmailFormat.emailPattern
-            ? "Email format refreshed."
-            : "Evidence remains inconclusive. Review the format manually."
-      });
+      const refreshedCompany = result.data.refreshCompanyEmailFormat;
+      await reloadCompanyPeople(refreshedCompany);
+      const message = emailFormatDiscoveryMessage(
+        refreshedCompany,
+        Boolean(refreshedCompany.emailDomain && refreshedCompany.emailPattern)
+      );
+      if (isEmailFormatProviderFailure(refreshedCompany)) {
+        setActionError(message);
+      } else {
+        setActionNotice({ message });
+      }
     },
     [refreshingFormat, reloadCompanyPeople]
   );
@@ -632,13 +636,17 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
         setActionError(result.error ?? "Could not find the email format with AI.");
         return;
       }
-      await reloadCompanyPeople(result.data.discoverCompanyEmailFormat);
-      setActionNotice({
-        message:
-          result.data.discoverCompanyEmailFormat.emailDomain && result.data.discoverCompanyEmailFormat.emailPattern
-            ? "Email format refreshed."
-            : "Evidence remains inconclusive. Review the format manually."
-      });
+      const discoveredCompany = result.data.discoverCompanyEmailFormat;
+      await reloadCompanyPeople(discoveredCompany);
+      const message = emailFormatDiscoveryMessage(
+        discoveredCompany,
+        Boolean(discoveredCompany.emailDomain && discoveredCompany.emailPattern)
+      );
+      if (isEmailFormatProviderFailure(discoveredCompany)) {
+        setActionError(message);
+      } else {
+        setActionNotice({ message });
+      }
     },
     [refreshingFormat, reloadCompanyPeople]
   );
@@ -1447,6 +1455,34 @@ function ConfidenceIndicator({ level }: { level: ConfidenceLevel }) {
   );
 }
 
+function emailFormatDiscoveryMessage(company: CompanyDetail, hasEmailFormat: boolean): string {
+  if (hasEmailFormat || company.emailFormatDiscoveryStatus === "FOUND") {
+    return "Email format discovered successfully from public evidence. Generated addresses remain inferred.";
+  }
+  switch (company.emailFormatDiscoveryStatus) {
+    case "NO_EVIDENCE":
+      return "No public email-format evidence was found.";
+    case "NOT_CONFIGURED":
+      return "AI email-format discovery is not configured.";
+    case "AUTH_ERROR":
+      return "The AI provider rejected the email-format request.";
+    case "RATE_LIMITED":
+      return "The AI provider is temporarily rate-limited. Email-format discovery will be retried.";
+    case "NETWORK_ERROR":
+      return "The AI provider could not be reached. Email-format discovery will be retried.";
+    case "BAD_PROVIDER_RESPONSE":
+      return "The AI provider returned an unusable response. Email-format discovery will be retried.";
+    case "PARSER_REJECTED_RESPONSE":
+      return "The provider response could not be parsed safely. Email-format discovery will be retried.";
+    default:
+      return "Email-format discovery has not completed yet.";
+  }
+}
+
+function isEmailFormatProviderFailure(company: CompanyDetail): boolean {
+  return !["NOT_ATTEMPTED", "FOUND", "NO_EVIDENCE"].includes(company.emailFormatDiscoveryStatus);
+}
+
 function EmailFormatPanel({
   company,
   loading,
@@ -1510,6 +1546,7 @@ function EmailFormatPanel({
     company.patternEvidence[0] ??
     null;
   const hasEmailFormat = Boolean(company.emailDomain && company.emailPattern);
+  const discoveryMessage = emailFormatDiscoveryMessage(company, hasEmailFormat);
   const evidenceSummary = emailFormatEvidenceSummary({
     emailFormatReason: company.emailFormatReason,
     emailDomainConfidence: company.emailDomainConfidence,
@@ -1532,9 +1569,7 @@ function EmailFormatPanel({
             <AtSign aria-hidden="true" className={styles.panelTitleIcon} /> Email format
           </h2>
           <p className={styles.panelSubtitle}>
-            {hasEmailFormat
-              ? "Selected from public evidence. Generated addresses stay inferred until verified."
-              : "No format selected yet — find it with AI web search, a public source URL, or set it manually."}
+            {discoveryMessage}
           </p>
         </div>
         {hasEmailFormat && (
@@ -1594,9 +1629,7 @@ function EmailFormatPanel({
             )}
           </div>
         ) : (
-          <span className={styles.metaHint}>
-            No email format found yet. Use AI web search, paste a public source URL, or set it manually.
-          </span>
+          <span className={styles.metaHint}>{discoveryMessage}</span>
         )}
         <span className={styles.evidenceAgreement}>{evidenceSummary}</span>
       </div>

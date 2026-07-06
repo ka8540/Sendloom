@@ -609,10 +609,18 @@ export class EmailFormatDiscoveryService implements EmailEvidenceProvider {
   async findEvidence(input: EmailEvidenceProviderInput): Promise<EmailEvidenceBundle> {
     const bundles: EmailEvidenceBundle[] = [];
     const fetchPage = this.options.fetchPage ?? safeFetchPublicText;
+    let providerFailed = false;
 
     if (input.sourceUrl) {
-      const text = await fetchPage(input.sourceUrl);
-      bundles.push(parsePublicEmailFormatEvidence(text, { sourceUrl: input.sourceUrl }));
+      try {
+        const text = await fetchPage(input.sourceUrl);
+        bundles.push(parsePublicEmailFormatEvidence(text, { sourceUrl: input.sourceUrl }));
+      } catch (error) {
+        return {
+          discoveryStatus: error instanceof TypeError ? "NETWORK_ERROR" : "BAD_PROVIDER_RESPONSE",
+          discoveryReason: "The public email-format source could not be retrieved safely."
+        };
+      }
     }
 
     const provider = this.options.searchProvider ?? createConfiguredEmailFormatSearchProvider();
@@ -620,7 +628,17 @@ export class EmailFormatDiscoveryService implements EmailEvidenceProvider {
       if (!input.sourceUrl && this.options.warnWhenUnconfigured !== false) {
         console.warn("[prospect-email-discovery] No web search provider configured");
       }
-      return mergeBundles(bundles);
+      const merged = mergeBundles(bundles);
+      const found = Boolean((merged.domainEvidence?.length ?? 0) && (merged.patternEvidence?.length ?? 0));
+      return {
+        ...merged,
+        discoveryStatus: found ? "FOUND" : input.sourceUrl ? "NO_EVIDENCE" : "NOT_CONFIGURED",
+        discoveryReason: found
+          ? null
+          : input.sourceUrl
+            ? "No public email-format evidence was found at the supplied source."
+            : "No deterministic public-search provider is configured."
+      };
     }
 
     const queries = buildEmailFormatSearchQueries(input.companyName, normalizeDomain(input.officialWebsiteDomain));
@@ -630,6 +648,7 @@ export class EmailFormatDiscoveryService implements EmailEvidenceProvider {
         results = await provider.search(query);
       } catch (error) {
         console.warn("[prospect-email-discovery] search failed", error instanceof Error ? error.message : error);
+        providerFailed = true;
         continue;
       }
       bundles.push(...results.map(snippetEvidence));
@@ -639,11 +658,22 @@ export class EmailFormatDiscoveryService implements EmailEvidenceProvider {
           bundles.push(parsePublicEmailFormatEvidence(text, { sourceUrl: url }));
         } catch (error) {
           console.warn("[prospect-email-discovery] source fetch failed", sanitizeUrlForLog(url), error instanceof Error ? error.message : error);
+          providerFailed = true;
         }
       }
     }
 
-    return mergeBundles(bundles);
+    const merged = mergeBundles(bundles);
+    const found = Boolean((merged.domainEvidence?.length ?? 0) && (merged.patternEvidence?.length ?? 0));
+    return {
+      ...merged,
+      discoveryStatus: found ? "FOUND" : providerFailed ? "NETWORK_ERROR" : "NO_EVIDENCE",
+      discoveryReason: found
+        ? null
+        : providerFailed
+          ? "One or more public evidence sources could not be reached."
+          : "No public email-format evidence was found."
+    };
   }
 }
 

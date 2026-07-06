@@ -306,8 +306,10 @@ describe("compact email-format evidence UI", () => {
   });
 
   it("uses concise refresh results and lets the card shrink naturally", () => {
-    expect(DETAIL_SOURCE).toContain('"Email format refreshed."');
-    expect(DETAIL_SOURCE).toContain('"Evidence remains inconclusive. Review the format manually."');
+    expect(DETAIL_SOURCE).toContain('"Email format discovered successfully from public evidence. Generated addresses remain inferred."');
+    expect(DETAIL_SOURCE).toContain('"No public email-format evidence was found."');
+    expect(DETAIL_SOURCE).toContain('"The provider response could not be parsed safely. Email-format discovery will be retried."');
+    expect(DETAIL_SOURCE).not.toContain('"Evidence remains inconclusive. Review the format manually."');
     expect(CSS).toContain(".evidenceAgreement");
     const evidencePanel = CSS.match(/\.evidencePanel\s*\{[^}]*\}/s)?.[0] ?? "";
     expect(evidencePanel).not.toContain("min-height");

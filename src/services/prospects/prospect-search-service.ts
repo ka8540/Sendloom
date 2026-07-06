@@ -41,6 +41,7 @@ import {
 } from "@/services/prospects/company-email-format";
 import {
   DiscoverSearchCacheService,
+  resolveEmailFormatDiscoveryExpiry,
   resolveSharedCacheVersion,
   type DiscoverCachePort,
   type ResolvedCachePerson,
@@ -50,6 +51,7 @@ import { computeDiscoverFingerprint } from "@/services/prospects/discover-cache-
 import {
   EmailDomainService,
   type EmailDomainEvidence,
+  type EmailFormatDiscoveryResult,
   type EmailPatternEvidence,
   isAllowedBusinessEmailDomain,
   makeManualEmailDomainEvidence
@@ -136,6 +138,27 @@ function isFreshHighConfidenceFormat(company: ProspectCompany): boolean {
     websiteDomain: company.officialWebsiteDomain ?? company.officialDomain,
     emailDomain: company.emailDomain
   });
+}
+
+function isFreshUsableCompanyFormat(company: ProspectCompany): boolean {
+  if (!hasUsableCompanyEmailFormat(company)) {
+    return false;
+  }
+  if (company.emailFormatAuthority === "MANUAL") {
+    return true;
+  }
+  if (!company.emailFormatDiscoveredAt) {
+    return false;
+  }
+  return Date.now() - company.emailFormatDiscoveredAt.getTime() < EMAIL_FORMAT_CACHE_TTL_MS;
+}
+
+function cachedEmailFormatStateIsFresh(format: ResolvedDataset["emailFormat"], now: Date): boolean {
+  if (!format.emailFormatDiscoveryExpiresAt) {
+    // Legacy valid cache rows are reusable; legacy empty rows are retried.
+    return hasUsableCompanyEmailFormat(format);
+  }
+  return new Date(format.emailFormatDiscoveryExpiresAt).getTime() > now.getTime();
 }
 
 function hasFreshStoredEmailEvidence(company: ProspectCompany) {
@@ -548,8 +571,8 @@ export class ProspectSearchService {
     });
 
     // 3) Reuse a fresh shared dataset, or run Apify behind the stampede lock and
-    // refresh the shared cache. The provider closure performs the real Apify +
-    // classification + email inference and returns a normalized dataset.
+    // refresh the shared cache. The provider closure performs Apify + role
+    // classification only; email-format discovery has a separate lifecycle.
     const startedAt = Date.now();
     let cacheResult;
     try {
@@ -578,7 +601,22 @@ export class ProspectSearchService {
       throw error;
     }
 
-    // 4) Materialize the shared dataset into THIS user's own records. The shared
+    // 4) Resolve email format independently from the people cache. A cache hit
+    // may reuse public people while its format is missing, stale, or a prior
+    // transient failure; in that case only format discovery is rerun (no Apify,
+    // no extra Discover quota).
+    const emailFormat = await this.resolveAutomaticEmailFormat({
+      userId,
+      search,
+      company,
+      resolution,
+      cachedFormat: cacheResult.dataset.emailFormat,
+      cacheId: cacheResult.cacheId,
+      budget
+    });
+    const resolvedDataset: ResolvedDataset = { ...cacheResult.dataset, emailFormat };
+
+    // 5) Materialize the shared dataset into THIS user's own records. The shared
     // cache only holds normalized public data — the user-owned company/people/
     // search records (and their ownership, exports, suppression) stay private.
     // Allocation is CAPPED: the shared pool may hold many more candidates (other
@@ -588,7 +626,7 @@ export class ProspectSearchService {
       userId,
       search,
       company,
-      cacheResult.dataset,
+      resolvedDataset,
       cacheResult.source === "CACHE" ? "CACHE" : "PROVIDER"
     );
 
@@ -609,7 +647,14 @@ export class ProspectSearchService {
       processingLatencyMs: Date.now() - startedAt
     });
 
-    // 5) Done — record internal result provenance (never exposed via GraphQL).
+    this.logEmailFormatStage({
+      searchId: search.id,
+      companyDomain: normalizeDomain(resolution.officialWebsiteDomain ?? resolution.officialDomain),
+      format: emailFormat,
+      people: resolvedDataset.people
+    });
+
+    // 6) Done — record internal result provenance (never exposed via GraphQL).
     const updated = await this.prisma.prospectSearch.update({
       where: { id: search.id },
       data: {
@@ -628,7 +673,7 @@ export class ProspectSearchService {
   }
 
   /**
-   * Run the real provider pipeline (Apify + classification + email inference) and
+   * Run the people provider pipeline (Apify + role classification) and
    * return a normalized, shareable dataset. This performs NO user-owned writes
    * other than progress/metadata on the user's own search row — the caller writes
    * the dataset to the shared cache and materializes the user's records.
@@ -678,48 +723,148 @@ export class ProspectSearchService {
       .filter((title): title is string => Boolean(title));
     const classifications = await this.roleClassifier.classify(rawTitles, { budget, searchId: search.id });
 
-    // Resolve ONE evidence-backed company email domain + pattern. A fresh
-    // canonical company format is reused across role searches, so a Recruiter
-    // search never pays to rediscover what Software Engineering already knows.
-    await this.setStatus(search.id, "INFERRING_EMAIL_PATTERN");
-    let emailFormat;
-    if (isFreshHighConfidenceFormat(company)) {
-      emailFormat = {
-        emailDomain: company.emailDomain,
-        emailDomainConfidence: company.emailDomainConfidence,
-        emailDomainEvidence: company.emailDomainEvidence,
-        emailPattern: company.emailPattern,
-        patternConfidence: company.patternConfidence,
-        patternEvidence: company.patternEvidence,
-        emailFormatReason: company.emailFormatReason
-      };
-    } else {
-      const inference = await this.emailDomain.infer({
-        userId,
-        companyId: company.id,
-        companyName: resolution.officialName,
-        officialWebsiteDomain: company.officialWebsiteDomain ?? company.officialDomain,
-        knownLinkedinUrl: company.linkedinUrl,
-        targetRoles: this.asStringArray(search.requestedTitles),
-        budget,
-        searchId: search.id
-      });
-      emailFormat = {
-        emailDomain: inference.selectedEmailDomain,
-        emailDomainConfidence: inference.emailDomainConfidence,
-        emailDomainEvidence: inference.emailDomainEvidence,
-        emailPattern: inference.selectedPattern,
-        patternConfidence: inference.patternConfidence,
-        patternEvidence: inference.patternEvidence,
-        emailFormatReason: serializeEmailFormatDecisionMetadata(inference.decision)
-      };
-    }
+    // People retrieval/classification and email-format discovery have separate
+    // cache lifecycles. Seed the provider dataset with only an already-valid
+    // canonical format; runPipeline resolves/retries format discovery after the
+    // people cache returns on BOTH provider and cache paths.
+    const emailFormat = this.companyResolvedEmailFormat(company);
 
-    // Generate candidate emails deterministically and build the normalized
-    // dataset shared across users.
+    // Build the normalized people dataset. Candidate emails are regenerated
+    // against the final persisted format during materialization.
     const people = this.buildDatasetPeople(searchResult.profiles, classifications, emailFormat);
 
     return { emailFormat, people };
+  }
+
+  private companyResolvedEmailFormat(company: ProspectCompany): ResolvedDataset["emailFormat"] {
+    return {
+      emailDomain: company.emailDomain,
+      emailDomainConfidence: company.emailDomainConfidence,
+      emailDomainEvidence: company.emailDomainEvidence,
+      emailPattern: company.emailPattern,
+      patternConfidence: company.patternConfidence,
+      patternEvidence: company.patternEvidence,
+      emailFormatReason: company.emailFormatReason,
+      emailFormatDiscoveryStatus: company.emailFormatDiscoveryStatus as
+        | ResolvedDataset["emailFormat"]["emailFormatDiscoveryStatus"],
+      emailFormatDiscoveryReason: company.emailFormatDiscoveryReason,
+      emailFormatDiscoveryAt: company.emailFormatDiscoveryAt,
+      emailFormatDiscoveryExpiresAt:
+        company.emailFormatDiscoveryAt && company.emailFormatDiscoveryStatus !== "NOT_ATTEMPTED"
+          ? resolveEmailFormatDiscoveryExpiry(
+              company.emailFormatDiscoveryStatus as Exclude<
+                ResolvedDataset["emailFormat"]["emailFormatDiscoveryStatus"],
+                undefined
+              >,
+              company.emailFormatDiscoveryAt
+            )
+          : null
+    };
+  }
+
+  /**
+   * Layered company-format resolution, independent from people retrieval:
+   * manual override -> fresh canonical format -> fresh cache state -> public/AI
+   * discovery -> explicit unresolved/provider-failure state.
+   */
+  private async resolveAutomaticEmailFormat(input: {
+    userId: string;
+    search: ProspectSearch;
+    company: ProspectCompany;
+    resolution: CompanyResolution;
+    cachedFormat: ResolvedDataset["emailFormat"];
+    cacheId: string | null;
+    budget: AiCallBudget;
+  }): Promise<ResolvedDataset["emailFormat"]> {
+    const { userId, search, company, resolution, cachedFormat, cacheId, budget } = input;
+    await this.setStatus(search.id, "INFERRING_EMAIL_PATTERN");
+
+    // Manual always wins, even if a shared cache contains a different format.
+    if (company.emailFormatAuthority === "MANUAL" && hasUsableCompanyEmailFormat(company)) {
+      return this.companyResolvedEmailFormat(company);
+    }
+
+    if (isFreshUsableCompanyFormat(company)) {
+      return this.companyResolvedEmailFormat(company);
+    }
+
+    const now = this.now();
+    if (cachedEmailFormatStateIsFresh(cachedFormat, now)) {
+      const candidate: CompanyEmailFormatRecord = {
+        ...cachedFormat,
+        emailFormatDiscoveredAt:
+          cachedFormat.emailFormatDiscoveryStatus === "FOUND"
+            ? new Date(cachedFormat.emailFormatDiscoveryAt ?? now)
+            : null,
+        emailFormatDiscoveryStatus: cachedFormat.emailFormatDiscoveryStatus ?? "NOT_ATTEMPTED",
+        emailFormatDiscoveryReason: cachedFormat.emailFormatDiscoveryReason ?? null,
+        emailFormatDiscoveryAt: cachedFormat.emailFormatDiscoveryAt
+          ? new Date(cachedFormat.emailFormatDiscoveryAt)
+          : now
+      };
+      const updated = await this.applyCanonicalCompanyEmailFormat(
+        userId,
+        company.id,
+        candidate,
+        "SHARED_CACHE"
+      );
+      return {
+        ...this.companyResolvedEmailFormat(updated),
+        emailFormatDiscoveryExpiresAt: cachedFormat.emailFormatDiscoveryExpiresAt
+      };
+    }
+
+    const inference = await this.emailDomain.infer({
+      userId,
+      companyId: company.id,
+      companyName: resolution.officialName,
+      officialWebsiteDomain: normalizeDomain(company.officialWebsiteDomain ?? company.officialDomain),
+      knownLinkedinUrl: company.linkedinUrl,
+      targetRoles: this.asStringArray(search.requestedTitles),
+      budget,
+      searchId: search.id
+    });
+    const format = this.inferenceResolvedEmailFormat(inference, now);
+    const updated = await this.applyCanonicalCompanyEmailFormat(userId, company.id, {
+      ...format,
+      emailFormatDiscoveredAt: inference.status === "FOUND" ? now : null,
+      emailFormatDiscoveryStatus: inference.status,
+      emailFormatDiscoveryReason: inference.reason,
+      emailFormatDiscoveryAt: now
+    }, "AI");
+
+    if (cacheId && this.discoverCache.updateEmailFormat) {
+      await this.discoverCache.updateEmailFormat({ cacheId, format });
+    }
+
+    return {
+      ...this.companyResolvedEmailFormat(updated),
+      emailFormatDiscoveryStatus: inference.status,
+      emailFormatDiscoveryReason: inference.reason,
+      emailFormatDiscoveryAt: now,
+      emailFormatDiscoveryExpiresAt: format.emailFormatDiscoveryExpiresAt,
+      ...(inference.diagnostics ? { diagnostics: inference.diagnostics } : {})
+    };
+  }
+
+  private inferenceResolvedEmailFormat(
+    inference: EmailFormatDiscoveryResult,
+    checkedAt: Date
+  ): ResolvedDataset["emailFormat"] {
+    return {
+      emailDomain: inference.selectedEmailDomain,
+      emailDomainConfidence: inference.emailDomainConfidence,
+      emailDomainEvidence: inference.emailDomainEvidence,
+      emailPattern: inference.selectedPattern,
+      patternConfidence: inference.patternConfidence,
+      patternEvidence: inference.patternEvidence,
+      emailFormatReason: serializeEmailFormatDecisionMetadata(inference.decision),
+      emailFormatDiscoveryStatus: inference.status,
+      emailFormatDiscoveryReason: inference.reason,
+      emailFormatDiscoveryAt: checkedAt,
+      emailFormatDiscoveryExpiresAt: resolveEmailFormatDiscoveryExpiry(inference.status, checkedAt),
+      ...(inference.diagnostics ? { diagnostics: inference.diagnostics } : {})
+    };
   }
 
   /**
@@ -874,7 +1019,15 @@ export class ProspectSearchService {
       company.id,
       {
         ...dataset.emailFormat,
-        emailFormatDiscoveredAt: new Date()
+        emailFormatDiscoveredAt:
+          dataset.emailFormat.emailFormatDiscoveryStatus === "FOUND"
+            ? new Date(dataset.emailFormat.emailFormatDiscoveryAt ?? this.now())
+            : null,
+        emailFormatDiscoveryStatus: dataset.emailFormat.emailFormatDiscoveryStatus ?? "NOT_ATTEMPTED",
+        emailFormatDiscoveryReason: dataset.emailFormat.emailFormatDiscoveryReason ?? null,
+        emailFormatDiscoveryAt: dataset.emailFormat.emailFormatDiscoveryAt
+          ? new Date(dataset.emailFormat.emailFormatDiscoveryAt)
+          : null
       },
       "SHARED_CACHE"
     );
@@ -1246,7 +1399,10 @@ export class ProspectSearchService {
       patternConfidence: inference.patternConfidence,
       patternEvidence: inference.patternEvidence,
       emailFormatReason: serializeEmailFormatDecisionMetadata(inference.decision),
-      emailFormatDiscoveredAt: new Date()
+      emailFormatDiscoveredAt: inference.status === "FOUND" ? this.now() : null,
+      emailFormatDiscoveryStatus: inference.status,
+      emailFormatDiscoveryReason: inference.reason,
+      emailFormatDiscoveryAt: this.now()
     };
     const candidateUsable = hasUsableCompanyEmailFormat(candidate);
     const updated = await this.applyCanonicalCompanyEmailFormat(
@@ -1263,7 +1419,7 @@ export class ProspectSearchService {
       userId,
       action: opts.sourceUrl ? "SOURCE_URL" : "AI",
       providerConfigured: opts.sourceUrl ? true : hasConfiguredEmailFormatDiscovery(),
-      resultStatus: candidateUsable ? "UPDATED" : "NO_EVIDENCE",
+      resultStatus: candidateUsable ? "UPDATED" : inference.status,
       domainFound: Boolean(inference.selectedEmailDomain),
       patternFound: Boolean(inference.selectedPattern),
       companyHasUsableFormat: hasUsableCompanyEmailFormat(updated)
@@ -1312,7 +1468,10 @@ export class ProspectSearchService {
         patternConfidence: input.confidence,
         patternEvidence: [manualEvidence.patternEvidence],
         emailFormatReason: input.reason?.trim() || "Manual override",
-        emailFormatDiscoveredAt: new Date()
+        emailFormatDiscoveredAt: this.now(),
+        emailFormatDiscoveryStatus: "FOUND",
+        emailFormatDiscoveryReason: null,
+        emailFormatDiscoveryAt: this.now()
       },
       "MANUAL"
     );
@@ -1440,6 +1599,51 @@ export class ProspectSearchService {
       });
     }
   }
+
+  private logEmailFormatStage(input: {
+    searchId: string;
+    companyDomain: string | null;
+    format: ResolvedDataset["emailFormat"];
+    people: ResolvedCachePerson[];
+  }): void {
+    if (process.env.NODE_ENV === "test") {
+      return;
+    }
+    const confidence = combinedEmailConfidence(
+      input.format.emailDomainConfidence,
+      input.format.patternConfidence
+    );
+    const eligible = input.people.filter((person) => Boolean(person.firstName.trim() && person.lastName.trim()));
+    const generatedEmailCount = eligible.filter((person) =>
+      resolveCandidateEmail({
+        firstName: person.firstName,
+        lastName: person.lastName,
+        domain: input.format.emailDomain,
+        pattern: input.format.emailPattern,
+        patternConfidence: confidence,
+        allowLowConfidence: env.PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS
+      }).email
+    ).length;
+    const diagnostics = input.format.diagnostics;
+    console.info(
+      `[discover-email-format-stage] ${JSON.stringify({
+        searchId: input.searchId,
+        companyDomain: input.companyDomain,
+        providerConfigured: diagnostics?.providerConfigured ?? hasConfiguredEmailFormatDiscovery(),
+        requestedTool: diagnostics?.requestedTool ?? null,
+        webSearchToolInvoked: diagnostics?.webSearchOccurred ?? false,
+        providerResponseReceived: Boolean(diagnostics?.responseStatus),
+        responseStatus: diagnostics?.responseStatus ?? null,
+        responseOutputItemTypes: diagnostics?.outputItemTypes ?? [],
+        responseParsed: diagnostics?.structuredParsingSucceeded ?? false,
+        discoveryStatus: input.format.emailFormatDiscoveryStatus ?? "NOT_ATTEMPTED",
+        formatPersisted: hasUsableCompanyEmailFormat(input.format),
+        eligiblePeopleCount: eligible.length,
+        generatedEmailCount,
+        unavailableCount: Math.max(0, eligible.length - generatedEmailCount)
+      })}`
+    );
+  }
 }
 
 function discoverCacheAgeDays(fetchedAt: Date | null, nowMs: number): number | null {
@@ -1536,7 +1740,7 @@ type DiscoverEmailFormatLogEvent = {
   action: "AI" | "SOURCE_URL" | "MANUAL";
   /** Whether the required discovery provider is configured (never the key). */
   providerConfigured: boolean;
-  resultStatus: "UPDATED" | "NO_EVIDENCE";
+  resultStatus: "UPDATED" | EmailFormatDiscoveryResult["status"];
   domainFound: boolean;
   patternFound: boolean;
   /** Whether the persisted company has a usable format after the action. */
@@ -1556,7 +1760,7 @@ function logDiscoverEmailFormatEvent(event: DiscoverEmailFormatLogEvent): void {
     return;
   }
   const line = `[discover-email-format] ${JSON.stringify(event)}`;
-  if (event.resultStatus === "NO_EVIDENCE" && !event.companyHasUsableFormat) {
+  if (event.resultStatus !== "UPDATED" && !event.companyHasUsableFormat) {
     console.warn(line);
   } else {
     console.info(line);

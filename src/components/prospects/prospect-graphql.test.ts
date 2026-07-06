@@ -7,6 +7,7 @@ import {
   PEOPLE_PAGE_SIZE,
   PEOPLE_QUERY,
   PREPARE_PROSPECT_EXPORT_MUTATION,
+  PROCESS_SEARCH_MUTATION,
   PROSPECT_SEARCHES_QUERY,
   REVIEW_PROSPECT_SELECTION_MUTATION,
   REFRESH_COMPANY_EMAIL_FORMAT_MUTATION,
@@ -99,8 +100,12 @@ describe("prospect graphql helper", () => {
   it("declares the AI web-search discovery mutation with a force flag and reason", () => {
     expect(DISCOVER_COMPANY_EMAIL_FORMAT_MUTATION).toContain("discoverCompanyEmailFormat(companyId: $companyId, force: $force)");
     expect(DISCOVER_COMPANY_EMAIL_FORMAT_MUTATION).toContain("emailFormatReason");
+    expect(DISCOVER_COMPANY_EMAIL_FORMAT_MUTATION).toContain("emailFormatDiscoveryStatus");
+    expect(DISCOVER_COMPANY_EMAIL_FORMAT_MUTATION).toContain("emailFormatDiscoveryReason");
     // The company detail query also exposes the reason so the card can show it.
     expect(COMPANY_DETAIL_QUERY).toContain("emailFormatReason");
+    expect(COMPANY_DETAIL_QUERY).toContain("emailFormatDiscoveryStatus");
+    expect(PROCESS_SEARCH_MUTATION).toContain("emailFormatDiscoveryStatus");
   });
 
   it("passes a safe rate-limit / not-configured FORBIDDEN message through to the UI", async () => {

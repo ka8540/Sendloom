@@ -1147,6 +1147,222 @@ describe("Discover shared cache integration", () => {
     return { port, calls };
   }
 
+  it("discovers and applies an email format when cached people have no format", async () => {
+    const runner = amatRunner();
+    const discovery = vi.fn(async () => ({
+      domainEvidence: [
+        {
+          emailDomain: "salesforce.com",
+          sourceName: "Public company staff page",
+          sourceUrl: "https://example.test/salesforce-staff",
+          sourceType: "public_format_page" as const,
+          observedPattern: "first.last" as const,
+          percentage: 92,
+          confidence: "HIGH" as const,
+          observedAt: "2026-07-05T00:00:00.000Z"
+        }
+      ],
+      patternEvidence: [
+        {
+          pattern: "first.last" as const,
+          emailDomain: "salesforce.com",
+          sourceName: "Public company staff page",
+          sourceUrl: "https://example.test/salesforce-staff",
+          sourceType: "public_format_page" as const,
+          percentage: 92,
+          confidence: "HIGH" as const,
+          observedAt: "2026-07-05T00:00:00.000Z"
+        }
+      ]
+    }));
+    const cachedPeople = Array.from({ length: 9 }, (_, index) => ({
+      sourceProfileId: `salesforce-${index + 1}`,
+      firstName: `First${index + 1}`,
+      lastName: `Last${index + 1}`,
+      fullName: `First${index + 1} Last${index + 1}`,
+      currentTitle: "Software Engineer",
+      normalizedTitle: "software engineer",
+      positionCategory: "SOFTWARE_ENGINEERING",
+      location: "United States",
+      country: "United States",
+      state: null,
+      city: null,
+      linkedinUrl: `https://www.linkedin.com/in/salesforce-${index + 1}`,
+      inferredEmail: null,
+      emailStatus: "UNAVAILABLE",
+      emailConfidence: "UNAVAILABLE",
+      emailPattern: null,
+      emailSource: null
+    }));
+    const { port } = cacheHitPort({
+      emailFormat: {
+        emailDomain: null,
+        emailDomainConfidence: "UNAVAILABLE",
+        emailDomainEvidence: [],
+        emailPattern: null,
+        patternConfidence: "UNAVAILABLE",
+        patternEvidence: [],
+        emailFormatReason: null
+      },
+      people: cachedPeople
+    });
+    const { service } = buildService(
+      prisma,
+      runner.runner,
+      ROLE_ONLY_AI,
+      { findEvidence: discovery },
+      allowAllQuota,
+      port
+    );
+
+    const created = await service.createSearch(USER_ID, {
+      companyName: "Salesforce, Inc.",
+      companyDomain: "salesforce.com",
+      companyLinkedinUrl: null,
+      jobTitles: ["Software Engineer"],
+      locations: ["United States"],
+      maxResults: 10
+    });
+    const result = await service.processSearch(USER_ID, created.id);
+
+    expect(result.status).toBe("READY");
+    expect(discovery).toHaveBeenCalledTimes(1);
+    expect(discovery).toHaveBeenCalledWith(expect.objectContaining({ officialWebsiteDomain: "salesforce.com" }));
+    expect(runner.run).not.toHaveBeenCalled();
+    expect(prisma._state.companies[0]).toMatchObject({
+      emailDomain: "salesforce.com",
+      emailPattern: "first.last"
+    });
+    expect(prisma._state.people).toHaveLength(9);
+    expect(prisma._state.people.every((person) => person.emailStatus === "INFERRED_HIGH")).toBe(true);
+    expect(prisma._state.people.every((person) => person.emailStatus !== "VERIFIED")).toBe(true);
+    const usable = prisma._state.people.filter((person) =>
+      ["INFERRED_HIGH", "INFERRED_MEDIUM", "VERIFIED"].includes(person.emailStatus)
+    ).length;
+    const unavailable = prisma._state.people.filter((person) => person.emailStatus === "UNAVAILABLE").length;
+    expect({ peopleFound: result.totalProcessed, usable, unavailable }).toEqual({
+      peopleFound: 9,
+      usable: 9,
+      unavailable: 0
+    });
+  });
+
+  it("retries a stale cached no-evidence state without rerunning Apify", async () => {
+    const runner = amatRunner();
+    const discovery = vi.fn(async () => amatEvidence().findEvidence({
+      companyName: "Applied Materials",
+      officialWebsiteDomain: "appliedmaterials.com"
+    }));
+    const stale = cacheDataset();
+    stale.emailFormat = {
+      ...stale.emailFormat,
+      emailDomain: null,
+      emailPattern: null,
+      emailFormatDiscoveryStatus: "NO_EVIDENCE",
+      emailFormatDiscoveryAt: new Date("2026-07-01T00:00:00.000Z"),
+      emailFormatDiscoveryExpiresAt: new Date("2026-07-02T00:00:00.000Z")
+    };
+    const { port } = cacheHitPort(stale);
+    const { service } = buildService(
+      prisma,
+      runner.runner,
+      ROLE_ONLY_AI,
+      { findEvidence: discovery },
+      allowAllQuota,
+      port
+    );
+
+    const created = await service.createSearch(USER_ID, APPLIED_MATERIALS);
+    await service.processSearch(USER_ID, created.id);
+
+    expect(discovery).toHaveBeenCalledTimes(1);
+    expect(runner.run).not.toHaveBeenCalled();
+    expect(prisma._state.people[0].emailStatus).toBe("INFERRED_HIGH");
+  });
+
+  it("preserves transient provider failure state instead of caching it as no evidence", async () => {
+    const runner = amatRunner();
+    const dataset = cacheDataset();
+    dataset.emailFormat = {
+      ...dataset.emailFormat,
+      emailDomain: null,
+      emailPattern: null,
+      emailFormatDiscoveryStatus: "NOT_ATTEMPTED"
+    };
+    const updateEmailFormat = vi.fn(async () => undefined);
+    const { port: basePort } = cacheHitPort(dataset);
+    const port: DiscoverCachePort = { ...basePort, updateEmailFormat };
+    const provider: EmailEvidenceProvider = {
+      async findEvidence() {
+        return {
+          discoveryStatus: "RATE_LIMITED",
+          discoveryReason: "The provider is temporarily rate-limited."
+        };
+      }
+    };
+    const { service } = buildService(prisma, runner.runner, ROLE_ONLY_AI, provider, allowAllQuota, port);
+
+    const created = await service.createSearch(USER_ID, APPLIED_MATERIALS);
+    const result = await service.processSearch(USER_ID, created.id);
+
+    expect(result.status).toBe("READY");
+    expect(runner.run).not.toHaveBeenCalled();
+    expect(prisma._state.companies[0].emailFormatDiscoveryStatus).toBe("RATE_LIMITED");
+    expect(updateEmailFormat).toHaveBeenCalledWith(expect.objectContaining({
+      format: expect.objectContaining({
+        emailFormatDiscoveryStatus: "RATE_LIMITED",
+        emailFormatDiscoveryExpiresAt: null
+      })
+    }));
+  });
+
+  it("keeps a manual override authoritative when a later people cache has no format", async () => {
+    const runner = amatRunner();
+    const unresolved = cacheDataset();
+    unresolved.emailFormat = {
+      ...unresolved.emailFormat,
+      emailDomain: null,
+      emailPattern: null,
+      emailFormatDiscoveryStatus: "NOT_ATTEMPTED"
+    };
+    const discovery = vi.fn(async () => amatEvidence().findEvidence({
+      companyName: "Applied Materials",
+      officialWebsiteDomain: "appliedmaterials.com"
+    }));
+    const { port } = cacheHitPort(unresolved);
+    const { service } = buildService(
+      prisma,
+      runner.runner,
+      ROLE_ONLY_AI,
+      { findEvidence: discovery },
+      allowAllQuota,
+      port
+    );
+
+    const first = await service.createSearch(USER_ID, APPLIED_MATERIALS);
+    await service.processSearch(USER_ID, first.id);
+    await service.setCompanyEmailInferenceOverride(USER_ID, {
+      companyId: prisma._state.companies[0].id,
+      emailDomain: "amat.com",
+      emailPattern: "first_last",
+      confidence: "HIGH"
+    });
+    discovery.mockClear();
+
+    const second = await service.createSearch(USER_ID, {
+      ...APPLIED_MATERIALS,
+      jobTitles: ["Recruiter"]
+    });
+    await service.processSearch(USER_ID, second.id);
+
+    expect(discovery).not.toHaveBeenCalled();
+    expect(prisma._state.companies[0]).toMatchObject({
+      emailFormatAuthority: "MANUAL",
+      emailPattern: "first_last"
+    });
+    expect(prisma._state.people.every((person) => person.emailStatus !== "VERIFIED")).toBe(true);
+  });
+
   it("reuses a fresh cache hit without calling Apify and still consumes a quota slot (#1, #3, #4)", async () => {
     const runner = amatRunner();
     const { port } = cacheHitPort(cacheDataset());

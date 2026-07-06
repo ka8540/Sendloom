@@ -5,18 +5,39 @@ import type { PrismaClient } from "@prisma/client";
 import { env } from "@/lib/env";
 import { getRedis } from "@/lib/redis";
 import type { DiscoverFingerprintInput } from "@/services/prospects/discover-cache-fingerprint";
+import type {
+  EmailFormatDiscoveryDiagnostics,
+  EmailFormatDiscoveryStatus
+} from "@/services/prospects/email-domain-service";
 
 const LOCK_KEY_PREFIX = "discover:shared-cache-lock";
 const DEFAULT_LOCK_TTL_SECONDS = 120;
 const DEFAULT_WAIT_TIMEOUT_MS = 20_000;
 const DEFAULT_POLL_INTERVAL_MS = 250;
 const DAY_MS = 24 * 60 * 60 * 1000;
+const EMAIL_FORMAT_FOUND_TTL_MS = 30 * DAY_MS;
+const EMAIL_FORMAT_NO_EVIDENCE_TTL_MS = DAY_MS;
 
 export const DISCOVER_CACHE_STATUS = {
   READY: "READY",
   REFRESHING: "REFRESHING",
   FAILED: "FAILED"
 } as const;
+
+export function resolveEmailFormatDiscoveryExpiry(
+  status: EmailFormatDiscoveryStatus | "NOT_ATTEMPTED",
+  checkedAt: Date
+): Date | null {
+  if (status === "FOUND") {
+    return new Date(checkedAt.getTime() + EMAIL_FORMAT_FOUND_TTL_MS);
+  }
+  if (status === "NO_EVIDENCE") {
+    return new Date(checkedAt.getTime() + EMAIL_FORMAT_NO_EVIDENCE_TTL_MS);
+  }
+  // Configuration, auth, rate-limit, network, provider, and parser failures
+  // are intentionally not reusable negative cache results.
+  return null;
+}
 
 /** Effective shared-cache TTL in days (env override, defaulting to 30). */
 export function resolveSharedCacheTtlDays(): number {
@@ -39,6 +60,11 @@ export type ResolvedEmailFormat = {
   patternConfidence: string;
   patternEvidence: unknown;
   emailFormatReason: string | null;
+  emailFormatDiscoveryStatus?: EmailFormatDiscoveryStatus | "NOT_ATTEMPTED";
+  emailFormatDiscoveryReason?: string | null;
+  emailFormatDiscoveryAt?: Date | string | null;
+  emailFormatDiscoveryExpiresAt?: Date | string | null;
+  diagnostics?: EmailFormatDiscoveryDiagnostics;
 };
 
 // One normalized public professional record. No requester identity is included.
@@ -100,7 +126,13 @@ export type GetOrRefreshParams = {
 /** The narrow port the prospect-search service depends on (injectable for tests). */
 export interface DiscoverCachePort {
   getOrRefresh(params: GetOrRefreshParams): Promise<DiscoverCacheResult>;
+  updateEmailFormat?(params: UpdateCachedEmailFormatParams): Promise<void>;
 }
+
+export type UpdateCachedEmailFormatParams = {
+  cacheId: string;
+  format: ResolvedEmailFormat;
+};
 
 // Continuation state for an "Add 10 more" expansion: the entry's people (in
 // stable provider order) plus where the provider left off.
@@ -195,6 +227,10 @@ type CacheRow = {
   patternConfidence: string;
   patternEvidence: unknown;
   emailFormatReason: string | null;
+  emailFormatDiscoveryStatus?: string | null;
+  emailFormatDiscoveryReason?: string | null;
+  emailFormatDiscoveryAt?: Date | string | null;
+  emailFormatDiscoveryExpiresAt?: Date | string | null;
 };
 
 export type DiscoverSearchCacheServiceDeps = {
@@ -313,6 +349,30 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
     // it). Fall back to running the provider ourselves so the request never
     // hangs, writing the cache best-effort.
     return await this.runProviderAndStore(params, false);
+  }
+
+  /** Update only email-format state; never refetch or replace cached people. */
+  async updateEmailFormat(params: UpdateCachedEmailFormatParams): Promise<void> {
+    const checkedAt = params.format.emailFormatDiscoveryAt
+      ? new Date(params.format.emailFormatDiscoveryAt)
+      : this.now();
+    const status = params.format.emailFormatDiscoveryStatus ?? "NOT_ATTEMPTED";
+    const expiresAt =
+      params.format.emailFormatDiscoveryExpiresAt !== undefined
+        ? params.format.emailFormatDiscoveryExpiresAt
+          ? new Date(params.format.emailFormatDiscoveryExpiresAt)
+          : null
+        : resolveEmailFormatDiscoveryExpiry(status, checkedAt);
+    await this.prisma.discoverSearchCache.update({
+      where: { id: params.cacheId },
+      data: {
+        ...emailFormatColumns(params.format),
+        emailFormatDiscoveryStatus: status,
+        emailFormatDiscoveryReason: params.format.emailFormatDiscoveryReason ?? null,
+        emailFormatDiscoveryAt: checkedAt,
+        emailFormatDiscoveryExpiresAt: expiresAt
+      }
+    });
   }
 
   // -- Expansion ("Add 10 more") continuation surface --------------------------
@@ -621,7 +681,14 @@ function rowToEmailFormat(entry: CacheRow): ResolvedEmailFormat {
     emailPattern: entry.emailPattern,
     patternConfidence: entry.patternConfidence,
     patternEvidence: entry.patternEvidence ?? null,
-    emailFormatReason: entry.emailFormatReason
+    emailFormatReason: entry.emailFormatReason,
+    emailFormatDiscoveryStatus:
+      (entry.emailFormatDiscoveryStatus as EmailFormatDiscoveryStatus | "NOT_ATTEMPTED" | null) ?? "NOT_ATTEMPTED",
+    emailFormatDiscoveryReason: entry.emailFormatDiscoveryReason ?? null,
+    emailFormatDiscoveryAt: entry.emailFormatDiscoveryAt ? new Date(entry.emailFormatDiscoveryAt) : null,
+    emailFormatDiscoveryExpiresAt: entry.emailFormatDiscoveryExpiresAt
+      ? new Date(entry.emailFormatDiscoveryExpiresAt)
+      : null
   };
 }
 
@@ -640,7 +707,13 @@ function emailFormatColumns(format: ResolvedEmailFormat) {
     emailPattern: format.emailPattern,
     patternConfidence: format.patternConfidence,
     patternEvidence: (format.patternEvidence ?? null) as never,
-    emailFormatReason: format.emailFormatReason
+    emailFormatReason: format.emailFormatReason,
+    emailFormatDiscoveryStatus: format.emailFormatDiscoveryStatus ?? "NOT_ATTEMPTED",
+    emailFormatDiscoveryReason: format.emailFormatDiscoveryReason ?? null,
+    emailFormatDiscoveryAt: format.emailFormatDiscoveryAt ? new Date(format.emailFormatDiscoveryAt) : null,
+    emailFormatDiscoveryExpiresAt: format.emailFormatDiscoveryExpiresAt
+      ? new Date(format.emailFormatDiscoveryExpiresAt)
+      : null
   };
 }
 

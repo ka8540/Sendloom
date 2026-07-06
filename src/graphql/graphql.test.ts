@@ -574,13 +574,16 @@ describe("Company email inference API", () => {
       patternEvidence: [],
       emailFormatReason: "Public evidence shows first_last on amat.com.",
       emailFormatDiscoveredAt: new Date(),
+      emailFormatDiscoveryStatus: "FOUND",
+      emailFormatDiscoveryReason: null,
+      emailFormatDiscoveryAt: new Date(),
       createdAt: new Date(),
       updatedAt: new Date()
     }));
 
     const result = await graphql({
       schema: prospectSchema,
-      source: `mutation { discoverCompanyEmailFormat(companyId: "comp_A", force: true) { id emailDomain emailPattern emailFormatReason } }`,
+      source: `mutation { discoverCompanyEmailFormat(companyId: "comp_A", force: true) { id emailDomain emailPattern emailFormatReason emailFormatDiscoveryStatus emailFormatDiscoveryReason } }`,
       contextValue: makeContext({
         user: FAKE_USER,
         services: {
@@ -595,7 +598,9 @@ describe("Company email inference API", () => {
     expect(result.data?.discoverCompanyEmailFormat).toMatchObject({
       emailDomain: "amat.com",
       emailPattern: "first_last",
-      emailFormatReason: "Public evidence shows first_last on amat.com."
+      emailFormatReason: "Public evidence shows first_last on amat.com.",
+      emailFormatDiscoveryStatus: "FOUND",
+      emailFormatDiscoveryReason: null
     });
     expect(discoverCompanyEmailFormat).toHaveBeenCalledWith("user_A", "comp_A", { force: true });
   });
@@ -624,6 +629,52 @@ describe("Company email inference API", () => {
     expect(result.data?.discoverCompanyEmailFormat ?? null).toBeNull();
     expect(result.errors?.[0]?.extensions?.code).toBe("FORBIDDEN");
     expect(result.errors?.[0]?.message).toContain("limit");
+  });
+
+  it("exposes parser failure distinctly from genuine no-evidence", async () => {
+    const discoverCompanyEmailFormat = vi.fn(async () => ({
+      id: "comp_A",
+      userId: "user_A",
+      name: "Example",
+      normalizedName: "example",
+      canonicalKey: "domain:example.com",
+      officialName: "Example",
+      officialDomain: "example.com",
+      officialWebsiteDomain: "example.com",
+      officialWebsite: "https://example.com",
+      linkedinUrl: null,
+      domainConfidence: "HIGH",
+      emailDomain: null,
+      emailDomainConfidence: "UNAVAILABLE",
+      emailDomainEvidence: [],
+      emailPattern: null,
+      patternConfidence: "UNAVAILABLE",
+      patternEvidence: [],
+      emailFormatAuthority: "UNRESOLVED",
+      emailFormatReason: null,
+      emailFormatDiscoveredAt: null,
+      emailFormatDiscoveryStatus: "PARSER_REJECTED_RESPONSE",
+      emailFormatDiscoveryReason: "The provider response could not be parsed safely.",
+      emailFormatDiscoveryAt: new Date(),
+      createdAt: new Date(),
+      updatedAt: new Date()
+    }));
+    const result = await graphql({
+      schema: prospectSchema,
+      source: `mutation { discoverCompanyEmailFormat(companyId: "comp_A") { emailFormatDiscoveryStatus emailFormatDiscoveryReason } }`,
+      contextValue: makeContext({
+        user: FAKE_USER,
+        services: {
+          prospectSearch: { discoverCompanyEmailFormat } as unknown as GraphQLContext["services"]["prospectSearch"]
+        }
+      })
+    });
+
+    expect(result.errors).toBeUndefined();
+    expect(result.data?.discoverCompanyEmailFormat).toEqual({
+      emailFormatDiscoveryStatus: "PARSER_REJECTED_RESPONSE",
+      emailFormatDiscoveryReason: "The provider response could not be parsed safely."
+    });
   });
 });
 

@@ -7,6 +7,7 @@ import { buildConnection, cursorArgs, decodeCursor, resolveFirst } from "@/graph
 import { asStringArray, mapProspectError } from "@/graphql/resolvers/helpers";
 import { notFoundError, requireUser } from "@/graphql/errors";
 import { resolveProspectPersonEmail } from "@/services/prospects/prospect-person-email";
+import { EMAIL_FORMAT_DISCOVERY_STATUSES } from "@/services/prospects/email-domain-service";
 
 type EvidenceRow = {
   emailDomain?: unknown;
@@ -181,6 +182,11 @@ export const Company = {
   },
   emailDomainConfidence(parent: ProspectCompany) {
     return coerceConfidenceLevel(parent.emailDomainConfidence);
+  },
+  emailFormatDiscoveryStatus(parent: ProspectCompany) {
+    return (EMAIL_FORMAT_DISCOVERY_STATUSES as readonly string[]).includes(parent.emailFormatDiscoveryStatus)
+      ? parent.emailFormatDiscoveryStatus
+      : "NOT_ATTEMPTED";
   },
   emailDomainEvidence(parent: ProspectCompany) {
     const evidence = Array.isArray(parent.emailDomainEvidence) ? (parent.emailDomainEvidence as EvidenceRow[]) : [];

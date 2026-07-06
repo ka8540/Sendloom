@@ -9,6 +9,7 @@ process.env.PROSPECT_EMAIL_FORMAT_WEB_SEARCH_ENABLED = "true";
 import {
   DEFAULT_PROSPECT_EMAIL_FORMAT_MODEL,
   EMAIL_FORMAT_MAX_OUTPUT_TOKENS,
+  EmailFormatProviderError,
   OPENAI_EMAIL_FORMAT_INSTRUCTIONS,
   OPENAI_EMAIL_FORMAT_JSON_SCHEMA,
   OpenAIEmailFormatDiscoveryService,
@@ -86,7 +87,12 @@ describe("OpenAIWebSearchCaller", () => {
     const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => ({
       ok: true,
       json: async () => ({
+        status: "completed",
         output_text: JSON.stringify(ESRI_RAW),
+        output: [
+          { type: "web_search_call" },
+          { type: "message", content: [{ type: "output_text", text: JSON.stringify(ESRI_RAW) }] }
+        ],
         usage: { input_tokens: 102, output_tokens: 74 }
       })
     }));
@@ -103,15 +109,17 @@ describe("OpenAIWebSearchCaller", () => {
     const body = JSON.parse(String(fetchMock.mock.calls[0][1]!.body)) as {
       model: string;
       tools: Array<{ type: string }>;
+      tool_choice: string;
       max_output_tokens: number;
       instructions: string;
       input: string;
       text: { format: { type: string; strict: boolean; schema: Record<string, unknown> } };
     };
     expect(body.tools).toEqual([{ type: "web_search" }]);
+    expect(body.tool_choice).toBe("required");
     expect(body.model).toBe("gpt-5.5");
     expect(body.max_output_tokens).toBe(EMAIL_FORMAT_MAX_OUTPUT_TOKENS);
-    expect(body.max_output_tokens).toBeLessThanOrEqual(400);
+    expect(body.max_output_tokens).toBe(EMAIL_FORMAT_MAX_OUTPUT_TOKENS);
     expect(body.text.format).toMatchObject({ type: "json_schema", strict: true });
     expect(JSON.stringify(body.text.format.schema)).not.toMatch(/reasonSummary|rationale|quote|snippet/i);
     expect(body.instructions).toContain("Do not return quotes, snippets, prose, rationale");
@@ -123,6 +131,87 @@ describe("OpenAIWebSearchCaller", () => {
   it("defaults to GPT-5.5 when PROSPECT_AI_MODEL is unset", () => {
     const caller = new OpenAIWebSearchCaller({ apiKey: "sk-test", enabled: true });
     expect(caller.model).toBe(DEFAULT_PROSPECT_EMAIL_FORMAT_MODEL);
+  });
+
+  it("parses message output after a web-search tool-call block", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        status: "completed",
+        output: [
+          { type: "reasoning" },
+          { type: "web_search_call", status: "completed" },
+          { type: "message", content: [{ type: "output_text", text: JSON.stringify(ESRI_RAW) }] }
+        ]
+      })
+    })));
+    const caller = new OpenAIWebSearchCaller({ apiKey: "sk-test", enabled: true });
+
+    await expect(caller.search({
+      instructions: OPENAI_EMAIL_FORMAT_INSTRUCTIONS,
+      input: "{}",
+      schemaName: "email_format_discovery",
+      jsonSchema: OPENAI_EMAIL_FORMAT_JSON_SCHEMA as unknown as Record<string, unknown>
+    })).resolves.toMatchObject({ selectedEmailDomain: "esri.com" });
+    expect(caller.getLastDiagnostics()).toMatchObject({
+      webSearchOccurred: true,
+      textOutputExisted: true,
+      structuredParsingSucceeded: true,
+      outputItemTypes: ["reasoning", "web_search_call", "message"]
+    });
+  });
+
+  it.each([
+    [401, "AUTH_ERROR"],
+    [403, "AUTH_ERROR"],
+    [429, "RATE_LIMITED"],
+    [500, "BAD_PROVIDER_RESPONSE"]
+  ] as const)("maps HTTP %s to %s", async (status, expected) => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: false,
+      status,
+      json: async () => ({ status: "failed", error: { message: "provider detail" }, output: [] })
+    })));
+    const caller = new OpenAIWebSearchCaller({ apiKey: "sk-test", enabled: true });
+    await expect(caller.search({
+      instructions: "safe",
+      input: "{}",
+      schemaName: "email_format_discovery",
+      jsonSchema: {}
+    })).rejects.toMatchObject({ status: expected });
+  });
+
+  it("maps fetch failures to NETWORK_ERROR", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new TypeError("fetch failed"); }));
+    const caller = new OpenAIWebSearchCaller({ apiKey: "sk-test", enabled: true });
+    await expect(caller.search({
+      instructions: "safe",
+      input: "{}",
+      schemaName: "email_format_discovery",
+      jsonSchema: {}
+    })).rejects.toMatchObject({ status: "NETWORK_ERROR" });
+  });
+
+  it("returns PARSER_REJECTED_RESPONSE for malformed model JSON", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        status: "completed",
+        output: [
+          { type: "web_search_call" },
+          { type: "message", content: [{ type: "output_text", text: '{"selectedEmailDomain":"esri.com"' }] }
+        ]
+      })
+    })));
+    const caller = new OpenAIWebSearchCaller({ apiKey: "sk-test", enabled: true });
+    await expect(caller.search({
+      instructions: "safe",
+      input: "{}",
+      schemaName: "email_format_discovery",
+      jsonSchema: {}
+    })).rejects.toMatchObject({ status: "PARSER_REJECTED_RESPONSE" });
   });
 });
 
@@ -179,6 +268,24 @@ describe("validateDiscoveryResult", () => {
     expect(result.supportingSources).toHaveLength(1);
     expect(result.domainConfidence).toBe("MEDIUM");
     expect(result.patternConfidence).toBe("MEDIUM");
+  });
+
+  it("normalizes provider pattern/confidence/domain aliases before persistence", () => {
+    const result = validateDiscoveryResult({
+      ...ESRI_RAW,
+      selectedEmailDomain: "WWW.ESRI.COM.",
+      selectedPattern: "FIRST_INITIAL_LAST",
+      domainConfidence: 0.91,
+      patternConfidence: "high",
+      supportingSources: [{
+        ...ESRI_RAW.supportingSources[0],
+        claimedDomain: "www.esri.com.",
+        claimedPattern: "first_initial_last"
+      }]
+    });
+    expect(result.selectedEmailDomain).toBe("esri.com");
+    expect(result.selectedPattern).toBe("flast");
+    expect(result.domainConfidence).toBe("HIGH");
   });
 });
 
@@ -246,7 +353,7 @@ describe("OpenAIEmailFormatDiscoveryService", () => {
     expect(Object.keys(JSON.parse(request.input))).toEqual(["company", "websiteDomain", "suggestedQueries"]);
     expect(request.input).not.toContain("linkedin.com");
     expect(request.input).not.toContain("Employee One");
-    expect(request.maxOutputTokens).toBeLessThanOrEqual(400);
+    expect(request.maxOutputTokens).toBe(EMAIL_FORMAT_MAX_OUTPUT_TOKENS);
     expect(bundle.domainEvidence?.[0]).toMatchObject({ emailDomain: "amat.com", observedPattern: "first_last" });
     expect(budget.canCall("email_pattern")).toBe(false);
 
@@ -277,7 +384,7 @@ describe("OpenAIEmailFormatDiscoveryService", () => {
     const service = new OpenAIEmailFormatDiscoveryService({ caller });
 
     await expect(service.findEvidence({ companyName: "Esri", officialWebsiteDomain: "esri.com" }))
-      .resolves.toEqual({});
+      .resolves.toMatchObject({ discoveryStatus: "PARSER_REJECTED_RESPONSE" });
     expect(caller.search).toHaveBeenCalledTimes(2);
   });
 
@@ -288,7 +395,7 @@ describe("OpenAIEmailFormatDiscoveryService", () => {
     const service = new OpenAIEmailFormatDiscoveryService({ caller });
 
     await expect(service.findEvidence({ companyName: "Esri", officialWebsiteDomain: "esri.com" }))
-      .resolves.toEqual({});
+      .resolves.toMatchObject({ discoveryStatus: "BAD_PROVIDER_RESPONSE" });
     expect(caller.search).toHaveBeenCalledTimes(1);
   });
 
@@ -299,7 +406,43 @@ describe("OpenAIEmailFormatDiscoveryService", () => {
       companyName: "Esri",
       officialWebsiteDomain: "esri.com",
       sourceUrl: "https://rocketreach.co/esri-email-format"
-    })).resolves.toEqual({});
+    })).resolves.toMatchObject({ discoveryStatus: "NO_EVIDENCE" });
     expect(caller.search).not.toHaveBeenCalled();
+  });
+
+  it("returns NOT_CONFIGURED when the caller has no API key", async () => {
+    const caller = new OpenAIWebSearchCaller({ apiKey: "", enabled: true });
+    const service = new OpenAIEmailFormatDiscoveryService({ caller });
+    await expect(service.findEvidence({ companyName: "Esri", officialWebsiteDomain: "esri.com" }))
+      .resolves.toMatchObject({ discoveryStatus: "NOT_CONFIGURED" });
+  });
+
+  it.each([
+    ["AUTH_ERROR", "AUTH_ERROR"],
+    ["RATE_LIMITED", "RATE_LIMITED"],
+    ["NETWORK_ERROR", "NETWORK_ERROR"]
+  ] as const)("preserves the typed %s provider failure", async (errorStatus, expected) => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    const caller = fakeCaller(new EmailFormatProviderError(errorStatus, "safe provider failure"));
+    const service = new OpenAIEmailFormatDiscoveryService({ caller });
+    await expect(service.findEvidence({ companyName: "Esri", officialWebsiteDomain: "esri.com" }))
+      .resolves.toMatchObject({ discoveryStatus: expected });
+  });
+
+  it("returns NO_EVIDENCE only for a successful searched response with no sources", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    const caller = fakeCaller({
+      ...ESRI_RAW,
+      selectedEmailDomain: null,
+      selectedPattern: null,
+      domainConfidence: "UNAVAILABLE",
+      patternConfidence: "UNAVAILABLE",
+      supportingSources: [],
+      decisionCode: "INSUFFICIENT_EVIDENCE"
+    });
+    const service = new OpenAIEmailFormatDiscoveryService({ caller });
+    await expect(service.findEvidence({ companyName: "No Evidence Co", officialWebsiteDomain: "example.test" }))
+      .resolves.toMatchObject({ discoveryStatus: "NO_EVIDENCE" });
   });
 });

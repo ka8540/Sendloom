@@ -125,6 +125,44 @@ export function isEmailPattern(value: unknown): value is EmailPattern {
   return typeof value === "string" && (EMAIL_PATTERNS as readonly string[]).includes(value);
 }
 
+// Provider-facing aliases are normalized at the boundary before persistence.
+// The canonical values above remain the only values stored or used to generate
+// person emails.
+const EMAIL_PATTERN_ALIASES: Record<string, EmailPattern> = {
+  first: "first",
+  last: "last",
+  firstlast: "firstlast",
+  first_last: "first_last",
+  first_dot_last: "first.last",
+  firstlast_dot: "first.last",
+  first_initial_last: "flast",
+  firstinitiallast: "flast",
+  first_initial_dot_last: "f.last",
+  first_initial_underscore_last: "f_last",
+  first_last_initial: "firstl",
+  first_dot_last_initial: "first.l",
+  last_first_initial: "lastf",
+  last_dot_first: "last.first"
+};
+
+export function normalizeEmailPattern(value: unknown): EmailPattern | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "")
+    .replace(/\]\s*[.]\s*\[/g, ".")
+    .replace(/\]\s*_\s*\[/g, "_")
+    .replace(/\]\s*\[/g, "")
+    .replace(/[ -]+/g, "_");
+  if (isEmailPattern(normalized)) {
+    return normalized;
+  }
+  return EMAIL_PATTERN_ALIASES[normalized] ?? null;
+}
+
 export function isPositionCategory(value: unknown): value is PositionCategory {
   return typeof value === "string" && (POSITION_CATEGORIES as readonly string[]).includes(value);
 }

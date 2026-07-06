@@ -28,9 +28,12 @@ import {
   EMAIL_PATTERNS,
   type ConfidenceLevel,
   type EmailPattern,
-  coerceConfidenceLevel
+  coerceConfidenceLevel,
+  normalizeEmailPattern
 } from "@/lib/prospect-enums";
 import {
+  type EmailFormatDiscoveryDiagnostics,
+  type EmailFormatDiscoveryStatus,
   type EmailDomainEvidence,
   type EmailEvidenceBundle,
   type EmailEvidenceProvider,
@@ -44,7 +47,10 @@ import { normalizeDomain } from "@/services/prospects/prospect-normalization";
 // The discovery model defaults to GPT-5.5; override with PROSPECT_AI_MODEL.
 export const DEFAULT_PROSPECT_EMAIL_FORMAT_MODEL = "gpt-5.5";
 
-export const EMAIL_FORMAT_MAX_OUTPUT_TOKENS = 400;
+// 400 tokens proved too small in production: GPT-5.5 returned a completed
+// web-search response whose JSON ended mid-string. Keep the payload compact,
+// but leave enough room for five evidence rows plus reasoning.
+export const EMAIL_FORMAT_MAX_OUTPUT_TOKENS = 1_600;
 export const EMAIL_FORMAT_MAX_SOURCES = 5;
 
 // AI-facing source categories (kept separate from the internal evidence source
@@ -70,7 +76,7 @@ export type EmailFormatEvidenceItem = {
   exampleEmail: string | null;
 };
 
-export type EmailFormatDiscoveryResult = {
+export type ValidatedEmailFormatDiscoveryPayload = {
   selectedEmailDomain: string | null;
   selectedPattern: EmailPattern | null;
   domainConfidence: ConfidenceLevel;
@@ -150,6 +156,105 @@ const discoveryResultSchema = z.object({
   conflictingSourceCount: z.number().int().nonnegative(),
   decisionCode: z.enum(EMAIL_FORMAT_DECISION_CODES)
 }).strict();
+
+function normalizeConfidenceAlias(value: unknown): ConfidenceLevel | unknown {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const score = value <= 1 ? value * 100 : value;
+    if (score >= 80) return "HIGH";
+    if (score >= 50) return "MEDIUM";
+    if (score > 0) return "LOW";
+    return "UNAVAILABLE";
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toUpperCase().replace(/[ -]+/g, "_");
+    if ((CONFIDENCE_LEVELS as readonly string[]).includes(normalized)) {
+      return normalized;
+    }
+  }
+  return value;
+}
+
+function normalizeDomainAlias(value: unknown): unknown {
+  return typeof value === "string" ? value.trim().replace(/[.,;:!?]+$/g, "") : value;
+}
+
+function normalizeUrlAlias(value: unknown): unknown {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (value && typeof value === "object") {
+    const row = value as Record<string, unknown>;
+    return row.url ?? row.href ?? row.sourceUrl;
+  }
+  return value;
+}
+
+/**
+ * Normalize only documented provider aliases before strict Zod validation.
+ * Unknown narrative/root fields still fail closed instead of being silently
+ * discarded.
+ */
+function normalizeDiscoveryPayload(raw: unknown): unknown {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return raw;
+  }
+  const input = raw as Record<string, unknown>;
+  const allowedRoot = new Set([
+    "selectedEmailDomain",
+    "emailDomain",
+    "selectedPattern",
+    "emailPattern",
+    "domainConfidence",
+    "emailConfidence",
+    "patternConfidence",
+    "supportingSources",
+    "evidence",
+    "conflictingSourceCount",
+    "decisionCode"
+  ]);
+  const unknownRoot = Object.keys(input).find((key) => !allowedRoot.has(key));
+  if (unknownRoot) {
+    throw new Error(`Unexpected email-format response field: ${unknownRoot}.`);
+  }
+  const sources = Array.isArray(input.supportingSources)
+    ? input.supportingSources
+    : Array.isArray(input.evidence)
+      ? input.evidence
+      : input.supportingSources;
+  const normalizedSources = Array.isArray(sources)
+    ? sources.map((source) => {
+        if (!source || typeof source !== "object" || Array.isArray(source)) {
+          return source;
+        }
+        const row = source as Record<string, unknown>;
+        const rawPattern = row.claimedPattern ?? row.emailPattern ?? row.pattern ?? null;
+        return {
+          label: row.label ?? row.sourceName ?? row.name,
+          url: normalizeUrlAlias(row.url ?? row.sourceUrl ?? row.evidenceUrl),
+          sourceType: typeof row.sourceType === "string" ? row.sourceType.trim().toLowerCase() : row.sourceType,
+          claimedDomain: normalizeDomainAlias(row.claimedDomain ?? row.emailDomain ?? row.domain ?? null),
+          claimedPattern: rawPattern === null ? null : normalizeEmailPattern(rawPattern) ?? rawPattern,
+          percentage: row.percentage ?? null,
+          exampleEmail: row.exampleEmail ?? row.emailExample ?? null
+        };
+      })
+    : sources;
+  return {
+    selectedEmailDomain: normalizeDomainAlias(input.selectedEmailDomain ?? input.emailDomain ?? null),
+    selectedPattern: (() => {
+      const rawPattern = input.selectedPattern ?? input.emailPattern ?? null;
+      return rawPattern === null ? null : normalizeEmailPattern(rawPattern) ?? rawPattern;
+    })(),
+    domainConfidence: normalizeConfidenceAlias(input.domainConfidence ?? input.emailConfidence),
+    patternConfidence: normalizeConfidenceAlias(input.patternConfidence),
+    supportingSources: normalizedSources,
+    conflictingSourceCount: input.conflictingSourceCount ?? 0,
+    decisionCode:
+      typeof input.decisionCode === "string"
+        ? input.decisionCode.trim().toUpperCase().replace(/[ -]+/g, "_")
+        : input.decisionCode
+  };
+}
 
 export const OPENAI_EMAIL_FORMAT_INSTRUCTIONS = [
   "You are finding a company's public work email format.",
@@ -254,8 +359,8 @@ function rowConfidence(
  * absent from evidence are rejected so the caller can retry once, then fall
  * back safely.
  */
-export function validateDiscoveryResult(raw: unknown): EmailFormatDiscoveryResult {
-  const parsed = discoveryResultSchema.parse(raw);
+export function validateDiscoveryResult(raw: unknown): ValidatedEmailFormatDiscoveryPayload {
+  const parsed = discoveryResultSchema.parse(normalizeDiscoveryPayload(raw));
   const seen = new Set<string>();
   const supportingSources = parsed.supportingSources.flatMap((source) => {
     const exampleEmail = source.exampleEmail?.trim().toLowerCase() || null;
@@ -332,7 +437,7 @@ export function validateDiscoveryResult(raw: unknown): EmailFormatDiscoveryResul
  * is known) a pattern-evidence entry.
  */
 export function discoveryResultToEvidenceBundle(
-  result: EmailFormatDiscoveryResult,
+  result: ValidatedEmailFormatDiscoveryPayload,
   options: { now?: () => Date } = {}
 ): EmailEvidenceBundle {
   const observedAtIso = (options.now ?? (() => new Date()))().toISOString();
@@ -406,14 +511,31 @@ export interface EmailFormatWebSearchCaller {
   /** Returns the parsed (but not yet validated) JSON object from the model. */
   search(request: WebSearchRequest): Promise<unknown>;
   getLastUsage?(): { inputTokens: number; outputTokens: number } | null;
+  getLastDiagnostics?(): EmailFormatDiscoveryDiagnostics | null;
 }
 
 type OpenAIResponse = {
+  status?: string;
   output_text?: string;
-  output?: Array<{ type?: string; content?: Array<{ type?: string; text?: string }> }>;
+  output?: Array<{
+    type?: string;
+    status?: string;
+    content?: Array<{ type?: string; text?: string; parsed?: unknown }>;
+  }>;
+  incomplete_details?: { reason?: string } | null;
   error?: { message?: string };
   usage?: { input_tokens?: number; output_tokens?: number };
 };
+
+export class EmailFormatProviderError extends Error {
+  constructor(
+    readonly status: Exclude<EmailFormatDiscoveryStatus, "FOUND" | "NO_EVIDENCE">,
+    message: string
+  ) {
+    super(message);
+    this.name = "EmailFormatProviderError";
+  }
+}
 
 function extractOutputText(response: OpenAIResponse): string {
   const direct = response.output_text?.trim();
@@ -443,6 +565,7 @@ export class OpenAIWebSearchCaller implements EmailFormatWebSearchCaller {
   private readonly reasoningEffort: string;
   private readonly enabledOverride?: boolean;
   private lastUsage: { inputTokens: number; outputTokens: number } | null = null;
+  private lastDiagnostics: EmailFormatDiscoveryDiagnostics | null = null;
 
   constructor(options?: { apiKey?: string; model?: string; reasoningEffort?: string; enabled?: boolean }) {
     this.apiKey = options?.apiKey ?? env.OPENAI_API_KEY;
@@ -462,39 +585,87 @@ export class OpenAIWebSearchCaller implements EmailFormatWebSearchCaller {
     return this.lastUsage;
   }
 
+  getLastDiagnostics() {
+    return this.lastDiagnostics;
+  }
+
   async search(request: WebSearchRequest): Promise<unknown> {
     if (!this.enabled) {
       throw new Error("Prospect AI is disabled or OPENAI_API_KEY is missing.");
     }
     this.lastUsage = null;
+    this.lastDiagnostics = {
+      providerConfigured: true,
+      model: this.model,
+      requestedTool: "web_search",
+      responseStatus: null,
+      outputItemTypes: [],
+      webSearchOccurred: false,
+      textOutputExisted: false,
+      structuredParsingSucceeded: false
+    };
 
-    const response = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${this.apiKey}`
-      },
-      body: JSON.stringify({
-        model: this.model,
-        reasoning: { effort: this.reasoningEffort },
-        instructions: request.instructions,
-        input: request.input,
-        tools: [{ type: "web_search" }],
-        max_output_tokens: request.maxOutputTokens ?? EMAIL_FORMAT_MAX_OUTPUT_TOKENS,
-        text: {
-          format: {
-            type: "json_schema",
-            name: request.schemaName,
-            strict: true,
-            schema: request.jsonSchema
+    let response: Response;
+    try {
+      response = await fetch("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.apiKey}`
+        },
+        body: JSON.stringify({
+          model: this.model,
+          reasoning: { effort: this.reasoningEffort },
+          instructions: request.instructions,
+          input: request.input,
+          tools: [{ type: "web_search" }],
+          // Discovery must actually search; `auto` is allowed to skip the tool.
+          tool_choice: "required",
+          max_output_tokens: request.maxOutputTokens ?? EMAIL_FORMAT_MAX_OUTPUT_TOKENS,
+          text: {
+            format: {
+              type: "json_schema",
+              name: request.schemaName,
+              strict: true,
+              schema: request.jsonSchema
+            }
           }
-        }
-      })
-    });
+        })
+      });
+    } catch {
+      throw new EmailFormatProviderError("NETWORK_ERROR", "The email-format provider could not be reached.");
+    }
 
-    const payload = (await response.json()) as OpenAIResponse;
+    let payload: OpenAIResponse;
+    try {
+      payload = (await response.json()) as OpenAIResponse;
+    } catch {
+      throw new EmailFormatProviderError("BAD_PROVIDER_RESPONSE", "The email-format provider returned invalid JSON.");
+    }
+    const outputItemTypes = (payload.output ?? []).map((item) => item.type ?? "unknown");
+    const webSearchOccurred = outputItemTypes.includes("web_search_call");
+    const text = extractOutputText(payload);
+    this.lastDiagnostics = {
+      providerConfigured: true,
+      model: this.model,
+      requestedTool: "web_search",
+      responseStatus: payload.status ?? String(response.status),
+      outputItemTypes,
+      webSearchOccurred,
+      textOutputExisted: Boolean(text),
+      structuredParsingSucceeded: false
+    };
     if (!response.ok) {
-      throw new Error(payload.error?.message ?? "Email-format web search failed.");
+      if (response.status === 401 || response.status === 403) {
+        throw new EmailFormatProviderError("AUTH_ERROR", "The email-format provider rejected authentication.");
+      }
+      if (response.status === 429) {
+        throw new EmailFormatProviderError("RATE_LIMITED", "The email-format provider is temporarily rate-limited.");
+      }
+      throw new EmailFormatProviderError(
+        "BAD_PROVIDER_RESPONSE",
+        payload.error?.message ? "The email-format provider rejected the request." : "Email-format discovery failed."
+      );
     }
 
     if (
@@ -507,11 +678,28 @@ export class OpenAIWebSearchCaller implements EmailFormatWebSearchCaller {
       };
     }
 
-    const text = extractOutputText(payload);
-    if (!text) {
-      throw new Error("Email-format web search returned an empty result.");
+    if (payload.status === "incomplete") {
+      throw new EmailFormatProviderError(
+        "BAD_PROVIDER_RESPONSE",
+        `The email-format provider response was incomplete${payload.incomplete_details?.reason ? ` (${payload.incomplete_details.reason})` : ""}.`
+      );
     }
-    return JSON.parse(text) as unknown;
+    if (!webSearchOccurred) {
+      throw new EmailFormatProviderError("BAD_PROVIDER_RESPONSE", "The provider did not execute the required web search.");
+    }
+    if (!text) {
+      throw new EmailFormatProviderError("BAD_PROVIDER_RESPONSE", "Email-format web search returned an empty result.");
+    }
+    try {
+      const parsed = JSON.parse(text) as unknown;
+      this.lastDiagnostics.structuredParsingSucceeded = true;
+      return parsed;
+    } catch {
+      throw new EmailFormatProviderError(
+        "PARSER_REJECTED_RESPONSE",
+        "The email-format provider response was not valid structured JSON."
+      );
+    }
   }
 }
 
@@ -536,22 +724,44 @@ export class OpenAIEmailFormatDiscoveryService implements EmailEvidenceProvider 
   async findEvidence(input: EmailEvidenceProviderInput): Promise<EmailEvidenceBundle> {
     // Pasted source URL → defer to the deterministic parser + ranker.
     if (input.sourceUrl) {
-      return {};
+      return {
+        discoveryStatus: "NO_EVIDENCE",
+        discoveryReason: "AI web search was skipped because a public source URL was supplied."
+      };
     }
     if (!isOpenAIEmailFormatDiscoveryConfigured()) {
-      return {};
+      return {
+        discoveryStatus: "NOT_CONFIGURED",
+        discoveryReason: "AI email-format discovery is not configured.",
+        diagnostics: {
+          providerConfigured: false,
+          model: env.PROSPECT_AI_MODEL ?? DEFAULT_PROSPECT_EMAIL_FORMAT_MODEL,
+          requestedTool: "web_search",
+          responseStatus: null,
+          outputItemTypes: [],
+          webSearchOccurred: false,
+          textOutputExisted: false,
+          structuredParsingSucceeded: false
+        }
+      };
     }
 
     const caller = this.caller ?? new OpenAIWebSearchCaller();
     if (!caller.enabled) {
-      return {};
+      return {
+        discoveryStatus: "NOT_CONFIGURED",
+        discoveryReason: "AI email-format discovery is not configured."
+      };
     }
 
     // One AI call per company: the web search consumes the shared email_pattern
     // budget so the deterministic selector — not a second model call — chooses.
     const budget = input.budget;
     if (budget && !budget.canCall("email_pattern")) {
-      return {};
+      return {
+        discoveryStatus: "RATE_LIMITED",
+        discoveryReason: "The email-format discovery budget is temporarily exhausted."
+      };
     }
     budget?.record("email_pattern");
 
@@ -563,7 +773,7 @@ export class OpenAIEmailFormatDiscoveryService implements EmailEvidenceProvider 
       })
     );
 
-    let result: EmailFormatDiscoveryResult | null = null;
+    let result: ValidatedEmailFormatDiscoveryPayload | null = null;
     let lastError: unknown = null;
     let inputTokens = 0;
     let outputTokens = 0;
@@ -594,9 +804,26 @@ export class OpenAIEmailFormatDiscoveryService implements EmailEvidenceProvider 
         }
       }
       if (!result) {
-        throw lastError ?? new Error("Email-format web search returned invalid JSON.");
+        throw new EmailFormatProviderError(
+          "PARSER_REJECTED_RESPONSE",
+          lastError instanceof Error
+            ? "The email-format provider response did not match the required schema."
+            : "The email-format provider response could not be parsed."
+        );
       }
     } catch (error) {
+      const status =
+        error instanceof EmailFormatProviderError ? error.status : "BAD_PROVIDER_RESPONSE";
+      const diagnostics = caller.getLastDiagnostics?.() ?? {
+        providerConfigured: true,
+        model: caller.model,
+        requestedTool: "web_search",
+        responseStatus: null,
+        outputItemTypes: [],
+        webSearchOccurred: false,
+        textOutputExisted: false,
+        structuredParsingSucceeded: false
+      };
       this.log({
         operation: "web_search_resolution",
         model: caller.model,
@@ -608,12 +835,29 @@ export class OpenAIEmailFormatDiscoveryService implements EmailEvidenceProvider 
       });
       console.warn(
         "[prospect-email-format-discovery] web search failed",
-        error instanceof Error ? error.message : error
+        { status, ...diagnostics }
       );
-      return {};
+      return {
+        discoveryStatus: status,
+        discoveryReason:
+          error instanceof EmailFormatProviderError
+            ? error.message
+            : "The email-format provider returned a bad response.",
+        diagnostics
+      };
     }
 
     const bundle = discoveryResultToEvidenceBundle(result, { now: this.now });
+    const diagnostics = caller.getLastDiagnostics?.() ?? {
+      providerConfigured: true,
+      model: caller.model,
+      requestedTool: "web_search",
+      responseStatus: "completed",
+      outputItemTypes: [],
+      webSearchOccurred: true,
+      textOutputExisted: true,
+      structuredParsingSucceeded: true
+    };
     this.log({
       operation: "web_search_resolution",
       model: caller.model,
@@ -623,7 +867,20 @@ export class OpenAIEmailFormatDiscoveryService implements EmailEvidenceProvider 
       decisionCode: result.decisionCode,
       ...(hasUsage ? { inputTokens, outputTokens } : {})
     });
-    return bundle;
+    if (result.supportingSources.length === 0) {
+      return {
+        ...bundle,
+        discoveryStatus: "NO_EVIDENCE",
+        discoveryReason: "No public email-format evidence was found.",
+        diagnostics
+      };
+    }
+    return {
+      ...bundle,
+      discoveryStatus: "FOUND",
+      discoveryReason: null,
+      diagnostics
+    };
   }
 
   // Safe telemetry only — never the API key, prompt, raw page content, tokens,

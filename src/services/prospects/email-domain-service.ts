@@ -60,6 +60,35 @@ export type EmailEvidenceBundle = {
     EmailFormatDecisionMetadata,
     "decisionCode" | "supportingSourceCount" | "conflictingSourceCount"
   > | null;
+  /** Typed provider outcome. Legacy test providers may omit this field. */
+  discoveryStatus?: EmailFormatDiscoveryStatus;
+  /** Privacy-safe explanation; never a prompt, person name, or generated email. */
+  discoveryReason?: string | null;
+  diagnostics?: EmailFormatDiscoveryDiagnostics;
+};
+
+export const EMAIL_FORMAT_DISCOVERY_STATUSES = [
+  "FOUND",
+  "NO_EVIDENCE",
+  "NOT_CONFIGURED",
+  "AUTH_ERROR",
+  "RATE_LIMITED",
+  "NETWORK_ERROR",
+  "BAD_PROVIDER_RESPONSE",
+  "PARSER_REJECTED_RESPONSE"
+] as const;
+
+export type EmailFormatDiscoveryStatus = (typeof EMAIL_FORMAT_DISCOVERY_STATUSES)[number];
+
+export type EmailFormatDiscoveryDiagnostics = {
+  providerConfigured: boolean;
+  model: string | null;
+  requestedTool: string | null;
+  responseStatus: string | null;
+  outputItemTypes: string[];
+  webSearchOccurred: boolean;
+  textOutputExisted: boolean;
+  structuredParsingSucceeded: boolean;
 };
 
 export type EmailEvidenceProviderInput = {
@@ -78,7 +107,7 @@ export interface EmailEvidenceProvider {
   findEvidence(input: EmailEvidenceProviderInput): Promise<EmailEvidenceBundle>;
 }
 
-export type CompanyEmailInferenceResult = {
+type CompanyEmailInferenceSelection = {
   selectedEmailDomain: string | null;
   emailDomainConfidence: ConfidenceLevel;
   emailDomainEvidence: EmailDomainEvidence[];
@@ -87,6 +116,22 @@ export type CompanyEmailInferenceResult = {
   patternEvidence: EmailPatternEvidence[];
   decision: EmailFormatDecisionMetadata;
 };
+
+export type EmailFormatDiscoveryResult = CompanyEmailInferenceSelection &
+  (
+    | {
+        status: "FOUND";
+        reason: null;
+        diagnostics?: EmailFormatDiscoveryDiagnostics;
+      }
+    | {
+        status: Exclude<EmailFormatDiscoveryStatus, "FOUND">;
+        reason: string;
+        diagnostics?: EmailFormatDiscoveryDiagnostics;
+      }
+  );
+
+export type CompanyEmailInferenceResult = EmailFormatDiscoveryResult;
 
 export type InferCompanyEmailInput = {
   userId: string;
@@ -189,15 +234,33 @@ const AI_INSTRUCTIONS = [
 
 class NoopEmailEvidenceProvider implements EmailEvidenceProvider {
   async findEvidence(): Promise<EmailEvidenceBundle> {
-    return {};
+    return {
+      discoveryStatus: "NO_EVIDENCE",
+      discoveryReason: "No public email-format evidence was found."
+    };
   }
 }
 
 function mergeEvidenceBundles(bundles: EmailEvidenceBundle[]): EmailEvidenceBundle {
+  const failure = [...bundles]
+    .reverse()
+    .find(
+      (bundle) =>
+        bundle.discoveryStatus &&
+        bundle.discoveryStatus !== "FOUND" &&
+        bundle.discoveryStatus !== "NO_EVIDENCE" &&
+        bundle.discoveryStatus !== "NOT_CONFIGURED"
+    );
+  const configured = bundles.some((bundle) => bundle.discoveryStatus !== "NOT_CONFIGURED");
   return {
     domainEvidence: bundles.flatMap((bundle) => bundle.domainEvidence ?? []),
     patternEvidence: bundles.flatMap((bundle) => bundle.patternEvidence ?? []),
-    decision: bundles.map((bundle) => bundle.decision).find((decision) => Boolean(decision)) ?? null
+    decision: bundles.map((bundle) => bundle.decision).find((decision) => Boolean(decision)) ?? null,
+    discoveryStatus: failure?.discoveryStatus ?? (configured ? "NO_EVIDENCE" : "NOT_CONFIGURED"),
+    discoveryReason:
+      failure?.discoveryReason ??
+      (configured ? "No public email-format evidence was found." : "Email-format discovery is not configured."),
+    diagnostics: [...bundles].reverse().find((bundle) => bundle.diagnostics)?.diagnostics
   };
 }
 
@@ -240,12 +303,15 @@ export class CompositeEmailEvidenceProvider implements EmailEvidenceProvider {
           "[prospect-email-evidence] provider failed",
           error instanceof Error ? error.message : error
         );
-        return {} as EmailEvidenceBundle;
+        return {
+          discoveryStatus: "BAD_PROVIDER_RESPONSE" as const,
+          discoveryReason: "The email-format provider failed before returning a usable response."
+        };
       });
       bundles.push(bundle);
       const combined = mergeEvidenceBundles(bundles);
       if (evidenceBundleHasDeterministicSelection(combined)) {
-        return combined;
+        return { ...combined, discoveryStatus: "FOUND", discoveryReason: null };
       }
     }
     return mergeEvidenceBundles(bundles);
@@ -665,7 +731,7 @@ function deterministicSelection(
   domainEvidence: EmailDomainEvidence[],
   patternEvidence: EmailPatternEvidence[],
   identity: { companyName: string; websiteDomain: string | null }
-): CompanyEmailInferenceResult {
+): CompanyEmailInferenceSelection {
   const ranked = buildRankedEvidence(domainEvidence, patternEvidence);
   const domain = bestByKey(ranked, (row) => row.emailDomain);
   const patternRows = domain.key ? ranked.filter((row) => !row.emailDomain || row.emailDomain === domain.key) : ranked;
@@ -711,11 +777,44 @@ function deterministicSelection(
   };
 }
 
-function requiresAiResolution(result: CompanyEmailInferenceResult) {
+function requiresAiResolution(result: CompanyEmailInferenceSelection) {
   return (
     Boolean(result.selectedEmailDomain && result.selectedPattern) &&
     result.decision.conflictingSourceCount > 0
   );
+}
+
+function finalizeDiscoveryResult(
+  selection: CompanyEmailInferenceSelection,
+  providerEvidence: EmailEvidenceBundle,
+  override?: { status: EmailFormatDiscoveryStatus; reason: string }
+): EmailFormatDiscoveryResult {
+  const usable = Boolean(
+    selection.selectedEmailDomain &&
+      selection.selectedPattern &&
+      selection.emailDomainConfidence !== "UNAVAILABLE" &&
+      selection.patternConfidence !== "UNAVAILABLE"
+  );
+  if (usable) {
+    return {
+      ...selection,
+      status: "FOUND",
+      reason: null,
+      ...(providerEvidence.diagnostics ? { diagnostics: providerEvidence.diagnostics } : {})
+    };
+  }
+
+  const status = override?.status ?? providerEvidence.discoveryStatus ?? "NO_EVIDENCE";
+  const unresolvedStatus = status === "FOUND" ? "NO_EVIDENCE" : status;
+  return {
+    ...selection,
+    status: unresolvedStatus,
+    reason:
+      override?.reason ??
+      providerEvidence.discoveryReason ??
+      "No public email-format evidence was found.",
+    ...(providerEvidence.diagnostics ? { diagnostics: providerEvidence.diagnostics } : {})
+  };
 }
 
 export function buildCompactEmailFormatAiPayload(input: {
@@ -804,7 +903,10 @@ export class EmailDomainService {
   async infer(input: InferCompanyEmailInput): Promise<CompanyEmailInferenceResult> {
     const officialWebsiteDomain = normalizeDomain(input.officialWebsiteDomain);
     const providerEvidence = input.skipProvider
-      ? {}
+      ? {
+          discoveryStatus: "NO_EVIDENCE" as const,
+          discoveryReason: "Stored public evidence was reused without a provider call."
+        }
       : await this.evidenceProvider.findEvidence({
           companyName: input.companyName,
           officialWebsiteDomain,
@@ -857,7 +959,7 @@ export class EmailDomainService {
       !input.budget.canCall("email_pattern")
     ) {
       this.logInferenceResult(input, ranked, deterministic);
-      return deterministic;
+      return finalizeDiscoveryResult(deterministic, providerEvidence);
     }
 
     input.budget.record("email_pattern");
@@ -944,7 +1046,7 @@ export class EmailDomainService {
         confidenceForEvidence(ranked.filter((row) => row.pattern === selectedPattern))
       );
 
-      const result = {
+      const selection: CompanyEmailInferenceSelection = {
         selectedEmailDomain: selectedDomain,
         emailDomainConfidence: domainConfidence,
         emailDomainEvidence: domainEvidence,
@@ -962,14 +1064,14 @@ export class EmailDomainService {
       };
       this.logAiResolution({
         sourceCount: compactPayload.sources.length,
-        decisionCode: result.decision.decisionCode,
+        decisionCode: selection.decision.decisionCode,
         usage: hasAiUsage ? { inputTokens: aiInputTokens, outputTokens: aiOutputTokens } : null
       });
-      this.logInferenceResult(input, ranked, result);
-      return result;
+      this.logInferenceResult(input, ranked, selection);
+      return finalizeDiscoveryResult(selection, providerEvidence);
     } catch (error) {
       console.warn("[prospect] email inference AI failed", error instanceof Error ? error.message : error);
-      const needsReview: CompanyEmailInferenceResult = {
+      const needsReview: CompanyEmailInferenceSelection = {
         ...deterministic,
         selectedPattern: null,
         patternConfidence: "UNAVAILABLE",
@@ -984,7 +1086,10 @@ export class EmailDomainService {
         usage: hasAiUsage ? { inputTokens: aiInputTokens, outputTokens: aiOutputTokens } : null
       });
       this.logInferenceResult(input, ranked, needsReview);
-      return needsReview;
+      return finalizeDiscoveryResult(needsReview, providerEvidence, {
+        status: "PARSER_REJECTED_RESPONSE",
+        reason: "The email-format resolver response could not be parsed safely."
+      });
     }
   }
 
@@ -1066,7 +1171,7 @@ export class EmailDomainService {
   private logInferenceResult(
     input: Pick<InferCompanyEmailInput, "searchId" | "companyId">,
     ranked: RankedEvidence[],
-    result: CompanyEmailInferenceResult
+    result: CompanyEmailInferenceSelection
   ) {
     this.logInference({
       searchId: input.searchId,

@@ -57,6 +57,16 @@ export type EmailCandidateStatus =
   | "UNSUBSCRIBED";
 
 export type ConfidenceLevel = "HIGH" | "MEDIUM" | "LOW" | "UNAVAILABLE";
+export type EmailFormatDiscoveryStatus =
+  | "NOT_ATTEMPTED"
+  | "FOUND"
+  | "NO_EVIDENCE"
+  | "NOT_CONFIGURED"
+  | "AUTH_ERROR"
+  | "RATE_LIMITED"
+  | "NETWORK_ERROR"
+  | "BAD_PROVIDER_RESPONSE"
+  | "PARSER_REJECTED_RESPONSE";
 export type ProspectSelectionMode = "EXPLICIT" | "ALL_MATCHING";
 
 // ---------------------------------------------------------------------------
@@ -72,6 +82,8 @@ export type CompanySummary = {
   emailDomainConfidence: ConfidenceLevel;
   emailPattern: string | null;
   patternConfidence: ConfidenceLevel;
+  emailFormatDiscoveryStatus?: EmailFormatDiscoveryStatus;
+  emailFormatDiscoveryReason?: string | null;
   peopleCount: number;
 };
 
@@ -205,6 +217,9 @@ export type CompanyDetail = {
   patternConfidence: ConfidenceLevel;
   emailFormatReason: string | null;
   emailFormatDiscoveredAt: string | null;
+  emailFormatDiscoveryStatus: EmailFormatDiscoveryStatus;
+  emailFormatDiscoveryReason: string | null;
+  emailFormatDiscoveryAt: string | null;
   peopleCount: number;
   emailStatusCounts: CompanyEmailStatusCount[];
   patternEvidence: PatternEvidenceNode[];
@@ -445,6 +460,9 @@ export const COMPANY_DETAIL_QUERY = /* GraphQL */ `
       patternConfidence
       emailFormatReason
       emailFormatDiscoveredAt
+      emailFormatDiscoveryStatus
+      emailFormatDiscoveryReason
+      emailFormatDiscoveryAt
       peopleCount
       emailStatusCounts {
         status
@@ -543,6 +561,8 @@ export const PROCESS_SEARCH_MUTATION = /* GraphQL */ `
         emailDomainConfidence
         emailPattern
         patternConfidence
+        emailFormatDiscoveryStatus
+        emailFormatDiscoveryReason
         peopleCount
       }
     }
@@ -614,6 +634,9 @@ export const REFRESH_COMPANY_EMAIL_FORMAT_MUTATION = /* GraphQL */ `
       patternConfidence
       emailFormatReason
       emailFormatDiscoveredAt
+      emailFormatDiscoveryStatus
+      emailFormatDiscoveryReason
+      emailFormatDiscoveryAt
       peopleCount
       emailStatusCounts {
         status
@@ -675,6 +698,9 @@ export const DISCOVER_COMPANY_EMAIL_FORMAT_MUTATION = /* GraphQL */ `
       patternConfidence
       emailFormatReason
       emailFormatDiscoveredAt
+      emailFormatDiscoveryStatus
+      emailFormatDiscoveryReason
+      emailFormatDiscoveryAt
       peopleCount
       emailStatusCounts {
         status
@@ -748,6 +774,9 @@ export const SET_COMPANY_EMAIL_INFERENCE_OVERRIDE_MUTATION = /* GraphQL */ `
       patternConfidence
       emailFormatReason
       emailFormatDiscoveredAt
+      emailFormatDiscoveryStatus
+      emailFormatDiscoveryReason
+      emailFormatDiscoveryAt
       peopleCount
       emailStatusCounts {
         status
