@@ -1,0 +1,318 @@
+/*
+ * Sendloom startup splash — "Signal Loom".
+ *
+ * A light, theme-aware boot overlay. All colour comes from the shared
+ * globals.css tokens (no hardcoded hex), so dark/light resolve automatically and
+ * the synchronous theme boot script means no theme flash. Motion is transform/
+ * opacity only, capped, and disabled under prefers-reduced-motion. Nothing here
+ * decides dismissal — that is readiness-driven in useStartupReadiness.
+ */
+
+.overlay {
+  --splash-accent: var(--accent);
+  --splash-accent-strong: var(--accent-strong);
+  --splash-muted-line: color-mix(in srgb, var(--text) 20%, transparent);
+
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(1.5rem, env(safe-area-inset-top)) 1.5rem max(1.5rem, env(safe-area-inset-bottom));
+  overflow: hidden;
+  background:
+    radial-gradient(90% 70% at 18% 12%, var(--bg-glow-green), transparent 60%),
+    radial-gradient(90% 80% at 88% 16%, var(--bg-glow-blue), transparent 62%),
+    linear-gradient(180deg, var(--bg-start) 0%, var(--bg-end) 100%);
+  opacity: 1;
+  transition: opacity 320ms ease;
+  will-change: opacity;
+}
+
+/* Exit: fade out and stop intercepting clicks immediately. */
+.overlay[data-phase="exiting"] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ---- Decorative backdrop -------------------------------------------------- */
+
+.backdrop {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.grid {
+  position: absolute;
+  inset: -1px;
+  background-image:
+    linear-gradient(to right, var(--loader-grid) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--loader-grid) 1px, transparent 1px);
+  background-size: 46px 46px;
+  mask-image: radial-gradient(115% 90% at 50% 42%, black, transparent 76%);
+  -webkit-mask-image: radial-gradient(115% 90% at 50% 42%, black, transparent 76%);
+  opacity: 0.55;
+}
+
+.particles {
+  position: absolute;
+  inset: 0;
+}
+
+.particle {
+  position: absolute;
+  top: var(--y);
+  left: var(--x);
+  width: var(--size);
+  height: var(--size);
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, var(--splash-accent), transparent 72%);
+  opacity: 0;
+  will-change: transform, opacity;
+  animation: splashDrift var(--duration) ease-in-out var(--delay) infinite;
+}
+
+/* Responsive caps — mirror resolveParticleCount (tablet ~10, mobile ~6). */
+@media (max-width: 1023px) {
+  .particle:nth-child(n + 11) {
+    display: none;
+  }
+}
+
+@media (max-width: 639px) {
+  .particle:nth-child(n + 7) {
+    display: none;
+  }
+}
+
+@keyframes splashDrift {
+  0% {
+    transform: translate3d(0, 10px, 0) scale(0.7);
+    opacity: 0;
+  }
+  25% {
+    opacity: var(--peak, 0.4);
+  }
+  75% {
+    opacity: var(--peak, 0.4);
+  }
+  100% {
+    transform: translate3d(var(--drift-x, 0), -24px, 0) scale(1);
+    opacity: 0;
+  }
+}
+
+/* ---- Composition ---------------------------------------------------------- */
+
+.composition {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.35rem;
+  text-align: center;
+  max-width: 30rem;
+  animation: splashRise 520ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes splashRise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ---- Signal Loom mark ----------------------------------------------------- */
+
+.mark {
+  width: clamp(108px, 26vw, 132px);
+  height: auto;
+  overflow: visible;
+}
+
+.glyphStrand {
+  fill: none;
+  stroke: var(--splash-muted-line);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.glyphMerge {
+  fill: none;
+  stroke: var(--splash-accent);
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-dasharray: 6 8;
+  animation: splashFlow 1.5s linear infinite;
+}
+
+@keyframes splashFlow {
+  to {
+    stroke-dashoffset: -28;
+  }
+}
+
+.glyphNode {
+  fill: var(--surface-strong);
+  stroke: var(--splash-muted-line);
+  stroke-width: 1.6;
+}
+
+.glyphNodeEnd {
+  fill: var(--splash-accent);
+  stroke: none;
+}
+
+.glyphCore {
+  fill: url(#splashCoreGradient);
+  stroke: color-mix(in srgb, var(--splash-accent) 45%, transparent);
+  stroke-width: 1;
+}
+
+.glyphCoreRing {
+  fill: none;
+  stroke: var(--splash-accent);
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  animation: splashPing 2.1s ease-out infinite;
+}
+
+@keyframes splashPing {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.5;
+  }
+  70% {
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.7);
+    opacity: 0;
+  }
+}
+
+/* ---- Copy ----------------------------------------------------------------- */
+
+.headline {
+  margin: 0;
+  font-family: var(--font-loader-body), ui-sans-serif, system-ui, sans-serif;
+  font-size: clamp(1.35rem, 3.6vw, 1.7rem);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+/* BrandText renders the "loom" of Sendloom in the accent. */
+.headline :global(.word) {
+  color: inherit;
+}
+
+.subtext {
+  margin: 0;
+  font-family: var(--font-loader-body), ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* ---- Indeterminate progress ---------------------------------------------- */
+
+.progress {
+  position: relative;
+  width: min(220px, 70vw);
+  height: 3px;
+  margin-top: 0.35rem;
+  border-radius: 999px;
+  background: var(--splash-muted-line);
+  overflow: hidden;
+}
+
+.progressBar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 40%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, var(--splash-accent), var(--splash-accent-strong));
+  transform: translateX(-120%);
+  animation: splashIndeterminate 1.4s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+
+@keyframes splashIndeterminate {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
+}
+
+/* ---- Accessibility helper ------------------------------------------------- */
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- Responsive ----------------------------------------------------------- */
+
+@media (max-width: 640px) {
+  .composition {
+    gap: 1.1rem;
+    max-width: 22rem;
+  }
+
+  .grid {
+    background-size: 36px 36px;
+  }
+}
+
+/* ---- Reduced motion: calm, static, still polished ------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .composition,
+  .glyphMerge,
+  .glyphCoreRing,
+  .progressBar,
+  .particle {
+    animation: none !important;
+  }
+
+  .particle {
+    opacity: 0.22;
+    transform: none;
+  }
+
+  .glyphMerge {
+    stroke-dasharray: none;
+  }
+
+  /* A static, centered hint instead of a sweeping bar. */
+  .progressBar {
+    position: absolute;
+    left: 50%;
+    width: 34%;
+    transform: translateX(-50%);
+    opacity: 0.85;
+  }
+
+  .overlay {
+    transition: none;
+  }
+}
