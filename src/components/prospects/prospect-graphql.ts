@@ -433,6 +433,23 @@ export const PROSPECT_SEARCH_BY_ID_QUERY = /* GraphQL */ `
   }
 `;
 
+// Lightweight status-only query for the processing experience's background
+// poller. It reads just enough to drive the stage/failure UI so reconnecting on
+// tab-return, focus, or refresh is cheap — the full detail/company/people load
+// happens once, on the transition to READY.
+export const PROSPECT_SEARCH_STATUS_QUERY = /* GraphQL */ `
+  query ProspectSearchStatus($id: ID!) {
+    prospectSearch(id: $id) {
+      id
+      status
+      errorCode
+      errorTitle
+      errorMessage
+      retryable
+    }
+  }
+`;
+
 export const COMPANY_DETAIL_QUERY = /* GraphQL */ `
   query CompanyDetail($id: ID!) {
     company(id: $id) {
@@ -965,7 +982,16 @@ export function isDisabledResponse(status: number, body: unknown): boolean {
 export async function prospectGraphql<T>(
   query: string,
   variables: Record<string, unknown> = {},
-  signal?: AbortSignal
+  options: {
+    signal?: AbortSignal;
+    /**
+     * Ask the browser to keep the request in flight even if the page is
+     * unloaded/closed. Used to START the Discover pipeline so the server-side
+     * operation finishes when the user leaves the tab — the progress display is
+     * then reconciled from durable backend state, never from this response.
+     */
+    keepalive?: boolean;
+  } = {}
 ): Promise<GraphQLResult<T>> {
   let response: Response;
   try {
@@ -974,7 +1000,8 @@ export async function prospectGraphql<T>(
       credentials: "same-origin",
       headers: { "content-type": "application/json", accept: "application/json" },
       body: JSON.stringify({ query, variables }),
-      signal
+      signal: options.signal,
+      keepalive: options.keepalive
     });
   } catch {
     return {

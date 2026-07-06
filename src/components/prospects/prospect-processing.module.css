@@ -1,0 +1,739 @@
+/*
+ * Discover search "processing" experience.
+ *
+ * A premium, theme-aware, low-cost loading composition. All colour comes from
+ * the shared globals.css tokens (no hardcoded hex), so dark/light Just Work.
+ * Motion is transform/opacity only, capped, and fully disabled under
+ * prefers-reduced-motion. Nothing here drives job progress — the ring fill and
+ * stage states are set from authoritative backend status by the component.
+ */
+
+.shell {
+  --proc-accent: var(--accent);
+  --proc-accent-strong: var(--accent-strong);
+  --proc-ring-track: color-mix(in srgb, var(--text) 12%, transparent);
+  --proc-node: color-mix(in srgb, var(--text) 22%, transparent);
+  --proc-surface: var(--surface-strong);
+
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  gap: clamp(1.5rem, 4vw, 3.5rem);
+  align-items: center;
+  min-height: min(72vh, 560px);
+  padding: clamp(1.75rem, 4vw, 3rem);
+  border-radius: 28px;
+  border: 1px solid var(--line);
+  background:
+    radial-gradient(120% 90% at 18% 8%, var(--bg-glow-green), transparent 60%),
+    radial-gradient(120% 100% at 92% 12%, var(--bg-glow-blue), transparent 62%),
+    linear-gradient(180deg, var(--surface-strong) 0%, var(--surface-muted) 100%);
+  box-shadow: var(--shadow);
+  isolation: isolate;
+}
+
+.shell[data-phase="FAILED"] {
+  --proc-accent: var(--warning);
+}
+
+/* ---- Decorative backdrop -------------------------------------------------- */
+
+.backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.grid {
+  position: absolute;
+  inset: -1px;
+  background-image:
+    linear-gradient(to right, var(--loader-grid) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--loader-grid) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(120% 90% at 50% 30%, black, transparent 78%);
+  -webkit-mask-image: radial-gradient(120% 90% at 50% 30%, black, transparent 78%);
+  opacity: 0.6;
+}
+
+.particles {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.particle {
+  position: absolute;
+  top: var(--y);
+  left: var(--x);
+  width: var(--size);
+  height: var(--size);
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, var(--proc-accent), transparent 72%);
+  opacity: 0;
+  will-change: transform, opacity;
+  animation: particleDrift var(--duration) ease-in-out var(--delay) infinite;
+}
+
+.particles[data-paused="true"] .particle {
+  animation-play-state: paused;
+}
+
+@keyframes particleDrift {
+  0% {
+    transform: translate3d(0, 8px, 0) scale(0.7);
+    opacity: 0;
+  }
+  22% {
+    opacity: var(--peak-opacity, 0.5);
+  }
+  78% {
+    opacity: var(--peak-opacity, 0.5);
+  }
+  100% {
+    transform: translate3d(var(--drift-x, 0), -26px, 0) scale(1);
+    opacity: 0;
+  }
+}
+
+/* ---- Signature visual (SVG orbit) ---------------------------------------- */
+
+.visual {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1 / 1;
+  width: min(100%, 380px);
+  margin-inline: auto;
+}
+
+.orbit {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.ringTrack {
+  fill: none;
+  stroke: var(--proc-ring-track);
+  stroke-width: 4;
+}
+
+.ringProgress {
+  fill: none;
+  stroke: url(#procRingGradient);
+  stroke-width: 5;
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: center;
+  transition: stroke-dashoffset 700ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.shell[data-reduced="true"] .ringProgress {
+  transition: none;
+}
+
+.link {
+  stroke: var(--proc-node);
+  stroke-width: 1.5;
+  fill: none;
+  opacity: 0.5;
+  transition: opacity 500ms ease, stroke 500ms ease;
+}
+
+.link[data-state="done"],
+.link[data-state="active"] {
+  stroke: var(--proc-accent);
+  opacity: 0.85;
+}
+
+.link[data-state="active"] {
+  stroke-dasharray: 5 7;
+  animation: linkFlow 1.4s linear infinite;
+}
+
+@keyframes linkFlow {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+
+.node {
+  fill: var(--proc-surface);
+  stroke: var(--proc-node);
+  stroke-width: 1.5;
+  transition: fill 500ms ease, stroke 500ms ease;
+}
+
+.node[data-state="done"] {
+  fill: var(--proc-accent);
+  stroke: var(--proc-accent);
+}
+
+.node[data-state="active"] {
+  stroke: var(--proc-accent);
+}
+
+.nodePulse {
+  fill: none;
+  stroke: var(--proc-accent);
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+}
+
+.node[data-state="active"] + .nodePulse {
+  animation: nodePulse 1.9s ease-out infinite;
+}
+
+@keyframes nodePulse {
+  0% {
+    transform: scale(0.7);
+    opacity: 0.55;
+  }
+  70% {
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.9);
+    opacity: 0;
+  }
+}
+
+.core {
+  fill: url(#procCoreGradient);
+  stroke: color-mix(in srgb, var(--proc-accent) 40%, transparent);
+  stroke-width: 1;
+}
+
+.coreGlow {
+  fill: var(--proc-accent);
+  opacity: 0.16;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: coreBreathe 3.6s ease-in-out infinite;
+}
+
+@keyframes coreBreathe {
+  0%,
+  100% {
+    transform: scale(0.92);
+    opacity: 0.12;
+  }
+  50% {
+    transform: scale(1.06);
+    opacity: 0.22;
+  }
+}
+
+.coreMark {
+  stroke: var(--accent-contrast);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  fill: none;
+  opacity: 0.92;
+}
+
+.corePercent {
+  fill: var(--accent-contrast);
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+
+.shell[data-phase="COMPLETED"] .core {
+  animation: coreComplete 520ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes coreComplete {
+  0% {
+    transform: scale(1);
+  }
+  45% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.checkPath {
+  stroke: var(--accent-contrast);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+  stroke-dasharray: 30;
+  stroke-dashoffset: 30;
+  animation: checkDraw 460ms ease-out forwards;
+}
+
+.shell[data-reduced="true"] .checkPath {
+  animation: none;
+  stroke-dashoffset: 0;
+}
+
+@keyframes checkDraw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* ---- Status panel --------------------------------------------------------- */
+
+.panel {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  min-width: 0;
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  align-self: flex-start;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--accent-soft);
+  color: var(--proc-accent);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.eyebrow svg {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
+.eyebrowDot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--proc-accent);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--proc-accent) 60%, transparent);
+  animation: livePing 2.4s ease-out infinite;
+}
+
+@keyframes livePing {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--proc-accent) 55%, transparent);
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 7px transparent;
+  }
+}
+
+.headline {
+  margin: 0;
+  font-size: clamp(1.5rem, 3.4vw, 2rem);
+  line-height: 1.12;
+  font-weight: 640;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  text-wrap: balance;
+}
+
+.stageLabel {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  min-height: 1.6rem;
+}
+
+.stageName {
+  font-size: 1.05rem;
+  font-weight: 560;
+  color: var(--text);
+  transition: opacity 300ms ease, transform 300ms ease;
+}
+
+.stepCounter {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.stageEnter {
+  animation: stageEnter 380ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes stageEnter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Determinate stage meter (honest: fills only as backend advances). */
+.meter {
+  position: relative;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--proc-ring-track);
+  overflow: hidden;
+}
+
+.meterFill {
+  position: absolute;
+  inset: 0;
+  transform-origin: left center;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--proc-accent), var(--proc-accent-strong));
+  transition: transform 700ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.shell[data-reduced="true"] .meterFill {
+  transition: none;
+}
+
+/* Indeterminate sheen while a stage is in progress (decorative only). */
+.meterFill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--accent-contrast) 45%, transparent),
+    transparent
+  );
+  transform: translateX(-100%);
+  animation: meterSheen 1.9s ease-in-out infinite;
+}
+
+.shell[data-static="true"] .meterFill::after {
+  animation: none;
+  opacity: 0;
+}
+
+@keyframes meterSheen {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+.reassurance {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.85rem 1rem;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--surface-muted);
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.reassurance svg {
+  flex-shrink: 0;
+  width: 1.05rem;
+  height: 1.05rem;
+  margin-top: 0.1rem;
+  color: var(--proc-accent);
+}
+
+.reassurance[data-tone="reconnecting"] {
+  border-color: color-mix(in srgb, var(--warning) 32%, var(--line));
+  background: var(--warning-soft);
+  color: var(--text);
+}
+
+.reassurance[data-tone="reconnecting"] svg {
+  color: var(--warning);
+}
+
+/* ---- Stage trail ---------------------------------------------------------- */
+
+.trail {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.trailItem {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 12px;
+  color: var(--muted);
+  transition: background 300ms ease, color 300ms ease;
+}
+
+.trailItem[data-state="active"] {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.trailItem[data-state="done"] {
+  color: var(--text);
+}
+
+.trailIcon {
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  flex-shrink: 0;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  transition: background 300ms ease, color 300ms ease, border-color 300ms ease;
+}
+
+.trailIcon svg {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+.trailItem[data-state="done"] .trailIcon {
+  background: var(--proc-accent);
+  border-color: var(--proc-accent);
+  color: var(--accent-contrast);
+}
+
+.trailItem[data-state="active"] .trailIcon {
+  border-color: var(--proc-accent);
+  color: var(--proc-accent);
+}
+
+.trailItem[data-state="active"] .trailIcon svg {
+  animation: trailSpin 1.1s linear infinite;
+}
+
+.shell[data-static="true"] .trailItem[data-state="active"] .trailIcon svg {
+  animation: none;
+}
+
+@keyframes trailSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.trailText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.trailLabel {
+  font-size: 0.92rem;
+  font-weight: 540;
+}
+
+.trailDetail {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+/* ---- Actions -------------------------------------------------------------- */
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 0.25rem;
+}
+
+.primaryButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.7rem 1.25rem;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: var(--proc-accent);
+  color: var(--accent-contrast);
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 160ms ease, transform 160ms ease;
+}
+
+.primaryButton:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+
+.primaryButton:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
+.secondaryButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.7rem 1.1rem;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--button-secondary-bg);
+  color: var(--text);
+  font-size: 0.92rem;
+  font-weight: 560;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 160ms ease;
+}
+
+.secondaryButton:hover {
+  background: var(--surface-hover);
+}
+
+.spin {
+  width: 1rem;
+  height: 1rem;
+  animation: trailSpin 0.9s linear infinite;
+}
+
+.shell[data-static="true"] .spin {
+  animation: none;
+}
+
+/* Keyboard focus stays clearly visible for every interactive control. */
+.primaryButton:focus-visible,
+.secondaryButton:focus-visible {
+  outline: 2px solid var(--proc-accent);
+  outline-offset: 2px;
+}
+
+/* ---- Failure state -------------------------------------------------------- */
+
+.failureIcon {
+  display: grid;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--warning) 32%, var(--line));
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.failureIcon svg {
+  width: 1.4rem;
+  height: 1.4rem;
+}
+
+.failureMessage {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.5;
+  max-width: 46ch;
+}
+
+/* ---- Screen-reader-only live region -------------------------------------- */
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- Responsive ----------------------------------------------------------- */
+
+@media (max-width: 900px) {
+  .shell {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.75rem;
+    min-height: 0;
+    text-align: left;
+  }
+
+  .visual {
+    width: min(72%, 300px);
+    order: -1;
+  }
+}
+
+@media (max-width: 560px) {
+  .shell {
+    padding: 1.4rem 1.15rem calc(1.4rem + env(safe-area-inset-bottom));
+    border-radius: 22px;
+  }
+
+  .visual {
+    width: min(64%, 240px);
+  }
+
+  .grid {
+    background-size: 34px 34px;
+  }
+
+  .trailDetail {
+    display: none;
+  }
+
+  .actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .primaryButton,
+  .secondaryButton {
+    width: 100%;
+  }
+}
+
+/* ---- Reduced motion: freeze all decorative movement ---------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .particle,
+  .link[data-state="active"],
+  .node[data-state="active"] + .nodePulse,
+  .coreGlow,
+  .eyebrowDot,
+  .meterFill::after,
+  .trailItem[data-state="active"] .trailIcon svg,
+  .checkPath,
+  .spin,
+  .stageEnter,
+  .shell[data-phase="COMPLETED"] .core {
+    animation: none !important;
+  }
+
+  .particle {
+    opacity: 0.28;
+    transform: none;
+  }
+
+  .checkPath {
+    stroke-dashoffset: 0;
+  }
+
+  .ringProgress,
+  .meterFill {
+    transition: none;
+  }
+}
