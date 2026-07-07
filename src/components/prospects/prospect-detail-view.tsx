@@ -1924,11 +1924,11 @@ function BulkSelectionToolbar({
       <div className={styles.bulkActions}>
         <button type="button" className={styles.secondaryButton} onClick={onDownload} disabled={busy}>
           <Download aria-hidden="true" />
-          <span>Download Excel</span>
+          <span>Export</span>
         </button>
         <button type="button" className={styles.secondaryButton} onClick={onImport} disabled={busy}>
           <FileSpreadsheet aria-hidden="true" />
-          <span>Review import</span>
+          <span>Import</span>
         </button>
         <button type="button" className={styles.ghostButton} onClick={onClear} disabled={busy}>
           Clear selection
@@ -2259,7 +2259,15 @@ function ProspectReviewDialog({
 
   const exportableCount = review?.exportableCount ?? 0;
   const busy = loading || preparingExport || creatingImport;
-  const title = intent === "download" ? "Review Excel export" : "Review import";
+  // The modal is action-specific: an export opens an export-only dialog and an
+  // import opens an import-only dialog — never both actions at once.
+  const isExport = intent === "download";
+  const title = isExport ? "Review export" : "Review import";
+  const ConfirmIcon = isExport ? Download : FileSpreadsheet;
+  const confirmBusy = isExport ? preparingExport : creatingImport;
+  const confirmBusyLabel = isExport ? "Preparing Excel file…" : "Creating import…";
+  const confirmLabel = isExport ? `Export ${exportableCount} records` : `Import ${exportableCount} records`;
+  const onConfirm = isExport ? onDownload : onImport;
 
   return (
     <div className={styles.modalOverlay} role="presentation">
@@ -2316,13 +2324,9 @@ function ProspectReviewDialog({
             Cancel
           </button>
           <div className={styles.reviewActionGroup}>
-            <button type="button" className={styles.secondaryButton} onClick={onDownload} disabled={busy || exportableCount <= 0}>
-              {preparingExport ? <LoaderCircle aria-hidden="true" className={styles.spin} /> : <Download aria-hidden="true" />}
-              <span>{preparingExport ? "Preparing Excel file…" : `Download ${exportableCount} records`}</span>
-            </button>
-            <button type="button" className={styles.primaryButton} onClick={onImport} disabled={busy || exportableCount <= 0}>
-              {creatingImport ? <LoaderCircle aria-hidden="true" className={styles.spin} /> : <FileSpreadsheet aria-hidden="true" />}
-              <span>{creatingImport ? "Creating import…" : `Add ${exportableCount} records to Imports`}</span>
+            <button type="button" className={styles.primaryButton} onClick={onConfirm} disabled={busy || exportableCount <= 0}>
+              {confirmBusy ? <LoaderCircle aria-hidden="true" className={styles.spin} /> : <ConfirmIcon aria-hidden="true" />}
+              <span>{confirmBusy ? confirmBusyLabel : confirmLabel}</span>
             </button>
           </div>
         </div>

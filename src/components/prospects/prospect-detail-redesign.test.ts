@@ -400,23 +400,29 @@ describe("review import dialog UI", () => {
     }
   });
 
-  it("preserves the Cancel / Download / Add buttons and their existing handlers", () => {
+  it("is action-specific: one primary action driven by the mode that opened it", () => {
     // Cancel (tertiary) stays outside the action group and closes the dialog.
     expect(DETAIL_SOURCE).toContain("<button type=\"button\" className={styles.ghostButton} onClick={onClose} disabled={busy}>");
-    // Download + Add keep their download/import handlers and the live count.
-    expect(DETAIL_SOURCE).toContain("className={styles.secondaryButton} onClick={onDownload}");
-    expect(DETAIL_SOURCE).toContain("className={styles.primaryButton} onClick={onImport}");
-    expect(DETAIL_SOURCE).toContain("`Download ${exportableCount} records`");
-    expect(DETAIL_SOURCE).toContain("`Add ${exportableCount} records to Imports`");
+    // The single confirm button is wired to the mode-resolved handler…
+    expect(DETAIL_SOURCE).toContain('const isExport = intent === "download";');
+    expect(DETAIL_SOURCE).toContain("const onConfirm = isExport ? onDownload : onImport;");
+    expect(DETAIL_SOURCE).toContain("className={styles.primaryButton} onClick={onConfirm}");
+    // …with export-only and import-only labels chosen by the mode.
+    expect(DETAIL_SOURCE).toContain("`Export ${exportableCount} records`");
+    expect(DETAIL_SOURCE).toContain("`Import ${exportableCount} records`");
+    expect(DETAIL_SOURCE).toContain('isExport ? "Review export" : "Review import"');
+    // The old combined footer (both actions at once) is gone.
+    expect(DETAIL_SOURCE).not.toContain("`Download ${exportableCount} records`");
+    expect(DETAIL_SOURCE).not.toContain("`Add ${exportableCount} records to Imports`");
   });
 
-  it("groups Download + Add in one right-anchored footer cluster (Cancel left)", () => {
+  it("keeps exactly one action in the right-anchored footer cluster (Cancel left)", () => {
     // A single presentational wrapper — introduced only in this dialog.
     expect(DETAIL_SOURCE.split("styles.reviewActionGroup").length - 1).toBe(1);
     const group = DETAIL_SOURCE.match(/reviewActionGroup[\s\S]*?<\/div>/)?.[0] ?? "";
-    // Both confirm actions live inside the group; Cancel does not.
-    expect(group).toContain("styles.secondaryButton");
+    // Exactly one confirm action lives inside the group; no second action, no Cancel.
     expect(group).toContain("styles.primaryButton");
+    expect(group).not.toContain("styles.secondaryButton");
     expect(group).not.toContain("styles.ghostButton");
     // CSS anchors the cluster to the right, even if it ever wraps.
     expect(CSS).toMatch(/\.reviewActionGroup\s*\{[^}]*margin-left:\s*auto/s);
@@ -475,22 +481,24 @@ describe("selection import actions UX", () => {
     expect(toolbar).toContain("{selectedCount} selected");
   });
 
-  it("labels the toolbar import action 'Review import', not the modal's final action", () => {
-    // The toolbar opens the review step…
-    expect(toolbar).toContain("<span>Review import</span>");
-    // …and the duplicated 'Add to Imports' label is gone from the toolbar/source.
+  it("labels the toolbar actions simply: Export / Import / Clear selection", () => {
+    expect(toolbar).toContain("<span>Export</span>");
+    expect(toolbar).toContain("<span>Import</span>");
+    expect(toolbar).toContain("Clear selection");
+    // The verbose / duplicated labels are gone from the toolbar.
+    expect(toolbar).not.toContain("Download Excel");
+    expect(toolbar).not.toContain("Review import");
     expect(DETAIL_SOURCE).not.toContain("<span>Add to Imports</span>");
-    // The final import action still lives on the modal's primary button.
-    expect(DETAIL_SOURCE).toContain("`Add ${exportableCount} records to Imports`");
   });
 
-  it("wires the toolbar Review import button to open the review dialog", () => {
+  it("wires the toolbar Export/Import buttons to the export/import review dialogs", () => {
+    expect(toolbar).toContain("onClick={onDownload}");
     expect(toolbar).toContain("onClick={onImport}");
+    expect(DETAIL_SOURCE).toContain('onDownload={() => openReviewDialog("download")}');
     expect(DETAIL_SOURCE).toContain('onImport={() => openReviewDialog("import")}');
   });
 
-  it("keeps Download Excel and Clear selection in the toolbar", () => {
-    expect(toolbar).toContain("<span>Download Excel</span>");
+  it("keeps Clear selection wired in the toolbar", () => {
     expect(toolbar).toContain("Clear selection");
     expect(toolbar).toContain("onClick={onClear}");
   });
