@@ -1,16 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useState } from "react";
-import {
-  BadgeCheck,
-  KeyRound,
-  Loader2,
-  Mail,
-  Plus,
-  ShieldCheck,
-  Trash2,
-  TriangleAlert
-} from "lucide-react";
+import { KeyRound, Loader2, Mail, Plus, Trash2 } from "lucide-react";
 
 import { AppConfirmDialog } from "@/components/app-confirm-dialog";
 import { useErrorToast } from "@/components/error-toast-provider";
@@ -19,6 +10,7 @@ import {
   type AccountOverview,
   type AccountSenderView,
   ACCOUNT_TYPE_LABELS,
+  MIN_PASSWORD_LENGTH,
   PASSWORD_UPDATE_ERROR_MESSAGE,
   PASSWORD_UPDATE_SUCCESS_MESSAGE,
   describeSenderRemoval,
@@ -31,6 +23,11 @@ const ACCOUNT_LOAD_ERROR = "We couldn't refresh your account details. Reload the
 
 function reconnectHref(fromEmail: string) {
   return `/api/auth/google/connect?email=${encodeURIComponent(fromEmail)}&next=${encodeURIComponent("/account")}`;
+}
+
+function accountInitial(profile: { name: string | null; email: string }) {
+  const source = profile.name?.trim() || profile.email;
+  return source.charAt(0).toUpperCase();
 }
 
 export function AccountDashboard({
@@ -61,7 +58,6 @@ export function AccountDashboard({
   const newPasswordId = useId();
   const confirmPasswordId = useId();
   const passwordErrorId = useId();
-  const removeHelperId = useId();
 
   // Surface the Gmail-connect outcome once we return from the OAuth kickoff,
   // then strip the query params so a reload doesn't re-toast.
@@ -183,14 +179,8 @@ export function AccountDashboard({
   return (
     <div className={styles.page}>
       <header className={styles.header}>
-        <div className={styles.headerCopy}>
-          <h1 className={styles.title}>Account details</h1>
-          <p className={styles.subtitle}>Manage your profile, connected senders, and password settings.</p>
-        </div>
-        <span className={styles.signedInBadge}>
-          <BadgeCheck aria-hidden="true" />
-          Signed in
-        </span>
+        <h1 className={styles.title}>Account</h1>
+        <p className={styles.subtitle}>Manage your identity, connected Gmail senders, and security.</p>
       </header>
 
       {loadError ? (
@@ -199,42 +189,34 @@ export function AccountDashboard({
         </p>
       ) : null}
 
-      {/* Card 1: Profile ---------------------------------------------------- */}
-      <section className={`card ${styles.card}`} aria-labelledby="account-profile-heading">
-        <div className={styles.cardHead}>
-          <div>
-            <h2 id="account-profile-heading" className={styles.cardTitle}>
-              Profile
+      {/* Identity card ------------------------------------------------------ */}
+      <section className={`card ${styles.identityCard}`} aria-labelledby="account-profile-heading">
+        <div className={styles.identityMain}>
+          <span className={styles.avatar} aria-hidden="true">
+            {accountInitial(profile)}
+          </span>
+          <div className={styles.identityText}>
+            <h2 id="account-profile-heading" className={styles.identityName}>
+              {profile.name ?? profile.email}
             </h2>
-            <p className={styles.cardSubtitle}>Your login identity and account status.</p>
+            {profile.name ? <p className={styles.identityEmail}>{profile.email}</p> : null}
+            <p className={styles.identityType}>
+              <span className={styles.typeDot} aria-hidden="true" />
+              {ACCOUNT_TYPE_LABELS[profile.accountType]}
+            </p>
           </div>
-          <span className={`${styles.pill} ${styles.pillNeutral}`}>{ACCOUNT_TYPE_LABELS[profile.accountType]}</span>
         </div>
 
-        <dl className={styles.detailGrid}>
-          {profile.name ? (
-            <div className={styles.detailItem}>
-              <dt className={styles.detailLabel}>Name</dt>
-              <dd className={styles.detailValue}>{profile.name}</dd>
-            </div>
-          ) : null}
-          <div className={styles.detailItem}>
-            <dt className={styles.detailLabel}>Login email</dt>
-            <dd className={styles.detailValue}>{profile.email}</dd>
-          </div>
-          <div className={styles.detailItem}>
-            <dt className={styles.detailLabel}>Account type</dt>
-            <dd className={styles.detailValue}>{ACCOUNT_TYPE_LABELS[profile.accountType]}</dd>
-          </div>
-          <div className={styles.detailItem}>
-            <dt className={styles.detailLabel}>Created</dt>
-            <dd className={styles.detailValue}>
+        <dl className={styles.identityStats}>
+          <div className={styles.identityStat}>
+            <dt className={styles.statLabel}>Member since</dt>
+            <dd className={styles.statValue}>
               <LocalDateTime value={profile.createdAt} emptyLabel="Not available" />
             </dd>
           </div>
-          <div className={styles.detailItem}>
-            <dt className={styles.detailLabel}>Last sign-in</dt>
-            <dd className={styles.detailValue}>
+          <div className={styles.identityStat}>
+            <dt className={styles.statLabel}>Last sign-in</dt>
+            <dd className={styles.statValue}>
               <LocalDateTime value={profile.lastLoginAt} emptyLabel="Not available" />
             </dd>
           </div>
@@ -242,14 +224,14 @@ export function AccountDashboard({
       </section>
 
       <div className={styles.columns}>
-        {/* Card 2: Connected senders --------------------------------------- */}
-        <section className={`card ${styles.card}`} aria-labelledby="account-senders-heading" aria-busy={refreshing}>
-          <div className={styles.cardHead}>
-            <div>
-              <h2 id="account-senders-heading" className={styles.cardTitle}>
-                Connected sender emails
+        {/* Connected senders ------------------------------------------------ */}
+        <section className={`card ${styles.panel}`} aria-labelledby="account-senders-heading" aria-busy={refreshing}>
+          <div className={styles.panelHead}>
+            <div className={styles.panelHeadCopy}>
+              <h2 id="account-senders-heading" className={styles.panelTitle}>
+                Connected Gmail senders
               </h2>
-              <p className={styles.cardSubtitle}>Gmail accounts you can send sequences from.</p>
+              <p className={styles.panelSubtitle}>Gmail accounts available for sending sequences.</p>
             </div>
             {refreshing ? (
               <span className={styles.updating}>
@@ -278,30 +260,28 @@ export function AccountDashboard({
                   const connected = sender.status === "connected";
                   return (
                     <li key={sender.id} className={styles.senderRow}>
-                      <span className={styles.senderAvatar} aria-hidden="true">
+                      <span className={styles.senderTile} aria-hidden="true">
                         <Mail />
                       </span>
                       <div className={styles.senderMain}>
                         <p className={styles.senderName}>{sender.name}</p>
                         <p className={styles.senderEmail}>{sender.fromEmail}</p>
                         <p className={styles.senderMeta}>
-                          {sender.providerLabel} · Connected{" "}
+                          {sender.providerLabel} · connected{" "}
                           <LocalDateTime value={sender.connectedAt} emptyLabel="recently" />
                         </p>
                       </div>
                       <div className={styles.senderSide}>
-                        <span
-                          className={`${styles.statusPill} ${connected ? styles.statusConnected : styles.statusReconnect}`}
-                        >
-                          {connected ? <ShieldCheck aria-hidden="true" /> : <TriangleAlert aria-hidden="true" />}
+                        <span className={`${styles.senderStatus} ${connected ? styles.statusOk : styles.statusWarn}`}>
+                          <span className={styles.statusDot} aria-hidden="true" />
                           {connected ? "Connected" : "Reconnect required"}
                         </span>
-                        <div className={styles.senderActions}>
-                          {connected ? null : (
-                            <a className={`button secondary ${styles.smallButton}`} href={reconnectHref(sender.fromEmail)}>
-                              Reconnect
-                            </a>
-                          )}
+                        {connected ? null : (
+                          <a className={styles.reconnectLink} href={reconnectHref(sender.fromEmail)}>
+                            Reconnect
+                          </a>
+                        )}
+                        {canRemoveSenders ? (
                           <button
                             type="button"
                             className={styles.removeButton}
@@ -309,15 +289,12 @@ export function AccountDashboard({
                               setRemoveError(null);
                               setPendingRemoval(sender);
                             }}
-                            disabled={!canRemoveSenders}
                             aria-label={`Remove sender ${sender.fromEmail}`}
-                            aria-describedby={canRemoveSenders ? undefined : removeHelperId}
-                            title={canRemoveSenders ? undefined : "Add another sender before removing this one."}
+                            title="Remove"
                           >
                             <Trash2 aria-hidden="true" />
-                            Remove
                           </button>
-                        </div>
+                        ) : null}
                       </div>
                     </li>
                   );
@@ -325,37 +302,37 @@ export function AccountDashboard({
               </ul>
 
               {!canRemoveSenders ? (
-                <p id={removeHelperId} className={styles.helperText}>
-                  Add another sender before removing this one.
+                <p className={styles.helperText}>
+                  Connect another Gmail account before removing this sender.
                 </p>
               ) : null}
 
-              <div className={styles.connectRow}>
-                <a className={`button secondary ${styles.connectButton}`} href={connectGmailHref}>
-                  <Plus aria-hidden="true" />
-                  Connect another Gmail
-                </a>
-              </div>
+              <a className={styles.addSenderRow} href={connectGmailHref}>
+                <span className={styles.addSenderIcon} aria-hidden="true">
+                  <Plus />
+                </span>
+                Connect another Gmail
+              </a>
             </>
           )}
         </section>
 
-        {/* Card 3: Password ------------------------------------------------ */}
-        <section className={`card ${styles.card}`} aria-labelledby="account-password-heading">
-          <div className={styles.cardHead}>
-            <div>
-              <h2 id="account-password-heading" className={styles.cardTitle}>
-                {hasPassword ? "Change password" : "Set a password"}
+        {/* Password ----------------------------------------------------------- */}
+        <section className={`card ${styles.panel}`} aria-labelledby="account-password-heading">
+          <div className={styles.panelHead}>
+            <div className={styles.panelHeadCopy}>
+              <h2 id="account-password-heading" className={styles.panelTitle}>
+                <span className={styles.titleIcon} aria-hidden="true">
+                  <KeyRound />
+                </span>
+                {hasPassword ? "Password" : "Set a password"}
               </h2>
-              <p className={styles.cardSubtitle}>
+              <p className={styles.panelSubtitle}>
                 {hasPassword
-                  ? "Update the password you use to sign in with email."
+                  ? "Update the password used for email sign-in."
                   : "This account signs in with Google. Add a password to also sign in with email."}
               </p>
             </div>
-            <span className={styles.passwordIcon} aria-hidden="true">
-              <KeyRound />
-            </span>
           </div>
 
           <form className={`form ${styles.passwordForm}`} onSubmit={submitPassword} noValidate>
@@ -386,8 +363,9 @@ export function AccountDashboard({
                 aria-invalid={passwordError ? true : undefined}
                 aria-describedby={passwordError ? passwordErrorId : undefined}
                 disabled={savingPassword}
-                minLength={8}
+                minLength={MIN_PASSWORD_LENGTH}
               />
+              <p className={styles.fieldHint}>At least {MIN_PASSWORD_LENGTH} characters.</p>
             </div>
 
             <div className="field">
@@ -401,7 +379,7 @@ export function AccountDashboard({
                 aria-invalid={passwordError ? true : undefined}
                 aria-describedby={passwordError ? passwordErrorId : undefined}
                 disabled={savingPassword}
-                minLength={8}
+                minLength={MIN_PASSWORD_LENGTH}
               />
             </div>
 

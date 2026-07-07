@@ -26,10 +26,17 @@ describe("account page (server component)", () => {
 });
 
 describe("account dashboard — profile + senders", () => {
-  it("renders profile identity: login email and account type", () => {
-    expect(DASHBOARD).toContain("{profile.email}");
+  it("renders the identity card: avatar initial, email, integrated account type", () => {
+    expect(DASHBOARD).toContain("accountInitial(profile)");
+    expect(DASHBOARD).toContain("{profile.name ?? profile.email}");
     expect(DASHBOARD).toContain("ACCOUNT_TYPE_LABELS[profile.accountType]");
-    expect(DASHBOARD).toContain("Login email");
+    expect(DASHBOARD).toContain("Member since");
+    expect(DASHBOARD).toContain("Last sign-in");
+  });
+
+  it("does not render a 'Signed in' badge or other decorative status chips", () => {
+    expect(DASHBOARD).not.toContain("Signed in");
+    expect(DASHBOARD).not.toContain("signedInBadge");
   });
 
   it("renders connected senders with name, email, provider and connection status", () => {
@@ -56,11 +63,12 @@ describe("account dashboard — profile + senders", () => {
 });
 
 describe("account dashboard — sender removal", () => {
-  it("disables Remove when only one sender exists, with an explanation", () => {
-    expect(DASHBOARD).toContain("disabled={!canRemoveSenders}");
-    expect(DASHBOARD).toContain("Add another sender before removing this one.");
-    // The disabled button points at the helper text for assistive tech.
-    expect(DASHBOARD).toContain("aria-describedby={canRemoveSenders ? undefined : removeHelperId}");
+  it("hides the Remove action when only one sender exists, with helper text below the list", () => {
+    // No disabled pill in the row — the action only renders when removal is allowed.
+    expect(DASHBOARD).toContain("{canRemoveSenders ? (");
+    expect(DASHBOARD).not.toContain("disabled={!canRemoveSenders}");
+    expect(DASHBOARD).toContain("{!canRemoveSenders ? (");
+    expect(DASHBOARD).toContain("Connect another Gmail account before removing this sender.");
   });
 
   it("names which sender each Remove button removes", () => {
@@ -90,7 +98,7 @@ describe("account dashboard — sender removal", () => {
 
 describe("account dashboard — password", () => {
   it("shows a change form for password users and a set form for google accounts", () => {
-    expect(DASHBOARD).toContain("hasPassword ? \"Change password\" : \"Set a password\"");
+    expect(DASHBOARD).toContain('hasPassword ? "Password" : "Set a password"');
     expect(DASHBOARD).toContain('hasPassword ? "Update password" : "Set password"');
     expect(DASHBOARD).toContain("{hasPassword ? (");
   });
