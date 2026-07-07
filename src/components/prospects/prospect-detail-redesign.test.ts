@@ -317,6 +317,70 @@ describe("compact email-format evidence UI", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Manual email-format editor — compact, labelled, responsive polish.
+// ---------------------------------------------------------------------------
+
+describe("manual email-format editor UI", () => {
+  it("opens only for the manual-fix mode and titles the editor", () => {
+    expect(DETAIL_SOURCE).toContain('actionMode === "manual-fix" && (');
+    expect(DETAIL_SOURCE).toContain("Set the format manually");
+  });
+
+  it("labels every field visibly above its control", () => {
+    for (const label of ["Email domain", "Email pattern", "Confidence"]) {
+      expect(DETAIL_SOURCE).toContain(`<span className={styles.manualFieldLabel}>${label}</span>`);
+    }
+    // Three labelled field wrappers, one per control.
+    expect(DETAIL_SOURCE.split("styles.manualField}").length - 1).toBe(3);
+  });
+
+  it("keeps the domain input, both dropdowns, and their aria-labels", () => {
+    expect(DETAIL_SOURCE).toContain('placeholder="amat.com"');
+    expect(DETAIL_SOURCE).toContain('aria-label="Manual email domain"');
+    expect(DETAIL_SOURCE).toContain('aria-label="Manual email pattern"');
+    expect(DETAIL_SOURCE).toContain('aria-label="Manual confidence"');
+    expect(DETAIL_SOURCE).toContain("EMAIL_PATTERN_OPTIONS.map");
+    for (const level of ['value="HIGH"', 'value="MEDIUM"', 'value="LOW"']) {
+      expect(DETAIL_SOURCE).toContain(level);
+    }
+  });
+
+  it("keeps the Apply button, its handler, and the exact disabled/loading logic", () => {
+    expect(DETAIL_SOURCE).toContain("onManualEmailFormat(company)");
+    expect(DETAIL_SOURCE).toContain("disabled={refreshingFormat || !manualEmailDomain.trim()}");
+    expect(DETAIL_SOURCE).toContain('{refreshingFormat ? "Applying…" : "Apply manual fix"}');
+  });
+
+  it("keeps the close-X wired to the shared editor-close handler", () => {
+    expect(DETAIL_SOURCE).toContain('label="Close manual editor"');
+    expect(DETAIL_SOURCE).toContain("onClick={onCloseEditor}");
+  });
+
+  it("constrains the form width and aligns fields on a controlled grid", () => {
+    const editor = CSS.match(/\.manualEditor\s*\{[^}]*\}/s)?.[0] ?? "";
+    expect(editor).toMatch(/max-width:\s*\d/);
+    const grid = CSS.match(/\.manualFormatGrid\s*\{[^}]*\}/s)?.[0] ?? "";
+    // Four controlled columns, not full-width stretched inputs.
+    expect(grid).toContain("grid-template-columns");
+    expect(grid).toContain("align-items: end");
+  });
+
+  it("stacks the fields to a single column on mobile (no horizontal scroll)", () => {
+    const mobile = CSS.match(/@media \(max-width: 640px\)\s*\{[\s\S]*?\n\}/)?.[0] ?? "";
+    expect(mobile).toContain(".manualFormatGrid");
+    expect(mobile).toMatch(/\.manualFormatGrid\s*\{\s*grid-template-columns:\s*1fr/s);
+    // The editor never introduces its own overflow scrolling.
+    const editor = CSS.match(/\.manualEditor\s*\{[^}]*\}/s)?.[0] ?? "";
+    expect(editor).not.toMatch(/overflow-x/);
+  });
+
+  it("styles labels with theme tokens (blue-gray muted), not hard-coded colors", () => {
+    const label = CSS.match(/\.manualFieldLabel\s*\{[^}]*\}/s)?.[0] ?? "";
+    expect(label).toContain("var(--muted)");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Regression — existing behavior the redesign must not break.
 // ---------------------------------------------------------------------------
 

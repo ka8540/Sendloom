@@ -1138,11 +1138,36 @@
   align-items: center;
 }
 
+/* Compact inline editor: keep the form from stretching across the whole card
+   and align the header close-X with the form's right edge. */
+.manualEditor {
+  max-width: 46rem;
+}
+
 .manualFormatGrid {
   display: grid;
-  grid-template-columns: minmax(8rem, 1fr) minmax(8rem, 0.8fr) minmax(7rem, 0.65fr) auto;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 0.85fr) auto;
   gap: 0.7rem;
-  align-items: center;
+  align-items: end;
+}
+
+.manualField {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.manualFieldLabel {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+/* Sits on the input baseline (align-items: end), never randomly wider. */
+.manualApplyButton {
+  white-space: nowrap;
 }
 
 /* Pressed state for the mutually exclusive correction-mode buttons. */
