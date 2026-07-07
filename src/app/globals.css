@@ -455,6 +455,15 @@ html[data-sidebar-collapsed="true"] .shell {
   padding-left: 0.35rem;
 }
 
+/* Subtle separator between the theme control and the lower account/utility
+   nav — sets the Account item apart from the main product navigation. */
+.nav-footer-divider {
+  height: 1px;
+  margin: 0.35rem 0.25rem;
+  background: linear-gradient(to right, transparent, var(--line) 20%, var(--line) 80%, transparent);
+  border-radius: 999px;
+}
+
 .nav-item-button {
   cursor: pointer;
   text-align: left;
@@ -553,6 +562,14 @@ html[data-sidebar-collapsed="true"] .sidebar .nav-footer {
 html[data-sidebar-collapsed="true"] .sidebar .nav-footer-theme {
   justify-content: center;
   padding-left: 0;
+}
+
+/* Collapsed rail: shorten the divider to a centered line so it stays subtle
+   and never looks cramped against the icon-only footer. */
+.sidebar.is-collapsed .nav-footer-divider,
+html[data-sidebar-collapsed="true"] .sidebar .nav-footer-divider {
+  width: 1.75rem;
+  margin-inline: auto;
 }
 
 .content {
