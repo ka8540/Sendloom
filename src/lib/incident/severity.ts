@@ -47,6 +47,11 @@ export function deriveSeverity(category: AppErrorCategory, occurrenceCount = 1):
     case "CLIENT_RENDER":
       return repeated ? "MEDIUM" : "LOW";
 
+    // User-opened feedback from the help menu: not an outage. Start Low, nudge to
+    // Medium only if the same report is submitted repeatedly.
+    case "USER_REPORTED_ISSUE":
+      return persistent ? "MEDIUM" : "LOW";
+
     case "UNKNOWN":
     default:
       return persistent ? "HIGH" : "MEDIUM";
