@@ -53,8 +53,32 @@ synchronous boot script decides per load and sets `html[data-load-screen]`;
 `globals.css` keeps the overlay hidden (no flash) until it says `show`. It does
 **not** replay during client-side navigation, remounts, theme changes, or
 query-string changes — the gate decides once on first mount and the root layout
-persists across soft navigations. No storage/cooldown: it is brief, so it may
-appear on every hard refresh.
+persists across soft navigations.
+
+### 30-minute cooldown
+
+Once the splash has actually been shown, hard refreshes of the splash paths
+within 30 minutes skip it entirely — the page appears immediately with no
+overlay, no timers, no listeners, and no particle animation. The boot script
+reads/writes `localStorage["sendloom:startup-splash:last-shown-at"]`
+(`STARTUP_SPLASH_COOLDOWN_MS = 30 * 60 * 1000`) synchronously before first
+paint, so a skip can never flash the overlay:
+
+- the stamp is written **once, at the moment the script commits to showing**
+  (so rapid refreshes during the animation don't replay it);
+- a skipped splash never refreshes the stamp;
+- missing/malformed/future stamps and unavailable or throwing storage
+  (private mode, storage denial) all fall back safely to *showing* the splash;
+- non-splash routes (`/workspace`, `/prospects`, …) never show it and never
+  write the stamp;
+- cross-tab: `storage` events fire only in other tabs, so a tab whose splash is
+  visible dismisses early when another tab stamps the key
+  (`useStartupReadiness`'s `onStorage`).
+
+`src/lib/load-screen.ts` exports the key/TTL plus
+`isStartupSplashCooldownActive()` / `markStartupSplashShown()`; the inline boot
+script mirrors them (same interpolated constants) because it must stay
+self-contained.
 
 ## Readiness / dismissal
 

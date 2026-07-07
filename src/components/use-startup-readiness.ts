@@ -11,6 +11,7 @@ import {
   resolveStageIndex,
   type SplashPhase
 } from "@/components/startup-splash-core";
+import { STARTUP_SPLASH_LAST_SHOWN_KEY } from "@/lib/load-screen";
 
 export type StartupReadiness = {
   phase: SplashPhase;
@@ -106,6 +107,16 @@ export function useStartupReadiness(): StartupReadiness {
       );
     }
 
+    // Cross-tab courtesy: `storage` fires only in OTHER tabs, so an event for
+    // the cooldown key means another tab just showed (and stamped) the splash —
+    // this one can exit early instead of double-playing the boot. A cleared
+    // value (null) is ignored; it never re-shows or extends anything.
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === STARTUP_SPLASH_LAST_SHOWN_KEY && event.newValue !== null) {
+        dismiss();
+      }
+    };
+
     evaluate();
     // Absolute safety net — never outlive the ceiling, regardless of anything.
     maxTimer = setTimeout(dismiss, MAX_VISIBLE_MS);
@@ -113,6 +124,7 @@ export function useStartupReadiness(): StartupReadiness {
     document.addEventListener("visibilitychange", reconcile);
     window.addEventListener("focus", reconcile);
     window.addEventListener("pageshow", reconcile);
+    window.addEventListener("storage", onStorage);
 
     return () => {
       for (const timer of timers) {
@@ -130,6 +142,7 @@ export function useStartupReadiness(): StartupReadiness {
       document.removeEventListener("visibilitychange", reconcile);
       window.removeEventListener("focus", reconcile);
       window.removeEventListener("pageshow", reconcile);
+      window.removeEventListener("storage", onStorage);
     };
   }, []);
 

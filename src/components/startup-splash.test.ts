@@ -19,7 +19,14 @@ import {
   resolveStageLabel,
   shouldDismiss
 } from "@/components/startup-splash-core";
-import { isLoadScreenPath, loadScreenInitScript } from "@/lib/load-screen";
+import {
+  STARTUP_SPLASH_COOLDOWN_MS,
+  STARTUP_SPLASH_LAST_SHOWN_KEY,
+  isLoadScreenPath,
+  isStartupSplashCooldownActive,
+  loadScreenInitScript,
+  markStartupSplashShown
+} from "@/lib/load-screen";
 
 // The splash + hook + gate are "use client" React modules; in the node test env
 // their contract is verified through the pure logic above plus source assertions.
@@ -28,8 +35,8 @@ const HOOK_SOURCE = readFileSync("src/components/use-startup-readiness.ts", "utf
 const CORE_SOURCE = readFileSync("src/components/startup-splash-core.ts", "utf8");
 const CSS_SOURCE = readFileSync("src/components/startup-splash.module.css", "utf8");
 const GATE_SOURCE = readFileSync("src/components/public-load-screen.tsx", "utf8");
-const LIB_SOURCE = readFileSync("src/lib/load-screen.ts", "utf8");
 const LAYOUT_SOURCE = readFileSync("src/app/layout.tsx", "utf8");
+const GLOBALS_SOURCE = readFileSync("src/app/globals.css", "utf8");
 
 const ALL_SPLASH_SOURCES = [SPLASH_SOURCE, HOOK_SOURCE, CORE_SOURCE, CSS_SOURCE];
 
@@ -42,10 +49,35 @@ function bansCopy(fragments: string[]): void {
   }
 }
 
-function runBootScript(pathname: string): string {
+// Fake localStorage for exercising the synchronous boot script + helpers.
+type FakeStorage = {
+  values: Map<string, string>;
+  setCalls: number;
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+};
+
+function makeStorage(initial?: Record<string, string>): FakeStorage {
+  const values = new Map(Object.entries(initial ?? {}));
+  const storage: FakeStorage = {
+    values,
+    setCalls: 0,
+    getItem: (key) => (values.has(key) ? (values.get(key) as string) : null),
+    setItem: (key, value) => {
+      storage.setCalls += 1;
+      values.set(key, value);
+    }
+  };
+  return storage;
+}
+
+function runBootScript(pathname: string, storage?: unknown): string {
   const fakeRoot = { dataset: {} as Record<string, string> };
   const fakeDocument = { documentElement: fakeRoot };
-  const fakeWindow = { location: { pathname } };
+  const fakeWindow: Record<string, unknown> = { location: { pathname } };
+  if (storage !== undefined) {
+    fakeWindow.localStorage = storage;
+  }
   new Function("document", "window", loadScreenInitScript)(fakeDocument, fakeWindow);
   return fakeRoot.dataset.loadScreen ?? "";
 }
@@ -56,12 +88,12 @@ function runBootScript(pathname: string): string {
 
 describe("command-center composition", () => {
   it("(1) renders on a hard initial load of splash paths only", () => {
+    // No localStorage on the fake window = storage-unavailable fallback: show.
     expect(runBootScript("/")).toBe("show");
     expect(runBootScript("/login")).toBe("show");
     expect(runBootScript("/workspace")).toBe("hide");
     expect(isLoadScreenPath("/")).toBe(true);
     expect(isLoadScreenPath("/prospects")).toBe(false);
-    expect(LIB_SOURCE).not.toMatch(/localStorage|sessionStorage/i);
     // The overlay is part of the initial HTML (state derived from the pathname).
     expect(GATE_SOURCE).toMatch(/useState\(\(\) => isLoadScreenPath\(pathname\)\)/);
     expect(SPLASH_SOURCE).toContain("data-loader-overlay");
@@ -204,6 +236,147 @@ describe("readiness & timing", () => {
     expect(SPLASH_SOURCE).toContain("data-stage={stage}");
     expect(CSS_SOURCE).toContain('[data-stage="2"]');
     expect(CSS_SOURCE).toContain("--splash-seg");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 30-minute cooldown
+// ---------------------------------------------------------------------------
+
+describe("30-minute cooldown", () => {
+  const NOW = Date.now();
+  const FRESH = { [STARTUP_SPLASH_LAST_SHOWN_KEY]: String(NOW - 5 * 60 * 1000) };
+  const EXPIRED = { [STARTUP_SPLASH_LAST_SHOWN_KEY]: String(NOW - STARTUP_SPLASH_COOLDOWN_MS - 1000) };
+
+  it("(c1) shows when no timestamp exists", () => {
+    expect(STARTUP_SPLASH_COOLDOWN_MS).toBe(30 * 60 * 1000);
+    expect(runBootScript("/", makeStorage())).toBe("show");
+  });
+
+  it("(c2) stamps last-shown-at exactly once when the splash is displayed", () => {
+    const storage = makeStorage();
+    const before = Date.now();
+    expect(runBootScript("/", storage)).toBe("show");
+    const after = Date.now();
+    expect(storage.setCalls).toBe(1);
+    const written = Number(storage.values.get(STARTUP_SPLASH_LAST_SHOWN_KEY));
+    expect(written).toBeGreaterThanOrEqual(before);
+    expect(written).toBeLessThanOrEqual(after);
+  });
+
+  it("(c3) skips while the stamp is fresh — and a skip never refreshes the stamp", () => {
+    const storage = makeStorage(FRESH);
+    expect(runBootScript("/", storage)).toBe("hide");
+    expect(storage.setCalls).toBe(0);
+    expect(storage.values.get(STARTUP_SPLASH_LAST_SHOWN_KEY)).toBe(FRESH[STARTUP_SPLASH_LAST_SHOWN_KEY]);
+  });
+
+  it("(c4) shows again after the stamp expires, refreshing it", () => {
+    const storage = makeStorage(EXPIRED);
+    expect(runBootScript("/", storage)).toBe("show");
+    expect(storage.setCalls).toBe(1);
+    expect(Number(storage.values.get(STARTUP_SPLASH_LAST_SHOWN_KEY))).toBeGreaterThan(
+      Number(EXPIRED[STARTUP_SPLASH_LAST_SHOWN_KEY])
+    );
+  });
+
+  it("(c5) invalid or future timestamps are ignored safely", () => {
+    for (const bad of ["garbage", "", String(NOW + 60 * 1000)]) {
+      expect(runBootScript("/", makeStorage({ [STARTUP_SPLASH_LAST_SHOWN_KEY]: bad }))).toBe("show");
+    }
+  });
+
+  it("(c6) unavailable or throwing storage never crashes and falls back to showing", () => {
+    expect(runBootScript("/")).toBe("show");
+    expect(runBootScript("/", null)).toBe("show");
+    const throwingRead = {
+      getItem: () => {
+        throw new Error("denied");
+      },
+      setItem: () => {}
+    };
+    expect(runBootScript("/", throwingRead)).toBe("show");
+    const throwingWrite = {
+      getItem: () => null,
+      setItem: () => {
+        throw new Error("quota");
+      }
+    };
+    expect(runBootScript("/", throwingWrite)).toBe("show");
+  });
+
+  it("(c7) the cooldown applies on /, /login, and /signup", () => {
+    for (const path of ["/", "/login", "/signup"]) {
+      expect(runBootScript(path, makeStorage(FRESH))).toBe("hide");
+      expect(runBootScript(path, makeStorage())).toBe("show");
+    }
+  });
+
+  it("(c8) app/dashboard routes never show the splash and never write the stamp", () => {
+    for (const path of ["/workspace", "/campaigns", "/prospects", "/imports", "/templates", "/admin"]) {
+      const storage = makeStorage();
+      expect(runBootScript(path, storage)).toBe("hide");
+      expect(storage.setCalls).toBe(0);
+      expect(storage.values.size).toBe(0);
+    }
+  });
+
+  it("(c9) the TS helpers agree with the boot script and are failure-safe", () => {
+    expect(isStartupSplashCooldownActive(NOW, makeStorage(FRESH))).toBe(true);
+    expect(isStartupSplashCooldownActive(NOW, makeStorage(EXPIRED))).toBe(false);
+    expect(isStartupSplashCooldownActive(NOW, makeStorage())).toBe(false);
+    expect(isStartupSplashCooldownActive(NOW, makeStorage({ [STARTUP_SPLASH_LAST_SHOWN_KEY]: "junk" }))).toBe(false);
+    expect(isStartupSplashCooldownActive(NOW, null)).toBe(false);
+    expect(
+      isStartupSplashCooldownActive(NOW, {
+        getItem: () => {
+          throw new Error("denied");
+        },
+        setItem: () => {}
+      })
+    ).toBe(false);
+    // In this node env there is no window at all — the default must be safe.
+    expect(isStartupSplashCooldownActive()).toBe(false);
+    expect(() => markStartupSplashShown()).not.toThrow();
+
+    const storage = makeStorage();
+    markStartupSplashShown(NOW, storage);
+    expect(storage.values.get(STARTUP_SPLASH_LAST_SHOWN_KEY)).toBe(String(NOW));
+    expect(isStartupSplashCooldownActive(NOW + 1, storage)).toBe(true);
+    expect(isStartupSplashCooldownActive(NOW + STARTUP_SPLASH_COOLDOWN_MS, storage)).toBe(false);
+    expect(() =>
+      markStartupSplashShown(NOW, {
+        getItem: () => null,
+        setItem: () => {
+          throw new Error("quota");
+        }
+      })
+    ).not.toThrow();
+  });
+
+  it("(c10) a skip is flash-free: decided synchronously pre-paint, overlay never rendered", () => {
+    // The decision runs as a parser-blocking inline script in the root layout…
+    expect(LAYOUT_SOURCE).toContain("dangerouslySetInnerHTML={{ __html: loadScreenInitScript }}");
+    // …with nothing asynchronous in the decision path…
+    expect(loadScreenInitScript).not.toMatch(/setTimeout|await|\.then\(|requestAnimationFrame/);
+    // …and CSS suppresses the server-rendered overlay before hydration…
+    expect(GLOBALS_SOURCE).toMatch(
+      /html:not\(\[data-load-screen="show"\]\) \[data-loader-overlay\] \{\s*display: none !important;/
+    );
+    // …then the gate unmounts it before the splash's own effects (timers,
+    // listeners, stage advance) could ever start: layout effect runs pre-paint.
+    expect(GATE_SOURCE).toContain("useIsomorphicLayoutEffect");
+    expect(GATE_SOURCE).toMatch(/dataset\.loadScreen === "show"/);
+    expect(GATE_SOURCE).toMatch(/if \(!showSplash\) \{\s*return null;/);
+    // Particles + every animated layer live inside that unmounted overlay.
+    expect(SPLASH_SOURCE).toMatch(/data-loader-overlay=""[\s\S]*styles\.particles/);
+  });
+
+  it("(c11) cross-tab: a stamp written by another tab dismisses a visible splash early", () => {
+    expect(HOOK_SOURCE).toContain("STARTUP_SPLASH_LAST_SHOWN_KEY");
+    expect(HOOK_SOURCE).toMatch(/event\.key === STARTUP_SPLASH_LAST_SHOWN_KEY && event\.newValue !== null/);
+    expect(HOOK_SOURCE).toContain('window.addEventListener("storage", onStorage)');
+    expect(HOOK_SOURCE).toContain('window.removeEventListener("storage", onStorage)');
   });
 });
 
