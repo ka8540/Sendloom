@@ -996,6 +996,125 @@
   height: 1rem;
 }
 
+/* --- "Add more people?" dialog -------------------------------------------- *
+ * Compact confirmation, sized to match the review dialog. Every rule is scoped
+ * under .addMoreCard so the shared .modalCard / .panelTitle / .field / .input /
+ * .reviewGrid / *Button classes used by the other dialogs stay untouched. */
+.addMoreCard {
+  max-width: 30rem;
+  gap: 1rem;
+  padding: 1.35rem 1.45rem;
+}
+
+.addMoreCard .panelHeader {
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.addMoreCard .panelTitle {
+  font-size: 1.1rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.addMoreCard .panelSubtitle {
+  margin-top: 0.25rem;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  max-width: 46ch;
+}
+
+.addMoreCard .field {
+  gap: 0.4rem;
+}
+
+.addMoreCard .fieldLabel {
+  font-size: 0.78rem;
+}
+
+.addMoreCard .fieldHint {
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
+/* Role-group select: same height/type scale as the rest of the dialog, with
+   the custom .selectField caret kept clear of the text. */
+.addMoreCard .selectField {
+  height: 2.6rem;
+  padding: 0 2.5rem 0 0.85rem;
+  font-size: 0.92rem;
+  font-weight: 500;
+  line-height: 2.5rem;
+  background-position: right 0.9rem center;
+  background-size: 0.85rem;
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+
+.addMoreCard .selectField:hover:not(:disabled) {
+  border-color: var(--field-focus);
+}
+
+.addMoreCard .selectField:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.addMoreCard .reviewGrid {
+  gap: 0.55rem;
+}
+
+.addMoreCard .reviewGrid div {
+  gap: 0.15rem;
+  padding: 0.6rem 0.7rem;
+  border-radius: 0.7rem;
+}
+
+.addMoreCard .reviewGrid dt {
+  font-size: 0.68rem;
+  letter-spacing: 0.02em;
+}
+
+.addMoreCard .reviewGrid dd {
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.addMoreCard .modalActions {
+  gap: 0.6rem;
+  margin-top: 0.35rem;
+}
+
+.addMoreCard .modalActions .ghostButton,
+.addMoreCard .modalActions .primaryButton {
+  font-size: 0.92rem;
+  padding: 0.6rem 1.15rem;
+}
+
+.addMoreCard .modalActions .ghostButton {
+  padding: 0.6rem 0.95rem;
+}
+
+.addMoreCard .modalActions svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+/* The shared .ghostButton has no :disabled rule; while an expansion runs the
+   Cancel button is disabled and should read that way. */
+.addMoreCard .modalActions .ghostButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Narrow phones: the uppercase stat labels need the full row to stay on one
+   or two lines, so the cards stack instead of squeezing side by side. */
+@media (max-width: 26rem) {
+  .addMoreCard .reviewGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
 @keyframes prospect-fade {
   from {
     opacity: 0;

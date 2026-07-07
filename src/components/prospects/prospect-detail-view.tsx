@@ -2161,7 +2161,12 @@ function AddMorePeopleDialog({
 
   return (
     <div className={styles.modalOverlay} role="presentation">
-      <div className={`card ${styles.modalCard}`} role="dialog" aria-modal="true" aria-labelledby="discover-add-more-title">
+      <div
+        className={`card ${styles.modalCard} ${styles.addMoreCard}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="discover-add-more-title"
+      >
         <div className={styles.panelHeader}>
           <div>
             <h2 id="discover-add-more-title" className={styles.panelTitle}>
@@ -2176,7 +2181,7 @@ function AddMorePeopleDialog({
           <label className={styles.field}>
             <span className={styles.fieldLabel}>Role group</span>
             <select
-              className={styles.input}
+              className={`${styles.input} ${styles.selectField}`}
               value={chosenSearchId}
               onChange={(event) => setChosenSearchId(event.target.value)}
               disabled={expanding}
