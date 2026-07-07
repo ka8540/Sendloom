@@ -60,16 +60,20 @@ const PARTICLES = buildParticles();
 // is sliced to fill any viewport.
 // ---------------------------------------------------------------------------
 
-type SignalKind = "company" | "person" | "email" | "message" | "reply";
+type SignalKind = "company" | "person" | "email" | "message" | "timing";
 
+// Scattered origins sweep in from the left/top/bottom on woven curves and gather
+// at a knot just below the wordmark; one controlled path exits bottom-right.
+// The two near-vertical paths keep the loom legible on narrow (mobile) crops.
+const KNOT: [number, number] = [720, 580];
 const SIGNALS: { d: string; node: [number, number]; kind: SignalKind; index: number }[] = [
-  { d: "M150,140 C360,300 520,380 720,470", node: [150, 140], kind: "company", index: 0 },
-  { d: "M1300,180 C1050,300 880,382 720,470", node: [1300, 180], kind: "person", index: 1 },
-  { d: "M110,470 C330,470 520,470 720,470", node: [110, 470], kind: "email", index: 2 },
-  { d: "M250,790 C440,660 560,560 720,470", node: [250, 790], kind: "message", index: 3 },
-  { d: "M1210,770 C1000,650 860,560 720,470", node: [1210, 770], kind: "reply", index: 4 }
+  { d: "M150,130 C400,215 540,430 706,566", node: [150, 130], kind: "company", index: 0 },
+  { d: "M95,395 C300,355 530,490 703,572", node: [95, 395], kind: "person", index: 1 },
+  { d: "M170,720 C380,700 560,630 702,588", node: [170, 720], kind: "email", index: 2 },
+  { d: "M640,90 C666,250 694,430 717,564", node: [640, 90], kind: "timing", index: 3 },
+  { d: "M980,720 C910,678 800,640 733,594", node: [980, 720], kind: "message", index: 4 }
 ];
-const OUTBOUND = "M720,470 C900,470 1070,430 1330,352";
+const OUTBOUND = "M720,580 C920,616 1150,610 1380,710";
 
 function SignalSymbol({ kind }: { kind: SignalKind }) {
   switch (kind) {
@@ -96,9 +100,14 @@ function SignalSymbol({ kind }: { kind: SignalKind }) {
           <path d="M-2,4 L-2,8 L2,4" className={styles.symbolStroke} />
         </>
       );
-    case "reply":
+    case "timing":
     default:
-      return <circle cx={0} cy={0} r={3.5} className={styles.symbolFill} />;
+      return (
+        <>
+          <circle cx={0} cy={0} r={5.5} className={styles.symbolStroke} />
+          <path d="M0,-2.5 L0,0.5 L3,2" className={styles.symbolStroke} />
+        </>
+      );
   }
 }
 
@@ -192,7 +201,9 @@ export function StartupSplash() {
 
         <path className={styles.wire} d={OUTBOUND} />
         <path className={styles.wireDraw} d={OUTBOUND} pathLength={100} style={{ "--delay": "0.55s" } as CSSProperties} />
-        <path className={styles.pulse} d={OUTBOUND} pathLength={100} style={{ "--delay": "0.9s" } as CSSProperties} />
+        {/* Evenly spaced pulses out (controlled sending) and one reply signal back. */}
+        <path className={styles.sendPulses} d={OUTBOUND} pathLength={100} style={{ "--delay": "0.9s" } as CSSProperties} />
+        <path className={styles.replyPulse} d={OUTBOUND} pathLength={100} style={{ "--delay": "1.5s" } as CSSProperties} />
 
         {SIGNALS.map((signal) => {
           const delay = `${0.05 + signal.index * 0.08}s`;
@@ -206,29 +217,33 @@ export function StartupSplash() {
           );
         })}
 
-        {/* Convergence core under the wordmark. */}
-        <circle className={styles.coreHalo} cx={720} cy={470} r={26} />
-        <circle className={styles.core} cx={720} cy={470} r={9} />
+        {/* Convergence knot beneath the wordmark, where the threads gather. */}
+        <circle className={styles.coreHalo} cx={KNOT[0]} cy={KNOT[1]} r={20} />
+        <circle className={styles.core} cx={KNOT[0]} cy={KNOT[1]} r={7.5} />
 
         {SIGNALS.map((signal) => (
-          <g
-            key={`node-${signal.kind}`}
-            className={styles.node}
-            transform={`translate(${signal.node[0]}, ${signal.node[1]})`}
-            style={{ "--delay": `${signal.index * 0.09}s` } as CSSProperties}
-          >
-            <circle className={styles.nodeDisc} r={13} />
-            <SignalSymbol kind={signal.kind} />
+          // Outer g holds position; the animated class lives on an inner g so the
+          // CSS transform animation cannot override the translate attribute.
+          <g key={`node-${signal.kind}`} transform={`translate(${signal.node[0]}, ${signal.node[1]})`}>
+            <g className={styles.node} style={{ "--delay": `${signal.index * 0.09}s` } as CSSProperties}>
+              <circle className={styles.nodeDisc} r={17} />
+              <g transform="scale(1.3)">
+                <SignalSymbol kind={signal.kind} />
+              </g>
+            </g>
           </g>
         ))}
-        <circle className={styles.replyNode} cx={1330} cy={352} r={5} />
+        <circle className={styles.replyNode} cx={1380} cy={710} r={5} />
       </svg>
 
       {/* Focal wordmark. */}
       <div className={styles.stage}>
         <Wordmark />
+      </div>
 
-        {/* Segmented readiness readout + rotating stage copy. */}
+      {/* Segmented readiness readout + stage copy, anchored near the bottom so
+          the signal knot beneath the wordmark stays clear. */}
+      <div className={styles.footer}>
         <div className={styles.readout} aria-hidden="true">
           <div className={styles.track}>
             {Array.from({ length: 5 }).map((_, i) => (

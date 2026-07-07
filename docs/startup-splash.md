@@ -20,13 +20,16 @@ gated behind it.
 
 ## Visual concept
 
-Scattered company / person / email / message signals flow along curved paths and
-weave together beneath a large kinetic **SENDLOOM** wordmark (SEND solid, LOOM
-constructed as an accent outline); one clean path continues out (TRACK). The
-brand workflow **FIND / PERSONALIZE / SEND / TRACK** is distributed across the
-composition, with a layered backdrop (gradient, emerald glow, faint grid, woven
-arcs, particles, vignette) and a segmented readiness readout. It is visual brand
-storytelling, not a claim that the loader is really searching or sending.
+Scattered company / person / email / timing / message signal chips sweep in on
+woven curves and gather at a knot just beneath a large kinetic **SENDLOOM**
+wordmark (SEND solid, LOOM constructed as an accent outline with warp threads);
+one controlled outbound path exits bottom-right carrying evenly spaced send
+pulses, with a reply signal travelling back (TRACK). Two near-vertical paths
+keep the loom legible on narrow mobile crops. The brand workflow **FIND /
+PERSONALIZE / SEND / TRACK** annotates the geometry, with a layered backdrop
+(gradient, emerald glow, faint grid, woven arcs, particles, vignette) and a
+bottom-anchored segmented readiness readout. It is visual brand storytelling,
+not a claim that the loader is really searching or sending.
 
 ## When it appears
 

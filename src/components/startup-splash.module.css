@@ -204,6 +204,30 @@
   animation: splashPulse 2.3s linear var(--delay, 0s) infinite;
 }
 
+/* Outbound: evenly spaced pulses — controlled sending, not a spray. */
+.sendPulses {
+  fill: none;
+  stroke: var(--splash-accent-strong);
+  stroke-width: 2.8;
+  stroke-linecap: round;
+  stroke-dasharray: 2.4 30.9;
+  stroke-dashoffset: 100;
+  opacity: 0.95;
+  animation: splashPulse 2.6s linear var(--delay, 0s) infinite;
+}
+
+/* A single reply signal travelling back up the outbound path. */
+.replyPulse {
+  fill: none;
+  stroke: color-mix(in srgb, var(--text) 85%, var(--splash-accent));
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-dasharray: 1.6 98.4;
+  stroke-dashoffset: 100;
+  opacity: 0.8;
+  animation: splashPulse 3.2s linear var(--delay, 0s) infinite reverse;
+}
+
 @keyframes splashDraw {
   to {
     stroke-dashoffset: 0;
@@ -255,13 +279,16 @@
 
 .node {
   opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
   animation: splashNodeIn 0.5s ease-out var(--delay, 0s) forwards;
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--splash-accent) 35%, transparent));
 }
 
 .nodeDisc {
-  fill: color-mix(in srgb, var(--surface-strong) 80%, transparent);
-  stroke: color-mix(in srgb, var(--splash-accent) 52%, var(--splash-line));
-  stroke-width: 1.6;
+  fill: color-mix(in srgb, var(--surface-strong) 92%, var(--splash-accent));
+  stroke: color-mix(in srgb, var(--splash-accent) 80%, var(--splash-line));
+  stroke-width: 2;
 }
 
 .symbolStroke {
@@ -279,6 +306,8 @@
 .replyNode {
   fill: var(--splash-accent-strong);
   opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
   animation: splashNodeIn 0.5s ease-out 1s forwards;
 }
 
@@ -336,7 +365,9 @@
   display: inline-flex;
   font-family: var(--font-loader-body), ui-sans-serif, system-ui, sans-serif;
   font-weight: 700;
-  font-size: clamp(3rem, 12.5vw, 9.5rem);
+  /* Width-driven, but bounded by height so large desktops still get a
+     commanding mark and short viewports keep the knot beneath it clear. */
+  font-size: clamp(3rem, min(12.5vw, 20vh), 11rem);
   line-height: 0.9;
   letter-spacing: -0.02em;
 }
@@ -397,6 +428,19 @@
 }
 
 /* ---- Readout -------------------------------------------------------------- */
+
+.footer {
+  position: absolute;
+  left: 50%;
+  bottom: clamp(28px, 9vh, 72px);
+  transform: translateX(-50%);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.9rem;
+  padding-bottom: env(safe-area-inset-bottom);
+}
 
 .readout {
   display: flex;
@@ -512,26 +556,28 @@
   box-shadow: 0 0 8px color-mix(in srgb, var(--splash-accent) 60%, transparent);
 }
 
+/* Positioned to annotate the signal geometry: FIND by the scattered origins,
+   PERSONALIZE where the threads merge, SEND on the outbound path, TRACK where
+   the reply lands. */
 .step[data-step="find"] {
   top: 17%;
-  left: 9%;
+  left: 8%;
 }
 
 .step[data-step="personalize"] {
-  top: 62%;
-  left: 6%;
+  top: 66%;
+  left: 9%;
 }
 
 .step[data-step="send"] {
-  top: 71%;
-  left: 50%;
-  transform: translateX(-50%);
+  top: 62%;
+  left: 63%;
   letter-spacing: 0.34em;
   color: color-mix(in srgb, var(--text) 78%, transparent);
 }
 
 .step[data-step="track"] {
-  top: 29%;
+  top: 80%;
   right: 8%;
 }
 
@@ -546,20 +592,6 @@
   }
 }
 
-.step[data-step="send"] {
-  animation-name: splashStepInCentered;
-}
-
-@keyframes splashStepInCentered {
-  from {
-    opacity: 0;
-    transform: translateX(-50%) translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0);
-  }
-}
 
 /* ---- Screen-reader helper ------------------------------------------------- */
 
@@ -607,8 +639,8 @@
     left: 7%;
   }
   .step[data-step="track"] {
-    top: 24%;
-    right: 6%;
+    top: 70%;
+    right: 5%;
   }
 }
 
@@ -643,12 +675,14 @@
   }
 
   .step[data-step="send"] {
-    top: auto;
-    bottom: 16%;
+    top: 60%;
+    left: 58%;
   }
 
-  .stage {
-    padding-bottom: calc(1.25rem + env(safe-area-inset-bottom));
+  .stageCopy {
+    font-size: 0.7rem;
+    letter-spacing: 0.12em;
+    white-space: nowrap;
   }
 }
 
@@ -660,6 +694,8 @@
   .particle,
   .wireDraw,
   .pulse,
+  .sendPulses,
+  .replyPulse,
   .coreHalo,
   .node,
   .replyNode,
@@ -690,7 +726,9 @@
     stroke-dashoffset: 0;
   }
 
-  .pulse {
+  .pulse,
+  .sendPulses,
+  .replyPulse {
     display: none;
   }
 

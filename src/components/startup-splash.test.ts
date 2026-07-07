@@ -71,8 +71,9 @@ describe("cinematic composition", () => {
     expect(SPLASH_SOURCE).toContain("styles.word");
     expect(SPLASH_SOURCE).toContain("styles.lead");
     expect(SPLASH_SOURCE).toContain("styles.tail");
-    // The wordmark is a strong focal point (large clamp) and LOOM is outlined.
-    expect(CSS_SOURCE).toMatch(/\.word \{[\s\S]*font-size: clamp\(3rem, 12\.5vw, 9\.5rem\)/);
+    // The wordmark is a strong focal point (large width- and height-aware clamp)
+    // and LOOM is outlined.
+    expect(CSS_SOURCE).toMatch(/\.word \{[\s\S]*font-size: clamp\(3rem, min\(12\.5vw, 20vh\), 11rem\)/);
     expect(CSS_SOURCE).toMatch(/\.tail \{[\s\S]*-webkit-text-stroke/);
   });
 
