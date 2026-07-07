@@ -453,3 +453,71 @@ describe("review import dialog UI", () => {
     expect(card).not.toMatch(/overflow-x|min-width:\s*[1-9]/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Selection import actions — the toolbar opens the review step (no duplicated
+// "Add to Imports"), and Select-all is a real button, not an inline text link.
+// ---------------------------------------------------------------------------
+
+describe("selection import actions UX", () => {
+  // These three components are declared consecutively in the source, so slice
+  // by their function boundaries to scope assertions to the right component.
+  const toolbar = DETAIL_SOURCE.slice(
+    DETAIL_SOURCE.indexOf("function BulkSelectionToolbar("),
+    DETAIL_SOURCE.indexOf("function SelectAllMatchingBanner(")
+  );
+  const banner = DETAIL_SOURCE.slice(
+    DETAIL_SOURCE.indexOf("function SelectAllMatchingBanner("),
+    DETAIL_SOURCE.indexOf("function PeopleTable(")
+  );
+
+  it("keeps the live selected count in the toolbar", () => {
+    expect(toolbar).toContain("{selectedCount} selected");
+  });
+
+  it("labels the toolbar import action 'Review import', not the modal's final action", () => {
+    // The toolbar opens the review step…
+    expect(toolbar).toContain("<span>Review import</span>");
+    // …and the duplicated 'Add to Imports' label is gone from the toolbar/source.
+    expect(DETAIL_SOURCE).not.toContain("<span>Add to Imports</span>");
+    // The final import action still lives on the modal's primary button.
+    expect(DETAIL_SOURCE).toContain("`Add ${exportableCount} records to Imports`");
+  });
+
+  it("wires the toolbar Review import button to open the review dialog", () => {
+    expect(toolbar).toContain("onClick={onImport}");
+    expect(DETAIL_SOURCE).toContain('onImport={() => openReviewDialog("import")}');
+  });
+
+  it("keeps Download Excel and Clear selection in the toolbar", () => {
+    expect(toolbar).toContain("<span>Download Excel</span>");
+    expect(toolbar).toContain("Clear selection");
+    expect(toolbar).toContain("onClick={onClear}");
+  });
+
+  it("renders Select-all as a styled, accessible button — not an underlined text link", () => {
+    // A real button with the shared select-all class and an explicit type.
+    expect(banner).toContain("className={styles.selectAllButton}");
+    expect(banner).toContain('type="button"');
+    expect(banner).toContain("onClick={onSelectAll}");
+    // It carries an accessible name that names the search scope.
+    expect(banner).toContain("aria-label=");
+    expect(banner).toContain("in this search");
+    // The compact button label leads with the total count.
+    expect(banner).toContain("`Select all ${totalCount} people`");
+  });
+
+  it("styles the Select-all button as a compact accent control with a visible focus ring", () => {
+    const rule = CSS.match(/\.selectAllButton\s*\{[^}]*\}/s)?.[0] ?? "";
+    expect(rule).toContain("var(--accent)");
+    // No longer a bare underlined text link.
+    expect(rule).not.toContain("text-decoration: underline");
+    expect(CSS).toMatch(/\.selectAllButton:focus-visible\s*\{[^}]*outline/s);
+  });
+
+  it("lays the banner out as message-left / button-right and wraps on mobile", () => {
+    const rule = CSS.match(/\.selectAllBanner\s*\{[^}]*\}/s)?.[0] ?? "";
+    expect(rule).toContain("justify-content: space-between");
+    expect(rule).toContain("flex-wrap: wrap");
+  });
+});

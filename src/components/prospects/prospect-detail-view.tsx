@@ -1928,7 +1928,7 @@ function BulkSelectionToolbar({
         </button>
         <button type="button" className={styles.secondaryButton} onClick={onImport} disabled={busy}>
           <FileSpreadsheet aria-hidden="true" />
-          <span>Add to Imports</span>
+          <span>Review import</span>
         </button>
         <button type="button" className={styles.ghostButton} onClick={onClear} disabled={busy}>
           Clear selection
@@ -1949,13 +1949,23 @@ function SelectAllMatchingBanner({
   categoryName: string | null;
   onSelectAll: () => void;
 }) {
+  const buttonLabel = categoryName
+    ? `Select all ${totalCount} ${categoryName} prospects`
+    : `Select all ${totalCount} people`;
   return (
     <div className={styles.selectAllBanner} role="status" data-discover-tour="select-all">
-      <span>All {pageCount} people on this page are selected.</span>
-      <button type="button" onClick={onSelectAll}>
-        {categoryName
-          ? `Select all ${totalCount} ${categoryName} prospects.`
-          : `Select all ${totalCount} people in this search.`}
+      <span className={styles.selectAllMessage}>All {pageCount} people on this page are selected.</span>
+      <button
+        type="button"
+        className={styles.selectAllButton}
+        onClick={onSelectAll}
+        aria-label={
+          categoryName
+            ? `Select all ${totalCount} ${categoryName} prospects in this search`
+            : `Select all ${totalCount} people in this search`
+        }
+      >
+        {buttonLabel}
       </button>
     </div>
   );

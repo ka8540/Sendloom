@@ -188,7 +188,9 @@ describe("Existing Discover functionality is preserved on the right page", () =>
 
   it("keeps export, imports, delete, and add-more on the detail page", () => {
     expect(DETAIL_SOURCE).toContain("Download Excel");
-    expect(DETAIL_SOURCE).toContain("Add to Imports");
+    // Toolbar opens the review step; the modal owns the final import action.
+    expect(DETAIL_SOURCE).toContain("Review import");
+    expect(DETAIL_SOURCE).toContain("records to Imports");
     expect(DETAIL_SOURCE).toContain("PREPARE_PROSPECT_EXPORT_MUTATION");
     expect(DETAIL_SOURCE).toContain("CREATE_PROSPECT_IMPORT_MUTATION");
     expect(DETAIL_SOURCE).toContain("DELETE_COMPANY_MUTATION");

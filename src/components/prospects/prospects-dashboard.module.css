@@ -1425,7 +1425,8 @@
 .selectAllBanner {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  justify-content: space-between;
+  gap: 0.5rem 0.75rem;
   flex-wrap: wrap;
   padding: 0.62rem 0.8rem;
   border-radius: 0.7rem;
@@ -1436,16 +1437,39 @@
   font-weight: 600;
 }
 
-.selectAllBanner button {
-  border: 0;
-  background: transparent;
+.selectAllMessage {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.selectAllButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  flex: none;
+  padding: 0.4rem 0.85rem;
+  border-radius: 0.65rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+  background: color-mix(in srgb, var(--accent-soft) 62%, var(--surface));
   color: var(--link);
   font: inherit;
+  font-size: 0.84rem;
   font-weight: 700;
-  padding: 0;
   cursor: pointer;
-  text-decoration: underline;
-  text-underline-offset: 0.16rem;
+  white-space: nowrap;
+  transition: background 140ms ease, border-color 140ms ease, transform 140ms ease;
+}
+
+.selectAllButton:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent-soft) 88%, var(--surface));
+  border-color: var(--field-focus);
+  transform: translateY(-1px);
+}
+
+.selectAllButton:focus-visible {
+  outline: 2px solid var(--field-focus);
+  outline-offset: 2px;
 }
 
 .filterField {
