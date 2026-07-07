@@ -2,6 +2,7 @@
 
 import { type CSSProperties } from "react";
 
+import { BrandText } from "@/components/brand-text";
 import { SendloomLogo } from "@/components/sendloom-logo";
 import {
   BRAND,
@@ -337,7 +338,9 @@ export function StartupSplash() {
             <span className={styles.brandTagline}>{BRAND_TAGLINE}</span>
           </div>
           <div className={styles.mark}>
-            <span className={styles.markText}>{BRAND}</span>
+            <span className={styles.markText}>
+              <BrandText>{BRAND}</BrandText>
+            </span>
             <span className={styles.markScan} aria-hidden="true" />
           </div>
           <div className={styles.specRule} aria-hidden="true" />
