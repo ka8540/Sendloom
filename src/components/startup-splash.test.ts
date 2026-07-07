@@ -3,8 +3,9 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
-  BRAND_LEAD,
-  BRAND_TAIL,
+  BRAND,
+  BRAND_TAGLINE,
+  COMMAND_MODULES,
   EXIT_MS,
   MAX_PARTICLES,
   MAX_VISIBLE_MS,
@@ -12,7 +13,6 @@ import {
   PARTICLE_TOTAL,
   SPLASH_STAGES,
   STAGE_THRESHOLDS_MS,
-  WORKFLOW_STEPS,
   resolveParticleCount,
   resolveRemainingDelayMs,
   resolveStageIndex,
@@ -31,6 +31,17 @@ const GATE_SOURCE = readFileSync("src/components/public-load-screen.tsx", "utf8"
 const LIB_SOURCE = readFileSync("src/lib/load-screen.ts", "utf8");
 const LAYOUT_SOURCE = readFileSync("src/app/layout.tsx", "utf8");
 
+const ALL_SPLASH_SOURCES = [SPLASH_SOURCE, HOOK_SOURCE, CORE_SOURCE, CSS_SOURCE];
+
+// Rejected copy is asserted via joined fragments so a plain-text sweep of the
+// repo for the old strings cannot match this test file itself.
+function bansCopy(fragments: string[]): void {
+  const phrase = fragments.join("");
+  for (const source of ALL_SPLASH_SOURCES) {
+    expect(source.includes(phrase)).toBe(false);
+  }
+}
+
 function runBootScript(pathname: string): string {
   const fakeRoot = { dataset: {} as Record<string, string> };
   const fakeDocument = { documentElement: fakeRoot };
@@ -40,53 +51,112 @@ function runBootScript(pathname: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Cinematic composition
+// Command-center composition
 // ---------------------------------------------------------------------------
 
-describe("cinematic composition", () => {
-  it("(1) the new cinematic splash renders backdrop, signals, wordmark, workflow", () => {
-    expect(SPLASH_SOURCE).toContain("styles.backdrop");
-    expect(SPLASH_SOURCE).toContain("styles.signals");
-    expect(SPLASH_SOURCE).toContain("styles.wordmark");
-    expect(SPLASH_SOURCE).toContain("styles.workflow");
-    expect(SPLASH_SOURCE).toContain("styles.weave");
-    // A real signal system with curved paths + nodes, not four circles by a logo.
-    expect(SPLASH_SOURCE).toContain("SIGNALS");
-    expect(SPLASH_SOURCE).toContain("OUTBOUND");
+describe("command-center composition", () => {
+  it("(1) renders on a hard initial load of splash paths only", () => {
+    expect(runBootScript("/")).toBe("show");
+    expect(runBootScript("/login")).toBe("show");
+    expect(runBootScript("/workspace")).toBe("hide");
+    expect(isLoadScreenPath("/")).toBe(true);
+    expect(isLoadScreenPath("/prospects")).toBe(false);
+    expect(LIB_SOURCE).not.toMatch(/localStorage|sessionStorage/i);
+    // The overlay is part of the initial HTML (state derived from the pathname).
+    expect(GATE_SOURCE).toMatch(/useState\(\(\) => isLoadScreenPath\(pathname\)\)/);
+    expect(SPLASH_SOURCE).toContain("data-loader-overlay");
   });
 
-  it("(2) the rejected basic design is gone", () => {
-    for (const source of [SPLASH_SOURCE, CORE_SOURCE, CSS_SOURCE]) {
-      expect(source).not.toMatch(/Preparing Sendloom|Building your outreach workspace/);
-    }
-    // No fake counter / percentage / spinner language survives.
-    for (const source of [SPLASH_SOURCE, CORE_SOURCE]) {
-      expect(source).not.toMatch(/092|\bspinner\b|PRIMING THE CALM SURFACE/i);
+  it("(2) the real page mounts beneath a fixed overlay", () => {
+    expect(LAYOUT_SOURCE).toMatch(/\{children\}[\s\S]*<PublicLoadScreen \/>/);
+    expect(CSS_SOURCE).toMatch(/\.overlay \{[\s\S]*position: fixed/);
+  });
+
+  it("(3) the full SENDLOOM brand lockup renders with the new title treatment", () => {
+    expect(BRAND).toBe("SENDLOOM");
+    expect(BRAND_TAGLINE.toUpperCase()).toBe("OUTREACH OPERATIONS");
+    expect(SPLASH_SOURCE).toContain("{BRAND}");
+    expect(SPLASH_SOURCE).toContain("{BRAND_TAGLINE}");
+    expect(SPLASH_SOURCE).toContain("SendloomLogo");
+    expect(SPLASH_SOURCE).toContain("styles.markText");
+    expect(SPLASH_SOURCE).toContain("styles.markScan");
+    // Sharp wide-tracked command title + emerald scan — not the old split/outline.
+    expect(CSS_SOURCE).toMatch(/\.markText \{[\s\S]*letter-spacing: 0\.14em/);
+    expect(CSS_SOURCE).toMatch(/@keyframes splashScan/);
+    expect(CSS_SOURCE).not.toContain("-webkit-text-stroke");
+  });
+
+  it("(4) the command map + mobile module flow both render the workflow system", () => {
+    expect(SPLASH_SOURCE).toContain("function CommandMap");
+    expect(SPLASH_SOURCE).toContain("function ModuleFlow");
+    expect(SPLASH_SOURCE).toContain("styles.commandMap");
+    expect(SPLASH_SOURCE).toContain("styles.moduleFlow");
+    expect(SPLASH_SOURCE).toContain("styles.sendRail");
+    expect(SPLASH_SOURCE).toContain("styles.core");
+    // Panels dock around a central core with routing spokes — real graphics,
+    // not floating text chips.
+    expect(SPLASH_SOURCE).toContain("PANELS");
+    expect(SPLASH_SOURCE).toMatch(/spoke: "M/);
+    expect(SPLASH_SOURCE).toContain("function ModuleGlyph");
+  });
+
+  it("(5) product modules cover Import, Enrich, Template, Sequence, Send, Track", () => {
+    expect(COMMAND_MODULES.map((module) => module.key)).toEqual([
+      "import",
+      "enrich",
+      "template",
+      "sequence",
+      "send",
+      "track"
+    ]);
+    expect(SPLASH_SOURCE).toContain("COMMAND_MODULES.map");
+    // Each module has its own meaningful glyph, not just a label.
+    for (const module of COMMAND_MODULES) {
+      expect(SPLASH_SOURCE).toContain(`case "${module.key}"`);
+      expect(module.detail.length).toBeGreaterThan(0);
     }
   });
 
-  it("(3) large SENDLOOM focal typography exists (SEND solid, LOOM constructed)", () => {
-    expect(BRAND_LEAD).toBe("SEND");
-    expect(BRAND_TAIL).toBe("LOOM");
-    expect(SPLASH_SOURCE).toContain("styles.word");
-    expect(SPLASH_SOURCE).toContain("styles.lead");
-    expect(SPLASH_SOURCE).toContain("styles.tail");
-    // The wordmark is a strong focal point (large width- and height-aware clamp)
-    // and LOOM is outlined.
-    expect(CSS_SOURCE).toMatch(/\.word \{[\s\S]*font-size: clamp\(3rem, min\(12\.5vw, 20vh\), 11rem\)/);
-    expect(CSS_SOURCE).toMatch(/\.tail \{[\s\S]*-webkit-text-stroke/);
+  it("(6) the old LOAD splash is gone", () => {
+    expect(() => readFileSync("src/components/load-screen.tsx", "utf8")).toThrow();
+    for (const source of ALL_SPLASH_SOURCES) {
+      expect(source).not.toMatch(/\bLOAD\b/);
+    }
+    bansCopy(["Loading ", "Send loom"]);
+    bansCopy(["Reading ", "audience, sender, and sequence state"]);
   });
 
-  it("(4) the IMPORT / ENRICH / TEMPLATE / SEQUENCE / SEND / TRACK workflow labels render", () => {
-    expect(WORKFLOW_STEPS).toEqual(["IMPORT", "ENRICH", "TEMPLATE", "SEQUENCE", "SEND", "TRACK"]);
-    expect(SPLASH_SOURCE).toContain("WORKFLOW_STEPS.map");
-    for (const step of WORKFLOW_STEPS) {
-      expect(CSS_SOURCE).toContain(`data-step="${step.toLowerCase()}"`);
+  it("(7) the rejected basic-splash copy is gone", () => {
+    bansCopy(["Preparing ", "Sendloom"]);
+    bansCopy(["Building your ", "outreach workspace"]);
+  });
+
+  it("(8) the rejected woven-signals visual treatment is gone", () => {
+    bansCopy(["Outreach ", "Loom"]);
+    bansCopy(["Organizing the ", "outreach flow"]);
+    bansCopy(["Connecting leads, messages, ", "and sends"]);
+    bansCopy(["Ready for ", "controlled outreach"]);
+    // Old composition identifiers must not survive the redesign.
+    for (const identifier of ["SIGNALS", "OUTBOUND", "KNOT", "WORKFLOW_STEPS", "BRAND_LEAD", "BRAND_TAIL"]) {
+      expect(SPLASH_SOURCE).not.toContain(identifier);
+      expect(CORE_SOURCE).not.toContain(identifier);
     }
-    // Mobile simplifies to IMPORT / ENRICH / SEND / TRACK.
-    expect(CSS_SOURCE).toMatch(
-      /\.step\[data-step="template"\],\s*\.step\[data-step="sequence"\] \{\s*display: none/
-    );
+    for (const className of [".weave", ".workflow", ".wordmark", ".signals", ".lead", ".tail"]) {
+      expect(CSS_SOURCE).not.toContain(`${className} {`);
+    }
+    expect(SPLASH_SOURCE).not.toContain("styles.weave");
+    expect(SPLASH_SOURCE).not.toContain("styles.workflow");
+  });
+
+  it("(9) no fake numeric counter exists or is required for dismissal", () => {
+    for (const stage of SPLASH_STAGES) {
+      expect(stage).not.toMatch(/\d/);
+    }
+    bansCopy(["0", "92"]);
+    bansCopy(["01", "8"]);
+    expect(HOOK_SOURCE).not.toMatch(/percent|progressValue|counter/i);
+    // Dismissal is pure readiness + wall clock.
+    expect(shouldDismiss({ elapsedMs: MIN_VISIBLE_MS, appReady: true })).toBe(true);
   });
 });
 
@@ -95,52 +165,45 @@ describe("cinematic composition", () => {
 // ---------------------------------------------------------------------------
 
 describe("readiness & timing", () => {
-  it("(7) the real page mounts beneath a fixed overlay", () => {
-    expect(LAYOUT_SOURCE).toMatch(/\{children\}[\s\S]*<PublicLoadScreen \/>/);
-    expect(CSS_SOURCE).toMatch(/\.overlay \{[\s\S]*position: fixed/);
-  });
-
-  it("(8) dismisses only once app-ready AND the minimum has elapsed", () => {
-    expect(shouldDismiss({ elapsedMs: 1100, appReady: true })).toBe(true);
-    expect(shouldDismiss({ elapsedMs: 400, appReady: true })).toBe(false);
+  it("(10) minimum visible time is 650-850ms and the remainder is scheduled", () => {
+    expect(MIN_VISIBLE_MS).toBeGreaterThanOrEqual(650);
+    expect(MIN_VISIBLE_MS).toBeLessThanOrEqual(850);
+    expect(shouldDismiss({ elapsedMs: MIN_VISIBLE_MS - 1, appReady: true })).toBe(false);
     expect(shouldDismiss({ elapsedMs: 9999, appReady: false })).toBe(false);
-  });
-
-  it("(9) minimum visible is 800–1100ms and schedules the remainder", () => {
-    expect(MIN_VISIBLE_MS).toBeGreaterThanOrEqual(800);
-    expect(MIN_VISIBLE_MS).toBeLessThanOrEqual(1100);
     expect(resolveRemainingDelayMs({ elapsedMs: 200 })).toBe(MIN_VISIBLE_MS - 200);
     expect(resolveRemainingDelayMs({ elapsedMs: 5000 })).toBe(0);
     expect(HOOK_SOURCE).toMatch(/setTimeout\(dismiss, MIN_VISIBLE_MS - elapsed\(\)\)/);
   });
 
-  it("(10) a max safety ceiling (2400–2800ms) removes a stuck splash", () => {
-    expect(MAX_VISIBLE_MS).toBeGreaterThanOrEqual(2400);
-    expect(MAX_VISIBLE_MS).toBeLessThanOrEqual(2800);
+  it("(11) a hard 2200ms ceiling releases the page no matter what", () => {
+    expect(MAX_VISIBLE_MS).toBeLessThanOrEqual(2200);
+    expect(MAX_VISIBLE_MS).toBeGreaterThan(MIN_VISIBLE_MS);
     expect(HOOK_SOURCE).toMatch(/setTimeout\(dismiss, MAX_VISIBLE_MS\)/);
-    expect(EXIT_MS).toBeGreaterThanOrEqual(300);
-    expect(EXIT_MS).toBeLessThanOrEqual(500);
+    expect(EXIT_MS).toBeGreaterThanOrEqual(250);
+    expect(EXIT_MS).toBeLessThanOrEqual(400);
   });
 
   it("(12) animation completion is NOT required — dismissal uses timers + wall clock", () => {
     expect(HOOK_SOURCE).not.toMatch(/requestAnimationFrame\(|["']animationend["']|["']transitionend["']/);
+    expect(SPLASH_SOURCE).not.toMatch(/onAnimationEnd|onTransitionEnd/);
     expect(HOOK_SOURCE).toContain("Date.now()");
     expect(HOOK_SOURCE).toContain("setTimeout");
   });
 
-  it("stage copy is broad, honest, and time-based (no fake precision)", () => {
+  it("stage copy is broad, honest, and advances on wall-clock thresholds", () => {
     expect(SPLASH_STAGES).toEqual([
-      "Organizing the outreach flow",
-      "Connecting leads, messages, and sends",
-      "Ready for controlled outreach"
+      "Assembling your outreach engine",
+      "Connecting leads, messages, and send controls",
+      "Opening the command center"
     ]);
     expect(resolveStageIndex(0)).toBe(0);
     expect(resolveStageIndex(STAGE_THRESHOLDS_MS[1])).toBe(1);
     expect(resolveStageIndex(99999)).toBe(SPLASH_STAGES.length - 1);
-    expect(resolveStageLabel(0)).toBe("Organizing the outreach flow");
-    for (const stage of SPLASH_STAGES) {
-      expect(stage).not.toMatch(/\d+%/);
-    }
+    expect(resolveStageLabel(0)).toBe("Assembling your outreach engine");
+    // The boot progress treatment is stage-driven, not a percentage bar.
+    expect(SPLASH_SOURCE).toContain("data-stage={stage}");
+    expect(CSS_SOURCE).toContain('[data-stage="2"]');
+    expect(CSS_SOURCE).toContain("--splash-seg");
   });
 });
 
@@ -149,56 +212,44 @@ describe("readiness & timing", () => {
 // ---------------------------------------------------------------------------
 
 describe("hidden-tab behavior", () => {
-  it("(11) returning to the tab reconciles stage + readiness immediately", () => {
+  it("(13) a hidden tab never resets or replays the splash", () => {
+    expect(HOOK_SOURCE).toContain("let dismissed = false");
+    expect(GATE_SOURCE).toContain("reconciledRef");
+    expect(GATE_SOURCE).toMatch(/if \(reconciledRef\.current\) \{\s*return;/);
+    // Stage is recomputed from elapsed wall-clock time — never rewound.
+    expect(HOOK_SOURCE).toMatch(/resolveStageIndex\(elapsed\(\)\)/);
+  });
+
+  it("(14) returning from a hidden tab reconciles readiness and can dismiss immediately", () => {
     expect(HOOK_SOURCE).toContain('addEventListener("visibilitychange", reconcile)');
-    expect(HOOK_SOURCE).toMatch(/reconcile = \(\) => \{[\s\S]*visibilityState[\s\S]*resolveStageIndex\(elapsed\(\)\)[\s\S]*evaluate\(\)/);
+    expect(HOOK_SOURCE).toMatch(/reconcile = \(\) => \{[\s\S]*visibilityState[\s\S]*evaluate\(\)/);
+    expect(HOOK_SOURCE).toMatch(/if \(elapsed\(\) >= MIN_VISIBLE_MS\) \{\s*dismiss\(\);/);
   });
 
-  it("(13) focus reconciliation is wired", () => {
+  it("(15) focus and pageshow reconciliation are wired", () => {
     expect(HOOK_SOURCE).toContain('window.addEventListener("focus", reconcile)');
-  });
-
-  it("(14) pageshow reconciliation is wired", () => {
     expect(HOOK_SOURCE).toContain('window.addEventListener("pageshow", reconcile)');
   });
 
-  it("(16) listeners and timers are cleaned up", () => {
+  it("(16) the overlay unmounts fully when done", () => {
+    expect(SPLASH_SOURCE).toMatch(/if \(phase === "done"\) \{\s*return null;/);
+  });
+
+  it("(17) timers and listeners are cleaned up", () => {
     expect(HOOK_SOURCE).toContain('removeEventListener("visibilitychange", reconcile)');
     expect(HOOK_SOURCE).toContain('removeEventListener("focus", reconcile)');
     expect(HOOK_SOURCE).toContain('removeEventListener("pageshow", reconcile)');
     expect((HOOK_SOURCE.match(/clearTimeout/g)?.length ?? 0)).toBeGreaterThanOrEqual(3);
-    expect(HOOK_SOURCE).toContain("let dismissed = false");
   });
 
-  it("(17) the overlay unmounts fully when done", () => {
-    expect(SPLASH_SOURCE).toMatch(/if \(phase === "done"\) \{\s*return null;/);
-  });
-
-  it("(18) body scroll/overflow is never mutated (nothing to restore)", () => {
+  it("(18) body scroll is never mutated (nothing to restore)", () => {
     for (const source of [SPLASH_SOURCE, HOOK_SOURCE, GATE_SOURCE]) {
       expect(source).not.toMatch(/document\.body|overflow\s*=/);
     }
   });
-});
 
-// ---------------------------------------------------------------------------
-// Navigation
-// ---------------------------------------------------------------------------
-
-describe("navigation", () => {
-  it("(15) decides once on mount — no replay on client nav / theme / query", () => {
-    expect(GATE_SOURCE).toContain("reconciledRef");
-    expect(GATE_SOURCE).toMatch(/if \(reconciledRef\.current\) \{\s*return;/);
+  it("decides once on mount — no replay on client nav / theme / query", () => {
     expect(GATE_SOURCE).toMatch(/useIsomorphicLayoutEffect\(\(\) => \{[\s\S]*\}, \[\]\)/);
-  });
-
-  it("shows on a hard load of splash paths only, with no storage suppression", () => {
-    expect(runBootScript("/")).toBe("show");
-    expect(runBootScript("/login")).toBe("show");
-    expect(runBootScript("/workspace")).toBe("hide");
-    expect(isLoadScreenPath("/")).toBe(true);
-    expect(isLoadScreenPath("/prospects")).toBe(false);
-    expect(LIB_SOURCE).not.toMatch(/localStorage|sessionStorage/i);
   });
 });
 
@@ -207,40 +258,36 @@ describe("navigation", () => {
 // ---------------------------------------------------------------------------
 
 describe("performance", () => {
-  it("(5) particle count is capped", () => {
-    expect(MAX_PARTICLES).toBeLessThanOrEqual(22);
+  it("(20) particle counts are sparse and reduced per breakpoint", () => {
+    expect(MAX_PARTICLES).toBeLessThanOrEqual(16);
     expect(PARTICLE_TOTAL).toBeLessThanOrEqual(MAX_PARTICLES);
-    for (const width of [320, 640, 1024, 1440, 3840]) {
-      expect(resolveParticleCount({ viewportWidth: width, reducedMotion: false })).toBeLessThanOrEqual(MAX_PARTICLES);
-    }
-  });
-
-  it("(6) mobile uses fewer particles than desktop, within the spec ranges", () => {
     const mobile = resolveParticleCount({ viewportWidth: 375, reducedMotion: false });
     const tablet = resolveParticleCount({ viewportWidth: 800, reducedMotion: false });
     const desktop = resolveParticleCount({ viewportWidth: 1440, reducedMotion: false });
     expect(mobile).toBeLessThan(tablet);
     expect(tablet).toBeLessThan(desktop);
-    expect(mobile).toBeGreaterThanOrEqual(5);
-    expect(mobile).toBeLessThanOrEqual(9);
-    expect(desktop).toBeGreaterThanOrEqual(14);
-    expect(desktop).toBeLessThanOrEqual(22);
+    expect(mobile).toBeLessThanOrEqual(6);
+    expect(desktop).toBeLessThanOrEqual(MAX_PARTICLES);
+    for (const width of [320, 640, 1024, 1440, 3840]) {
+      expect(resolveParticleCount({ viewportWidth: width, reducedMotion: false })).toBeLessThanOrEqual(MAX_PARTICLES);
+    }
     // CSS mirrors the caps by hiding surplus particles.
-    expect(CSS_SOURCE).toMatch(/nth-child\(n \+ 13\)/);
-    expect(CSS_SOURCE).toMatch(/nth-child\(n \+ 8\)/);
+    expect(CSS_SOURCE).toMatch(/nth-child\(n \+ 9\)/);
+    expect(CSS_SOURCE).toMatch(/nth-child\(n \+ 6\)/);
   });
 
-  it("(22) no WebGL / video / new animation library / remote image", () => {
-    for (const source of [SPLASH_SOURCE, HOOK_SOURCE, CORE_SOURCE, CSS_SOURCE]) {
+  it("(21) no WebGL / canvas loop / video / new animation library / remote assets", () => {
+    for (const source of ALL_SPLASH_SOURCES) {
       expect(source).not.toMatch(/three|WebGL|<canvas|<video|url\(https?:|gsap|framer-motion|lottie/i);
     }
     expect(SPLASH_SOURCE).not.toMatch(/next\/image|<img\b/);
-    // Motion is CSS keyframes only.
+    // Motion is CSS keyframes only; no JS animation loop.
     expect(CSS_SOURCE).toMatch(/@keyframes splashDraw/);
     expect(HOOK_SOURCE).not.toMatch(/requestAnimationFrame\(|setInterval\(/);
+    expect(SPLASH_SOURCE).not.toMatch(/requestAnimationFrame\(|setInterval\(/);
   });
 
-  it("(23) no dashboard/backend flow is touched", () => {
+  it("(22) no dashboard/Discover/sequence-processing loader is touched", () => {
     for (const source of [SPLASH_SOURCE, HOOK_SOURCE, CORE_SOURCE]) {
       expect(source).not.toMatch(/fetch\(|graphql|MUTATION|prospect|discover|dashboard|workspace/i);
     }
@@ -256,37 +303,36 @@ describe("accessibility & themes", () => {
   it("exposes status semantics without over-announcing", () => {
     expect(SPLASH_SOURCE).toMatch(/aria-busy=\{phase === "loading"\}/);
     expect(SPLASH_SOURCE).toMatch(/role="status" aria-live="polite"/);
-    // Decorative graphics are hidden from assistive tech.
     expect(SPLASH_SOURCE).toMatch(/className=\{styles\.backdrop\} aria-hidden="true"/);
-    expect(SPLASH_SOURCE).toMatch(/className=\{styles\.signals\}[\s\S]*aria-hidden="true"/);
-    expect(SPLASH_SOURCE).toMatch(/className=\{styles\.workflow\} aria-hidden="true"/);
+    expect(SPLASH_SOURCE).toMatch(/className=\{styles\.mapZone\} aria-hidden="true"/);
+    expect(SPLASH_SOURCE).toMatch(/className=\{styles\.moduleFlow\} aria-hidden="true"/);
   });
 
-  it("(19) reduced motion keeps a full, crisp static composition", () => {
+  it("(19) reduced motion keeps the full, resolved command-center composition", () => {
     expect(CSS_SOURCE).toContain("@media (prefers-reduced-motion: reduce)");
     expect(CSS_SOURCE).toMatch(/animation: none !important/);
-    // The wordmark + nodes resolve to their finished state (not hidden).
-    expect(CSS_SOURCE).toMatch(/prefers-reduced-motion: reduce\)[\s\S]*\.lead,[\s\S]*opacity: 1/);
+    // Panels, core, brand, and footer resolve to their finished state.
+    expect(CSS_SOURCE).toMatch(/prefers-reduced-motion: reduce\)[\s\S]*\.panel,[\s\S]*opacity: 1;\s*transform: none/);
+    // Travelling pulses are removed rather than frozen mid-path.
+    expect(CSS_SOURCE).toMatch(/prefers-reduced-motion: reduce\)[\s\S]*\.railPulses,[\s\S]*display: none/);
     expect(resolveParticleCount({ viewportWidth: 1440, reducedMotion: true })).toBe(0);
   });
 
-  it("(20) colours are theme tokens only — dark and light both work", () => {
+  it("colours are theme tokens only — dark and light both work, no theme flash", () => {
     expect(CSS_SOURCE).toContain("var(--accent)");
     expect(CSS_SOURCE).toContain("var(--bg-start)");
     expect(CSS_SOURCE).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
     expect(CSS_SOURCE).not.toMatch(/\brgb\(/);
   });
 
-  it("(21) responsive, no horizontal overflow, safe-area aware", () => {
+  it("responsive: asymmetric desktop, stacked tablet, separate mobile flow", () => {
     expect(CSS_SOURCE).toMatch(/\.overlay \{[\s\S]*overflow: hidden/);
+    expect(CSS_SOURCE).toMatch(/\.scene \{[\s\S]*grid-template-columns: minmax\(0, 45%\) minmax\(0, 55%\)/);
     expect(CSS_SOURCE).toContain("@media (max-width: 1024px)");
+    expect(CSS_SOURCE).toContain("@media (max-width: 900px)");
     expect(CSS_SOURCE).toContain("@media (max-width: 640px)");
     expect(CSS_SOURCE).toContain("env(safe-area-inset-bottom)");
-  });
-
-  it("(1-visual) removes the old giant-SEND splash entirely", () => {
-    expect(() => readFileSync("src/components/load-screen.tsx", "utf8")).toThrow();
+    expect(CSS_SOURCE).toContain("env(safe-area-inset-top");
     expect(CSS_SOURCE).toContain("var(--font-loader-body)");
-    expect(CSS_SOURCE).not.toMatch(/Bebas|font-loader-display/);
   });
 });

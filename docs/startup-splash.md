@@ -1,6 +1,6 @@
-# Startup splash — "The Outreach Loom"
+# Startup splash — the command-center boot sequence
 
-The full-screen cinematic boot overlay shown while the public site initializes.
+The full-screen boot overlay shown while the public site initializes.
 
 ## Where it is mounted
 
@@ -13,26 +13,38 @@ gated behind it.
 | --- | --- |
 | `src/lib/load-screen.ts` | Splash paths + the synchronous boot script that sets `html[data-load-screen]`. |
 | `src/components/public-load-screen.tsx` | Mount gate — decides once whether to render the splash. |
-| `src/components/startup-splash.tsx` | The cinematic composition. |
+| `src/components/startup-splash.tsx` | The command-center composition. |
 | `src/components/use-startup-readiness.ts` | Readiness-driven lifecycle + broad stage copy. |
-| `src/components/startup-splash-core.ts` | Pure timing / stage / particle / copy logic (unit-tested). |
+| `src/components/startup-splash-core.ts` | Pure timing / stage / module / particle logic (unit-tested). |
 | `src/components/startup-splash.module.css` | Theme-token styling, motion, responsive, reduced-motion. |
 
 ## Visual concept
 
-Scattered signal chips mirroring the product's real workflow — an imported lead
-list, an enriched contact, a message template, sequence timing, and the
-connected Gmail sender — sweep in on woven curves and gather at a knot just
-beneath a large kinetic **SENDLOOM** wordmark (SEND solid, LOOM constructed as
-an accent outline with warp threads); one controlled outbound path exits
-bottom-right carrying evenly spaced send pulses, with a reply signal travelling
-back (TRACK). Two near-vertical paths keep the loom legible on narrow mobile
-crops. The landing page's own workflow vocabulary — **IMPORT / ENRICH /
-TEMPLATE / SEQUENCE / SEND / TRACK** (mobile keeps IMPORT / ENRICH / SEND /
-TRACK) — annotates the geometry, with a layered backdrop (gradient, emerald
-glow, faint grid, woven arcs, particles, vignette) and a bottom-anchored
-segmented readiness readout. It is visual brand storytelling, not a claim that
-the loader is really searching or sending.
+A calm outreach command center powering on. The desktop composition is
+asymmetric:
+
+- **Left:** the brand lockup — the real Sendloom logo tile, an
+  "OUTREACH OPERATIONS" eyebrow, and a wide-tracked **SENDLOOM** command title
+  framed by technical corner brackets. A thin emerald scan line sweeps across
+  the title once; beneath it a spec rule carries tick marks and an accent
+  segment that advances with the boot stage, plus the product story in one
+  quiet line (Import → Enrich → Template → Sequence → Send → Track).
+- **Right:** an operations map. Six module panels — Import (lead rows),
+  Enrich (person node receiving data), Template (message card with a merge
+  token), Sequence (timeline rail), Send (Gmail envelope with paced arcs),
+  Track (reply loop) — dock into orbit around a central Sendloom core (loom
+  threads + envelope chevron, the product mark's own motifs). Thin routing
+  spokes draw in toward the core, paced pulses circulate the orbit, a send
+  pulse leaves the core and a reply pulse returns along the Track spoke.
+- **Bottom:** a boot footer with three stage ticks, one honest stage line with
+  a blinking caret, and a controlled send rail carrying evenly spaced pulses
+  right with a single reply blip returning.
+- **Mobile (≤640px):** a separate vertical composition — compact centered
+  lockup, then the six modules as docked rows on a live spine with a pulse
+  travelling down and a reply returning up. Not a shrunken desktop.
+
+It is visual brand storytelling, not a claim that the loader is really
+searching or sending.
 
 ## When it appears
 
@@ -51,14 +63,17 @@ completing. The real page is interactive as soon as `useStartupReadiness`'s
 effect runs (React has mounted); from there it holds for a brief minimum, then
 plays a short exit.
 
-- Minimum visible: `MIN_VISIBLE_MS = 900ms`.
-- Maximum safety ceiling: `MAX_VISIBLE_MS = 2600ms` — always removed by then, so
+- Minimum visible: `MIN_VISIBLE_MS = 800ms`.
+- Maximum safety ceiling: `MAX_VISIBLE_MS = 2200ms` — always removed by then, so
   it can never get stuck.
-- Exit: `EXIT_MS = 420ms`, then the overlay unmounts.
+- Exit: `EXIT_MS = 320ms` (a CSS opacity transition; removal is a timer, not a
+  `transitionend` listener), then the overlay unmounts.
 
-Broad stage copy ("Organizing the outreach flow" → "Connecting leads, messages,
-and sends" → "Ready for controlled outreach") advances on time thresholds — no
-fake percentage.
+Broad stage copy ("Assembling your outreach engine" → "Connecting leads,
+messages, and send controls" → "Opening the command center") advances on time
+thresholds — no fake percentage. The stage also drives the footer ticks and the
+spec-rule segment via `data-stage`, so "progress" is wall-clock state, not an
+animation.
 
 ## Hidden-tab reconciliation
 
@@ -71,16 +86,17 @@ cleaned up on unmount.
 
 ## Reduced motion
 
-`prefers-reduced-motion: reduce` resolves the whole composition to its finished,
-crisp state (wordmark, nodes, drawn paths all visible) and removes path travel,
-particle drift, sweeps, and the pulse — keeping a premium static design. Timing is
-unchanged, so it never stays visible longer.
+`prefers-reduced-motion: reduce` resolves the whole composition to its finished
+state (title, panels, core, spokes, footer all visible) and removes travelling
+pulses, particle drift, the scan, and the caret — keeping a premium static
+design. Timing is unchanged, so it never stays visible longer.
 
 ## Performance
 
-CSS/SVG only: keyframes, transforms, opacity, and `stroke-dashoffset` (paths use
-`pathLength="100"` so dash math is size-independent). ≤18 particles (16 desktop
-/ 12 tablet / 7 mobile), capped and reduced on smaller viewports via CSS. No WebGL / canvas / video / new dependency
-(the previous Three.js + GSAP splash was removed). Colours are `globals.css`
-tokens, so dark and light both work with no theme flash (theme is resolved by
-`themeInitScript` before the splash renders).
+CSS/SVG only: keyframes, transforms, opacity, `stroke-dashoffset` (paths use
+`pathLength="100"` so dash math is size-independent), and one
+`background-position` rail. ≤14 particles (12 desktop / 8 tablet / 5 mobile),
+capped and reduced on smaller viewports via CSS. No WebGL / canvas / video /
+new dependency (the original Three.js + GSAP splash was removed). Colours are
+`globals.css` tokens, so dark and light both work with no theme flash (theme is
+resolved by `themeInitScript` before the splash renders).

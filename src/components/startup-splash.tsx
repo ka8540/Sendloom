@@ -2,21 +2,23 @@
 
 import { type CSSProperties } from "react";
 
+import { SendloomLogo } from "@/components/sendloom-logo";
 import {
-  BRAND_LEAD,
-  BRAND_TAIL,
+  BRAND,
+  BRAND_TAGLINE,
+  COMMAND_MODULES,
   PARTICLE_TOTAL,
   SPLASH_STAGES,
   SPLASH_STATUS_LABEL,
-  WORKFLOW_STEPS
+  type CommandModuleKey
 } from "@/components/startup-splash-core";
 import { useStartupReadiness } from "@/components/use-startup-readiness";
 import styles from "@/components/startup-splash.module.css";
 
 // ---------------------------------------------------------------------------
-// Deterministic particle field (index-based) so the server render and the first
-// client render agree — no hydration mismatch, no resize listener. CSS
-// breakpoints cap how many actually drift on smaller viewports.
+// Deterministic sparse particle field (index-based) so the server render and
+// the first client render agree — no hydration mismatch, no resize listener.
+// CSS breakpoints cap how many actually drift on smaller viewports.
 // ---------------------------------------------------------------------------
 
 type Particle = {
@@ -25,27 +27,21 @@ type Particle = {
   size: string;
   duration: string;
   delay: string;
-  driftX: string;
   peak: number;
-  variant: "point" | "square" | "streak" | "bright";
 };
 
 function buildParticles(): Particle[] {
   const particles: Particle[] = [];
   for (let index = 0; index < PARTICLE_TOTAL; index += 1) {
     const golden = (index * 0.61803398875) % 1;
-    const alt = (index * 0.7548776662 + 0.19) % 1;
-    const variant: Particle["variant"] =
-      index % 9 === 4 ? "bright" : index % 11 === 3 ? "streak" : index % 5 === 0 ? "square" : "point";
+    const alt = (index * 0.7548776662 + 0.23) % 1;
     particles.push({
-      x: `${Math.round(4 + golden * 92)}%`,
-      y: `${Math.round(6 + alt * 88)}%`,
-      size: `${2 + (index % 4)}px`,
-      duration: `${11 + (index % 6) * 1.6}s`,
-      delay: `${(index % 7) * 0.6}s`,
-      driftX: `${(index % 2 === 0 ? 1 : -1) * (8 + (index % 5) * 4)}px`,
-      peak: 0.22 + (index % 4) * 0.13,
-      variant
+      x: `${Math.round(5 + golden * 90)}%`,
+      y: `${Math.round(8 + alt * 84)}%`,
+      size: `${2 + (index % 3)}px`,
+      duration: `${12 + (index % 5) * 1.7}s`,
+      delay: `${(index % 6) * 0.7}s`,
+      peak: 0.16 + (index % 4) * 0.09
     });
   }
   return particles;
@@ -54,111 +50,236 @@ function buildParticles(): Particle[] {
 const PARTICLES = buildParticles();
 
 // ---------------------------------------------------------------------------
-// Signal system. A few scattered signals (company, person, email, message,
-// reply) flow along curved paths and weave together under the wordmark; one
-// clean outbound path continues past it. Geometry is in a 1440×900 canvas that
-// is sliced to fill any viewport.
+// Command map geometry — a hub-and-spoke operations map in a 760×640 canvas
+// (preserveAspectRatio "meet": the whole map always stays visible). Six module
+// panels dock in orbit around the Sendloom core; thin routing spokes link each
+// panel to the core; paced pulses circulate the orbit; a send pulse leaves the
+// core down the SEND spoke and a reply pulse returns along TRACK.
 // ---------------------------------------------------------------------------
 
-// The chips mirror the landing page's real workflow: an imported lead list, an
-// enriched contact, a message template, sequence timing, and the connected
-// Gmail sender feeding the loom.
-type SignalKind = "importList" | "person" | "template" | "timing" | "email";
+const CORE: [number, number] = [380, 296];
+const PANEL_W = 168;
+const PANEL_H = 88;
 
-// Scattered origins sweep in from the left/top/bottom on woven curves and gather
-// at a knot just below the wordmark; one controlled path exits bottom-right.
-// The two near-vertical paths keep the loom legible on narrow (mobile) crops.
-const KNOT: [number, number] = [720, 580];
-const SIGNALS: { d: string; node: [number, number]; kind: SignalKind; index: number }[] = [
-  { d: "M150,130 C400,215 540,430 706,566", node: [150, 130], kind: "timing", index: 0 },
-  { d: "M95,395 C300,355 530,490 703,572", node: [95, 395], kind: "person", index: 1 },
-  { d: "M170,720 C380,700 560,630 702,588", node: [170, 720], kind: "template", index: 2 },
-  { d: "M640,90 C666,250 694,430 717,564", node: [640, 90], kind: "importList", index: 3 },
-  { d: "M980,720 C910,678 800,640 733,594", node: [980, 720], kind: "email", index: 4 }
+type PanelSpec = {
+  key: CommandModuleKey;
+  /** Panel top-left corner. */
+  x: number;
+  y: number;
+  /** Routing spoke from panel edge to the core ring. */
+  spoke: string;
+  /** Entry slide direction (panels dock inward from their orbital side). */
+  ex: number;
+  ey: number;
+};
+
+const PANELS: PanelSpec[] = [
+  { key: "import", x: 97, y: 137, spoke: "M257,225 L318,260", ex: -20, ey: -12 },
+  { key: "enrich", x: 296, y: 22, spoke: "M380,110 L380,224", ex: 0, ey: -22 },
+  { key: "template", x: 495, y: 137, spoke: "M503,225 L442,260", ex: 20, ey: -12 },
+  { key: "sequence", x: 495, y: 367, spoke: "M503,367 L442,332", ex: 20, ey: 12 },
+  { key: "send", x: 296, y: 482, spoke: "M380,482 L380,368", ex: 0, ey: 22 },
+  { key: "track", x: 97, y: 367, spoke: "M257,367 L318,332", ex: -20, ey: 12 }
 ];
-const OUTBOUND = "M720,580 C920,616 1150,610 1380,710";
 
-function SignalSymbol({ kind }: { kind: SignalKind }) {
+// Send leaves the core downward (through the SEND spoke); the reply returns to
+// the core along the TRACK spoke. Both are decorative pulses, wall-clock free.
+const SEND_PULSE_PATH = "M380,368 L380,482";
+const REPLY_PULSE_PATH = "M257,367 L318,332";
+
+// ---------------------------------------------------------------------------
+// Module glyphs — small meaningful graphics, one per workflow module, drawn in
+// a 36×28 stroke box. Shared by the desktop panels and the mobile module rows.
+// ---------------------------------------------------------------------------
+
+function ModuleGlyph({ kind }: { kind: CommandModuleKey }) {
   switch (kind) {
-    case "importList":
-      // Imported lead list — CSV-like rows.
+    case "import":
+      // A mini spreadsheet with rows/columns, plus an arrow dropping rows in.
       return (
         <>
-          <path d="M-5,-4 H5" className={styles.symbolStroke} />
-          <path d="M-5,0 H5" className={styles.symbolStroke} />
-          <path d="M-5,4 H1.5" className={styles.symbolStroke} />
+          <rect x={1} y={3} width={26} height={20} rx={2.5} className={styles.glyphStroke} />
+          <path d="M1,10 H27" className={styles.glyphStroke} />
+          <path d="M1,16.5 H27" className={styles.glyphStroke} />
+          <path d="M9.5,3 V23" className={styles.glyphFaint} />
+          <path d="M32.5,6 V13" className={styles.glyphAccent} />
+          <path d="M29.5,10.5 L32.5,13.8 L35.5,10.5" className={styles.glyphAccent} />
         </>
       );
-    case "person":
+    case "enrich":
+      // A person node receiving data points from the right.
       return (
         <>
-          <circle cx={0} cy={-3} r={3} className={styles.symbolStroke} />
-          <path d="M-5,6 C-5,1 5,1 5,6" className={styles.symbolStroke} />
+          <circle cx={9} cy={8} r={4.2} className={styles.glyphStroke} />
+          <path d="M2,23 C2,15.8 16,15.8 16,23" className={styles.glyphStroke} />
+          <path d="M22,9 H31" className={styles.glyphAccent} />
+          <circle cx={33.5} cy={9} r={1.7} className={styles.glyphAccentFill} />
+          <path d="M22,16 H27.5" className={styles.glyphAccent} />
+          <circle cx={30} cy={16} r={1.7} className={styles.glyphAccentFill} />
         </>
       );
     case "template":
-      // Message template block with merge-field lines.
+      // A message card with a highlighted merge-variable token.
       return (
         <>
-          <rect x={-6} y={-5} width={12} height={10} rx={2} className={styles.symbolStroke} />
-          <path d="M-3.5,-1.5 H3.5" className={styles.symbolStroke} />
-          <path d="M-3.5,1.5 H1" className={styles.symbolStroke} />
+          <rect x={1} y={2} width={25} height={22} rx={3} className={styles.glyphStroke} />
+          <path d="M5.5,8 H21.5" className={styles.glyphStroke} />
+          <rect x={5.5} y={12} width={9.5} height={5} rx={1.6} className={styles.glyphToken} />
+          <path d="M18,14.5 H21.5" className={styles.glyphFaint} />
+          <path d="M5.5,20.5 H16" className={styles.glyphFaint} />
+          <path d="M31,7 V12 M28.5,9.5 H33.5" className={styles.glyphAccent} />
         </>
       );
-    case "email":
-      // Connected Gmail sender.
+    case "sequence":
+      // An ordered timeline rail: step dots with even interval ticks.
       return (
         <>
-          <rect x={-6} y={-4} width={12} height={9} rx={1.5} className={styles.symbolStroke} />
-          <path d="M-6,-3 L0,2 L6,-3" className={styles.symbolStroke} />
+          <path d="M2,14 H34" className={styles.glyphFaint} />
+          <circle cx={7} cy={14} r={3} className={styles.glyphAccentFill} />
+          <circle cx={19} cy={14} r={3} className={styles.glyphStroke} />
+          <circle cx={31} cy={14} r={3} className={styles.glyphStroke} />
+          <path d="M13,9.5 V18.5" className={styles.glyphFaint} />
+          <path d="M25,9.5 V18.5" className={styles.glyphFaint} />
         </>
       );
-    case "timing":
+    case "send":
+      // The connected Gmail channel: envelope with paced outbound arcs.
+      return (
+        <>
+          <rect x={1} y={5} width={22} height={16} rx={2.5} className={styles.glyphStroke} />
+          <path d="M2.5,7 L12,15 L21.5,7" className={styles.glyphStroke} />
+          <path d="M27,9.5 C29.6,11.4 29.6,14.6 27,16.5" className={styles.glyphAccent} />
+          <path d="M31,7 C34.8,10 34.8,16 31,19" className={styles.glyphAccent} />
+        </>
+      );
+    case "track":
     default:
+      // The reply/activity loop returning to the run.
       return (
         <>
-          <circle cx={0} cy={0} r={5.5} className={styles.symbolStroke} />
-          <path d="M0,-2.5 L0,0.5 L3,2" className={styles.symbolStroke} />
+          <path d="M31,14 a9,9 0 1 1 -9,-9" className={styles.glyphStroke} />
+          <path d="M18.5,2.4 L22.4,5 L18.7,7.8" className={styles.glyphStroke} />
+          <circle cx={22} cy={14} r={2.3} className={styles.glyphReply} />
         </>
       );
   }
 }
 
-// SEND reads solid; LOOM reads constructed/outlined. Split into letter spans for
-// a kinetic, staggered reveal.
-function Wordmark() {
-  const lead = BRAND_LEAD.split("");
-  const tail = BRAND_TAIL.split("");
-  let cursor = 0;
+// ---------------------------------------------------------------------------
+// Desktop/tablet command map. Everything decorative — hidden from AT.
+// ---------------------------------------------------------------------------
+
+function CommandMap() {
   return (
-    <div className={styles.wordmark} aria-hidden="true">
-      <svg className={styles.threads} viewBox="0 0 620 40" preserveAspectRatio="none" aria-hidden="true">
-        <path className={styles.thread} d="M8,20 H612" pathLength={100} />
-        <path className={styles.thread} d="M40,10 H580" pathLength={100} style={{ animationDelay: "0.15s" } as CSSProperties} />
-        <path className={styles.thread} d="M40,30 H580" pathLength={100} style={{ animationDelay: "0.3s" } as CSSProperties} />
-      </svg>
-      <span className={styles.word}>
-        {lead.map((letter, i) => {
-          const style = { "--i": cursor++ } as CSSProperties;
-          return (
-            <span key={`lead-${i}`} className={styles.lead} style={style}>
-              {letter}
-            </span>
-          );
-        })}
-        {tail.map((letter, i) => {
-          const style = { "--i": cursor++ } as CSSProperties;
-          return (
-            <span key={`tail-${i}`} className={styles.tail} style={style} data-letter={letter}>
-              {letter}
-            </span>
-          );
-        })}
-      </span>
-      <span className={styles.sweep} />
+    <svg className={styles.commandMap} viewBox="0 0 760 640" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+      {/* Orbit ring behind the panels, with paced pulses circulating it. */}
+      <circle className={styles.orbitRing} cx={CORE[0]} cy={CORE[1]} r={230} />
+      <circle className={styles.orbitPulses} cx={CORE[0]} cy={CORE[1]} r={230} pathLength={100} />
+
+      {/* Routing spokes: faint base + drawn-in active line per module. */}
+      {PANELS.map((panel, index) => (
+        <g key={`spoke-${panel.key}`}>
+          <path className={styles.spokeBase} d={panel.spoke} />
+          <path
+            className={styles.spokeDraw}
+            d={panel.spoke}
+            pathLength={100}
+            style={{ "--delay": `${0.28 + index * 0.05}s` } as CSSProperties}
+          />
+        </g>
+      ))}
+
+      {/* Controlled outbound + returning reply pulses. */}
+      <path className={styles.sendPulse} d={SEND_PULSE_PATH} pathLength={100} />
+      <path className={styles.replyPulse} d={REPLY_PULSE_PATH} pathLength={100} />
+
+      {/* The Sendloom core powering on: halo, rotating dashed ring, hub with
+          loom threads + envelope chevron (the product mark's own motifs). */}
+      <g className={styles.core}>
+        <circle className={styles.coreHalo} cx={CORE[0]} cy={CORE[1]} r={96} />
+        <circle className={styles.coreDashRing} cx={CORE[0]} cy={CORE[1]} r={72} />
+        <circle className={styles.coreRing} cx={CORE[0]} cy={CORE[1]} r={52} />
+        <circle className={styles.corePulseRing} cx={CORE[0]} cy={CORE[1]} r={52} />
+        <circle className={styles.coreHub} cx={CORE[0]} cy={CORE[1]} r={36} />
+        <g transform={`translate(${CORE[0]}, ${CORE[1]})`}>
+          <path d="M-11,-13 V13" className={styles.coreThreadFaint} />
+          <path d="M0,-16 V16" className={styles.coreThread} />
+          <path d="M11,-13 V13" className={styles.coreThreadFaint} />
+          <path d="M-13,-4 L0,8 L13,-4" className={styles.coreChevron} />
+        </g>
+      </g>
+
+      {/* Module panels docking into orbit. */}
+      {COMMAND_MODULES.map((module, index) => {
+        const panel = PANELS[index];
+        const { x, y } = panel;
+        return (
+          <g
+            key={module.key}
+            className={styles.panel}
+            style={
+              {
+                "--delay": `${0.12 + index * 0.07}s`,
+                "--ex": `${panel.ex}px`,
+                "--ey": `${panel.ey}px`
+              } as CSSProperties
+            }
+          >
+            <rect className={styles.panelBox} x={x} y={y} width={PANEL_W} height={PANEL_H} rx={14} />
+            <circle className={styles.panelDot} cx={x + 19} cy={y + 21} r={3} />
+            <text className={styles.panelLabel} x={x + 31} y={y + 25.5}>
+              {module.label.toUpperCase()}
+            </text>
+            <text className={styles.panelIndex} x={x + PANEL_W - 15} y={y + 25.5}>
+              {`0${index + 1}`}
+            </text>
+            <path className={styles.panelDivider} d={`M${x + 16},${y + 36} H${x + PANEL_W - 16}`} />
+            <g transform={`translate(${x + 18}, ${y + 45})`}>
+              <ModuleGlyph kind={module.key} />
+            </g>
+            <text className={styles.panelDetail} x={x + 66} y={y + 63}>
+              {module.detail}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Mobile module flow — a separate vertical composition (not shrunken desktop):
+// the six modules as compact docked rows on a live spine, with a send pulse
+// travelling down and a reply pulse returning up.
+// ---------------------------------------------------------------------------
+
+function ModuleFlow() {
+  return (
+    <div className={styles.moduleFlow} aria-hidden="true">
+      <span className={styles.flowSpine} />
+      <span className={styles.flowPulse} />
+      <span className={styles.flowReply} />
+      {COMMAND_MODULES.map((module, index) => (
+        <div key={module.key} className={styles.moduleRow} style={{ "--i": index } as CSSProperties}>
+          <span className={styles.moduleChip}>
+            <svg viewBox="0 0 36 28" className={styles.moduleChipGlyph}>
+              <ModuleGlyph kind={module.key} />
+            </svg>
+          </span>
+          <span className={styles.moduleText}>
+            <span className={styles.moduleLabel}>{module.label.toUpperCase()}</span>
+            <span className={styles.moduleDetail}>{module.detail}</span>
+          </span>
+          <span className={styles.moduleIndex}>{`0${index + 1}`}</span>
+        </div>
+      ))}
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// The splash overlay.
+// ---------------------------------------------------------------------------
 
 export function StartupSplash() {
   const { phase, stage } = useStartupReadiness();
@@ -170,22 +291,26 @@ export function StartupSplash() {
   const stageLabel = SPLASH_STAGES[stage] ?? SPLASH_STAGES[0];
 
   return (
-    <div className={styles.overlay} data-loader-overlay="" data-phase={phase} aria-busy={phase === "loading"}>
-      {/* Layered backdrop — all decorative, hidden from assistive tech. */}
+    <div
+      className={styles.overlay}
+      data-loader-overlay=""
+      data-phase={phase}
+      data-stage={stage}
+      aria-busy={phase === "loading"}
+    >
+      {/* Layered command surface — all decorative, hidden from assistive tech. */}
       <div className={styles.backdrop} aria-hidden="true">
         <div className={styles.glow} />
         <div className={styles.grid} />
-        <svg className={styles.weave} viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
-          <path d="M-100,700 C300,520 700,880 1560,540" className={styles.weaveArc} pathLength={100} />
-          <path d="M-100,540 C420,760 900,360 1560,700" className={styles.weaveArc} pathLength={100} />
-          <path d="M-100,320 C380,180 980,520 1560,240" className={styles.weaveArc} pathLength={100} />
+        <svg className={styles.fieldArcs} viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
+          <circle className={styles.fieldArc} cx={1030} cy={430} r={430} />
+          <circle className={styles.fieldArcAlt} cx={1030} cy={430} r={560} />
         </svg>
         <div className={styles.particles}>
           {PARTICLES.map((particle, index) => (
             <span
               key={index}
               className={styles.particle}
-              data-variant={particle.variant}
               style={
                 {
                   "--x": particle.x,
@@ -193,7 +318,6 @@ export function StartupSplash() {
                   "--size": particle.size,
                   "--duration": particle.duration,
                   "--delay": particle.delay,
-                  "--drift-x": particle.driftX,
                   "--peak": particle.peak
                 } as CSSProperties
               }
@@ -203,81 +327,57 @@ export function StartupSplash() {
         <div className={styles.vignette} />
       </div>
 
-      {/* Signal system. */}
-      <svg className={styles.signals} viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
-        <defs>
-          <radialGradient id="splashNodeGradient" cx="35%" cy="30%" r="80%">
-            <stop offset="0%" stopColor="var(--accent-strong)" />
-            <stop offset="100%" stopColor="var(--accent)" />
-          </radialGradient>
-        </defs>
-
-        <path className={styles.wire} d={OUTBOUND} />
-        <path className={styles.wireDraw} d={OUTBOUND} pathLength={100} style={{ "--delay": "0.55s" } as CSSProperties} />
-        {/* Evenly spaced pulses out (controlled sending) and one reply signal back. */}
-        <path className={styles.sendPulses} d={OUTBOUND} pathLength={100} style={{ "--delay": "0.9s" } as CSSProperties} />
-        <path className={styles.replyPulse} d={OUTBOUND} pathLength={100} style={{ "--delay": "1.5s" } as CSSProperties} />
-
-        {SIGNALS.map((signal) => {
-          const delay = `${0.05 + signal.index * 0.08}s`;
-          const pulseDelay = `${0.35 + signal.index * 0.12}s`;
-          return (
-            <g key={signal.kind}>
-              <path className={styles.wire} d={signal.d} />
-              <path className={styles.wireDraw} d={signal.d} pathLength={100} style={{ "--delay": delay } as CSSProperties} />
-              <path className={styles.pulse} d={signal.d} pathLength={100} style={{ "--delay": pulseDelay } as CSSProperties} />
-            </g>
-          );
-        })}
-
-        {/* Convergence knot beneath the wordmark, where the threads gather. */}
-        <circle className={styles.coreHalo} cx={KNOT[0]} cy={KNOT[1]} r={20} />
-        <circle className={styles.core} cx={KNOT[0]} cy={KNOT[1]} r={7.5} />
-
-        {SIGNALS.map((signal) => (
-          // Outer g holds position; the animated class lives on an inner g so the
-          // CSS transform animation cannot override the translate attribute.
-          <g key={`node-${signal.kind}`} transform={`translate(${signal.node[0]}, ${signal.node[1]})`}>
-            <g className={styles.node} style={{ "--delay": `${signal.index * 0.09}s` } as CSSProperties}>
-              <circle className={styles.nodeDisc} r={17} />
-              <g transform="scale(1.3)">
-                <SignalSymbol kind={signal.kind} />
-              </g>
-            </g>
-          </g>
-        ))}
-        <circle className={styles.replyNode} cx={1380} cy={710} r={5} />
-      </svg>
-
-      {/* Focal wordmark. */}
-      <div className={styles.stage}>
-        <Wordmark />
-      </div>
-
-      {/* Segmented readiness readout + stage copy, anchored near the bottom so
-          the signal knot beneath the wordmark stays clear. */}
-      <div className={styles.footer}>
-        <div className={styles.readout} aria-hidden="true">
-          <div className={styles.track}>
-            {Array.from({ length: 5 }).map((_, i) => (
-              <span key={i} className={styles.segment} style={{ "--i": i } as CSSProperties} />
-            ))}
-            <span className={styles.readPulse} />
+      <div className={styles.scene}>
+        {/* Brand block — asymmetric left column on desktop. */}
+        <header className={styles.brandBlock}>
+          <div className={styles.brandRow}>
+            <span className={styles.brandLogo}>
+              <SendloomLogo className={styles.brandLogoSvg} />
+            </span>
+            <span className={styles.brandTagline}>{BRAND_TAGLINE}</span>
           </div>
-        </div>
-        <p className={styles.stageCopy} role="status" aria-live="polite">
-          {stageLabel}
-        </p>
-      </div>
+          <div className={styles.mark}>
+            <span className={styles.markText}>{BRAND}</span>
+            <span className={styles.markScan} aria-hidden="true" />
+          </div>
+          <div className={styles.specRule} aria-hidden="true" />
+          <p className={styles.flowLine} aria-hidden="true">
+            {COMMAND_MODULES.map((module) => (
+              <span key={module.key} className={styles.flowStep}>
+                {module.label}
+              </span>
+            ))}
+          </p>
+        </header>
 
-      {/* Brand workflow labels distributed across the composition. */}
-      <div className={styles.workflow} aria-hidden="true">
-        {WORKFLOW_STEPS.map((step, i) => (
-          <span key={step} className={styles.step} data-step={step.toLowerCase()} style={{ "--i": i } as CSSProperties}>
-            <span className={styles.stepDot} />
-            {step}
-          </span>
-        ))}
+        {/* Operations map (desktop/tablet) and its mobile counterpart. */}
+        <div className={styles.mapZone} aria-hidden="true">
+          <CommandMap />
+        </div>
+        <ModuleFlow />
+
+        {/* Boot footer: phase ticks + one stage line + the controlled send rail. */}
+        <footer className={styles.footer}>
+          <div className={styles.phaseRail} aria-hidden="true">
+            {SPLASH_STAGES.map((_, index) => (
+              <span key={index} className={styles.phaseTick} data-active={index <= stage ? "" : undefined} />
+            ))}
+          </div>
+          <p className={styles.stageCopy} role="status" aria-live="polite">
+            {stageLabel}
+            {/* Word-joiner glues the caret to the last word so it never wraps alone. */}
+            <span className={styles.caretHold} aria-hidden="true">
+              {"⁠"}
+              <span className={styles.copyCaret} />
+            </span>
+          </p>
+          <div className={styles.sendRail} aria-hidden="true">
+            <span className={styles.railLine} />
+            <span className={styles.railPulses} />
+            <span className={styles.railReply} />
+            <span className={styles.railCap} />
+          </div>
+        </footer>
       </div>
 
       <span className={styles.srOnly}>{SPLASH_STATUS_LABEL}</span>
