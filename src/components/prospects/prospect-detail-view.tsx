@@ -1713,56 +1713,47 @@ function EmailFormatPanel({
             </div>
           )}
           {actionMode === "manual-fix" && (
-            <div className={`${styles.editorPanel} ${styles.manualEditor}`}>
+            <div className={styles.editorPanel}>
               <div className={styles.editorHead}>
                 <span className={styles.metaLabel}>Set the format manually</span>
                 <CircularCloseButton compact label="Close manual editor" onClick={onCloseEditor} disabled={refreshingFormat} />
               </div>
               <div className={styles.manualFormatGrid}>
-                <label className={styles.manualField}>
-                  <span className={styles.manualFieldLabel}>Email domain</span>
-                  <input
-                    className={styles.input}
-                    value={manualEmailDomain}
-                    onChange={(event) => onManualEmailDomainChange(event.target.value)}
-                    placeholder="amat.com"
-                    aria-label="Manual email domain"
-                    disabled={refreshingFormat}
-                  />
-                </label>
-                <label className={styles.manualField}>
-                  <span className={styles.manualFieldLabel}>Email pattern</span>
-                  <select
-                    className={styles.input}
-                    value={manualEmailPattern}
-                    onChange={(event) => onManualEmailPatternChange(event.target.value)}
-                    aria-label="Manual email pattern"
-                    disabled={refreshingFormat}
-                  >
-                    {EMAIL_PATTERN_OPTIONS.map((pattern) => (
-                      <option key={pattern} value={pattern}>
-                        {pattern}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className={styles.manualField}>
-                  <span className={styles.manualFieldLabel}>Confidence</span>
-                  <select
-                    className={styles.input}
-                    value={manualConfidence}
-                    onChange={(event) => onManualConfidenceChange(event.target.value as ConfidenceLevel)}
-                    aria-label="Manual confidence"
-                    disabled={refreshingFormat}
-                  >
-                    <option value="HIGH">High</option>
-                    <option value="MEDIUM">Medium</option>
-                    <option value="LOW">Low</option>
-                  </select>
-                </label>
+                <input
+                  className={styles.input}
+                  value={manualEmailDomain}
+                  onChange={(event) => onManualEmailDomainChange(event.target.value)}
+                  placeholder="amat.com"
+                  aria-label="Manual email domain"
+                  disabled={refreshingFormat}
+                />
+                <select
+                  className={`${styles.input} ${styles.selectField}`}
+                  value={manualEmailPattern}
+                  onChange={(event) => onManualEmailPatternChange(event.target.value)}
+                  aria-label="Manual email pattern"
+                  disabled={refreshingFormat}
+                >
+                  {EMAIL_PATTERN_OPTIONS.map((pattern) => (
+                    <option key={pattern} value={pattern}>
+                      {pattern}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className={`${styles.input} ${styles.selectField}`}
+                  value={manualConfidence}
+                  onChange={(event) => onManualConfidenceChange(event.target.value as ConfidenceLevel)}
+                  aria-label="Manual confidence"
+                  disabled={refreshingFormat}
+                >
+                  <option value="HIGH">High</option>
+                  <option value="MEDIUM">Medium</option>
+                  <option value="LOW">Low</option>
+                </select>
                 <button
                   type="button"
-                  className={`${styles.secondaryButton} ${styles.manualApplyButton}`}
+                  className={styles.secondaryButton}
                   onClick={() => onManualEmailFormat(company)}
                   disabled={refreshingFormat || !manualEmailDomain.trim()}
                 >
