@@ -1,11 +1,18 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 
-export function SessionControls({ collapsed = false }: { collapsed?: boolean }) {
+export function SessionControls({
+  collapsed = false,
+  utilityNav = null
+}: {
+  collapsed?: boolean;
+  /** Lower account/settings nav rendered under a divider, above logout. */
+  utilityNav?: ReactNode;
+}) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
 
@@ -33,6 +40,12 @@ export function SessionControls({ collapsed = false }: { collapsed?: boolean }) 
       <div className="nav-footer-theme">
         <ThemeSwitcher className="theme-menu--footer" />
       </div>
+      {utilityNav ? (
+        <>
+          <div className="nav-footer-divider" role="separator" aria-hidden="true" />
+          {utilityNav}
+        </>
+      ) : null}
       <button
         className="nav-item nav-item-button"
         type="button"

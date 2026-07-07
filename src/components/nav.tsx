@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import {
   Activity,
+  CircleUserRound,
   FileSpreadsheet,
   History,
   House,
@@ -133,6 +134,23 @@ export function AppNav({ initialCollapsed = false, isAdmin = false }: { initialC
         { href: "/campaigns" as Route, label: "Sequences", icon: SendHorizontal },
       ];
 
+  // Account is a settings/utility item, deliberately kept OUT of the primary
+  // product navigation. Non-admins get it in the lower footer section (below
+  // the theme control, above logout); admins manage accounts elsewhere.
+  const accountHref = "/account" as Route;
+  const accountActive = pathname === accountHref || pathname.startsWith(`${accountHref}/`);
+  const utilityNav = isAdmin ? null : (
+    <Link
+      href={accountHref}
+      className={`nav-item${accountActive ? " is-active" : ""}`}
+      aria-current={accountActive ? "page" : undefined}
+      title={collapsed ? "Account" : undefined}
+    >
+      <CircleUserRound aria-hidden="true" />
+      <span>Account</span>
+    </Link>
+  );
+
   return (
     <aside className={`sidebar${collapsed ? " is-collapsed" : ""}`}>
       <div className="sidebar-top">
@@ -186,7 +204,7 @@ export function AppNav({ initialCollapsed = false, isAdmin = false }: { initialC
           );
         })}
       </nav>
-      <SessionControls collapsed={collapsed} />
+      <SessionControls collapsed={collapsed} utilityNav={utilityNav} />
     </aside>
   );
 }
