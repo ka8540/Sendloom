@@ -1728,7 +1728,7 @@ function EmailFormatPanel({
                   disabled={refreshingFormat}
                 />
                 <select
-                  className={styles.input}
+                  className={`${styles.input} ${styles.selectField}`}
                   value={manualEmailPattern}
                   onChange={(event) => onManualEmailPatternChange(event.target.value)}
                   aria-label="Manual email pattern"
@@ -1741,7 +1741,7 @@ function EmailFormatPanel({
                   ))}
                 </select>
                 <select
-                  className={styles.input}
+                  className={`${styles.input} ${styles.selectField}`}
                   value={manualConfidence}
                   onChange={(event) => onManualConfidenceChange(event.target.value as ConfidenceLevel)}
                   aria-label="Manual confidence"

@@ -968,6 +968,36 @@
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
+/* Native <select> caret: replace the inconsistent browser-default arrow with a
+   centered, right-aligned chevron in the muted blue-gray token. The extra
+   right padding keeps the selected text clear of the caret. */
+.selectField {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding-right: 2.75rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2366758f' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 1rem center;
+  background-size: 0.9rem;
+}
+
+/* Caret follows the dark-theme muted token (explicit toggle + system default). */
+:global(:root[data-theme="dark"]) .selectField {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2397a9c6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
+@media (prefers-color-scheme: dark) {
+  :global(:root:not([data-theme])) .selectField {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2397a9c6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  }
+}
+
+/* Hide the legacy caret that Firefox/IE draw on top of the custom one. */
+.selectField::-ms-expand {
+  display: none;
+}
+
 /* ---- Email-format intelligence panel ------------------------------------- */
 
 .companyCard {
