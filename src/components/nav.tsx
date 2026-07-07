@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import {
   Activity,
+  CircleUserRound,
   FileSpreadsheet,
   History,
   House,
@@ -131,6 +132,7 @@ export function AppNav({ initialCollapsed = false, isAdmin = false }: { initialC
         { href: "/imports" as Route, label: "Imports", icon: FileSpreadsheet },
         { href: "/templates" as Route, label: "Templates", icon: ScrollText },
         { href: "/campaigns" as Route, label: "Sequences", icon: SendHorizontal },
+        { href: "/account" as Route, label: "Account", icon: CircleUserRound },
       ];
 
   return (
