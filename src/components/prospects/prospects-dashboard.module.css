@@ -864,17 +864,17 @@
 .reviewCard .modalActions .ghostButton,
 .reviewCard .modalActions .secondaryButton,
 .reviewCard .modalActions .primaryButton {
-  font-size: 0.9rem;
-  padding: 0.5rem 0.85rem;
+  font-size: 1rem;
+  padding: 0.8rem 1.5rem;
 }
 
 .reviewCard .modalActions .ghostButton {
-  padding: 0.5rem 0.7rem;
+  padding: 0.8rem 1.25rem;
 }
 
 .reviewCard .modalActions svg {
-  width: 0.95rem;
-  height: 0.95rem;
+  width: 1.15rem;
+  height: 1.15rem;
 }
 
 .reviewGrid {

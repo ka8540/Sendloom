@@ -445,8 +445,8 @@ describe("review import dialog UI", () => {
     const numberSize = Number.parseFloat(number.match(/font-size:\s*([\d.]+)rem/)?.[1] ?? "99");
     expect(numberSize).toBeLessThanOrEqual(1.5);
     expect(number).toContain("font-weight: 700");
-    // Footer buttons sit just under body size, not oversized.
-    expect(CSS).toMatch(/\.reviewCard \.modalActions \.primaryButton\s*\{[^}]*font-size:\s*0\.9rem/s);
+    // Footer buttons are a comfortable, tappable size (not the compact scale).
+    expect(CSS).toMatch(/\.reviewCard \.modalActions \.primaryButton\s*\{[^}]*font-size:\s*1rem/s);
   });
 
   it("stacks the footer full-width on mobile without adding horizontal overflow", () => {
