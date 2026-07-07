@@ -1,11 +1,31 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CircleHelp, Compass, GraduationCap, Sparkles } from "lucide-react";
+import { CircleHelp, Compass, GraduationCap, MessageSquare, Sparkles } from "lucide-react";
 
+import { HelpReportDialog } from "@/components/incident/help-report-dialog";
 import type { ManualConfig } from "@/components/manual/manualTypes";
 import { useManual } from "@/components/manual/ManualProvider";
 import styles from "@/components/manual/manual.module.css";
+
+// Stable machine context for where a manual report was opened, so admin triage
+// can tell which dashboard's help menu produced it. Admin sub-pages share one
+// context; the captured pathname distinguishes them.
+const GUIDE_CONTEXT_BY_ID: Record<string, string> = {
+  workspace: "overview_guide_menu",
+  "discover-list": "discover_guide_menu",
+  "discover-detail": "discover_guide_menu",
+  finder: "finder_guide_menu",
+  imports: "imports_guide_menu",
+  templates: "templates_guide_menu",
+  campaigns: "sequences_guide_menu",
+  "campaign-detail": "sequence_detail_guide_menu",
+  admin: "admin_guide_menu"
+};
+
+function guideContextForManual(manual: ManualConfig): string {
+  return GUIDE_CONTEXT_BY_ID[manual.id] ?? `${manual.id.replace(/-/g, "_")}_guide_menu`;
+}
 
 export function ManualButton() {
   const { isOpen, manual, openManual } = useManual();
@@ -55,6 +75,7 @@ function DashboardHelpButton({ label, tooltip, manual }: { label: string; toolti
   const quickStartStage = manual.quickStartStage ?? "starter";
   const fullTourStage = manual.fullTourStage ?? "full";
   const [menuOpen, setMenuOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   const [changedStage, setChangedStage] = useState<string | null>(null);
   // Read completion only after mount so SSR and the first client render agree
   // (localStorage is unavailable on the server). The button remounts whenever a
@@ -142,6 +163,16 @@ function DashboardHelpButton({ label, tooltip, manual }: { label: string; toolti
     [closeMenu, openManualStage]
   );
 
+  const openReport = useCallback(() => {
+    closeMenu(false);
+    setReportOpen(true);
+  }, [closeMenu]);
+
+  const closeReport = useCallback(() => {
+    setReportOpen(false);
+    window.requestAnimationFrame(() => triggerRef.current?.focus());
+  }, []);
+
   return (
     <div className={styles.overviewHelpRoot}>
       {menuOpen ? (
@@ -193,6 +224,20 @@ function DashboardHelpButton({ label, tooltip, manual }: { label: string; toolti
               </span>
             </button>
           ) : null}
+          <div className={styles.overviewMenuDivider} role="separator" aria-hidden="true" />
+          <button
+            className={styles.overviewMenuItem}
+            type="button"
+            role="menuitem"
+            onClick={openReport}
+            data-tour-report-issue="true"
+          >
+            <MessageSquare aria-hidden="true" />
+            <span>
+              <strong>Report issue</strong>
+              <small>Tell us what went wrong on this page</small>
+            </span>
+          </button>
         </div>
       ) : null}
 
@@ -214,6 +259,13 @@ function DashboardHelpButton({ label, tooltip, manual }: { label: string; toolti
         </span>
         <span className={styles.overviewHelpLabel}>{tooltip}</span>
       </button>
+
+      <HelpReportDialog
+        open={reportOpen}
+        onClose={closeReport}
+        pageLabel={manual.routeLabel}
+        guideContext={guideContextForManual(manual)}
+      />
     </div>
   );
 }

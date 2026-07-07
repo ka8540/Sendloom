@@ -249,6 +249,13 @@
   outline: none;
 }
 
+/* Hairline separating the guide/tour actions from the "Report issue" action. */
+.overviewMenuDivider {
+  height: 1px;
+  margin: 0.3rem 0.55rem;
+  background: color-mix(in srgb, var(--line) 80%, transparent);
+}
+
 @keyframes overview-help-breathe {
   0% {
     opacity: 0;

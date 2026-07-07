@@ -28,6 +28,10 @@ export const APP_ERROR_CATEGORIES = [
   "TEMPLATE_SAVE",
   "DISCOVER_PROCESSING",
   "CLIENT_RENDER",
+  // A report a user opened themselves from the help menu — not an auto-captured
+  // failure. Kept distinct so the admin console can tell manual feedback apart
+  // from real error incidents.
+  "USER_REPORTED_ISSUE",
   "UNKNOWN"
 ] as const;
 
@@ -173,6 +177,16 @@ const CATEGORY_COPY: Record<AppErrorCategory, CategoryCopy> = {
     retryable: true,
     reportable: true,
     flavor: "retry"
+  },
+  USER_REPORTED_ISSUE: {
+    // Never surfaced through the error recovery panel (a user opens this kind of
+    // report deliberately, with its own dialog copy); present only so the
+    // category resolves to itself instead of falling through to UNKNOWN.
+    title: "Report an issue",
+    message: "Tell us what went wrong on this page and we'll take a look.",
+    retryable: false,
+    reportable: true,
+    flavor: "terminal"
   },
   UNKNOWN: {
     title: "This action could not be completed",
