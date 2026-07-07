@@ -11,3 +11,4 @@ prisma/dev.db-journal
 .codex/
 .vercel
 .env*
+docs/
