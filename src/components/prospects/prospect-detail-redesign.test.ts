@@ -379,3 +379,77 @@ describe("redesign regression contracts", () => {
     expect(CLIENT_GRAPHQL).toMatch(/emailStatusCounts \{\s*status\s*count\s*\}/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Review import / export dialog — compact typography + footer polish.
+// Pure UI: these lock the structure and the scoped CSS scale so the shared
+// modal/panel/button classes stay untouched and all wiring is preserved.
+// ---------------------------------------------------------------------------
+
+describe("review import dialog UI", () => {
+  it("keeps the accessible dialog shell (title association + close control)", () => {
+    expect(DETAIL_SOURCE).toContain('aria-labelledby="prospect-review-title"');
+    expect(DETAIL_SOURCE).toContain('id="prospect-review-title"');
+    // The one shared circular close control, with an accessible name.
+    expect(DETAIL_SOURCE).toContain('<CircularCloseButton label="Close" onClick={onClose} disabled={busy} />');
+  });
+
+  it("renders exactly the four stat cards, unchanged labels", () => {
+    for (const label of ["<dt>Selected</dt>", "<dt>Exportable</dt>", "<dt>Unavailable email</dt>", "<dt>Suppressed</dt>"]) {
+      expect(DETAIL_SOURCE).toContain(label);
+    }
+  });
+
+  it("preserves the Cancel / Download / Add buttons and their existing handlers", () => {
+    // Cancel (tertiary) stays outside the action group and closes the dialog.
+    expect(DETAIL_SOURCE).toContain("<button type=\"button\" className={styles.ghostButton} onClick={onClose} disabled={busy}>");
+    // Download + Add keep their download/import handlers and the live count.
+    expect(DETAIL_SOURCE).toContain("className={styles.secondaryButton} onClick={onDownload}");
+    expect(DETAIL_SOURCE).toContain("className={styles.primaryButton} onClick={onImport}");
+    expect(DETAIL_SOURCE).toContain("`Download ${exportableCount} records`");
+    expect(DETAIL_SOURCE).toContain("`Add ${exportableCount} records to Imports`");
+  });
+
+  it("groups Download + Add in one right-anchored footer cluster (Cancel left)", () => {
+    // A single presentational wrapper — introduced only in this dialog.
+    expect(DETAIL_SOURCE.split("styles.reviewActionGroup").length - 1).toBe(1);
+    const group = DETAIL_SOURCE.match(/reviewActionGroup[\s\S]*?<\/div>/)?.[0] ?? "";
+    // Both confirm actions live inside the group; Cancel does not.
+    expect(group).toContain("styles.secondaryButton");
+    expect(group).toContain("styles.primaryButton");
+    expect(group).not.toContain("styles.ghostButton");
+    // CSS anchors the cluster to the right, even if it ever wraps.
+    expect(CSS).toMatch(/\.reviewActionGroup\s*\{[^}]*margin-left:\s*auto/s);
+  });
+
+  it("scopes every restyle under .reviewCard so shared modal classes are untouched", () => {
+    // The compact overrides target the review card only…
+    for (const scoped of [".reviewCard .panelTitle", ".reviewCard .reviewGrid dd", ".reviewCard .modalActions"]) {
+      expect(CSS).toContain(scoped);
+    }
+    // …and the shared bases keep their original values.
+    expect(CSS).toMatch(/\.panelTitle\s*\{[^}]*font-size:\s*1\.12rem/s);
+    expect(CSS).toMatch(/\.modalActions\s*\{[^}]*justify-content:\s*flex-end/s);
+  });
+
+  it("uses a compact, non-chunky type scale for the dialog", () => {
+    expect(CSS).toMatch(/\.reviewCard \.panelTitle\s*\{[^}]*font-size:\s*1\.1rem/s);
+    // Stat numbers stay a clear metric, not a loud 40px+ headline.
+    const number = CSS.match(/\.reviewCard \.reviewGrid dd\s*\{[^}]*\}/s)?.[0] ?? "";
+    const numberSize = Number.parseFloat(number.match(/font-size:\s*([\d.]+)rem/)?.[1] ?? "99");
+    expect(numberSize).toBeLessThanOrEqual(1.5);
+    expect(number).toContain("font-weight: 700");
+    // Footer buttons sit just under body size, not oversized.
+    expect(CSS).toMatch(/\.reviewCard \.modalActions \.primaryButton\s*\{[^}]*font-size:\s*0\.9rem/s);
+  });
+
+  it("stacks the footer full-width on mobile without adding horizontal overflow", () => {
+    const mobile = CSS.match(/@media \(max-width: 640px\)\s*\{[\s\S]*?\n\}/)?.[0] ?? "";
+    expect(mobile).toMatch(/\.reviewCard \.modalActions\s*\{[^}]*flex-direction:\s*column-reverse/s);
+    expect(mobile).toMatch(/\.reviewActionGroup\s*\{[^}]*flex-direction:\s*column-reverse/s);
+    expect(mobile).toContain("width: 100%");
+    // The review card itself never introduces a min-width / overflow-x rule.
+    const card = CSS.match(/\.reviewCard\s*\{[^}]*\}/s)?.[0] ?? "";
+    expect(card).not.toMatch(/overflow-x|min-width:\s*[1-9]/);
+  });
+});

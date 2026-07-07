@@ -2305,14 +2305,16 @@ function ProspectReviewDialog({
           <button type="button" className={styles.ghostButton} onClick={onClose} disabled={busy}>
             Cancel
           </button>
-          <button type="button" className={styles.secondaryButton} onClick={onDownload} disabled={busy || exportableCount <= 0}>
-            {preparingExport ? <LoaderCircle aria-hidden="true" className={styles.spin} /> : <Download aria-hidden="true" />}
-            <span>{preparingExport ? "Preparing Excel file…" : `Download ${exportableCount} records`}</span>
-          </button>
-          <button type="button" className={styles.primaryButton} onClick={onImport} disabled={busy || exportableCount <= 0}>
-            {creatingImport ? <LoaderCircle aria-hidden="true" className={styles.spin} /> : <FileSpreadsheet aria-hidden="true" />}
-            <span>{creatingImport ? "Creating import…" : `Add ${exportableCount} records to Imports`}</span>
-          </button>
+          <div className={styles.reviewActionGroup}>
+            <button type="button" className={styles.secondaryButton} onClick={onDownload} disabled={busy || exportableCount <= 0}>
+              {preparingExport ? <LoaderCircle aria-hidden="true" className={styles.spin} /> : <Download aria-hidden="true" />}
+              <span>{preparingExport ? "Preparing Excel file…" : `Download ${exportableCount} records`}</span>
+            </button>
+            <button type="button" className={styles.primaryButton} onClick={onImport} disabled={busy || exportableCount <= 0}>
+              {creatingImport ? <LoaderCircle aria-hidden="true" className={styles.spin} /> : <FileSpreadsheet aria-hidden="true" />}
+              <span>{creatingImport ? "Creating import…" : `Add ${exportableCount} records to Imports`}</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>
