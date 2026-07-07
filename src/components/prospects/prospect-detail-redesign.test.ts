@@ -379,3 +379,153 @@ describe("redesign regression contracts", () => {
     expect(CLIENT_GRAPHQL).toMatch(/emailStatusCounts \{\s*status\s*count\s*\}/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Review import / export dialog — compact typography + footer polish.
+// Pure UI: these lock the structure and the scoped CSS scale so the shared
+// modal/panel/button classes stay untouched and all wiring is preserved.
+// ---------------------------------------------------------------------------
+
+describe("review import dialog UI", () => {
+  it("keeps the accessible dialog shell (title association + close control)", () => {
+    expect(DETAIL_SOURCE).toContain('aria-labelledby="prospect-review-title"');
+    expect(DETAIL_SOURCE).toContain('id="prospect-review-title"');
+    // The one shared circular close control, with an accessible name.
+    expect(DETAIL_SOURCE).toContain('<CircularCloseButton label="Close" onClick={onClose} disabled={busy} />');
+  });
+
+  it("renders exactly the four stat cards, unchanged labels", () => {
+    for (const label of ["<dt>Selected</dt>", "<dt>Exportable</dt>", "<dt>Unavailable email</dt>", "<dt>Suppressed</dt>"]) {
+      expect(DETAIL_SOURCE).toContain(label);
+    }
+  });
+
+  it("is action-specific: one primary action driven by the mode that opened it", () => {
+    // Cancel (tertiary) stays outside the action group and closes the dialog.
+    expect(DETAIL_SOURCE).toContain("<button type=\"button\" className={styles.ghostButton} onClick={onClose} disabled={busy}>");
+    // The single confirm button is wired to the mode-resolved handler…
+    expect(DETAIL_SOURCE).toContain('const isExport = intent === "download";');
+    expect(DETAIL_SOURCE).toContain("const onConfirm = isExport ? onDownload : onImport;");
+    expect(DETAIL_SOURCE).toContain("className={styles.primaryButton} onClick={onConfirm}");
+    // …with export-only and import-only labels chosen by the mode.
+    expect(DETAIL_SOURCE).toContain("`Export ${exportableCount} records`");
+    expect(DETAIL_SOURCE).toContain("`Import ${exportableCount} records`");
+    expect(DETAIL_SOURCE).toContain('isExport ? "Review export" : "Review import"');
+    // The old combined footer (both actions at once) is gone.
+    expect(DETAIL_SOURCE).not.toContain("`Download ${exportableCount} records`");
+    expect(DETAIL_SOURCE).not.toContain("`Add ${exportableCount} records to Imports`");
+  });
+
+  it("keeps exactly one action in the right-anchored footer cluster (Cancel left)", () => {
+    // A single presentational wrapper — introduced only in this dialog.
+    expect(DETAIL_SOURCE.split("styles.reviewActionGroup").length - 1).toBe(1);
+    const group = DETAIL_SOURCE.match(/reviewActionGroup[\s\S]*?<\/div>/)?.[0] ?? "";
+    // Exactly one confirm action lives inside the group; no second action, no Cancel.
+    expect(group).toContain("styles.primaryButton");
+    expect(group).not.toContain("styles.secondaryButton");
+    expect(group).not.toContain("styles.ghostButton");
+    // CSS anchors the cluster to the right, even if it ever wraps.
+    expect(CSS).toMatch(/\.reviewActionGroup\s*\{[^}]*margin-left:\s*auto/s);
+  });
+
+  it("scopes every restyle under .reviewCard so shared modal classes are untouched", () => {
+    // The compact overrides target the review card only…
+    for (const scoped of [".reviewCard .panelTitle", ".reviewCard .reviewGrid dd", ".reviewCard .modalActions"]) {
+      expect(CSS).toContain(scoped);
+    }
+    // …and the shared bases keep their original values.
+    expect(CSS).toMatch(/\.panelTitle\s*\{[^}]*font-size:\s*1\.12rem/s);
+    expect(CSS).toMatch(/\.modalActions\s*\{[^}]*justify-content:\s*flex-end/s);
+  });
+
+  it("uses a compact, non-chunky type scale for the dialog", () => {
+    expect(CSS).toMatch(/\.reviewCard \.panelTitle\s*\{[^}]*font-size:\s*1\.1rem/s);
+    // Stat numbers stay a clear metric, not a loud 40px+ headline.
+    const number = CSS.match(/\.reviewCard \.reviewGrid dd\s*\{[^}]*\}/s)?.[0] ?? "";
+    const numberSize = Number.parseFloat(number.match(/font-size:\s*([\d.]+)rem/)?.[1] ?? "99");
+    expect(numberSize).toBeLessThanOrEqual(1.5);
+    expect(number).toContain("font-weight: 700");
+    // Footer buttons are a comfortable, tappable size (not the compact scale).
+    expect(CSS).toMatch(/\.reviewCard \.modalActions \.primaryButton\s*\{[^}]*font-size:\s*1rem/s);
+  });
+
+  it("stacks the footer full-width on mobile without adding horizontal overflow", () => {
+    const mobile = CSS.match(/@media \(max-width: 640px\)\s*\{[\s\S]*?\n\}/)?.[0] ?? "";
+    expect(mobile).toMatch(/\.reviewCard \.modalActions\s*\{[^}]*flex-direction:\s*column-reverse/s);
+    expect(mobile).toMatch(/\.reviewActionGroup\s*\{[^}]*flex-direction:\s*column-reverse/s);
+    expect(mobile).toContain("width: 100%");
+    // The review card itself never introduces a min-width / overflow-x rule.
+    const card = CSS.match(/\.reviewCard\s*\{[^}]*\}/s)?.[0] ?? "";
+    expect(card).not.toMatch(/overflow-x|min-width:\s*[1-9]/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Selection import actions — the toolbar opens the review step (no duplicated
+// "Add to Imports"), and Select-all is a real button, not an inline text link.
+// ---------------------------------------------------------------------------
+
+describe("selection import actions UX", () => {
+  // These three components are declared consecutively in the source, so slice
+  // by their function boundaries to scope assertions to the right component.
+  const toolbar = DETAIL_SOURCE.slice(
+    DETAIL_SOURCE.indexOf("function BulkSelectionToolbar("),
+    DETAIL_SOURCE.indexOf("function SelectAllMatchingBanner(")
+  );
+  const banner = DETAIL_SOURCE.slice(
+    DETAIL_SOURCE.indexOf("function SelectAllMatchingBanner("),
+    DETAIL_SOURCE.indexOf("function PeopleTable(")
+  );
+
+  it("keeps the live selected count in the toolbar", () => {
+    expect(toolbar).toContain("{selectedCount} selected");
+  });
+
+  it("labels the toolbar actions simply: Export / Import / Clear selection", () => {
+    expect(toolbar).toContain("<span>Export</span>");
+    expect(toolbar).toContain("<span>Import</span>");
+    expect(toolbar).toContain("Clear selection");
+    // The verbose / duplicated labels are gone from the toolbar.
+    expect(toolbar).not.toContain("Download Excel");
+    expect(toolbar).not.toContain("Review import");
+    expect(DETAIL_SOURCE).not.toContain("<span>Add to Imports</span>");
+  });
+
+  it("wires the toolbar Export/Import buttons to the export/import review dialogs", () => {
+    expect(toolbar).toContain("onClick={onDownload}");
+    expect(toolbar).toContain("onClick={onImport}");
+    expect(DETAIL_SOURCE).toContain('onDownload={() => openReviewDialog("download")}');
+    expect(DETAIL_SOURCE).toContain('onImport={() => openReviewDialog("import")}');
+  });
+
+  it("keeps Clear selection wired in the toolbar", () => {
+    expect(toolbar).toContain("Clear selection");
+    expect(toolbar).toContain("onClick={onClear}");
+  });
+
+  it("renders Select-all as a styled, accessible button — not an underlined text link", () => {
+    // A real button with the shared select-all class and an explicit type.
+    expect(banner).toContain("className={styles.selectAllButton}");
+    expect(banner).toContain('type="button"');
+    expect(banner).toContain("onClick={onSelectAll}");
+    // It carries an accessible name that names the search scope.
+    expect(banner).toContain("aria-label=");
+    expect(banner).toContain("in this search");
+    // The compact button label leads with the total count.
+    expect(banner).toContain("`Select all ${totalCount} people`");
+  });
+
+  it("styles the Select-all button as a compact accent control with a visible focus ring", () => {
+    const rule = CSS.match(/\.selectAllButton\s*\{[^}]*\}/s)?.[0] ?? "";
+    expect(rule).toContain("var(--accent)");
+    // No longer a bare underlined text link.
+    expect(rule).not.toContain("text-decoration: underline");
+    expect(CSS).toMatch(/\.selectAllButton:focus-visible\s*\{[^}]*outline/s);
+  });
+
+  it("lays the banner out as message-left / button-right and wraps on mobile", () => {
+    const rule = CSS.match(/\.selectAllBanner\s*\{[^}]*\}/s)?.[0] ?? "";
+    expect(rule).toContain("justify-content: space-between");
+    expect(rule).toContain("flex-wrap: wrap");
+  });
+});

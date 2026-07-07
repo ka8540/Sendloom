@@ -793,8 +793,88 @@
   animation: prospect-rise 160ms ease;
 }
 
+/* --- Review import / export dialog --------------------------------------- *
+ * A compact, scannable confirmation. Every rule below is scoped under
+ * .reviewCard (or the review-only .reviewNote / .reviewActionGroup classes) so
+ * the shared .modalCard / .panelTitle / .modalActions / *Button classes used by
+ * every other dialog stay exactly as they were. Sizes assume a 16px root. */
 .reviewCard {
-  max-width: 34rem;
+  max-width: 36rem;
+  gap: 1rem;
+  padding: 1.35rem 1.45rem;
+}
+
+.reviewCard .panelHeader {
+  gap: 0.75rem;
+}
+
+.reviewCard .panelTitle {
+  font-size: 1.1rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.reviewCard .panelSubtitle {
+  margin-top: 0.25rem;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  max-width: 42ch;
+}
+
+.reviewCard .reviewGrid {
+  gap: 0.55rem;
+}
+
+.reviewCard .reviewGrid div {
+  gap: 0.15rem;
+  padding: 0.6rem 0.7rem;
+  border-radius: 0.7rem;
+}
+
+.reviewCard .reviewGrid dt {
+  font-size: 0.7rem;
+  letter-spacing: 0.02em;
+}
+
+.reviewCard .reviewGrid dd {
+  font-size: 1.4rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+/* Footer: Cancel pinned left (tertiary), Download + Add grouped right. */
+.reviewCard .modalActions {
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.35rem;
+}
+
+.reviewActionGroup {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.55rem;
+  /* Keeps Download + Add anchored to the right edge — and if the row is ever too
+     narrow for all three buttons, the group drops below Cancel still right-aligned
+     rather than stranded on the left. */
+  margin-left: auto;
+}
+
+.reviewCard .modalActions .ghostButton,
+.reviewCard .modalActions .secondaryButton,
+.reviewCard .modalActions .primaryButton {
+  font-size: 1rem;
+  padding: 0.8rem 1.5rem;
+}
+
+.reviewCard .modalActions .ghostButton {
+  padding: 0.8rem 1.25rem;
+}
+
+.reviewCard .modalActions svg {
+  width: 1.15rem;
+  height: 1.15rem;
 }
 
 .reviewGrid {
@@ -830,7 +910,7 @@
 .reviewNote {
   margin: 0;
   color: var(--muted);
-  font-size: 0.88rem;
+  font-size: 0.83rem;
   line-height: 1.45;
 }
 
@@ -1345,7 +1425,8 @@
 .selectAllBanner {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  justify-content: space-between;
+  gap: 0.5rem 0.75rem;
   flex-wrap: wrap;
   padding: 0.62rem 0.8rem;
   border-radius: 0.7rem;
@@ -1356,16 +1437,39 @@
   font-weight: 600;
 }
 
-.selectAllBanner button {
-  border: 0;
-  background: transparent;
+.selectAllMessage {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.selectAllButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  flex: none;
+  padding: 0.4rem 0.85rem;
+  border-radius: 0.65rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+  background: color-mix(in srgb, var(--accent-soft) 62%, var(--surface));
   color: var(--link);
   font: inherit;
+  font-size: 0.84rem;
   font-weight: 700;
-  padding: 0;
   cursor: pointer;
-  text-decoration: underline;
-  text-underline-offset: 0.16rem;
+  white-space: nowrap;
+  transition: background 140ms ease, border-color 140ms ease, transform 140ms ease;
+}
+
+.selectAllButton:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent-soft) 88%, var(--surface));
+  border-color: var(--field-focus);
+  transform: translateY(-1px);
+}
+
+.selectAllButton:focus-visible {
+  outline: 2px solid var(--field-focus);
+  outline-offset: 2px;
 }
 
 .filterField {
@@ -1958,6 +2062,24 @@
   .sourceRefreshRow,
   .manualFormatGrid {
     grid-template-columns: 1fr;
+  }
+
+  /* Review dialog footer stacks: primary on top, Cancel at the bottom, all
+     full-width so nothing overflows on narrow screens. */
+  .reviewCard .modalActions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .reviewActionGroup {
+    flex-direction: column-reverse;
+    width: 100%;
+  }
+
+  .reviewCard .modalActions .ghostButton,
+  .reviewCard .modalActions .secondaryButton,
+  .reviewCard .modalActions .primaryButton {
+    width: 100%;
   }
 }
 
