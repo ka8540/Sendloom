@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, LoaderCircle, MessageSquare } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, LoaderCircle, MessageSquare } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -237,20 +237,23 @@ export function HelpReportDialog({ open, onClose, pageLabel, guideContext }: Hel
               <label className={styles.label} htmlFor={typeId}>
                 Issue type
               </label>
-              <select
-                ref={selectRef}
-                id={typeId}
-                className={styles.select}
-                value={issueType}
-                onChange={(event) => setIssueType(event.target.value)}
-                disabled={submitting}
-              >
-                {HELP_REPORT_ISSUE_TYPES.map((type) => (
-                  <option key={type.value} value={type.value}>
-                    {type.label}
-                  </option>
-                ))}
-              </select>
+              <div className={styles.selectWrap}>
+                <select
+                  ref={selectRef}
+                  id={typeId}
+                  className={styles.select}
+                  value={issueType}
+                  onChange={(event) => setIssueType(event.target.value)}
+                  disabled={submitting}
+                >
+                  {HELP_REPORT_ISSUE_TYPES.map((type) => (
+                    <option key={type.value} value={type.value}>
+                      {type.label}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className={styles.selectChevron} aria-hidden="true" />
+              </div>
             </div>
 
             <div className={styles.field}>
