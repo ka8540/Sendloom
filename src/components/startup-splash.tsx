@@ -60,25 +60,35 @@ const PARTICLES = buildParticles();
 // is sliced to fill any viewport.
 // ---------------------------------------------------------------------------
 
-type SignalKind = "company" | "person" | "email" | "message" | "timing";
+// The chips mirror the landing page's real workflow: an imported lead list, an
+// enriched contact, a message template, sequence timing, and the connected
+// Gmail sender feeding the loom.
+type SignalKind = "importList" | "person" | "template" | "timing" | "email";
 
 // Scattered origins sweep in from the left/top/bottom on woven curves and gather
 // at a knot just below the wordmark; one controlled path exits bottom-right.
 // The two near-vertical paths keep the loom legible on narrow (mobile) crops.
 const KNOT: [number, number] = [720, 580];
 const SIGNALS: { d: string; node: [number, number]; kind: SignalKind; index: number }[] = [
-  { d: "M150,130 C400,215 540,430 706,566", node: [150, 130], kind: "company", index: 0 },
+  { d: "M150,130 C400,215 540,430 706,566", node: [150, 130], kind: "timing", index: 0 },
   { d: "M95,395 C300,355 530,490 703,572", node: [95, 395], kind: "person", index: 1 },
-  { d: "M170,720 C380,700 560,630 702,588", node: [170, 720], kind: "email", index: 2 },
-  { d: "M640,90 C666,250 694,430 717,564", node: [640, 90], kind: "timing", index: 3 },
-  { d: "M980,720 C910,678 800,640 733,594", node: [980, 720], kind: "message", index: 4 }
+  { d: "M170,720 C380,700 560,630 702,588", node: [170, 720], kind: "template", index: 2 },
+  { d: "M640,90 C666,250 694,430 717,564", node: [640, 90], kind: "importList", index: 3 },
+  { d: "M980,720 C910,678 800,640 733,594", node: [980, 720], kind: "email", index: 4 }
 ];
 const OUTBOUND = "M720,580 C920,616 1150,610 1380,710";
 
 function SignalSymbol({ kind }: { kind: SignalKind }) {
   switch (kind) {
-    case "company":
-      return <rect x={-5} y={-5} width={10} height={10} rx={1.5} className={styles.symbolStroke} />;
+    case "importList":
+      // Imported lead list — CSV-like rows.
+      return (
+        <>
+          <path d="M-5,-4 H5" className={styles.symbolStroke} />
+          <path d="M-5,0 H5" className={styles.symbolStroke} />
+          <path d="M-5,4 H1.5" className={styles.symbolStroke} />
+        </>
+      );
     case "person":
       return (
         <>
@@ -86,18 +96,21 @@ function SignalSymbol({ kind }: { kind: SignalKind }) {
           <path d="M-5,6 C-5,1 5,1 5,6" className={styles.symbolStroke} />
         </>
       );
+    case "template":
+      // Message template block with merge-field lines.
+      return (
+        <>
+          <rect x={-6} y={-5} width={12} height={10} rx={2} className={styles.symbolStroke} />
+          <path d="M-3.5,-1.5 H3.5" className={styles.symbolStroke} />
+          <path d="M-3.5,1.5 H1" className={styles.symbolStroke} />
+        </>
+      );
     case "email":
+      // Connected Gmail sender.
       return (
         <>
           <rect x={-6} y={-4} width={12} height={9} rx={1.5} className={styles.symbolStroke} />
           <path d="M-6,-3 L0,2 L6,-3" className={styles.symbolStroke} />
-        </>
-      );
-    case "message":
-      return (
-        <>
-          <rect x={-6} y={-5} width={12} height={9} rx={2.5} className={styles.symbolStroke} />
-          <path d="M-2,4 L-2,8 L2,4" className={styles.symbolStroke} />
         </>
       );
     case "timing":

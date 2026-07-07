@@ -556,17 +556,28 @@
   box-shadow: 0 0 8px color-mix(in srgb, var(--splash-accent) 60%, transparent);
 }
 
-/* Positioned to annotate the signal geometry: FIND by the scattered origins,
-   PERSONALIZE where the threads merge, SEND on the outbound path, TRACK where
-   the reply lands. */
-.step[data-step="find"] {
-  top: 17%;
+/* Positioned to annotate the signal geometry with the product's own workflow:
+   IMPORT by the lead-list chip, ENRICH by the contact chip, TEMPLATE by the
+   message block, SEQUENCE by the timing chip, SEND on the controlled outbound
+   path, TRACK where the reply lands. */
+.step[data-step="import"] {
+  top: 12%;
+  left: 48%;
+}
+
+.step[data-step="enrich"] {
+  top: 48%;
   left: 8%;
 }
 
-.step[data-step="personalize"] {
-  top: 66%;
-  left: 9%;
+.step[data-step="template"] {
+  top: 84%;
+  left: 8%;
+}
+
+.step[data-step="sequence"] {
+  top: 17%;
+  left: 8%;
 }
 
 .step[data-step="send"] {
@@ -634,7 +645,7 @@
 /* ---- Responsive ----------------------------------------------------------- */
 
 @media (max-width: 1024px) {
-  .step[data-step="find"] {
+  .step[data-step="sequence"] {
     top: 14%;
     left: 7%;
   }
@@ -663,20 +674,31 @@
     background-size: 38px 38px;
   }
 
-  /* Keep only the two labels that stay clear of the wordmark. */
-  .step[data-step="personalize"],
-  .step[data-step="track"] {
+  /* Mobile keeps IMPORT / ENRICH / SEND / TRACK, positioned clear of the
+     near-full-width wordmark. */
+  .step[data-step="template"],
+  .step[data-step="sequence"] {
     display: none;
   }
 
-  .step[data-step="find"] {
-    top: 12%;
-    left: 8%;
+  .step[data-step="import"] {
+    top: 13%;
+    left: 42%;
+  }
+
+  .step[data-step="enrich"] {
+    top: 54%;
+    left: 7%;
   }
 
   .step[data-step="send"] {
     top: 60%;
     left: 58%;
+  }
+
+  .step[data-step="track"] {
+    top: 72%;
+    right: 7%;
   }
 
   .stageCopy {

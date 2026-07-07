@@ -16,7 +16,7 @@ export type SplashPhase =
 
 // The splash holds long enough for the assembly to read as complete, but always
 // yields to a hard ceiling so it can never get stuck.
-export const MIN_VISIBLE_MS = 1000;
+export const MIN_VISIBLE_MS = 900;
 export const MAX_VISIBLE_MS = 2600;
 // Exit duration. Removal is scheduled off a timer (not animationend) so a hidden
 // tab that never fires the animation still unmounts the overlay.
@@ -27,7 +27,11 @@ export const EXIT_MS = 420;
 // never a claim that the loader is really finding people or sending mail.
 // ---------------------------------------------------------------------------
 
-export const SPLASH_STAGES = ["Connecting the signals", "Shaping the workflow", "Sendloom is ready"] as const;
+export const SPLASH_STAGES = [
+  "Organizing the outreach flow",
+  "Connecting leads, messages, and sends",
+  "Ready for controlled outreach"
+] as const;
 export const STAGE_THRESHOLDS_MS = [0, 420, 820] as const;
 
 /** Which stage label to show for an elapsed time (highest threshold reached). */
@@ -45,9 +49,11 @@ export function resolveStageLabel(elapsedMs: number): string {
   return SPLASH_STAGES[resolveStageIndex(elapsedMs)];
 }
 
-// The brand workflow the signal system tells the story of. Decorative labels
-// only — never announced as live actions.
-export const WORKFLOW_STEPS = ["FIND", "PERSONALIZE", "SEND", "TRACK"] as const;
+// The brand workflow the signal system tells the story of — the landing page's
+// own vocabulary (Import → Enrich → Template → Sequence → Send → Track).
+// Decorative labels only — never announced as live actions. Mobile keeps
+// IMPORT / ENRICH / SEND / TRACK (the others are hidden by CSS).
+export const WORKFLOW_STEPS = ["IMPORT", "ENRICH", "TEMPLATE", "SEQUENCE", "SEND", "TRACK"] as const;
 
 // The wordmark is split so SEND reads solid and LOOM reads constructed/outlined.
 export const BRAND_LEAD = "SEND";
@@ -62,14 +68,14 @@ export const SPLASH_STATUS_LABEL = "Sendloom is loading.";
 // actually drift, mirrored by CSS breakpoints in the stylesheet.
 // ---------------------------------------------------------------------------
 
-export const PARTICLE_TOTAL = 20;
-export const MAX_PARTICLES = 22;
+export const PARTICLE_TOTAL = 16;
+export const MAX_PARTICLES = 18;
 export const MOBILE_BREAKPOINT_PX = 640;
 export const TABLET_BREAKPOINT_PX = 1024;
 
 /**
  * How many particles should drift for a viewport. Reduced-motion returns 0 (a
- * static field); otherwise ~7 mobile / ~12 tablet / 20 desktop, always capped.
+ * static field); otherwise ~7 mobile / ~12 tablet / 16 desktop, always capped.
  */
 export function resolveParticleCount(input: { viewportWidth: number; reducedMotion: boolean }): number {
   if (input.reducedMotion) {

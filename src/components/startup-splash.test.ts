@@ -77,12 +77,16 @@ describe("cinematic composition", () => {
     expect(CSS_SOURCE).toMatch(/\.tail \{[\s\S]*-webkit-text-stroke/);
   });
 
-  it("(4) the FIND / PERSONALIZE / SEND / TRACK workflow labels render", () => {
-    expect(WORKFLOW_STEPS).toEqual(["FIND", "PERSONALIZE", "SEND", "TRACK"]);
+  it("(4) the IMPORT / ENRICH / TEMPLATE / SEQUENCE / SEND / TRACK workflow labels render", () => {
+    expect(WORKFLOW_STEPS).toEqual(["IMPORT", "ENRICH", "TEMPLATE", "SEQUENCE", "SEND", "TRACK"]);
     expect(SPLASH_SOURCE).toContain("WORKFLOW_STEPS.map");
     for (const step of WORKFLOW_STEPS) {
       expect(CSS_SOURCE).toContain(`data-step="${step.toLowerCase()}"`);
     }
+    // Mobile simplifies to IMPORT / ENRICH / SEND / TRACK.
+    expect(CSS_SOURCE).toMatch(
+      /\.step\[data-step="template"\],\s*\.step\[data-step="sequence"\] \{\s*display: none/
+    );
   });
 });
 
@@ -125,11 +129,15 @@ describe("readiness & timing", () => {
   });
 
   it("stage copy is broad, honest, and time-based (no fake precision)", () => {
-    expect(SPLASH_STAGES).toEqual(["Connecting the signals", "Shaping the workflow", "Sendloom is ready"]);
+    expect(SPLASH_STAGES).toEqual([
+      "Organizing the outreach flow",
+      "Connecting leads, messages, and sends",
+      "Ready for controlled outreach"
+    ]);
     expect(resolveStageIndex(0)).toBe(0);
     expect(resolveStageIndex(STAGE_THRESHOLDS_MS[1])).toBe(1);
     expect(resolveStageIndex(99999)).toBe(SPLASH_STAGES.length - 1);
-    expect(resolveStageLabel(0)).toBe("Connecting the signals");
+    expect(resolveStageLabel(0)).toBe("Organizing the outreach flow");
     for (const stage of SPLASH_STAGES) {
       expect(stage).not.toMatch(/\d+%/);
     }

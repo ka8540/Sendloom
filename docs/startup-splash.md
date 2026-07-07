@@ -20,16 +20,19 @@ gated behind it.
 
 ## Visual concept
 
-Scattered company / person / email / timing / message signal chips sweep in on
-woven curves and gather at a knot just beneath a large kinetic **SENDLOOM**
-wordmark (SEND solid, LOOM constructed as an accent outline with warp threads);
-one controlled outbound path exits bottom-right carrying evenly spaced send
-pulses, with a reply signal travelling back (TRACK). Two near-vertical paths
-keep the loom legible on narrow mobile crops. The brand workflow **FIND /
-PERSONALIZE / SEND / TRACK** annotates the geometry, with a layered backdrop
-(gradient, emerald glow, faint grid, woven arcs, particles, vignette) and a
-bottom-anchored segmented readiness readout. It is visual brand storytelling,
-not a claim that the loader is really searching or sending.
+Scattered signal chips mirroring the product's real workflow — an imported lead
+list, an enriched contact, a message template, sequence timing, and the
+connected Gmail sender — sweep in on woven curves and gather at a knot just
+beneath a large kinetic **SENDLOOM** wordmark (SEND solid, LOOM constructed as
+an accent outline with warp threads); one controlled outbound path exits
+bottom-right carrying evenly spaced send pulses, with a reply signal travelling
+back (TRACK). Two near-vertical paths keep the loom legible on narrow mobile
+crops. The landing page's own workflow vocabulary — **IMPORT / ENRICH /
+TEMPLATE / SEQUENCE / SEND / TRACK** (mobile keeps IMPORT / ENRICH / SEND /
+TRACK) — annotates the geometry, with a layered backdrop (gradient, emerald
+glow, faint grid, woven arcs, particles, vignette) and a bottom-anchored
+segmented readiness readout. It is visual brand storytelling, not a claim that
+the loader is really searching or sending.
 
 ## When it appears
 
@@ -48,13 +51,14 @@ completing. The real page is interactive as soon as `useStartupReadiness`'s
 effect runs (React has mounted); from there it holds for a brief minimum, then
 plays a short exit.
 
-- Minimum visible: `MIN_VISIBLE_MS = 1000ms`.
+- Minimum visible: `MIN_VISIBLE_MS = 900ms`.
 - Maximum safety ceiling: `MAX_VISIBLE_MS = 2600ms` — always removed by then, so
   it can never get stuck.
 - Exit: `EXIT_MS = 420ms`, then the overlay unmounts.
 
-Broad stage copy ("Connecting the signals" → "Shaping the workflow" → "Sendloom
-is ready") advances on time thresholds — no fake percentage.
+Broad stage copy ("Organizing the outreach flow" → "Connecting leads, messages,
+and sends" → "Ready for controlled outreach") advances on time thresholds — no
+fake percentage.
 
 ## Hidden-tab reconciliation
 
@@ -75,8 +79,8 @@ unchanged, so it never stays visible longer.
 ## Performance
 
 CSS/SVG only: keyframes, transforms, opacity, and `stroke-dashoffset` (paths use
-`pathLength="100"` so dash math is size-independent). ≤22 particles, capped and
-reduced on smaller viewports via CSS. No WebGL / canvas / video / new dependency
+`pathLength="100"` so dash math is size-independent). ≤18 particles (16 desktop
+/ 12 tablet / 7 mobile), capped and reduced on smaller viewports via CSS. No WebGL / canvas / video / new dependency
 (the previous Three.js + GSAP splash was removed). Colours are `globals.css`
 tokens, so dark and light both work with no theme flash (theme is resolved by
 `themeInitScript` before the splash renders).
