@@ -24,6 +24,10 @@ describe("Check bounces button", () => {
   it("shows the success, no-new-bounces, disconnected, and failure messages", () => {
     expect(BUTTON).toContain("invalid address");
     expect(BUTTON).toContain("marked as skipped");
+    expect(BUTTON).toContain("existingRowsReclassified");
+    expect(BUTTON).toContain("suppressionsCreated");
+    expect(BUTTON).toContain("statsChanged");
+    expect(BUTTON).toContain("No invalid addresses needed updating.");
     expect(BUTTON).toContain("No new bounces found.");
     expect(BUTTON).toContain("Reconnect Gmail to check bounces.");
     expect(BUTTON).toContain("Couldn't check bounces. Please try again.");

@@ -29,7 +29,7 @@
  * runs with --apply; dry-run reports stored evidence only. Never sends email.
  */
 import { prisma } from "@/lib/db";
-import { runRecentBounceBackfill, syncSenderBounces } from "@/services/bounces";
+import { runRecentBounceBackfill, runSequenceBounceScan, syncSenderBounces } from "@/services/bounces";
 import { reclassifyInvalidRecipientJobs } from "@/services/invalid-recipient-reclassification";
 
 function parseArgs(argv: string[]): {
@@ -68,6 +68,18 @@ async function findTargetSenderIds(args: { userId?: string; campaignId?: string 
   return [...new Set(campaigns.map((campaign) => campaign.senderProfileId))];
 }
 
+async function findTargetCampaigns(args: { userId?: string; campaignId?: string }) {
+  return prisma.campaign.findMany({
+    where: {
+      ...(args.campaignId ? { id: args.campaignId } : {}),
+      ...(args.userId ? { userId: args.userId } : {}),
+      senderProfile: { provider: "google_oauth" }
+    },
+    select: { id: true, userId: true, senderProfileId: true },
+    take: 500
+  });
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
 
@@ -76,17 +88,40 @@ async function main(): Promise<void> {
       "[reclassify-invalid-recipients] --sync-gmail ingests bounce notifications as it reads, so it requires --apply. Dry run uses stored evidence only."
     );
   } else if (args.syncGmail) {
-    const senderIds = await findTargetSenderIds(args);
-    console.info(`[reclassify-invalid-recipients] Syncing Gmail bounces for ${senderIds.length} sender(s)…`);
-    for (const senderId of senderIds) {
-      const backfill = await runRecentBounceBackfill(senderId);
-      const sync = await syncSenderBounces(senderId, { force: true });
-      console.info(
-        `[reclassify-invalid-recipients] ${senderId}: checked ${backfill.checkedMessages + sync.checkedMessages} message(s), ` +
-          `${backfill.bouncesParsed + sync.bouncesParsed} bounce(s) parsed, ` +
-          `${backfill.permanentFailures + sync.permanentFailures} permanent failure(s)` +
-          `${sync.skipped ? ` (sync skipped: ${sync.skipped})` : ""}`
-      );
+    if (args.campaignId) {
+      const campaigns = await findTargetCampaigns(args);
+      console.info(`[reclassify-invalid-recipients] Syncing Gmail bounces for ${campaigns.length} campaign(s)…`);
+      for (const campaign of campaigns) {
+        if (!campaign.userId) {
+          console.info(`[reclassify-invalid-recipients] ${campaign.id}: skipped (campaign has no user).`);
+          continue;
+        }
+        const scan = await runSequenceBounceScan({
+          campaignId: campaign.id,
+          userId: campaign.userId,
+          senderId: campaign.senderProfileId
+        });
+        console.info(
+          `[reclassify-invalid-recipients] ${campaign.id}: checked ${scan.checkedMessages} message(s), ` +
+            `${scan.bouncesParsed} bounce(s) parsed, ${scan.processedBounces} matched, ` +
+            `${scan.permanentFailures} permanent failure(s)` +
+            `${scan.skipped ? ` (sync skipped: ${scan.skipped})` : ""}`
+        );
+      }
+    } else {
+      const senderIds = await findTargetSenderIds(args);
+      console.info(`[reclassify-invalid-recipients] Syncing Gmail bounces for ${senderIds.length} sender(s)…`);
+      for (const senderId of senderIds) {
+        const backfill = await runRecentBounceBackfill(senderId);
+        const sync = await syncSenderBounces(senderId, { force: true });
+        console.info(
+          `[reclassify-invalid-recipients] ${senderId}: checked ${backfill.checkedMessages + sync.checkedMessages} message(s), ` +
+            `${backfill.bouncesParsed + sync.bouncesParsed} bounce(s) parsed, ` +
+            `${sync.processedBounces + backfill.processedBounces} matched, ` +
+            `${backfill.permanentFailures + sync.permanentFailures} permanent failure(s)` +
+            `${sync.skipped ? ` (sync skipped: ${sync.skipped})` : ""}`
+        );
+      }
     }
   }
 
@@ -109,7 +144,7 @@ async function main(): Promise<void> {
   }
   if (args.apply) {
     console.info(
-      `[reclassify-invalid-recipients] Reclassified ${result.reclassifiedCount} job(s), recorded ${result.suppressionsRecordedCount} suppression(s), resynced run counters.`
+      `[reclassify-invalid-recipients] Reclassified ${result.reclassifiedCount} row(s), recorded ${result.suppressionsRecordedCount} suppression(s), recomputed stats for ${result.runsResyncedCount} run(s).`
     );
   } else {
     console.info("[reclassify-invalid-recipients] Dry run only — re-run with --apply to write.");

@@ -12,6 +12,7 @@ const h = vi.hoisted(() => {
   const calls = {
     backfill: [] as string[],
     sync: [] as Row[],
+    sequenceScan: [] as Row[],
     reclassify: [] as Row[]
   };
   const emptySyncResult = () => ({
@@ -26,11 +27,13 @@ const h = vi.hoisted(() => {
   const impl = {
     backfill: (async () => emptySyncResult()) as (senderId: string) => Promise<Row>,
     sync: (async () => emptySyncResult()) as (senderId: string, options?: Row) => Promise<Row>,
+    sequenceScan: (async () => emptySyncResult()) as (options: Row) => Promise<Row>,
     reclassify: (async () => ({
       scanned: 0,
       candidates: [],
       reclassifiedCount: 0,
-      suppressionsRecordedCount: 0
+      suppressionsRecordedCount: 0,
+      runsResyncedCount: 0
     })) as (options: Row) => Promise<Row>
   };
   const prismaMock = {
@@ -57,6 +60,10 @@ vi.mock("@/services/bounces", () => ({
   syncSenderBounces: (senderId: string, options?: Record<string, unknown>) => {
     h.calls.sync.push({ senderId, options });
     return h.impl.sync(senderId, options);
+  },
+  runSequenceBounceScan: (options: Record<string, unknown>) => {
+    h.calls.sequenceScan.push(options);
+    return h.impl.sequenceScan(options);
   }
 }));
 vi.mock("@/services/invalid-recipient-reclassification", () => ({
@@ -93,10 +100,18 @@ beforeEach(() => {
   state.jobs.length = 0;
   calls.backfill.length = 0;
   calls.sync.length = 0;
+  calls.sequenceScan.length = 0;
   calls.reclassify.length = 0;
   impl.backfill = async () => h.emptySyncResult();
   impl.sync = async () => h.emptySyncResult();
-  impl.reclassify = async () => ({ scanned: 0, candidates: [], reclassifiedCount: 0, suppressionsRecordedCount: 0 });
+  impl.sequenceScan = async () => h.emptySyncResult();
+  impl.reclassify = async () => ({
+    scanned: 0,
+    candidates: [],
+    reclassifiedCount: 0,
+    suppressionsRecordedCount: 0,
+    runsResyncedCount: 0
+  });
 });
 
 describe("checkSequenceBounces", () => {
@@ -136,10 +151,12 @@ describe("checkSequenceBounces", () => {
     expect(result).toEqual({
       status: "ok",
       summary: {
-        checkedMessages: 0,
+        gmailMessagesChecked: 0,
         bouncesFound: 0,
+        existingRowsReclassified: 0,
         invalidRecipientsUpdated: 0,
-        suppressionsRecorded: 0,
+        suppressionsCreated: 0,
+        statsChanged: false,
         skippedAlreadyKnown: 0,
         gmailSyncSkipped: null
       }
@@ -147,6 +164,11 @@ describe("checkSequenceBounces", () => {
     // The sync ran forced and scoped to this campaign's sender; the
     // reclassification stayed scoped to this user's campaign.
     expect(calls.sync[0]).toMatchObject({ senderId: "sender-1", options: { force: true } });
+    expect(calls.sequenceScan[0]).toMatchObject({
+      campaignId: "campaign-1",
+      userId: "user-1",
+      senderId: "sender-1"
+    });
     expect(calls.reclassify[0]).toMatchObject({ apply: true, userId: "user-1", campaignId: "campaign-1" });
   });
 
@@ -155,7 +177,7 @@ describe("checkSequenceBounces", () => {
     seedJobs(28, "SENT");
     seedJobs(22, "SENT", "campaign-1");
     // The sync heals 22 of this sequence's rows to the Skipped disposition.
-    impl.sync = async () => {
+    impl.sequenceScan = async () => {
       for (const job of state.jobs.slice(28)) {
         job.status = "SUPPRESSED";
         job.metadata = { failureCode: "HARD_BOUNCE_RECIPIENT" };
@@ -167,10 +189,11 @@ describe("checkSequenceBounces", () => {
 
     expect(result.status).toBe("ok");
     if (result.status !== "ok") return;
-    expect(result.summary.checkedMessages).toBe(40);
+    expect(result.summary.gmailMessagesChecked).toBe(40);
     expect(result.summary.bouncesFound).toBe(22);
     expect(result.summary.invalidRecipientsUpdated).toBe(22);
-    expect(result.summary.suppressionsRecorded).toBe(22);
+    expect(result.summary.suppressionsCreated).toBe(22);
+    expect(result.summary.statsChanged).toBe(true);
     expect(result.summary.skippedAlreadyKnown).toBe(0);
   });
 
@@ -187,6 +210,7 @@ describe("checkSequenceBounces", () => {
     if (result.status !== "ok") return;
     expect(result.summary.invalidRecipientsUpdated).toBe(0);
     expect(result.summary.skippedAlreadyKnown).toBe(22);
+    expect(result.summary.statsChanged).toBe(false);
   });
 
   it("also repairs rows from stored evidence when the DSN was already consumed by the idempotency gate", async () => {
@@ -199,7 +223,7 @@ describe("checkSequenceBounces", () => {
       const stuck = state.jobs[state.jobs.length - 1];
       stuck.status = "SUPPRESSED";
       stuck.metadata = { failureCode: "HARD_BOUNCE_RECIPIENT" };
-      return { scanned: 50, candidates: [{}], reclassifiedCount: 1, suppressionsRecordedCount: 1 };
+      return { scanned: 50, candidates: [{}], reclassifiedCount: 1, suppressionsRecordedCount: 1, runsResyncedCount: 1 };
     };
 
     const result = await checkSequenceBounces({ campaignId: "campaign-1", userId: "user-1" });
@@ -207,7 +231,8 @@ describe("checkSequenceBounces", () => {
     expect(result.status).toBe("ok");
     if (result.status !== "ok") return;
     expect(result.summary.invalidRecipientsUpdated).toBe(1);
-    expect(result.summary.suppressionsRecorded).toBe(1);
+    expect(result.summary.existingRowsReclassified).toBe(1);
+    expect(result.summary.suppressionsCreated).toBe(1);
   });
 
   it("surfaces a stale Gmail authorization as disconnected when nothing could be repaired", async () => {

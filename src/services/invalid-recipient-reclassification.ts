@@ -27,7 +27,7 @@ export type InvalidRecipientEvidence = {
   failureCategory: DeliveryFailureCategory;
   enhancedStatusCode: string | null;
   /** Which stored signal proved the address invalid (for reporting only). */
-  evidenceSource: "bounce-metadata" | "provider-diagnostic" | "existing-suppression";
+  evidenceSource: "bounce-metadata" | "provider-diagnostic" | "nonretryable-gmail-rejection" | "existing-suppression";
 };
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -58,6 +58,7 @@ export function findInvalidRecipientEvidence(job: {
   const metadata = asRecord(job.metadata);
   const failureCategory = readString(metadata.failureCategory);
   const failureCode = readString(metadata.failureCode);
+  const lastInternalError = asRecord(metadata.lastInternalError);
 
   // 1. The job already carries hard-bounce classification (written by the DSN
   //    processor or the send-time rejection path) but kept a FAILED status.
@@ -75,7 +76,6 @@ export function findInvalidRecipientEvidence(job: {
 
   // 2. The sanitized provider diagnostic (or the stored lastError) names the
   //    recipient address as the problem.
-  const lastInternalError = asRecord(metadata.lastInternalError);
   const diagnosticText = [
     readString(metadata.providerErrorMessage),
     readString(lastInternalError.message),
@@ -88,6 +88,24 @@ export function findInvalidRecipientEvidence(job: {
       failureCategory: "HARD_BOUNCE_INVALID_RECIPIENT",
       enhancedStatusCode: getEnhancedStatusCodeFromText(diagnosticText),
       evidenceSource: "provider-diagnostic"
+    };
+  }
+
+  // 3. Older send rows only stored the safe generic copy even when Gmail
+  // treated the recipient rejection as terminal. Keep this narrow: it must be
+  // a non-retryable Gmail recipient rejection with no policy/spam category.
+  const nonRetryable =
+    metadata.retryable === false || lastInternalError.retryable === false || /permanent/i.test(diagnosticText);
+  if (
+    failureCode === "GMAIL_SEND_REJECTED" &&
+    !failureCategory &&
+    nonRetryable &&
+    /gmail rejected this recipient/i.test(diagnosticText)
+  ) {
+    return {
+      failureCategory: "HARD_BOUNCE_INVALID_RECIPIENT",
+      enhancedStatusCode: readString(metadata.enhancedStatusCode) ?? getEnhancedStatusCodeFromText(diagnosticText),
+      evidenceSource: "nonretryable-gmail-rejection"
     };
   }
 
@@ -109,6 +127,7 @@ export type ReclassificationResult = {
   candidates: ReclassificationCandidate[];
   reclassifiedCount: number;
   suppressionsRecordedCount: number;
+  runsResyncedCount: number;
 };
 
 // FAILED and BOUNCED rows may be reclassified from any stored evidence
@@ -223,7 +242,7 @@ export async function reclassifyInvalidRecipientJobs(options: {
   }
 
   if (!options.apply || candidates.length === 0) {
-    return { scanned: jobs.length, candidates, reclassifiedCount: 0, suppressionsRecordedCount: 0 };
+    return { scanned: jobs.length, candidates, reclassifiedCount: 0, suppressionsRecordedCount: 0, runsResyncedCount: 0 };
   }
 
   const jobsById = new Map(jobs.map((job) => [job.id, job] as const));
@@ -264,7 +283,8 @@ export async function reclassifyInvalidRecipientJobs(options: {
     });
   }
 
-  for (const runId of new Set(candidates.map((candidate) => candidate.campaignRunId))) {
+  const runIds = new Set(candidates.map((candidate) => candidate.campaignRunId));
+  for (const runId of runIds) {
     await syncRunCounts(runId);
   }
 
@@ -272,6 +292,7 @@ export async function reclassifyInvalidRecipientJobs(options: {
     scanned: jobs.length,
     candidates,
     reclassifiedCount: candidates.length,
-    suppressionsRecordedCount
+    suppressionsRecordedCount,
+    runsResyncedCount: runIds.size
   };
 }

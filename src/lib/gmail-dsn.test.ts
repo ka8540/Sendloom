@@ -178,6 +178,24 @@ describe("delivery-status parsing", () => {
     expect(parsed?.recipients[0]?.status).toBe("5.1.1");
   });
 
+  it("falls back to the Gmail snippet when full text parts are unavailable", () => {
+    const parsed = parseDeliveryStatusFromGmailMessage(
+      gmailBounceMessage({
+        snippet:
+          "Address not found Your message wasn't delivered to luna_y@example.com because the address couldn't be found. 550 #5.1.0 Address rejected",
+        payload: {
+          mimeType: "multipart/mixed",
+          headers: [{ name: "From", value: "Mail Delivery Subsystem <mailer-daemon@googlemail.com>" }],
+          parts: []
+        }
+      })
+    );
+
+    expect(parsed?.structured).toBe(false);
+    expect(parsed?.recipients[0]?.email).toBe("luna_y@example.com");
+    expect(parsed?.recipients[0]?.status).toBe("5.1.0");
+  });
+
   it("returns null for ordinary mail (nothing is stored)", () => {
     const parsed = parseDeliveryStatusFromGmailMessage(
       gmailBounceMessage({

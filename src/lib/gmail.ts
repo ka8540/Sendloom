@@ -43,6 +43,25 @@ export type GmailReplyCandidate = {
   referenceMessageIds: string[];
 };
 
+const GMAIL_DSN_SEARCH_TERMS = [
+  "from:mailer-daemon",
+  "from:mailer-daemon@googlemail.com",
+  "from:postmaster",
+  '"Mail Delivery Subsystem"',
+  '"Address not found"',
+  '"Address rejected"',
+  '"550 5.1.0"',
+  '"550 #5.1.0"',
+  '"550 5.1.1"',
+  '"user unknown"',
+  '"recipient rejected"',
+  '"recipient address rejected"',
+  '"unable to receive mail"',
+  '"Delivery Status Notification"',
+  '"Undelivered Mail Returned to Sender"',
+  "subject:Undeliverable"
+] as const;
+
 function getHeader(headers: GmailHeader[] | undefined, name: string) {
   return headers?.find((header) => header.name.toLowerCase() === name.toLowerCase())?.value ?? null;
 }
@@ -360,17 +379,38 @@ export async function fetchGmailMessageFull(accessToken: string, messageId: stri
 
 /**
  * Bounded search for likely delivery-status messages (recovery + one-time
- * backfill). The query narrows to automated failure senders/subjects within a
- * limited window; per-message DSN filtering still applies afterwards.
+ * backfill + manual sequence checks). The query looks across the mailbox, not
+ * just Sent or unread mail, for automated failure senders and common bounce
+ * body/subject phrases within a limited window. Per-message DSN filtering
+ * still applies afterwards.
  */
+export function buildGmailDsnCandidateQuery(args: {
+  newerThanDays?: number;
+  after?: Date;
+  before?: Date;
+}): string {
+  const bounds: string[] = [];
+  if (args.after) {
+    bounds.push(`after:${Math.floor(args.after.getTime() / 1000)}`);
+  } else {
+    bounds.push(`newer_than:${Math.max(1, Math.floor(args.newerThanDays ?? 7))}d`);
+  }
+  if (args.before) {
+    bounds.push(`before:${Math.floor(args.before.getTime() / 1000)}`);
+  }
+  return `(${GMAIL_DSN_SEARCH_TERMS.join(" OR ")}) ${bounds.join(" ")}`;
+}
+
 export async function listGmailDsnCandidateIds(args: {
   accessToken: string;
-  newerThanDays: number;
+  newerThanDays?: number;
+  after?: Date;
+  before?: Date;
   maxResults: number;
 }): Promise<string[]> {
   const messages: GmailMessageRef[] = [];
   let nextPageToken: string | undefined;
-  const query = `(from:mailer-daemon OR from:postmaster OR subject:"Delivery Status Notification" OR subject:Undeliverable) newer_than:${Math.max(1, Math.floor(args.newerThanDays))}d`;
+  const query = buildGmailDsnCandidateQuery(args);
 
   do {
     const url = new URL(`${GMAIL_API_BASE_URL}/messages`);

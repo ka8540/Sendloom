@@ -113,22 +113,8 @@ function getFailureCategory(metadata: unknown): string | null {
   return typeof category === "string" ? category : null;
 }
 
-/** Concise visible reason for a permanently invalid address. */
-function invalidAddressReason(failureCategory: string | null): string {
-  if (failureCategory === "HARD_BOUNCE_DOMAIN_NOT_FOUND") {
-    return "Domain not found";
-  }
-  if (failureCategory === "HARD_BOUNCE_PERMANENT_MAILBOX_FAILURE") {
-    return "Mailbox unavailable";
-  }
-  if (failureCategory === "HARD_BOUNCE_INVALID_RECIPIENT") {
-    return "Invalid address";
-  }
-  return "Address not found";
-}
-
 export const SKIPPED_INVALID_ADDRESS_HINT =
-  "This email address was rejected as invalid and is skipped from future sends.";
+  "Skipped from future sends.";
 
 // Compact the visible reason for skipped rows. Older records carry verbose
 // sentences ("Address not found — this address previously returned a permanent
@@ -294,7 +280,7 @@ export function buildRecipientActivityItem(job: RecipientJobInput): RecipientAct
       statusLabel: "Invalid",
       tone: "neutral",
       engaged: false,
-      message: `Email address rejected — ${invalidAddressReason(failureCategory).toLowerCase()}`,
+      message: "Email address rejected.",
       isIssue: false,
       retryable: false,
       detailLabel: null,

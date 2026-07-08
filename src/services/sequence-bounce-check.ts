@@ -9,18 +9,22 @@
 
 import { prisma } from "@/lib/db";
 import { summarizeRecipientOverviewDispositions } from "@/lib/recipient-overview-disposition";
-import { runRecentBounceBackfill, syncSenderBounces } from "@/services/bounces";
+import { runRecentBounceBackfill, runSequenceBounceScan, syncSenderBounces } from "@/services/bounces";
 import { reclassifyInvalidRecipientJobs } from "@/services/invalid-recipient-reclassification";
 
 export type SequenceBounceCheckSummary = {
   /** Gmail messages inspected across the backfill + incremental sync. */
-  checkedMessages: number;
+  gmailMessagesChecked: number;
   /** Delivery-status notifications parsed among them. */
   bouncesFound: number;
+  /** Stored failed/delivered rows repaired by the reclassification pass. */
+  existingRowsReclassified: number;
   /** THIS sequence's recipients newly moved to the invalid/skipped outcome. */
   invalidRecipientsUpdated: number;
-  /** Suppression upserts performed (exact addresses, user-scoped). */
-  suppressionsRecorded: number;
+  /** Exact-address suppression writes performed (user-scoped, idempotent). */
+  suppressionsCreated: number;
+  /** Whether the sequence-level skipped/delivered rollups changed. */
+  statsChanged: boolean;
   /** This sequence's recipients already known invalid/skipped before the check. */
   skippedAlreadyKnown: number;
   /** Set when the Gmail mailbox could not be read (stale authorization). */
@@ -78,9 +82,16 @@ export async function checkSequenceBounces(args: {
 
   // One-time recent backfill for mailboxes that predate bounce monitoring
   // (no-op once completed), then a forced incremental sync from the stored
-  // history position. Both are bounded and per-sender locked.
+  // history position. The final sequence scan is broader (body/subject/sender
+  // DSN terms, not Sent-only) but bounded to the sequence's run window and
+  // scoped to this campaign's jobs. It also repairs already-recorded DSNs.
   const backfill = await runRecentBounceBackfill(campaign.senderProfileId);
   const sync = await syncSenderBounces(campaign.senderProfileId, { force: true });
+  const sequenceScan = await runSequenceBounceScan({
+    campaignId: campaign.id,
+    userId: args.userId,
+    senderId: campaign.senderProfileId
+  });
 
   // A DSN processed earlier may have been unable to update the job at the
   // time (and its message id is now consumed by the idempotency gate). The
@@ -95,9 +106,20 @@ export async function checkSequenceBounces(args: {
 
   const skippedAfter = await countSequenceSkipped(campaign.id);
 
-  const gmailSyncSkipped = sync.skipped ?? backfill.skipped ?? null;
+  const gmailMessagesChecked = backfill.checkedMessages + sync.checkedMessages + sequenceScan.checkedMessages;
+  const bouncesFound = backfill.bouncesParsed + sync.bouncesParsed + sequenceScan.bouncesParsed;
+  const existingRowsReclassified = reclassification.reclassifiedCount;
+  const suppressionsCreated =
+    backfill.permanentFailures +
+    sync.permanentFailures +
+    sequenceScan.permanentFailures +
+    reclassification.suppressionsRecordedCount;
+
+  const gmailSyncSkipped = sequenceScan.skipped ?? sync.skipped ?? backfill.skipped ?? null;
   const authorizationLost = gmailSyncSkipped === "reconnect_required" || gmailSyncSkipped === "permission_required";
-  const invalidRecipientsUpdated = Math.max(0, skippedAfter - skippedBefore);
+  const skippedDelta = Math.max(0, skippedAfter - skippedBefore);
+  const invalidRecipientsUpdated = Math.max(skippedDelta, existingRowsReclassified);
+  const statsChanged = skippedAfter !== skippedBefore;
 
   // The mailbox is unreadable AND nothing could be repaired from stored
   // evidence: surface the reconnect state instead of a hollow zero summary.
@@ -108,11 +130,12 @@ export async function checkSequenceBounces(args: {
   return {
     status: "ok",
     summary: {
-      checkedMessages: backfill.checkedMessages + sync.checkedMessages,
-      bouncesFound: backfill.bouncesParsed + sync.bouncesParsed,
+      gmailMessagesChecked,
+      bouncesFound,
+      existingRowsReclassified,
       invalidRecipientsUpdated,
-      suppressionsRecorded:
-        backfill.permanentFailures + sync.permanentFailures + reclassification.suppressionsRecordedCount,
+      suppressionsCreated,
+      statsChanged,
       skippedAlreadyKnown: skippedBefore,
       gmailSyncSkipped
     }

@@ -14,10 +14,12 @@ const h = vi.hoisted(() => {
     check: (async () => ({
       status: "ok",
       summary: {
-        checkedMessages: 12,
+        gmailMessagesChecked: 12,
         bouncesFound: 3,
+        existingRowsReclassified: 1,
         invalidRecipientsUpdated: 3,
-        suppressionsRecorded: 3,
+        suppressionsCreated: 3,
+        statsChanged: true,
         skippedAlreadyKnown: 0,
         gmailSyncSkipped: null
       }
@@ -67,10 +69,12 @@ beforeEach(() => {
   h.impl.check = async () => ({
     status: "ok",
     summary: {
-      checkedMessages: 12,
+      gmailMessagesChecked: 12,
       bouncesFound: 3,
+      existingRowsReclassified: 1,
       invalidRecipientsUpdated: 3,
-      suppressionsRecorded: 3,
+      suppressionsCreated: 3,
+      statsChanged: true,
       skippedAlreadyKnown: 0,
       gmailSyncSkipped: null
     }
@@ -107,10 +111,12 @@ describe("POST /api/campaigns/[id]/sync-bounces", () => {
     const response = await post();
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
-      checkedMessages: 12,
+      gmailMessagesChecked: 12,
       bouncesFound: 3,
+      existingRowsReclassified: 1,
       invalidRecipientsUpdated: 3,
-      suppressionsRecorded: 3,
+      suppressionsCreated: 3,
+      statsChanged: true,
       skippedAlreadyKnown: 0,
       gmailSyncSkipped: null
     });

@@ -81,7 +81,7 @@ const sections = [
       "To sign you into your Sendloom account when you choose Google sign-in.",
       "To connect a Gmail sender that you choose and send emails from that account inside the product.",
       "To read replies to messages Sendloom sent for you, so sequences can stop following up after a response.",
-      "To read automated delivery-status notifications (bounce messages from Mail Delivery Subsystem) so failed addresses can be marked Failed and excluded from future sends. Sendloom inspects only messages that look like automated delivery reports, keeps only structured failure details (recipient address, failure code, category), and never stores the message body.",
+      "To read automated delivery-status notifications (bounce messages from Mail Delivery Subsystem) so invalid addresses can be marked skipped and excluded from future sends. Sendloom inspects only messages that look like automated delivery reports, keeps only structured failure details (recipient address, failure code, category), and never stores the message body.",
       "To store the minimum Google account details needed to identify the connected sender and maintain your session."
     ],
     note:

@@ -25,6 +25,7 @@ export type GmailMessagePart = {
 export type GmailFullMessage = {
   id: string;
   threadId?: string;
+  snippet?: string;
   internalDate?: string;
   sizeEstimate?: number;
   payload?: GmailMessagePart;
@@ -363,7 +364,7 @@ export function parseDeliveryStatusFromGmailMessage(message: GmailFullMessage): 
 
   if (!structured) {
     const textPart = findPartsByMimeType(payload, "text/plain")[0];
-    const text = decodePartData(textPart);
+    const text = decodePartData(textPart) ?? message.snippet ?? null;
     if (text) {
       recipients = parseTextFallback(text);
     }

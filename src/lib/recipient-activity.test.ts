@@ -104,7 +104,7 @@ describe("recipient activity", () => {
     });
 
     expect(item.statusLabel).toBe("Invalid");
-    expect(item.message).toBe("Email address rejected — address not found");
+    expect(item.message).toBe("Email address rejected.");
     expect(item.statusLabel).not.toBe("Failed");
     // Calm styling: not an issue, so the red detail strip ("PERMANENT",
     // attempt metadata) never renders, and there is no Retry.
@@ -113,7 +113,7 @@ describe("recipient activity", () => {
     expect(item.tone).toBe("neutral");
     expect(item.detailLabel).toBeNull();
     // The skipped-from-future-sends explanation lives in the accessible hint.
-    expect(item.hint).toContain("skipped from future sends");
+    expect(item.hint).toBe("Skipped from future sends.");
     expect(item.message).not.toContain("permanent delivery failure");
   });
 
@@ -129,7 +129,7 @@ describe("recipient activity", () => {
     });
 
     expect(item.statusLabel).toBe("Invalid");
-    expect(item.message).toBe("Email address rejected — invalid address");
+    expect(item.message).toBe("Email address rejected.");
     expect(item.isIssue).toBe(false);
     expect(item.retryable).toBe(false);
   });
@@ -145,7 +145,7 @@ describe("recipient activity", () => {
         }
       });
       expect(item.statusLabel).toBe("Invalid");
-      expect(item.message).toBe("Email address rejected — address not found");
+      expect(item.message).toBe("Email address rejected.");
       expect(item.engaged).toBe(false);
       expect(item.isIssue).toBe(false);
       expect(item.retryable).toBe(false);

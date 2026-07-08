@@ -21,6 +21,7 @@ const h = vi.hoisted(() => {
   }
 
   const state = {
+    campaigns: [] as Row[],
     senders: [] as Row[],
     suppressions: [] as Row[],
     providerEvents: [] as Row[],
@@ -70,6 +71,15 @@ const h = vi.hoisted(() => {
         }
         return row;
       }
+    },
+    campaign: {
+      findFirst: async ({ where }: Row) =>
+        state.campaigns.find(
+          (row) =>
+            row.id === where.id &&
+            (!where.userId || row.userId === where.userId) &&
+            (!where.senderProfileId || row.senderProfileId === where.senderProfileId)
+        ) ?? null
     },
     suppression: {
       findUnique: async ({ where }: Row) => {
@@ -166,8 +176,11 @@ const h = vi.hoisted(() => {
         if (where?.campaignRun?.campaign?.senderProfileId) {
           rows = rows.filter((row) => row.senderProfileId === where.campaignRun.campaign.senderProfileId);
         }
-        if (where?.providerMessageId?.not === null) {
-          rows = rows.filter((row) => row.providerMessageId);
+        if (where?.campaignRun?.campaign?.id) {
+          rows = rows.filter((row) => row.campaignId === where.campaignRun.campaign.id);
+        }
+        if (where?.createdAt?.gte) {
+          rows = rows.filter((row) => (row.createdAt ?? new Date()).getTime() >= where.createdAt.gte.getTime());
         }
         return rows.slice(0, take ?? rows.length).map((row) => ({ ...row }));
       },
@@ -258,6 +271,7 @@ import {
   repairHardBouncedRecipientDispositions,
   resolveBounceMonitoringStatus,
   runRecentBounceBackfill,
+  runSequenceBounceScan,
   skipQueuedSendsForFailedAddress,
   syncSenderBounces
 } from "@/services/bounces";
@@ -285,6 +299,29 @@ function seedSender(overrides: Record<string, any> = {}) {
   return sender;
 }
 
+function seedCampaign(overrides: Record<string, any> = {}) {
+  const campaign: Record<string, any> = {
+    id: "campaign-1",
+    userId: "user-1",
+    senderProfileId: "sender-1",
+    createdAt: new Date("2026-07-08T18:00:00Z"),
+    updatedAt: new Date("2026-07-08T19:00:00Z"),
+    runs: [
+      {
+        id: "run-1",
+        createdAt: new Date("2026-07-08T18:00:00Z"),
+        scheduledFor: null,
+        startedAt: new Date("2026-07-08T19:10:00Z"),
+        completedAt: null,
+        updatedAt: new Date("2026-07-08T19:30:00Z")
+      }
+    ],
+    ...overrides
+  };
+  state.campaigns.push(campaign);
+  return campaign;
+}
+
 function seedJob(overrides: Record<string, any> = {}) {
   const job: Record<string, any> = {
     id: h.nextId(),
@@ -294,8 +331,10 @@ function seedJob(overrides: Record<string, any> = {}) {
     status: "SENT",
     replyCount: 0,
     metadata: { rfcMessageId: "sendloom-abc123@techsmail.com" },
+    createdAt: new Date("2026-07-08T19:10:00Z"),
     updatedAt: new Date(),
     userId: "user-1",
+    campaignId: "campaign-1",
     senderProfileId: "sender-1",
     ...overrides
   };
@@ -359,6 +398,7 @@ async function processBounce(sender: Record<string, any>, jobs: Record<string, a
 }
 
 beforeEach(() => {
+  state.campaigns.length = 0;
   state.senders.length = 0;
   state.suppressions.length = 0;
   state.providerEvents.length = 0;
@@ -571,6 +611,56 @@ describe("bounce processing", () => {
     expect(state.suppressions).toHaveLength(1);
     expect(state.suppressions[0].failureCount).toBe(1);
     expect(calls.markRecipientAttempt).toHaveLength(1);
+  });
+
+  it("manual sequence repair can reprocess an already-recorded DSN and heal a generic failed row by exact email", async () => {
+    const sender = seedSender();
+    const failed = seedJob({
+      id: "generic-failed",
+      status: "FAILED",
+      providerMessageId: null,
+      recipientEmail: "luna_y@example.com",
+      metadata: { failureCode: "GMAIL_SEND_REJECTED" },
+      lastError: "Gmail rejected this recipient."
+    });
+    state.providerEvents.push({
+      id: "event-1",
+      provider: "gmail-dsn",
+      providerMessageId: "dsn-1",
+      eventType: "BOUNCED",
+      payload: {}
+    });
+    impl.fetchMetadata = async () => bounceMetadata();
+    impl.fetchFull = async () =>
+      bounceFull({
+        recipient: "luna_y@example.com",
+        status: "5.1.0",
+        diagnostic: "550 #5.1.0 Address rejected"
+      });
+
+    const result = await processPotentialBounceMessage({
+      sender: { id: sender.id, userId: sender.userId, fromEmail: sender.fromEmail },
+      accessToken: "token-1",
+      gmailMessageId: "dsn-1",
+      jobs: [failed] as never,
+      threadCache: new Map(),
+      allowDuplicateRepair: true
+    });
+
+    expect(result.outcome).toBe("processed");
+    expect(state.providerEvents).toHaveLength(1);
+    expect(calls.markRecipientAttempt[0]).toMatchObject({
+      jobId: "generic-failed",
+      status: "SUPPRESSED",
+      failureCode: "HARD_BOUNCE_RECIPIENT",
+      lastError: "Address not found"
+    });
+    expect(state.suppressions[0]).toMatchObject({
+      userId: "user-1",
+      email: "luna_y@example.com",
+      reason: "HARD_BOUNCE",
+      enhancedStatusCode: "5.1.0"
+    });
   });
 
   it("temporary 4.x.x failures neither suppress nor change the attempt", async () => {
@@ -792,6 +882,63 @@ describe("gmail watch lifecycle", () => {
     const result = await syncSenderBounces(sender.id, { force: true });
     expect(result.skipped).toBe("reconnect_required");
     expect(sender.gmailWatchStatus).toBe("RECONNECT_REQUIRED");
+  });
+});
+
+describe("manual sequence bounce scan", () => {
+  it("searches a bounded sequence window and repairs already-ingested bounces for this sequence only", async () => {
+    seedSender();
+    seedCampaign();
+    seedJob({
+      id: "sequence-failed",
+      status: "FAILED",
+      providerMessageId: null,
+      recipientEmail: "will_hsu@example.com",
+      metadata: { failureCode: "GMAIL_SEND_REJECTED" },
+      lastError: "Gmail rejected this recipient."
+    });
+    seedJob({
+      id: "other-sequence",
+      campaignId: "campaign-2",
+      status: "FAILED",
+      providerMessageId: null,
+      recipientEmail: "will_hsu@example.com",
+      metadata: { failureCode: "GMAIL_SEND_REJECTED" },
+      lastError: "Gmail rejected this recipient."
+    });
+    state.providerEvents.push({
+      id: "event-1",
+      provider: "gmail-dsn",
+      providerMessageId: "dsn-1",
+      eventType: "BOUNCED",
+      payload: {}
+    });
+    impl.listDsnCandidates = async () => ["dsn-1"];
+    impl.fetchMetadata = async () => bounceMetadata();
+    impl.fetchFull = async () =>
+      bounceFull({
+        recipient: "will_hsu@example.com",
+        status: "5.1.1",
+        diagnostic: "550 5.1.1 user unknown"
+      });
+
+    const result = await runSequenceBounceScan({
+      campaignId: "campaign-1",
+      userId: "user-1",
+      senderId: "sender-1"
+    });
+
+    expect(result.checkedMessages).toBe(1);
+    expect(result.bouncesParsed).toBe(1);
+    expect(result.processedBounces).toBe(1);
+    expect(calls.dsnCandidateArgs).toHaveLength(1);
+    expect(calls.dsnCandidateArgs[0]).toMatchObject({ maxResults: 200 });
+    expect(calls.dsnCandidateArgs[0].after).toBeInstanceOf(Date);
+    expect(calls.dsnCandidateArgs[0].before).toBeInstanceOf(Date);
+    expect(calls.dsnCandidateArgs[0].newerThanDays).toBeUndefined();
+    expect(calls.markRecipientAttempt).toHaveLength(1);
+    expect(calls.markRecipientAttempt[0]).toMatchObject({ jobId: "sequence-failed", status: "SUPPRESSED" });
+    expect(calls.markRecipientAttempt.map((call) => call.jobId)).toEqual(["sequence-failed"]);
   });
 });
 

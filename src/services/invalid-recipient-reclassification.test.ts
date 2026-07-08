@@ -110,6 +110,21 @@ describe("findInvalidRecipientEvidence", () => {
     });
   });
 
+  it("finds evidence in old non-retryable Gmail recipient rejections with only generic safe copy", () => {
+    expect(
+      findInvalidRecipientEvidence({
+        metadata: {
+          failureCode: "GMAIL_SEND_REJECTED",
+          retryable: false
+        },
+        lastError: "Gmail rejected this recipient."
+      })
+    ).toMatchObject({
+      failureCategory: "HARD_BOUNCE_INVALID_RECIPIENT",
+      evidenceSource: "nonretryable-gmail-rejection"
+    });
+  });
+
   it("returns null for generic, policy, transient, and system failures", () => {
     for (const job of [
       { metadata: { failureCode: "GMAIL_SEND_REJECTED" }, lastError: "Gmail rejected this recipient." },
@@ -179,6 +194,30 @@ describe("reclassifyInvalidRecipientJobs", () => {
     }
     expect(h.state.jobs.find((job) => job.recipientEmail === "fine@example.com")?.status).toBe("FAILED");
     expect(new Set(h.calls.syncRunCounts)).toEqual(new Set(["run-a", "run-b"]));
+  });
+
+  it("repairs non-retryable generic Gmail rejected rows even when Gmail search finds no new messages", async () => {
+    h.state.jobs = [
+      failedJob({
+        recipientEmail: "luna@example.com",
+        lastError: "Gmail rejected this recipient.",
+        metadata: { failureCode: "GMAIL_SEND_REJECTED", retryable: false }
+      })
+    ];
+
+    const result = await reclassifyInvalidRecipientJobs({ apply: true });
+
+    expect(result.reclassifiedCount).toBe(1);
+    expect(h.state.jobs[0]?.status).toBe("SUPPRESSED");
+    expect(h.state.jobs[0]?.metadata).toMatchObject({
+      failureCode: "HARD_BOUNCE_RECIPIENT",
+      failureCategory: "HARD_BOUNCE_INVALID_RECIPIENT",
+      retryable: false
+    });
+    expect(h.calls.recordSuppression[0]).toMatchObject({
+      email: "luna@example.com",
+      failureCategory: "HARD_BOUNCE_INVALID_RECIPIENT"
+    });
   });
 
   it("apply is idempotent — a second run finds no remaining candidates", async () => {

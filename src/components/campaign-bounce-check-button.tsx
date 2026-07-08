@@ -49,10 +49,18 @@ export function CampaignBounceCheckButton(props: {
       }
 
       const updated = typeof payload.invalidRecipientsUpdated === "number" ? payload.invalidRecipientsUpdated : 0;
-      if (updated > 0) {
+      const existingRowsReclassified =
+        typeof payload.existingRowsReclassified === "number" ? payload.existingRowsReclassified : 0;
+      const bouncesFound = typeof payload.bouncesFound === "number" ? payload.bouncesFound : 0;
+      const suppressionsCreated = typeof payload.suppressionsCreated === "number" ? payload.suppressionsCreated : 0;
+      const statsChanged = Boolean(payload.statsChanged);
+      const totalUpdated = Math.max(updated, existingRowsReclassified);
+      if (totalUpdated > 0) {
         showSuccess(
-          `Checked bounces. ${updated} invalid address${updated === 1 ? "" : "es"} marked as skipped.`
+          `Checked bounces. ${totalUpdated} invalid address${totalUpdated === 1 ? "" : "es"} marked as skipped.`
         );
+      } else if (bouncesFound > 0 || suppressionsCreated > 0 || statsChanged) {
+        showSuccess("Checked bounces. No invalid addresses needed updating.");
       } else {
         showSuccess("No new bounces found.");
       }
