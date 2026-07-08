@@ -93,6 +93,21 @@ const sections = [
     ]
   },
   {
+    id: "discover-and-inferred-contacts",
+    title: "Discover and inferred contact information",
+    bullets: [
+      "Discover is provided to help you organize lawful business outreach.",
+      "Discover results may include inferred or generated email addresses based on public evidence, company domains, naming patterns, and provider data.",
+      "Sendloom does not guarantee that inferred email addresses are accurate, verified, deliverable, current, or appropriate for every use.",
+      "You are responsible for verifying results and deciding whether outreach is lawful and appropriate before you send.",
+      "You must comply with applicable email, privacy, anti-spam, employment, platform, and data-protection laws.",
+      "You may not use Discover for harassment, spam, deception, unlawful profiling, sensitive targeting, or otherwise prohibited outreach.",
+      "Sendloom may limit, suspend, or restrict Discover access in response to abuse or policy violations.",
+      "Manual reports and issue reports are for product support and safety review, not emergency support."
+    ],
+    note: "This section is product policy information and not legal advice."
+  },
+  {
     id: "google-and-connected-email",
     title: "Google and connected email accounts",
     paragraphs: [
@@ -158,7 +173,7 @@ export default function TermsPage() {
       guideBody="This version keeps the substance of the original terms intact, but organizes the reading path around the questions operators usually have before they connect a sender or launch outreach."
       guideTitle="The quick read"
       highlights={highlights}
-      lastUpdated="June 12, 2026"
+      lastUpdated="July 8, 2026"
       quickFacts={quickFacts}
       relatedHref="/privacy"
       relatedLabel="Read privacy policy"

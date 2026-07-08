@@ -11,6 +11,7 @@ const faqNavItems = [
   { href: "/", label: "Home" },
   { href: "/privacy", label: "Privacy" },
   { href: "/terms", label: "Terms" },
+  { href: "/abuse", label: "Abuse" },
   { href: "/faq", label: "FAQ" },
   { href: "mailto:ka8540@g.rit.edu", label: "Contact" }
 ] as const;
@@ -112,6 +113,47 @@ const faqSections = [
         question: "Can I search for contacts from a company domain?",
         answer:
           "Yes. Domain search allows users to discover available contacts associated with a company domain."
+      }
+    ]
+  },
+  {
+    id: "discover",
+    title: "Discover",
+    items: [
+      {
+        question: "What is Discover?",
+        answer:
+          "Discover helps you find relevant professional profiles and infer likely work email addresses, so you can build a focused outreach list. It can draw on public professional information, company and domain patterns, source evidence, and provider results."
+      },
+      {
+        question: "Are Discover emails verified?",
+        answer:
+          "Not always. Many Discover email addresses are inferred from names, company domains, and common patterns. Inferred addresses are best guesses, not guaranteed-verified contacts, so treat them as a starting point."
+      },
+      {
+        question: "How should I use inferred emails?",
+        answer:
+          "Use them responsibly. Review each result, confirm the contact is a good fit, and make sure your outreach is lawful and appropriate before you send. Inferred emails are meant to help you research, not to enable bulk or unsolicited messaging."
+      },
+      {
+        question: "Why do some people show unavailable emails?",
+        answer:
+          "Some profiles do not have a usable inferred email. This can happen when there is not enough public evidence, the company pattern is unclear, or providers return no reliable match. Those people are shown without a usable address rather than with a guessed one."
+      },
+      {
+        question: "What does Add more people do?",
+        answer:
+          "Add more people expands an existing search to surface additional relevant profiles for the same target. It continues from where the search left off, within the limits that apply to your account."
+      },
+      {
+        question: "Can I export or import Discover results?",
+        answer:
+          "Yes. You can export Discover results and bring the people you select into your imports, so they can flow into templates and sequences like any other contact list."
+      },
+      {
+        question: "How do I report wrong Discover data?",
+        answer:
+          "If a Discover result looks wrong, confusing, or out of date, open the guide button on the Discover page and choose “Report issue.” Pick a type such as Wrong data, describe what you saw, and send it for review."
       }
     ]
   },
@@ -233,6 +275,27 @@ const faqSections = [
         question: "Is Sendloom only for sales teams?",
         answer:
           "No. Sendloom can support sales outreach, recruiting, student job outreach, founder networking, partnership outreach, and other structured communication workflows."
+      }
+    ]
+  },
+  {
+    id: "reporting-and-support",
+    title: "Reporting and support",
+    items: [
+      {
+        question: "How do I report a problem?",
+        answer:
+          "You can report a problem from the help/guide menu inside Sendloom dashboards. Open the guide button on a workspace page and choose “Report issue.” You can use this for bugs, confusing UI, wrong data, loading problems, guide or tour issues, or anything that feels broken. You do not need to wait for an error message."
+      },
+      {
+        question: "What should I include in a report?",
+        answer:
+          "Describe what you were trying to do and what happened. Reports are meant for product and support review, so keep them focused on the problem. Please do not paste passwords, API keys, OAuth tokens, private contact lists, or sensitive email contents into the description."
+      },
+      {
+        question: "Is a manual report the same as the automatic error report?",
+        answer:
+          "No. If the app shows an automatic error report after something fails, that is separate from a manual report. You can still open “Report issue” yourself at any time, even when nothing has visibly broken."
       }
     ]
   }

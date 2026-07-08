@@ -99,6 +99,37 @@ const sections = [
     ]
   },
   {
+    id: "discover-data",
+    title: "Discover data",
+    bullets: [
+      "Search inputs you provide, such as company, role, domain, location, or LinkedIn and company information.",
+      "Public professional and profile information returned by providers.",
+      "Inferred email domain and pattern evidence.",
+      "Generated or inferred email addresses.",
+      "Your selections, exports, imports, and Add more actions.",
+      "Timestamps and usage metadata needed for limits, safety, abuse prevention, and product reliability."
+    ],
+    note:
+      "Generated emails may be inferred and may not be verified. Discover data is used to show results, enable exports and imports, support deduplication and caching where applicable, prevent abuse, and improve reliability. Please do not enter sensitive personal data into search fields unless it is necessary."
+  },
+  {
+    id: "report-issue-data",
+    title: "Report issue data",
+    paragraphs: [
+      "When you submit a manual issue report from a dashboard help/guide menu, Sendloom may collect the details below."
+    ],
+    bullets: [
+      "Your written report description.",
+      "The issue type or category you choose.",
+      "The current route or page context.",
+      "A timestamp for the report.",
+      "Basic browser and platform diagnostic information, when collected.",
+      "An authenticated user or account reference needed for support follow-up."
+    ],
+    note:
+      "Please do not include passwords, API keys, OAuth tokens, private contact lists, confidential email bodies, or sensitive personal data in a report. Reports are used to diagnose bugs, improve product quality, handle support, and enforce safety and policy rules."
+  },
+  {
     id: "storage-and-retention",
     title: "How data is stored and retained",
     paragraphs: [
@@ -167,7 +198,7 @@ export default function PrivacyPage() {
       guideBody="Everything below keeps the original policy substance, but the flow is organized so the answers are easier to scan before you log in, connect Google, or upload a list."
       guideTitle="The short read"
       highlights={highlights}
-      lastUpdated="June 12, 2026"
+      lastUpdated="July 8, 2026"
       quickFacts={quickFacts}
       relatedHref="/terms"
       relatedLabel="Read terms"
