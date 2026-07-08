@@ -13,6 +13,7 @@
  *   npx tsx scripts/reclassify-invalid-recipient-bounces.ts --apply
  *   npx tsx scripts/reclassify-invalid-recipient-bounces.ts --apply --user <userId>
  *   npx tsx scripts/reclassify-invalid-recipient-bounces.ts --apply --campaign <campaignId>
+ *   npx tsx scripts/reclassify-invalid-recipient-bounces.ts --apply --campaign <campaignId> --sync-gmail
  *
  * Dry-run by default; pass --apply to write. Idempotent — reclassified rows
  * leave the scanned filters, and suppressions are upserted per (user, email).
@@ -20,11 +21,24 @@
  * or a confirmed suppression) and never when the recipient replied. Detection
  * is signature-based only: no company, domain, or recipient is special-cased.
  * Prints ids, categories, and counts — never message bodies.
+ *
+ * --sync-gmail additionally reads the targeted senders' Gmail delivery-status
+ * notifications (bounded backfill + incremental sync — the same pipeline as
+ * the in-app "Check bounces" action) before reclassifying, so bounces not yet
+ * ingested are picked up. Because that sync writes as it processes, it only
+ * runs with --apply; dry-run reports stored evidence only. Never sends email.
  */
 import { prisma } from "@/lib/db";
+import { runRecentBounceBackfill, syncSenderBounces } from "@/services/bounces";
 import { reclassifyInvalidRecipientJobs } from "@/services/invalid-recipient-reclassification";
 
-function parseArgs(argv: string[]): { apply: boolean; userId?: string; campaignId?: string; limit?: number } {
+function parseArgs(argv: string[]): {
+  apply: boolean;
+  syncGmail: boolean;
+  userId?: string;
+  campaignId?: string;
+  limit?: number;
+} {
   const readValue = (flag: string) => {
     const index = argv.indexOf(flag);
     return index >= 0 ? argv[index + 1] : undefined;
@@ -33,14 +47,49 @@ function parseArgs(argv: string[]): { apply: boolean; userId?: string; campaignI
   const limit = limitRaw ? Number.parseInt(limitRaw, 10) : undefined;
   return {
     apply: argv.includes("--apply"),
+    syncGmail: argv.includes("--sync-gmail"),
     userId: readValue("--user"),
     campaignId: readValue("--campaign"),
     limit: Number.isFinite(limit) && limit ? limit : undefined
   };
 }
 
+/** Distinct Gmail senders behind the targeted campaigns (exact scope only). */
+async function findTargetSenderIds(args: { userId?: string; campaignId?: string }): Promise<string[]> {
+  const campaigns = await prisma.campaign.findMany({
+    where: {
+      ...(args.campaignId ? { id: args.campaignId } : {}),
+      ...(args.userId ? { userId: args.userId } : {}),
+      senderProfile: { provider: "google_oauth" }
+    },
+    select: { senderProfileId: true },
+    take: 500
+  });
+  return [...new Set(campaigns.map((campaign) => campaign.senderProfileId))];
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
+
+  if (args.syncGmail && !args.apply) {
+    console.info(
+      "[reclassify-invalid-recipients] --sync-gmail ingests bounce notifications as it reads, so it requires --apply. Dry run uses stored evidence only."
+    );
+  } else if (args.syncGmail) {
+    const senderIds = await findTargetSenderIds(args);
+    console.info(`[reclassify-invalid-recipients] Syncing Gmail bounces for ${senderIds.length} sender(s)…`);
+    for (const senderId of senderIds) {
+      const backfill = await runRecentBounceBackfill(senderId);
+      const sync = await syncSenderBounces(senderId, { force: true });
+      console.info(
+        `[reclassify-invalid-recipients] ${senderId}: checked ${backfill.checkedMessages + sync.checkedMessages} message(s), ` +
+          `${backfill.bouncesParsed + sync.bouncesParsed} bounce(s) parsed, ` +
+          `${backfill.permanentFailures + sync.permanentFailures} permanent failure(s)` +
+          `${sync.skipped ? ` (sync skipped: ${sync.skipped})` : ""}`
+      );
+    }
+  }
+
   const result = await reclassifyInvalidRecipientJobs(args);
 
   console.info(

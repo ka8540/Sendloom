@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 import { ActiveRunRefresher } from "@/components/active-run-refresher";
+import { CampaignBounceCheckButton } from "@/components/campaign-bounce-check-button";
 import { CampaignLaunchButton } from "@/components/campaign-launch-button";
 import { CampaignPauseResumeButton } from "@/components/campaign-pause-resume-button";
 import { CampaignScheduleEditor } from "@/components/campaign-schedule-editor";
@@ -640,6 +641,15 @@ export default async function CampaignDetailPage({
                   {validationButtonLabel}
                 </button>
               </form>
+              {/* Post-send bounce check — reads Gmail delivery-status reports
+                  for already-sent emails; deliberately separate from Refresh
+                  validation (which checks setup before a launch) and always
+                  available, including for completed sequences. */}
+              <CampaignBounceCheckButton
+                campaignId={campaign.id}
+                senderNeedsReconnect={senderNeedsReconnect}
+                className={styles.actionSecondaryItem}
+              />
               {latestRun && (isActiveRun || isPausedRun) ? (
                 <CampaignPauseResumeButton
                   campaignId={campaign.id}
