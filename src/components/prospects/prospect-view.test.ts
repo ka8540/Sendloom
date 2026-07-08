@@ -852,6 +852,74 @@ describe("Add 10 more detail-page wiring", () => {
   });
 });
 
+describe("Add more people dialog UI polish", () => {
+  const detailSource = readFileSync("src/components/prospects/prospect-detail-view.tsx", "utf8");
+  const css = readFileSync("src/components/prospects/prospects-dashboard.module.css", "utf8");
+  const dialogSource =
+    detailSource.match(/function AddMorePeopleDialog\([\s\S]*?\nfunction ProspectReviewDialog\(/)?.[0] ?? "";
+
+  it("renders the dialog with its title, description, and both stat cards", () => {
+    expect(dialogSource).toContain("ADD_MORE_DIALOG_TITLE");
+    expect(dialogSource).toContain("ADD_MORE_DIALOG_BODY");
+    expect(dialogSource).toContain("<dt>Current people</dt>");
+    expect(dialogSource).toContain("<dt>Searches remaining today</dt>");
+    // The stat values are untouched.
+    expect(dialogSource).toContain("{Math.max(0, peopleCount)}");
+    expect(dialogSource).toContain('{quota && !quota.unlimited ? quota.searchesRemaining : "Unlimited"}');
+  });
+
+  it("keeps the role-group select controlled with its existing options, value, and handler", () => {
+    expect(dialogSource).toContain("value={chosenSearchId}");
+    expect(dialogSource).toContain("setChosenSearchId(event.target.value)");
+    expect(dialogSource).toContain("addMoreSearchLabel(option)");
+    expect(dialogSource).toContain("{ADD_MORE_CHOOSE_ROLE_HINT}");
+  });
+
+  it("keeps the accessible label on the role-group select", () => {
+    expect(dialogSource).toContain('aria-label="Role group to extend"');
+    expect(dialogSource).toContain("<span className={styles.fieldLabel}>Role group</span>");
+  });
+
+  it("keeps Cancel, the close X, and the confirm handler wired", () => {
+    expect(dialogSource).toContain('<CircularCloseButton label="Close" onClick={onClose} disabled={expanding} />');
+    expect(dialogSource).toContain("onClick={onClose} disabled={expanding}>");
+    expect(dialogSource).toContain("onConfirm(resolvedSearchId)");
+    expect(dialogSource).toContain("disabled={expanding || !resolvedSearchId}");
+  });
+
+  it("scopes every polish rule under .addMoreCard so other dialogs are untouched", () => {
+    expect(dialogSource).toContain("styles.addMoreCard");
+    // The block exists and only ships .addMoreCard-prefixed selectors.
+    const rules = css.match(/^\.addMoreCard[^{]*\{/gm) ?? [];
+    expect(rules.length).toBeGreaterThanOrEqual(8);
+  });
+
+  it("replaces the raw browser select look with the shared custom caret", () => {
+    // The role-group select opts into the shared caret treatment…
+    expect(dialogSource).toMatch(/select\s+className=\{`\$\{styles\.input\} \$\{styles\.selectField\}`\}/);
+    // …which suppresses the native arrow and paints a right-aligned chevron.
+    expect(css).toMatch(/\.selectField\s*\{[^}]*appearance:\s*none/s);
+    expect(css).toMatch(/\.selectField\s*\{[^}]*background-position:\s*right/s);
+    // Dialog-scoped sizing keeps the selected text clear of the caret.
+    expect(css).toMatch(/\.addMoreCard \.selectField\s*\{[^}]*padding:\s*0 2\.5rem 0 0\.85rem/s);
+  });
+
+  it("keeps the dialog typography compact (no oversized type)", () => {
+    const blocks = css.match(/\.addMoreCard[^{]*\{[^}]*\}/gs) ?? [];
+    expect(blocks.length).toBeGreaterThanOrEqual(8);
+    for (const block of blocks) {
+      const size = block.match(/font-size:\s*([\d.]+)rem/);
+      if (size) {
+        expect(Number.parseFloat(size[1])).toBeLessThanOrEqual(1.25);
+      }
+    }
+  });
+
+  it("stacks the stat cards on narrow phones", () => {
+    expect(css).toMatch(/@media \(max-width: 26rem\)\s*\{\s*\.addMoreCard \.reviewGrid\s*\{\s*grid-template-columns: 1fr;/s);
+  });
+});
+
 describe("Discover list/detail split contracts", () => {
   const listSource = readFileSync("src/components/prospects/prospects-list-view.tsx", "utf8");
   const detailSource = readFileSync("src/components/prospects/prospect-detail-view.tsx", "utf8");
