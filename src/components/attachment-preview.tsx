@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
-import { Download, ExternalLink, FileText } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Download, ExternalLink, FileText, LoaderCircle } from "lucide-react";
 
 import { CircularCloseButton } from "@/components/circular-close-button";
 
@@ -32,6 +32,8 @@ function getPreviewLabel(item: AttachmentPreviewItem) {
   return item.contentType ?? "Preview not available in browser";
 }
 
+type FramedPreviewStatus = "idle" | "loading" | "ready" | "error";
+
 export function AttachmentPreviewModal({
   attachment,
   onClose
@@ -39,6 +41,13 @@ export function AttachmentPreviewModal({
   attachment: AttachmentPreviewItem | null;
   onClose: () => void;
 }) {
+  const previewUrl = attachment?.previewUrl ?? null;
+  const previewKind = attachment?.previewKind ?? null;
+  const needsFrame = previewKind === "pdf" || previewKind === "text";
+
+  const [frameUrl, setFrameUrl] = useState<string | null>(null);
+  const [frameStatus, setFrameStatus] = useState<FramedPreviewStatus>("idle");
+
   useEffect(() => {
     if (!attachment) {
       return;
@@ -60,6 +69,61 @@ export function AttachmentPreviewModal({
     };
   }, [attachment, onClose]);
 
+  // PDFs/text are served from the authenticated attachment route, which carries
+  // the app's `X-Frame-Options: DENY` + CSP `frame-ancestors 'none'`. Iframing
+  // that URL directly makes the browser refuse to connect. Instead, fetch the
+  // file over the normal (cookie-authenticated) session and frame a local
+  // `blob:` object URL — which is exempt from the route's anti-framing headers.
+  useEffect(() => {
+    if (!previewUrl || !needsFrame) {
+      setFrameUrl(null);
+      setFrameStatus("idle");
+      return;
+    }
+
+    // Freshly-uploaded (unsaved) attachments already expose a local `blob:`
+    // object URL owned by the editor — frame it directly and never revoke it.
+    if (previewUrl.startsWith("blob:")) {
+      setFrameUrl(previewUrl);
+      setFrameStatus("ready");
+      return;
+    }
+
+    let cancelled = false;
+    let createdUrl: string | null = null;
+    setFrameUrl(null);
+    setFrameStatus("loading");
+
+    fetch(previewUrl, { credentials: "same-origin", cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`Attachment preview failed with ${response.status}`);
+        }
+        return response.blob();
+      })
+      .then((blob) => {
+        if (cancelled) {
+          return;
+        }
+        createdUrl = URL.createObjectURL(blob);
+        setFrameUrl(createdUrl);
+        setFrameStatus("ready");
+      })
+      .catch(() => {
+        if (cancelled) {
+          return;
+        }
+        setFrameStatus("error");
+      });
+
+    return () => {
+      cancelled = true;
+      if (createdUrl) {
+        URL.revokeObjectURL(createdUrl);
+      }
+    };
+  }, [previewUrl, needsFrame]);
+
   if (!attachment) {
     return null;
   }
@@ -72,12 +136,29 @@ export function AttachmentPreviewModal({
         <img src={attachment.previewUrl} alt={attachment.fileName} />
       </div>
     );
-  } else if (attachment.previewKind === "pdf" || attachment.previewKind === "text") {
-    surface = (
-      <div className={styles.viewport}>
-        <iframe key={attachment.previewUrl} src={attachment.previewUrl} title={`Preview of ${attachment.fileName}`} />
-      </div>
-    );
+  } else if (needsFrame) {
+    if (frameStatus === "error") {
+      surface = (
+        <div className={styles.fallback}>
+          <FileText aria-hidden="true" />
+          <strong>Preview unavailable.</strong>
+          <span>Open or download the file instead.</span>
+        </div>
+      );
+    } else if (frameStatus === "ready" && frameUrl) {
+      surface = (
+        <div className={styles.viewport}>
+          <iframe key={frameUrl} src={frameUrl} title={`Preview of ${attachment.fileName}`} />
+        </div>
+      );
+    } else {
+      surface = (
+        <div className={`${styles.fallback} ${styles.loading}`} role="status" aria-live="polite">
+          <LoaderCircle aria-hidden="true" />
+          <span>Loading preview…</span>
+        </div>
+      );
+    }
   } else {
     surface = (
       <div className={styles.fallback}>

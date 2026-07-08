@@ -8,11 +8,17 @@
 // - `connect-src` permits the OpenAI Responses API and the Google OAuth/token
 //   endpoints the app calls server-side; the wildcard `https:` for img-src
 //   covers email previews and Google profile pictures.
+// - `frame-src 'self' blob:` lets the in-app attachment preview render a PDF
+//   that is fetched from the authenticated attachment route and turned into a
+//   local `blob:` object URL. This only widens *nested* framing to same-origin
+//   blobs; `frame-ancestors 'none'` still blocks the app itself from being
+//   embedded, and `object-src 'none'` is left untouched.
 const csp = [
   "default-src 'self'",
   "base-uri 'self'",
   "form-action 'self'",
   "frame-ancestors 'none'",
+  "frame-src 'self' blob:",
   "object-src 'none'",
   "script-src 'self' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
