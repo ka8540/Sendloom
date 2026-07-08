@@ -17,9 +17,11 @@ import { prisma } from "@/lib/db";
 import type { FailureCode, FailureSource } from "@/lib/failures";
 import {
   buildGmailSendFailureMetadata,
+  getEnhancedStatusCodeFromError,
   getGmailRetryAfterDate,
   type GmailSendFailureMetadata
 } from "@/lib/gmail-errors";
+import { safeDeliveryFailureReason } from "@/lib/gmail-dsn";
 import { buildMergePayload } from "@/lib/mapping";
 import {
   GMAIL_RECONNECT_ERROR,
@@ -47,7 +49,7 @@ import {
   withStructuredValidationChecks
 } from "@/lib/validation";
 import { markSenderRequiresReconnect } from "@/services/senders";
-import { getSuppressedEmailSet, suppressEmail } from "@/services/suppressions";
+import { getSuppressedEmailSet, recordInvalidRecipientSuppression, suppressEmail } from "@/services/suppressions";
 import {
   SequenceConcurrencyLimitError,
   activateClaimedSequenceRun,
@@ -1702,6 +1704,78 @@ async function failQueuedRecipientJobs(runId: string, message: string, skipJobId
   await syncRunCounts(runId);
 }
 
+export const GMAIL_SEND_REJECTION_SUPPRESSION_SOURCE = "gmail-send-rejection";
+
+/**
+ * Gmail refused the recipient ADDRESS itself at send time (address not found /
+ * user unknown / 5.1.x). The send attempt worked — the address is bad — so the
+ * outcome is the Skipped disposition, never a generic Sendloom failure:
+ *   1. the job becomes SUPPRESSED with the bounce-style evidence in metadata,
+ *   2. an INVALID_EMAIL suppression stops every future send to the address,
+ *   3. still-queued attempts to the same address are skipped without a Gmail
+ *      call. Shared by the cron processor and the BullMQ worker.
+ */
+export async function handleInvalidRecipientSendRejection(args: {
+  jobId: string;
+  userId: string | null;
+  recipientEmail: string;
+  error: unknown;
+  failureDetails: Record<string, unknown>;
+}) {
+  const failureCategory = "HARD_BOUNCE_INVALID_RECIPIENT";
+  const enhancedStatusCode = getEnhancedStatusCodeFromError(args.error);
+  const reason = safeDeliveryFailureReason(failureCategory);
+  const email = args.recipientEmail.trim().toLowerCase();
+
+  if (args.userId) {
+    await recordInvalidRecipientSuppression({
+      userId: args.userId,
+      email,
+      source: GMAIL_SEND_REJECTION_SUPPRESSION_SOURCE,
+      failureCategory,
+      enhancedStatusCode
+    });
+  }
+
+  const updated = await markRecipientAttempt({
+    jobId: args.jobId,
+    status: "SUPPRESSED",
+    lastError: reason,
+    failureCode: "HARD_BOUNCE_RECIPIENT",
+    failureSource: "GMAIL",
+    failureDetails: {
+      ...args.failureDetails,
+      failureCategory,
+      enhancedStatusCode
+    }
+  });
+
+  // Skip every other still-queued attempt to this address for the same user,
+  // across all sequences — no Gmail request, no send capacity consumed.
+  if (args.userId) {
+    const queued = await prisma.recipientJob.findMany({
+      where: {
+        id: { not: args.jobId },
+        status: { in: ["PENDING", "RETRYING"] },
+        recipientEmail: { equals: email, mode: "insensitive" },
+        campaignRun: { campaign: { userId: args.userId } }
+      },
+      select: { id: true, campaignRunId: true }
+    });
+    if (queued.length > 0) {
+      await prisma.recipientJob.updateMany({
+        where: { id: { in: queued.map((job) => job.id) } },
+        data: { status: "SUPPRESSED", lastError: reason, nextRetryAt: null }
+      });
+      for (const runId of new Set(queued.map((job) => job.campaignRunId))) {
+        await syncRunCounts(runId);
+      }
+    }
+  }
+
+  return updated;
+}
+
 async function processRecipientJob(recipientJob: RecipientJobWithContext) {
   const outcome = await withRedisLock(`sendloom:recipient-job:${recipientJob.id}`, RECIPIENT_LOCK_TTL_SECONDS, async () => {
     const latestJob = await prisma.recipientJob.findUnique({
@@ -1941,6 +2015,27 @@ async function processRecipientJob(recipientJob: RecipientJobWithContext) {
         return {
           processed: true,
           rateLimited: true
+        };
+      }
+
+      if (failureCode === "HARD_BOUNCE_RECIPIENT") {
+        // Invalid recipient address: a Skipped outcome plus a suppression —
+        // never a generic FAILED row, never retried.
+        await handleInvalidRecipientSendRejection({
+          jobId: latestJob.id,
+          userId: scope.userId,
+          recipientEmail: latestJob.recipientEmail,
+          error,
+          failureDetails
+        });
+        logGmailSendFailure("campaign-send", {
+          ...logContext,
+          nextRetryAt: null
+        });
+
+        return {
+          processed: true,
+          rateLimited: false
         };
       }
 

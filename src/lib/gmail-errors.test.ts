@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   buildGmailApiFailureDiagnostic,
   buildGmailSendFailureMetadata,
+  getEnhancedStatusCodeFromText,
+  isInvalidRecipientDiagnosticText,
   GmailSendError
 } from "@/lib/gmail-errors";
 
@@ -56,5 +58,58 @@ describe("gmail error diagnostics", () => {
 
     expect(metadata.providerErrorMessage).toContain("[redacted]");
     expect(metadata.providerErrorMessage).not.toContain("super-secret-access-token");
+  });
+});
+
+describe("invalid recipient detection", () => {
+  it("recognizes recipient-address enhanced status codes by code alone", () => {
+    for (const text of [
+      "550 5.1.1 mailbox rejected",
+      "550 5.1.2 bad domain",
+      "5.1.3 bad destination syntax",
+      "5.1.6 mailbox has moved",
+      "5.1.10 RESOLVER.ADR.RecipientNotFound"
+    ]) {
+      expect(isInvalidRecipientDiagnosticText(text)).toBe(true);
+    }
+  });
+
+  it("recognizes Gmail and common MTA invalid-address wordings", () => {
+    for (const text of [
+      "Address not found",
+      "550 #5.1.0 Address rejected.",
+      "The email account that you tried to reach does not exist",
+      "the address couldn't be found, or is unable to receive mail",
+      "user unknown",
+      "No such user here",
+      "Recipient address rejected: undeliverable",
+      "Mailbox unavailable",
+      "Invalid to header"
+    ]) {
+      expect(isInvalidRecipientDiagnosticText(text)).toBe(true);
+    }
+  });
+
+  it("never qualifies sender-address, ambiguous, or system errors", () => {
+    for (const text of [
+      "550 5.1.0 delivery failed",
+      "550 5.1.7 bad sender address",
+      "550 5.1.8 Sender address rejected: domain not allowed",
+      "550 5.7.1 policy violation",
+      "421 4.7.0 try again later",
+      "Service unavailable",
+      "The specified key does not exist.",
+      "invalid_grant",
+      "userRateLimitExceeded",
+      ""
+    ]) {
+      expect(isInvalidRecipientDiagnosticText(text)).toBe(false);
+    }
+  });
+
+  it("extracts the SMTP enhanced status code from diagnostic text", () => {
+    expect(getEnhancedStatusCodeFromText("550 5.1.1 User unknown")).toBe("5.1.1");
+    expect(getEnhancedStatusCodeFromText("550 #5.1.0 Address rejected.")).toBe("5.1.0");
+    expect(getEnhancedStatusCodeFromText("plain rejection text")).toBeNull();
   });
 });

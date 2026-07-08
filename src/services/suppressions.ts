@@ -59,6 +59,64 @@ export async function deleteSuppression(userId: string, suppressionId: string) {
   return suppression;
 }
 
+/**
+ * Record that a recipient ADDRESS was rejected as invalid (synchronous Gmail
+ * send rejection, or a reclassified historical failure). Idempotent per
+ * address: repeated detections only bump the failure counters. An existing
+ * UNSUBSCRIBED record keeps its reason (unsubscribes are never relabelled),
+ * and a confirmed HARD_BOUNCE keeps the stronger DSN-backed reason — only the
+ * failure detail is refreshed.
+ */
+export async function recordInvalidRecipientSuppression(args: {
+  userId: string;
+  email: string;
+  source: string;
+  failureCategory?: string | null;
+  enhancedStatusCode?: string | null;
+  occurredAt?: Date;
+}) {
+  const email = normalizeSuppressionEmail(args.email);
+  const occurredAt = args.occurredAt ?? new Date();
+
+  return prisma.$transaction(async (tx) => {
+    const existing = await tx.suppression.findUnique({
+      where: { userId_email: { userId: args.userId, email } }
+    });
+
+    const failureDetail = {
+      failureCategory: args.failureCategory ?? null,
+      enhancedStatusCode: args.enhancedStatusCode ?? null,
+      lastFailedAt: occurredAt
+    };
+
+    if (existing) {
+      const keepReason = existing.reason === "UNSUBSCRIBED" || existing.reason === "HARD_BOUNCE";
+      return tx.suppression.update({
+        where: { id: existing.id },
+        data: {
+          ...failureDetail,
+          reason: keepReason ? existing.reason : "INVALID_EMAIL",
+          source: keepReason ? existing.source : args.source,
+          firstFailedAt: existing.firstFailedAt ?? occurredAt,
+          failureCount: { increment: 1 }
+        }
+      });
+    }
+
+    return tx.suppression.create({
+      data: {
+        userId: args.userId,
+        email,
+        reason: "INVALID_EMAIL",
+        source: args.source,
+        ...failureDetail,
+        firstFailedAt: occurredAt,
+        failureCount: 1
+      }
+    });
+  });
+}
+
 export async function getSuppressedEmailSet(userId: string) {
   const suppressions = await prisma.suppression.findMany({
     where: { userId },

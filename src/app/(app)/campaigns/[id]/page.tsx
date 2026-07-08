@@ -29,6 +29,7 @@ import { isCampaignSetupLocked } from "@/lib/campaign-setup-lock";
 import { prisma } from "@/lib/db";
 import { getGmailDailySendWindow } from "@/lib/daily-send-limit";
 import { RECIPIENT_ACTIVITY_PAGE_SIZE, buildRecipientActivityItem } from "@/lib/recipient-activity";
+import { summarizeRecipientOverviewDispositions } from "@/lib/recipient-overview-disposition";
 import { canShowRetryFailedAction, isManuallyRetriableFailedJob } from "@/lib/retry-eligibility";
 import { formatSequenceStatus } from "@/lib/sequence-status";
 import { RecipientActivity } from "@/components/recipient-activity";
@@ -359,7 +360,19 @@ export default async function CampaignDetailPage({
   const attachments = ((campaign.templateSnapshot as CampaignTemplateSnapshot).attachments ?? []).filter(
     (attachment) => attachment.fileName
   );
-  const issueCount = (displayRun?.failedCount ?? 0) + (displayRun?.invalidCount ?? 0);
+  // Truthful Needs-attention count: classify recipients with the shared
+  // overview disposition helper so permanently-invalid addresses (a Skipped
+  // outcome, even on legacy rows still stored as FAILED) never inflate the
+  // failure metric. Only genuine send failures and retries count here.
+  const dispositionJobs = displayRun
+    ? await prisma.recipientJob.findMany({
+        where: { campaignRunId: displayRun.id },
+        select: { status: true, metadata: true, lastError: true }
+      })
+    : [];
+  const dispositionCounts = summarizeRecipientOverviewDispositions(dispositionJobs);
+  const issueCount = dispositionCounts.needsAttention;
+  const skippedCount = dispositionCounts.skipped;
   const recipientStatusCountMap = new Map(recipientStatusCounts.map((entry) => [entry.status, entry._count]));
   const replyCount = replyCountAggregate._sum.replyCount ?? 0;
   const deliveredCount = getDeliveredCount(displayRun);
@@ -682,7 +695,7 @@ export default async function CampaignDetailPage({
           <strong className={styles.metricValue}>{displayRun?.totalRecipients ?? campaign.import.rowCount ?? 0}</strong>
           <span className={styles.metricMeta}>
             {isFromPreviousRun ? "Last run" : "This run"}
-            {(displayRun?.suppressedCount ?? 0) > 0 ? ` · ${displayRun?.suppressedCount} skipped` : ""}
+            {skippedCount > 0 ? ` · ${skippedCount} skipped (invalid or excluded)` : ""}
           </span>
         </article>
         <article className={styles.metricCard}>
@@ -707,7 +720,7 @@ export default async function CampaignDetailPage({
           </div>
           <span className={styles.metricLabel}>Needs attention</span>
           <strong className={styles.metricValue}>{issueCount}</strong>
-          <span className={styles.metricMeta}>Failed &amp; invalid</span>
+          <span className={styles.metricMeta}>Failed sends &amp; retries</span>
         </article>
       </section>
       {validationChecks.length ? (

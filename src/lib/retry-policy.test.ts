@@ -116,17 +116,52 @@ describe("retry policy", () => {
   it("keeps unknown structured Gmail rejections permanent", () => {
     expect(
       classifySendFailure(
-        gmailError({ httpStatus: 400, code: "400", status: "INVALID_ARGUMENT", message: "Invalid recipient" }),
+        gmailError({ httpStatus: 400, code: "400", status: "INVALID_ARGUMENT", message: "Malformed request payload" }),
         { senderConnected: true }
       )
     ).toBe("GMAIL_SEND_REJECTED");
   });
 
-  it("keeps a 550 'no such user' recipient rejection permanent (not a 50x temporary)", () => {
+  it.each([
+    "550 5.1.0 Address rejected",
+    "550 #5.1.0 Address rejected.",
+    "550 5.1.1 The email account that you tried to reach does not exist",
+    "550 5.1.1 Address not found",
+    "550 5.1.1 User unknown",
+    "Your message wasn't delivered because the address couldn't be found, or is unable to receive mail.",
+    "553 No such user here",
+    "550 Recipient address rejected: undeliverable address",
+    "550 5.2.1 Mailbox unavailable",
+    "Invalid to header"
+  ])("classifies %s as an invalid recipient address (skipped, suppressed, never retried)", (message) => {
+    const code = classifySendFailure(new Error(message), { senderConnected: true });
+    expect(code).toBe("HARD_BOUNCE_RECIPIENT");
+    expect(isRetryableFailure(code)).toBe(false);
+  });
+
+  it("classifies a structured invalid-recipient diagnostic as an invalid address", () => {
     expect(
-      classifySendFailure(new Error("550 5.1.1 The email account that you tried to reach does not exist"), {
-        senderConnected: true
-      })
-    ).toBe("GMAIL_SEND_REJECTED");
+      classifySendFailure(
+        gmailError({ httpStatus: 400, code: "400", status: "INVALID_ARGUMENT", message: "Invalid recipient" }),
+        { senderConnected: true }
+      )
+    ).toBe("HARD_BOUNCE_RECIPIENT");
+  });
+
+  it("never classifies sender-account, transient, or attachment problems as invalid recipients", () => {
+    const nonRecipient = [
+      new Error("invalid_grant"),
+      new Error("Token has been expired or revoked"),
+      new Error("429 rate limit"),
+      new Error("Backend Error"),
+      new Error("Service unavailable"),
+      new Error("The specified key does not exist."),
+      new Error("Attachment resume.pdf is missing storage information."),
+      new Error("550 5.1.8 Sender address rejected: domain not allowed"),
+      gmailError({ httpStatus: 429, code: "429" })
+    ];
+    for (const error of nonRecipient) {
+      expect(classifySendFailure(error, { senderConnected: true })).not.toBe("HARD_BOUNCE_RECIPIENT");
+    }
   });
 });

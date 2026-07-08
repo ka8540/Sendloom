@@ -23,6 +23,7 @@ export const GMAIL_SEND_TEMPORARY_USER_ERROR =
 export const GMAIL_SEND_DAILY_LIMIT_USER_ERROR =
   "Daily Gmail safety limit reached. Sending resumes automatically when the safety window resets.";
 export const GMAIL_SEND_REJECTED_USER_ERROR = "Gmail rejected this recipient.";
+export const GMAIL_SEND_INVALID_RECIPIENT_USER_ERROR = "Email address rejected";
 
 const GOOGLE_GMAIL_SEND_URL = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send";
 
@@ -89,6 +90,12 @@ export function getUserSafeGmailSendError(error: unknown, failureCode?: FailureC
 
   if (failureCode === "GMAIL_TEMPORARY_FAILURE" || isGmailTemporaryLikeError(error)) {
     return GMAIL_SEND_TEMPORARY_USER_ERROR;
+  }
+
+  if (failureCode === "HARD_BOUNCE_RECIPIENT") {
+    // Address-quality outcome, not a Sendloom failure — the recipient row
+    // reads "Skipped · Email address rejected", never a generic failure.
+    return GMAIL_SEND_INVALID_RECIPIENT_USER_ERROR;
   }
 
   if (failureCode === "GMAIL_SEND_REJECTED") {

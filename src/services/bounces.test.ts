@@ -444,6 +444,41 @@ describe("bounce processing", () => {
     expect(sent.status).toBe("SENT");
   });
 
+  it("heals a job that already FAILED at send time into the Skipped disposition", async () => {
+    const sender = seedSender();
+    const failed = seedJob({
+      status: "FAILED",
+      metadata: { rfcMessageId: "sendloom-abc123@techsmail.com", failureCode: "GMAIL_SEND_REJECTED" }
+    });
+    impl.fetchMetadata = async () => bounceMetadata();
+    impl.fetchFull = async () => bounceFull({ references: "<sendloom-abc123@techsmail.com>" });
+
+    const { outcome } = await processBounce(sender, [failed]);
+
+    expect(outcome).toBe("processed");
+    expect(state.suppressions).toHaveLength(1);
+    expect(calls.markRecipientAttempt[0]).toMatchObject({
+      jobId: failed.id,
+      status: "SUPPRESSED",
+      failureCode: "HARD_BOUNCE_RECIPIENT"
+    });
+  });
+
+  it("never rewrites engaged (OPENED/CLICKED) recipients from a bounce", async () => {
+    const sender = seedSender();
+    const opened = seedJob({ status: "OPENED", metadata: { rfcMessageId: "sendloom-abc123@techsmail.com" } });
+    impl.fetchMetadata = async () => bounceMetadata();
+    impl.fetchFull = async () => bounceFull({ references: "<sendloom-abc123@techsmail.com>" });
+
+    await processBounce(sender, [opened]);
+
+    // The suppression is still recorded (the ADDRESS is bad for future sends)
+    // but the engaged job's disposition is never overwritten.
+    expect(state.suppressions).toHaveLength(1);
+    expect(calls.markRecipientAttempt).toHaveLength(0);
+    expect(opened.status).toBe("OPENED");
+  });
+
   it("correlates by RFC Message-ID before falling back to recipient matching", async () => {
     const sender = seedSender();
     const byRfc = seedJob({ id: "job-rfc", metadata: { rfcMessageId: "sendloom-abc123@techsmail.com" } });

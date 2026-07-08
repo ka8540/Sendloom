@@ -454,7 +454,12 @@ type BounceProcessResult = {
   temporaryFailures: number;
 };
 
-const JOB_STATUSES_UPDATABLE_BY_BOUNCE = new Set(["PENDING", "RETRYING", "SENT"]);
+// FAILED is included so a delivery-status report can HEAL a job that already
+// failed synchronously at send time (e.g. a generic "Gmail rejected this
+// recipient" row) into the truthful Skipped/invalid-address disposition.
+// OPENED/CLICKED stay protected: confirmed engagement is never overwritten by
+// a late or misdirected bounce.
+const JOB_STATUSES_UPDATABLE_BY_BOUNCE = new Set(["PENDING", "RETRYING", "SENT", "FAILED"]);
 
 async function recordDsnEvent(gmailMessageId: string, payload: Record<string, unknown>): Promise<boolean> {
   try {

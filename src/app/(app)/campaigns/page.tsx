@@ -87,12 +87,14 @@ function getDeliveredCount(run?: {
   return (run?.sentCount ?? 0) + (run?.openedCount ?? 0) + (run?.clickedCount ?? 0);
 }
 
+// Skipped recipients (SUPPRESSED — invalid addresses, unsubscribes, blocks)
+// are deliberate exclusions, not delivery issues, so they never count toward
+// the Health "issues" number. Only failed/invalid sends do.
 function getIssueCount(run?: {
   failedCount?: number | null;
-  suppressedCount?: number | null;
   invalidCount?: number | null;
 } | null) {
-  return (run?.failedCount ?? 0) + (run?.suppressedCount ?? 0) + (run?.invalidCount ?? 0);
+  return (run?.failedCount ?? 0) + (run?.invalidCount ?? 0);
 }
 
 function getProcessedCount(run?: {
@@ -103,7 +105,7 @@ function getProcessedCount(run?: {
   suppressedCount?: number | null;
   invalidCount?: number | null;
 } | null) {
-  return getDeliveredCount(run) + getIssueCount(run);
+  return getDeliveredCount(run) + getIssueCount(run) + (run?.suppressedCount ?? 0);
 }
 
 function hasKnownRunMetrics(

@@ -256,6 +256,64 @@ export function getGmailErrorInspectionText(error: unknown) {
     .join(" ");
 }
 
+// SMTP enhanced status codes that identify the RECIPIENT ADDRESS as bad
+// (5.1.1 mailbox not found, 5.1.2 domain not found, 5.1.3 bad syntax,
+// 5.1.6 mailbox moved, 5.1.10 recipient not found). 5.1.0 is "other address
+// status" and 5.1.7/5.1.8 are SENDER-address problems — none qualify by code
+// alone, matching the DSN classifier's policy.
+const INVALID_RECIPIENT_ENHANCED_CODE_PATTERN = /\b5\.1\.(?:1|2|3|6|10)\b/;
+
+// Explicit invalid-address wordings used by Gmail and common receiving MTAs.
+// Deliberately narrow: bare "does not exist" or "unavailable" never qualify —
+// storage errors ("The specified key does not exist.") and outages ("service
+// unavailable") must stay system failures.
+const INVALID_RECIPIENT_TEXT_PATTERN =
+  /address not found|user unknown|unknown user|no such user|recipient address rejected|invalid recipient|recipient not found|recipient rejected|bad destination mailbox|address couldn't be found|couldn't be found, or is unable to receive mail|unable to receive mail|mailbox unavailable|mailbox not found|(?:mailbox|address|account|user|recipient) does(?:n't| not) exist|account that you tried to reach does(?:n't| not) exist|invalid to header/i;
+
+// "Address rejected" alone is recipient-fault ("550 5.1.0 Address rejected"),
+// but only when it is not the SENDER address being rejected (5.1.7/5.1.8).
+const ADDRESS_REJECTED_PATTERN = /address rejected/i;
+const SENDER_ADDRESS_REJECTED_PATTERN = /(?:sender|from)(?: address)? rejected|5\.1\.[78]\b/i;
+
+/**
+ * True when free-form delivery/send diagnostic text names the RECIPIENT
+ * ADDRESS itself as the problem. Shared by the synchronous send-error
+ * classifier and the FAILED-row reclassification backfill so both recognize
+ * exactly the same signatures. Provider/system failures (rate limits, OAuth,
+ * attachments, storage, 5xx backend errors) never match.
+ */
+export function isInvalidRecipientDiagnosticText(text: string): boolean {
+  if (!text) {
+    return false;
+  }
+  if (INVALID_RECIPIENT_ENHANCED_CODE_PATTERN.test(text) || INVALID_RECIPIENT_TEXT_PATTERN.test(text)) {
+    return true;
+  }
+  return ADDRESS_REJECTED_PATTERN.test(text) && !SENDER_ADDRESS_REJECTED_PATTERN.test(text);
+}
+
+/**
+ * Recipient-address rejection expressed in a synchronous Gmail send error.
+ * The send attempt itself worked — Gmail (or the receiving server, relayed
+ * through Gmail's response) refused the ADDRESS — so this is an address-quality
+ * outcome, never a Sendloom system failure.
+ */
+export function isGmailInvalidRecipientLikeError(error: unknown) {
+  return isInvalidRecipientDiagnosticText(getGmailErrorInspectionText(error));
+}
+
+const ENHANCED_SMTP_STATUS_PATTERN = /\b[245]\.\d{1,3}\.\d{1,3}\b/;
+
+/** SMTP enhanced status code (e.g. "5.1.1") from diagnostic text, when present. */
+export function getEnhancedStatusCodeFromText(text: string): string | null {
+  return text.match(ENHANCED_SMTP_STATUS_PATTERN)?.[0] ?? null;
+}
+
+/** SMTP enhanced status code (e.g. "5.1.1") from a send error, when present. */
+export function getEnhancedStatusCodeFromError(error: unknown): string | null {
+  return getEnhancedStatusCodeFromText(getGmailErrorInspectionText(error));
+}
+
 export function isGmailDailyLimitLikeError(error: unknown) {
   const normalized = getGmailErrorInspectionText(error);
   return (
