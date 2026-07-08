@@ -292,6 +292,7 @@ function seedJob(overrides: Record<string, any> = {}) {
     recipientEmail: "nmarshall@paychex.com",
     providerMessageId: "gmail-sent-1",
     status: "SENT",
+    replyCount: 0,
     metadata: { rfcMessageId: "sendloom-abc123@techsmail.com" },
     updatedAt: new Date(),
     userId: "user-1",
@@ -464,19 +465,49 @@ describe("bounce processing", () => {
     });
   });
 
-  it("never rewrites engaged (OPENED/CLICKED) recipients from a bounce", async () => {
+  it("heals a falsely-OPENED recipient — a hard-bounced message was never delivered, so its 'open' is bogus", async () => {
     const sender = seedSender();
+    // Gmail's image proxy fetches the tracking pixel again when the sender
+    // views the bounce report (it quotes the original message), which used to
+    // leave hard-bounced recipients stuck as OPENED/"Delivered".
     const opened = seedJob({ status: "OPENED", metadata: { rfcMessageId: "sendloom-abc123@techsmail.com" } });
     impl.fetchMetadata = async () => bounceMetadata();
     impl.fetchFull = async () => bounceFull({ references: "<sendloom-abc123@techsmail.com>" });
 
     await processBounce(sender, [opened]);
 
+    expect(state.suppressions).toHaveLength(1);
+    expect(calls.markRecipientAttempt[0]).toMatchObject({
+      jobId: opened.id,
+      status: "SUPPRESSED",
+      failureCode: "HARD_BOUNCE_RECIPIENT"
+    });
+  });
+
+  it("never rewrites a recipient with a real reply or a CLICKED recipient from a bounce", async () => {
+    const sender = seedSender();
+    const replied = seedJob({
+      status: "OPENED",
+      replyCount: 1,
+      metadata: { rfcMessageId: "sendloom-abc123@techsmail.com" }
+    });
+    impl.fetchMetadata = async () => bounceMetadata();
+    impl.fetchFull = async () => bounceFull({ references: "<sendloom-abc123@techsmail.com>" });
+
+    await processBounce(sender, [replied]);
+
     // The suppression is still recorded (the ADDRESS is bad for future sends)
-    // but the engaged job's disposition is never overwritten.
+    // but strong engagement evidence protects the job's disposition.
     expect(state.suppressions).toHaveLength(1);
     expect(calls.markRecipientAttempt).toHaveLength(0);
-    expect(opened.status).toBe("OPENED");
+    expect(replied.status).toBe("OPENED");
+
+    state.suppressions.length = 0;
+    state.providerEvents.length = 0;
+    const clicked = seedJob({ status: "CLICKED", metadata: { rfcMessageId: "sendloom-abc123@techsmail.com" } });
+    await processBounce(sender, [clicked]);
+    expect(calls.markRecipientAttempt).toHaveLength(0);
+    expect(clicked.status).toBe("CLICKED");
   });
 
   it("correlates by RFC Message-ID before falling back to recipient matching", async () => {

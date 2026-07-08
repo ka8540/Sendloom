@@ -457,9 +457,16 @@ type BounceProcessResult = {
 // FAILED is included so a delivery-status report can HEAL a job that already
 // failed synchronously at send time (e.g. a generic "Gmail rejected this
 // recipient" row) into the truthful Skipped/invalid-address disposition.
-// OPENED/CLICKED stay protected: confirmed engagement is never overwritten by
-// a late or misdirected bounce.
-const JOB_STATUSES_UPDATABLE_BY_BOUNCE = new Set(["PENDING", "RETRYING", "SENT", "FAILED"]);
+// OPENED is included because a message the receiving server permanently
+// rejected was never delivered — an "open" on it is a false positive (Gmail's
+// image proxy fetches the tracking pixel from the quoted original when the
+// sender views the bounce report). CLICKED and any job with a real reply stay
+// protected: that engagement is strong evidence the bounce was misdirected.
+const JOB_STATUSES_UPDATABLE_BY_BOUNCE = new Set(["PENDING", "RETRYING", "SENT", "FAILED", "OPENED"]);
+
+function isJobUpdatableByBounce(job: { status: string; replyCount: number }): boolean {
+  return JOB_STATUSES_UPDATABLE_BY_BOUNCE.has(job.status) && job.replyCount === 0;
+}
 
 async function recordDsnEvent(gmailMessageId: string, payload: Record<string, unknown>): Promise<boolean> {
   try {
@@ -592,6 +599,14 @@ export async function processPotentialBounceMessage(args: {
     }
     matchedAny = true;
 
+    // The candidate list is loaded once per batch, so the row may have moved
+    // since (a pixel hit, an earlier DSN, or the bogus-reply healer above).
+    // The disposition decision always uses the live status and reply count.
+    const liveJob = await prisma.recipientJob.findUnique({
+      where: { id: job.id },
+      select: { status: true, replyCount: true }
+    });
+
     if (classification.suppressRecipient && classification.permanence === "permanent") {
       permanentFailures += 1;
       const reason = safeDeliveryFailureReason(classification.category);
@@ -605,7 +620,7 @@ export async function processPotentialBounceMessage(args: {
           occurredAt: parsed.receivedAt
         });
       }
-      if (JOB_STATUSES_UPDATABLE_BY_BOUNCE.has(job.status)) {
+      if (liveJob && isJobUpdatableByBounce(liveJob)) {
         // The ADDRESS is bad, not Sendloom: the recipient's disposition is
         // Skipped (SUPPRESSED), never a system failure. The immutable bounce
         // evidence (category, enhanced code, failure code) stays in metadata,
@@ -638,7 +653,11 @@ export async function processPotentialBounceMessage(args: {
       });
     } else if (
       (classification.category === "POLICY_REJECTION" || classification.category === "SPAM_REJECTION") &&
-      JOB_STATUSES_UPDATABLE_BY_BOUNCE.has(job.status)
+      // Policy/spam rejections never demote an engagement state — only a
+      // proven-invalid ADDRESS justifies overriding a recorded open.
+      liveJob &&
+      liveJob.status !== "OPENED" &&
+      isJobUpdatableByBounce(liveJob)
     ) {
       // The specific attempt failed, but the address is not proven invalid —
       // no suppression, and a manual retry stays available.

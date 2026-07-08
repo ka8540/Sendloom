@@ -89,10 +89,10 @@ describe("recipient activity", () => {
 
 
   // -------------------------------------------------------------------------
-  // Permanent invalid addresses read as Skipped — never a Sendloom failure.
+  // Permanent invalid addresses read as Invalid — never a Sendloom failure.
   // -------------------------------------------------------------------------
 
-  it("shows a confirmed hard bounce as Skipped · Address not found (never Failed)", () => {
+  it("shows a confirmed hard bounce as Invalid · Email address rejected (never Failed)", () => {
     const item = buildRecipientActivityItem({
       ...BASE_JOB,
       status: "SUPPRESSED",
@@ -103,8 +103,8 @@ describe("recipient activity", () => {
       }
     });
 
-    expect(item.statusLabel).toBe("Skipped");
-    expect(item.message).toBe("Address not found");
+    expect(item.statusLabel).toBe("Invalid");
+    expect(item.message).toBe("Email address rejected — address not found");
     expect(item.statusLabel).not.toBe("Failed");
     // Calm styling: not an issue, so the red detail strip ("PERMANENT",
     // attempt metadata) never renders, and there is no Retry.
@@ -112,12 +112,12 @@ describe("recipient activity", () => {
     expect(item.retryable).toBe(false);
     expect(item.tone).toBe("neutral");
     expect(item.detailLabel).toBeNull();
-    // The fuller explanation lives in the accessible hint, not the row copy.
-    expect(item.hint).toContain("permanent recipient error");
+    // The skipped-from-future-sends explanation lives in the accessible hint.
+    expect(item.hint).toContain("skipped from future sends");
     expect(item.message).not.toContain("permanent delivery failure");
   });
 
-  it("normalizes legacy hard-bounce rows still stored as FAILED to the same Skipped disposition", () => {
+  it("normalizes legacy hard-bounce rows still stored as FAILED to the same Invalid disposition", () => {
     const item = buildRecipientActivityItem({
       ...BASE_JOB,
       status: "FAILED",
@@ -128,10 +128,36 @@ describe("recipient activity", () => {
       }
     });
 
-    expect(item.statusLabel).toBe("Skipped");
-    expect(item.message).toBe("Invalid address");
+    expect(item.statusLabel).toBe("Invalid");
+    expect(item.message).toBe("Email address rejected — invalid address");
     expect(item.isIssue).toBe(false);
     expect(item.retryable).toBe(false);
+  });
+
+  it("shows falsely-delivered SENT/OPENED rows carrying hard-bounce evidence as Invalid, never Opened", () => {
+    for (const status of ["SENT", "OPENED"]) {
+      const item = buildRecipientActivityItem({
+        ...BASE_JOB,
+        status,
+        metadata: {
+          failureCode: "HARD_BOUNCE_RECIPIENT",
+          failureCategory: "HARD_BOUNCE_MAILBOX_NOT_FOUND"
+        }
+      });
+      expect(item.statusLabel).toBe("Invalid");
+      expect(item.message).toBe("Email address rejected — address not found");
+      expect(item.engaged).toBe(false);
+      expect(item.isIssue).toBe(false);
+      expect(item.retryable).toBe(false);
+    }
+
+    // A real click is strong engagement evidence and keeps its outcome.
+    const clicked = buildRecipientActivityItem({
+      ...BASE_JOB,
+      status: "CLICKED",
+      metadata: { failureCode: "HARD_BOUNCE_RECIPIENT" }
+    });
+    expect(clicked.statusLabel).toBe("Clicked");
   });
 
   it("keeps real system and Gmail failures as Failed / action required", () => {

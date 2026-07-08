@@ -15,7 +15,9 @@ const h = vi.hoisted(() => {
     recipientJob: {
       findMany: async ({ where, take }: Row) =>
         state.jobs
-          .filter((job) => job.status === where.status)
+          .filter((job) =>
+            where.status?.in ? where.status.in.includes(job.status) : job.status === where.status
+          )
           .slice(0, take ?? 1000)
           .map((job) => ({
             ...job,
@@ -67,6 +69,7 @@ function failedJob(overrides: Record<string, any> = {}) {
     recipientEmail: overrides.recipientEmail ?? `person${jobCounter}@example.com`,
     userId: overrides.userId ?? "user-1",
     status: "FAILED",
+    replyCount: 0,
     lastError: null,
     metadata: null,
     updatedAt: new Date(),
@@ -209,6 +212,58 @@ describe("reclassifyInvalidRecipientJobs", () => {
       evidenceSource: "existing-suppression"
     });
     expect(h.state.jobs[0]?.status).toBe("SUPPRESSED");
+  });
+
+  it("repairs falsely-delivered SENT/OPENED rows only on strong evidence", async () => {
+    h.state.jobs = [
+      // Healed by the DSN processor, then flipped back to OPENED by a false
+      // pixel "open" — the hard-bounce metadata survives and is strong proof.
+      failedJob({
+        id: "flipped-open",
+        status: "OPENED",
+        campaignRunId: "run-a",
+        metadata: { failureCode: "HARD_BOUNCE_RECIPIENT", failureCategory: "HARD_BOUNCE_MAILBOX_NOT_FOUND" }
+      }),
+      // Bounce confirmed by the DSN (suppression exists) but the job was
+      // engagement-protected at the time.
+      failedJob({ id: "suppressed-sent", status: "SENT", recipientEmail: "gone2@example.com" }),
+      // Free-text diagnostics alone never demote a delivery status.
+      failedJob({
+        id: "weak-text",
+        status: "SENT",
+        lastError: "550 5.1.1 Address not found"
+      }),
+      // A real reply protects the row even with a matching suppression.
+      failedJob({ id: "replied", status: "OPENED", recipientEmail: "gone2@example.com", replyCount: 2 }),
+      // Legacy BOUNCED rows convert like FAILED rows.
+      failedJob({
+        id: "legacy-bounced",
+        status: "BOUNCED",
+        metadata: { providerErrorMessage: "550 5.1.1 user unknown" }
+      })
+    ];
+    h.state.suppressions = [
+      { userId: "user-1", email: "gone2@example.com", reason: "INVALID_EMAIL", failureCategory: null, enhancedStatusCode: "5.1.0" }
+    ];
+
+    const result = await reclassifyInvalidRecipientJobs({ apply: true });
+
+    const byId = new Map(h.state.jobs.map((job) => [job.id, job]));
+    expect(byId.get("flipped-open")?.status).toBe("SUPPRESSED");
+    expect(byId.get("suppressed-sent")?.status).toBe("SUPPRESSED");
+    expect(byId.get("legacy-bounced")?.status).toBe("SUPPRESSED");
+    expect(byId.get("weak-text")?.status).toBe("SENT");
+    expect(byId.get("replied")?.status).toBe("OPENED");
+    expect(result.reclassifiedCount).toBe(3);
+    expect(result.candidates.map((candidate) => candidate.previousStatus).sort()).toEqual([
+      "BOUNCED",
+      "OPENED",
+      "SENT"
+    ]);
+    // Every touched run's rollup counters are resynced.
+    expect(new Set(h.calls.syncRunCounts)).toEqual(
+      new Set(["run-a", byId.get("suppressed-sent")?.campaignRunId, byId.get("legacy-bounced")?.campaignRunId])
+    );
   });
 
   it("contains no company- or domain-specific special cases", async () => {

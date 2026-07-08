@@ -111,14 +111,6 @@ function humanize(value?: string | null) {
     .join(" ");
 }
 
-function getDeliveredCount(run?: {
-  sentCount?: number | null;
-  openedCount?: number | null;
-  clickedCount?: number | null;
-} | null) {
-  return (run?.sentCount ?? 0) + (run?.openedCount ?? 0) + (run?.clickedCount ?? 0);
-}
-
 function formatScheduleLabel(scheduleType?: string | null, scheduleConfig?: ScheduleConfig | null) {
   if (scheduleType === "once") {
     const onceConfig = scheduleConfig && "scheduledFor" in scheduleConfig ? scheduleConfig : null;
@@ -375,7 +367,11 @@ export default async function CampaignDetailPage({
   const skippedCount = dispositionCounts.skipped;
   const recipientStatusCountMap = new Map(recipientStatusCounts.map((entry) => [entry.status, entry._count]));
   const replyCount = replyCountAggregate._sum.replyCount ?? 0;
-  const deliveredCount = getDeliveredCount(displayRun);
+  // Delivered comes from the same per-recipient classification as the other
+  // cards, so an address that later hard-bounced (a Skipped outcome, even if a
+  // false "open" left the row in an engagement status) never counts as
+  // delivered — the four cards always add up truthfully.
+  const deliveredCount = dispositionCounts.sent;
   const launchButtonLabel = dailyLimitActive
     ? "Waiting for Gmail safety window"
     : isWaitingForSlot
@@ -714,14 +710,25 @@ export default async function CampaignDetailPage({
           <strong className={styles.metricValue}>{replyCount}</strong>
           <span className={styles.metricMeta}>{isFromPreviousRun ? "Last run" : "This run"}</span>
         </article>
-        <article className={styles.metricCard}>
-          <div className={styles.metricIcon}>
-            <ShieldAlert aria-hidden="true" />
-          </div>
-          <span className={styles.metricLabel}>Needs attention</span>
-          <strong className={styles.metricValue}>{issueCount}</strong>
-          <span className={styles.metricMeta}>Failed sends &amp; retries</span>
-        </article>
+        {issueCount > 0 ? (
+          <article className={styles.metricCard}>
+            <div className={styles.metricIcon}>
+              <ShieldAlert aria-hidden="true" />
+            </div>
+            <span className={styles.metricLabel}>Needs attention</span>
+            <strong className={styles.metricValue}>{issueCount}</strong>
+            <span className={styles.metricMeta}>Failed sends &amp; retries</span>
+          </article>
+        ) : (
+          <article className={styles.metricCard}>
+            <div className={styles.metricIcon}>
+              <ShieldAlert aria-hidden="true" />
+            </div>
+            <span className={styles.metricLabel}>Skipped / invalid</span>
+            <strong className={styles.metricValue}>{skippedCount}</strong>
+            <span className={styles.metricMeta}>Invalid or excluded recipients</span>
+          </article>
+        )}
       </section>
       {validationChecks.length ? (
         <section className={styles.validationBand}>

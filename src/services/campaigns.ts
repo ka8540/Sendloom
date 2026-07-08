@@ -2786,15 +2786,21 @@ export async function processProviderEvent(args: {
   }
 
   if (args.eventType === "OPENED" || args.eventType === "CLICKED") {
-    const updated = await prisma.recipientJob.update({
-      where: { id: recipientJob.id },
+    // Engagement only advances delivered/opened messages. A terminal outcome
+    // (SUPPRESSED/FAILED/INVALID/BOUNCED) is never resurrected by a late open
+    // or click event — those are false positives for a rejected address.
+    await prisma.recipientJob.updateMany({
+      where: {
+        id: recipientJob.id,
+        status: { in: args.eventType === "CLICKED" ? ["SENT", "OPENED"] : ["SENT"] }
+      },
       data: {
         status: args.eventType === "CLICKED" ? "CLICKED" : "OPENED"
       }
     });
 
     await syncRunCounts(recipientJob.campaignRunId);
-    return updated;
+    return prisma.recipientJob.findUnique({ where: { id: recipientJob.id } });
   }
 
   return recipientJob;

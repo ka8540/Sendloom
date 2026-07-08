@@ -1,6 +1,9 @@
-// Reclassification of recipient jobs that were recorded as generic FAILED but
-// whose OWN stored evidence proves the recipient ADDRESS was invalid (an
-// address-quality outcome, never a Sendloom failure). Used by the
+// Reclassification of recipient jobs whose stored evidence proves the
+// recipient ADDRESS was invalid (an address-quality outcome, never a Sendloom
+// failure) but whose status still hides that from the rollups: generic FAILED
+// rows, legacy BOUNCED rows, and falsely-delivered SENT/OPENED rows (a bounce
+// confirmed the address after the send, but the job kept — or was flipped
+// back to — a delivery status by a false pixel "open"). Used by the
 // scripts/reclassify-invalid-recipient-bounces.ts backfill.
 //
 // Evidence is read only from safe, already-sanitized fields (classifier
@@ -96,6 +99,8 @@ export type ReclassificationCandidate = {
   campaignRunId: string;
   userId: string | null;
   email: string;
+  /** Status the row held before reclassification (for reporting). */
+  previousStatus: string;
   evidence: InvalidRecipientEvidence;
 };
 
@@ -106,16 +111,28 @@ export type ReclassificationResult = {
   suppressionsRecordedCount: number;
 };
 
+// FAILED and BOUNCED rows may be reclassified from any stored evidence
+// (metadata, provider diagnostics, or an existing invalid-address
+// suppression). SENT/OPENED rows are treated as delivered unless STRONG
+// evidence proves otherwise: hard-bounce metadata written by the DSN healer,
+// or a confirmed invalid-address suppression for this exact user + email.
+// Free-text diagnostics never demote a delivery status, and a row with a real
+// reply is never touched. CLICKED rows are never scanned.
+const SCANNED_STATUSES = ["FAILED", "BOUNCED", "SENT", "OPENED"] as const;
+const DELIVERY_STATUSES: ReadonlySet<string> = new Set(["SENT", "OPENED"]);
+
 /**
- * Scan FAILED recipient jobs and reclassify the provably-invalid ones to the
- * Skipped (SUPPRESSED) disposition, recording an INVALID_EMAIL suppression so
- * every future send skips the address before calling Gmail.
+ * Scan FAILED/BOUNCED/SENT/OPENED recipient jobs and reclassify the
+ * provably-invalid ones to the Skipped (SUPPRESSED) disposition, recording an
+ * INVALID_EMAIL suppression so every future send skips the address before
+ * calling Gmail, then resyncing every touched run's rollup counters.
  *
- * Idempotent: reclassified rows leave the FAILED filter, and suppressions are
- * upserted once per (user, email) per run. Dry-run (apply: false) only reports.
- * A FAILED job whose address the user has ALREADY suppressed as invalid
+ * Idempotent: reclassified rows leave the scanned filters, and suppressions
+ * are upserted once per (user, email) per run. Dry-run (apply: false) only
+ * reports. A job whose address the user has ALREADY suppressed as invalid
  * (HARD_BOUNCE / INVALID_EMAIL) also qualifies — that covers bounces the DSN
- * processor confirmed but could not apply to an already-failed job.
+ * processor confirmed but could not apply to the job at the time (for example
+ * a row a false pixel "open" had flipped to OPENED).
  */
 export async function reclassifyInvalidRecipientJobs(options: {
   apply: boolean;
@@ -125,7 +142,7 @@ export async function reclassifyInvalidRecipientJobs(options: {
 }): Promise<ReclassificationResult> {
   const jobs = await prisma.recipientJob.findMany({
     where: {
-      status: "FAILED",
+      status: { in: [...SCANNED_STATUSES] },
       campaignRun: {
         campaign: {
           ...(options.campaignId ? { id: options.campaignId } : {}),
@@ -139,6 +156,8 @@ export async function reclassifyInvalidRecipientJobs(options: {
       id: true,
       campaignRunId: true,
       recipientEmail: true,
+      status: true,
+      replyCount: true,
       lastError: true,
       metadata: true,
       campaignRun: { select: { campaign: { select: { userId: true, senderProfile: { select: { userId: true } } } } } }
@@ -162,7 +181,21 @@ export async function reclassifyInvalidRecipientJobs(options: {
   for (const job of jobs) {
     const userId = job.campaignRun.campaign.userId ?? job.campaignRun.campaign.senderProfile.userId ?? null;
     const email = job.recipientEmail.trim().toLowerCase();
+    const isDeliveryStatus = DELIVERY_STATUSES.has(job.status);
+
+    // A recorded reply is strong evidence the message really reached a person
+    // — a delivered row with replies is never demoted.
+    if (isDeliveryStatus && job.replyCount > 0) {
+      continue;
+    }
+
     let evidence = findInvalidRecipientEvidence(job);
+    // Free-text diagnostics are enough to relabel a FAILED/BOUNCED row, but
+    // never to demote a delivery status — SENT/OPENED rows require the
+    // hard-bounce classification written by the DSN/send-rejection paths.
+    if (evidence && isDeliveryStatus && evidence.evidenceSource !== "bounce-metadata") {
+      evidence = null;
+    }
     if (!evidence && userId) {
       const suppression = suppressionByUserEmail.get(`${userId}:${email}`);
       if (suppression) {
@@ -178,7 +211,14 @@ export async function reclassifyInvalidRecipientJobs(options: {
       }
     }
     if (evidence) {
-      candidates.push({ jobId: job.id, campaignRunId: job.campaignRunId, userId, email, evidence });
+      candidates.push({
+        jobId: job.id,
+        campaignRunId: job.campaignRunId,
+        userId,
+        email,
+        previousStatus: job.status,
+        evidence
+      });
     }
   }
 

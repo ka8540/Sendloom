@@ -128,7 +128,7 @@ function invalidAddressReason(failureCategory: string | null): string {
 }
 
 export const SKIPPED_INVALID_ADDRESS_HINT =
-  "This address previously returned a permanent recipient error and will be skipped in future sends.";
+  "This email address was rejected as invalid and is skipped from future sends.";
 
 // Compact the visible reason for skipped rows. Older records carry verbose
 // sentences ("Address not found — this address previously returned a permanent
@@ -273,21 +273,28 @@ export function buildRecipientActivityItem(job: RecipientJobInput): RecipientAct
   // A confirmed permanently-invalid ADDRESS is not a Sendloom failure — the
   // send worked and the mailbox does not exist. Regardless of the stored
   // status (new rows are SUPPRESSED; rows written before this mapping may
-  // still be FAILED/BOUNCED), the disposition reads as a calm Skipped row with
-  // a concise reason. It never counts as an issue and can never be retried.
+  // still be FAILED/BOUNCED, and a false "open" recorded off a quoted bounce
+  // can leave hard-bounce evidence on a SENT/OPENED row), the disposition
+  // reads as a calm Invalid row with a concise reason. It never counts as an
+  // issue, never reads as delivered, and can never be retried. CLICKED stays
+  // an engagement outcome.
   if (
     isPermanentRecipientAddressFailure({ failureCode, failureCategory }) &&
-    (job.status === "FAILED" || job.status === "SUPPRESSED" || job.status === "BOUNCED")
+    (job.status === "FAILED" ||
+      job.status === "SUPPRESSED" ||
+      job.status === "BOUNCED" ||
+      job.status === "SENT" ||
+      job.status === "OPENED")
   ) {
     return {
       id: job.id,
       email: job.recipientEmail,
       name: job.recipientName?.trim() ? job.recipientName.trim() : null,
       status: job.status,
-      statusLabel: "Skipped",
+      statusLabel: "Invalid",
       tone: "neutral",
       engaged: false,
-      message: invalidAddressReason(failureCategory),
+      message: `Email address rejected — ${invalidAddressReason(failureCategory).toLowerCase()}`,
       isIssue: false,
       retryable: false,
       detailLabel: null,
