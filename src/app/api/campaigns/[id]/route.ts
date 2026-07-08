@@ -6,10 +6,10 @@ import { createForbiddenApiResponse, getApiRestrictionMessage, requireApiUser } 
 import type { EmailAttachment } from "@/lib/provider";
 import { GMAIL_RECONNECT_ERROR } from "@/lib/provider";
 import { createRateLimitResponse, rateLimit } from "@/lib/rate-limit";
-import { buildAttachmentKey, uploadObject } from "@/lib/storage";
 import { recordAuditEvent } from "@/lib/audit";
 import { prisma } from "@/lib/db";
 import type { ScheduleRule } from "@/lib/types";
+import { findOrCreateAttachmentAsset, toAttachmentSnapshot } from "@/services/attachment-assets";
 import { deleteCampaign, processPendingCampaignWork, updateCampaignSchedule, updateCampaignSetup } from "@/services/campaigns";
 
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
@@ -177,17 +177,13 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       }
 
       const buffer = Buffer.from(await file.arrayBuffer());
-      const upload = await uploadObject({
-        bucket: "attachments",
-        key: buildAttachmentKey(auth.user.id, file.name),
-        body: buffer,
-        contentType: file.type || undefined
-      });
-      attachments.push({
+      const { asset } = await findOrCreateAttachmentAsset({
+        userId: auth.user.id,
+        buffer,
         fileName: file.name,
-        storagePath: upload.key,
-        contentType: file.type || null
+        contentType: file.type
       });
+      attachments.push(toAttachmentSnapshot(asset, file.name, file.type));
     }
   }
 

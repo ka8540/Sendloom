@@ -1,6 +1,5 @@
 import { constants as fsConstants } from "node:fs";
 import { access, mkdir, readFile, unlink, writeFile } from "node:fs/promises";
-import { randomBytes } from "node:crypto";
 import path from "node:path";
 
 import {
@@ -62,9 +61,15 @@ export function buildImportKey(userId: string, importId: string, fileName: strin
   return `users/${userId}/imports/${importId}/${sanitizeFilename(fileName)}`;
 }
 
-export function buildAttachmentKey(userId: string, fileName: string) {
-  const randomId = randomBytes(8).toString("hex");
-  return `users/${userId}/campaigns/attachments/${Date.now()}-${randomId}-${sanitizeFilename(fileName)}`;
+// Content-addressed key: identical file contents map to the same object per
+// user, so duplicate uploads never create a second copy. Display filenames
+// live in the campaign snapshot / AttachmentAsset row, not the key.
+export function buildAttachmentAssetKey(userId: string, sha256: string) {
+  if (!/^[0-9a-f]{64}$/.test(sha256)) {
+    throw new Error("Invalid attachment hash.");
+  }
+
+  return `users/${userId}/attachments/${sha256}`;
 }
 
 async function toBuffer(body: Buffer | Uint8Array | ReadableStream): Promise<Buffer> {

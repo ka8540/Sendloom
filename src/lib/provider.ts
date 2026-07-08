@@ -36,6 +36,10 @@ export type EmailAttachment = {
   storagePath?: string;
   contentBase64?: string;
   contentType?: string | null;
+  // Set on snapshots written after attachment dedupe shipped; legacy
+  // snapshots carry only storagePath and must keep working.
+  assetId?: string;
+  sizeBytes?: number;
 };
 
 type SendArgs = {

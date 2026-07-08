@@ -515,6 +515,9 @@ async function ensureCampaignLaunchable(campaignId: string, userId?: string) {
   return report;
 }
 
+// Attachment storage objects are intentionally left alone here: they are
+// content-addressed and can be shared by other sequences owned by the same
+// user. They are swept on account deletion; orphan cleanup is a future GC job.
 export async function deleteCampaign(campaignId: string, userId?: string) {
   const campaign = await prisma.campaign.findFirstOrThrow({
     where: campaignOwnershipFilter(campaignId, userId),

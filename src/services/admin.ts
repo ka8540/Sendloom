@@ -258,9 +258,17 @@ export async function deleteUserAccountData(args: {
   const importKeys = getUniqueFilePaths(
     targetUser.imports.map((entry) => entry.storagePath).filter((value): value is string => Boolean(value))
   );
-  const attachmentKeys = getUniqueFilePaths(
-    targetUser.campaigns.flatMap((campaign) => extractAttachmentPaths(campaign.templateSnapshot))
-  );
+  // Deduped attachment assets are shared only within this user's account, so
+  // deleting every key on account wipe is safe. The asset table also covers
+  // objects whose snapshot references were edited away.
+  const attachmentAssets = await prisma.attachmentAsset.findMany({
+    where: { userId: targetUser.id },
+    select: { storageKey: true }
+  });
+  const attachmentKeys = getUniqueFilePaths([
+    ...targetUser.campaigns.flatMap((campaign) => extractAttachmentPaths(campaign.templateSnapshot)),
+    ...attachmentAssets.map((asset) => asset.storageKey)
+  ]);
 
   await prisma.$transaction(async (tx) => {
     await tx.campaign.deleteMany({

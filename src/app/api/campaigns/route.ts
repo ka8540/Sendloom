@@ -7,8 +7,9 @@ import { recordAuditEvent } from "@/lib/audit";
 import { getAttachmentFilesFromFormData } from "@/lib/campaign-attachments";
 import { prisma } from "@/lib/db";
 import { GMAIL_RECONNECT_ERROR } from "@/lib/provider";
+import type { EmailAttachment } from "@/lib/provider";
 import { createRateLimitResponse, rateLimit } from "@/lib/rate-limit";
-import { buildAttachmentKey, uploadObject } from "@/lib/storage";
+import { findOrCreateAttachmentAsset, toAttachmentSnapshot } from "@/services/attachment-assets";
 import { CampaignLaunchBlockedError, createCampaignDraft, launchCampaign, processPendingCampaignWork } from "@/services/campaigns";
 import { SequenceConcurrencyLimitError, SequenceStorageLimitError } from "@/services/sequence-limits";
 
@@ -108,14 +109,7 @@ export async function POST(request: Request) {
     );
   }
 
-  let attachments:
-    | {
-        fileName: string;
-        storagePath?: string;
-        contentBase64?: string;
-        contentType?: string | null;
-      }[]
-    | undefined;
+  let attachments: EmailAttachment[] | undefined;
 
   for (const attachment of attachmentFiles) {
     if (attachment.size > MAX_ATTACHMENT_BYTES) {
@@ -132,17 +126,13 @@ export async function POST(request: Request) {
           attachments = [];
           for (const attachment of attachmentFiles) {
             const buffer = Buffer.from(await attachment.arrayBuffer());
-            const upload = await uploadObject({
-              bucket: "attachments",
-              key: buildAttachmentKey(auth.user.id, attachment.name),
-              body: buffer,
-              contentType: attachment.type || undefined
-            });
-            attachments.push({
+            const { asset } = await findOrCreateAttachmentAsset({
+              userId: auth.user.id,
+              buffer,
               fileName: attachment.name,
-              storagePath: upload.key,
-              contentType: attachment.type || null
+              contentType: attachment.type
             });
+            attachments.push(toAttachmentSnapshot(asset, attachment.name, attachment.type));
           }
           return attachments;
         }

@@ -9,7 +9,7 @@ const { mockEnv } = vi.hoisted(() => ({ mockEnv: {} as Record<string, unknown> }
 vi.mock("@/lib/env", () => ({ env: mockEnv }));
 
 import {
-  buildAttachmentKey,
+  buildAttachmentAssetKey,
   buildImportKey,
   checkStorageHealth,
   deleteObject,
@@ -70,9 +70,15 @@ describe("storage keys", () => {
     );
   });
 
-  it("produces a unique, sanitized attachment key", () => {
-    const key = buildAttachmentKey("user-1", "../../resume.pdf");
-    expect(key).toMatch(/^users\/user-1\/campaigns\/attachments\/\d+-[a-f0-9]+-resume\.pdf$/);
+  it("builds a content-addressed attachment key from the file hash", () => {
+    const sha256 = "a".repeat(64);
+    expect(buildAttachmentAssetKey("user-1", sha256)).toBe(`users/user-1/attachments/${sha256}`);
+  });
+
+  it("rejects attachment hashes that are not 64 lowercase hex characters", () => {
+    expect(() => buildAttachmentAssetKey("user-1", "../escape")).toThrow(/Invalid attachment hash/);
+    expect(() => buildAttachmentAssetKey("user-1", "abc123")).toThrow(/Invalid attachment hash/);
+    expect(() => buildAttachmentAssetKey("user-1", "A".repeat(64))).toThrow(/Invalid attachment hash/);
   });
 });
 
