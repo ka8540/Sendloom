@@ -140,6 +140,22 @@
   line-height: 1.55;
 }
 
+.loading svg {
+  animation: attachmentPreviewSpin 900ms linear infinite;
+}
+
+@keyframes attachmentPreviewSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading svg {
+    animation: none;
+  }
+}
+
 .modalActions {
   display: flex;
   justify-content: flex-end;
