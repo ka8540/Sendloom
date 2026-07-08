@@ -22,6 +22,7 @@ import { classifySendFailure, isRetryableFailure, MAX_RETRY_ATTEMPTS } from "@/l
 import {
   deferRecipientForSendWindow,
   enqueueRecipientJobs,
+  handleInvalidRecipientSendRejection,
   markRecipientAttempt,
   pauseCampaignRunForDailyLimit,
   pauseCampaignRunForSenderLimit
@@ -248,6 +249,23 @@ const sendWorker = new Worker(
         logGmailSendFailure({
           ...logContext,
           nextRetryAt: resumeAt
+        });
+        return;
+      }
+
+      if (failureCode === "HARD_BOUNCE_RECIPIENT") {
+        // Invalid recipient address: a Skipped outcome plus a suppression —
+        // never a generic FAILED row, never retried.
+        await handleInvalidRecipientSendRejection({
+          jobId,
+          userId: scope.userId,
+          recipientEmail: recipientJob.recipientEmail,
+          error,
+          failureDetails
+        });
+        logGmailSendFailure({
+          ...logContext,
+          nextRetryAt: null
         });
         return;
       }

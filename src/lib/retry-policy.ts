@@ -1,6 +1,7 @@
 import { getFailureSeverity, getHumanReadableFailureMessage, type FailureCode } from "@/lib/failures";
 import {
   getGmailErrorInspectionText,
+  isGmailInvalidRecipientLikeError,
   isGmailRateLimitLikeError,
   isGmailTemporaryLikeError
 } from "@/lib/gmail-errors";
@@ -64,6 +65,14 @@ export function classifySendFailure(error: unknown, options: { senderConnected: 
     normalized.includes("invalid credentials")
   ) {
     return "GMAIL_REFRESH_FAILED";
+  }
+
+  // The recipient ADDRESS is bad (address not found / user unknown / 5.1.x):
+  // an address-quality outcome, not a Sendloom failure. Checked before the
+  // rate-limit/temporary heuristics because wordings like "mailbox unavailable"
+  // would otherwise read as a temporary provider problem and be retried.
+  if (isGmailInvalidRecipientLikeError(error)) {
+    return "HARD_BOUNCE_RECIPIENT";
   }
 
   if (isGmailRateLimitLikeError(error)) {

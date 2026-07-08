@@ -24,9 +24,14 @@ export async function GET(_: Request, context: { params: Promise<{ token: string
     throw error;
   }
 
+  // Only a delivered message can be opened. Terminal recipient outcomes
+  // (SUPPRESSED/FAILED/INVALID/BOUNCED/…) must never be resurrected by a pixel
+  // fetch — Gmail's image proxy loads the pixel again when the SENDER views a
+  // bounce report that quotes the original message, which would otherwise flip
+  // a confirmed invalid address back to "Opened".
   await prisma.recipientJob
-    .update({
-      where: { id: payload.jobId },
+    .updateMany({
+      where: { id: payload.jobId, status: "SENT" },
       data: { status: "OPENED" }
     })
     .catch(() => undefined);

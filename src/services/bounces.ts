@@ -45,6 +45,10 @@ const BOUNCE_FIRST_SYNC_WINDOW_DAYS = 7;
 const BOUNCE_FIRST_SYNC_MAX_MESSAGES = 100;
 const BOUNCE_BACKFILL_WINDOW_DAYS = 30;
 const BOUNCE_BACKFILL_MAX_MESSAGES = 200;
+const BOUNCE_SEQUENCE_SCAN_WINDOW_DAYS = 30;
+const BOUNCE_SEQUENCE_SCAN_PADDING_BEFORE_MS = 12 * 60 * 60_000;
+const BOUNCE_SEQUENCE_SCAN_PADDING_AFTER_MS = 7 * 24 * 60 * 60_000;
+const BOUNCE_SEQUENCE_SCAN_MAX_MESSAGES = 200;
 const BOUNCE_CORRELATION_WINDOW_MS = 30 * 24 * 60 * 60_000;
 const BOUNCE_JOB_CANDIDATE_LIMIT = 5_000;
 
@@ -316,12 +320,19 @@ function getJobRfcMessageId(metadata: unknown): string | null {
   return typeof value === "string" ? normalizeMessageId(value) : null;
 }
 
-async function loadCandidateJobs(senderProfileId: string): Promise<CandidateJob[]> {
+async function loadCandidateJobs(
+  senderProfileId: string,
+  options: { campaignId?: string } = {}
+): Promise<CandidateJob[]> {
   return prisma.recipientJob.findMany({
     where: {
-      providerMessageId: { not: null },
       createdAt: { gte: new Date(Date.now() - BOUNCE_CORRELATION_WINDOW_MS) },
-      campaignRun: { campaign: { senderProfileId } }
+      campaignRun: {
+        campaign: {
+          senderProfileId,
+          ...(options.campaignId ? { id: options.campaignId } : {})
+        }
+      }
     },
     select: {
       id: true,
@@ -454,7 +465,19 @@ type BounceProcessResult = {
   temporaryFailures: number;
 };
 
-const JOB_STATUSES_UPDATABLE_BY_BOUNCE = new Set(["PENDING", "RETRYING", "SENT"]);
+// FAILED is included so a delivery-status report can HEAL a job that already
+// failed synchronously at send time (e.g. a generic "Gmail rejected this
+// recipient" row) into the truthful Skipped/invalid-address disposition.
+// OPENED is included because a message the receiving server permanently
+// rejected was never delivered — an "open" on it is a false positive (Gmail's
+// image proxy fetches the tracking pixel from the quoted original when the
+// sender views the bounce report). CLICKED and any job with a real reply stay
+// protected: that engagement is strong evidence the bounce was misdirected.
+const JOB_STATUSES_UPDATABLE_BY_BOUNCE = new Set(["PENDING", "RETRYING", "SENT", "FAILED", "OPENED"]);
+
+function isJobUpdatableByBounce(job: { status: string; replyCount: number }): boolean {
+  return JOB_STATUSES_UPDATABLE_BY_BOUNCE.has(job.status) && job.replyCount === 0;
+}
 
 async function recordDsnEvent(gmailMessageId: string, payload: Record<string, unknown>): Promise<boolean> {
   try {
@@ -487,6 +510,12 @@ export async function processPotentialBounceMessage(args: {
   gmailMessageId: string;
   jobs: CandidateJob[];
   threadCache: Map<string, string[]>;
+  /**
+   * Manual sequence checks intentionally re-read DSNs whose ProviderEvent was
+   * already recorded, because old code may have consumed the message before it
+   * repaired a matching FAILED/SENT row. The event itself stays idempotent.
+   */
+  allowDuplicateRepair?: boolean;
 }): Promise<BounceProcessResult> {
   const done = (
     outcome: BounceProcessOutcome,
@@ -508,7 +537,7 @@ export async function processPotentialBounceMessage(args: {
     },
     select: { id: true }
   });
-  if (existing) {
+  if (existing && !args.allowDuplicateRepair) {
     return done("duplicate", { parsed: true });
   }
 
@@ -587,6 +616,14 @@ export async function processPotentialBounceMessage(args: {
     }
     matchedAny = true;
 
+    // The candidate list is loaded once per batch, so the row may have moved
+    // since (a pixel hit, an earlier DSN, or the bogus-reply healer above).
+    // The disposition decision always uses the live status and reply count.
+    const liveJob = await prisma.recipientJob.findUnique({
+      where: { id: job.id },
+      select: { status: true, replyCount: true }
+    });
+
     if (classification.suppressRecipient && classification.permanence === "permanent") {
       permanentFailures += 1;
       const reason = safeDeliveryFailureReason(classification.category);
@@ -600,7 +637,7 @@ export async function processPotentialBounceMessage(args: {
           occurredAt: parsed.receivedAt
         });
       }
-      if (JOB_STATUSES_UPDATABLE_BY_BOUNCE.has(job.status)) {
+      if (liveJob && isJobUpdatableByBounce(liveJob)) {
         // The ADDRESS is bad, not Sendloom: the recipient's disposition is
         // Skipped (SUPPRESSED), never a system failure. The immutable bounce
         // evidence (category, enhanced code, failure code) stays in metadata,
@@ -633,7 +670,11 @@ export async function processPotentialBounceMessage(args: {
       });
     } else if (
       (classification.category === "POLICY_REJECTION" || classification.category === "SPAM_REJECTION") &&
-      JOB_STATUSES_UPDATABLE_BY_BOUNCE.has(job.status)
+      // Policy/spam rejections never demote an engagement state — only a
+      // proven-invalid ADDRESS justifies overriding a recorded open.
+      liveJob &&
+      liveJob.status !== "OPENED" &&
+      isJobUpdatableByBounce(liveJob)
     ) {
       // The specific attempt failed, but the address is not proven invalid —
       // no suppression, and a manual retry stays available.
@@ -653,12 +694,14 @@ export async function processPotentialBounceMessage(args: {
     // an already-submitted Gmail message must never be re-sent from here.
   }
 
-  const created = await recordDsnEvent(args.gmailMessageId, {
-    reports: results,
-    referenceCount: parsed.referenceMessageIds.length
-  });
+  const created = existing
+    ? false
+    : await recordDsnEvent(args.gmailMessageId, {
+        reports: results,
+        referenceCount: parsed.referenceMessageIds.length
+      });
 
-  if (!created) {
+  if (!created && !existing) {
     return done("duplicate", { parsed: true });
   }
   return done(matchedAny ? "processed" : "unmatched", { parsed: true, permanentFailures, temporaryFailures });
@@ -705,9 +748,10 @@ type BounceBatchStats = Omit<BounceSyncResult, "recovered" | "skipped">;
 async function processMessageIds(
   sender: SenderBounceCandidate,
   accessToken: string,
-  messageIds: string[]
+  messageIds: string[],
+  options: { campaignId?: string; allowDuplicateRepair?: boolean } = {}
 ): Promise<BounceBatchStats> {
-  const jobs = await loadCandidateJobs(sender.id);
+  const jobs = await loadCandidateJobs(sender.id, { campaignId: options.campaignId });
   const threadCache = new Map<string, string[]>();
   const stats: BounceBatchStats = {
     checkedMessages: messageIds.length,
@@ -724,7 +768,8 @@ async function processMessageIds(
       accessToken,
       gmailMessageId,
       jobs,
-      threadCache
+      threadCache,
+      allowDuplicateRepair: options.allowDuplicateRepair
     });
     if (result.parsed) {
       stats.bouncesParsed += 1;
@@ -923,6 +968,124 @@ export async function runRecentBounceBackfill(
   });
 
   return result ?? { ...EMPTY_BATCH_STATS, recovered: false, skipped: "locked" };
+}
+
+function getSequenceSearchWindow(
+  campaign: {
+    createdAt: Date;
+    updatedAt: Date;
+    runs: Array<{
+      createdAt: Date;
+      scheduledFor: Date | null;
+      startedAt: Date | null;
+      completedAt: Date | null;
+      updatedAt: Date;
+    }>;
+  },
+  now = new Date()
+): { after: Date; before: Date } | null {
+  const runStarts = campaign.runs.map(
+    (run) => run.startedAt ?? run.scheduledFor ?? run.createdAt
+  );
+  const runEnds = campaign.runs.map((run) => run.completedAt ?? run.updatedAt);
+  const earliest = runStarts.length
+    ? new Date(Math.min(...runStarts.map((date) => date.getTime())))
+    : campaign.createdAt;
+  const latest = runEnds.length
+    ? new Date(Math.max(...runEnds.map((date) => date.getTime())))
+    : campaign.updatedAt;
+  const oldestAllowed = new Date(now.getTime() - BOUNCE_SEQUENCE_SCAN_WINDOW_DAYS * 24 * 60 * 60_000);
+  const after = new Date(Math.max(oldestAllowed.getTime(), earliest.getTime() - BOUNCE_SEQUENCE_SCAN_PADDING_BEFORE_MS));
+  const before = new Date(Math.min(now.getTime() + 60_000, latest.getTime() + BOUNCE_SEQUENCE_SCAN_PADDING_AFTER_MS));
+  return after < before ? { after, before } : null;
+}
+
+/**
+ * Manual Check-bounces scan for one sequence. Unlike the background sender
+ * sync, this searches broadly for DSN-looking messages in a bounded window
+ * around the sequence run(s), scopes correlation to the sequence's recipient
+ * jobs, and reprocesses already-recorded DSN events so old consumed bounces can
+ * still repair stuck FAILED/SENT rows.
+ */
+export async function runSequenceBounceScan(args: {
+  campaignId: string;
+  userId: string;
+  senderId: string;
+}): Promise<BounceSyncResult> {
+  const skipped = (reason: string): BounceSyncResult => ({
+    ...EMPTY_BATCH_STATS,
+    recovered: false,
+    skipped: reason
+  });
+
+  const [sender, campaign] = await Promise.all([
+    loadSenderForBounceSync(args.senderId),
+    prisma.campaign.findFirst({
+      where: { id: args.campaignId, userId: args.userId, senderProfileId: args.senderId },
+      select: {
+        createdAt: true,
+        updatedAt: true,
+        runs: {
+          select: {
+            createdAt: true,
+            scheduledFor: true,
+            startedAt: true,
+            completedAt: true,
+            updatedAt: true
+          }
+        }
+      }
+    })
+  ]);
+
+  if (!sender || !campaign) {
+    return skipped("sender_not_found");
+  }
+  if (!sender.oauthRefreshToken) {
+    await markSenderWatchState(sender.id, { gmailWatchStatus: "RECONNECT_REQUIRED" });
+    return skipped("reconnect_required");
+  }
+  if (!senderHasBounceReadScope(sender)) {
+    await markSenderWatchState(sender.id, { gmailWatchStatus: "PERMISSION_REQUIRED" });
+    return skipped("permission_required");
+  }
+
+  const window = getSequenceSearchWindow(campaign);
+  if (!window) {
+    return { ...EMPTY_BATCH_STATS, recovered: false };
+  }
+
+  const result = await withBounceSyncLock(`${sender.id}:sequence:${args.campaignId}`, async (): Promise<BounceSyncResult> => {
+    let accessToken: string;
+    try {
+      accessToken = (await refreshGoogleAccessToken(sender.oauthRefreshToken as string)).access_token;
+    } catch (error) {
+      await markSenderWatchState(sender.id, {
+        gmailWatchStatus: "RECONNECT_REQUIRED",
+        gmailWatchError: "authorization_expired"
+      });
+      return skipped("reconnect_required");
+    }
+
+    const candidateIds = await listGmailDsnCandidateIds({
+      accessToken,
+      after: window.after,
+      before: window.before,
+      maxResults: BOUNCE_SEQUENCE_SCAN_MAX_MESSAGES
+    });
+    const stats = await processMessageIds(sender, accessToken, candidateIds, {
+      campaignId: args.campaignId,
+      allowDuplicateRepair: true
+    });
+    await markSenderWatchState(sender.id, {
+      bounceLastSyncedAt: new Date(),
+      gmailWatchError: null
+    });
+    logBounceSyncSummary(sender.id, stats, "sequence-check");
+    return { ...stats, recovered: false };
+  });
+
+  return result ?? skipped("locked");
 }
 
 // ---------------------------------------------------------------------------

@@ -35,9 +35,13 @@ export async function GET(_: Request, context: { params: Promise<{ token: string
     return notFound();
   }
 
+  // Clicks only advance delivered/opened messages. Terminal outcomes
+  // (SUPPRESSED/FAILED/INVALID/BOUNCED/…) stay untouched so a link fetched
+  // from a quoted bounce report or by a scanner can never resurrect a
+  // confirmed invalid address into an engagement state.
   await prisma.recipientJob
-    .update({
-      where: { id: payload.jobId },
+    .updateMany({
+      where: { id: payload.jobId, status: { in: ["SENT", "OPENED"] } },
       data: { status: "CLICKED" }
     })
     .catch(() => undefined);

@@ -69,13 +69,22 @@ function hasClearLegacySkipReason(lastError: string | null | undefined) {
 export function classifyRecipientOverviewDisposition(
   recipient: RecipientOverviewInput
 ): RecipientOverviewDisposition {
-  if (SENT_STATUSES.has(recipient.status)) {
-    return "SENT";
-  }
-
   const failureCode = getFailureCodeFromMetadata(recipient.metadata);
   const failureCategory = getFailureCategory(recipient.metadata);
   const isPermanentAddressFailure = isPermanentRecipientAddressFailure({ failureCode, failureCategory });
+
+  if (SENT_STATUSES.has(recipient.status)) {
+    // A successful send clears every failure field, so hard-bounce evidence on
+    // a SENT/OPENED row can only mean the bounce was confirmed AFTER the send
+    // (and a false "open" — e.g. Gmail's proxy fetching the pixel from the
+    // quoted bounce — flipped the status back). The address never received the
+    // message: that recipient is Skipped, not delivered. CLICKED is stronger
+    // engagement evidence and stays a delivered outcome.
+    if (isPermanentAddressFailure && recipient.status !== "CLICKED") {
+      return "SKIPPED";
+    }
+    return "SENT";
+  }
 
   if (
     SKIPPED_STATUSES.has(recipient.status) ||

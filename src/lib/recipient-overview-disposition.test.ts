@@ -28,6 +28,15 @@ describe("recipient Overview disposition", () => {
     expect(classifyRecipientOverviewDisposition({ status: "OPENED" })).toBe("SENT");
   });
 
+  it("maps falsely-delivered SENT/OPENED rows with hard-bounce evidence to Skipped, protecting clicks", () => {
+    // A hard-bounced message was never delivered — a lingering SENT status or
+    // a false pixel "open" must not count the recipient as delivered.
+    const metadata = { failureCode: "HARD_BOUNCE_RECIPIENT", failureCategory: "HARD_BOUNCE_MAILBOX_NOT_FOUND" };
+    expect(classifyRecipientOverviewDisposition({ status: "SENT", metadata })).toBe("SKIPPED");
+    expect(classifyRecipientOverviewDisposition({ status: "OPENED", metadata })).toBe("SKIPPED");
+    expect(classifyRecipientOverviewDisposition({ status: "CLICKED", metadata })).toBe("SENT");
+  });
+
   it("keeps ambiguous aggregate-only history conservative", () => {
     expect(
       summarizeOverviewRun({

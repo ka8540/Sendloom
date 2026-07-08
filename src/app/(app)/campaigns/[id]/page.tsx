@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 import { ActiveRunRefresher } from "@/components/active-run-refresher";
+import { CampaignBounceCheckButton } from "@/components/campaign-bounce-check-button";
 import { CampaignLaunchButton } from "@/components/campaign-launch-button";
 import { CampaignPauseResumeButton } from "@/components/campaign-pause-resume-button";
 import { CampaignScheduleEditor } from "@/components/campaign-schedule-editor";
@@ -29,6 +30,7 @@ import { isCampaignSetupLocked } from "@/lib/campaign-setup-lock";
 import { prisma } from "@/lib/db";
 import { getGmailDailySendWindow } from "@/lib/daily-send-limit";
 import { RECIPIENT_ACTIVITY_PAGE_SIZE, buildRecipientActivityItem } from "@/lib/recipient-activity";
+import { summarizeRecipientOverviewDispositions } from "@/lib/recipient-overview-disposition";
 import { canShowRetryFailedAction, isManuallyRetriableFailedJob } from "@/lib/retry-eligibility";
 import { formatSequenceStatus } from "@/lib/sequence-status";
 import { RecipientActivity } from "@/components/recipient-activity";
@@ -108,14 +110,6 @@ function humanize(value?: string | null) {
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
-}
-
-function getDeliveredCount(run?: {
-  sentCount?: number | null;
-  openedCount?: number | null;
-  clickedCount?: number | null;
-} | null) {
-  return (run?.sentCount ?? 0) + (run?.openedCount ?? 0) + (run?.clickedCount ?? 0);
 }
 
 function formatScheduleLabel(scheduleType?: string | null, scheduleConfig?: ScheduleConfig | null) {
@@ -359,10 +353,26 @@ export default async function CampaignDetailPage({
   const attachments = ((campaign.templateSnapshot as CampaignTemplateSnapshot).attachments ?? []).filter(
     (attachment) => attachment.fileName
   );
-  const issueCount = (displayRun?.failedCount ?? 0) + (displayRun?.invalidCount ?? 0);
+  // Truthful Needs-attention count: classify recipients with the shared
+  // overview disposition helper so permanently-invalid addresses (a Skipped
+  // outcome, even on legacy rows still stored as FAILED) never inflate the
+  // failure metric. Only genuine send failures and retries count here.
+  const dispositionJobs = displayRun
+    ? await prisma.recipientJob.findMany({
+        where: { campaignRunId: displayRun.id },
+        select: { status: true, metadata: true, lastError: true }
+      })
+    : [];
+  const dispositionCounts = summarizeRecipientOverviewDispositions(dispositionJobs);
+  const issueCount = dispositionCounts.needsAttention;
+  const skippedCount = dispositionCounts.skipped;
   const recipientStatusCountMap = new Map(recipientStatusCounts.map((entry) => [entry.status, entry._count]));
   const replyCount = replyCountAggregate._sum.replyCount ?? 0;
-  const deliveredCount = getDeliveredCount(displayRun);
+  // Delivered comes from the same per-recipient classification as the other
+  // cards, so an address that later hard-bounced (a Skipped outcome, even if a
+  // false "open" left the row in an engagement status) never counts as
+  // delivered — the four cards always add up truthfully.
+  const deliveredCount = dispositionCounts.sent;
   const launchButtonLabel = dailyLimitActive
     ? "Waiting for Gmail safety window"
     : isWaitingForSlot
@@ -631,6 +641,15 @@ export default async function CampaignDetailPage({
                   {validationButtonLabel}
                 </button>
               </form>
+              {/* Post-send bounce check — reads Gmail delivery-status reports
+                  for already-sent emails; deliberately separate from Refresh
+                  validation (which checks setup before a launch) and always
+                  available, including for completed sequences. */}
+              <CampaignBounceCheckButton
+                campaignId={campaign.id}
+                senderNeedsReconnect={senderNeedsReconnect}
+                className={styles.actionSecondaryItem}
+              />
               {latestRun && (isActiveRun || isPausedRun) ? (
                 <CampaignPauseResumeButton
                   campaignId={campaign.id}
@@ -682,7 +701,7 @@ export default async function CampaignDetailPage({
           <strong className={styles.metricValue}>{displayRun?.totalRecipients ?? campaign.import.rowCount ?? 0}</strong>
           <span className={styles.metricMeta}>
             {isFromPreviousRun ? "Last run" : "This run"}
-            {(displayRun?.suppressedCount ?? 0) > 0 ? ` · ${displayRun?.suppressedCount} skipped` : ""}
+            {skippedCount > 0 ? ` · ${skippedCount} skipped (invalid or excluded)` : ""}
           </span>
         </article>
         <article className={styles.metricCard}>
@@ -701,14 +720,25 @@ export default async function CampaignDetailPage({
           <strong className={styles.metricValue}>{replyCount}</strong>
           <span className={styles.metricMeta}>{isFromPreviousRun ? "Last run" : "This run"}</span>
         </article>
-        <article className={styles.metricCard}>
-          <div className={styles.metricIcon}>
-            <ShieldAlert aria-hidden="true" />
-          </div>
-          <span className={styles.metricLabel}>Needs attention</span>
-          <strong className={styles.metricValue}>{issueCount}</strong>
-          <span className={styles.metricMeta}>Failed &amp; invalid</span>
-        </article>
+        {issueCount > 0 ? (
+          <article className={styles.metricCard}>
+            <div className={styles.metricIcon}>
+              <ShieldAlert aria-hidden="true" />
+            </div>
+            <span className={styles.metricLabel}>Needs attention</span>
+            <strong className={styles.metricValue}>{issueCount}</strong>
+            <span className={styles.metricMeta}>Failed sends &amp; retries</span>
+          </article>
+        ) : (
+          <article className={styles.metricCard}>
+            <div className={styles.metricIcon}>
+              <ShieldAlert aria-hidden="true" />
+            </div>
+            <span className={styles.metricLabel}>Skipped / invalid</span>
+            <strong className={styles.metricValue}>{skippedCount}</strong>
+            <span className={styles.metricMeta}>Invalid or excluded recipients</span>
+          </article>
+        )}
       </section>
       {validationChecks.length ? (
         <section className={styles.validationBand}>
