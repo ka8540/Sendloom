@@ -107,6 +107,16 @@ describe("POST /api/campaigns/[id]/sync-bounces", () => {
     });
   });
 
+  it("returns a safe retryable error (never the raw Gmail 404) when Gmail is unavailable", async () => {
+    h.impl.check = async () => ({ status: "gmail_unavailable" });
+    const response = await post();
+    expect(response.status).toBe(503);
+    const body = await response.json();
+    expect(body).toEqual({ error: "Couldn't check bounces. Please try again.", code: "GMAIL_UNAVAILABLE" });
+    // The raw Gmail API error must never reach the client.
+    expect(JSON.stringify(body)).not.toMatch(/requested entity was not found/i);
+  });
+
   it("returns the counts-only summary and records an audit event on success", async () => {
     const response = await post();
     expect(response.status).toBe(200);

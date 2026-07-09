@@ -20,6 +20,13 @@ const h = vi.hoisted(() => {
     }
   }
 
+  class EntityNotFoundError extends Error {
+    constructor() {
+      super("Gmail entity not found.");
+      this.name = "GmailEntityNotFoundError";
+    }
+  }
+
   const state = {
     campaigns: [] as Row[],
     senders: [] as Row[],
@@ -199,7 +206,7 @@ const h = vi.hoisted(() => {
     $transaction: async <T,>(fn: (tx: unknown) => Promise<T>): Promise<T> => fn(prismaMock)
   };
 
-  return { state, calls, impl, prismaMock, PrismaKnownError, HistoryExpiredError, nextId };
+  return { state, calls, impl, prismaMock, PrismaKnownError, HistoryExpiredError, EntityNotFoundError, nextId };
 });
 
 vi.mock("@prisma/client", () => ({
@@ -225,6 +232,10 @@ vi.mock("@/lib/google", () => ({
 
 vi.mock("@/lib/gmail", () => ({
   GmailHistoryExpiredError: h.HistoryExpiredError,
+  GmailEntityNotFoundError: h.EntityNotFoundError,
+  isGmailNotFoundError: (error: unknown) =>
+    error instanceof h.EntityNotFoundError ||
+    (error instanceof Error && /requested entity was not found|not_found/i.test(error.message)),
   normalizeMessageId: (value?: string | null) => value?.replace(/[<>]/g, "").trim().toLowerCase() || null,
   registerGmailWatch: () => h.impl.registerWatch(),
   listGmailHistoryMessageIds: (args: Record<string, unknown>) => {
@@ -939,6 +950,87 @@ describe("manual sequence bounce scan", () => {
     expect(calls.markRecipientAttempt).toHaveLength(1);
     expect(calls.markRecipientAttempt[0]).toMatchObject({ jobId: "sequence-failed", status: "SUPPRESSED" });
     expect(calls.markRecipientAttempt.map((call) => call.jobId)).toEqual(["sequence-failed"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Missing Gmail entities (404 "Requested entity was not found") — a message or
+// thread the search/history listed can be deleted before we read it. Each
+// missing entity is skipped; the scan keeps going and never throws.
+// ---------------------------------------------------------------------------
+
+describe("missing Gmail entities are skipped, not fatal", () => {
+  it("skips a messages.get 404 (metadata) and keeps scanning the rest of the batch", async () => {
+    seedSender();
+    seedCampaign();
+    seedJob({ id: "sequence-hit", recipientEmail: "nmarshall@paychex.com", providerMessageId: null });
+    impl.listDsnCandidates = async () => ["dsn-missing", "dsn-1"];
+    impl.fetchMetadata = async (_token: string, id: string) => {
+      if (id === "dsn-missing") {
+        throw new h.EntityNotFoundError();
+      }
+      return bounceMetadata();
+    };
+    impl.fetchFull = async () => bounceFull();
+
+    const result = await runSequenceBounceScan({ campaignId: "campaign-1", userId: "user-1", senderId: "sender-1" });
+
+    // The whole batch was inspected, the missing one counted, the real one parsed.
+    expect(result.checkedMessages).toBe(2);
+    expect(result.missingMessageCount).toBe(1);
+    expect(result.bouncesParsed).toBe(1);
+  });
+
+  it("skips a messages.get 404 on the full-body fetch too", async () => {
+    seedSender();
+    seedCampaign();
+    seedJob({ id: "sequence-hit", recipientEmail: "nmarshall@paychex.com", providerMessageId: null });
+    impl.listDsnCandidates = async () => ["dsn-1"];
+    impl.fetchMetadata = async () => bounceMetadata();
+    impl.fetchFull = async () => {
+      throw new h.EntityNotFoundError();
+    };
+
+    const result = await runSequenceBounceScan({ campaignId: "campaign-1", userId: "user-1", senderId: "sender-1" });
+
+    expect(result.checkedMessages).toBe(1);
+    expect(result.missingMessageCount).toBe(1);
+    expect(result.bouncesParsed).toBe(0);
+  });
+
+  it("counts a threads.get 404 and falls back to email correlation without throwing", async () => {
+    seedSender();
+    seedCampaign();
+    // The DSN carries no matching RFC reference, forcing the thread lookup path.
+    const job = seedJob({
+      id: "thread-fallback",
+      recipientEmail: "nmarshall@paychex.com",
+      providerMessageId: "gmail-thread-msg",
+      metadata: {}
+    });
+    impl.listDsnCandidates = async () => ["dsn-1"];
+    impl.fetchMetadata = async () => bounceMetadata();
+    impl.fetchFull = async () =>
+      bounceFull({ recipient: "nmarshall@paychex.com", status: "5.1.1", references: "<no-match@techsmail.com>" });
+    impl.listThreadMessageIds = async () => {
+      throw new h.EntityNotFoundError();
+    };
+
+    const result = await runSequenceBounceScan({ campaignId: "campaign-1", userId: "user-1", senderId: "sender-1" });
+
+    expect(result.missingThreadCount).toBe(1);
+    // Email fallback still correlated the bounce to the recipient's job.
+    expect(calls.markRecipientAttempt.map((call) => call.jobId)).toContain(job.id);
+  });
+
+  it("propagates a non-404 Gmail error (not swallowed as a missing entity)", async () => {
+    const sender = seedSender({ gmailWatchHistoryId: "hist-1" });
+    impl.listHistory = async () => ({ messageIds: ["dsn-1"], latestHistoryId: "hist-2" });
+    impl.fetchMetadata = async () => {
+      throw new Error("Gmail backend error (500).");
+    };
+
+    await expect(syncSenderBounces(sender.id, { force: true })).rejects.toThrow("Gmail backend error");
   });
 });
 

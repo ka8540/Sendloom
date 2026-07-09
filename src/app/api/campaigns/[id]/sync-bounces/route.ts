@@ -45,6 +45,14 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       { status: 409 }
     );
   }
+  if (result.status === "gmail_unavailable") {
+    // A transient Gmail outage/rate limit that repaired nothing — safe,
+    // retryable, and never a raw Gmail API error to the UI.
+    return NextResponse.json(
+      { error: "Couldn't check bounces. Please try again.", code: "GMAIL_UNAVAILABLE" },
+      { status: 503 }
+    );
+  }
 
   await recordAuditEvent({
     actor: { id: auth.user.id, email: auth.user.email },
