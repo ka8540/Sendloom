@@ -1023,6 +1023,7 @@ describe("role-targeted Add 10 more (#35-#38)", () => {
     return {
       status: "READY",
       requestedTitles: ["Software Engineer"],
+      requestedLocations: [],
       positionCategories: ["SOFTWARE_ENGINEERING"],
       createdAt: "2026-07-04T10:00:00.000Z",
       ...overrides
@@ -1079,5 +1080,66 @@ describe("role-targeted Add 10 more (#35-#38)", () => {
   it("labels chooser options by their requested roles", () => {
     expect(addMoreSearchLabel(recruiter)).toBe("Recruiter");
     expect(addMoreSearchLabel({ requestedTitles: [] })).toBe("Any role");
+  });
+
+  it("collapses re-searched duplicate role groups into a single direct target — no chooser (bug: 'Software Engineer' twice)", () => {
+    // The same company+role searched twice → two READY ProspectSearch rows that
+    // must present as ONE role group. With a single group there is nothing to
+    // choose: the target is direct, and the newest is extended.
+    const first = candidate({ id: "s_eng_1", createdAt: "2026-07-04T10:00:00.000Z" });
+    const second = candidate({ id: "s_eng_2", createdAt: "2026-07-05T10:00:00.000Z" });
+    const target = resolveAddMoreTarget({ activeCategory: null, searches: [first, second], currentSearchId: "" });
+    expect(target.kind).toBe("search");
+    expect(target.kind === "search" && target.search.id).toBe("s_eng_2");
+  });
+
+  it("dedupes across casing/whitespace variants of the same role (#8, #14)", () => {
+    const canonical = candidate({ id: "s_eng_1", requestedTitles: ["Software Engineer"] });
+    const variant = candidate({
+      id: "s_eng_2",
+      requestedTitles: ["  software   engineer "],
+      createdAt: "2026-07-05T10:00:00.000Z"
+    });
+    const target = resolveAddMoreTarget({ activeCategory: null, searches: [canonical, variant], currentSearchId: "" });
+    expect(target.kind).toBe("search");
+  });
+
+  it("shows one chooser option per distinct role group, deduping same-role siblings (#13, #14)", () => {
+    // Two Software Engineer searches + one Recruiter → exactly two options.
+    const engineerA = candidate({ id: "s_eng_1", createdAt: "2026-07-04T10:00:00.000Z" });
+    const engineerB = candidate({ id: "s_eng_2", createdAt: "2026-07-05T10:00:00.000Z" });
+    const target = resolveAddMoreTarget({
+      activeCategory: null,
+      searches: [engineerA, engineerB, recruiter],
+      currentSearchId: ""
+    });
+    expect(target.kind).toBe("choose");
+    const labels = target.kind === "choose" ? target.options.map((option) => addMoreSearchLabel(option)) : [];
+    expect(labels).toEqual(["Software Engineer", "Recruiter"]);
+    // Never two identical "Software Engineer" options.
+    expect(labels.filter((label) => label === "Software Engineer")).toHaveLength(1);
+  });
+
+  it("keeps the same role in different locations as separate groups", () => {
+    const nyc = candidate({ id: "s_ny", requestedLocations: ["New York"] });
+    const london = candidate({
+      id: "s_ldn",
+      requestedLocations: ["London"],
+      createdAt: "2026-07-05T10:00:00.000Z"
+    });
+    const target = resolveAddMoreTarget({ activeCategory: null, searches: [nyc, london], currentSearchId: "" });
+    expect(target.kind).toBe("choose");
+    expect(target.kind === "choose" && target.options).toHaveLength(2);
+  });
+
+  it("prefers the currently-viewed search as the collapsed group's target", () => {
+    const first = candidate({ id: "s_eng_1", createdAt: "2026-07-04T10:00:00.000Z" });
+    const second = candidate({ id: "s_eng_2", createdAt: "2026-07-05T10:00:00.000Z" });
+    const target = resolveAddMoreTarget({
+      activeCategory: null,
+      searches: [first, second],
+      currentSearchId: "s_eng_1"
+    });
+    expect(target.kind === "search" && target.search.id).toBe("s_eng_1");
   });
 });

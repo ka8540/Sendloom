@@ -16,6 +16,7 @@ import type {
 } from "@/components/prospects/prospect-graphql";
 import { mapDiscoverPublicError } from "@/lib/discover-public-error";
 import { parseEmailFormatDecisionMetadata } from "@/lib/email-format-decision";
+import { normalizeRoleGroupToken, roleGroupKeyFor } from "@/services/prospects/discover-role-group-key";
 
 // External links to LinkedIn always open in a new tab with a hardened rel so we
 // never leak the opener or referrer.
@@ -949,6 +950,7 @@ export type AddMoreCandidateSearch = {
   id: string;
   status: ProspectSearchStatus;
   requestedTitles: string[];
+  requestedLocations: string[];
   positionCategories: PositionCategory[];
   createdAt: string;
 };
@@ -967,6 +969,44 @@ export type AddMoreTarget =
   | { kind: "choose"; options: AddMoreCandidateSearch[] }
   | { kind: "none" };
 
+/**
+ * Collapse the ready child searches into one representative per canonical role
+ * group (same normalized roles + locations). Re-searching a company+role a user
+ * already searched creates a second ProspectSearch, but both share one role
+ * group and must surface as a single option. Within a group the representative
+ * is the search the user is currently viewing (so "Add 10 more" extends the page
+ * they are on) or else the newest — `ready` is already newest-first. The
+ * group's position categories are unioned so an active role tab can still pin a
+ * group even when the representative itself didn't carry that category.
+ * Extending any sibling is equivalent: they share the same canonical query, so
+ * the same shared provider/cache continuation feeds the batch.
+ */
+function canonicalRoleGroupRepresentatives(
+  ready: AddMoreCandidateSearch[],
+  currentSearchId: string
+): AddMoreCandidateSearch[] {
+  const groups = new Map<string, AddMoreCandidateSearch[]>();
+  const order: string[] = [];
+  for (const search of ready) {
+    const key = roleGroupKeyFor(search);
+    const bucket = groups.get(key);
+    if (bucket) {
+      bucket.push(search);
+    } else {
+      groups.set(key, [search]);
+      order.push(key);
+    }
+  }
+  return order.map((key) => {
+    const bucket = groups.get(key)!;
+    const representative = bucket.find((search) => search.id === currentSearchId) ?? bucket[0];
+    return {
+      ...representative,
+      positionCategories: [...new Set(bucket.flatMap((search) => search.positionCategories))]
+    };
+  });
+}
+
 export function resolveAddMoreTarget(input: {
   activeCategory: PositionCategory | null;
   searches: AddMoreCandidateSearch[];
@@ -978,11 +1018,15 @@ export function resolveAddMoreTarget(input: {
   if (ready.length === 0) {
     return { kind: "none" };
   }
-  if (ready.length === 1) {
-    return { kind: "search", search: ready[0] };
+  // Dedupe by canonical role group BEFORE deciding — two searches for the same
+  // role must never present as two chooser options, and if they are the only
+  // group there is nothing to choose.
+  const groups = canonicalRoleGroupRepresentatives(ready, input.currentSearchId);
+  if (groups.length === 1) {
+    return { kind: "search", search: groups[0] };
   }
   if (input.activeCategory) {
-    const matching = ready.filter((search) => search.positionCategories.includes(input.activeCategory!));
+    const matching = groups.filter((search) => search.positionCategories.includes(input.activeCategory!));
     if (matching.length > 0) {
       return {
         kind: "search",
@@ -990,7 +1034,7 @@ export function resolveAddMoreTarget(input: {
       };
     }
   }
-  return { kind: "choose", options: ready };
+  return { kind: "choose", options: groups };
 }
 
 /** User-facing label for one child search in the role chooser. */
@@ -1007,7 +1051,9 @@ export function groupedRoleLabels(searches: Array<{ requestedTitles: string[] }>
   const labels: string[] = [];
   for (const search of searches) {
     for (const title of search.requestedTitles) {
-      const key = title.trim().toLowerCase();
+      // Same canonical fold used for role-group identity, so "Software Engineer"
+      // and "software  engineer" never render as two chips.
+      const key = normalizeRoleGroupToken(title);
       if (!key || seen.has(key)) {
         continue;
       }
