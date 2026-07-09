@@ -62,6 +62,43 @@ const GMAIL_DSN_SEARCH_TERMS = [
   "subject:Undeliverable"
 ] as const;
 
+/**
+ * A Gmail entity (message, thread, or other resource) that Gmail previously
+ * listed no longer exists — messages.get / threads.get returned 404 NOT_FOUND.
+ * Thrown instead of a raw Error so bounce sync can SKIP the missing entity and
+ * continue, and so the raw Gmail 404 payload never escapes into logs or the UI.
+ */
+export class GmailEntityNotFoundError extends Error {
+  constructor() {
+    super("Gmail entity not found.");
+    this.name = "GmailEntityNotFoundError";
+  }
+}
+
+/**
+ * Recognise a "missing Gmail entity" error (a stale/deleted message, thread, or
+ * history reference) so it can be skipped rather than crashing a sync. Matches
+ * the typed error above and, defensively, the Gmail 404 signature (code/status
+ * 404, NOT_FOUND, reason notFound, or "Requested entity was not found").
+ *
+ * Only meaningful around a Gmail API call: application 404s (campaign/sender/
+ * user not found) are NextResponse results, not thrown Gmail errors, so they
+ * are never seen here.
+ */
+export function isGmailNotFoundError(error: unknown): boolean {
+  if (error instanceof GmailEntityNotFoundError) {
+    return true;
+  }
+  const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("requested entity was not found") ||
+    normalized.includes("\"status\": \"not_found\"") ||
+    normalized.includes('"reason": "notfound"') ||
+    (normalized.includes("notfound") && normalized.includes("404"))
+  );
+}
+
 function getHeader(headers: GmailHeader[] | undefined, name: string) {
   return headers?.find((header) => header.name.toLowerCase() === name.toLowerCase())?.value ?? null;
 }
@@ -108,6 +145,12 @@ async function fetchGmailJson<T>(accessToken: string, input: URL | string) {
 
   if (!response.ok) {
     const payload = await response.text();
+    if (response.status === 404) {
+      // The message/thread Gmail listed (search or history) vanished before we
+      // could read it. Signal a typed, content-free error so bounce sync skips
+      // the missing entity — and never surface the raw Gmail 404 payload.
+      throw new GmailEntityNotFoundError();
+    }
     throw new Error(normalizeGoogleApiErrorMessage(payload || "Gmail API request failed."));
   }
 

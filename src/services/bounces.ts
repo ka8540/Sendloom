@@ -7,6 +7,7 @@ import {
   fetchGmailDsnFilterMetadata,
   fetchGmailMessageFull,
   getGmailProfileHistoryId,
+  isGmailNotFoundError,
   listGmailDsnCandidateIds,
   listGmailHistoryMessageIds,
   listGmailThreadMessageIds,
@@ -361,6 +362,8 @@ async function correlateBounceToJob(args: {
   referenceMessageIds: string[];
   gmailThreadId: string | null;
   threadCache: Map<string, string[]>;
+  /** Invoked when a referenced thread no longer exists (threads.get 404). */
+  onMissingThread?: () => void;
 }): Promise<CandidateJob | null> {
   const byRfcId = new Map<string, CandidateJob>();
   const byGmailId = new Map<string, CandidateJob>();
@@ -390,7 +393,13 @@ async function correlateBounceToJob(args: {
           accessToken: args.accessToken,
           threadId: args.gmailThreadId
         });
-      } catch {
+      } catch (error) {
+        // A missing thread (404) is expected for deleted/archived-away
+        // conversations — count it and fall back to email-based correlation.
+        // Any other thread-read failure also falls back rather than aborting.
+        if (isGmailNotFoundError(error)) {
+          args.onMissingThread?.();
+        }
         threadMessageIds = [];
       }
       args.threadCache.set(args.gmailThreadId, threadMessageIds);
@@ -516,6 +525,8 @@ export async function processPotentialBounceMessage(args: {
    * repaired a matching FAILED/SENT row. The event itself stays idempotent.
    */
   allowDuplicateRepair?: boolean;
+  /** Invoked when a referenced thread no longer exists (threads.get 404). */
+  onMissingThread?: () => void;
 }): Promise<BounceProcessResult> {
   const done = (
     outcome: BounceProcessOutcome,
@@ -588,7 +599,8 @@ export async function processPotentialBounceMessage(args: {
       failedEmail: recipient.email,
       referenceMessageIds: parsed.referenceMessageIds,
       gmailThreadId: parsed.gmailThreadId,
-      threadCache: args.threadCache
+      threadCache: args.threadCache,
+      onMissingThread: args.onMissingThread
     });
 
     // Never persist the recipient address in the event payload — categories,
@@ -739,6 +751,10 @@ export type BounceSyncResult = {
   unmatchedBounces: number;
   permanentFailures: number;
   temporaryFailures: number;
+  /** Listed message ids that no longer existed (Gmail messages.get 404) — skipped. */
+  missingMessageCount: number;
+  /** Referenced thread ids that no longer existed (Gmail threads.get 404) — skipped. */
+  missingThreadCount: number;
   recovered: boolean;
   skipped?: string;
 };
@@ -759,18 +775,42 @@ async function processMessageIds(
     processedBounces: 0,
     unmatchedBounces: 0,
     permanentFailures: 0,
-    temporaryFailures: 0
+    temporaryFailures: 0,
+    missingMessageCount: 0,
+    missingThreadCount: 0
   };
 
   for (const gmailMessageId of messageIds) {
-    const result = await processPotentialBounceMessage({
-      sender,
-      accessToken,
-      gmailMessageId,
-      jobs,
-      threadCache,
-      allowDuplicateRepair: options.allowDuplicateRepair
-    });
+    let result: BounceProcessResult;
+    try {
+      result = await processPotentialBounceMessage({
+        sender,
+        accessToken,
+        gmailMessageId,
+        jobs,
+        threadCache,
+        allowDuplicateRepair: options.allowDuplicateRepair,
+        onMissingThread: () => {
+          stats.missingThreadCount += 1;
+        }
+      });
+    } catch (error) {
+      // A message the search/history listed can be deleted before we read it —
+      // Gmail then returns 404 "Requested entity was not found". Skip that one
+      // message and keep scanning the rest; never let it crash the sync. Only
+      // a missing-entity 404 is swallowed here — real auth/outage errors still
+      // propagate to the caller's safe handling.
+      if (isGmailNotFoundError(error)) {
+        stats.missingMessageCount += 1;
+        console.warn("[sync-bounces] Gmail message not found; skipping missing message.", {
+          senderId: sender.id,
+          gmailMessageId,
+          operation: "messages.get"
+        });
+        continue;
+      }
+      throw error;
+    }
     if (result.parsed) {
       stats.bouncesParsed += 1;
     }
@@ -792,7 +832,9 @@ const EMPTY_BATCH_STATS: BounceBatchStats = {
   processedBounces: 0,
   unmatchedBounces: 0,
   permanentFailures: 0,
-  temporaryFailures: 0
+  temporaryFailures: 0,
+  missingMessageCount: 0,
+  missingThreadCount: 0
 };
 
 function logBounceSyncSummary(senderId: string, stats: BounceBatchStats, context: string) {
@@ -805,7 +847,9 @@ function logBounceSyncSummary(senderId: string, stats: BounceBatchStats, context
     bouncesMatched: stats.processedBounces,
     permanentFailures: stats.permanentFailures,
     temporaryFailures: stats.temporaryFailures,
-    unmatchedBounces: stats.unmatchedBounces
+    unmatchedBounces: stats.unmatchedBounces,
+    missingMessages: stats.missingMessageCount,
+    missingThreads: stats.missingThreadCount
   });
 }
 

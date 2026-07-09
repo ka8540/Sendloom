@@ -22,6 +22,8 @@ const h = vi.hoisted(() => {
     unmatchedBounces: 0,
     permanentFailures: 0,
     temporaryFailures: 0,
+    missingMessageCount: 0,
+    missingThreadCount: 0,
     recovered: false
   });
   const impl = {
@@ -52,6 +54,9 @@ const h = vi.hoisted(() => {
 });
 
 vi.mock("@/lib/db", () => ({ prisma: h.prismaMock }));
+vi.mock("@/lib/provider", () => ({
+  isGmailReconnectError: (error: unknown) => error instanceof Error && error.message.includes("invalid_grant")
+}));
 vi.mock("@/services/bounces", () => ({
   runRecentBounceBackfill: (senderId: string) => {
     h.calls.backfill.push(senderId);
@@ -158,7 +163,10 @@ describe("checkSequenceBounces", () => {
         suppressionsCreated: 0,
         statsChanged: false,
         skippedAlreadyKnown: 0,
-        gmailSyncSkipped: null
+        gmailSyncSkipped: null,
+        missingMessageCount: 0,
+        missingThreadCount: 0,
+        skippedMissingGmailEntities: 0
       }
     });
     // The sync ran forced and scoped to this campaign's sender; the
@@ -243,5 +251,79 @@ describe("checkSequenceBounces", () => {
     expect((await checkSequenceBounces({ campaignId: "campaign-1", userId: "user-1" })).status).toBe(
       "sender_disconnected"
     );
+  });
+
+  it("still repairs stored-evidence rows when the Gmail sync phase throws", async () => {
+    seedCampaign();
+    seedJobs(9, "SENT");
+    state.jobs.push({ campaignId: "campaign-1", status: "FAILED", lastError: "Gmail rejected this recipient." });
+    // Gmail is unreadable this run (a transient backend error), but the DB-only
+    // reclassification must still heal the row from its own stored evidence —
+    // repair must never sit behind a Gmail call that can throw.
+    impl.sync = async () => {
+      throw new Error("Gmail backend error (500).");
+    };
+    impl.reclassify = async () => {
+      const stuck = state.jobs[state.jobs.length - 1];
+      stuck.status = "SUPPRESSED";
+      stuck.metadata = { failureCode: "HARD_BOUNCE_RECIPIENT" };
+      return { scanned: 10, candidates: [{}], reclassifiedCount: 1, suppressionsRecordedCount: 1, runsResyncedCount: 1 };
+    };
+
+    const result = await checkSequenceBounces({ campaignId: "campaign-1", userId: "user-1" });
+
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") return;
+    expect(result.summary.existingRowsReclassified).toBe(1);
+    expect(result.summary.invalidRecipientsUpdated).toBe(1);
+    // The repair ran even though the Gmail phase threw before completing.
+    expect(calls.reclassify).toHaveLength(1);
+  });
+
+  it("returns a retryable gmail_unavailable state when Gmail errors and nothing was repaired", async () => {
+    seedCampaign();
+    seedJobs(10, "SENT");
+    impl.backfill = async () => {
+      throw new Error("Gmail backend error (500).");
+    };
+
+    const result = await checkSequenceBounces({ campaignId: "campaign-1", userId: "user-1" });
+
+    expect(result.status).toBe("gmail_unavailable");
+    // The repair still ran; it simply found nothing to fix.
+    expect(calls.reclassify).toHaveLength(1);
+  });
+
+  it("treats a thrown reconnect error as disconnected when nothing could be repaired", async () => {
+    seedCampaign();
+    seedJobs(10, "SENT");
+    impl.sync = async () => {
+      throw new Error("invalid_grant");
+    };
+
+    expect((await checkSequenceBounces({ campaignId: "campaign-1", userId: "user-1" })).status).toBe(
+      "sender_disconnected"
+    );
+  });
+
+  it("surfaces skipped missing Gmail entities in the counts-only summary without leaking raw errors", async () => {
+    seedCampaign();
+    seedJobs(10, "SENT");
+    impl.sequenceScan = async () => ({
+      ...h.emptySyncResult(),
+      checkedMessages: 5,
+      missingMessageCount: 2,
+      missingThreadCount: 1
+    });
+
+    const result = await checkSequenceBounces({ campaignId: "campaign-1", userId: "user-1" });
+
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") return;
+    expect(result.summary.missingMessageCount).toBe(2);
+    expect(result.summary.missingThreadCount).toBe(1);
+    expect(result.summary.skippedMissingGmailEntities).toBe(3);
+    // Counts only — the raw Gmail 404 text never travels to the client.
+    expect(JSON.stringify(result)).not.toMatch(/requested entity was not found/i);
   });
 });
