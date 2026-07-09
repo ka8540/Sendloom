@@ -713,6 +713,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
         id: child.id,
         status: child.status,
         requestedTitles: child.requestedTitles,
+        requestedLocations: child.requestedLocations,
         positionCategories: child.positionCategories,
         createdAt: child.createdAt
       }));
@@ -725,6 +726,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
         id: search.id,
         status: search.status,
         requestedTitles: search.requestedTitles,
+        requestedLocations: search.requestedLocations,
         positionCategories: [],
         createdAt: search.createdAt
       }
