@@ -4,6 +4,7 @@
 
 import type {
   ConfidenceLevel,
+  DiscoverCompanyGroupNode,
   DiscoverQuota,
   EmailDomainEvidenceNode,
   EmailCandidateStatus,
@@ -516,6 +517,65 @@ export function resolveGroupOpenTarget<T extends { id: string; status: ProspectS
 /** "3 companies" subtitle for the grouped Search History panel. */
 export function formatGroupCountLabel(totalCount: number): string {
   return `${totalCount} ${totalCount === 1 ? "company" : "companies"}`;
+}
+
+/**
+ * Local, case-insensitive text filter over the already-loaded page of Search
+ * History company groups. Matches what the row displays: company name, domain,
+ * requested role labels, locations (or the "Any location" fallback), the
+ * derived status label, and the formatted updated date. Never calls the
+ * backend — an empty or whitespace-only query returns the page untouched.
+ */
+export function filterHistoryGroups(
+  groups: DiscoverCompanyGroupNode[],
+  query: string
+): DiscoverCompanyGroupNode[] {
+  const trimmed = query.trim().toLowerCase();
+  if (!trimmed) {
+    return groups;
+  }
+  return groups.filter((group) => {
+    const haystack = [
+      group.company?.name ?? group.displayName,
+      group.company?.officialWebsiteDomain,
+      group.company?.officialDomain,
+      ...group.requestedRoles,
+      ...(group.locations.length > 0 ? group.locations : ["Any location"]),
+      groupStatusBadge(group.searches.map((search) => search.status)).label,
+      formatDateTime(group.latestActivityAt)
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(trimmed);
+  });
+}
+
+/**
+ * Subtitle under the Search History title. Unfiltered it stays the plain
+ * "30 companies"; while the user is filtering it becomes "6 of 30 companies"
+ * (matches on the loaded page against the untouched backend total).
+ */
+export function formatFilteredGroupCountLabel(input: {
+  filteredCount: number;
+  totalCount: number;
+  hasQuery: boolean;
+}): string {
+  if (!input.hasQuery) {
+    return formatGroupCountLabel(input.totalCount);
+  }
+  return `${input.filteredCount} of ${input.totalCount} ${input.totalCount === 1 ? "company" : "companies"}`;
+}
+
+/**
+ * Replaces the "Showing X–Y of Z" pager label while a history filter is active,
+ * since the unfiltered range would misdescribe what is visible.
+ */
+export function formatHistoryMatchesLabel(matchCount: number): string {
+  if (matchCount <= 0) {
+    return "No matches on this page";
+  }
+  return `${matchCount} ${matchCount === 1 ? "match" : "matches"} on this page`;
 }
 
 /**
