@@ -5,11 +5,25 @@
 // a row navigates to the dedicated detail page (/prospects/[searchId]); this page
 // never renders company details, the People table, or selection/export actions.
 
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { AlertCircle, ChevronLeft, ChevronRight, Inbox, LoaderCircle, Plus, RefreshCw, Sparkles, Trash2, Users } from "lucide-react";
+import {
+  AlertCircle,
+  ChevronLeft,
+  ChevronRight,
+  Inbox,
+  LoaderCircle,
+  Plus,
+  RefreshCw,
+  Search,
+  SearchX,
+  Sparkles,
+  Trash2,
+  Users,
+  X
+} from "lucide-react";
 
 import { CircularCloseButton } from "@/components/circular-close-button";
 import {
@@ -30,8 +44,10 @@ import {
   PROSPECT_FINDER_TAGLINE,
   PROSPECT_FINDER_TITLE,
   discoverPerSearchSentence,
+  filterHistoryGroups,
   formatDateTime,
-  formatGroupCountLabel,
+  formatFilteredGroupCountLabel,
+  formatHistoryMatchesLabel,
   formatPageLabel,
   formatQuotaRemaining,
   formatQuotaReset,
@@ -429,12 +445,64 @@ function SearchHistoryTable({
   onPrev: () => void;
   onNext: () => void;
 }) {
+  // Client-side filter over the rows already loaded for this page. Typing never
+  // calls the backend; it only narrows what is visible, and the pager still
+  // moves between server pages with the filter kept applied.
+  const [filterQuery, setFilterQuery] = useState("");
+  const filterInputRef = useRef<HTMLInputElement | null>(null);
+  const hasFilterQuery = filterQuery.trim().length > 0;
+  const visibleSearches = useMemo(() => filterHistoryGroups(searches, filterQuery), [searches, filterQuery]);
+
+  const clearFilter = useCallback(() => {
+    setFilterQuery("");
+    filterInputRef.current?.focus();
+  }, []);
+
   return (
     <section className={`card ${styles.historyPanel}`} aria-label="Search history" data-discover-tour="search-history">
-      <div className={styles.panelHeader}>
+      <div className={`${styles.panelHeader} ${styles.historyPanelHeader}`}>
         <div>
           <h2 className={styles.panelTitle}>Search history</h2>
-          <p className={styles.panelSubtitle}>{formatGroupCountLabel(total)}</p>
+          <p className={styles.panelSubtitle} aria-live="polite">
+            {formatFilteredGroupCountLabel({
+              filteredCount: visibleSearches.length,
+              totalCount: total,
+              hasQuery: hasFilterQuery
+            })}
+          </p>
+        </div>
+        <div className={styles.historySearch} role="search">
+          <Search aria-hidden="true" className={styles.historySearchIcon} />
+          <input
+            ref={filterInputRef}
+            type="text"
+            className={styles.historySearchInput}
+            value={filterQuery}
+            onChange={(event) => setFilterQuery(event.target.value)}
+            onKeyDown={(event) => {
+              // Escape clears the filter (only intercepted while there is one).
+              if (event.key === "Escape" && filterQuery) {
+                event.preventDefault();
+                event.stopPropagation();
+                setFilterQuery("");
+              }
+            }}
+            placeholder="Search company, role, domain, or location"
+            aria-label="Search Discover history"
+            autoComplete="off"
+            spellCheck={false}
+          />
+          {filterQuery && (
+            <button
+              type="button"
+              className={styles.historySearchClear}
+              aria-label="Clear Discover history search"
+              title="Clear search"
+              onClick={clearFilter}
+            >
+              <X aria-hidden="true" />
+            </button>
+          )}
         </div>
       </div>
       {error && <p className={styles.errorText}>{error}</p>}
@@ -452,6 +520,20 @@ function SearchHistoryTable({
             body="Create a search to start discovering relevant people."
             compact
           />
+        ) : visibleSearches.length === 0 ? (
+          // History exists but the current filter has no matches — distinct
+          // from the no-history-at-all state above.
+          <EmptyState
+            icon={<SearchX aria-hidden="true" />}
+            title="No matching searches"
+            body="Try another company, role, domain, or location."
+            compact
+            action={
+              <button type="button" className={styles.secondaryButton} onClick={clearFilter}>
+                Clear search
+              </button>
+            }
+          />
         ) : (
           <div className={styles.historyTable} role="table" aria-label="Searches">
             <div className={styles.historyHeadRow} role="row">
@@ -463,7 +545,7 @@ function SearchHistoryTable({
               <span role="columnheader">Updated</span>
               <span role="columnheader" aria-label="Actions" />
             </div>
-            {searches.map((group, index) => {
+            {visibleSearches.map((group, index) => {
               const roles = group.requestedRoles;
               const location = group.locations[0] ?? null;
               const domain = group.company?.officialWebsiteDomain ?? group.company?.officialDomain ?? null;
@@ -542,7 +624,9 @@ function SearchHistoryTable({
       </div>
       <div className={styles.paginationRow} data-discover-tour={pageCount > 1 ? "history-pagination" : undefined}>
         <span className={styles.peopleShowing}>
-          {formatShowingLabel({ offset, pageCount: searches.length, totalCount: total })}
+          {hasFilterQuery
+            ? formatHistoryMatchesLabel(visibleSearches.length)
+            : formatShowingLabel({ offset, pageCount: searches.length, totalCount: total })}
         </span>
         <div className={styles.pager}>
           <button

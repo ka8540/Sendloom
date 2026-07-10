@@ -724,6 +724,100 @@
   color: var(--muted);
 }
 
+/* ---- Search history filter ------------------------------------------------
+   Compact search control in the Search History card header. Filters the
+   already-loaded rows client-side; the look follows the shared field tokens
+   (dark navy field surface, subtle border, restrained green focus ring). */
+
+.historyPanelHeader {
+  flex-wrap: wrap;
+  align-items: center;
+  row-gap: 0.65rem;
+}
+
+.historySearch {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 17rem;
+  max-width: 23.5rem;
+  min-width: 0;
+}
+
+.historySearchIcon {
+  position: absolute;
+  left: 0.85rem;
+  width: 0.95rem;
+  height: 0.95rem;
+  color: var(--muted);
+  pointer-events: none;
+  transition: color 140ms ease;
+}
+
+.historySearch:focus-within .historySearchIcon {
+  color: var(--accent);
+}
+
+.historySearchInput {
+  width: 100%;
+  height: 2.4rem;
+  padding: 0 2.3rem 0 2.35rem;
+  border-radius: 999px;
+  border: 1px solid var(--field-border);
+  background: var(--field-bg);
+  color: var(--text);
+  font-size: 0.88rem;
+  text-overflow: ellipsis;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.historySearchInput::placeholder {
+  color: var(--muted);
+}
+
+.historySearchInput:hover {
+  border-color: var(--field-focus);
+}
+
+.historySearchInput:focus-visible {
+  outline: none;
+  border-color: var(--field-focus);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* Inline clear ("x") action; only rendered while the filter has text. */
+.historySearchClear {
+  position: absolute;
+  right: 0.4rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.65rem;
+  height: 1.65rem;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.historySearchClear:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.historySearchClear:focus-visible {
+  outline: 2px solid var(--field-focus);
+  outline-offset: 1px;
+}
+
+.historySearchClear svg {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
 /* ---- Badges ------------------------------------------------------------- */
 
 .badge {
@@ -2104,6 +2198,17 @@
 @media (max-width: 640px) {
   .header {
     align-items: flex-start;
+  }
+
+  /* The history filter stacks under the title and stretches full width. */
+  .historyPanelHeader {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .historyPanelHeader .historySearch {
+    max-width: none;
+    flex: 1 1 auto;
   }
 
   /* Rows become stacked cards on mobile, so the tables no longer need the

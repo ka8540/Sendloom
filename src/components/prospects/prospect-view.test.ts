@@ -2,7 +2,12 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
-import type { DiscoverQuota, PersonNode, ProspectSearchNode } from "@/components/prospects/prospect-graphql";
+import type {
+  DiscoverCompanyGroupNode,
+  DiscoverQuota,
+  PersonNode,
+  ProspectSearchNode
+} from "@/components/prospects/prospect-graphql";
 import {
   ADD_MORE_DIALOG_BODY,
   ADD_MORE_PEOPLE_LABEL,
@@ -32,7 +37,11 @@ import {
   discoverPerSearchSentence,
   emailFormatEvidenceSummary,
   emailStatusBadge,
+  filterHistoryGroups,
   filterPeopleByText,
+  formatDateTime,
+  formatFilteredGroupCountLabel,
+  formatHistoryMatchesLabel,
   formatPageLabel,
   formatQuotaRemaining,
   formatQuotaReset,
@@ -1141,5 +1150,176 @@ describe("role-targeted Add 10 more (#35-#38)", () => {
       currentSearchId: "s_eng_1"
     });
     expect(target.kind === "search" && target.search.id).toBe("s_eng_1");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Search History filter (client-side search over the loaded history page).
+// ---------------------------------------------------------------------------
+
+function historyGroup(overrides: Partial<DiscoverCompanyGroupNode> = {}): DiscoverCompanyGroupNode {
+  return {
+    id: "group-acme",
+    displayName: "Acme Corp",
+    requestedRoles: ["Software Engineer"],
+    locations: ["United States"],
+    peopleCount: 10,
+    latestActivityAt: "2026-07-09T12:00:00.000Z",
+    company: {
+      id: "company-acme",
+      name: "Acme Corp",
+      officialDomain: "acme.com",
+      officialWebsiteDomain: "acme.com"
+    },
+    searches: [
+      {
+        id: "search-acme",
+        requestedTitles: ["Software Engineer"],
+        requestedLocations: ["United States"],
+        status: "READY",
+        peopleCount: 10,
+        createdAt: "2026-07-09T12:00:00.000Z",
+        completedAt: "2026-07-09T12:05:00.000Z"
+      }
+    ],
+    ...overrides
+  };
+}
+
+describe("filterHistoryGroups", () => {
+  const intuit = historyGroup({
+    id: "group-intuit",
+    displayName: "Intuit Inc.",
+    company: { id: "company-intuit", name: "Intuit Inc.", officialDomain: "intuit.com", officialWebsiteDomain: "intuit.com" }
+  });
+  const walmart = historyGroup({
+    id: "group-walmart",
+    displayName: "Walmart",
+    requestedRoles: ["Recruiter"],
+    locations: ["Canada"],
+    latestActivityAt: "2026-05-02T09:00:00.000Z",
+    company: { id: "company-walmart", name: "Walmart", officialDomain: "walmart.com", officialWebsiteDomain: "walmart.com" },
+    searches: [
+      {
+        id: "search-walmart",
+        requestedTitles: ["Recruiter"],
+        requestedLocations: ["Canada"],
+        status: "SEARCHING_PEOPLE",
+        peopleCount: 0,
+        createdAt: "2026-05-02T09:00:00.000Z",
+        completedAt: null
+      }
+    ]
+  });
+  const groups = [intuit, walmart];
+
+  it("returns every row for an empty or whitespace-only query", () => {
+    expect(filterHistoryGroups(groups, "")).toEqual(groups);
+    expect(filterHistoryGroups(groups, "   ")).toEqual(groups);
+  });
+
+  it("matches the company name case-insensitively and trims whitespace", () => {
+    expect(filterHistoryGroups(groups, "intuit")).toEqual([intuit]);
+    expect(filterHistoryGroups(groups, "  INTUIT  ")).toEqual([intuit]);
+  });
+
+  it("matches the company domain", () => {
+    expect(filterHistoryGroups(groups, "walmart.com")).toEqual([walmart]);
+  });
+
+  it("matches requested role labels", () => {
+    expect(filterHistoryGroups(groups, "software engineer")).toEqual([intuit]);
+    expect(filterHistoryGroups(groups, "recruiter")).toEqual([walmart]);
+  });
+
+  it("matches the location, including the Any-location fallback", () => {
+    expect(filterHistoryGroups(groups, "united states")).toEqual([intuit]);
+    const anywhere = historyGroup({ id: "group-anywhere", locations: [] });
+    expect(filterHistoryGroups([anywhere, walmart], "any location")).toEqual([anywhere]);
+  });
+
+  it("matches the derived status label", () => {
+    expect(filterHistoryGroups(groups, "ready")).toEqual([intuit]);
+    expect(filterHistoryGroups(groups, "processing")).toEqual([walmart]);
+  });
+
+  it("matches the displayed updated-date text", () => {
+    const dateText = formatDateTime(intuit.latestActivityAt);
+    expect(filterHistoryGroups(groups, dateText)).toEqual([intuit]);
+  });
+
+  it("matches the display name for unresolved groups with no company", () => {
+    const unresolved = historyGroup({ id: "group-pylon", displayName: "Pylon", company: null });
+    expect(filterHistoryGroups([unresolved, walmart], "pylon")).toEqual([unresolved]);
+  });
+
+  it("returns no rows when nothing matches", () => {
+    expect(filterHistoryGroups(groups, "zzz-no-such-company")).toEqual([]);
+  });
+});
+
+describe("Search History filtered count labels", () => {
+  it("keeps the plain count when no filter is active", () => {
+    expect(formatFilteredGroupCountLabel({ filteredCount: 30, totalCount: 30, hasQuery: false })).toBe("30 companies");
+    expect(formatFilteredGroupCountLabel({ filteredCount: 1, totalCount: 1, hasQuery: false })).toBe("1 company");
+  });
+
+  it('shows "X of Y companies" while filtering', () => {
+    expect(formatFilteredGroupCountLabel({ filteredCount: 6, totalCount: 30, hasQuery: true })).toBe("6 of 30 companies");
+    expect(formatFilteredGroupCountLabel({ filteredCount: 0, totalCount: 1, hasQuery: true })).toBe("0 of 1 company");
+  });
+
+  it("describes per-page matches for the pager label", () => {
+    expect(formatHistoryMatchesLabel(0)).toBe("No matches on this page");
+    expect(formatHistoryMatchesLabel(1)).toBe("1 match on this page");
+    expect(formatHistoryMatchesLabel(6)).toBe("6 matches on this page");
+  });
+});
+
+describe("Discover Search History filter UI", () => {
+  const listSource = readFileSync("src/components/prospects/prospects-list-view.tsx", "utf8");
+  const css = readFileSync("src/components/prospects/prospects-dashboard.module.css", "utf8");
+
+  it("renders the search control in the card header with the scoped classes", () => {
+    expect(listSource).toContain("styles.historyPanelHeader");
+    expect(listSource).toContain("styles.historySearch");
+    expect(listSource).toContain('role="search"');
+    expect(css).toMatch(/\.historySearch\s*\{/);
+    expect(css).toMatch(/\.historySearchInput\s*\{/);
+    expect(css).toMatch(/\.historySearchClear\s*\{/);
+  });
+
+  it("has the required placeholder and accessible names", () => {
+    expect(listSource).toContain('placeholder="Search company, role, domain, or location"');
+    expect(listSource).toContain('aria-label="Search Discover history"');
+    expect(listSource).toContain('aria-label="Clear Discover history search"');
+  });
+
+  it("filters client-side only — the input drives local state, never a backend call", () => {
+    expect(listSource).toContain("filterHistoryGroups(searches, filterQuery)");
+    expect(listSource).toContain("setFilterQuery(event.target.value)");
+  });
+
+  it("clear button and Escape both reset the filter", () => {
+    expect(listSource).toContain("const clearFilter = useCallback");
+    expect(listSource).toContain('event.key === "Escape" && filterQuery');
+  });
+
+  it("shows the filtered empty state with a clear action, separate from the no-history state", () => {
+    expect(listSource).toContain('title="No matching searches"');
+    expect(listSource).toContain('body="Try another company, role, domain, or location."');
+    expect(listSource).toContain("Clear search");
+    expect(listSource).toContain('title="No prospect searches yet"');
+  });
+
+  it("shows the filtered count in the subtitle", () => {
+    expect(listSource).toContain("formatFilteredGroupCountLabel");
+    expect(listSource).toContain("formatHistoryMatchesLabel");
+  });
+
+  it("keeps row open and delete wiring on the filtered rows", () => {
+    expect(listSource).toContain("visibleSearches.map((group, index)");
+    expect(listSource).toContain("resolveGroupOpenTarget(group.searches)");
+    expect(listSource).toContain("onRequestDelete(group, event.currentTarget)");
   });
 });
