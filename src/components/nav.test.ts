@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 // style used across the codebase for client components.
 const NAV_SOURCE = readFileSync("src/components/nav.tsx", "utf8");
 const SESSION_SOURCE = readFileSync("src/components/session-controls.tsx", "utf8");
+const TOOLTIP_SOURCE = readFileSync("src/components/collapsed-sidebar-tooltip.tsx", "utf8");
 const GLOBALS = readFileSync("src/app/globals.css", "utf8");
 
 function operatorNavBlock(): string {
@@ -35,6 +36,42 @@ describe("primary product navigation", () => {
   });
 });
 
+describe("collapsed sidebar tooltips", () => {
+  it("wraps every collapsed primary item with its exact label", () => {
+    expect(NAV_SOURCE).toContain('<CollapsedSidebarTooltip key={item.href} label={item.label}>');
+    expect(NAV_SOURCE).toContain('aria-label={collapsed ? item.label : undefined}');
+    for (const label of ["Overview", "Finder", "Discover", "Imports", "Templates", "Sequences"]) {
+      expect(operatorNavBlock()).toContain(`label: "${label}"`);
+    }
+  });
+
+  it("adds collapsed labels for Account, Theme, and Log out", () => {
+    expect(NAV_SOURCE).toContain('<CollapsedSidebarTooltip label="Account">');
+    expect(NAV_SOURCE).toContain('aria-label={collapsed ? "Account" : undefined}');
+    expect(SESSION_SOURCE).toContain('<CollapsedSidebarTooltip label="Theme">');
+    expect(SESSION_SOURCE).toContain('<CollapsedSidebarTooltip label="Log out">');
+    expect(SESSION_SOURCE).toContain('aria-label={collapsed ? "Log out" : undefined}');
+  });
+
+  it("only renders tooltip wrappers in the collapsed branches", () => {
+    expect(NAV_SOURCE).toContain("return collapsed ? (");
+    expect(NAV_SOURCE).toContain(": accountLink\n");
+    expect(SESSION_SOURCE).toContain("{collapsed ? (");
+  });
+
+  it("supports mouse, keyboard, overflow-safe positioning, and non-blocking clicks", () => {
+    expect(TOOLTIP_SOURCE).toContain("onPointerEnter={handlePointerEnter}");
+    expect(TOOLTIP_SOURCE).toContain("onPointerLeave={() => setPosition(null)}");
+    expect(TOOLTIP_SOURCE).toContain("onFocusCapture={showTooltip}");
+    expect(TOOLTIP_SOURCE).toContain("onBlurCapture={handleBlur}");
+    expect(TOOLTIP_SOURCE).toContain("onClickCapture={() => setPosition(null)}");
+    expect(TOOLTIP_SOURCE).toContain('event.pointerType !== "touch"');
+    expect(TOOLTIP_SOURCE).toContain("createPortal(");
+    expect(GLOBALS).toMatch(/\.collapsed-sidebar-tooltip \{[\s\S]*?position:\s*fixed/);
+    expect(GLOBALS).toMatch(/\.collapsed-sidebar-tooltip \{[\s\S]*?pointer-events:\s*none/);
+  });
+});
+
 describe("Account moved to the lower account/utility section", () => {
   it("renders Account as a nav item passed into the footer utility slot (not admin)", () => {
     expect(NAV_SOURCE).toContain('const accountHref = "/account" as Route;');
@@ -53,9 +90,9 @@ describe("Account moved to the lower account/utility section", () => {
   });
 
   it("keeps the Account icon visible when the sidebar is collapsed", () => {
-    // The icon always renders; only the label span is hidden via CSS. The title
-    // gives the collapsed rail an accessible tooltip.
-    expect(NAV_SOURCE).toContain('title={collapsed ? "Account" : undefined}');
+    // The icon always renders; only the label span is hidden via CSS. aria-label
+    // gives the collapsed rail an accessible name independent of its tooltip.
+    expect(NAV_SOURCE).toContain('aria-label={collapsed ? "Account" : undefined}');
   });
 
   it("does not expose Account in the admin sidebar", () => {
@@ -71,9 +108,7 @@ describe("session controls footer order", () => {
     const themeIndex = SESSION_SOURCE.indexOf("nav-footer-theme");
     const dividerIndex = SESSION_SOURCE.indexOf("nav-footer-divider");
     const utilityIndex = SESSION_SOURCE.indexOf("{utilityNav}");
-    // Anchor on the rendered label — the performLogout callback is defined
-    // above the JSX and would match before the utility slot.
-    const logoutIndex = SESSION_SOURCE.indexOf('"Log out"');
+    const logoutIndex = SESSION_SOURCE.indexOf('<CollapsedSidebarTooltip label="Log out">');
 
     expect(themeIndex).toBeGreaterThan(-1);
     expect(dividerIndex).toBeGreaterThan(themeIndex);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useState } from "react";
 import type { Route } from "next";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -24,6 +24,7 @@ import {
   Users,
 } from "lucide-react";
 import { BrandText } from "@/components/brand-text";
+import { CollapsedSidebarTooltip } from "@/components/collapsed-sidebar-tooltip";
 import { SendloomLogo } from "@/components/sendloom-logo";
 import { SessionControls } from "@/components/session-controls";
 
@@ -139,16 +140,19 @@ export function AppNav({ initialCollapsed = false, isAdmin = false }: { initialC
   // the theme control, above logout); admins manage accounts elsewhere.
   const accountHref = "/account" as Route;
   const accountActive = pathname === accountHref || pathname.startsWith(`${accountHref}/`);
-  const utilityNav = isAdmin ? null : (
+  const accountLink = (
     <Link
       href={accountHref}
       className={`nav-item${accountActive ? " is-active" : ""}`}
       aria-current={accountActive ? "page" : undefined}
-      title={collapsed ? "Account" : undefined}
+      aria-label={collapsed ? "Account" : undefined}
     >
       <CircleUserRound aria-hidden="true" />
       <span>Account</span>
     </Link>
+  );
+  const utilityNav = isAdmin ? null : (
+    collapsed ? <CollapsedSidebarTooltip label="Account">{accountLink}</CollapsedSidebarTooltip> : accountLink
   );
 
   return (
@@ -190,17 +194,22 @@ export function AppNav({ initialCollapsed = false, isAdmin = false }: { initialC
             : pathname === item.href || pathname.startsWith(`${item.href}/`);
           const Icon = item.icon;
 
-          return (
+          const link = (
             <Link
-              key={item.href}
               href={item.href}
               className={`nav-item${active ? " is-active" : ""}`}
               aria-current={active ? "page" : undefined}
-              title={collapsed ? item.label : undefined}
+              aria-label={collapsed ? item.label : undefined}
             >
               <Icon aria-hidden="true" />
               <span>{item.label}</span>
             </Link>
+          );
+
+          return collapsed ? (
+            <CollapsedSidebarTooltip key={item.href} label={item.label}>{link}</CollapsedSidebarTooltip>
+          ) : (
+            <Fragment key={item.href}>{link}</Fragment>
           );
         })}
       </nav>

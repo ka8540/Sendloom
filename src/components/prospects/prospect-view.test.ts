@@ -404,7 +404,8 @@ describe("Discover navigation and landing contracts", () => {
     expect(navSource).toContain('href: "/prospects" as Route');
     expect(navSource).toContain('label: "Discover"');
     expect(navSource).toContain("UserRoundSearch");
-    expect(navSource).toContain("title={collapsed ? item.label : undefined}");
+    expect(navSource).toContain("aria-label={collapsed ? item.label : undefined}");
+    expect(navSource).toContain("<CollapsedSidebarTooltip key={item.href} label={item.label}>");
     expect(navSource).not.toContain(`label: "${oldPluralLabel}"`);
     expect(navSource).not.toContain("icon: Network");
   });

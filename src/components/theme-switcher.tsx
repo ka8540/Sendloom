@@ -39,7 +39,7 @@ function applyThemePreference(theme: ThemePreference) {
   root.style.colorScheme = theme;
 }
 
-export function ThemeSwitcher({ className = "" }: { className?: string }) {
+export function ThemeSwitcher({ className = "", collapsed = false }: { className?: string; collapsed?: boolean }) {
   const [theme, setTheme] = useState<ThemePreference>("system");
   const [open, setOpen] = useState(false);
   const [menuStyle, setMenuStyle] = useState<CSSProperties | undefined>();
@@ -202,8 +202,8 @@ export function ThemeSwitcher({ className = "" }: { className?: string }) {
         aria-expanded={open}
         aria-controls={menuId}
         onClick={() => setOpen((current) => !current)}
-        aria-label={`Theme: ${activeOption.label}. Open theme menu`}
-        title={`Theme: ${activeOption.label}`}
+        aria-label={collapsed ? "Theme" : `Theme: ${activeOption.label}. Open theme menu`}
+        title={collapsed ? undefined : `Theme: ${activeOption.label}`}
       >
         <ActiveIcon aria-hidden="true" />
       </button>

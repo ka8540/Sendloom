@@ -414,6 +414,61 @@ html[data-sidebar-collapsed="true"] .shell {
   white-space: nowrap;
 }
 
+.collapsed-sidebar-tooltip-target {
+  display: flex;
+  width: fit-content;
+}
+
+.collapsed-sidebar-tooltip {
+  position: fixed;
+  z-index: 100;
+  width: max-content;
+  max-width: min(14rem, calc(100vw - 1.5rem));
+  padding: 0.42rem 0.65rem;
+  border: 1px solid rgba(151, 171, 204, 0.22);
+  border-radius: 7px;
+  background: #0b1524;
+  color: #f4f7fd;
+  box-shadow: 0 10px 28px rgba(1, 6, 15, 0.42);
+  font-size: 0.78rem;
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: 0.01em;
+  pointer-events: none;
+  transform: translateY(-50%);
+  animation: collapsed-sidebar-tooltip-in 140ms ease-out both;
+}
+
+.collapsed-sidebar-tooltip::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 100%;
+  width: 0.42rem;
+  height: 0.42rem;
+  border-left: 1px solid rgba(151, 171, 204, 0.22);
+  border-bottom: 1px solid rgba(151, 171, 204, 0.22);
+  background: #0b1524;
+  transform: translate(50%, -50%) rotate(45deg);
+}
+
+@keyframes collapsed-sidebar-tooltip-in {
+  from {
+    opacity: 0;
+    transform: translate(-4px, -50%);
+  }
+  to {
+    opacity: 1;
+    transform: translate(0, -50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .collapsed-sidebar-tooltip {
+    animation: none;
+  }
+}
+
 .nav-item:hover,
 .nav-item:focus-visible {
   background: var(--accent-soft);

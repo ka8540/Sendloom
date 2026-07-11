@@ -3,6 +3,7 @@
 import { useCallback, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
+import { CollapsedSidebarTooltip } from "@/components/collapsed-sidebar-tooltip";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 
 export function SessionControls({
@@ -35,10 +36,29 @@ export function SessionControls({
     redirectToLogin();
   }, [redirectToLogin]);
 
+  const logoutButton = (
+    <button
+      className="nav-item nav-item-button"
+      type="button"
+      onClick={() => void performLogout()}
+      disabled={pending}
+      aria-label={collapsed ? "Log out" : undefined}
+    >
+      <LogOut aria-hidden="true" />
+      <span>{pending ? "Signing out..." : "Log out"}</span>
+    </button>
+  );
+
   return (
     <div className="nav-footer">
       <div className="nav-footer-theme">
-        <ThemeSwitcher className="theme-menu--footer" />
+        {collapsed ? (
+          <CollapsedSidebarTooltip label="Theme">
+            <ThemeSwitcher className="theme-menu--footer" collapsed />
+          </CollapsedSidebarTooltip>
+        ) : (
+          <ThemeSwitcher className="theme-menu--footer" />
+        )}
       </div>
       {utilityNav ? (
         <>
@@ -46,16 +66,9 @@ export function SessionControls({
           {utilityNav}
         </>
       ) : null}
-      <button
-        className="nav-item nav-item-button"
-        type="button"
-        onClick={() => void performLogout()}
-        disabled={pending}
-        title={collapsed ? "Log out" : undefined}
-      >
-        <LogOut aria-hidden="true" />
-        <span>{pending ? "Signing out..." : "Log out"}</span>
-      </button>
+      {collapsed ? (
+        <CollapsedSidebarTooltip label="Log out">{logoutButton}</CollapsedSidebarTooltip>
+      ) : logoutButton}
     </div>
   );
 }
