@@ -8,6 +8,10 @@ import {
 } from "@/services/bounces";
 import { processPendingCampaignWork } from "@/services/campaigns";
 import { syncConnectedSenderReplies } from "@/services/replies";
+import {
+  type AutomaticBounceCheckResult,
+  runAutomaticSequenceBounceChecks
+} from "@/services/sequence-bounce-monitor";
 
 export const maxDuration = 60;
 
@@ -109,6 +113,20 @@ async function handleCron(request: Request) {
       message: error instanceof Error ? error.message : String(error)
     });
   }
+  // Automatic per-sequence bounce monitoring: while a run is sending (and
+  // briefly after it completes) run the same shared check the manual "Check
+  // bounces" button uses, on a per-run cadence checkpoint. Deliberately last:
+  // send work always comes first, and a monitoring failure never blocks it.
+  let bounceMonitor: AutomaticBounceCheckResult | null = null;
+  try {
+    bounceMonitor = await runAutomaticSequenceBounceChecks();
+  } catch (error) {
+    console.error("[campaign-cron] Automatic sequence bounce monitoring failed.", error);
+    errors.push({
+      scope: "sequence-bounce-monitor",
+      message: error instanceof Error ? error.message : String(error)
+    });
+  }
 
   return NextResponse.json({
     ...result,
@@ -117,7 +135,8 @@ async function handleCron(request: Request) {
     replySync,
     watchRenewal,
     bounceSync,
-    dispositionRepair
+    dispositionRepair,
+    bounceMonitor
   });
 }
 
