@@ -70,6 +70,16 @@ describe("collapsed sidebar tooltips", () => {
     expect(GLOBALS).toMatch(/\.collapsed-sidebar-tooltip \{[\s\S]*?position:\s*fixed/);
     expect(GLOBALS).toMatch(/\.collapsed-sidebar-tooltip \{[\s\S]*?pointer-events:\s*none/);
   });
+
+  it("keeps the tooltip compact and visually restrained", () => {
+    expect(TOOLTIP_SOURCE).toContain("const TOOLTIP_GAP = 10;");
+    expect(GLOBALS).toMatch(/\.collapsed-sidebar-tooltip \{[\s\S]*?padding:\s*0\.34rem 0\.56rem/);
+    expect(GLOBALS).toMatch(/\.collapsed-sidebar-tooltip \{[\s\S]*?border-radius:\s*10px/);
+    expect(GLOBALS).toMatch(/\.collapsed-sidebar-tooltip \{[\s\S]*?font-size:\s*0\.75rem/);
+    expect(GLOBALS).toMatch(/\.collapsed-sidebar-tooltip \{[\s\S]*?font-weight:\s*600/);
+    expect(GLOBALS).toMatch(/\.collapsed-sidebar-tooltip \{[\s\S]*?line-height:\s*1/);
+    expect(GLOBALS).toMatch(/\.collapsed-sidebar-tooltip::before \{[\s\S]*?width:\s*0\.28rem/);
+  });
 });
 
 describe("Account moved to the lower account/utility section", () => {

@@ -3,7 +3,7 @@
 import { createPortal } from "react-dom";
 import { useCallback, useRef, useState, type FocusEvent, type PointerEvent, type ReactNode } from "react";
 
-const TOOLTIP_GAP = 12;
+const TOOLTIP_GAP = 10;
 
 export function CollapsedSidebarTooltip({ label, children }: { label: string; children: ReactNode }) {
   const targetRef = useRef<HTMLDivElement | null>(null);
