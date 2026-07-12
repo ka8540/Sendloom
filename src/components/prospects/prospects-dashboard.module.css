@@ -2504,10 +2504,25 @@
   transition: transform 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
 }
 
+/* Hover/focus: slight lift, a touch brighter surface, and a clearly greener
+   ring — refined intent feedback, never a big glow. */
 .companySearchTrigger:hover,
 .companySearchTrigger:focus-visible {
   transform: translateY(-1px);
   box-shadow: 0 8px 20px var(--accent-soft-strong);
+  background:
+    linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-strong) 88%, var(--accent-soft)),
+        color-mix(in srgb, var(--surface-muted) 86%, var(--accent-soft))
+      )
+      padding-box,
+    linear-gradient(
+        135deg,
+        color-mix(in srgb, var(--accent) 62%, var(--line)),
+        color-mix(in srgb, var(--accent-strong) 42%, var(--line))
+      )
+      border-box;
 }
 
 .companySearchTrigger:focus-visible {
@@ -2599,6 +2614,74 @@
   transform: translateY(0);
 }
 
+/* ---- Header quota chip ("2/4") ------------------------------------------- */
+
+/* Anchor for the chip + its helper card, with breathing room before the
+   Search trigger (the row gap alone reads cramped). */
+.quotaChipWrap {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  margin-right: 0.5rem;
+}
+
+/* Small premium stat chip: 34px pill, tabular digits, quiet at rest and
+   accent-ringed on hover/keyboard focus (which also reveals the helper). */
+.quotaChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  height: 2.125rem;
+  padding: 0 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-strong) 92%, transparent);
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  cursor: default;
+  transition: border-color 160ms ease, color 160ms ease;
+}
+
+.quotaChip:hover,
+.quotaChip:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--line));
+  color: var(--text);
+}
+
+.quotaChip:focus-visible {
+  outline: 2px solid var(--field-focus);
+  outline-offset: 2px;
+}
+
+.quotaChipIcon {
+  width: 0.85rem;
+  height: 0.85rem;
+  color: var(--accent);
+  flex: none;
+}
+
+.quotaChipUnlimited {
+  color: var(--accent-strong);
+}
+
+/* The quota helper card opens from the row's LEFT edge (the chip is the
+   leftmost action), unlike the trigger's right-aligned card. Declared after
+   .companySearchTooltip so this override wins the cascade. */
+.quotaChipTooltip {
+  left: 0;
+  right: auto;
+}
+
+.quotaChipWrap:hover .companySearchTooltip,
+.quotaChipWrap:has(.quotaChip:focus-visible) .companySearchTooltip {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 /* The dialog card: a COMPACT centered modal on the page's shared modalOverlay,
    styled after the confirm-dialog card — icon tile, accent-tinted navy
    surface, big radius, soft shadow. Never a full-width page section. */
@@ -2683,7 +2766,8 @@
 
   .companySearchTrigger,
   .companySearchTriggerLabel,
-  .companySearchTooltip {
+  .companySearchTooltip,
+  .quotaChip {
     transition: none;
   }
 

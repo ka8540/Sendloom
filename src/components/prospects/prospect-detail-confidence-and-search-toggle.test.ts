@@ -21,13 +21,17 @@ import {
   COMPANY_SEARCH_TOOLTIP_BODY,
   COMPANY_SEARCH_TOOLTIP_TITLE,
   COMPANY_SEARCH_TRIGGER_LABEL,
+  DISCOVER_QUOTA_TOOLTIP_TITLE,
   EMAIL_CONFIDENCE_HIGH_USABLE_PERCENT,
   EMAIL_CONFIDENCE_MEDIUM_USABLE_PERCENT,
   deriveDiscoverQualitySummary,
-  emailConfidenceFromUsableRate
+  emailConfidenceFromUsableRate,
+  formatQuotaChip
 } from "@/components/prospects/prospect-view";
+import type { DiscoverQuota } from "@/components/prospects/prospect-graphql";
 
 const DETAIL_SOURCE = readFileSync("src/components/prospects/prospect-detail-view.tsx", "utf8");
+const SHARED_SOURCE = readFileSync("src/components/prospects/prospects-shared.tsx", "utf8");
 const CSS = readFileSync("src/components/prospects/prospects-dashboard.module.css", "utf8");
 
 const rate = (usable: number, total: number) => ({ usable, total });
@@ -267,6 +271,68 @@ describe("duplicate rules for same-company searches (#14, #15)", () => {
     const validated = validateCompanyRoleSearchInput({ jobTitle: "  Recruiter  ", location: "   " });
     expect(validated).toEqual({ ok: true, jobTitle: "Recruiter", location: null });
     expect(validateCompanyRoleSearchInput({ jobTitle: "   " }).ok).toBe(false);
+  });
+});
+
+describe("compact header quota chip", () => {
+  const quotaOf = (searchesRemaining: number, dailySearchLimit = 4, unlimited = false): DiscoverQuota => ({
+    resultsPerSearch: 10,
+    dailySearchLimit,
+    searchesUsed: dailySearchLimit - searchesRemaining,
+    searchesRemaining,
+    resetAt: "2026-07-13T00:00:00.000Z",
+    unlimited
+  });
+
+  it("formats the compact value from the live quota", () => {
+    expect(formatQuotaChip(quotaOf(2))?.value).toBe("2/4");
+    expect(formatQuotaChip(quotaOf(4))?.value).toBe("4/4");
+    expect(formatQuotaChip(quotaOf(0))?.value).toBe("0/4");
+    // A transient negative can never render "-1/4".
+    expect(formatQuotaChip(quotaOf(-1))?.value).toBe("0/4");
+    expect(formatQuotaChip(quotaOf(0, 4, true))?.value).toBe("Unlimited");
+    expect(formatQuotaChip(null)).toBeNull();
+  });
+
+  it("carries the full meaning in the accessible label and helper copy", () => {
+    const limited = formatQuotaChip(quotaOf(2))!;
+    expect(limited.ariaLabel).toBe("2 of 4 Discover searches remaining today");
+    expect(limited.tooltip).toBe("2 of 4 searches remaining today.");
+    const unlimited = formatQuotaChip(quotaOf(0, 4, true))!;
+    expect(unlimited.ariaLabel).toBe("Unlimited Discover access");
+    expect(unlimited.tooltip).toBe("Unlimited Discover access.");
+    expect(DISCOVER_QUOTA_TOOLTIP_TITLE).toBe("Discover searches");
+  });
+
+  it("the detail header renders the chip; the dialog footer keeps the full sentence", () => {
+    expect(DETAIL_SOURCE).toContain("<QuotaStatChip quota={quota} />");
+    // Exactly one QuotaIndicator remains in the detail view — the dialog footer.
+    expect(DETAIL_SOURCE.match(/<QuotaIndicator quota=\{quota\} \/>/g)).toHaveLength(1);
+  });
+
+  it("the chip is focusable, labelled, and keeps the detail-tour anchors", () => {
+    expect(SHARED_SOURCE).toContain("export function QuotaStatChip");
+    expect(SHARED_SOURCE).toContain("tabIndex={0}");
+    expect(SHARED_SOURCE).toContain("aria-label={view.ariaLabel}");
+    // The detail tour still finds and reads the quota element.
+    const chip = SHARED_SOURCE.slice(SHARED_SOURCE.indexOf("export function QuotaStatChip"));
+    expect(chip).toContain('data-discover-tour="quota"');
+    expect(chip).toContain("data-discover-quota=");
+    // The helper card is decorative only.
+    expect(chip).toMatch(/quotaChipTooltip\}`\} aria-hidden="true"/);
+  });
+
+  it("the chip is a small stat pill with room before the Search trigger", () => {
+    // 34px pill, tabular digits, quiet muted text.
+    expect(CSS).toMatch(/\.quotaChip \{[^}]*height: 2\.125rem/);
+    expect(CSS).toMatch(/\.quotaChip \{[^}]*font-variant-numeric: tabular-nums/);
+    // ~20px total to the Search trigger: 12px row gap + 8px chip margin.
+    expect(CSS).toMatch(/\.quotaChipWrap \{[^}]*margin-right: 0\.5rem/);
+    // Its helper card opens from the left edge and shows on hover/keyboard focus.
+    expect(CSS).toMatch(/\.quotaChipTooltip \{\s*\n\s*left: 0;\s*\n\s*right: auto;/);
+    expect(CSS).toMatch(
+      /\.quotaChipWrap:hover \.companySearchTooltip,\s*\n\s*\.quotaChipWrap:has\(\.quotaChip:focus-visible\) \.companySearchTooltip \{/
+    );
   });
 });
 

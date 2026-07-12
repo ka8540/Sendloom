@@ -994,6 +994,47 @@ export function formatQuotaRemaining(quota: DiscoverQuota | null): string | null
   return `${quota.searchesRemaining} of ${quota.dailySearchLimit} searches remaining today`;
 }
 
+// The compact detail-header quota chip ("2/4"): the full meaning lives in the
+// chip's aria-label and its hover/focus helper card, never in the visible row.
+export const DISCOVER_QUOTA_TOOLTIP_TITLE = "Discover searches";
+
+export type QuotaChipView = {
+  /** Compact visible value, e.g. "2/4" or "Unlimited". */
+  value: string;
+  /** Full accessible name for the focusable chip. */
+  ariaLabel: string;
+  /** One-sentence helper-card body. */
+  tooltip: string;
+  unlimited: boolean;
+};
+
+/**
+ * Chip view for the live quota. Remaining is clamped at 0 so a transient
+ * negative can never render "-1/4". Unlimited (exempt) accounts show a compact
+ * "Unlimited" — the numeric limit is never rendered for them. Null while the
+ * quota is still loading → the chip does not render.
+ */
+export function formatQuotaChip(quota: DiscoverQuota | null): QuotaChipView | null {
+  if (!quota) {
+    return null;
+  }
+  if (quota.unlimited) {
+    return {
+      value: "Unlimited",
+      ariaLabel: "Unlimited Discover access",
+      tooltip: "Unlimited Discover access.",
+      unlimited: true
+    };
+  }
+  const remaining = Math.max(0, quota.searchesRemaining);
+  return {
+    value: `${remaining}/${quota.dailySearchLimit}`,
+    ariaLabel: `${remaining} of ${quota.dailySearchLimit} Discover searches remaining today`,
+    tooltip: `${remaining} of ${quota.dailySearchLimit} searches remaining today.`,
+    unlimited: false
+  };
+}
+
 /** Difference in whole local calendar days between two dates (to - from). */
 function localCalendarDayDiff(from: Date, to: Date): number {
   const a = new Date(from.getFullYear(), from.getMonth(), from.getDate());

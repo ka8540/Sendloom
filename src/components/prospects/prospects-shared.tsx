@@ -6,11 +6,13 @@
 // without duplicating markup. All styling comes from the shared CSS module.
 
 import type { ReactNode } from "react";
-import { Ban } from "lucide-react";
+import { Ban, Gauge } from "lucide-react";
 
 import {
+  DISCOVER_QUOTA_TOOLTIP_TITLE,
   PROSPECT_FINDER_UNAVAILABLE_BODY,
   PROSPECT_FINDER_UNAVAILABLE_TITLE,
+  formatQuotaChip,
   formatQuotaRemaining,
   type Badge,
   type BadgeTone
@@ -109,6 +111,38 @@ export function DisabledState() {
       <h2 className={styles.emptyTitle}>{PROSPECT_FINDER_UNAVAILABLE_TITLE}</h2>
       <p className={styles.emptyBody}>{PROSPECT_FINDER_UNAVAILABLE_BODY}</p>
     </div>
+  );
+}
+
+/**
+ * Compact "2/4" stat chip for the DETAIL header action row. The visible value
+ * stays tiny; the full meaning lives in the chip's aria-label and a decorative
+ * hover/focus helper card. Carries the same data-discover-tour/quota hooks as
+ * QuotaIndicator so the detail tour keeps anchoring and reading it.
+ */
+export function QuotaStatChip({ quota }: { quota: DiscoverQuota | null }) {
+  const view = formatQuotaChip(quota);
+  if (!view) {
+    return null;
+  }
+  return (
+    <span className={styles.quotaChipWrap}>
+      <span
+        tabIndex={0}
+        className={`${styles.quotaChip} ${view.unlimited ? styles.quotaChipUnlimited : ""}`}
+        aria-label={view.ariaLabel}
+        data-discover-tour="quota"
+        data-discover-quota={view.unlimited ? "unlimited" : "limited"}
+      >
+        <Gauge className={styles.quotaChipIcon} aria-hidden="true" />
+        {view.value}
+      </span>
+      {/* Decorative — the chip's aria-label carries the accessible name. */}
+      <span className={`${styles.companySearchTooltip} ${styles.quotaChipTooltip}`} aria-hidden="true">
+        <strong>{DISCOVER_QUOTA_TOOLTIP_TITLE}</strong>
+        <span>{view.tooltip}</span>
+      </span>
+    </span>
   );
 }
 

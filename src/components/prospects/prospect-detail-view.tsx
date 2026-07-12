@@ -151,6 +151,7 @@ import {
   EmptyState,
   EMAIL_PATTERN_OPTIONS,
   QuotaIndicator,
+  QuotaStatChip,
   type ActionNotice,
   type ReviewIntent
 } from "@/components/prospects/prospects-shared";
@@ -1235,7 +1236,9 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
           </div>
         </div>
         <div className={styles.headerActions}>
-          <QuotaIndicator quota={quota} />
+          {/* Compact "2/4" chip — the full sentence lives in its aria-label
+              and hover/focus helper card, so the action row stays quiet. */}
+          <QuotaStatChip quota={quota} />
           {selectedView === "ready" && company && (
             <span className={styles.companySearchTriggerWrap}>
               <button
