@@ -1533,128 +1533,133 @@
   container-type: inline-size;
 }
 
-/* ---- People filter bar (scalable role + location dropdowns) ------------- */
-/* Native <select> controls replace the old chip walls so the People section
-   stays compact no matter how many role groups or locations exist. */
+/* ---- People filter bar (compact role + location pill controls) ---------- */
+/* Each control is ONE quiet pill: a muted inline label ("Role", "Location")
+   next to a native <select> with the browser chrome stripped. The pill owns
+   the border, hover, active tint, and keyboard focus ring, so the row reads
+   as a single intentional control bar rather than labels + raw selects. */
 
 .peopleFilterBar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.55rem 0.75rem;
+  gap: 0.65rem;
+  /* Never let a wide <select> option stretch the bar past its parent. */
+  min-width: 0;
+  max-width: 100%;
 }
 
-.peopleFilterHeading {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  color: var(--muted);
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-}
-
-.peopleFilterHeading svg {
-  width: 0.95rem;
-  height: 0.95rem;
-}
-
-.peopleFilterField {
+.peopleFilterControl {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
+  height: 2.625rem; /* 42px — compact control-bar height */
+  padding: 0 2rem 0 0.9rem;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--surface-soft);
   min-width: 0;
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease;
 }
 
-.peopleFilterFieldLabel {
+.peopleFilterControl:hover {
+  border-color: color-mix(in srgb, var(--field-focus) 55%, var(--line));
+}
+
+/* Keyboard-only focus ring on the pill (mouse interaction stays quiet). */
+.peopleFilterControl:has(.peopleFilterSelect:focus-visible) {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-soft-strong) 60%, transparent);
+}
+
+.peopleFilterPrefix {
   color: var(--muted);
-  font-size: 0.82rem;
-  font-weight: 600;
+  font-size: 0.8rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
   white-space: nowrap;
 }
 
-.peopleFilterSelectShell {
-  position: relative;
-  display: inline-flex;
-  min-width: 0;
-}
-
-/* Long role/location labels truncate inside the control (text-overflow) rather
+/* Long role/location labels truncate inside the pill (text-overflow) rather
    than stretching the bar; the browser's own option list shows them in full. */
 .peopleFilterSelect {
   appearance: none;
   -webkit-appearance: none;
-  width: 100%;
-  max-width: 15rem;
-  min-height: 2.6rem;
-  padding: 0 2.15rem 0 0.85rem;
-  border-radius: 0.7rem;
-  border: 1px solid var(--line);
-  background: var(--surface-soft);
+  border: none;
+  background: transparent;
   color: var(--text);
-  font-weight: 600;
   font-size: 0.88rem;
+  font-weight: 600;
+  height: 100%;
+  min-width: 0;
+  max-width: 12rem;
+  padding: 0;
+  white-space: nowrap;
+  overflow: hidden;
   text-overflow: ellipsis;
   cursor: pointer;
-  transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease, color 140ms ease;
 }
 
-.peopleFilterSelect:hover {
-  border-color: var(--field-focus);
-}
-
-.peopleFilterSelect:focus-visible {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft-strong);
-}
-
-.peopleFilterSelectShellActive .peopleFilterSelect {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent-strong);
+.peopleFilterSelect:focus {
+  outline: none; /* the pill carries the focus ring */
 }
 
 .peopleFilterChevron {
   position: absolute;
   top: 50%;
-  right: 0.75rem;
-  width: 0.9rem;
-  height: 0.9rem;
+  right: 0.8rem;
+  width: 0.85rem;
+  height: 0.85rem;
   transform: translateY(-50%);
   color: var(--muted);
   pointer-events: none;
 }
 
-.peopleFilterSelectShellActive .peopleFilterChevron {
+/* An applied filter tints the pill — visible but quiet, no glow. */
+.peopleFilterControlActive {
+  border-color: color-mix(in srgb, var(--accent) 62%, var(--line));
+  background: color-mix(in srgb, var(--accent-soft) 55%, var(--surface-soft));
+}
+
+.peopleFilterControlActive .peopleFilterSelect,
+.peopleFilterControlActive .peopleFilterChevron {
   color: var(--accent-strong);
 }
 
+/* Ghost reset: reads as an inline action, gains a surface only on hover. */
 .peopleFilterClear {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  min-height: 2.6rem;
-  padding: 0 0.85rem;
-  border-radius: 0.7rem;
-  border: 1px solid var(--line);
-  background: var(--surface-soft);
+  gap: 0.35rem;
+  height: 2.625rem;
+  padding: 0 0.8rem;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: transparent;
   color: var(--muted);
+  font-size: 0.84rem;
   font-weight: 600;
-  font-size: 0.86rem;
   cursor: pointer;
-  transition: border-color 140ms ease, color 140ms ease, background 140ms ease;
+  transition: color 140ms ease, border-color 140ms ease, background 140ms ease;
 }
 
 .peopleFilterClear svg {
-  width: 0.9rem;
-  height: 0.9rem;
+  width: 0.8rem;
+  height: 0.8rem;
 }
 
 .peopleFilterClear:hover {
-  border-color: var(--field-focus);
   color: var(--text);
+  background: var(--surface-soft);
+  border-color: var(--line);
+}
+
+.peopleFilterClear:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-soft-strong) 60%, transparent);
 }
 
 .noticeBanner {
@@ -2433,7 +2438,7 @@
   .ghostButton,
   .dangerButton,
   .dangerGhostButton,
-  .peopleFilterSelect,
+  .peopleFilterControl,
   .peopleFilterClear,
   .pagerButton,
   .linkButton,
@@ -2489,21 +2494,22 @@
     white-space: normal;
   }
 
-  /* People filters go full width and stack so long labels never overflow. */
-  .peopleFilterField {
-    flex: 1 1 100%;
-  }
-
-  .peopleFilterSelectShell {
-    flex: 1 1 auto;
+  /* People filter pills stack full width; the select stretches so long
+     labels truncate inside the pill instead of overflowing the viewport.
+     flex-basis 0 (not auto) keeps the widest <option>'s intrinsic width
+     from inflating the pill/bar min-content and pushing past the card. */
+  .peopleFilterControl {
+    width: 100%;
   }
 
   .peopleFilterSelect {
     max-width: none;
+    width: 0;
+    flex: 1 1 0%;
   }
 
   .peopleFilterClear {
-    flex: 1 1 100%;
+    width: 100%;
     justify-content: center;
   }
 }

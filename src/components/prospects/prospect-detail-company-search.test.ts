@@ -111,6 +111,20 @@ describe("Scalable People filter controls (#21-#27)", () => {
     expect(CSS).toContain(".peopleFilterBar");
   });
 
+  it("keeps the bar quiet — inline pill labels, no shouty FILTERS heading or icon", () => {
+    // Each control carries its own muted label INSIDE the pill; there is no
+    // standalone toolbar heading, filter icon, or floating field label.
+    expect(DETAIL_SOURCE).toContain("peopleFilterPrefix");
+    expect(DETAIL_SOURCE).toContain("peopleFilterControl");
+    expect(DETAIL_SOURCE).not.toContain("SlidersHorizontal");
+    expect(DETAIL_SOURCE).not.toContain("peopleFilterHeading");
+    expect(CSS).not.toContain(".peopleFilterHeading");
+    expect(CSS).not.toContain(".peopleFilterFieldLabel");
+    // Compact control metrics: 42px pills, 14px value text.
+    expect(CSS).toMatch(/\.peopleFilterControl \{[^}]*height: 2\.625rem/);
+    expect(CSS).toMatch(/\.peopleFilterSelect \{[^}]*font-size: 0\.88rem/);
+  });
+
   it("builds the role dropdown from server-side groups with counts (#2, #3)", () => {
     // "All roles · <total>" plus one option per position group, each with its
     // server-provided peopleCount — no per-page recomputation.

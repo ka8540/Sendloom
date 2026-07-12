@@ -25,7 +25,6 @@ import {
   LoaderCircle,
   MapPin,
   Search,
-  SlidersHorizontal,
   Sparkles,
   Trash2,
   UserPlus,
@@ -1328,72 +1327,64 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
                 )}
               </div>
 
-              {/* Compact, scalable filter bar. Native <select> controls keep the
-                  People section calm no matter how many role groups or locations
-                  exist — the browser handles overflow, keyboard, and long-label
-                  truncation instead of a wall of chips. */}
+              {/* Quiet, compact filter bar. Each control is ONE pill — a muted
+                  inline label plus a native <select> with the browser chrome
+                  stripped — so any number of role groups or locations stays
+                  scannable without a chip wall or a shouty toolbar heading. */}
               <div className={styles.peopleFilterBar} data-discover-tour="role-filters">
-                <span className={styles.peopleFilterHeading}>
-                  <SlidersHorizontal aria-hidden="true" />
-                  Filters
-                </span>
-
-                <div className={styles.peopleFilterField}>
-                  <span className={styles.peopleFilterFieldLabel}>Role</span>
-                  <span
-                    className={`${styles.peopleFilterSelectShell} ${
-                      activeCategory !== null ? styles.peopleFilterSelectShellActive : ""
-                    }`}
+                <label
+                  className={`${styles.peopleFilterControl} ${
+                    activeCategory !== null ? styles.peopleFilterControlActive : ""
+                  }`}
+                >
+                  <span className={styles.peopleFilterPrefix}>Role</span>
+                  <select
+                    className={styles.peopleFilterSelect}
+                    aria-label="Filter by role"
+                    value={activeCategory ?? ALL_ROLES_VALUE}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      handleSelectCategory(value === ALL_ROLES_VALUE ? null : (value as PositionCategory));
+                    }}
                   >
+                    <option value={ALL_ROLES_VALUE}>
+                      {ALL_ROLES_LABEL} · {company.peopleCount}
+                    </option>
+                    {visibleCategories.map((position) => (
+                      <option key={position.id} value={position.category}>
+                        {position.displayName} · {position.peopleCount}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className={styles.peopleFilterChevron} aria-hidden="true" />
+                </label>
+
+                {locationOptions.length > 0 && (
+                  <label
+                    className={`${styles.peopleFilterControl} ${
+                      activeLocation !== null ? styles.peopleFilterControlActive : ""
+                    }`}
+                    data-discover-tour="location-filters"
+                  >
+                    <span className={styles.peopleFilterPrefix}>Location</span>
                     <select
                       className={styles.peopleFilterSelect}
-                      aria-label="Filter by role"
-                      value={activeCategory ?? ALL_ROLES_VALUE}
+                      aria-label="Filter by location"
+                      value={activeLocation ?? ALL_LOCATIONS_VALUE}
                       onChange={(event) => {
                         const value = event.target.value;
-                        handleSelectCategory(value === ALL_ROLES_VALUE ? null : (value as PositionCategory));
+                        handleSelectLocation(value === ALL_LOCATIONS_VALUE ? null : value);
                       }}
                     >
-                      <option value={ALL_ROLES_VALUE}>
-                        {ALL_ROLES_LABEL} · {company.peopleCount}
-                      </option>
-                      {visibleCategories.map((position) => (
-                        <option key={position.id} value={position.category}>
-                          {position.displayName} · {position.peopleCount}
+                      <option value={ALL_LOCATIONS_VALUE}>{ALL_LOCATIONS_LABEL}</option>
+                      {locationOptions.map((option) => (
+                        <option key={option.key || "__any_location"} value={option.key}>
+                          {option.label}
                         </option>
                       ))}
                     </select>
                     <ChevronDown className={styles.peopleFilterChevron} aria-hidden="true" />
-                  </span>
-                </div>
-
-                {locationOptions.length > 0 && (
-                  <div className={styles.peopleFilterField} data-discover-tour="location-filters">
-                    <span className={styles.peopleFilterFieldLabel}>Location</span>
-                    <span
-                      className={`${styles.peopleFilterSelectShell} ${
-                        activeLocation !== null ? styles.peopleFilterSelectShellActive : ""
-                      }`}
-                    >
-                      <select
-                        className={styles.peopleFilterSelect}
-                        aria-label="Filter by location"
-                        value={activeLocation ?? ALL_LOCATIONS_VALUE}
-                        onChange={(event) => {
-                          const value = event.target.value;
-                          handleSelectLocation(value === ALL_LOCATIONS_VALUE ? null : value);
-                        }}
-                      >
-                        <option value={ALL_LOCATIONS_VALUE}>{ALL_LOCATIONS_LABEL}</option>
-                        {locationOptions.map((option) => (
-                          <option key={option.key || "__any_location"} value={option.key}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown className={styles.peopleFilterChevron} aria-hidden="true" />
-                    </span>
-                  </div>
+                  </label>
                 )}
 
                 {filtersActive && (
