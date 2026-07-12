@@ -145,6 +145,11 @@
   align-items: center;
   gap: 0.75rem;
   flex-wrap: wrap;
+  /* When a narrower content column (expanded sidebar / tablet) wraps the
+     header, the action row keeps hugging the RIGHT edge instead of dropping
+     left-aligned under the subtitle — no squeezed, misaligned buttons. */
+  margin-left: auto;
+  justify-content: flex-end;
 }
 
 .refreshButton,

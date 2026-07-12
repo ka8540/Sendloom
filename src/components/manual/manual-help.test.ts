@@ -175,7 +175,8 @@ describe("Stable tour targets exist on the correct Discover page", () => {
 describe("Existing Discover functionality is preserved on the right page", () => {
   it("keeps the New search action + quota on the list page", () => {
     expect(LIST_SOURCE).toContain("New search");
-    expect(LIST_SOURCE).toContain("QuotaIndicator");
+    // The daily quota now renders as the compact stat chip.
+    expect(LIST_SOURCE).toContain("QuotaStatChip");
   });
 
   it("keeps the New search modal fields on the list page", () => {

@@ -31,6 +31,7 @@ import {
 import type { DiscoverQuota } from "@/components/prospects/prospect-graphql";
 
 const DETAIL_SOURCE = readFileSync("src/components/prospects/prospect-detail-view.tsx", "utf8");
+const LIST_SOURCE = readFileSync("src/components/prospects/prospects-list-view.tsx", "utf8");
 const SHARED_SOURCE = readFileSync("src/components/prospects/prospects-shared.tsx", "utf8");
 const CSS = readFileSync("src/components/prospects/prospects-dashboard.module.css", "utf8");
 
@@ -320,6 +321,22 @@ describe("compact header quota chip", () => {
     expect(chip).toContain("data-discover-quota=");
     // The helper card is decorative only.
     expect(chip).toMatch(/quotaChipTooltip\}`\} aria-hidden="true"/);
+  });
+
+  it("the Discover list header uses the same chip; Refresh/New search stay wired", () => {
+    // The long sentence indicator is fully replaced on the list page.
+    expect(LIST_SOURCE).toContain("<QuotaStatChip quota={quota} />");
+    expect(LIST_SOURCE).not.toContain("QuotaIndicator");
+    // The existing actions are untouched.
+    expect(LIST_SOURCE).toContain('data-discover-tour="refresh"');
+    expect(LIST_SOURCE).toContain("onClick={refreshAll}");
+    expect(LIST_SOURCE).toContain('data-discover-tour="new-search"');
+    expect(LIST_SOURCE).toContain("setShowNewSearch(true)");
+  });
+
+  it("a wrapped header action row stays right-aligned (expanded sidebar / tablet)", () => {
+    expect(CSS).toMatch(/\.headerActions \{[^}]*margin-left: auto/);
+    expect(CSS).toMatch(/\.headerActions \{[^}]*justify-content: flex-end/);
   });
 
   it("the chip is a small stat pill with room before the Search trigger", () => {

@@ -62,7 +62,7 @@ import {
   BadgePill,
   DisabledState,
   EmptyState,
-  QuotaIndicator,
+  QuotaStatChip,
   EMPTY_FORM,
   type ActionNotice,
   type CreateForm
@@ -319,7 +319,9 @@ export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean 
         </div>
         {!disabled && (
           <div className={styles.headerActions}>
-            <QuotaIndicator quota={quota} />
+            {/* Compact "2/4" chip — the full sentence lives in its aria-label
+                and hover/focus helper card, so the action row stays quiet. */}
+            <QuotaStatChip quota={quota} />
             <button
               type="button"
               className={styles.refreshButton}
