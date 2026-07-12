@@ -125,12 +125,13 @@ describe("Scalable People filter controls (#21-#27)", () => {
     expect(CSS).toMatch(/\.peopleFilterSelect \{[^}]*font-size: 0\.88rem/);
   });
 
-  it("builds the role dropdown from server-side groups with counts (#2, #3)", () => {
-    // "All roles · <total>" plus one option per position group, each with its
-    // server-provided peopleCount — no per-page recomputation.
-    expect(DETAIL_SOURCE).toMatch(/\{ALL_ROLES_LABEL\} · \{company\.peopleCount\}/);
+  it("builds the role dropdown from server-side groups, labels only — no counts (#2, #3)", () => {
+    // "All roles" plus one option per position group. Counts were removed from
+    // the option labels on request; the pill shows just the role name.
+    expect(DETAIL_SOURCE).toMatch(/<option value=\{ALL_ROLES_VALUE\}>\{ALL_ROLES_LABEL\}<\/option>/);
     expect(DETAIL_SOURCE).toContain("visibleCategories.map((position)");
-    expect(DETAIL_SOURCE).toMatch(/\{position\.displayName\} · \{position\.peopleCount\}/);
+    expect(DETAIL_SOURCE).not.toContain("· {company.peopleCount}");
+    expect(DETAIL_SOURCE).not.toContain("· {position.peopleCount}");
   });
 
   it("builds the location dropdown from already-loaded options (#4, #5, #14)", () => {

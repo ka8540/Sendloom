@@ -1347,12 +1347,10 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
                       handleSelectCategory(value === ALL_ROLES_VALUE ? null : (value as PositionCategory));
                     }}
                   >
-                    <option value={ALL_ROLES_VALUE}>
-                      {ALL_ROLES_LABEL} · {company.peopleCount}
-                    </option>
+                    <option value={ALL_ROLES_VALUE}>{ALL_ROLES_LABEL}</option>
                     {visibleCategories.map((position) => (
                       <option key={position.id} value={position.category}>
-                        {position.displayName} · {position.peopleCount}
+                        {position.displayName}
                       </option>
                     ))}
                   </select>
