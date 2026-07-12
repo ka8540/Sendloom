@@ -15,6 +15,7 @@ import {
   AtSign,
   Building2,
   Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Copy,
@@ -24,10 +25,12 @@ import {
   LoaderCircle,
   MapPin,
   Search,
+  SlidersHorizontal,
   Sparkles,
   Trash2,
   UserPlus,
-  Users
+  Users,
+  X
 } from "lucide-react";
 
 import { AppConfirmDialog } from "@/components/app-confirm-dialog";
@@ -74,6 +77,7 @@ import {
   ADD_MORE_LOADING_LABEL,
   ADD_MORE_PEOPLE_LABEL,
   ALL_LOCATIONS_LABEL,
+  ALL_ROLES_LABEL,
   CLEAR_FILTERS_LABEL,
   COMPANY_SEARCH_BUTTON_LABEL,
   COMPANY_SEARCH_HELPER,
@@ -151,6 +155,13 @@ import styles from "@/components/prospects/prospects-dashboard.module.css";
 
 const DELETE_COMPANY_ERROR = "This company could not be deleted. Please try again.";
 const DEFAULT_MANUAL_PATTERN = "first.last";
+
+// People filter <select> sentinels. Both dropdowns reserve a non-colliding
+// value for their "show everything" option: role categories are uppercase enum
+// tokens and location keys are normalized/blank ("" = "Any location"), so these
+// double-underscore values can never match a real option.
+const ALL_ROLES_VALUE = "__all_roles__";
+const ALL_LOCATIONS_VALUE = "__all_locations__";
 
 type DetailStage = "ready" | "draft" | "processing" | "failed";
 
@@ -1317,66 +1328,86 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
                 )}
               </div>
 
-              <div className={styles.categoryRail} role="tablist" aria-label="Role groups" data-discover-tour="role-filters">
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={activeCategory === null}
-                  className={`${styles.categoryChip} ${activeCategory === null ? styles.categoryChipActive : ""}`}
-                  onClick={() => handleSelectCategory(null)}
-                >
-                  All people <span className={styles.categoryCount}>{company.peopleCount}</span>
-                </button>
-                {visibleCategories.map((position) => (
-                  <button
-                    key={position.id}
-                    type="button"
-                    role="tab"
-                    aria-selected={activeCategory === position.category}
-                    className={`${styles.categoryChip} ${
-                      activeCategory === position.category ? styles.categoryChipActive : ""
-                    }`}
-                    onClick={() => handleSelectCategory(position.category)}
-                    title={position.rawTitles.join(", ")}
-                  >
-                    {position.displayName} <span className={styles.categoryCount}>{position.peopleCount}</span>
-                  </button>
-                ))}
-              </div>
+              {/* Compact, scalable filter bar. Native <select> controls keep the
+                  People section calm no matter how many role groups or locations
+                  exist — the browser handles overflow, keyboard, and long-label
+                  truncation instead of a wall of chips. */}
+              <div className={styles.peopleFilterBar} data-discover-tour="role-filters">
+                <span className={styles.peopleFilterHeading}>
+                  <SlidersHorizontal aria-hidden="true" />
+                  Filters
+                </span>
 
-              {locationOptions.length > 0 && (
-                <div
-                  className={styles.categoryRail}
-                  role="tablist"
-                  aria-label="Locations"
-                  data-discover-tour="location-filters"
-                >
+                <div className={styles.peopleFilterField}>
+                  <span className={styles.peopleFilterFieldLabel}>Role</span>
+                  <span
+                    className={`${styles.peopleFilterSelectShell} ${
+                      activeCategory !== null ? styles.peopleFilterSelectShellActive : ""
+                    }`}
+                  >
+                    <select
+                      className={styles.peopleFilterSelect}
+                      aria-label="Filter by role"
+                      value={activeCategory ?? ALL_ROLES_VALUE}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        handleSelectCategory(value === ALL_ROLES_VALUE ? null : (value as PositionCategory));
+                      }}
+                    >
+                      <option value={ALL_ROLES_VALUE}>
+                        {ALL_ROLES_LABEL} · {company.peopleCount}
+                      </option>
+                      {visibleCategories.map((position) => (
+                        <option key={position.id} value={position.category}>
+                          {position.displayName} · {position.peopleCount}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className={styles.peopleFilterChevron} aria-hidden="true" />
+                  </span>
+                </div>
+
+                {locationOptions.length > 0 && (
+                  <div className={styles.peopleFilterField} data-discover-tour="location-filters">
+                    <span className={styles.peopleFilterFieldLabel}>Location</span>
+                    <span
+                      className={`${styles.peopleFilterSelectShell} ${
+                        activeLocation !== null ? styles.peopleFilterSelectShellActive : ""
+                      }`}
+                    >
+                      <select
+                        className={styles.peopleFilterSelect}
+                        aria-label="Filter by location"
+                        value={activeLocation ?? ALL_LOCATIONS_VALUE}
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          handleSelectLocation(value === ALL_LOCATIONS_VALUE ? null : value);
+                        }}
+                      >
+                        <option value={ALL_LOCATIONS_VALUE}>{ALL_LOCATIONS_LABEL}</option>
+                        {locationOptions.map((option) => (
+                          <option key={option.key || "__any_location"} value={option.key}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown className={styles.peopleFilterChevron} aria-hidden="true" />
+                    </span>
+                  </div>
+                )}
+
+                {filtersActive && (
                   <button
                     type="button"
-                    role="tab"
-                    aria-selected={activeLocation === null}
-                    className={`${styles.categoryChip} ${activeLocation === null ? styles.categoryChipActive : ""}`}
-                    onClick={() => handleSelectLocation(null)}
+                    className={styles.peopleFilterClear}
+                    onClick={handleClearFilters}
+                    aria-label={CLEAR_FILTERS_LABEL}
                   >
-                    {ALL_LOCATIONS_LABEL}
+                    <X aria-hidden="true" />
+                    <span>{CLEAR_FILTERS_LABEL}</span>
                   </button>
-                  {locationOptions.map((option) => (
-                    <button
-                      key={option.key || "__any_location"}
-                      type="button"
-                      role="tab"
-                      aria-selected={activeLocation === option.key}
-                      className={`${styles.categoryChip} ${
-                        activeLocation === option.key ? styles.categoryChipActive : ""
-                      }`}
-                      onClick={() => handleSelectLocation(option.key)}
-                      title={option.label}
-                    >
-                      <span className={styles.chipLabelTruncate}>{option.label}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
+                )}
+              </div>
 
               <div className={styles.noticeBanner} role="note" data-discover-tour="inferred-warning">
                 <AlertCircle aria-hidden="true" />

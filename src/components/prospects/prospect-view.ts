@@ -701,6 +701,8 @@ export function formatDateTime(iso: string | null): string {
 // ---------------------------------------------------------------------------
 
 export const ALL_LOCATIONS_LABEL = "All locations";
+/** Dropdown option that clears the role filter (People section, detail page). */
+export const ALL_ROLES_LABEL = "All roles";
 /** Chip label for the group of searches that were run WITHOUT a location. */
 export const ANY_LOCATION_LABEL = "Any location";
 export const CLEAR_FILTERS_LABEL = "Clear filters";

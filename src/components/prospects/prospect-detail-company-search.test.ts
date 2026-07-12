@@ -14,6 +14,7 @@ import {
 } from "@/services/prospects/discover-company-role-search";
 import {
   ALL_LOCATIONS_LABEL,
+  ALL_ROLES_LABEL,
   ANY_LOCATION_LABEL,
   CLEAR_FILTERS_LABEL,
   COMPANY_SEARCH_BUTTON_LABEL,
@@ -82,42 +83,87 @@ describe("Search this company section (detail page) (#16-#18)", () => {
   });
 });
 
-describe("Location filters on the People section (#21-#27)", () => {
-  it("renders a location rail alongside the existing role rail — never replacing it (#31)", () => {
+describe("Scalable People filter controls (#21-#27)", () => {
+  it("renders compact role + location dropdowns under the same tour targets (#31)", () => {
+    // Both filter dimensions survive as accessible <select> controls, and the
+    // tour anchors that pointed at the old chip rails still resolve.
     expect(DETAIL_SOURCE).toContain('data-discover-tour="role-filters"');
     expect(DETAIL_SOURCE).toContain('data-discover-tour="location-filters"');
+    expect(DETAIL_SOURCE).toContain('aria-label="Filter by role"');
+    expect(DETAIL_SOURCE).toContain('aria-label="Filter by location"');
     expect(DETAIL_SOURCE).toContain("ALL_LOCATIONS_LABEL");
+    expect(DETAIL_SOURCE).toContain("ALL_ROLES_LABEL");
     expect(ALL_LOCATIONS_LABEL).toBe("All locations");
+    expect(ALL_ROLES_LABEL).toBe("All roles");
     expect(ANY_LOCATION_LABEL).toBe("Any location");
   });
 
-  it("passes BOTH the active role and active location to every people load (#25)", () => {
+  it("replaces the chip wall so many roles/locations never clutter the page (#11)", () => {
+    // The old pill rails are gone entirely — no per-role/per-location chip is
+    // rendered, so 8 roles × 10 locations can no longer stretch the section.
+    expect(DETAIL_SOURCE).not.toContain("categoryChip");
+    expect(DETAIL_SOURCE).not.toContain("categoryRail");
+    expect(DETAIL_SOURCE).not.toContain("chipLabelTruncate");
+    expect(CSS).not.toContain(".categoryChip");
+    expect(CSS).not.toContain(".categoryRail");
+    // The scalable control bar is what renders instead.
+    expect(DETAIL_SOURCE).toContain("peopleFilterBar");
+    expect(CSS).toContain(".peopleFilterBar");
+  });
+
+  it("builds the role dropdown from server-side groups with counts (#2, #3)", () => {
+    // "All roles · <total>" plus one option per position group, each with its
+    // server-provided peopleCount — no per-page recomputation.
+    expect(DETAIL_SOURCE).toMatch(/\{ALL_ROLES_LABEL\} · \{company\.peopleCount\}/);
+    expect(DETAIL_SOURCE).toContain("visibleCategories.map((position)");
+    expect(DETAIL_SOURCE).toMatch(/\{position\.displayName\} · \{position\.peopleCount\}/);
+  });
+
+  it("builds the location dropdown from already-loaded options (#4, #5, #14)", () => {
+    // All locations + one option per deduped requested location, sourced from
+    // the frontend helper (no extra fetch just to list locations).
+    expect(DETAIL_SOURCE).toContain("buildLocationFilterOptions(companySearches)");
+    expect(DETAIL_SOURCE).toContain("locationOptions.map((option)");
+    expect(DETAIL_SOURCE).toMatch(/<option value=\{ALL_LOCATIONS_VALUE\}>\{ALL_LOCATIONS_LABEL\}<\/option>/);
+  });
+
+  it("keeps role and location filtering on the existing combined load path (#6, #7, #8)", () => {
+    // Changing either dropdown routes through the same handlers that carry BOTH
+    // dimensions into every people load — combined filtering is unchanged.
+    expect(DETAIL_SOURCE).toContain("handleSelectCategory");
     expect(DETAIL_SOURCE).toContain("handleSelectLocation");
-    // Selecting a role keeps the location and vice versa.
     expect(DETAIL_SOURCE).toMatch(/category,\s*location: activeLocation/);
     expect(DETAIL_SOURCE).toMatch(/category: activeCategory,\s*location,/);
     expect(PEOPLE_QUERY).toContain("$location: String");
     expect(PEOPLE_QUERY).toContain("location: $location");
   });
 
-  it("shows the filtered empty state with a Clear filters action — never a blank table (#26, #27)", () => {
+  it("shows Clear filters only when a filter is active and resets both (#9)", () => {
+    expect(DETAIL_SOURCE).toMatch(/\{filtersActive && \(/);
     expect(DETAIL_SOURCE).toContain("handleClearFilters");
-    expect(DETAIL_SOURCE).toContain("FILTERED_PEOPLE_EMPTY_TITLE");
+    expect(DETAIL_SOURCE).toContain("aria-label={CLEAR_FILTERS_LABEL}");
     expect(DETAIL_SOURCE).toContain("CLEAR_FILTERS_LABEL");
-    expect(FILTERED_PEOPLE_EMPTY_TITLE).toBe("No people match these filters.");
     expect(CLEAR_FILTERS_LABEL).toBe("Clear filters");
   });
 
-  it("long chip labels truncate instead of stretching the rail (#12-edge)", () => {
-    expect(DETAIL_SOURCE).toContain("chipLabelTruncate");
+  it("shows the filtered empty state — never a blank table (#26, #27)", () => {
+    expect(DETAIL_SOURCE).toContain("FILTERED_PEOPLE_EMPTY_TITLE");
+    expect(FILTERED_PEOPLE_EMPTY_TITLE).toBe("No people match these filters.");
+  });
+
+  it("long role/location labels truncate inside the control (#1, #2, #3-edge)", () => {
+    // The select clips overflow with an ellipsis instead of widening the bar,
+    // and drops its max-width on mobile so it fills the row cleanly.
+    expect(DETAIL_SOURCE).toContain("peopleFilterSelect");
     expect(CSS).toContain("text-overflow: ellipsis");
+    expect(CSS).toMatch(/@media \(max-width: 640px\)[\s\S]*\.peopleFilterSelect \{\s*\n\s*max-width: none;/);
   });
 
   it("Add 10 more targets the active role/location group (#28)", () => {
     expect(DETAIL_SOURCE).toMatch(/activeLocationKey: activeLocation/);
   });
 
-  it("bulk select-all stays role-scoped only — hidden while a location chip is active", () => {
+  it("bulk select-all stays role-scoped only — hidden while a location filter is active", () => {
     expect(DETAIL_SOURCE).toMatch(/activeLocation === null &&\s*\n\s*peopleTotal > selectedPageIds.length/);
   });
 });
@@ -133,8 +179,18 @@ describe("Detail page regressions (#31-#35)", () => {
     expect(DETAIL_SOURCE).toContain("AddMorePeopleDialog");
   });
 
-  it("keeps the role chips driven by server-side position groups", () => {
+  it("keeps the role dropdown driven by server-side position groups", () => {
     expect(DETAIL_SOURCE).toContain("visibleCategories.map((position)");
-    expect(DETAIL_SOURCE).toContain("handleSelectCategory(position.category)");
+    // The role <select> still hands the chosen group's category to the same
+    // handler (via its onChange) that drove the old chips.
+    expect(DETAIL_SOURCE).toContain("handleSelectCategory");
+    expect(DETAIL_SOURCE).toContain("as PositionCategory");
+  });
+
+  it("keeps Add 10 more and the per-page table search intact (#12, #13)", () => {
+    expect(DETAIL_SOURCE).toContain("ADD_MORE_PEOPLE_LABEL");
+    expect(DETAIL_SOURCE).toContain('data-discover-tour="add-more-people"');
+    expect(DETAIL_SOURCE).toContain("Filter this page by name, title, or email");
+    expect(DETAIL_SOURCE).toContain("setPeopleFilter");
   });
 });

@@ -1533,55 +1533,128 @@
   container-type: inline-size;
 }
 
-.categoryRail {
+/* ---- People filter bar (scalable role + location dropdowns) ------------- */
+/* Native <select> controls replace the old chip walls so the People section
+   stays compact no matter how many role groups or locations exist. */
+
+.peopleFilterBar {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.55rem;
+  align-items: center;
+  gap: 0.55rem 0.75rem;
 }
 
-.categoryChip {
+.peopleFilterHeading {
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
-  padding: 0.5rem 0.85rem;
-  border-radius: 999px;
+  gap: 0.4rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.peopleFilterHeading svg {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+.peopleFilterField {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.peopleFilterFieldLabel {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.peopleFilterSelectShell {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+}
+
+/* Long role/location labels truncate inside the control (text-overflow) rather
+   than stretching the bar; the browser's own option list shows them in full. */
+.peopleFilterSelect {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  max-width: 15rem;
+  min-height: 2.6rem;
+  padding: 0 2.15rem 0 0.85rem;
+  border-radius: 0.7rem;
+  border: 1px solid var(--line);
+  background: var(--surface-soft);
+  color: var(--text);
+  font-weight: 600;
+  font-size: 0.88rem;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease, color 140ms ease;
+}
+
+.peopleFilterSelect:hover {
+  border-color: var(--field-focus);
+}
+
+.peopleFilterSelect:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft-strong);
+}
+
+.peopleFilterSelectShellActive .peopleFilterSelect {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.peopleFilterChevron {
+  position: absolute;
+  top: 50%;
+  right: 0.75rem;
+  width: 0.9rem;
+  height: 0.9rem;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.peopleFilterSelectShellActive .peopleFilterChevron {
+  color: var(--accent-strong);
+}
+
+.peopleFilterClear {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.6rem;
+  padding: 0 0.85rem;
+  border-radius: 0.7rem;
   border: 1px solid var(--line);
   background: var(--surface-soft);
   color: var(--muted);
   font-weight: 600;
-  font-size: 0.88rem;
+  font-size: 0.86rem;
   cursor: pointer;
-  transition: border-color 140ms ease, color 140ms ease, background 140ms ease, transform 140ms ease;
+  transition: border-color 140ms ease, color 140ms ease, background 140ms ease;
 }
 
-.categoryChip:hover {
-  color: var(--text);
+.peopleFilterClear svg {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
+.peopleFilterClear:hover {
   border-color: var(--field-focus);
-  transform: translateY(-1px);
-}
-
-.categoryChipActive {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  color: var(--accent-strong);
-}
-
-.categoryCount {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 1.5rem;
-  padding: 0 0.35rem;
-  height: 1.35rem;
-  border-radius: 999px;
-  background: var(--button-secondary-bg);
-  color: inherit;
-  font-size: 0.78rem;
-  font-weight: 700;
-}
-
-.categoryChipActive .categoryCount {
-  background: var(--accent-soft-strong);
+  color: var(--text);
 }
 
 .noticeBanner {
@@ -2360,7 +2433,8 @@
   .ghostButton,
   .dangerButton,
   .dangerGhostButton,
-  .categoryChip,
+  .peopleFilterSelect,
+  .peopleFilterClear,
   .pagerButton,
   .linkButton,
   .confidenceTick {
@@ -2373,7 +2447,6 @@
   .dangerButton:hover:not(:disabled),
   .pagerButton:hover:not(:disabled),
   .primaryButton:hover:not(:disabled),
-  .categoryChip:hover,
   .linkButton:hover {
     transform: none;
   }
@@ -2399,15 +2472,6 @@
   white-space: nowrap;
 }
 
-/* Long location/role labels truncate inside chips instead of stretching them;
-   the chip's title attribute still carries the full text. */
-.chipLabelTruncate {
-  max-width: 14rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 @media (max-width: 640px) {
   /* Fields stack and the submit goes full width on narrow screens. */
   .companySearchForm {
@@ -2425,7 +2489,21 @@
     white-space: normal;
   }
 
-  .chipLabelTruncate {
-    max-width: 9rem;
+  /* People filters go full width and stack so long labels never overflow. */
+  .peopleFilterField {
+    flex: 1 1 100%;
+  }
+
+  .peopleFilterSelectShell {
+    flex: 1 1 auto;
+  }
+
+  .peopleFilterSelect {
+    max-width: none;
+  }
+
+  .peopleFilterClear {
+    flex: 1 1 100%;
+    justify-content: center;
   }
 }
