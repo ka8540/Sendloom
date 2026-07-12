@@ -174,6 +174,16 @@ describe("rankSuggestions — company matching by name and domain (#10, #11)", (
     expect(matches[0]?.value).toBe("Snowflake Inc.");
   });
 
+  it("matches punctuation and spacing variants only when the entry opts in", () => {
+    const company: SuggestionEntry = {
+      value: "Northwind Research, Ltd.",
+      matchKeys: ["Northwind Research, Ltd."],
+      punctuationTolerant: true
+    };
+    expect(rankSuggestions([company], "northwindresearchltd").matches[0]?.value).toBe("Northwind Research, Ltd.");
+    expect(rankSuggestions([company], "northwind research ltd").matches[0]?.value).toBe("Northwind Research, Ltd.");
+  });
+
   it("enforces the result limit (#15)", () => {
     const many = Array.from({ length: 20 }, (_, index) => roleEntry(`Engineer ${index}`));
     expect(rankSuggestions(many, "engineer", { limit: 8 }).matches).toHaveLength(8);

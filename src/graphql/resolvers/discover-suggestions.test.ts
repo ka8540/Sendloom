@@ -36,6 +36,7 @@ function seedCompany(prisma: FakePrisma, overrides: Record<string, unknown>) {
     officialDomain: null,
     officialWebsiteDomain: null,
     emailDomain: null,
+    linkedinUrl: null,
     ...overrides
   });
 }
@@ -46,6 +47,8 @@ function seedSearch(prisma: FakePrisma, overrides: Record<string, unknown>) {
     userId: USER_A.id,
     companyId: null,
     requestedCompany: "Example",
+    requestedDomain: null,
+    requestedLinkedin: null,
     requestedTitles: [],
     requestedLocations: [],
     status: "READY",
@@ -127,6 +130,119 @@ describe("discoverSuggestions — company scoping + matching (#10, #11)", () => 
     expect(first?.detail).toBe("snowflake.com");
     expect(first?.canonicalKey).toBe("domain:snowflake.com");
     expect(first?.companyId).toBeTruthy();
+  });
+
+  it("matches partial, full, mixed-case, spacing, and punctuation variants", async () => {
+    const prisma = createFakePrisma();
+    seedCompany(prisma, {
+      name: "Northwind Research, Ltd.",
+      officialName: "Northwind Research, Ltd.",
+      normalizedName: "northwind research",
+      canonicalKey: "domain:northwind-research.test",
+      officialDomain: "northwind-research.test"
+    });
+
+    for (const query of [
+      "north",
+      "NORTHWIND RESEARCH, LTD.",
+      "NoRtHwInD",
+      "northwindresearch",
+      "northwind research ltd"
+    ]) {
+      const { suggestions } = await run(prisma, { query, types: ["COMPANY"] });
+      expect(suggestions?.companies[0]?.value).toBe("Northwind Research, Ltd.");
+    }
+  });
+
+  it("searches canonical, normalized, official, domain, and LinkedIn company fields", async () => {
+    const prisma = createFakePrisma();
+    seedCompany(prisma, {
+      name: "Northwind Holdings",
+      officialName: "Northwind Research Group",
+      normalizedName: "northwind research",
+      canonicalKey: "domain:northwind-labs.test",
+      officialDomain: "northwind-labs.test",
+      officialWebsiteDomain: "www.northwind-labs.test",
+      emailDomain: "mail.northwind-labs.test",
+      linkedinUrl: "https://www.linkedin.com/company/northwind-research-group/"
+    });
+
+    for (const query of [
+      "research group",
+      "northwind research",
+      "northwind-labs.test",
+      "mail.northwind",
+      "linkedin.com/company/northwind-research"
+    ]) {
+      const { suggestions } = await run(prisma, { query, types: ["COMPANY"] });
+      expect(suggestions?.companies).toHaveLength(1);
+      expect(suggestions?.companies[0]?.value).toBe("Northwind Research Group");
+    }
+  });
+
+  it("suggests unresolved history by requested name, domain, and LinkedIn slug", async () => {
+    const prisma = createFakePrisma();
+    seedSearch(prisma, {
+      requestedCompany: "Blue Mesa Systems",
+      requestedDomain: "blue-mesa.test",
+      requestedLinkedin: "https://www.linkedin.com/company/blue-mesa-systems/"
+    });
+
+    for (const query of ["blue mes", "blue-mesa.test", "blue-mesa-systems"]) {
+      const { suggestions } = await run(prisma, { query, types: ["COMPANY"] });
+      expect(suggestions?.companies).toEqual([
+        expect.objectContaining({ value: "Blue Mesa Systems", detail: "blue-mesa.test" })
+      ]);
+    }
+  });
+
+  it("merges repeated linked searches into one canonical suggestion", async () => {
+    const prisma = createFakePrisma();
+    seedCompany(prisma, {
+      id: "company_northwind",
+      name: "Northwind Research Group",
+      normalizedName: "northwind research",
+      canonicalKey: "domain:northwind.test",
+      officialDomain: "northwind.test"
+    });
+    seedSearch(prisma, { companyId: "company_northwind", requestedCompany: "Northwind" });
+    seedSearch(prisma, { companyId: "company_northwind", requestedCompany: "Northwind Research" });
+    seedSearch(prisma, { companyId: "company_northwind", requestedCompany: "Northwind Research Group" });
+
+    const { suggestions } = await run(prisma, { query: "northwind", types: ["COMPANY"] });
+    expect(suggestions?.companies).toHaveLength(1);
+    expect(suggestions?.companies[0]).toEqual(
+      expect.objectContaining({ value: "Northwind Research Group", companyId: "company_northwind" })
+    );
+  });
+
+  it("dedupes an unresolved draft against the matching canonical company", async () => {
+    const prisma = createFakePrisma();
+    seedCompany(prisma, {
+      id: "company_northwind",
+      name: "Northwind Research, Inc.",
+      normalizedName: "northwind research",
+      canonicalKey: "domain:northwind.test",
+      officialDomain: "northwind.test"
+    });
+    seedSearch(prisma, { companyId: null, requestedCompany: "Northwind Research" });
+
+    const { suggestions } = await run(prisma, { query: "northwind", types: ["COMPANY"] });
+    expect(suggestions?.companies).toHaveLength(1);
+    expect(suggestions?.companies[0]).toEqual(
+      expect.objectContaining({ value: "Northwind Research, Inc.", companyId: "company_northwind" })
+    );
+  });
+
+  it("reads all owner history rather than a visible or paginated subset", async () => {
+    const prisma = createFakePrisma();
+    for (let index = 0; index < 35; index += 1) {
+      seedSearch(prisma, { requestedCompany: `Archived Company ${index}` });
+    }
+    seedSearch(prisma, { requestedCompany: "Oldest Horizon Works", createdAt: new Date(2001, 0, 1) });
+
+    const { suggestions } = await run(prisma, { query: "oldest hor", types: ["COMPANY"] });
+    expect(suggestions?.companies.map((company) => company.value)).toEqual(["Oldest Horizon Works"]);
   });
 });
 

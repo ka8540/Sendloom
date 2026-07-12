@@ -5,6 +5,7 @@
 // suggestion is a value the user has already used.
 
 import {
+  companyMatchAliases,
   DEFAULT_SUGGESTION_LIMIT,
   rankSuggestions,
   titleCaseLabel,
@@ -25,12 +26,15 @@ export type SuggestionCompanyRow = {
   officialDomain?: string | null;
   officialWebsiteDomain?: string | null;
   emailDomain?: string | null;
+  linkedinUrl?: string | null;
 };
 
 /** The subset of ProspectSearch columns suggestions read. */
 export type SuggestionSearchRow = {
   companyId?: string | null;
   requestedCompany?: string | null;
+  requestedDomain?: string | null;
+  requestedLinkedin?: string | null;
   requestedTitles?: unknown;
   requestedLocations?: unknown;
 };
@@ -56,6 +60,32 @@ function firstDomain(company: SuggestionCompanyRow): string | null {
   return company.officialDomain ?? company.officialWebsiteDomain ?? company.emailDomain ?? null;
 }
 
+function clean(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
+function companyIdentity(company: SuggestionCompanyRow): string {
+  return company.canonicalKey ? `key:${company.canonicalKey}` : `id:${company.id}`;
+}
+
+function companyNameIdentity(value: string): string {
+  const spaced = companyMatchAliases(value)[0] ?? "";
+  return spaced
+    .replace(/\b(?:incorporated|inc|corporation|corp|company|co|limited|ltd|llc|plc)\b/g, " ")
+    .replace(/\band\s*$/g, "")
+    .replace(/\s+/g, "")
+    .trim();
+}
+
+function unresolvedIdentity(search: SuggestionSearchRow): string | null {
+  const name = clean(search.requestedCompany);
+  const domain = clean(search.requestedDomain);
+  const nameKey = name ? companyNameIdentity(name) : "";
+  const domainKey = domain ? normalizeRoleGroupToken(domain).replace(/^https?:\/\//, "").replace(/^www\./, "") : "";
+  return nameKey || domainKey ? `raw:${nameKey}|${domainKey}` : null;
+}
+
 /**
  * Build company entries from resolved ProspectCompany rows plus the raw company
  * strings the user typed on searches that never resolved. Resolved companies
@@ -68,46 +98,103 @@ export function buildCompanyEntries(
   companies: readonly SuggestionCompanyRow[],
   searches: readonly SuggestionSearchRow[]
 ): SuggestionEntry[] {
-  const entries: SuggestionEntry[] = [];
-  const seen = new Set<string>();
+  type MutableCompanyEntry = SuggestionEntry & { matchKeys: string[]; correctionKeys: string[] };
+  const byIdentity = new Map<string, MutableCompanyEntry>();
+  const byCompanyId = new Map<string, MutableCompanyEntry>();
 
   for (const company of companies) {
-    const key = normalizeRoleGroupToken(company.name);
-    if (!key) {
+    const displayName = clean(company.officialName) ?? clean(company.name);
+    if (!displayName) {
       continue;
     }
-    seen.add(key);
     const matchKeys = [
       company.name,
       company.officialName ?? "",
       company.normalizedName ?? "",
       company.officialDomain ?? "",
       company.officialWebsiteDomain ?? "",
-      company.emailDomain ?? ""
+      company.emailDomain ?? "",
+      company.canonicalKey ?? "",
+      company.linkedinUrl ?? ""
     ].filter(Boolean);
-    entries.push({
-      value: company.name,
+    const entry: MutableCompanyEntry = {
+      value: displayName,
       detail: firstDomain(company),
       companyId: company.id,
       canonicalKey: company.canonicalKey ?? null,
       matchKeys,
       correctionKeys: [company.name, company.officialName ?? ""].filter(Boolean),
+      punctuationTolerant: true,
       priority: PRIORITY_RESOLVED_COMPANY
+    };
+    byIdentity.set(companyIdentity(company), entry);
+    byCompanyId.set(company.id, entry);
+  }
+
+  // Every historical request is searchable. Linked requests add their original
+  // name/domain/LinkedIn text as aliases of the canonical company; unresolved
+  // draft/failed requests become standalone suggestions.
+  for (const search of searches) {
+    const raw = clean(search.requestedCompany);
+    const requestedDomain = clean(search.requestedDomain);
+    const requestedLinkedin = clean(search.requestedLinkedin);
+    const linked = search.companyId ? byCompanyId.get(search.companyId) : null;
+    if (linked) {
+      linked.matchKeys.push(
+        ...[raw, requestedDomain, requestedLinkedin].filter((value): value is string => Boolean(value))
+      );
+      if (raw) {
+        linked.correctionKeys.push(raw);
+      }
+      continue;
+    }
+    const identity = unresolvedIdentity(search);
+    if (!identity || !raw) {
+      continue;
+    }
+    const existing = byIdentity.get(identity);
+    if (existing) {
+      existing.matchKeys.push(
+        ...[raw, requestedDomain, requestedLinkedin].filter((value): value is string => Boolean(value))
+      );
+      continue;
+    }
+    byIdentity.set(identity, {
+      value: raw,
+      detail: requestedDomain,
+      matchKeys: [raw, requestedDomain ?? "", requestedLinkedin ?? ""].filter(Boolean),
+      correctionKeys: [raw],
+      punctuationTolerant: true,
+      priority: PRIORITY_RAW_COMPANY
     });
   }
 
-  // Raw typed company names from searches (covers drafts / unresolved history).
-  for (const search of searches) {
-    const raw = (search.requestedCompany ?? "").trim();
-    const key = normalizeRoleGroupToken(raw);
-    if (!raw || !key || seen.has(key)) {
+  // De-dupe unresolved aliases that identify an already-resolved company by
+  // normalized display name + domain fallback, while stable company identities
+  // (canonical key / id) remain authoritative.
+  const accepted: MutableCompanyEntry[] = [];
+  for (const entry of byIdentity.values()) {
+    const nameKey = companyNameIdentity(entry.value);
+    const domainKey = normalizeRoleGroupToken(entry.detail ?? "").replace(/^www\./, "");
+    const duplicate = accepted.find((candidate) => {
+      if (companyNameIdentity(candidate.value) !== nameKey) {
+        return false;
+      }
+      const candidateDomain = normalizeRoleGroupToken(candidate.detail ?? "").replace(/^www\./, "");
+      return !domainKey || !candidateDomain || domainKey === candidateDomain;
+    });
+    if (duplicate) {
+      duplicate.matchKeys.push(...entry.matchKeys);
+      duplicate.correctionKeys.push(...entry.correctionKeys);
       continue;
     }
-    seen.add(key);
-    entries.push({ value: raw, priority: PRIORITY_RAW_COMPANY });
+    accepted.push(entry);
   }
-
-  return entries;
+  return accepted.map((entry) => {
+    entry.matchKeys = [...new Set(entry.matchKeys)];
+    entry.correctionKeys = [...new Set(entry.correctionKeys)];
+    return entry;
+  });
 }
 
 /**

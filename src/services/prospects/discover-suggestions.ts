@@ -56,6 +56,8 @@ export type SuggestionEntry = {
    * so this defaults to [value] unless the caller narrows it.
    */
   correctionKeys?: string[];
+  /** Company-only matching can safely ignore punctuation and URL decoration. */
+  punctuationTolerant?: boolean;
   /**
    * Tie-breaker when two entries match at the same rank: higher wins. A resolved
    * company (with a domain + id) can outrank a raw typed company string, and a
@@ -85,9 +87,32 @@ function unique(values: string[]): string[] {
   return [...new Set(values.filter(Boolean))];
 }
 
+/**
+ * Additional company-search folds. The spaced form makes punctuation and URL
+ * separators equivalent; the compact form also covers variants such as
+ * "AcmeCo" / "Acme Co" and dotted initialisms. These aliases are opt-in so
+ * role/location identity remains deliberately conservative.
+ */
+export function companyMatchAliases(value: string): string[] {
+  const normalized = normalizeRoleGroupToken(value)
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .replace(/&/g, " and ")
+    .replace(/[’']/g, "")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized) {
+    return [];
+  }
+  return unique([normalized, normalized.replace(/\s+/g, "")]);
+}
+
 function normalizedMatchKeys(entry: SuggestionEntry): string[] {
   const raw = entry.matchKeys && entry.matchKeys.length > 0 ? entry.matchKeys : [entry.value];
-  return unique(raw.map((key) => normalizeRoleGroupToken(key)));
+  return unique(
+    raw.flatMap((key) => [normalizeRoleGroupToken(key), ...(entry.punctuationTolerant ? companyMatchAliases(key) : [])])
+  );
 }
 
 function normalizedCorrectionKeys(entry: SuggestionEntry): string[] {
@@ -214,7 +239,14 @@ export function rankSuggestions(
   const byValue = new Map<string, Scored>();
   for (const entry of entries) {
     const matchKeys = normalizedMatchKeys(entry);
-    const rank = bestMatchRank(matchKeys, query);
+    const queries = unique([query, ...(entry.punctuationTolerant ? companyMatchAliases(rawQuery) : [])]);
+    let rank: number | null = null;
+    for (const candidateQuery of queries) {
+      const candidateRank = bestMatchRank(matchKeys, candidateQuery);
+      if (candidateRank !== null && (rank === null || candidateRank < rank)) {
+        rank = candidateRank;
+      }
+    }
     if (rank === null) {
       continue;
     }
