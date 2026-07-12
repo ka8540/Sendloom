@@ -88,6 +88,7 @@ import {
   COMPANY_SEARCH_ROLE_PLACEHOLDER,
   COMPANY_SEARCH_SUBTITLE,
   COMPANY_SEARCH_TITLE,
+  COMPANY_SEARCH_TRIGGER_LABEL,
   EXTERNAL_LINK_REL,
   EXTERNAL_LINK_TARGET,
   FILTERED_PEOPLE_EMPTY_BODY,
@@ -1241,13 +1242,12 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
               onClick={handleToggleCompanySearch}
               aria-expanded={companySearchOpen}
               aria-controls={COMPANY_SEARCH_PANEL_ID}
-              title={COMPANY_SEARCH_SUBTITLE}
+              aria-label={COMPANY_SEARCH_TITLE}
+              title={COMPANY_SEARCH_TITLE}
               data-discover-tour="company-search"
             >
-              <span className={styles.companySearchTriggerIcon} aria-hidden="true">
-                <Search />
-              </span>
-              <span>{COMPANY_SEARCH_TITLE}</span>
+              <Search className={styles.companySearchTriggerIcon} aria-hidden="true" />
+              <span>{COMPANY_SEARCH_TRIGGER_LABEL}</span>
               <ChevronDown className={styles.companySearchTriggerChevron} aria-hidden="true" />
             </button>
           )}

@@ -1106,6 +1106,12 @@ export function formatCurrentPeopleLine(peopleCount: number): string {
 // ---------------------------------------------------------------------------
 
 export const COMPANY_SEARCH_TITLE = "Search this company";
+/**
+ * Visible text on the compact header trigger. Deliberately short — the full
+ * name lives in the trigger's aria-label/tooltip (COMPANY_SEARCH_TITLE), so
+ * the button never dominates the header action row.
+ */
+export const COMPANY_SEARCH_TRIGGER_LABEL = "Search";
 export const COMPANY_SEARCH_SUBTITLE = "Add another role or location without leaving this company.";
 export const COMPANY_SEARCH_ROLE_LABEL = "Job title";
 export const COMPANY_SEARCH_ROLE_PLACEHOLDER = "Software Engineer";

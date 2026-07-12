@@ -18,6 +18,7 @@ import {
 import {
   COMPANY_SEARCH_CLOSE_LABEL,
   COMPANY_SEARCH_TITLE,
+  COMPANY_SEARCH_TRIGGER_LABEL,
   EMAIL_CONFIDENCE_HIGH_USABLE_PERCENT,
   EMAIL_CONFIDENCE_MEDIUM_USABLE_PERCENT,
   deriveDiscoverQualitySummary,
@@ -94,6 +95,17 @@ describe("Search this company disclosure (#8-#13, #16)", () => {
     expect(DETAIL_SOURCE).toContain("aria-expanded={companySearchOpen}");
     expect(DETAIL_SOURCE).toContain("aria-controls={COMPANY_SEARCH_PANEL_ID}");
     expect(DETAIL_SOURCE).toContain("id={panelId}");
+  });
+
+  it("the trigger is compact: visible label is short, full name stays accessible", () => {
+    // Visible text is just "Search" — the button never dominates the row.
+    expect(COMPANY_SEARCH_TRIGGER_LABEL).toBe("Search");
+    expect(DETAIL_SOURCE).toContain("<span>{COMPANY_SEARCH_TRIGGER_LABEL}</span>");
+    // Screen readers and the tooltip still get the full name.
+    expect(DETAIL_SOURCE).toContain("aria-label={COMPANY_SEARCH_TITLE}");
+    expect(DETAIL_SOURCE).toContain("title={COMPANY_SEARCH_TITLE}");
+    // The long title is no longer the visible trigger label.
+    expect(DETAIL_SOURCE).not.toContain("<span>{COMPANY_SEARCH_TITLE}</span>");
   });
 
   it("the search form is collapsed by default and never an always-visible div (#9, #16)", () => {
@@ -260,6 +272,16 @@ describe("premium styling contract", () => {
     expect(CSS).toContain(".companySearchTriggerIcon");
   });
 
+  it("the trigger stays a compact 42px action, never a hero CTA", () => {
+    // 42px pill, ~14.4px text, plain ~18px icon — no filled icon chip.
+    expect(CSS).toMatch(/\.companySearchTrigger \{[^}]*height: 2\.625rem/);
+    expect(CSS).toMatch(/\.companySearchTrigger \{[^}]*font-size: 0\.9rem/);
+    expect(CSS).toMatch(/\.companySearchTriggerIcon \{\s*\n\s*width: 1\.15rem/);
+    expect(CSS).not.toMatch(/\.companySearchTriggerIcon \{[^}]*background/);
+    // No full-row takeover on phones — it wraps like any other header action.
+    expect(CSS).not.toMatch(/\.companySearchTrigger \{\s*\n\s*flex: 1 1 100%;/);
+  });
+
   it("the dialog card is compact — never full content width on desktop", () => {
     // ~608px card in the 560–720px band, big radius, confirm-dialog surface.
     expect(CSS).toMatch(/\.companySearchCard \{[^}]*max-width: 38rem/);
@@ -275,9 +297,5 @@ describe("premium styling contract", () => {
   it("the dialog footer stacks to full-width tap targets on phones", () => {
     expect(CSS).toMatch(/@media \(max-width: 640px\) \{[\s\S]*?\.companySearchFooter \{\s*\n\s*flex-direction: column;/);
     expect(CSS).toMatch(/\.companySearchFooterActions \{\s*\n\s*display: grid;\s*\n\s*grid-template-columns: 1fr;/);
-  });
-
-  it("the trigger goes full-width on phones", () => {
-    expect(CSS).toMatch(/@media \(max-width: 640px\) \{[\s\S]*?\.companySearchTrigger \{\s*\n\s*flex: 1 1 100%;/);
   });
 });
