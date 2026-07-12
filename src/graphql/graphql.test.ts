@@ -1148,3 +1148,223 @@ describe("Grouped Search History GraphQL surface", () => {
     expect((result.data?.discoverCompanyGroups as { totalCount: number }).totalCount).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// "Search this company" mutation + location-filtered people query.
+// ---------------------------------------------------------------------------
+
+describe("searchCompanyRole mutation (Search this company)", () => {
+  const MUTATION = `mutation {
+    searchCompanyRole(companyId: "comp_A", jobTitle: "Recruiter", location: "Canada", idempotencyKey: "k1") {
+      id
+      status
+      requestedTitles
+      requestedLocations
+    }
+  }`;
+
+  it("rejects unauthenticated requests before touching the service (#10)", async () => {
+    const searchCompanyRole = vi.fn();
+    const result = await graphql({
+      schema: prospectSchema,
+      source: MUTATION,
+      contextValue: makeContext({
+        user: null,
+        services: {
+          prospectSearch: { searchCompanyRole } as unknown as GraphQLContext["services"]["prospectSearch"]
+        }
+      })
+    });
+    expect(result.errors?.[0]?.extensions?.code).toBe("UNAUTHENTICATED");
+    expect(searchCompanyRole).not.toHaveBeenCalled();
+  });
+
+  it("runs a valid new role/location with the session user's id and email (#12)", async () => {
+    const searchCompanyRole = vi.fn(async () => ({
+      id: "s_new",
+      userId: "user_A",
+      companyId: "comp_A",
+      requestedCompany: "Apple",
+      requestedTitles: ["Recruiter"],
+      requestedLocations: ["Canada"],
+      maxResults: 10,
+      status: "READY",
+      errorCode: null,
+      totalProcessed: 10,
+      totalFound: 10,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      completedAt: new Date()
+    }));
+    const result = await graphql({
+      schema: prospectSchema,
+      source: MUTATION,
+      contextValue: makeContext({
+        user: FAKE_USER,
+        services: {
+          prospectSearch: { searchCompanyRole } as unknown as GraphQLContext["services"]["prospectSearch"]
+        }
+      })
+    });
+    expect(result.errors).toBeUndefined();
+    expect(result.data?.searchCompanyRole).toMatchObject({
+      id: "s_new",
+      status: "READY",
+      requestedTitles: ["Recruiter"],
+      requestedLocations: ["Canada"]
+    });
+    expect(searchCompanyRole).toHaveBeenCalledWith("user_A", {
+      companyId: "comp_A",
+      jobTitle: "Recruiter",
+      location: "Canada",
+      actorEmail: "a@example.com",
+      idempotencyKey: "k1"
+    });
+  });
+
+  it("maps a duplicate role+location to the safe DUPLICATE_ROLE_LOCATION error (#13)", async () => {
+    const message = "This role and location already exist. Use Add 10 more to extend this group.";
+    const searchCompanyRole = vi.fn(async () => {
+      throw new ProspectError("DUPLICATE_ROLE_LOCATION", message);
+    });
+    const result = await graphql({
+      schema: prospectSchema,
+      source: MUTATION,
+      contextValue: makeContext({
+        user: FAKE_USER,
+        services: {
+          prospectSearch: { searchCompanyRole } as unknown as GraphQLContext["services"]["prospectSearch"]
+        }
+      })
+    });
+    expect(result.data?.searchCompanyRole ?? null).toBeNull();
+    expect(result.errors?.[0]?.extensions?.code).toBe("DUPLICATE_ROLE_LOCATION");
+    expect(result.errors?.[0]?.message).toBe(message);
+  });
+
+  it("maps an empty job title to BAD_USER_INPUT (#11-validate)", async () => {
+    const searchCompanyRole = vi.fn(async () => {
+      throw new ProspectError("INVALID_INPUT", "Enter a job title to search.");
+    });
+    const result = await graphql({
+      schema: prospectSchema,
+      source: `mutation { searchCompanyRole(companyId: "comp_A", jobTitle: "  ") { id } }`,
+      contextValue: makeContext({
+        user: FAKE_USER,
+        services: {
+          prospectSearch: { searchCompanyRole } as unknown as GraphQLContext["services"]["prospectSearch"]
+        }
+      })
+    });
+    expect(result.errors?.[0]?.extensions?.code).toBe("BAD_USER_INPUT");
+  });
+});
+
+describe("people query location filter (role/location groups)", () => {
+  function seedLocationGraph() {
+    const prisma = createFakePrisma();
+    seedCompany(prisma, { id: "comp_A", userId: "user_A" });
+    prisma._state.positions.push(
+      { id: "pos_se", companyId: "comp_A", category: "SOFTWARE_ENGINEERING", displayName: "Software Engineering", rawTitles: [] },
+      { id: "pos_rec", companyId: "comp_A", category: "RECRUITING", displayName: "Recruiting", rawTitles: [] }
+    );
+    const searchBase = {
+      userId: "user_A",
+      companyId: "comp_A",
+      requestedCompany: "Apple",
+      maxResults: 10,
+      status: "READY",
+      totalProcessed: 0,
+      totalFound: 0,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    prisma._state.searches.push(
+      { ...searchBase, id: "s_us", requestedTitles: ["Software Engineer"], requestedLocations: ["United States"] },
+      { ...searchBase, id: "s_ca", requestedTitles: ["Software Engineer"], requestedLocations: ["Canada"] },
+      { ...searchBase, id: "s_bare", requestedTitles: ["Recruiter"], requestedLocations: [] }
+    );
+    const personBase = {
+      userId: "user_A",
+      companyId: "comp_A",
+      lastName: "X",
+      inferredEmail: null,
+      emailStatus: "UNAVAILABLE",
+      emailConfidence: "UNAVAILABLE",
+      createdAt: new Date()
+    };
+    prisma._state.people.push(
+      { ...personBase, id: "p_us_se", positionId: "pos_se", firstName: "UsSe", fullName: "UsSe X", linkedinUrl: "https://www.linkedin.com/in/us-se" },
+      { ...personBase, id: "p_us_rec", positionId: "pos_rec", firstName: "UsRec", fullName: "UsRec X", linkedinUrl: "https://www.linkedin.com/in/us-rec" },
+      { ...personBase, id: "p_ca_se", positionId: "pos_se", firstName: "CaSe", fullName: "CaSe X", linkedinUrl: "https://www.linkedin.com/in/ca-se" },
+      { ...personBase, id: "p_bare", positionId: "pos_rec", firstName: "Bare", fullName: "Bare X", linkedinUrl: "https://www.linkedin.com/in/bare" }
+    );
+    prisma._state.searchPeople.push(
+      { id: "a1", searchId: "s_us", personId: "p_us_se" },
+      { id: "a2", searchId: "s_us", personId: "p_us_rec" },
+      { id: "a3", searchId: "s_ca", personId: "p_ca_se" },
+      { id: "a4", searchId: "s_bare", personId: "p_bare" }
+    );
+    return prisma;
+  }
+
+  async function queryPeople(prisma: FakePrisma, args: string) {
+    const result = await graphql({
+      schema: prospectSchema,
+      source: `{ people(companyId: "comp_A"${args}, first: 10) { totalCount edges { node { id } } } }`,
+      contextValue: makeContext({ user: FAKE_USER, prisma, userId: "user_A" })
+    });
+    expect(result.errors).toBeUndefined();
+    const connection = result.data?.people as { totalCount: number; edges: Array<{ node: { id: string } }> };
+    return { totalCount: connection.totalCount, ids: connection.edges.map((edge) => edge.node.id).sort() };
+  }
+
+  it("filters people to the matching location group through allocations (#24)", async () => {
+    const prisma = seedLocationGraph();
+    expect(await queryPeople(prisma, `, location: "United States"`)).toEqual({
+      totalCount: 2,
+      ids: ["p_us_rec", "p_us_se"]
+    });
+    expect(await queryPeople(prisma, `, location: "Canada"`)).toEqual({ totalCount: 1, ids: ["p_ca_se"] });
+  });
+
+  it("normalizes the location filter (casing + duplicated spaces) (#24-normalized)", async () => {
+    const prisma = seedLocationGraph();
+    expect(await queryPeople(prisma, `, location: "  united   STATES "`)).toEqual({
+      totalCount: 2,
+      ids: ["p_us_rec", "p_us_se"]
+    });
+  });
+
+  it("an empty-string location targets the searches run WITHOUT a location", async () => {
+    const prisma = seedLocationGraph();
+    expect(await queryPeople(prisma, `, location: ""`)).toEqual({ totalCount: 1, ids: ["p_bare"] });
+  });
+
+  it("role and location filters combine (#25)", async () => {
+    const prisma = seedLocationGraph();
+    expect(
+      await queryPeople(prisma, `, location: "United States", positionCategory: SOFTWARE_ENGINEERING`)
+    ).toEqual({ totalCount: 1, ids: ["p_us_se"] });
+  });
+
+  it("no location filter returns everyone (regression #31)", async () => {
+    const prisma = seedLocationGraph();
+    expect(await queryPeople(prisma, "")).toEqual({
+      totalCount: 4,
+      ids: ["p_bare", "p_ca_se", "p_us_rec", "p_us_se"]
+    });
+  });
+
+  it("an unknown location matches nothing — never leaks other groups", async () => {
+    const prisma = seedLocationGraph();
+    expect(await queryPeople(prisma, `, location: "Mars"`)).toEqual({ totalCount: 0, ids: [] });
+  });
+
+  it("legacy searches without allocation rows fall back to the whole company", async () => {
+    const prisma = seedLocationGraph();
+    // Simulate the pre-allocation era: no grants exist at all.
+    prisma._state.searchPeople.length = 0;
+    expect((await queryPeople(prisma, `, location: "United States"`)).totalCount).toBe(4);
+  });
+});

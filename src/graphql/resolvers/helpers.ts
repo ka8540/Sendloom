@@ -4,6 +4,7 @@ import type { GraphQLContext } from "@/graphql/context";
 import {
   badInputError,
   discoverDailyLimitError,
+  discoverDuplicateRoleLocationError,
   discoverExpansionFailedError,
   discoverExpansionRunningError,
   forbiddenError,
@@ -31,7 +32,10 @@ export function mapProspectError(error: unknown): never {
       case "NOT_FOUND":
         throw notFoundError(error.message);
       case "INVALID_STATE":
+      case "INVALID_INPUT":
         throw badInputError(error.message);
+      case "DUPLICATE_ROLE_LOCATION":
+        throw discoverDuplicateRoleLocationError(error.message);
       case "NOT_CONFIGURED":
       case "RATE_LIMITED":
         throw forbiddenError(error.message);

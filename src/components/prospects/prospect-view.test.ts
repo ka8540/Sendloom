@@ -11,6 +11,8 @@ import type {
 import {
   ADD_MORE_DIALOG_BODY,
   ADD_MORE_PEOPLE_LABEL,
+  ANY_LOCATION_LABEL,
+  COMPANY_SEARCH_LOADING_LABEL,
   EXTERNAL_LINK_REL,
   EXTERNAL_LINK_TARGET,
   INFERRED_EMAIL_NOTICE,
@@ -21,6 +23,9 @@ import {
   PROSPECT_FINDER_UNAVAILABLE_TITLE,
   addMoreDisabledReason,
   addMoreSearchLabel,
+  buildLocationFilterOptions,
+  companySearchDisabledReason,
+  companySearchSuccessMessage,
   confidenceBadge,
   formatCurrentPeopleLine,
   formatGroupCountLabel,
@@ -848,9 +853,12 @@ describe("Add 10 more detail-page wiring", () => {
 
   it("updates counts + people in place without a full-page reload (existing #6, #7, #9)", () => {
     expect(detailSource).toContain("ADD_MORE_DISCOVER_PEOPLE_MUTATION");
-    // Refreshes company (totals), people (pagination), and the search in place.
-    expect(detailSource).toContain("await loadPeople({ companyId: search.company.id, category: activeCategory, pageIndex: 0, after: null })");
-    expect(detailSource).toContain("await loadDetail({ category: activeCategory })");
+    // Refreshes company (totals), people (pagination), and the search in place,
+    // preserving BOTH active filters (role + location).
+    expect(detailSource).toMatch(
+      /await loadPeople\(\{\s*companyId: search\.company\.id,\s*category: activeCategory,\s*location: activeLocation,\s*pageIndex: 0,\s*after: null\s*\}\)/
+    );
+    expect(detailSource).toContain("await loadDetail({ category: activeCategory, location: activeLocation })");
     // No hard navigation / full reload.
     expect(detailSource).not.toContain("window.location.reload");
   });
@@ -1321,5 +1329,144 @@ describe("Discover Search History filter UI", () => {
     expect(listSource).toContain("visibleSearches.map((group, index)");
     expect(listSource).toContain("resolveGroupOpenTarget(group.searches)");
     expect(listSource).toContain("onRequestDelete(group, event.currentTarget)");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Location filters + "Search this company" helpers (same-company search).
+// ---------------------------------------------------------------------------
+
+describe("location filter chips (buildLocationFilterOptions)", () => {
+  it("builds one chip per distinct location, deduped across casing/whitespace (#22)", () => {
+    const options = buildLocationFilterOptions([
+      { status: "READY", requestedLocations: ["United States"] },
+      { status: "READY", requestedLocations: ["united  states"] },
+      { status: "READY", requestedLocations: ["Canada"] }
+    ]);
+    expect(options).toEqual([
+      { key: "united states", label: "United States" },
+      { key: "canada", label: "Canada" }
+    ]);
+  });
+
+  it("adds the 'Any location' chip only when bare searches coexist with located ones", () => {
+    const mixed = buildLocationFilterOptions([
+      { status: "READY", requestedLocations: ["United States"] },
+      { status: "READY", requestedLocations: [] }
+    ]);
+    expect(mixed.map((option) => option.label)).toEqual(["United States", ANY_LOCATION_LABEL]);
+    expect(mixed[1].key).toBe("");
+  });
+
+  it("returns no options when nothing is filterable — the rail should not render", () => {
+    expect(buildLocationFilterOptions([])).toEqual([]);
+    expect(buildLocationFilterOptions([{ status: "READY", requestedLocations: [] }])).toEqual([]);
+  });
+
+  it("ignores locations from unfinished searches (they have no people yet)", () => {
+    const options = buildLocationFilterOptions([
+      { status: "READY", requestedLocations: ["United States"] },
+      { status: "SEARCHING_PEOPLE", requestedLocations: ["Canada"] },
+      { status: "FAILED", requestedLocations: ["Germany"] }
+    ]);
+    expect(options.map((option) => option.label)).toEqual(["United States"]);
+  });
+});
+
+describe("location-aware Add 10 more (#28, #29)", () => {
+  function located(overrides: Partial<AddMoreCandidateSearch> & { id: string }): AddMoreCandidateSearch {
+    return {
+      status: "READY",
+      requestedTitles: ["Software Engineer"],
+      requestedLocations: ["United States"],
+      positionCategories: ["SOFTWARE_ENGINEERING"],
+      createdAt: "2026-07-04T10:00:00.000Z",
+      ...overrides
+    };
+  }
+
+  const us = located({ id: "s_us" });
+  const canada = located({ id: "s_ca", requestedLocations: ["Canada"], createdAt: "2026-07-05T10:00:00.000Z" });
+
+  it("an active location chip pins Add 10 more to that location's group", () => {
+    const target = resolveAddMoreTarget({
+      activeCategory: null,
+      activeLocationKey: "canada",
+      searches: [us, canada],
+      currentSearchId: "s_us"
+    });
+    expect(target.kind).toBe("search");
+    expect(target.kind === "search" && target.search.id).toBe("s_ca");
+  });
+
+  it("the 'Any location' chip (key \"\") pins the bare-location group", () => {
+    const bare = located({ id: "s_bare", requestedLocations: [] });
+    const target = resolveAddMoreTarget({
+      activeCategory: null,
+      activeLocationKey: "",
+      searches: [us, bare],
+      currentSearchId: ""
+    });
+    expect(target.kind === "search" && target.search.id).toBe("s_bare");
+  });
+
+  it("without a location filter, same role in two locations still requires a choice", () => {
+    const target = resolveAddMoreTarget({
+      activeCategory: null,
+      activeLocationKey: null,
+      searches: [us, canada],
+      currentSearchId: ""
+    });
+    expect(target.kind).toBe("choose");
+  });
+
+  it("a stale location key falls back to the full chooser instead of mistargeting", () => {
+    const target = resolveAddMoreTarget({
+      activeCategory: null,
+      activeLocationKey: "mars",
+      searches: [us, canada],
+      currentSearchId: ""
+    });
+    expect(target.kind).toBe("choose");
+    expect(target.kind === "choose" && target.options).toHaveLength(2);
+  });
+
+  it("chooser labels carry the location so same-role groups are distinguishable (#29)", () => {
+    expect(addMoreSearchLabel(us)).toBe("Software Engineer · United States");
+    expect(addMoreSearchLabel(canada)).toBe("Software Engineer · Canada");
+    expect(addMoreSearchLabel({ requestedTitles: ["Recruiter"], requestedLocations: [] })).toBe("Recruiter");
+    expect(addMoreSearchLabel({ requestedTitles: [] })).toBe("Any role");
+  });
+
+  it("chooser options for the same role across locations never collapse or duplicate", () => {
+    const target = resolveAddMoreTarget({ activeCategory: null, searches: [us, canada], currentSearchId: "" });
+    const labels = target.kind === "choose" ? target.options.map((option) => addMoreSearchLabel(option)) : [];
+    expect(labels).toEqual(["Software Engineer · Canada", "Software Engineer · United States"]);
+    expect(new Set(labels).size).toBe(labels.length);
+  });
+});
+
+describe("Search this company helpers", () => {
+  const quota: DiscoverQuota = {
+    resultsPerSearch: 10,
+    dailySearchLimit: 4,
+    searchesUsed: 4,
+    searchesRemaining: 0,
+    resetAt: "2026-07-12T00:00:00.000Z",
+    unlimited: false
+  };
+
+  it("locks the submit while a search is in flight and when the daily quota is spent (#10)", () => {
+    expect(companySearchDisabledReason(quota, true)).toBe(COMPANY_SEARCH_LOADING_LABEL);
+    expect(companySearchDisabledReason(quota, false)).toMatch(/used today's Discover searches/);
+    expect(companySearchDisabledReason({ ...quota, searchesRemaining: 2 }, false)).toBeNull();
+    // Owner/unlimited accounts are never quota-blocked.
+    expect(companySearchDisabledReason({ ...quota, unlimited: true }, false)).toBeNull();
+    expect(companySearchDisabledReason(null, false)).toBeNull();
+  });
+
+  it("describes the added group, falling back to 'Any location' for blank locations", () => {
+    expect(companySearchSuccessMessage(" Recruiter ", "Canada")).toBe("New search added: Recruiter · Canada.");
+    expect(companySearchSuccessMessage("Recruiter", null)).toBe(`New search added: Recruiter · ${ANY_LOCATION_LABEL}.`);
   });
 });

@@ -158,6 +158,37 @@ export const prospectSearchMutations = {
     }
   },
 
+  /**
+   * "Search this company" from the company detail page. Ownership is enforced
+   * server-side from the session user, and an exact normalized role+location
+   * duplicate throws DUPLICATE_ROLE_LOCATION before any quota or provider work
+   * — see ProspectSearchService.searchCompanyRole.
+   */
+  async searchCompanyRole(
+    _root: unknown,
+    args: { companyId: string; jobTitle: string; location?: string | null; idempotencyKey?: string | null },
+    context: GraphQLContext
+  ) {
+    const user = requireUser(context);
+    const idempotencyKey = (args.idempotencyKey ?? "").trim();
+    if (idempotencyKey.length > MAX_IDEMPOTENCY_KEY_LENGTH) {
+      throw badInputError("A valid idempotency key is required.");
+    }
+    try {
+      // The quota email is taken from the authenticated session user only — a
+      // request body / GraphQL input can never grant the exemption.
+      return await context.services.prospectSearch.searchCompanyRole(user.id, {
+        companyId: args.companyId,
+        jobTitle: args.jobTitle,
+        location: args.location ?? null,
+        actorEmail: user.email,
+        idempotencyKey: idempotencyKey || null
+      });
+    } catch (error) {
+      mapProspectError(error);
+    }
+  },
+
   async addMoreDiscoverPeople(
     _root: unknown,
     args: { searchId: string; idempotencyKey: string },

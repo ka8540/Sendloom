@@ -2273,3 +2273,188 @@ describe("Discover email-format failure handling (no poisoning)", () => {
     expect(prisma._state.people.find((p) => p.firstName === "Jane")!.inferredEmail).toBe("jane_doe@amat.com");
   });
 });
+
+// ---------------------------------------------------------------------------
+// "Search this company" — same-company role/location search from the company
+// detail page (searchCompanyRole).
+// ---------------------------------------------------------------------------
+
+describe("Search this company (same-company role/location search)", () => {
+  const SCR_ROLE_ONLY = { responses: { role_classification: { classifications: [] } } };
+
+  function companyRunner() {
+    // The same provider person on every call — exercises the person-dedupe
+    // guarantee for sibling role/location searches of one company.
+    const run = vi.fn<ApifyRunner["run"]>(async () => ({
+      runId: "run-scr",
+      datasetId: "ds-scr",
+      items: [profile("scr1", "Jane", "Doe", "Software Engineer", "Applied Materials")]
+    }));
+    return { run, runner: { run } as ApifyRunner };
+  }
+
+  /** One READY Applied Materials search (Software Engineer · United States). */
+  async function seedReadyCompany(quota = makeQuotaReserver({ limit: 4 })) {
+    const { run, runner } = companyRunner();
+    const { service } = buildService(prisma, runner, SCR_ROLE_ONLY, undefined, quota.reserve);
+    const created = await service.createSearch(USER_ID, APPLIED_MATERIALS);
+    const ready = await service.processSearch(USER_ID, created.id, { actorEmail: "u@test.dev" });
+    expect(ready.status).toBe("READY");
+    const company = prisma._state.companies[0];
+    return { service, run, quota, company, firstSearch: ready };
+  }
+
+  it("rejects a duplicate role+location without charging quota or calling the provider (#7, #8, #13)", async () => {
+    const { service, run, quota, company } = await seedReadyCompany();
+    const runsBefore = run.mock.calls.length;
+    const consumedBefore = quota.consumed.size;
+
+    await expect(
+      service.searchCompanyRole(USER_ID, {
+        companyId: company.id,
+        // Casing + extra whitespace still collapse onto the existing group.
+        jobTitle: "  software   ENGINEER ",
+        location: " UNITED  states ",
+        actorEmail: "u@test.dev"
+      })
+    ).rejects.toMatchObject({ code: "DUPLICATE_ROLE_LOCATION" });
+
+    expect(run.mock.calls.length).toBe(runsBefore);
+    expect(quota.consumed.size).toBe(consumedBefore);
+    expect(prisma._state.searches).toHaveLength(1);
+  });
+
+  it("runs a different role for the same company and materializes into the SAME company (#12)", async () => {
+    const { service, run, quota, company } = await seedReadyCompany();
+
+    const result = await service.searchCompanyRole(USER_ID, {
+      companyId: company.id,
+      jobTitle: "Recruiter",
+      location: "United States",
+      actorEmail: "u@test.dev"
+    });
+
+    expect(result.status).toBe("READY");
+    expect(result.companyId).toBe(company.id);
+    expect(result.requestedTitles).toEqual(["Recruiter"]);
+    expect(result.requestedLocations).toEqual(["United States"]);
+    expect(prisma._state.companies).toHaveLength(1);
+    expect(prisma._state.searches).toHaveLength(2);
+    // A real new search: provider ran again and one more quota slot was used.
+    expect(run.mock.calls.length).toBe(2);
+    expect(quota.consumed.size).toBe(2);
+  });
+
+  it("same role + different location creates a separate location group (#14)", async () => {
+    const { service, company } = await seedReadyCompany();
+
+    const result = await service.searchCompanyRole(USER_ID, {
+      companyId: company.id,
+      jobTitle: "Software Engineer",
+      location: "Canada",
+      actorEmail: "u@test.dev"
+    });
+
+    expect(result.status).toBe("READY");
+    expect(result.companyId).toBe(company.id);
+    expect(result.requestedLocations).toEqual(["Canada"]);
+    expect(prisma._state.searches).toHaveLength(2);
+  });
+
+  it("never duplicates a person the company already has when the provider returns them again (#15)", async () => {
+    const { service, company } = await seedReadyCompany();
+    expect(prisma._state.people).toHaveLength(1);
+
+    await service.searchCompanyRole(USER_ID, {
+      companyId: company.id,
+      jobTitle: "Software Engineer",
+      location: "Canada",
+      actorEmail: "u@test.dev"
+    });
+
+    // Same sourceProfileId from the provider → still exactly one person row.
+    expect(prisma._state.people).toHaveLength(1);
+  });
+
+  it("blocks while an identical role/location search is still running (#9-running)", async () => {
+    const { service, company } = await seedReadyCompany();
+    prisma._state.searches.push({
+      id: "search_running",
+      userId: USER_ID,
+      companyId: company.id,
+      requestedCompany: "Applied Materials",
+      requestedTitles: ["Recruiter"],
+      requestedLocations: ["United States"],
+      status: "SEARCHING_PEOPLE",
+      maxResults: 10,
+      totalProcessed: 0,
+      totalFound: 0,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+
+    await expect(
+      service.searchCompanyRole(USER_ID, {
+        companyId: company.id,
+        jobTitle: "Recruiter",
+        location: "United States",
+        actorEmail: "u@test.dev"
+      })
+    ).rejects.toMatchObject({
+      code: "DUPLICATE_ROLE_LOCATION",
+      message: expect.stringContaining("already running")
+    });
+  });
+
+  it("rejects another user's company before any quota is reserved (#11)", async () => {
+    const { service, quota, company } = await seedReadyCompany();
+    const callsBefore = quota.calls.length;
+
+    await expect(
+      service.searchCompanyRole("user_intruder", {
+        companyId: company.id,
+        jobTitle: "Recruiter",
+        location: "Canada",
+        actorEmail: "intruder@test.dev"
+      })
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+
+    expect(quota.calls.length).toBe(callsBefore);
+    expect(prisma._state.searches).toHaveLength(1);
+  });
+
+  it("rejects an empty job title with a validation error (#10-validate)", async () => {
+    const { service, company } = await seedReadyCompany();
+    await expect(
+      service.searchCompanyRole(USER_ID, { companyId: company.id, jobTitle: "   ", actorEmail: "u@test.dev" })
+    ).rejects.toMatchObject({ code: "INVALID_INPUT" });
+    expect(prisma._state.searches).toHaveLength(1);
+  });
+
+  it("a quota-blocked new role leaves a reusable draft — no second row on resubmit (#10-quota)", async () => {
+    const quota = makeQuotaReserver({ limit: 1 });
+    const { service, company } = await seedReadyCompany(quota);
+
+    await expect(
+      service.searchCompanyRole(USER_ID, {
+        companyId: company.id,
+        jobTitle: "Recruiter",
+        location: "Canada",
+        actorEmail: "u@test.dev"
+      })
+    ).rejects.toMatchObject({ code: "DISCOVER_DAILY_LIMIT_REACHED" });
+    expect(prisma._state.searches).toHaveLength(2);
+
+    // Resubmitting the same role/location reuses the stranded DRAFT instead of
+    // stacking another row (and is blocked by the same quota, not a duplicate).
+    await expect(
+      service.searchCompanyRole(USER_ID, {
+        companyId: company.id,
+        jobTitle: "Recruiter",
+        location: "Canada",
+        actorEmail: "u@test.dev"
+      })
+    ).rejects.toMatchObject({ code: "DISCOVER_DAILY_LIMIT_REACHED" });
+    expect(prisma._state.searches).toHaveLength(2);
+  });
+});

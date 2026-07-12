@@ -2378,3 +2378,54 @@
     transform: none;
   }
 }
+
+/* ---- Search this company (same-company role/location search) ------------- */
+
+.companySearchCard {
+  display: grid;
+  gap: 0.9rem;
+}
+
+/* Two rounded inputs + the submit in one compact row; the button aligns with
+   the input baseline (labels sit above the fields). */
+.companySearchForm {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: end;
+}
+
+.companySearchSubmit {
+  white-space: nowrap;
+}
+
+/* Long location/role labels truncate inside chips instead of stretching them;
+   the chip's title attribute still carries the full text. */
+.chipLabelTruncate {
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  /* Fields stack and the submit goes full width on narrow screens. */
+  .companySearchForm {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  /* The nowrap quota chip would otherwise set the header's min-content wider
+     than the card and push the whole grid past the card edge. */
+  .companySearchCard .panelHeader {
+    flex-wrap: wrap;
+  }
+
+  .companySearchCard .quotaIndicator {
+    white-space: normal;
+  }
+
+  .chipLabelTruncate {
+    max-width: 9rem;
+  }
+}

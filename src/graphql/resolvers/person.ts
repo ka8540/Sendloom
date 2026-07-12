@@ -5,13 +5,64 @@ import { notFoundError, requireUser } from "@/graphql/errors";
 import { env } from "@/lib/env";
 import { isPositionCategory, overlayEmailCandidateStatus } from "@/lib/prospect-enums";
 import { buildConnection, cursorArgs, decodeCursor, resolveFirst } from "@/graphql/pagination";
-import { loadCompanyOrThrow } from "@/graphql/resolvers/helpers";
+import { asStringArray, loadCompanyOrThrow } from "@/graphql/resolvers/helpers";
+import {
+  normalizeRoleGroupToken,
+  normalizeRoleGroupTokens
+} from "@/services/prospects/discover-role-group-key";
 import { resolveProspectPersonEmail } from "@/services/prospects/prospect-person-email";
+
+/**
+ * Resolve a location filter to a person-id restriction for one company.
+ * Membership follows the per-search allocations: a person belongs to a
+ * location group when one of the USER'S searches whose normalized requested
+ * location matches the filter has allocated that person. `location` uses the
+ * same conservative fold as the role-group identity, so "united  states"
+ * matches "United States" but never "Canada"; "" targets the searches run
+ * WITHOUT a location.
+ *
+ * Returns null for "no restriction": either no filter was requested, or every
+ * matched search predates allocations (legacy searches own the whole company,
+ * the same fallback the group people-count uses).
+ */
+async function resolveLocationPersonIds(
+  context: GraphQLContext,
+  userId: string,
+  companyId: string,
+  location: string | null | undefined
+): Promise<string[] | null> {
+  if (location === null || location === undefined) {
+    return null;
+  }
+  const token = normalizeRoleGroupToken(location);
+  const searches = await context.prisma.prospectSearch.findMany({ where: { userId, companyId } });
+  const matching = searches.filter((search) => {
+    const tokens = normalizeRoleGroupTokens(asStringArray(search.requestedLocations));
+    return token === "" ? tokens.length === 0 : tokens.includes(token);
+  });
+  if (matching.length === 0) {
+    return [];
+  }
+  const allocations = await context.prisma.prospectSearchPerson.findMany({
+    where: { searchId: { in: matching.map((search) => search.id) } },
+    select: { personId: true }
+  });
+  if (allocations.length === 0) {
+    return null;
+  }
+  return [...new Set(allocations.map((row) => row.personId))];
+}
 
 export const personQueries = {
   async people(
     _root: unknown,
-    args: { companyId: string; positionCategory?: string | null; first?: number | null; after?: string | null },
+    args: {
+      companyId: string;
+      positionCategory?: string | null;
+      location?: string | null;
+      first?: number | null;
+      after?: string | null;
+    },
     context: GraphQLContext
   ) {
     const user = requireUser(context);
@@ -20,13 +71,15 @@ export const personQueries = {
 
     const first = resolveFirst(args.first, 50);
     const afterId = decodeCursor(args.after);
+    const locationPersonIds = await resolveLocationPersonIds(context, user.id, args.companyId, args.location);
 
     const where = {
       userId: user.id,
       companyId: args.companyId,
       ...(args.positionCategory && isPositionCategory(args.positionCategory)
         ? { position: { category: args.positionCategory } }
-        : {})
+        : {}),
+      ...(locationPersonIds !== null ? { id: { in: locationPersonIds } } : {})
     };
 
     const [rows, totalCount] = await Promise.all([

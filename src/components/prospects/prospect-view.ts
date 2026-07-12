@@ -17,7 +17,11 @@ import type {
 } from "@/components/prospects/prospect-graphql";
 import { mapDiscoverPublicError } from "@/lib/discover-public-error";
 import { parseEmailFormatDecisionMetadata } from "@/lib/email-format-decision";
-import { normalizeRoleGroupToken, roleGroupKeyFor } from "@/services/prospects/discover-role-group-key";
+import {
+  normalizeRoleGroupToken,
+  normalizeRoleGroupTokens,
+  roleGroupKeyFor
+} from "@/services/prospects/discover-role-group-key";
 
 // External links to LinkedIn always open in a new tab with a hardened rel so we
 // never leak the opener or referrer.
@@ -692,6 +696,67 @@ export function formatDateTime(iso: string | null): string {
   return date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
+// ---------------------------------------------------------------------------
+// Location filters (People section, grouped company detail).
+// ---------------------------------------------------------------------------
+
+export const ALL_LOCATIONS_LABEL = "All locations";
+/** Chip label for the group of searches that were run WITHOUT a location. */
+export const ANY_LOCATION_LABEL = "Any location";
+export const CLEAR_FILTERS_LABEL = "Clear filters";
+export const FILTERED_PEOPLE_EMPTY_TITLE = "No people match these filters.";
+export const FILTERED_PEOPLE_EMPTY_BODY =
+  "Try a different role or location, or clear the filters to see everyone.";
+
+export type LocationFilterOption = {
+  /** Canonical location key (normalizeRoleGroupToken); "" = "Any location". */
+  key: string;
+  /** First-seen casing, for display. */
+  label: string;
+};
+
+/**
+ * Distinct location chips for a company's READY searches. Deduped by the same
+ * canonical fold as role-group identity, so "United States" and "united
+ * states" render as ONE chip (first-seen casing wins) while "Canada" stays
+ * separate. Locations of unfinished searches are excluded (they have no people
+ * to filter yet). The bare "Any location" chip appears only when location-less
+ * searches coexist with located ones — an empty list means there is nothing to
+ * filter by and the rail should not render.
+ */
+export function buildLocationFilterOptions(
+  searches: Array<{ status: ProspectSearchStatus; requestedLocations: string[] }>
+): LocationFilterOption[] {
+  const seen = new Set<string>();
+  const options: LocationFilterOption[] = [];
+  let hasBareLocationGroup = false;
+  for (const search of searches) {
+    if (search.status !== "READY") {
+      continue;
+    }
+    const tokens = normalizeRoleGroupTokens(search.requestedLocations);
+    if (tokens.length === 0) {
+      hasBareLocationGroup = true;
+      continue;
+    }
+    for (const label of search.requestedLocations) {
+      const key = normalizeRoleGroupToken(label);
+      if (!key || seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      options.push({ key, label: label.trim() });
+    }
+  }
+  if (options.length === 0) {
+    return [];
+  }
+  if (hasBareLocationGroup) {
+    options.push({ key: "", label: ANY_LOCATION_LABEL });
+  }
+  return options;
+}
+
 /** Local text filter over an already-loaded page of people. */
 export function filterPeopleByText(people: PersonNode[], query: string): PersonNode[] {
   const trimmed = query.trim().toLowerCase();
@@ -1000,6 +1065,44 @@ export function formatCurrentPeopleLine(peopleCount: number): string {
 }
 
 // ---------------------------------------------------------------------------
+// "Search this company" (same-company role/location search).
+// ---------------------------------------------------------------------------
+
+export const COMPANY_SEARCH_TITLE = "Search this company";
+export const COMPANY_SEARCH_SUBTITLE = "Add another role or location without leaving this company.";
+export const COMPANY_SEARCH_ROLE_LABEL = "Job title";
+export const COMPANY_SEARCH_ROLE_PLACEHOLDER = "Software Engineer";
+export const COMPANY_SEARCH_LOCATION_LABEL = "Location";
+export const COMPANY_SEARCH_LOCATION_PLACEHOLDER = "United States";
+export const COMPANY_SEARCH_BUTTON_LABEL = "Search this company";
+export const COMPANY_SEARCH_LOADING_LABEL = "Searching…";
+export const COMPANY_SEARCH_HELPER =
+  "Use Add 10 more when you want more people for an existing role and location.";
+
+/**
+ * A reason the "Search this company" submit is disabled, or null when it is
+ * actionable. Mirrors addMoreDisabledReason: an in-flight search blocks a
+ * second submit, and a spent daily allowance blocks new searches (exempt
+ * accounts never are). Duplicate rejections are free, but they never reach the
+ * backend anyway — the pre-check answers first.
+ */
+export function companySearchDisabledReason(quota: DiscoverQuota | null, searching: boolean): string | null {
+  if (searching) {
+    return COMPANY_SEARCH_LOADING_LABEL;
+  }
+  if (quota && !quota.unlimited && quota.searchesRemaining <= 0) {
+    return "You've used today's Discover searches.";
+  }
+  return null;
+}
+
+/** Success notice after the same-company search completes. */
+export function companySearchSuccessMessage(jobTitle: string, location: string | null): string {
+  const locationLabel = location?.trim() || ANY_LOCATION_LABEL;
+  return `New search added: ${jobTitle.trim()} · ${locationLabel}.`;
+}
+
+// ---------------------------------------------------------------------------
 // Role-targeted "Add 10 more" for the grouped company detail.
 // ---------------------------------------------------------------------------
 
@@ -1069,6 +1172,13 @@ function canonicalRoleGroupRepresentatives(
 
 export function resolveAddMoreTarget(input: {
   activeCategory: PositionCategory | null;
+  /**
+   * Canonical key of the active location chip (normalizeRoleGroupToken), "" for
+   * the "Any location" chip, or null/undefined when no location filter is
+   * active. A set location narrows the candidate groups first, so viewing
+   * "Software Engineer · Canada" extends the Canada group — never the US one.
+   */
+  activeLocationKey?: string | null;
   searches: AddMoreCandidateSearch[];
   currentSearchId: string;
 }): AddMoreTarget {
@@ -1081,7 +1191,18 @@ export function resolveAddMoreTarget(input: {
   // Dedupe by canonical role group BEFORE deciding — two searches for the same
   // role must never present as two chooser options, and if they are the only
   // group there is nothing to choose.
-  const groups = canonicalRoleGroupRepresentatives(ready, input.currentSearchId);
+  let groups = canonicalRoleGroupRepresentatives(ready, input.currentSearchId);
+  if (input.activeLocationKey !== null && input.activeLocationKey !== undefined) {
+    const inLocation = groups.filter((search) => {
+      const tokens = normalizeRoleGroupTokens(search.requestedLocations);
+      return input.activeLocationKey === "" ? tokens.length === 0 : tokens.includes(input.activeLocationKey!);
+    });
+    // A chip that matches no group (stale UI state) falls back to all groups —
+    // the user is then asked to choose rather than silently mistargeted.
+    if (inLocation.length > 0) {
+      groups = inLocation;
+    }
+  }
   if (groups.length === 1) {
     return { kind: "search", search: groups[0] };
   }
@@ -1097,9 +1218,19 @@ export function resolveAddMoreTarget(input: {
   return { kind: "choose", options: groups };
 }
 
-/** User-facing label for one child search in the role chooser. */
-export function addMoreSearchLabel(search: Pick<AddMoreCandidateSearch, "requestedTitles">): string {
-  return search.requestedTitles.length > 0 ? search.requestedTitles.join(", ") : "Any role";
+/**
+ * User-facing label for one child search in the role chooser. Includes the
+ * group's location ("Software Engineer · United States") whenever one was
+ * requested, so the same role in two locations is always distinguishable.
+ * Options are already deduped by canonical role+location group upstream.
+ */
+export function addMoreSearchLabel(search: {
+  requestedTitles: string[];
+  requestedLocations?: string[];
+}): string {
+  const roles = search.requestedTitles.length > 0 ? search.requestedTitles.join(", ") : "Any role";
+  const locations = (search.requestedLocations ?? []).map((label) => label.trim()).filter(Boolean);
+  return locations.length > 0 ? `${roles} · ${locations.join(", ")}` : roles;
 }
 
 /**

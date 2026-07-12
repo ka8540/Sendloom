@@ -38,6 +38,16 @@ export function discoverExpansionFailedError(message: string): GraphQLError {
 }
 
 /**
+ * "Search this company" was rejected because the same normalized role+location
+ * already exists for this company (409-style). The message is product copy that
+ * points the user at "Add 10 more" / the running or failed sibling — it never
+ * carries ids or internals.
+ */
+export function discoverDuplicateRoleLocationError(message: string): GraphQLError {
+  return new GraphQLError(message, { extensions: { code: "DUPLICATE_ROLE_LOCATION" } });
+}
+
+/**
  * Resolve the authenticated, eligible user for a request or throw. Every
  * prospect resolver must call this before touching data — there is no weaker
  * GraphQL-only auth path.
