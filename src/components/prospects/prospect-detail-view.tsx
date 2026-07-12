@@ -34,6 +34,7 @@ import {
 
 import { AppConfirmDialog } from "@/components/app-confirm-dialog";
 import { CircularCloseButton } from "@/components/circular-close-button";
+import { SuggestionInput } from "@/components/prospects/suggestion-input";
 
 import {
   ADD_MORE_DISCOVER_PEOPLE_MUTATION,
@@ -1323,6 +1324,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
           {company && companySearchOpen && (
             <SearchCompanyCard
               panelId={COMPANY_SEARCH_PANEL_ID}
+              companyId={company.id}
               quota={quota}
               jobTitle={companyRoleTitle}
               location={companyRoleLocation}
@@ -2122,6 +2124,7 @@ function EvidenceItem({ label, sourceName, sourceUrl }: { label: string; sourceN
  */
 function SearchCompanyCard({
   panelId,
+  companyId,
   quota,
   jobTitle,
   location,
@@ -2134,6 +2137,7 @@ function SearchCompanyCard({
   onClose
 }: {
   panelId: string;
+  companyId: string;
   quota: DiscoverQuota | null;
   jobTitle: string;
   location: string;
@@ -2193,29 +2197,35 @@ function SearchCompanyCard({
             onSubmit();
           }}
         >
-          <label className={styles.field}>
+          <div className={styles.field}>
             <span className={styles.fieldLabel}>{COMPANY_SEARCH_ROLE_LABEL}</span>
-            <input
-              ref={roleInputRef}
-              className={styles.input}
+            {/* Company is fixed on this page, so only roles/locations get
+                suggestions — and this company's own roles/locations rank first
+                (companyId). Single-token: the same-company search takes one role
+                and one location. */}
+            <SuggestionInput
+              type="ROLE"
+              companyId={companyId}
               value={jobTitle}
-              onChange={(event) => onJobTitleChange(event.target.value)}
+              onChange={onJobTitleChange}
+              inputRef={roleInputRef}
               placeholder={COMPANY_SEARCH_ROLE_PLACEHOLDER}
-              aria-label={COMPANY_SEARCH_ROLE_LABEL}
+              ariaLabel={COMPANY_SEARCH_ROLE_LABEL}
               disabled={searching}
             />
-          </label>
-          <label className={styles.field}>
+          </div>
+          <div className={styles.field}>
             <span className={styles.fieldLabel}>{COMPANY_SEARCH_LOCATION_LABEL}</span>
-            <input
-              className={styles.input}
+            <SuggestionInput
+              type="LOCATION"
+              companyId={companyId}
               value={location}
-              onChange={(event) => onLocationChange(event.target.value)}
+              onChange={onLocationChange}
               placeholder={COMPANY_SEARCH_LOCATION_PLACEHOLDER}
-              aria-label={COMPANY_SEARCH_LOCATION_LABEL}
+              ariaLabel={COMPANY_SEARCH_LOCATION_LABEL}
               disabled={searching}
             />
-          </label>
+          </div>
         </form>
         {notice && (
           <div

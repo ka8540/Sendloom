@@ -1296,6 +1296,123 @@
   display: none;
 }
 
+/* ---- Suggestion autocomplete (company / role / location) ----------------- *
+ * A compact dropdown anchored below its input. Every colour is a shared theme
+ * token, so light and dark are handled automatically. The list overflows the
+ * modal/card intentionally (the card never clips) and scrolls internally when
+ * long, so it never breaks the layout on desktop or mobile. */
+.suggestionField {
+  position: relative;
+  min-width: 0;
+}
+
+.suggestionList {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  margin: 0;
+  padding: 0.3rem;
+  list-style: none;
+  display: grid;
+  gap: 0.15rem;
+  max-height: 15rem;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 0.7rem;
+  background: var(--surface-strong);
+  box-shadow: 0 18px 36px -18px rgba(2, 6, 14, 0.6);
+  animation: prospect-fade 120ms ease;
+}
+
+.suggestionItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border: none;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.suggestionItem:hover,
+.suggestionItemActive {
+  background: var(--surface-hover);
+}
+
+.suggestionMain {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.suggestionValue {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.suggestionDetail {
+  font-size: 0.76rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.suggestionMeta {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.suggestionTag {
+  flex-shrink: 0;
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: var(--accent-soft);
+  padding: 0.15rem 0.42rem;
+  border-radius: 999px;
+}
+
+/* The "Did you mean …" row — subtly distinct from a plain match. */
+.suggestionCorrection {
+  color: var(--accent-strong);
+}
+
+.suggestionCorrectionText {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.suggestionCorrectionText strong {
+  font-weight: 700;
+}
+
+.suggestionCorrectionIcon {
+  width: 0.9rem;
+  height: 0.9rem;
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
 /* ---- Email-format intelligence panel ------------------------------------- */
 
 .companyCard {

@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 
 import { CircularCloseButton } from "@/components/circular-close-button";
+import { SuggestionInput } from "@/components/prospects/suggestion-input";
 import {
   CREATE_SEARCH_MUTATION,
   DELETE_COMPANY_MUTATION,
@@ -37,7 +38,8 @@ import {
   prospectGraphql,
   type Connection,
   type DiscoverCompanyGroupNode,
-  type DiscoverQuota
+  type DiscoverQuota,
+  type DiscoverSuggestion
 } from "@/components/prospects/prospect-graphql";
 import {
   PROSPECT_FINDER_SUBTITLE,
@@ -70,6 +72,13 @@ import {
 import { useManual } from "@/components/manual/ManualProvider";
 import styles from "@/components/prospects/prospects-dashboard.module.css";
 
+// Conservative shape check before forwarding a picked company's domain to the
+// create mutation (which validates it authoritatively). Never a full validator —
+// just enough to avoid sending an obviously malformed value.
+function isLikelyDomain(value: string): boolean {
+  return /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(value.trim());
+}
+
 export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean }) {
   const router = useRouter();
   const [disabled, setDisabled] = useState(!featureEnabled);
@@ -88,6 +97,11 @@ export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean 
   const [quota, setQuota] = useState<DiscoverQuota | null>(null);
   const [showNewSearch, setShowNewSearch] = useState(false);
   const [form, setForm] = useState<CreateForm>(EMPTY_FORM);
+  // When the user PICKS a company suggestion we remember its resolved domain so
+  // the create can carry it for canonical dedupe. It is only ever sent while the
+  // typed name still matches the picked suggestion (see handleCreate), so a later
+  // manual edit never sends a stale domain.
+  const [companyHint, setCompanyHint] = useState<{ name: string; domain: string | null } | null>(null);
   const [creating, setCreating] = useState(false);
   // In-app delete confirmation state (replaces the old native browser confirm).
   const [searchPendingDeletion, setSearchPendingDeletion] = useState<DiscoverCompanyGroupNode | null>(null);
@@ -248,17 +262,28 @@ export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean 
   const handleCreate = useCallback(
     async (event: FormEvent) => {
       event.preventDefault();
+      const companyName = form.companyName.trim();
       const jobTitles = form.jobTitles.split(",").map((value) => value.trim()).filter(Boolean);
       const locations = form.locations.split(",").map((value) => value.trim()).filter(Boolean);
-      if (!form.companyName.trim() || jobTitles.length === 0) {
+      if (!companyName || jobTitles.length === 0) {
         setActionError("Enter a company name and at least one job title.");
         return;
       }
+      // Carry the picked company's domain ONLY while the typed name still matches
+      // it — a manual edit after selecting drops the hint so no stale domain is
+      // ever sent. The backend still re-resolves and de-dupes authoritatively.
+      const companyDomain =
+        companyHint &&
+        companyHint.domain &&
+        isLikelyDomain(companyHint.domain) &&
+        companyHint.name.trim().toLowerCase() === companyName.toLowerCase()
+          ? companyHint.domain
+          : null;
       setCreating(true);
       setActionError(null);
       setActionNotice(null);
       const result = await prospectGraphql<{ createProspectSearch: { id: string } }>(CREATE_SEARCH_MUTATION, {
-        input: { companyName: form.companyName.trim(), jobTitles, locations }
+        input: { companyName, jobTitles, locations, ...(companyDomain ? { companyDomain } : {}) }
       });
       setCreating(false);
       if (result.disabled) {
@@ -271,10 +296,11 @@ export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean 
       }
       // Open the new draft's detail page so the user can process it there.
       setForm(EMPTY_FORM);
+      setCompanyHint(null);
       setShowNewSearch(false);
       router.push(`/prospects/${result.data.createProspectSearch.id}` as Route);
     },
-    [form, router]
+    [companyHint, form, router]
   );
 
   useEffect(() => {
@@ -400,8 +426,14 @@ export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean 
         creating={creating}
         quota={quota}
         onChange={setForm}
+        onCompanySelect={(suggestion) =>
+          setCompanyHint(suggestion.companyId ? { name: suggestion.value, domain: suggestion.detail } : null)
+        }
         onSubmit={handleCreate}
-        onClose={() => setShowNewSearch(false)}
+        onClose={() => {
+          setCompanyHint(null);
+          setShowNewSearch(false);
+        }}
       />
 
       <DeleteSearchDialog
@@ -774,6 +806,7 @@ function NewSearchModal({
   creating,
   quota,
   onChange,
+  onCompanySelect,
   onSubmit,
   onClose
 }: {
@@ -782,6 +815,7 @@ function NewSearchModal({
   creating: boolean;
   quota: DiscoverQuota | null;
   onChange: (form: CreateForm) => void;
+  onCompanySelect: (suggestion: DiscoverSuggestion) => void;
   onSubmit: (event: FormEvent) => void;
   onClose: () => void;
 }) {
@@ -822,40 +856,46 @@ function NewSearchModal({
           </div>
           <CircularCloseButton label="Close new search" onClick={onClose} />
         </div>
-        <label className={styles.field}>
+        <div className={styles.field}>
           <span className={styles.fieldLabel}>Company name</span>
-          <input
-            className={styles.input}
+          <SuggestionInput
+            type="COMPANY"
             value={form.companyName}
-            onChange={(event) => onChange({ ...form, companyName: event.target.value })}
+            onChange={(value) => onChange({ ...form, companyName: value })}
+            onSelectSuggestion={onCompanySelect}
             placeholder="Stripe"
+            ariaLabel="Company name"
             required
             autoFocus
           />
           <span className={styles.fieldHint}>Enter the company whose professionals you want to find.</span>
-        </label>
-        <label className={styles.field}>
+        </div>
+        <div className={styles.field}>
           <span className={styles.fieldLabel}>Job titles</span>
-          <input
-            className={styles.input}
+          <SuggestionInput
+            type="ROLE"
+            multiToken
             value={form.jobTitles}
-            onChange={(event) => onChange({ ...form, jobTitles: event.target.value })}
+            onChange={(value) => onChange({ ...form, jobTitles: value })}
             placeholder="Software Engineer, Recruiter"
+            ariaLabel="Job titles"
           />
           <span className={styles.fieldHint}>
             Add one or more roles separated by commas, such as Software Engineer, Recruiter, or Data Analyst.
           </span>
-        </label>
-        <label className={styles.field}>
+        </div>
+        <div className={styles.field}>
           <span className={styles.fieldLabel}>Locations</span>
-          <input
-            className={styles.input}
+          <SuggestionInput
+            type="LOCATION"
+            multiToken
             value={form.locations}
-            onChange={(event) => onChange({ ...form, locations: event.target.value })}
+            onChange={(value) => onChange({ ...form, locations: value })}
             placeholder="United States"
+            ariaLabel="Locations"
           />
           <span className={styles.fieldHint}>Enter a country, state, city, or professional region to narrow the search.</span>
-        </label>
+        </div>
         <DiscoverUsagePanel quota={quota} />
         <div className={styles.modalActions}>
           <button type="button" className={styles.secondaryButton} onClick={onClose}>

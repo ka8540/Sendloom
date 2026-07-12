@@ -299,6 +299,27 @@ export type DiscoverQuota = {
   unlimited: boolean;
 };
 
+// Autocomplete + typo correction over the user's OWN Discover history. MATCH is
+// a direct hit; CORRECTION is a conservative "Did you mean …" near-miss.
+export type DiscoverSuggestionType = "COMPANY" | "ROLE" | "LOCATION";
+export type DiscoverSuggestionKind = "MATCH" | "CORRECTION";
+
+export type DiscoverSuggestion = {
+  value: string;
+  detail: string | null;
+  count: number | null;
+  /** Present only for resolved company suggestions (backend dedupe hints). */
+  companyId: string | null;
+  canonicalKey: string | null;
+  kind: DiscoverSuggestionKind;
+};
+
+export type DiscoverSuggestionResult = {
+  companies: DiscoverSuggestion[];
+  roles: DiscoverSuggestion[];
+  locations: DiscoverSuggestion[];
+};
+
 // ---------------------------------------------------------------------------
 // Queries (field names verified against src/graphql/schema.ts).
 // ---------------------------------------------------------------------------
@@ -312,6 +333,19 @@ export const DISCOVER_QUOTA_QUERY = /* GraphQL */ `
       searchesRemaining
       resetAt
       unlimited
+    }
+  }
+`;
+
+// Owner-scoped autocomplete over the user's Discover history. `types` narrows
+// which lists are computed; `companyId` (inside-company card) prioritizes that
+// company's roles/locations. Never calls a provider.
+export const DISCOVER_SUGGESTIONS_QUERY = /* GraphQL */ `
+  query DiscoverSuggestions($query: String!, $types: [DiscoverSuggestionType!], $companyId: ID) {
+    discoverSuggestions(query: $query, types: $types, companyId: $companyId) {
+      companies { value detail count companyId canonicalKey kind }
+      roles { value detail count companyId canonicalKey kind }
+      locations { value detail count companyId canonicalKey kind }
     }
   }
 `;
@@ -1036,4 +1070,36 @@ export async function prospectGraphql<T>(
   }
 
   return { data: raw.data ?? null, disabled: false, error: null, errorCode: null };
+}
+
+/**
+ * Fetch autocomplete/typo-correction suggestions for ONE field type. Owner-scoped
+ * server-side; this only asks for the given type (and optional companyId for the
+ * inside-company card). Any transport/disabled/GraphQL error resolves to an empty
+ * list — suggestions are strictly additive, so a failure never blocks typing.
+ */
+export async function loadDiscoverSuggestions(
+  input: { query: string; type: DiscoverSuggestionType; companyId?: string | null },
+  signal?: AbortSignal
+): Promise<DiscoverSuggestion[]> {
+  const query = input.query.trim();
+  if (!query) {
+    return [];
+  }
+  const result = await prospectGraphql<{ discoverSuggestions: DiscoverSuggestionResult }>(
+    DISCOVER_SUGGESTIONS_QUERY,
+    { query, types: [input.type], companyId: input.companyId ?? null },
+    signal
+  );
+  const data = result.data?.discoverSuggestions;
+  if (!data) {
+    return [];
+  }
+  if (input.type === "COMPANY") {
+    return data.companies;
+  }
+  if (input.type === "ROLE") {
+    return data.roles;
+  }
+  return data.locations;
 }
