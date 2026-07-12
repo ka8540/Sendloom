@@ -39,9 +39,15 @@ describe("SuggestionInput behaviour contract", () => {
     expect(SUGGESTION_INPUT).toContain("styles.suggestionCorrection");
   });
 
-  it("shows a company's domain subtext and a 'Previous search' tag", () => {
+  it("shows a company's domain subtext but no 'Previous search' badge (#1, #2)", () => {
     expect(SUGGESTION_INPUT).toContain("styles.suggestionDetail");
-    expect(SUGGESTION_INPUT).toContain("Previous search");
+    expect(SUGGESTION_INPUT).not.toContain("Previous search");
+  });
+
+  it("never renders usage counts / metadata in the dropdown (#3, #4)", () => {
+    expect(SUGGESTION_INPUT).not.toContain("searches");
+    expect(SUGGESTION_INPUT).not.toContain("suggestionMeta");
+    expect(SUGGESTION_INPUT).not.toContain("suggestionTag");
   });
 
   it("only renders the dropdown when there are suggestions — never an empty box", () => {
@@ -124,16 +130,46 @@ describe("Inside-company card wiring (#26, #27, #28, #29, #30)", () => {
   });
 });
 
-describe("Suggestion dropdown styling is theme-aware and non-clipping", () => {
+describe("Suggestion dropdown styling is theme-aware, compact, and non-clipping (#5)", () => {
   it("uses shared theme tokens (light/dark) for the dropdown surface", () => {
     expect(CSS).toContain(".suggestionList");
     expect(CSS).toContain("background: var(--surface-strong)");
     expect(CSS).toContain(".suggestionItemActive");
   });
 
-  it("truncates long values and scrolls internally so it never breaks layout (#10, #12)", () => {
+  it("bounds the dropdown height (~5 rows) and scrolls internally so it never covers the footer (#5)", () => {
+    const list = CSS.slice(CSS.indexOf(".suggestionList"));
+    expect(list).toMatch(/max-height:\s*1[0-4]rem/);
+    expect(list).toContain("overflow-y: auto");
+  });
+
+  it("truncates long values so it never breaks layout (#10, #12)", () => {
     expect(CSS).toContain("text-overflow: ellipsis");
-    expect(CSS).toContain("overflow-y: auto");
+  });
+});
+
+describe("clean canonical labels on display + save (#3, #4, #15, #16, #17, #18)", () => {
+  it("history role chips render title-cased, not raw stored casing (#16)", () => {
+    expect(LIST_SOURCE).toContain("group.requestedRoles.map((role) => titleCaseLabel(role))");
+  });
+
+  it("the detail header + role chips display clean labels (#16)", () => {
+    // groupedRoleLabels cleans casing for its chips…
+    const view = readFileSync("src/components/prospects/prospect-view.ts", "utf8");
+    expect(view).toContain("labels.push(titleCaseLabel(title))");
+    // …and the fallback role/location labels are cleaned too.
+    expect(DETAIL_SOURCE).toContain("search.requestedTitles.map((title) => titleCaseLabel(title))");
+  });
+
+  it("the inside-company card canonicalizes role + location before the duplicate pre-check (#17, #18, #19)", () => {
+    expect(DETAIL_SOURCE).toContain("canonicalizeLabel(companyRoleTitle, knownRoles)");
+    expect(DETAIL_SOURCE).toContain("validateCompanyRoleSearchInput({ jobTitle: canonicalRole, location: canonicalLocation })");
+  });
+
+  it("create + searchCompanyRole resolvers canonicalize the saved labels (#15)", () => {
+    const resolver = readFileSync("src/graphql/resolvers/prospect-search.ts", "utf8");
+    expect(resolver).toContain("canonicalizeLabels(validated.jobTitles, known.roles)");
+    expect(resolver).toContain("canonicalizeLabel(args.jobTitle, known.roles)");
   });
 });
 

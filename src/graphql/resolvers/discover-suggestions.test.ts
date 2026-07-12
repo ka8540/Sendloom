@@ -147,6 +147,13 @@ describe("discoverSuggestions — role + location scoping (#12, #13)", () => {
     expect(suggestions?.locations.map((location) => location.value)).toEqual(["United States"]);
   });
 
+  it("surfaces a bad-cased stored role as a CLEAN canonical suggestion", async () => {
+    const prisma = createFakePrisma();
+    seedSearch(prisma, { requestedTitles: ["SOftware Engineer"] });
+    const { suggestions } = await run(prisma, { query: "soft", types: ["ROLE"] });
+    expect(suggestions?.roles.map((role) => role.value)).toEqual(["Software Engineer"]);
+  });
+
   it("offers a typo correction for a known location", async () => {
     const prisma = createFakePrisma();
     seedSearch(prisma, { requestedLocations: ["United States"] });

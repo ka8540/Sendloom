@@ -293,6 +293,150 @@ function toRanked(entry: SuggestionEntry, kind: SuggestionKind): RankedSuggestio
 }
 
 // ---------------------------------------------------------------------------
+// Canonical display labels for roles / locations.
+//
+// Two independent, deterministic steps:
+//   1. titleCaseLabel — fix casing + whitespace only ("SOftware  ENGINEER" →
+//      "Software Engineer"). Acronyms the user clearly meant ("AI", "HR",
+//      "SQL") are preserved. This never changes which role a label is.
+//   2. canonicalizeLabel — after casing cleanup, snap a near-miss typo onto a
+//      known value when (and only when) it is within the same conservative edit
+//      budget the correction uses. Exact/known values always win, so a label
+//      the user really has is never rewritten into a different one.
+// ---------------------------------------------------------------------------
+
+// Tokens that read as acronyms and should keep their letters uppercase rather
+// than being title-cased into "Ai"/"Hr". An explicit allowlist (never a blanket
+// "all-caps stays" rule, which would wrongly keep place words like "YORK" or
+// "OHIO" shouted). Deliberately generic — no company or product names.
+const ACRONYM_TOKENS = new Set([
+  "ai",
+  "ml",
+  "ar",
+  "vr",
+  "hr",
+  "it",
+  "qa",
+  "ux",
+  "ui",
+  "pm",
+  "sre",
+  "seo",
+  "sem",
+  "sdr",
+  "bdr",
+  "vp",
+  "ceo",
+  "cto",
+  "cfo",
+  "coo",
+  "cio",
+  "sql",
+  "aws",
+  "gcp",
+  "api",
+  "sdk",
+  "crm",
+  "erp",
+  "nlp",
+  "cpu",
+  "gpu",
+  "ios",
+  "hrbp"
+]);
+
+function titleCaseWord(word: string): string {
+  const lower = word.toLowerCase();
+  if (ACRONYM_TOKENS.has(lower)) {
+    return lower.toUpperCase();
+  }
+  // Preserve 2-letter all-caps codes (US / CA / TX / UK / NY …) so a location
+  // like "Austin, TX" is never mangled into "Austin, Tx". Longer place words
+  // ("YORK", "OHIO") are still cleaned to title case.
+  if (/^[A-Z]{2}$/.test(word)) {
+    return word;
+  }
+  if (!/[a-zA-Z]/.test(word)) {
+    return word;
+  }
+  return lower.charAt(0).toUpperCase() + lower.slice(1);
+}
+
+/**
+ * Clean a single role/location label's casing + whitespace without ever
+ * changing which value it is. Capitalizes each alphanumeric run so
+ * "SOftware Enigneer" → "Software Enigneer" and "  united   states " →
+ * "United States". Empty input yields "".
+ */
+export function titleCaseLabel(raw: string): string {
+  const collapsed = (raw ?? "").replace(/\s+/g, " ").trim();
+  if (!collapsed) {
+    return "";
+  }
+  return collapsed.replace(/[A-Za-z0-9]+/g, (word) => titleCaseWord(word));
+}
+
+/**
+ * Canonicalize a label: title-case it, then, if it is a near-miss typo of a
+ * known value, snap it onto that known value (returned in its own clean form).
+ * `known` is the pool of trusted values (the user's own history plus a small
+ * generic dictionary). Exact matches win; unrelated input is left as its clean
+ * title-cased form. Conservative by construction — the same edit budget as the
+ * suggestion correction, so distinct roles are never merged.
+ */
+export function canonicalizeLabel(raw: string, known: readonly string[] = []): string {
+  const clean = titleCaseLabel(raw);
+  if (!clean) {
+    return "";
+  }
+  const target = normalizeRoleGroupToken(clean);
+  let best: { label: string; distance: number } | null = null;
+  for (const candidate of known) {
+    const candidateClean = titleCaseLabel(candidate);
+    const candidateKey = normalizeRoleGroupToken(candidateClean);
+    if (!candidateKey) {
+      continue;
+    }
+    if (candidateKey === target) {
+      // An exact (case/space-insensitive) known value always wins.
+      return candidateClean;
+    }
+    if (target.length < CORRECTION_MIN_QUERY_LENGTH) {
+      continue;
+    }
+    const budget = correctionBudget(target, candidateKey);
+    const distance = levenshtein(target, candidateKey, budget);
+    if (distance <= budget && (!best || distance < best.distance)) {
+      best = { label: candidateClean, distance };
+    }
+  }
+  return best ? best.label : clean;
+}
+
+/**
+ * Canonicalize a list of labels against `known`, dropping blanks and de-duping
+ * by canonical identity (so "SOftware Engineer" and "software engineer" collapse
+ * to one "Software Engineer"). Order of first appearance is preserved.
+ */
+export function canonicalizeLabels(labels: readonly string[], known: readonly string[] = []): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const label of labels) {
+    const canonical = canonicalizeLabel(label, known);
+    if (!canonical) {
+      continue;
+    }
+    const key = normalizeRoleGroupToken(canonical);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    out.push(canonical);
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // Comma-token helpers (client): the Job titles / Locations fields accept a
 // comma-separated list, so a suggestion must apply to the CURRENT token only
 // (the one the caret sits in) and never wipe the others.

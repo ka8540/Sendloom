@@ -290,19 +290,12 @@ export function SuggestionInput({
                       </span>
                     </span>
                   ) : (
-                    <>
-                      <span className={styles.suggestionMain}>
-                        <span className={styles.suggestionValue}>{suggestion.value}</span>
-                        {suggestion.detail && <span className={styles.suggestionDetail}>{suggestion.detail}</span>}
-                      </span>
-                      {type === "COMPANY" ? (
-                        <span className={styles.suggestionTag}>Previous search</span>
-                      ) : suggestion.count && suggestion.count > 0 ? (
-                        <span className={styles.suggestionMeta}>
-                          {suggestion.count} {suggestion.count === 1 ? "search" : "searches"}
-                        </span>
-                      ) : null}
-                    </>
+                    // Clean, minimal rows: the value, plus a company's domain as
+                    // muted subtext. No usage counts, no "previous search" badge.
+                    <span className={styles.suggestionMain}>
+                      <span className={styles.suggestionValue}>{suggestion.value}</span>
+                      {suggestion.detail && <span className={styles.suggestionDetail}>{suggestion.detail}</span>}
+                    </span>
                   )}
                 </button>
               </li>

@@ -7,6 +7,7 @@
 import {
   DEFAULT_SUGGESTION_LIMIT,
   rankSuggestions,
+  titleCaseLabel,
   type RankedSuggestion,
   type SuggestionEntry
 } from "@/services/prospects/discover-suggestions";
@@ -127,9 +128,11 @@ function buildLabelEntries(
     const labels = toStringArray(search[field]);
     const isCurrent = Boolean(currentCompanyId) && search.companyId === currentCompanyId;
     for (const label of labels) {
-      const trimmed = label.trim();
-      const key = normalizeRoleGroupToken(trimmed);
-      if (!trimmed || !key) {
+      // Suggestions always display a CLEAN, title-cased label — a stored
+      // "SOftware Engineer" surfaces (and is inserted) as "Software Engineer".
+      const display = titleCaseLabel(label);
+      const key = normalizeRoleGroupToken(display);
+      if (!display || !key) {
         continue;
       }
       const existing = byKey.get(key);
@@ -137,7 +140,7 @@ function buildLabelEntries(
         existing.count += 1;
         existing.fromCurrentCompany = existing.fromCurrentCompany || isCurrent;
       } else {
-        byKey.set(key, { value: trimmed, count: 1, fromCurrentCompany: isCurrent });
+        byKey.set(key, { value: display, count: 1, fromCurrentCompany: isCurrent });
       }
     }
   }

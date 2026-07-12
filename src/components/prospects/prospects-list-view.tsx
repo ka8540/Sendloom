@@ -27,6 +27,7 @@ import {
 
 import { CircularCloseButton } from "@/components/circular-close-button";
 import { SuggestionInput } from "@/components/prospects/suggestion-input";
+import { titleCaseLabel } from "@/services/prospects/discover-suggestions";
 import {
   CREATE_SEARCH_MUTATION,
   DELETE_COMPANY_MUTATION,
@@ -580,8 +581,10 @@ function SearchHistoryTable({
               <span role="columnheader" aria-label="Actions" />
             </div>
             {visibleSearches.map((group, index) => {
-              const roles = group.requestedRoles;
-              const location = group.locations[0] ?? null;
+              // Display clean, canonical labels even for older rows stored with
+              // broken casing ("SOftware Engineer" → "Software Engineer").
+              const roles = group.requestedRoles.map((role) => titleCaseLabel(role));
+              const location = group.locations[0] ? titleCaseLabel(group.locations[0]) : null;
               const domain = group.company?.officialWebsiteDomain ?? group.company?.officialDomain ?? null;
               const companyName = group.company?.name ?? group.displayName;
               const openTarget = resolveGroupOpenTarget(group.searches);

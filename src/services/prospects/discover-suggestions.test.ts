@@ -7,9 +7,12 @@ import { describe, expect, it } from "vitest";
 import {
   activeToken,
   activeTokenRange,
+  canonicalizeLabel,
+  canonicalizeLabels,
   levenshtein,
   rankSuggestions,
   replaceActiveToken,
+  titleCaseLabel,
   type SuggestionEntry
 } from "@/services/prospects/discover-suggestions";
 
@@ -189,6 +192,90 @@ describe("levenshtein", () => {
     expect(levenshtein("untied", "united")).toBe(2);
     // Bailing early once the bound is exceeded returns max + 1, not the true cost.
     expect(levenshtein("abcdef", "zzzzzz", 2)).toBe(3);
+  });
+});
+
+describe("titleCaseLabel — casing/whitespace cleanup (#7)", () => {
+  it("fixes broken casing without changing the role", () => {
+    expect(titleCaseLabel("SOftware Engineer")).toBe("Software Engineer");
+    expect(titleCaseLabel("  software   ENGINEER ")).toBe("Software Engineer");
+    expect(titleCaseLabel("data engineer")).toBe("Data Engineer");
+    expect(titleCaseLabel("recruiter")).toBe("Recruiter");
+  });
+
+  it("cleans location casing", () => {
+    expect(titleCaseLabel("united states")).toBe("United States");
+    expect(titleCaseLabel("new YORK")).toBe("New York");
+  });
+
+  it("preserves acronyms and short all-caps tokens", () => {
+    expect(titleCaseLabel("ai engineer")).toBe("AI Engineer");
+    expect(titleCaseLabel("hr manager")).toBe("HR Manager");
+    expect(titleCaseLabel("SQL developer")).toBe("SQL Developer");
+  });
+
+  it("returns empty for blank input", () => {
+    expect(titleCaseLabel("   ")).toBe("");
+    expect(titleCaseLabel("")).toBe("");
+  });
+});
+
+describe("canonicalizeLabel — casing + high-confidence typo snap (#7, #8, #9, #10, #11, #12)", () => {
+  const roles = ["Software Engineer", "Data Engineer", "Recruiter"];
+  const locations = ["United States", "United Kingdom", "India", "New York"];
+
+  it("corrects SOftware Enigneer to Software Engineer (#7)", () => {
+    expect(canonicalizeLabel("SOftware Enigneer", roles)).toBe("Software Engineer");
+  });
+
+  it("corrects softwere engineer / software enginer (#8, #9)", () => {
+    expect(canonicalizeLabel("softwere engineer", roles)).toBe("Software Engineer");
+    expect(canonicalizeLabel("software enginer", roles)).toBe("Software Engineer");
+  });
+
+  it("corrects recuiter to Recruiter (#10)", () => {
+    expect(canonicalizeLabel("recuiter", roles)).toBe("Recruiter");
+  });
+
+  it("corrects untied states to United States (#11)", () => {
+    expect(canonicalizeLabel("untied states", locations)).toBe("United States");
+  });
+
+  it("leaves an unrelated role as its clean title-cased form (#12)", () => {
+    // No close known role → cleaned casing only, never force-corrected.
+    expect(canonicalizeLabel("quantum mechanic", roles)).toBe("Quantum Mechanic");
+    expect(canonicalizeLabel("blorptician", roles)).toBe("Blorptician");
+  });
+
+  it("never merges distinct known roles / locations", () => {
+    expect(canonicalizeLabel("Data Engineer", roles)).toBe("Data Engineer");
+    expect(canonicalizeLabel("India", locations)).toBe("India");
+    // Indiana is distinct from India and must not be snapped to it.
+    expect(canonicalizeLabel("Indiana", locations)).toBe("Indiana");
+  });
+
+  it("cleans casing even with no known pool", () => {
+    expect(canonicalizeLabel("SOftware Engineer")).toBe("Software Engineer");
+  });
+
+  it("is idempotent", () => {
+    const once = canonicalizeLabel("SOftware Enigneer", roles);
+    expect(canonicalizeLabel(once, roles)).toBe(once);
+  });
+});
+
+describe("canonicalizeLabels — list dedupe by canonical identity", () => {
+  it("collapses casing/typo variants of the same role", () => {
+    expect(canonicalizeLabels(["SOftware Engineer", "software engineer"], ["Software Engineer"])).toEqual([
+      "Software Engineer"
+    ]);
+  });
+
+  it("keeps distinct roles and drops blanks", () => {
+    expect(canonicalizeLabels(["recuiter", "  ", "data engneer"], ["Recruiter", "Data Engineer"])).toEqual([
+      "Recruiter",
+      "Data Engineer"
+    ]);
   });
 });
 
