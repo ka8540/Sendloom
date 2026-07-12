@@ -79,6 +79,7 @@ import {
   ALL_ROLES_LABEL,
   CLEAR_FILTERS_LABEL,
   COMPANY_SEARCH_BUTTON_LABEL,
+  COMPANY_SEARCH_CLOSE_LABEL,
   COMPANY_SEARCH_HELPER,
   COMPANY_SEARCH_LOADING_LABEL,
   COMPANY_SEARCH_LOCATION_LABEL,
@@ -103,6 +104,7 @@ import {
   createEmptyProspectSelection,
   deriveDiscoverQualitySummary,
   describeQualitySummary,
+  emailConfidenceFromUsableRate,
   emailFormatEvidenceSummary,
   emailStatusBadge,
   filterPeopleByText,
@@ -154,6 +156,10 @@ import styles from "@/components/prospects/prospects-dashboard.module.css";
 
 const DELETE_COMPANY_ERROR = "This company could not be deleted. Please try again.";
 const DEFAULT_MANUAL_PATTERN = "first.last";
+
+// Disclosure pair id: the premium header trigger points aria-controls here and
+// the collapsible "Search this company" panel carries it.
+const COMPANY_SEARCH_PANEL_ID = "discover-company-search-panel";
 
 // People filter <select> sentinels. Both dropdowns reserve a non-colliding
 // value for their "show everything" option: role categories are uppercase enum
@@ -223,7 +229,11 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
 
   const [quota, setQuota] = useState<DiscoverQuota | null>(null);
   const [processing, setProcessing] = useState(false);
-  // "Search this company" (same company, new role/location) form state.
+  // "Search this company" (same company, new role/location) form state. The
+  // form lives in a collapsible panel that is CLOSED by default — only the
+  // premium header trigger is visible until the user asks for the form.
+  const [companySearchOpen, setCompanySearchOpen] = useState(false);
+  const companySearchTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [companyRoleTitle, setCompanyRoleTitle] = useState("");
   const [companyRoleLocation, setCompanyRoleLocation] = useState("");
   const [companySearching, setCompanySearching] = useState(false);
@@ -388,6 +398,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     setActionNotice(null);
     setSelection(createEmptyProspectSelection());
     setActiveLocation(null);
+    setCompanySearchOpen(false);
     setCompanyRoleTitle("");
     setCompanyRoleLocation("");
     setCompanySearchNotice(null);
@@ -666,6 +677,18 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     await loadDetail({ category: activeCategory, location: activeLocation });
   }, [activeCategory, activeLocation, expanding, loadCompany, loadDetail, loadPeople, loadQuota, search]);
 
+  // Disclosure for the "Search this company" panel. Opening is a plain toggle;
+  // closing hands focus back to the header trigger so keyboard users are never
+  // dropped when the panel unmounts.
+  const handleToggleCompanySearch = useCallback(() => {
+    setCompanySearchOpen((open) => !open);
+  }, []);
+
+  const handleCloseCompanySearch = useCallback(() => {
+    setCompanySearchOpen(false);
+    companySearchTriggerRef.current?.focus();
+  }, []);
+
   // "Search this company": run the SAME company again with a new role/location.
   // A duplicate role+location never reaches the backend — the client pre-check
   // answers instantly with the same copy the server would return — and the
@@ -725,6 +748,9 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
       return;
     }
     // Success: the new role/location group now belongs to this company page.
+    // The panel collapses again (space is reclaimed) and the page-level notice
+    // confirms the new group.
+    setCompanySearchOpen(false);
     setCompanyRoleTitle("");
     setCompanyRoleLocation("");
     setActionNotice({ message: companySearchSuccessMessage(validated.jobTitle, validated.location) });
@@ -1210,6 +1236,24 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
           {selectedView === "ready" && company && (
             <button
               type="button"
+              ref={companySearchTriggerRef}
+              className={`${styles.companySearchTrigger} ${companySearchOpen ? styles.companySearchTriggerOpen : ""}`}
+              onClick={handleToggleCompanySearch}
+              aria-expanded={companySearchOpen}
+              aria-controls={COMPANY_SEARCH_PANEL_ID}
+              title={COMPANY_SEARCH_SUBTITLE}
+              data-discover-tour="company-search"
+            >
+              <span className={styles.companySearchTriggerIcon} aria-hidden="true">
+                <Search />
+              </span>
+              <span>{COMPANY_SEARCH_TITLE}</span>
+              <ChevronDown className={styles.companySearchTriggerChevron} aria-hidden="true" />
+            </button>
+          )}
+          {selectedView === "ready" && company && (
+            <button
+              type="button"
               className={styles.dangerGhostButton}
               onClick={() => handleDeleteCompany(company)}
               disabled={deleting}
@@ -1260,6 +1304,25 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
 
       {selectedView === "ready" && (
         <>
+          {/* Collapsible "Search this company" panel — mounted only while open,
+              so the closed page never spends space on the form. It sits right
+              under the header, anchored to the trigger that revealed it. */}
+          {company && companySearchOpen && (
+            <SearchCompanyCard
+              panelId={COMPANY_SEARCH_PANEL_ID}
+              quota={quota}
+              jobTitle={companyRoleTitle}
+              location={companyRoleLocation}
+              searching={companySearching}
+              notice={companySearchNotice}
+              onJobTitleChange={setCompanyRoleTitle}
+              onLocationChange={setCompanyRoleLocation}
+              onDismissNotice={() => setCompanySearchNotice(null)}
+              onSubmit={handleSearchCompany}
+              onClose={handleCloseCompanySearch}
+            />
+          )}
+
           <ResultsQualityCard company={company} loading={companyLoading} />
 
           <EmailFormatPanel
@@ -1281,20 +1344,6 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
             onDiscoverEmailFormat={handleDiscoverEmailFormat}
             onManualEmailFormat={handleManualEmailFormat}
           />
-
-          {company && (
-            <SearchCompanyCard
-              quota={quota}
-              jobTitle={companyRoleTitle}
-              location={companyRoleLocation}
-              searching={companySearching}
-              notice={companySearchNotice}
-              onJobTitleChange={setCompanyRoleTitle}
-              onLocationChange={setCompanyRoleLocation}
-              onDismissNotice={() => setCompanySearchNotice(null)}
-              onSubmit={handleSearchCompany}
-            />
-          )}
 
           {company && (
             <div className={`card ${styles.peopleSection}`}>
@@ -1805,6 +1854,12 @@ function EmailFormatPanel({
     company.patternEvidence[0] ??
     null;
   const hasEmailFormat = Boolean(company.emailDomain && company.emailPattern);
+  // Email confidence tracks the Results quality card: it is derived from the
+  // usable share of the SAME per-status counts (80%+ High, 50–79% Medium,
+  // below Low), so a format whose generated addresses mostly failed can never
+  // keep advertising High. Pattern confidence stays the discovery-evidence
+  // level on purpose.
+  const emailConfidence = emailConfidenceFromUsableRate(deriveDiscoverQualitySummary(company.emailStatusCounts));
   const discoveryMessage = emailFormatDiscoveryMessage(company, hasEmailFormat);
   const evidenceSummary = emailFormatEvidenceSummary({
     emailFormatReason: company.emailFormatReason,
@@ -1855,7 +1910,7 @@ function EmailFormatPanel({
         </div>
         <div className={styles.metaItem}>
           <span className={styles.metaLabel}>Email confidence</span>
-          <ConfidenceIndicator level={company.emailDomainConfidence} />
+          <ConfidenceIndicator level={emailConfidence} />
         </div>
         <div className={styles.metaItem}>
           <span className={styles.metaLabel}>Pattern confidence</span>
@@ -2046,10 +2101,13 @@ function EvidenceItem({ label, sourceName, sourceUrl }: { label: string; sourceN
 /**
  * "Search this company": compact same-company search — a new role and/or
  * location for the company already on this page, without going back to the
- * main Discover page. Duplicate role+location submits are answered inline
- * (pre-check + server 409) and pointed at "Add 10 more" instead.
+ * main Discover page. Rendered only while the header trigger's disclosure is
+ * open, so the closed page never spends space on it; Escape or the close
+ * button collapses it again. Duplicate role+location submits are answered
+ * inline (pre-check + server 409) and pointed at "Add 10 more" instead.
  */
 function SearchCompanyCard({
+  panelId,
   quota,
   jobTitle,
   location,
@@ -2058,8 +2116,10 @@ function SearchCompanyCard({
   onJobTitleChange,
   onLocationChange,
   onDismissNotice,
-  onSubmit
+  onSubmit,
+  onClose
 }: {
+  panelId: string;
   quota: DiscoverQuota | null;
   jobTitle: string;
   location: string;
@@ -2069,13 +2129,26 @@ function SearchCompanyCard({
   onLocationChange: (value: string) => void;
   onDismissNotice: () => void;
   onSubmit: () => void;
+  onClose: () => void;
 }) {
   const disabledReason = companySearchDisabledReason(quota, searching);
+  // The panel mounts on open — move focus straight into the first field so
+  // opening the disclosure never strands keyboard focus on nothing.
+  const roleInputRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    roleInputRef.current?.focus();
+  }, []);
   return (
     <section
+      id={panelId}
       className={`card ${styles.companySearchCard}`}
       aria-label={COMPANY_SEARCH_TITLE}
-      data-discover-tour="company-search"
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && !searching) {
+          event.stopPropagation();
+          onClose();
+        }
+      }}
     >
       <div className={styles.panelHeader}>
         <div>
@@ -2084,7 +2157,10 @@ function SearchCompanyCard({
           </h2>
           <p className={styles.panelSubtitle}>{COMPANY_SEARCH_SUBTITLE}</p>
         </div>
-        <QuotaIndicator quota={quota} />
+        <div className={styles.companySearchHeadActions}>
+          <QuotaIndicator quota={quota} />
+          <CircularCloseButton label={COMPANY_SEARCH_CLOSE_LABEL} onClick={onClose} />
+        </div>
       </div>
       <form
         className={styles.companySearchForm}
@@ -2096,6 +2172,7 @@ function SearchCompanyCard({
         <label className={styles.field}>
           <span className={styles.fieldLabel}>{COMPANY_SEARCH_ROLE_LABEL}</span>
           <input
+            ref={roleInputRef}
             className={styles.input}
             value={jobTitle}
             onChange={(event) => onJobTitleChange(event.target.value)}

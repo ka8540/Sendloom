@@ -2459,9 +2459,126 @@
 
 /* ---- Search this company (same-company role/location search) ------------- */
 
+/* Premium header trigger: a compact glass pill with a gradient accent ring and
+   a filled icon chip. It is the ONLY thing the closed state renders — the form
+   itself stays collapsed until this disclosure opens it. */
+.companySearchTrigger {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.9rem 0.4rem 0.45rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background:
+    linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--surface-strong) 97%, transparent),
+        color-mix(in srgb, var(--surface-muted) 93%, transparent)
+      )
+      padding-box,
+    linear-gradient(
+        135deg,
+        color-mix(in srgb, var(--accent) 55%, var(--line)),
+        color-mix(in srgb, var(--accent-strong) 35%, var(--line))
+      )
+      border-box;
+  color: var(--text);
+  font-size: 0.88rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  box-shadow: 0 10px 22px var(--accent-soft);
+  backdrop-filter: blur(14px) saturate(1.08);
+  -webkit-backdrop-filter: blur(14px) saturate(1.08);
+  transition: transform 180ms ease, box-shadow 180ms ease, background-color 180ms ease;
+}
+
+.companySearchTrigger:hover,
+.companySearchTrigger:focus-visible {
+  transform: translateY(-1px);
+  box-shadow: 0 16px 32px var(--accent-soft-strong);
+}
+
+.companySearchTrigger:focus-visible {
+  outline: 2px solid var(--field-focus);
+  outline-offset: 2px;
+}
+
+.companySearchTriggerIcon {
+  display: grid;
+  place-items: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  color: var(--accent-contrast);
+  flex: none;
+}
+
+.companySearchTriggerIcon svg {
+  width: 0.92rem;
+  height: 0.92rem;
+}
+
+.companySearchTriggerChevron {
+  width: 0.95rem;
+  height: 0.95rem;
+  color: var(--muted);
+  transition: transform 180ms ease;
+}
+
+.companySearchTriggerOpen {
+  box-shadow: 0 16px 32px var(--accent-soft-strong);
+}
+
+.companySearchTriggerOpen .companySearchTriggerChevron {
+  transform: rotate(180deg);
+}
+
+/* The reveal panel: an elevated, accent-ringed card that slides in under the
+   header while open and unmounts entirely on close. */
 .companySearchCard {
   display: grid;
   gap: 0.9rem;
+  border-color: color-mix(in srgb, var(--accent) 24%, var(--line));
+  box-shadow: 0 24px 48px color-mix(in srgb, var(--accent) 10%, transparent);
+  animation: companySearchReveal 200ms ease;
+}
+
+@keyframes companySearchReveal {
+  from {
+    opacity: 0;
+    transform: translateY(-0.4rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Quota chip + circular close sit together on the panel's header edge. */
+.companySearchHeadActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .companySearchCard {
+    animation: none;
+  }
+
+  .companySearchTrigger,
+  .companySearchTriggerChevron {
+    transition: none;
+  }
+
+  .companySearchTrigger:hover,
+  .companySearchTrigger:focus-visible {
+    transform: none;
+  }
 }
 
 /* Two rounded inputs + the submit in one compact row; the button aligns with
@@ -2492,6 +2609,13 @@
 
   .companySearchCard .quotaIndicator {
     white-space: normal;
+  }
+
+  /* The header trigger takes the full row on phones — a bigger tap target
+     that never crowds the Delete action. */
+  .companySearchTrigger {
+    flex: 1 1 100%;
+    justify-content: center;
   }
 
   /* People filter pills stack full width; the select stretches so long

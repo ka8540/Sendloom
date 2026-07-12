@@ -387,6 +387,41 @@ export function describeQualitySummary(summary: DiscoverQualitySummary): string 
 }
 
 // ---------------------------------------------------------------------------
+// Email confidence derived from results quality (Discover detail dashboard).
+// ---------------------------------------------------------------------------
+
+/**
+ * Usable-rate thresholds for the "Email confidence" shown in the Email format
+ * panel: >= 80% usable → High, >= 50% → Medium, below → Low.
+ */
+export const EMAIL_CONFIDENCE_HIGH_USABLE_PERCENT = 80;
+export const EMAIL_CONFIDENCE_MEDIUM_USABLE_PERCENT = 50;
+
+/**
+ * "Email confidence" reflects how the generated addresses actually performed —
+ * the usable share of Results quality — not how strong the discovery evidence
+ * looked. Computed on the SAME rounded percent the quality headline displays
+ * (qualityPercent over the same counts), so the badge and the "76% usable"
+ * number can never disagree. With no people counted yet there is no rate, so
+ * confidence is Unknown rather than a misleading Low.
+ */
+export function emailConfidenceFromUsableRate(
+  summary: Pick<DiscoverQualitySummary, "usable" | "total">
+): ConfidenceLevel {
+  if (!Number.isFinite(summary.total) || summary.total <= 0) {
+    return "UNAVAILABLE";
+  }
+  const usablePercent = qualityPercent(summary.usable, summary.total);
+  if (usablePercent >= EMAIL_CONFIDENCE_HIGH_USABLE_PERCENT) {
+    return "HIGH";
+  }
+  if (usablePercent >= EMAIL_CONFIDENCE_MEDIUM_USABLE_PERCENT) {
+    return "MEDIUM";
+  }
+  return "LOW";
+}
+
+// ---------------------------------------------------------------------------
 // Email-format correction modes (Discover detail dashboard).
 // ---------------------------------------------------------------------------
 
@@ -1077,6 +1112,7 @@ export const COMPANY_SEARCH_ROLE_PLACEHOLDER = "Software Engineer";
 export const COMPANY_SEARCH_LOCATION_LABEL = "Location";
 export const COMPANY_SEARCH_LOCATION_PLACEHOLDER = "United States";
 export const COMPANY_SEARCH_BUTTON_LABEL = "Search this company";
+export const COMPANY_SEARCH_CLOSE_LABEL = "Close company search";
 export const COMPANY_SEARCH_LOADING_LABEL = "Searching…";
 export const COMPANY_SEARCH_HELPER =
   "Use Add 10 more when you want more people for an existing role and location.";
