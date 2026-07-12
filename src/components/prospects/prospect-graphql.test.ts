@@ -60,7 +60,9 @@ describe("prospect graphql helper", () => {
     });
 
     it("declares a parameterised People query", () => {
-      expect(PEOPLE_QUERY).toContain("people(companyId: $companyId, positionCategory: $category, first: $first");
+      expect(PEOPLE_QUERY).toContain(
+        "people(companyId: $companyId, positionCategory: $category, location: $location, first: $first"
+      );
     });
   });
 

@@ -339,9 +339,14 @@ export const typeDefs = /* GraphQL */ `
     company(id: ID!): Company
     companies(first: Int = 20, after: String): CompanyConnection!
 
+    # location filters people to the role/location group(s) whose normalized
+    # requested location matches (people are matched through their per-search
+    # allocations). Omitted/null = all locations; "" = the searches that were
+    # run WITHOUT a location ("Any location"). Combines with positionCategory.
     people(
       companyId: ID!
       positionCategory: PositionCategory
+      location: String
       first: Int = 50
       after: String
     ): ProspectPersonConnection!
@@ -361,6 +366,14 @@ export const typeDefs = /* GraphQL */ `
     # is client-generated so retries/double-clicks never charge a second slot or
     # add a second batch.
     addMoreDiscoverPeople(searchId: ID!, idempotencyKey: String!): DiscoverSearchExpansion!
+    # "Search this company" on the company detail page: run the SAME company
+    # again with a new role/location without leaving the page. An exact
+    # normalized role+location duplicate is rejected with code
+    # DUPLICATE_ROLE_LOCATION before any quota is charged or the provider is
+    # called; a distinct role or location creates a sibling search that
+    # materializes into the same company. idempotencyKey mirrors
+    # processProspectSearch: replaying the same key never double-processes.
+    searchCompanyRole(companyId: ID!, jobTitle: String!, location: String, idempotencyKey: String): ProspectSearch!
     reclassifyCompanyPositions(companyId: ID!): Company!
     reinferCompanyEmailPattern(companyId: ID!): Company!
     refreshCompanyEmailFormat(companyId: ID!, sourceUrl: String): Company!

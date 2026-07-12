@@ -64,6 +64,10 @@ import {
   isOpenAIEmailFormatDiscoveryConfigured
 } from "@/services/prospects/openai-email-format-discovery";
 import { AiCallBudget, createAiBudget } from "@/services/prospects/prospect-ai";
+import {
+  resolveCompanyRoleSearchAction,
+  validateCompanyRoleSearchInput
+} from "@/services/prospects/discover-company-role-search";
 import { normalizeDomain, normalizeTitle } from "@/services/prospects/prospect-normalization";
 import { rateLimit } from "@/lib/rate-limit";
 import { RoleClassificationService } from "@/services/prospects/role-classification-service";
@@ -72,6 +76,7 @@ import type { ValidatedCreateProspectSearch } from "@/services/prospects/prospec
 export type ProspectErrorCode =
   | "NOT_FOUND"
   | "INVALID_STATE"
+  | "INVALID_INPUT"
   | "COMPANY_UNRESOLVED"
   | "PROVIDER_TIMEOUT"
   | "PROVIDER_ERROR"
@@ -79,7 +84,8 @@ export type ProspectErrorCode =
   | "RATE_LIMITED"
   | "DISCOVER_DAILY_LIMIT_REACHED"
   | "DISCOVER_EXPANSION_ALREADY_RUNNING"
-  | "DISCOVER_EXPANSION_FAILED";
+  | "DISCOVER_EXPANSION_FAILED"
+  | "DUPLICATE_ROLE_LOCATION";
 
 export class ProspectError extends Error {
   code: ProspectErrorCode;
@@ -497,6 +503,78 @@ export class ProspectSearchService {
       });
       return failed;
     }
+  }
+
+  /**
+   * "Search this company": run a NEW role/location search for a company the
+   * user already owns, straight from the company detail page.
+   *
+   * Order matters for billing: ownership → input validation → duplicate
+   * resolution → only then create/process. A duplicate role+location is
+   * rejected BEFORE any quota reservation or provider work, so a blocked
+   * submit never consumes a daily slot or calls the provider. An identical
+   * DRAFT sibling is reused (processed) instead of creating a second row,
+   * which also makes a replayed request idempotent. The created search passes
+   * the company's own name/domain/LinkedIn as resolution anchors so the
+   * pipeline materializes into the SAME company — nothing is hardcoded.
+   */
+  async searchCompanyRole(
+    userId: string,
+    args: {
+      companyId: string;
+      jobTitle: string;
+      location?: string | null;
+      actorEmail?: string | null;
+      idempotencyKey?: string | null;
+    }
+  ): Promise<ProspectSearch> {
+    const company = await this.requireOwnedCompany(userId, args.companyId);
+
+    const validated = validateCompanyRoleSearchInput({ jobTitle: args.jobTitle, location: args.location });
+    if (!validated.ok) {
+      throw new ProspectError("INVALID_INPUT", validated.message);
+    }
+
+    const existingSearches = await this.prisma.prospectSearch.findMany({
+      where: { userId, companyId: company.id }
+    });
+    const action = resolveCompanyRoleSearchAction({
+      jobTitle: validated.jobTitle,
+      location: validated.location,
+      existingSearches
+    });
+    if (action.kind === "duplicate") {
+      throw new ProspectError("DUPLICATE_ROLE_LOCATION", action.message);
+    }
+
+    let target: ProspectSearch;
+    if (action.kind === "reuse-draft") {
+      target = existingSearches.find((search) => search.id === action.searchId)!;
+    } else {
+      const created = await this.createSearch(userId, {
+        companyName: company.name,
+        companyDomain: company.officialWebsiteDomain ?? company.officialDomain ?? null,
+        companyLinkedinUrl: company.linkedinUrl ?? null,
+        jobTitles: [validated.jobTitle],
+        locations: validated.location ? [validated.location] : [],
+        maxResults: resolveResultsPerSearch()
+      });
+      // Unlike a main-page draft, this search's company is already known — stamp
+      // it now so the duplicate scan above finds the row even while it is still
+      // a DRAFT (e.g. stranded by a spent quota) or mid-pipeline. Processing
+      // re-resolves and re-stamps the same company from the anchors above.
+      target = await this.prisma.prospectSearch.update({
+        where: { id: created.id },
+        data: { companyId: company.id }
+      });
+    }
+
+    // processSearch owns quota (reserved idempotently on this search id) and
+    // the audit/attempt bookkeeping — identical to the main Discover flow.
+    return this.processSearch(userId, target.id, {
+      actorEmail: args.actorEmail ?? null,
+      idempotencyKey: args.idempotencyKey ?? null
+    });
   }
 
   /**

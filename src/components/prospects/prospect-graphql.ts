@@ -499,8 +499,8 @@ export const COMPANY_DETAIL_QUERY = /* GraphQL */ `
 `;
 
 export const PEOPLE_QUERY = /* GraphQL */ `
-  query People($companyId: ID!, $category: PositionCategory, $first: Int!, $after: String) {
-    people(companyId: $companyId, positionCategory: $category, first: $first, after: $after) {
+  query People($companyId: ID!, $category: PositionCategory, $location: String, $first: Int!, $after: String) {
+    people(companyId: $companyId, positionCategory: $category, location: $location, first: $first, after: $after) {
       totalCount
       edges {
         cursor
@@ -583,6 +583,24 @@ export const CANCEL_SEARCH_MUTATION = /* GraphQL */ `
 export const DELETE_SEARCH_MUTATION = /* GraphQL */ `
   mutation DeleteProspectSearch($id: ID!) {
     deleteProspectSearch(id: $id)
+  }
+`;
+
+// "Search this company" (company detail page): same company, new role/location.
+// The server rejects an exact normalized role+location duplicate with the safe
+// code DUPLICATE_ROLE_LOCATION before charging quota or calling the provider.
+export const SEARCH_COMPANY_ROLE_MUTATION = /* GraphQL */ `
+  mutation SearchCompanyRole($companyId: ID!, $jobTitle: String!, $location: String, $idempotencyKey: String) {
+    searchCompanyRole(companyId: $companyId, jobTitle: $jobTitle, location: $location, idempotencyKey: $idempotencyKey) {
+      id
+      status
+      requestedTitles
+      requestedLocations
+      errorCode
+      errorTitle
+      errorMessage
+      retryable
+    }
   }
 `;
 
@@ -866,6 +884,7 @@ export const CREATE_PROSPECT_IMPORT_MUTATION = /* GraphQL */ `
 export type PeopleQueryVariables = {
   companyId: string;
   category?: PositionCategory | null;
+  location?: string | null;
   first: number;
   after?: string | null;
 };
@@ -873,17 +892,21 @@ export type PeopleQueryVariables = {
 /**
  * Build the variables for the People query. `first` defaults to
  * PEOPLE_PAGE_SIZE (10). A null/"All people" category is sent as null so the
- * backend returns every category.
+ * backend returns every category. `location` follows the same rule for the
+ * location chips — null means "All locations", while "" targets the "Any
+ * location" group (searches that were run without a location).
  */
 export function buildPeopleVariables(args: {
   companyId: string;
   category?: PositionCategory | null;
+  location?: string | null;
   first?: number;
   after?: string | null;
 }): PeopleQueryVariables {
   return {
     companyId: args.companyId,
     category: args.category ?? null,
+    location: args.location ?? null,
     first: args.first ?? PEOPLE_PAGE_SIZE,
     after: args.after ?? null
   };
@@ -922,7 +945,8 @@ const SAFE_GRAPHQL_ERROR_CODES = new Set([
   "UNAUTHENTICATED",
   "DISCOVER_DAILY_LIMIT_REACHED",
   "DISCOVER_EXPANSION_ALREADY_RUNNING",
-  "DISCOVER_EXPANSION_FAILED"
+  "DISCOVER_EXPANSION_FAILED",
+  "DUPLICATE_ROLE_LOCATION"
 ]);
 
 function safeGraphqlErrorMessage(errors: NonNullable<RawGraphQLResponse<unknown>["errors"]>): string {
