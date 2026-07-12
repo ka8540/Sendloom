@@ -1304,9 +1304,10 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
 
       {selectedView === "ready" && (
         <>
-          {/* Collapsible "Search this company" panel — mounted only while open,
-              so the closed page never spends space on the form. It sits right
-              under the header, anchored to the trigger that revealed it. */}
+          {/* "Search this company" modal — mounted only while open, so the
+              closed page never spends space on the form. It renders as a
+              compact centered dialog over the page, opened from the header
+              trigger. */}
           {company && companySearchOpen && (
             <SearchCompanyCard
               panelId={COMPANY_SEARCH_PANEL_ID}
@@ -2099,12 +2100,13 @@ function EvidenceItem({ label, sourceName, sourceUrl }: { label: string; sourceN
 }
 
 /**
- * "Search this company": compact same-company search — a new role and/or
- * location for the company already on this page, without going back to the
- * main Discover page. Rendered only while the header trigger's disclosure is
- * open, so the closed page never spends space on it; Escape or the close
- * button collapses it again. Duplicate role+location submits are answered
- * inline (pre-check + server 409) and pointed at "Add 10 more" instead.
+ * "Search this company" dialog: compact same-company search — a new role
+ * and/or location for the company already on this page, without going back to
+ * the main Discover page. Opens from the premium header trigger as a CENTERED
+ * MODAL CARD (the page's shared modalOverlay pattern, styled after the
+ * confirm-dialog card) — never an always-visible full-width section. Escape,
+ * the close X, and Cancel all collapse it. Duplicate role+location submits are
+ * answered inline (pre-check + server 409) and pointed at "Add 10 more".
  */
 function SearchCompanyCard({
   panelId,
@@ -2132,88 +2134,108 @@ function SearchCompanyCard({
   onClose: () => void;
 }) {
   const disabledReason = companySearchDisabledReason(quota, searching);
-  // The panel mounts on open — move focus straight into the first field so
-  // opening the disclosure never strands keyboard focus on nothing.
+  // The dialog mounts on open — move focus straight into the first field so
+  // opening never strands keyboard focus on nothing.
   const roleInputRef = useRef<HTMLInputElement | null>(null);
   useEffect(() => {
     roleInputRef.current?.focus();
   }, []);
+  // The submit lives in the footer, outside the <form>, so it targets the form
+  // by id — Enter in either field and the footer button share one submit path.
+  const formId = `${panelId}-form`;
   return (
-    <section
-      id={panelId}
-      className={`card ${styles.companySearchCard}`}
-      aria-label={COMPANY_SEARCH_TITLE}
-      onKeyDown={(event) => {
-        if (event.key === "Escape" && !searching) {
-          event.stopPropagation();
-          onClose();
-        }
-      }}
-    >
-      <div className={styles.panelHeader}>
-        <div>
-          <h2 className={styles.panelTitle}>
-            <Search aria-hidden="true" className={styles.panelTitleIcon} /> {COMPANY_SEARCH_TITLE}
-          </h2>
-          <p className={styles.panelSubtitle}>{COMPANY_SEARCH_SUBTITLE}</p>
-        </div>
-        <div className={styles.companySearchHeadActions}>
-          <QuotaIndicator quota={quota} />
-          <CircularCloseButton label={COMPANY_SEARCH_CLOSE_LABEL} onClick={onClose} />
-        </div>
-      </div>
-      <form
-        className={styles.companySearchForm}
-        onSubmit={(event) => {
-          event.preventDefault();
-          onSubmit();
+    <div className={styles.modalOverlay} role="presentation">
+      <div
+        id={panelId}
+        className={`card ${styles.modalCard} ${styles.companySearchCard}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="discover-company-search-title"
+        aria-describedby="discover-company-search-subtitle"
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && !searching) {
+            event.stopPropagation();
+            onClose();
+          }
         }}
       >
-        <label className={styles.field}>
-          <span className={styles.fieldLabel}>{COMPANY_SEARCH_ROLE_LABEL}</span>
-          <input
-            ref={roleInputRef}
-            className={styles.input}
-            value={jobTitle}
-            onChange={(event) => onJobTitleChange(event.target.value)}
-            placeholder={COMPANY_SEARCH_ROLE_PLACEHOLDER}
-            aria-label={COMPANY_SEARCH_ROLE_LABEL}
-            disabled={searching}
-          />
-        </label>
-        <label className={styles.field}>
-          <span className={styles.fieldLabel}>{COMPANY_SEARCH_LOCATION_LABEL}</span>
-          <input
-            className={styles.input}
-            value={location}
-            onChange={(event) => onLocationChange(event.target.value)}
-            placeholder={COMPANY_SEARCH_LOCATION_PLACEHOLDER}
-            aria-label={COMPANY_SEARCH_LOCATION_LABEL}
-            disabled={searching}
-          />
-        </label>
-        <button
-          type="submit"
-          className={`${styles.primaryButton} ${styles.companySearchSubmit}`}
-          disabled={disabledReason !== null}
-          title={disabledReason ?? undefined}
-        >
-          {searching ? <LoaderCircle aria-hidden="true" className={styles.spin} /> : <Search aria-hidden="true" />}
-          <span>{searching ? COMPANY_SEARCH_LOADING_LABEL : COMPANY_SEARCH_BUTTON_LABEL}</span>
-        </button>
-      </form>
-      {notice && (
-        <div
-          className={`${styles.inlineAlert} ${notice.tone === "error" ? styles.inlineAlertError : ""}`}
-          role={notice.tone === "error" ? "alert" : "status"}
-        >
-          <AlertCircle aria-hidden="true" />
-          <span>{notice.message}</span>
-          <CircularCloseButton compact label="Dismiss" onClick={onDismissNotice} />
+        <div className={styles.companySearchHead}>
+          <span className={styles.companySearchIconTile} aria-hidden="true">
+            <Search />
+          </span>
+          <div className={styles.companySearchHeadCopy}>
+            <h2 id="discover-company-search-title" className={styles.panelTitle}>
+              {COMPANY_SEARCH_TITLE}
+            </h2>
+            <p id="discover-company-search-subtitle" className={styles.panelSubtitle}>
+              {COMPANY_SEARCH_SUBTITLE}
+            </p>
+          </div>
+          <CircularCloseButton label={COMPANY_SEARCH_CLOSE_LABEL} onClick={onClose} disabled={searching} />
         </div>
-      )}
-      <p className={styles.fieldHint}>{COMPANY_SEARCH_HELPER}</p>
-    </section>
+        <form
+          id={formId}
+          className={styles.companySearchForm}
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSubmit();
+          }}
+        >
+          <label className={styles.field}>
+            <span className={styles.fieldLabel}>{COMPANY_SEARCH_ROLE_LABEL}</span>
+            <input
+              ref={roleInputRef}
+              className={styles.input}
+              value={jobTitle}
+              onChange={(event) => onJobTitleChange(event.target.value)}
+              placeholder={COMPANY_SEARCH_ROLE_PLACEHOLDER}
+              aria-label={COMPANY_SEARCH_ROLE_LABEL}
+              disabled={searching}
+            />
+          </label>
+          <label className={styles.field}>
+            <span className={styles.fieldLabel}>{COMPANY_SEARCH_LOCATION_LABEL}</span>
+            <input
+              className={styles.input}
+              value={location}
+              onChange={(event) => onLocationChange(event.target.value)}
+              placeholder={COMPANY_SEARCH_LOCATION_PLACEHOLDER}
+              aria-label={COMPANY_SEARCH_LOCATION_LABEL}
+              disabled={searching}
+            />
+          </label>
+        </form>
+        {notice && (
+          <div
+            className={`${styles.inlineAlert} ${notice.tone === "error" ? styles.inlineAlertError : ""}`}
+            role={notice.tone === "error" ? "alert" : "status"}
+          >
+            <AlertCircle aria-hidden="true" />
+            <span>{notice.message}</span>
+            <CircularCloseButton compact label="Dismiss" onClick={onDismissNotice} />
+          </div>
+        )}
+        <p className={styles.fieldHint}>{COMPANY_SEARCH_HELPER}</p>
+        <div className={styles.companySearchFooter}>
+          <QuotaIndicator quota={quota} />
+          <div className={styles.companySearchFooterActions}>
+            <button type="button" className={styles.ghostButton} onClick={onClose} disabled={searching}>
+              Cancel
+            </button>
+            <button
+              type="submit"
+              form={formId}
+              className={`${styles.primaryButton} ${styles.companySearchSubmit}`}
+              disabled={disabledReason !== null}
+              title={disabledReason ?? undefined}
+            >
+              {searching ? <LoaderCircle aria-hidden="true" className={styles.spin} /> : <Search aria-hidden="true" />}
+              <span>{searching ? COMPANY_SEARCH_LOADING_LABEL : COMPANY_SEARCH_BUTTON_LABEL}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 

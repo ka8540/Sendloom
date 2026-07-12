@@ -108,14 +108,47 @@ describe("Search this company disclosure (#8-#13, #16)", () => {
     expect(DETAIL_SOURCE).toContain("setCompanySearchOpen((open) => !open)");
   });
 
-  it("close/collapse hides the card and restores focus to the trigger (#11)", () => {
+  it("the open state is a compact centered modal dialog, not a page section", () => {
+    // The card sits on the page's shared modal overlay with dialog semantics
+    // and a labelled title/subtitle pair.
+    const card = DETAIL_SOURCE.slice(DETAIL_SOURCE.indexOf("function SearchCompanyCard"));
+    expect(card).toContain("styles.modalOverlay");
+    expect(card).toContain('role="dialog"');
+    expect(card).toContain('aria-modal="true"');
+    expect(card).toContain('aria-labelledby="discover-company-search-title"');
+    expect(card).toContain('aria-describedby="discover-company-search-subtitle"');
+    // Confirm-dialog-style anatomy: icon tile, head copy, footer actions.
+    expect(card).toContain("companySearchIconTile");
+    expect(card).toContain("companySearchHead");
+    expect(card).toContain("companySearchFooterActions");
+  });
+
+  it("the footer submit drives the same form the fields live in", () => {
+    const card = DETAIL_SOURCE.slice(DETAIL_SOURCE.indexOf("function SearchCompanyCard"));
+    // One form id shared by the <form> and the footer submit button.
+    expect(card).toContain("const formId = `${panelId}-form`");
+    expect(card).toContain("id={formId}");
+    expect(card).toContain("form={formId}");
+    expect(card).toMatch(/type="submit"\s*\n\s*form=\{formId\}/);
+  });
+
+  it("close X, Cancel, and Escape all collapse the card; focus returns to the trigger (#11)", () => {
     expect(DETAIL_SOURCE).toContain("handleCloseCompanySearch");
     expect(DETAIL_SOURCE).toContain("companySearchTriggerRef.current?.focus()");
     // The card carries the shared circular close control with a real name.
     expect(DETAIL_SOURCE).toContain("CircularCloseButton label={COMPANY_SEARCH_CLOSE_LABEL}");
     expect(COMPANY_SEARCH_CLOSE_LABEL).toBe("Close company search");
+    // A plain Cancel button shares the same close handler.
+    const card = DETAIL_SOURCE.slice(DETAIL_SOURCE.indexOf("function SearchCompanyCard"));
+    expect(card).toMatch(/onClick=\{onClose\} disabled=\{searching\}>\s*\n\s*Cancel/);
     // Escape collapses it too.
     expect(DETAIL_SOURCE).toContain('event.key === "Escape"');
+  });
+
+  it("the duplicate/error notice renders inside the dialog card (#10-dup)", () => {
+    const card = DETAIL_SOURCE.slice(DETAIL_SOURCE.indexOf("function SearchCompanyCard"));
+    expect(card).toContain("notice.message");
+    expect(card).toMatch(/role=\{notice\.tone === "error" \? "alert" : "status"\}/);
   });
 
   it("both labelled inputs render inside the open card (#12, #13)", () => {
@@ -227,9 +260,21 @@ describe("premium styling contract", () => {
     expect(CSS).toContain(".companySearchTriggerIcon");
   });
 
+  it("the dialog card is compact — never full content width on desktop", () => {
+    // ~608px card in the 560–720px band, big radius, confirm-dialog surface.
+    expect(CSS).toMatch(/\.companySearchCard \{[^}]*max-width: 38rem/);
+    expect(CSS).toMatch(/\.companySearchCard \{[^}]*border-radius: 26px/);
+    expect(CSS).toMatch(/\.companySearchCard \{[^}]*radial-gradient/);
+  });
+
   it("the reveal card animates in and honors reduced motion", () => {
     expect(CSS).toContain("@keyframes companySearchReveal");
     expect(CSS).toMatch(/@media \(prefers-reduced-motion: reduce\) \{\s*\n\s*\.companySearchCard \{\s*\n\s*animation: none;/);
+  });
+
+  it("the dialog footer stacks to full-width tap targets on phones", () => {
+    expect(CSS).toMatch(/@media \(max-width: 640px\) \{[\s\S]*?\.companySearchFooter \{\s*\n\s*flex-direction: column;/);
+    expect(CSS).toMatch(/\.companySearchFooterActions \{\s*\n\s*display: grid;\s*\n\s*grid-template-columns: 1fr;/);
   });
 
   it("the trigger goes full-width on phones", () => {

@@ -2536,33 +2536,81 @@
   transform: rotate(180deg);
 }
 
-/* The reveal panel: an elevated, accent-ringed card that slides in under the
-   header while open and unmounts entirely on close. */
+/* The dialog card: a COMPACT centered modal on the page's shared modalOverlay,
+   styled after the confirm-dialog card — icon tile, accent-tinted navy
+   surface, big radius, soft shadow. Never a full-width page section. */
 .companySearchCard {
-  display: grid;
-  gap: 0.9rem;
+  max-width: 38rem;
+  gap: 1rem;
+  padding: 1.4rem 1.5rem;
+  border-radius: 26px;
   border-color: color-mix(in srgb, var(--accent) 24%, var(--line));
-  box-shadow: 0 24px 48px color-mix(in srgb, var(--accent) 10%, transparent);
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 9%, transparent), transparent 36%),
+    color-mix(in srgb, var(--surface) 94%, var(--surface-strong) 6%);
+  box-shadow: 0 30px 60px -18px rgba(2, 6, 14, 0.55);
   animation: companySearchReveal 200ms ease;
 }
 
 @keyframes companySearchReveal {
   from {
     opacity: 0;
-    transform: translateY(-0.4rem);
+    transform: translateY(0.5rem) scale(0.99);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateY(0) scale(1);
   }
 }
 
-/* Quota chip + circular close sit together on the panel's header edge. */
-.companySearchHeadActions {
+/* Head row: icon tile · title/subtitle · close X. */
+.companySearchHead {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+}
+
+.companySearchIconTile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line));
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.companySearchIconTile svg {
+  width: 1.2rem;
+  height: 1.2rem;
+}
+
+.companySearchHeadCopy {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.companySearchHeadCopy .panelSubtitle {
+  margin-top: 0.25rem;
+}
+
+/* Footer: quota context on the left, Cancel + submit pinned right. */
+.companySearchFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.companySearchFooterActions {
   display: inline-flex;
   align-items: center;
   gap: 0.6rem;
-  flex: none;
+  margin-left: auto;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2581,11 +2629,11 @@
   }
 }
 
-/* Two rounded inputs + the submit in one compact row; the button aligns with
-   the input baseline (labels sit above the fields). */
+/* Two rounded inputs side-by-side inside the dialog (labels sit above the
+   fields); the submit lives in the dialog footer, not in this row. */
 .companySearchForm {
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) auto;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.75rem;
   align-items: end;
 }
@@ -2595,16 +2643,22 @@
 }
 
 @media (max-width: 640px) {
-  /* Fields stack and the submit goes full width on narrow screens. */
+  /* Fields stack on narrow screens. */
   .companySearchForm {
     grid-template-columns: 1fr;
     align-items: stretch;
   }
 
-  /* The nowrap quota chip would otherwise set the header's min-content wider
-     than the card and push the whole grid past the card edge. */
-  .companySearchCard .panelHeader {
-    flex-wrap: wrap;
+  /* The dialog footer stacks: quota line above full-width tap targets. */
+  .companySearchFooter {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .companySearchFooterActions {
+    display: grid;
+    grid-template-columns: 1fr;
+    margin-left: 0;
   }
 
   .companySearchCard .quotaIndicator {
