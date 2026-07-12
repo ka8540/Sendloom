@@ -88,6 +88,8 @@ import {
   COMPANY_SEARCH_ROLE_PLACEHOLDER,
   COMPANY_SEARCH_SUBTITLE,
   COMPANY_SEARCH_TITLE,
+  COMPANY_SEARCH_TOOLTIP_BODY,
+  COMPANY_SEARCH_TOOLTIP_TITLE,
   COMPANY_SEARCH_TRIGGER_LABEL,
   EXTERNAL_LINK_REL,
   EXTERNAL_LINK_TARGET,
@@ -1235,21 +1237,28 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
         <div className={styles.headerActions}>
           <QuotaIndicator quota={quota} />
           {selectedView === "ready" && company && (
-            <button
-              type="button"
-              ref={companySearchTriggerRef}
-              className={`${styles.companySearchTrigger} ${companySearchOpen ? styles.companySearchTriggerOpen : ""}`}
-              onClick={handleToggleCompanySearch}
-              aria-expanded={companySearchOpen}
-              aria-controls={COMPANY_SEARCH_PANEL_ID}
-              aria-label={COMPANY_SEARCH_TITLE}
-              title={COMPANY_SEARCH_TITLE}
-              data-discover-tour="company-search"
-            >
-              <Search className={styles.companySearchTriggerIcon} aria-hidden="true" />
-              <span>{COMPANY_SEARCH_TRIGGER_LABEL}</span>
-              <ChevronDown className={styles.companySearchTriggerChevron} aria-hidden="true" />
-            </button>
+            <span className={styles.companySearchTriggerWrap}>
+              <button
+                type="button"
+                ref={companySearchTriggerRef}
+                className={`${styles.companySearchTrigger} ${companySearchOpen ? styles.companySearchTriggerOpen : ""}`}
+                onClick={handleToggleCompanySearch}
+                aria-expanded={companySearchOpen}
+                aria-controls={COMPANY_SEARCH_PANEL_ID}
+                aria-label={COMPANY_SEARCH_TITLE}
+                data-discover-tour="company-search"
+              >
+                <Search className={styles.companySearchTriggerIcon} aria-hidden="true" />
+                {/* Hidden at rest (icon-only); slides in on hover/focus/open. */}
+                <span className={styles.companySearchTriggerLabel}>{COMPANY_SEARCH_TRIGGER_LABEL}</span>
+              </button>
+              {/* Decorative helper card — the button's aria-label carries the
+                  real accessible name, so this stays aria-hidden. */}
+              <span className={styles.companySearchTooltip} aria-hidden="true">
+                <strong>{COMPANY_SEARCH_TOOLTIP_TITLE}</strong>
+                <span>{COMPANY_SEARCH_TOOLTIP_BODY}</span>
+              </span>
+            </span>
           )}
           {selectedView === "ready" && company && (
             <button

@@ -2459,18 +2459,25 @@
 
 /* ---- Search this company (same-company role/location search) ------------- */
 
-/* Compact header trigger: a quiet 42px pill with a thin accent ring and a
-   plain accent icon — a refined dashboard action, not a hero CTA. The visible
-   label is just "Search"; the full name lives in aria-label/title. It is the
-   ONLY thing the closed state renders — the form stays collapsed until this
-   disclosure opens it. */
-.companySearchTrigger {
+/* Anchor for the trigger + its decorative helper card. */
+.companySearchTriggerWrap {
   position: relative;
   display: inline-flex;
+  flex: none;
+}
+
+/* Header trigger: a 44px icon-only glass pill at rest (matching the overview
+   help button's expand-on-intent pattern) — the "Search" label slides in on
+   hover/keyboard focus/open, so the resting row stays quiet. The full name
+   lives in the aria-label. It is the ONLY thing the closed state renders —
+   the form stays collapsed until this disclosure opens it. */
+.companySearchTrigger {
+  display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
-  height: 2.625rem;
-  padding: 0 0.85rem;
+  justify-content: center;
+  height: 2.75rem;
+  min-width: 2.75rem;
+  padding: 0 0.78rem;
   border: 1px solid transparent;
   border-radius: 999px;
   background:
@@ -2515,11 +2522,25 @@
   flex: none;
 }
 
-.companySearchTriggerChevron {
-  width: 0.9rem;
-  height: 0.9rem;
-  color: var(--muted);
-  transition: transform 160ms ease;
+/* Collapsed at rest — max-width (not display) so the reveal can animate. */
+.companySearchTriggerLabel {
+  display: inline-block;
+  max-width: 0;
+  margin-left: 0;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateX(-0.25rem);
+  white-space: nowrap;
+  transition: max-width 200ms ease, opacity 160ms ease, margin-left 200ms ease, transform 200ms ease;
+}
+
+.companySearchTrigger:hover .companySearchTriggerLabel,
+.companySearchTrigger:focus-visible .companySearchTriggerLabel,
+.companySearchTriggerOpen .companySearchTriggerLabel {
+  max-width: 5rem;
+  margin-left: 0.4rem;
+  opacity: 1;
+  transform: translateX(0);
 }
 
 /* Open state: a gentle accent tint — enough to read as active, no big glow. */
@@ -2534,8 +2555,48 @@
       border-box;
 }
 
-.companySearchTriggerOpen .companySearchTriggerChevron {
-  transform: rotate(180deg);
+/* Decorative helper card under the trigger: hover or keyboard focus only,
+   right-aligned to the button so it never reaches the Delete action, and
+   pointer-events: none so it can never intercept a click. Sits below the
+   modal overlay (z 60) so an open dialog always covers it. */
+.companySearchTooltip {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  z-index: 50;
+  display: grid;
+  gap: 0.15rem;
+  width: max-content;
+  max-width: 15rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--line));
+  background: color-mix(in srgb, var(--surface) 94%, var(--surface-strong) 6%);
+  box-shadow: var(--shadow);
+  text-align: left;
+  opacity: 0;
+  transform: translateY(-0.25rem);
+  pointer-events: none;
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.companySearchTooltip strong {
+  color: var(--text);
+  font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.companySearchTooltip > span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.companySearchTriggerWrap:hover .companySearchTooltip,
+.companySearchTriggerWrap:has(.companySearchTrigger:focus-visible) .companySearchTooltip {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 /* The dialog card: a COMPACT centered modal on the page's shared modalOverlay,
@@ -2621,7 +2682,8 @@
   }
 
   .companySearchTrigger,
-  .companySearchTriggerChevron {
+  .companySearchTriggerLabel,
+  .companySearchTooltip {
     transition: none;
   }
 
@@ -2665,6 +2727,19 @@
 
   .companySearchCard .quotaIndicator {
     white-space: normal;
+  }
+
+  /* Touch screens have no hover: the trigger keeps its compact "Search"
+     label visible and the hover helper card is dropped entirely. */
+  .companySearchTriggerLabel {
+    max-width: none;
+    margin-left: 0.4rem;
+    opacity: 1;
+    transform: none;
+  }
+
+  .companySearchTooltip {
+    display: none;
   }
 
   /* People filter pills stack full width; the select stretches so long

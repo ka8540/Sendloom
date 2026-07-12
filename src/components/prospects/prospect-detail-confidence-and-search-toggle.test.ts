@@ -18,6 +18,8 @@ import {
 import {
   COMPANY_SEARCH_CLOSE_LABEL,
   COMPANY_SEARCH_TITLE,
+  COMPANY_SEARCH_TOOLTIP_BODY,
+  COMPANY_SEARCH_TOOLTIP_TITLE,
   COMPANY_SEARCH_TRIGGER_LABEL,
   EMAIL_CONFIDENCE_HIGH_USABLE_PERCENT,
   EMAIL_CONFIDENCE_MEDIUM_USABLE_PERCENT,
@@ -97,15 +99,38 @@ describe("Search this company disclosure (#8-#13, #16)", () => {
     expect(DETAIL_SOURCE).toContain("id={panelId}");
   });
 
-  it("the trigger is compact: visible label is short, full name stays accessible", () => {
-    // Visible text is just "Search" — the button never dominates the row.
+  it("the trigger is icon-only at rest: the label reveals on intent, the full name stays accessible", () => {
+    // The reveal text is just "Search" — the button never dominates the row.
     expect(COMPANY_SEARCH_TRIGGER_LABEL).toBe("Search");
-    expect(DETAIL_SOURCE).toContain("<span>{COMPANY_SEARCH_TRIGGER_LABEL}</span>");
-    // Screen readers and the tooltip still get the full name.
+    expect(DETAIL_SOURCE).toContain(
+      "<span className={styles.companySearchTriggerLabel}>{COMPANY_SEARCH_TRIGGER_LABEL}</span>"
+    );
+    // Screen readers always get the full name from the button itself.
     expect(DETAIL_SOURCE).toContain("aria-label={COMPANY_SEARCH_TITLE}");
-    expect(DETAIL_SOURCE).toContain("title={COMPANY_SEARCH_TITLE}");
-    // The long title is no longer the visible trigger label.
+    // The long title is never the visible trigger label.
     expect(DETAIL_SOURCE).not.toContain("<span>{COMPANY_SEARCH_TITLE}</span>");
+    // CSS collapses the label at rest and reveals it on hover/focus/open.
+    expect(CSS).toMatch(/\.companySearchTriggerLabel \{[^}]*max-width: 0/);
+    expect(CSS).toMatch(
+      /\.companySearchTrigger:hover \.companySearchTriggerLabel,\s*\n\s*\.companySearchTrigger:focus-visible \.companySearchTriggerLabel,\s*\n\s*\.companySearchTriggerOpen \.companySearchTriggerLabel \{/
+    );
+  });
+
+  it("a decorative helper card explains the icon button on hover/focus", () => {
+    expect(COMPANY_SEARCH_TOOLTIP_TITLE).toBe("Find more people");
+    expect(COMPANY_SEARCH_TOOLTIP_BODY).toBe("Search this company by another role or location.");
+    // Rendered next to the trigger, decorative only — never the accessible name.
+    expect(DETAIL_SOURCE).toMatch(/companySearchTooltip\} aria-hidden="true"/);
+    expect(DETAIL_SOURCE).toContain("{COMPANY_SEARCH_TOOLTIP_TITLE}");
+    expect(DETAIL_SOURCE).toContain("{COMPANY_SEARCH_TOOLTIP_BODY}");
+    // It can never intercept clicks, and keyboard focus shows it too.
+    expect(CSS).toMatch(/\.companySearchTooltip \{[^}]*pointer-events: none/);
+    expect(CSS).toMatch(
+      /\.companySearchTriggerWrap:hover \.companySearchTooltip,\s*\n\s*\.companySearchTriggerWrap:has\(\.companySearchTrigger:focus-visible\) \.companySearchTooltip \{/
+    );
+    // Touch screens drop the hover card and keep the label visible instead.
+    expect(CSS).toMatch(/@media \(max-width: 640px\) \{[\s\S]*?\.companySearchTooltip \{\s*\n\s*display: none;/);
+    expect(CSS).toMatch(/@media \(max-width: 640px\) \{[\s\S]*?\.companySearchTriggerLabel \{\s*\n\s*max-width: none;/);
   });
 
   it("the search form is collapsed by default and never an always-visible div (#9, #16)", () => {
@@ -272,9 +297,11 @@ describe("premium styling contract", () => {
     expect(CSS).toContain(".companySearchTriggerIcon");
   });
 
-  it("the trigger stays a compact 42px action, never a hero CTA", () => {
-    // 42px pill, ~14.4px text, plain ~18px icon — no filled icon chip.
-    expect(CSS).toMatch(/\.companySearchTrigger \{[^}]*height: 2\.625rem/);
+  it("the trigger stays a compact 44px icon action, never a hero CTA", () => {
+    // 44px round-pill at rest, ~14.4px reveal text, plain ~18px icon —
+    // no filled icon chip.
+    expect(CSS).toMatch(/\.companySearchTrigger \{[^}]*height: 2\.75rem/);
+    expect(CSS).toMatch(/\.companySearchTrigger \{[^}]*min-width: 2\.75rem/);
     expect(CSS).toMatch(/\.companySearchTrigger \{[^}]*font-size: 0\.9rem/);
     expect(CSS).toMatch(/\.companySearchTriggerIcon \{\s*\n\s*width: 1\.15rem/);
     expect(CSS).not.toMatch(/\.companySearchTriggerIcon \{[^}]*background/);

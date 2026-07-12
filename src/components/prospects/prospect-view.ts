@@ -1107,11 +1107,17 @@ export function formatCurrentPeopleLine(peopleCount: number): string {
 
 export const COMPANY_SEARCH_TITLE = "Search this company";
 /**
- * Visible text on the compact header trigger. Deliberately short — the full
- * name lives in the trigger's aria-label/tooltip (COMPANY_SEARCH_TITLE), so
- * the button never dominates the header action row.
+ * Text revealed when the icon-only header trigger expands on hover/focus.
+ * Deliberately short — the full name lives in the trigger's aria-label
+ * (COMPANY_SEARCH_TITLE), so the button never dominates the header action row.
  */
 export const COMPANY_SEARCH_TRIGGER_LABEL = "Search";
+/**
+ * Decorative helper card shown while the trigger is hovered/focused. It only
+ * explains the icon button — the accessible name stays on the button itself.
+ */
+export const COMPANY_SEARCH_TOOLTIP_TITLE = "Find more people";
+export const COMPANY_SEARCH_TOOLTIP_BODY = "Search this company by another role or location.";
 export const COMPANY_SEARCH_SUBTITLE = "Add another role or location without leaving this company.";
 export const COMPANY_SEARCH_ROLE_LABEL = "Job title";
 export const COMPANY_SEARCH_ROLE_PLACEHOLDER = "Software Engineer";
