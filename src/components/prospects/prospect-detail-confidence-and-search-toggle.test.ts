@@ -196,8 +196,10 @@ describe("Search this company disclosure (#8-#13, #16)", () => {
   it("both labelled inputs render inside the open card (#12, #13)", () => {
     expect(DETAIL_SOURCE).toContain("COMPANY_SEARCH_ROLE_LABEL");
     expect(DETAIL_SOURCE).toContain("COMPANY_SEARCH_LOCATION_LABEL");
-    expect(DETAIL_SOURCE).toContain("aria-label={COMPANY_SEARCH_ROLE_LABEL}");
-    expect(DETAIL_SOURCE).toContain("aria-label={COMPANY_SEARCH_LOCATION_LABEL}");
+    // The fields are now SuggestionInputs (autocomplete + typo correction), still
+    // accessibly labelled via the ariaLabel prop.
+    expect(DETAIL_SOURCE).toContain("ariaLabel={COMPANY_SEARCH_ROLE_LABEL}");
+    expect(DETAIL_SOURCE).toContain("ariaLabel={COMPANY_SEARCH_LOCATION_LABEL}");
     // Opening moves focus into the first field so keyboard focus is never lost.
     expect(DETAIL_SOURCE).toContain("roleInputRef.current?.focus()");
   });

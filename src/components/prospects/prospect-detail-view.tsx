@@ -34,6 +34,9 @@ import {
 
 import { AppConfirmDialog } from "@/components/app-confirm-dialog";
 import { CircularCloseButton } from "@/components/circular-close-button";
+import { SuggestionInput } from "@/components/prospects/suggestion-input";
+import { COMMON_LOCATION_LABELS, COMMON_ROLE_LABELS } from "@/services/prospects/discover-canonical-labels";
+import { canonicalizeLabel, titleCaseLabel } from "@/services/prospects/discover-suggestions";
 
 import {
   ADD_MORE_DISCOVER_PEOPLE_MUTATION,
@@ -701,7 +704,24 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     if (!company || companySearching) {
       return;
     }
-    const validated = validateCompanyRoleSearchInput({ jobTitle: companyRoleTitle, location: companyRoleLocation });
+    // Canonicalize BEFORE validating / duplicate-checking so a typo like
+    // "SOftware Enigneer" is corrected to the company's known "Software Engineer"
+    // — the client pre-check, the notice copy, and the value we send are all the
+    // clean label (the server re-normalizes authoritatively too). Known pool =
+    // this company's existing roles/locations plus the generic dictionary.
+    const knownRoles = [
+      ...(company.searches ?? []).flatMap((existing) => existing.requestedTitles),
+      ...COMMON_ROLE_LABELS
+    ];
+    const knownLocations = [
+      ...(company.searches ?? []).flatMap((existing) => existing.requestedLocations),
+      ...COMMON_LOCATION_LABELS
+    ];
+    const canonicalRole = canonicalizeLabel(companyRoleTitle, knownRoles);
+    const canonicalLocation = companyRoleLocation.trim()
+      ? canonicalizeLabel(companyRoleLocation, knownLocations)
+      : companyRoleLocation;
+    const validated = validateCompanyRoleSearchInput({ jobTitle: canonicalRole, location: canonicalLocation });
     if (!validated.ok) {
       setCompanySearchNotice({ tone: "error", message: validated.message });
       return;
@@ -1176,9 +1196,9 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     groupedRoles.length > 0
       ? groupedRoles.join(", ")
       : search.requestedTitles.length > 0
-        ? search.requestedTitles.join(", ")
+        ? search.requestedTitles.map((title) => titleCaseLabel(title)).join(", ")
         : "Any role";
-  const locationLabel = search.requestedLocations[0] ?? "Any location";
+  const locationLabel = search.requestedLocations[0] ? titleCaseLabel(search.requestedLocations[0]) : "Any location";
   const headerPeopleCount = company?.peopleCount ?? search.peopleCount;
   const detailStage = resolveDetailStage(search);
 
@@ -1323,6 +1343,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
           {company && companySearchOpen && (
             <SearchCompanyCard
               panelId={COMPANY_SEARCH_PANEL_ID}
+              companyId={company.id}
               quota={quota}
               jobTitle={companyRoleTitle}
               location={companyRoleLocation}
@@ -2122,6 +2143,7 @@ function EvidenceItem({ label, sourceName, sourceUrl }: { label: string; sourceN
  */
 function SearchCompanyCard({
   panelId,
+  companyId,
   quota,
   jobTitle,
   location,
@@ -2134,6 +2156,7 @@ function SearchCompanyCard({
   onClose
 }: {
   panelId: string;
+  companyId: string;
   quota: DiscoverQuota | null;
   jobTitle: string;
   location: string;
@@ -2193,29 +2216,35 @@ function SearchCompanyCard({
             onSubmit();
           }}
         >
-          <label className={styles.field}>
+          <div className={styles.field}>
             <span className={styles.fieldLabel}>{COMPANY_SEARCH_ROLE_LABEL}</span>
-            <input
-              ref={roleInputRef}
-              className={styles.input}
+            {/* Company is fixed on this page, so only roles/locations get
+                suggestions — and this company's own roles/locations rank first
+                (companyId). Single-token: the same-company search takes one role
+                and one location. */}
+            <SuggestionInput
+              type="ROLE"
+              companyId={companyId}
               value={jobTitle}
-              onChange={(event) => onJobTitleChange(event.target.value)}
+              onChange={onJobTitleChange}
+              inputRef={roleInputRef}
               placeholder={COMPANY_SEARCH_ROLE_PLACEHOLDER}
-              aria-label={COMPANY_SEARCH_ROLE_LABEL}
+              ariaLabel={COMPANY_SEARCH_ROLE_LABEL}
               disabled={searching}
             />
-          </label>
-          <label className={styles.field}>
+          </div>
+          <div className={styles.field}>
             <span className={styles.fieldLabel}>{COMPANY_SEARCH_LOCATION_LABEL}</span>
-            <input
-              className={styles.input}
+            <SuggestionInput
+              type="LOCATION"
+              companyId={companyId}
               value={location}
-              onChange={(event) => onLocationChange(event.target.value)}
+              onChange={onLocationChange}
               placeholder={COMPANY_SEARCH_LOCATION_PLACEHOLDER}
-              aria-label={COMPANY_SEARCH_LOCATION_LABEL}
+              ariaLabel={COMPANY_SEARCH_LOCATION_LABEL}
               disabled={searching}
             />
-          </label>
+          </div>
         </form>
         {notice && (
           <div

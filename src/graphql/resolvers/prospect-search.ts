@@ -8,11 +8,13 @@ import { asStringArray, mapProspectError } from "@/graphql/resolvers/helpers";
 import { discoverPublicErrorCategory, mapDiscoverPublicError } from "@/lib/discover-public-error";
 import { getDiscoverQuotaStatus } from "@/lib/discover-quota";
 import { coercePositionCategory } from "@/lib/prospect-enums";
+import { COMMON_LOCATION_LABELS, COMMON_ROLE_LABELS } from "@/services/prospects/discover-canonical-labels";
 import {
   buildDiscoverCompanyGroups,
   type DiscoverCompanyGroupNode
 } from "@/services/prospects/discover-company-groups";
 import { PersonIdentitySet } from "@/services/prospects/discover-person-identity";
+import { canonicalizeLabel, canonicalizeLabels } from "@/services/prospects/discover-suggestions";
 import { createProspectSearchSchema, type CreateProspectSearchInput } from "@/services/prospects/prospect-validation";
 
 const MAX_IDEMPOTENCY_KEY_LENGTH = 200;
@@ -105,6 +107,30 @@ export const DiscoverCompanyGroup = {
   }
 };
 
+/**
+ * The user's own role + location labels across their searches — the trusted
+ * pool a typo is allowed to snap onto (alongside the small generic dictionary).
+ * Owner-scoped: only this user's rows are read, so canonicalization can never
+ * pull in another user's values.
+ */
+async function loadKnownLabels(context: GraphQLContext, userId: string) {
+  const rows = await context.prisma.prospectSearch.findMany({ where: { userId } });
+  const roles = new Set<string>();
+  const locations = new Set<string>();
+  for (const row of rows) {
+    for (const title of asStringArray(row.requestedTitles)) {
+      roles.add(title);
+    }
+    for (const location of asStringArray(row.requestedLocations)) {
+      locations.add(location);
+    }
+  }
+  return {
+    roles: [...roles, ...COMMON_ROLE_LABELS],
+    locations: [...locations, ...COMMON_LOCATION_LABELS]
+  };
+}
+
 export const prospectSearchMutations = {
   async createProspectSearch(_root: unknown, args: { input: CreateProspectSearchInput }, context: GraphQLContext) {
     const user = requireUser(context);
@@ -117,7 +143,17 @@ export const prospectSearchMutations = {
       }
       throw error;
     }
-    return context.services.prospectSearch.createSearch(user.id, validated);
+    // Safe input normalization before saving/searching: clean casing/whitespace
+    // and snap a clear typo onto a known value ("SOftware Enigneer" → "Software
+    // Engineer") so the stored draft, the provider query, and every later
+    // display use the canonical label. Distinct roles are never merged.
+    const known = await loadKnownLabels(context, user.id);
+    const normalized = {
+      ...validated,
+      jobTitles: canonicalizeLabels(validated.jobTitles, known.roles),
+      locations: canonicalizeLabels(validated.locations, known.locations)
+    };
+    return context.services.prospectSearch.createSearch(user.id, normalized);
   },
 
   async processProspectSearch(
@@ -174,13 +210,20 @@ export const prospectSearchMutations = {
     if (idempotencyKey.length > MAX_IDEMPOTENCY_KEY_LENGTH) {
       throw badInputError("A valid idempotency key is required.");
     }
+    // Same safe normalization as create: the duplicate check + stored search use
+    // the canonical role/location, so "SOftware Enigneer" is de-duped and shown
+    // as "Software Engineer".
+    const known = await loadKnownLabels(context, user.id);
+    const jobTitle = canonicalizeLabel(args.jobTitle, known.roles);
+    const rawLocation = (args.location ?? "").trim();
+    const location = rawLocation ? canonicalizeLabel(rawLocation, known.locations) : null;
     try {
       // The quota email is taken from the authenticated session user only — a
       // request body / GraphQL input can never grant the exemption.
       return await context.services.prospectSearch.searchCompanyRole(user.id, {
         companyId: args.companyId,
-        jobTitle: args.jobTitle,
-        location: args.location ?? null,
+        jobTitle,
+        location,
         actorEmail: user.email,
         idempotencyKey: idempotencyKey || null
       });

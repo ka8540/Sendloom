@@ -328,8 +328,55 @@ export const typeDefs = /* GraphQL */ `
     unlimited: Boolean!
   }
 
+  enum DiscoverSuggestionType {
+    COMPANY
+    ROLE
+    LOCATION
+  }
+
+  # MATCH is a direct (exact/prefix/substring) hit on a known value; CORRECTION
+  # is a conservative "Did you mean …" near-miss of a known value, offered only
+  # when nothing matched directly.
+  enum DiscoverSuggestionKind {
+    MATCH
+    CORRECTION
+  }
+
+  # One autocomplete row. Company rows come from Sendloom's GLOBAL company
+  # identity records (any user's resolved companies plus the shared Discover
+  # cache) and expose reusable identity only — name, domain, canonical key —
+  # never people, emails, usage counts, or who searched what. companyId is
+  # present only when the row is the current user's own resolved company. Role
+  # and location rows are drawn from the authenticated user's own Discover
+  # history. Never a provider call.
+  type DiscoverSuggestion {
+    value: String!
+    detail: String
+    count: Int
+    companyId: ID
+    canonicalKey: String
+    kind: DiscoverSuggestionKind!
+  }
+
+  type DiscoverSuggestionResult {
+    companies: [DiscoverSuggestion!]!
+    roles: [DiscoverSuggestion!]!
+    locations: [DiscoverSuggestion!]!
+  }
+
   type Query {
     discoverQuota: DiscoverQuota!
+    # Autocomplete + conservative typo correction. COMPANY suggestions search
+    # Sendloom's global company identity records (safe identity fields only —
+    # no per-user metadata); ROLE/LOCATION suggestions stay scoped to the
+    # current user's own Discover history. Provider-free. Each requested type
+    # returns at most 8 rows; an optional companyId (inside-company card)
+    # prioritizes that company's roles/locations. Omitting types returns all.
+    discoverSuggestions(
+      query: String!
+      types: [DiscoverSuggestionType!]
+      companyId: ID
+    ): DiscoverSuggestionResult!
     prospectSearch(id: ID!): ProspectSearch
     prospectSearches(first: Int = 20, after: String): ProspectSearchConnection!
     # Grouped Search History: one entry per resolved company for the current

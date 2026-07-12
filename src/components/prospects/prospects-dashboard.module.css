@@ -1296,6 +1296,107 @@
   display: none;
 }
 
+/* ---- Suggestion autocomplete (company / role / location) ----------------- *
+ * A compact dropdown anchored below its input. Every colour is a shared theme
+ * token, so light and dark are handled automatically. It is deliberately small:
+ * about five compact rows tall, then it scrolls internally instead of growing
+ * to cover the quota card / footer. It aligns to the input width and never
+ * breaks the layout on desktop or mobile. */
+.suggestionField {
+  position: relative;
+  min-width: 0;
+}
+
+.suggestionList {
+  position: absolute;
+  top: calc(100% + 0.3rem);
+  left: 0;
+  right: 0;
+  z-index: 40;
+  margin: 0;
+  padding: 0.25rem;
+  list-style: none;
+  display: grid;
+  gap: 0.1rem;
+  /* ~5 compact rows, then scroll — keeps the panel small and bounded. */
+  max-height: 13rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+  background: var(--surface-strong);
+  box-shadow: 0 16px 32px -18px rgba(2, 6, 14, 0.6);
+  animation: prospect-fade 120ms ease;
+}
+
+.suggestionItem {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.4rem 0.55rem;
+  border: none;
+  border-radius: 0.45rem;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.88rem;
+  line-height: 1.3;
+  text-align: left;
+  cursor: pointer;
+}
+
+.suggestionItem:hover,
+.suggestionItemActive {
+  background: var(--surface-hover);
+}
+
+.suggestionMain {
+  display: grid;
+  gap: 0.05rem;
+  min-width: 0;
+}
+
+.suggestionValue {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.suggestionDetail {
+  font-size: 0.74rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The "Did you mean …" row — subtly distinct from a plain match. */
+.suggestionCorrection {
+  color: var(--accent-strong);
+}
+
+.suggestionCorrectionText {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.suggestionCorrectionText strong {
+  font-weight: 700;
+}
+
+.suggestionCorrectionIcon {
+  width: 0.9rem;
+  height: 0.9rem;
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
 /* ---- Email-format intelligence panel ------------------------------------- */
 
 .companyCard {

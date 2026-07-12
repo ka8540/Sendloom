@@ -22,6 +22,7 @@ import {
   normalizeRoleGroupTokens,
   roleGroupKeyFor
 } from "@/services/prospects/discover-role-group-key";
+import { titleCaseLabel } from "@/services/prospects/discover-suggestions";
 
 // External links to LinkedIn always open in a new tab with a hardened rel so we
 // never leak the opener or referrer.
@@ -1325,8 +1326,9 @@ export function addMoreSearchLabel(search: {
 }
 
 /**
- * Distinct requested role labels across a company's child searches (first-seen
- * casing preserved) for the grouped detail header.
+ * Distinct requested role labels across a company's child searches for the
+ * grouped detail header, shown in clean canonical casing — so a legacy row
+ * stored as "SOftware Engineer" still renders "Software Engineer".
  */
 export function groupedRoleLabels(searches: Array<{ requestedTitles: string[] }>): string[] {
   const seen = new Set<string>();
@@ -1340,7 +1342,7 @@ export function groupedRoleLabels(searches: Array<{ requestedTitles: string[] }>
         continue;
       }
       seen.add(key);
-      labels.push(title.trim());
+      labels.push(titleCaseLabel(title));
     }
   }
   return labels;
