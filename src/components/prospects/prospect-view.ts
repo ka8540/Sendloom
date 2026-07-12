@@ -387,6 +387,41 @@ export function describeQualitySummary(summary: DiscoverQualitySummary): string 
 }
 
 // ---------------------------------------------------------------------------
+// Email confidence derived from results quality (Discover detail dashboard).
+// ---------------------------------------------------------------------------
+
+/**
+ * Usable-rate thresholds for the "Email confidence" shown in the Email format
+ * panel: >= 80% usable → High, >= 50% → Medium, below → Low.
+ */
+export const EMAIL_CONFIDENCE_HIGH_USABLE_PERCENT = 80;
+export const EMAIL_CONFIDENCE_MEDIUM_USABLE_PERCENT = 50;
+
+/**
+ * "Email confidence" reflects how the generated addresses actually performed —
+ * the usable share of Results quality — not how strong the discovery evidence
+ * looked. Computed on the SAME rounded percent the quality headline displays
+ * (qualityPercent over the same counts), so the badge and the "76% usable"
+ * number can never disagree. With no people counted yet there is no rate, so
+ * confidence is Unknown rather than a misleading Low.
+ */
+export function emailConfidenceFromUsableRate(
+  summary: Pick<DiscoverQualitySummary, "usable" | "total">
+): ConfidenceLevel {
+  if (!Number.isFinite(summary.total) || summary.total <= 0) {
+    return "UNAVAILABLE";
+  }
+  const usablePercent = qualityPercent(summary.usable, summary.total);
+  if (usablePercent >= EMAIL_CONFIDENCE_HIGH_USABLE_PERCENT) {
+    return "HIGH";
+  }
+  if (usablePercent >= EMAIL_CONFIDENCE_MEDIUM_USABLE_PERCENT) {
+    return "MEDIUM";
+  }
+  return "LOW";
+}
+
+// ---------------------------------------------------------------------------
 // Email-format correction modes (Discover detail dashboard).
 // ---------------------------------------------------------------------------
 
@@ -959,6 +994,47 @@ export function formatQuotaRemaining(quota: DiscoverQuota | null): string | null
   return `${quota.searchesRemaining} of ${quota.dailySearchLimit} searches remaining today`;
 }
 
+// The compact detail-header quota chip ("2/4"): the full meaning lives in the
+// chip's aria-label and its hover/focus helper card, never in the visible row.
+export const DISCOVER_QUOTA_TOOLTIP_TITLE = "Discover searches";
+
+export type QuotaChipView = {
+  /** Compact visible value, e.g. "2/4" or "Unlimited". */
+  value: string;
+  /** Full accessible name for the focusable chip. */
+  ariaLabel: string;
+  /** One-sentence helper-card body. */
+  tooltip: string;
+  unlimited: boolean;
+};
+
+/**
+ * Chip view for the live quota. Remaining is clamped at 0 so a transient
+ * negative can never render "-1/4". Unlimited (exempt) accounts show a compact
+ * "Unlimited" — the numeric limit is never rendered for them. Null while the
+ * quota is still loading → the chip does not render.
+ */
+export function formatQuotaChip(quota: DiscoverQuota | null): QuotaChipView | null {
+  if (!quota) {
+    return null;
+  }
+  if (quota.unlimited) {
+    return {
+      value: "Unlimited",
+      ariaLabel: "Unlimited Discover access",
+      tooltip: "Unlimited Discover access.",
+      unlimited: true
+    };
+  }
+  const remaining = Math.max(0, quota.searchesRemaining);
+  return {
+    value: `${remaining}/${quota.dailySearchLimit}`,
+    ariaLabel: `${remaining} of ${quota.dailySearchLimit} Discover searches remaining today`,
+    tooltip: `${remaining} of ${quota.dailySearchLimit} searches remaining today.`,
+    unlimited: false
+  };
+}
+
 /** Difference in whole local calendar days between two dates (to - from). */
 function localCalendarDayDiff(from: Date, to: Date): number {
   const a = new Date(from.getFullYear(), from.getMonth(), from.getDate());
@@ -1071,12 +1147,25 @@ export function formatCurrentPeopleLine(peopleCount: number): string {
 // ---------------------------------------------------------------------------
 
 export const COMPANY_SEARCH_TITLE = "Search this company";
+/**
+ * Text revealed when the icon-only header trigger expands on hover/focus.
+ * Deliberately short — the full name lives in the trigger's aria-label
+ * (COMPANY_SEARCH_TITLE), so the button never dominates the header action row.
+ */
+export const COMPANY_SEARCH_TRIGGER_LABEL = "Search";
+/**
+ * Decorative helper card shown while the trigger is hovered/focused. It only
+ * explains the icon button — the accessible name stays on the button itself.
+ */
+export const COMPANY_SEARCH_TOOLTIP_TITLE = "Find more people";
+export const COMPANY_SEARCH_TOOLTIP_BODY = "Search this company by another role or location.";
 export const COMPANY_SEARCH_SUBTITLE = "Add another role or location without leaving this company.";
 export const COMPANY_SEARCH_ROLE_LABEL = "Job title";
 export const COMPANY_SEARCH_ROLE_PLACEHOLDER = "Software Engineer";
 export const COMPANY_SEARCH_LOCATION_LABEL = "Location";
 export const COMPANY_SEARCH_LOCATION_PLACEHOLDER = "United States";
 export const COMPANY_SEARCH_BUTTON_LABEL = "Search this company";
+export const COMPANY_SEARCH_CLOSE_LABEL = "Close company search";
 export const COMPANY_SEARCH_LOADING_LABEL = "Searching…";
 export const COMPANY_SEARCH_HELPER =
   "Use Add 10 more when you want more people for an existing role and location.";
