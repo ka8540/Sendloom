@@ -2,10 +2,11 @@
 
 // A text input with a lightweight, premium autocomplete + typo-correction
 // dropdown, used by the Discover "Create discovery search" modal and the
-// inside-company "Search this company" card. Every suggestion comes from the
-// user's OWN Discover history via loadDiscoverSuggestions (owner-scoped,
-// provider-free) — this component never calls a provider itself and never
-// bypasses backend validation: choosing a suggestion only fills the input.
+// inside-company "Search this company" card. Suggestions come from
+// loadDiscoverSuggestions (provider-free): company rows from Sendloom's global
+// company identity records, role/location rows from the user's own Discover
+// history. This component never calls a provider itself and never bypasses
+// backend validation: choosing a suggestion only fills the input.
 //
 // Features: 200ms debounce, per-type minimum query length, comma-token support
 // (a suggestion replaces only the caret's token), keyboard navigation
@@ -114,8 +115,8 @@ export function SuggestionInput({
   // actually query suggestions for.
   const queryToken = multiToken ? activeToken(value, caretRef.current) : value.trim();
 
-  // Debounced, owner-scoped fetch. Only runs while focused; aborts in-flight
-  // requests so a fast typist never sees a stale list.
+  // Debounced fetch. Only runs while focused; aborts in-flight requests so a
+  // fast typist never sees a stale list.
   useEffect(() => {
     if (!focused) {
       return;

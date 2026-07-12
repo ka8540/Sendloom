@@ -428,7 +428,13 @@ export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean 
         quota={quota}
         onChange={setForm}
         onCompanySelect={(suggestion) =>
-          setCompanyHint(suggestion.companyId ? { name: suggestion.value, domain: suggestion.detail } : null)
+          // Resolved companies — the user's own (companyId) or global identity
+          // rows (canonicalKey) — carry a domain hint; raw history strings don't.
+          setCompanyHint(
+            suggestion.companyId || suggestion.canonicalKey
+              ? { name: suggestion.value, domain: suggestion.detail }
+              : null
+          )
         }
         onSubmit={handleCreate}
         onClose={() => {

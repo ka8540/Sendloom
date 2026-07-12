@@ -1,7 +1,8 @@
-// API contracts for the discoverSuggestions query: authentication, strict
-// per-user scoping, company/role/location matching, current-company
-// prioritization, the result limit, and the empty-query response. Runs against
-// the real schema + resolvers with the in-memory fake Prisma.
+// API contracts for the discoverSuggestions query: authentication, GLOBAL
+// company-identity matching (with strict per-user scoping for roles/locations
+// and for what identity is exposed), current-company prioritization, the
+// result limit, and the empty-query response. Runs against the real schema +
+// resolvers with the in-memory fake Prisma.
 
 import type { PrismaClient, User } from "@prisma/client";
 import { graphql } from "graphql";
@@ -57,10 +58,23 @@ function seedSearch(prisma: FakePrisma, overrides: Record<string, unknown>) {
   });
 }
 
+function seedCacheEntry(prisma: FakePrisma, overrides: Record<string, unknown>) {
+  prisma._state.discoverCache.push({
+    id: `dcache_${prisma._state.discoverCache.length + 1}`,
+    fingerprint: `fp_${prisma._state.discoverCache.length + 1}`,
+    companyKey: "domain:example.com",
+    companyName: "Example",
+    companyDomain: "example.com",
+    companyLinkedinUrl: null,
+    status: "READY",
+    ...overrides
+  });
+}
+
 const QUERY = /* GraphQL */ `
   query Suggest($query: String!, $types: [DiscoverSuggestionType!], $companyId: ID) {
     discoverSuggestions(query: $query, types: $types, companyId: $companyId) {
-      companies { value detail companyId canonicalKey kind }
+      companies { value detail count companyId canonicalKey kind }
       roles { value count kind }
       locations { value count kind }
     }
@@ -101,19 +115,159 @@ describe("discoverSuggestions — authentication (#9)", () => {
   });
 });
 
-describe("discoverSuggestions — company scoping + matching (#10, #11)", () => {
-  it("returns only the current user's companies (#10)", async () => {
+describe("discoverSuggestions — GLOBAL company matching (#10, #11)", () => {
+  it("suggests companies from the global database, not only the current user's rows (#10)", async () => {
     const prisma = createFakePrisma();
-    seedCompany(prisma, { name: "Stripe", normalizedName: "stripe", officialDomain: "stripe.com" });
-    // Another user's company must never surface.
+    seedCompany(prisma, {
+      name: "Stripe",
+      normalizedName: "stripe",
+      canonicalKey: "domain:stripe.test",
+      officialDomain: "stripe.test"
+    });
+    // Another user's company DOES surface — company identity is shared app-wide.
     seedCompany(prisma, {
       userId: "user_B",
       name: "Stripedelivery",
       normalizedName: "stripedelivery",
-      officialDomain: "stripedelivery.com"
+      canonicalKey: "domain:stripedelivery.test",
+      officialDomain: "stripedelivery.test"
     });
     const { suggestions } = await run(prisma, { query: "str", types: ["COMPANY"] });
-    expect(suggestions?.companies.map((company) => company.value)).toEqual(["Stripe"]);
+    expect(suggestions?.companies.map((company) => company.value)).toEqual(["Stripe", "Stripedelivery"]);
+    // The user's own company keeps its row id; the other user's exposes identity only.
+    expect(suggestions?.companies[0]?.companyId).toBeTruthy();
+    expect(suggestions?.companies[1]?.companyId).toBeNull();
+    expect(suggestions?.companies[1]?.detail).toBe("stripedelivery.test");
+  });
+
+  it("matches a global company this user never searched by partial, full, casing, and domain", async () => {
+    const prisma = createFakePrisma();
+    seedCompany(prisma, {
+      userId: "user_B",
+      name: "Helix Analytics",
+      normalizedName: "helix analytics",
+      canonicalKey: "domain:helix-analytics.test",
+      officialDomain: "helix-analytics.test"
+    });
+
+    for (const query of ["hel", "Helix Analytics", "helix analytics", "HELIX", "helix-analytics.test"]) {
+      const { suggestions } = await run(prisma, { query, types: ["COMPANY"] });
+      expect(suggestions?.companies.map((company) => company.value)).toEqual(["Helix Analytics"]);
+    }
+  });
+
+  it("exposes ONLY safe identity fields for another user's company — no ids, counts, or history", async () => {
+    const prisma = createFakePrisma();
+    seedCompany(prisma, {
+      userId: "user_B",
+      name: "Helix Analytics",
+      normalizedName: "helix analytics",
+      canonicalKey: "domain:helix-analytics.test",
+      officialDomain: "helix-analytics.test"
+    });
+    // user_B's private search history must never shape user_A's role/location lists.
+    seedSearch(prisma, {
+      userId: "user_B",
+      companyId: "company_1",
+      requestedCompany: "Helix Analytics",
+      requestedTitles: ["Secret Role"],
+      requestedLocations: ["Secret City"]
+    });
+
+    const { suggestions } = await run(prisma, { query: "helix" });
+    expect(suggestions?.companies).toEqual([
+      {
+        value: "Helix Analytics",
+        detail: "helix-analytics.test",
+        count: null,
+        companyId: null,
+        canonicalKey: "domain:helix-analytics.test",
+        kind: "MATCH"
+      }
+    ]);
+    expect(suggestions?.roles).toEqual([]);
+    expect(suggestions?.locations).toEqual([]);
+  });
+
+  it("dedupes the same company held by multiple users into one suggestion (own identity wins)", async () => {
+    const prisma = createFakePrisma();
+    seedCompany(prisma, {
+      id: "company_own",
+      name: "Acme",
+      normalizedName: "acme",
+      canonicalKey: "domain:acme.test"
+    });
+    seedCompany(prisma, {
+      userId: "user_B",
+      id: "company_foreign",
+      name: "Acme Inc.",
+      normalizedName: "acme",
+      canonicalKey: "domain:acme.test",
+      officialDomain: "acme.test"
+    });
+
+    const { suggestions } = await run(prisma, { query: "acme", types: ["COMPANY"] });
+    expect(suggestions?.companies).toHaveLength(1);
+    expect(suggestions?.companies[0]).toEqual(
+      // The duplicate's domain still fills in, but the row id is the user's own.
+      expect.objectContaining({ value: "Acme", detail: "acme.test", companyId: "company_own" })
+    );
+  });
+
+  it("suggests a company known only from the shared Discover cache", async () => {
+    const prisma = createFakePrisma();
+    seedCacheEntry(prisma, {
+      companyKey: "domain:orbit.test",
+      companyName: "Orbit Dynamics",
+      companyDomain: "orbit.test"
+    });
+
+    const { suggestions } = await run(prisma, { query: "orbit", types: ["COMPANY"] });
+    expect(suggestions?.companies).toEqual([
+      {
+        value: "Orbit Dynamics",
+        detail: "orbit.test",
+        count: null,
+        companyId: null,
+        canonicalKey: "domain:orbit.test",
+        kind: "MATCH"
+      }
+    ]);
+  });
+
+  it("dedupes a shared-cache entry against the matching resolved company", async () => {
+    const prisma = createFakePrisma();
+    seedCompany(prisma, {
+      id: "company_orbit",
+      name: "Orbit Dynamics",
+      normalizedName: "orbit dynamics",
+      canonicalKey: "domain:orbit.test",
+      officialDomain: "orbit.test"
+    });
+    seedCacheEntry(prisma, {
+      companyKey: "domain:orbit.test",
+      companyName: "Orbit Dynamics",
+      companyDomain: "orbit.test"
+    });
+
+    const { suggestions } = await run(prisma, { query: "orbit", types: ["COMPANY"] });
+    expect(suggestions?.companies).toHaveLength(1);
+    expect(suggestions?.companies[0]?.companyId).toBe("company_orbit");
+  });
+
+  it("caps company suggestions at the result limit (#15)", async () => {
+    const prisma = createFakePrisma();
+    for (let index = 0; index < 12; index += 1) {
+      seedCompany(prisma, {
+        userId: `user_${index}`,
+        name: `Meridian Labs ${index}`,
+        normalizedName: `meridian labs ${index}`,
+        canonicalKey: `domain:meridian-${index}.test`,
+        officialDomain: `meridian-${index}.test`
+      });
+    }
+    const { suggestions } = await run(prisma, { query: "meridian", types: ["COMPANY"] });
+    expect(suggestions?.companies).toHaveLength(8);
   });
 
   it("matches a company by its domain and preserves dedupe hints (#11)", async () => {

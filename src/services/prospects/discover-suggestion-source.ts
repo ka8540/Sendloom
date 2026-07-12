@@ -1,8 +1,14 @@
-// Turn the current user's OWN Discover rows into ranked company / role /
-// location suggestions. Pure: the resolver fetches the user-scoped rows (only
-// ever `where: { userId }`) and hands them here, so nothing in this module can
-// read another user's data. It never calls a provider, Apify, or AI — every
-// suggestion is a value the user has already used.
+// Turn Discover rows into ranked company / role / location suggestions. Pure:
+// the resolver fetches rows and hands them here, this module only orders them.
+//
+// Scoping is per type:
+//   - COMPANY entries come from Sendloom's GLOBAL company identity records
+//     (every user's resolved ProspectCompany rows plus the shared Discover
+//     cache). Only reusable identity fields (name, domain, canonical key) are
+//     ever emitted; a row id is exposed ONLY when the row belongs to the
+//     current user (`isOwn`), so another user's internal ids never leak.
+//   - ROLE / LOCATION entries come from the current user's OWN searches only.
+// It never calls a provider, Apify, or AI.
 
 import {
   companyMatchAliases,
@@ -16,7 +22,12 @@ import { normalizeRoleGroupToken } from "@/services/prospects/discover-role-grou
 
 export type DiscoverSuggestionType = "COMPANY" | "ROLE" | "LOCATION";
 
-/** The subset of ProspectCompany columns suggestions read. */
+/**
+ * One GLOBAL company identity candidate: the safe, reusable subset of a
+ * ProspectCompany row (any user's) or a shared Discover cache entry. `isOwn`
+ * marks rows belonging to the current user — only those may expose their row
+ * id as a dedupe hint; every other row contributes identity fields only.
+ */
 export type SuggestionCompanyRow = {
   id: string;
   name: string;
@@ -27,6 +38,8 @@ export type SuggestionCompanyRow = {
   officialWebsiteDomain?: string | null;
   emailDomain?: string | null;
   linkedinUrl?: string | null;
+  /** True only for the current user's own ProspectCompany rows. Defaults to false. */
+  isOwn?: boolean;
 };
 
 /** The subset of ProspectSearch columns suggestions read. */
@@ -45,9 +58,11 @@ export type DiscoverSuggestionResult = {
   locations: RankedSuggestion[];
 };
 
-// Priorities keep resolved/current-company values above raw or broader ones when
-// they tie on match rank (see rankSuggestions).
-const PRIORITY_RESOLVED_COMPANY = 2;
+// Priorities keep own/resolved/current-company values above raw or broader ones
+// when they tie on match rank (see rankSuggestions): the user's own resolved
+// company outranks a globally known one, which outranks a raw typed string.
+const PRIORITY_OWN_COMPANY = 3;
+const PRIORITY_GLOBAL_COMPANY = 2;
 const PRIORITY_RAW_COMPANY = 1;
 const PRIORITY_CURRENT_COMPANY = 2;
 const PRIORITY_OTHER_COMPANY = 1;
@@ -87,12 +102,14 @@ function unresolvedIdentity(search: SuggestionSearchRow): string | null {
 }
 
 /**
- * Build company entries from resolved ProspectCompany rows plus the raw company
- * strings the user typed on searches that never resolved. Resolved companies
- * carry a domain, id, and canonicalKey (so selecting one can preserve backend
- * dedupe identity) and outrank raw strings on ties. Matching includes the domain
- * and official name; correction is limited to the display name so we never emit
- * "Did you mean stripe.com?".
+ * Build company entries from GLOBAL company identity rows (every user's
+ * resolved companies + shared cache entries) plus the raw company strings the
+ * CURRENT user typed on searches that never resolved. Resolved companies carry
+ * a domain and canonicalKey (so selecting one can preserve backend dedupe
+ * identity) and outrank raw strings on ties; a row id is attached only for the
+ * current user's own rows. Matching includes the domain and official name;
+ * correction is limited to the display name so we never emit "Did you mean
+ * stripe.com?".
  */
 export function buildCompanyEntries(
   companies: readonly SuggestionCompanyRow[],
@@ -102,7 +119,13 @@ export function buildCompanyEntries(
   const byIdentity = new Map<string, MutableCompanyEntry>();
   const byCompanyId = new Map<string, MutableCompanyEntry>();
 
-  for (const company of companies) {
+  // The user's own rows are processed first (stable sort) so, when the same
+  // company exists for several users or in the shared cache, the surviving
+  // suggestion keeps THIS user's display name and row id — a foreign row id is
+  // never exposed, only merged identity aliases.
+  const ordered = [...companies].sort((a, b) => Number(b.isOwn ?? false) - Number(a.isOwn ?? false));
+
+  for (const company of ordered) {
     const displayName = clean(company.officialName) ?? clean(company.name);
     if (!displayName) {
       continue;
@@ -117,18 +140,34 @@ export function buildCompanyEntries(
       company.canonicalKey ?? "",
       company.linkedinUrl ?? ""
     ].filter(Boolean);
+    const correctionKeys = [company.name, company.officialName ?? ""].filter(Boolean);
+    const existing = byIdentity.get(companyIdentity(company));
+    if (existing) {
+      // Same canonical identity seen again (another user's row or a cache
+      // entry): merge its aliases and fill a missing domain, keep the first
+      // (own-first) entry authoritative.
+      existing.matchKeys.push(...matchKeys);
+      existing.correctionKeys.push(...correctionKeys);
+      existing.detail = existing.detail ?? firstDomain(company);
+      if (company.isOwn) {
+        byCompanyId.set(company.id, existing);
+      }
+      continue;
+    }
     const entry: MutableCompanyEntry = {
       value: displayName,
       detail: firstDomain(company),
-      companyId: company.id,
+      companyId: company.isOwn ? company.id : null,
       canonicalKey: company.canonicalKey ?? null,
       matchKeys,
-      correctionKeys: [company.name, company.officialName ?? ""].filter(Boolean),
+      correctionKeys,
       punctuationTolerant: true,
-      priority: PRIORITY_RESOLVED_COMPANY
+      priority: company.isOwn ? PRIORITY_OWN_COMPANY : PRIORITY_GLOBAL_COMPANY
     };
     byIdentity.set(companyIdentity(company), entry);
-    byCompanyId.set(company.id, entry);
+    if (company.isOwn) {
+      byCompanyId.set(company.id, entry);
+    }
   }
 
   // Every historical request is searchable. Linked requests add their original
@@ -186,6 +225,7 @@ export function buildCompanyEntries(
     if (duplicate) {
       duplicate.matchKeys.push(...entry.matchKeys);
       duplicate.correctionKeys.push(...entry.correctionKeys);
+      duplicate.detail = duplicate.detail ?? entry.detail;
       continue;
     }
     accepted.push(entry);
@@ -240,9 +280,11 @@ function buildLabelEntries(
 }
 
 /**
- * Rank the user's known companies/roles/locations against `query`, computing
- * only the requested `types`. `companyId` (inside-company card) prioritizes the
- * current company's roles/locations. Results are capped per type at `limit`.
+ * Rank companies/roles/locations against `query`, computing only the requested
+ * `types`. `companies` is the GLOBAL identity pool (own rows flagged `isOwn`);
+ * `searches` is always the current user's own rows and alone feeds roles and
+ * locations. `companyId` (inside-company card) prioritizes the current
+ * company's roles/locations. Results are capped per type at `limit`.
  */
 export function buildDiscoverSuggestions(input: {
   query: string;

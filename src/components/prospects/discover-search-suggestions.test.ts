@@ -26,7 +26,7 @@ describe("SuggestionInput behaviour contract", () => {
     expect(SUGGESTION_INPUT).toContain("queryToken.length < effectiveMinChars");
   });
 
-  it("fetches owner-scoped suggestions and aborts stale requests", () => {
+  it("fetches suggestions through the shared loader and aborts stale requests", () => {
     expect(SUGGESTION_INPUT).toContain("loadDiscoverSuggestions");
     expect(SUGGESTION_INPUT).toContain("new AbortController()");
     expect(SUGGESTION_INPUT).toContain("controller.abort()");
@@ -88,6 +88,8 @@ describe("Main modal wiring (#17, #18, #19, #21, #23)", () => {
     expect(LIST_SOURCE).toContain("onChange={(value) => onChange({ ...form, companyName: value })}");
     // …and captures its resolved domain, sent only while the name still matches.
     expect(LIST_SOURCE).toContain("onSelectSuggestion={onCompanySelect}");
+    // Global identity suggestions (canonicalKey, no own row id) carry the hint too.
+    expect(LIST_SOURCE).toContain("suggestion.companyId || suggestion.canonicalKey");
     expect(LIST_SOURCE).toContain("companyHint.name.trim().toLowerCase() === companyName.toLowerCase()");
     expect(LIST_SOURCE).toContain("...(companyDomain ? { companyDomain } : {})");
   });
