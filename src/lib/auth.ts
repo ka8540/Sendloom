@@ -222,6 +222,19 @@ export async function getSessionEmail() {
   return session?.email ?? null;
 }
 
+// Used by the public landing/login/signup pages: if the visitor already has a
+// valid, non-expired session, send them straight to their workspace instead of
+// re-showing the marketing/auth flow. Session validity is decided by
+// `getSession()` (JWT signature + DB freshness/expiry), so a stale, revoked, or
+// expired cookie falls through and the public page renders for logged-out
+// visitors. Never redirects protected routes back to public ones, so no loop.
+export async function redirectAuthenticatedToWorkspace() {
+  const session = await getSession();
+  if (session) {
+    redirect("/workspace");
+  }
+}
+
 export async function requireSession() {
   const session = await getSession();
   if (!session) {

@@ -22,6 +22,7 @@ import { LandingNav } from "@/components/landing-nav";
 import { LandingPointerFX } from "@/components/landing-pointer-fx";
 import { MarketingFooter } from "@/components/marketing/MarketingFooter";
 import { SendloomLogo } from "@/components/sendloom-logo";
+import { redirectAuthenticatedToWorkspace } from "@/lib/auth";
 
 import styles from "@/app/landing.module.css";
 
@@ -153,7 +154,12 @@ const trustPoints = [
   }
 ];
 
-export default function LandingPage() {
+export default async function LandingPage() {
+  // Send already-authenticated visitors straight to their workspace instead of
+  // showing the public landing page; logged-out visitors still get the landing
+  // page. See `redirectAuthenticatedToWorkspace` for the validity rules.
+  await redirectAuthenticatedToWorkspace();
+
   return (
     <main id="top" className={styles.page}>
       <AnimatedEmailPath />

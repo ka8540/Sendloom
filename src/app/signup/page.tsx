@@ -1,15 +1,9 @@
-import { redirect } from "next/navigation";
-
 import { AuthPage } from "@/components/auth-page";
 import { SignupForm } from "@/components/forms";
-import { getSession } from "@/lib/auth";
+import { redirectAuthenticatedToWorkspace } from "@/lib/auth";
 
 export default async function SignupPage() {
-  const session = await getSession();
-
-  if (session) {
-    redirect("/workspace");
-  }
+  await redirectAuthenticatedToWorkspace();
 
   return (
     <AuthPage
