@@ -52,6 +52,8 @@ export default async function ImportsPage({
     return [{
       importId: entry.id,
       fileName: entry.fileName,
+      rowCount: entry.rowCount,
+      linkedCampaignCount: entry._count.campaigns,
       columns: entry.columns.map((column) => ({
         sourceName: column.sourceName,
         normalized: column.normalized
