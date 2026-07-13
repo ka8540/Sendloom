@@ -1,7 +1,7 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, Loader2, PencilLine, Trash2 } from "lucide-react";
-import { useEffect, useId, useMemo, useState, type FormEvent } from "react";
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Loader2, PencilLine, Trash2 } from "lucide-react";
+import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 
@@ -9,8 +9,10 @@ import { useErrorToast, useErrorToastEffect } from "@/components/error-toast-pro
 import { AppConfirmDialog } from "@/components/app-confirm-dialog";
 import { CircularCloseButton } from "@/components/circular-close-button";
 import editorStyles from "@/components/import-editor-dialog.module.css";
+import pickerStyles from "@/components/import-picker.module.css";
 import {
   DELETE_IMPORT_ERROR_MESSAGE,
+  DELETE_IMPORT_SUCCESS_MESSAGE,
   EDIT_IMPORT_CANCEL_LABEL,
   EDIT_IMPORT_ERROR_MESSAGE,
   EDIT_IMPORT_FIELDS_HINT,
@@ -21,9 +23,15 @@ import {
   EDIT_IMPORT_SUCCESS_MESSAGE,
   EDIT_IMPORT_TITLE,
   IMPORT_NAME_MAX_LENGTH,
+  IMPORT_PICKER_EMPTY_HINT,
+  IMPORT_PICKER_EMPTY_TITLE,
+  IMPORT_PICKER_LABEL,
+  IMPORT_PICKER_PLACEHOLDER,
   MAX_TEMPLATE_COLUMNS,
+  deleteImportLabel,
   describeImportDeletion,
   editImportLabel,
+  importPickerRowMeta,
   planImportEdit,
   toggleTemplateColumn
 } from "@/components/imports-editor";
@@ -40,6 +48,8 @@ type TemplateFieldItem = {
   fileName: string;
   columns: MappingColumn[];
   selectedColumns: string[];
+  rowCount?: number;
+  linkedCampaignCount?: number;
 };
 
 type MappingLibraryItem = {
@@ -65,6 +75,93 @@ function formatColumnLabel(column: MappingColumn) {
     : `${column.sourceName} (${column.normalized})`;
 }
 
+type DeletableImport = {
+  importId: string;
+  fileName: string;
+  linkedCampaignCount: number;
+};
+
+/**
+ * The one import-deletion flow, shared by the Template fields picker and the
+ * Imports list below it. Same DELETE endpoint, same confirmation copy, same
+ * safe error message, same refresh — a trash action anywhere on the page
+ * behaves identically. The mutation runs only after the in-app confirmation is
+ * accepted, exactly once; failures keep the import and surface a safe message
+ * in the dialog (never raw backend detail).
+ */
+function useImportDeletion(options?: { onDeleted?: (importId: string) => void }) {
+  const router = useRouter();
+  const { showSuccess } = useErrorToast();
+  const [pendingDeletion, setPendingDeletion] = useState<DeletableImport | null>(null);
+  const [deletingImportId, setDeletingImportId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  function requestDeletion(item: DeletableImport) {
+    setDeleteError(null);
+    setPendingDeletion(item);
+  }
+
+  function cancelDeletion() {
+    if (deletingImportId) {
+      return;
+    }
+    setPendingDeletion(null);
+    setDeleteError(null);
+  }
+
+  async function confirmDeleteImport() {
+    const item = pendingDeletion;
+    if (!item || deletingImportId) {
+      return;
+    }
+
+    setDeletingImportId(item.importId);
+    setDeleteError(null);
+
+    try {
+      const response = await fetch(`/api/imports/${item.importId}`, {
+        method: "DELETE"
+      });
+
+      if (!response.ok) {
+        setDeletingImportId(null);
+        setDeleteError(DELETE_IMPORT_ERROR_MESSAGE);
+        return;
+      }
+    } catch {
+      setDeletingImportId(null);
+      setDeleteError(DELETE_IMPORT_ERROR_MESSAGE);
+      return;
+    }
+
+    setDeletingImportId(null);
+    setPendingDeletion(null);
+    options?.onDeleted?.(item.importId);
+    router.refresh();
+    showSuccess(DELETE_IMPORT_SUCCESS_MESSAGE);
+  }
+
+  return { pendingDeletion, deletingImportId, deleteError, requestDeletion, cancelDeletion, confirmDeleteImport };
+}
+
+/** The shared delete confirmation, rendered identically wherever imports can be deleted. */
+function ImportDeleteDialog({ deletion }: { deletion: ReturnType<typeof useImportDeletion> }) {
+  return (
+    <AppConfirmDialog
+      open={deletion.pendingDeletion !== null}
+      title="Delete this import?"
+      description={deletion.pendingDeletion ? describeImportDeletion(deletion.pendingDeletion) : null}
+      confirmLabel="Delete import"
+      loadingLabel="Deleting…"
+      destructive
+      loading={deletion.deletingImportId !== null}
+      error={deletion.deleteError}
+      onConfirm={() => void deletion.confirmDeleteImport()}
+      onCancel={deletion.cancelDeletion}
+    />
+  );
+}
+
 export function TemplateFieldPicker(props: { imports: TemplateFieldItem[]; initialImportId?: string }) {
   const router = useRouter();
   const [state, setState] = useState<{ pending: boolean; error?: string }>({ pending: false });
@@ -76,19 +173,107 @@ export function TemplateFieldPicker(props: { imports: TemplateFieldItem[]; initi
   const [selectedByImport, setSelectedByImport] = useState<Record<string, string[]>>(() =>
     Object.fromEntries(props.imports.map((entry) => [entry.importId, entry.selectedColumns]))
   );
+  // Imports deleted from this picker disappear immediately; the server refresh
+  // that follows makes the removal durable and clears these local tombstones.
+  const [removedImportIds, setRemovedImportIds] = useState<string[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const pickerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const triggerId = useId();
+
+  const visibleImports = useMemo(
+    () => props.imports.filter((entry) => !removedImportIds.includes(entry.importId)),
+    [props.imports, removedImportIds]
+  );
+
+  const deletion = useImportDeletion({
+    onDeleted: (importId) => {
+      setRemovedImportIds((current) => [...current, importId]);
+      // Never leave a deleted import selected — Save disables until another is picked.
+      setSelectedImportId((current) => (current === importId ? "" : current));
+    }
+  });
 
   const selectedImport = useMemo(
-    () => (selectedImportId ? props.imports.find((entry) => entry.importId === selectedImportId) : undefined),
-    [props.imports, selectedImportId]
+    () => (selectedImportId ? visibleImports.find((entry) => entry.importId === selectedImportId) : undefined),
+    [visibleImports, selectedImportId]
   );
   useErrorToastEffect(state.error, "Template field save failed");
 
   const selectedColumns = selectedImport ? selectedByImport[selectedImport.importId] ?? [] : [];
 
   useEffect(() => {
+    setRemovedImportIds([]);
     setSelectedByImport(Object.fromEntries(props.imports.map((entry) => [entry.importId, entry.selectedColumns])));
     setSelectedImportId((current) => (props.imports.some((entry) => entry.importId === current) ? current : ""));
   }, [props.imports]);
+
+  // Clicking anywhere outside the picker closes the panel — except while the
+  // delete confirmation (a body-level portal) is up, so cancelling a delete
+  // returns the user to the still-open list.
+  useEffect(() => {
+    if (!pickerOpen) {
+      return;
+    }
+    function onPointerDown(event: MouseEvent) {
+      if (deletion.pendingDeletion !== null) {
+        return;
+      }
+      if (pickerRef.current && event.target instanceof Node && !pickerRef.current.contains(event.target)) {
+        setPickerOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [pickerOpen, deletion.pendingDeletion]);
+
+  function focusOption(index: number) {
+    const options = panelRef.current?.querySelectorAll<HTMLButtonElement>("[data-import-option]");
+    if (!options || options.length === 0) {
+      return;
+    }
+    const clamped = Math.max(0, Math.min(options.length - 1, index));
+    options[clamped]?.focus();
+  }
+
+  function closePicker() {
+    setPickerOpen(false);
+    triggerRef.current?.focus();
+  }
+
+  function chooseImport(importId: string) {
+    setSelectedImportId(importId);
+    setState({ pending: false, error: undefined });
+    closePicker();
+  }
+
+  function onTriggerKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>) {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setPickerOpen(true);
+      window.requestAnimationFrame(() => focusOption(0));
+      return;
+    }
+    if (event.key === "Escape" && pickerOpen) {
+      event.preventDefault();
+      setPickerOpen(false);
+    }
+  }
+
+  function onPanelKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closePicker();
+      return;
+    }
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const options = Array.from(panelRef.current?.querySelectorAll<HTMLButtonElement>("[data-import-option]") ?? []);
+      const activeIndex = options.findIndex((option) => option === document.activeElement);
+      focusOption(activeIndex + (event.key === "ArrowDown" ? 1 : -1));
+    }
+  }
 
   function toggleColumn(column: string) {
     if (!selectedImport) {
@@ -144,32 +329,91 @@ export function TemplateFieldPicker(props: { imports: TemplateFieldItem[]; initi
     setState({ pending: false });
   }
 
-  if (props.imports.length === 0) {
-    return <p className="muted">No pending imports need template-field setup here. Edit existing imports below.</p>;
-  }
-
   return (
     <form className="form" onSubmit={onSubmit}>
-      <div className="field">
-        <label htmlFor="template-field-import">Import</label>
-        <select
-          id="template-field-import"
-          name="importId"
-          data-imports-tour="pending-selector"
-          value={selectedImportId}
-          onChange={(event) => {
-            setSelectedImportId(event.target.value);
-            setState({ pending: false, error: undefined });
-          }}
-          required
-        >
-          <option value="">Select an import</option>
-          {props.imports.map((entry) => (
-            <option key={entry.importId} value={entry.importId}>
-              {entry.fileName}
-            </option>
-          ))}
-        </select>
+      <div className="field" data-imports-tour="pending-selector">
+        <label htmlFor={triggerId}>Import</label>
+        {visibleImports.length === 0 ? (
+          <div className={pickerStyles.empty}>
+            <span className={pickerStyles.emptyTitle}>{IMPORT_PICKER_EMPTY_TITLE}</span>
+            <span className={pickerStyles.emptyHint}>{IMPORT_PICKER_EMPTY_HINT}</span>
+          </div>
+        ) : (
+          <div className={pickerStyles.picker} ref={pickerRef}>
+            <button
+              ref={triggerRef}
+              id={triggerId}
+              type="button"
+              className={`${pickerStyles.trigger}${pickerOpen ? ` ${pickerStyles.triggerOpen}` : ""}`}
+              aria-haspopup="listbox"
+              aria-expanded={pickerOpen}
+              aria-label={IMPORT_PICKER_LABEL}
+              onClick={() => setPickerOpen((current) => !current)}
+              onKeyDown={onTriggerKeyDown}
+            >
+              <span
+                className={`${pickerStyles.triggerText}${selectedImport ? "" : ` ${pickerStyles.triggerPlaceholder}`}`}
+              >
+                {selectedImport ? selectedImport.fileName : IMPORT_PICKER_PLACEHOLDER}
+              </span>
+              <ChevronDown
+                className={`${pickerStyles.chevron}${pickerOpen ? ` ${pickerStyles.chevronOpen}` : ""}`}
+                aria-hidden="true"
+              />
+            </button>
+            {pickerOpen ? (
+              <div className={pickerStyles.panel} ref={panelRef} onKeyDown={onPanelKeyDown}>
+                <ul className={pickerStyles.list} aria-label="Imports awaiting template fields">
+                  {visibleImports.map((entry) => {
+                    const isSelected = entry.importId === selectedImportId;
+
+                    return (
+                      <li
+                        key={entry.importId}
+                        className={`${pickerStyles.row}${isSelected ? ` ${pickerStyles.rowSelected}` : ""}`}
+                      >
+                        <button
+                          type="button"
+                          data-import-option
+                          className={pickerStyles.rowSelect}
+                          aria-pressed={isSelected}
+                          onClick={() => chooseImport(entry.importId)}
+                        >
+                          <span className={pickerStyles.rowName}>
+                            <span className={pickerStyles.rowNameText} title={entry.fileName}>
+                              {entry.fileName}
+                            </span>
+                            {isSelected ? <Check className={pickerStyles.check} aria-hidden="true" /> : null}
+                          </span>
+                          <span className={pickerStyles.rowMeta}>
+                            {importPickerRowMeta({ rowCount: entry.rowCount, columnCount: entry.columns.length })}
+                          </span>
+                        </button>
+                        {/* A separate button, never nested in the row's select action —
+                            clicking the trash only stages the confirmation. */}
+                        <button
+                          type="button"
+                          className={pickerStyles.rowDelete}
+                          aria-label={deleteImportLabel(entry.fileName)}
+                          disabled={deletion.deletingImportId !== null}
+                          onClick={() =>
+                            deletion.requestDeletion({
+                              importId: entry.importId,
+                              fileName: entry.fileName,
+                              linkedCampaignCount: entry.linkedCampaignCount ?? 0
+                            })
+                          }
+                        >
+                          <Trash2 aria-hidden="true" />
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+        )}
       </div>
       {selectedImport ? (
         <>
@@ -215,16 +459,20 @@ export function TemplateFieldPicker(props: { imports: TemplateFieldItem[]; initi
       >
         {state.pending ? "Saving fields..." : "Save template fields"}
       </button>
+      <ImportDeleteDialog deletion={deletion} />
     </form>
   );
 }
 
 export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
-  const router = useRouter();
-  const [deletingImportId, setDeletingImportId] = useState<string | null>(null);
-  const [pendingDeletion, setPendingDeletion] = useState<MappingLibraryItem | null>(null);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [editingImportId, setEditingImportId] = useState<string | null>(null);
+  const deletion = useImportDeletion({
+    onDeleted: (importId) => {
+      if (editingImportId === importId) {
+        setEditingImportId(null);
+      }
+    }
+  });
   const [page, setPage] = useState(1);
   const [error, setError] = useState<string | null>(null);
   useErrorToastEffect(error, "Import update failed");
@@ -263,50 +511,13 @@ export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
     }
   }, [editingImportId, props.items]);
 
-  // Run the actual deletion only after the in-app confirmation is accepted. The
-  // mutation runs once; failures keep the import and surface a safe message in
-  // the dialog (never raw backend detail).
-  async function confirmDeleteImport() {
-    const item = pendingDeletion;
-    if (!item || deletingImportId) {
-      return;
-    }
-
-    setDeletingImportId(item.importId);
-    setDeleteError(null);
-
-    try {
-      const response = await fetch(`/api/imports/${item.importId}`, {
-        method: "DELETE"
-      });
-
-      if (!response.ok) {
-        setDeletingImportId(null);
-        setDeleteError(DELETE_IMPORT_ERROR_MESSAGE);
-        return;
-      }
-    } catch {
-      setDeletingImportId(null);
-      setDeleteError(DELETE_IMPORT_ERROR_MESSAGE);
-      return;
-    }
-
-    if (editingImportId === item.importId) {
-      setEditingImportId(null);
-    }
-
-    setDeletingImportId(null);
-    setPendingDeletion(null);
-    router.refresh();
-  }
-
   return (
     <div className="imports-library">
       {visibleItems.map((item, index) => {
         // The first visible card carries the guided-tour targets, so the Imports
         // help guide always finds an anchor when any processed import is shown.
         const isTourAnchor = index === 0;
-        const isDeleting = deletingImportId === item.importId;
+        const isDeleting = deletion.deletingImportId === item.importId;
         const activeTemplateFields = item.selectedTemplateColumns;
         const selectedColumns = item.columns.filter((column) => activeTemplateFields.includes(column.normalized));
         const detectedOnlyColumns = item.columns.filter((column) => !activeTemplateFields.includes(column.normalized));
@@ -369,10 +580,7 @@ export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
                   className="field-icon-button field-icon-button--danger"
                   data-tooltip="Delete import"
                   data-imports-tour={isTourAnchor ? "delete-import" : undefined}
-                  onClick={() => {
-                    setDeleteError(null);
-                    setPendingDeletion(item);
-                  }}
+                  onClick={() => deletion.requestDeletion(item)}
                   disabled={isDeleting}
                   aria-label={`Delete ${item.fileName} import`}
                 >
@@ -501,24 +709,7 @@ export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
         <ImportEditorDialog key={editingItem.importId} item={editingItem} onClose={() => setEditingImportId(null)} />
       ) : null}
 
-      <AppConfirmDialog
-        open={pendingDeletion !== null}
-        title="Delete this import?"
-        description={pendingDeletion ? describeImportDeletion(pendingDeletion) : null}
-        confirmLabel="Delete import"
-        loadingLabel="Deleting…"
-        destructive
-        loading={deletingImportId !== null}
-        error={deleteError}
-        onConfirm={() => void confirmDeleteImport()}
-        onCancel={() => {
-          if (deletingImportId) {
-            return;
-          }
-          setPendingDeletion(null);
-          setDeleteError(null);
-        }}
-      />
+      <ImportDeleteDialog deletion={deletion} />
     </div>
   );
 }

@@ -12,6 +12,29 @@
 
 /** Safe, user-facing message for a failed import deletion (never backend detail). */
 export const DELETE_IMPORT_ERROR_MESSAGE = "This import could not be deleted. Please try again.";
+/** Success toast shown after an import is deleted (from the list or the picker). */
+export const DELETE_IMPORT_SUCCESS_MESSAGE = "Import deleted.";
+
+// Copy for the Template fields import picker, centralized like the editor copy.
+export const IMPORT_PICKER_LABEL = "Select import";
+export const IMPORT_PICKER_PLACEHOLDER = "Select an import";
+export const IMPORT_PICKER_EMPTY_TITLE = "No imports available";
+export const IMPORT_PICKER_EMPTY_HINT = "Review or add an import first.";
+
+/** Accessible label for a picker row's trash action, e.g. "Delete import AMD SDE". */
+export function deleteImportLabel(fileName: string): string {
+  return `Delete import ${fileName}`;
+}
+
+/** Compact metadata line for a picker row, e.g. "12 contacts · 6 columns". */
+export function importPickerRowMeta(entry: { rowCount?: number; columnCount: number }): string {
+  const parts: string[] = [];
+  if (typeof entry.rowCount === "number") {
+    parts.push(`${entry.rowCount} ${entry.rowCount === 1 ? "contact" : "contacts"}`);
+  }
+  parts.push(`${entry.columnCount} ${entry.columnCount === 1 ? "column" : "columns"}`);
+  return parts.join(" · ");
+}
 
 /**
  * Plain-language warning shown in the import delete confirmation, with correct
