@@ -37,7 +37,8 @@ type DetailContent = {
   headline: string;
   /** The complementary share — Delivered always carries the issue share and vice versa. */
   paired: { key: PulseMetricKey; label: string } | null;
-  description: string;
+  /** One short line of microcopy — the insight strip stays compact. */
+  note: string;
   stats: Array<{ label: string; value: string }>;
   actions: DetailAction[];
 };
@@ -56,8 +57,8 @@ function plural(count: number, singular: string, pluralForm?: string) {
   return count === 1 ? singular : (pluralForm ?? `${singular}s`);
 }
 
-// Bars and arcs keep a small visible floor for non-zero counts so a 0.4% issue
-// share still reads as a real, clickable sliver instead of vanishing.
+// Arcs keep a small visible floor for non-zero counts so a 0.4% issue share
+// still reads as a real, clickable sliver instead of vanishing.
 function visibleShare(share: number, count: number, floor: number) {
   return count > 0 ? Math.max(share, floor) : 0;
 }
@@ -72,12 +73,12 @@ function buildDeliveryDetail(selection: PulseMetricKey, split: DeliverySplit, ta
       eyebrow: "Delivered",
       headline: `${split.deliveredLabel} successful`,
       paired: { key: "issues", label: `${split.issueLabel} issues` },
-      description:
+      note:
         split.issues === 0
-          ? "Every tracked outcome reached an inbox — nothing is waiting on review."
+          ? "Every outcome reached an inbox."
           : split.delivered === 0
-            ? "Nothing has delivered yet — every tracked outcome needs review before this climbs."
-            : `${split.deliveredLabel} of tracked recipients are moving cleanly. ${split.issueLabel} need review.`,
+            ? "Nothing delivered yet."
+            : `Moving cleanly — ${split.issueLabel} need review.`,
       stats: [deliveredStat, issueStat, targetedStat],
       actions: [{ label: "View sequences", href: "/campaigns" as Route }]
     };
@@ -87,10 +88,10 @@ function buildDeliveryDetail(selection: PulseMetricKey, split: DeliverySplit, ta
     eyebrow: "Issues",
     headline: split.issues === 0 ? "No open issues" : `${split.issueLabel} need attention`,
     paired: { key: "delivered", label: `${split.deliveredLabel} delivered` },
-    description:
+    note:
       split.issues === 0
-        ? `All clear — ${split.deliveredLabel} of tracked outcomes delivered with no invalid, failed, or bounced recipients.`
-        : `${split.issueLabel} of tracked recipients need review — check invalid, bounced, or failed records. ${split.deliveredLabel} delivered cleanly.`,
+        ? "No invalid, failed, or bounced recipients."
+        : "Check invalid, bounced, or failed records.",
     stats: [issueStat, deliveredStat, targetedStat],
     actions:
       split.issues > 0
@@ -111,7 +112,6 @@ function buildHealthDetail(
   const count = slice?.value ?? 0;
   const share = sequenceTotal > 0 ? Math.round((count / sequenceTotal) * 100) : 0;
   const stats = [
-    { label: slice?.label ?? "Count", value: formatCompactNumber(count) },
     { label: "Share", value: `${share}%` },
     { label: "All sequences", value: formatCompactNumber(sequenceTotal) }
   ];
@@ -122,10 +122,7 @@ function buildHealthDetail(
         eyebrow: "Running",
         headline: count > 0 ? `${formatCompactNumber(count)} active ${plural(count, "run")}` : "Nothing running",
         paired: null,
-        description:
-          count > 0
-            ? "Sequences currently sending or queued for an execution slot."
-            : "No sequences are sending right now — launch one to put outreach in motion.",
+        note: count > 0 ? "Sending or queued for a slot." : "Nothing is sending right now.",
         stats,
         actions: [{ label: count > 0 ? "View running sequences" : "Launch a sequence", href: "/campaigns" as Route }]
       };
@@ -134,10 +131,7 @@ function buildHealthDetail(
         eyebrow: "Done",
         headline: count > 0 ? `${formatCompactNumber(count)} completed` : "None completed yet",
         paired: null,
-        description:
-          count > 0
-            ? "Finished runs with their final delivery numbers locked in."
-            : "Completed runs will collect here once your first sequence finishes.",
+        note: count > 0 ? "Final delivery numbers locked in." : "Finished runs collect here.",
         stats,
         actions: [{ label: "View completed sequences", href: "/campaigns" as Route }]
       };
@@ -149,10 +143,7 @@ function buildHealthDetail(
             ? `${formatCompactNumber(count)} ${plural(count, "sequence")} ${count === 1 ? "needs" : "need"} review`
             : "Nothing needs review",
         paired: null,
-        description:
-          count > 0
-            ? "Runs with failed, invalid, or suppressed recipients worth a look."
-            : "All clear — no sequences are flagged for review.",
+        note: count > 0 ? "Failed, invalid, or suppressed recipients worth a look." : "All clear.",
         stats,
         actions: count > 0 ? [{ label: "View review items", href: "/campaigns" as Route }] : []
       };
@@ -162,10 +153,7 @@ function buildHealthDetail(
         eyebrow: "Ready",
         headline: count > 0 ? `${formatCompactNumber(count)} ready to launch` : "None staged",
         paired: null,
-        description:
-          count > 0
-            ? "Validated sequences waiting for you to hit go."
-            : "Validate a sequence and it will show up here, ready to launch.",
+        note: count > 0 ? "Validated and waiting on go." : "Validate a sequence to stage it.",
         stats,
         actions: [{ label: count > 0 ? "Launch a sequence" : "Create a sequence", href: "/campaigns" as Route }]
       };
@@ -173,12 +161,13 @@ function buildHealthDetail(
 }
 
 /**
- * Interactive analytics module for the Overview hero. The delivered/issues
- * split is computed once (complementary pair — see delivery-split.ts) and shown
- * as a pair everywhere: donut center, metric-card badges, and the pinned
- * insight panel. Hover/focus previews a segment; click (or Enter/Space, on the
- * donut arcs and health bar too) pins the detail. Pure CSS transitions — no
- * chart library, no polling.
+ * Interactive analytics deck for the Overview command center: a delivery
+ * module (minimal ring + two selectable metric rows) beside a sequence-health
+ * module (segmented bar + chip selectors). The delivered/issues split is one
+ * complementary pair (see delivery-split.ts) shown outside the ring — the ring
+ * center holds a single figure only. Hover/focus previews a segment; click
+ * (or Enter/Space on the arcs and bar) pins a compact one-line insight strip.
+ * Pure CSS transitions — no chart library, no polling.
  */
 export function AnalyticsPulse(props: AnalyticsPulseProps) {
   const { targeted, delivered, issues, sequenceTotal, health } = props;
@@ -203,7 +192,7 @@ export function AnalyticsPulse(props: AnalyticsPulseProps) {
   };
 
   // Enter/Space activation for the non-button interactive shapes (SVG arcs and
-  // health-bar slices); the metric cards are native buttons and need no help.
+  // health-bar slices); the metric rows and chips are native buttons.
   const segmentKeyDown = (selection: PulseSelection) => (event: KeyboardEvent<Element>) => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
@@ -222,17 +211,20 @@ export function AnalyticsPulse(props: AnalyticsPulseProps) {
   const metricState = (key: PulseSelection) =>
     emphasis === null ? undefined : emphasis === key ? "active" : "dim";
 
-  // The donut center follows hover first, then the pinned selection, and falls
-  // back to the overall success reading. Every mode shows both shares.
+  // The ring center follows hover first, then the pinned selection, and falls
+  // back to the overall success reading. It shows one figure only — the paired
+  // share always lives in the metric rows beside it.
   const deliveryFocus = isMetricSelection(hovered) ? hovered : isMetricSelection(selected) ? selected : null;
   const centerMode: "overall" | PulseMetricKey = deliveryFocus ?? "overall";
+  const centerValue = split ? (centerMode === "issues" ? split.issueLabel : split.deliveredLabel) : "";
+  const centerWord = centerMode === "issues" ? "issues" : centerMode === "delivered" ? "delivered" : "success";
 
   // Donut arcs share a pathLength of 100; a hairline gap keeps adjacent
   // segments legible without rounded caps overlapping.
   const deliveredArc = split ? visibleShare(split.deliveredShare, split.delivered, 0.4) : 0;
   const issueArc = split ? visibleShare(split.issueShare, split.issues, 0.4) : 0;
   const bothVisible = deliveredArc > 0 && issueArc > 0;
-  const arcGap = bothVisible ? 1.1 : 0;
+  const arcGap = bothVisible ? 1.4 : 0;
 
   const deliveryDetail = split && isMetricSelection(selected) ? buildDeliveryDetail(selected, split, targeted) : null;
   const healthDetail =
@@ -240,83 +232,85 @@ export function AnalyticsPulse(props: AnalyticsPulseProps) {
 
   return (
     <div className={styles.pulse} onKeyDown={closeOnEscape}>
-      <div className={styles.titleRow}>
-        <span className={styles.titleLabel}>
-          <BarChart3 aria-hidden="true" />
-          Analytics pulse
-        </span>
-        <strong className={styles.titleValue}>{formatCompactNumber(targeted)} targeted</strong>
-      </div>
+      <section className={styles.module} data-overview-tour="delivery-issues">
+        <div className={styles.moduleHead}>
+          <span className={styles.moduleLabel}>
+            <BarChart3 aria-hidden="true" />
+            Analytics pulse
+          </span>
+          <strong className={styles.moduleValue}>{formatCompactNumber(targeted)} targeted</strong>
+        </div>
 
-      <div className={styles.deliverySection} data-overview-tour="delivery-issues">
         {split ? (
           <>
-            <div className={styles.deliveryLayout}>
-              <div className={styles.donutWrap}>
-                <svg
-                  className={styles.donut}
-                  viewBox="0 0 42 42"
-                  role="group"
-                  aria-label={`Delivery outcomes: ${split.deliveredLabel} delivered (${formatCompactNumber(split.delivered)}), ${split.issueLabel} issues (${formatCompactNumber(split.issues)})`}
-                >
-                  <circle className={styles.donutTrack} cx="21" cy="21" r="15.9" pathLength={100} />
-                  {deliveredArc > 0 ? (
-                    <circle
-                      className={styles.donutSegment}
-                      data-key="delivered"
-                      data-state={metricState("delivered")}
-                      role="button"
-                      tabIndex={0}
-                      aria-label={`Delivered segment: ${split.deliveredLabel} of outcomes`}
-                      aria-pressed={selected === "delivered"}
-                      cx="21"
-                      cy="21"
-                      r="15.9"
-                      pathLength={100}
-                      strokeDasharray={`${Math.max(deliveredArc - arcGap, 0.4)} ${100 - Math.max(deliveredArc - arcGap, 0.4)}`}
-                      transform="rotate(-90 21 21)"
-                      onClick={() => toggle("delivered")}
-                      onKeyDown={segmentKeyDown("delivered")}
-                      {...preview("delivered")}
-                    />
-                  ) : null}
-                  {issueArc > 0 ? (
-                    <circle
-                      className={styles.donutSegment}
-                      data-key="issues"
-                      data-state={metricState("issues")}
-                      role="button"
-                      tabIndex={0}
-                      aria-label={`Issues segment: ${split.issueLabel} of outcomes`}
-                      aria-pressed={selected === "issues"}
-                      cx="21"
-                      cy="21"
-                      r="15.9"
-                      pathLength={100}
-                      strokeDasharray={`${Math.max(issueArc - arcGap, 0.4)} ${100 - Math.max(issueArc - arcGap, 0.4)}`}
-                      strokeDashoffset={-deliveredArc}
-                      transform="rotate(-90 21 21)"
-                      onClick={() => toggle("issues")}
-                      onKeyDown={segmentKeyDown("issues")}
-                      {...preview("issues")}
-                    />
-                  ) : null}
-                </svg>
-                <span className={styles.donutCenter} aria-hidden="true">
-                  <span key={centerMode} className={styles.donutCenterSwap} data-mode={centerMode}>
-                    <strong>{centerMode === "issues" ? split.issueLabel : split.deliveredLabel}</strong>
-                    <small>{centerMode === "issues" ? "issues" : centerMode === "delivered" ? "delivered" : "success"}</small>
-                    <em className={styles.donutCenterPaired}>
-                      {centerMode === "issues" ? `${split.deliveredLabel} delivered` : `${split.issueLabel} issues`}
-                    </em>
+            <div className={styles.deliveryBody}>
+              <div className={styles.donutColumn}>
+                <div className={styles.donutWrap}>
+                  <svg
+                    className={styles.donut}
+                    viewBox="0 0 42 42"
+                    role="group"
+                    aria-label={`Delivery outcomes: ${split.deliveredLabel} delivered (${formatCompactNumber(split.delivered)}), ${split.issueLabel} issues (${formatCompactNumber(split.issues)})`}
+                  >
+                    <circle className={styles.donutTrack} cx="21" cy="21" r="15.9" pathLength={100} />
+                    {deliveredArc > 0 ? (
+                      <circle
+                        className={styles.donutSegment}
+                        data-key="delivered"
+                        data-state={metricState("delivered")}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Delivered segment: ${split.deliveredLabel} of outcomes`}
+                        aria-pressed={selected === "delivered"}
+                        cx="21"
+                        cy="21"
+                        r="15.9"
+                        pathLength={100}
+                        strokeDasharray={`${Math.max(deliveredArc - arcGap, 0.4)} ${100 - Math.max(deliveredArc - arcGap, 0.4)}`}
+                        transform="rotate(-90 21 21)"
+                        onClick={() => toggle("delivered")}
+                        onKeyDown={segmentKeyDown("delivered")}
+                        {...preview("delivered")}
+                      />
+                    ) : null}
+                    {issueArc > 0 ? (
+                      <circle
+                        className={styles.donutSegment}
+                        data-key="issues"
+                        data-state={metricState("issues")}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Issues segment: ${split.issueLabel} of outcomes`}
+                        aria-pressed={selected === "issues"}
+                        cx="21"
+                        cy="21"
+                        r="15.9"
+                        pathLength={100}
+                        strokeDasharray={`${Math.max(issueArc - arcGap, 0.4)} ${100 - Math.max(issueArc - arcGap, 0.4)}`}
+                        strokeDashoffset={-deliveredArc}
+                        transform="rotate(-90 21 21)"
+                        onClick={() => toggle("issues")}
+                        onKeyDown={segmentKeyDown("issues")}
+                        {...preview("issues")}
+                      />
+                    ) : null}
+                  </svg>
+                  {/* Ring center: one figure, nothing else. */}
+                  <span className={styles.donutCenter} aria-hidden="true">
+                    <strong key={centerMode} className={styles.donutCenterValue} data-mode={centerMode}>
+                      {centerValue}
+                    </strong>
                   </span>
+                </div>
+                <span key={centerMode} className={styles.donutCaption} data-mode={centerMode} aria-hidden="true">
+                  {centerWord}
                 </span>
               </div>
 
-              <div className={styles.metricButtons}>
+              <div className={styles.metricRows}>
                 <button
                   type="button"
-                  className={styles.metricButton}
+                  className={styles.metricRow}
                   data-key="delivered"
                   data-state={metricState("delivered")}
                   aria-pressed={selected === "delivered"}
@@ -325,24 +319,14 @@ export function AnalyticsPulse(props: AnalyticsPulseProps) {
                   onClick={() => toggle("delivered")}
                   {...preview("delivered")}
                 >
-                  <span className={styles.metricTop}>
-                    <i className={styles.metricDot} aria-hidden="true" />
-                    <span className={styles.metricLabel}>Delivered</span>
-                    <span className={styles.metricNumbers}>
-                      <strong className={styles.metricValue}>{formatCompactNumber(split.delivered)}</strong>
-                      <span className={styles.metricShare}>{split.deliveredLabel}</span>
-                    </span>
-                  </span>
-                  <span className={styles.metricTrack} aria-hidden="true">
-                    <span
-                      className={styles.metricFill}
-                      style={{ width: `${visibleShare(split.deliveredShare, split.delivered, 1.5)}%` }}
-                    />
-                  </span>
+                  <i className={styles.metricDot} aria-hidden="true" />
+                  <span className={styles.metricLabel}>Delivered</span>
+                  <strong className={styles.metricValue}>{formatCompactNumber(split.delivered)}</strong>
+                  <span className={styles.metricShare}>{split.deliveredLabel}</span>
                 </button>
                 <button
                   type="button"
-                  className={styles.metricButton}
+                  className={styles.metricRow}
                   data-key="issues"
                   data-state={metricState("issues")}
                   aria-pressed={selected === "issues"}
@@ -351,20 +335,10 @@ export function AnalyticsPulse(props: AnalyticsPulseProps) {
                   onClick={() => toggle("issues")}
                   {...preview("issues")}
                 >
-                  <span className={styles.metricTop}>
-                    <i className={styles.metricDot} aria-hidden="true" />
-                    <span className={styles.metricLabel}>Issues</span>
-                    <span className={styles.metricNumbers}>
-                      <strong className={styles.metricValue}>{formatCompactNumber(split.issues)}</strong>
-                      <span className={styles.metricShare}>{split.issueLabel}</span>
-                    </span>
-                  </span>
-                  <span className={styles.metricTrack} aria-hidden="true">
-                    <span
-                      className={styles.metricFill}
-                      style={{ width: `${visibleShare(split.issueShare, split.issues, 1.5)}%` }}
-                    />
-                  </span>
+                  <i className={styles.metricDot} aria-hidden="true" />
+                  <span className={styles.metricLabel}>Issues</span>
+                  <strong className={styles.metricValue}>{formatCompactNumber(split.issues)}</strong>
+                  <span className={styles.metricShare}>{split.issueLabel}</span>
                 </button>
               </div>
             </div>
@@ -376,20 +350,20 @@ export function AnalyticsPulse(props: AnalyticsPulseProps) {
             </div>
           </>
         ) : (
-          <div className={styles.deliveryEmpty}>
-            <span className={styles.deliveryEmptyRing} aria-hidden="true" />
-            <p>No delivery data yet. Launch a sequence and this pulse lights up with live results.</p>
+          <div className={styles.moduleEmpty}>
+            <span className={styles.emptyRing} aria-hidden="true" />
+            <p>No delivery data yet.</p>
           </div>
         )}
-      </div>
+      </section>
 
-      <div className={styles.healthSection} data-overview-tour="sequence-health">
-        <div className={styles.titleRow}>
-          <span className={styles.titleLabel}>
+      <section className={styles.module} data-overview-tour="sequence-health">
+        <div className={styles.moduleHead}>
+          <span className={styles.moduleLabel}>
             <PieChart aria-hidden="true" />
             Sequence health
           </span>
-          <strong className={styles.titleValue}>{formatCompactNumber(sequenceTotal)}</strong>
+          <strong className={styles.moduleValue}>{formatCompactNumber(sequenceTotal)}</strong>
         </div>
 
         {hasSequences ? (
@@ -421,12 +395,12 @@ export function AnalyticsPulse(props: AnalyticsPulseProps) {
               )}
             </div>
 
-            <div className={styles.healthButtons}>
+            <div className={styles.healthChips}>
               {health.map((slice) => (
                 <button
                   key={slice.key}
                   type="button"
-                  className={styles.healthButton}
+                  className={styles.healthChip}
                   data-key={slice.key}
                   data-state={metricState(slice.key)}
                   aria-pressed={selected === slice.key}
@@ -435,11 +409,9 @@ export function AnalyticsPulse(props: AnalyticsPulseProps) {
                   onClick={() => toggle(slice.key)}
                   {...preview(slice.key)}
                 >
-                  <span className={styles.healthButtonLabel}>
-                    <i className={styles.metricDot} aria-hidden="true" />
-                    {slice.label}
-                  </span>
-                  <strong className={styles.healthButtonValue}>{formatCompactNumber(slice.value)}</strong>
+                  <i className={styles.metricDot} aria-hidden="true" />
+                  <span className={styles.healthChipLabel}>{slice.label}</span>
+                  <strong className={styles.healthChipValue}>{formatCompactNumber(slice.value)}</strong>
                 </button>
               ))}
             </div>
@@ -451,11 +423,11 @@ export function AnalyticsPulse(props: AnalyticsPulseProps) {
             </div>
           </>
         ) : (
-          <div className={styles.healthEmpty}>
-            <p>No sequences yet — health tracking starts with your first launch.</p>
+          <div className={styles.moduleEmpty}>
+            <p>No sequences yet.</p>
           </div>
         )}
-      </div>
+      </section>
     </div>
   );
 }
@@ -492,9 +464,9 @@ function DetailCard({
             {detail.paired.label}
           </span>
         ) : null}
+        <span className={styles.detailNote}>{detail.note}</span>
       </div>
-      <p className={styles.detailCopy}>{detail.description}</p>
-      {detail.stats.length > 1 ? (
+      <div className={styles.detailFoot}>
         <dl className={styles.detailStats}>
           {detail.stats.map((stat) => (
             <div key={stat.label} className={styles.detailStat}>
@@ -503,17 +475,17 @@ function DetailCard({
             </div>
           ))}
         </dl>
-      ) : null}
-      {detail.actions.length > 0 ? (
-        <div className={styles.detailActions}>
-          {detail.actions.map((action) => (
-            <Link key={action.label} href={action.href} className={styles.detailAction}>
-              {action.label}
-              <ArrowUpRight aria-hidden="true" />
-            </Link>
-          ))}
-        </div>
-      ) : null}
+        {detail.actions.length > 0 ? (
+          <div className={styles.detailActions}>
+            {detail.actions.map((action) => (
+              <Link key={action.label} href={action.href} className={styles.detailAction}>
+                {action.label}
+                <ArrowUpRight aria-hidden="true" />
+              </Link>
+            ))}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

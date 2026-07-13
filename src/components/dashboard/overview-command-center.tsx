@@ -776,121 +776,123 @@ export default async function OverviewCommandCenter() {
   };
 
   const isBlankWorkspace = campaignCount === 0 && processedImportCount === 0;
-  const heroStatusSentence = buildHeroStatusSentence({
-    activeCount: activeSequenceCount,
-    sentLast24h: sentLastDayCount,
-    needsAttention: needsAttentionCount,
-    hasAnyWork: !isBlankWorkspace
-  });
 
   return (
     <div className={styles.page}>
+      {/* Compact command header: identity + primary actions on one band, with a
+          hairline stat strip underneath. No paragraphs — the stats are the status. */}
       <section className={styles.hero} data-overview-tour="page-intro">
-        <div className={styles.heroContent}>
-          <span className={styles.heroEyebrow}>
-            <span className={styles.heroPulse} />
-            Today&apos;s command center
-          </span>
-          <h1 className={styles.heroTitle}>Overview</h1>
-          <p className={styles.heroCopy}>{heroStatusSentence}</p>
-          <div className={styles.heroHighlights}>
-            <div className={styles.heroHighlight}>
-              <span className={styles.heroHighlightLabel}>Active now</span>
-              <strong className={styles.heroHighlightValue}>{formatCompactNumber(activeSequenceCount)}</strong>
-              <span className={styles.heroHighlightMeta}>Running or queued</span>
-            </div>
-            <div className={styles.heroHighlight}>
-              <span className={styles.heroHighlightLabel}>Sent last 24h</span>
-              <strong className={styles.heroHighlightValue}>{formatCompactNumber(sentLastDayCount)}</strong>
-              <span className={styles.heroHighlightMeta}>{sentTrend.label}</span>
-            </div>
-            <div className={styles.heroHighlight} data-overview-tour="needs-attention">
-              <span className={styles.heroHighlightLabel}>Needs attention</span>
-              <strong className={styles.heroHighlightValue}>{formatCompactNumber(needsAttentionCount)}</strong>
-              <span className={styles.heroHighlightMeta}>{needsAttentionCount ? "Review required" : "All clear"}</span>
-            </div>
+        <div className={styles.heroMain}>
+          <div className={styles.heroIdentity}>
+            <span className={styles.heroEyebrow}>
+              <span className={styles.heroPulse} />
+              Command center
+            </span>
+            <h1 className={styles.heroTitle}>Overview</h1>
+            <p className={styles.heroCopy}>Launch, import, or review what needs attention.</p>
+          </div>
+          <div className={styles.heroButtons}>
+            <Link href="/campaigns" className={styles.heroCta}>
+              <SendHorizontal aria-hidden="true" />
+              <span>Create Sequence</span>
+              <ArrowRight className={styles.heroCtaArrow} aria-hidden="true" />
+            </Link>
+            <Link href="/imports" className={`${styles.heroCta} ${styles.heroCtaGhost}`}>
+              <FileSpreadsheet aria-hidden="true" />
+              <span>Import List</span>
+              <ArrowRight className={styles.heroCtaArrow} aria-hidden="true" />
+            </Link>
           </div>
         </div>
 
-        <div className={styles.heroActions}>
-          {isBlankWorkspace ? (
+        {!isBlankWorkspace ? (
+          <div className={styles.heroStats}>
+            <div className={styles.heroStat}>
+              <span className={styles.heroStatLabel}>Active now</span>
+              <strong className={styles.heroStatValue}>{formatCompactNumber(activeSequenceCount)}</strong>
+              <span className={styles.heroStatMeta}>Running or queued</span>
+            </div>
+            <div className={styles.heroStat}>
+              <span className={styles.heroStatLabel}>Sent · 24h</span>
+              <strong className={styles.heroStatValue}>{formatCompactNumber(sentLastDayCount)}</strong>
+              <span className={styles.heroStatMeta}>{sentTrend.label}</span>
+            </div>
             <div
-              className={`${styles.heroActionCard} ${styles.heroEmptyCard}`}
-              data-overview-tour="workspace-health"
+              className={styles.heroStat}
+              data-tone={needsAttentionCount > 0 ? "warn" : "ok"}
+              data-overview-tour="needs-attention"
             >
-              <span className={styles.heroEmptyBadge}>
-                <Sparkles aria-hidden="true" />
-                Getting started
-              </span>
-              <strong className={styles.heroActionTitle}>Start your outreach system</strong>
-              <p>Import a list, create a template, then launch your first sequence.</p>
-              <ol className={styles.heroEmptySteps}>
-                <li data-done="false">
-                  <span className={styles.heroEmptyStepMark}>1</span>
-                  Import a list
-                </li>
-                <li data-done={templateCount > 0 ? "true" : "false"}>
-                  <span className={styles.heroEmptyStepMark}>
-                    {templateCount > 0 ? <Check aria-hidden="true" /> : 2}
-                  </span>
-                  Create a template
-                  {templateCount > 0 ? <em>Done</em> : null}
-                </li>
-                <li data-done="false">
-                  <span className={styles.heroEmptyStepMark}>3</span>
-                  Launch a sequence
-                </li>
-              </ol>
-              <div className={styles.heroButtons}>
-                <Link href="/imports" className={styles.heroCta}>
-                  <FileSpreadsheet aria-hidden="true" />
-                  <span>Import List</span>
-                  <ArrowRight className={styles.heroCtaArrow} aria-hidden="true" />
-                </Link>
-                <Link href="/campaigns" className={`${styles.heroCta} ${styles.heroCtaGhost}`}>
-                  <SendHorizontal aria-hidden="true" />
-                  <span>Create Sequence</span>
-                  <ArrowRight className={styles.heroCtaArrow} aria-hidden="true" />
-                </Link>
-              </div>
+              <span className={styles.heroStatLabel}>Attention</span>
+              <strong className={styles.heroStatValue}>{formatCompactNumber(needsAttentionCount)}</strong>
+              <span className={styles.heroStatMeta}>{needsAttentionCount ? "Review required" : "All clear"}</span>
             </div>
-          ) : (
-            <div className={styles.heroActionCard}>
-              <strong className={styles.heroActionTitle}>Pick the next move</strong>
-              <p>Create a new sequence, import a fresh list, or jump straight into a recent run from the table below.</p>
-              <div className={styles.heroButtons}>
-                <Link href="/campaigns" className={styles.heroCta}>
-                  <SendHorizontal aria-hidden="true" />
-                  <span>Create Sequence</span>
-                  <ArrowRight className={styles.heroCtaArrow} aria-hidden="true" />
-                </Link>
-                <Link href="/imports" className={`${styles.heroCta} ${styles.heroCtaGhost}`}>
-                  <FileSpreadsheet aria-hidden="true" />
-                  <span>Import List</span>
-                  <ArrowRight className={styles.heroCtaArrow} aria-hidden="true" />
-                </Link>
-              </div>
-              <div className={styles.heroFootnote}>
-                <strong>{formatCompactNumber(validatedSequenceCount)} validated</strong>
-                <span>{sentTrend.label}</span>
-              </div>
-              <div
-                className={styles.heroInsights}
-                aria-label="Workspace analytics summary"
-                data-overview-tour="workspace-health"
-              >
-                <AnalyticsPulse
-                  targeted={runTotals.recipients}
-                  delivered={runTotals.delivered}
-                  issues={analyticsIssueCount}
-                  sequenceTotal={sequenceRows.length}
-                  health={sequenceHealth}
-                />
-              </div>
+            <div className={styles.heroStat}>
+              <span className={styles.heroStatLabel}>Validated</span>
+              <strong className={styles.heroStatValue}>{formatCompactNumber(validatedSequenceCount)}</strong>
+              <span className={styles.heroStatMeta}>Ready to relaunch</span>
             </div>
-          )}
-        </div>
+          </div>
+        ) : null}
       </section>
+
+      {isBlankWorkspace ? (
+        <section className={styles.startSection}>
+          <div
+            className={`${styles.heroActionCard} ${styles.heroEmptyCard}`}
+            data-overview-tour="workspace-health"
+          >
+            <span className={styles.heroEmptyBadge}>
+              <Sparkles aria-hidden="true" />
+              Getting started
+            </span>
+            <strong className={styles.heroActionTitle}>Start your outreach system</strong>
+            <p>Import a list, create a template, then launch your first sequence.</p>
+            <ol className={styles.heroEmptySteps}>
+              <li data-done="false">
+                <span className={styles.heroEmptyStepMark}>1</span>
+                Import a list
+              </li>
+              <li data-done={templateCount > 0 ? "true" : "false"}>
+                <span className={styles.heroEmptyStepMark}>
+                  {templateCount > 0 ? <Check aria-hidden="true" /> : 2}
+                </span>
+                Create a template
+                {templateCount > 0 ? <em>Done</em> : null}
+              </li>
+              <li data-done="false">
+                <span className={styles.heroEmptyStepMark}>3</span>
+                Launch a sequence
+              </li>
+            </ol>
+            <div className={styles.heroButtons}>
+              <Link href="/imports" className={styles.heroCta}>
+                <FileSpreadsheet aria-hidden="true" />
+                <span>Import List</span>
+                <ArrowRight className={styles.heroCtaArrow} aria-hidden="true" />
+              </Link>
+              <Link href="/campaigns" className={`${styles.heroCta} ${styles.heroCtaGhost}`}>
+                <SendHorizontal aria-hidden="true" />
+                <span>Create Sequence</span>
+                <ArrowRight className={styles.heroCtaArrow} aria-hidden="true" />
+              </Link>
+            </div>
+          </div>
+        </section>
+      ) : (
+        <section
+          className={styles.pulseDeck}
+          aria-label="Workspace analytics summary"
+          data-overview-tour="workspace-health"
+        >
+          <AnalyticsPulse
+            targeted={runTotals.recipients}
+            delivered={runTotals.delivered}
+            issues={analyticsIssueCount}
+            sequenceTotal={sequenceRows.length}
+            health={sequenceHealth}
+          />
+        </section>
+      )}
 
       <OverviewSummary
         active={summaryActive}
@@ -904,10 +906,8 @@ export default async function OverviewCommandCenter() {
           <div className={styles.sectionTop}>
             <div>
               <span className={styles.sectionKicker}>Recent sequences</span>
-              <h2 className={styles.sectionTitle}>Jump into the work that moved last</h2>
-              <p className={styles.sectionCopy}>
-                Every row is a live entry point. Hover to relaunch or remove, or click anywhere to open the full sequence detail screen.
-              </p>
+              <h2 className={styles.sectionTitle}>Jump back in</h2>
+              <p className={styles.sectionCopy}>Open, relaunch, or clean up recent runs.</p>
             </div>
             <div className={styles.sectionTopMeta}>
               <Link href="/campaigns" className={styles.sectionLink} data-overview-tour="view-all-sequences">
@@ -1048,32 +1048,6 @@ function deriveSequenceStatus(campaignStatus: CampaignStatus, runStatus?: RunSta
     label: humanizeEnum(campaignStatus),
     tone: "draft" as const
   };
-}
-
-// One dynamic sentence for the hero: what is moving, what went out, and what
-// needs a look — all from data already loaded for this page. The blank
-// workspace gets an invitation instead of a wall of zeros.
-function buildHeroStatusSentence(input: {
-  activeCount: number;
-  sentLast24h: number;
-  needsAttention: number;
-  hasAnyWork: boolean;
-}) {
-  if (!input.hasAnyWork) {
-    return "All quiet so far. Import a list and launch your first sequence to put this command center to work.";
-  }
-
-  const runs =
-    input.activeCount > 0
-      ? `${formatCompactNumber(input.activeCount)} ${input.activeCount === 1 ? "sequence is" : "sequences are"} in motion`
-      : "No sequences are running right now";
-  const sent = `${formatCompactNumber(input.sentLast24h)} ${input.sentLast24h === 1 ? "email" : "emails"} went out in the last 24 hours`;
-  const attention =
-    input.needsAttention > 0
-      ? `${formatCompactNumber(input.needsAttention)} ${input.needsAttention === 1 ? "sequence needs" : "sequences need"} your review`
-      : "nothing needs your attention";
-
-  return `${runs}, ${sent}, and ${attention}.`;
 }
 
 function buildSequenceHealth(rows: SequenceRowData[]): PulseHealthSlice[] {

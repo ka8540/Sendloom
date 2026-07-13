@@ -112,8 +112,8 @@ describe("Loading skeleton (#2, #3)", () => {
     expect(LOADING_CSS).not.toMatch(/rotate\(360deg\)|animation:[^;]*spin/);
   });
 
-  it("mirrors the real dashboard layout: hero, command card, metric cards, chart placeholders", () => {
-    for (const piece of ["heroContent", "actionCard", "ctaRow", "donutRing", "donutCore", "healthCells", "summaryRow", "mainGrid", "activityRow"]) {
+  it("mirrors the redesigned layout: command header, stat strip, analytics deck, panels", () => {
+    for (const piece of ["heroMain", "ctaRow", "statStrip", "pulseDeck", "donutRing", "donutCore", "healthChips", "summaryRow", "mainGrid", "activityRow"]) {
       expect(LOADING).toContain(piece);
     }
     // The skeleton is CSS-only — a server component with zero client JS.
@@ -155,9 +155,7 @@ describe("Metrics come from live data (#6, #13)", () => {
   });
 
   it("keeps the derived helpers that feed the charts", () => {
-    for (const fn of ["buildSequenceHealth", "buildHeroStatusSentence"]) {
-      expect(CENTER).toContain(fn);
-    }
+    expect(CENTER).toContain("buildSequenceHealth");
   });
 
   it("never hardcodes the screenshot values (8.7K / 8.2K / 299 / 155 / 96%)", () => {
@@ -212,14 +210,26 @@ describe("Interactive metrics (#3, #4, #5, #6, #8, #9, #10)", () => {
     expect(issues).toContain('"/suppressions"');
   });
 
-  it("the donut center always shows both shares and swaps with the focused metric", () => {
-    // Default center: success percent with the paired issue share beneath it.
-    expect(PULSE).toContain("donutCenterPaired");
-    expect(PULSE).toContain("`${split.issueLabel} issues`");
-    expect(PULSE).toContain("`${split.deliveredLabel} delivered`");
+  it("the ring center is minimal — one figure, no multi-line text (#7)", () => {
+    // The center holds a single <strong>; the mode word sits below the ring
+    // (donutCaption) and the paired share lives in the metric rows beside it.
+    const center = PULSE.slice(PULSE.indexOf("styles.donutCenter}"), PULSE.indexOf("styles.donutCaption"));
+    expect((center.match(/<strong/g) ?? []).length).toBe(1);
+    expect(center).not.toContain("<small");
+    expect(center).not.toContain("<em");
+    expect(PULSE).not.toContain("donutCenterPaired");
     // Keyed swap so switching Delivered <-> Issues animates the reading.
-    expect(PULSE).toMatch(/key=\{centerMode\}[\s\S]{0,80}donutCenterSwap/);
+    expect(PULSE).toMatch(/<strong key=\{centerMode\}/);
     expect(PULSE_CSS).toContain("pulse-center-in");
+  });
+
+  it("both shares stay visible outside the chart at rest", () => {
+    // The metric rows always render count + share for BOTH sides, so a 0%
+    // issues state reads as a compact row, never crammed into the circle.
+    expect(PULSE).toContain("{split.deliveredLabel}");
+    expect(PULSE).toContain("{split.issueLabel}");
+    expect(PULSE).toMatch(/metricRow[\s\S]{0,900}\{split\.deliveredLabel\}/);
+    expect(PULSE).toMatch(/data-key="issues"[\s\S]{0,900}\{split\.issueLabel\}/);
   });
 
   it("both metric cards show count and share side by side", () => {
@@ -306,8 +316,8 @@ describe("Keyboard + screen-reader accessibility (#8, #11)", () => {
 
   it("focus states are visible on the new interactive controls, including SVG segments", () => {
     for (const selector of [
-      ".metricButton:focus-visible",
-      ".healthButton:focus-visible",
+      ".metricRow:focus-visible",
+      ".healthChip:focus-visible",
       ".detailAction:focus-visible",
       ".donutSegment:focus-visible",
       ".healthSlice:focus-visible"
