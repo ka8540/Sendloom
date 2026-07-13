@@ -82,15 +82,17 @@
 
 .donutSegment[data-key="delivered"] {
   stroke: var(--accent);
+  color: var(--accent);
 }
 
 .donutSegment[data-key="issues"] {
   stroke: #d96952;
+  color: #d96952;
 }
 
 .donutSegment[data-state="active"] {
   stroke-width: 5.6;
-  filter: drop-shadow(0 0 6px color-mix(in srgb, currentColor 0%, transparent))
+  filter: drop-shadow(0 0 6px color-mix(in srgb, currentColor 45%, transparent))
     drop-shadow(0 2px 8px rgba(0, 0, 0, 0.22));
 }
 
@@ -98,13 +100,18 @@
   opacity: 0.34;
 }
 
+.donutSegment:focus-visible {
+  outline: none;
+  stroke-width: 6;
+  filter: drop-shadow(0 0 5px color-mix(in srgb, currentColor 60%, transparent))
+    drop-shadow(0 2px 8px rgba(0, 0, 0, 0.28));
+}
+
 .donutCenter {
   position: absolute;
   inset: 0.85rem;
   display: grid;
-  place-content: center;
-  justify-items: center;
-  gap: 0.06rem;
+  place-items: center;
   border-radius: 999px;
   border: 1px solid var(--line);
   background: color-mix(in srgb, var(--surface-soft) 96%, transparent);
@@ -113,19 +120,75 @@
   pointer-events: none;
 }
 
-.donutCenter strong {
-  font-size: 1.34rem;
+/* Keyed by the focused metric so switching Delivered <-> Issues re-runs the
+   entry animation — a quick fade/rise crossfade, static under reduced motion. */
+.donutCenterSwap {
+  display: grid;
+  justify-items: center;
+  gap: 0.16rem;
+  animation: pulse-center-in 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes pulse-center-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.donutCenterSwap strong {
+  font-size: 1.3rem;
   font-weight: 700;
   letter-spacing: -0.06em;
   font-variant-numeric: tabular-nums;
+  transition: color 180ms ease;
 }
 
-.donutCenter small {
+.donutCenterSwap[data-mode="delivered"] strong {
+  color: var(--accent);
+}
+
+.donutCenterSwap[data-mode="issues"] strong {
+  color: #d96952;
+}
+
+.donutCenterSwap small {
   color: var(--muted);
-  font-size: 0.66rem;
+  font-size: 0.62rem;
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+/* The complementary share is always visible under the big number, so 96%
+   success never appears without its 4% issues counterpart. */
+.donutCenterPaired {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  margin-top: 0.18rem;
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 700;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.donutCenterPaired::before {
+  content: "";
+  width: 0.34rem;
+  height: 0.34rem;
+  border-radius: 999px;
+  background: #d96952;
+}
+
+.donutCenterSwap[data-mode="issues"] .donutCenterPaired::before {
+  background: var(--accent);
 }
 
 .metricButtons {
@@ -208,12 +271,33 @@
   white-space: nowrap;
 }
 
+.metricNumbers {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  white-space: nowrap;
+}
+
 .metricValue {
   font-size: 1.06rem;
   font-weight: 700;
   letter-spacing: -0.04em;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+/* Each metric card carries its own share of outcomes, so Delivered and Issues
+   read as a 96% / 4% pair at a glance before anything is even clicked. */
+.metricShare {
+  padding: 0.14rem 0.44rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--metric-color, var(--accent)) 28%, transparent);
+  background: color-mix(in srgb, var(--metric-color, var(--accent)) 13%, transparent);
+  color: color-mix(in srgb, var(--metric-color, var(--accent)) 78%, var(--text));
+  font-size: 0.68rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
 }
 
 .metricTrack {
@@ -293,6 +377,12 @@
 
 .healthSlice[data-state="dim"] {
   opacity: 0.3;
+}
+
+.healthSlice:focus-visible {
+  outline: none;
+  filter: brightness(1.2);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--text) 78%, transparent);
 }
 
 .healthSlice[data-key="running"],
@@ -455,16 +545,78 @@
 
 .detailHead {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
 }
 
-.detailTitle {
-  font-size: 0.98rem;
+/* Text label naming the pinned metric — the selection is announced in words,
+   never by color alone. */
+.detailEyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.detailEyebrow .metricDot {
+  width: 0.46rem;
+  height: 0.46rem;
+  box-shadow: none;
+}
+
+.detailHeadline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.6rem;
+  min-width: 0;
+}
+
+.detailHeadline strong {
+  font-size: 1.42rem;
+  font-weight: 750;
+  letter-spacing: -0.045em;
+  line-height: 1.12;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The complementary share rides next to the headline: Delivered pins carry the
+   issue share, Issues pins carry the delivered share. */
+.detailPaired {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.34rem;
+  padding: 0.22rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--pair-color, var(--accent)) 30%, var(--line));
+  background: color-mix(in srgb, var(--pair-color, var(--accent)) 12%, transparent);
+  color: var(--text);
+  font-size: 0.74rem;
   font-weight: 700;
-  letter-spacing: -0.02em;
-  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.detailPaired::before {
+  content: "";
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: var(--pair-color, var(--accent));
+}
+
+.detailPaired[data-key="delivered"] {
+  --pair-color: var(--accent);
+}
+
+.detailPaired[data-key="issues"] {
+  --pair-color: #d96952;
 }
 
 .detailClose {
@@ -512,6 +664,8 @@
   flex-wrap: wrap;
   gap: 0.4rem 1.15rem;
   margin: 0;
+  padding-top: 0.55rem;
+  border-top: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
 }
 
 .detailStat {
@@ -608,13 +762,15 @@
   .healthButton,
   .healthSlice,
   .donutSegment,
+  .donutCenterSwap strong,
   .detailAction,
   .detailClose,
   .metricFill {
     transition: none;
   }
 
-  .detailCard {
+  .detailCard,
+  .donutCenterSwap {
     animation: none;
   }
 

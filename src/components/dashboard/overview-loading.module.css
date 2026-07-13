@@ -163,12 +163,38 @@
 }
 
 .donutRing {
+  display: grid;
+  place-items: center;
   width: 7.9rem;
   aspect-ratio: 1;
   border-radius: 999px;
   border: 0.62rem solid color-mix(in srgb, var(--muted) 12%, transparent);
   border-top-color: color-mix(in srgb, var(--muted) 24%, transparent);
   animation: overview-skeleton-breathe 1.7s ease-in-out infinite;
+}
+
+/* Mirrors the interactive donut's center reading: big percent, caption, and
+   the paired-share line underneath. */
+.donutCore {
+  display: grid;
+  justify-items: center;
+  gap: 0.42rem;
+}
+
+.donutPercent {
+  width: 3rem;
+  height: 1.15rem;
+  border-radius: 8px;
+}
+
+.donutCaption {
+  width: 2.1rem;
+  height: 0.5rem;
+}
+
+.donutPaired {
+  width: 3.4rem;
+  height: 0.5rem;
 }
 
 @keyframes overview-skeleton-breathe {

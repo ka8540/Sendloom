@@ -41,7 +41,13 @@ export default function OverviewLoading() {
               <span className={`${styles.bone} ${styles.tinyLineShort}`} />
             </div>
             <div className={styles.donutRow}>
-              <span className={styles.donutRing} />
+              <span className={styles.donutRing}>
+                <span className={styles.donutCore}>
+                  <span className={`${styles.bone} ${styles.donutPercent}`} />
+                  <span className={`${styles.bone} ${styles.donutCaption}`} />
+                  <span className={`${styles.bone} ${styles.donutPaired}`} />
+                </span>
+              </span>
               <div className={styles.metricStack}>
                 <span className={`${styles.bone} ${styles.metricBar}`} />
                 <span className={`${styles.bone} ${styles.metricBar}`} />

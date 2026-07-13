@@ -463,7 +463,6 @@ export default async function OverviewCommandCenter() {
 
       totals.delivered += getDeliveredCount(latestRun);
       totals.needsAttention += latestRun.overviewDispositionCounts?.needsAttention ?? 0;
-      totals.skipped += latestRun.overviewDispositionCounts?.skipped ?? 0;
       totals.recipients += latestRun.totalRecipients;
 
       return totals;
@@ -471,24 +470,13 @@ export default async function OverviewCommandCenter() {
     {
       delivered: 0,
       needsAttention: 0,
-      skipped: 0,
       recipients: 0
     }
   );
+  // The delivered/issues percentage split itself is derived inside the
+  // AnalyticsPulse client component (computeDeliverySplit), so the paired
+  // delivered-with-issues presentation has a single owner.
   const analyticsIssueCount = runTotals.needsAttention;
-  const eligibleRecipientCount = Math.max(
-    0,
-    Math.max(runTotals.recipients - runTotals.skipped, runTotals.delivered + analyticsIssueCount)
-  );
-  const deliveryMix = buildDeliveryMix({
-    delivered: runTotals.delivered,
-    issues: analyticsIssueCount
-  });
-  const analyticsPulse = buildAnalyticsPulse({
-    delivered: runTotals.delivered,
-    issues: analyticsIssueCount,
-    eligibleRecipients: eligibleRecipientCount
-  });
 
   const sequenceRows: SequenceRowData[] = overviewCampaigns.map((campaign) => {
     const latestRun = campaign.latestRun; // display run (metrics)
@@ -895,9 +883,6 @@ export default async function OverviewCommandCenter() {
                   targeted={runTotals.recipients}
                   delivered={runTotals.delivered}
                   issues={analyticsIssueCount}
-                  successPercent={deliveryMix.successPercent}
-                  coveragePercent={analyticsPulse.coveragePercent}
-                  issuePercent={analyticsPulse.issuePercent}
                   sequenceTotal={sequenceRows.length}
                   health={sequenceHealth}
                 />
@@ -1091,30 +1076,6 @@ function buildHeroStatusSentence(input: {
   return `${runs}, ${sent}, and ${attention}.`;
 }
 
-// Success split for the interactive delivery donut: how the delivered / issue
-// slices divide the outcomes we know about. A null success rate means there is
-// no outcome data yet, which the client renders as a graceful empty state.
-function buildDeliveryMix(totals: { delivered: number; issues: number }) {
-  const total = totals.delivered + totals.issues;
-
-  return {
-    total,
-    successPercent: total > 0 ? getPercent(totals.delivered, total) : null
-  };
-}
-
-// Meter percentages behind the Delivered / Issues metric buttons.
-function buildAnalyticsPulse(totals: {
-  delivered: number;
-  issues: number;
-  eligibleRecipients: number;
-}) {
-  return {
-    coveragePercent: getNullablePercent(totals.delivered, totals.eligibleRecipients) ?? 0,
-    issuePercent: getNullablePercent(totals.issues, totals.delivered + totals.issues) ?? 0
-  };
-}
-
 function buildSequenceHealth(rows: SequenceRowData[]): PulseHealthSlice[] {
   const total = rows.length;
   const values = [
@@ -1153,14 +1114,6 @@ function getPercent(value: number, total: number) {
   }
 
   return Math.min(100, Math.round((value / total) * 100));
-}
-
-function getNullablePercent(value: number, total: number) {
-  if (total <= 0) {
-    return null;
-  }
-
-  return getPercent(value, total);
 }
 
 // Safely coerce a Prisma JSON column (requestedTitles / requestedLocations) into
