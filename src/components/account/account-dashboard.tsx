@@ -179,8 +179,8 @@ export function AccountDashboard({
   return (
     <div className={styles.page}>
       <header className={styles.header}>
-        <h1 className={styles.title}>Account</h1>
-        <p className={styles.subtitle}>Manage your identity, connected Gmail senders, and security.</p>
+        <h1 className="dashboard-page-title">Account</h1>
+        <p className={`dashboard-page-subtitle ${styles.subtitle}`}>Manage your identity, connected Gmail senders, and security.</p>
       </header>
 
       {loadError ? (

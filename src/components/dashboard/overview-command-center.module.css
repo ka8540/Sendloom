@@ -64,18 +64,8 @@
   animation: dashboard-pulse 1.8s ease-out infinite;
 }
 
-.heroTitle {
-  margin: 0;
-  font-size: var(--dashboard-title-size);
-  line-height: var(--dashboard-title-line-height);
-  letter-spacing: -0.04em;
-}
-
 .heroCopy {
-  margin: 0;
   color: var(--muted);
-  font-size: var(--dashboard-body-size);
-  line-height: var(--dashboard-body-line-height);
 }
 
 /* Compact stat tiles under the title: label / figure / one-line meta. */

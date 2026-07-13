@@ -206,7 +206,7 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
           <div>
             <p className="templates-editor-card__eyebrow">{editingTemplate ? "Template editor" : "Create template"}</p>
             <h1 className="dashboard-page-title">{heading}</h1>
-            <p className="muted dashboard-body">{subheading}</p>
+            <p className="muted dashboard-page-subtitle">{subheading}</p>
           </div>
           <span className={`badge${editingTemplate ? "" : " warning"}`}>{editingTemplate ? "Editing" : "Draft"}</span>
         </div>

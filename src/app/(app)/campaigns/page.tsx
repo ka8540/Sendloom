@@ -538,8 +538,8 @@ export default async function CampaignsPage({
         <article className={styles.builderCard}>
           <div className={styles.panelHeading}>
             <span className={styles.kicker}>Build</span>
-            <h1>Create a sequence</h1>
-            <p>Pick a contact list, template, sender, and send timing without leaving the dashboard.</p>
+            <h1 className="dashboard-page-title">Create a sequence</h1>
+            <p className="dashboard-page-subtitle">Pick a contact list, template, sender, and send timing without leaving the dashboard.</p>
           </div>
           <CampaignBuilder
             imports={imports.map((entry) => ({ id: entry.id, label: entry.fileName }))}
@@ -572,7 +572,7 @@ export default async function CampaignsPage({
           <div className={styles.panelHeading}>
             <span className={styles.kicker}>Senders</span>
             <h2>Send from Gmail</h2>
-            <p>
+            <p className="dashboard-body">
               Connected senders can launch sequences right away. If Google revoked access, reconnect the account first.
             </p>
           </div>

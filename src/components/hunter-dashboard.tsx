@@ -745,8 +745,8 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
         <section className={`hero ${styles.hero}`} data-finder-tour="page-intro">
           <div className={styles.heroCopy}>
             <p className={styles.eyebrow}>Prospecting workspace</p>
-            <h1>Email Finder</h1>
-            <p className="muted">
+            <h1 className="dashboard-page-title">Email Finder</h1>
+            <p className="muted dashboard-page-subtitle">
               Use Hunter through a secure backend proxy to find one contact by name or search an entire company domain without
               exposing your API key in the browser.
             </p>

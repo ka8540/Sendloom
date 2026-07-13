@@ -100,7 +100,7 @@ export default async function ImportsPage({
       <section className="grid cols-2">
         <article className="card" data-imports-tour="upload">
           <h1 className="dashboard-page-title">Upload your people list</h1>
-          <p className="muted dashboard-body">Upload a CSV or spreadsheet to create an audience.</p>
+          <p className="muted dashboard-page-subtitle">Upload a CSV or spreadsheet to create an audience.</p>
           <UploadImportForm />
         </article>
         <article className="card" data-imports-tour="template-fields">

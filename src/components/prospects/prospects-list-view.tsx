@@ -341,8 +341,8 @@ export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean 
           <p className={styles.eyebrow}>
             <Users aria-hidden="true" /> {PROSPECT_FINDER_TAGLINE}
           </p>
-          <h1>{PROSPECT_FINDER_TITLE}</h1>
-          <p className={styles.subtitle}>{PROSPECT_FINDER_SUBTITLE}</p>
+          <h1 className="dashboard-page-title">{PROSPECT_FINDER_TITLE}</h1>
+          <p className="dashboard-page-subtitle muted">{PROSPECT_FINDER_SUBTITLE}</p>
         </div>
         {!disabled && (
           <div className={styles.headerActions}>

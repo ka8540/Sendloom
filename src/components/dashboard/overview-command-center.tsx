@@ -788,8 +788,8 @@ export default async function OverviewCommandCenter() {
             <span className={styles.heroPulse} />
             Command center
           </span>
-          <h1 className={styles.heroTitle}>Overview</h1>
-          <p className={styles.heroCopy}>Launch, import, or review what needs attention.</p>
+          <h1 className="dashboard-page-title">Overview</h1>
+          <p className={`dashboard-page-subtitle ${styles.heroCopy}`}>Launch, import, or review what needs attention.</p>
           <div className={styles.heroHighlights}>
             <div className={styles.heroHighlight}>
               <span className={styles.heroHighlightLabel}>Active now</span>

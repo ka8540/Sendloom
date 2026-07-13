@@ -15,19 +15,6 @@
   max-width: 44rem;
 }
 
-.heroCopy :global(h1) {
-  margin: 0;
-  font-size: var(--dashboard-title-size);
-  font-weight: 700;
-  line-height: var(--dashboard-title-line-height);
-  letter-spacing: -0.04em;
-}
-
-.heroCopy :global(.muted) {
-  font-size: var(--dashboard-body-size);
-  line-height: var(--dashboard-body-line-height);
-}
-
 .eyebrow {
   margin: 0;
   font-size: var(--dashboard-caption-size);
