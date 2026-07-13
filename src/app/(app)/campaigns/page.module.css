@@ -70,14 +70,26 @@
 }
 
 .panelHeading h1 {
-  font-size: clamp(2.1rem, 4vw, 3rem);
+  font-size: var(--dashboard-title-size);
+  font-weight: 700;
+  line-height: var(--dashboard-title-line-height);
+  letter-spacing: -0.04em;
+}
+
+.panelHeading h2,
+.sectionHeader h2 {
+  font-size: var(--dashboard-section-title-size);
+  font-weight: 700;
+  line-height: var(--dashboard-heading-line-height);
+  letter-spacing: -0.025em;
 }
 
 .panelHeading p,
 .sectionHeader p {
   margin: 0;
   color: var(--muted);
-  line-height: 1.6;
+  font-size: var(--dashboard-body-size);
+  line-height: var(--dashboard-body-line-height);
 }
 
 .kicker {
@@ -88,7 +100,7 @@
   border-radius: 999px;
   background: var(--accent-soft);
   color: var(--accent-strong);
-  font-size: 0.78rem;
+  font-size: var(--dashboard-caption-size);
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -113,10 +125,17 @@
 .senderItem strong {
   display: block;
   margin-bottom: 0.15rem;
+  font-size: var(--dashboard-card-title-size);
+  line-height: var(--dashboard-heading-line-height);
 }
 
 .senderItem > div:nth-child(2) {
   min-width: 0;
+}
+
+.senderItem :global(.muted) {
+  font-size: var(--dashboard-body-size);
+  line-height: var(--dashboard-body-line-height);
 }
 
 .senderIcon,
@@ -147,7 +166,7 @@
 
 .senderSectionTitle {
   color: var(--muted);
-  font-size: 0.84rem;
+  font-size: var(--dashboard-label-size);
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -198,13 +217,14 @@
 
 .summaryCard span {
   color: var(--muted);
+  font-size: var(--dashboard-label-size);
   font-weight: 700;
 }
 
 .summaryCard strong {
   display: block;
   margin-top: 0.35rem;
-  font-size: clamp(1.9rem, 3vw, 2.6rem);
+  font-size: var(--dashboard-metric-size);
   letter-spacing: -0.05em;
   line-height: 1;
 }
@@ -212,7 +232,8 @@
 .summaryCard p {
   margin: 0.45rem 0 0;
   color: var(--muted);
-  line-height: 1.5;
+  font-size: var(--dashboard-body-size);
+  line-height: var(--dashboard-body-line-height);
 }
 
 .sequenceSection {
@@ -236,6 +257,7 @@
   border: 1px solid var(--line);
   background: var(--surface-muted);
   color: var(--muted);
+  font-size: var(--dashboard-label-size);
   font-weight: 700;
 }
 
@@ -266,7 +288,7 @@
   text-align: center;
   color: var(--muted);
   font-weight: 650;
-  font-size: 0.9rem;
+  font-size: var(--dashboard-label-size);
   font-variant-numeric: tabular-nums;
 }
 
@@ -408,7 +430,7 @@
   min-width: 0;
   margin: 0;
   color: var(--text);
-  font-size: 1rem;
+  font-size: var(--dashboard-card-title-size);
   font-weight: 700;
   letter-spacing: -0.03em;
   line-height: 1.25;
@@ -442,7 +464,7 @@
   border: 1px solid var(--line);
   background: var(--surface);
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: var(--dashboard-caption-size);
   font-weight: 650;
   white-space: nowrap;
 }
@@ -479,7 +501,7 @@
 
 .metricCell span {
   color: var(--muted);
-  font-size: 0.66rem;
+  font-size: var(--dashboard-caption-size);
   font-weight: 750;
   letter-spacing: 0.08em;
   line-height: 1.2;
@@ -490,7 +512,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--text);
-  font-size: 0.98rem;
+  font-size: var(--dashboard-card-title-size);
   font-weight: 700;
   letter-spacing: -0.025em;
   line-height: 1.2;
@@ -502,7 +524,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: var(--dashboard-caption-size);
   line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -559,7 +581,7 @@
 
 .detailItem span {
   color: var(--muted);
-  font-size: 0.66rem;
+  font-size: var(--dashboard-caption-size);
   font-weight: 750;
   letter-spacing: 0.08em;
   line-height: 1.35;
@@ -570,7 +592,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--text);
-  font-size: 0.82rem;
+  font-size: var(--dashboard-label-size);
   font-weight: 650;
   line-height: 1.35;
   text-overflow: ellipsis;
@@ -581,7 +603,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--muted);
-  font-size: 0.76rem;
+  font-size: var(--dashboard-caption-size);
   line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -788,7 +810,7 @@
   }
 
   .panelHeading h1 {
-    font-size: 1.9rem;
+    font-size: var(--dashboard-title-size);
   }
 
   .summaryCard {

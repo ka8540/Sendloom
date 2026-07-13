@@ -250,9 +250,10 @@ describe("redesigned detail layout contracts", () => {
   });
 
   it("introduces no oversized landing-page typography", () => {
-    // Page heading keeps the existing dashboard size; card headings stay compact.
-    expect(CSS).toMatch(/\.detailHeaderTitle\s*\{[^}]*font-size:\s*1\.7rem/s);
-    expect(CSS).toMatch(/\.panelTitle\s*\{[^}]*font-size:\s*1\.12rem/s);
+    // Page and section headings consume the shared dashboard hierarchy rather
+    // than introducing route-specific headline sizes.
+    expect(CSS).toMatch(/\.detailHeaderTitle\s*\{[^}]*font-size:\s*var\(--dashboard-title-size\)/s);
+    expect(CSS).toMatch(/\.panelTitle\s*\{[^}]*font-size:\s*var\(--dashboard-section-title-size\)/s);
     // The new quality styles never exceed the existing metric size.
     const qualityBlocks = CSS.match(/\.quality[A-Za-z]+\s*\{[^}]*\}/gs) ?? [];
     for (const block of qualityBlocks) {
@@ -433,8 +434,8 @@ describe("review import dialog UI", () => {
     for (const scoped of [".reviewCard .panelTitle", ".reviewCard .reviewGrid dd", ".reviewCard .modalActions"]) {
       expect(CSS).toContain(scoped);
     }
-    // …and the shared bases keep their original values.
-    expect(CSS).toMatch(/\.panelTitle\s*\{[^}]*font-size:\s*1\.12rem/s);
+    // …and the shared bases keep their shared semantic values.
+    expect(CSS).toMatch(/\.panelTitle\s*\{[^}]*font-size:\s*var\(--dashboard-section-title-size\)/s);
     expect(CSS).toMatch(/\.modalActions\s*\{[^}]*justify-content:\s*flex-end/s);
   });
 

@@ -205,8 +205,8 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
         <div className="templates-editor-card__header">
           <div>
             <p className="templates-editor-card__eyebrow">{editingTemplate ? "Template editor" : "Create template"}</p>
-            <h1 style={{ marginTop: 0 }}>{heading}</h1>
-            <p className="muted">{subheading}</p>
+            <h1 className="dashboard-page-title">{heading}</h1>
+            <p className="muted dashboard-body">{subheading}</p>
           </div>
           <span className={`badge${editingTemplate ? "" : " warning"}`}>{editingTemplate ? "Editing" : "Draft"}</span>
         </div>
@@ -223,8 +223,8 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
         <section className="card template-preview-card">
           <div className="template-preview-card__header">
             <div>
-              <h2 style={{ marginTop: 0, marginBottom: "0.45rem" }}>Live preview</h2>
-              <p className="muted" style={{ margin: 0 }}>
+              <h2 className="dashboard-section-title">Live preview</h2>
+              <p className="muted dashboard-body" style={{ margin: 0 }}>
                 What you type on the left updates here instantly.
               </p>
             </div>
@@ -266,7 +266,7 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
 
         <section className="card">
           <div className="saved-templates__header">
-            <h2 style={{ marginTop: 0, marginBottom: 0 }}>Saved templates</h2>
+            <h2 className="dashboard-section-title">Saved templates</h2>
             {hasTemplates ? (
               <label className="saved-templates__search" aria-label="Search saved templates">
                 <Search aria-hidden="true" />
@@ -334,7 +334,7 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
                 </div>
 
                 <div className="template-list-item__details">
-                  <p className="muted">{template.subject}</p>
+                  <p className="muted dashboard-body">{template.subject}</p>
                   <p className="template-list-item__snippet">{toSnippet(template.format, template.htmlBody)}</p>
 
                   <div className="pill-row">

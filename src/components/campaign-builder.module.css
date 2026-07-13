@@ -42,7 +42,7 @@
   border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line));
   background: color-mix(in srgb, var(--accent-soft) 55%, transparent);
   color: var(--text);
-  font-size: 0.82rem;
+  font-size: var(--dashboard-caption-size);
   font-weight: 700;
 }
 
@@ -50,8 +50,8 @@
   margin: 0;
   max-width: 45ch;
   color: var(--muted);
-  font-size: 0.92rem;
-  line-height: 1.5;
+  font-size: var(--dashboard-body-size);
+  line-height: var(--dashboard-body-line-height);
 }
 
 .addButton {
@@ -104,6 +104,7 @@
 }
 
 .attachmentName {
+  font-size: var(--dashboard-card-title-size);
   line-height: 1.35;
   overflow: hidden;
   display: -webkit-box;
@@ -129,13 +130,13 @@
   border: 1px solid var(--line);
   background: color-mix(in srgb, var(--surface-muted) 88%, transparent);
   color: var(--text);
-  font-size: 0.74rem;
+  font-size: var(--dashboard-caption-size);
   font-weight: 700;
 }
 
 .attachmentSize {
   color: var(--muted);
-  font-size: 0.88rem;
+  font-size: var(--dashboard-label-size);
 }
 
 .removeButton {
@@ -186,14 +187,15 @@
 }
 
 .emptyTitle {
+  font-size: var(--dashboard-card-title-size);
   font-weight: 700;
 }
 
 .emptyCopy,
 .attachmentFooter {
   color: var(--muted);
-  font-size: 0.9rem;
-  line-height: 1.5;
+  font-size: var(--dashboard-body-size);
+  line-height: var(--dashboard-body-line-height);
 }
 
 .attachmentFooter {
@@ -207,7 +209,7 @@
 
 .weekdayLabel {
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: var(--dashboard-label-size);
   font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -228,7 +230,7 @@
   background: var(--field-bg);
   color: var(--muted);
   font: inherit;
-  font-size: 0.82rem;
+  font-size: var(--dashboard-button-size);
   font-weight: 850;
   line-height: 1;
   cursor: pointer;

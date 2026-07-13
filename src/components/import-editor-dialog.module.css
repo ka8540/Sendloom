@@ -50,15 +50,15 @@
 .header h2 {
   margin: 0;
   letter-spacing: -0.03em;
-  font-size: 1.2rem;
-  line-height: 1.2;
+  font-size: var(--dashboard-section-title-size);
+  line-height: var(--dashboard-heading-line-height);
 }
 
 .headerSubtitle {
   margin: 0;
   color: var(--muted);
-  font-size: 0.9rem;
-  line-height: 1.45;
+  font-size: var(--dashboard-body-size);
+  line-height: var(--dashboard-body-line-height);
   overflow-wrap: anywhere;
 }
 
@@ -78,7 +78,7 @@
 
 .field label,
 .groupLabel {
-  font-size: 0.8rem;
+  font-size: var(--dashboard-label-size);
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -94,7 +94,7 @@
   color: var(--text);
   font: inherit;
   font-weight: 700;
-  font-size: 1.02rem;
+  font-size: var(--dashboard-control-size);
   letter-spacing: -0.02em;
   outline: none;
   transition: border-color 160ms ease, box-shadow 160ms ease;
@@ -113,8 +113,8 @@
 .fieldsHint {
   margin: 0;
   color: var(--muted);
-  font-size: 0.88rem;
-  line-height: 1.5;
+  font-size: var(--dashboard-body-size);
+  line-height: var(--dashboard-body-line-height);
 }
 
 .summary {
@@ -127,7 +127,7 @@
   border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
   background: color-mix(in srgb, var(--accent-soft) 40%, transparent);
   color: var(--text);
-  font-size: 0.82rem;
+  font-size: var(--dashboard-caption-size);
   font-weight: 700;
 }
 
@@ -138,7 +138,7 @@
   border: 1px solid color-mix(in srgb, var(--danger, #d6455d) 38%, var(--line));
   background: color-mix(in srgb, var(--danger, #d6455d) 12%, transparent);
   color: var(--text);
-  font-size: 0.88rem;
+  font-size: var(--dashboard-body-size);
   line-height: 1.45;
 }
 
