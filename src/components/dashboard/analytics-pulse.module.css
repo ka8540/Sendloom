@@ -1,51 +1,67 @@
+/* Analytics stack embedded in the Overview action card: the delivery module
+   above the sequence-health module, split by a hairline — no card chrome of
+   its own, so the pair never reads as sibling cards. One figure in the ring;
+   detail lives in the selectable rows/chips and the compact insight strip.
+   All motion is transform/opacity + CSS transitions. */
+
 .pulse {
   display: grid;
   gap: 1rem;
   min-width: 0;
 }
 
-.titleRow {
+.module {
+  display: grid;
+  gap: 0.8rem;
+  align-content: start;
+  min-width: 0;
+}
+
+.module + .module {
+  padding-top: 1rem;
+  border-top: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
+}
+
+.moduleHead {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
   gap: 0.85rem;
   min-width: 0;
 }
 
-.titleLabel {
+.moduleLabel {
   display: inline-flex;
   align-items: center;
-  gap: 0.48rem;
+  gap: 0.45rem;
   min-width: 0;
   color: var(--muted);
-  font-size: 0.78rem;
-  font-weight: 800;
+  font-size: 0.72rem;
+  font-weight: 750;
   letter-spacing: 0.12em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
-.titleLabel svg {
-  width: 0.95rem;
-  height: 0.95rem;
+.moduleLabel svg {
+  width: 0.88rem;
+  height: 0.88rem;
   color: var(--accent);
   flex-shrink: 0;
 }
 
-.titleValue {
+.moduleValue {
   color: var(--text);
-  font-size: 0.92rem;
+  font-size: 0.86rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-/* ---- Delivery donut + metric buttons ------------------------------------- */
+/* ---- Delivery: minimal ring + selectable metric rows ----------------------- */
 
-.deliverySection {
-  display: grid;
-  gap: 0.85rem;
-  min-width: 0;
-}
-
-.deliveryLayout {
+.deliveryBody {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
@@ -53,11 +69,17 @@
   min-width: 0;
 }
 
+.donutColumn {
+  display: grid;
+  justify-items: center;
+  gap: 0.4rem;
+}
+
 .donutWrap {
   position: relative;
   display: grid;
   place-items: center;
-  width: 7.9rem;
+  width: 6.2rem;
   aspect-ratio: 1;
 }
 
@@ -69,130 +91,171 @@
 
 .donutTrack {
   fill: none;
-  stroke: color-mix(in srgb, var(--button-secondary-bg) 88%, transparent);
-  stroke-width: 4.4;
+  stroke: color-mix(in srgb, var(--button-secondary-bg) 80%, transparent);
+  stroke-width: 2.6;
 }
 
 .donutSegment {
   fill: none;
-  stroke-width: 4.4;
+  stroke-width: 2.6;
   cursor: pointer;
   transition: stroke-width 180ms ease, opacity 180ms ease, filter 180ms ease;
 }
 
 .donutSegment[data-key="delivered"] {
   stroke: var(--accent);
+  color: var(--accent);
 }
 
 .donutSegment[data-key="issues"] {
   stroke: #d96952;
+  color: #d96952;
 }
 
 .donutSegment[data-state="active"] {
-  stroke-width: 5.6;
-  filter: drop-shadow(0 0 6px color-mix(in srgb, currentColor 0%, transparent))
-    drop-shadow(0 2px 8px rgba(0, 0, 0, 0.22));
+  stroke-width: 3.8;
+  filter: drop-shadow(0 0 5px color-mix(in srgb, currentColor 40%, transparent));
 }
 
 .donutSegment[data-state="dim"] {
-  opacity: 0.34;
+  opacity: 0.3;
+}
+
+.donutSegment:focus-visible {
+  outline: none;
+  stroke-width: 4.2;
+  filter: drop-shadow(0 0 5px color-mix(in srgb, currentColor 55%, transparent))
+    drop-shadow(0 2px 6px rgba(0, 0, 0, 0.25));
 }
 
 .donutCenter {
   position: absolute;
-  inset: 0.85rem;
+  inset: 0;
   display: grid;
-  place-content: center;
-  justify-items: center;
-  gap: 0.06rem;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: color-mix(in srgb, var(--surface-soft) 96%, transparent);
-  box-shadow: inset 0 1px 12px rgba(28, 42, 70, 0.08);
-  line-height: 1;
+  place-items: center;
   pointer-events: none;
 }
 
-.donutCenter strong {
-  font-size: 1.34rem;
+/* One figure only. Keyed by the focused metric so switching Delivered <->
+   Issues re-runs the entry animation; static under reduced motion. */
+.donutCenterValue {
+  font-size: 1.32rem;
   font-weight: 700;
-  letter-spacing: -0.06em;
+  line-height: 1;
+  letter-spacing: -0.05em;
   font-variant-numeric: tabular-nums;
+  animation: pulse-center-in 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.donutCenter small {
+.donutCenterValue[data-mode="delivered"] {
+  color: var(--accent);
+}
+
+.donutCenterValue[data-mode="issues"] {
+  color: #d96952;
+}
+
+@keyframes pulse-center-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Mode word lives under the ring, outside the circle. */
+.donutCaption {
   color: var(--muted);
-  font-size: 0.66rem;
+  font-size: 0.62rem;
   font-weight: 800;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
+  animation: pulse-center-in 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.metricButtons {
-  display: grid;
-  gap: 0.55rem;
-  min-width: 0;
+.donutCaption[data-mode="issues"] {
+  color: color-mix(in srgb, #d96952 72%, var(--muted));
 }
 
-.metricButton {
+/* Selectable metric rows: dot · label · count · share chip, split by a
+   hairline. The pair always shows both percentages at rest. */
+.metricRows {
   display: grid;
-  gap: 0.5rem;
   min-width: 0;
-  padding: 0.72rem 0.85rem;
-  border-radius: 16px;
-  border: 1px solid var(--line);
-  background: color-mix(in srgb, var(--surface-muted) 78%, transparent);
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--line) 85%, transparent);
+  background: color-mix(in srgb, var(--surface-soft) 55%, transparent);
+  overflow: hidden;
+}
+
+.metricRow {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+  min-height: 2.85rem;
+  padding: 0.55rem 0.8rem 0.55rem 0.95rem;
+  border: 0;
+  background: transparent;
   color: var(--text);
   text-align: left;
   cursor: pointer;
-  transition: transform 160ms ease, border-color 180ms ease, background-color 180ms ease, box-shadow 180ms ease,
-    opacity 180ms ease;
+  transition: background-color 160ms ease, opacity 160ms ease;
 }
 
-.metricButton[data-key="delivered"] {
+.metricRow + .metricRow {
+  border-top: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
+}
+
+.metricRow::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2px;
+  background: var(--metric-color, var(--accent));
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.metricRow[data-key="delivered"] {
   --metric-color: var(--accent);
 }
 
-.metricButton[data-key="issues"] {
+.metricRow[data-key="issues"] {
   --metric-color: #d96952;
 }
 
-.metricButton:hover,
-.metricButton[data-state="active"] {
-  transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--metric-color) 34%, var(--line));
-  background: color-mix(in srgb, var(--surface-muted) 72%, color-mix(in srgb, var(--metric-color) 30%, transparent) 28%);
-  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.18);
+.metricRow:hover,
+.metricRow[data-state="active"] {
+  background: color-mix(in srgb, var(--metric-color) 8%, transparent);
 }
 
-.metricButton[data-state="dim"] {
-  opacity: 0.55;
+.metricRow[data-state="active"]::before,
+.metricRow[aria-pressed="true"]::before {
+  opacity: 1;
 }
 
-.metricButton:focus-visible {
+.metricRow[data-state="dim"] {
+  opacity: 0.5;
+}
+
+.metricRow:focus-visible {
   outline: none;
-  border-color: color-mix(in srgb, var(--metric-color) 45%, var(--line));
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--metric-color) 26%, transparent);
-}
-
-.metricButton:active {
-  transform: translateY(1px) scale(0.99);
-}
-
-.metricTop {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 0.55rem;
-  min-width: 0;
+  background: color-mix(in srgb, var(--metric-color) 10%, transparent);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--metric-color) 45%, transparent);
 }
 
 .metricDot {
-  width: 0.55rem;
-  height: 0.55rem;
+  width: 0.5rem;
+  height: 0.5rem;
   border-radius: 999px;
   background: var(--metric-color, var(--accent));
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--metric-color, var(--accent)) 16%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--metric-color, var(--accent)) 14%, transparent);
   flex-shrink: 0;
 }
 
@@ -201,78 +264,43 @@
   overflow: hidden;
   color: var(--muted);
   font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
+  font-weight: 750;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .metricValue {
-  font-size: 1.06rem;
+  font-size: 1rem;
   font-weight: 700;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-.metricTrack {
-  position: relative;
-  display: block;
-  height: 0.34rem;
+.metricShare {
+  min-width: 3.1rem;
+  padding: 0.16rem 0.45rem;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--button-secondary-bg) 86%, transparent);
-  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--metric-color, var(--accent)) 26%, transparent);
+  background: color-mix(in srgb, var(--metric-color, var(--accent)) 12%, transparent);
+  color: color-mix(in srgb, var(--metric-color, var(--accent)) 78%, var(--text));
+  font-size: 0.68rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  white-space: nowrap;
 }
 
-.metricFill {
-  position: absolute;
-  inset: 0 auto 0 0;
-  border-radius: inherit;
-  background: linear-gradient(90deg, var(--metric-color), color-mix(in srgb, var(--metric-color) 68%, white));
-  transition: width 500ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.deliveryEmpty {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 0.9rem;
-  padding: 0.9rem;
-  border-radius: 18px;
-  border: 1px dashed var(--line);
-  background: color-mix(in srgb, var(--surface-muted) 72%, transparent);
-}
-
-.deliveryEmptyRing {
-  width: 3rem;
-  height: 3rem;
-  border-radius: 999px;
-  border: 4px dashed color-mix(in srgb, var(--muted) 34%, transparent);
-  flex-shrink: 0;
-}
-
-.deliveryEmpty p {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.88rem;
-  line-height: 1.55;
-}
-
-/* ---- Sequence health ------------------------------------------------------ */
-
-.healthSection {
-  display: grid;
-  gap: 0.7rem;
-  min-width: 0;
-}
+/* ---- Sequence health: segmented bar + chip selectors ----------------------- */
 
 .healthBar {
   display: flex;
   width: 100%;
-  height: 0.66rem;
+  height: 0.48rem;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--button-secondary-bg) 86%, transparent);
+  background: color-mix(in srgb, var(--button-secondary-bg) 82%, transparent);
   overflow: hidden;
 }
 
@@ -280,37 +308,43 @@
   min-width: 0;
   background: var(--slice-color, var(--accent));
   cursor: pointer;
-  transition: opacity 180ms ease, transform 180ms ease, filter 180ms ease;
+  transition: opacity 180ms ease, filter 180ms ease;
 }
 
 .healthSlice + .healthSlice {
-  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--surface) 80%, transparent);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--surface) 85%, transparent);
 }
 
 .healthSlice[data-state="active"] {
-  filter: brightness(1.12);
+  filter: brightness(1.14);
 }
 
 .healthSlice[data-state="dim"] {
-  opacity: 0.3;
+  opacity: 0.28;
+}
+
+.healthSlice:focus-visible {
+  outline: none;
+  filter: brightness(1.2);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--text) 78%, transparent);
 }
 
 .healthSlice[data-key="running"],
-.healthButton[data-key="running"],
+.healthChip[data-key="running"],
 .detailCard[data-tone="running"] {
   --slice-color: var(--accent);
   --metric-color: var(--accent);
 }
 
 .healthSlice[data-key="done"],
-.healthButton[data-key="done"],
+.healthChip[data-key="done"],
 .detailCard[data-tone="done"] {
   --slice-color: var(--success);
   --metric-color: var(--success);
 }
 
 .healthSlice[data-key="review"],
-.healthButton[data-key="review"],
+.healthChip[data-key="review"],
 .detailCard[data-tone="review"],
 .detailCard[data-tone="issues"] {
   --slice-color: #d96952;
@@ -318,7 +352,7 @@
 }
 
 .healthSlice[data-key="ready"],
-.healthButton[data-key="ready"],
+.healthChip[data-key="ready"],
 .detailCard[data-tone="ready"] {
   --slice-color: var(--warning);
   --metric-color: var(--warning);
@@ -328,91 +362,105 @@
   --metric-color: var(--accent);
 }
 
-.healthButtons {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+.healthChips {
+  display: flex;
+  flex-wrap: wrap;
   gap: 0.45rem;
 }
 
-.healthButton {
-  display: grid;
-  gap: 0.18rem;
-  min-width: 0;
-  padding: 0.55rem 0.6rem;
-  border-radius: 14px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--text);
-  text-align: left;
-  cursor: pointer;
-  transition: transform 160ms ease, border-color 180ms ease, background-color 180ms ease, opacity 180ms ease,
-    box-shadow 180ms ease;
-}
-
-.healthButton:hover,
-.healthButton[data-state="active"] {
-  transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--metric-color) 30%, var(--line));
-  background: color-mix(in srgb, var(--surface-muted) 74%, color-mix(in srgb, var(--metric-color) 26%, transparent) 26%);
-}
-
-.healthButton[data-state="dim"] {
-  opacity: 0.55;
-}
-
-.healthButton:focus-visible {
-  outline: none;
-  border-color: color-mix(in srgb, var(--metric-color) 45%, var(--line));
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--metric-color) 26%, transparent);
-}
-
-.healthButton:active {
-  transform: translateY(1px) scale(0.99);
-}
-
-.healthButtonLabel {
+.healthChip {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.45rem;
   min-width: 0;
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 0.68rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  min-height: 2.15rem;
+  padding: 0.36rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--line) 90%, transparent);
+  background: color-mix(in srgb, var(--surface-soft) 60%, transparent);
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 160ms ease, background-color 160ms ease, opacity 160ms ease, transform 160ms ease;
 }
 
-.healthButtonLabel .metricDot {
+.healthChip .metricDot {
   width: 0.42rem;
   height: 0.42rem;
   box-shadow: none;
 }
 
-.healthButtonValue {
-  font-size: 0.98rem;
+.healthChip:hover,
+.healthChip[data-state="active"] {
+  border-color: color-mix(in srgb, var(--metric-color) 40%, var(--line));
+  background: color-mix(in srgb, var(--metric-color) 10%, transparent);
+}
+
+.healthChip[data-state="active"] {
+  transform: translateY(-1px);
+}
+
+.healthChip[data-state="dim"] {
+  opacity: 0.5;
+}
+
+.healthChip:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--metric-color) 55%, var(--line));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--metric-color) 24%, transparent);
+}
+
+.healthChip:active {
+  transform: translateY(0) scale(0.98);
+}
+
+.healthChipLabel {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 750;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.healthChipValue {
+  font-size: 0.88rem;
   font-weight: 700;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
 }
 
-.healthEmpty {
+/* ---- Empty states ----------------------------------------------------------- */
+
+.moduleEmpty {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  min-height: 6rem;
   padding: 0.85rem 0.9rem;
   border-radius: 16px;
   border: 1px dashed var(--line);
-  background: color-mix(in srgb, var(--surface-muted) 72%, transparent);
+  background: color-mix(in srgb, var(--surface-muted) 68%, transparent);
 }
 
-.healthEmpty p {
+.moduleEmpty p {
   margin: 0;
   color: var(--muted);
   font-size: 0.86rem;
   line-height: 1.5;
 }
 
-/* ---- Detail card ----------------------------------------------------------- */
+.emptyRing {
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 999px;
+  border: 3px dashed color-mix(in srgb, var(--muted) 32%, transparent);
+  flex-shrink: 0;
+}
+
+/* ---- Insight strip ----------------------------------------------------------- */
 
 .detailSlot {
   min-width: 0;
@@ -425,21 +473,19 @@
 
 .detailCard {
   display: grid;
-  gap: 0.6rem;
+  gap: 0.5rem;
   min-width: 0;
-  padding: 0.9rem 0.95rem;
-  border-radius: 18px;
+  padding: 0.7rem 0.8rem;
+  border-radius: 14px;
   border: 1px solid color-mix(in srgb, var(--metric-color, var(--accent)) 26%, var(--line));
   background:
     linear-gradient(
       180deg,
-      color-mix(in srgb, color-mix(in srgb, var(--metric-color, var(--accent)) 14%, transparent) 100%, transparent),
-      color-mix(in srgb, var(--surface-muted) 88%, transparent)
+      color-mix(in srgb, var(--metric-color, var(--accent)) 10%, transparent),
+      color-mix(in srgb, var(--surface-muted) 90%, transparent)
     );
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, white 6%, transparent),
-    0 16px 32px rgba(0, 0, 0, 0.16);
-  animation: pulse-detail-in 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 5%, transparent);
+  animation: pulse-detail-in 200ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 @keyframes pulse-detail-in {
@@ -455,24 +501,93 @@
 
 .detailHead {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
 }
 
-.detailTitle {
-  font-size: 0.98rem;
+/* Text label naming the pinned metric — the selection is announced in words,
+   never by color alone. */
+.detailEyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.detailEyebrow .metricDot {
+  width: 0.42rem;
+  height: 0.42rem;
+  box-shadow: none;
+}
+
+.detailHeadline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.3rem 0.55rem;
+  min-width: 0;
+}
+
+.detailHeadline strong {
+  font-size: 1.05rem;
+  font-weight: 750;
+  letter-spacing: -0.035em;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The complementary share rides next to the headline: Delivered pins carry the
+   issue share, Issues pins carry the delivered share. */
+.detailPaired {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+  padding: 0.18rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--pair-color, var(--accent)) 30%, var(--line));
+  background: color-mix(in srgb, var(--pair-color, var(--accent)) 12%, transparent);
+  color: var(--text);
+  font-size: 0.7rem;
   font-weight: 700;
-  letter-spacing: -0.02em;
-  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.detailPaired::before {
+  content: "";
+  width: 0.36rem;
+  height: 0.36rem;
+  border-radius: 999px;
+  background: var(--pair-color, var(--accent));
+}
+
+.detailPaired[data-key="delivered"] {
+  --pair-color: var(--accent);
+}
+
+.detailPaired[data-key="issues"] {
+  --pair-color: #d96952;
+}
+
+.detailNote {
+  flex-basis: 100%;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
 }
 
 .detailClose {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.9rem;
-  height: 1.9rem;
+  width: 1.7rem;
+  height: 1.7rem;
   padding: 0;
   border-radius: 999px;
   border: 1px solid var(--line);
@@ -484,8 +599,8 @@
 }
 
 .detailClose svg {
-  width: 0.85rem;
-  height: 0.85rem;
+  width: 0.8rem;
+  height: 0.8rem;
 }
 
 .detailClose:hover,
@@ -500,30 +615,34 @@
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 24%, transparent);
 }
 
-.detailCopy {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.86rem;
-  line-height: 1.55;
+.detailFoot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem 1rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
 }
 
 .detailStats {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem 1.15rem;
+  gap: 0.35rem 1rem;
   margin: 0;
+  min-width: 0;
 }
 
 .detailStat {
   display: inline-flex;
   align-items: baseline;
-  gap: 0.4rem;
+  gap: 0.38rem;
   min-width: 0;
 }
 
 .detailStat dt {
   color: var(--muted);
-  font-size: 0.68rem;
+  font-size: 0.64rem;
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -531,37 +650,37 @@
 
 .detailStat dd {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: 0.88rem;
   font-weight: 700;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
 }
 
 .detailActions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: 0.45rem;
 }
 
 .detailAction {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  min-height: 2.35rem;
-  padding: 0.5rem 0.85rem;
+  gap: 0.35rem;
+  min-height: 2.1rem;
+  padding: 0.4rem 0.75rem;
   border-radius: 999px;
   border: 1px solid color-mix(in srgb, var(--metric-color, var(--accent)) 30%, var(--line));
   background: color-mix(in srgb, var(--surface-soft) 82%, color-mix(in srgb, var(--metric-color, var(--accent)) 24%, transparent) 18%);
   color: var(--text);
-  font-size: 0.84rem;
+  font-size: 0.78rem;
   font-weight: 650;
   white-space: nowrap;
   transition: transform 160ms ease, border-color 180ms ease, background-color 180ms ease, box-shadow 180ms ease;
 }
 
 .detailAction svg {
-  width: 0.85rem;
-  height: 0.85rem;
+  width: 0.78rem;
+  height: 0.78rem;
   transition: transform 180ms ease;
 }
 
@@ -569,14 +688,14 @@
 .detailAction:focus-visible {
   transform: translateY(-1px);
   border-color: color-mix(in srgb, var(--metric-color, var(--accent)) 48%, var(--line));
-  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.16);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.14);
   outline: none;
 }
 
 .detailAction:focus-visible {
   box-shadow:
     0 0 0 3px color-mix(in srgb, var(--metric-color, var(--accent)) 26%, transparent),
-    0 10px 22px rgba(0, 0, 0, 0.16);
+    0 8px 18px rgba(0, 0, 0, 0.14);
 }
 
 .detailAction:hover svg,
@@ -587,41 +706,46 @@
 /* ---- Responsive ------------------------------------------------------------ */
 
 @media (max-width: 480px) {
-  .deliveryLayout {
+  .deliveryBody {
     grid-template-columns: 1fr;
     justify-items: center;
+    gap: 0.9rem;
   }
 
-  .metricButtons {
+  .metricRows {
     width: 100%;
   }
 
-  .healthButtons {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .detailFoot {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .detailAction {
+    justify-content: center;
   }
 }
 
 /* ---- Reduced motion --------------------------------------------------------- */
 
 @media (prefers-reduced-motion: reduce) {
-  .metricButton,
-  .healthButton,
+  .metricRow,
+  .healthChip,
   .healthSlice,
   .donutSegment,
   .detailAction,
   .detailClose,
-  .metricFill {
+  .metricRow::before {
     transition: none;
   }
 
-  .detailCard {
+  .detailCard,
+  .donutCenterValue,
+  .donutCaption {
     animation: none;
   }
 
-  .metricButton:hover,
-  .metricButton[data-state="active"],
-  .healthButton:hover,
-  .healthButton[data-state="active"],
+  .healthChip[data-state="active"],
   .detailAction:hover,
   .detailAction:focus-visible {
     transform: none;

@@ -2,9 +2,11 @@ import styles from "./overview-loading.module.css";
 
 /**
  * Route-level loading state for the Overview dashboard. A CSS-only skeleton
- * that mirrors the real layout — hero + command card, summary cards, sequence
- * list, and activity rail — with a subtle shimmer that goes static under
- * prefers-reduced-motion. Server-rendered markup only; no client JS.
+ * that mirrors the single command panel — identity + stat tiles beside the
+ * action card (CTA buttons, mini ring + metric rows, health rail + chips) —
+ * then summary cards, sequence list, and activity rail, with a subtle shimmer
+ * that goes static under prefers-reduced-motion. Server-rendered markup only;
+ * no client JS.
  */
 export default function OverviewLoading() {
   return (
@@ -12,16 +14,15 @@ export default function OverviewLoading() {
       <span className={styles.srOnly}>Loading your Overview…</span>
 
       <section className={styles.hero} aria-hidden="true">
-        <div className={styles.heroContent}>
+        <div className={styles.heroIdentity}>
           <span className={`${styles.bone} ${styles.eyebrow}`} />
           <span className={`${styles.bone} ${styles.title}`} />
           <span className={`${styles.bone} ${styles.copy}`} />
-          <span className={`${styles.bone} ${styles.copyShort}`} />
-          <div className={styles.highlights}>
+          <div className={styles.highlightRow}>
             {[0, 1, 2].map((index) => (
-              <div key={index} className={styles.highlightCard}>
+              <div key={index} className={styles.highlightCell}>
                 <span className={`${styles.bone} ${styles.tinyLine}`} />
-                <span className={`${styles.bone} ${styles.bigNumber}`} />
+                <span className={`${styles.bone} ${styles.statNumber}`} />
                 <span className={`${styles.bone} ${styles.smallLine}`} />
               </div>
             ))}
@@ -29,28 +30,34 @@ export default function OverviewLoading() {
         </div>
 
         <div className={styles.actionCard}>
-          <span className={`${styles.bone} ${styles.cardTitle}`} />
-          <span className={`${styles.bone} ${styles.copy}`} />
+          <div className={styles.actionHead}>
+            <span className={`${styles.bone} ${styles.tinyLine}`} />
+            <span className={`${styles.bone} ${styles.pillSmall}`} />
+          </div>
           <div className={styles.ctaRow}>
             <span className={`${styles.bone} ${styles.cta}`} />
             <span className={`${styles.bone} ${styles.ctaGhost}`} />
           </div>
-          <div className={styles.pulseBlock}>
-            <div className={styles.pulseHead}>
+          <div className={styles.insightStack}>
+            <div className={styles.moduleHead}>
               <span className={`${styles.bone} ${styles.tinyLine}`} />
               <span className={`${styles.bone} ${styles.tinyLineShort}`} />
             </div>
             <div className={styles.donutRow}>
-              <span className={styles.donutRing} />
-              <div className={styles.metricStack}>
-                <span className={`${styles.bone} ${styles.metricBar}`} />
-                <span className={`${styles.bone} ${styles.metricBar}`} />
+              <span className={styles.donutRing}>
+                <span className={styles.donutCore}>
+                  <span className={`${styles.bone} ${styles.donutPercent}`} />
+                </span>
+              </span>
+              <div className={styles.metricRows}>
+                <span className={`${styles.bone} ${styles.metricRow}`} />
+                <span className={`${styles.bone} ${styles.metricRow}`} />
               </div>
             </div>
             <span className={`${styles.bone} ${styles.railBar}`} />
-            <div className={styles.healthCells}>
+            <div className={styles.healthChips}>
               {[0, 1, 2, 3].map((index) => (
-                <span key={index} className={`${styles.bone} ${styles.healthCell}`} />
+                <span key={index} className={`${styles.bone} ${styles.healthChip}`} />
               ))}
             </div>
           </div>

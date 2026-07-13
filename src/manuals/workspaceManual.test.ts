@@ -481,7 +481,9 @@ describe("No backend work + no Overview behaviour change (#26, #27, #28)", () =>
   });
 
   it("leaves Overview data calculations untouched — only data-* targets added (#27)", () => {
-    for (const fn of ["buildSequenceHealth", "buildDeliveryMix", "buildAnalyticsPulse", "buildActivityItems"]) {
+    // buildDeliveryMix/buildAnalyticsPulse moved into the pulse client
+    // component as computeDeliverySplit during the command-center redesign.
+    for (const fn of ["buildSequenceHealth", "buildActivityItems"]) {
       expect(CENTER_SOURCE).toContain(fn);
     }
     // The tour additions are inert data attributes, not logic.

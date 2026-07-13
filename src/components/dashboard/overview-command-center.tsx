@@ -463,7 +463,6 @@ export default async function OverviewCommandCenter() {
 
       totals.delivered += getDeliveredCount(latestRun);
       totals.needsAttention += latestRun.overviewDispositionCounts?.needsAttention ?? 0;
-      totals.skipped += latestRun.overviewDispositionCounts?.skipped ?? 0;
       totals.recipients += latestRun.totalRecipients;
 
       return totals;
@@ -471,24 +470,13 @@ export default async function OverviewCommandCenter() {
     {
       delivered: 0,
       needsAttention: 0,
-      skipped: 0,
       recipients: 0
     }
   );
+  // The delivered/issues percentage split itself is derived inside the
+  // AnalyticsPulse client component (computeDeliverySplit), so the paired
+  // delivered-with-issues presentation has a single owner.
   const analyticsIssueCount = runTotals.needsAttention;
-  const eligibleRecipientCount = Math.max(
-    0,
-    Math.max(runTotals.recipients - runTotals.skipped, runTotals.delivered + analyticsIssueCount)
-  );
-  const deliveryMix = buildDeliveryMix({
-    delivered: runTotals.delivered,
-    issues: analyticsIssueCount
-  });
-  const analyticsPulse = buildAnalyticsPulse({
-    delivered: runTotals.delivered,
-    issues: analyticsIssueCount,
-    eligibleRecipients: eligibleRecipientCount
-  });
 
   const sequenceRows: SequenceRowData[] = overviewCampaigns.map((campaign) => {
     const latestRun = campaign.latestRun; // display run (metrics)
@@ -788,23 +776,20 @@ export default async function OverviewCommandCenter() {
   };
 
   const isBlankWorkspace = campaignCount === 0 && processedImportCount === 0;
-  const heroStatusSentence = buildHeroStatusSentence({
-    activeCount: activeSequenceCount,
-    sentLast24h: sentLastDayCount,
-    needsAttention: needsAttentionCount,
-    hasAnyWork: !isBlankWorkspace
-  });
 
   return (
     <div className={styles.page}>
+      {/* One command panel: identity + live stat tiles on the left, the action
+          card on the right. The action card stacks the next-move CTAs over the
+          interactive analytics — nothing breaks out into sibling cards. */}
       <section className={styles.hero} data-overview-tour="page-intro">
         <div className={styles.heroContent}>
           <span className={styles.heroEyebrow}>
             <span className={styles.heroPulse} />
-            Today&apos;s command center
+            Command center
           </span>
           <h1 className={styles.heroTitle}>Overview</h1>
-          <p className={styles.heroCopy}>{heroStatusSentence}</p>
+          <p className={styles.heroCopy}>Launch, import, or review what needs attention.</p>
           <div className={styles.heroHighlights}>
             <div className={styles.heroHighlight}>
               <span className={styles.heroHighlightLabel}>Active now</span>
@@ -812,12 +797,16 @@ export default async function OverviewCommandCenter() {
               <span className={styles.heroHighlightMeta}>Running or queued</span>
             </div>
             <div className={styles.heroHighlight}>
-              <span className={styles.heroHighlightLabel}>Sent last 24h</span>
+              <span className={styles.heroHighlightLabel}>Sent · 24h</span>
               <strong className={styles.heroHighlightValue}>{formatCompactNumber(sentLastDayCount)}</strong>
               <span className={styles.heroHighlightMeta}>{sentTrend.label}</span>
             </div>
-            <div className={styles.heroHighlight} data-overview-tour="needs-attention">
-              <span className={styles.heroHighlightLabel}>Needs attention</span>
+            <div
+              className={styles.heroHighlight}
+              data-tone={needsAttentionCount > 0 ? "warn" : "ok"}
+              data-overview-tour="needs-attention"
+            >
+              <span className={styles.heroHighlightLabel}>Attention</span>
               <strong className={styles.heroHighlightValue}>{formatCompactNumber(needsAttentionCount)}</strong>
               <span className={styles.heroHighlightMeta}>{needsAttentionCount ? "Review required" : "All clear"}</span>
             </div>
@@ -835,7 +824,7 @@ export default async function OverviewCommandCenter() {
                 Getting started
               </span>
               <strong className={styles.heroActionTitle}>Start your outreach system</strong>
-              <p>Import a list, create a template, then launch your first sequence.</p>
+              <p className={styles.heroActionCopy}>Import a list, create a template, then launch your first sequence.</p>
               <ol className={styles.heroEmptySteps}>
                 <li data-done="false">
                   <span className={styles.heroEmptyStepMark}>1</span>
@@ -868,8 +857,12 @@ export default async function OverviewCommandCenter() {
             </div>
           ) : (
             <div className={styles.heroActionCard}>
-              <strong className={styles.heroActionTitle}>Pick the next move</strong>
-              <p>Create a new sequence, import a fresh list, or jump straight into a recent run from the table below.</p>
+              <div className={styles.heroActionHead}>
+                <strong className={styles.heroActionTitle}>Pick the next move</strong>
+                <span className={styles.heroActionChip}>
+                  {formatCompactNumber(validatedSequenceCount)} validated
+                </span>
+              </div>
               <div className={styles.heroButtons}>
                 <Link href="/campaigns" className={styles.heroCta}>
                   <SendHorizontal aria-hidden="true" />
@@ -882,10 +875,6 @@ export default async function OverviewCommandCenter() {
                   <ArrowRight className={styles.heroCtaArrow} aria-hidden="true" />
                 </Link>
               </div>
-              <div className={styles.heroFootnote}>
-                <strong>{formatCompactNumber(validatedSequenceCount)} validated</strong>
-                <span>{sentTrend.label}</span>
-              </div>
               <div
                 className={styles.heroInsights}
                 aria-label="Workspace analytics summary"
@@ -895,9 +884,6 @@ export default async function OverviewCommandCenter() {
                   targeted={runTotals.recipients}
                   delivered={runTotals.delivered}
                   issues={analyticsIssueCount}
-                  successPercent={deliveryMix.successPercent}
-                  coveragePercent={analyticsPulse.coveragePercent}
-                  issuePercent={analyticsPulse.issuePercent}
                   sequenceTotal={sequenceRows.length}
                   health={sequenceHealth}
                 />
@@ -919,10 +905,8 @@ export default async function OverviewCommandCenter() {
           <div className={styles.sectionTop}>
             <div>
               <span className={styles.sectionKicker}>Recent sequences</span>
-              <h2 className={styles.sectionTitle}>Jump into the work that moved last</h2>
-              <p className={styles.sectionCopy}>
-                Every row is a live entry point. Hover to relaunch or remove, or click anywhere to open the full sequence detail screen.
-              </p>
+              <h2 className={styles.sectionTitle}>Jump back in</h2>
+              <p className={styles.sectionCopy}>Open, relaunch, or clean up recent runs.</p>
             </div>
             <div className={styles.sectionTopMeta}>
               <Link href="/campaigns" className={styles.sectionLink} data-overview-tour="view-all-sequences">
@@ -1065,56 +1049,6 @@ function deriveSequenceStatus(campaignStatus: CampaignStatus, runStatus?: RunSta
   };
 }
 
-// One dynamic sentence for the hero: what is moving, what went out, and what
-// needs a look — all from data already loaded for this page. The blank
-// workspace gets an invitation instead of a wall of zeros.
-function buildHeroStatusSentence(input: {
-  activeCount: number;
-  sentLast24h: number;
-  needsAttention: number;
-  hasAnyWork: boolean;
-}) {
-  if (!input.hasAnyWork) {
-    return "All quiet so far. Import a list and launch your first sequence to put this command center to work.";
-  }
-
-  const runs =
-    input.activeCount > 0
-      ? `${formatCompactNumber(input.activeCount)} ${input.activeCount === 1 ? "sequence is" : "sequences are"} in motion`
-      : "No sequences are running right now";
-  const sent = `${formatCompactNumber(input.sentLast24h)} ${input.sentLast24h === 1 ? "email" : "emails"} went out in the last 24 hours`;
-  const attention =
-    input.needsAttention > 0
-      ? `${formatCompactNumber(input.needsAttention)} ${input.needsAttention === 1 ? "sequence needs" : "sequences need"} your review`
-      : "nothing needs your attention";
-
-  return `${runs}, ${sent}, and ${attention}.`;
-}
-
-// Success split for the interactive delivery donut: how the delivered / issue
-// slices divide the outcomes we know about. A null success rate means there is
-// no outcome data yet, which the client renders as a graceful empty state.
-function buildDeliveryMix(totals: { delivered: number; issues: number }) {
-  const total = totals.delivered + totals.issues;
-
-  return {
-    total,
-    successPercent: total > 0 ? getPercent(totals.delivered, total) : null
-  };
-}
-
-// Meter percentages behind the Delivered / Issues metric buttons.
-function buildAnalyticsPulse(totals: {
-  delivered: number;
-  issues: number;
-  eligibleRecipients: number;
-}) {
-  return {
-    coveragePercent: getNullablePercent(totals.delivered, totals.eligibleRecipients) ?? 0,
-    issuePercent: getNullablePercent(totals.issues, totals.delivered + totals.issues) ?? 0
-  };
-}
-
 function buildSequenceHealth(rows: SequenceRowData[]): PulseHealthSlice[] {
   const total = rows.length;
   const values = [
@@ -1153,14 +1087,6 @@ function getPercent(value: number, total: number) {
   }
 
   return Math.min(100, Math.round((value / total) * 100));
-}
-
-function getNullablePercent(value: number, total: number) {
-  if (total <= 0) {
-    return null;
-  }
-
-  return getPercent(value, total);
 }
 
 // Safely coerce a Prisma JSON column (requestedTitles / requestedLocations) into

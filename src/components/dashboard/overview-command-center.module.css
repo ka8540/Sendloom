@@ -3,17 +3,20 @@
   gap: 1.25rem;
 }
 
+/* One command panel: identity + live stat tiles beside the action/analytics
+   stack. A single bordered block — inner sections split by hairlines, never
+   broken out into sibling cards. */
 .hero {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1.3fr) minmax(300px, 0.9fr);
+  grid-template-columns: minmax(0, 1.05fr) minmax(21rem, 0.95fr);
   gap: 1.5rem;
-  padding: 1.6rem;
-  border-radius: 30px;
+  padding: 1.5rem;
+  border-radius: 28px;
   border: 1px solid var(--line);
   background:
-    radial-gradient(circle at top right, color-mix(in srgb, var(--accent) 10%, transparent), transparent 24rem),
-    linear-gradient(180deg, color-mix(in srgb, var(--surface) 90%, transparent), var(--surface));
+    radial-gradient(120% 130% at 100% 0%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 46%),
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 92%, transparent), var(--surface));
   box-shadow: var(--shadow);
   overflow: hidden;
 }
@@ -21,9 +24,9 @@
 .hero::after {
   content: "";
   position: absolute;
-  inset: auto -10% -55% 45%;
+  inset: auto -12% -58% 42%;
   height: 18rem;
-  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 11%, transparent), transparent 65%);
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 10%, transparent), transparent 65%);
   pointer-events: none;
 }
 
@@ -31,42 +34,30 @@
 .heroActions {
   position: relative;
   z-index: 1;
+  min-width: 0;
 }
 
 .heroContent {
   display: grid;
-  gap: 1rem;
-  align-content: start;
-  align-self: start;
-  min-width: 0;
+  gap: 0.85rem;
+  align-content: center;
 }
 
 .heroEyebrow {
   display: inline-flex;
-  width: fit-content;
-  min-height: 2.65rem;
   align-items: center;
-  gap: 0.55rem;
-  align-self: start;
-  padding: 0.56rem 0.9rem;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 88%, transparent), color-mix(in srgb, var(--surface-muted) 92%, transparent));
+  gap: 0.5rem;
   color: var(--accent-strong);
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, white 6%, transparent),
-    0 14px 32px color-mix(in srgb, var(--accent) 8%, transparent);
-  font-size: 0.74rem;
+  font-size: 0.68rem;
   font-weight: 800;
   line-height: 1;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
 }
 
 .heroPulse {
-  width: 0.48rem;
-  height: 0.48rem;
+  width: 0.44rem;
+  height: 0.44rem;
   border-radius: 999px;
   background: var(--accent);
   box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 34%, transparent);
@@ -75,118 +66,194 @@
 
 .heroTitle {
   margin: 0;
-  font-size: clamp(2.5rem, 5vw, 4rem);
-  line-height: 0.95;
-  letter-spacing: -0.07em;
+  font-size: clamp(2rem, 3.6vw, 2.85rem);
+  line-height: 0.98;
+  letter-spacing: -0.055em;
 }
 
 .heroCopy {
-  max-width: 52rem;
   margin: 0;
   color: var(--muted);
-  font-size: 1.06rem;
-  line-height: 1.75;
+  font-size: 0.95rem;
+  line-height: 1.55;
 }
 
+/* Compact stat tiles under the title: label / figure / one-line meta. */
 .heroHighlights {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 11rem));
-  gap: 0.75rem;
-  align-items: stretch;
-  max-width: 36rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.6rem;
+  max-width: 31rem;
+  margin-top: 0.3rem;
 }
 
 .heroHighlight {
   position: relative;
   display: grid;
-  gap: 0.55rem;
+  gap: 0.4rem;
   align-content: start;
-  min-height: 7.25rem;
   min-width: 0;
-  padding: 1rem;
-  border-radius: 18px;
-  border: 1px solid var(--line);
+  padding: 0.85rem 0.9rem;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--line) 90%, transparent);
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-muted) 82%, transparent), color-mix(in srgb, var(--surface-soft) 94%, transparent));
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-muted) 80%, transparent), color-mix(in srgb, var(--surface-soft) 92%, transparent));
   box-shadow: inset 0 1px 0 color-mix(in srgb, white 5%, transparent);
   overflow: hidden;
-  transition: transform 160ms ease, border-color 180ms ease, background-color 180ms ease, box-shadow 180ms ease;
+  transition: transform 160ms ease, border-color 180ms ease, box-shadow 180ms ease;
 }
 
 .heroHighlight::before {
   content: "";
   position: absolute;
   inset: 0 auto 0 0;
-  width: 3px;
-  background: linear-gradient(180deg, var(--accent), color-mix(in srgb, var(--accent) 26%, transparent));
+  width: 2px;
+  background: linear-gradient(180deg, var(--highlight-color, var(--accent)), color-mix(in srgb, var(--highlight-color, var(--accent)) 22%, transparent));
 }
 
 .heroHighlight:hover {
   transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--accent) 22%, var(--line));
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-muted) 74%, var(--accent-soft) 26%), color-mix(in srgb, var(--surface-soft) 94%, transparent));
+  border-color: color-mix(in srgb, var(--highlight-color, var(--accent)) 26%, var(--line));
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, white 6%, transparent),
-    0 18px 34px rgba(28, 42, 70, 0.14);
+    0 14px 28px rgba(0, 0, 0, 0.16);
 }
 
 .heroHighlightLabel {
   color: var(--muted);
-  font-size: 0.7rem;
+  font-size: 0.64rem;
   font-weight: 800;
   letter-spacing: 0.12em;
   line-height: 1.2;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .heroHighlightValue {
-  font-size: 2.15rem;
-  font-weight: 800;
-  line-height: 0.9;
-  letter-spacing: -0.05em;
+  font-size: 1.6rem;
+  font-weight: 750;
+  line-height: 0.95;
+  letter-spacing: -0.045em;
   font-variant-numeric: tabular-nums;
 }
 
 .heroHighlightMeta {
+  overflow: hidden;
   color: var(--muted);
-  font-size: 0.84rem;
-  font-weight: 700;
+  font-size: 0.74rem;
+  font-weight: 600;
   line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.heroHighlight[data-tone="warn"] {
+  --highlight-color: #d96952;
+}
+
+.heroHighlight[data-tone="warn"] .heroHighlightValue {
+  color: #d96952;
+}
+
+.heroHighlight[data-tone="ok"] .heroHighlightMeta {
+  color: color-mix(in srgb, var(--success) 72%, var(--muted));
 }
 
 .heroActions {
   display: grid;
   align-content: start;
-  justify-items: stretch;
-  gap: 1rem;
 }
 
+/* The action card: next-move CTAs over the embedded analytics stack. A faint
+   grid fades in from the top-right corner for depth — content sits above it. */
 .heroActionCard {
+  position: relative;
   display: grid;
-  gap: 0.9rem;
-  padding: 1.15rem;
-  border-radius: 24px;
-  border: 1px solid var(--line);
-  background: color-mix(in srgb, var(--surface-soft) 92%, transparent);
+  gap: 0.95rem;
+  align-content: start;
+  padding: 1.2rem;
+  border-radius: 22px;
+  border: 1px solid color-mix(in srgb, var(--line) 94%, transparent);
+  background:
+    radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--accent) 6%, transparent), transparent 44%),
+    color-mix(in srgb, var(--surface-soft) 94%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 6%, transparent);
   backdrop-filter: blur(10px);
+  overflow: hidden;
 }
 
-.heroActionCard strong {
-  font-size: 1rem;
-  letter-spacing: -0.04em;
+.heroActionCard::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--line) 55%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--line) 55%, transparent) 1px, transparent 1px);
+  background-size: 24px 24px;
+  opacity: 0.16;
+  mask-image: radial-gradient(130% 90% at 100% 0%, black 20%, transparent 74%);
+  pointer-events: none;
 }
 
-.heroActionCard p {
-  margin: 0;
-  color: var(--muted);
-  line-height: 1.6;
+.heroActionCard > * {
+  position: relative;
+  z-index: 1;
+}
+
+.heroActionHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 0.75rem;
+  min-width: 0;
 }
 
 .heroActionTitle {
-  font-size: 1.08rem;
+  font-size: 1.05rem;
   font-weight: 750;
   letter-spacing: -0.03em;
+}
+
+.heroActionCopy {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+
+/* Tiny status chip beside the card title, e.g. "3 validated". */
+.heroActionChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.28rem 0.62rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--success) 30%, var(--line));
+  background: color-mix(in srgb, var(--success) 10%, transparent);
+  color: var(--text);
+  font-size: 0.7rem;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.heroActionChip::before {
+  content: "";
+  width: 0.38rem;
+  height: 0.38rem;
+  border-radius: 999px;
+  background: var(--success);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 14%, transparent);
+}
+
+/* The embedded analytics stack, split from the CTAs by a hairline. */
+.heroInsights {
+  display: grid;
+  gap: 0.95rem;
+  min-width: 0;
+  padding-top: 1rem;
+  border-top: 1px solid color-mix(in srgb, var(--line) 85%, transparent);
 }
 
 .heroButtons {
@@ -202,10 +269,9 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.55rem;
-  min-width: 10.5rem;
-  min-height: 3.1rem;
-  padding: 0.82rem 1.3rem;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  padding: 0.68rem 1.15rem;
   border-radius: 999px;
   border: 1px solid color-mix(in srgb, var(--accent) 52%, transparent);
   background:
@@ -312,30 +378,11 @@
     0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
-.heroFootnote {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-  color: var(--muted);
-  font-size: 0.92rem;
-}
-
-.heroFootnote strong {
-  color: var(--text);
-}
-
-.heroInsights {
-  display: grid;
-  gap: 1rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--line);
-}
-
-/* ---- Blank-workspace hero card: "Start your outreach system" -------------- */
+/* ---- Blank-workspace card: "Start your outreach system" ------------------- */
 
 .heroEmptyCard {
   gap: 1rem;
+  max-width: 38rem;
 }
 
 .heroEmptyBadge {
@@ -1052,8 +1099,8 @@
   .heroCta svg,
   .heroCta::after,
   .heroCta .heroCtaArrow,
-  .heroEmptySteps li,
-  .heroHighlight {
+  .heroHighlight,
+  .heroEmptySteps li {
     transition: none;
   }
 
@@ -1061,8 +1108,8 @@
   .heroCta:focus-visible,
   .heroCta:hover svg:first-of-type,
   .heroCta:focus-visible svg:first-of-type,
-  .heroEmptySteps li:hover,
-  .heroHighlight:hover {
+  .heroHighlight:hover,
+  .heroEmptySteps li:hover {
     transform: none;
   }
 
@@ -1727,7 +1774,6 @@
 }
 
 @media (max-width: 1200px) {
-  .hero,
   .mainGrid {
     grid-template-columns: 1fr;
   }
@@ -1738,6 +1784,17 @@
 
   .sectionTopMeta {
     justify-content: flex-start;
+  }
+}
+
+@media (max-width: 1080px) {
+  .hero {
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+  }
+
+  .heroHighlights {
+    max-width: none;
   }
 }
 
@@ -1780,14 +1837,21 @@
   }
 
   .heroButtons,
-  .heroHighlights,
   .sectionTopMeta {
     width: 100%;
   }
 
   .heroHighlights {
-    grid-template-columns: 1fr;
-    max-width: none;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+
+  .heroHighlight {
+    padding: 0.7rem 0.75rem;
+  }
+
+  .heroHighlightValue {
+    font-size: 1.35rem;
   }
 
   .heroCta,
