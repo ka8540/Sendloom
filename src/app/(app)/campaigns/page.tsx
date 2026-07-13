@@ -1,27 +1,18 @@
-import Link from "next/link";
 import { after } from "next/server";
-import {
-  CalendarClock,
-  CheckCircle2,
-  Mail,
-  RefreshCcw,
-  SendHorizontal,
-  Sparkles,
-  Users
-} from "lucide-react";
+import { CheckCircle2, Mail, RefreshCcw } from "lucide-react";
 
 import { ActiveRunRefresher } from "@/components/active-run-refresher";
-import { CampaignCardActions } from "@/components/campaign-card-actions";
 import { CampaignBuilder } from "@/components/campaign-builder";
 import { ErrorToastOnMount } from "@/components/error-toast-provider";
-import { LocalDateTime } from "@/components/local-date-time";
 import { BounceMonitoringStatus } from "@/components/senders/bounce-monitoring-status";
 import { requireOperatorUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { summarizeOverviewRun } from "@/lib/recipient-overview-disposition";
 import { resolveBounceMonitoringStatus } from "@/services/bounces";
 import { processPendingCampaignWork } from "@/services/campaigns";
 import { formatSequenceStatus } from "@/lib/sequence-status";
-import { SequenceBoard } from "./sequence-board";
+import { computeSequenceFlags } from "./sequence-insights";
+import { SequencesCommandCenter, type SequenceBoardItem } from "./sequences-command-center";
 import styles from "./page.module.css";
 
 type ScheduleConfig =
@@ -67,47 +58,6 @@ function getSearchParam(
   return Array.isArray(value) ? value[0] : value;
 }
 
-function humanize(value?: string | null) {
-  if (!value) {
-    return "Not set";
-  }
-
-  return value
-    .toLowerCase()
-    .split("_")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
-function getDeliveredCount(run?: {
-  sentCount?: number | null;
-  openedCount?: number | null;
-  clickedCount?: number | null;
-} | null) {
-  return (run?.sentCount ?? 0) + (run?.openedCount ?? 0) + (run?.clickedCount ?? 0);
-}
-
-// Skipped recipients (SUPPRESSED — invalid addresses, unsubscribes, blocks)
-// are deliberate exclusions, not delivery issues, so they never count toward
-// the Health "issues" number. Only failed/invalid sends do.
-function getIssueCount(run?: {
-  failedCount?: number | null;
-  invalidCount?: number | null;
-} | null) {
-  return (run?.failedCount ?? 0) + (run?.invalidCount ?? 0);
-}
-
-function getProcessedCount(run?: {
-  sentCount?: number | null;
-  openedCount?: number | null;
-  clickedCount?: number | null;
-  failedCount?: number | null;
-  suppressedCount?: number | null;
-  invalidCount?: number | null;
-} | null) {
-  return getDeliveredCount(run) + getIssueCount(run) + (run?.suppressedCount ?? 0);
-}
-
 function hasKnownRunMetrics(
   run:
     | {
@@ -133,10 +83,6 @@ function getPercent(value: number, total: number) {
   return Math.min(100, Math.max(0, Math.round((value / total) * 100)));
 }
 
-function formatCount(value: number) {
-  return new Intl.NumberFormat("en-US").format(value);
-}
-
 function formatDateTime(value?: Date | string | null, timeZone?: string) {
   if (!value) {
     return "Not available";
@@ -160,8 +106,7 @@ function formatDeliveryLabel(scheduleType?: string | null, scheduleConfig?: Sche
 
     return {
       label: "Run once",
-      detail,
-      fullDetail: detail
+      detail
     };
   }
 
@@ -171,27 +116,19 @@ function formatDeliveryLabel(scheduleType?: string | null, scheduleConfig?: Sche
     const timeLabel = recurringConfig?.time ?? "09:00";
     const dayLabel =
       recurringConfig?.frequency === "weekly" ? ` · ${formatWeeklyDayLabel(recurringConfig)}` : "";
-    const detail = `${frequencyLabel}${dayLabel}`;
     const secondaryDetail = recurringConfig?.timeZone ? `${timeLabel} · ${recurringConfig.timeZone}` : timeLabel;
 
     return {
       label: "Recurring",
-      detail,
-      secondaryDetail,
-      fullDetail: `${detail} · ${secondaryDetail}`
+      detail: `${frequencyLabel}${dayLabel} · ${secondaryDetail}`
     };
   }
 
-  const detail = "Starts as soon as you launch it";
-
   return {
     label: "Send now",
-    detail,
-    fullDetail: detail
+    detail: "Starts as soon as you launch it"
   };
 }
-
-const PAGE_SIZE = 10;
 
 const ACTIVE_RUN_STATUSES = new Set(["QUEUED", "WAITING_FOR_SLOT", "RUNNING", "PAUSED"]);
 const COMPLETED_RUN_STATUSES = new Set(["COMPLETED", "FAILED", "CANCELLED"]);
@@ -309,13 +246,11 @@ export default async function CampaignsPage({
       )
   ).length;
   const hasLiveActivity = activeSequences > 0 || campaigns.some((campaign) => campaign.status === "WAITING_FOR_SLOT");
-  const scheduledSequences = campaigns.filter((campaign) => campaign.scheduleType !== "immediate").length;
-  const validatedSequences = campaigns.filter((campaign) => Boolean(campaign.lastValidatedAt)).length;
 
   // Determine which run to show metrics from for each campaign.
   // If the latest run is queued/unstarted and a previous completed run exists, show that instead.
-  // All campaigns are computed here; the board paginates client-side so prev/next never
-  // re-renders the route.
+  // Every sequence is serialized here; the command center filters, searches, and
+  // paginates client-side so interactions never re-render the route.
   const campaignDisplayRuns = new Map(
     campaigns.map((campaign) => [campaign.id, selectDisplayRun(campaign.runs as RunSummary[])])
   );
@@ -343,8 +278,8 @@ export default async function CampaignsPage({
     latestRunCounts.set(row.campaignRunId, counts);
   }
 
-  const sequenceCards = campaigns.map((campaign) => {
-    const latestRun = campaign.runs[0]; // most-recent run — used for status label only
+  const boardItems: SequenceBoardItem[] = campaigns.map((campaign) => {
+    const latestRun = campaign.runs[0] ?? null; // most-recent run — used for status context
     const { run: displayRun, isFromPreviousRun } = campaignDisplayRuns.get(campaign.id)!;
     const displayRunCountsByStatus = displayRun ? latestRunCounts.get(displayRun.id) : null;
     const displayRunSnapshot = displayRun
@@ -360,185 +295,89 @@ export default async function CampaignsPage({
           invalidCount: displayRunCountsByStatus ? (displayRunCountsByStatus.INVALID ?? 0) : displayRun.invalidCount
         }
       : null;
-    const deliveredCount = getDeliveredCount(displayRunSnapshot);
-    const issueCount = getIssueCount(displayRunSnapshot);
-    const processedCount = getProcessedCount(displayRunSnapshot);
-    const runMetricsKnown = hasKnownRunMetrics(displayRunSnapshot, processedCount);
-    const recipientCount = displayRun?.totalRecipients ?? campaign.import.rowCount;
-    const deliveryHealthPercent =
-      runMetricsKnown && displayRunSnapshot
-        ? getPercent(deliveredCount, displayRunSnapshot.totalRecipients)
-        : null;
-    const progressPercent =
-      displayRunSnapshot && displayRunSnapshot.totalRecipients > 0
-        ? getPercent(processedCount, displayRunSnapshot.totalRecipients)
-        : 0;
-    const openedPercent =
-      runMetricsKnown && displayRunSnapshot
-        ? getPercent(displayRunSnapshot.openedCount ?? 0, displayRunSnapshot.totalRecipients)
-        : null;
+
+    // Shared Overview classification: address/compliance exclusions are calm
+    // Skipped outcomes; only real failures count as issues.
+    const outcome = displayRunSnapshot
+      ? summarizeOverviewRun({
+          totalRecipients: displayRunSnapshot.totalRecipients,
+          sentCount: displayRunSnapshot.sentCount ?? 0,
+          openedCount: displayRunSnapshot.openedCount ?? 0,
+          clickedCount: displayRunSnapshot.clickedCount ?? 0,
+          failedCount: displayRunSnapshot.failedCount ?? 0,
+          suppressedCount: displayRunSnapshot.suppressedCount ?? 0,
+          invalidCount: displayRunSnapshot.invalidCount ?? 0
+        })
+      : null;
+    const processedCount = outcome ? outcome.sent + outcome.skipped + outcome.needsAttention : 0;
+    const metricsKnown = hasKnownRunMetrics(displayRunSnapshot, processedCount);
+    const totalRecipients = displayRunSnapshot?.totalRecipients ?? 0;
+    const issues = metricsKnown && outcome ? outcome.needsAttention : 0;
     const delivery = formatDeliveryLabel(campaign.scheduleType, campaign.scheduleConfig as ScheduleConfig | null);
-    const latestRunSummary = displayRun
-      ? runMetricsKnown
-        ? `${formatCount(deliveredCount)}/${formatCount(displayRun.totalRecipients)} delivered${isFromPreviousRun ? " (last run)" : ""}`
-        : "Metrics syncing"
-      : "No run started yet";
-    // For the "Latest run" row, show the actual most-recent run's status
-    const latestRunValue = latestRun?.updatedAt?.toISOString() ?? null;
-    const validatedAtValue = campaign.lastValidatedAt?.toISOString() ?? null;
-    const healthDetail = displayRun
-      ? runMetricsKnown
-        ? isFromPreviousRun
-          ? `Last run · ${formatCount(deliveredCount)} delivered`
-          : latestRunSummary
-        : "Waiting for activity"
-      : campaign.lastValidatedAt
-        ? "Validated and ready"
-        : "Awaiting first run";
-    const healthValue = displayRun
-      ? deliveryHealthPercent === null
-        ? "—"
-        : `${deliveryHealthPercent}%`
-      : campaign.lastValidatedAt
-        ? "Ready"
-        : "—";
-    const performanceMetric =
-      displayRun
-        ? {
-            label: "Opened",
-            value: openedPercent === null ? "—" : `${openedPercent}%`,
-            detail:
-              openedPercent === null
-                ? isFromPreviousRun ? "Next run queued" : "Waiting for activity"
-                : `${formatCount(displayRunSnapshot?.openedCount ?? 0)} opens${isFromPreviousRun ? " (last run)" : ""}`
-          }
-        : {
-            label: "Delivered",
-            value: "—",
-            detail: "No run yet"
-          };
+    const flags = computeSequenceFlags({
+      status: campaign.status,
+      latestRunStatus: latestRun?.status ?? null,
+      issueCount: issues
+    });
 
-    return (
-      <article key={campaign.id} className={styles.sequenceRow}>
-        <Link
-          href={`/campaigns/${campaign.id}`}
-          className={styles.sequenceContentLink}
-          aria-label={`Open sequence ${campaign.name}`}
-        >
-          <div className={styles.sequenceMainGrid}>
-            <div className={styles.sequencePrimary}>
-              <div className={styles.sequenceIdentity}>
-                <div className={styles.sequenceIcon}>
-                  <SendHorizontal aria-hidden="true" />
-                </div>
-                <div className={styles.sequenceTitleBlock}>
-                  <div className={styles.sequenceHeader}>
-                    <h3 className={styles.sequenceTitle} title={campaign.name}>
-                      {campaign.name}
-                    </h3>
-                    <span className="badge" title={campaign.status === "WAITING_FOR_SLOT" ? "This sequence will start automatically when an execution slot becomes available." : undefined}>
-                      {formatSequenceStatus(campaign.status)}
-                    </span>
-                  </div>
-
-                  <div className={styles.sequenceMetaRow}>
-                    <span className={styles.metaPill} title={campaign.import.fileName}>
-                      <Users aria-hidden="true" />
-                      <span>{campaign.import.fileName}</span>
-                    </span>
-                    <span
-                      className={styles.metaPill}
-                      title={`${campaign.senderProfile.name} <${campaign.senderProfile.fromEmail}>`}
-                    >
-                      <Mail aria-hidden="true" />
-                      <span>{campaign.senderProfile.name}</span>
-                    </span>
-                    <span className={styles.metaPill} title={campaign.template.name}>
-                      <CheckCircle2 aria-hidden="true" />
-                      <span>{campaign.template.name}</span>
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className={`${styles.metricCell} ${styles.metricHealth}`}>
-              <span>Health</span>
-              <strong>{healthValue}</strong>
-              <div className={styles.metricTrack} aria-hidden="true">
-                <span style={{ width: `${progressPercent}%` }} />
-              </div>
-              <small>{healthDetail}</small>
-            </div>
-
-            <div className={`${styles.metricCell} ${styles.metricEnrolled}`}>
-              <span>Enrolled</span>
-              <strong>{formatCount(recipientCount)}</strong>
-              <small>Recipients</small>
-            </div>
-
-            <div className={`${styles.metricCell} ${styles.metricPerformance}`}>
-              <span>{performanceMetric.label}</span>
-              <strong>{performanceMetric.value}</strong>
-              <small>{performanceMetric.detail}</small>
-            </div>
-          </div>
-
-          <div className={styles.sequenceDetails}>
-            <div className={styles.detailItem}>
-              <span>Delivery</span>
-              <strong title={delivery.fullDetail}>{delivery.label}</strong>
-              <small>{delivery.fullDetail}</small>
-            </div>
-
-            <div className={styles.detailItem}>
-              <span>Latest run</span>
-              <strong>{latestRun ? formatSequenceStatus(latestRun.status) : "Waiting to launch"}</strong>
-              <small>{latestRunValue ? <LocalDateTime value={latestRunValue} /> : "No delivery activity yet"}</small>
-            </div>
-
-            <div className={styles.detailItem}>
-              <span>Validation</span>
-              <strong>{validatedAtValue ? "Validated" : "Needs validation"}</strong>
-              <small>{validatedAtValue ? <LocalDateTime value={validatedAtValue} /> : "Before next send"}</small>
-            </div>
-
-            <div className={styles.detailItem}>
-              <span>Health</span>
-              <strong>{latestRunSummary}</strong>
-              <small>
-                {displayRun && runMetricsKnown
-                  ? issueCount
-                    ? `${formatCount(issueCount)} issue${issueCount === 1 ? "" : "s"}`
-                    : "Clean delivery"
-                  : "No confirmed delivery yet"}
-              </small>
-            </div>
-          </div>
-        </Link>
-
-        <div className={styles.sequenceActions}>
-          <CampaignCardActions campaignId={campaign.id} campaignName={campaign.name} />
-        </div>
-      </article>
-    );
+    return {
+      id: campaign.id,
+      name: campaign.name,
+      statusLabel: formatSequenceStatus(campaign.status),
+      flags,
+      listName: campaign.import.fileName,
+      templateName: campaign.template.name,
+      senderName: campaign.senderProfile.name,
+      senderEmail: campaign.senderProfile.fromEmail,
+      scheduleLabel: delivery.label,
+      scheduleDetail: delivery.detail,
+      enrolled: displayRun?.totalRecipients ?? campaign.import.rowCount,
+      totalRecipients,
+      delivered: metricsKnown && outcome ? outcome.sent : 0,
+      opened: metricsKnown ? (displayRunSnapshot?.openedCount ?? 0) : 0,
+      skipped: metricsKnown && outcome ? outcome.skipped : 0,
+      issues,
+      pendingCount: metricsKnown && outcome ? outcome.pending : 0,
+      healthPercent: metricsKnown && outcome ? getPercent(outcome.sent, totalRecipients) : null,
+      openedPercent: metricsKnown ? getPercent(displayRunSnapshot?.openedCount ?? 0, totalRecipients) : null,
+      metricsKnown,
+      isFromPreviousRun,
+      latestRunStatusLabel: latestRun ? formatSequenceStatus(latestRun.status) : null,
+      latestRunAt: latestRun?.updatedAt?.toISOString() ?? null,
+      validatedAt: campaign.lastValidatedAt?.toISOString() ?? null,
+      isPaused: flags.paused,
+      canPause: flags.active
+    };
   });
 
   return (
     <div className={styles.page}>
       <ActiveRunRefresher active={hasLiveActivity} intervalMs={4_000} />
       {gmailError ? <ErrorToastOnMount message={gmailError} title="Gmail connection failed" /> : null}
-      <section className={styles.topGrid}>
-        {gmailStatus === "connected" ? (
-          <div className={styles.flashNotice}>
-            <CheckCircle2 aria-hidden="true" />
-            <span>Gmail reconnected. You can use that sender again.</span>
-          </div>
-        ) : null}
+      {gmailStatus === "connected" ? (
+        <div className={styles.flashNotice}>
+          <CheckCircle2 aria-hidden="true" />
+          <span>Gmail reconnected. You can use that sender again.</span>
+        </div>
+      ) : null}
+
+      <header className={styles.hero}>
+        <div className={styles.heroText}>
+          <h1>Sequences</h1>
+          <p>Track launches, delivery health, and sequences that need attention.</p>
+        </div>
+        <a className="button" href="#create-sequence">
+          Create sequence
+        </a>
+      </header>
+
+      <SequencesCommandCenter items={boardItems} />
+
+      <section className={styles.buildGrid} id="create-sequence">
         <article className={styles.builderCard}>
           <div className={styles.panelHeading}>
             <span className={styles.kicker}>Build</span>
-            <h1>Create a sequence</h1>
+            <h2>Create a sequence</h2>
             <p>Pick a contact list, template, sender, and send timing without leaving the dashboard.</p>
           </div>
           <CampaignBuilder
@@ -629,51 +468,6 @@ export default async function CampaignsPage({
           </div>
         </article>
       </section>
-
-      <section className={styles.summaryGrid}>
-        <article className={styles.summaryCard}>
-          <div className={styles.summaryIcon}>
-            <Sparkles aria-hidden="true" />
-          </div>
-          <div>
-            <span>Total sequences</span>
-            <strong>{campaigns.length}</strong>
-            <p>Everything currently configured in your workspace.</p>
-          </div>
-        </article>
-        <article className={styles.summaryCard}>
-          <div className={styles.summaryIcon}>
-            <RefreshCcw aria-hidden="true" />
-          </div>
-          <div>
-            <span>Validated</span>
-            <strong>{validatedSequences}</strong>
-            <p>Sequences with a recent validation pass.</p>
-          </div>
-        </article>
-        <article className={styles.summaryCard}>
-          <div className={styles.summaryIcon}>
-            <CalendarClock aria-hidden="true" />
-          </div>
-          <div>
-            <span>Scheduled</span>
-            <strong>{scheduledSequences}</strong>
-            <p>Run once or recurring sends queued on a schedule.</p>
-          </div>
-        </article>
-        <article className={styles.summaryCard}>
-          <div className={styles.summaryIcon}>
-            <SendHorizontal aria-hidden="true" />
-          </div>
-          <div>
-            <span>Active now</span>
-            <strong>{activeSequences}</strong>
-            <p>Runs that are currently queued or processing.</p>
-          </div>
-        </article>
-      </section>
-
-      <SequenceBoard cards={sequenceCards} totalCount={campaigns.length} pageSize={PAGE_SIZE} />
     </div>
   );
 }

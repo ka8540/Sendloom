@@ -1,0 +1,303 @@
+/* CSS-only skeletons for the Sequences command center. The shimmer is a
+ * background-position animation; prefers-reduced-motion freezes it to a
+ * static tint. Layout mirrors command-center.module.css so nothing jumps. */
+
+.page {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.bone {
+  border-radius: 999px;
+  background:
+    linear-gradient(
+      100deg,
+      color-mix(in srgb, var(--line) 42%, transparent) 30%,
+      color-mix(in srgb, var(--line) 68%, transparent) 50%,
+      color-mix(in srgb, var(--line) 42%, transparent) 70%
+    );
+  background-size: 220% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 130% 0;
+  }
+  to {
+    background-position: -70% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bone {
+    animation: none;
+    background: color-mix(in srgb, var(--line) 50%, transparent);
+  }
+}
+
+/* hero */
+
+.hero {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.35rem 0.2rem 0;
+}
+
+.title {
+  width: 13rem;
+  height: 2.4rem;
+  border-radius: 12px;
+}
+
+.subtitle {
+  width: 22rem;
+  max-width: 60vw;
+  height: 0.95rem;
+  margin-top: 0.7rem;
+}
+
+.cta {
+  width: 9.5rem;
+  height: 2.6rem;
+}
+
+/* board shell */
+
+.board {
+  display: grid;
+  gap: 1.05rem;
+  padding: 1.45rem;
+  border-radius: 28px;
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 92%, transparent), var(--surface));
+  box-shadow: var(--shadow);
+}
+
+.commandBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+}
+
+.filterRail {
+  display: flex;
+  gap: 0.42rem;
+  flex-wrap: wrap;
+}
+
+.pill {
+  width: 5.4rem;
+  height: 2rem;
+}
+
+.search {
+  width: 15rem;
+  height: 2.35rem;
+}
+
+.rangeLine {
+  width: 10rem;
+  height: 0.8rem;
+}
+
+/* two panes */
+
+.boardGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(19rem, 0.95fr);
+  gap: 1.1rem;
+  align-items: start;
+}
+
+.queue {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  padding: 0.85rem 0.95rem 0.85rem 1.1rem;
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-muted) 88%, transparent);
+}
+
+.cardBody {
+  display: grid;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.cardTop {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  flex-shrink: 0;
+}
+
+.cardName {
+  width: 11rem;
+  max-width: 45%;
+  height: 1rem;
+}
+
+.cardPill {
+  width: 4.6rem;
+  height: 1.3rem;
+  margin-left: auto;
+}
+
+.cardChips {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.chip {
+  width: 7rem;
+  height: 1.45rem;
+}
+
+.rail {
+  width: 100%;
+  height: 0.42rem;
+}
+
+.cardActions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.45rem;
+}
+
+.action {
+  width: 2.15rem;
+  height: 2.15rem;
+}
+
+/* pagination */
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  padding-top: 0.3rem;
+}
+
+.pageLabel {
+  width: 6rem;
+  height: 0.9rem;
+}
+
+/* inspector */
+
+.inspector {
+  display: grid;
+  gap: 1rem;
+  padding: 1.25rem;
+  border-radius: 24px;
+  border: 1px solid var(--line);
+  background: var(--surface-muted);
+}
+
+.inspectorHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.inspectorTitle {
+  width: 55%;
+  height: 1.25rem;
+}
+
+.inspectorPulse {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 1.1rem;
+  align-items: center;
+}
+
+.ring {
+  width: 7rem;
+  height: 7rem;
+  border-radius: 50%;
+}
+
+.legend {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.legendRow {
+  width: 100%;
+  height: 0.85rem;
+}
+
+.factGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem 1rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid color-mix(in srgb, var(--line) 88%, transparent);
+}
+
+.fact {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.factLabel {
+  width: 45%;
+  height: 0.55rem;
+}
+
+.factValue {
+  width: 75%;
+  height: 0.85rem;
+}
+
+/* responsive */
+
+@media (max-width: 1024px) {
+  .boardGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .inspector {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .board {
+    padding: 1.1rem;
+    border-radius: 22px;
+  }
+
+  .hero {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .card {
+    grid-template-columns: 1fr;
+  }
+
+  .cardActions {
+    flex-direction: row;
+  }
+}
