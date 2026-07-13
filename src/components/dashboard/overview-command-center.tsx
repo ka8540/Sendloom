@@ -1,13 +1,11 @@
-import type { CSSProperties } from "react";
 import type { Route } from "next";
 import Link from "next/link";
 import { after } from "next/server";
 import type { CampaignStatus, RecipientJobStatus, RunStatus } from "@prisma/client";
 import {
   ArrowRight,
-  BarChart3,
+  Check,
   FileSpreadsheet,
-  PieChart,
   SendHorizontal,
   Sparkles
 } from "lucide-react";
@@ -16,6 +14,7 @@ import { requireOperatorUser } from "@/lib/auth";
 import { getGmailDailySendWindow } from "@/lib/daily-send-limit";
 import { prisma } from "@/lib/db";
 import { ActivityFeed } from "@/components/dashboard/activity-feed";
+import { AnalyticsPulse, type PulseHealthSlice } from "@/components/dashboard/analytics-pulse";
 import { buildActivityItems } from "@/components/dashboard/activity-builder";
 import { formatCompactNumber, formatRelativeTime, buildTrend, humanizeEnum } from "@/components/dashboard/formatters";
 import { OverviewSummary, type SendWindowSender, type TemplateFormatSlice } from "@/components/dashboard/overview-summary";
@@ -788,19 +787,24 @@ export default async function OverviewCommandCenter() {
     hasMultipleSequencePages: sequenceRows.length > 5
   };
 
+  const isBlankWorkspace = campaignCount === 0 && processedImportCount === 0;
+  const heroStatusSentence = buildHeroStatusSentence({
+    activeCount: activeSequenceCount,
+    sentLast24h: sentLastDayCount,
+    needsAttention: needsAttentionCount,
+    hasAnyWork: !isBlankWorkspace
+  });
+
   return (
     <div className={styles.page}>
       <section className={styles.hero} data-overview-tour="page-intro">
         <div className={styles.heroContent}>
           <span className={styles.heroEyebrow}>
             <span className={styles.heroPulse} />
-            Command center
+            Today&apos;s command center
           </span>
           <h1 className={styles.heroTitle}>Overview</h1>
-          <p className={styles.heroCopy}>
-            Move from signal to action in one surface. Launch new sequences, jump into live runs, and keep imports and
-            templates moving without hunting through tabs.
-          </p>
+          <p className={styles.heroCopy}>{heroStatusSentence}</p>
           <div className={styles.heroHighlights}>
             <div className={styles.heroHighlight}>
               <span className={styles.heroHighlightLabel}>Active now</span>
@@ -821,113 +825,85 @@ export default async function OverviewCommandCenter() {
         </div>
 
         <div className={styles.heroActions}>
-          <div className={styles.heroActionCard}>
-            <strong>Pick the next move</strong>
-            <p>Create a new sequence, import a fresh list, or jump straight into a recent run from the table below.</p>
-            <div className={styles.heroButtons}>
-              <Link href="/campaigns" className={`button ${styles.heroButtonPrimary}`}>
-                <SendHorizontal aria-hidden="true" />
-                Create Sequence
-              </Link>
-              <Link href="/imports" className={`button secondary ${styles.heroButtonSecondary}`}>
-                <FileSpreadsheet aria-hidden="true" />
-                Import List
-              </Link>
-            </div>
-            <div className={styles.heroFootnote}>
-              <strong>{formatCompactNumber(validatedSequenceCount)} validated</strong>
-              <span>{sentTrend.label}</span>
-            </div>
-            <div className={styles.heroInsights} aria-label="Workspace analytics summary" data-overview-tour="workspace-health">
-              <div className={styles.insightTitleRow}>
-                <span>
-                  <BarChart3 aria-hidden="true" />
-                  Analytics pulse
-                </span>
-                <strong>{formatCompactNumber(runTotals.recipients)} targeted</strong>
-              </div>
-
-              <div className={styles.deliveryInsight} data-overview-tour="delivery-issues">
-                <div
-                  className={styles.deliveryDonut}
-                  style={{ "--chart-background": deliveryMix.gradient } as CSSProperties}
-                  aria-label={`Delivery success is ${deliveryMix.cleanRate ?? "unavailable"}`}
-                  role="img"
-                >
-                  <span className={styles.deliveryDonutText}>
-                    <strong>{deliveryMix.cleanRate ?? "—"}</strong>
-                    <small>success</small>
+          {isBlankWorkspace ? (
+            <div
+              className={`${styles.heroActionCard} ${styles.heroEmptyCard}`}
+              data-overview-tour="workspace-health"
+            >
+              <span className={styles.heroEmptyBadge}>
+                <Sparkles aria-hidden="true" />
+                Getting started
+              </span>
+              <strong className={styles.heroActionTitle}>Start your outreach system</strong>
+              <p>Import a list, create a template, then launch your first sequence.</p>
+              <ol className={styles.heroEmptySteps}>
+                <li data-done="false">
+                  <span className={styles.heroEmptyStepMark}>1</span>
+                  Import a list
+                </li>
+                <li data-done={templateCount > 0 ? "true" : "false"}>
+                  <span className={styles.heroEmptyStepMark}>
+                    {templateCount > 0 ? <Check aria-hidden="true" /> : 2}
                   </span>
-                </div>
-                <div className={styles.deliveryLegend}>
-                  {deliveryMix.segments.map((segment) => (
-                    <div key={segment.label} className={styles.deliveryLegendItem}>
-                      <span
-                        className={styles.deliveryLegendSwatch}
-                        style={{ "--segment-color": segment.color } as CSSProperties}
-                      />
-                      <span>{segment.label}</span>
-                      <strong>{formatCompactNumber(segment.value)}</strong>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className={styles.funnelChart}>
-                {analyticsPulse.map((item) => (
-                  <div key={item.label} className={styles.funnelRow}>
-                    <div className={styles.funnelMeta}>
-                      <span>{item.label}</span>
-                      <strong>{item.value}</strong>
-                    </div>
-                    <div className={styles.funnelTrack} aria-hidden="true">
-                      <span
-                        className={styles.funnelFill}
-                        style={
-                          {
-                            "--bar-value": `${item.percent}%`,
-                            "--bar-color": item.color
-                          } as CSSProperties
-                        }
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className={styles.healthChart} data-overview-tour="sequence-health">
-                <div className={styles.healthHeader}>
-                  <span>
-                    <PieChart aria-hidden="true" />
-                    Sequence health
-                  </span>
-                  <strong>{formatCompactNumber(sequenceRows.length)}</strong>
-                </div>
-                <div className={styles.healthSegments} aria-hidden="true">
-                  {sequenceHealth.map((item) => (
-                    <span
-                      key={item.label}
-                      className={styles.healthSegment}
-                      style={
-                        {
-                          "--segment-value": `${item.percent}%`,
-                          "--segment-color": item.color
-                        } as CSSProperties
-                      }
-                    />
-                  ))}
-                </div>
-                <div className={styles.healthLegend}>
-                  {sequenceHealth.map((item) => (
-                    <span key={item.label}>
-                      {item.label}
-                      <strong>{formatCompactNumber(item.value)}</strong>
-                    </span>
-                  ))}
-                </div>
+                  Create a template
+                  {templateCount > 0 ? <em>Done</em> : null}
+                </li>
+                <li data-done="false">
+                  <span className={styles.heroEmptyStepMark}>3</span>
+                  Launch a sequence
+                </li>
+              </ol>
+              <div className={styles.heroButtons}>
+                <Link href="/imports" className={styles.heroCta}>
+                  <FileSpreadsheet aria-hidden="true" />
+                  <span>Import List</span>
+                  <ArrowRight className={styles.heroCtaArrow} aria-hidden="true" />
+                </Link>
+                <Link href="/campaigns" className={`${styles.heroCta} ${styles.heroCtaGhost}`}>
+                  <SendHorizontal aria-hidden="true" />
+                  <span>Create Sequence</span>
+                  <ArrowRight className={styles.heroCtaArrow} aria-hidden="true" />
+                </Link>
               </div>
             </div>
-          </div>
+          ) : (
+            <div className={styles.heroActionCard}>
+              <strong className={styles.heroActionTitle}>Pick the next move</strong>
+              <p>Create a new sequence, import a fresh list, or jump straight into a recent run from the table below.</p>
+              <div className={styles.heroButtons}>
+                <Link href="/campaigns" className={styles.heroCta}>
+                  <SendHorizontal aria-hidden="true" />
+                  <span>Create Sequence</span>
+                  <ArrowRight className={styles.heroCtaArrow} aria-hidden="true" />
+                </Link>
+                <Link href="/imports" className={`${styles.heroCta} ${styles.heroCtaGhost}`}>
+                  <FileSpreadsheet aria-hidden="true" />
+                  <span>Import List</span>
+                  <ArrowRight className={styles.heroCtaArrow} aria-hidden="true" />
+                </Link>
+              </div>
+              <div className={styles.heroFootnote}>
+                <strong>{formatCompactNumber(validatedSequenceCount)} validated</strong>
+                <span>{sentTrend.label}</span>
+              </div>
+              <div
+                className={styles.heroInsights}
+                aria-label="Workspace analytics summary"
+                data-overview-tour="workspace-health"
+              >
+                <AnalyticsPulse
+                  targeted={runTotals.recipients}
+                  delivered={runTotals.delivered}
+                  issues={analyticsIssueCount}
+                  successPercent={deliveryMix.successPercent}
+                  coveragePercent={analyticsPulse.coveragePercent}
+                  issuePercent={analyticsPulse.issuePercent}
+                  sequenceTotal={sequenceRows.length}
+                  health={sequenceHealth}
+                />
+              </div>
+            </div>
+          )}
         </div>
       </section>
 
@@ -1089,101 +1065,86 @@ function deriveSequenceStatus(campaignStatus: CampaignStatus, runStatus?: RunSta
   };
 }
 
-function buildDeliveryMix(totals: {
-  delivered: number;
-  issues: number;
+// One dynamic sentence for the hero: what is moving, what went out, and what
+// needs a look — all from data already loaded for this page. The blank
+// workspace gets an invitation instead of a wall of zeros.
+function buildHeroStatusSentence(input: {
+  activeCount: number;
+  sentLast24h: number;
+  needsAttention: number;
+  hasAnyWork: boolean;
 }) {
-  const segments = [
-    { label: "Delivered", value: totals.delivered, color: "var(--accent)" },
-    { label: "Issues", value: totals.issues, color: "#d96952" }
-  ];
-  const total = segments.reduce((sum, segment) => sum + segment.value, 0);
+  if (!input.hasAnyWork) {
+    return "All quiet so far. Import a list and launch your first sequence to put this command center to work.";
+  }
+
+  const runs =
+    input.activeCount > 0
+      ? `${formatCompactNumber(input.activeCount)} ${input.activeCount === 1 ? "sequence is" : "sequences are"} in motion`
+      : "No sequences are running right now";
+  const sent = `${formatCompactNumber(input.sentLast24h)} ${input.sentLast24h === 1 ? "email" : "emails"} went out in the last 24 hours`;
+  const attention =
+    input.needsAttention > 0
+      ? `${formatCompactNumber(input.needsAttention)} ${input.needsAttention === 1 ? "sequence needs" : "sequences need"} your review`
+      : "nothing needs your attention";
+
+  return `${runs}, ${sent}, and ${attention}.`;
+}
+
+// Success split for the interactive delivery donut: how the delivered / issue
+// slices divide the outcomes we know about. A null success rate means there is
+// no outcome data yet, which the client renders as a graceful empty state.
+function buildDeliveryMix(totals: { delivered: number; issues: number }) {
+  const total = totals.delivered + totals.issues;
 
   return {
-    segments,
-    gradient: buildConicGradient(segments, total),
-    cleanRate: total > 0 ? formatPercent(totals.delivered, total) : null
+    total,
+    successPercent: total > 0 ? getPercent(totals.delivered, total) : null
   };
 }
 
+// Meter percentages behind the Delivered / Issues metric buttons.
 function buildAnalyticsPulse(totals: {
   delivered: number;
   issues: number;
   eligibleRecipients: number;
 }) {
-  const coveragePercent = getNullablePercent(totals.delivered, totals.eligibleRecipients);
-  const successPercent = getNullablePercent(totals.delivered, totals.delivered + totals.issues);
-  const issueRate = getNullablePercent(totals.issues, totals.delivered + totals.issues);
-
-  return [
-    {
-      label: "Delivered",
-      value: formatCompactNumber(totals.delivered),
-      percent: coveragePercent ?? 0,
-      color: "var(--accent)"
-    },
-    {
-      label: "Delivery success",
-      value: successPercent === null ? "—" : `${successPercent}%`,
-      percent: successPercent ?? 0,
-      color: "var(--success)"
-    },
-    {
-      label: "Issues",
-      value: formatCompactNumber(totals.issues),
-      percent: issueRate ?? 0,
-      color: "#d96952"
-    }
-  ];
+  return {
+    coveragePercent: getNullablePercent(totals.delivered, totals.eligibleRecipients) ?? 0,
+    issuePercent: getNullablePercent(totals.issues, totals.delivered + totals.issues) ?? 0
+  };
 }
 
-function buildSequenceHealth(rows: SequenceRowData[]) {
+function buildSequenceHealth(rows: SequenceRowData[]): PulseHealthSlice[] {
   const total = rows.length;
   const values = [
     {
+      key: "running" as const,
       label: "Running",
-      value: rows.filter((row) => row.statusTone === "running").length,
-      color: "var(--accent)"
+      value: rows.filter((row) => row.statusTone === "running").length
     },
     {
+      key: "done" as const,
       label: "Done",
-      value: rows.filter((row) => row.statusTone === "completed").length,
-      color: "var(--success)"
+      value: rows.filter((row) => row.statusTone === "completed").length
     },
     {
+      key: "review" as const,
       label: "Review",
-      value: rows.filter((row) => row.needsAttention).length,
-      color: "#d96952"
+      value: rows.filter((row) => row.needsAttention).length
     },
     {
+      key: "ready" as const,
       label: "Ready",
-      value: rows.filter((row) => row.isValidated && row.statusTone !== "running" && row.statusTone !== "completed").length,
-      color: "var(--warning)"
+      value: rows.filter((row) => row.isValidated && row.statusTone !== "running" && row.statusTone !== "completed").length
     }
   ];
 
   return values.map((item) => ({
     ...item,
+    // Non-zero slices keep a 4% floor so tiny counts stay visible/clickable.
     percent: item.value > 0 ? Math.max(4, getPercent(item.value, total)) : 0
   }));
-}
-
-function buildConicGradient(segments: Array<{ value: number; color: string }>, total: number) {
-  if (total <= 0) {
-    return "conic-gradient(color-mix(in srgb, var(--button-secondary-bg) 88%, transparent) 0% 100%)";
-  }
-
-  let cursor = 0;
-  const stops = segments
-    .filter((segment) => segment.value > 0)
-    .map((segment) => {
-      const next = cursor + (segment.value / total) * 100;
-      const stop = `${segment.color} ${cursor.toFixed(2)}% ${next.toFixed(2)}%`;
-      cursor = next;
-      return stop;
-    });
-
-  return `conic-gradient(${stops.join(", ")})`;
 }
 
 function getPercent(value: number, total: number) {
@@ -1200,10 +1161,6 @@ function getNullablePercent(value: number, total: number) {
   }
 
   return getPercent(value, total);
-}
-
-function formatPercent(value: number, total: number) {
-  return `${getPercent(value, total)}%`;
 }
 
 // Safely coerce a Prisma JSON column (requestedTitles / requestedLocations) into

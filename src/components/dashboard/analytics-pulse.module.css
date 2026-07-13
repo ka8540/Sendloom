@@ -1,0 +1,629 @@
+.pulse {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.85rem;
+  min-width: 0;
+}
+
+.titleLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.48rem;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.titleLabel svg {
+  width: 0.95rem;
+  height: 0.95rem;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.titleValue {
+  color: var(--text);
+  font-size: 0.92rem;
+  white-space: nowrap;
+}
+
+/* ---- Delivery donut + metric buttons ------------------------------------- */
+
+.deliverySection {
+  display: grid;
+  gap: 0.85rem;
+  min-width: 0;
+}
+
+.deliveryLayout {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.donutWrap {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 7.9rem;
+  aspect-ratio: 1;
+}
+
+.donut {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.donutTrack {
+  fill: none;
+  stroke: color-mix(in srgb, var(--button-secondary-bg) 88%, transparent);
+  stroke-width: 4.4;
+}
+
+.donutSegment {
+  fill: none;
+  stroke-width: 4.4;
+  cursor: pointer;
+  transition: stroke-width 180ms ease, opacity 180ms ease, filter 180ms ease;
+}
+
+.donutSegment[data-key="delivered"] {
+  stroke: var(--accent);
+}
+
+.donutSegment[data-key="issues"] {
+  stroke: #d96952;
+}
+
+.donutSegment[data-state="active"] {
+  stroke-width: 5.6;
+  filter: drop-shadow(0 0 6px color-mix(in srgb, currentColor 0%, transparent))
+    drop-shadow(0 2px 8px rgba(0, 0, 0, 0.22));
+}
+
+.donutSegment[data-state="dim"] {
+  opacity: 0.34;
+}
+
+.donutCenter {
+  position: absolute;
+  inset: 0.85rem;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 0.06rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-soft) 96%, transparent);
+  box-shadow: inset 0 1px 12px rgba(28, 42, 70, 0.08);
+  line-height: 1;
+  pointer-events: none;
+}
+
+.donutCenter strong {
+  font-size: 1.34rem;
+  font-weight: 700;
+  letter-spacing: -0.06em;
+  font-variant-numeric: tabular-nums;
+}
+
+.donutCenter small {
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.metricButtons {
+  display: grid;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.metricButton {
+  display: grid;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.72rem 0.85rem;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-muted) 78%, transparent);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: transform 160ms ease, border-color 180ms ease, background-color 180ms ease, box-shadow 180ms ease,
+    opacity 180ms ease;
+}
+
+.metricButton[data-key="delivered"] {
+  --metric-color: var(--accent);
+}
+
+.metricButton[data-key="issues"] {
+  --metric-color: #d96952;
+}
+
+.metricButton:hover,
+.metricButton[data-state="active"] {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--metric-color) 34%, var(--line));
+  background: color-mix(in srgb, var(--surface-muted) 72%, color-mix(in srgb, var(--metric-color) 30%, transparent) 28%);
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.18);
+}
+
+.metricButton[data-state="dim"] {
+  opacity: 0.55;
+}
+
+.metricButton:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--metric-color) 45%, var(--line));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--metric-color) 26%, transparent);
+}
+
+.metricButton:active {
+  transform: translateY(1px) scale(0.99);
+}
+
+.metricTop {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.metricDot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 999px;
+  background: var(--metric-color, var(--accent));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--metric-color, var(--accent)) 16%, transparent);
+  flex-shrink: 0;
+}
+
+.metricLabel {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metricValue {
+  font-size: 1.06rem;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.metricTrack {
+  position: relative;
+  display: block;
+  height: 0.34rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--button-secondary-bg) 86%, transparent);
+  overflow: hidden;
+}
+
+.metricFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--metric-color), color-mix(in srgb, var(--metric-color) 68%, white));
+  transition: width 500ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.deliveryEmpty {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.9rem;
+  border-radius: 18px;
+  border: 1px dashed var(--line);
+  background: color-mix(in srgb, var(--surface-muted) 72%, transparent);
+}
+
+.deliveryEmptyRing {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 999px;
+  border: 4px dashed color-mix(in srgb, var(--muted) 34%, transparent);
+  flex-shrink: 0;
+}
+
+.deliveryEmpty p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
+/* ---- Sequence health ------------------------------------------------------ */
+
+.healthSection {
+  display: grid;
+  gap: 0.7rem;
+  min-width: 0;
+}
+
+.healthBar {
+  display: flex;
+  width: 100%;
+  height: 0.66rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--button-secondary-bg) 86%, transparent);
+  overflow: hidden;
+}
+
+.healthSlice {
+  min-width: 0;
+  background: var(--slice-color, var(--accent));
+  cursor: pointer;
+  transition: opacity 180ms ease, transform 180ms ease, filter 180ms ease;
+}
+
+.healthSlice + .healthSlice {
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--surface) 80%, transparent);
+}
+
+.healthSlice[data-state="active"] {
+  filter: brightness(1.12);
+}
+
+.healthSlice[data-state="dim"] {
+  opacity: 0.3;
+}
+
+.healthSlice[data-key="running"],
+.healthButton[data-key="running"],
+.detailCard[data-tone="running"] {
+  --slice-color: var(--accent);
+  --metric-color: var(--accent);
+}
+
+.healthSlice[data-key="done"],
+.healthButton[data-key="done"],
+.detailCard[data-tone="done"] {
+  --slice-color: var(--success);
+  --metric-color: var(--success);
+}
+
+.healthSlice[data-key="review"],
+.healthButton[data-key="review"],
+.detailCard[data-tone="review"],
+.detailCard[data-tone="issues"] {
+  --slice-color: #d96952;
+  --metric-color: #d96952;
+}
+
+.healthSlice[data-key="ready"],
+.healthButton[data-key="ready"],
+.detailCard[data-tone="ready"] {
+  --slice-color: var(--warning);
+  --metric-color: var(--warning);
+}
+
+.detailCard[data-tone="delivered"] {
+  --metric-color: var(--accent);
+}
+
+.healthButtons {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.healthButton {
+  display: grid;
+  gap: 0.18rem;
+  min-width: 0;
+  padding: 0.55rem 0.6rem;
+  border-radius: 14px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: transform 160ms ease, border-color 180ms ease, background-color 180ms ease, opacity 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.healthButton:hover,
+.healthButton[data-state="active"] {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--metric-color) 30%, var(--line));
+  background: color-mix(in srgb, var(--surface-muted) 74%, color-mix(in srgb, var(--metric-color) 26%, transparent) 26%);
+}
+
+.healthButton[data-state="dim"] {
+  opacity: 0.55;
+}
+
+.healthButton:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--metric-color) 45%, var(--line));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--metric-color) 26%, transparent);
+}
+
+.healthButton:active {
+  transform: translateY(1px) scale(0.99);
+}
+
+.healthButtonLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.healthButtonLabel .metricDot {
+  width: 0.42rem;
+  height: 0.42rem;
+  box-shadow: none;
+}
+
+.healthButtonValue {
+  font-size: 0.98rem;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+.healthEmpty {
+  padding: 0.85rem 0.9rem;
+  border-radius: 16px;
+  border: 1px dashed var(--line);
+  background: color-mix(in srgb, var(--surface-muted) 72%, transparent);
+}
+
+.healthEmpty p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
+/* ---- Detail card ----------------------------------------------------------- */
+
+.detailSlot {
+  min-width: 0;
+  display: grid;
+}
+
+.detailSlot:empty {
+  display: none;
+}
+
+.detailCard {
+  display: grid;
+  gap: 0.6rem;
+  min-width: 0;
+  padding: 0.9rem 0.95rem;
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--metric-color, var(--accent)) 26%, var(--line));
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, color-mix(in srgb, var(--metric-color, var(--accent)) 14%, transparent) 100%, transparent),
+      color-mix(in srgb, var(--surface-muted) 88%, transparent)
+    );
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 6%, transparent),
+    0 16px 32px rgba(0, 0, 0, 0.16);
+  animation: pulse-detail-in 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes pulse-detail-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.detailHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.detailTitle {
+  font-size: 0.98rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.3;
+}
+
+.detailClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-soft) 92%, transparent);
+  color: var(--muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 160ms ease, border-color 180ms ease, background-color 180ms ease, transform 160ms ease;
+}
+
+.detailClose svg {
+  width: 0.85rem;
+  height: 0.85rem;
+}
+
+.detailClose:hover,
+.detailClose:focus-visible {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 22%, var(--line));
+  background: color-mix(in srgb, var(--surface-soft) 74%, var(--accent-soft) 26%);
+  outline: none;
+}
+
+.detailClose:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+.detailCopy {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.55;
+}
+
+.detailStats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.15rem;
+  margin: 0;
+}
+
+.detailStat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.detailStat dt {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.detailStat dd {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+
+.detailActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.detailAction {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.35rem;
+  padding: 0.5rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--metric-color, var(--accent)) 30%, var(--line));
+  background: color-mix(in srgb, var(--surface-soft) 82%, color-mix(in srgb, var(--metric-color, var(--accent)) 24%, transparent) 18%);
+  color: var(--text);
+  font-size: 0.84rem;
+  font-weight: 650;
+  white-space: nowrap;
+  transition: transform 160ms ease, border-color 180ms ease, background-color 180ms ease, box-shadow 180ms ease;
+}
+
+.detailAction svg {
+  width: 0.85rem;
+  height: 0.85rem;
+  transition: transform 180ms ease;
+}
+
+.detailAction:hover,
+.detailAction:focus-visible {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--metric-color, var(--accent)) 48%, var(--line));
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.16);
+  outline: none;
+}
+
+.detailAction:focus-visible {
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--metric-color, var(--accent)) 26%, transparent),
+    0 10px 22px rgba(0, 0, 0, 0.16);
+}
+
+.detailAction:hover svg,
+.detailAction:focus-visible svg {
+  transform: translate(2px, -2px);
+}
+
+/* ---- Responsive ------------------------------------------------------------ */
+
+@media (max-width: 480px) {
+  .deliveryLayout {
+    grid-template-columns: 1fr;
+    justify-items: center;
+  }
+
+  .metricButtons {
+    width: 100%;
+  }
+
+  .healthButtons {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* ---- Reduced motion --------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .metricButton,
+  .healthButton,
+  .healthSlice,
+  .donutSegment,
+  .detailAction,
+  .detailClose,
+  .metricFill {
+    transition: none;
+  }
+
+  .detailCard {
+    animation: none;
+  }
+
+  .metricButton:hover,
+  .metricButton[data-state="active"],
+  .healthButton:hover,
+  .healthButton[data-state="active"],
+  .detailAction:hover,
+  .detailAction:focus-visible {
+    transform: none;
+  }
+}
