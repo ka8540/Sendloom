@@ -85,16 +85,44 @@ describe("Delivered/issues split math (#1, #2)", () => {
   });
 });
 
-describe("Overview dashboard renders (#1)", () => {
+describe("Overview dashboard renders as one main block (#1, #2, #3)", () => {
+  // Everything between the hero opening and the summary cards — the main
+  // dashboard block. Analytics + health must live inside it.
+  const heroBlock = CENTER.slice(
+    CENTER.indexOf('data-overview-tour="page-intro"'),
+    CENTER.indexOf("<OverviewSummary")
+  );
+
   it("the /workspace route renders the redesigned command center", () => {
     expect(WORKSPACE_PAGE).toContain('export { default } from "@/components/dashboard/overview-command-center"');
     expect(CENTER).toContain("styles.heroTitle}>Overview</h1>");
     expect(CENTER).toContain('data-overview-tour="page-intro"');
   });
 
-  it("mounts the interactive Analytics Pulse with the hero insights", () => {
+  it("keeps identity, actions, and analytics inside the single hero block — no sibling sections", () => {
+    // No <section> opens inside the hero slice: the pulse and the health rail
+    // are children of the one main card, not separate deck cards.
+    expect((heroBlock.match(/<section/g) ?? []).length).toBe(0);
+    expect(heroBlock).toContain("<AnalyticsPulse");
+    expect(heroBlock).toContain("styles.heroActionCard");
+    expect(heroBlock).toContain("styles.heroInsights");
+    // The old split-layout sections are gone.
+    expect(CENTER).not.toContain("pulseDeck");
+    expect(CENTER).not.toContain("startSection");
+  });
+
+  it("mounts the interactive Analytics Pulse inside the hero insights", () => {
     expect(CENTER).toContain("<AnalyticsPulse");
     expect(CENTER).toContain('data-overview-tour="workspace-health"');
+    // The sequence-health module renders inside the same client component the
+    // hero embeds, so it also stays inside the main block.
+    expect(PULSE).toContain('data-overview-tour="sequence-health"');
+  });
+
+  it("keeps hero copy short — the long launch paragraph stays gone", () => {
+    expect(CENTER).toContain("Launch, import, or review what needs attention.");
+    expect(CENTER).not.toContain("jump straight into a recent run");
+    expect(CENTER).not.toContain("Move from signal to action");
   });
 });
 
@@ -112,14 +140,37 @@ describe("Loading skeleton (#2, #3)", () => {
     expect(LOADING_CSS).not.toMatch(/rotate\(360deg\)|animation:[^;]*spin/);
   });
 
-  it("mirrors the redesigned layout: command header, stat strip, analytics deck, panels", () => {
-    for (const piece of ["heroMain", "ctaRow", "statStrip", "pulseDeck", "donutRing", "donutCore", "healthChips", "summaryRow", "mainGrid", "activityRow"]) {
+  it("mirrors the compact panel: identity + stat tiles, action card with ring and health rail", () => {
+    for (const piece of [
+      "heroIdentity",
+      "highlightRow",
+      "actionCard",
+      "ctaRow",
+      "insightStack",
+      "donutRing",
+      "donutCore",
+      "metricRow",
+      "railBar",
+      "healthChips",
+      "summaryRow",
+      "mainGrid",
+      "activityRow"
+    ]) {
       expect(LOADING).toContain(piece);
     }
     // The skeleton is CSS-only — a server component with zero client JS.
     expect(LOADING).not.toContain('"use client"');
     expect(LOADING).not.toMatch(/useState|useEffect|canvas|three|lottie/i);
     expect(LOADING_CSS).toContain("overview-skeleton-shimmer");
+  });
+
+  it("keeps the skeleton's ring and health rail inside the one hero block (#10)", () => {
+    const heroSkeleton = LOADING.slice(LOADING.indexOf("styles.hero}"), LOADING.indexOf("</section>"));
+    expect((heroSkeleton.match(/<section/g) ?? []).length).toBe(0);
+    expect(heroSkeleton).toContain("donutRing");
+    expect(heroSkeleton).toContain("healthChips");
+    expect(LOADING).not.toContain("pulseDeck");
+    expect(LOADING).not.toContain("statStrip");
   });
 });
 

@@ -779,120 +779,119 @@ export default async function OverviewCommandCenter() {
 
   return (
     <div className={styles.page}>
-      {/* Compact command header: identity + primary actions on one band, with a
-          hairline stat strip underneath. No paragraphs — the stats are the status. */}
+      {/* One command panel: identity + live stat tiles on the left, the action
+          card on the right. The action card stacks the next-move CTAs over the
+          interactive analytics — nothing breaks out into sibling cards. */}
       <section className={styles.hero} data-overview-tour="page-intro">
-        <div className={styles.heroMain}>
-          <div className={styles.heroIdentity}>
-            <span className={styles.heroEyebrow}>
-              <span className={styles.heroPulse} />
-              Command center
-            </span>
-            <h1 className={styles.heroTitle}>Overview</h1>
-            <p className={styles.heroCopy}>Launch, import, or review what needs attention.</p>
-          </div>
-          <div className={styles.heroButtons}>
-            <Link href="/campaigns" className={styles.heroCta}>
-              <SendHorizontal aria-hidden="true" />
-              <span>Create Sequence</span>
-              <ArrowRight className={styles.heroCtaArrow} aria-hidden="true" />
-            </Link>
-            <Link href="/imports" className={`${styles.heroCta} ${styles.heroCtaGhost}`}>
-              <FileSpreadsheet aria-hidden="true" />
-              <span>Import List</span>
-              <ArrowRight className={styles.heroCtaArrow} aria-hidden="true" />
-            </Link>
-          </div>
-        </div>
-
-        {!isBlankWorkspace ? (
-          <div className={styles.heroStats}>
-            <div className={styles.heroStat}>
-              <span className={styles.heroStatLabel}>Active now</span>
-              <strong className={styles.heroStatValue}>{formatCompactNumber(activeSequenceCount)}</strong>
-              <span className={styles.heroStatMeta}>Running or queued</span>
+        <div className={styles.heroContent}>
+          <span className={styles.heroEyebrow}>
+            <span className={styles.heroPulse} />
+            Command center
+          </span>
+          <h1 className={styles.heroTitle}>Overview</h1>
+          <p className={styles.heroCopy}>Launch, import, or review what needs attention.</p>
+          <div className={styles.heroHighlights}>
+            <div className={styles.heroHighlight}>
+              <span className={styles.heroHighlightLabel}>Active now</span>
+              <strong className={styles.heroHighlightValue}>{formatCompactNumber(activeSequenceCount)}</strong>
+              <span className={styles.heroHighlightMeta}>Running or queued</span>
             </div>
-            <div className={styles.heroStat}>
-              <span className={styles.heroStatLabel}>Sent · 24h</span>
-              <strong className={styles.heroStatValue}>{formatCompactNumber(sentLastDayCount)}</strong>
-              <span className={styles.heroStatMeta}>{sentTrend.label}</span>
+            <div className={styles.heroHighlight}>
+              <span className={styles.heroHighlightLabel}>Sent · 24h</span>
+              <strong className={styles.heroHighlightValue}>{formatCompactNumber(sentLastDayCount)}</strong>
+              <span className={styles.heroHighlightMeta}>{sentTrend.label}</span>
             </div>
             <div
-              className={styles.heroStat}
+              className={styles.heroHighlight}
               data-tone={needsAttentionCount > 0 ? "warn" : "ok"}
               data-overview-tour="needs-attention"
             >
-              <span className={styles.heroStatLabel}>Attention</span>
-              <strong className={styles.heroStatValue}>{formatCompactNumber(needsAttentionCount)}</strong>
-              <span className={styles.heroStatMeta}>{needsAttentionCount ? "Review required" : "All clear"}</span>
-            </div>
-            <div className={styles.heroStat}>
-              <span className={styles.heroStatLabel}>Validated</span>
-              <strong className={styles.heroStatValue}>{formatCompactNumber(validatedSequenceCount)}</strong>
-              <span className={styles.heroStatMeta}>Ready to relaunch</span>
+              <span className={styles.heroHighlightLabel}>Attention</span>
+              <strong className={styles.heroHighlightValue}>{formatCompactNumber(needsAttentionCount)}</strong>
+              <span className={styles.heroHighlightMeta}>{needsAttentionCount ? "Review required" : "All clear"}</span>
             </div>
           </div>
-        ) : null}
-      </section>
+        </div>
 
-      {isBlankWorkspace ? (
-        <section className={styles.startSection}>
-          <div
-            className={`${styles.heroActionCard} ${styles.heroEmptyCard}`}
-            data-overview-tour="workspace-health"
-          >
-            <span className={styles.heroEmptyBadge}>
-              <Sparkles aria-hidden="true" />
-              Getting started
-            </span>
-            <strong className={styles.heroActionTitle}>Start your outreach system</strong>
-            <p>Import a list, create a template, then launch your first sequence.</p>
-            <ol className={styles.heroEmptySteps}>
-              <li data-done="false">
-                <span className={styles.heroEmptyStepMark}>1</span>
-                Import a list
-              </li>
-              <li data-done={templateCount > 0 ? "true" : "false"}>
-                <span className={styles.heroEmptyStepMark}>
-                  {templateCount > 0 ? <Check aria-hidden="true" /> : 2}
-                </span>
-                Create a template
-                {templateCount > 0 ? <em>Done</em> : null}
-              </li>
-              <li data-done="false">
-                <span className={styles.heroEmptyStepMark}>3</span>
-                Launch a sequence
-              </li>
-            </ol>
-            <div className={styles.heroButtons}>
-              <Link href="/imports" className={styles.heroCta}>
-                <FileSpreadsheet aria-hidden="true" />
-                <span>Import List</span>
-                <ArrowRight className={styles.heroCtaArrow} aria-hidden="true" />
-              </Link>
-              <Link href="/campaigns" className={`${styles.heroCta} ${styles.heroCtaGhost}`}>
-                <SendHorizontal aria-hidden="true" />
-                <span>Create Sequence</span>
-                <ArrowRight className={styles.heroCtaArrow} aria-hidden="true" />
-              </Link>
+        <div className={styles.heroActions}>
+          {isBlankWorkspace ? (
+            <div
+              className={`${styles.heroActionCard} ${styles.heroEmptyCard}`}
+              data-overview-tour="workspace-health"
+            >
+              <span className={styles.heroEmptyBadge}>
+                <Sparkles aria-hidden="true" />
+                Getting started
+              </span>
+              <strong className={styles.heroActionTitle}>Start your outreach system</strong>
+              <p className={styles.heroActionCopy}>Import a list, create a template, then launch your first sequence.</p>
+              <ol className={styles.heroEmptySteps}>
+                <li data-done="false">
+                  <span className={styles.heroEmptyStepMark}>1</span>
+                  Import a list
+                </li>
+                <li data-done={templateCount > 0 ? "true" : "false"}>
+                  <span className={styles.heroEmptyStepMark}>
+                    {templateCount > 0 ? <Check aria-hidden="true" /> : 2}
+                  </span>
+                  Create a template
+                  {templateCount > 0 ? <em>Done</em> : null}
+                </li>
+                <li data-done="false">
+                  <span className={styles.heroEmptyStepMark}>3</span>
+                  Launch a sequence
+                </li>
+              </ol>
+              <div className={styles.heroButtons}>
+                <Link href="/imports" className={styles.heroCta}>
+                  <FileSpreadsheet aria-hidden="true" />
+                  <span>Import List</span>
+                  <ArrowRight className={styles.heroCtaArrow} aria-hidden="true" />
+                </Link>
+                <Link href="/campaigns" className={`${styles.heroCta} ${styles.heroCtaGhost}`}>
+                  <SendHorizontal aria-hidden="true" />
+                  <span>Create Sequence</span>
+                  <ArrowRight className={styles.heroCtaArrow} aria-hidden="true" />
+                </Link>
+              </div>
             </div>
-          </div>
-        </section>
-      ) : (
-        <section
-          className={styles.pulseDeck}
-          aria-label="Workspace analytics summary"
-          data-overview-tour="workspace-health"
-        >
-          <AnalyticsPulse
-            targeted={runTotals.recipients}
-            delivered={runTotals.delivered}
-            issues={analyticsIssueCount}
-            sequenceTotal={sequenceRows.length}
-            health={sequenceHealth}
-          />
-        </section>
-      )}
+          ) : (
+            <div className={styles.heroActionCard}>
+              <div className={styles.heroActionHead}>
+                <strong className={styles.heroActionTitle}>Pick the next move</strong>
+                <span className={styles.heroActionChip}>
+                  {formatCompactNumber(validatedSequenceCount)} validated
+                </span>
+              </div>
+              <div className={styles.heroButtons}>
+                <Link href="/campaigns" className={styles.heroCta}>
+                  <SendHorizontal aria-hidden="true" />
+                  <span>Create Sequence</span>
+                  <ArrowRight className={styles.heroCtaArrow} aria-hidden="true" />
+                </Link>
+                <Link href="/imports" className={`${styles.heroCta} ${styles.heroCtaGhost}`}>
+                  <FileSpreadsheet aria-hidden="true" />
+                  <span>Import List</span>
+                  <ArrowRight className={styles.heroCtaArrow} aria-hidden="true" />
+                </Link>
+              </div>
+              <div
+                className={styles.heroInsights}
+                aria-label="Workspace analytics summary"
+                data-overview-tour="workspace-health"
+              >
+                <AnalyticsPulse
+                  targeted={runTotals.recipients}
+                  delivered={runTotals.delivered}
+                  issues={analyticsIssueCount}
+                  sequenceTotal={sequenceRows.length}
+                  health={sequenceHealth}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
 
       <OverviewSummary
         active={summaryActive}

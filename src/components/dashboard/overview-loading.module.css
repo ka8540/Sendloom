@@ -42,33 +42,27 @@
   }
 }
 
-/* ---- Command header ------------------------------------------------------------ */
+/* ---- Command panel: identity + stat tiles | action card ------------------------- */
 
 .hero {
   position: relative;
   display: grid;
-  gap: 1.15rem;
-  padding: 1.35rem 1.5rem;
-  border-radius: 24px;
+  grid-template-columns: minmax(0, 1.05fr) minmax(21rem, 0.95fr);
+  gap: 1.5rem;
+  padding: 1.5rem;
+  border-radius: 28px;
   border: 1px solid var(--line);
   background:
-    radial-gradient(120% 130% at 100% 0%, color-mix(in srgb, var(--accent) 6%, transparent), transparent 42%),
+    radial-gradient(120% 130% at 100% 0%, color-mix(in srgb, var(--accent) 6%, transparent), transparent 46%),
     linear-gradient(180deg, color-mix(in srgb, var(--surface) 92%, transparent), var(--surface));
   box-shadow: var(--shadow);
   overflow: hidden;
 }
 
-.heroMain {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem 1.5rem;
-}
-
 .heroIdentity {
   display: grid;
-  gap: 0.55rem;
+  gap: 0.85rem;
+  align-content: start;
   min-width: 0;
 }
 
@@ -79,7 +73,7 @@
 
 .title {
   width: min(11rem, 70%);
-  height: 2.1rem;
+  height: 2.4rem;
   border-radius: 10px;
 }
 
@@ -87,6 +81,57 @@
   width: 16rem;
   max-width: 92%;
   height: 0.85rem;
+}
+
+.highlightRow {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.6rem;
+  max-width: 31rem;
+  margin-top: 0.3rem;
+}
+
+.highlightCell {
+  display: grid;
+  gap: 0.45rem;
+  align-content: start;
+  min-width: 0;
+  padding: 0.85rem 0.9rem;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--line) 90%, transparent);
+  background: color-mix(in srgb, var(--surface-muted) 80%, transparent);
+}
+
+.statNumber {
+  width: 3.4rem;
+  height: 1.45rem;
+  border-radius: 8px;
+}
+
+/* Action card skeleton: CTA row over the embedded analytics stack. */
+
+.actionCard {
+  display: grid;
+  gap: 0.95rem;
+  align-content: start;
+  min-width: 0;
+  padding: 1.2rem;
+  border-radius: 22px;
+  border: 1px solid color-mix(in srgb, var(--line) 94%, transparent);
+  background: color-mix(in srgb, var(--surface-soft) 94%, transparent);
+}
+
+.actionHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.pillSmall {
+  width: 5rem;
+  height: 1.5rem;
+  border-radius: 999px;
 }
 
 .ctaRow {
@@ -107,44 +152,12 @@
   opacity: 0.65;
 }
 
-.statStrip {
+.insightStack {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 1rem;
-  padding-top: 1.05rem;
-  border-top: 1px solid color-mix(in srgb, var(--line) 85%, transparent);
-}
-
-.statCell {
-  display: grid;
-  gap: 0.4rem;
-  align-content: start;
+  gap: 0.85rem;
   min-width: 0;
-}
-
-.statNumber {
-  width: 3.4rem;
-  height: 1.45rem;
-  border-radius: 8px;
-}
-
-/* ---- Analytics deck: ring + metric rows | health bar + chips -------------------- */
-
-.pulseDeck {
-  display: grid;
-  grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr);
-  gap: 1rem;
-}
-
-.module {
-  display: grid;
-  gap: 0.95rem;
-  align-content: start;
-  padding: 1.15rem 1.2rem 1.2rem;
-  border-radius: 22px;
-  border: 1px solid var(--line);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 92%, transparent), var(--surface-muted));
-  box-shadow: var(--shadow);
+  padding-top: 1rem;
+  border-top: 1px solid color-mix(in srgb, var(--line) 85%, transparent);
 }
 
 .moduleHead {
@@ -158,13 +171,13 @@
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  gap: 1.25rem;
+  gap: 1rem;
 }
 
 .donutRing {
   display: grid;
   place-items: center;
-  width: 6.6rem;
+  width: 6.2rem;
   aspect-ratio: 1;
   border-radius: 999px;
   border: 0.34rem solid color-mix(in srgb, var(--muted) 12%, transparent);
@@ -398,9 +411,14 @@
   }
 }
 
-@media (max-width: 1100px) {
-  .pulseDeck {
+@media (max-width: 1080px) {
+  .hero {
     grid-template-columns: 1fr;
+    gap: 1.25rem;
+  }
+
+  .highlightRow {
+    max-width: none;
   }
 }
 
@@ -411,8 +429,12 @@
     border-radius: 24px;
   }
 
-  .statStrip {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .highlightRow {
+    gap: 0.5rem;
+  }
+
+  .highlightCell {
+    padding: 0.7rem 0.75rem;
   }
 
   .summaryRow {
