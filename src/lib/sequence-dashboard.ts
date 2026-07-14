@@ -230,6 +230,36 @@ export function countSequenceFilters(
   return counts;
 }
 
+// Sender email account filter. The empty string means "all email accounts";
+// values are compared case-insensitively because Gmail addresses are.
+export const ALL_SENDER_ACCOUNTS = "";
+
+export function collectSequenceSenderEmails(items: readonly SequenceListItem[]): string[] {
+  const seen = new Map<string, string>();
+
+  for (const item of items) {
+    const email = item.senderEmail.trim();
+    if (!email) {
+      continue;
+    }
+
+    const key = email.toLowerCase();
+    if (!seen.has(key)) {
+      seen.set(key, email);
+    }
+  }
+
+  return [...seen.values()].sort((a, b) => a.localeCompare(b));
+}
+
+export function sequenceMatchesSender(item: SequenceListItem, senderEmail: string): boolean {
+  if (!senderEmail) {
+    return true;
+  }
+
+  return item.senderEmail.trim().toLowerCase() === senderEmail.trim().toLowerCase();
+}
+
 export function normalizeSequenceQuery(query: string): string {
   return query.trim().toLowerCase();
 }
@@ -249,10 +279,14 @@ export function sequenceMatchesSearch(item: SequenceListItem, query: string): bo
 export function filterSequenceItems(
   items: readonly SequenceListItem[],
   filterId: SequenceFilterId,
-  query: string
+  query: string,
+  senderEmail: string = ALL_SENDER_ACCOUNTS
 ): SequenceListItem[] {
   return items.filter(
-    (item) => sequenceMatchesFilter(item, filterId) && sequenceMatchesSearch(item, query)
+    (item) =>
+      sequenceMatchesFilter(item, filterId) &&
+      sequenceMatchesSender(item, senderEmail) &&
+      sequenceMatchesSearch(item, query)
   );
 }
 

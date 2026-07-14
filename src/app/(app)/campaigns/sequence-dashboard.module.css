@@ -1,7 +1,8 @@
-/* Sequence list: count + search + filter toolbar, a table-style list of
-   5 rows per page (name, status, state, created, progress, performance,
-   actions), and pagination with page previews. Tone colors are declared once
-   here and shared by dots, pills, and rows. */
+/* Sequence list: a compact control bar (count | search | Status dropdown |
+   Email accounts dropdown), a table-style list of 5 rows per page (name,
+   status, state, created, progress, performance, actions), and pagination
+   with page previews. Tone colors are declared once here and shared by dots,
+   menu options, and rows. */
 
 .dashboard {
   --tone-attention: #e5484d;
@@ -35,7 +36,8 @@
   min-width: 0;
 }
 
-/* Toolbar: total count, search, and the status filter rail. */
+/* Control bar: total count | search | Status dropdown | Email accounts
+   dropdown. One row on desktop; wraps into stacked rows on narrow boards. */
 
 .toolbar {
   display: flex;
@@ -55,48 +57,135 @@
   white-space: nowrap;
 }
 
-.filterRail {
+.filterControls {
   display: flex;
   align-items: center;
-  gap: 0.45rem;
-  flex-wrap: wrap;
+  gap: 0.55rem;
   min-width: 0;
 }
 
-.filterPill {
+/* Dropdown trigger: styled like the app's fields, never a native select. */
+
+.select {
+  position: relative;
+  min-width: 0;
+}
+
+.selectTrigger {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
-  padding: 0.42rem 0.72rem;
+  max-width: 17rem;
+  padding: 0.58rem 0.8rem 0.58rem 0.95rem;
   border-radius: 999px;
-  border: 1px solid var(--line);
-  background: var(--surface-muted);
+  border: 1px solid var(--field-border);
+  background: var(--field-bg);
   color: var(--text);
   font: inherit;
-  font-size: 0.84rem;
+  font-size: 0.86rem;
   font-weight: 650;
-  line-height: 1;
+  line-height: 1.2;
   cursor: pointer;
   transition: border-color 140ms ease, background-color 140ms ease, color 140ms ease;
   white-space: nowrap;
 }
 
-.filterPill:hover {
-  border-color: color-mix(in srgb, var(--accent) 32%, var(--line));
+.selectTrigger:hover {
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--field-border));
 }
 
-.filterPill:focus-visible {
+.selectTrigger:focus-visible {
   outline: 2px solid var(--field-focus);
   outline-offset: 2px;
 }
 
-.filterPill[aria-pressed="true"] {
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+.selectTrigger[aria-expanded="true"] {
+  border-color: var(--field-focus);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.selectTrigger[data-active="true"] {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--field-border));
   background: var(--accent-soft);
   color: var(--accent-strong);
 }
 
-.filterDot {
+.selectValue {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selectChevron {
+  width: 0.9rem;
+  height: 0.9rem;
+  color: var(--muted);
+  flex-shrink: 0;
+  transition: transform 140ms ease;
+}
+
+.selectTrigger[aria-expanded="true"] .selectChevron {
+  transform: rotate(180deg);
+}
+
+.selectTrigger[data-active="true"] .selectChevron {
+  color: var(--accent-strong);
+}
+
+/* Dropdown menu: dark polished panel anchored under the trigger. */
+
+.selectMenu {
+  position: absolute;
+  top: calc(100% + 0.45rem);
+  left: 0;
+  z-index: 30;
+  display: grid;
+  gap: 0.12rem;
+  min-width: 100%;
+  width: max-content;
+  max-width: min(21rem, calc(100vw - 3rem));
+  padding: 0.4rem;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--surface-strong);
+  box-shadow: var(--shadow);
+}
+
+.selectOption {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.48rem 0.62rem;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+  min-width: 0;
+}
+
+.selectOption:hover {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.selectOption:focus-visible {
+  outline: 2px solid var(--field-focus);
+  outline-offset: -2px;
+}
+
+.selectOption[aria-selected="true"] {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.selectDot {
   width: 0.42rem;
   height: 0.42rem;
   border-radius: 999px;
@@ -104,53 +193,77 @@
   flex-shrink: 0;
 }
 
-.filterPill[data-tone="all"] .filterDot {
+.selectDot[data-tone="all"] {
   background: var(--text);
 }
 
-.filterPill[data-tone="active"] .filterDot {
+.selectDot[data-tone="active"] {
   background: var(--tone-active);
 }
 
-.filterPill[data-tone="paused"] .filterDot {
+.selectDot[data-tone="paused"] {
   background: var(--tone-paused);
 }
 
-.filterPill[data-tone="attention"] .filterDot {
+.selectDot[data-tone="attention"] {
   background: var(--tone-attention);
 }
 
-.filterPill[data-tone="completed"] .filterDot {
+.selectDot[data-tone="completed"] {
   background: var(--tone-completed);
 }
 
-.filterPill[data-tone="scheduled"] .filterDot {
+.selectDot[data-tone="scheduled"] {
   background: var(--tone-scheduled);
 }
 
-.filterPill[data-tone="draft"] .filterDot {
+.selectDot[data-tone="draft"] {
   background: var(--tone-draft);
 }
 
-.filterCount {
-  padding: 0.14rem 0.46rem;
+.optionLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.optionCount {
+  margin-left: auto;
+  padding: 0.12rem 0.44rem;
   border-radius: 999px;
   border: 1px solid var(--line);
   background: var(--surface);
   color: var(--muted);
-  font-size: 0.74rem;
+  font-size: 0.72rem;
   font-weight: 750;
   font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
 }
 
-.filterPill[aria-pressed="true"] .filterCount {
+.selectOption[aria-selected="true"] .optionCount {
   border-color: color-mix(in srgb, var(--accent) 34%, var(--line));
   color: var(--accent-strong);
 }
 
+.optionCheck {
+  width: 0.82rem;
+  height: 0.82rem;
+  color: var(--accent-strong);
+  flex-shrink: 0;
+}
+
+.selectOption .optionCheck {
+  margin-left: 0.1rem;
+}
+
+.selectOption:not(:has(.optionCount)) .optionCheck {
+  margin-left: auto;
+}
+
 .search {
   position: relative;
-  flex: 0 1 15rem;
+  flex: 0 1 16rem;
   min-width: 11rem;
 }
 
@@ -635,13 +748,27 @@
 
   .search {
     flex: 1 1 auto;
+    min-width: 0;
   }
 
-  .filterRail {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    padding-bottom: 0.25rem;
-    -webkit-overflow-scrolling: touch;
+  /* The two dropdowns sit side-by-side and split the row; menus stay inside
+     the viewport via the max-width clamp above. */
+  .filterControls {
+    width: 100%;
+  }
+
+  .filterControls .select {
+    flex: 1 1 0;
+  }
+
+  .selectTrigger {
+    width: 100%;
+    max-width: none;
+    justify-content: space-between;
+  }
+
+  .selectValue {
+    margin-right: auto;
   }
 
   .tableHead {
@@ -689,7 +816,9 @@
 @media (prefers-reduced-motion: reduce) {
   .row,
   .rowLink,
-  .filterPill,
+  .selectTrigger,
+  .selectChevron,
+  .selectOption,
   .pageButton,
   .pagePreview {
     transition: none;

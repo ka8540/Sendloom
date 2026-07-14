@@ -49,10 +49,9 @@ export default function CampaignsLoading() {
         <div className={styles.toolbar}>
           <Bar className={styles.totalCount} />
           <Bar className={styles.search} />
-          <div className={styles.filterRail}>
-            {Array.from({ length: 6 }).map((_, index) => (
-              <Bar key={index} className={styles.filterPill} />
-            ))}
+          <div className={styles.filterControls}>
+            <Bar className={styles.filterControl} />
+            <Bar className={styles.filterControl} />
           </div>
         </div>
 

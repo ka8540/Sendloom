@@ -3,10 +3,12 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
+  ALL_SENDER_ACCOUNTS,
   SEQUENCE_FILTERS,
   SEQUENCE_PAGE_SIZE,
   SEQUENCE_TONE_LABELS,
   buildSequenceAttentionItems,
+  collectSequenceSenderEmails,
   countSequenceFilters,
   describeSequencePagePreview,
   describeSequenceState,
@@ -18,13 +20,15 @@ import {
   primarySequenceTone,
   sequenceMatchesFilter,
   sequenceMatchesSearch,
+  sequenceMatchesSender,
   type SequenceListItem
 } from "@/lib/sequence-dashboard";
 
 // Unit tests for the sequence-dashboard view logic plus node-only source
 // assertions for the redesigned Sequences pages (server components are not
 // renderable in the node test env). Covers: the dashboard-only /campaigns
-// route (header, summary cards, health panel, filters with counts, search,
+// route (header, summary cards, health panel, the compact control bar —
+// count | search | Status dropdown | Email accounts dropdown — and
 // 5-per-page pagination), the separate /campaigns/new create page with the
 // compact Gmail sender panel, the untouched detail page, and the
 // no-backend-change guards.
@@ -43,6 +47,7 @@ const DETAIL = readFileSync("src/app/(app)/campaigns/[id]/page.tsx", "utf8");
 const DETAIL_CSS = readFileSync("src/app/(app)/campaigns/[id]/page.module.css", "utf8");
 const ACTIONS = readFileSync("src/components/campaign-card-actions.tsx", "utf8");
 const ACTIONS_CSS = readFileSync("src/components/campaign-card-actions.module.css", "utf8");
+const MANUAL = readFileSync("src/manuals/campaignsManual.ts", "utf8");
 
 function makeItem(overrides: Partial<SequenceListItem> = {}): SequenceListItem {
   return {
@@ -199,6 +204,74 @@ describe("search (#8, #9)", () => {
   });
 });
 
+describe("email account filter", () => {
+  const items = [
+    makeItem({ id: "a", senderEmail: "kush.ahir2024@gmail.com" }),
+    makeItem({ id: "b", senderEmail: "outreach@sendloom.net", campaignStatus: "PAUSED" }),
+    makeItem({ id: "c", senderEmail: "Kush.Ahir2024@Gmail.com", campaignStatus: "PAUSED" })
+  ];
+
+  it("collects unique sender emails, case-insensitively, sorted", () => {
+    expect(collectSequenceSenderEmails(items)).toEqual([
+      "kush.ahir2024@gmail.com",
+      "outreach@sendloom.net"
+    ]);
+    expect(collectSequenceSenderEmails([])).toEqual([]);
+    expect(collectSequenceSenderEmails([makeItem({ senderEmail: "  " })])).toEqual([]);
+  });
+
+  it("matches a sender case-insensitively; the empty sentinel matches everything", () => {
+    expect(ALL_SENDER_ACCOUNTS).toBe("");
+    expect(sequenceMatchesSender(items[0], "kush.ahir2024@gmail.com")).toBe(true);
+    expect(sequenceMatchesSender(items[2], "kush.ahir2024@gmail.com")).toBe(true);
+    expect(sequenceMatchesSender(items[1], "kush.ahir2024@gmail.com")).toBe(false);
+    expect(sequenceMatchesSender(items[1], ALL_SENDER_ACCOUNTS)).toBe(true);
+  });
+
+  it("selecting an email account narrows the visible list", () => {
+    expect(
+      filterSequenceItems(items, "all", "", "kush.ahir2024@gmail.com").map((item) => item.id)
+    ).toEqual(["a", "c"]);
+    expect(filterSequenceItems(items, "all", "", ALL_SENDER_ACCOUNTS)).toHaveLength(3);
+  });
+
+  it("search + status + email account combine", () => {
+    const mixed = [
+      makeItem({
+        id: "a",
+        name: "BlackRock analysts",
+        campaignStatus: "COMPLETED",
+        senderEmail: "kush.ahir2024@gmail.com"
+      }),
+      makeItem({
+        id: "b",
+        name: "BlackRock analysts",
+        campaignStatus: "COMPLETED",
+        senderEmail: "outreach@sendloom.net"
+      }),
+      makeItem({
+        id: "c",
+        name: "BlackRock analysts",
+        campaignStatus: "PAUSED",
+        latestRunStatus: "PAUSED",
+        senderEmail: "kush.ahir2024@gmail.com"
+      }),
+      makeItem({
+        id: "d",
+        name: "Verkada recruiters",
+        campaignStatus: "COMPLETED",
+        senderEmail: "kush.ahir2024@gmail.com"
+      })
+    ];
+
+    expect(
+      filterSequenceItems(mixed, "completed", "blackrock", "kush.ahir2024@gmail.com").map(
+        (item) => item.id
+      )
+    ).toEqual(["a"]);
+  });
+});
+
 describe("pagination (#10, #11)", () => {
   const items = Array.from({ length: 12 }, (_, index) =>
     makeItem({ id: `seq-${index}`, name: `Sequence ${index}` })
@@ -343,10 +416,38 @@ describe("create page (#4, #5)", () => {
   });
 });
 
-describe("dashboard component (#7, #8, #10, #11)", () => {
-  it("filters render as aria-pressed buttons with live counts", () => {
-    expect(DASH).toContain("aria-pressed={filter === entry.id}");
-    expect(DASH).toContain("{formatCount(counts[entry.id])}");
+describe("control bar (#7, #8, #10, #11)", () => {
+  it("no longer renders the status pill rail as the main filter UI (#1)", () => {
+    expect(DASH).not.toContain("filterPill");
+    expect(DASH).not.toContain("filterRail");
+    expect(DASH).not.toContain("aria-pressed");
+    expect(DASH_CSS).not.toContain(".filterPill");
+    expect(DASH_CSS).not.toContain(".filterRail");
+  });
+
+  it("renders count | search | Status | Email accounts, in that order (#2)", () => {
+    const countIndex = DASH.indexOf("styles.totalCount");
+    const searchIndex = DASH.indexOf("styles.searchInput");
+    const statusIndex = DASH.indexOf('placeholder="Status"');
+    const accountsIndex = DASH.indexOf('placeholder="Email accounts"');
+    expect(countIndex).toBeGreaterThan(-1);
+    expect(countIndex).toBeLessThan(searchIndex);
+    expect(searchIndex).toBeLessThan(statusIndex);
+    expect(statusIndex).toBeLessThan(accountsIndex);
+    // The count text sits left of a hairline divider.
+    expect(DASH_CSS).toMatch(/\.totalCount \{[^}]*border-right: 1px solid var\(--line\);/);
+  });
+
+  it("search renders with the reference placeholder and an in-field icon (#3)", () => {
+    expect(DASH).toContain('placeholder="Search a sequence…"');
+    expect(DASH).toContain("styles.searchIcon");
+    expect(DASH).toContain('aria-label="Search sequences by name, list, template, or sender"');
+  });
+
+  it("the Status dropdown lists every status with live counts (#4)", () => {
+    expect(DASH).toContain('label="Filter sequences by status"');
+    expect(DASH).toContain("options={statusOptions}");
+    expect(DASH).toContain("count: counts[entry.id]");
     expect(DASH).toContain('from "@/lib/sequence-dashboard"');
     expect(SEQUENCE_FILTERS.map((entry) => entry.id)).toEqual([
       "all",
@@ -357,14 +458,59 @@ describe("dashboard component (#7, #8, #10, #11)", () => {
       "scheduled",
       "draft"
     ]);
+    // Draft only appears in the menu when draft sequences exist.
+    expect(DASH).toContain('entry.id !== "draft" || counts.draft > 0');
   });
 
-  it("search has an accessible label and resets pagination", () => {
-    expect(DASH).toContain('aria-label="Search sequences by name, list, template, or sender"');
+  it("the Email accounts dropdown lists All + each sender email (#5)", () => {
+    expect(DASH).toContain('label="Filter sequences by email account"');
+    expect(DASH).toContain('label: "All email accounts"');
+    expect(DASH).toContain("collectSequenceSenderEmails");
+    expect(DASH).toContain("options={senderOptions}");
+  });
+
+  it("dropdowns are custom listboxes, not native selects, with keyboard support", () => {
+    expect(DASH).not.toContain("<select");
+    expect(DASH).toContain('aria-haspopup="listbox"');
+    expect(DASH).toContain('role="listbox"');
+    expect(DASH).toContain('role="option"');
+    expect(DASH).toContain("aria-selected={option.value === selected.value}");
+    // The trigger announces the current selection and its expanded state.
+    expect(DASH).toContain("aria-label={`${label}: ${selected.label}`}");
+    expect(DASH).toContain("aria-expanded={open}");
+    // Escape closes and restores focus; arrows move between options.
+    expect(DASH).toContain('event.key === "Escape"');
+    expect(DASH).toContain('event.key === "ArrowDown"');
+    expect(DASH).toContain('event.key === "ArrowUp"');
+    expect(DASH).toContain("closeAndRefocus");
+    // Menu styling is module-scoped and focus states are visible.
+    expect(DASH_CSS).toContain(".selectMenu");
+    expect(DASH_CSS).toMatch(/\.selectTrigger:focus-visible \{[^}]*outline: 2px solid var\(--field-focus\);/);
+    expect(DASH_CSS).toMatch(/\.selectOption:focus-visible \{[^}]*outline: 2px solid var\(--field-focus\);/);
+  });
+
+  it("the filter group anchors the guided tour", () => {
+    expect(DASH).toContain('aria-label="Sequence filters"');
+    expect(MANUAL).toContain("selector: \"[aria-label='Sequence filters']\"");
+    expect(MANUAL).not.toContain("[aria-label='Filter sequences by status']");
+  });
+
+  it("changing search, status, or email account resets pagination (#9)", () => {
     const searchHandler = DASH.slice(DASH.indexOf("function onSearchChange"), DASH.indexOf("function clearFilters"));
     expect(searchHandler).toContain("setPage(1)");
-    const filterHandler = DASH.slice(DASH.indexOf("function selectFilter"), DASH.indexOf("function onSearchChange"));
+    const filterHandler = DASH.slice(DASH.indexOf("function selectFilter"), DASH.indexOf("function selectSender"));
     expect(filterHandler).toContain("setPage(1)");
+    const senderHandler = DASH.slice(DASH.indexOf("function selectSender"), DASH.indexOf("function onSearchChange"));
+    expect(senderHandler).toContain("setPage(1)");
+    // Both dropdowns drive the shared filter pipeline (#6, #7, #8).
+    expect(DASH).toContain("onChange={selectFilter}");
+    expect(DASH).toContain("onChange={selectSender}");
+    expect(DASH).toContain("filterSequenceItems(items, filter, query, sender)");
+    // Clearing filters resets all three plus the page.
+    const clear = DASH.slice(DASH.indexOf("function clearFilters"), DASH.indexOf("const hasSequences"));
+    expect(clear).toContain("setSender(ALL_SENDER_ACCOUNTS)");
+    expect(clear).toContain('setQuery("")');
+    expect(clear).toContain("setPage(1)");
   });
 
   it("pages change on click only — hover previews are informational tooltips", () => {
@@ -456,7 +602,7 @@ describe("empty states", () => {
 
   it("an empty filter result offers to clear filters", () => {
     expect(DASH).toContain("No sequences match this filter");
-    expect(DASH).toContain("Try another status or clear search.");
+    expect(DASH).toContain("Try another status, email account, or search.");
     expect(DASH).toContain("Clear filters");
     expect(DASH).toContain("onClick={clearFilters}");
   });
@@ -476,7 +622,7 @@ describe("loading skeleton", () => {
       "newButton",
       "summaryCards",
       "healthPanel",
-      "filterRail",
+      "filterControls",
       "search",
       "paginationBar"
     ]) {

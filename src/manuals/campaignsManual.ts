@@ -40,8 +40,8 @@ export const campaignsManual: ManualConfig = {
     {
       id: "find",
       title: "Search and filter the list",
-      body: "Search matches name, contact list, template, and sender. The status filters show live counts and combine with search.",
-      selector: "[aria-label='Filter sequences by status']",
+      body: "Search matches name, contact list, template, and sender. The Status menu filters by state with live counts, and Email accounts narrows to one sender — all three combine.",
+      selector: "[aria-label='Sequence filters']",
       placement: "bottom"
     },
     {
