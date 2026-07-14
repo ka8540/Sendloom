@@ -202,7 +202,6 @@
   padding-left: 2.45rem !important;
 }
 
-.optionList,
 .templateList {
   display: grid;
   gap: 0.65rem;
@@ -211,22 +210,288 @@
   overflow-y: auto;
 }
 
-.optionList {
-  gap: 0.5rem;
-  max-height: 22rem;
-  padding: 0.1rem 0.25rem 0.1rem 0.1rem;
+.audienceField {
+  display: grid;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.audienceLabel {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.audienceSelector {
+  position: relative;
+  min-width: 0;
+}
+
+.audienceTrigger {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.72rem;
+  width: 100%;
+  min-width: 0;
+  min-height: 4rem;
+  padding: 0.7rem 0.82rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface-muted) 82%, transparent);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
+}
+
+.audienceTrigger:hover:not(:disabled),
+.audienceTrigger[data-open],
+.audienceTrigger:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 52%, var(--line));
+  background: color-mix(in srgb, var(--accent-soft) 34%, var(--surface-muted));
+}
+
+.audienceTrigger:focus-visible {
+  outline: 2px solid var(--field-focus);
+  outline-offset: 2px;
+}
+
+.audienceTrigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.68;
+}
+
+.audienceTriggerIcon {
+  display: inline-grid;
+  place-items: center;
+  width: 2.15rem;
+  height: 2.15rem;
+  border-radius: 11px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.audienceTriggerIcon svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.audienceTriggerCopy {
+  display: grid;
+  gap: 0.22rem;
+  min-width: 0;
+}
+
+.audienceTriggerCopy > strong {
+  overflow: hidden;
+  font-size: 0.92rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audienceTriggerCopy > span {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.audienceTriggerMeta {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.audienceTriggerMeta > span:not(:first-child) {
+  padding: 0.08rem 0.34rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--line));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-soft) 42%, transparent);
+  font-size: 0.64rem;
+  font-weight: 750;
+}
+
+.audienceChevron {
+  width: 1rem;
+  height: 1rem;
+  color: var(--muted);
+  transition: transform 150ms ease;
+}
+
+.audienceTrigger[data-open] .audienceChevron {
+  transform: rotate(180deg);
+}
+
+.audienceMenu {
+  position: absolute;
+  top: calc(100% + 0.45rem);
+  left: 0;
+  z-index: 30;
+  width: 100%;
+  min-width: 0;
+  padding: 0.48rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--line));
+  border-radius: 15px;
+  background: color-mix(in srgb, var(--surface) 97%, transparent);
+  box-shadow: 0 18px 45px rgb(0 0 0 / 28%);
+}
+
+.audienceMenuSearch {
+  position: relative;
+  margin-bottom: 0.4rem;
+}
+
+.audienceMenuSearch > svg {
+  position: absolute;
+  left: 0.7rem;
+  top: 50%;
+  z-index: 1;
+  width: 0.9rem;
+  height: 0.9rem;
+  color: var(--muted);
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.audienceMenuSearch > input {
+  width: 100%;
+  min-height: 2.55rem;
+  padding: 0.58rem 0.72rem 0.58rem 2.1rem !important;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-muted) 88%, transparent);
+  color: var(--text);
+  font-size: 0.82rem !important;
+}
+
+.audienceMenuSearch > input:focus {
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--line));
+  outline: 2px solid var(--field-focus);
+  outline-offset: 1px;
+}
+
+.audienceOptions {
+  display: grid;
+  gap: 0.2rem;
+  max-height: 17rem;
+  padding-right: 0.12rem;
+  overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
 }
 
+.audienceOption {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  min-width: 0;
+  padding: 0.58rem 0.62rem;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.audienceOption:hover,
+.audienceOption:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 26%, var(--line));
+  background: color-mix(in srgb, var(--accent-soft) 34%, var(--surface-muted));
+}
+
+.audienceOption:focus-visible {
+  outline: 2px solid var(--field-focus);
+  outline-offset: -1px;
+}
+
+.audienceOptionSelected {
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--line));
+  background: color-mix(in srgb, var(--accent-soft) 58%, var(--surface-muted));
+}
+
+.audienceOptionCopy {
+  display: grid;
+  gap: 0.28rem;
+  min-width: 0;
+}
+
+.audienceOptionTitle {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.audienceOptionTitle strong {
+  overflow: hidden;
+  font-size: 0.84rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audienceOptionTitle > span {
+  color: var(--muted);
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
+.audienceNoResults,
+.audienceEmpty {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  color: var(--muted);
+}
+
+.audienceNoResults {
+  padding: 0.85rem 0.7rem;
+}
+
+.audienceEmpty {
+  padding: 0.68rem 0.76rem;
+  border: 1px dashed color-mix(in srgb, var(--muted) 34%, var(--line));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-muted) 68%, transparent);
+}
+
+.audienceNoResults > svg,
+.audienceEmpty > svg {
+  width: 1rem;
+  height: 1rem;
+  margin-top: 0.12rem;
+  color: var(--accent-strong);
+  flex: none;
+}
+
+.audienceNoResults > span,
+.audienceEmpty > span {
+  display: grid;
+  gap: 0.12rem;
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
+.audienceNoResults strong,
+.audienceEmpty strong {
+  color: var(--text);
+  font-size: 0.8rem;
+}
+
 .audienceHelper {
-  margin: -0.1rem 0 0;
+  margin: 0;
   color: var(--muted);
   font-size: 0.76rem;
   line-height: 1.4;
 }
 
-.optionCard,
 .templateCard {
   width: 100%;
   min-width: 0;
@@ -240,22 +505,11 @@
   transition: border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
 }
 
-.optionCard {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 0.8rem;
-  padding: 0.72rem 0.8rem;
-}
-
-.optionCard:hover,
-.optionCard:focus-visible,
 .templateCard:hover,
 .templateCard:focus-visible {
   border-color: color-mix(in srgb, var(--accent) 42%, var(--line));
 }
 
-.optionCard:focus-visible,
 .templateCard:focus-visible {
   outline: 2px solid var(--field-focus);
   outline-offset: 2px;
@@ -265,39 +519,6 @@
   border-color: color-mix(in srgb, var(--accent) 62%, var(--line));
   background: color-mix(in srgb, var(--accent-soft) 58%, var(--surface-muted));
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 9%, transparent);
-}
-
-.optionIcon {
-  display: inline-grid;
-  place-items: center;
-  width: 2.2rem;
-  height: 2.2rem;
-  border-radius: 11px;
-  background: var(--accent-soft);
-  color: var(--accent-strong);
-}
-
-.optionIcon svg {
-  width: 1rem;
-  height: 1rem;
-}
-
-.optionCopy {
-  display: grid;
-  gap: 0.24rem;
-  min-width: 0;
-}
-
-.optionCopy strong {
-  overflow: hidden;
-  font-size: 0.94rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.optionCopy > span:not(.fieldChips) {
-  color: var(--muted);
-  font-size: 0.8rem;
 }
 
 .fieldChips {
@@ -1099,18 +1320,14 @@
     font-size: 0.68rem;
   }
 
-  .optionCard {
-    grid-template-columns: auto minmax(0, 1fr);
+  .audienceTrigger {
+    gap: 0.58rem;
+    padding-inline: 0.7rem;
   }
 
-  .selectionMark {
-    grid-column: 1;
-    grid-row: 2;
-  }
-
-  .templateHeader .selectionMark {
-    grid-column: auto;
-    grid-row: auto;
+  .audienceOptionTitle {
+    display: grid;
+    gap: 0.08rem;
   }
 
   .weekdayGroup {
@@ -1158,7 +1375,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .stepButton,
-  .optionCard,
+  .audienceTrigger,
+  .audienceOption,
   .templateCard,
   .timingChoice,
   .progressTrack > span {

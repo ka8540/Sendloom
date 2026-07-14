@@ -89,15 +89,31 @@ describe("Create Sequence wizard structure", () => {
 });
 
 describe("Step 1: Audience", () => {
-  it("shows the sequence name, searchable audience choices, real counts, and CSV action", () => {
+  it("renders one closed-by-default audience combobox with its search inside the dropdown", () => {
     expect(BUILDER).toContain('<label htmlFor="campaign-name">Sequence name</label>');
-    expect(BUILDER).toContain('<label htmlFor="audience-search">Search contact lists</label>');
+    expect(BUILDER).toContain('id="audience-selector-label">Audience</span>');
+    expect(BUILDER).toContain('role="combobox"');
+    expect(BUILDER).toContain('aria-expanded={audienceMenuOpen}');
+    expect(BUILDER).toContain('aria-controls="audience-options-menu"');
+    expect(BUILDER).toContain('"Choose an audience"');
+    expect(BUILDER).toContain('{audienceMenuOpen ? (');
+    expect(BUILDER).toContain('placeholder="Search contact lists"');
     expect(BUILDER).toContain('aria-label="Available contact lists"');
+    expect(BUILDER).toContain('role="listbox"');
+    expect(BUILDER).toContain('role="option"');
     expect(BUILDER).toContain("audience.rowCount");
     expect(BUILDER).toContain("audience.mappedFields");
     expect(BUILDER).toContain("Import or add a new CSV");
     expect(BUILDER).toContain("No contact lists yet");
     expect(BUILDER).toContain('href="/imports"');
+  });
+
+  it("does not render audience cards or an inline list while the selector is closed", () => {
+    expect(BUILDER).not.toContain("styles.optionList");
+    expect(BUILDER).not.toContain("styles.optionCard}${selected");
+    expect(BUILDER_CSS).not.toContain(".optionCard {");
+    expect(BUILDER).toContain("const [audienceMenuOpen, setAudienceMenuOpen] = useState(false)");
+    expect(BUILDER_CSS).toMatch(/\.audienceMenu\s*\{[^}]*position:\s*absolute;/s);
   });
 
   it("shows only the latest five audiences when search is empty", () => {
@@ -111,6 +127,7 @@ describe("Step 1: Audience", () => {
     ]);
     expect(CREATE_PAGE).toContain('orderBy: { createdAt: "desc" }');
     expect(BUILDER).toContain("Showing latest {DEFAULT_AUDIENCE_LIMIT}. Search to find older lists.");
+    expect(BUILDER).toContain("!audienceMenuOpen && hasImports && !hasAudienceQuery && hasOlderAudiences");
   });
 
   it("searches every audience by list name and mapped personalization field", () => {
@@ -128,13 +145,29 @@ describe("Step 1: Audience", () => {
     expect(BUILDER).not.toContain("setSelectedImportId(event.target.value)");
   });
 
+  it("selects an audience, closes the dropdown, and summarizes the preserved value in the field", () => {
+    const audienceOption = BUILDER.slice(
+      BUILDER.indexOf("className={`${styles.audienceOption}"),
+      BUILDER.indexOf("</button>", BUILDER.indexOf("className={`${styles.audienceOption}"))
+    );
+    expect(audienceOption).toContain("setSelectedImportId(audience.id)");
+    expect(audienceOption).toContain("closeAudienceMenu(true)");
+    expect(BUILDER).toContain("selectedImport?.label");
+    expect(BUILDER).toContain("selectedImport.mappedFields.slice(0, 2)");
+    expect(BUILDER).toContain("+{selectedImport.mappedFields.length - 2} fields");
+
+    const changeStepBody = BUILDER.slice(BUILDER.indexOf("function changeStep"), BUILDER.indexOf("function canOpenStep"));
+    expect(changeStepBody).not.toContain("setSelectedImportId");
+  });
+
   it("renders compact helper and requested empty states without hiding the import CTA", () => {
     expect(BUILDER).toContain("hasOlderAudiences");
-    expect(BUILDER).toContain("No matching contact lists");
+    expect(BUILDER).toContain("No matching audiences");
     expect(BUILDER).toContain("Try another list name or mapped field.");
     expect(BUILDER).toContain("No contact lists yet");
     expect(BUILDER).toContain("Import a CSV to create your first audience.");
-    expect(BUILDER.match(/Import or add a new CSV/g)).toHaveLength(2);
+    expect(BUILDER.match(/Import or add a new CSV/g)).toHaveLength(1);
+    expect(BUILDER).toContain("disabled={!hasImports}");
     expect(BUILDER_CSS).toContain("overscroll-behavior: contain;");
   });
 

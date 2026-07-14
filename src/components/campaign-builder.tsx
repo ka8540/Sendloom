@@ -5,6 +5,7 @@ import {
   ArrowRight,
   CalendarClock,
   Check,
+  ChevronDown,
   Clock3,
   FilePlus2,
   FileText,
@@ -111,12 +112,16 @@ export function CampaignBuilder(props: {
   const router = useRouter();
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const stepHeadingRef = useRef<HTMLHeadingElement | null>(null);
+  const audienceSelectorRef = useRef<HTMLDivElement | null>(null);
+  const audienceTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const audienceSearchRef = useRef<HTMLInputElement | null>(null);
   const hasMountedRef = useRef(false);
   const { showSuccess } = useErrorToast();
   const [state, setState] = useState<{ pending: boolean; error?: string }>({ pending: false });
   const [activeStep, setActiveStep] = useState<WizardStep>(0);
   const [sequenceName, setSequenceName] = useState("");
   const [audienceQuery, setAudienceQuery] = useState("");
+  const [audienceMenuOpen, setAudienceMenuOpen] = useState(false);
   const [templateQuery, setTemplateQuery] = useState("");
   const [attachments, setAttachments] = useState<File[]>([]);
   const [selectedImportId, setSelectedImportId] = useState("");
@@ -200,6 +205,22 @@ export function CampaignBuilder(props: {
     stepHeadingRef.current?.focus();
   }, [activeStep]);
 
+  useEffect(() => {
+    if (!audienceMenuOpen) return;
+
+    audienceSearchRef.current?.focus();
+
+    function handlePointerDown(event: PointerEvent) {
+      if (event.target instanceof Node && !audienceSelectorRef.current?.contains(event.target)) {
+        setAudienceMenuOpen(false);
+        setAudienceQuery("");
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [audienceMenuOpen]);
+
   const selectedImport = props.imports.find((entry) => entry.id === selectedImportId) ?? null;
   const selectedTemplate = props.templates.find((entry) => entry.id === selectedTemplateId) ?? null;
   const selectedSender = props.senders.find((entry) => entry.id === selectedSenderId) ?? null;
@@ -228,6 +249,24 @@ export function CampaignBuilder(props: {
       : scheduleType === "once"
         ? `Sends once at the chosen time in ${selectedTimeZone}.`
         : `Repeats ${frequency === "daily" ? "every day" : "weekly"} in ${selectedTimeZone}.`;
+
+  function toggleAudienceMenu() {
+    if (audienceMenuOpen) {
+      setAudienceMenuOpen(false);
+      setAudienceQuery("");
+      return;
+    }
+
+    setAudienceMenuOpen(true);
+  }
+
+  function closeAudienceMenu(restoreFocus = false) {
+    setAudienceMenuOpen(false);
+    setAudienceQuery("");
+    if (restoreFocus) {
+      requestAnimationFrame(() => audienceTriggerRef.current?.focus());
+    }
+  }
 
   function formatAttachmentSize(bytes: number) {
     if (bytes >= 1024 * 1024) {
@@ -266,6 +305,7 @@ export function CampaignBuilder(props: {
   function resetBuilder() {
     setSequenceName("");
     setAudienceQuery("");
+    setAudienceMenuOpen(false);
     setTemplateQuery("");
     setAttachments([]);
     setSelectedImportId("");
@@ -498,83 +538,131 @@ export function CampaignBuilder(props: {
                   />
                 </div>
 
-                {hasImports ? (
-                  <>
-                    <div className={`field ${styles.searchField}`}>
-                      <label htmlFor="audience-search">Search contact lists</label>
-                      <span className={styles.searchControl}>
-                        <Search aria-hidden="true" />
-                        <input
-                          id="audience-search"
-                          type="search"
-                          value={audienceQuery}
-                          onChange={(event) => setAudienceQuery(event.target.value)}
-                          placeholder="Search by list or mapped field"
-                        />
+                <div className={styles.audienceField}>
+                  <span className={styles.audienceLabel} id="audience-selector-label">Audience</span>
+                  <div
+                    className={styles.audienceSelector}
+                    ref={audienceSelectorRef}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape" && audienceMenuOpen) {
+                        event.preventDefault();
+                        closeAudienceMenu(true);
+                      }
+                    }}
+                  >
+                    <button
+                      ref={audienceTriggerRef}
+                      className={styles.audienceTrigger}
+                      type="button"
+                      role="combobox"
+                      aria-haspopup="listbox"
+                      aria-expanded={audienceMenuOpen}
+                      aria-controls="audience-options-menu"
+                      aria-labelledby="audience-selector-label audience-selector-value"
+                      disabled={!hasImports}
+                      data-open={audienceMenuOpen || undefined}
+                      onClick={toggleAudienceMenu}
+                    >
+                      <span className={styles.audienceTriggerIcon} aria-hidden="true"><Users /></span>
+                      <span className={styles.audienceTriggerCopy}>
+                        <strong id="audience-selector-value">
+                          {selectedImport?.label ?? (hasImports ? "Choose an audience" : "No audiences available")}
+                        </strong>
+                        {selectedImport ? (
+                          <span className={styles.audienceTriggerMeta}>
+                            <span>{contactCountFormatter.format(selectedImport.rowCount)} contacts</span>
+                            {selectedImport.mappedFields.slice(0, 2).map((field) => <span key={field}>{field}</span>)}
+                            {selectedImport.mappedFields.length > 2 ? (
+                              <span>+{selectedImport.mappedFields.length - 2} fields</span>
+                            ) : null}
+                          </span>
+                        ) : (
+                          <span>{hasImports ? "Select from your recent contact lists" : "Import a CSV to get started"}</span>
+                        )}
                       </span>
-                    </div>
+                      <ChevronDown className={styles.audienceChevron} aria-hidden="true" />
+                    </button>
 
-                    <div className={styles.optionList} role="listbox" aria-label="Available contact lists">
-                      {filteredAudiences.map((audience) => {
-                        const selected = audience.id === selectedImportId;
+                    {audienceMenuOpen ? (
+                      <div className={styles.audienceMenu} id="audience-options-menu">
+                        <div className={styles.audienceMenuSearch}>
+                          <Search aria-hidden="true" />
+                          <input
+                            ref={audienceSearchRef}
+                            id="audience-search"
+                            type="search"
+                            value={audienceQuery}
+                            onChange={(event) => setAudienceQuery(event.target.value)}
+                            aria-label="Search contact lists"
+                            placeholder="Search contact lists"
+                            autoComplete="off"
+                          />
+                        </div>
 
-                        return (
-                          <button
-                            key={audience.id}
-                            type="button"
-                            role="option"
-                            aria-selected={selected}
-                            className={`${styles.optionCard}${selected ? ` ${styles.optionCardSelected}` : ""}`}
-                            onClick={() => {
-                              setSelectedImportId(audience.id);
-                              setState({ pending: false });
-                            }}
-                          >
-                            <span className={styles.optionIcon} aria-hidden="true"><Users /></span>
-                            <span className={styles.optionCopy}>
-                              <strong>{audience.label}</strong>
-                              <span>{contactCountFormatter.format(audience.rowCount)} contacts</span>
-                              <span className={styles.fieldChips}>
-                                {audience.mappedFields.length ? (
-                                  audience.mappedFields.slice(0, 4).map((field) => <span key={field}>{field}</span>)
-                                ) : (
-                                  <span>No personalization fields mapped</span>
-                                )}
-                              </span>
-                            </span>
-                            <span className={styles.selectionMark} aria-hidden="true">{selected ? <Check /> : null}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
+                        {filteredAudiences.length ? (
+                          <div className={styles.audienceOptions} role="listbox" aria-label="Available contact lists">
+                            {filteredAudiences.map((audience) => {
+                              const selected = audience.id === selectedImportId;
 
-                    {!hasAudienceQuery && hasOlderAudiences ? (
-                      <p className={styles.audienceHelper}>
-                        Showing latest {DEFAULT_AUDIENCE_LIMIT}. Search to find older lists.
-                      </p>
-                    ) : null}
-
-                    {!filteredAudiences.length ? (
-                      <div className={styles.emptyState}>
-                        <Search aria-hidden="true" />
-                        <strong>No matching contact lists</strong>
-                        <span>Try another list name or mapped field.</span>
+                              return (
+                                <button
+                                  key={audience.id}
+                                  type="button"
+                                  role="option"
+                                  aria-selected={selected}
+                                  className={`${styles.audienceOption}${selected ? ` ${styles.audienceOptionSelected}` : ""}`}
+                                  onClick={() => {
+                                    setSelectedImportId(audience.id);
+                                    setState({ pending: false });
+                                    closeAudienceMenu(true);
+                                  }}
+                                >
+                                  <span className={styles.audienceOptionCopy}>
+                                    <span className={styles.audienceOptionTitle}>
+                                      <strong>{audience.label}</strong>
+                                      <span>{contactCountFormatter.format(audience.rowCount)} contacts</span>
+                                    </span>
+                                    <span className={styles.fieldChips}>
+                                      {audience.mappedFields.length ? (
+                                        audience.mappedFields.slice(0, 3).map((field) => <span key={field}>{field}</span>)
+                                      ) : (
+                                        <span>No mapped fields</span>
+                                      )}
+                                    </span>
+                                  </span>
+                                  <span className={styles.selectionMark} aria-hidden="true">{selected ? <Check /> : null}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className={styles.audienceNoResults} role="status">
+                            <Search aria-hidden="true" />
+                            <span><strong>No matching audiences</strong>Try another list name or mapped field.</span>
+                          </div>
+                        )}
                       </div>
                     ) : null}
-
-                    <a className={styles.inlineAction} href="/imports">
-                      <Upload aria-hidden="true" />
-                      Import or add a new CSV
-                    </a>
-                  </>
-                ) : (
-                  <div className={styles.emptyState}>
-                    <Upload aria-hidden="true" />
-                    <strong>No contact lists yet</strong>
-                    <span>Import a CSV to create your first audience.</span>
-                    <a className="button" href="/imports">Import or add a new CSV</a>
                   </div>
-                )}
+
+                  {!audienceMenuOpen && hasImports && !hasAudienceQuery && hasOlderAudiences ? (
+                    <p className={styles.audienceHelper}>
+                      Showing latest {DEFAULT_AUDIENCE_LIMIT}. Search to find older lists.
+                    </p>
+                  ) : null}
+
+                  {!hasImports ? (
+                    <div className={styles.audienceEmpty}>
+                      <Upload aria-hidden="true" />
+                      <span><strong>No contact lists yet</strong>Import a CSV to create your first audience.</span>
+                    </div>
+                  ) : null}
+
+                  <a className={styles.inlineAction} href="/imports">
+                    <Upload aria-hidden="true" />
+                    Import or add a new CSV
+                  </a>
+                </div>
 
                 {selectedImport ? (
                   <p className={styles.builderNote} data-tone={activeMapping ? undefined : "warning"}>
