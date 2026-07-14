@@ -1,10 +1,10 @@
-/* Create Sequence page: the build form on the left and the compact Gmail
-   sender panel on the right. The panel hugs its content — it never stretches
-   to match the tall form. */
+/* Create Sequence page: a page-level builder header (eyebrow, title, the
+   Audience → Message → Sender → Timing path), the step-based builder card on
+   the left, and the compact Gmail sender panel on the right. */
 
 .page {
   display: grid;
-  gap: 1.1rem;
+  gap: 1.25rem;
 }
 
 .page > * {
@@ -30,63 +30,32 @@
   flex-shrink: 0;
 }
 
-.topGrid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 24rem);
-  gap: 1.15rem;
-  align-items: start;
-}
+/* Page header: matches the Sequences dashboard typography — eyebrow, title,
+   subtitle on the left, the decorative workflow path on the right. */
 
-.builderCard,
-.senderPanel {
-  border-radius: 28px;
-  border: 1px solid var(--line);
-  background:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 10%, transparent), transparent 30%),
-    linear-gradient(180deg, color-mix(in srgb, var(--surface) 90%, transparent), var(--surface));
-  box-shadow: var(--shadow);
-  min-width: 0;
-}
-
-.builderCard {
-  padding: 1.55rem;
-}
-
-/* The sender panel hugs its content — no stretching to match the tall form. */
-.senderPanel {
-  align-self: start;
-  display: grid;
+.pageHeader {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
   gap: 1rem;
-  padding: 1.3rem;
+  flex-wrap: wrap;
 }
 
-.panelHeading {
-  display: grid;
-  gap: 0.35rem;
-  margin-bottom: 1.15rem;
-}
-
-.panelHeading h1 {
-  margin: 0;
-  font-size: clamp(2.1rem, 4vw, 3rem);
-  letter-spacing: -0.05em;
-}
-
-.panelHeading p {
-  margin: 0;
-  color: var(--muted);
-  line-height: 1.6;
-}
-
-.senderPanelHeading {
+.pageHeading {
   display: grid;
   gap: 0.4rem;
 }
 
-.senderPanelHeading h2 {
+.pageHeading h1 {
   margin: 0;
-  font-size: 1.25rem;
-  letter-spacing: -0.04em;
+  font-size: clamp(1.9rem, 3.4vw, 2.5rem);
+  letter-spacing: -0.05em;
+}
+
+.pageHeading p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
 }
 
 .kicker {
@@ -103,18 +72,133 @@
   text-transform: uppercase;
 }
 
+/* Decorative Audience → Message → Sender → Timing path. The numbered steps
+   inside the form carry the real structure; this is aria-hidden. */
+
+.flowPath {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.15rem;
+  padding-bottom: 0.35rem;
+}
+
+.flowStop {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.flowChip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.32rem 0.68rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.flowArrow {
+  width: 0.8rem;
+  height: 0.8rem;
+  color: color-mix(in srgb, var(--accent) 62%, var(--muted));
+  flex-shrink: 0;
+}
+
+/* Builder card left, sender panel right. */
+
+.topGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 21.5rem);
+  gap: 1.15rem;
+  align-items: start;
+}
+
+.builderCard,
+.senderPanel {
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  min-width: 0;
+}
+
+.builderCard {
+  padding: 1.6rem 1.7rem;
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 9%, transparent), transparent 30%),
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 90%, transparent), var(--surface));
+}
+
+/* The sender panel hugs its content and stays in normal document flow — it is
+   never sticky or fixed and never stretches to match the tall form. */
+.senderPanel {
+  align-self: start;
+  display: grid;
+  gap: 0.95rem;
+  padding: 1.25rem;
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--accent) 7%, transparent), transparent 34%),
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 92%, transparent), var(--surface));
+}
+
+.senderPanelHeading {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.senderPanelTitleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.senderPanelTitleRow h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  letter-spacing: -0.02em;
+}
+
+.senderCount {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.18rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--line));
+  background: color-mix(in srgb, var(--accent-soft) 60%, transparent);
+  color: var(--accent-strong);
+  font-size: 0.74rem;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.senderPanelHeading p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
 .senderList {
   display: grid;
-  gap: 0.7rem;
+  gap: 0.6rem;
 }
 
 .senderRow {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: start;
-  gap: 0.75rem;
-  padding: 0.85rem;
-  border-radius: 16px;
+  gap: 0.7rem;
+  padding: 0.75rem;
+  border-radius: 14px;
   border: 1px solid var(--line);
   background: var(--surface-muted);
 }
@@ -129,9 +213,9 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2.1rem;
-  height: 2.1rem;
-  border-radius: 12px;
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 10px;
   background: var(--accent-soft);
   color: var(--accent-strong);
   flex-shrink: 0;
@@ -143,8 +227,8 @@
 }
 
 .senderIcon svg {
-  width: 1rem;
-  height: 1rem;
+  width: 0.92rem;
+  height: 0.92rem;
 }
 
 .senderMeta {
@@ -162,6 +246,7 @@
 }
 
 .senderNameRow strong {
+  font-size: 0.92rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -171,12 +256,12 @@
 .senderChip {
   display: inline-flex;
   align-items: center;
-  padding: 0.16rem 0.55rem;
+  padding: 0.14rem 0.5rem;
   border-radius: 999px;
   border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--line));
   background: color-mix(in srgb, var(--accent) 9%, var(--surface));
   color: var(--accent-strong);
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   font-weight: 750;
   white-space: nowrap;
   flex-shrink: 0;
@@ -190,7 +275,7 @@
 
 .senderEmail {
   color: var(--muted);
-  font-size: 0.86rem;
+  font-size: 0.82rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -198,17 +283,39 @@
 
 .senderEmpty {
   padding: 0.85rem;
-  border-radius: 16px;
+  border-radius: 14px;
   border: 1px dashed color-mix(in srgb, var(--muted) 34%, var(--line));
   background: var(--surface-muted);
   color: var(--muted);
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   line-height: 1.55;
 }
 
-@media (max-width: 960px) {
+.reconnectButton {
+  padding: 0.5rem 0.85rem;
+  font-size: 0.84rem;
+}
+
+.connectButton {
+  gap: 0.4rem;
+  padding: 0.68rem 1rem;
+  font-size: 0.9rem;
+}
+
+.connectButton svg {
+  width: 0.92rem;
+  height: 0.92rem;
+}
+
+@media (max-width: 1024px) {
   .topGrid {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 700px) {
+  .flowPath {
+    display: none;
   }
 }
 
@@ -220,10 +327,8 @@
   .senderPanel {
     padding: 1.05rem;
   }
-}
 
-@media (prefers-reduced-motion: reduce) {
-  .backLink {
-    transition: none;
+  .senderNameRow strong {
+    white-space: normal;
   }
 }

@@ -1,4 +1,4 @@
-import { CheckCircle2, Mail, RefreshCcw } from "lucide-react";
+import { CheckCircle2, ChevronRight, Mail, Plus, RefreshCcw } from "lucide-react";
 
 import { CampaignBuilder } from "@/components/campaign-builder";
 import { ErrorToastOnMount } from "@/components/error-toast-provider";
@@ -7,6 +7,8 @@ import { requireOperatorUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { resolveBounceMonitoringStatus } from "@/services/bounces";
 import styles from "./page.module.css";
+
+const BUILDER_PATH = ["Audience", "Message", "Sender", "Timing"] as const;
 
 function getSearchParam(
   searchParams: Record<string, string | string[] | undefined>,
@@ -54,13 +56,24 @@ export default async function NewSequencePage({
         </div>
       ) : null}
 
+      <header className={styles.pageHeader}>
+        <div className={styles.pageHeading}>
+          <span className={styles.kicker}>Build</span>
+          <h1>Create a sequence</h1>
+          <p>Pick your audience, template, sender, and launch timing.</p>
+        </div>
+        <div className={styles.flowPath} aria-hidden="true">
+          {BUILDER_PATH.map((stop, index) => (
+            <span key={stop} className={styles.flowStop}>
+              {index > 0 ? <ChevronRight className={styles.flowArrow} /> : null}
+              <span className={styles.flowChip}>{stop}</span>
+            </span>
+          ))}
+        </div>
+      </header>
+
       <section className={styles.topGrid}>
         <article className={styles.builderCard} id="create-sequence">
-          <div className={styles.panelHeading}>
-            <span className={styles.kicker}>Build</span>
-            <h1>Create a sequence</h1>
-            <p>Pick a contact list, template, sender, and send timing, then launch.</p>
-          </div>
           <CampaignBuilder
             imports={imports.map((entry) => ({ id: entry.id, label: entry.fileName }))}
             mappings={imports.flatMap((entry) => {
@@ -90,8 +103,15 @@ export default async function NewSequencePage({
 
         <aside className={styles.senderPanel} aria-label="Send from Gmail">
           <div className={styles.senderPanelHeading}>
-            <span className={styles.kicker}>Senders</span>
-            <h2>Send from Gmail</h2>
+            <div className={styles.senderPanelTitleRow}>
+              <h2>Send from Gmail</h2>
+              {connectedSenders.length ? (
+                <span className={styles.senderCount}>
+                  {connectedSenders.length} connected
+                </span>
+              ) : null}
+            </div>
+            <p>Every email in this sequence goes out through one of these accounts.</p>
           </div>
 
           <div className={styles.senderList}>
@@ -136,7 +156,7 @@ export default async function NewSequencePage({
                   <span className={styles.senderEmail}>{sender.fromEmail}</span>
                 </div>
                 <a
-                  className="button secondary"
+                  className={`button secondary ${styles.reconnectButton}`}
                   href={`/api/auth/google/connect?email=${encodeURIComponent(sender.fromEmail)}&next=${encodeURIComponent("/campaigns/new")}`}
                 >
                   Reconnect
@@ -144,7 +164,11 @@ export default async function NewSequencePage({
               </div>
             ))}
 
-            <a className="button" href="/api/auth/google/connect">
+            <a
+              className={`button${connectedSenders.length ? " secondary" : ""} ${styles.connectButton}`}
+              href="/api/auth/google/connect"
+            >
+              <Plus aria-hidden="true" />
               {connectedSenders.length ? "Connect another Gmail" : "Connect Gmail"}
             </a>
           </div>

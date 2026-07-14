@@ -1,6 +1,6 @@
 "use client";
 
-import { FilePlus2, FileText, Trash2 } from "lucide-react";
+import { CalendarClock, FilePlus2, FileText, Sparkles, Trash2, TriangleAlert } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
@@ -292,196 +292,265 @@ export function CampaignBuilder(props: {
   const canCreateSequence = hasSenders && hasTemplates && hasImports && Boolean(selectedMappingId);
   const needsReconnect = !hasSenders && (props.disconnectedSenderCount ?? 0) > 0;
 
+  // Real, launch-relevant summary derived from the current timing selection —
+  // shown next to the create button so the final action reads back the plan.
+  const timingSummary =
+    scheduleType === "immediate"
+      ? "Starts sending right after you create it."
+      : scheduleType === "once"
+        ? `Sends once at your chosen time in ${selectedTimeZone}.`
+        : `Repeats ${frequency === "daily" ? "every day" : "weekly"} in ${selectedTimeZone}.`;
+
   return (
     <>
-    <form className="form" onSubmit={onSubmit}>
-      <div className="field">
-        <label htmlFor="campaign-name">Sequence name</label>
-        <input id="campaign-name" name="name" placeholder="April founder outreach" required />
-      </div>
-      <div className="field">
-        <label htmlFor="importId">Contact list</label>
-        <select
-          id="importId"
-          name="importId"
-          value={selectedImportId}
-          onChange={(event) => {
-            setSelectedImportId(event.target.value);
-            setState({ pending: false });
-          }}
-          required
-        >
-          <option value="">{hasImports ? "Choose the list you want to send to" : "Upload a list first"}</option>
-          {renderOptions(props.imports)}
-        </select>
-      </div>
-      <input type="hidden" name="mappingId" value={selectedMappingId} />
-      <div className="surface-note">
-        {selectedImport && activeMapping
-          ? `Using the saved personalization fields for ${selectedImport.label}.`
-          : selectedImport
-            ? `${selectedImport.label} still needs its personalization fields set up in Imports before you can send.`
-            : "Pick a contact list and we’ll use its saved personalization fields automatically."}
-      </div>
-      <div className="field">
-        <label htmlFor="templateId">Email template</label>
-        <select id="templateId" name="templateId" defaultValue={props.templates[0]?.id ?? ""} required>
-          <option value="">{hasTemplates ? "Choose the email you want to send" : "Create a template first"}</option>
-          {renderOptions(props.templates)}
-        </select>
-      </div>
-      <div className="field">
-        <label htmlFor="senderProfileId">Send from</label>
-        <select id="senderProfileId" name="senderProfileId" defaultValue={props.senders[0]?.id ?? ""} required disabled={!hasSenders}>
-          <option value="">{hasSenders ? "Choose the Gmail account to send from" : needsReconnect ? "Reconnect Gmail first" : "Connect Gmail first"}</option>
-          {renderOptions(props.senders)}
-        </select>
-      </div>
-      {needsReconnect ? (
-        <div className="surface-note">
-          A connected sender is required before this sequence can launch.
-          {props.reconnectHref ? (
-            <>
-              {" "}
-              <a href={props.reconnectHref}>Reconnect Gmail</a> to restore sending access.
-            </>
-          ) : null}
-        </div>
-      ) : null}
-      <div className="field">
-        <label htmlFor="attachments">Optional attachments</label>
-        <input
-          ref={attachmentInputRef}
-          id="attachments"
-          type="file"
-          accept=".pdf,.doc,.docx,.txt,.rtf"
-          multiple
-          className={styles.hiddenInput}
-          onChange={(event) => {
-            const selectedFiles = Array.from(event.target.files ?? []);
-            if (selectedFiles.length) {
-              setAttachments((currentAttachments) => mergeAttachmentFiles(currentAttachments, selectedFiles));
-            }
-            event.currentTarget.value = "";
-          }}
-        />
-        <div className={styles.attachmentComposer}>
-          <div className={styles.attachmentHeader}>
-            <div className={styles.attachmentCopy}>
-              <span className={styles.attachmentCount}>
-                {attachments.length ? `${attachments.length} attachment${attachments.length === 1 ? "" : "s"} ready` : "No attachments yet"}
-              </span>
-              <p className={styles.attachmentHelp}>Include resumes, cover letters, or supporting documents with every email in this sequence.</p>
+    <form className={styles.builder} onSubmit={onSubmit}>
+      <ol className={styles.steps}>
+        <li className={styles.step}>
+          <span className={styles.stepMarker} aria-hidden="true">1</span>
+          <div className={styles.stepBody}>
+            <div className={styles.stepHeader}>
+              <h2 className={styles.stepTitle}>Basics</h2>
+              <span className={styles.stepHint}>Name it so you can find it on the dashboard.</span>
             </div>
-            <button
-              type="button"
-              className={`button secondary ${styles.addButton}`}
-              onClick={() => attachmentInputRef.current?.click()}
-              disabled={state.pending}
-            >
-              <FilePlus2 aria-hidden="true" />
-              Add files
-            </button>
-          </div>
-
-          {attachments.length ? (
-            <div className={styles.attachmentList}>
-              {attachments.map((attachment) => (
-                <div key={getAttachmentIdentity(attachment)} className={styles.attachmentItem}>
-                  <span className={styles.attachmentIcon} aria-hidden="true">
-                    <FileText />
-                  </span>
-                  <div className={styles.attachmentMeta}>
-                    <strong className={styles.attachmentName} title={attachment.name}>
-                      {attachment.name}
-                    </strong>
-                    <div className={styles.attachmentDetails}>
-                      <span className={styles.attachmentBadge}>{getAttachmentTypeLabel(attachment.name)}</span>
-                      <span className={styles.attachmentSize}>{formatAttachmentSize(attachment.size)}</span>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className={styles.removeButton}
-                    aria-label={`Remove ${attachment.name}`}
-                    onClick={() =>
-                      setAttachments((currentAttachments) =>
-                        currentAttachments.filter((file) => getAttachmentIdentity(file) !== getAttachmentIdentity(attachment))
-                      )
-                    }
-                    disabled={state.pending}
-                  >
-                    <Trash2 aria-hidden="true" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className={styles.emptyState}>
-              <p className={styles.emptyTitle}>No files selected yet.</p>
-              <p className={styles.emptyCopy}>Pick files one at a time or select several together. Every new selection stays in the list until you remove it.</p>
-            </div>
-          )}
-
-          <p className={styles.attachmentFooter}>Supported files: PDF, DOC, DOCX, TXT, and RTF. Each file can be up to 10 MB.</p>
-        </div>
-      </div>
-      <div className="field">
-        <label htmlFor="scheduleType">When should this send?</label>
-        <select
-          id="scheduleType"
-          name="scheduleType"
-          value={scheduleType}
-          onChange={(event) => setScheduleType(event.target.value)}
-        >
-          <option value="immediate">Right away</option>
-          <option value="once">Schedule once</option>
-          <option value="recurring">Repeat on a schedule</option>
-        </select>
-      </div>
-      {scheduleType === "once" ? (
-        <div className="field">
-          <label htmlFor="scheduledFor">Send on</label>
-          <input id="scheduledFor" name="scheduledFor" type="datetime-local" required />
-        </div>
-      ) : null}
-      {scheduleType !== "immediate" ? (
-        <div className="field">
-          <label htmlFor="scheduleTimeZone">Send in timezone</label>
-          <select
-            id="scheduleTimeZone"
-            name="scheduleTimeZone"
-            value={selectedTimeZone}
-            onChange={(event) => setSelectedTimeZone(event.target.value)}
-          >
-            {timeZoneOptions.map((timeZone) => (
-              <option key={timeZone.value} value={timeZone.value}>
-                {timeZone.label}
-              </option>
-            ))}
-          </select>
-        </div>
-      ) : null}
-      {scheduleType === "recurring" ? (
-        <>
-          <div className="grid cols-3">
             <div className="field">
-              <label htmlFor="frequency">Repeat</label>
+              <label htmlFor="campaign-name">Sequence name</label>
+              <input id="campaign-name" name="name" placeholder="April founder outreach" required />
+            </div>
+          </div>
+        </li>
+
+        <li className={styles.step}>
+          <span className={styles.stepMarker} aria-hidden="true">2</span>
+          <div className={styles.stepBody}>
+            <div className={styles.stepHeader}>
+              <h2 className={styles.stepTitle}>Audience</h2>
+              <span className={styles.stepHint}>Who receives this sequence.</span>
+            </div>
+            <div className="field">
+              <label htmlFor="importId">Contact list</label>
               <select
-                id="frequency"
-                name="frequency"
-                value={frequency}
-                onChange={(event) => setFrequency(event.target.value)}
+                id="importId"
+                name="importId"
+                value={selectedImportId}
+                onChange={(event) => {
+                  setSelectedImportId(event.target.value);
+                  setState({ pending: false });
+                }}
+                required
               >
-                <option value="daily">Every day</option>
-                <option value="weekly">Every week</option>
+                <option value="">{hasImports ? "Choose the list you want to send to" : "Upload a list first"}</option>
+                {renderOptions(props.imports)}
               </select>
             </div>
-            <div className="field">
-              <label htmlFor="time">Send at</label>
-              <input id="time" name="time" type="time" defaultValue="09:00" required />
+            <input type="hidden" name="mappingId" value={selectedMappingId} />
+            <p className={styles.builderNote}>
+              <Sparkles aria-hidden="true" />
+              <span>
+                {selectedImport && activeMapping
+                  ? `Using the saved personalization fields for ${selectedImport.label}.`
+                  : selectedImport
+                    ? `${selectedImport.label} still needs its personalization fields set up in Imports before you can send.`
+                    : "Pick a contact list and we’ll use its saved personalization fields automatically."}
+              </span>
+            </p>
+          </div>
+        </li>
+
+        <li className={styles.step}>
+          <span className={styles.stepMarker} aria-hidden="true">3</span>
+          <div className={styles.stepBody}>
+            <div className={styles.stepHeader}>
+              <h2 className={styles.stepTitle}>Message</h2>
+              <span className={styles.stepHint}>The email everyone in the list receives.</span>
             </div>
-            {frequency === "weekly" ? (
+            <div className="field">
+              <label htmlFor="templateId">Email template</label>
+              <select id="templateId" name="templateId" defaultValue={props.templates[0]?.id ?? ""} required>
+                <option value="">{hasTemplates ? "Choose the email you want to send" : "Create a template first"}</option>
+                {renderOptions(props.templates)}
+              </select>
+            </div>
+          </div>
+        </li>
+
+        <li className={styles.step}>
+          <span className={styles.stepMarker} aria-hidden="true">4</span>
+          <div className={styles.stepBody}>
+            <div className={styles.stepHeader}>
+              <h2 className={styles.stepTitle}>Sender</h2>
+              <span className={styles.stepHint}>The Gmail account these emails come from.</span>
+            </div>
+            <div className="field">
+              <label htmlFor="senderProfileId">Send from</label>
+              <select id="senderProfileId" name="senderProfileId" defaultValue={props.senders[0]?.id ?? ""} required disabled={!hasSenders}>
+                <option value="">{hasSenders ? "Choose the Gmail account to send from" : needsReconnect ? "Reconnect Gmail first" : "Connect Gmail first"}</option>
+                {renderOptions(props.senders)}
+              </select>
+            </div>
+            {needsReconnect ? (
+              <p className={styles.builderNote} data-tone="warning">
+                <TriangleAlert aria-hidden="true" />
+                <span>
+                  A connected sender is required before this sequence can launch.
+                  {props.reconnectHref ? (
+                    <>
+                      {" "}
+                      <a href={props.reconnectHref}>Reconnect Gmail</a> to restore sending access.
+                    </>
+                  ) : null}
+                </span>
+              </p>
+            ) : null}
+          </div>
+        </li>
+
+        <li className={styles.step}>
+          <span className={styles.stepMarker} aria-hidden="true">5</span>
+          <div className={styles.stepBody}>
+            <div className={styles.stepHeader}>
+              <h2 className={styles.stepTitle}>Attachments</h2>
+              <span className={styles.stepHint}>Included with every email in this sequence.</span>
+            </div>
+            <input
+              ref={attachmentInputRef}
+              id="attachments"
+              type="file"
+              accept=".pdf,.doc,.docx,.txt,.rtf"
+              multiple
+              className={styles.hiddenInput}
+              onChange={(event) => {
+                const selectedFiles = Array.from(event.target.files ?? []);
+                if (selectedFiles.length) {
+                  setAttachments((currentAttachments) => mergeAttachmentFiles(currentAttachments, selectedFiles));
+                }
+                event.currentTarget.value = "";
+              }}
+            />
+            <div className={styles.attachmentComposer}>
+              <div className={styles.attachmentHeader}>
+                <label htmlFor="attachments" className={styles.attachmentLabel}>
+                  Optional attachments
+                </label>
+                <span className={styles.attachmentCount}>
+                  {attachments.length ? `${attachments.length} file${attachments.length === 1 ? "" : "s"}` : "No files yet"}
+                </span>
+                <button
+                  type="button"
+                  className={styles.addButton}
+                  onClick={() => attachmentInputRef.current?.click()}
+                  disabled={state.pending}
+                >
+                  <FilePlus2 aria-hidden="true" />
+                  Add files
+                </button>
+              </div>
+
+              {attachments.length ? (
+                <ul className={styles.attachmentList}>
+                  {attachments.map((attachment) => (
+                    <li key={getAttachmentIdentity(attachment)} className={styles.attachmentItem}>
+                      <span className={styles.attachmentIcon} aria-hidden="true">
+                        <FileText />
+                      </span>
+                      <span className={styles.attachmentName} title={attachment.name}>
+                        {attachment.name}
+                      </span>
+                      <span className={styles.attachmentMeta}>
+                        {getAttachmentTypeLabel(attachment.name)} · {formatAttachmentSize(attachment.size)}
+                      </span>
+                      <button
+                        type="button"
+                        className={styles.removeButton}
+                        aria-label={`Remove ${attachment.name}`}
+                        onClick={() =>
+                          setAttachments((currentAttachments) =>
+                            currentAttachments.filter((file) => getAttachmentIdentity(file) !== getAttachmentIdentity(attachment))
+                          )
+                        }
+                        disabled={state.pending}
+                      >
+                        <Trash2 aria-hidden="true" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className={styles.attachmentEmpty}>
+                  No files attached yet — add resumes, cover letters, or supporting documents.
+                </p>
+              )}
+
+              <p className={styles.attachmentFooter}>PDF, DOC, DOCX, TXT, or RTF · up to 10 MB each</p>
+            </div>
+          </div>
+        </li>
+
+        <li className={styles.step}>
+          <span className={styles.stepMarker} aria-hidden="true">6</span>
+          <div className={styles.stepBody}>
+            <div className={styles.stepHeader}>
+              <h2 className={styles.stepTitle}>Timing</h2>
+              <span className={styles.stepHint}>Launch now, later, or on a repeating schedule.</span>
+            </div>
+            <div className={styles.timingFields}>
+              <div className="field">
+                <label htmlFor="scheduleType">When should this send?</label>
+                <select
+                  id="scheduleType"
+                  name="scheduleType"
+                  value={scheduleType}
+                  onChange={(event) => setScheduleType(event.target.value)}
+                >
+                  <option value="immediate">Right away</option>
+                  <option value="once">Schedule once</option>
+                  <option value="recurring">Repeat on a schedule</option>
+                </select>
+              </div>
+              {scheduleType === "once" ? (
+                <div className="field">
+                  <label htmlFor="scheduledFor">Send on</label>
+                  <input id="scheduledFor" name="scheduledFor" type="datetime-local" required />
+                </div>
+              ) : null}
+              {scheduleType !== "immediate" ? (
+                <div className="field">
+                  <label htmlFor="scheduleTimeZone">Send in timezone</label>
+                  <select
+                    id="scheduleTimeZone"
+                    name="scheduleTimeZone"
+                    value={selectedTimeZone}
+                    onChange={(event) => setSelectedTimeZone(event.target.value)}
+                  >
+                    {timeZoneOptions.map((timeZone) => (
+                      <option key={timeZone.value} value={timeZone.value}>
+                        {timeZone.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
+              {scheduleType === "recurring" ? (
+                <>
+                  <div className="field">
+                    <label htmlFor="frequency">Repeat</label>
+                    <select
+                      id="frequency"
+                      name="frequency"
+                      value={frequency}
+                      onChange={(event) => setFrequency(event.target.value)}
+                    >
+                      <option value="daily">Every day</option>
+                      <option value="weekly">Every week</option>
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="time">Send at</label>
+                    <input id="time" name="time" type="time" defaultValue="09:00" required />
+                  </div>
+                </>
+              ) : null}
+            </div>
+            {scheduleType === "recurring" && frequency === "weekly" ? (
               <div className={`field ${styles.weekdayField}`}>
                 <span className={styles.weekdayLabel}>Days</span>
                 <div className={styles.weekdayGroup} aria-label="Recurring weekdays">
@@ -509,23 +578,31 @@ export function CampaignBuilder(props: {
                 </div>
               </div>
             ) : null}
+            {scheduleType === "recurring" ? (
+              <p className={styles.timingNote}>
+                We’ll keep using this list, template, and sender each time the sequence runs.
+              </p>
+            ) : null}
           </div>
-          <p className="muted" style={{ marginTop: "-0.35rem", marginBottom: 0 }}>
-            We’ll keep using this list, template, and sender each time the sequence runs.
+        </li>
+      </ol>
+
+      <div className={styles.builderFooter}>
+        {!selectedMappingId && selectedImport ? (
+          <p className={styles.footerNote} data-tone="warning">
+            <TriangleAlert aria-hidden="true" />
+            <span>Finish the personalization fields for this list on the Imports page before creating the sequence.</span>
           </p>
-        </>
-      ) : null}
-      {scheduleType !== "immediate" ? (
-        <p className="muted" style={{ marginTop: scheduleType === "recurring" ? "0.35rem" : "-0.35rem", marginBottom: 0 }}>
-          This schedule will run in {selectedTimeZone}.
-        </p>
-      ) : null}
-      <button className="button" type="submit" disabled={state.pending || !canCreateSequence}>
-        {state.pending ? "Preparing sequence..." : "Create sequence"}
-      </button>
-      {!selectedMappingId && selectedImport ? (
-        <p className="muted">Finish the personalization fields for this list on the Imports page before creating the sequence.</p>
-      ) : null}
+        ) : (
+          <p className={styles.footerNote}>
+            <CalendarClock aria-hidden="true" />
+            <span>{timingSummary}</span>
+          </p>
+        )}
+        <button className={`button ${styles.createButton}`} type="submit" disabled={state.pending || !canCreateSequence}>
+          {state.pending ? "Preparing sequence..." : "Create sequence"}
+        </button>
+      </div>
     </form>
     <SequenceLimitDialog
       open={limitDialog !== null}
