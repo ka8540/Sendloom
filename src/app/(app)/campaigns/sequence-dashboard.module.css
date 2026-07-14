@@ -228,21 +228,29 @@
   min-width: 0;
 }
 
+.selectOption:has(.optionCount) {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(3ch, auto) 0.82rem;
+}
+
 .optionCount {
-  margin-left: auto;
-  padding: 0.12rem 0.44rem;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: var(--surface);
+  grid-column: 3;
+  justify-self: end;
+  min-width: 3ch;
+  margin-left: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 750;
+  font-size: 0.75rem;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
+  text-align: right;
   flex-shrink: 0;
 }
 
 .selectOption[aria-selected="true"] .optionCount {
-  border-color: color-mix(in srgb, var(--accent) 34%, var(--line));
   color: var(--accent-strong);
 }
 
@@ -255,6 +263,11 @@
 
 .selectOption .optionCheck {
   margin-left: 0.1rem;
+}
+
+.selectOption:has(.optionCount) .optionCheck {
+  grid-column: 4;
+  margin-left: 0;
 }
 
 .selectOption:not(:has(.optionCount)) .optionCheck {
