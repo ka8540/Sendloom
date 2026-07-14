@@ -15,8 +15,18 @@ export type SequenceListItem = {
   enrolledCount: number;
   healthPercent: number | null;
   progressPercent: number;
-  issueCount: number;
+  failedCount: number;
+  invalidCount: number;
+  deliveredCount: number;
+  opensCount: number;
+  repliedCount: number;
+  createdAtIso: string;
+  updatedAtIso: string;
 };
+
+export function getSequenceIssueCount(item: SequenceListItem): number {
+  return item.failedCount + item.invalidCount;
+}
 
 export type SequenceStatusFlags = {
   active: boolean;
@@ -38,7 +48,7 @@ export function getSequenceStatusFlags(item: SequenceListItem): SequenceStatusFl
       item.campaignStatus === "WAITING_FOR_SLOT" ||
       ACTIVE_RUN_STATUSES.has(run),
     paused: item.campaignStatus === "PAUSED" || run === "PAUSED",
-    attention: item.campaignStatus === "FAILED" || run === "FAILED" || item.issueCount > 0,
+    attention: item.campaignStatus === "FAILED" || run === "FAILED" || getSequenceIssueCount(item) > 0,
     completed: item.campaignStatus === "COMPLETED" || run === "COMPLETED",
     scheduled: item.campaignStatus === "SCHEDULED" || item.campaignStatus === "VALIDATED",
     draft: item.campaignStatus === "DRAFT"
@@ -76,6 +86,100 @@ export function primarySequenceTone(item: SequenceListItem): SequenceTone {
   if (flags.scheduled) return "scheduled";
   if (flags.draft) return "draft";
   return "idle";
+}
+
+// Human description of what the sequence is doing right now. Run status wins
+// over campaign status because it reflects the most recent launch.
+export function describeSequenceState(item: SequenceListItem): string {
+  const run = item.latestRunStatus ?? "";
+
+  if (run === "RUNNING") return "Sending";
+  if (run === "WAITING_FOR_SLOT" || item.campaignStatus === "WAITING_FOR_SLOT") {
+    return "Waiting for a send slot";
+  }
+  if (run === "QUEUED") return "Queued to send";
+  if (run === "PAUSED" || item.campaignStatus === "PAUSED") return "Manually paused";
+  if (run === "FAILED" || item.campaignStatus === "FAILED") return "Last run failed";
+  if (run === "CANCELLED" || item.campaignStatus === "CANCELLED") return "Cancelled";
+  if (run === "COMPLETED" || item.campaignStatus === "COMPLETED") return "Finished sending";
+  if (item.campaignStatus === "RUNNING") return "Sending";
+  if (item.campaignStatus === "SCHEDULED") return "Scheduled";
+  if (item.campaignStatus === "VALIDATED") return "Ready to launch";
+  if (item.campaignStatus === "DRAFT") return "Draft";
+  return "Not launched yet";
+}
+
+// Opens as a share of delivered emails. Opened and clicked recipient statuses
+// are exclusive, so opensCount is precomputed as opened + clicked upstream.
+export function getSequenceOpenRatePercent(item: SequenceListItem): number | null {
+  if (item.deliveredCount <= 0) {
+    return null;
+  }
+
+  return Math.min(100, Math.round((item.opensCount / item.deliveredCount) * 100));
+}
+
+export type SequenceAttentionItem = {
+  id: string;
+  name: string;
+  severity: "critical" | "warning";
+  title: string;
+  detail: string;
+};
+
+// Attention entries derive only from observed delivery facts — failed runs,
+// failed sends, invalid addresses. Nothing is inferred or invented, and a
+// paused sequence alone is not an alert (we cannot know why it was paused).
+export function buildSequenceAttentionItems(
+  items: readonly SequenceListItem[]
+): SequenceAttentionItem[] {
+  const entries: SequenceAttentionItem[] = [];
+
+  for (const item of items) {
+    if (!getSequenceStatusFlags(item).attention) {
+      continue;
+    }
+
+    const runFailed = item.campaignStatus === "FAILED" || item.latestRunStatus === "FAILED";
+    const parts: string[] = [];
+
+    if (runFailed) {
+      parts.push("the last run failed before finishing");
+    }
+    if (item.failedCount > 0) {
+      parts.push(`${item.failedCount} send${item.failedCount === 1 ? "" : "s"} failed`);
+    }
+    if (item.invalidCount > 0) {
+      parts.push(
+        `${item.invalidCount} recipient${item.invalidCount === 1 ? "" : "s"} skipped as invalid`
+      );
+    }
+
+    if (!parts.length) {
+      continue;
+    }
+
+    const detail = parts.join(", ");
+
+    entries.push({
+      id: item.id,
+      name: item.name,
+      severity: runFailed || item.failedCount > 0 ? "critical" : "warning",
+      title: runFailed
+        ? "Run failed"
+        : item.failedCount > 0
+          ? "Failed sends detected"
+          : "Invalid recipients skipped",
+      detail: detail.charAt(0).toUpperCase() + detail.slice(1) + "."
+    });
+  }
+
+  // Critical entries surface first; input order (most recently updated first)
+  // is preserved within each severity.
+  return [
+    ...entries.filter((entry) => entry.severity === "critical"),
+    ...entries.filter((entry) => entry.severity === "warning")
+  ];
 }
 
 export const SEQUENCE_FILTERS = [

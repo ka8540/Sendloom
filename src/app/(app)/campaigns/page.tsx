@@ -1,14 +1,26 @@
+import Link from "next/link";
 import { after } from "next/server";
-import { CheckCircle2, Mail, RefreshCcw } from "lucide-react";
+import {
+  AlertTriangle,
+  CalendarClock,
+  CheckCircle2,
+  MailCheck,
+  Plus,
+  Reply,
+  Send,
+  ShieldCheck
+} from "lucide-react";
 
 import { ActiveRunRefresher } from "@/components/active-run-refresher";
-import { CampaignBuilder } from "@/components/campaign-builder";
 import { ErrorToastOnMount } from "@/components/error-toast-provider";
-import { BounceMonitoringStatus } from "@/components/senders/bounce-monitoring-status";
 import { requireOperatorUser } from "@/lib/auth";
+import { getGmailDailySendWindow } from "@/lib/daily-send-limit";
 import { prisma } from "@/lib/db";
-import type { SequenceListItem } from "@/lib/sequence-dashboard";
-import { resolveBounceMonitoringStatus } from "@/services/bounces";
+import {
+  buildSequenceAttentionItems,
+  countSequenceFilters,
+  type SequenceListItem
+} from "@/lib/sequence-dashboard";
 import { processPendingCampaignWork } from "@/services/campaigns";
 import { SequenceDashboard } from "./sequence-dashboard";
 import styles from "./page.module.css";
@@ -88,6 +100,7 @@ type RunSummary = {
   failedCount: number | null;
   suppressedCount: number | null;
   invalidCount: number | null;
+  repliedCount: number | null;
   updatedAt: Date;
   scheduledFor: Date | null;
 };
@@ -117,6 +130,8 @@ function selectDisplayRun(runs: RunSummary[]): { run: RunSummary | null; isFromP
   return { run: activeRun, isFromPreviousRun: false };
 }
 
+const countFormatter = new Intl.NumberFormat("en-US");
+
 export default async function CampaignsPage({
   searchParams
 }: {
@@ -126,14 +141,7 @@ export default async function CampaignsPage({
   const resolvedSearchParams = searchParams ? await searchParams : {};
   const gmailStatus = getSearchParam(resolvedSearchParams, "gmail");
   const gmailError = getSearchParam(resolvedSearchParams, "gmail_error");
-  const [imports, mappings, templates, senders, campaigns] = await Promise.all([
-    prisma.import.findMany({ where: { userId: user.id }, orderBy: { createdAt: "desc" } }),
-    prisma.mapping.findMany({ where: { userId: user.id }, orderBy: { createdAt: "desc" } }),
-    prisma.template.findMany({ where: { userId: user.id }, orderBy: { updatedAt: "desc" } }),
-    prisma.senderProfile.findMany({
-      where: { userId: user.id },
-      orderBy: { createdAt: "asc" }
-    }),
+  const [campaigns, repliesCount, scheduledRunCount, sendWindow] = await Promise.all([
     prisma.campaign.findMany({
       where: { userId: user.id },
       orderBy: { updatedAt: "desc" },
@@ -157,17 +165,16 @@ export default async function CampaignsPage({
         },
         runs: { orderBy: { createdAt: "desc" }, take: 2 }
       }
-    })
+    }),
+    prisma.inboundReply.count({ where: { senderProfile: { userId: user.id } } }),
+    prisma.campaignRun.count({
+      where: {
+        campaign: { userId: user.id },
+        status: { in: ["QUEUED", "WAITING_FOR_SLOT"] }
+      }
+    }),
+    getGmailDailySendWindow({ userId: user.id })
   ]);
-  const latestMappings = new Map<string, (typeof mappings)[number]>();
-  const connectedSenders = senders.filter((sender) => Boolean(sender.oauthRefreshToken));
-  const disconnectedSenders = senders.filter((sender) => !sender.oauthRefreshToken);
-
-  for (const mapping of mappings) {
-    if (!latestMappings.has(mapping.importId)) {
-      latestMappings.set(mapping.importId, mapping);
-    }
-  }
 
   if (
     campaigns.some(
@@ -263,9 +270,52 @@ export default async function CampaignsPage({
         displayRunSnapshot && displayRunSnapshot.totalRecipients > 0
           ? getPercent(processedCount, displayRunSnapshot.totalRecipients)
           : 0,
-      issueCount: getIssueCount(displayRunSnapshot)
+      failedCount: displayRunSnapshot?.failedCount ?? 0,
+      invalidCount: displayRunSnapshot?.invalidCount ?? 0,
+      deliveredCount,
+      // OPENED and CLICKED are exclusive recipient statuses, so opens = both.
+      opensCount: (displayRunSnapshot?.openedCount ?? 0) + (displayRunSnapshot?.clickedCount ?? 0),
+      repliedCount: displayRunSnapshot?.repliedCount ?? 0,
+      createdAtIso: campaign.createdAt.toISOString(),
+      updatedAtIso: campaign.updatedAt.toISOString()
     };
   });
+
+  const filterCounts = countSequenceFilters(sequenceItems);
+  const attentionItems = buildSequenceAttentionItems(sequenceItems);
+  const visibleAttentionItems = attentionItems.slice(0, 3);
+  const hiddenAttentionCount = attentionItems.length - visibleAttentionItems.length;
+
+  const summaryCards = [
+    {
+      id: "active",
+      label: "Active",
+      value: countFormatter.format(filterCounts.active),
+      unit: filterCounts.active === 1 ? "sequence" : "sequences",
+      icon: <Send aria-hidden="true" />
+    },
+    {
+      id: "replies",
+      label: "Replies",
+      value: countFormatter.format(repliesCount),
+      unit: "received",
+      icon: <Reply aria-hidden="true" />
+    },
+    {
+      id: "sent",
+      label: "Sent",
+      value: sendWindow.ledgerAvailable ? countFormatter.format(sendWindow.sentLast24h) : "—",
+      unit: sendWindow.ledgerAvailable ? "emails · last 24h" : "unavailable",
+      icon: <MailCheck aria-hidden="true" />
+    },
+    {
+      id: "scheduled",
+      label: "Scheduled",
+      value: countFormatter.format(scheduledRunCount),
+      unit: scheduledRunCount === 1 ? "run queued" : "runs queued",
+      icon: <CalendarClock aria-hidden="true" />
+    }
+  ];
 
   return (
     <div className={styles.page}>
@@ -278,100 +328,78 @@ export default async function CampaignsPage({
         </div>
       ) : null}
 
-      <section className={styles.topGrid}>
-        <article className={styles.builderCard} id="create-sequence">
-          <div className={styles.panelHeading}>
-            <span className={styles.kicker}>Build</span>
-            <h1>Create a sequence</h1>
-            <p>Pick a contact list, template, sender, and send timing without leaving the dashboard.</p>
-          </div>
-          <CampaignBuilder
-            imports={imports.map((entry) => ({ id: entry.id, label: entry.fileName }))}
-            mappings={imports.flatMap((entry) => {
-              const mapping = latestMappings.get(entry.id);
-              if (!mapping) {
-                return [];
-              }
+      <header className={styles.pageHeader}>
+        <div className={styles.pageHeading}>
+          <h1>Sequences</h1>
+          <p>Track delivery, replies, and runs that need attention.</p>
+        </div>
+        <Link className={`button ${styles.newSequenceButton}`} href="/campaigns/new">
+          <Plus aria-hidden="true" />
+          <span>New sequence</span>
+        </Link>
+      </header>
 
-              return [
-                {
-                  id: mapping.id,
-                  importId: entry.id,
-                  label: `${entry.fileName} field set`
-                }
-              ];
-            })}
-            templates={templates.map((entry) => ({ id: entry.id, label: entry.name }))}
-            senders={connectedSenders.map((entry) => ({ id: entry.id, label: `${entry.name} <${entry.fromEmail}>` }))}
-            disconnectedSenderCount={disconnectedSenders.length}
-            reconnectHref={
-              disconnectedSenders[0]
-                ? `/api/auth/google/connect?email=${encodeURIComponent(disconnectedSenders[0].fromEmail)}&next=${encodeURIComponent("/campaigns")}`
-                : undefined
-            }
-          />
-        </article>
+      <section className={styles.overviewGrid} aria-label="Sequence overview">
+        <dl className={styles.summaryCards}>
+          {summaryCards.map((card) => (
+            <div key={card.id} className={styles.summaryCard}>
+              <dt>
+                <span className={styles.summaryIcon}>{card.icon}</span>
+                <span>{card.label}</span>
+              </dt>
+              <dd>
+                <span className={styles.summaryValue}>{card.value}</span>
+                <span className={styles.summaryUnit}>{card.unit}</span>
+              </dd>
+            </div>
+          ))}
+        </dl>
 
-        <aside className={styles.senderPanel} aria-label="Send from Gmail">
-          <div className={styles.senderPanelHeading}>
-            <span className={styles.kicker}>Senders</span>
-            <h2>Send from Gmail</h2>
+        <aside className={styles.healthPanel} aria-label="Sequences health">
+          <div className={styles.healthHeading}>
+            <h2>Sequences health</h2>
+            {attentionItems.length ? (
+              <span className={styles.healthCount}>{attentionItems.length}</span>
+            ) : null}
           </div>
 
-          <div className={styles.senderList}>
-            {connectedSenders.length ? (
-              connectedSenders.map((sender) => (
-                <div key={sender.id} className={styles.senderRow}>
-                  <div className={styles.senderIcon}>
-                    <Mail aria-hidden="true" />
+          {attentionItems.length ? (
+            <ul className={styles.healthList}>
+              {visibleAttentionItems.map((entry) => (
+                <li key={entry.id} className={styles.healthItem} data-severity={entry.severity}>
+                  <div className={styles.healthItemBody}>
+                    <strong>
+                      {entry.name} — {entry.title}
+                    </strong>
+                    <p>{entry.detail}</p>
                   </div>
-                  <div className={styles.senderMeta}>
-                    <div className={styles.senderNameRow}>
-                      <strong>{sender.name}</strong>
-                      <span className={styles.senderChip}>Connected</span>
-                    </div>
-                    <span className={styles.senderEmail}>{sender.fromEmail}</span>
-                    <BounceMonitoringStatus
-                      senderId={sender.id}
-                      status={resolveBounceMonitoringStatus(sender)}
-                      backfillCompleted={Boolean(sender.bounceBackfillCompletedAt)}
-                    />
+                  <div className={styles.healthItemFooter}>
+                    <Link className={styles.healthReviewLink} href={`/campaigns/${entry.id}`}>
+                      Review sequence
+                    </Link>
+                    <span className={styles.healthSeverity} data-severity={entry.severity}>
+                      <AlertTriangle aria-hidden="true" />
+                      {entry.severity === "critical" ? "Critical" : "Warning"}
+                    </span>
                   </div>
-                </div>
-              ))
-            ) : (
-              <div className={styles.senderEmpty}>
-                {disconnectedSenders.length
-                  ? "Reconnect Gmail to keep sending from this workspace."
-                  : "Connect a Gmail account to send emails."}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className={styles.healthAllClear}>
+              <ShieldCheck aria-hidden="true" />
+              <div>
+                <strong>All clear</strong>
+                <p>No sequences need attention right now.</p>
               </div>
-            )}
+            </div>
+          )}
 
-            {disconnectedSenders.map((sender) => (
-              <div key={sender.id} className={`${styles.senderRow} ${styles.senderRowWarning}`}>
-                <div className={styles.senderIcon}>
-                  <RefreshCcw aria-hidden="true" />
-                </div>
-                <div className={styles.senderMeta}>
-                  <div className={styles.senderNameRow}>
-                    <strong>{sender.name}</strong>
-                    <span className={`${styles.senderChip} ${styles.senderChipWarning}`}>Reconnect</span>
-                  </div>
-                  <span className={styles.senderEmail}>{sender.fromEmail}</span>
-                </div>
-                <a
-                  className="button secondary"
-                  href={`/api/auth/google/connect?email=${encodeURIComponent(sender.fromEmail)}&next=${encodeURIComponent("/campaigns")}`}
-                >
-                  Reconnect
-                </a>
-              </div>
-            ))}
-
-            <a className="button" href="/api/auth/google/connect">
-              {connectedSenders.length ? "Connect another Gmail" : "Connect Gmail"}
-            </a>
-          </div>
+          {hiddenAttentionCount > 0 ? (
+            <p className={styles.healthMore}>
+              +{hiddenAttentionCount} more under the Needs attention filter below.
+            </p>
+          ) : null}
         </aside>
       </section>
 

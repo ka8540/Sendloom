@@ -1,21 +1,24 @@
 "use client";
 
-// The sequence board that lives below the create form: summary values,
-// status filters with counts, search, and a minimal 5-per-page list. Rows
-// stay scannable — name, status pill, one list chip, health, enrolled, and
-// the open/delete actions. Deeper analysis lives on the sequence detail page.
+// The sequence list that lives below the summary cards: a count + search +
+// status-filter toolbar and a compact table (5 rows per page). Each row shows
+// name, recipients + sender, status, current state, created date, progress,
+// and mini performance metrics. Deeper analysis lives on the detail page.
 
 import Link from "next/link";
 import { useId, useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Inbox, Search, Users } from "lucide-react";
+import { ChevronLeft, ChevronRight, Eye, Inbox, MailCheck, Reply, Search } from "lucide-react";
 
 import { CampaignCardActions } from "@/components/campaign-card-actions";
+import { formatRelativeTime } from "@/components/dashboard/formatters";
 import {
   SEQUENCE_FILTERS,
   SEQUENCE_TONE_LABELS,
   countSequenceFilters,
   describeSequencePagePreview,
+  describeSequenceState,
   filterSequenceItems,
+  getSequenceOpenRatePercent,
   paginateSequenceItems,
   primarySequenceTone,
   type SequenceFilterId,
@@ -31,6 +34,8 @@ function formatCount(value: number) {
 
 function SequenceRow({ item }: { item: SequenceListItem }) {
   const tone = primarySequenceTone(item);
+  const openRate = getSequenceOpenRatePercent(item);
+  const createdDate = new Date(item.createdAtIso);
 
   return (
     <li className={styles.row} data-tone={tone}>
@@ -45,29 +50,47 @@ function SequenceRow({ item }: { item: SequenceListItem }) {
             <span className={styles.rowName} title={item.name}>
               {item.name}
             </span>
-            <span className={styles.rowChip} title={`Contact list: ${item.listName}`}>
-              <Users aria-hidden="true" />
-              <span>{item.listName}</span>
+            <span className={styles.rowMeta} title={`Contact list: ${item.listName}`}>
+              {formatCount(item.enrolledCount)} recipient{item.enrolledCount === 1 ? "" : "s"} ·{" "}
+              {item.senderEmail}
             </span>
           </span>
         </span>
 
-        <span className={styles.rowHealth}>
-          <span className={styles.rowHealthValue}>
-            {item.healthPercent === null ? "—" : `${item.healthPercent}%`}
-          </span>
+        <span className={styles.rowStatus} data-tone={tone}>
+          {SEQUENCE_TONE_LABELS[tone]}
+        </span>
+
+        <span className={styles.rowState}>{describeSequenceState(item)}</span>
+
+        <span
+          className={styles.rowCreated}
+          title={createdDate.toLocaleString()}
+          suppressHydrationWarning
+        >
+          {formatRelativeTime(createdDate)}
+        </span>
+
+        <span className={styles.rowProgress}>
+          <span className={styles.rowProgressValue}>{item.progressPercent}%</span>
           <span className={styles.rowTrack} aria-hidden="true">
             <span className={styles.rowTrackFill} style={{ width: `${item.progressPercent}%` }} />
           </span>
         </span>
 
-        <span className={styles.rowEnrolled}>
-          <span className={styles.rowEnrolledValue}>{formatCount(item.enrolledCount)}</span>
-          <span className={styles.rowEnrolledLabel}>enrolled</span>
-        </span>
-
-        <span className={styles.rowStatus} data-tone={tone}>
-          {SEQUENCE_TONE_LABELS[tone]}
+        <span className={styles.rowPerformance}>
+          <span className={styles.rowStat} title="Delivered emails">
+            <MailCheck aria-hidden="true" />
+            {formatCount(item.deliveredCount)}
+          </span>
+          <span className={styles.rowStat} title="Open rate">
+            <Eye aria-hidden="true" />
+            {openRate === null ? "—" : `${openRate}%`}
+          </span>
+          <span className={styles.rowStat} title="Replies">
+            <Reply aria-hidden="true" />
+            {formatCount(item.repliedCount)}
+          </span>
         </span>
       </Link>
 
@@ -123,37 +146,24 @@ export function SequenceDashboard({ items }: { items: SequenceListItem[] }) {
   const hasResults = filtered.length > 0;
 
   return (
-    <section className={styles.dashboard} aria-label="Sequence dashboard">
-      <header className={styles.header}>
-        <div className={styles.headingBlock}>
-          <span className={styles.kicker}>Sequence board</span>
-          <h2 className={styles.title}>Sequences</h2>
-          <p className={styles.subtitle}>
-            Track launches, delivery health, and sequences that need attention.
-          </p>
+    <section className={styles.dashboard} aria-label="Sequence list">
+      <div className={styles.toolbar}>
+        <span className={styles.totalCount}>
+          {formatCount(counts.all)} sequence{counts.all === 1 ? "" : "s"}
+        </span>
+
+        <div className={styles.search}>
+          <Search aria-hidden="true" className={styles.searchIcon} />
+          <input
+            type="search"
+            className={styles.searchInput}
+            value={query}
+            onChange={(event) => onSearchChange(event.target.value)}
+            placeholder="Search sequences…"
+            aria-label="Search sequences by name, list, template, or sender"
+          />
         </div>
 
-        <dl className={styles.summaryStrip} aria-label="Sequence summary">
-          <div className={styles.summaryItem}>
-            <dt>Total</dt>
-            <dd>{formatCount(counts.all)}</dd>
-          </div>
-          <div className={styles.summaryItem}>
-            <dt>Active</dt>
-            <dd>{formatCount(counts.active)}</dd>
-          </div>
-          <div className={styles.summaryItem} data-tone="attention">
-            <dt>Needs attention</dt>
-            <dd>{formatCount(counts.attention)}</dd>
-          </div>
-          <div className={styles.summaryItem}>
-            <dt>Completed</dt>
-            <dd>{formatCount(counts.completed)}</dd>
-          </div>
-        </dl>
-      </header>
-
-      <div className={styles.toolbar}>
         <div className={styles.filterRail} role="group" aria-label="Filter sequences by status">
           {visibleFilters.map((entry) => (
             <button
@@ -170,18 +180,6 @@ export function SequenceDashboard({ items }: { items: SequenceListItem[] }) {
             </button>
           ))}
         </div>
-
-        <div className={styles.search}>
-          <Search aria-hidden="true" className={styles.searchIcon} />
-          <input
-            type="search"
-            className={styles.searchInput}
-            value={query}
-            onChange={(event) => onSearchChange(event.target.value)}
-            placeholder="Search sequences…"
-            aria-label="Search sequences by name, list, template, or sender"
-          />
-        </div>
       </div>
 
       {!hasSequences ? (
@@ -194,9 +192,9 @@ export function SequenceDashboard({ items }: { items: SequenceListItem[] }) {
             Create your first sequence or import a list to get started.
           </p>
           <div className={styles.emptyActions}>
-            <a className="button" href="#create-sequence">
+            <Link className="button" href="/campaigns/new">
               Create sequence
-            </a>
+            </Link>
             <Link className="button secondary" href="/imports">
               Import list
             </Link>
@@ -220,6 +218,16 @@ export function SequenceDashboard({ items }: { items: SequenceListItem[] }) {
           <p className={styles.rangeLine} aria-live="polite">
             {slice.rangeLabel}
           </p>
+
+          <div className={styles.tableHead} aria-hidden="true">
+            <span>Name</span>
+            <span>Status</span>
+            <span>Current state</span>
+            <span>Created</span>
+            <span>Progress</span>
+            <span>Performance</span>
+            <span className={styles.tableHeadActions}>Actions</span>
+          </div>
 
           <ul className={styles.list}>
             {slice.pageItems.map((item) => (

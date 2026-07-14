@@ -6,9 +6,13 @@ import {
   SEQUENCE_FILTERS,
   SEQUENCE_PAGE_SIZE,
   SEQUENCE_TONE_LABELS,
+  buildSequenceAttentionItems,
   countSequenceFilters,
   describeSequencePagePreview,
+  describeSequenceState,
   filterSequenceItems,
+  getSequenceIssueCount,
+  getSequenceOpenRatePercent,
   getSequenceStatusFlags,
   paginateSequenceItems,
   primarySequenceTone,
@@ -18,14 +22,18 @@ import {
 } from "@/lib/sequence-dashboard";
 
 // Unit tests for the sequence-dashboard view logic plus node-only source
-// assertions for the redesigned Sequences page (server components are not
-// renderable in the node test env). Covers: page structure (form on top,
-// compact sender panel, dashboard below), filters with counts, search,
-// 5-per-page pagination, minimal list rows, empty states, the route loading
-// skeleton, the detail-page visual cards, and the no-backend-change guards.
+// assertions for the redesigned Sequences pages (server components are not
+// renderable in the node test env). Covers: the dashboard-only /campaigns
+// route (header, summary cards, health panel, filters with counts, search,
+// 5-per-page pagination), the separate /campaigns/new create page with the
+// compact Gmail sender panel, the untouched detail page, and the
+// no-backend-change guards.
 
 const PAGE = readFileSync("src/app/(app)/campaigns/page.tsx", "utf8");
 const PAGE_CSS = readFileSync("src/app/(app)/campaigns/page.module.css", "utf8");
+const CREATE = readFileSync("src/app/(app)/campaigns/new/page.tsx", "utf8");
+const CREATE_CSS = readFileSync("src/app/(app)/campaigns/new/page.module.css", "utf8");
+const CREATE_ALIAS = readFileSync("src/app/(app)/sequences/new/page.tsx", "utf8");
 const DASH = readFileSync("src/app/(app)/campaigns/sequence-dashboard.tsx", "utf8");
 const DASH_CSS = readFileSync("src/app/(app)/campaigns/sequence-dashboard.module.css", "utf8");
 const LOGIC = readFileSync("src/lib/sequence-dashboard.ts", "utf8");
@@ -47,12 +55,18 @@ function makeItem(overrides: Partial<SequenceListItem> = {}): SequenceListItem {
     enrolledCount: 30,
     healthPercent: 77,
     progressPercent: 100,
-    issueCount: 0,
+    failedCount: 0,
+    invalidCount: 0,
+    deliveredCount: 23,
+    opensCount: 9,
+    repliedCount: 1,
+    createdAtIso: "2026-05-02T10:00:00.000Z",
+    updatedAtIso: "2026-06-02T10:00:00.000Z",
     ...overrides
   };
 }
 
-describe("status mapping (#4)", () => {
+describe("status mapping", () => {
   it("maps campaign and run statuses onto the real enum values", () => {
     expect(getSequenceStatusFlags(makeItem({ campaignStatus: "RUNNING", latestRunStatus: null })).active).toBe(true);
     expect(getSequenceStatusFlags(makeItem({ campaignStatus: "WAITING_FOR_SLOT" })).active).toBe(true);
@@ -61,11 +75,12 @@ describe("status mapping (#4)", () => {
     expect(getSequenceStatusFlags(makeItem({ latestRunStatus: "PAUSED" })).paused).toBe(true);
     expect(getSequenceStatusFlags(makeItem({ campaignStatus: "FAILED" })).attention).toBe(true);
     expect(getSequenceStatusFlags(makeItem({ latestRunStatus: "FAILED" })).attention).toBe(true);
-    expect(getSequenceStatusFlags(makeItem({ issueCount: 3 })).attention).toBe(true);
+    expect(getSequenceStatusFlags(makeItem({ failedCount: 2, invalidCount: 1 })).attention).toBe(true);
     expect(getSequenceStatusFlags(makeItem({ campaignStatus: "COMPLETED" })).completed).toBe(true);
     expect(getSequenceStatusFlags(makeItem({ campaignStatus: "SCHEDULED" })).scheduled).toBe(true);
     expect(getSequenceStatusFlags(makeItem({ campaignStatus: "VALIDATED" })).scheduled).toBe(true);
     expect(getSequenceStatusFlags(makeItem({ campaignStatus: "DRAFT", latestRunStatus: null })).draft).toBe(true);
+    expect(getSequenceIssueCount(makeItem({ failedCount: 2, invalidCount: 3 }))).toBe(5);
   });
 
   it("keeps cancelled sequences visible only under All", () => {
@@ -77,13 +92,13 @@ describe("status mapping (#4)", () => {
   });
 
   it("filters are overlapping predicates — a completed run with failures shows under both", () => {
-    const item = makeItem({ campaignStatus: "COMPLETED", latestRunStatus: "COMPLETED", issueCount: 2 });
+    const item = makeItem({ campaignStatus: "COMPLETED", latestRunStatus: "COMPLETED", failedCount: 2 });
     expect(sequenceMatchesFilter(item, "completed")).toBe(true);
     expect(sequenceMatchesFilter(item, "attention")).toBe(true);
   });
 
   it("assigns one primary tone with attention taking priority", () => {
-    expect(primarySequenceTone(makeItem({ issueCount: 2 }))).toBe("attention");
+    expect(primarySequenceTone(makeItem({ failedCount: 2 }))).toBe("attention");
     expect(primarySequenceTone(makeItem({ campaignStatus: "PAUSED" }))).toBe("paused");
     expect(primarySequenceTone(makeItem({ campaignStatus: "RUNNING" }))).toBe("active");
     expect(primarySequenceTone(makeItem())).toBe("completed");
@@ -91,13 +106,36 @@ describe("status mapping (#4)", () => {
     expect(primarySequenceTone(makeItem({ campaignStatus: "DRAFT", latestRunStatus: null }))).toBe("draft");
     expect(SEQUENCE_TONE_LABELS.attention).toBe("Needs attention");
   });
+
+  it("describes the current state from real statuses", () => {
+    expect(describeSequenceState(makeItem({ latestRunStatus: "RUNNING" }))).toBe("Sending");
+    expect(describeSequenceState(makeItem({ latestRunStatus: "WAITING_FOR_SLOT" }))).toBe(
+      "Waiting for a send slot"
+    );
+    expect(describeSequenceState(makeItem({ latestRunStatus: "QUEUED" }))).toBe("Queued to send");
+    expect(describeSequenceState(makeItem({ latestRunStatus: "PAUSED" }))).toBe("Manually paused");
+    expect(describeSequenceState(makeItem({ latestRunStatus: "FAILED" }))).toBe("Last run failed");
+    expect(describeSequenceState(makeItem())).toBe("Finished sending");
+    expect(
+      describeSequenceState(makeItem({ campaignStatus: "SCHEDULED", latestRunStatus: null }))
+    ).toBe("Scheduled");
+    expect(
+      describeSequenceState(makeItem({ campaignStatus: "DRAFT", latestRunStatus: null }))
+    ).toBe("Draft");
+  });
+
+  it("computes the open rate only from delivered emails", () => {
+    expect(getSequenceOpenRatePercent(makeItem({ deliveredCount: 200, opensCount: 58 }))).toBe(29);
+    expect(getSequenceOpenRatePercent(makeItem({ deliveredCount: 0, opensCount: 0 }))).toBeNull();
+    expect(getSequenceOpenRatePercent(makeItem({ deliveredCount: 3, opensCount: 3 }))).toBe(100);
+  });
 });
 
-describe("filter counts (#4, #5)", () => {
+describe("filter counts (#7)", () => {
   const items = [
     makeItem({ id: "a", campaignStatus: "RUNNING", latestRunStatus: "RUNNING" }),
     makeItem({ id: "b", campaignStatus: "PAUSED", latestRunStatus: "PAUSED" }),
-    makeItem({ id: "c", campaignStatus: "COMPLETED", issueCount: 1 }),
+    makeItem({ id: "c", campaignStatus: "COMPLETED", failedCount: 1 }),
     makeItem({ id: "d", campaignStatus: "COMPLETED" }),
     makeItem({ id: "e", campaignStatus: "SCHEDULED", latestRunStatus: null })
   ];
@@ -120,7 +158,7 @@ describe("filter counts (#4, #5)", () => {
   });
 });
 
-describe("search (#6, #7)", () => {
+describe("search (#8, #9)", () => {
   const item = makeItem({
     name: "Verkada Recruiters List",
     listName: "Verkada Recruiters",
@@ -147,7 +185,7 @@ describe("search (#6, #7)", () => {
     expect(sequenceMatchesSearch(item, "   ")).toBe(true);
   });
 
-  it("search and filter combine", () => {
+  it("search and filter combine (#9)", () => {
     const items = [
       makeItem({ id: "a", name: "Verkada SDE", campaignStatus: "PAUSED" }),
       makeItem({ id: "b", name: "Verkada Recruiters", campaignStatus: "COMPLETED" }),
@@ -159,7 +197,7 @@ describe("search (#6, #7)", () => {
   });
 });
 
-describe("pagination (#8, #9)", () => {
+describe("pagination (#10, #11)", () => {
   const items = Array.from({ length: 12 }, (_, index) =>
     makeItem({ id: `seq-${index}`, name: `Sequence ${index}` })
   );
@@ -193,7 +231,7 @@ describe("pagination (#8, #9)", () => {
     const preview = describeSequencePagePreview([
       makeItem({ id: "a" }),
       makeItem({ id: "b", campaignStatus: "PAUSED" }),
-      makeItem({ id: "c", issueCount: 1 })
+      makeItem({ id: "c", failedCount: 1 })
     ]);
     expect(preview).not.toBeNull();
     expect(preview!.headline).toBe("3 sequences");
@@ -202,34 +240,108 @@ describe("pagination (#8, #9)", () => {
   });
 });
 
-describe("page structure (#1, #2, #3)", () => {
-  it("keeps the create-sequence form at the top, dashboard below", () => {
-    const builderIndex = PAGE.indexOf("styles.builderCard");
-    const dashboardIndex = PAGE.indexOf("<SequenceDashboard");
-    expect(builderIndex).toBeGreaterThan(-1);
-    expect(dashboardIndex).toBeGreaterThan(builderIndex);
-    expect(PAGE).toContain('id="create-sequence"');
-    expect(PAGE).toContain("Create a sequence");
+describe("health panel logic (#13)", () => {
+  it("builds attention items only from observed delivery facts", () => {
+    const entries = buildSequenceAttentionItems([
+      makeItem({ id: "ok" }),
+      makeItem({ id: "invalid", invalidCount: 3 }),
+      makeItem({ id: "failed-run", latestRunStatus: "FAILED" }),
+      makeItem({ id: "failed-sends", failedCount: 4, invalidCount: 1 })
+    ]);
+
+    expect(entries.map((entry) => entry.id)).toEqual(["failed-run", "failed-sends", "invalid"]);
+    expect(entries[0].severity).toBe("critical");
+    expect(entries[0].title).toBe("Run failed");
+    expect(entries[1].detail).toBe("4 sends failed, 1 recipient skipped as invalid.");
+    expect(entries[2].severity).toBe("warning");
+    expect(entries[2].title).toBe("Invalid recipients skipped");
   });
 
-  it("renders the Send from Gmail panel compactly — sender, status chip, connect button", () => {
-    expect(PAGE).toContain("styles.senderPanel");
-    expect(PAGE).toContain("styles.senderChip}>Connected</span>");
-    expect(PAGE).toContain("Connect another Gmail");
-    // The old tall-card copy is gone and the panel hugs its content.
-    expect(PAGE).not.toContain("Connected senders can launch sequences right away");
-    const senderPanelCss = PAGE_CSS.slice(PAGE_CSS.indexOf(".senderPanel {"));
-    expect(senderPanelCss).toContain("align-self: start;");
+  it("a paused sequence alone is never an invented alert", () => {
+    expect(
+      buildSequenceAttentionItems([makeItem({ id: "p", campaignStatus: "PAUSED", latestRunStatus: "PAUSED" })])
+    ).toEqual([]);
   });
 
-  it("the old board and summary-card deck are gone from the route", () => {
-    expect(PAGE).not.toContain("SequenceBoard");
-    expect(PAGE).not.toContain("summaryGrid");
-    expect(PAGE).not.toContain("sequenceCards");
+  it("the page renders attention items with review links or the all-clear state", () => {
+    expect(PAGE).toContain("buildSequenceAttentionItems");
+    expect(PAGE).toContain('aria-label="Sequences health"');
+    expect(PAGE).toContain("Review sequence");
+    expect(PAGE).toContain("href={`/campaigns/${entry.id}`}");
+    expect(PAGE).toContain("All clear");
+    expect(PAGE).toContain("No sequences need attention right now.");
   });
 });
 
-describe("dashboard component (#4, #5, #6, #9, #10)", () => {
+describe("dashboard page structure (#1, #2, #3, #12)", () => {
+  it("renders the dashboard, not the create form (#1)", () => {
+    expect(PAGE).not.toContain("<CampaignBuilder");
+    expect(PAGE).not.toContain("Create a sequence");
+    expect(PAGE).toContain("<SequenceDashboard");
+    expect(PAGE).toContain("<h1>Sequences</h1>");
+    expect(PAGE).toContain("Track delivery, replies, and runs that need attention.");
+  });
+
+  it("has a New sequence button that links to the create page (#2, #3)", () => {
+    expect(PAGE).toContain("New sequence");
+    expect(PAGE).toContain('href="/campaigns/new"');
+  });
+
+  it("summary cards use only real data sources", () => {
+    for (const label of ['label: "Active"', 'label: "Replies"', 'label: "Sent"', 'label: "Scheduled"']) {
+      expect(PAGE).toContain(label);
+    }
+    // Active derives from status flags, replies from InboundReply, sent from
+    // the send-window ledger, scheduled from queued runs — no invented values.
+    expect(PAGE).toContain("countSequenceFilters");
+    expect(PAGE).toContain("prisma.inboundReply.count");
+    expect(PAGE).toContain("getGmailDailySendWindow");
+    expect(PAGE).toContain('status: { in: ["QUEUED", "WAITING_FOR_SLOT"] }');
+    // The send count degrades gracefully when the ledger is unavailable.
+    expect(PAGE).toContain('sendWindow.ledgerAvailable ? countFormatter.format(sendWindow.sentLast24h) : "—"');
+  });
+
+  it("no side inspector and no giant cards on the list page (#12)", () => {
+    expect(DASH).not.toContain("<aside");
+    expect(DASH).not.toMatch(/inspector/i);
+    expect(DASH_CSS).not.toMatch(/inspector/i);
+    // The only asides on the page are the health panel, not a list inspector.
+    const asides = PAGE.match(/<aside/g) ?? [];
+    expect(asides).toHaveLength(1);
+    expect(PAGE).toContain('<aside className={styles.healthPanel} aria-label="Sequences health">');
+  });
+});
+
+describe("create page (#4, #5)", () => {
+  it("renders the create form on its own route (#4)", () => {
+    expect(CREATE).toContain("<CampaignBuilder");
+    expect(CREATE).toContain("Create a sequence");
+    for (const prop of ["imports={", "mappings={", "templates={", "senders={", "disconnectedSenderCount={"]) {
+      expect(CREATE).toContain(prop);
+    }
+    // No sequence list/table below the form.
+    expect(CREATE).not.toContain("SequenceDashboard");
+    expect(CREATE).not.toContain("paginateSequenceItems");
+    // A way back to the dashboard.
+    expect(CREATE).toContain('href="/campaigns"');
+    expect(CREATE).toContain("Back to sequences");
+  });
+
+  it("renders the compact Send from Gmail panel (#5)", () => {
+    expect(CREATE).toContain("styles.senderPanel");
+    expect(CREATE).toContain("Send from Gmail");
+    expect(CREATE).toContain("styles.senderChip}>Connected</span>");
+    expect(CREATE).toContain("Connect another Gmail");
+    const senderPanelCss = CREATE_CSS.slice(CREATE_CSS.indexOf(".senderPanel {"));
+    expect(senderPanelCss).toContain("align-self: start;");
+  });
+
+  it("the /sequences/new alias reuses the same page", () => {
+    expect(CREATE_ALIAS).toContain('export { default } from "@/app/(app)/campaigns/new/page"');
+  });
+});
+
+describe("dashboard component (#7, #8, #10, #11)", () => {
   it("filters render as aria-pressed buttons with live counts", () => {
     expect(DASH).toContain("aria-pressed={filter === entry.id}");
     expect(DASH).toContain("{formatCount(counts[entry.id])}");
@@ -264,36 +376,34 @@ describe("dashboard component (#4, #5, #6, #9, #10)", () => {
     expect(DASH).toContain("{slice.rangeLabel}");
   });
 
-  it("each row opens the detail page and keeps the existing delete action", () => {
+  it("each row shows the required columns and keeps the existing actions", () => {
     expect(DASH).toContain("href={`/campaigns/${item.id}`}");
     expect(DASH).toContain("aria-label={`Open sequence ${item.name}`}");
     expect(DASH).toContain("<CampaignCardActions campaignId={item.id} campaignName={item.name} />");
+    // recipient count + sender email, status, state, created, progress, performance
+    expect(DASH).toContain("{item.senderEmail}");
+    expect(DASH).toContain("{SEQUENCE_TONE_LABELS[tone]}");
+    expect(DASH).toContain("{describeSequenceState(item)}");
+    expect(DASH).toContain("formatRelativeTime(createdDate)");
+    expect(DASH).toContain("{item.progressPercent}%");
+    expect(DASH).toContain("getSequenceOpenRatePercent");
+    expect(DASH).toContain("{formatCount(item.repliedCount)}");
   });
 
-  it("rows stay minimal — no detail-page facts crammed into the list", () => {
-    // The row template renders name, one list chip, health, enrolled, and the
-    // status pill. Validation timestamps, schedule labels, and run history
-    // stay on the detail page.
-    expect(DASH).not.toContain("Validated");
-    expect(DASH).not.toContain("Send timing");
-    expect(DASH).not.toContain("Latest run");
-    expect(DASH).not.toContain("LocalDateTime");
-    expect(DASH).not.toContain("<aside");
-  });
-
-  it("summary values render in the dashboard header", () => {
-    expect(DASH).toContain('aria-label="Sequence summary"');
-    for (const label of ["<dt>Total</dt>", "<dt>Active</dt>", "<dt>Needs attention</dt>", "<dt>Completed</dt>"]) {
-      expect(DASH).toContain(label);
+  it("renders a table-style header aligned with the row grid", () => {
+    for (const column of ["Name", "Status", "Current state", "Created", "Progress", "Performance"]) {
+      expect(DASH).toContain(`<span>${column}</span>`);
     }
+    expect(DASH_CSS).toContain("--seq-cols:");
+    expect(DASH_CSS).toContain("grid-template-columns: var(--seq-cols)");
   });
 });
 
-describe("empty states (#12)", () => {
-  it("a workspace with no sequences gets the starter empty state", () => {
+describe("empty states", () => {
+  it("a workspace with no sequences points to the create page", () => {
     expect(DASH).toContain("No sequences yet");
     expect(DASH).toContain("Create your first sequence or import a list to get started.");
-    expect(DASH).toContain('href="#create-sequence"');
+    expect(DASH).toContain('href="/campaigns/new"');
     expect(DASH).toContain('href="/imports"');
   });
 
@@ -305,7 +415,7 @@ describe("empty states (#12)", () => {
   });
 });
 
-describe("loading skeleton (#13)", () => {
+describe("loading skeleton", () => {
   it("announces loading accessibly with no spinner-only state", () => {
     expect(LOADING).toContain('role="status"');
     expect(LOADING).toContain('aria-busy="true"');
@@ -313,11 +423,12 @@ describe("loading skeleton (#13)", () => {
     expect(LOADING_CSS).not.toMatch(/rotate\(360deg\)|animation:[^;]*\bspin\b/);
   });
 
-  it("mirrors the real layout: form, sender panel, header, filters, five rows, pagination", () => {
+  it("mirrors the real layout: header, summary cards, health panel, toolbar, five rows, pagination", () => {
     for (const piece of [
-      "builderCard",
-      "senderPanel",
-      "dashboardHeader",
+      "pageHeader",
+      "newButton",
+      "summaryCards",
+      "healthPanel",
       "filterRail",
       "search",
       "paginationBar"
@@ -339,41 +450,21 @@ describe("loading skeleton (#13)", () => {
   });
 });
 
-describe("detail page visual cards (#11)", () => {
-  it("delivery health gets a ring and a segmented breakdown on the detail page", () => {
-    expect(DETAIL).toContain("Delivery health");
-    expect(DETAIL).toContain("styles.healthRing");
-    expect(DETAIL).toContain("strokeDasharray");
-    expect(DETAIL).toContain("styles.healthRail");
-    expect(DETAIL).toContain("styles.healthLegend");
-    expect(DETAIL_CSS).toContain(".healthBand {");
-  });
-
-  it("the ring is readable — labelled figure plus per-segment legend counts", () => {
-    expect(DETAIL).toMatch(/aria-label=\{`Delivery health \$\{deliveryHealthPercent \?\? 0\}%/);
-    expect(DETAIL).toContain('{ key: "delivered", label: "Delivered", count: deliveredCount }');
-    expect(DETAIL).toContain('{ key: "pending", label: "Pending", count: pendingCount }');
-  });
-
-  it("adds Opened alongside the existing truthful metric cards", () => {
-    expect(DETAIL).toContain("<span className={styles.metricLabel}>Opened</span>");
-    expect(DETAIL).toContain("const opensCount =");
-    // The disposition-based cards from the earlier hardening remain intact
-    // (also covered by sequence-detail-metrics.test.ts).
-    expect(DETAIL).toContain("const deliveredCount = dispositionCounts.sent");
-    expect(DETAIL).toContain("Recent recipient activity");
+describe("detail page untouched (#6)", () => {
+  it("carries none of this redesign's markers", () => {
+    // The reverted v2 experiment added a health ring and band styles — gone.
+    expect(DETAIL).not.toContain("healthRing");
+    expect(DETAIL_CSS).not.toContain(".healthBand");
+    // The detail page never consumes the dashboard view logic.
+    expect(DETAIL).not.toContain('from "@/lib/sequence-dashboard"');
+    // Its established structure (pinned by sequence-detail-metrics.test.ts)
+    // is intact.
+    expect(DETAIL).toContain("const issueCount = dispositionCounts.needsAttention");
     expect(DETAIL).toContain("<CampaignSetupEditor");
   });
 });
 
-describe("scope guards (#14, #15, #16)", () => {
-  it("sequence creation is unchanged — the same builder with the same wiring", () => {
-    expect(PAGE).toContain("<CampaignBuilder");
-    for (const prop of ["imports={", "mappings={", "templates={", "senders={", "disconnectedSenderCount={"]) {
-      expect(PAGE).toContain(prop);
-    }
-  });
-
+describe("scope guards (#14)", () => {
   it("the dashboard is a pure client view — no data fetching, no db access", () => {
     expect(DASH).not.toContain('from "@/lib/db"');
     expect(DASH).not.toContain('from "@/services');
@@ -382,8 +473,17 @@ describe("scope guards (#14, #15, #16)", () => {
     expect(LOGIC).not.toContain("import");
   });
 
+  it("the pages only read — no new mutations, endpoints, or schema use", () => {
+    // Reads only: findMany/count/groupBy. No create/update/delete calls.
+    for (const source of [PAGE, CREATE]) {
+      expect(source).not.toMatch(/prisma\.[a-zA-Z]+\.(create|update|upsert|delete)/);
+    }
+    // Creation still flows through the existing builder + API route.
+    expect(CREATE).toContain("<CampaignBuilder");
+  });
+
   it("adds no heavy dependencies", () => {
-    for (const source of [DASH, LOADING, LOGIC]) {
+    for (const source of [DASH, LOADING, LOGIC, PAGE, CREATE, PAGE_CSS, CREATE_CSS]) {
       expect(source).not.toMatch(/three|gsap|lottie|framer-motion|chart\.js|recharts|d3/i);
     }
   });

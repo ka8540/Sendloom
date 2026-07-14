@@ -1,9 +1,9 @@
 import styles from "./loading.module.css";
 
-// Route-level skeleton for the Sequences page. Pure CSS shimmer on a server
-// component — no client JS — mirroring the real layout: the create form on
-// the left, the compact sender panel on the right, and the dashboard below
-// with its header, filter rail, search, five rows, and pagination.
+// Route-level skeleton for the Sequences dashboard. Pure CSS shimmer on a
+// server component — no client JS — mirroring the real layout: the page
+// header with the New sequence action, the summary cards and health panel,
+// and the list below with its toolbar, five rows, and pagination.
 
 function Bar({ className }: { className: string }) {
   return <span className={`${styles.bar} ${className}`} aria-hidden="true" />;
@@ -14,54 +14,46 @@ export default function CampaignsLoading() {
     <div className={styles.page} role="status" aria-busy="true">
       <span className={styles.srOnly}>Loading sequences…</span>
 
-      <div className={styles.topGrid}>
-        <div className={styles.builderCard}>
-          <Bar className={styles.kicker} />
+      <div className={styles.pageHeader}>
+        <div className={styles.headingBlock}>
           <Bar className={styles.pageTitle} />
           <Bar className={styles.lede} />
-          <div className={styles.formFields}>
-            {Array.from({ length: 4 }).map((_, index) => (
-              <div key={index} className={styles.formField}>
-                <Bar className={styles.fieldLabel} />
-                <Bar className={styles.fieldInput} />
-              </div>
-            ))}
-          </div>
-          <Bar className={styles.submit} />
+        </div>
+        <Bar className={styles.newButton} />
+      </div>
+
+      <div className={styles.overviewGrid}>
+        <div className={styles.summaryCards}>
+          {Array.from({ length: 4 }).map((_, index) => (
+            <div key={index} className={styles.summaryCard}>
+              <Bar className={styles.summaryLabel} />
+              <Bar className={styles.summaryValue} />
+            </div>
+          ))}
         </div>
 
-        <div className={styles.senderPanel}>
-          <Bar className={styles.kicker} />
+        <div className={styles.healthPanel}>
           <Bar className={styles.panelTitle} />
-          <div className={styles.senderRow}>
-            <Bar className={styles.senderIcon} />
-            <div className={styles.senderMeta}>
-              <Bar className={styles.senderName} />
-              <Bar className={styles.senderEmail} />
-            </div>
-            <Bar className={styles.senderChip} />
+          <div className={styles.healthItem}>
+            <Bar className={styles.healthLine} />
+            <Bar className={styles.healthDetail} />
           </div>
-          <Bar className={styles.connectButton} />
+          <div className={styles.healthItem}>
+            <Bar className={styles.healthLine} />
+            <Bar className={styles.healthDetail} />
+          </div>
         </div>
       </div>
 
       <div className={styles.dashboard}>
-        <div className={styles.dashboardHeader}>
-          <div className={styles.headingBlock}>
-            <Bar className={styles.kicker} />
-            <Bar className={styles.sectionTitle} />
-            <Bar className={styles.lede} />
-          </div>
-          <Bar className={styles.summaryStrip} />
-        </div>
-
         <div className={styles.toolbar}>
+          <Bar className={styles.totalCount} />
+          <Bar className={styles.search} />
           <div className={styles.filterRail}>
             {Array.from({ length: 6 }).map((_, index) => (
               <Bar key={index} className={styles.filterPill} />
             ))}
           </div>
-          <Bar className={styles.search} />
         </div>
 
         <Bar className={styles.rangeLine} />
@@ -76,11 +68,11 @@ export default function CampaignsLoading() {
                   <Bar className={styles.rowChip} />
                 </div>
               </div>
+              <Bar className={styles.rowStatus} />
               <div className={styles.rowHealth}>
                 <Bar className={styles.rowValue} />
                 <Bar className={styles.rowTrack} />
               </div>
-              <Bar className={styles.rowStatus} />
               <Bar className={styles.rowAction} />
             </div>
           ))}

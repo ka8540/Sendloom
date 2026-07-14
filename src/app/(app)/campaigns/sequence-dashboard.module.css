@@ -1,6 +1,7 @@
-/* Sequence dashboard: header + summary values, filter pills with counts,
-   search, the minimal 5-per-page list, and pagination with page previews.
-   Tone colors are declared once here and shared by dots, pills, and rows. */
+/* Sequence list: count + search + filter toolbar, a table-style list of
+   5 rows per page (name, status, state, created, progress, performance,
+   actions), and pagination with page previews. Tone colors are declared once
+   here and shared by dots, pills, and rows. */
 
 .dashboard {
   --tone-attention: #e5484d;
@@ -11,6 +12,13 @@
   --tone-draft: var(--muted);
   --tone-idle: var(--muted);
 
+  /* Shared column template so the header row and data rows stay aligned.
+     The board is a size container: the sidebar makes viewport width a bad
+     proxy for available space, so columns collapse on container width. */
+  --seq-cols: minmax(0, 1.8fr) 7.5rem 8rem 5.8rem minmax(4.5rem, 0.8fr) 10rem;
+  --seq-actions: 5.6rem;
+
+  container-type: inline-size;
   display: grid;
   gap: 1.05rem;
   padding: 1.55rem;
@@ -27,101 +35,24 @@
   min-width: 0;
 }
 
-/* Header: title block left, compact summary values right. */
-
-.header {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 1.25rem;
-  flex-wrap: wrap;
-}
-
-.headingBlock {
-  display: grid;
-  gap: 0.3rem;
-}
-
-.kicker {
-  display: inline-flex;
-  width: fit-content;
-  align-items: center;
-  padding: 0.34rem 0.66rem;
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent-strong);
-  font-size: 0.74rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.title {
-  margin: 0;
-  font-size: 1.45rem;
-  letter-spacing: -0.04em;
-}
-
-.subtitle {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.92rem;
-  line-height: 1.55;
-}
-
-.summaryStrip {
-  display: flex;
-  align-items: stretch;
-  gap: 0;
-  margin: 0;
-  padding: 0.55rem 0.25rem;
-  border-radius: 16px;
-  border: 1px solid var(--line);
-  background: var(--surface-muted);
-}
-
-.summaryItem {
-  display: grid;
-  gap: 0.1rem;
-  padding: 0.15rem 1.05rem;
-  text-align: left;
-}
-
-.summaryItem + .summaryItem {
-  border-left: 1px solid var(--line);
-}
-
-.summaryItem dt {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.summaryItem dd {
-  margin: 0;
-  font-size: 1.1rem;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
-}
-
-.summaryItem[data-tone="attention"] dd {
-  color: color-mix(in srgb, var(--tone-attention) 82%, var(--text));
-}
-
-/* Toolbar: filter rail + search. */
+/* Toolbar: total count, search, and the status filter rail. */
 
 .toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 0.9rem;
   flex-wrap: wrap;
   min-width: 0;
+}
+
+.totalCount {
+  padding-right: 0.9rem;
+  border-right: 1px solid var(--line);
+  font-size: 0.95rem;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
 }
 
 .filterRail {
@@ -219,8 +150,8 @@
 
 .search {
   position: relative;
-  flex: 0 1 17rem;
-  min-width: 12rem;
+  flex: 0 1 15rem;
+  min-width: 11rem;
 }
 
 .searchIcon {
@@ -265,11 +196,29 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* The list: five compact rows per page. */
+/* Table header row (visual only — each data row is a single link). */
+
+.tableHead {
+  display: grid;
+  grid-template-columns: var(--seq-cols) var(--seq-actions);
+  gap: 1rem;
+  padding: 0 0.4rem 0.15rem 1rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.tableHeadActions {
+  text-align: right;
+}
+
+/* The list: five compact table-style rows per page. */
 
 .list {
   display: grid;
-  gap: 0.6rem;
+  gap: 0.55rem;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -278,10 +227,10 @@
 .row {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) var(--seq-actions);
   align-items: center;
-  gap: 0.6rem;
-  border-radius: 18px;
+  gap: 1rem;
+  border-radius: 16px;
   border: 1px solid var(--line);
   background: var(--surface-muted);
   transition: border-color 140ms ease, transform 140ms ease, box-shadow 140ms ease;
@@ -299,10 +248,10 @@
 
 .rowLink {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(9.5rem, 12rem) auto auto;
+  grid-template-columns: var(--seq-cols);
   align-items: center;
-  gap: 1.1rem;
-  padding: 0.8rem 0.4rem 0.8rem 1rem;
+  gap: 1rem;
+  padding: 0.72rem 0 0.72rem 1rem;
   min-width: 0;
   color: inherit;
   text-decoration: none;
@@ -351,12 +300,12 @@
 
 .rowTitleBlock {
   display: grid;
-  gap: 0.28rem;
+  gap: 0.2rem;
   min-width: 0;
 }
 
 .rowName {
-  font-size: 0.98rem;
+  font-size: 0.96rem;
   font-weight: 700;
   letter-spacing: -0.015em;
   overflow: hidden;
@@ -368,85 +317,17 @@
   color: var(--accent-strong);
 }
 
-.rowChip {
-  display: inline-flex;
-  width: fit-content;
-  max-width: 100%;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.18rem 0.55rem;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: var(--surface);
+.rowMeta {
   color: var(--muted);
-  font-size: 0.76rem;
+  font-size: 0.78rem;
   font-weight: 600;
-  min-width: 0;
-}
-
-.rowChip svg {
-  width: 0.72rem;
-  height: 0.72rem;
-  flex-shrink: 0;
-}
-
-.rowChip span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.rowHealth {
-  display: grid;
-  gap: 0.32rem;
-  min-width: 0;
-}
-
-.rowHealthValue {
-  font-size: 0.94rem;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
-}
-
-.rowTrack {
-  display: block;
-  height: 0.28rem;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--muted) 22%, transparent);
-  overflow: hidden;
-}
-
-.rowTrackFill {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 60%, #8bdcb9));
-}
-
-.rowEnrolled {
-  display: grid;
-  gap: 0.05rem;
-  text-align: right;
-  min-width: 4.4rem;
-}
-
-.rowEnrolledValue {
-  font-size: 0.94rem;
-  font-weight: 750;
-  font-variant-numeric: tabular-nums;
-}
-
-.rowEnrolledLabel {
-  color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-}
-
 .rowStatus {
-  justify-self: end;
+  justify-self: start;
   padding: 0.3rem 0.68rem;
   border-radius: 999px;
   border: 1px solid var(--line);
@@ -487,9 +368,77 @@
   background: color-mix(in srgb, var(--tone-scheduled) 9%, var(--surface));
 }
 
+.rowState {
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.rowCreated {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.rowProgress {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.rowProgressValue {
+  font-size: 0.86rem;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.rowTrack {
+  display: block;
+  height: 0.28rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 22%, transparent);
+  overflow: hidden;
+}
+
+.rowTrackFill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 60%, #8bdcb9));
+}
+
+.rowPerformance {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.rowStat {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.rowStat svg {
+  width: 0.82rem;
+  height: 0.82rem;
+  color: var(--accent-strong);
+  flex-shrink: 0;
+}
+
 .rowActions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   padding-right: 0.8rem;
 }
 
@@ -652,29 +601,36 @@
   justify-content: center;
 }
 
-/* Responsive: the toolbar stacks, the filter rail scrolls sideways on narrow
-   screens (min-width: 0 all the way down so it never widens the page), and
-   rows collapse into stacked cards. */
+/* Responsive: wide boards show every column; below 64rem of board width the
+   state and created columns fold away; below 46rem rows collapse into
+   stacked cards (min-width: 0 all the way down so nothing widens the page). */
 
-@media (max-width: 960px) {
-  .header {
-    align-items: flex-start;
+@container (max-width: 64rem) {
+  .dashboard {
+    --seq-cols: minmax(0, 1.8fr) 7.5rem minmax(4.5rem, 0.8fr) 10rem;
   }
 
-  .summaryStrip {
-    width: 100%;
-    overflow-x: auto;
+  .rowState,
+  .rowCreated,
+  .tableHead span:nth-child(3),
+  .tableHead span:nth-child(4) {
+    display: none;
   }
 }
 
-@media (max-width: 760px) {
+@container (max-width: 46rem) {
   .dashboard {
     padding: 1.15rem;
   }
 
   .toolbar {
-    flex-direction: column-reverse;
+    flex-direction: column;
     align-items: stretch;
+  }
+
+  .totalCount {
+    padding-right: 0;
+    border-right: 0;
   }
 
   .search {
@@ -688,6 +644,10 @@
     -webkit-overflow-scrolling: touch;
   }
 
+  .tableHead {
+    display: none;
+  }
+
   .rowLink {
     grid-template-columns: minmax(0, 1fr);
     gap: 0.7rem;
@@ -698,17 +658,12 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .rowHealth {
-    order: 3;
-  }
-
-  .rowEnrolled {
-    text-align: left;
-    justify-self: start;
+  .rowState,
+  .rowCreated {
+    display: block;
   }
 
   .rowStatus {
-    justify-self: start;
     order: 2;
   }
 

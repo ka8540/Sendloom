@@ -269,216 +269,10 @@
   width: 100%;
 }
 
-/* Delivery health band: the ring + segmented rail card on the left and the
-   compact metric cards beside it. Segment colors are shared by the rail and
-   its legend dots, and every count is labelled so color never stands alone. */
-
-.healthBand {
-  --segment-delivered: var(--accent);
-  --segment-skipped: color-mix(in srgb, var(--muted) 72%, var(--text));
-  --segment-attention: #e5484d;
-  --segment-pending: color-mix(in srgb, var(--muted) 34%, transparent);
-
+.metrics {
   display: grid;
-  grid-template-columns: minmax(300px, 0.95fr) minmax(0, 1.55fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 1rem;
-  align-items: stretch;
-}
-
-.healthCard {
-  display: grid;
-  align-content: start;
-  gap: 1.1rem;
-  padding: 1.35rem;
-  border-radius: 24px;
-  border: 1px solid var(--line);
-  background:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 9%, transparent), transparent 34%),
-    var(--surface);
-  box-shadow: var(--shadow);
-  min-width: 0;
-}
-
-.healthHeading {
-  display: grid;
-  gap: 0.25rem;
-}
-
-.healthHeading h2 {
-  margin: 0;
-  font-size: 1.15rem;
-  letter-spacing: -0.03em;
-}
-
-.healthHeading p {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.9rem;
-  line-height: 1.55;
-}
-
-.healthBody {
-  display: flex;
-  align-items: center;
-  gap: 1.35rem;
-  min-width: 0;
-}
-
-.healthRing {
-  position: relative;
-  width: 8.6rem;
-  height: 8.6rem;
-  flex-shrink: 0;
-}
-
-.healthRing svg {
-  width: 100%;
-  height: 100%;
-  transform: rotate(-90deg);
-}
-
-.ringTrack {
-  fill: none;
-  stroke: color-mix(in srgb, var(--muted) 20%, transparent);
-  stroke-width: 10;
-}
-
-.ringValue {
-  fill: none;
-  stroke: var(--segment-delivered);
-  stroke-width: 10;
-  stroke-linecap: round;
-}
-
-.ringCenter {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-content: center;
-  justify-items: center;
-  gap: 0.1rem;
-  text-align: center;
-}
-
-.ringCenter strong {
-  font-size: 1.65rem;
-  font-weight: 800;
-  letter-spacing: -0.04em;
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-}
-
-.ringCenter small {
-  color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 650;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-
-.healthBreakdown {
-  flex: 1;
-  display: grid;
-  gap: 0.85rem;
-  min-width: 0;
-}
-
-.healthRail {
-  display: flex;
-  height: 0.5rem;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--muted) 14%, transparent);
-  overflow: hidden;
-}
-
-.healthRail span {
-  display: block;
-  min-width: 5px;
-  flex-basis: 0;
-}
-
-.healthRail span[data-segment="delivered"] {
-  background: var(--segment-delivered);
-}
-
-.healthRail span[data-segment="skipped"] {
-  background: var(--segment-skipped);
-}
-
-.healthRail span[data-segment="attention"] {
-  background: var(--segment-attention);
-}
-
-.healthRail span[data-segment="pending"] {
-  background: var(--segment-pending);
-}
-
-.healthLegend {
-  display: grid;
-  gap: 0.42rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.healthLegend li {
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
-  font-size: 0.88rem;
-}
-
-.legendDot {
-  width: 0.5rem;
-  height: 0.5rem;
-  border-radius: 999px;
-  background: var(--muted);
-  flex-shrink: 0;
-}
-
-.healthLegend li[data-segment="delivered"] .legendDot {
-  background: var(--segment-delivered);
-}
-
-.healthLegend li[data-segment="skipped"] .legendDot {
-  background: var(--segment-skipped);
-}
-
-.healthLegend li[data-segment="attention"] .legendDot {
-  background: var(--segment-attention);
-}
-
-.healthLegend li[data-segment="pending"] .legendDot {
-  background: color-mix(in srgb, var(--muted) 55%, transparent);
-}
-
-.legendLabel {
-  color: var(--muted);
-  font-weight: 600;
-}
-
-.legendCount {
-  margin-left: auto;
-  font-weight: 750;
-  font-variant-numeric: tabular-nums;
-}
-
-.healthEmpty {
-  padding: 1.15rem;
-  border-radius: 18px;
-  border: 1px dashed color-mix(in srgb, var(--muted) 34%, var(--line));
-  background: var(--surface-muted);
-  color: var(--muted);
-  font-size: 0.92rem;
-  line-height: 1.6;
-}
-
-.metricsGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr));
-  gap: 1rem;
-  align-content: start;
-  min-width: 0;
 }
 
 .metricCard {
@@ -799,8 +593,8 @@
 }
 
 @media (max-width: 1180px) {
-  .healthBand {
-    grid-template-columns: minmax(0, 1fr);
+  .metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .detailGrid,
@@ -810,17 +604,8 @@
 }
 
 @media (max-width: 720px) {
-  .metricsGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .healthBody {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .healthRing {
-    margin: 0 auto;
+  .metrics {
+    grid-template-columns: 1fr;
   }
 
   .panelHeader,

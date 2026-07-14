@@ -1,0 +1,266 @@
+/* Create Sequence page: the build form on the left and the compact Gmail
+   sender panel on the right. The panel hugs its content — it never stretches
+   to match the tall form. */
+
+.page {
+  display: grid;
+  gap: 1.1rem;
+}
+
+.page > * {
+  min-width: 0;
+}
+
+.flashNotice {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.95rem 1.05rem;
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
+  background: color-mix(in srgb, var(--accent-soft) 58%, var(--surface));
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.flashNotice svg {
+  width: 1rem;
+  height: 1rem;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.backLink {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.85rem 0.45rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface-muted);
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 650;
+  text-decoration: none;
+  transition: border-color 140ms ease, color 140ms ease;
+}
+
+.backLink:hover {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+  color: var(--text);
+}
+
+.backLink:focus-visible {
+  outline: 2px solid var(--field-focus);
+  outline-offset: 2px;
+}
+
+.backLink svg {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+.topGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 24rem);
+  gap: 1.15rem;
+  align-items: start;
+}
+
+.builderCard,
+.senderPanel {
+  border-radius: 28px;
+  border: 1px solid var(--line);
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 10%, transparent), transparent 30%),
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 90%, transparent), var(--surface));
+  box-shadow: var(--shadow);
+  min-width: 0;
+}
+
+.builderCard {
+  padding: 1.55rem;
+}
+
+/* The sender panel hugs its content — no stretching to match the tall form. */
+.senderPanel {
+  align-self: start;
+  position: sticky;
+  top: 1rem;
+  display: grid;
+  gap: 1rem;
+  padding: 1.3rem;
+}
+
+.panelHeading {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 1.15rem;
+}
+
+.panelHeading h1 {
+  margin: 0;
+  font-size: clamp(2.1rem, 4vw, 3rem);
+  letter-spacing: -0.05em;
+}
+
+.panelHeading p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.senderPanelHeading {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.senderPanelHeading h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  letter-spacing: -0.04em;
+}
+
+.kicker {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  padding: 0.38rem 0.7rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.senderList {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.senderRow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 0.75rem;
+  padding: 0.85rem;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: var(--surface-muted);
+}
+
+.senderRowWarning {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  border-color: color-mix(in srgb, var(--warning) 30%, var(--line));
+}
+
+.senderIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  flex-shrink: 0;
+}
+
+.senderRowWarning .senderIcon {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.senderIcon svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.senderMeta {
+  display: grid;
+  gap: 0.18rem;
+  min-width: 0;
+}
+
+.senderNameRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.senderNameRow strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: -0.01em;
+}
+
+.senderChip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.16rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--line));
+  background: color-mix(in srgb, var(--accent) 9%, var(--surface));
+  color: var(--accent-strong);
+  font-size: 0.72rem;
+  font-weight: 750;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.senderChipWarning {
+  border-color: color-mix(in srgb, var(--warning) 40%, var(--line));
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.senderEmail {
+  color: var(--muted);
+  font-size: 0.86rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.senderEmpty {
+  padding: 0.85rem;
+  border-radius: 16px;
+  border: 1px dashed color-mix(in srgb, var(--muted) 34%, var(--line));
+  background: var(--surface-muted);
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+@media (max-width: 960px) {
+  .topGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .senderPanel {
+    position: static;
+  }
+}
+
+@media (max-width: 640px) {
+  .builderCard {
+    padding: 1.15rem;
+  }
+
+  .senderPanel {
+    padding: 1.05rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .backLink {
+    transition: none;
+  }
+}

@@ -1,7 +1,7 @@
 import type { ManualConfig } from "@/components/manual/manualTypes";
 import { adminManual } from "@/manuals/adminManual";
 import { campaignDetailManual } from "@/manuals/campaignDetailManual";
-import { campaignsManual } from "@/manuals/campaignsManual";
+import { campaignCreateManual, campaignsManual } from "@/manuals/campaignsManual";
 import { discoverDetailManual, discoverListManual } from "@/manuals/discoverManual";
 import { finderManual } from "@/manuals/finderManual";
 import { importsManual } from "@/manuals/importsManual";
@@ -18,6 +18,12 @@ const routeManuals: Record<string, ManualConfig> = {
 };
 
 export function getManualForPathname(pathname: string): ManualConfig | null {
+  // The create page shares the /campaigns/[id] URL shape, so it must be
+  // matched before the detail-page pattern.
+  if (pathname === "/campaigns/new" || pathname === "/sequences/new") {
+    return campaignCreateManual;
+  }
+
   if (/^\/(?:campaigns|sequences)\/[^/]+$/.test(pathname)) {
     return campaignDetailManual;
   }

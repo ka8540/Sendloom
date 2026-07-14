@@ -1,5 +1,5 @@
-/* CSS-only skeleton for the Sequences route. A single shimmer sweep animates
-   every bar; reduced-motion users get static placeholders. */
+/* CSS-only skeleton for the Sequences dashboard route. A single shimmer sweep
+   animates every bar; reduced-motion users get static placeholders. */
 
 .page {
   display: grid;
@@ -42,147 +42,11 @@
   }
 }
 
-.topGrid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 24rem);
-  gap: 1.15rem;
-  align-items: start;
-}
-
-.builderCard,
-.senderPanel,
-.dashboard {
-  border-radius: 28px;
-  border: 1px solid var(--line);
-  background: var(--surface);
-  box-shadow: var(--shadow);
-  min-width: 0;
-}
-
-.builderCard {
-  display: grid;
-  gap: 0.9rem;
-  padding: 1.55rem;
-}
-
-.kicker {
-  width: 4.6rem;
-  height: 1.4rem;
-}
-
-.pageTitle {
-  width: min(19rem, 70%);
-  height: 2.4rem;
-  border-radius: 12px;
-}
-
-.sectionTitle {
-  width: 10rem;
-  height: 1.7rem;
-  border-radius: 10px;
-}
-
-.panelTitle {
-  width: 11rem;
-  height: 1.5rem;
-  border-radius: 10px;
-}
-
-.lede {
-  width: min(26rem, 92%);
-  height: 0.95rem;
-}
-
-.formFields {
-  display: grid;
-  gap: 1rem;
-  margin-top: 0.4rem;
-}
-
-.formField {
-  display: grid;
-  gap: 0.45rem;
-}
-
-.fieldLabel {
-  width: 7.5rem;
-  height: 0.85rem;
-}
-
-.fieldInput {
-  width: 100%;
-  height: 2.6rem;
-  border-radius: 14px;
-}
-
-.submit {
-  width: 11rem;
-  height: 2.7rem;
-  border-radius: 999px;
-  margin-top: 0.3rem;
-}
-
-.senderPanel {
-  display: grid;
-  gap: 0.85rem;
-  padding: 1.3rem;
-  align-self: start;
-}
-
-.senderRow {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.85rem;
-  border-radius: 16px;
-  border: 1px solid var(--line);
-}
-
-.senderIcon {
-  width: 2.1rem;
-  height: 2.1rem;
-  border-radius: 12px;
-}
-
-.senderMeta {
-  display: grid;
-  gap: 0.4rem;
-  min-width: 0;
-}
-
-.senderName {
-  width: 60%;
-  height: 0.95rem;
-}
-
-.senderEmail {
-  width: 85%;
-  height: 0.8rem;
-}
-
-.senderChip {
-  width: 4.6rem;
-  height: 1.4rem;
-}
-
-.connectButton {
-  width: 100%;
-  height: 2.6rem;
-  border-radius: 999px;
-}
-
-.dashboard {
-  display: grid;
-  gap: 1.05rem;
-  padding: 1.55rem;
-}
-
-.dashboardHeader {
+.pageHeader {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 1.25rem;
+  gap: 1rem;
   flex-wrap: wrap;
 }
 
@@ -191,18 +55,113 @@
   gap: 0.45rem;
 }
 
-.summaryStrip {
-  width: min(24rem, 100%);
-  height: 3.3rem;
-  border-radius: 16px;
+.pageTitle {
+  width: min(14rem, 70%);
+  height: 2.4rem;
+  border-radius: 12px;
+}
+
+.panelTitle {
+  width: 11rem;
+  height: 1.3rem;
+  border-radius: 10px;
+}
+
+.lede {
+  width: min(24rem, 92%);
+  height: 0.95rem;
+}
+
+.newButton {
+  width: 10rem;
+  height: 2.6rem;
+  border-radius: 999px;
+}
+
+.overviewGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(300px, 1fr);
+  gap: 1.15rem;
+  align-items: stretch;
+}
+
+.summaryCards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.summaryCard,
+.healthPanel,
+.dashboard {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  min-width: 0;
+}
+
+.summaryCard {
+  display: grid;
+  gap: 0.8rem;
+  align-content: space-between;
+  padding: 1rem 1.1rem;
+  border-radius: 20px;
+}
+
+.summaryLabel {
+  width: 6rem;
+  height: 1.1rem;
+}
+
+.summaryValue {
+  width: 4.2rem;
+  height: 1.6rem;
+  border-radius: 10px;
+}
+
+.healthPanel {
+  display: grid;
+  align-content: start;
+  gap: 0.8rem;
+  padding: 1.1rem 1.2rem;
+  border-radius: 20px;
+}
+
+.healthItem {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+}
+
+.healthLine {
+  width: min(16rem, 85%);
+  height: 0.95rem;
+}
+
+.healthDetail {
+  width: min(12rem, 65%);
+  height: 0.8rem;
+}
+
+.dashboard {
+  display: grid;
+  gap: 1.05rem;
+  padding: 1.55rem;
+  border-radius: 28px;
 }
 
 .toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 0.9rem;
   flex-wrap: wrap;
+}
+
+.totalCount {
+  width: 7rem;
+  height: 1.1rem;
 }
 
 .filterRail {
@@ -230,16 +189,16 @@
 
 .list {
   display: grid;
-  gap: 0.6rem;
+  gap: 0.55rem;
 }
 
 .row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(8rem, 11rem) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto minmax(8rem, 11rem) auto;
   align-items: center;
   gap: 1.1rem;
   padding: 0.85rem 1rem;
-  border-radius: 18px;
+  border-radius: 16px;
   border: 1px solid var(--line);
 }
 
@@ -270,7 +229,7 @@
 
 .rowChip {
   width: min(9rem, 55%);
-  height: 1.3rem;
+  height: 0.85rem;
 }
 
 .rowHealth {
@@ -324,8 +283,8 @@
   height: 1rem;
 }
 
-@media (max-width: 960px) {
-  .topGrid {
+@media (max-width: 1080px) {
+  .overviewGrid {
     grid-template-columns: minmax(0, 1fr);
   }
 }
