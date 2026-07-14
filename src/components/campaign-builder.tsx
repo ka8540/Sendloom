@@ -1033,18 +1033,31 @@ export function CampaignBuilder(props: {
               <>
                 <div className="field">
                   <label htmlFor="senderProfileId">Send from</label>
-                  <select
-                    id="senderProfileId"
-                    value={selectedSenderId}
-                    onChange={(event) => {
-                      setSelectedSenderId(event.target.value);
-                      setState({ pending: false });
-                    }}
-                    aria-label="Send from connected Gmail account"
-                    required
-                  >
-                    {props.senders.map((sender) => <option key={sender.id} value={sender.id}>{sender.label}</option>)}
-                  </select>
+                  <div className={styles.senderSelectShell}>
+                    {selectedSender ? (
+                      <span className={styles.senderSelectIdentity} aria-hidden="true">
+                        <strong>{selectedSender.name}</strong>
+                        <span title={selectedSender.email}>{selectedSender.email}</span>
+                      </span>
+                    ) : null}
+                    <ChevronDown className={styles.senderSelectChevron} aria-hidden="true" />
+                    <select
+                      className={styles.senderNativeSelect}
+                      id="senderProfileId"
+                      value={selectedSenderId}
+                      onChange={(event) => {
+                        setSelectedSenderId(event.target.value);
+                        setState({ pending: false });
+                      }}
+                      aria-label="Send from connected Gmail account"
+                      title={selectedSender?.email}
+                      required
+                    >
+                      {props.senders.map((sender) => (
+                        <option key={sender.id} value={sender.id}>{sender.name} — {sender.email}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
                 {selectedSender ? (
@@ -1053,7 +1066,7 @@ export function CampaignBuilder(props: {
                       <strong>{selectedSender.name}</strong>
                       <span>Connected</span>
                     </span>
-                    <span className={styles.senderEmail}>{selectedSender.email}</span>
+                    <span className={styles.senderEmail} title={selectedSender.email}>{selectedSender.email}</span>
                     <BounceMonitoringStatus
                       key={selectedSender.id}
                       senderId={selectedSender.id}
