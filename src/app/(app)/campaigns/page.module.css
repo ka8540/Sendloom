@@ -70,23 +70,28 @@
 }
 
 /* Overview band: 2x2 summary cards left, health panel right — sized like a
-   compact dashboard strip, not a marketing section. Each column sizes to its
-   own content — `align-items: start` (not `stretch`) keeps the fixed-height
-   metric grid from being pulled tall by a health panel that's listing
-   several issues. Cards use a tighter radius/padding/shadow than the app's
-   larger surfaces (e.g. .card) on purpose; this band reads as a dense strip
-   of stats, so it stays visually flat next to the table below it. */
+   compact dashboard strip, not a marketing section. `align-items: stretch`
+   (the grid default) makes both columns share the row's height, so the
+   health panel's top and bottom line up with the metric grid instead of
+   floating at its own shorter content height; `align-content: start` on each
+   column keeps their own internal content top-anchored while the stretch
+   fills the rest. The right column gets slightly more than half the row so
+   the health panel has breathing room instead of feeling squeezed. Cards use
+   a tighter radius/padding/shadow than the app's larger surfaces (e.g.
+   .card) on purpose; this band reads as a dense strip of stats, so it stays
+   visually flat next to the table below it. */
 
 .overviewGrid {
   display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(300px, 1fr);
+  grid-template-columns: minmax(0, 12fr) minmax(340px, 13fr);
   gap: 0.9rem;
-  align-items: start;
+  align-items: stretch;
 }
 
 .summaryCards {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
   gap: 0.65rem;
   margin: 0;
 }
@@ -97,7 +102,7 @@
   gap: 0.4rem;
   height: 8.5rem;
   padding: 0.85rem 1rem;
-  border-radius: 14px;
+  border-radius: 12px;
   border: 1px solid var(--line);
   background: var(--surface);
   box-shadow: 0 6px 16px color-mix(in srgb, var(--text) 5%, transparent);
@@ -157,17 +162,18 @@
   white-space: nowrap;
 }
 
-/* Health panel: real attention items or a calm all-clear. Its natural
-   content height (heading + 2 capped issue rows + the "+N more" line) is
-   tuned to land close to the metric grid's fixed 2-row height so the band
-   reads as balanced — without ever forcing either side to stretch. */
+/* Health panel: real attention items or a calm all-clear. It stretches to
+   match the metric grid's height (see .overviewGrid), so its own
+   `align-content: start` keeps the heading + 2 capped issue rows + "+N more"
+   line top-anchored, leaving any extra stretched space below rather than
+   spreading the content out. */
 
 .healthPanel {
   display: grid;
   align-content: start;
   gap: 0.6rem;
   padding: 0.9rem 1rem;
-  border-radius: 14px;
+  border-radius: 12px;
   border: 1px solid var(--line);
   background: var(--surface);
   box-shadow: 0 6px 16px color-mix(in srgb, var(--text) 5%, transparent);
@@ -214,7 +220,7 @@
   display: grid;
   gap: 0.32rem;
   padding: 0.6rem 0.7rem;
-  border-radius: 10px;
+  border-radius: 9px;
   border: 1px solid var(--line);
   border-left: 3px solid var(--muted);
   background: var(--surface-muted);
@@ -309,7 +315,7 @@
   align-items: center;
   gap: 0.7rem;
   padding: 0.75rem;
-  border-radius: 10px;
+  border-radius: 9px;
   border: 1px dashed color-mix(in srgb, var(--accent) 30%, var(--line));
   background: color-mix(in srgb, var(--accent-soft) 40%, var(--surface));
 }

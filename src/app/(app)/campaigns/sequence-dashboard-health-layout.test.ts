@@ -95,14 +95,22 @@ describe("health panel visible-issue cap", () => {
   });
 });
 
-describe("overview grid no longer stretches metric cards to health panel height", () => {
-  it("the overview grid top-aligns its two columns instead of stretching (#1, #2, #3)", () => {
+describe("overview grid keeps the metric cards and health panel aligned top and bottom", () => {
+  it("the overview grid stretches its two columns to the same row height (#1, #2, #3)", () => {
     const overviewGridRule = PAGE_CSS.slice(
       PAGE_CSS.indexOf(".overviewGrid {"),
       PAGE_CSS.indexOf(".summaryCards {")
     );
-    expect(overviewGridRule).toContain("align-items: start;");
-    expect(overviewGridRule).not.toMatch(/align-items:\s*stretch/);
+    expect(overviewGridRule).toContain("align-items: stretch;");
+    expect(overviewGridRule).not.toMatch(/align-items:\s*start/);
+  });
+
+  it("the health panel gets a wider share of the row than before", () => {
+    const overviewGridRule = PAGE_CSS.slice(
+      PAGE_CSS.indexOf(".overviewGrid {"),
+      PAGE_CSS.indexOf(".summaryCards {")
+    );
+    expect(overviewGridRule).toContain("grid-template-columns: minmax(0, 12fr) minmax(340px, 13fr);");
   });
 
   it("summary cards use a fixed compact height, equal for all four, independent of the health panel", () => {
@@ -118,19 +126,17 @@ describe("overview grid no longer stretches metric cards to health panel height"
     expect(summaryCardRule).not.toContain("min-height");
   });
 
-  it("the health panel still sizes to its own content only", () => {
+  it("the health panel keeps its own content top-anchored while stretching", () => {
     const healthPanelRule = PAGE_CSS.slice(
       PAGE_CSS.indexOf(".healthPanel {"),
       PAGE_CSS.indexOf(".healthHeading {")
     );
     expect(healthPanelRule).toContain("align-content: start;");
-    expect(healthPanelRule).not.toMatch(/height:\s*100%/);
-    expect(healthPanelRule).not.toContain("min-height");
   });
 });
 
 describe("compact card styling — not an oversized marketing panel", () => {
-  it("metric cards and the health panel share a tight radius and a light shadow, not the app's large surface shadow", () => {
+  it("metric cards and the health panel share a sharp radius and a light shadow, not the app's large surface shadow", () => {
     const summaryCardRule = PAGE_CSS.slice(
       PAGE_CSS.indexOf(".summaryCard {"),
       PAGE_CSS.indexOf(".summaryCard dt {")
@@ -141,7 +147,7 @@ describe("compact card styling — not an oversized marketing panel", () => {
     );
 
     for (const rule of [summaryCardRule, healthPanelRule]) {
-      expect(rule).toMatch(/border-radius:\s*14px;/);
+      expect(rule).toMatch(/border-radius:\s*12px;/);
       // Not the shared `var(--shadow)` used by large surfaces like .card —
       // this band uses its own smaller, flatter shadow.
       expect(rule).not.toContain("box-shadow: var(--shadow)");
@@ -154,7 +160,7 @@ describe("compact card styling — not an oversized marketing panel", () => {
       PAGE_CSS.indexOf(".healthItem {"),
       PAGE_CSS.indexOf(".healthItem[data-severity=\"critical\"]")
     );
-    expect(healthItemRule).toMatch(/border-radius:\s*10px;/);
+    expect(healthItemRule).toMatch(/border-radius:\s*9px;/);
     expect(healthItemRule).toMatch(/padding:\s*0\.6rem 0\.7rem;/);
   });
 
