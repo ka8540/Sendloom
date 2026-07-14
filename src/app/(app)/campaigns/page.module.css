@@ -69,13 +69,16 @@
   height: 1rem;
 }
 
-/* Overview band: 2x2 summary cards left, health panel right. */
+/* Overview band: 2x2 summary cards left, health panel right. Each column
+   sizes to its own content — `align-items: start` (not `stretch`) keeps the
+   compact metric grid from being pulled tall by a health panel that's
+   listing several issues. */
 
 .overviewGrid {
   display: grid;
   grid-template-columns: minmax(0, 1.05fr) minmax(300px, 1fr);
   gap: 1.15rem;
-  align-items: stretch;
+  align-items: start;
 }
 
 .summaryCards {
@@ -89,6 +92,7 @@
   display: grid;
   align-content: center;
   gap: 0.7rem;
+  min-height: 6.5rem;
   padding: 1rem 1.1rem;
   border-radius: 20px;
   border: 1px solid var(--line);

@@ -89,6 +89,7 @@ function getPercent(value: number, total: number) {
 
 const ACTIVE_RUN_STATUSES = new Set(["QUEUED", "WAITING_FOR_SLOT", "RUNNING", "PAUSED"]);
 const COMPLETED_RUN_STATUSES = new Set(["COMPLETED", "FAILED", "CANCELLED"]);
+const HEALTH_PANEL_VISIBLE_LIMIT = 2;
 
 type RunSummary = {
   id: string;
@@ -283,7 +284,10 @@ export default async function CampaignsPage({
 
   const filterCounts = countSequenceFilters(sequenceItems);
   const attentionItems = buildSequenceAttentionItems(sequenceItems);
-  const visibleAttentionItems = attentionItems.slice(0, 3);
+  // Keep the health panel compact: at most 2 issue rows, regardless of how
+  // many sequences need attention. The rest stay reachable via the Needs
+  // attention filter below — this is a display cap, not a data change.
+  const visibleAttentionItems = attentionItems.slice(0, HEALTH_PANEL_VISIBLE_LIMIT);
   const hiddenAttentionCount = attentionItems.length - visibleAttentionItems.length;
 
   const summaryCards = [
