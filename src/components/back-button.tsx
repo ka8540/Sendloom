@@ -4,7 +4,12 @@ import { useCallback, useEffect, useRef } from "react";
 import { ArrowLeft } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 
-import { getDefaultBackFallback, shouldUseBrowserBack, type AppFallbackHref } from "@/lib/back-navigation";
+import {
+  getDefaultBackFallback,
+  getSequenceDetailReturnTo,
+  shouldUseBrowserBack,
+  type AppFallbackHref
+} from "@/lib/back-navigation";
 
 type BackButtonProps = {
   alwaysUseFallback?: boolean;
@@ -68,6 +73,15 @@ export function BackButton({ alwaysUseFallback = false, className, fallbackHref,
   const handleClick = useCallback(() => {
     if (isCreateSequencePage) {
       router.push("/sequences");
+      return;
+    }
+
+    const sequenceReturnTo =
+      typeof window === "undefined"
+        ? null
+        : getSequenceDetailReturnTo(pathname, new URLSearchParams(window.location.search));
+    if (sequenceReturnTo) {
+      router.push(sequenceReturnTo);
       return;
     }
 

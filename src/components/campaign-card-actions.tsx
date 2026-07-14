@@ -10,7 +10,11 @@ import styles from "./campaign-card-actions.module.css";
 
 const DELETE_SEQUENCE_ERROR = "This sequence could not be deleted. Please try again.";
 
-export function CampaignCardActions(props: { campaignId: string; campaignName: string }) {
+export function CampaignCardActions(props: {
+  campaignId: string;
+  campaignName: string;
+  detailHref?: string;
+}) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -49,7 +53,7 @@ export function CampaignCardActions(props: { campaignId: string; campaignName: s
     <div className={styles.rail}>
       <Link
         className={`${styles.action} ${styles.open}`}
-        href={`/campaigns/${props.campaignId}`}
+        href={props.detailHref ?? `/campaigns/${props.campaignId}`}
         data-tooltip="Open sequence"
         aria-label={`Open sequence ${props.campaignName}`}
       >

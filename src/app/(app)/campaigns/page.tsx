@@ -21,6 +21,11 @@ import {
   countSequenceFilters,
   type SequenceListItem
 } from "@/lib/sequence-dashboard";
+import {
+  buildSequenceDashboardReturnTo,
+  buildSequenceDetailHref,
+  SEQUENCE_DASHBOARD_QUERY_KEYS
+} from "@/lib/sequence-dashboard-url";
 import { processPendingCampaignWork } from "@/services/campaigns";
 import { SequenceDashboard } from "./sequence-dashboard";
 import styles from "./page.module.css";
@@ -142,6 +147,17 @@ export default async function CampaignsPage({
   const resolvedSearchParams = searchParams ? await searchParams : {};
   const gmailStatus = getSearchParam(resolvedSearchParams, "gmail");
   const gmailError = getSearchParam(resolvedSearchParams, "gmail_error");
+  const dashboardSearchParams = new URLSearchParams();
+  for (const key of SEQUENCE_DASHBOARD_QUERY_KEYS) {
+    const value = getSearchParam(resolvedSearchParams, key);
+    if (value) {
+      dashboardSearchParams.set(key, value);
+    }
+  }
+  const dashboardReturnTo = buildSequenceDashboardReturnTo(
+    "/campaigns",
+    dashboardSearchParams
+  );
   const [campaigns, repliesCount, scheduledRunCount, sendWindow] = await Promise.all([
     prisma.campaign.findMany({
       where: { userId: user.id },
@@ -378,7 +394,10 @@ export default async function CampaignsPage({
                     <p>{entry.detail}</p>
                   </div>
                   <div className={styles.healthItemFooter}>
-                    <Link className={styles.healthReviewLink} href={`/campaigns/${entry.id}`}>
+                    <Link
+                      className={styles.healthReviewLink}
+                      href={buildSequenceDetailHref(entry.id, dashboardReturnTo)}
+                    >
                       Review sequence
                     </Link>
                     <span className={styles.healthSeverity} data-severity={entry.severity}>

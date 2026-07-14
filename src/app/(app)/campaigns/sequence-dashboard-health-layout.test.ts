@@ -83,7 +83,7 @@ describe("health panel visible-issue cap", () => {
   });
 
   it("issue rows stay compact — name, short detail, review link, severity badge (#5, #6)", () => {
-    expect(PAGE).toContain("href={`/campaigns/${entry.id}`}");
+    expect(PAGE).toContain("href={buildSequenceDetailHref(entry.id, dashboardReturnTo)}");
     expect(PAGE).toContain("Review sequence");
     expect(PAGE).toContain('{entry.severity === "critical" ? "Critical" : "Warning"}');
     // No long-paragraph markup: the detail is a single derived sentence, not

@@ -38,3 +38,37 @@ export function shouldUseBrowserBack(args: { alwaysUseFallback?: boolean; naviga
 
   return args.navigationDepth > 0;
 }
+
+/**
+ * Read the dashboard return target carried by a sequence-detail URL.
+ * Only the two dashboard aliases are accepted, which keeps the back button
+ * inside Sendloom and prevents an arbitrary/open redirect.
+ */
+export function getSequenceDetailReturnTo(
+  pathname: string,
+  searchParams: Pick<URLSearchParams, "get">
+) {
+  if (!/^\/(campaigns|sequences)\/[^/]+$/.test(pathname)) {
+    return null;
+  }
+
+  const returnTo = searchParams.get("returnTo");
+  if (!returnTo?.startsWith("/") || returnTo.startsWith("//")) {
+    return null;
+  }
+
+  try {
+    const base = new URL("https://sendloom.local");
+    const target = new URL(returnTo, base);
+    if (
+      target.origin !== base.origin ||
+      (target.pathname !== "/campaigns" && target.pathname !== "/sequences")
+    ) {
+      return null;
+    }
+
+    return `${target.pathname}${target.search}`;
+  } catch {
+    return null;
+  }
+}

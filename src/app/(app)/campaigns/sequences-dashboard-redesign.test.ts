@@ -342,7 +342,7 @@ describe("health panel logic (#13)", () => {
     expect(PAGE).toContain("buildSequenceAttentionItems");
     expect(PAGE).toContain('aria-label="Sequences health"');
     expect(PAGE).toContain("Review sequence");
-    expect(PAGE).toContain("href={`/campaigns/${entry.id}`}");
+    expect(PAGE).toContain("href={buildSequenceDetailHref(entry.id, dashboardReturnTo)}");
     expect(PAGE).toContain("All clear");
     expect(PAGE).toContain("No sequences need attention right now.");
   });
@@ -495,25 +495,26 @@ describe("control bar (#7, #8, #10, #11)", () => {
 
   it("changing search, status, or email account resets pagination (#9)", () => {
     const searchHandler = DASH.slice(DASH.indexOf("function onSearchChange"), DASH.indexOf("function clearFilters"));
-    expect(searchHandler).toContain("setPage(1)");
+    expect(searchHandler).toContain("replaceUrlState({ query: value, page: 1 })");
     const filterHandler = DASH.slice(DASH.indexOf("function selectFilter"), DASH.indexOf("function selectSender"));
-    expect(filterHandler).toContain("setPage(1)");
+    expect(filterHandler).toContain("replaceUrlState({ filter: next as SequenceFilterId, page: 1 })");
     const senderHandler = DASH.slice(DASH.indexOf("function selectSender"), DASH.indexOf("function onSearchChange"));
-    expect(senderHandler).toContain("setPage(1)");
+    expect(senderHandler).toContain("replaceUrlState({ sender: next, page: 1 })");
     // Both dropdowns drive the shared filter pipeline (#6, #7, #8).
     expect(DASH).toContain("onChange={selectFilter}");
     expect(DASH).toContain("onChange={selectSender}");
     expect(DASH).toContain("filterSequenceItems(items, filter, query, sender)");
-    // Clearing filters resets all three plus the page.
+    // Clearing filters removes all three URL params plus the page.
     const clear = DASH.slice(DASH.indexOf("function clearFilters"), DASH.indexOf("const hasSequences"));
-    expect(clear).toContain("setSender(ALL_SENDER_ACCOUNTS)");
-    expect(clear).toContain('setQuery("")');
-    expect(clear).toContain("setPage(1)");
+    expect(clear).toContain('filter: "all"');
+    expect(clear).toContain("sender: ALL_SENDER_ACCOUNTS");
+    expect(clear).toContain('query: ""');
+    expect(clear).toContain("page: 1");
   });
 
   it("pages change on click with no pagination preview tooltip", () => {
-    expect(DASH).toContain("onClick={() => setPage(slice.page + 1)}");
-    expect(DASH).toContain("onClick={() => setPage(slice.page - 1)}");
+    expect(DASH).toContain("onClick={() => replaceUrlState({ page: slice.page + 1 })}");
+    expect(DASH).toContain("onClick={() => replaceUrlState({ page: slice.page - 1 })}");
     expect(DASH).not.toContain("pagePreview");
     expect(DASH).not.toContain("describeSequencePagePreview");
     expect(DASH_CSS).not.toContain(".pagePreview");
@@ -535,9 +536,10 @@ describe("control bar (#7, #8, #10, #11)", () => {
   });
 
   it("each row shows the required columns and keeps the existing actions", () => {
-    expect(DASH).toContain("href={`/campaigns/${item.id}`}");
+    expect(DASH).toContain("const detailHref = buildSequenceDetailHref(item.id, returnTo)");
+    expect(DASH).toContain("href={detailHref}");
     expect(DASH).toContain("aria-label={`Open sequence ${item.name}`}");
-    expect(DASH).toContain("<CampaignCardActions campaignId={item.id} campaignName={item.name} />");
+    expect(DASH).toContain("detailHref={detailHref}");
     // recipient count + sender email, status, state, created, progress, performance
     expect(DASH).toContain("{item.senderEmail}");
     expect(DASH).toContain("{SEQUENCE_TONE_LABELS[tone]}");
@@ -559,7 +561,8 @@ describe("control bar (#7, #8, #10, #11)", () => {
 
 describe("row action rail", () => {
   it("renders open and delete with accessible labels (#1–#4)", () => {
-    expect(DASH).toContain("<CampaignCardActions campaignId={item.id} campaignName={item.name} />");
+    expect(DASH).toContain("detailHref={detailHref}");
+    expect(ACTIONS).toContain("href={props.detailHref ?? `/campaigns/${props.campaignId}`}");
     expect(ACTIONS).toContain("aria-label={`Open sequence ${props.campaignName}`}");
     expect(ACTIONS).toContain("aria-label={`Delete sequence ${props.campaignName}`}");
   });
@@ -586,7 +589,7 @@ describe("row action rail", () => {
   });
 
   it("keeps the existing behavior: same route, same delete flow (#6)", () => {
-    expect(ACTIONS).toContain("href={`/campaigns/${props.campaignId}`}");
+    expect(ACTIONS).toContain("href={props.detailHref ?? `/campaigns/${props.campaignId}`}");
     expect(ACTIONS).toContain("fetch(`/api/campaigns/${props.campaignId}`");
     expect(ACTIONS).toContain('method: "DELETE"');
     expect(ACTIONS).toContain("<AppConfirmDialog");

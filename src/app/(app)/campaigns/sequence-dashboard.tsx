@@ -7,7 +7,16 @@
 // analysis lives on the detail page.
 
 import Link from "next/link";
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent
+} from "react";
 import {
   Check,
   ChevronDown,
@@ -36,6 +45,14 @@ import {
   type SequenceFilterId,
   type SequenceListItem
 } from "@/lib/sequence-dashboard";
+import {
+  buildSequenceDashboardReturnTo,
+  buildSequenceDetailHref,
+  normalizeSequenceDashboardSearchParams,
+  readSequenceDashboardUrlState,
+  updateSequenceDashboardSearchParams,
+  type SequenceDashboardUrlState
+} from "@/lib/sequence-dashboard-url";
 import styles from "./sequence-dashboard.module.css";
 
 const countFormatter = new Intl.NumberFormat("en-US");
@@ -211,15 +228,16 @@ function ToolbarSelect({
   );
 }
 
-function SequenceRow({ item }: { item: SequenceListItem }) {
+function SequenceRow({ item, returnTo }: { item: SequenceListItem; returnTo: string }) {
   const tone = primarySequenceTone(item);
   const openRate = getSequenceOpenRatePercent(item);
   const createdDate = new Date(item.createdAtIso);
+  const detailHref = buildSequenceDetailHref(item.id, returnTo);
 
   return (
     <li className={styles.row} data-tone={tone}>
       <Link
-        href={`/campaigns/${item.id}`}
+        href={detailHref}
         className={styles.rowLink}
         aria-label={`Open sequence ${item.name}`}
       >
@@ -289,25 +307,58 @@ function SequenceRow({ item }: { item: SequenceListItem }) {
       </Link>
 
       <span className={styles.rowActions}>
-        <CampaignCardActions campaignId={item.id} campaignName={item.name} />
+        <CampaignCardActions
+          campaignId={item.id}
+          campaignName={item.name}
+          detailHref={detailHref}
+        />
       </span>
     </li>
   );
 }
 
 export function SequenceDashboard({ items }: { items: SequenceListItem[] }) {
-  const [filter, setFilter] = useState<SequenceFilterId>("all");
-  const [sender, setSender] = useState<string>(ALL_SENDER_ACCOUNTS);
-  const [query, setQuery] = useState("");
-  const [page, setPage] = useState(1);
-
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const counts = useMemo(() => countSequenceFilters(items), [items]);
   const senderEmails = useMemo(() => collectSequenceSenderEmails(items), [items]);
+  const urlState = useMemo(
+    () => readSequenceDashboardUrlState(searchParams, senderEmails),
+    [searchParams, senderEmails]
+  );
+  const { filter, sender, query, page } = urlState;
   const filtered = useMemo(
     () => filterSequenceItems(items, filter, query, sender),
     [items, filter, query, sender]
   );
   const slice = paginateSequenceItems(filtered, page);
+  const normalizedSearchParams = useMemo(
+    () => normalizeSequenceDashboardSearchParams(searchParams, urlState, slice.page),
+    [searchParams, slice.page, urlState]
+  );
+  const normalizedSearch = normalizedSearchParams.toString();
+  const currentSearch = searchParams.toString();
+  const returnTo = buildSequenceDashboardReturnTo(pathname, normalizedSearchParams);
+
+  const replaceUrlState = useCallback(
+    (patch: Partial<SequenceDashboardUrlState>) => {
+      const nextParams = updateSequenceDashboardSearchParams(searchParams, patch);
+      const queryString = nextParams.toString();
+      const href = queryString ? `${pathname}?${queryString}` : pathname;
+      router.replace(href, { scroll: false });
+    },
+    [pathname, router, searchParams]
+  );
+
+  useEffect(() => {
+    if (normalizedSearch === currentSearch) {
+      return;
+    }
+
+    const href = normalizedSearch ? `${pathname}?${normalizedSearch}` : pathname;
+    router.replace(href, { scroll: false });
+  }, [currentSearch, normalizedSearch, pathname, router]);
 
   // Draft is only offered when draft sequences exist; the six core statuses
   // always appear in the dropdown, including zero counts.
@@ -326,25 +377,24 @@ export function SequenceDashboard({ items }: { items: SequenceListItem[] }) {
   ];
 
   function selectFilter(next: string) {
-    setFilter(next as SequenceFilterId);
-    setPage(1);
+    replaceUrlState({ filter: next as SequenceFilterId, page: 1 });
   }
 
   function selectSender(next: string) {
-    setSender(next);
-    setPage(1);
+    replaceUrlState({ sender: next, page: 1 });
   }
 
   function onSearchChange(value: string) {
-    setQuery(value);
-    setPage(1);
+    replaceUrlState({ query: value, page: 1 });
   }
 
   function clearFilters() {
-    setFilter("all");
-    setSender(ALL_SENDER_ACCOUNTS);
-    setQuery("");
-    setPage(1);
+    replaceUrlState({
+      filter: "all",
+      sender: ALL_SENDER_ACCOUNTS,
+      query: "",
+      page: 1
+    });
   }
 
   const hasSequences = items.length > 0;
@@ -436,7 +486,7 @@ export function SequenceDashboard({ items }: { items: SequenceListItem[] }) {
 
           <ul className={styles.list}>
             {slice.pageItems.map((item) => (
-              <SequenceRow key={item.id} item={item} />
+              <SequenceRow key={item.id} item={item} returnTo={returnTo} />
             ))}
           </ul>
 
@@ -447,7 +497,7 @@ export function SequenceDashboard({ items }: { items: SequenceListItem[] }) {
                 <button
                   type="button"
                   className={styles.pageButton}
-                  onClick={() => setPage(slice.page - 1)}
+                  onClick={() => replaceUrlState({ page: slice.page - 1 })}
                   disabled={slice.page <= 1}
                   aria-label="Previous page"
                 >
@@ -461,7 +511,7 @@ export function SequenceDashboard({ items }: { items: SequenceListItem[] }) {
                 <button
                   type="button"
                   className={styles.pageButton}
-                  onClick={() => setPage(slice.page + 1)}
+                  onClick={() => replaceUrlState({ page: slice.page + 1 })}
                   disabled={slice.page >= slice.totalPages}
                   aria-label="Next page"
                 >
