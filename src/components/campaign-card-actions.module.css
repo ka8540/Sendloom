@@ -1,0 +1,102 @@
+/* Compact action rail for sequence rows: open + delete as two small icon
+   buttons in one horizontal pill, vertically centered in the row. Tooltips
+   are custom and theme-styled (small, below the rail so they never overlap
+   the table header) — never the browser-native title bubble. */
+
+.rail {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.22rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+}
+
+.action {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+.action svg {
+  width: 0.88rem;
+  height: 0.88rem;
+}
+
+.action:focus-visible {
+  outline: 2px solid var(--field-focus);
+  outline-offset: 1px;
+}
+
+.open:hover,
+.open:focus-visible {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.delete:hover:not(:disabled),
+.delete:focus-visible {
+  background: color-mix(in srgb, #e5484d 14%, var(--surface));
+  color: color-mix(in srgb, #e5484d 78%, var(--text));
+}
+
+.delete:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* Custom tooltip: small, theme-consistent, hover/focus only. It opens below
+   the rail so the first row's tooltip never covers the table header. */
+
+.action::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: -0.2rem;
+  z-index: 6;
+  padding: 0.28rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface-strong);
+  color: var(--text);
+  font-size: 0.72rem;
+  font-weight: 650;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--text) 8%, transparent);
+  opacity: 0;
+  transform: translateY(-2px);
+  pointer-events: none;
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.action:hover::after,
+.action:focus-visible::after {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Touch devices have no hover — the aria-label carries the meaning. */
+@media (hover: none) {
+  .action::after {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .action,
+  .action::after {
+    transition: none;
+  }
+}

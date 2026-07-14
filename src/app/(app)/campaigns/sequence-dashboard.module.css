@@ -16,7 +16,7 @@
      The board is a size container: the sidebar makes viewport width a bad
      proxy for available space, so columns collapse on container width. */
   --seq-cols: minmax(0, 1.8fr) 7.5rem 8rem 5.8rem minmax(4.5rem, 0.8fr) 10rem;
-  --seq-actions: 5.6rem;
+  --seq-actions: 5.2rem;
 
   container-type: inline-size;
   display: grid;

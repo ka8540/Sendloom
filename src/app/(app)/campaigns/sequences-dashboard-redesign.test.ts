@@ -41,6 +41,8 @@ const LOADING = readFileSync("src/app/(app)/campaigns/loading.tsx", "utf8");
 const LOADING_CSS = readFileSync("src/app/(app)/campaigns/loading.module.css", "utf8");
 const DETAIL = readFileSync("src/app/(app)/campaigns/[id]/page.tsx", "utf8");
 const DETAIL_CSS = readFileSync("src/app/(app)/campaigns/[id]/page.module.css", "utf8");
+const ACTIONS = readFileSync("src/components/campaign-card-actions.tsx", "utf8");
+const ACTIONS_CSS = readFileSync("src/components/campaign-card-actions.module.css", "utf8");
 
 function makeItem(overrides: Partial<SequenceListItem> = {}): SequenceListItem {
   return {
@@ -396,6 +398,51 @@ describe("dashboard component (#7, #8, #10, #11)", () => {
     }
     expect(DASH_CSS).toContain("--seq-cols:");
     expect(DASH_CSS).toContain("grid-template-columns: var(--seq-cols)");
+  });
+});
+
+describe("row action rail", () => {
+  it("renders open and delete with accessible labels (#1–#4)", () => {
+    expect(DASH).toContain("<CampaignCardActions campaignId={item.id} campaignName={item.name} />");
+    expect(ACTIONS).toContain("aria-label={`Open sequence ${props.campaignName}`}");
+    expect(ACTIONS).toContain("aria-label={`Delete sequence ${props.campaignName}`}");
+  });
+
+  it("never uses the browser-native title tooltip (#5)", () => {
+    // No `title` attribute on the open/delete controls (AppConfirmDialog's
+    // `title` prop is dialog copy, not a DOM tooltip).
+    const controls = ACTIONS.slice(0, ACTIONS.indexOf("<AppConfirmDialog"));
+    expect(controls).not.toMatch(/\btitle=/);
+    // The custom tooltip is module-scoped, small, theme-styled, and opens
+    // below the rail — visible on hover/focus only, hidden on touch.
+    expect(ACTIONS_CSS).toContain("content: attr(data-tooltip);");
+    expect(ACTIONS_CSS).toContain("top: calc(100% + 0.5rem);");
+    expect(ACTIONS_CSS).toMatch(/\.action:hover::after,\s*\.action:focus-visible::after/);
+    expect(ACTIONS_CSS).toContain("@media (hover: none)");
+  });
+
+  it("is one compact horizontal cluster, not a stack", () => {
+    expect(ACTIONS).toContain("styles.rail");
+    expect(ACTIONS_CSS).toMatch(/\.rail \{[^}]*display: inline-flex;/);
+    expect(ACTIONS_CSS).toMatch(/\.rail \{[^}]*align-items: center;/);
+    // No reliance on the oversized global icon-button styling.
+    expect(ACTIONS).not.toContain("field-icon-button");
+  });
+
+  it("keeps the existing behavior: same route, same delete flow (#6)", () => {
+    expect(ACTIONS).toContain("href={`/campaigns/${props.campaignId}`}");
+    expect(ACTIONS).toContain("fetch(`/api/campaigns/${props.campaignId}`");
+    expect(ACTIONS).toContain('method: "DELETE"');
+    expect(ACTIONS).toContain("<AppConfirmDialog");
+    expect(ACTIONS).toContain("Delete this sequence?");
+  });
+
+  it("delete reads as the danger action beyond color alone", () => {
+    // Trash icon + explicit label + confirm dialog; red is hover/focus only.
+    expect(ACTIONS).toContain("<Trash2");
+    expect(ACTIONS_CSS).toMatch(/\.delete:hover:not\(:disabled\),\s*\.delete:focus-visible/);
+    const baseAction = ACTIONS_CSS.slice(ACTIONS_CSS.indexOf(".action {"), ACTIONS_CSS.indexOf(".action svg"));
+    expect(baseAction).not.toContain("#e5484d");
   });
 });
 
