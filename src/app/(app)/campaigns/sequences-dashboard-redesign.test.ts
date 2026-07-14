@@ -324,9 +324,9 @@ describe("create page (#4, #5)", () => {
     // No sequence list/table below the form.
     expect(CREATE).not.toContain("SequenceDashboard");
     expect(CREATE).not.toContain("paginateSequenceItems");
-    // A way back to the dashboard.
-    expect(CREATE).toContain('href="/campaigns"');
-    expect(CREATE).toContain("Back to sequences");
+    // Back navigation is provided only by the icon button in the app shell.
+    expect(CREATE).not.toContain('href="/campaigns"');
+    expect(CREATE).not.toContain("Back to sequences");
   });
 
   it("renders the compact Send from Gmail panel (#5)", () => {

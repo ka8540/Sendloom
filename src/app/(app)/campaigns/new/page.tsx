@@ -1,5 +1,4 @@
-import Link from "next/link";
-import { ArrowLeft, CheckCircle2, Mail, RefreshCcw } from "lucide-react";
+import { CheckCircle2, Mail, RefreshCcw } from "lucide-react";
 
 import { CampaignBuilder } from "@/components/campaign-builder";
 import { ErrorToastOnMount } from "@/components/error-toast-provider";
@@ -54,11 +53,6 @@ export default async function NewSequencePage({
           <span>Gmail reconnected. You can use that sender again.</span>
         </div>
       ) : null}
-
-      <Link className={styles.backLink} href="/campaigns">
-        <ArrowLeft aria-hidden="true" />
-        <span>Back to sequences</span>
-      </Link>
 
       <section className={styles.topGrid}>
         <article className={styles.builderCard} id="create-sequence">
