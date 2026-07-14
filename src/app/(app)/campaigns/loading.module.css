@@ -1,0 +1,349 @@
+/* CSS-only skeleton for the Sequences route. A single shimmer sweep animates
+   every bar; reduced-motion users get static placeholders. */
+
+.page {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.bar {
+  display: block;
+  border-radius: 999px;
+  background:
+    linear-gradient(
+      100deg,
+      color-mix(in srgb, var(--muted) 14%, transparent) 38%,
+      color-mix(in srgb, var(--muted) 26%, transparent) 50%,
+      color-mix(in srgb, var(--muted) 14%, transparent) 62%
+    );
+  background-size: 220% 100%;
+  animation: sequences-skeleton-shimmer 1.6s ease-in-out infinite;
+}
+
+@keyframes sequences-skeleton-shimmer {
+  from {
+    background-position: 130% 0;
+  }
+
+  to {
+    background-position: -30% 0;
+  }
+}
+
+.topGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 24rem);
+  gap: 1.15rem;
+  align-items: start;
+}
+
+.builderCard,
+.senderPanel,
+.dashboard {
+  border-radius: 28px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  min-width: 0;
+}
+
+.builderCard {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1.55rem;
+}
+
+.kicker {
+  width: 4.6rem;
+  height: 1.4rem;
+}
+
+.pageTitle {
+  width: min(19rem, 70%);
+  height: 2.4rem;
+  border-radius: 12px;
+}
+
+.sectionTitle {
+  width: 10rem;
+  height: 1.7rem;
+  border-radius: 10px;
+}
+
+.panelTitle {
+  width: 11rem;
+  height: 1.5rem;
+  border-radius: 10px;
+}
+
+.lede {
+  width: min(26rem, 92%);
+  height: 0.95rem;
+}
+
+.formFields {
+  display: grid;
+  gap: 1rem;
+  margin-top: 0.4rem;
+}
+
+.formField {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.fieldLabel {
+  width: 7.5rem;
+  height: 0.85rem;
+}
+
+.fieldInput {
+  width: 100%;
+  height: 2.6rem;
+  border-radius: 14px;
+}
+
+.submit {
+  width: 11rem;
+  height: 2.7rem;
+  border-radius: 999px;
+  margin-top: 0.3rem;
+}
+
+.senderPanel {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1.3rem;
+  align-self: start;
+}
+
+.senderRow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+}
+
+.senderIcon {
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 12px;
+}
+
+.senderMeta {
+  display: grid;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.senderName {
+  width: 60%;
+  height: 0.95rem;
+}
+
+.senderEmail {
+  width: 85%;
+  height: 0.8rem;
+}
+
+.senderChip {
+  width: 4.6rem;
+  height: 1.4rem;
+}
+
+.connectButton {
+  width: 100%;
+  height: 2.6rem;
+  border-radius: 999px;
+}
+
+.dashboard {
+  display: grid;
+  gap: 1.05rem;
+  padding: 1.55rem;
+}
+
+.dashboardHeader {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.headingBlock {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.summaryStrip {
+  width: min(24rem, 100%);
+  height: 3.3rem;
+  border-radius: 16px;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+}
+
+.filterRail {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.filterPill {
+  width: 6.2rem;
+  height: 1.95rem;
+}
+
+.search {
+  width: 15rem;
+  max-width: 100%;
+  height: 2.25rem;
+}
+
+.rangeLine {
+  width: 9.5rem;
+  height: 0.9rem;
+}
+
+.list {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(8rem, 11rem) auto auto;
+  align-items: center;
+  gap: 1.1rem;
+  padding: 0.85rem 1rem;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+}
+
+.rowIdentity {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  min-width: 0;
+}
+
+.rowDot {
+  width: 0.5rem;
+  height: 0.5rem;
+  flex-shrink: 0;
+}
+
+.rowTitleBlock {
+  display: grid;
+  gap: 0.4rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.rowName {
+  width: min(15rem, 80%);
+  height: 1rem;
+}
+
+.rowChip {
+  width: min(9rem, 55%);
+  height: 1.3rem;
+}
+
+.rowHealth {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.rowValue {
+  width: 3rem;
+  height: 0.95rem;
+}
+
+.rowTrack {
+  width: 100%;
+  height: 0.3rem;
+}
+
+.rowStatus {
+  width: 5.6rem;
+  height: 1.6rem;
+}
+
+.rowAction {
+  width: 4.4rem;
+  height: 1.9rem;
+}
+
+.paginationBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.9rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+
+.paginationControls {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.pageButton {
+  width: 2.15rem;
+  height: 2.15rem;
+}
+
+.pageIndicator {
+  width: 5.4rem;
+  height: 1rem;
+}
+
+@media (max-width: 960px) {
+  .topGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .rowStatus,
+  .rowAction {
+    justify-self: start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bar {
+    animation: none;
+    background-position: 50% 0;
+  }
+}

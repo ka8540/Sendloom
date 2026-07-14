@@ -40,6 +40,7 @@ import styles from "./page.module.css";
 
 export const maxDuration = 60;
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+const RING_CIRCUMFERENCE = 2 * Math.PI * 52;
 
 type CampaignTemplateSnapshot = {
   attachments?: Array<{
@@ -373,6 +374,21 @@ export default async function CampaignDetailPage({
   // false "open" left the row in an engagement status) never counts as
   // delivered — the four cards always add up truthfully.
   const deliveredCount = dispositionCounts.sent;
+  // Visual delivery-health rollup for the ring + segmented rail. Every value
+  // comes from the same per-recipient disposition counts as the metric cards,
+  // so the segments always add up to the run's audience.
+  const totalForRun = displayRun?.totalRecipients ?? 0;
+  const pendingCount = dispositionCounts.pending;
+  const deliveryHealthPercent =
+    totalForRun > 0 ? Math.min(100, Math.max(0, Math.round((deliveredCount / totalForRun) * 100))) : null;
+  const opensCount =
+    (recipientStatusCountMap.get("OPENED") ?? 0) + (recipientStatusCountMap.get("CLICKED") ?? 0);
+  const healthSegments = [
+    { key: "delivered", label: "Delivered", count: deliveredCount },
+    { key: "skipped", label: "Skipped", count: skippedCount },
+    { key: "attention", label: "Needs attention", count: issueCount },
+    { key: "pending", label: "Pending", count: pendingCount }
+  ];
   const launchButtonLabel = dailyLimitActive
     ? "Waiting for Gmail safety window"
     : isWaitingForSlot
@@ -692,53 +708,125 @@ export default async function CampaignDetailPage({
         </aside>
       </section>
 
-      <section className={styles.metrics}>
-        <article className={styles.metricCard}>
-          <div className={styles.metricIcon}>
-            <Users aria-hidden="true" />
+      <section className={styles.healthBand}>
+        <article className={styles.healthCard}>
+          <div className={styles.healthHeading}>
+            <h2>Delivery health</h2>
+            <p>
+              {displayRun
+                ? isFromPreviousRun
+                  ? "How the last completed run's recipients resolved."
+                  : "How this run's recipients resolved."
+                : "Launch the sequence to start measuring delivery."}
+            </p>
           </div>
-          <span className={styles.metricLabel}>Audience size</span>
-          <strong className={styles.metricValue}>{displayRun?.totalRecipients ?? campaign.import.rowCount ?? 0}</strong>
-          <span className={styles.metricMeta}>
-            {isFromPreviousRun ? "Last run" : "This run"}
-            {skippedCount > 0 ? ` · ${skippedCount} skipped (invalid or excluded)` : ""}
-          </span>
+
+          {displayRun && totalForRun > 0 ? (
+            <div className={styles.healthBody}>
+              <div
+                className={styles.healthRing}
+                role="img"
+                aria-label={`Delivery health ${deliveryHealthPercent ?? 0}%: ${deliveredCount} of ${totalForRun} recipients delivered`}
+              >
+                <svg viewBox="0 0 120 120" aria-hidden="true">
+                  <circle className={styles.ringTrack} cx="60" cy="60" r="52" />
+                  <circle
+                    className={styles.ringValue}
+                    cx="60"
+                    cy="60"
+                    r="52"
+                    strokeDasharray={`${(((deliveryHealthPercent ?? 0) / 100) * RING_CIRCUMFERENCE).toFixed(2)} ${RING_CIRCUMFERENCE.toFixed(2)}`}
+                  />
+                </svg>
+                <span className={styles.ringCenter}>
+                  <strong>{deliveryHealthPercent ?? 0}%</strong>
+                  <small>delivered</small>
+                </span>
+              </div>
+
+              <div className={styles.healthBreakdown}>
+                <div className={styles.healthRail} aria-hidden="true">
+                  {healthSegments
+                    .filter((segment) => segment.count > 0)
+                    .map((segment) => (
+                      <span key={segment.key} data-segment={segment.key} style={{ flexGrow: segment.count }} />
+                    ))}
+                </div>
+                <ul className={styles.healthLegend}>
+                  {healthSegments.map((segment) => (
+                    <li key={segment.key} data-segment={segment.key}>
+                      <span className={styles.legendDot} aria-hidden="true" />
+                      <span className={styles.legendLabel}>{segment.label}</span>
+                      <span className={styles.legendCount}>{segment.count}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          ) : (
+            <div className={styles.healthEmpty}>
+              No recipient outcomes yet. Delivered, skipped, and issue counts will appear here after the first
+              send.
+            </div>
+          )}
         </article>
-        <article className={styles.metricCard}>
-          <div className={styles.metricIcon}>
-            <SendHorizontal aria-hidden="true" />
-          </div>
-          <span className={styles.metricLabel}>Delivered</span>
-          <strong className={styles.metricValue}>{deliveredCount}</strong>
-          <span className={styles.metricMeta}>{isFromPreviousRun ? "Last run" : "Sent + opened + clicked"}</span>
-        </article>
-        <article className={styles.metricCard}>
-          <div className={styles.metricIcon}>
-            <Mail aria-hidden="true" />
-          </div>
-          <span className={styles.metricLabel}>Replies</span>
-          <strong className={styles.metricValue}>{replyCount}</strong>
-          <span className={styles.metricMeta}>{isFromPreviousRun ? "Last run" : "This run"}</span>
-        </article>
-        {issueCount > 0 ? (
+
+        <div className={styles.metricsGrid}>
           <article className={styles.metricCard}>
             <div className={styles.metricIcon}>
-              <ShieldAlert aria-hidden="true" />
+              <Users aria-hidden="true" />
             </div>
-            <span className={styles.metricLabel}>Needs attention</span>
-            <strong className={styles.metricValue}>{issueCount}</strong>
-            <span className={styles.metricMeta}>Failed sends &amp; retries</span>
+            <span className={styles.metricLabel}>Audience size</span>
+            <strong className={styles.metricValue}>{displayRun?.totalRecipients ?? campaign.import.rowCount ?? 0}</strong>
+            <span className={styles.metricMeta}>
+              {isFromPreviousRun ? "Last run" : "This run"}
+              {skippedCount > 0 ? ` · ${skippedCount} skipped (invalid or excluded)` : ""}
+            </span>
           </article>
-        ) : (
           <article className={styles.metricCard}>
             <div className={styles.metricIcon}>
-              <ShieldAlert aria-hidden="true" />
+              <SendHorizontal aria-hidden="true" />
             </div>
-            <span className={styles.metricLabel}>Skipped / invalid</span>
-            <strong className={styles.metricValue}>{skippedCount}</strong>
-            <span className={styles.metricMeta}>Invalid or excluded recipients</span>
+            <span className={styles.metricLabel}>Delivered</span>
+            <strong className={styles.metricValue}>{deliveredCount}</strong>
+            <span className={styles.metricMeta}>{isFromPreviousRun ? "Last run" : "Sent + opened + clicked"}</span>
           </article>
-        )}
+          <article className={styles.metricCard}>
+            <div className={styles.metricIcon}>
+              <Eye aria-hidden="true" />
+            </div>
+            <span className={styles.metricLabel}>Opened</span>
+            <strong className={styles.metricValue}>{opensCount}</strong>
+            <span className={styles.metricMeta}>{isFromPreviousRun ? "Last run" : "Opens tracked so far"}</span>
+          </article>
+          <article className={styles.metricCard}>
+            <div className={styles.metricIcon}>
+              <Mail aria-hidden="true" />
+            </div>
+            <span className={styles.metricLabel}>Replies</span>
+            <strong className={styles.metricValue}>{replyCount}</strong>
+            <span className={styles.metricMeta}>{isFromPreviousRun ? "Last run" : "This run"}</span>
+          </article>
+          {issueCount > 0 ? (
+            <article className={styles.metricCard}>
+              <div className={styles.metricIcon}>
+                <ShieldAlert aria-hidden="true" />
+              </div>
+              <span className={styles.metricLabel}>Needs attention</span>
+              <strong className={styles.metricValue}>{issueCount}</strong>
+              <span className={styles.metricMeta}>Failed sends &amp; retries</span>
+            </article>
+          ) : (
+            <article className={styles.metricCard}>
+              <div className={styles.metricIcon}>
+                <ShieldAlert aria-hidden="true" />
+              </div>
+              <span className={styles.metricLabel}>Skipped / invalid</span>
+              <strong className={styles.metricValue}>{skippedCount}</strong>
+              <span className={styles.metricMeta}>Invalid or excluded recipients</span>
+            </article>
+          )}
+        </div>
       </section>
       {validationChecks.length ? (
         <section className={styles.validationBand}>
