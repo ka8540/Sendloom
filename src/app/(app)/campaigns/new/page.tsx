@@ -1,14 +1,17 @@
-import { CheckCircle2, ChevronRight, Mail, Plus, RefreshCcw } from "lucide-react";
+import { CheckCircle2 } from "lucide-react";
 
 import { CampaignBuilder } from "@/components/campaign-builder";
 import { ErrorToastOnMount } from "@/components/error-toast-provider";
-import { BounceMonitoringStatus } from "@/components/senders/bounce-monitoring-status";
 import { requireOperatorUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import {
+  getTemplateFormatLabel,
+  templateContentToPlainText,
+  TEMPLATE_FORMATS,
+  type TemplateFormat
+} from "@/lib/templates";
 import { resolveBounceMonitoringStatus } from "@/services/bounces";
 import styles from "./page.module.css";
-
-const BUILDER_PATH = ["Audience", "Message", "Sender", "Timing"] as const;
 
 function getSearchParam(
   searchParams: Record<string, string | string[] | undefined>,
@@ -16,6 +19,34 @@ function getSearchParam(
 ) {
   const value = searchParams[key];
   return Array.isArray(value) ? value[0] : value;
+}
+
+function getMappedFields(mapping: { reservedFieldMap: unknown; variableMap: unknown } | undefined) {
+  if (!mapping) {
+    return [];
+  }
+
+  const fields = [mapping.reservedFieldMap, mapping.variableMap].flatMap((value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return [];
+    }
+
+    return Object.values(value).filter((field): field is string => typeof field === "string" && Boolean(field.trim()));
+  });
+
+  return Array.from(new Set(fields));
+}
+
+function normalizeTemplateFormat(format: string): TemplateFormat {
+  return TEMPLATE_FORMATS.includes(format as TemplateFormat) ? (format as TemplateFormat) : "HTML";
+}
+
+function getTemplateSnippet(format: string, htmlBody: string) {
+  const snippet = templateContentToPlainText(normalizeTemplateFormat(format), htmlBody)
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return snippet ? `${snippet.slice(0, 150)}${snippet.length > 150 ? "…" : ""}` : "No preview available.";
 }
 
 export default async function NewSequencePage({
@@ -60,120 +91,53 @@ export default async function NewSequencePage({
         <div className={styles.pageHeading}>
           <span className={styles.kicker}>Build</span>
           <h1>Create a sequence</h1>
-          <p>Pick your audience, template, sender, and launch timing.</p>
-        </div>
-        <div className={styles.flowPath} aria-hidden="true">
-          {BUILDER_PATH.map((stop, index) => (
-            <span key={stop} className={styles.flowStop}>
-              {index > 0 ? <ChevronRight className={styles.flowArrow} /> : null}
-              <span className={styles.flowChip}>{stop}</span>
-            </span>
-          ))}
+          <p>Choose an audience, shape the message, set the timing, then review.</p>
         </div>
       </header>
 
-      <section className={styles.topGrid}>
-        <article className={styles.builderCard} id="create-sequence">
-          <CampaignBuilder
-            imports={imports.map((entry) => ({ id: entry.id, label: entry.fileName }))}
-            mappings={imports.flatMap((entry) => {
-              const mapping = latestMappings.get(entry.id);
-              if (!mapping) {
-                return [];
-              }
+      <CampaignBuilder
+        imports={imports.map((entry) => ({
+          id: entry.id,
+          label: entry.fileName,
+          rowCount: entry.rowCount,
+          mappedFields: getMappedFields(latestMappings.get(entry.id))
+        }))}
+        mappings={imports.flatMap((entry) => {
+          const mapping = latestMappings.get(entry.id);
+          if (!mapping) {
+            return [];
+          }
 
-              return [
-                {
-                  id: mapping.id,
-                  importId: entry.id,
-                  label: `${entry.fileName} field set`
-                }
-              ];
-            })}
-            templates={templates.map((entry) => ({ id: entry.id, label: entry.name }))}
-            senders={connectedSenders.map((entry) => ({ id: entry.id, label: `${entry.name} <${entry.fromEmail}>` }))}
-            disconnectedSenderCount={disconnectedSenders.length}
-            reconnectHref={
-              disconnectedSenders[0]
-                ? `/api/auth/google/connect?email=${encodeURIComponent(disconnectedSenders[0].fromEmail)}&next=${encodeURIComponent("/campaigns/new")}`
-                : undefined
+          return [
+            {
+              id: mapping.id,
+              importId: entry.id,
+              label: `${entry.fileName} field set`
             }
-          />
-        </article>
-
-        <aside className={styles.senderPanel} aria-label="Send from Gmail">
-          <div className={styles.senderPanelHeading}>
-            <div className={styles.senderPanelTitleRow}>
-              <h2>Send from Gmail</h2>
-              {connectedSenders.length ? (
-                <span className={styles.senderCount}>
-                  {connectedSenders.length} connected
-                </span>
-              ) : null}
-            </div>
-            <p>Every email in this sequence goes out through one of these accounts.</p>
-          </div>
-
-          <div className={styles.senderList}>
-            {connectedSenders.length ? (
-              connectedSenders.map((sender) => (
-                <div key={sender.id} className={styles.senderRow}>
-                  <div className={styles.senderIcon}>
-                    <Mail aria-hidden="true" />
-                  </div>
-                  <div className={styles.senderMeta}>
-                    <div className={styles.senderNameRow}>
-                      <strong>{sender.name}</strong>
-                      <span className={styles.senderChip}>Connected</span>
-                    </div>
-                    <span className={styles.senderEmail}>{sender.fromEmail}</span>
-                    <BounceMonitoringStatus
-                      senderId={sender.id}
-                      status={resolveBounceMonitoringStatus(sender)}
-                      backfillCompleted={Boolean(sender.bounceBackfillCompletedAt)}
-                    />
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div className={styles.senderEmpty}>
-                {disconnectedSenders.length
-                  ? "Reconnect Gmail to keep sending from this workspace."
-                  : "Connect a Gmail account to send emails."}
-              </div>
-            )}
-
-            {disconnectedSenders.map((sender) => (
-              <div key={sender.id} className={`${styles.senderRow} ${styles.senderRowWarning}`}>
-                <div className={styles.senderIcon}>
-                  <RefreshCcw aria-hidden="true" />
-                </div>
-                <div className={styles.senderMeta}>
-                  <div className={styles.senderNameRow}>
-                    <strong>{sender.name}</strong>
-                    <span className={`${styles.senderChip} ${styles.senderChipWarning}`}>Reconnect</span>
-                  </div>
-                  <span className={styles.senderEmail}>{sender.fromEmail}</span>
-                </div>
-                <a
-                  className={`button secondary ${styles.reconnectButton}`}
-                  href={`/api/auth/google/connect?email=${encodeURIComponent(sender.fromEmail)}&next=${encodeURIComponent("/campaigns/new")}`}
-                >
-                  Reconnect
-                </a>
-              </div>
-            ))}
-
-            <a
-              className={`button${connectedSenders.length ? " secondary" : ""} ${styles.connectButton}`}
-              href="/api/auth/google/connect"
-            >
-              <Plus aria-hidden="true" />
-              {connectedSenders.length ? "Connect another Gmail" : "Connect Gmail"}
-            </a>
-          </div>
-        </aside>
-      </section>
+          ];
+        })}
+        templates={templates.map((entry) => ({
+          id: entry.id,
+          label: entry.name,
+          formatLabel: getTemplateFormatLabel(normalizeTemplateFormat(entry.format)),
+          subject: entry.subject,
+          snippet: getTemplateSnippet(entry.format, entry.htmlBody)
+        }))}
+        senders={connectedSenders.map((entry) => ({
+          id: entry.id,
+          label: `${entry.name} <${entry.fromEmail}>`,
+          name: entry.name,
+          email: entry.fromEmail,
+          status: resolveBounceMonitoringStatus(entry),
+          backfillCompleted: Boolean(entry.bounceBackfillCompletedAt)
+        }))}
+        disconnectedSenderCount={disconnectedSenders.length}
+        reconnectHref={
+          disconnectedSenders[0]
+            ? `/api/auth/google/connect?email=${encodeURIComponent(disconnectedSenders[0].fromEmail)}&next=${encodeURIComponent("/campaigns/new")}`
+            : undefined
+        }
+      />
     </div>
   );
 }

@@ -1,11 +1,41 @@
 "use client";
 
-import { CalendarClock, FilePlus2, FileText, Sparkles, Trash2, TriangleAlert } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  CalendarClock,
+  Check,
+  Clock3,
+  FilePlus2,
+  FileText,
+  Mail,
+  Plus,
+  Search,
+  Sparkles,
+  Trash2,
+  TriangleAlert,
+  Upload,
+  Users
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
 import { useErrorToast, useErrorToastEffect } from "@/components/error-toast-provider";
+import {
+  BounceMonitoringStatus,
+  type BounceMonitoringStatusKind
+} from "@/components/senders/bounce-monitoring-status";
 import { SequenceLimitDialog } from "@/components/sequence-limit-dialog";
+import {
+  WIZARD_STEPS,
+  filterAudienceOptions,
+  filterTemplateOptions,
+  isAudienceStepComplete,
+  isTimingStepComplete,
+  type AudienceOption,
+  type TemplateOption,
+  type WizardStep
+} from "@/components/campaign-builder-wizard";
 import { mergeAttachmentFiles } from "@/lib/campaign-attachments";
 import { convertScheduledLocalInputToUtc, fallbackTimeZones } from "@/lib/schedule";
 import {
@@ -23,6 +53,13 @@ type MappingOption = Option & {
   importId: string;
 };
 
+type SenderOption = Option & {
+  name: string;
+  email: string;
+  status: BounceMonitoringStatusKind;
+  backfillCompleted: boolean;
+};
+
 const weekdayOptions = [
   { label: "Sun", value: 0 },
   { label: "Mon", value: 1 },
@@ -33,7 +70,26 @@ const weekdayOptions = [
   { label: "Sat", value: 6 }
 ] as const;
 
+const timingOptions = [
+  {
+    value: "immediate",
+    title: "Right away",
+    description: "Start sending as soon as the sequence is created."
+  },
+  {
+    value: "once",
+    title: "Schedule once",
+    description: "Choose one future date and time for launch."
+  },
+  {
+    value: "recurring",
+    title: "Repeat on a schedule",
+    description: "Run this sequence daily or on selected weekdays."
+  }
+] as const;
+
 const DEFAULT_BROWSER_TIME_ZONE = "America/New_York";
+const contactCountFormatter = new Intl.NumberFormat("en-US");
 
 function readBrowserTimeZone() {
   try {
@@ -44,21 +100,31 @@ function readBrowserTimeZone() {
 }
 
 export function CampaignBuilder(props: {
-  imports: Option[];
+  imports: AudienceOption[];
   mappings: MappingOption[];
-  templates: Option[];
-  senders: Option[];
+  templates: TemplateOption[];
+  senders: SenderOption[];
   disconnectedSenderCount?: number;
   reconnectHref?: string;
 }) {
   const router = useRouter();
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
+  const stepHeadingRef = useRef<HTMLHeadingElement | null>(null);
+  const hasMountedRef = useRef(false);
   const { showSuccess } = useErrorToast();
   const [state, setState] = useState<{ pending: boolean; error?: string }>({ pending: false });
+  const [activeStep, setActiveStep] = useState<WizardStep>(0);
+  const [sequenceName, setSequenceName] = useState("");
+  const [audienceQuery, setAudienceQuery] = useState("");
+  const [templateQuery, setTemplateQuery] = useState("");
   const [attachments, setAttachments] = useState<File[]>([]);
-  const [selectedImportId, setSelectedImportId] = useState(props.imports[0]?.id ?? "");
+  const [selectedImportId, setSelectedImportId] = useState("");
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [selectedSenderId, setSelectedSenderId] = useState(props.senders[0]?.id ?? "");
   const [scheduleType, setScheduleType] = useState("immediate");
+  const [scheduledFor, setScheduledFor] = useState("");
   const [frequency, setFrequency] = useState("weekly");
+  const [sendTime, setSendTime] = useState("09:00");
   const [selectedWeekdays, setSelectedWeekdays] = useState<number[]>([1]);
   const [browserTimeZone, setBrowserTimeZone] = useState(DEFAULT_BROWSER_TIME_ZONE);
   const [selectedTimeZone, setSelectedTimeZone] = useState(DEFAULT_BROWSER_TIME_ZONE);
@@ -66,10 +132,8 @@ export function CampaignBuilder(props: {
   const [limitCampaignId, setLimitCampaignId] = useState<string | null>(null);
   const [queueing, setQueueing] = useState(false);
   const [queueError, setQueueError] = useState<string | null>(null);
-  const [selectedMappingId, setSelectedMappingId] = useState(() => {
-    const firstImportId = props.imports[0]?.id;
-    return props.mappings.find((mapping) => mapping.importId === firstImportId)?.id ?? "";
-  });
+  const [selectedMappingId, setSelectedMappingId] = useState("");
+
   const timeZoneOptions = useMemo(() => {
     const labels = new Map<string, string>([
       ["America/New_York", "Eastern Time (America/New_York)"],
@@ -100,6 +164,14 @@ export function CampaignBuilder(props: {
     () => props.mappings.filter((mapping) => mapping.importId === selectedImportId),
     [props.mappings, selectedImportId]
   );
+  const filteredAudiences = useMemo(
+    () => filterAudienceOptions(props.imports, audienceQuery),
+    [audienceQuery, props.imports]
+  );
+  const filteredTemplates = useMemo(
+    () => filterTemplateOptions(props.templates, templateQuery),
+    [props.templates, templateQuery]
+  );
 
   useEffect(() => {
     const nextTimeZone = readBrowserTimeZone();
@@ -118,9 +190,41 @@ export function CampaignBuilder(props: {
     }
   }, [mappingOptions, selectedMappingId]);
 
+  useEffect(() => {
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true;
+      return;
+    }
+
+    stepHeadingRef.current?.focus();
+  }, [activeStep]);
+
   const selectedImport = props.imports.find((entry) => entry.id === selectedImportId) ?? null;
+  const selectedTemplate = props.templates.find((entry) => entry.id === selectedTemplateId) ?? null;
+  const selectedSender = props.senders.find((entry) => entry.id === selectedSenderId) ?? null;
   const activeMapping = mappingOptions.find((mapping) => mapping.id === selectedMappingId) ?? mappingOptions[0] ?? null;
+  const hasSenders = props.senders.length > 0;
+  const hasTemplates = props.templates.length > 0;
+  const hasImports = props.imports.length > 0;
+  const needsReconnect = !hasSenders && (props.disconnectedSenderCount ?? 0) > 0;
+  const audienceStepComplete = isAudienceStepComplete(sequenceName, selectedImportId, selectedMappingId);
+  const timingStepComplete = isTimingStepComplete({
+    scheduleType,
+    scheduledFor,
+    sendTime,
+    frequency,
+    selectedWeekdays
+  });
+  const canCreateSequence = audienceStepComplete && Boolean(selectedTemplateId && selectedSenderId) && timingStepComplete;
+
   useErrorToastEffect(state.error, "Sequence creation failed");
+
+  const timingSummary =
+    scheduleType === "immediate"
+      ? "Starts sending right after you create it."
+      : scheduleType === "once"
+        ? `Sends once at the chosen time in ${selectedTimeZone}.`
+        : `Repeats ${frequency === "daily" ? "every day" : "weekly"} in ${selectedTimeZone}.`;
 
   function formatAttachmentSize(bytes: number) {
     if (bytes >= 1024 * 1024) {
@@ -143,15 +247,52 @@ export function CampaignBuilder(props: {
     return extension && extension.length <= 5 ? extension : "FILE";
   }
 
+  function changeStep(nextStep: WizardStep) {
+    setState({ pending: false });
+    setActiveStep(nextStep);
+  }
+
+  function canOpenStep(step: WizardStep) {
+    if (step <= activeStep) return true;
+    if (step !== activeStep + 1) return false;
+    if (step === 1) return audienceStepComplete;
+    if (step === 2) return audienceStepComplete && Boolean(selectedTemplateId);
+    return audienceStepComplete && Boolean(selectedTemplateId) && timingStepComplete;
+  }
+
+  function resetBuilder() {
+    setSequenceName("");
+    setAudienceQuery("");
+    setTemplateQuery("");
+    setAttachments([]);
+    setSelectedImportId("");
+    setSelectedMappingId("");
+    setSelectedTemplateId("");
+    setSelectedSenderId(props.senders[0]?.id ?? "");
+    setScheduleType("immediate");
+    setScheduledFor("");
+    setFrequency("weekly");
+    setSendTime("09:00");
+    setSelectedWeekdays([1]);
+    setSelectedTimeZone(browserTimeZone);
+    setActiveStep(0);
+  }
+
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (!canCreateSequence) {
+      setState({ pending: false, error: "Complete each step and connect a Gmail sender before creating the sequence." });
+      return;
+    }
+
     const form = event.currentTarget;
     setState({ pending: true });
     const formData = new FormData(form);
     attachments.forEach((attachment) => formData.append("attachments", attachment));
-    const scheduleType = String(formData.get("scheduleType"));
+    const submittedScheduleType = String(formData.get("scheduleType"));
     const scheduleTimeZone = String(formData.get("scheduleTimeZone") || browserTimeZone);
-    const autoLaunch = scheduleType === "immediate";
+    const autoLaunch = submittedScheduleType === "immediate";
     let scheduleRule:
       | {
           type: "recurring";
@@ -171,7 +312,7 @@ export function CampaignBuilder(props: {
 
     try {
       scheduleRule =
-        scheduleType === "recurring"
+        submittedScheduleType === "recurring"
           ? {
               type: "recurring",
               frequency: formData.get("frequency"),
@@ -179,18 +320,18 @@ export function CampaignBuilder(props: {
               timeZone: scheduleTimeZone,
               ...(formData.get("frequency") === "weekly" ? { daysOfWeek: selectedWeekdays } : {})
             }
-          : scheduleType === "once"
+          : submittedScheduleType === "once"
             ? (() => {
                 const scheduledForInput = String(formData.get("scheduledFor") ?? "");
-                const scheduledFor = convertScheduledLocalInputToUtc(scheduledForInput, scheduleTimeZone);
+                const scheduledDate = convertScheduledLocalInputToUtc(scheduledForInput, scheduleTimeZone);
 
-                if (Number.isNaN(scheduledFor.getTime()) || scheduledFor <= new Date()) {
+                if (Number.isNaN(scheduledDate.getTime()) || scheduledDate <= new Date()) {
                   throw new Error("Choose a future date and time in the selected timezone.");
                 }
 
                 return {
                   type: "once" as const,
-                  scheduledFor: scheduledFor.toISOString(),
+                  scheduledFor: scheduledDate.toISOString(),
                   timeZone: scheduleTimeZone
                 };
               })()
@@ -226,7 +367,7 @@ export function CampaignBuilder(props: {
       }
       if (payload.code === SEQUENCE_CONCURRENCY_LIMIT_CODE && typeof payload.campaignId === "string") {
         form.reset();
-        setAttachments([]);
+        resetBuilder();
         setLimitCampaignId(payload.campaignId);
         setLimitDialog("concurrency");
         setState({ pending: false });
@@ -241,14 +382,7 @@ export function CampaignBuilder(props: {
     if (attachmentInputRef.current) {
       attachmentInputRef.current.value = "";
     }
-    setAttachments([]);
-    const firstImportId = props.imports[0]?.id ?? "";
-    setSelectedImportId(firstImportId);
-    setSelectedMappingId(props.mappings.find((mapping) => mapping.importId === firstImportId)?.id ?? "");
-    setScheduleType("immediate");
-    setFrequency("weekly");
-    setSelectedWeekdays([1]);
-    setSelectedTimeZone(browserTimeZone);
+    resetBuilder();
     router.refresh();
     setState({ pending: false });
   }
@@ -279,344 +413,612 @@ export function CampaignBuilder(props: {
     }
   }
 
-  const renderOptions = (options: Option[]) =>
-    options.map((option) => (
-      <option key={option.id} value={option.id}>
-        {option.label}
-      </option>
-    ));
-
-  const hasSenders = props.senders.length > 0;
-  const hasTemplates = props.templates.length > 0;
-  const hasImports = props.imports.length > 0;
-  const canCreateSequence = hasSenders && hasTemplates && hasImports && Boolean(selectedMappingId);
-  const needsReconnect = !hasSenders && (props.disconnectedSenderCount ?? 0) > 0;
-
-  // Real, launch-relevant summary derived from the current timing selection —
-  // shown next to the create button so the final action reads back the plan.
-  const timingSummary =
-    scheduleType === "immediate"
-      ? "Starts sending right after you create it."
-      : scheduleType === "once"
-        ? `Sends once at your chosen time in ${selectedTimeZone}.`
-        : `Repeats ${frequency === "daily" ? "every day" : "weekly"} in ${selectedTimeZone}.`;
-
   return (
     <>
-    <form className={styles.builder} onSubmit={onSubmit}>
-      <ol className={styles.steps}>
-        <li className={styles.step}>
-          <span className={styles.stepMarker} aria-hidden="true">1</span>
-          <div className={styles.stepBody}>
-            <div className={styles.stepHeader}>
-              <h2 className={styles.stepTitle}>Basics</h2>
-              <span className={styles.stepHint}>Name it so you can find it on the dashboard.</span>
-            </div>
-            <div className="field">
-              <label htmlFor="campaign-name">Sequence name</label>
-              <input id="campaign-name" name="name" placeholder="April founder outreach" required />
-            </div>
-          </div>
-        </li>
+      <form className={styles.builder} onSubmit={onSubmit}>
+        <input type="hidden" name="name" value={sequenceName} />
+        <input type="hidden" name="importId" value={selectedImportId} />
+        <input type="hidden" name="mappingId" value={selectedMappingId} />
+        <input type="hidden" name="templateId" value={selectedTemplateId} />
+        <input type="hidden" name="senderProfileId" value={selectedSenderId} />
+        <input type="hidden" name="scheduleType" value={scheduleType} />
+        <input type="hidden" name="scheduledFor" value={scheduledFor} />
+        <input type="hidden" name="scheduleTimeZone" value={selectedTimeZone} />
+        <input type="hidden" name="frequency" value={frequency} />
+        <input type="hidden" name="time" value={sendTime} />
 
-        <li className={styles.step}>
-          <span className={styles.stepMarker} aria-hidden="true">2</span>
-          <div className={styles.stepBody}>
-            <div className={styles.stepHeader}>
-              <h2 className={styles.stepTitle}>Audience</h2>
-              <span className={styles.stepHint}>Who receives this sequence.</span>
-            </div>
-            <div className="field">
-              <label htmlFor="importId">Contact list</label>
-              <select
-                id="importId"
-                name="importId"
-                value={selectedImportId}
-                onChange={(event) => {
-                  setSelectedImportId(event.target.value);
-                  setState({ pending: false });
-                }}
-                required
-              >
-                <option value="">{hasImports ? "Choose the list you want to send to" : "Upload a list first"}</option>
-                {renderOptions(props.imports)}
-              </select>
-            </div>
-            <input type="hidden" name="mappingId" value={selectedMappingId} />
-            <p className={styles.builderNote}>
-              <Sparkles aria-hidden="true" />
-              <span>
-                {selectedImport && activeMapping
-                  ? `Using the saved personalization fields for ${selectedImport.label}.`
-                  : selectedImport
-                    ? `${selectedImport.label} still needs its personalization fields set up in Imports before you can send.`
-                    : "Pick a contact list and we’ll use its saved personalization fields automatically."}
-              </span>
-            </p>
-          </div>
-        </li>
+        <div className={styles.wizardLayout}>
+          <article className={styles.wizardCard} id="create-sequence">
+            <nav className={styles.stepNav} aria-label="Sequence creation progress">
+              <ol>
+                {WIZARD_STEPS.map((step, index) => {
+                  const stepIndex = index as WizardStep;
+                  const isActive = activeStep === stepIndex;
+                  const isComplete = activeStep > stepIndex;
 
-        <li className={styles.step}>
-          <span className={styles.stepMarker} aria-hidden="true">3</span>
-          <div className={styles.stepBody}>
-            <div className={styles.stepHeader}>
-              <h2 className={styles.stepTitle}>Message</h2>
-              <span className={styles.stepHint}>The email everyone in the list receives.</span>
-            </div>
-            <div className="field">
-              <label htmlFor="templateId">Email template</label>
-              <select id="templateId" name="templateId" defaultValue={props.templates[0]?.id ?? ""} required>
-                <option value="">{hasTemplates ? "Choose the email you want to send" : "Create a template first"}</option>
-                {renderOptions(props.templates)}
-              </select>
-            </div>
-          </div>
-        </li>
-
-        <li className={styles.step}>
-          <span className={styles.stepMarker} aria-hidden="true">4</span>
-          <div className={styles.stepBody}>
-            <div className={styles.stepHeader}>
-              <h2 className={styles.stepTitle}>Sender</h2>
-              <span className={styles.stepHint}>The Gmail account these emails come from.</span>
-            </div>
-            <div className="field">
-              <label htmlFor="senderProfileId">Send from</label>
-              <select id="senderProfileId" name="senderProfileId" defaultValue={props.senders[0]?.id ?? ""} required disabled={!hasSenders}>
-                <option value="">{hasSenders ? "Choose the Gmail account to send from" : needsReconnect ? "Reconnect Gmail first" : "Connect Gmail first"}</option>
-                {renderOptions(props.senders)}
-              </select>
-            </div>
-            {needsReconnect ? (
-              <p className={styles.builderNote} data-tone="warning">
-                <TriangleAlert aria-hidden="true" />
-                <span>
-                  A connected sender is required before this sequence can launch.
-                  {props.reconnectHref ? (
-                    <>
-                      {" "}
-                      <a href={props.reconnectHref}>Reconnect Gmail</a> to restore sending access.
-                    </>
-                  ) : null}
-                </span>
-              </p>
-            ) : null}
-          </div>
-        </li>
-
-        <li className={styles.step}>
-          <span className={styles.stepMarker} aria-hidden="true">5</span>
-          <div className={styles.stepBody}>
-            <div className={styles.stepHeader}>
-              <h2 className={styles.stepTitle}>Attachments</h2>
-              <span className={styles.stepHint}>Included with every email in this sequence.</span>
-            </div>
-            <input
-              ref={attachmentInputRef}
-              id="attachments"
-              type="file"
-              accept=".pdf,.doc,.docx,.txt,.rtf"
-              multiple
-              className={styles.hiddenInput}
-              onChange={(event) => {
-                const selectedFiles = Array.from(event.target.files ?? []);
-                if (selectedFiles.length) {
-                  setAttachments((currentAttachments) => mergeAttachmentFiles(currentAttachments, selectedFiles));
-                }
-                event.currentTarget.value = "";
-              }}
-            />
-            <div className={styles.attachmentComposer}>
-              <div className={styles.attachmentHeader}>
-                <label htmlFor="attachments" className={styles.attachmentLabel}>
-                  Optional attachments
-                </label>
-                <span className={styles.attachmentCount}>
-                  {attachments.length ? `${attachments.length} file${attachments.length === 1 ? "" : "s"}` : "No files yet"}
-                </span>
-                <button
-                  type="button"
-                  className={styles.addButton}
-                  onClick={() => attachmentInputRef.current?.click()}
-                  disabled={state.pending}
-                >
-                  <FilePlus2 aria-hidden="true" />
-                  Add files
-                </button>
-              </div>
-
-              {attachments.length ? (
-                <ul className={styles.attachmentList}>
-                  {attachments.map((attachment) => (
-                    <li key={getAttachmentIdentity(attachment)} className={styles.attachmentItem}>
-                      <span className={styles.attachmentIcon} aria-hidden="true">
-                        <FileText />
-                      </span>
-                      <span className={styles.attachmentName} title={attachment.name}>
-                        {attachment.name}
-                      </span>
-                      <span className={styles.attachmentMeta}>
-                        {getAttachmentTypeLabel(attachment.name)} · {formatAttachmentSize(attachment.size)}
-                      </span>
+                  return (
+                    <li key={step}>
                       <button
                         type="button"
-                        className={styles.removeButton}
-                        aria-label={`Remove ${attachment.name}`}
-                        onClick={() =>
-                          setAttachments((currentAttachments) =>
-                            currentAttachments.filter((file) => getAttachmentIdentity(file) !== getAttachmentIdentity(attachment))
-                          )
-                        }
-                        disabled={state.pending}
+                        className={`${styles.stepButton}${isActive ? ` ${styles.stepButtonActive}` : ""}${isComplete ? ` ${styles.stepButtonComplete}` : ""}`}
+                        aria-current={isActive ? "step" : undefined}
+                        disabled={!canOpenStep(stepIndex)}
+                        onClick={() => changeStep(stepIndex)}
                       >
-                        <Trash2 aria-hidden="true" />
+                        <span className={styles.stepNumber} aria-hidden="true">
+                          {isComplete ? <Check /> : index + 1}
+                        </span>
+                        <span>{step}</span>
                       </button>
                     </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className={styles.attachmentEmpty}>
-                  No files attached yet — add resumes, cover letters, or supporting documents.
-                </p>
-              )}
+                  );
+                })}
+              </ol>
+            </nav>
 
-              <p className={styles.attachmentFooter}>PDF, DOC, DOCX, TXT, or RTF · up to 10 MB each</p>
+            <div className={styles.stepIntro} aria-live="polite">
+              <span>Step {activeStep + 1} of {WIZARD_STEPS.length}</span>
+              <h2 ref={stepHeadingRef} tabIndex={-1}>
+                {activeStep === 0
+                  ? "Choose your audience"
+                  : activeStep === 1
+                    ? "Choose the message"
+                    : activeStep === 2
+                      ? "Choose launch timing"
+                      : "Review and create"}
+              </h2>
+              <p>
+                {activeStep === 0
+                  ? "Name the sequence and select the contact list that should receive it."
+                  : activeStep === 1
+                    ? "Pick the existing template that everyone in this audience will receive."
+                    : activeStep === 2
+                      ? "Choose when to launch and add any files that should travel with every email."
+                      : "Confirm the plan below. Nothing is sent until you create the sequence."}
+              </p>
             </div>
-          </div>
-        </li>
 
-        <li className={styles.step}>
-          <span className={styles.stepMarker} aria-hidden="true">6</span>
-          <div className={styles.stepBody}>
-            <div className={styles.stepHeader}>
-              <h2 className={styles.stepTitle}>Timing</h2>
-              <span className={styles.stepHint}>Launch now, later, or on a repeating schedule.</span>
-            </div>
-            <div className={styles.timingFields}>
-              <div className="field">
-                <label htmlFor="scheduleType">When should this send?</label>
-                <select
-                  id="scheduleType"
-                  name="scheduleType"
-                  value={scheduleType}
-                  onChange={(event) => setScheduleType(event.target.value)}
-                >
-                  <option value="immediate">Right away</option>
-                  <option value="once">Schedule once</option>
-                  <option value="recurring">Repeat on a schedule</option>
-                </select>
-              </div>
-              {scheduleType === "once" ? (
+            {activeStep === 0 ? (
+              <section className={styles.stepContent} aria-label="Audience step">
                 <div className="field">
-                  <label htmlFor="scheduledFor">Send on</label>
-                  <input id="scheduledFor" name="scheduledFor" type="datetime-local" required />
+                  <label htmlFor="campaign-name">Sequence name</label>
+                  <input
+                    id="campaign-name"
+                    value={sequenceName}
+                    onChange={(event) => {
+                      setSequenceName(event.target.value);
+                      setState({ pending: false });
+                    }}
+                    placeholder="April founder outreach"
+                    autoComplete="off"
+                    required
+                  />
                 </div>
-              ) : null}
-              {scheduleType !== "immediate" ? (
-                <div className="field">
-                  <label htmlFor="scheduleTimeZone">Send in timezone</label>
-                  <select
-                    id="scheduleTimeZone"
-                    name="scheduleTimeZone"
-                    value={selectedTimeZone}
-                    onChange={(event) => setSelectedTimeZone(event.target.value)}
+
+                {hasImports ? (
+                  <>
+                    <div className={`field ${styles.searchField}`}>
+                      <label htmlFor="audience-search">Search contact lists</label>
+                      <span className={styles.searchControl}>
+                        <Search aria-hidden="true" />
+                        <input
+                          id="audience-search"
+                          type="search"
+                          value={audienceQuery}
+                          onChange={(event) => setAudienceQuery(event.target.value)}
+                          placeholder="Search by list or mapped field"
+                        />
+                      </span>
+                    </div>
+
+                    <div className={styles.optionList} role="listbox" aria-label="Available contact lists">
+                      {filteredAudiences.map((audience) => {
+                        const selected = audience.id === selectedImportId;
+
+                        return (
+                          <button
+                            key={audience.id}
+                            type="button"
+                            role="option"
+                            aria-selected={selected}
+                            className={`${styles.optionCard}${selected ? ` ${styles.optionCardSelected}` : ""}`}
+                            onClick={() => {
+                              setSelectedImportId(audience.id);
+                              setState({ pending: false });
+                            }}
+                          >
+                            <span className={styles.optionIcon} aria-hidden="true"><Users /></span>
+                            <span className={styles.optionCopy}>
+                              <strong>{audience.label}</strong>
+                              <span>{contactCountFormatter.format(audience.rowCount)} contacts</span>
+                              <span className={styles.fieldChips}>
+                                {audience.mappedFields.length ? (
+                                  audience.mappedFields.slice(0, 4).map((field) => <span key={field}>{field}</span>)
+                                ) : (
+                                  <span>No personalization fields mapped</span>
+                                )}
+                              </span>
+                            </span>
+                            <span className={styles.selectionMark} aria-hidden="true">{selected ? <Check /> : null}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {!filteredAudiences.length ? (
+                      <div className={styles.emptyState}>
+                        <Search aria-hidden="true" />
+                        <strong>No contact lists match “{audienceQuery}”</strong>
+                        <span>Try a different list name or mapped field.</span>
+                      </div>
+                    ) : null}
+
+                    <a className={styles.inlineAction} href="/imports">
+                      <Upload aria-hidden="true" />
+                      Import or add a new CSV
+                    </a>
+                  </>
+                ) : (
+                  <div className={styles.emptyState}>
+                    <Upload aria-hidden="true" />
+                    <strong>No contact lists yet</strong>
+                    <span>Import a CSV, map its fields, then return here to build the sequence.</span>
+                    <a className="button" href="/imports">Import a CSV</a>
+                  </div>
+                )}
+
+                {selectedImport ? (
+                  <p className={styles.builderNote} data-tone={activeMapping ? undefined : "warning"}>
+                    {activeMapping ? <Sparkles aria-hidden="true" /> : <TriangleAlert aria-hidden="true" />}
+                    <span>
+                      {activeMapping
+                        ? `Using the saved personalization fields for ${selectedImport.label}.`
+                        : `${selectedImport.label} still needs its personalization fields set up in Imports before you can continue.`}
+                    </span>
+                  </p>
+                ) : null}
+
+                <div className={styles.stepActions}>
+                  <a className={`button secondary ${styles.secondaryAction}`} href="/sequences">Cancel</a>
+                  <button
+                    className={`button ${styles.primaryAction}`}
+                    type="button"
+                    disabled={!audienceStepComplete}
+                    onClick={() => changeStep(1)}
                   >
-                    {timeZoneOptions.map((timeZone) => (
-                      <option key={timeZone.value} value={timeZone.value}>
-                        {timeZone.label}
-                      </option>
-                    ))}
+                    Next
+                    <ArrowRight aria-hidden="true" />
+                  </button>
+                </div>
+              </section>
+            ) : null}
+
+            {activeStep === 1 ? (
+              <section className={styles.stepContent} aria-label="Message step">
+                <div className={styles.contextSummary}>
+                  <Users aria-hidden="true" />
+                  <span><strong>{selectedImport?.label}</strong> · {contactCountFormatter.format(selectedImport?.rowCount ?? 0)} contacts</span>
+                </div>
+
+                {hasTemplates ? (
+                  <>
+                    <div className={`field ${styles.searchField}`}>
+                      <label htmlFor="template-search">Search templates</label>
+                      <span className={styles.searchControl}>
+                        <Search aria-hidden="true" />
+                        <input
+                          id="template-search"
+                          type="search"
+                          value={templateQuery}
+                          onChange={(event) => setTemplateQuery(event.target.value)}
+                          placeholder="Search by name, subject, or content"
+                        />
+                      </span>
+                    </div>
+
+                    <div className={styles.templateList} role="listbox" aria-label="Available email templates">
+                      {filteredTemplates.map((template) => {
+                        const selected = template.id === selectedTemplateId;
+
+                        return (
+                          <button
+                            key={template.id}
+                            type="button"
+                            role="option"
+                            aria-selected={selected}
+                            className={`${styles.templateCard}${selected ? ` ${styles.optionCardSelected}` : ""}`}
+                            onClick={() => {
+                              setSelectedTemplateId(template.id);
+                              setState({ pending: false });
+                            }}
+                          >
+                            <span className={styles.templateHeader}>
+                              <span>
+                                <strong>{template.label}</strong>
+                                <span className={styles.formatBadge}>{template.formatLabel}</span>
+                              </span>
+                              <span className={styles.selectionMark} aria-hidden="true">{selected ? <Check /> : null}</span>
+                            </span>
+                            <span className={styles.templateSubject}>{template.subject || "No subject"}</span>
+                            <span className={styles.templateSnippet}>{template.snippet}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {!filteredTemplates.length ? (
+                      <div className={styles.emptyState}>
+                        <Search aria-hidden="true" />
+                        <strong>No templates match “{templateQuery}”</strong>
+                        <span>Try another name, subject, or phrase.</span>
+                      </div>
+                    ) : null}
+
+                    <a className={styles.inlineAction} href="/templates">
+                      <Plus aria-hidden="true" />
+                      Create a new template
+                    </a>
+                  </>
+                ) : (
+                  <div className={styles.emptyState}>
+                    <FileText aria-hidden="true" />
+                    <strong>No email templates yet</strong>
+                    <span>Create a template before continuing this sequence.</span>
+                    <a className="button" href="/templates">Create a template</a>
+                  </div>
+                )}
+
+                <div className={styles.stepActions}>
+                  <button className={`button secondary ${styles.secondaryAction}`} type="button" onClick={() => changeStep(0)}>
+                    <ArrowLeft aria-hidden="true" />
+                    Back
+                  </button>
+                  <button
+                    className={`button ${styles.primaryAction}`}
+                    type="button"
+                    disabled={!selectedTemplateId}
+                    onClick={() => changeStep(2)}
+                  >
+                    Next
+                    <ArrowRight aria-hidden="true" />
+                  </button>
+                </div>
+              </section>
+            ) : null}
+
+            {activeStep === 2 ? (
+              <section className={styles.stepContent} aria-label="Timing step">
+                <div className={styles.summaryStrip}>
+                  <span><Users aria-hidden="true" /><strong>{selectedImport?.label}</strong></span>
+                  <span><Mail aria-hidden="true" /><strong>{selectedTemplate?.label}</strong></span>
+                </div>
+
+                <fieldset className={styles.timingChoiceGroup}>
+                  <legend>When should this send?</legend>
+                  <div className={styles.timingChoices}>
+                    {timingOptions.map((option) => {
+                      const selected = scheduleType === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          className={`${styles.timingChoice}${selected ? ` ${styles.timingChoiceSelected}` : ""}`}
+                          aria-pressed={selected}
+                          onClick={() => {
+                            setScheduleType(option.value);
+                            setState({ pending: false });
+                          }}
+                        >
+                          <Clock3 aria-hidden="true" />
+                          <strong>{option.title}</strong>
+                          <span>{option.description}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </fieldset>
+
+                {scheduleType !== "immediate" ? (
+                  <div className={styles.timingFields}>
+                    {scheduleType === "once" ? (
+                      <div className="field">
+                        <label htmlFor="scheduledFor-control">Send on</label>
+                        <input
+                          id="scheduledFor-control"
+                          type="datetime-local"
+                          value={scheduledFor}
+                          onChange={(event) => setScheduledFor(event.target.value)}
+                          required
+                        />
+                      </div>
+                    ) : null}
+                    <div className="field">
+                      <label htmlFor="scheduleTimeZone-control">Send in timezone</label>
+                      <select
+                        id="scheduleTimeZone-control"
+                        value={selectedTimeZone}
+                        onChange={(event) => setSelectedTimeZone(event.target.value)}
+                      >
+                        {timeZoneOptions.map((timeZone) => (
+                          <option key={timeZone.value} value={timeZone.value}>{timeZone.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    {scheduleType === "recurring" ? (
+                      <>
+                        <div className="field">
+                          <label htmlFor="frequency-control">Repeat</label>
+                          <select
+                            id="frequency-control"
+                            value={frequency}
+                            onChange={(event) => setFrequency(event.target.value)}
+                          >
+                            <option value="daily">Every day</option>
+                            <option value="weekly">Every week</option>
+                          </select>
+                        </div>
+                        <div className="field">
+                          <label htmlFor="time-control">Send at</label>
+                          <input
+                            id="time-control"
+                            type="time"
+                            value={sendTime}
+                            onChange={(event) => setSendTime(event.target.value)}
+                            required
+                          />
+                        </div>
+                      </>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {scheduleType === "recurring" && frequency === "weekly" ? (
+                  <div className={`field ${styles.weekdayField}`}>
+                    <span className={styles.weekdayLabel}>Days</span>
+                    <div className={styles.weekdayGroup} aria-label="Recurring weekdays">
+                      {weekdayOptions.map((day) => {
+                        const selected = selectedWeekdays.includes(day.value);
+                        return (
+                          <button
+                            key={day.value}
+                            type="button"
+                            className={`${styles.weekdayChip}${selected ? ` ${styles.weekdayChipSelected}` : ""}`}
+                            aria-pressed={selected}
+                            onClick={() => {
+                              setSelectedWeekdays((current) =>
+                                current.includes(day.value)
+                                  ? current.filter((value) => value !== day.value)
+                                  : [...current, day.value].sort((left, right) => left - right)
+                              );
+                              setState({ pending: false });
+                            }}
+                          >
+                            {day.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+
+                <input
+                  ref={attachmentInputRef}
+                  id="attachments"
+                  type="file"
+                  accept=".pdf,.doc,.docx,.txt,.rtf"
+                  multiple
+                  className={styles.hiddenInput}
+                  onChange={(event) => {
+                    const selectedFiles = Array.from(event.target.files ?? []);
+                    if (selectedFiles.length) {
+                      setAttachments((currentAttachments) => mergeAttachmentFiles(currentAttachments, selectedFiles));
+                    }
+                    event.currentTarget.value = "";
+                  }}
+                />
+                <div className={styles.attachmentComposer}>
+                  <div className={styles.attachmentHeader}>
+                    <span>
+                      <strong>Optional attachments</strong>
+                      <small>Included with every email in this sequence.</small>
+                    </span>
+                    <span className={styles.attachmentCount}>
+                      {attachments.length ? `${attachments.length} file${attachments.length === 1 ? "" : "s"}` : "No files yet"}
+                    </span>
+                    <button
+                      type="button"
+                      className={styles.addButton}
+                      onClick={() => attachmentInputRef.current?.click()}
+                      disabled={state.pending}
+                    >
+                      <FilePlus2 aria-hidden="true" />
+                      Add files
+                    </button>
+                  </div>
+
+                  {attachments.length ? (
+                    <ul className={styles.attachmentList}>
+                      {attachments.map((attachment) => (
+                        <li key={getAttachmentIdentity(attachment)} className={styles.attachmentItem}>
+                          <span className={styles.attachmentIcon} aria-hidden="true"><FileText /></span>
+                          <span className={styles.attachmentName} title={attachment.name}>{attachment.name}</span>
+                          <span className={styles.attachmentMeta}>
+                            {getAttachmentTypeLabel(attachment.name)} · {formatAttachmentSize(attachment.size)}
+                          </span>
+                          <button
+                            type="button"
+                            className={styles.removeButton}
+                            aria-label={`Remove ${attachment.name}`}
+                            onClick={() =>
+                              setAttachments((currentAttachments) =>
+                                currentAttachments.filter((file) => getAttachmentIdentity(file) !== getAttachmentIdentity(attachment))
+                              )
+                            }
+                            disabled={state.pending}
+                          >
+                            <Trash2 aria-hidden="true" />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className={styles.attachmentEmpty}>No files attached yet — add resumes, cover letters, or supporting documents.</p>
+                  )}
+                  <p className={styles.attachmentFooter}>PDF, DOC, DOCX, TXT, or RTF · up to 10 MB each</p>
+                </div>
+
+                <div className={styles.stepActions}>
+                  <button className={`button secondary ${styles.secondaryAction}`} type="button" onClick={() => changeStep(1)}>
+                    <ArrowLeft aria-hidden="true" />
+                    Back
+                  </button>
+                  <button
+                    className={`button ${styles.primaryAction}`}
+                    type="button"
+                    disabled={!timingStepComplete}
+                    onClick={() => changeStep(3)}
+                  >
+                    Review
+                    <ArrowRight aria-hidden="true" />
+                  </button>
+                </div>
+              </section>
+            ) : null}
+
+            {activeStep === 3 ? (
+              <section className={styles.stepContent} aria-label="Review step">
+                <dl className={styles.reviewList}>
+                  <div><dt>Sequence name</dt><dd>{sequenceName}</dd></div>
+                  <div><dt>Audience</dt><dd>{selectedImport?.label} · {contactCountFormatter.format(selectedImport?.rowCount ?? 0)} contacts</dd></div>
+                  <div><dt>Template</dt><dd>{selectedTemplate?.label} · {selectedTemplate?.formatLabel}</dd></div>
+                  <div><dt>Sender email</dt><dd>{selectedSender?.email ?? "Connect a Gmail sender"}</dd></div>
+                  <div><dt>Timing</dt><dd>{timingSummary}</dd></div>
+                  <div><dt>Attachments</dt><dd>{attachments.length ? `${attachments.length} attached` : "None"}</dd></div>
+                </dl>
+
+                {!selectedSender ? (
+                  <p className={styles.validationMessage} role="status">
+                    <TriangleAlert aria-hidden="true" />
+                    Connect a Gmail account in the sender panel before creating this sequence.
+                  </p>
+                ) : (
+                  <p className={styles.readyMessage} role="status">
+                    <Check aria-hidden="true" />
+                    Ready to create. Your existing launch and validation flow will run next.
+                  </p>
+                )}
+
+                {state.error ? <p className={styles.validationMessage} role="alert">{state.error}</p> : null}
+
+                <div className={styles.stepActions}>
+                  <button className={`button secondary ${styles.secondaryAction}`} type="button" onClick={() => changeStep(2)}>
+                    <ArrowLeft aria-hidden="true" />
+                    Back
+                  </button>
+                  <button className={`button ${styles.createButton}`} type="submit" disabled={state.pending || !canCreateSequence}>
+                    {state.pending ? "Preparing sequence..." : "Create sequence"}
+                  </button>
+                </div>
+              </section>
+            ) : null}
+          </article>
+
+          <aside className={styles.senderSelector} aria-label="Sender selection">
+            <div className={styles.senderHeading}>
+              <span className={styles.senderIcon}><Mail aria-hidden="true" /></span>
+              <span>
+                <strong>Send from</strong>
+                <small>Connected Gmail account</small>
+              </span>
+            </div>
+
+            {hasSenders ? (
+              <>
+                <div className="field">
+                  <label htmlFor="senderProfileId">Send from</label>
+                  <select
+                    id="senderProfileId"
+                    value={selectedSenderId}
+                    onChange={(event) => {
+                      setSelectedSenderId(event.target.value);
+                      setState({ pending: false });
+                    }}
+                    aria-label="Send from connected Gmail account"
+                    required
+                  >
+                    {props.senders.map((sender) => <option key={sender.id} value={sender.id}>{sender.label}</option>)}
                   </select>
                 </div>
-              ) : null}
-              {scheduleType === "recurring" ? (
-                <>
-                  <div className="field">
-                    <label htmlFor="frequency">Repeat</label>
-                    <select
-                      id="frequency"
-                      name="frequency"
-                      value={frequency}
-                      onChange={(event) => setFrequency(event.target.value)}
-                    >
-                      <option value="daily">Every day</option>
-                      <option value="weekly">Every week</option>
-                    </select>
-                  </div>
-                  <div className="field">
-                    <label htmlFor="time">Send at</label>
-                    <input id="time" name="time" type="time" defaultValue="09:00" required />
-                  </div>
-                </>
-              ) : null}
-            </div>
-            {scheduleType === "recurring" && frequency === "weekly" ? (
-              <div className={`field ${styles.weekdayField}`}>
-                <span className={styles.weekdayLabel}>Days</span>
-                <div className={styles.weekdayGroup} aria-label="Recurring weekdays">
-                  {weekdayOptions.map((day) => {
-                    const selected = selectedWeekdays.includes(day.value);
-                    return (
-                      <button
-                        key={day.value}
-                        type="button"
-                        className={`${styles.weekdayChip}${selected ? ` ${styles.weekdayChipSelected}` : ""}`}
-                        aria-pressed={selected}
-                        onClick={() => {
-                          setSelectedWeekdays((current) =>
-                            current.includes(day.value)
-                              ? current.filter((value) => value !== day.value)
-                              : [...current, day.value].sort((left, right) => left - right)
-                          );
-                          setState({ pending: false });
-                        }}
-                      >
-                        {day.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : null}
-            {scheduleType === "recurring" ? (
-              <p className={styles.timingNote}>
-                We’ll keep using this list, template, and sender each time the sequence runs.
-              </p>
-            ) : null}
-          </div>
-        </li>
-      </ol>
 
-      <div className={styles.builderFooter}>
-        {!selectedMappingId && selectedImport ? (
-          <p className={styles.footerNote} data-tone="warning">
-            <TriangleAlert aria-hidden="true" />
-            <span>Finish the personalization fields for this list on the Imports page before creating the sequence.</span>
-          </p>
-        ) : (
-          <p className={styles.footerNote}>
-            <CalendarClock aria-hidden="true" />
-            <span>{timingSummary}</span>
-          </p>
-        )}
-        <button className={`button ${styles.createButton}`} type="submit" disabled={state.pending || !canCreateSequence}>
-          {state.pending ? "Preparing sequence..." : "Create sequence"}
-        </button>
-      </div>
-    </form>
-    <SequenceLimitDialog
-      open={limitDialog !== null}
-      kind={limitDialog ?? "storage"}
-      loading={queueing}
-      error={queueError}
-      onWaitForSlot={waitForSlot}
-      onClose={() => {
-        if (!queueing) {
-          setLimitDialog(null);
-          setQueueError(null);
-        }
-      }}
-    />
+                {selectedSender ? (
+                  <div className={styles.selectedSender}>
+                    <span className={styles.connectedRow}>
+                      <strong>{selectedSender.name}</strong>
+                      <span>Connected</span>
+                    </span>
+                    <span className={styles.senderEmail}>{selectedSender.email}</span>
+                    <BounceMonitoringStatus
+                      key={selectedSender.id}
+                      senderId={selectedSender.id}
+                      status={selectedSender.status}
+                      backfillCompleted={selectedSender.backfillCompleted}
+                    />
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <div className={styles.senderEmpty}>
+                <TriangleAlert aria-hidden="true" />
+                <strong>{needsReconnect ? "Reconnect Gmail" : "Connect Gmail"}</strong>
+                <span>A connected sender is required before this sequence can be created.</span>
+              </div>
+            )}
+
+            <a
+              className={styles.connectAction}
+              href={!hasSenders && props.reconnectHref ? props.reconnectHref : "/api/auth/google/connect"}
+            >
+              <Plus aria-hidden="true" />
+              {hasSenders ? "Connect another Gmail" : needsReconnect ? "Reconnect Gmail" : "Connect Gmail"}
+            </a>
+
+            <div className={styles.progressSummary}>
+              <span className={styles.progressHeader}>
+                <strong>Progress</strong>
+                <span>{activeStep + 1} / {WIZARD_STEPS.length}</span>
+              </span>
+              <span className={styles.progressTrack} aria-hidden="true">
+                <span style={{ width: `${((activeStep + 1) / WIZARD_STEPS.length) * 100}%` }} />
+              </span>
+              <ul>
+                <li data-complete={audienceStepComplete || undefined}>
+                  <span>Audience</span><strong>{selectedImport?.label ?? "Not selected"}</strong>
+                </li>
+                <li data-complete={Boolean(selectedTemplateId) || undefined}>
+                  <span>Message</span><strong>{selectedTemplate?.label ?? "Not selected"}</strong>
+                </li>
+                <li data-complete={timingStepComplete || undefined}>
+                  <span>Timing</span><strong>{timingOptions.find((option) => option.value === scheduleType)?.title}</strong>
+                </li>
+              </ul>
+            </div>
+          </aside>
+        </div>
+      </form>
+
+      <SequenceLimitDialog
+        open={limitDialog !== null}
+        kind={limitDialog ?? "storage"}
+        loading={queueing}
+        error={queueError}
+        onWaitForSlot={waitForSlot}
+        onClose={() => {
+          if (!queueing) {
+            setLimitDialog(null);
+            setQueueError(null);
+          }
+        }}
+      />
     </>
   );
 }

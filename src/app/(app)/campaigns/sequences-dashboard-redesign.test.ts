@@ -402,13 +402,11 @@ describe("create page (#4, #5)", () => {
     expect(CREATE).not.toContain("Back to sequences");
   });
 
-  it("renders the compact Send from Gmail panel (#5)", () => {
-    expect(CREATE).toContain("styles.senderPanel");
-    expect(CREATE).toContain("Send from Gmail");
-    expect(CREATE).toContain("styles.senderChip}>Connected</span>");
-    expect(CREATE).toContain("Connect another Gmail");
-    const senderPanelCss = CREATE_CSS.slice(CREATE_CSS.indexOf(".senderPanel {"));
-    expect(senderPanelCss).toContain("align-self: start;");
+  it("delegates sender selection to the create-page wizard (#5)", () => {
+    expect(CREATE).not.toContain("styles.senderPanel");
+    expect(CREATE).not.toContain("Send from Gmail");
+    expect(CREATE).toContain("senders={connectedSenders.map");
+    expect(CREATE).toContain("resolveBounceMonitoringStatus(entry)");
   });
 
   it("the /sequences/new alias reuses the same page", () => {
