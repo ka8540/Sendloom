@@ -116,6 +116,25 @@ describe("Step 1: Audience", () => {
     expect(BUILDER_CSS).toMatch(/\.audienceMenu\s*\{[^}]*position:\s*absolute;/s);
   });
 
+  it("uses an opaque, low-noise audience popover with one search focus border", () => {
+    const menuRule = BUILDER_CSS.slice(
+      BUILDER_CSS.indexOf(".audienceMenu {"),
+      BUILDER_CSS.indexOf(".audienceMenuSearch {")
+    );
+    const searchRules = BUILDER_CSS.slice(
+      BUILDER_CSS.indexOf(".audienceMenuSearch > input {"),
+      BUILDER_CSS.indexOf(".audienceOptions {")
+    );
+
+    expect(menuRule).toContain("background: var(--surface-strong);");
+    expect(menuRule).toContain("opacity: 1;");
+    expect(menuRule).toContain("backdrop-filter: none;");
+    expect(menuRule).not.toContain("transparent");
+    expect(searchRules).toContain("background: var(--bg-start);");
+    expect(searchRules).toContain("outline: none !important;");
+    expect(searchRules).toContain("box-shadow: none !important;");
+  });
+
   it("shows only the latest five audiences when search is empty", () => {
     expect(DEFAULT_AUDIENCE_LIMIT).toBe(5);
     expect(filterAudienceOptions(manyAudiences, "").map((entry) => entry.id)).toEqual([
