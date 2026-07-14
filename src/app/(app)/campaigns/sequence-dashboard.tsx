@@ -28,7 +28,6 @@ import {
   SEQUENCE_TONE_LABELS,
   collectSequenceSenderEmails,
   countSequenceFilters,
-  describeSequencePagePreview,
   describeSequenceState,
   filterSequenceItems,
   getSequenceOpenRatePercent,
@@ -259,15 +258,30 @@ function SequenceRow({ item }: { item: SequenceListItem }) {
         </span>
 
         <span className={styles.rowPerformance}>
-          <span className={styles.rowStat} title="Delivered emails">
+          <span
+            className={styles.rowStat}
+            data-tooltip="Delivered emails"
+            aria-label={`Delivered emails: ${formatCount(item.deliveredCount)}`}
+            tabIndex={0}
+          >
             <MailCheck aria-hidden="true" />
             {formatCount(item.deliveredCount)}
           </span>
-          <span className={styles.rowStat} title="Open rate">
+          <span
+            className={styles.rowStat}
+            data-tooltip="Open rate"
+            aria-label={`Open rate: ${openRate === null ? "unavailable" : `${openRate}%`}`}
+            tabIndex={0}
+          >
             <Eye aria-hidden="true" />
             {openRate === null ? "—" : `${openRate}%`}
           </span>
-          <span className={styles.rowStat} title="Replies">
+          <span
+            className={styles.rowStat}
+            data-tooltip="Replies received"
+            aria-label={`Replies received: ${formatCount(item.repliedCount)}`}
+            tabIndex={0}
+          >
             <Reply aria-hidden="true" />
             {formatCount(item.repliedCount)}
           </span>
@@ -286,7 +300,6 @@ export function SequenceDashboard({ items }: { items: SequenceListItem[] }) {
   const [sender, setSender] = useState<string>(ALL_SENDER_ACCOUNTS);
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
-  const previewBaseId = useId();
 
   const counts = useMemo(() => countSequenceFilters(items), [items]);
   const senderEmails = useMemo(() => collectSequenceSenderEmails(items), [items]);
@@ -311,15 +324,6 @@ export function SequenceDashboard({ items }: { items: SequenceListItem[] }) {
     { value: ALL_SENDER_ACCOUNTS, label: "All email accounts" },
     ...senderEmails.map((email) => ({ value: email, label: email }))
   ];
-
-  const prevPreview =
-    slice.page > 1
-      ? describeSequencePagePreview(paginateSequenceItems(filtered, slice.page - 1).pageItems)
-      : null;
-  const nextPreview =
-    slice.page < slice.totalPages
-      ? describeSequencePagePreview(paginateSequenceItems(filtered, slice.page + 1).pageItems)
-      : null;
 
   function selectFilter(next: string) {
     setFilter(next as SequenceFilterId);
@@ -440,49 +444,29 @@ export function SequenceDashboard({ items }: { items: SequenceListItem[] }) {
             <nav className={styles.pagination} aria-label="Sequences pages">
               <span className={styles.paginationHint}>{slice.rangeLabel}</span>
               <div className={styles.paginationControls}>
-                <span className={styles.pageButtonWrap}>
-                  <button
-                    type="button"
-                    className={styles.pageButton}
-                    onClick={() => setPage(slice.page - 1)}
-                    disabled={slice.page <= 1}
-                    aria-label="Previous page"
-                    aria-describedby={prevPreview ? `${previewBaseId}-prev` : undefined}
-                  >
-                    <ChevronLeft aria-hidden="true" />
-                  </button>
-                  {prevPreview ? (
-                    <span role="tooltip" id={`${previewBaseId}-prev`} className={styles.pagePreview}>
-                      <strong>Previous page</strong>
-                      <span>{prevPreview.headline}</span>
-                      <span>{prevPreview.breakdown}</span>
-                    </span>
-                  ) : null}
-                </span>
+                <button
+                  type="button"
+                  className={styles.pageButton}
+                  onClick={() => setPage(slice.page - 1)}
+                  disabled={slice.page <= 1}
+                  aria-label="Previous page"
+                >
+                  <ChevronLeft aria-hidden="true" />
+                </button>
 
                 <span className={styles.pageIndicator} aria-live="polite">
                   Page {slice.page} of {slice.totalPages}
                 </span>
 
-                <span className={styles.pageButtonWrap}>
-                  <button
-                    type="button"
-                    className={styles.pageButton}
-                    onClick={() => setPage(slice.page + 1)}
-                    disabled={slice.page >= slice.totalPages}
-                    aria-label="Next page"
-                    aria-describedby={nextPreview ? `${previewBaseId}-next` : undefined}
-                  >
-                    <ChevronRight aria-hidden="true" />
-                  </button>
-                  {nextPreview ? (
-                    <span role="tooltip" id={`${previewBaseId}-next`} className={styles.pagePreview}>
-                      <strong>Next page</strong>
-                      <span>{nextPreview.headline}</span>
-                      <span>{nextPreview.breakdown}</span>
-                    </span>
-                  ) : null}
-                </span>
+                <button
+                  type="button"
+                  className={styles.pageButton}
+                  onClick={() => setPage(slice.page + 1)}
+                  disabled={slice.page >= slice.totalPages}
+                  aria-label="Next page"
+                >
+                  <ChevronRight aria-hidden="true" />
+                </button>
               </div>
             </nav>
           ) : null}

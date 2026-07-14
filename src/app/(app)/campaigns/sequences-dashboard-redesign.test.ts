@@ -511,15 +511,27 @@ describe("control bar (#7, #8, #10, #11)", () => {
     expect(clear).toContain("setPage(1)");
   });
 
-  it("pages change on click only — hover previews are informational tooltips", () => {
+  it("pages change on click with no pagination preview tooltip", () => {
     expect(DASH).toContain("onClick={() => setPage(slice.page + 1)}");
     expect(DASH).toContain("onClick={() => setPage(slice.page - 1)}");
-    expect(DASH).toContain('role="tooltip"');
+    expect(DASH).not.toContain("pagePreview");
+    expect(DASH).not.toContain("describeSequencePagePreview");
+    expect(DASH_CSS).not.toContain(".pagePreview");
     expect(DASH).not.toContain("onMouseEnter");
     expect(DASH).toContain('aria-label="Next page"');
     expect(DASH).toContain('aria-label="Previous page"');
     expect(DASH).toContain("Page {slice.page} of {slice.totalPages}");
     expect(DASH).toContain("{slice.rangeLabel}");
+  });
+
+  it("labels every performance metric with a compact hover and focus tooltip", () => {
+    for (const label of ["Delivered emails", "Open rate", "Replies received"]) {
+      expect(DASH).toContain(`data-tooltip="${label}"`);
+    }
+    expect(DASH).toContain("tabIndex={0}");
+    expect(DASH_CSS).toContain("content: attr(data-tooltip);");
+    expect(DASH_CSS).toMatch(/\.rowStat:hover::after,\s*\.rowStat:focus-visible::after/);
+    expect(DASH_CSS).toContain("@media (hover: none)");
   });
 
   it("each row shows the required columns and keeps the existing actions", () => {

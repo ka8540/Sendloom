@@ -531,6 +531,7 @@
 }
 
 .rowStat {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 0.28rem;
@@ -539,6 +540,44 @@
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+.rowStat::after {
+  position: absolute;
+  bottom: calc(100% + 0.4rem);
+  left: 50%;
+  z-index: 10;
+  width: max-content;
+  max-width: 10rem;
+  padding: 0.3rem 0.48rem;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-strong);
+  box-shadow: 0 6px 16px rgb(0 0 0 / 24%);
+  color: var(--text);
+  content: attr(data-tooltip);
+  font-size: 0.7rem;
+  font-weight: 650;
+  line-height: 1.15;
+  opacity: 0;
+  visibility: hidden;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translate(-50%, 3px);
+  transition: opacity 120ms ease, transform 120ms ease, visibility 120ms;
+}
+
+.rowStat:hover::after,
+.rowStat:focus-visible::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
+}
+
+.rowStat:focus-visible {
+  border-radius: 5px;
+  outline: 2px solid var(--field-focus);
+  outline-offset: 2px;
 }
 
 .rowStat svg {
@@ -588,11 +627,6 @@
   white-space: nowrap;
 }
 
-.pageButtonWrap {
-  position: relative;
-  display: inline-flex;
-}
-
 .pageButton {
   display: inline-flex;
   align-items: center;
@@ -625,44 +659,6 @@
 .pageButton:disabled {
   opacity: 0.42;
   cursor: default;
-}
-
-/* Hover/focus preview of the target page. Informational only — the page
-   changes on click, and the same facts are visible after navigating. */
-
-.pagePreview {
-  position: absolute;
-  bottom: calc(100% + 0.55rem);
-  right: 0;
-  z-index: 5;
-  display: grid;
-  gap: 0.14rem;
-  width: max-content;
-  max-width: 15rem;
-  padding: 0.6rem 0.75rem;
-  border-radius: 12px;
-  border: 1px solid var(--line);
-  background: var(--surface-strong);
-  box-shadow: var(--shadow);
-  font-size: 0.78rem;
-  color: var(--muted);
-  opacity: 0;
-  visibility: hidden;
-  transform: translateY(3px);
-  transition: opacity 140ms ease, transform 140ms ease, visibility 140ms;
-  pointer-events: none;
-}
-
-.pagePreview strong {
-  color: var(--text);
-  font-size: 0.8rem;
-}
-
-.pageButtonWrap:hover .pagePreview,
-.pageButtonWrap:focus-within .pagePreview {
-  opacity: 1;
-  visibility: visible;
-  transform: translateY(0);
 }
 
 /* Empty states. */
@@ -807,8 +803,10 @@
     width: 100%;
     text-align: center;
   }
+}
 
-  .pagePreview {
+@media (hover: none) {
+  .rowStat::after {
     display: none;
   }
 }
@@ -820,15 +818,11 @@
   .selectChevron,
   .selectOption,
   .pageButton,
-  .pagePreview {
+  .rowStat::after {
     transition: none;
   }
 
   .row:hover {
-    transform: none;
-  }
-
-  .pagePreview {
     transform: none;
   }
 }
