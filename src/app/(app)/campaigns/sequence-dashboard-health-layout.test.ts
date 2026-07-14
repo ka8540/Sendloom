@@ -105,13 +105,17 @@ describe("overview grid no longer stretches metric cards to health panel height"
     expect(overviewGridRule).not.toMatch(/align-items:\s*stretch/);
   });
 
-  it("summary cards keep a compact, consistent min-height independent of the health panel", () => {
+  it("summary cards use a fixed compact height, equal for all four, independent of the health panel", () => {
     const summaryCardRule = PAGE_CSS.slice(
       PAGE_CSS.indexOf(".summaryCard {"),
       PAGE_CSS.indexOf(".summaryCard dt {")
     );
-    expect(summaryCardRule).toContain("min-height:");
+    // A single fixed `height` (not `min-height`/`100%`) guarantees all four
+    // cards match regardless of unit-text length, and can never be inflated
+    // by the health panel's own height.
+    expect(summaryCardRule).toMatch(/height:\s*8\.5rem;/);
     expect(summaryCardRule).not.toMatch(/height:\s*100%/);
+    expect(summaryCardRule).not.toContain("min-height");
   });
 
   it("the health panel still sizes to its own content only", () => {
@@ -121,6 +125,51 @@ describe("overview grid no longer stretches metric cards to health panel height"
     );
     expect(healthPanelRule).toContain("align-content: start;");
     expect(healthPanelRule).not.toMatch(/height:\s*100%/);
+    expect(healthPanelRule).not.toContain("min-height");
+  });
+});
+
+describe("compact card styling — not an oversized marketing panel", () => {
+  it("metric cards and the health panel share a tight radius and a light shadow, not the app's large surface shadow", () => {
+    const summaryCardRule = PAGE_CSS.slice(
+      PAGE_CSS.indexOf(".summaryCard {"),
+      PAGE_CSS.indexOf(".summaryCard dt {")
+    );
+    const healthPanelRule = PAGE_CSS.slice(
+      PAGE_CSS.indexOf(".healthPanel {"),
+      PAGE_CSS.indexOf(".healthHeading {")
+    );
+
+    for (const rule of [summaryCardRule, healthPanelRule]) {
+      expect(rule).toMatch(/border-radius:\s*14px;/);
+      // Not the shared `var(--shadow)` used by large surfaces like .card —
+      // this band uses its own smaller, flatter shadow.
+      expect(rule).not.toContain("box-shadow: var(--shadow)");
+      expect(rule).toContain("box-shadow:");
+    }
+  });
+
+  it("issue rows use compact padding/radius, not the roomy defaults from a large card", () => {
+    const healthItemRule = PAGE_CSS.slice(
+      PAGE_CSS.indexOf(".healthItem {"),
+      PAGE_CSS.indexOf(".healthItem[data-severity=\"critical\"]")
+    );
+    expect(healthItemRule).toMatch(/border-radius:\s*10px;/);
+    expect(healthItemRule).toMatch(/padding:\s*0\.6rem 0\.7rem;/);
+  });
+
+  it("colors are theme-variable driven only — no hardcoded light/dark variants for this band", () => {
+    const overviewSection = PAGE_CSS.slice(
+      PAGE_CSS.indexOf(".overviewGrid {"),
+      PAGE_CSS.indexOf("@media (max-width: 1080px)")
+    );
+    // No literal hex/rgb backgrounds outside the pre-existing critical-red
+    // accent (#e5484d) — every other color rides the theme's CSS variables,
+    // so light and dark share one structure and only the variables differ.
+    const hexColors = overviewSection.match(/#[0-9a-fA-F]{3,6}/g) ?? [];
+    expect(hexColors.every((hex) => hex.toLowerCase() === "#e5484d")).toBe(true);
+    expect(overviewSection).not.toMatch(/@media\s*\(prefers-color-scheme/);
+    expect(overviewSection).not.toContain('data-theme=');
   });
 });
 
