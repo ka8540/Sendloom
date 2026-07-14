@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
+  DEFAULT_AUDIENCE_LIMIT,
   WIZARD_STEPS,
   filterAudienceOptions,
   filterTemplateOptions,
@@ -24,6 +25,16 @@ const DETAIL_PAGE = readFileSync("src/app/(app)/campaigns/[id]/page.tsx", "utf8"
 const audiences: AudienceOption[] = [
   { id: "founders", label: "Founder prospects.csv", rowCount: 42, mappedFields: ["email", "first_name"] },
   { id: "designers", label: "Design leaders.csv", rowCount: 17, mappedFields: ["email", "job_title"] }
+];
+
+const manyAudiences: AudienceOption[] = [
+  { id: "latest-1", label: "Latest founders.csv", rowCount: 10, mappedFields: ["email"] },
+  { id: "latest-2", label: "Latest engineers.csv", rowCount: 20, mappedFields: ["email"] },
+  { id: "latest-3", label: "Latest designers.csv", rowCount: 30, mappedFields: ["email"] },
+  { id: "latest-4", label: "Latest recruiters.csv", rowCount: 40, mappedFields: ["email"] },
+  { id: "latest-5", label: "Latest operators.csv", rowCount: 50, mappedFields: ["email"] },
+  { id: "older-finance", label: "Legacy finance.csv", rowCount: 60, mappedFields: ["company", "role"] },
+  { id: "older-sales", label: "Legacy sales.csv", rowCount: 70, mappedFields: ["email", "region"] }
 ];
 
 const templates: TemplateOption[] = [
@@ -89,10 +100,42 @@ describe("Step 1: Audience", () => {
     expect(BUILDER).toContain('href="/imports"');
   });
 
-  it("filters audiences by list name and mapped personalization field", () => {
+  it("shows only the latest five audiences when search is empty", () => {
+    expect(DEFAULT_AUDIENCE_LIMIT).toBe(5);
+    expect(filterAudienceOptions(manyAudiences, "").map((entry) => entry.id)).toEqual([
+      "latest-1",
+      "latest-2",
+      "latest-3",
+      "latest-4",
+      "latest-5"
+    ]);
+    expect(CREATE_PAGE).toContain('orderBy: { createdAt: "desc" }');
+    expect(BUILDER).toContain("Showing latest {DEFAULT_AUDIENCE_LIMIT}. Search to find older lists.");
+  });
+
+  it("searches every audience by list name and mapped personalization field", () => {
     expect(filterAudienceOptions(audiences, "founder").map((entry) => entry.id)).toEqual(["founders"]);
     expect(filterAudienceOptions(audiences, "job_title").map((entry) => entry.id)).toEqual(["designers"]);
-    expect(filterAudienceOptions(audiences, "  ")).toEqual(audiences);
+    expect(filterAudienceOptions(manyAudiences, "legacy finance").map((entry) => entry.id)).toEqual(["older-finance"]);
+    expect(filterAudienceOptions(manyAudiences, "region").map((entry) => entry.id)).toEqual(["older-sales"]);
+  });
+
+  it("returns to the latest five after search clears without clearing selection state", () => {
+    expect(filterAudienceOptions(manyAudiences, "legacy")).toHaveLength(2);
+    expect(filterAudienceOptions(manyAudiences, "  ")).toEqual(manyAudiences.slice(0, 5));
+    expect(BUILDER).toContain("const [selectedImportId, setSelectedImportId] = useState(\"\")");
+    expect(BUILDER).toContain("setAudienceQuery(event.target.value)");
+    expect(BUILDER).not.toContain("setSelectedImportId(event.target.value)");
+  });
+
+  it("renders compact helper and requested empty states without hiding the import CTA", () => {
+    expect(BUILDER).toContain("hasOlderAudiences");
+    expect(BUILDER).toContain("No matching contact lists");
+    expect(BUILDER).toContain("Try another list name or mapped field.");
+    expect(BUILDER).toContain("No contact lists yet");
+    expect(BUILDER).toContain("Import a CSV to create your first audience.");
+    expect(BUILDER.match(/Import or add a new CSV/g)).toHaveLength(2);
+    expect(BUILDER_CSS).toContain("overscroll-behavior: contain;");
   });
 
   it("keeps Next disabled until name, audience, and its saved mapping are present", () => {

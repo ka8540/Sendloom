@@ -15,6 +15,8 @@ export type TemplateOption = {
 
 export const WIZARD_STEPS = ["Audience", "Message", "Timing", "Review"] as const;
 
+export const DEFAULT_AUDIENCE_LIMIT = 5;
+
 export type WizardStep = 0 | 1 | 2 | 3;
 
 function normalizeSearch(value: string) {
@@ -25,7 +27,7 @@ export function filterAudienceOptions(options: AudienceOption[], query: string) 
   const normalizedQuery = normalizeSearch(query);
 
   if (!normalizedQuery) {
-    return options;
+    return options.slice(0, DEFAULT_AUDIENCE_LIMIT);
   }
 
   return options.filter((option) =>

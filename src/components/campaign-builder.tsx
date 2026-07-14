@@ -27,6 +27,7 @@ import {
 } from "@/components/senders/bounce-monitoring-status";
 import { SequenceLimitDialog } from "@/components/sequence-limit-dialog";
 import {
+  DEFAULT_AUDIENCE_LIMIT,
   WIZARD_STEPS,
   filterAudienceOptions,
   filterTemplateOptions,
@@ -206,6 +207,8 @@ export function CampaignBuilder(props: {
   const hasSenders = props.senders.length > 0;
   const hasTemplates = props.templates.length > 0;
   const hasImports = props.imports.length > 0;
+  const hasAudienceQuery = Boolean(audienceQuery.trim());
+  const hasOlderAudiences = props.imports.length > DEFAULT_AUDIENCE_LIMIT;
   const needsReconnect = !hasSenders && (props.disconnectedSenderCount ?? 0) > 0;
   const audienceStepComplete = isAudienceStepComplete(sequenceName, selectedImportId, selectedMappingId);
   const timingStepComplete = isTimingStepComplete({
@@ -545,11 +548,17 @@ export function CampaignBuilder(props: {
                       })}
                     </div>
 
+                    {!hasAudienceQuery && hasOlderAudiences ? (
+                      <p className={styles.audienceHelper}>
+                        Showing latest {DEFAULT_AUDIENCE_LIMIT}. Search to find older lists.
+                      </p>
+                    ) : null}
+
                     {!filteredAudiences.length ? (
                       <div className={styles.emptyState}>
                         <Search aria-hidden="true" />
-                        <strong>No contact lists match “{audienceQuery}”</strong>
-                        <span>Try a different list name or mapped field.</span>
+                        <strong>No matching contact lists</strong>
+                        <span>Try another list name or mapped field.</span>
                       </div>
                     ) : null}
 
@@ -562,8 +571,8 @@ export function CampaignBuilder(props: {
                   <div className={styles.emptyState}>
                     <Upload aria-hidden="true" />
                     <strong>No contact lists yet</strong>
-                    <span>Import a CSV, map its fields, then return here to build the sequence.</span>
-                    <a className="button" href="/imports">Import a CSV</a>
+                    <span>Import a CSV to create your first audience.</span>
+                    <a className="button" href="/imports">Import or add a new CSV</a>
                   </div>
                 )}
 

@@ -211,6 +211,21 @@
   overflow-y: auto;
 }
 
+.optionList {
+  gap: 0.5rem;
+  max-height: 22rem;
+  padding: 0.1rem 0.25rem 0.1rem 0.1rem;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.audienceHelper {
+  margin: -0.1rem 0 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
 .optionCard,
 .templateCard {
   width: 100%;
@@ -230,7 +245,7 @@
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 0.8rem;
-  padding: 0.85rem;
+  padding: 0.72rem 0.8rem;
 }
 
 .optionCard:hover,
