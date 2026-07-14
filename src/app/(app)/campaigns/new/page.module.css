@@ -55,8 +55,6 @@
 /* The sender panel hugs its content — no stretching to match the tall form. */
 .senderPanel {
   align-self: start;
-  position: sticky;
-  top: 1rem;
   display: grid;
   gap: 1rem;
   padding: 1.3rem;
@@ -211,10 +209,6 @@
 @media (max-width: 960px) {
   .topGrid {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .senderPanel {
-    position: static;
   }
 }
 
