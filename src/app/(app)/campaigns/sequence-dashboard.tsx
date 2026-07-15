@@ -7,6 +7,7 @@
 // analysis lives on the detail page.
 
 import Link from "next/link";
+import type { Route } from "next";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   useCallback,
@@ -346,7 +347,7 @@ export function SequenceDashboard({ items }: { items: SequenceListItem[] }) {
       const nextParams = updateSequenceDashboardSearchParams(searchParams, patch);
       const queryString = nextParams.toString();
       const href = queryString ? `${pathname}?${queryString}` : pathname;
-      router.replace(href, { scroll: false });
+      router.replace(href as Route, { scroll: false });
     },
     [pathname, router, searchParams]
   );
@@ -357,7 +358,7 @@ export function SequenceDashboard({ items }: { items: SequenceListItem[] }) {
     }
 
     const href = normalizedSearch ? `${pathname}?${normalizedSearch}` : pathname;
-    router.replace(href, { scroll: false });
+    router.replace(href as Route, { scroll: false });
   }, [currentSearch, normalizedSearch, pathname, router]);
 
   // Draft is only offered when draft sequences exist; the six core statuses

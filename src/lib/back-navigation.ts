@@ -1,3 +1,5 @@
+import type { Route } from "next";
+
 export type AppFallbackHref = "/" | "/admin" | "/campaigns" | "/finder" | "/imports" | "/suppressions" | "/templates" | "/workspace";
 
 const APP_PATH_PREFIXES = ["/admin", "/campaigns", "/finder", "/imports", "/sequences", "/suppressions", "/templates", "/workspace"] as const;
@@ -47,7 +49,7 @@ export function shouldUseBrowserBack(args: { alwaysUseFallback?: boolean; naviga
 export function getSequenceDetailReturnTo(
   pathname: string,
   searchParams: Pick<URLSearchParams, "get">
-) {
+): Route | null {
   if (!/^\/(campaigns|sequences)\/[^/]+$/.test(pathname)) {
     return null;
   }
@@ -67,7 +69,7 @@ export function getSequenceDetailReturnTo(
       return null;
     }
 
-    return `${target.pathname}${target.search}`;
+    return `${target.pathname}${target.search}` as Route;
   } catch {
     return null;
   }

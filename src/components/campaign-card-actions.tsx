@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import type { Route } from "next";
 import { ArrowUpRight, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -13,7 +14,7 @@ const DELETE_SEQUENCE_ERROR = "This sequence could not be deleted. Please try ag
 export function CampaignCardActions(props: {
   campaignId: string;
   campaignName: string;
-  detailHref?: string;
+  detailHref?: Route;
 }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);

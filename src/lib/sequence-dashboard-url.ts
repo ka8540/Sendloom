@@ -1,3 +1,5 @@
+import type { Route } from "next";
+
 import {
   ALL_SENDER_ACCOUNTS,
   type SequenceFilterId
@@ -117,6 +119,6 @@ export function buildSequenceDashboardReturnTo(pathname: string, searchParams: S
   return query ? `${dashboardPath}?${query}` : dashboardPath;
 }
 
-export function buildSequenceDetailHref(sequenceId: string, returnTo: string) {
-  return `/campaigns/${encodeURIComponent(sequenceId)}?returnTo=${encodeURIComponent(returnTo)}`;
+export function buildSequenceDetailHref(sequenceId: string, returnTo: string): Route {
+  return `/campaigns/${encodeURIComponent(sequenceId)}?returnTo=${encodeURIComponent(returnTo)}` as Route;
 }
