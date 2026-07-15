@@ -890,110 +890,447 @@ html[data-sidebar-collapsed="true"] .sidebar .nav-footer-divider {
   }
 }
 
-.template-form-toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
+.template-form {
   gap: 1rem;
-  margin-bottom: 0.35rem;
 }
 
-.template-form-toolbar__content {
+.template-meta-grid {
   display: grid;
-  gap: 0.28rem;
+  grid-template-columns: minmax(0, 1.35fr) minmax(12rem, 0.65fr);
+  gap: 0.9rem;
 }
 
-.template-form-toolbar__eyebrow {
-  margin: 0 0 0.35rem;
-  font-size: 0.75rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+.template-meta-field {
+  gap: 0.36rem;
+}
+
+.template-meta-field label {
+  font-size: 0.83rem;
+  font-weight: 750;
   color: var(--muted);
 }
 
-.template-form-toolbar__copy {
-  margin: 0;
-  max-width: 34rem;
-  color: var(--muted);
-  line-height: 1.6;
+.template-meta-field input,
+.template-meta-field select {
+  min-height: 3rem;
+  padding-top: 0.72rem;
+  padding-bottom: 0.72rem;
+  border-radius: 14px;
 }
 
-.template-check-spam-button {
+.template-meta-hint {
+  margin: -0.2rem 0 0.25rem;
+  color: var(--muted);
+  font-size: 0.83rem;
+  line-height: 1.5;
+}
+
+.template-composer {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--field-border) 88%, transparent);
+  border-radius: 22px;
+  background: color-mix(in srgb, var(--surface-strong) 92%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 18px 42px rgba(7, 17, 34, 0.1);
+}
+
+.template-composer__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 4.25rem;
+  padding: 0.95rem 1.2rem;
+  border-bottom: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-muted) 94%, transparent), color-mix(in srgb, var(--surface) 88%, transparent));
+}
+
+.template-composer__title,
+.template-composer__ab-test {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.template-composer__title {
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 780;
+}
+
+.template-composer__title svg {
+  width: 1.15rem;
+  height: 1.15rem;
+  color: var(--muted);
+}
+
+.template-composer__ab-test {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: not-allowed;
+}
+
+.template-composer__ab-test button {
+  position: relative;
+  width: 2.5rem;
+  height: 1.45rem;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 20%, var(--surface-muted));
+}
+
+.template-composer__ab-test button span {
+  position: absolute;
+  top: 50%;
+  left: 0.2rem;
+  width: 0.95rem;
+  height: 0.95rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 70%, white);
+  transform: translateY(-50%);
+  box-shadow: 0 2px 6px rgba(7, 17, 34, 0.18);
+}
+
+.template-composer__subject {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 4.25rem;
+  padding: 0.75rem 1rem 0.75rem 1.2rem;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-strong) 92%, transparent);
+}
+
+.template-composer__subject label {
+  color: var(--muted);
+  font-size: 0.93rem;
+}
+
+.template-composer__subject input {
+  min-width: 0;
+  width: 100%;
+  padding: 0.55rem 0.35rem;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  line-height: 1.4;
+}
+
+.template-composer__subject input::placeholder,
+.template-composer__body textarea::placeholder {
+  color: color-mix(in srgb, var(--muted) 82%, transparent);
+}
+
+.template-composer__subject input:focus {
+  box-shadow: none;
+}
+
+.template-composer__subject-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.template-composer__icon-button,
+.template-composer__send-icon,
+.template-composer__toolbar button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.65rem;
   flex: 0 0 auto;
-  min-width: 0;
-  padding: 0.74rem 0.95rem;
-  border: 1px solid color-mix(in srgb, var(--line) 84%, transparent);
-  border-radius: 14px;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface) 94%, transparent), color-mix(in srgb, var(--surface-muted) 90%, transparent));
-  color: var(--text);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 10px 18px rgba(28, 42, 70, 0.08);
-  font-size: 0.89rem;
-  font-weight: 700;
-  line-height: 1;
-  white-space: nowrap;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.template-composer__icon-button,
+.template-composer__toolbar button {
   cursor: pointer;
-  transition: transform 140ms ease, border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+  transition: transform 140ms ease, background-color 160ms ease, color 160ms ease;
 }
 
-.template-check-spam-button__signal {
-  width: 0.8rem;
-  height: 0.8rem;
-  border-radius: 999px;
-  background: color-mix(in srgb, #d96952 78%, white 22%);
-  box-shadow: 0 0 0 0.36rem color-mix(in srgb, rgba(217, 105, 82, 0.14) 100%, transparent);
+.template-composer__icon-button:hover:not(:disabled),
+.template-composer__icon-button:focus-visible,
+.template-composer__toolbar button:hover:not(:disabled),
+.template-composer__toolbar button:focus-visible {
+  outline: none;
+  transform: translateY(-1px);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
 }
 
-.template-check-spam-button__copy {
-  display: contents;
+.template-composer__icon-button:active:not(:disabled),
+.template-composer__toolbar button:active:not(:disabled) {
+  transform: translateY(1px) scale(0.96);
 }
 
-.template-check-spam-button__label {
-  display: inline-block;
-  font-size: 0.89rem;
-  font-weight: 700;
-  line-height: 1;
-  letter-spacing: -0.02em;
+.template-composer__icon-button:disabled,
+.template-composer__toolbar button:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
 }
 
-.template-check-spam-button__hint {
+.template-composer__icon-button svg,
+.template-composer__send-icon svg,
+.template-composer__toolbar svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.template-composer__send-icon {
+  color: color-mix(in srgb, var(--muted) 80%, var(--text));
+}
+
+.template-composer__message,
+.template-composer__messages p {
+  margin: 0;
+  color: var(--warning);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.template-composer__message {
+  padding: 0.55rem 1.2rem 0;
+}
+
+.template-composer__body {
+  position: relative;
+  min-width: 0;
+  background-color: color-mix(in srgb, var(--surface-strong) 96%, transparent);
+  background-image: radial-gradient(circle, color-mix(in srgb, var(--line) 48%, transparent) 0.7px, transparent 0.8px);
+  background-size: 18px 18px;
+}
+
+.template-composer__body-prompt {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.38rem;
+  min-height: 3.2rem;
+  padding: 0.85rem 1.2rem 0.35rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.template-composer__body-prompt button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid currentColor;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.template-composer__body-prompt button:hover:not(:disabled),
+.template-composer__body-prompt button:focus-visible {
+  outline: none;
+  color: var(--accent-strong);
+}
+
+.template-composer__body-prompt button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.template-composer__body-prompt .field-score-chip {
+  margin-left: auto;
+}
+
+.template-composer__body textarea {
+  display: block;
+  width: 100%;
+  min-height: 340px;
+  max-height: 620px;
+  resize: vertical;
+  padding: 0.9rem 1.2rem 1.2rem;
+  border: 0;
+  outline: 0;
+  background: color-mix(in srgb, var(--surface-strong) 88%, transparent);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.96rem;
+  line-height: 1.68;
+  caret-color: var(--accent);
+}
+
+.template-composer__body textarea:focus {
+  background: color-mix(in srgb, var(--surface-strong) 94%, transparent);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.template-composer__messages {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0 1.2rem;
+  background: color-mix(in srgb, var(--surface-strong) 90%, transparent);
+}
+
+.template-composer__messages:empty {
   display: none;
 }
 
-.template-check-spam-button.is-ready {
-  border-color: color-mix(in srgb, var(--accent) 34%, var(--line));
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 34%, var(--surface) 66%), color-mix(in srgb, var(--surface-muted) 82%, transparent));
+.template-composer__toolbar {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-height: 3.8rem;
+  padding: 0.65rem 0.85rem;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-muted) 94%, transparent);
 }
 
-.template-check-spam-button.is-ready .template-check-spam-button__signal {
-  background: var(--accent);
-  box-shadow: 0 0 0 0.36rem color-mix(in srgb, var(--accent) 16%, transparent);
+.template-composer__toolbar-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.05rem;
 }
 
-.template-check-spam-button:hover:not(:disabled),
-.template-check-spam-button:focus-visible {
-  transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--accent) 30%, var(--line));
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 22%, var(--surface) 78%), color-mix(in srgb, var(--surface-muted) 88%, transparent));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 14px 24px rgba(28, 42, 70, 0.11);
+.template-composer__toolbar-divider {
+  width: 1px;
+  height: 1.45rem;
+  margin: 0 0.22rem;
+  background: var(--line);
+}
+
+.template-composer__attributes {
+  position: relative;
+  margin-left: auto;
+}
+
+.template-composer__attributes summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2.25rem;
+  padding: 0 0.65rem;
+  border-radius: 10px;
+  color: var(--text);
+  font-size: 0.83rem;
+  font-weight: 700;
+  list-style: none;
+  cursor: pointer;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+
+.template-composer__attributes summary::-webkit-details-marker {
+  display: none;
+}
+
+.template-composer__attributes summary:hover,
+.template-composer__attributes summary:focus-visible,
+.template-composer__attributes[open] summary {
   outline: none;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
 }
 
-.template-check-spam-button:active:not(:disabled) {
-  transform: translateY(1px) scale(0.985);
+.template-composer__attributes summary svg {
+  width: 1rem;
+  height: 1rem;
 }
 
-.template-check-spam-button:disabled {
-  opacity: 0.68;
+.template-composer__attribute-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 0.6rem);
+  z-index: 20;
+  display: grid;
+  gap: 0.2rem;
+  width: min(18rem, calc(100vw - 3rem));
+  padding: 0.45rem;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface-strong) 98%, transparent);
+  box-shadow: var(--shadow);
+}
+
+.template-composer__attribute-menu button {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+  height: auto;
+  min-height: 2.55rem;
+  padding: 0.58rem 0.7rem;
+  color: var(--text);
+  font-size: 0.83rem;
+}
+
+.template-composer__attribute-menu code {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.template-composer__stats {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.7rem 1.25rem;
+  min-height: 3.65rem;
+  padding: 0.75rem 1.2rem;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-muted) 96%, transparent);
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.template-composer__stats strong {
+  color: var(--text);
+  font-weight: 760;
+}
+
+.template-composer__spam-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+}
+
+.template-composer__spam-stat button {
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid currentColor;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-weight: 760;
+  cursor: pointer;
+}
+
+.template-composer__spam-stat button:hover:not(:disabled),
+.template-composer__spam-stat button:focus-visible {
+  outline: none;
+  color: var(--accent-strong);
+}
+
+.template-composer__spam-stat button:disabled {
+  opacity: 0.6;
   cursor: not-allowed;
+}
+
+.template-composer__spam-stat button.is-medium {
+  color: var(--warning);
+}
+
+.template-composer__spam-stat button.is-high {
+  color: #d96952;
 }
 
 /*
@@ -1484,8 +1821,8 @@ html[data-sidebar-collapsed="true"] .sidebar .theme-menu--footer .theme-menu__pa
   color: var(--muted);
 }
 
-.templates-editor-card .form {
-  gap: 1.5rem;
+.templates-editor-card .template-form {
+  gap: 1rem;
 }
 
 .templates-editor-card .field textarea {
@@ -2688,8 +3025,7 @@ html[data-sidebar-collapsed="true"] .sidebar .theme-menu--footer .theme-menu__pa
 
   .template-list-item__header,
   .template-preview-card__header,
-  .templates-editor-card__header,
-  .template-form-toolbar {
+  .templates-editor-card__header {
     display: grid;
   }
 
@@ -2697,8 +3033,38 @@ html[data-sidebar-collapsed="true"] .sidebar .theme-menu--footer .theme-menu__pa
     width: 100%;
   }
 
-  .template-check-spam-button {
-    width: auto;
+  .template-meta-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .template-composer__header {
+    align-items: flex-start;
+  }
+
+  .template-composer__ab-test > span {
+    display: none;
+  }
+
+  .template-composer__subject {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .template-composer__subject-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+  }
+
+  .template-composer__toolbar {
+    flex-wrap: wrap;
+  }
+
+  .template-composer__attributes {
+    margin-left: 0;
+  }
+
+  .template-composer__stats {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .field-label-row,

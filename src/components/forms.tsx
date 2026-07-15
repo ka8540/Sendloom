@@ -1,7 +1,23 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Eye, EyeOff, Sparkles } from "lucide-react";
+import {
+  Bold,
+  Braces,
+  Eye,
+  EyeOff,
+  ImageIcon,
+  Italic,
+  Link,
+  List as ListIcon,
+  ListOrdered,
+  Mail,
+  Paperclip,
+  Send,
+  Sparkles,
+  Strikethrough,
+  Video
+} from "lucide-react";
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
 
@@ -9,13 +25,20 @@ import { renderBrandText } from "@/components/brand-text";
 import { useErrorToastEffect } from "@/components/error-toast-provider";
 import { analyzeSpam, type SpamAnalysis } from "@/lib/spam-analysis";
 import {
+  applyTemplateComposerCommand,
+  insertTemplateAttribute,
+  TEMPLATE_COMPOSER_ATTRIBUTES,
+  type TemplateComposerCommand,
+  type TemplateComposerEdit
+} from "@/lib/template-composer";
+import {
   convertTemplateBody,
   getDefaultTemplateBody,
   getTemplateBodyHint,
-  getTemplateBodyLabel,
   getTemplateBodyPlaceholder,
   getTemplateFormatLabel,
   TEMPLATE_FORMATS,
+  templateContentToPlainText,
   type TemplateFormat,
   validateTemplateBody
 } from "@/lib/templates";
@@ -258,9 +281,16 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
   const [spamAnalysis, setSpamAnalysis] = useState<SpamAnalysis | null>(null);
   const [highlightedField, setHighlightedField] = useState<EnhanceField | null>(null);
   const highlightTimeoutRef = useRef<number | null>(null);
+  const bodyTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const attributeMenuRef = useRef<HTMLDetailsElement | null>(null);
   const controlled = Boolean(value && onChange);
   const fields = value ?? localFields;
   const bodyValidationError = validateTemplateBody(fields.format, fields.htmlBody);
+  const plainTextBody = templateContentToPlainText(fields.format, fields.htmlBody);
+  const wordCount = plainTextBody ? plainTextBody.split(/\s+/).filter(Boolean).length : 0;
+  const readingSeconds = wordCount ? Math.max(1, Math.ceil((wordCount / 200) * 60)) : 0;
+  const readingTime = readingSeconds >= 60 ? `${Math.ceil(readingSeconds / 60)} min` : `${readingSeconds} sec`;
+  const overallSpamScore = spamAnalysis ? Math.max(spamAnalysis.subjectScore, spamAnalysis.bodyScore) : null;
   useErrorToastEffect(state.error, initialTemplate ? "Template update failed" : "Template save failed");
 
   const updateFields = (updater: (current: TemplateDraft) => TemplateDraft) => {
@@ -387,6 +417,40 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
     return <span className={`field-score-chip field-score-chip--${risk.toLowerCase()}`}>{score}% spam</span>;
   }
 
+  function updateBody(nextBody: string) {
+    setEnhanceError((current) => ({ ...current, body: undefined }));
+    setSpamAnalysis(null);
+    updateFields((current) => ({ ...current, htmlBody: nextBody }));
+  }
+
+  function commitComposerEdit(edit: TemplateComposerEdit) {
+    updateBody(edit.value);
+
+    window.requestAnimationFrame(() => {
+      bodyTextareaRef.current?.focus();
+      bodyTextareaRef.current?.setSelectionRange(edit.selectionStart, edit.selectionEnd);
+    });
+  }
+
+  function runComposerCommand(command: TemplateComposerCommand) {
+    const textarea = bodyTextareaRef.current;
+    const selectionStart = textarea?.selectionStart ?? fields.htmlBody.length;
+    const selectionEnd = textarea?.selectionEnd ?? selectionStart;
+
+    commitComposerEdit(
+      applyTemplateComposerCommand(fields.format, fields.htmlBody, selectionStart, selectionEnd, command)
+    );
+  }
+
+  function insertAttribute(attribute: string) {
+    const textarea = bodyTextareaRef.current;
+    const selectionStart = textarea?.selectionStart ?? fields.htmlBody.length;
+    const selectionEnd = textarea?.selectionEnd ?? selectionStart;
+
+    commitComposerEdit(insertTemplateAttribute(fields.htmlBody, selectionStart, selectionEnd, attribute));
+    attributeMenuRef.current?.removeAttribute("open");
+  }
+
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setState({ pending: true });
@@ -429,130 +493,247 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
   }
 
   const isEditing = Boolean(initialTemplate);
+  const composerBusy = state.pending || checkingSpam || enhancingField !== null;
+  const formattingDisabled = composerBusy || fields.format === "JSON";
 
   return (
-    <form className="form" onSubmit={onSubmit}>
-      <div className="template-form-toolbar">
-        <div className="template-form-toolbar__content">
-          <p className="template-form-toolbar__eyebrow">Delivery health</p>
-          <p className="template-form-toolbar__copy">Run a spam pass whenever you want, then use AI to tighten the copy with that score in mind.</p>
+    <form className="form template-form" onSubmit={onSubmit}>
+      <div className="template-meta-grid">
+        <div className="field template-meta-field">
+          <label htmlFor="name">Template name</label>
+          <input
+            id="name"
+            name="name"
+            value={fields.name}
+            onChange={(event) => updateFields((current) => ({ ...current, name: event.target.value }))}
+            placeholder="e.g. Recruiting intro"
+            required
+          />
         </div>
-        <button
-          className={`template-check-spam-button${spamAnalysis ? " is-ready" : ""}`}
-          type="button"
-          onClick={checkSpam}
-          disabled={state.pending || checkingSpam || enhancingField !== null}
-        >
-          {checkingSpam ? (
-            <span className="button-spinner" aria-hidden="true" />
-          ) : (
-            <span className="template-check-spam-button__signal" aria-hidden="true" />
-          )}
-          <span className="template-check-spam-button__label">{checkingSpam ? "Checking spam" : "Check spam"}</span>
-        </button>
-      </div>
-      <div className="field">
-        <label htmlFor="name">Template name</label>
-        <input
-          id="name"
-          name="name"
-          value={fields.name}
-          onChange={(event) => updateFields((current) => ({ ...current, name: event.target.value }))}
-          required
-        />
-      </div>
-      <div className="field">
-        <label htmlFor="format">Message format</label>
-        <select
-          id="format"
-          name="format"
-          value={fields.format}
-          onChange={(event) => {
-            const nextFormat = event.target.value as TemplateFormat;
-            setEnhanceError((current) => ({ ...current, body: undefined }));
-            setSpamAnalysis(null);
+        <div className="field template-meta-field">
+          <label htmlFor="format">Message format</label>
+          <select
+            id="format"
+            name="format"
+            value={fields.format}
+            onChange={(event) => {
+              const nextFormat = event.target.value as TemplateFormat;
+              setEnhanceError((current) => ({ ...current, body: undefined }));
+              setSpamAnalysis(null);
 
-            updateFields((current) => ({
-              ...current,
-              format: nextFormat,
-              htmlBody: convertTemplateBody(current.htmlBody, current.format, nextFormat)
-            }));
-          }}
-        >
-          {TEMPLATE_FORMATS.map((format) => (
-            <option key={format} value={format}>
-              {getTemplateFormatLabel(format)}
-            </option>
-          ))}
-        </select>
-        <p className="field-inline-note">{renderBrandText(getTemplateBodyHint(fields.format))}</p>
+              updateFields((current) => ({
+                ...current,
+                format: nextFormat,
+                htmlBody: convertTemplateBody(current.htmlBody, current.format, nextFormat)
+              }));
+            }}
+          >
+            {TEMPLATE_FORMATS.map((format) => (
+              <option key={format} value={format}>
+                {getTemplateFormatLabel(format)}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
-      <div className="field">
-        <div className="field-label-row">
-          <label htmlFor="subject">Subject</label>
-          <div className="field-label-row__actions">
+      <p className="template-meta-hint">{renderBrandText(getTemplateBodyHint(fields.format))}</p>
+
+      <section className="template-composer" aria-label="Opening email composer">
+        <header className="template-composer__header">
+          <div className="template-composer__title">
+            <Mail aria-hidden="true" />
+            <span>Opening email</span>
+          </div>
+          <div className="template-composer__ab-test" title="A/B testing is not available for templates yet">
+            <span>A/B test this email</span>
+            <button type="button" role="switch" aria-checked="false" aria-label="A/B test this email" disabled>
+              <span aria-hidden="true" />
+            </button>
+          </div>
+        </header>
+
+        <div className={`template-composer__subject${highlightedField === "subject" ? " field-enhanced" : ""}`}>
+          <label htmlFor="subject">Subject:</label>
+          <input
+            id="subject"
+            name="subject"
+            value={fields.subject}
+            onChange={(event) => {
+              setEnhanceError((current) => ({ ...current, subject: undefined }));
+              setSpamAnalysis(null);
+              updateFields((current) => ({ ...current, subject: event.target.value }));
+            }}
+            placeholder="Enter your subject line"
+            required
+          />
+          <div className="template-composer__subject-actions">
             {spamAnalysis ? renderSpamScoreChip(spamAnalysis.subjectScore, spamAnalysis.subjectRisk) : null}
             <button
-              className="field-icon-button"
+              className="template-composer__icon-button"
               type="button"
               onClick={() => enhanceText("subject", fields.subject)}
-              disabled={state.pending || enhancingField !== null || checkingSpam}
+              disabled={composerBusy}
               aria-label={getEnhanceTooltip("subject")}
-              data-tooltip={getEnhanceTooltip("subject")}
+              title={getEnhanceTooltip("subject")}
             >
               {enhancingField === "subject" ? <span className="button-spinner" aria-hidden="true" /> : <Sparkles aria-hidden="true" />}
             </button>
+            <span className="template-composer__send-icon" title="Email subject">
+              <Send aria-hidden="true" />
+            </span>
           </div>
         </div>
-        <input
-          id="subject"
-          name="subject"
-          value={fields.subject}
-          onChange={(event) => {
-            setEnhanceError((current) => ({ ...current, subject: undefined }));
-            setSpamAnalysis(null);
-            updateFields((current) => ({ ...current, subject: event.target.value }));
-          }}
-          placeholder="Hi {{name}}, quick question"
-          className={highlightedField === "subject" ? "field-enhanced" : undefined}
-          required
-        />
-        {enhanceError.subject ? <p className="field-inline-note">{enhanceError.subject}</p> : null}
-      </div>
-      <div className="field">
-        <div className="field-label-row">
-          <label htmlFor="htmlBody">{getTemplateBodyLabel(fields.format)}</label>
-          <div className="field-label-row__actions">
-            {spamAnalysis ? renderSpamScoreChip(spamAnalysis.bodyScore, spamAnalysis.bodyRisk) : null}
+        {enhanceError.subject ? <p className="template-composer__message">{enhanceError.subject}</p> : null}
+
+        <div className="template-composer__body">
+          <div className="template-composer__body-prompt">
+            <span>Compose your email, or</span>
             <button
-              className="field-icon-button"
               type="button"
               onClick={() => enhanceText("body", fields.htmlBody)}
-              disabled={state.pending || enhancingField !== null || checkingSpam}
+              disabled={composerBusy}
               aria-label={getEnhanceTooltip("body")}
-              data-tooltip={getEnhanceTooltip("body")}
             >
-              {enhancingField === "body" ? <span className="button-spinner" aria-hidden="true" /> : <Sparkles aria-hidden="true" />}
+              {enhancingField === "body" ? <span className="button-spinner" aria-hidden="true" /> : null}
+              generate with AI
             </button>
+            {spamAnalysis ? renderSpamScoreChip(spamAnalysis.bodyScore, spamAnalysis.bodyRisk) : null}
+          </div>
+          <textarea
+            ref={bodyTextareaRef}
+            id="htmlBody"
+            name="htmlBody"
+            value={fields.htmlBody}
+            placeholder={fields.format === "PLAIN_TEXT" ? "Compose your email" : getTemplateBodyPlaceholder(fields.format)}
+            onChange={(event) => updateBody(event.target.value)}
+            className={highlightedField === "body" ? "field-enhanced" : undefined}
+            required
+          />
+
+          <div className="template-composer__messages" aria-live="polite">
+            {bodyValidationError ? <p>{bodyValidationError}</p> : null}
+            {enhanceError.body ? <p>{enhanceError.body}</p> : null}
+          </div>
+
+          <div className="template-composer__toolbar" aria-label="Email formatting toolbar">
+            <div className="template-composer__toolbar-group">
+              <button
+                type="button"
+                onClick={() => runComposerCommand("bold")}
+                disabled={formattingDisabled}
+                aria-label="Bold"
+                title={fields.format === "JSON" ? "Formatting is unavailable in structured JSON" : "Bold"}
+              >
+                <Bold aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                onClick={() => runComposerCommand("italic")}
+                disabled={formattingDisabled}
+                aria-label="Italic"
+                title={fields.format === "JSON" ? "Formatting is unavailable in structured JSON" : "Italic"}
+              >
+                <Italic aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                onClick={() => runComposerCommand("strike")}
+                disabled={formattingDisabled}
+                aria-label="Strikethrough"
+                title={fields.format === "JSON" ? "Formatting is unavailable in structured JSON" : "Strikethrough"}
+              >
+                <Strikethrough aria-hidden="true" />
+              </button>
+            </div>
+
+            <span className="template-composer__toolbar-divider" aria-hidden="true" />
+
+            <div className="template-composer__toolbar-group">
+              <button
+                type="button"
+                onClick={() => runComposerCommand("bullet-list")}
+                disabled={formattingDisabled}
+                aria-label="Bullet list"
+                title={fields.format === "JSON" ? "Formatting is unavailable in structured JSON" : "Bullet list"}
+              >
+                <ListIcon aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                onClick={() => runComposerCommand("numbered-list")}
+                disabled={formattingDisabled}
+                aria-label="Numbered list"
+                title={fields.format === "JSON" ? "Formatting is unavailable in structured JSON" : "Numbered list"}
+              >
+                <ListOrdered aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                onClick={() => runComposerCommand("link")}
+                disabled={formattingDisabled}
+                aria-label="Insert link"
+                title={fields.format === "JSON" ? "Formatting is unavailable in structured JSON" : "Insert link"}
+              >
+                <Link aria-hidden="true" />
+              </button>
+            </div>
+
+            <span className="template-composer__toolbar-divider" aria-hidden="true" />
+
+            <div className="template-composer__toolbar-group">
+              <button type="button" disabled aria-label="Image attachments are not available yet" title="Image attachments are not available yet">
+                <ImageIcon aria-hidden="true" />
+              </button>
+              <button type="button" disabled aria-label="Video attachments are not available yet" title="Video attachments are not available yet">
+                <Video aria-hidden="true" />
+              </button>
+              <button type="button" disabled aria-label="File attachments are not available yet" title="File attachments are not available yet">
+                <Paperclip aria-hidden="true" />
+              </button>
+            </div>
+
+            <span className="template-composer__toolbar-divider" aria-hidden="true" />
+
+            <details className="template-composer__attributes" ref={attributeMenuRef}>
+              <summary>
+                <Braces aria-hidden="true" />
+                <span>Insert attribute</span>
+              </summary>
+              <div className="template-composer__attribute-menu">
+                {TEMPLATE_COMPOSER_ATTRIBUTES.map((attribute) => (
+                  <button
+                    key={attribute.value}
+                    type="button"
+                    onClick={() => insertAttribute(attribute.value)}
+                    disabled={composerBusy}
+                  >
+                    <span>{attribute.label}</span>
+                    <code>{`{{${attribute.value}}}`}</code>
+                  </button>
+                ))}
+              </div>
+            </details>
           </div>
         </div>
-        <textarea
-          id="htmlBody"
-          name="htmlBody"
-          value={fields.htmlBody}
-          placeholder={getTemplateBodyPlaceholder(fields.format)}
-          onChange={(event) => {
-            setEnhanceError((current) => ({ ...current, body: undefined }));
-            setSpamAnalysis(null);
-            updateFields((current) => ({ ...current, htmlBody: event.target.value }));
-          }}
-          className={highlightedField === "body" ? "field-enhanced" : undefined}
-          required
-        />
-        <p className="field-inline-note">{renderBrandText(getTemplateBodyHint(fields.format))}</p>
-        {bodyValidationError ? <p className="field-inline-note">{bodyValidationError}</p> : null}
-        {enhanceError.body ? <p className="field-inline-note">{enhanceError.body}</p> : null}
-      </div>
+
+        <footer className="template-composer__stats">
+          <span>Words: <strong>{wordCount}</strong></span>
+          <span>Reading time: <strong>{readingTime}</strong></span>
+          <span>Grade: <strong>-</strong></span>
+          <span className="template-composer__spam-stat">
+            Spam score:
+            <button
+              type="button"
+              onClick={checkSpam}
+              disabled={composerBusy}
+              className={spamAnalysis ? `is-${spamAnalysis.bodyRisk.toLowerCase()}` : undefined}
+            >
+              {checkingSpam ? "Checking..." : overallSpamScore === null ? "Check" : `${overallSpamScore}% · Check again`}
+            </button>
+          </span>
+        </footer>
+      </section>
+
       <div className="template-form-actions">
         <button className="button" type="submit" disabled={state.pending || Boolean(bodyValidationError)}>
           {state.pending ? "Saving..." : isEditing ? "Save changes" : "Save template"}
