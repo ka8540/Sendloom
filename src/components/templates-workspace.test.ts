@@ -107,7 +107,7 @@ describe("templates library and creation wizard", () => {
   });
 
   it("provides responsive wizard, progress, and library styles", () => {
-    expect(STYLES).toContain(".templates-library__hero");
+    expect(WORKSPACE).toContain("<WorkspacePageHeader");
     expect(STYLES).toContain(".template-wizard__steps");
     expect(STYLES).toContain(".template-wizard__progress");
     expect(STYLES).toContain("grid-template-columns: repeat(2, minmax(0, 1fr))");

@@ -353,8 +353,9 @@ describe("dashboard page structure (#1, #2, #3, #12)", () => {
     expect(PAGE).not.toContain("<CampaignBuilder");
     expect(PAGE).not.toContain("Create a sequence");
     expect(PAGE).toContain("<SequenceDashboard");
-    expect(PAGE).toContain("<h1>Sequences</h1>");
-    expect(PAGE).toContain("Track delivery, replies, and runs that need attention.");
+    expect(PAGE).toContain("<WorkspacePageHeader");
+    expect(PAGE).toContain('title="Sequences"');
+    expect(PAGE).toContain('subtitle="Track delivery, replies, and runs that need attention."');
   });
 
   it("has a New sequence button that links to the create page (#2, #3)", () => {

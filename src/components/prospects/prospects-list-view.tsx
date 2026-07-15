@@ -21,12 +21,12 @@ import {
   SearchX,
   Sparkles,
   Trash2,
-  Users,
   X
 } from "lucide-react";
 
 import { CircularCloseButton } from "@/components/circular-close-button";
 import { SuggestionInput } from "@/components/prospects/suggestion-input";
+import { WorkspacePageHeader } from "@/components/workspace-page-header";
 import { titleCaseLabel } from "@/services/prospects/discover-suggestions";
 import {
   CREATE_SEARCH_MUTATION,
@@ -44,7 +44,6 @@ import {
 } from "@/components/prospects/prospect-graphql";
 import {
   PROSPECT_FINDER_SUBTITLE,
-  PROSPECT_FINDER_TAGLINE,
   PROSPECT_FINDER_TITLE,
   discoverPerSearchSentence,
   filterHistoryGroups,
@@ -336,42 +335,40 @@ export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean 
 
   return (
     <div className={styles.page}>
-      <header className={styles.header} data-discover-tour="page-intro">
-        <div className={styles.headerCopy}>
-          <p className={styles.eyebrow}>
-            <Users aria-hidden="true" /> {PROSPECT_FINDER_TAGLINE}
-          </p>
-          <h1>{PROSPECT_FINDER_TITLE}</h1>
-          <p className={styles.subtitle}>{PROSPECT_FINDER_SUBTITLE}</p>
-        </div>
-        {!disabled && (
-          <div className={styles.headerActions}>
-            {/* Compact "2/4" chip — the full sentence lives in its aria-label
-                and hover/focus helper card, so the action row stays quiet. */}
-            <QuotaStatChip quota={quota} />
-            <button
-              type="button"
-              className={styles.refreshButton}
-              onClick={refreshAll}
-              disabled={searchesLoading}
-              title="Refresh"
-              data-discover-tour="refresh"
-            >
-              <RefreshCw aria-hidden="true" className={searchesLoading ? styles.spin : undefined} />
-              <span>Refresh</span>
-            </button>
-            <button
-              type="button"
-              className={styles.primaryButton}
-              onClick={() => setShowNewSearch(true)}
-              data-discover-tour="new-search"
-            >
-              <Plus aria-hidden="true" />
-              <span>New search</span>
-            </button>
-          </div>
-        )}
-      </header>
+      <WorkspacePageHeader
+        data-discover-tour="page-intro"
+        title={PROSPECT_FINDER_TITLE}
+        subtitle={PROSPECT_FINDER_SUBTITLE}
+        actions={
+          !disabled ? (
+            <>
+              {/* Compact "2/4" chip — the full sentence lives in its aria-label
+                  and hover/focus helper card, so the action row stays quiet. */}
+              <QuotaStatChip quota={quota} />
+              <button
+                type="button"
+                className={styles.refreshButton}
+                onClick={refreshAll}
+                disabled={searchesLoading}
+                title="Refresh"
+                data-discover-tour="refresh"
+              >
+                <RefreshCw aria-hidden="true" className={searchesLoading ? styles.spin : undefined} />
+                <span>Refresh</span>
+              </button>
+              <button
+                type="button"
+                className={styles.primaryButton}
+                onClick={() => setShowNewSearch(true)}
+                data-discover-tour="new-search"
+              >
+                <Plus aria-hidden="true" />
+                <span>New search</span>
+              </button>
+            </>
+          ) : undefined
+        }
+      />
 
       {actionError && (
         <div className={`${styles.inlineAlert} ${styles.inlineAlertError}`} role="alert">

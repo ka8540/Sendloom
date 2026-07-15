@@ -2,6 +2,7 @@ import { FileSpreadsheet, SlidersHorizontal, UploadCloud } from "lucide-react";
 
 import { UploadImportForm } from "@/components/forms";
 import { MappingLibrary, TemplateFieldPicker } from "@/components/mapping-library";
+import { WorkspacePageHeader } from "@/components/workspace-page-header";
 import { requireOperatorUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { importIsFinalized, importNeedsFieldSelection } from "@/lib/imports-view";
@@ -99,13 +100,10 @@ export default async function ImportsPage({
 
   return (
     <div className="imports-dashboard">
-      <header className="imports-dashboard__hero">
-        <div>
-          <span className="imports-dashboard__kicker">Audience library</span>
-          <h1>Imports</h1>
-          <p>Upload, map, and manage the people lists that power your sequences.</p>
-        </div>
-      </header>
+      <WorkspacePageHeader
+        title="Imports"
+        subtitle="Upload, map, and manage the people lists that power your sequences."
+      />
 
       <section className="imports-setup-grid" aria-label="Import setup">
         <article className="card imports-setup-card" id="import-upload" data-imports-tour="upload">

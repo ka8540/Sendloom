@@ -1,31 +1,10 @@
 .page {
   display: grid;
-  gap: 1.5rem;
+  gap: 1.25rem;
   min-width: 0;
 }
 
 /* ---- Header ------------------------------------------------------------- */
-
-.header {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 1.5rem;
-  flex-wrap: wrap;
-}
-
-.headerCopy {
-  display: grid;
-  gap: 0.5rem;
-  max-width: 46rem;
-  min-width: 0;
-}
-
-.headerCopy h1 {
-  margin: 0;
-  font-size: 1.85rem;
-  letter-spacing: -0.01em;
-}
 
 .eyebrow {
   display: inline-flex;
@@ -2380,10 +2359,6 @@
 }
 
 @media (max-width: 640px) {
-  .header {
-    align-items: flex-start;
-  }
-
   /* The history filter stacks under the title and stretches full width. */
   .historyPanelHeader {
     flex-direction: column;

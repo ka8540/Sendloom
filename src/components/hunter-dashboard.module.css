@@ -1,22 +1,20 @@
 .page {
   display: grid;
-  gap: 1.5rem;
-}
-
-.hero {
-  display: grid;
   gap: 1.25rem;
-  align-items: start;
 }
 
-.heroCopy {
+.headerBlock {
   display: grid;
   gap: 0.75rem;
-  max-width: 44rem;
+  justify-items: start;
 }
 
-.heroCopy :global(h1) {
-  margin: 0;
+.headerControls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.75rem;
+  flex-wrap: wrap;
 }
 
 .eyebrow {
@@ -26,12 +24,6 @@
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--accent);
-}
-
-.heroActions {
-  display: grid;
-  gap: 0.875rem;
-  justify-items: start;
 }
 
 .keyStatus {
@@ -1044,7 +1036,6 @@
 }
 
 @media (max-width: 860px) {
-  .heroActions,
   .callout {
     justify-items: stretch;
   }

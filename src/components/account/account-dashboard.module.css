@@ -1,11 +1,9 @@
 .page {
   display: flex;
   flex-direction: column;
-  gap: 1.4rem;
+  gap: 1.25rem;
   width: 100%;
   min-width: 0;
-  max-width: 1180px;
-  margin: 0 auto;
 }
 
 /* Calm staggered entrance; skipped entirely for reduced motion. */
@@ -29,28 +27,6 @@
     opacity: 1;
     transform: translateY(0);
   }
-}
-
-/* --- Header ---------------------------------------------------------------- */
-
-.header {
-  min-width: 0;
-}
-
-.title {
-  margin: 0;
-  font-size: clamp(1.9rem, 3vw, 2.4rem);
-  font-weight: 700;
-  letter-spacing: -0.035em;
-  line-height: 1.05;
-}
-
-.subtitle {
-  margin: 0.45rem 0 0;
-  color: var(--muted);
-  font-size: 1rem;
-  line-height: 1.55;
-  max-width: 44rem;
 }
 
 .loadError {
