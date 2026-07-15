@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronLeft, ChevronRight, Plus, Search, X } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { TemplateForm, type EditableTemplate, type TemplateDraft } from "@/components/forms";
@@ -55,8 +55,8 @@ function toSnippet(format: TemplateFormat, body: string) {
 
 export function TemplatesWorkspace({ templates: initialTemplates }: { templates: EditableTemplate[] }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [templates, setTemplates] = useState(initialTemplates.map(normalizeTemplate));
-  const [wizardOpen, setWizardOpen] = useState(false);
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
   const [hoveredTemplateId, setHoveredTemplateId] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -64,6 +64,7 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
   const [draft, setDraft] = useState<TemplateDraft>(createDraft(null));
   const hoverIntentTimeoutRef = useRef<number | null>(null);
   const hoverLeaveTimeoutRef = useRef<number | null>(null);
+  const wizardOpen = searchParams.get("wizard") === "template";
 
   useEffect(() => {
     setTemplates(initialTemplates.map(normalizeTemplate));
@@ -120,7 +121,6 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
     setCurrentPage(1);
     setEditingTemplateId(null);
     setDraft(createDraft(null));
-    setWizardOpen(false);
     router.replace("/templates");
     router.refresh();
   };
@@ -128,20 +128,20 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
   const handleStartCreating = () => {
     setEditingTemplateId(null);
     setDraft(createDraft(null));
-    setWizardOpen(true);
+    router.push("/templates?wizard=template");
   };
 
   const handleStartEditing = (template: EditableTemplate) => {
     setEditingTemplateId(template.id);
     setDraft(createDraft(template));
     setHoveredTemplateId(null);
-    setWizardOpen(true);
+    router.push("/templates?wizard=template");
   };
 
   const handleCloseWizard = () => {
     setEditingTemplateId(null);
     setDraft(createDraft(null));
-    setWizardOpen(false);
+    router.push("/templates");
   };
 
   const handleTemplateMouseEnter = (templateId: string) => {

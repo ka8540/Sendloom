@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 const WORKSPACE = readFileSync("src/components/templates-workspace.tsx", "utf8");
 const FORM = readFileSync("src/components/forms.tsx", "utf8");
+const BACK_BUTTON = readFileSync("src/components/back-button.tsx", "utf8");
 const STYLES = readFileSync("src/app/globals.css", "utf8");
 
 describe("templates library and creation wizard", () => {
@@ -15,10 +16,12 @@ describe("templates library and creation wizard", () => {
     expect(WORKSPACE).not.toContain("Live preview");
   });
 
-  it("opens create and edit work in a separate two-step wizard state", () => {
+  it("opens create and edit work in a URL-identifiable two-step wizard state", () => {
     expect(WORKSPACE).toContain("if (wizardOpen)");
+    expect(WORKSPACE).toContain('searchParams.get("wizard") === "template"');
     expect(WORKSPACE).toContain("handleStartCreating");
     expect(WORKSPACE).toContain("handleStartEditing");
+    expect(WORKSPACE).toContain('router.push("/templates?wizard=template")');
     expect(FORM).toContain("Back to templates");
     expect(FORM).toContain("onCancel?.()");
     expect(FORM).toMatch(/TEMPLATE_WIZARD_STEPS\s*=\s*\[\s*"Compose",\s*"Preview \/ Review"/);
@@ -56,7 +59,25 @@ describe("templates library and creation wizard", () => {
     expect(FORM).toContain("Back to Compose");
     expect(FORM).toContain("Create template");
     expect(WORKSPACE).toContain('router.replace("/templates")');
-    expect(WORKSPACE).toContain("setWizardOpen(false)");
+  });
+
+  it("routes template wizard exits explicitly instead of using browser history", () => {
+    const templateWizardExit = BACK_BUTTON.slice(
+      BACK_BUTTON.indexOf("if (isTemplateWizardPage)"),
+      BACK_BUTTON.indexOf("if (isCreateSequencePage)")
+    );
+    const closeWizard = WORKSPACE.slice(
+      WORKSPACE.indexOf("const handleCloseWizard"),
+      WORKSPACE.indexOf("const handleTemplateMouseEnter")
+    );
+    const previewStep = FORM.slice(FORM.indexOf("{activeStep === 1 ? ("));
+
+    expect(BACK_BUTTON).toContain('pathname === "/templates" && searchParams.get("wizard") === "template"');
+    expect(templateWizardExit).toContain('router.push("/templates")');
+    expect(templateWizardExit).not.toContain("router.back()");
+    expect(closeWizard).toContain('router.push("/templates")');
+    expect(previewStep).toContain("onClick={() => changeStep(0)}");
+    expect(previewStep).toContain("Back to Compose");
   });
 
   it("provides responsive wizard, progress, and library styles", () => {
