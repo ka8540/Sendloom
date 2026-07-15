@@ -1,3 +1,5 @@
+import { FileSpreadsheet, SlidersHorizontal, UploadCloud } from "lucide-react";
+
 import { UploadImportForm } from "@/components/forms";
 import { MappingLibrary, TemplateFieldPicker } from "@/components/mapping-library";
 import { requireOperatorUser } from "@/lib/auth";
@@ -96,23 +98,57 @@ export default async function ImportsPage({
   });
 
   return (
-    <div className="stack">
-      <section className="grid cols-2">
-        <article className="card" data-imports-tour="upload">
-          <h1 style={{ marginTop: 0 }}>Upload your people list</h1>
-          <p className="muted">Upload a CSV or spreadsheet to create an audience.</p>
+    <div className="imports-dashboard">
+      <header className="imports-dashboard__hero">
+        <div>
+          <span className="imports-dashboard__kicker">Audience library</span>
+          <h1>Imports</h1>
+          <p>Upload, map, and manage the people lists that power your sequences.</p>
+        </div>
+      </header>
+
+      <section className="imports-setup-grid" aria-label="Import setup">
+        <article className="card imports-setup-card" id="import-upload" data-imports-tour="upload">
+          <header className="imports-setup-card__header">
+            <span className="imports-setup-card__icon" aria-hidden="true">
+              <UploadCloud />
+            </span>
+            <div>
+              <h2>Upload people</h2>
+              <p>Add a CSV or spreadsheet to create an audience.</p>
+            </div>
+          </header>
           <UploadImportForm />
         </article>
-        <article className="card" data-imports-tour="template-fields">
-          <h2 style={{ marginTop: 0 }}>Template fields</h2>
-          <p className="muted">Choose fields for newly reviewed imports here. Anything already saved can be edited in the imports list below.</p>
+        <article className="card imports-setup-card" data-imports-tour="template-fields">
+          <header className="imports-setup-card__header">
+            <span className="imports-setup-card__icon" aria-hidden="true">
+              <SlidersHorizontal />
+            </span>
+            <div>
+              <h2>Template fields</h2>
+              <p>Choose personalization fields for imports awaiting review.</p>
+            </div>
+          </header>
           <TemplateFieldPicker imports={templateFieldItems} initialImportId={pendingImportId} />
         </article>
       </section>
 
-      <section className="card" data-imports-tour="imports-list">
-        <h2>Imports</h2>
-        <p className="muted">Review, rename, reselect template fields, page through, or delete imported audiences in one place.</p>
+      <section className="card imports-library-shell" data-imports-tour="imports-list" aria-labelledby="imports-library-heading">
+        <header className="imports-library-shell__header">
+          <div className="imports-library-shell__heading">
+            <div className="imports-library-shell__title">
+              <span className="imports-library-shell__icon" aria-hidden="true">
+                <FileSpreadsheet />
+              </span>
+              <h2 id="imports-library-heading">People lists</h2>
+              <span className="imports-library-shell__count" aria-label={`${mappingItems.length} processed imports`}>
+                {mappingItems.length}
+              </span>
+            </div>
+            <p>Processed imports ready to review, edit, or use in a sequence.</p>
+          </div>
+        </header>
         <MappingLibrary items={mappingItems} />
       </section>
     </div>
