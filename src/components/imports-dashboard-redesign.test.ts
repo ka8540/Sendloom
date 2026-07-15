@@ -4,12 +4,21 @@ import { describe, expect, it } from "vitest";
 
 const PAGE = readFileSync("src/app/(app)/imports/page.tsx", "utf8");
 const LIBRARY = readFileSync("src/components/mapping-library.tsx", "utf8");
+const STYLES = readFileSync("src/app/globals.css", "utf8");
 
 describe("Imports dashboard redesign", () => {
   it("uses compact setup and people-list surfaces", () => {
     expect(PAGE).toContain('className="imports-dashboard"');
     expect(PAGE).toContain('className="imports-setup-grid"');
     expect(PAGE).toContain('className="card imports-library-shell"');
+  });
+
+  it("keeps both desktop setup cards equal-height with bottom-aligned actions", () => {
+    expect(STYLES).toMatch(/\.imports-setup-grid\s*\{[^}]*align-items: stretch;/s);
+    expect(STYLES).toMatch(/\.imports-setup-card\s*\{[^}]*display: flex;[^}]*flex-direction: column;[^}]*height: 100%;/s);
+    expect(STYLES).toMatch(/\.import-upload-form,\s*\.imports-field-picker\s*\{[^}]*flex: 1 1 auto;/s);
+    expect(STYLES).toMatch(/\.import-upload-form > \.button,\s*\.imports-field-picker > \.button\s*\{[^}]*margin-top: auto;/s);
+    expect(STYLES).toMatch(/@media \(max-width: 960px\)[\s\S]*\.imports-setup-card\s*\{[^}]*height: auto;/);
   });
 
   it("keeps sample contacts collapsed until their real toggle is used", () => {

@@ -2808,12 +2808,14 @@ html[data-sidebar-collapsed="true"] .sidebar .theme-menu--footer .theme-menu__pa
   display: grid;
   grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
   gap: 1rem;
-  align-items: start;
+  align-items: stretch;
 }
 
 .imports-setup-card {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 1rem;
+  height: 100%;
   padding: 1.15rem 1.2rem;
   border-color: color-mix(in srgb, var(--line) 90%, transparent);
   background:
@@ -2870,6 +2872,9 @@ html[data-sidebar-collapsed="true"] .sidebar .theme-menu--footer .theme-menu__pa
 
 .import-upload-form,
 .imports-field-picker {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
   gap: 0.72rem;
 }
 
@@ -2893,6 +2898,7 @@ html[data-sidebar-collapsed="true"] .sidebar .theme-menu--footer .theme-menu__pa
 .import-upload-form > .button,
 .imports-field-picker > .button {
   min-height: 2.65rem;
+  margin-top: auto;
 }
 
 .imports-field-picker .selection-summary {
@@ -3965,6 +3971,14 @@ html[data-sidebar-collapsed="true"] .sidebar .theme-menu--footer .theme-menu__pa
   .sidebar {
     border-right: 0;
     border-bottom: 1px solid var(--line);
+  }
+
+  .imports-setup-grid {
+    align-items: start;
+  }
+
+  .imports-setup-card {
+    height: auto;
   }
 }
 
