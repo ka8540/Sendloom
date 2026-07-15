@@ -495,10 +495,13 @@ describe("control bar (#7, #8, #10, #11)", () => {
 
   it("changing search, status, or email account resets pagination (#9)", () => {
     const searchHandler = DASH.slice(DASH.indexOf("function onSearchChange"), DASH.indexOf("function clearFilters"));
+    expect(searchHandler).toContain("setPage(1)");
     expect(searchHandler).toContain("replaceUrlState({ query: value, page: 1 })");
     const filterHandler = DASH.slice(DASH.indexOf("function selectFilter"), DASH.indexOf("function selectSender"));
+    expect(filterHandler).toContain("setPage(1)");
     expect(filterHandler).toContain("replaceUrlState({ filter: next as SequenceFilterId, page: 1 })");
     const senderHandler = DASH.slice(DASH.indexOf("function selectSender"), DASH.indexOf("function onSearchChange"));
+    expect(senderHandler).toContain("setPage(1)");
     expect(senderHandler).toContain("replaceUrlState({ sender: next, page: 1 })");
     // Both dropdowns drive the shared filter pipeline (#6, #7, #8).
     expect(DASH).toContain("onChange={selectFilter}");
@@ -513,8 +516,19 @@ describe("control bar (#7, #8, #10, #11)", () => {
   });
 
   it("pages change on click with no pagination preview tooltip", () => {
-    expect(DASH).toContain("onClick={() => replaceUrlState({ page: slice.page + 1 })}");
-    expect(DASH).toContain("onClick={() => replaceUrlState({ page: slice.page - 1 })}");
+    expect(DASH).toContain("onClick={() => replacePaginationPage(slice.page + 1)}");
+    expect(DASH).toContain("onClick={() => replacePaginationPage(slice.page - 1)}");
+    const paginationHandler = DASH.slice(
+      DASH.indexOf("const replacePaginationPage"),
+      DASH.indexOf("useEffect(() =>", DASH.indexOf("const replacePaginationPage"))
+    );
+    expect(paginationHandler).toContain("setPage(nextPage)");
+    expect(paginationHandler).toContain("window.history.replaceState");
+    expect(paginationHandler).not.toContain("router.replace");
+    // The same list element stays mounted and keeps its measured height while
+    // the five-item client-side slice changes.
+    expect(DASH).toContain("ref={listRef}");
+    expect(DASH).toContain("minHeight: listMinHeight");
     expect(DASH).not.toContain("pagePreview");
     expect(DASH).not.toContain("describeSequencePagePreview");
     expect(DASH_CSS).not.toContain(".pagePreview");

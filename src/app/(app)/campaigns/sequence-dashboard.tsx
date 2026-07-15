@@ -328,7 +328,10 @@ export function SequenceDashboard({ items }: { items: SequenceListItem[] }) {
     () => readSequenceDashboardUrlState(searchParams, senderEmails),
     [searchParams, senderEmails]
   );
-  const { filter, sender, query, page } = urlState;
+  const { filter, sender, query, page: urlPage } = urlState;
+  const [page, setPage] = useState(urlPage);
+  const [listMinHeight, setListMinHeight] = useState<number | null>(null);
+  const listRef = useRef<HTMLUListElement | null>(null);
   const filtered = useMemo(
     () => filterSequenceItems(items, filter, query, sender),
     [items, filter, query, sender]
@@ -339,7 +342,6 @@ export function SequenceDashboard({ items }: { items: SequenceListItem[] }) {
     [searchParams, slice.page, urlState]
   );
   const normalizedSearch = normalizedSearchParams.toString();
-  const currentSearch = searchParams.toString();
   const returnTo = buildSequenceDashboardReturnTo(pathname, normalizedSearchParams);
 
   const replaceUrlState = useCallback(
@@ -352,14 +354,37 @@ export function SequenceDashboard({ items }: { items: SequenceListItem[] }) {
     [pathname, router, searchParams]
   );
 
+  const replacePaginationPage = useCallback(
+    (nextPage: number) => {
+      const currentHeight = listRef.current?.getBoundingClientRect().height ?? 0;
+      if (currentHeight > 0) {
+        setListMinHeight((height) => Math.max(height ?? 0, currentHeight));
+      }
+
+      setPage(nextPage);
+
+      const currentParams = new URLSearchParams(window.location.search);
+      const nextParams = updateSequenceDashboardSearchParams(currentParams, { page: nextPage });
+      const queryString = nextParams.toString();
+      const href = queryString ? `${pathname}?${queryString}` : pathname;
+      window.history.replaceState(window.history.state, "", href);
+    },
+    [pathname]
+  );
+
   useEffect(() => {
-    if (normalizedSearch === currentSearch) {
+    setPage(urlPage);
+  }, [urlPage]);
+
+  useEffect(() => {
+    const browserSearch = new URLSearchParams(window.location.search).toString();
+    if (normalizedSearch === browserSearch) {
       return;
     }
 
     const href = normalizedSearch ? `${pathname}?${normalizedSearch}` : pathname;
     router.replace(href as Route, { scroll: false });
-  }, [currentSearch, normalizedSearch, pathname, router]);
+  }, [normalizedSearch, pathname, router]);
 
   // Draft is only offered when draft sequences exist; the six core statuses
   // always appear in the dropdown, including zero counts.
@@ -378,18 +403,26 @@ export function SequenceDashboard({ items }: { items: SequenceListItem[] }) {
   ];
 
   function selectFilter(next: string) {
+    setPage(1);
+    setListMinHeight(null);
     replaceUrlState({ filter: next as SequenceFilterId, page: 1 });
   }
 
   function selectSender(next: string) {
+    setPage(1);
+    setListMinHeight(null);
     replaceUrlState({ sender: next, page: 1 });
   }
 
   function onSearchChange(value: string) {
+    setPage(1);
+    setListMinHeight(null);
     replaceUrlState({ query: value, page: 1 });
   }
 
   function clearFilters() {
+    setPage(1);
+    setListMinHeight(null);
     replaceUrlState({
       filter: "all",
       sender: ALL_SENDER_ACCOUNTS,
@@ -485,7 +518,11 @@ export function SequenceDashboard({ items }: { items: SequenceListItem[] }) {
             <span className={styles.tableHeadActions}>Actions</span>
           </div>
 
-          <ul className={styles.list}>
+          <ul
+            ref={listRef}
+            className={styles.list}
+            style={listMinHeight ? { minHeight: listMinHeight } : undefined}
+          >
             {slice.pageItems.map((item) => (
               <SequenceRow key={item.id} item={item} returnTo={returnTo} />
             ))}
@@ -498,7 +535,7 @@ export function SequenceDashboard({ items }: { items: SequenceListItem[] }) {
                 <button
                   type="button"
                   className={styles.pageButton}
-                  onClick={() => replaceUrlState({ page: slice.page - 1 })}
+                  onClick={() => replacePaginationPage(slice.page - 1)}
                   disabled={slice.page <= 1}
                   aria-label="Previous page"
                 >
@@ -512,7 +549,7 @@ export function SequenceDashboard({ items }: { items: SequenceListItem[] }) {
                 <button
                   type="button"
                   className={styles.pageButton}
-                  onClick={() => replaceUrlState({ page: slice.page + 1 })}
+                  onClick={() => replacePaginationPage(slice.page + 1)}
                   disabled={slice.page >= slice.totalPages}
                   aria-label="Next page"
                 >
