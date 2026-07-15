@@ -233,8 +233,8 @@ export function UploadImportForm() {
   }
 
   return (
-    <form className="form" onSubmit={onSubmit}>
-      <div className="field">
+    <form className="form import-upload-form" onSubmit={onSubmit}>
+      <div className="field import-upload-form__field">
         <label htmlFor="file">Spreadsheet</label>
         <input id="file" name="file" type="file" accept=".csv,.xls,.xlsx" required />
       </div>

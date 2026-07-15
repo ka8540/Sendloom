@@ -1,12 +1,27 @@
 "use client";
 
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Loader2, PencilLine, Trash2 } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Columns3,
+  FileSpreadsheet,
+  Loader2,
+  PencilLine,
+  Search,
+  SearchX,
+  Trash2,
+  Users,
+  X
+} from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 
 import { useErrorToast, useErrorToastEffect } from "@/components/error-toast-provider";
 import { AppConfirmDialog } from "@/components/app-confirm-dialog";
+import actionStyles from "@/components/campaign-card-actions.module.css";
 import { CircularCloseButton } from "@/components/circular-close-button";
 import editorStyles from "@/components/import-editor-dialog.module.css";
 import pickerStyles from "@/components/import-picker.module.css";
@@ -330,7 +345,7 @@ export function TemplateFieldPicker(props: { imports: TemplateFieldItem[]; initi
   }
 
   return (
-    <form className="form" onSubmit={onSubmit}>
+    <form className="form imports-field-picker" onSubmit={onSubmit}>
       <div className="field" data-imports-tour="pending-selector">
         <label htmlFor={triggerId}>Import</label>
         {visibleImports.length === 0 ? (
@@ -440,15 +455,6 @@ export function TemplateFieldPicker(props: { imports: TemplateFieldItem[]; initi
               );
             })}
           </div>
-          <div className="pill-row">
-            {selectedImport.columns
-              .filter((column) => selectedColumns.includes(column.normalized))
-              .map((column) => (
-                <span key={column.normalized} className="pill" title={`Saved as ${column.normalized}`}>
-                  {column.sourceName}
-                </span>
-              ))}
-          </div>
         </>
       ) : null}
       <button
@@ -466,25 +472,54 @@ export function TemplateFieldPicker(props: { imports: TemplateFieldItem[]; initi
 
 export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
   const [editingImportId, setEditingImportId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [expandedPreviewIds, setExpandedPreviewIds] = useState<string[]>([]);
+  const [expandedColumnIds, setExpandedColumnIds] = useState<string[]>([]);
   const deletion = useImportDeletion({
     onDeleted: (importId) => {
       if (editingImportId === importId) {
         setEditingImportId(null);
       }
+      setExpandedPreviewIds((current) => current.filter((id) => id !== importId));
+      setExpandedColumnIds((current) => current.filter((id) => id !== importId));
     }
   });
   const [page, setPage] = useState(1);
   const [error, setError] = useState<string | null>(null);
   useErrorToastEffect(error, "Import update failed");
-  const totalPages = Math.max(1, Math.ceil(props.items.length / IMPORTS_PAGE_SIZE));
-  const visibleItems = props.items.slice((page - 1) * IMPORTS_PAGE_SIZE, page * IMPORTS_PAGE_SIZE);
+  const normalizedSearchQuery = searchQuery.trim().toLowerCase();
+  const filteredItems = useMemo(() => {
+    if (!normalizedSearchQuery) {
+      return props.items;
+    }
+
+    return props.items.filter((item) => {
+      const searchableValues = [
+        item.fileName,
+        ...item.columns.flatMap((column) => [column.sourceName, column.normalized]),
+        ...item.previewRows.flatMap((row) => [row.primary, row.secondary, row.tertiary])
+      ];
+
+      return searchableValues.some((value) => value.toLowerCase().includes(normalizedSearchQuery));
+    });
+  }, [normalizedSearchQuery, props.items]);
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / IMPORTS_PAGE_SIZE));
+  const visibleItems = filteredItems.slice((page - 1) * IMPORTS_PAGE_SIZE, page * IMPORTS_PAGE_SIZE);
   const editingItem = editingImportId
     ? props.items.find((item) => item.importId === editingImportId) ?? null
     : null;
+  const isSearching = normalizedSearchQuery.length > 0;
+  const hasNoResults = isSearching && filteredItems.length === 0;
+  const pageRangeStart = filteredItems.length ? (page - 1) * IMPORTS_PAGE_SIZE + 1 : 0;
+  const pageRangeEnd = Math.min(filteredItems.length, page * IMPORTS_PAGE_SIZE);
 
   useEffect(() => {
-    setPage((current) => Math.min(current, Math.max(1, Math.ceil(props.items.length / IMPORTS_PAGE_SIZE))));
-  }, [props.items.length]);
+    setPage((current) => Math.min(current, Math.max(1, Math.ceil(filteredItems.length / IMPORTS_PAGE_SIZE))));
+  }, [filteredItems.length]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [normalizedSearchQuery]);
 
   // Publish the "what changed" marker so the Help menu can offer a short tour of
   // the processed-import card once the user has at least one. Layout-neutral.
@@ -511,26 +546,55 @@ export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
     }
   }, [editingImportId, props.items]);
 
+  function toggleExpanded(setter: typeof setExpandedPreviewIds, importId: string) {
+    setter((current) => (current.includes(importId) ? current.filter((id) => id !== importId) : [...current, importId]));
+  }
+
   return (
     <div className="imports-library">
+      {props.items.length ? (
+        <div className="imports-library__toolbar">
+          <p className="imports-library__result-count" aria-live="polite">
+            {isSearching
+              ? `${filteredItems.length} ${filteredItems.length === 1 ? "match" : "matches"}`
+              : `${props.items.length} ${props.items.length === 1 ? "import" : "imports"}`}
+          </p>
+          <label className="imports-library__search" aria-label="Search imports">
+            <Search aria-hidden="true" />
+            <input
+              type="search"
+              value={searchQuery}
+              placeholder="Search lists, fields, or contacts..."
+              onChange={(event) => setSearchQuery(event.target.value)}
+            />
+            {searchQuery ? (
+              <button type="button" aria-label="Clear import search" onClick={() => setSearchQuery("")}>
+                <X aria-hidden="true" />
+              </button>
+            ) : null}
+          </label>
+        </div>
+      ) : null}
+
       {visibleItems.map((item, index) => {
         // The first visible card carries the guided-tour targets, so the Imports
         // help guide always finds an anchor when any processed import is shown.
         const isTourAnchor = index === 0;
         const isDeleting = deletion.deletingImportId === item.importId;
+        const showPreview = expandedPreviewIds.includes(item.importId);
+        const showDetectedColumns = expandedColumnIds.includes(item.importId);
         const activeTemplateFields = item.selectedTemplateColumns;
         const selectedColumns = item.columns.filter((column) => activeTemplateFields.includes(column.normalized));
         const detectedOnlyColumns = item.columns.filter((column) => !activeTemplateFields.includes(column.normalized));
         const visibleSelectedColumns = selectedColumns.slice(0, 5);
-        const hiddenSelectedColumnCount = Math.max(0, selectedColumns.length - visibleSelectedColumns.length);
-        const visibleDetectedColumns = detectedOnlyColumns.slice(0, 4);
-        const hiddenDetectedColumnCount = Math.max(0, detectedOnlyColumns.length - visibleDetectedColumns.length);
-        const visiblePreviewRows = item.previewRows.slice(0, 2);
+        const hiddenSelectedColumns = selectedColumns.slice(visibleSelectedColumns.length);
+        const visiblePreviewRows = item.previewRows.slice(0, 3);
         const hiddenPreviewCount = Math.max(0, item.rowCount - visiblePreviewRows.length);
+        const isExpanded = showPreview || showDetectedColumns;
 
         return (
           <article
-            className="import-card"
+            className={`import-card${isExpanded ? " is-expanded" : ""}`}
             key={item.importId}
             data-imports-tour={isTourAnchor ? "import-card" : undefined}
           >
@@ -538,31 +602,25 @@ export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
               <div className="import-card__primary">
                 <div className="import-card__title-row">
                   <strong className="import-card__title">{item.fileName}</strong>
-
-                  <div className="import-card__meta">
-                    <span className="badge">{item.status}</span>
-                    <span className="import-card__metric">
-                      {item.rowCount} {item.rowCount === 1 ? "contact" : "contacts"}
-                    </span>
-                    {item.linkedCampaignCount ? (
-                      <span className="import-card__metric">
-                        {item.linkedCampaignCount} sequence{item.linkedCampaignCount === 1 ? "" : "s"}
-                      </span>
-                    ) : null}
-                  </div>
+                  <span className="badge import-card__status">{item.status}</span>
                 </div>
 
-                {item.updatedAt ? (
-                  <div className="import-card__meta import-card__meta--secondary">
-                    <span className="import-card__meta-text">Updated {item.updatedAt}</span>
-                  </div>
-                ) : null}
+                <div className="import-card__meta">
+                  {item.updatedAt ? <span className="import-card__meta-text">Updated {item.updatedAt}</span> : null}
+                  <span className="import-card__meta-divider" aria-hidden="true" />
+                  <span className="import-card__metric">
+                    {item.rowCount} {item.rowCount === 1 ? "contact" : "contacts"}
+                  </span>
+                  <span className="import-card__metric">
+                    {item.linkedCampaignCount} sequence{item.linkedCampaignCount === 1 ? "" : "s"}
+                  </span>
+                </div>
               </div>
 
-              <div className="import-card__actions">
+              <div className={actionStyles.rail}>
                 <button
                   type="button"
-                  className="field-icon-button"
+                  className={`${actionStyles.action} ${actionStyles.open}`}
                   data-tooltip="Edit import"
                   data-imports-tour={isTourAnchor ? "edit-import" : undefined}
                   onClick={() => {
@@ -577,7 +635,7 @@ export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
 
                 <button
                   type="button"
-                  className="field-icon-button field-icon-button--danger"
+                  className={`${actionStyles.action} ${actionStyles.delete}`}
                   data-tooltip="Delete import"
                   data-imports-tour={isTourAnchor ? "delete-import" : undefined}
                   onClick={() => deletion.requestDeletion(item)}
@@ -589,47 +647,87 @@ export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
               </div>
             </div>
 
-            <div className="import-card__content">
-              <div
-                className="import-card__section import-card__section--columns"
-                data-imports-tour={isTourAnchor ? "active-template-fields" : undefined}
-              >
-                <div className="import-card__section-head">
-                  <div className="import-card__section-heading">
-                    <span className="import-card__section-label">Template fields</span>
-                    <p className="import-card__section-copy">
-                      {activeTemplateFields.length} of {item.columns.length} detected columns are active in templates.
-                    </p>
-                  </div>
+            <div
+              className="import-card__fields"
+              data-imports-tour={isTourAnchor ? "active-template-fields" : undefined}
+            >
+              <div className="import-card__fields-label">
+                <span>Template fields</span>
+                <span>{selectedColumns.length} active</span>
+              </div>
+              {visibleSelectedColumns.length ? (
+                <div className="import-card__field-pill-row">
+                  {visibleSelectedColumns.map((column) => (
+                    <span
+                      key={`${item.importId}-${column.normalized}`}
+                      className="import-card__field-pill import-card__field-pill--selected"
+                      title={`Saved as ${column.normalized}`}
+                    >
+                      {column.sourceName}
+                    </span>
+                  ))}
+                  {hiddenSelectedColumns.length ? (
+                    <span
+                      className="import-card__field-pill import-card__field-pill--overflow import-card__field-tooltip"
+                      tabIndex={0}
+                      data-field-tooltip={hiddenSelectedColumns.map((column) => column.sourceName).join(" · ")}
+                      aria-label={`${hiddenSelectedColumns.length} more active fields: ${hiddenSelectedColumns
+                        .map((column) => column.sourceName)
+                        .join(", ")}`}
+                    >
+                      +{hiddenSelectedColumns.length}
+                    </span>
+                  ) : null}
                 </div>
+              ) : (
+                <span className="import-card__empty-inline">No active fields</span>
+              )}
+            </div>
 
-                {visibleSelectedColumns.length ? (
-                  <div className="import-card__field-pill-row">
-                    {visibleSelectedColumns.map((column) => (
-                      <span
-                        key={`${item.importId}-${column.normalized}`}
-                        className="import-card__field-pill import-card__field-pill--selected"
-                        title={`Saved as ${column.normalized}`}
-                      >
-                        {column.sourceName}
-                      </span>
-                    ))}
-                    {hiddenSelectedColumnCount ? (
-                      <span className="import-card__field-pill import-card__field-pill--overflow">+{hiddenSelectedColumnCount} more</span>
-                    ) : null}
-                  </div>
-                ) : (
-                  <span className="muted">No template fields are selected for this import yet.</span>
-                )}
+            <div className="import-card__toggles">
+              {detectedOnlyColumns.length ? (
+                <button
+                  type="button"
+                  className="import-card__details-toggle"
+                  aria-expanded={showDetectedColumns}
+                  aria-controls={`detected-columns-${item.importId}`}
+                  data-imports-tour={isTourAnchor ? "other-detected-columns" : undefined}
+                  onClick={() => toggleExpanded(setExpandedColumnIds, item.importId)}
+                >
+                  <Columns3 aria-hidden="true" />
+                  <span>{detectedOnlyColumns.length} more column{detectedOnlyColumns.length === 1 ? "" : "s"}</span>
+                  <ChevronDown aria-hidden="true" />
+                </button>
+              ) : null}
 
-                {visibleDetectedColumns.length ? (
-                  <div
-                    className="import-card__detected-summary"
-                    data-imports-tour={isTourAnchor ? "other-detected-columns" : undefined}
-                  >
-                    <span className="import-card__detected-label">Other detected columns</span>
-                    <div className="import-card__field-pill-row import-card__field-pill-row--muted">
-                      {visibleDetectedColumns.map((column) => (
+              {visiblePreviewRows.length ? (
+                <button
+                  type="button"
+                  className="import-card__details-toggle"
+                  aria-expanded={showPreview}
+                  aria-controls={`sample-contacts-${item.importId}`}
+                  data-imports-tour={isTourAnchor ? "sample-contacts" : undefined}
+                  onClick={() => toggleExpanded(setExpandedPreviewIds, item.importId)}
+                >
+                  <Users aria-hidden="true" />
+                  <span>{showPreview ? "Hide sample" : "Sample contacts"}</span>
+                  <ChevronDown aria-hidden="true" />
+                </button>
+              ) : (
+                <span className="import-card__empty-inline">No sample available</span>
+              )}
+            </div>
+
+            {isExpanded ? (
+              <div className="import-card__details" aria-label={`Expanded details for ${item.fileName}`}>
+                {showDetectedColumns ? (
+                  <section className="import-card__details-panel" id={`detected-columns-${item.importId}`}>
+                    <div className="import-card__details-heading">
+                      <span className="import-card__section-label">Detected columns</span>
+                      <span>{detectedOnlyColumns.length}</span>
+                    </div>
+                    <div className="import-card__field-pill-row">
+                      {detectedOnlyColumns.map((column) => (
                         <span
                           key={`${item.importId}-${column.normalized}-detected`}
                           className="import-card__field-pill import-card__field-pill--muted"
@@ -638,70 +736,88 @@ export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
                           {column.sourceName}
                         </span>
                       ))}
-                      {hiddenDetectedColumnCount ? (
-                        <span className="import-card__field-pill import-card__field-pill--overflow">+{hiddenDetectedColumnCount} more</span>
-                      ) : null}
                     </div>
-                  </div>
+                  </section>
                 ) : null}
-              </div>
 
-              <div
-                className="import-card__section import-card__section--preview"
-                data-imports-tour={isTourAnchor ? "sample-contacts" : undefined}
-              >
-                <div className="import-card__section-head">
-                  <div className="import-card__section-heading">
-                    <span className="import-card__section-label">Sample contacts</span>
-                    <p className="import-card__section-copy">A quick peek at the people in this import.</p>
-                  </div>
-                  <span className="import-card__section-count">{Math.min(item.rowCount, visiblePreviewRows.length)}</span>
-                </div>
-                {item.previewRows.length ? (
-                  <div className="import-card__preview-list">
-                    {visiblePreviewRows.map((row) => (
-                      <div key={row.id} className="import-card__preview-item">
-                        <strong>{row.primary}</strong>
-                        <span>{row.secondary}</span>
-                        <span>{row.tertiary}</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <span className="muted">No preview available</span>
-                )}
-                {hiddenPreviewCount ? (
-                  <span className="import-card__preview-more">+{hiddenPreviewCount} more contacts in this import</span>
+                {showPreview ? (
+                  <section className="import-card__details-panel" id={`sample-contacts-${item.importId}`}>
+                    <div className="import-card__details-heading">
+                      <span className="import-card__section-label">Sample contacts</span>
+                      <span>{visiblePreviewRows.length}</span>
+                    </div>
+                    <div className="import-card__preview-list">
+                      {visiblePreviewRows.map((row) => (
+                        <div key={row.id} className="import-card__preview-item">
+                          <strong>{row.primary}</strong>
+                          <span>{row.secondary}</span>
+                          <span>{row.tertiary}</span>
+                        </div>
+                      ))}
+                    </div>
+                    {hiddenPreviewCount ? (
+                      <span className="import-card__preview-more">+{hiddenPreviewCount} more contacts</span>
+                    ) : null}
+                  </section>
                 ) : null}
               </div>
-            </div>
+            ) : null}
           </article>
         );
       })}
 
-      {props.items.length > IMPORTS_PAGE_SIZE ? (
-        <div className="imports-pagination" data-imports-tour="imports-pagination">
-          <button
-            type="button"
-            className="imports-pagination__button"
-            onClick={() => setPage((current) => Math.max(1, current - 1))}
-            disabled={page === 1}
-            aria-label="Previous imports page"
-          >
-            <ChevronLeft aria-hidden="true" />
-          </button>
-          <span className="imports-pagination__count">
-            {page} / {totalPages}
+      {!props.items.length ? (
+        <div className="imports-library__empty">
+          <span className="imports-library__empty-icon" aria-hidden="true">
+            <FileSpreadsheet />
           </span>
-          <button
-            type="button"
-            className="imports-pagination__button"
-            onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-            disabled={page === totalPages}
-            aria-label="Next imports page"
-          >
-            <ChevronRight aria-hidden="true" />
+          <strong>No imports yet</strong>
+          <p>Upload a people list above, then choose its template fields.</p>
+          <a className="button imports-library__empty-action" href="#import-upload">
+            Upload people
+          </a>
+        </div>
+      ) : hasNoResults ? (
+        <div className="imports-library__empty" role="status">
+          <span className="imports-library__empty-icon" aria-hidden="true">
+            <SearchX />
+          </span>
+          <strong>No matching imports</strong>
+          <p>Try another list name, field, or contact.</p>
+          <button className="button secondary imports-library__empty-action" type="button" onClick={() => setSearchQuery("")}>
+            Clear search
           </button>
+        </div>
+      ) : null}
+
+      {filteredItems.length > IMPORTS_PAGE_SIZE ? (
+        <div className="imports-pagination" data-imports-tour="imports-pagination">
+          <p className="imports-pagination__summary">
+            Showing <strong>{pageRangeStart}–{pageRangeEnd}</strong> of {filteredItems.length}
+          </p>
+          <div className="imports-pagination__controls">
+            <button
+              type="button"
+              className="imports-pagination__button"
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+              disabled={page === 1}
+              aria-label="Previous imports page"
+            >
+              <ChevronLeft aria-hidden="true" />
+            </button>
+            <span className="imports-pagination__count">
+              {page} / {totalPages}
+            </span>
+            <button
+              type="button"
+              className="imports-pagination__button"
+              onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+              disabled={page === totalPages}
+              aria-label="Next imports page"
+            >
+              <ChevronRight aria-hidden="true" />
+            </button>
+          </div>
         </div>
       ) : null}
 
