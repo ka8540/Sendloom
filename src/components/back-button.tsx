@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { ArrowLeft } from "lucide-react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import {
   getDefaultBackFallback,
@@ -21,8 +21,14 @@ type BackButtonProps = {
 export function BackButton({ alwaysUseFallback = false, className, fallbackHref, label = "Go back" }: BackButtonProps) {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const isCreateSequencePage = pathname === "/campaigns/new" || pathname === "/sequences/new";
-  const resolvedLabel = isCreateSequencePage ? "Back to sequences" : label;
+  const isTemplateWizardPage = pathname === "/templates" && searchParams.get("wizard") === "template";
+  const resolvedLabel = isCreateSequencePage
+    ? "Back to sequences"
+    : isTemplateWizardPage
+      ? "Back to templates"
+      : label;
 
   // How many in-app client navigations have happened since this button mounted.
   // The back button lives in the persistent app shell, so this ref survives every
@@ -71,6 +77,11 @@ export function BackButton({ alwaysUseFallback = false, className, fallbackHref,
   }, [alwaysUseFallback, pathname]);
 
   const handleClick = useCallback(() => {
+    if (isTemplateWizardPage) {
+      router.push("/templates");
+      return;
+    }
+
     if (isCreateSequencePage) {
       router.push("/sequences");
       return;
@@ -94,7 +105,7 @@ export function BackButton({ alwaysUseFallback = false, className, fallbackHref,
     }
 
     router.push(fallbackHref ?? getDefaultBackFallback(pathname));
-  }, [alwaysUseFallback, fallbackHref, isCreateSequencePage, pathname, router]);
+  }, [alwaysUseFallback, fallbackHref, isCreateSequencePage, isTemplateWizardPage, pathname, router]);
 
   return (
     <button

@@ -72,8 +72,15 @@ export function ManualButton() {
 function DashboardHelpButton({ label, tooltip, manual }: { label: string; tooltip: string; manual: ManualConfig }) {
   const { openManualStage, isStageComplete } = useManual();
   const hasQuickStart = Boolean(manual.helpQuickStart);
-  const quickStartStage = manual.quickStartStage ?? "starter";
-  const fullTourStage = manual.fullTourStage ?? "full";
+  // Manuals whose "page" changes by internal state rather than the URL (the
+  // Templates library vs. its create/edit wizard steps) opt into `contextualStages`
+  // so the menu's guide actions target whatever surface is on screen. The stage is
+  // read from the live DOM as the menu renders; every other manual keeps its fixed
+  // quick/full stages untouched.
+  const resolveContextStage = (fallbackStage: string) =>
+    manual.contextualStages && manual.resolveStage ? manual.resolveStage() ?? fallbackStage : fallbackStage;
+  const quickStartStage = resolveContextStage(manual.quickStartStage ?? "starter");
+  const fullTourStage = resolveContextStage(manual.fullTourStage ?? "full");
   const [menuOpen, setMenuOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [changedStage, setChangedStage] = useState<string | null>(null);

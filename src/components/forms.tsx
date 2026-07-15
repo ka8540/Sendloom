@@ -1,7 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Eye, EyeOff, Sparkles } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  Circle,
+  Eye,
+  EyeOff,
+  Mail,
+  Sparkles
+} from "lucide-react";
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
 
@@ -9,13 +18,18 @@ import { renderBrandText } from "@/components/brand-text";
 import { useErrorToastEffect } from "@/components/error-toast-provider";
 import { analyzeSpam, type SpamAnalysis } from "@/lib/spam-analysis";
 import {
+  buildTemplatePreviewPayload,
   convertTemplateBody,
+  extractTemplateVariables,
   getDefaultTemplateBody,
   getTemplateBodyHint,
   getTemplateBodyLabel,
   getTemplateBodyPlaceholder,
   getTemplateFormatLabel,
+  renderTemplatePreview,
+  renderTemplateSubjectPreview,
   TEMPLATE_FORMATS,
+  templateContentToPlainText,
   type TemplateFormat,
   validateTemplateBody
 } from "@/lib/templates";
@@ -28,6 +42,8 @@ type ActionState = {
 
 type EnhanceField = "subject" | "body";
 const DEFAULT_TEMPLATE_FORMAT: TemplateFormat = "PLAIN_TEXT";
+export const TEMPLATE_WIZARD_STEPS = ["Compose", "Preview / Review"] as const;
+type TemplateWizardStep = 0 | 1;
 
 type PasswordFieldProps = {
   id: string;
@@ -257,10 +273,20 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
   const [checkingSpam, setCheckingSpam] = useState(false);
   const [spamAnalysis, setSpamAnalysis] = useState<SpamAnalysis | null>(null);
   const [highlightedField, setHighlightedField] = useState<EnhanceField | null>(null);
+  const [activeStep, setActiveStep] = useState<TemplateWizardStep>(0);
   const highlightTimeoutRef = useRef<number | null>(null);
+  const stepHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const controlled = Boolean(value && onChange);
   const fields = value ?? localFields;
   const bodyValidationError = validateTemplateBody(fields.format, fields.htmlBody);
+  const overallSpamScore = spamAnalysis ? Math.max(spamAnalysis.subjectScore, spamAnalysis.bodyScore) : null;
+  const previewVariables = Array.from(new Set([...extractTemplateVariables(fields.subject), ...extractTemplateVariables(fields.htmlBody)]));
+  const previewPayload = buildTemplatePreviewPayload(previewVariables, fields.previewPayload ?? undefined);
+  const previewSubject = renderTemplateSubjectPreview(fields.subject, previewPayload);
+  const previewPlainText = templateContentToPlainText(fields.format, fields.htmlBody).trim();
+  const previewWordCount = previewPlainText ? previewPlainText.split(/\s+/).length : 0;
+  const previewReadingMinutes = previewWordCount ? Math.max(1, Math.ceil(previewWordCount / 200)) : 0;
+  const composeComplete = Boolean(fields.name.trim() && fields.subject.trim() && fields.htmlBody.trim() && !bodyValidationError);
   useErrorToastEffect(state.error, initialTemplate ? "Template update failed" : "Template save failed");
 
   const updateFields = (updater: (current: TemplateDraft) => TemplateDraft) => {
@@ -297,6 +323,7 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
     }
 
     setState({ pending: false });
+    setActiveStep(0);
     resetTemplateAssistState();
   }, [controlled, initialTemplate?.id]);
 
@@ -322,7 +349,10 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
         })
       });
 
-      const payload = (await response.json()) as { enhancedText?: string; error?: string };
+      const payload = (await response.json()) as {
+        enhancedText?: string;
+        error?: string;
+      };
       if (!response.ok || !payload.enhancedText) {
         setEnhanceError((current) => ({
           ...current,
@@ -387,6 +417,15 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
     return <span className={`field-score-chip field-score-chip--${risk.toLowerCase()}`}>{score}% spam</span>;
   }
 
+  function changeStep(nextStep: TemplateWizardStep) {
+    if (nextStep > 0 && !composeComplete) {
+      return;
+    }
+
+    setActiveStep(nextStep);
+    window.requestAnimationFrame(() => stepHeadingRef.current?.focus());
+  }
+
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setState({ pending: true });
@@ -404,7 +443,10 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
 
     if (!response.ok) {
       const payload = await response.json();
-      setState({ pending: false, error: payload.error ?? "Template save failed." });
+      setState({
+        pending: false,
+        error: payload.error ?? "Template save failed."
+      });
       return;
     }
 
@@ -429,148 +471,356 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
   }
 
   const isEditing = Boolean(initialTemplate);
+  const formBusy = state.pending || checkingSpam || enhancingField !== null;
+  const progressItems = [
+    { label: "Template name", complete: Boolean(fields.name.trim()) },
+    { label: "Message format", complete: Boolean(fields.format) },
+    { label: "Subject", complete: Boolean(fields.subject.trim()) },
+    {
+      label: "Email body",
+      complete: Boolean(fields.htmlBody.trim()) && !bodyValidationError
+    },
+    { label: "Spam check", complete: Boolean(spamAnalysis) }
+  ];
 
   return (
-    <form className="form" onSubmit={onSubmit}>
-      <div className="template-form-toolbar">
-        <div className="template-form-toolbar__content">
-          <p className="template-form-toolbar__eyebrow">Delivery health</p>
-          <p className="template-form-toolbar__copy">Run a spam pass whenever you want, then use AI to tighten the copy with that score in mind.</p>
-        </div>
-        <button
-          className={`template-check-spam-button${spamAnalysis ? " is-ready" : ""}`}
-          type="button"
-          onClick={checkSpam}
-          disabled={state.pending || checkingSpam || enhancingField !== null}
-        >
-          {checkingSpam ? (
-            <span className="button-spinner" aria-hidden="true" />
-          ) : (
-            <span className="template-check-spam-button__signal" aria-hidden="true" />
-          )}
-          <span className="template-check-spam-button__label">{checkingSpam ? "Checking spam" : "Check spam"}</span>
-        </button>
-      </div>
-      <div className="field">
-        <label htmlFor="name">Template name</label>
-        <input
-          id="name"
-          name="name"
-          value={fields.name}
-          onChange={(event) => updateFields((current) => ({ ...current, name: event.target.value }))}
-          required
-        />
-      </div>
-      <div className="field">
-        <label htmlFor="format">Message format</label>
-        <select
-          id="format"
-          name="format"
-          value={fields.format}
-          onChange={(event) => {
-            const nextFormat = event.target.value as TemplateFormat;
-            setEnhanceError((current) => ({ ...current, body: undefined }));
-            setSpamAnalysis(null);
+    <form className="template-wizard" onSubmit={onSubmit} data-template-step={activeStep === 0 ? "compose" : "review"}>
+      <article className="card template-wizard__card">
+        <nav className="template-wizard__steps" aria-label="Template creation progress">
+          {TEMPLATE_WIZARD_STEPS.map((step, index) => {
+            const stepIndex = index as TemplateWizardStep;
+            const isActive = activeStep === stepIndex;
+            const isComplete = activeStep > stepIndex;
 
-            updateFields((current) => ({
-              ...current,
-              format: nextFormat,
-              htmlBody: convertTemplateBody(current.htmlBody, current.format, nextFormat)
-            }));
-          }}
-        >
-          {TEMPLATE_FORMATS.map((format) => (
-            <option key={format} value={format}>
-              {getTemplateFormatLabel(format)}
-            </option>
-          ))}
-        </select>
-        <p className="field-inline-note">{renderBrandText(getTemplateBodyHint(fields.format))}</p>
-      </div>
-      <div className="field">
-        <div className="field-label-row">
-          <label htmlFor="subject">Subject</label>
-          <div className="field-label-row__actions">
-            {spamAnalysis ? renderSpamScoreChip(spamAnalysis.subjectScore, spamAnalysis.subjectRisk) : null}
-            <button
-              className="field-icon-button"
-              type="button"
-              onClick={() => enhanceText("subject", fields.subject)}
-              disabled={state.pending || enhancingField !== null || checkingSpam}
-              aria-label={getEnhanceTooltip("subject")}
-              data-tooltip={getEnhanceTooltip("subject")}
-            >
-              {enhancingField === "subject" ? <span className="button-spinner" aria-hidden="true" /> : <Sparkles aria-hidden="true" />}
-            </button>
+            return (
+              <button
+                key={step}
+                className={`template-wizard__step${isActive ? " is-active" : ""}${isComplete ? " is-complete" : ""}`}
+                type="button"
+                onClick={() => changeStep(stepIndex)}
+                disabled={stepIndex > 0 && !composeComplete}
+                aria-current={isActive ? "step" : undefined}
+              >
+                <span className="template-wizard__step-number">{isComplete ? <Check aria-hidden="true" /> : index + 1}</span>
+                <span>{step}</span>
+              </button>
+            );
+          })}
+        </nav>
+
+        <header className="template-wizard__intro">
+          <span>
+            Step {activeStep + 1} of {TEMPLATE_WIZARD_STEPS.length}
+          </span>
+          <h2 ref={stepHeadingRef} tabIndex={-1}>
+            {activeStep === 0 ? "Compose your template" : "Preview and review"}
+          </h2>
+          <p>
+            {activeStep === 0
+              ? "Write the reusable message your sequences will send."
+              : "Review every detail before you create the template."}
+          </p>
+        </header>
+
+        {activeStep === 0 ? (
+          <div className="template-wizard__step-content">
+            <section className="template-form-toolbar" aria-labelledby="template-delivery-health" data-template-tour="compose-tools">
+              <div className="template-form-toolbar__content">
+                <p className="template-form-toolbar__eyebrow" id="template-delivery-health">
+                  Delivery health
+                </p>
+                <p className="template-form-toolbar__copy">
+                  Run a spam pass whenever you want, then use AI to tighten the copy with that score in mind.
+                </p>
+              </div>
+              <button
+                className={`template-check-spam-button${spamAnalysis ? " is-ready" : ""}`}
+                type="button"
+                onClick={checkSpam}
+                disabled={formBusy}
+              >
+                {checkingSpam ? (
+                  <span className="button-spinner" aria-hidden="true" />
+                ) : (
+                  <span className="template-check-spam-button__signal" aria-hidden="true" />
+                )}
+                <span className="template-check-spam-button__label">{checkingSpam ? "Checking spam" : "Check spam"}</span>
+              </button>
+            </section>
+
+            <div className="template-meta-grid" data-template-tour="compose-basics">
+              <div className="field template-meta-field">
+                <label htmlFor="name">Template name</label>
+                <input
+                  id="name"
+                  name="name"
+                  value={fields.name}
+                  onChange={(event) => updateFields((current) => ({ ...current, name: event.target.value }))}
+                  placeholder="e.g. Recruiting intro"
+                  required
+                />
+              </div>
+              <div className="field template-meta-field">
+                <label htmlFor="format">Message format</label>
+                <select
+                  id="format"
+                  name="format"
+                  value={fields.format}
+                  onChange={(event) => {
+                    const nextFormat = event.target.value as TemplateFormat;
+                    setEnhanceError((current) => ({ ...current, body: undefined }));
+                    setSpamAnalysis(null);
+
+                    updateFields((current) => ({
+                      ...current,
+                      format: nextFormat,
+                      htmlBody: convertTemplateBody(current.htmlBody, current.format, nextFormat)
+                    }));
+                  }}
+                >
+                  {TEMPLATE_FORMATS.map((format) => (
+                    <option key={format} value={format}>
+                      {getTemplateFormatLabel(format)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <p className="template-meta-hint">{renderBrandText(getTemplateBodyHint(fields.format))}</p>
+
+            <div className="field template-compose-field" data-template-tour="compose-personalization">
+              <div className="field-label-row">
+                <label htmlFor="subject">Subject</label>
+                <div className="field-label-row__actions">
+                  {spamAnalysis ? renderSpamScoreChip(spamAnalysis.subjectScore, spamAnalysis.subjectRisk) : null}
+                  <button
+                    className="field-icon-button"
+                    type="button"
+                    onClick={() => enhanceText("subject", fields.subject)}
+                    disabled={formBusy}
+                    aria-label={getEnhanceTooltip("subject")}
+                    data-tooltip={getEnhanceTooltip("subject")}
+                  >
+                    {enhancingField === "subject" ? (
+                      <span className="button-spinner" aria-hidden="true" />
+                    ) : (
+                      <Sparkles aria-hidden="true" />
+                    )}
+                  </button>
+                </div>
+              </div>
+              <input
+                id="subject"
+                name="subject"
+                value={fields.subject}
+                onChange={(event) => {
+                  setEnhanceError((current) => ({ ...current, subject: undefined }));
+                  setSpamAnalysis(null);
+                  updateFields((current) => ({ ...current, subject: event.target.value }));
+                }}
+                placeholder="Hi {{name}}, quick question"
+                className={highlightedField === "subject" ? "field-enhanced" : undefined}
+                required
+              />
+              {enhanceError.subject ? <p className="field-inline-note">{enhanceError.subject}</p> : null}
+            </div>
+
+            <div className="field template-compose-field">
+              <div className="field-label-row">
+                <label htmlFor="htmlBody">{getTemplateBodyLabel(fields.format)}</label>
+                <div className="field-label-row__actions">
+                  {spamAnalysis ? renderSpamScoreChip(spamAnalysis.bodyScore, spamAnalysis.bodyRisk) : null}
+                  <button
+                    className="field-icon-button"
+                    type="button"
+                    onClick={() => enhanceText("body", fields.htmlBody)}
+                    disabled={formBusy}
+                    aria-label={getEnhanceTooltip("body")}
+                    data-tooltip={getEnhanceTooltip("body")}
+                  >
+                    {enhancingField === "body" ? (
+                      <span className="button-spinner" aria-hidden="true" />
+                    ) : (
+                      <Sparkles aria-hidden="true" />
+                    )}
+                  </button>
+                </div>
+              </div>
+              <textarea
+                id="htmlBody"
+                name="htmlBody"
+                value={fields.htmlBody}
+                placeholder={getTemplateBodyPlaceholder(fields.format)}
+                onChange={(event) => {
+                  setEnhanceError((current) => ({ ...current, body: undefined }));
+                  setSpamAnalysis(null);
+                  updateFields((current) => ({ ...current, htmlBody: event.target.value }));
+                }}
+                className={highlightedField === "body" ? "field-enhanced" : undefined}
+                required
+              />
+              <p className="field-inline-note">{renderBrandText(getTemplateBodyHint(fields.format))}</p>
+              {bodyValidationError ? <p className="field-inline-note">{bodyValidationError}</p> : null}
+              {enhanceError.body ? <p className="field-inline-note">{enhanceError.body}</p> : null}
+            </div>
+
+            <div className="template-wizard__actions">
+              <button
+                className="button secondary"
+                type="button"
+                onClick={() => {
+                  resetTemplateAssistState();
+                  onCancel?.();
+                }}
+                disabled={state.pending}
+              >
+                <ArrowLeft aria-hidden="true" />
+                Back to templates
+              </button>
+              <button
+                className="button"
+                type="button"
+                onClick={() => changeStep(1)}
+                disabled={!composeComplete || state.pending}
+                data-template-tour="compose-next"
+              >
+                Next: Preview
+                <ArrowRight aria-hidden="true" />
+              </button>
+            </div>
           </div>
-        </div>
-        <input
-          id="subject"
-          name="subject"
-          value={fields.subject}
-          onChange={(event) => {
-            setEnhanceError((current) => ({ ...current, subject: undefined }));
-            setSpamAnalysis(null);
-            updateFields((current) => ({ ...current, subject: event.target.value }));
-          }}
-          placeholder="Hi {{name}}, quick question"
-          className={highlightedField === "subject" ? "field-enhanced" : undefined}
-          required
-        />
-        {enhanceError.subject ? <p className="field-inline-note">{enhanceError.subject}</p> : null}
-      </div>
-      <div className="field">
-        <div className="field-label-row">
-          <label htmlFor="htmlBody">{getTemplateBodyLabel(fields.format)}</label>
-          <div className="field-label-row__actions">
-            {spamAnalysis ? renderSpamScoreChip(spamAnalysis.bodyScore, spamAnalysis.bodyRisk) : null}
-            <button
-              className="field-icon-button"
-              type="button"
-              onClick={() => enhanceText("body", fields.htmlBody)}
-              disabled={state.pending || enhancingField !== null || checkingSpam}
-              aria-label={getEnhanceTooltip("body")}
-              data-tooltip={getEnhanceTooltip("body")}
-            >
-              {enhancingField === "body" ? <span className="button-spinner" aria-hidden="true" /> : <Sparkles aria-hidden="true" />}
-            </button>
-          </div>
-        </div>
-        <textarea
-          id="htmlBody"
-          name="htmlBody"
-          value={fields.htmlBody}
-          placeholder={getTemplateBodyPlaceholder(fields.format)}
-          onChange={(event) => {
-            setEnhanceError((current) => ({ ...current, body: undefined }));
-            setSpamAnalysis(null);
-            updateFields((current) => ({ ...current, htmlBody: event.target.value }));
-          }}
-          className={highlightedField === "body" ? "field-enhanced" : undefined}
-          required
-        />
-        <p className="field-inline-note">{renderBrandText(getTemplateBodyHint(fields.format))}</p>
-        {bodyValidationError ? <p className="field-inline-note">{bodyValidationError}</p> : null}
-        {enhanceError.body ? <p className="field-inline-note">{enhanceError.body}</p> : null}
-      </div>
-      <div className="template-form-actions">
-        <button className="button" type="submit" disabled={state.pending || Boolean(bodyValidationError)}>
-          {state.pending ? "Saving..." : isEditing ? "Save changes" : "Save template"}
-        </button>
-        {isEditing ? (
-          <button
-            className="button secondary"
-            type="button"
-            onClick={() => {
-              resetTemplateAssistState();
-              onCancel?.();
-            }}
-            disabled={state.pending}
-          >
-            Cancel
-          </button>
         ) : null}
-      </div>
+
+        {activeStep === 1 ? (
+          <div className="template-wizard__step-content template-wizard-preview">
+            <section className="template-review-summary" aria-labelledby="template-review-summary-heading" data-template-tour="review-summary">
+              <header className="template-review-summary__header">
+                <div>
+                  <span className="template-review-summary__eyebrow">Template summary</span>
+                  <h3 id="template-review-summary-heading">Review details</h3>
+                </div>
+                <span className="format-badge">{getTemplateFormatLabel(fields.format)}</span>
+              </header>
+
+              <dl className="template-review-summary__details">
+                <div>
+                  <dt>Template name</dt>
+                  <dd>{fields.name}</dd>
+                </div>
+                <div>
+                  <dt>Spam check</dt>
+                  <dd className={overallSpamScore === null ? undefined : "is-checked"}>
+                    <span className="template-review-summary__status" aria-hidden="true" />
+                    {overallSpamScore === null ? "Not checked" : `${overallSpamScore}% risk`}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Length</dt>
+                  <dd>
+                    {previewWordCount} words · ~{previewReadingMinutes} min read
+                  </dd>
+                </div>
+                <div className="template-review-summary__subject">
+                  <dt>Subject</dt>
+                  <dd>{previewSubject}</dd>
+                </div>
+              </dl>
+
+              <div className="template-review-summary__variables">
+                <span>Variables used</span>
+                <div>
+                  {previewVariables.length ? (
+                    previewVariables.map((variable) => <code key={variable}>{`{{${variable}}}`}</code>)
+                  ) : (
+                    <span className="template-review-summary__empty">None detected</span>
+                  )}
+                </div>
+              </div>
+            </section>
+
+            <section className="template-email-review" aria-labelledby="email-preview-heading" data-template-tour="review-preview">
+              <header className="template-email-review__header">
+                <div className="template-email-review__title">
+                  <span className="template-email-review__icon" aria-hidden="true">
+                    <Mail />
+                  </span>
+                  <div>
+                    <span>Recipient view</span>
+                    <h3 id="email-preview-heading">Preview email</h3>
+                  </div>
+                </div>
+                <span className="format-badge">{getTemplateFormatLabel(fields.format)}</span>
+              </header>
+
+              <div className="template-preview-mail template-wizard-preview__mail">
+                <div className="template-preview-mail__subject">
+                  <span className="template-preview-mail__label">Subject</span>
+                  <h4>{previewSubject}</h4>
+                </div>
+                <div
+                  className={`template-preview-mail__body template-preview-mail__body--${fields.format.toLowerCase().replace("_", "-")}`}
+                  role="document"
+                  aria-label="Email body preview"
+                  dangerouslySetInnerHTML={{
+                    __html: renderTemplatePreview(fields.format, fields.htmlBody, previewPayload)
+                  }}
+                />
+              </div>
+
+              <p className="template-email-review__note">Merge fields are shown with safe sample values for this preview.</p>
+            </section>
+
+            {state.error ? (
+              <p className="error-message" role="alert">
+                {state.error}
+              </p>
+            ) : null}
+
+            <div className="template-wizard__actions">
+              <button
+                className="button secondary"
+                type="button"
+                onClick={() => changeStep(0)}
+                disabled={state.pending}
+                data-template-tour="review-back"
+              >
+                <ArrowLeft aria-hidden="true" />
+                Back to Compose
+              </button>
+              <button
+                className="button"
+                type="submit"
+                disabled={state.pending || Boolean(bodyValidationError)}
+                data-template-tour="review-save"
+              >
+                {state.pending ? "Saving..." : isEditing ? "Save changes" : "Create template"}
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </article>
+
+      <aside className="card template-wizard__progress" aria-label="Template progress">
+        <span className="template-wizard__progress-kicker">Progress</span>
+        <div className="template-wizard__progress-heading">
+          <strong>
+            {activeStep + 1} of {TEMPLATE_WIZARD_STEPS.length}
+          </strong>
+          <span>{Math.round(((activeStep + 1) / TEMPLATE_WIZARD_STEPS.length) * 100)}%</span>
+        </div>
+        <div className="template-wizard__progress-track" aria-hidden="true">
+          <span style={{ width: `${((activeStep + 1) / TEMPLATE_WIZARD_STEPS.length) * 100}%` }} />
+        </div>
+        <ul className="template-wizard__checklist">
+          {progressItems.map((item) => (
+            <li key={item.label} className={item.complete ? "is-complete" : undefined}>
+              {item.complete ? <Check aria-hidden="true" /> : <Circle aria-hidden="true" />}
+              <span>{item.label}</span>
+            </li>
+          ))}
+        </ul>
+        <p>Write the template, review the preview, then create it. Spam checking is available but optional.</p>
+      </aside>
     </form>
   );
 }

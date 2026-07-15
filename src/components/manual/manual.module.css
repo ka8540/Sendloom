@@ -445,7 +445,16 @@
   gap: 0.75rem;
 }
 
+/* Groups the optional Back control with Next on the right, so Skip stays anchored
+   on the left while step-to-step navigation reads left-to-right. */
+.actionsRight {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
 .skipButton,
+.backButton,
 .nextButton {
   flex-shrink: 0;
   display: inline-flex;
@@ -459,7 +468,8 @@
   transition: transform 140ms ease, border-color 160ms ease, background-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
 }
 
-.skipButton {
+.skipButton,
+.backButton {
   padding: 0.68rem 0.9rem;
   border: 1px solid var(--line);
   background: color-mix(in srgb, var(--surface-muted) 86%, transparent);
@@ -475,6 +485,7 @@
 }
 
 .nextButton svg,
+.backButton svg,
 .skipButton svg {
   width: 0.96rem;
   height: 0.96rem;
@@ -482,6 +493,8 @@
 
 .skipButton:hover,
 .skipButton:focus-visible,
+.backButton:hover,
+.backButton:focus-visible,
 .nextButton:hover,
 .nextButton:focus-visible {
   transform: translateY(-1px);
@@ -489,7 +502,9 @@
 }
 
 .skipButton:hover,
-.skipButton:focus-visible {
+.skipButton:focus-visible,
+.backButton:hover,
+.backButton:focus-visible {
   border-color: color-mix(in srgb, var(--accent) 16%, var(--line));
   color: var(--text);
 }
@@ -535,6 +550,7 @@
   .helpButton,
   .iconButton,
   .skipButton,
+  .backButton,
   .nextButton,
   .progressDot,
   .overviewHelpButton,

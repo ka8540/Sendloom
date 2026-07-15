@@ -53,6 +53,15 @@ export type ManualConfig = {
   scrollBlock?: ScrollLogicalPosition;
   /** When false, the provider never auto-opens this manual (a host page drives it). */
   autoOpen?: boolean;
+  /**
+   * When true, the guide-menu actions resolve their stage from `resolveStage()`
+   * at click time instead of opening the fixed quick/full stages. Used by
+   * same-route flows whose "page" changes by internal state, not the URL (the
+   * Templates library vs. its create/edit wizard steps), so a single registered
+   * manual can present context-specific guides. Other manuals omit this and keep
+   * opening their static stages unchanged.
+   */
+  contextualStages?: boolean;
   /** Appended to the completion storage key so the manual can be re-versioned. */
   version?: string;
   /** Resolve the current stage id from page state (e.g. reading the DOM). */
