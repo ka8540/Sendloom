@@ -1,8 +1,8 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, Plus, Search, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileText, Pencil, Plus, Search, SearchX, X } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { TemplateForm, type EditableTemplate, type TemplateDraft } from "@/components/forms";
 import { getDefaultTemplateBody, getTemplateFormatLabel, templateContentToPlainText, type TemplateFormat } from "@/lib/templates";
@@ -17,6 +17,10 @@ const DEFAULT_TEMPLATE_DRAFT: TemplateDraft = {
 };
 const TEMPLATE_PAGE_SIZE = 5;
 
+type LibraryTemplate = EditableTemplate & {
+  updatedAt?: string;
+};
+
 function normalizePreviewPayload(payload: MergeVariables | null | undefined) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return null;
@@ -27,7 +31,7 @@ function normalizePreviewPayload(payload: MergeVariables | null | undefined) {
   ) as MergeVariables;
 }
 
-function normalizeTemplate(template: EditableTemplate): EditableTemplate {
+function normalizeTemplate(template: LibraryTemplate): LibraryTemplate {
   return {
     ...template,
     format: (template.format ?? DEFAULT_TEMPLATE_DRAFT.format) as TemplateFormat,
@@ -47,23 +51,44 @@ function createDraft(template?: EditableTemplate | null): TemplateDraft {
   };
 }
 
-function toSnippet(format: TemplateFormat, body: string) {
-  const collapsed = templateContentToPlainText(format, body).replace(/\s+/g, " ").trim();
+function getTemplateCardContent(format: TemplateFormat, body: string) {
+  const plainText = templateContentToPlainText(format, body).trim();
+  const collapsed = plainText.replace(/\s+/g, " ");
+  const wordCount = plainText ? plainText.split(/\s+/).length : 0;
 
-  return collapsed || "No body content yet.";
+  return {
+    bodyPreview: collapsed || "No body content yet.",
+    wordCount,
+    readingMinutes: wordCount ? Math.max(1, Math.ceil(wordCount / 200)) : 0
+  };
 }
 
-export function TemplatesWorkspace({ templates: initialTemplates }: { templates: EditableTemplate[] }) {
+function formatUpdatedDate(value?: string) {
+  if (!value) {
+    return null;
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC"
+  }).format(date);
+}
+
+export function TemplatesWorkspace({ templates: initialTemplates }: { templates: LibraryTemplate[] }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [templates, setTemplates] = useState(initialTemplates.map(normalizeTemplate));
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
-  const [hoveredTemplateId, setHoveredTemplateId] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState("");
   const [draft, setDraft] = useState<TemplateDraft>(createDraft(null));
-  const hoverIntentTimeoutRef = useRef<number | null>(null);
-  const hoverLeaveTimeoutRef = useRef<number | null>(null);
   const wizardOpen = searchParams.get("wizard") === "template";
 
   useEffect(() => {
@@ -92,18 +117,6 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
     setCurrentPage(1);
   }, [normalizedSearchQuery]);
 
-  useEffect(() => {
-    return () => {
-      if (hoverIntentTimeoutRef.current) {
-        window.clearTimeout(hoverIntentTimeoutRef.current);
-      }
-
-      if (hoverLeaveTimeoutRef.current) {
-        window.clearTimeout(hoverLeaveTimeoutRef.current);
-      }
-    };
-  }, []);
-
   const editingTemplate = templates.find((template) => template.id === editingTemplateId) ?? null;
   const totalPages = Math.max(1, Math.ceil(filteredTemplates.length / TEMPLATE_PAGE_SIZE));
   const pagedTemplates = filteredTemplates.slice((currentPage - 1) * TEMPLATE_PAGE_SIZE, currentPage * TEMPLATE_PAGE_SIZE);
@@ -112,7 +125,7 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
   const hasNoResults = isSearching && filteredTemplates.length === 0;
 
   const handleSaved = (savedTemplate: EditableTemplate) => {
-    const normalized = normalizeTemplate(savedTemplate);
+    const normalized = normalizeTemplate({ ...savedTemplate, updatedAt: new Date().toISOString() });
 
     setTemplates((currentTemplates) => {
       const nextTemplates = currentTemplates.filter((template) => template.id !== normalized.id);
@@ -134,7 +147,6 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
   const handleStartEditing = (template: EditableTemplate) => {
     setEditingTemplateId(template.id);
     setDraft(createDraft(template));
-    setHoveredTemplateId(null);
     router.push("/templates?wizard=template");
   };
 
@@ -142,34 +154,6 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
     setEditingTemplateId(null);
     setDraft(createDraft(null));
     router.push("/templates");
-  };
-
-  const handleTemplateMouseEnter = (templateId: string) => {
-    if (hoverIntentTimeoutRef.current) {
-      window.clearTimeout(hoverIntentTimeoutRef.current);
-    }
-
-    if (hoverLeaveTimeoutRef.current) {
-      window.clearTimeout(hoverLeaveTimeoutRef.current);
-    }
-
-    hoverIntentTimeoutRef.current = window.setTimeout(() => {
-      setHoveredTemplateId(templateId);
-    }, 340);
-  };
-
-  const handleTemplateMouseLeave = () => {
-    if (hoverIntentTimeoutRef.current) {
-      window.clearTimeout(hoverIntentTimeoutRef.current);
-    }
-
-    if (hoverLeaveTimeoutRef.current) {
-      window.clearTimeout(hoverLeaveTimeoutRef.current);
-    }
-
-    hoverLeaveTimeoutRef.current = window.setTimeout(() => {
-      setHoveredTemplateId(null);
-    }, 160);
   };
 
   if (wizardOpen) {
@@ -214,9 +198,12 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
 
       <section className="card templates-library__card" aria-labelledby="saved-templates-heading">
         <div className="saved-templates__header">
-          <div className="saved-templates__title">
-            <h2 id="saved-templates-heading">Saved templates</h2>
-            <span>{templates.length}</span>
+          <div className="saved-templates__heading">
+            <div className="saved-templates__title">
+              <h2 id="saved-templates-heading">Saved templates</h2>
+              <span aria-label={`${templates.length} saved templates`}>{templates.length}</span>
+            </div>
+            <p>Reusable messages ready for your sequences.</p>
           </div>
           <label className="saved-templates__search" aria-label="Search saved templates">
             <Search aria-hidden="true" />
@@ -241,55 +228,56 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
 
         <div className="templates-list">
           {pagedTemplates.map((template) => {
-            const isRevealed = hoveredTemplateId === template.id;
+            const cardContent = getTemplateCardContent(template.format, template.htmlBody);
+            const updatedDate = formatUpdatedDate(template.updatedAt);
+            const variableCount = template.variableManifest.length;
 
             return (
-              <article
-                key={template.id}
-                className={`template-list-item${isRevealed ? " is-revealed" : ""}`}
-                tabIndex={0}
-                onMouseEnter={() => handleTemplateMouseEnter(template.id)}
-                onMouseLeave={handleTemplateMouseLeave}
-                onFocus={() => {
-                  if (hoverIntentTimeoutRef.current) {
-                    window.clearTimeout(hoverIntentTimeoutRef.current);
-                  }
-
-                  if (hoverLeaveTimeoutRef.current) {
-                    window.clearTimeout(hoverLeaveTimeoutRef.current);
-                  }
-
-                  setHoveredTemplateId(template.id);
-                }}
-                onBlur={(event) => {
-                  if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-                    handleTemplateMouseLeave();
-                  }
-                }}
-              >
+              <article key={template.id} className="template-list-item">
                 <div className="template-list-item__header">
                   <div className="template-list-item__copy">
-                    <strong>{template.name}</strong>
-                    <span className="template-list-item__format">{getTemplateFormatLabel(template.format)}</span>
+                    <div className="template-list-item__title">
+                      <strong>{template.name}</strong>
+                      <span className="template-list-item__format">{getTemplateFormatLabel(template.format)}</span>
+                    </div>
+                    <div className="template-list-item__subject">
+                      <span>Subject</span>
+                      <p>{template.subject || "No subject"}</p>
+                    </div>
                   </div>
 
-                  <button className="button template-list-item__button" type="button" onClick={() => handleStartEditing(template)}>
-                    Edit
+                  <button
+                    className="button secondary template-list-item__button"
+                    type="button"
+                    aria-label={`Edit template ${template.name}`}
+                    onClick={() => handleStartEditing(template)}
+                  >
+                    <Pencil aria-hidden="true" />
+                    <span>Edit</span>
                   </button>
                 </div>
 
-                <div className="template-list-item__details">
-                  <p className="muted">{template.subject || "No subject"}</p>
-                  <p className="template-list-item__snippet">{toSnippet(template.format, template.htmlBody)}</p>
+                <p className="template-list-item__snippet">{cardContent.bodyPreview}</p>
 
-                  <div className="pill-row">
-                    {(template.variableManifest.length ? template.variableManifest : ["None detected"]).map((variable) => (
-                      <span key={variable} className="pill">
-                        {variable}
+                <footer className="template-list-item__meta" aria-label={`Details for ${template.name}`}>
+                  <span>{cardContent.wordCount} words</span>
+                  <span aria-hidden="true">·</span>
+                  <span>~{cardContent.readingMinutes} min read</span>
+                  {variableCount ? (
+                    <>
+                      <span aria-hidden="true">·</span>
+                      <span>
+                        {variableCount} {variableCount === 1 ? "variable" : "variables"}
                       </span>
-                    ))}
-                  </div>
-                </div>
+                    </>
+                  ) : null}
+                  {updatedDate ? (
+                    <>
+                      <span aria-hidden="true">·</span>
+                      <span>Updated {updatedDate}</span>
+                    </>
+                  ) : null}
+                </footer>
               </article>
             );
           })}
@@ -297,18 +285,24 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
           {!hasTemplates ? (
             <div className="templates-library__empty">
               <span className="templates-library__empty-icon">
-                <Plus aria-hidden="true" />
+                <FileText aria-hidden="true" />
               </span>
-              <strong>Create your first template</strong>
+              <h3>Create your first template</h3>
               <p>Build a reusable message, preview it, and use it in any sequence.</p>
-              <button className="button" type="button" onClick={handleStartCreating}>
+              <button className="button templates-library__empty-action" type="button" onClick={handleStartCreating}>
                 Create new template
               </button>
             </div>
           ) : hasNoResults ? (
-            <div className="surface-note saved-templates__empty">
-              <strong>No templates found</strong>
-              <span>Try a different search term.</span>
+            <div className="saved-templates__empty" role="status">
+              <span className="saved-templates__empty-icon" aria-hidden="true">
+                <SearchX />
+              </span>
+              <strong>No matching templates</strong>
+              <p>Try another name, subject, or format.</p>
+              <button className="button secondary saved-templates__empty-action" type="button" onClick={() => setSearchQuery("")}>
+                Clear search
+              </button>
             </div>
           ) : null}
         </div>
@@ -322,7 +316,6 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
                 aria-label="Previous template page"
                 disabled={currentPage === 1}
                 onClick={() => {
-                  handleTemplateMouseLeave();
                   setCurrentPage((page) => Math.max(1, page - 1));
                 }}
               >
@@ -337,7 +330,6 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
                 aria-label="Next template page"
                 disabled={currentPage === totalPages}
                 onClick={() => {
-                  handleTemplateMouseLeave();
                   setCurrentPage((page) => Math.min(totalPages, page + 1));
                 }}
               >

@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 const WORKSPACE = readFileSync("src/components/templates-workspace.tsx", "utf8");
 const FORM = readFileSync("src/components/forms.tsx", "utf8");
 const BACK_BUTTON = readFileSync("src/components/back-button.tsx", "utf8");
+const TEMPLATES_PAGE = readFileSync("src/app/(app)/templates/page.tsx", "utf8");
 const STYLES = readFileSync("src/app/globals.css", "utf8");
 
 describe("templates library and creation wizard", () => {
@@ -13,7 +14,26 @@ describe("templates library and creation wizard", () => {
     expect(WORKSPACE).toContain("Saved templates");
     expect(WORKSPACE).toContain("Search templates...");
     expect(WORKSPACE).toContain("templates-pagination");
+    expect(WORKSPACE).toContain("template-list-item__subject");
+    expect(WORKSPACE).toContain("template-list-item__snippet");
+    expect(WORKSPACE).toContain("template-list-item__meta");
+    expect(WORKSPACE).toContain("getTemplateCardContent");
+    expect(WORKSPACE).toContain("Updated ");
+    expect(TEMPLATES_PAGE).toContain("updatedAt: template.updatedAt.toISOString()");
+    expect(WORKSPACE).not.toContain("hoveredTemplateId");
     expect(WORKSPACE).not.toContain("Live preview");
+  });
+
+  it("keeps compact library actions and polished empty search states", () => {
+    expect(WORKSPACE).toContain("Edit template ${template.name}");
+    expect(WORKSPACE).toContain("No matching templates");
+    expect(WORKSPACE).toContain("Clear search");
+    expect(WORKSPACE).toContain("Create your first template");
+    expect(WORKSPACE).toContain("handleStartCreating");
+    expect(WORKSPACE).toContain("handleStartEditing");
+    expect(STYLES).toContain(".template-list-item:hover");
+    expect(STYLES).toContain("white-space: nowrap");
+    expect(STYLES).toContain(".saved-templates__empty-icon");
   });
 
   it("opens create and edit work in a URL-identifiable two-step wizard state", () => {

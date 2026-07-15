@@ -32,7 +32,8 @@ export default async function TemplatesPage() {
         format: (template.format as TemplateFormat | null) ?? "HTML",
         htmlBody: template.htmlBody,
         variableManifest: Array.isArray(template.variableManifest) ? (template.variableManifest as string[]) : [],
-        previewPayload: normalizePreviewPayload(template.previewPayload)
+        previewPayload: normalizePreviewPayload(template.previewPayload),
+        updatedAt: template.updatedAt.toISOString()
       }))}
     />
   );
