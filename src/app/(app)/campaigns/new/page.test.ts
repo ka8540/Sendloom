@@ -364,6 +364,8 @@ describe("create behavior and scope guards", () => {
     expect(BUILDER).toContain("SEQUENCE_CONCURRENCY_LIMIT_CODE");
     expect(BUILDER).toContain("<SequenceLimitDialog");
     expect(BUILDER).toContain("wait-for-slot");
+    expect(BUILDER).toContain('router.push("/campaigns")');
+    expect(BUILDER.indexOf('router.push("/campaigns")')).toBeGreaterThan(BUILDER.indexOf("if (!response.ok)"));
   });
 
   it("does not move wizard code into the sequence dashboard or detail page", () => {

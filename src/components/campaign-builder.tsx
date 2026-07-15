@@ -468,7 +468,7 @@ export function CampaignBuilder(props: {
       attachmentInputRef.current.value = "";
     }
     resetBuilder();
-    router.refresh();
+    router.push("/campaigns");
     setState({ pending: false });
   }
 
