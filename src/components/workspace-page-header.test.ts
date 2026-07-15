@@ -26,9 +26,15 @@ describe("workspace page header", () => {
   });
 
   it("is the one header rendered by each main workspace page", () => {
-    for (const source of [SEQUENCES, DISCOVER, IMPORTS, TEMPLATES, FINDER, OVERVIEW, ACCOUNT]) {
+    for (const source of [SEQUENCES, DISCOVER, IMPORTS, TEMPLATES, FINDER, ACCOUNT]) {
       expect(source).toContain("<WorkspacePageHeader");
     }
+  });
+
+  it("keeps Overview as its purpose-built command-center hero", () => {
+    expect(OVERVIEW).not.toContain("<WorkspacePageHeader");
+    expect(OVERVIEW).toContain("styles.heroEyebrow");
+    expect(OVERVIEW).toContain("styles.heroTitle}>Overview</h1>");
   });
 
   it("removes dashboard eyebrow labels without changing create/detail flows", () => {
@@ -36,8 +42,13 @@ describe("workspace page header", () => {
     expect(IMPORTS).not.toContain("Audience library");
     expect(TEMPLATES).not.toContain("Message library");
     expect(FINDER).not.toContain("Prospecting workspace");
-    expect(OVERVIEW).not.toContain("styles.heroEyebrow");
     expect(TEMPLATES).toContain("Template workflow");
+  });
+
+  it("keeps Email Finder controls in a left-aligned row below its shared title", () => {
+    expect(FINDER).toContain("styles.headerBlock");
+    expect(FINDER).toContain("styles.headerControls");
+    expect(FINDER_STYLES).toMatch(/\.headerControls\s*\{[^}]*justify-content: flex-start;/s);
   });
 
   it("uses the Sequences 1.25rem header-to-content rhythm across workspace pages", () => {

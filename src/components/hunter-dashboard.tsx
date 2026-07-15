@@ -743,31 +743,30 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
   return (
     <>
       <div className={styles.page}>
-        <WorkspacePageHeader
-          data-finder-tour="page-intro"
-          title="Email Finder"
-          subtitle="Use Hunter through a secure backend proxy to find one contact by name or search an entire company domain without exposing your API key in the browser."
-          actions={
-            <>
-              <div className={styles.keyStatus} data-finder-tour="status">
-                <span
-                  className={`${styles.keyDot} ${keyStatus.configured ? styles.keyDotReady : styles.keyDotMissing}`}
-                  aria-hidden="true"
-                />
-                <span>{statusCopy}</span>
-              </div>
-              <button
-                className="button secondary"
-                type="button"
-                onClick={() => setIsSettingsOpen(true)}
-                data-finder-tour="settings"
-              >
-                <Settings2 aria-hidden="true" />
-                Hunter settings
-              </button>
-            </>
-          }
-        />
+        <div className={styles.headerBlock} data-finder-tour="page-intro">
+          <WorkspacePageHeader
+            title="Email Finder"
+            subtitle="Use Hunter through a secure backend proxy to find one contact by name or search an entire company domain without exposing your API key in the browser."
+          />
+          <div className={styles.headerControls}>
+            <div className={styles.keyStatus} data-finder-tour="status">
+              <span
+                className={`${styles.keyDot} ${keyStatus.configured ? styles.keyDotReady : styles.keyDotMissing}`}
+                aria-hidden="true"
+              />
+              <span>{statusCopy}</span>
+            </div>
+            <button
+              className="button secondary"
+              type="button"
+              onClick={() => setIsSettingsOpen(true)}
+              data-finder-tour="settings"
+            >
+              <Settings2 aria-hidden="true" />
+              Hunter settings
+            </button>
+          </div>
+        </div>
 
         <section className={`card ${styles.workspace}`}>
           <div className={styles.tabRow} role="tablist" aria-label="Hunter search modes" data-finder-tour="mode-tabs">
