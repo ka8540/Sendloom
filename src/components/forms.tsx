@@ -8,6 +8,7 @@ import {
   Circle,
   Eye,
   EyeOff,
+  Mail,
   Sparkles
 } from "lucide-react";
 import type { Route } from "next";
@@ -281,6 +282,10 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
   const overallSpamScore = spamAnalysis ? Math.max(spamAnalysis.subjectScore, spamAnalysis.bodyScore) : null;
   const previewVariables = Array.from(new Set([...extractTemplateVariables(fields.subject), ...extractTemplateVariables(fields.htmlBody)]));
   const previewPayload = buildTemplatePreviewPayload(previewVariables, fields.previewPayload ?? undefined);
+  const previewSubject = renderTemplateSubjectPreview(fields.subject, previewPayload);
+  const previewPlainText = templateContentToPlainText(fields.format, fields.htmlBody).trim();
+  const previewWordCount = previewPlainText ? previewPlainText.split(/\s+/).length : 0;
+  const previewReadingMinutes = previewWordCount ? Math.max(1, Math.ceil(previewWordCount / 200)) : 0;
   const composeComplete = Boolean(fields.name.trim() && fields.subject.trim() && fields.htmlBody.trim() && !bodyValidationError);
   useErrorToastEffect(state.error, initialTemplate ? "Template update failed" : "Template save failed");
 
@@ -687,54 +692,81 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
 
         {activeStep === 1 ? (
           <div className="template-wizard__step-content template-wizard-preview">
-            <div className="template-wizard-preview__summary" aria-label="Template details">
-              <div>
-                <span>Template name</span>
-                <strong>{fields.name}</strong>
-              </div>
-              <div>
-                <span>Message format</span>
-                <strong>{getTemplateFormatLabel(fields.format)}</strong>
-              </div>
-              <div>
-                <span>Spam score</span>
-                <strong>{overallSpamScore === null ? "Not checked" : `${overallSpamScore}%`}</strong>
-              </div>
-              <div className="template-wizard-preview__summary-item--wide">
-                <span>Subject</span>
-                <strong>{renderTemplateSubjectPreview(fields.subject, previewPayload)}</strong>
-              </div>
-            </div>
-
-            <div className="template-wizard-preview__variables">
-              <span>Variables / merge fields</span>
-              <div className="pill-row">
-                {(previewVariables.length ? previewVariables : ["None detected"]).map((variable) => (
-                  <span key={variable} className="pill">
-                    {variable}
-                  </span>
-                ))}
-              </div>
-            </div>
-
-            <section className="template-wizard-preview__surface" aria-labelledby="email-preview-heading">
-              <div className="template-wizard-preview__surface-heading">
+            <section className="template-review-summary" aria-labelledby="template-review-summary-heading">
+              <header className="template-review-summary__header">
                 <div>
-                  <span>Final message</span>
-                  <h3 id="email-preview-heading">Email preview</h3>
+                  <span className="template-review-summary__eyebrow">Template summary</span>
+                  <h3 id="template-review-summary-heading">Review details</h3>
                 </div>
                 <span className="format-badge">{getTemplateFormatLabel(fields.format)}</span>
+              </header>
+
+              <dl className="template-review-summary__details">
+                <div>
+                  <dt>Template name</dt>
+                  <dd>{fields.name}</dd>
+                </div>
+                <div>
+                  <dt>Spam check</dt>
+                  <dd className={overallSpamScore === null ? undefined : "is-checked"}>
+                    <span className="template-review-summary__status" aria-hidden="true" />
+                    {overallSpamScore === null ? "Not checked" : `${overallSpamScore}% risk`}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Length</dt>
+                  <dd>
+                    {previewWordCount} words · ~{previewReadingMinutes} min read
+                  </dd>
+                </div>
+                <div className="template-review-summary__subject">
+                  <dt>Subject</dt>
+                  <dd>{previewSubject}</dd>
+                </div>
+              </dl>
+
+              <div className="template-review-summary__variables">
+                <span>Variables used</span>
+                <div>
+                  {previewVariables.length ? (
+                    previewVariables.map((variable) => <code key={variable}>{`{{${variable}}}`}</code>)
+                  ) : (
+                    <span className="template-review-summary__empty">None detected</span>
+                  )}
+                </div>
               </div>
+            </section>
+
+            <section className="template-email-review" aria-labelledby="email-preview-heading">
+              <header className="template-email-review__header">
+                <div className="template-email-review__title">
+                  <span className="template-email-review__icon" aria-hidden="true">
+                    <Mail />
+                  </span>
+                  <div>
+                    <span>Recipient view</span>
+                    <h3 id="email-preview-heading">Preview email</h3>
+                  </div>
+                </div>
+                <span className="format-badge">{getTemplateFormatLabel(fields.format)}</span>
+              </header>
+
               <div className="template-preview-mail template-wizard-preview__mail">
-                <span className="template-preview-mail__eyebrow">Subject</span>
-                <h4>{renderTemplateSubjectPreview(fields.subject, previewPayload)}</h4>
+                <div className="template-preview-mail__subject">
+                  <span className="template-preview-mail__label">Subject</span>
+                  <h4>{previewSubject}</h4>
+                </div>
                 <div
                   className={`template-preview-mail__body template-preview-mail__body--${fields.format.toLowerCase().replace("_", "-")}`}
+                  role="document"
+                  aria-label="Email body preview"
                   dangerouslySetInnerHTML={{
                     __html: renderTemplatePreview(fields.format, fields.htmlBody, previewPayload)
                   }}
                 />
               </div>
+
+              <p className="template-email-review__note">Merge fields are shown with safe sample values for this preview.</p>
             </section>
 
             {state.error ? (
