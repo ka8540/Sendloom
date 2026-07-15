@@ -4,25 +4,11 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   ArrowLeft,
   ArrowRight,
-  Bold,
-  Braces,
   Check,
   Circle,
   Eye,
   EyeOff,
-  Gauge,
-  ImageIcon,
-  Italic,
-  Link,
-  List as ListIcon,
-  ListOrdered,
-  Mail,
-  Paperclip,
-  Send,
-  ShieldCheck,
-  Sparkles,
-  Strikethrough,
-  Video
+  Sparkles
 } from "lucide-react";
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
@@ -31,18 +17,12 @@ import { renderBrandText } from "@/components/brand-text";
 import { useErrorToastEffect } from "@/components/error-toast-provider";
 import { analyzeSpam, type SpamAnalysis } from "@/lib/spam-analysis";
 import {
-  applyTemplateComposerCommand,
-  insertTemplateAttribute,
-  TEMPLATE_COMPOSER_ATTRIBUTES,
-  type TemplateComposerCommand,
-  type TemplateComposerEdit
-} from "@/lib/template-composer";
-import {
   buildTemplatePreviewPayload,
   convertTemplateBody,
   extractTemplateVariables,
   getDefaultTemplateBody,
   getTemplateBodyHint,
+  getTemplateBodyLabel,
   getTemplateBodyPlaceholder,
   getTemplateFormatLabel,
   renderTemplatePreview,
@@ -61,8 +41,8 @@ type ActionState = {
 
 type EnhanceField = "subject" | "body";
 const DEFAULT_TEMPLATE_FORMAT: TemplateFormat = "PLAIN_TEXT";
-export const TEMPLATE_WIZARD_STEPS = ["Compose", "Optimize", "Preview"] as const;
-type TemplateWizardStep = 0 | 1 | 2;
+export const TEMPLATE_WIZARD_STEPS = ["Compose", "Preview / Review"] as const;
+type TemplateWizardStep = 0 | 1;
 
 type PasswordFieldProps = {
   id: string;
@@ -295,15 +275,9 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
   const [activeStep, setActiveStep] = useState<TemplateWizardStep>(0);
   const highlightTimeoutRef = useRef<number | null>(null);
   const stepHeadingRef = useRef<HTMLHeadingElement | null>(null);
-  const bodyTextareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const attributeMenuRef = useRef<HTMLDetailsElement | null>(null);
   const controlled = Boolean(value && onChange);
   const fields = value ?? localFields;
   const bodyValidationError = validateTemplateBody(fields.format, fields.htmlBody);
-  const plainTextBody = templateContentToPlainText(fields.format, fields.htmlBody);
-  const wordCount = plainTextBody ? plainTextBody.split(/\s+/).filter(Boolean).length : 0;
-  const readingSeconds = wordCount ? Math.max(1, Math.ceil((wordCount / 200) * 60)) : 0;
-  const readingTime = readingSeconds >= 60 ? `${Math.ceil(readingSeconds / 60)} min` : `${readingSeconds} sec`;
   const overallSpamScore = spamAnalysis ? Math.max(spamAnalysis.subjectScore, spamAnalysis.bodyScore) : null;
   const previewVariables = Array.from(new Set([...extractTemplateVariables(fields.subject), ...extractTemplateVariables(fields.htmlBody)]));
   const previewPayload = buildTemplatePreviewPayload(previewVariables, fields.previewPayload ?? undefined);
@@ -438,38 +412,6 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
     return <span className={`field-score-chip field-score-chip--${risk.toLowerCase()}`}>{score}% spam</span>;
   }
 
-  function updateBody(nextBody: string) {
-    setEnhanceError((current) => ({ ...current, body: undefined }));
-    setSpamAnalysis(null);
-    updateFields((current) => ({ ...current, htmlBody: nextBody }));
-  }
-
-  function commitComposerEdit(edit: TemplateComposerEdit) {
-    updateBody(edit.value);
-
-    window.requestAnimationFrame(() => {
-      bodyTextareaRef.current?.focus();
-      bodyTextareaRef.current?.setSelectionRange(edit.selectionStart, edit.selectionEnd);
-    });
-  }
-
-  function runComposerCommand(command: TemplateComposerCommand) {
-    const textarea = bodyTextareaRef.current;
-    const selectionStart = textarea?.selectionStart ?? fields.htmlBody.length;
-    const selectionEnd = textarea?.selectionEnd ?? selectionStart;
-
-    commitComposerEdit(applyTemplateComposerCommand(fields.format, fields.htmlBody, selectionStart, selectionEnd, command));
-  }
-
-  function insertAttribute(attribute: string) {
-    const textarea = bodyTextareaRef.current;
-    const selectionStart = textarea?.selectionStart ?? fields.htmlBody.length;
-    const selectionEnd = textarea?.selectionEnd ?? selectionStart;
-
-    commitComposerEdit(insertTemplateAttribute(fields.htmlBody, selectionStart, selectionEnd, attribute));
-    attributeMenuRef.current?.removeAttribute("open");
-  }
-
   function changeStep(nextStep: TemplateWizardStep) {
     if (nextStep > 0 && !composeComplete) {
       return;
@@ -524,8 +466,7 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
   }
 
   const isEditing = Boolean(initialTemplate);
-  const composerBusy = state.pending || checkingSpam || enhancingField !== null;
-  const formattingDisabled = composerBusy || fields.format === "JSON";
+  const formBusy = state.pending || checkingSpam || enhancingField !== null;
   const progressItems = [
     { label: "Template name", complete: Boolean(fields.name.trim()) },
     { label: "Message format", complete: Boolean(fields.format) },
@@ -536,7 +477,6 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
     },
     { label: "Spam check", complete: Boolean(spamAnalysis) }
   ];
-  const spamSignals = spamAnalysis ? Array.from(new Set([...spamAnalysis.subjectSignals, ...spamAnalysis.bodySignals])) : [];
 
   return (
     <form className="template-wizard" onSubmit={onSubmit}>
@@ -568,19 +508,41 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
             Step {activeStep + 1} of {TEMPLATE_WIZARD_STEPS.length}
           </span>
           <h2 ref={stepHeadingRef} tabIndex={-1}>
-            {activeStep === 0 ? "Compose your template" : activeStep === 1 ? "Optimize your message" : "Review and create"}
+            {activeStep === 0 ? "Compose your template" : "Preview and review"}
           </h2>
           <p>
             {activeStep === 0
-              ? "Name the template and write the subject and body your sequences will use."
-              : activeStep === 1
-                ? "Use AI and a spam pass to tighten the copy before you publish it."
-                : "Confirm the final message, variables, and delivery health."}
+              ? "Write the reusable message your sequences will send."
+              : "Review every detail before you create the template."}
           </p>
         </header>
 
         {activeStep === 0 ? (
           <div className="template-wizard__step-content">
+            <section className="template-form-toolbar" aria-labelledby="template-delivery-health">
+              <div className="template-form-toolbar__content">
+                <p className="template-form-toolbar__eyebrow" id="template-delivery-health">
+                  Delivery health
+                </p>
+                <p className="template-form-toolbar__copy">
+                  Run a spam pass whenever you want, then use AI to tighten the copy with that score in mind.
+                </p>
+              </div>
+              <button
+                className={`template-check-spam-button${spamAnalysis ? " is-ready" : ""}`}
+                type="button"
+                onClick={checkSpam}
+                disabled={formBusy}
+              >
+                {checkingSpam ? (
+                  <span className="button-spinner" aria-hidden="true" />
+                ) : (
+                  <span className="template-check-spam-button__signal" aria-hidden="true" />
+                )}
+                <span className="template-check-spam-button__label">{checkingSpam ? "Checking spam" : "Check spam"}</span>
+              </button>
+            </section>
+
             <div className="template-meta-grid">
               <div className="field template-meta-field">
                 <label htmlFor="name">Template name</label>
@@ -588,12 +550,7 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
                   id="name"
                   name="name"
                   value={fields.name}
-                  onChange={(event) =>
-                    updateFields((current) => ({
-                      ...current,
-                      name: event.target.value
-                    }))
-                  }
+                  onChange={(event) => updateFields((current) => ({ ...current, name: event.target.value }))}
                   placeholder="e.g. Recruiting intro"
                   required
                 />
@@ -606,10 +563,7 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
                   value={fields.format}
                   onChange={(event) => {
                     const nextFormat = event.target.value as TemplateFormat;
-                    setEnhanceError((current) => ({
-                      ...current,
-                      body: undefined
-                    }));
+                    setEnhanceError((current) => ({ ...current, body: undefined }));
                     setSpamAnalysis(null);
 
                     updateFields((current) => ({
@@ -629,325 +583,101 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
             </div>
             <p className="template-meta-hint">{renderBrandText(getTemplateBodyHint(fields.format))}</p>
 
-            <section className="template-composer" aria-label="Opening email composer">
-              <header className="template-composer__header">
-                <div className="template-composer__title">
-                  <Mail aria-hidden="true" />
-                  <span>Opening email</span>
-                </div>
-              </header>
-
-              <div className="template-composer__subject">
-                <label htmlFor="subject">Subject:</label>
-                <input
-                  id="subject"
-                  name="subject"
-                  value={fields.subject}
-                  onChange={(event) => {
-                    setEnhanceError((current) => ({
-                      ...current,
-                      subject: undefined
-                    }));
-                    setSpamAnalysis(null);
-                    updateFields((current) => ({
-                      ...current,
-                      subject: event.target.value
-                    }));
-                  }}
-                  placeholder="Enter your subject line"
-                  required
-                />
-                <span className="template-composer__send-icon" title="Email subject">
-                  <Send aria-hidden="true" />
-                </span>
-              </div>
-
-              <div className="template-composer__body">
-                <div className="template-composer__body-prompt">
-                  <span>Compose your email</span>
-                </div>
-                <textarea
-                  ref={bodyTextareaRef}
-                  id="htmlBody"
-                  name="htmlBody"
-                  value={fields.htmlBody}
-                  placeholder={fields.format === "PLAIN_TEXT" ? "Compose your email" : getTemplateBodyPlaceholder(fields.format)}
-                  onChange={(event) => updateBody(event.target.value)}
-                  required
-                />
-
-                <div className="template-composer__messages" aria-live="polite">
-                  {bodyValidationError ? <p>{bodyValidationError}</p> : null}
-                </div>
-
-                <div className="template-composer__toolbar" aria-label="Email formatting toolbar">
-                  <div className="template-composer__toolbar-group">
-                    <button
-                      type="button"
-                      onClick={() => runComposerCommand("bold")}
-                      disabled={formattingDisabled}
-                      aria-label="Bold"
-                      title={fields.format === "JSON" ? "Formatting is unavailable in structured JSON" : "Bold"}
-                    >
-                      <Bold aria-hidden="true" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => runComposerCommand("italic")}
-                      disabled={formattingDisabled}
-                      aria-label="Italic"
-                      title={fields.format === "JSON" ? "Formatting is unavailable in structured JSON" : "Italic"}
-                    >
-                      <Italic aria-hidden="true" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => runComposerCommand("strike")}
-                      disabled={formattingDisabled}
-                      aria-label="Strikethrough"
-                      title={fields.format === "JSON" ? "Formatting is unavailable in structured JSON" : "Strikethrough"}
-                    >
-                      <Strikethrough aria-hidden="true" />
-                    </button>
-                  </div>
-
-                  <span className="template-composer__toolbar-divider" aria-hidden="true" />
-
-                  <div className="template-composer__toolbar-group">
-                    <button
-                      type="button"
-                      onClick={() => runComposerCommand("bullet-list")}
-                      disabled={formattingDisabled}
-                      aria-label="Bullet list"
-                      title={fields.format === "JSON" ? "Formatting is unavailable in structured JSON" : "Bullet list"}
-                    >
-                      <ListIcon aria-hidden="true" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => runComposerCommand("numbered-list")}
-                      disabled={formattingDisabled}
-                      aria-label="Numbered list"
-                      title={fields.format === "JSON" ? "Formatting is unavailable in structured JSON" : "Numbered list"}
-                    >
-                      <ListOrdered aria-hidden="true" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => runComposerCommand("link")}
-                      disabled={formattingDisabled}
-                      aria-label="Insert link"
-                      title={fields.format === "JSON" ? "Formatting is unavailable in structured JSON" : "Insert link"}
-                    >
-                      <Link aria-hidden="true" />
-                    </button>
-                  </div>
-
-                  <span className="template-composer__toolbar-divider" aria-hidden="true" />
-
-                  <div className="template-composer__toolbar-group">
-                    <button
-                      type="button"
-                      disabled
-                      aria-label="Image attachments are not available yet"
-                      title="Image attachments are not available yet"
-                    >
-                      <ImageIcon aria-hidden="true" />
-                    </button>
-                    <button
-                      type="button"
-                      disabled
-                      aria-label="Video attachments are not available yet"
-                      title="Video attachments are not available yet"
-                    >
-                      <Video aria-hidden="true" />
-                    </button>
-                    <button
-                      type="button"
-                      disabled
-                      aria-label="File attachments are not available yet"
-                      title="File attachments are not available yet"
-                    >
-                      <Paperclip aria-hidden="true" />
-                    </button>
-                  </div>
-
-                  <span className="template-composer__toolbar-divider" aria-hidden="true" />
-
-                  <details className="template-composer__attributes" ref={attributeMenuRef}>
-                    <summary>
-                      <Braces aria-hidden="true" />
-                      <span>Insert attribute</span>
-                    </summary>
-                    <div className="template-composer__attribute-menu">
-                      {TEMPLATE_COMPOSER_ATTRIBUTES.map((attribute) => (
-                        <button
-                          key={attribute.value}
-                          type="button"
-                          onClick={() => insertAttribute(attribute.value)}
-                          disabled={composerBusy}
-                        >
-                          <span>{attribute.label}</span>
-                          <code>{`{{${attribute.value}}}`}</code>
-                        </button>
-                      ))}
-                    </div>
-                  </details>
-                </div>
-              </div>
-
-              <footer className="template-composer__stats">
-                <span>
-                  Words: <strong>{wordCount}</strong>
-                </span>
-                <span>
-                  Reading time: <strong>{readingTime}</strong>
-                </span>
-                <span>
-                  Grade: <strong>-</strong>
-                </span>
-              </footer>
-            </section>
-
-            <div className="template-wizard__actions">
-              <button className="button secondary" type="button" onClick={onCancel} disabled={state.pending}>
-                Cancel
-              </button>
-              <button className="button" type="button" onClick={() => changeStep(1)} disabled={!composeComplete || state.pending}>
-                Next: Optimize
-                <ArrowRight aria-hidden="true" />
-              </button>
-            </div>
-          </div>
-        ) : null}
-
-        {activeStep === 1 ? (
-          <div className="template-wizard__step-content">
-            <div className="template-optimize-grid">
-              <section className="template-optimize-card" aria-labelledby="ai-assistant-heading">
-                <div className="template-optimize-card__heading">
-                  <span className="template-optimize-card__icon">
-                    <Sparkles aria-hidden="true" />
-                  </span>
-                  <div>
-                    <h3 id="ai-assistant-heading">AI copy assistant</h3>
-                    <p>Draft or polish one field at a time while preserving your format and merge fields.</p>
-                  </div>
-                </div>
-                <div className={`template-optimize-card__field${highlightedField === "subject" ? " field-enhanced" : ""}`}>
-                  <span>Subject</span>
-                  <strong>{fields.subject}</strong>
+            <div className="field template-compose-field">
+              <div className="field-label-row">
+                <label htmlFor="subject">Subject</label>
+                <div className="field-label-row__actions">
+                  {spamAnalysis ? renderSpamScoreChip(spamAnalysis.subjectScore, spamAnalysis.subjectRisk) : null}
                   <button
-                    className="button secondary"
+                    className="field-icon-button"
                     type="button"
                     onClick={() => enhanceText("subject", fields.subject)}
-                    disabled={composerBusy}
-                    title={getEnhanceTooltip("subject")}
+                    disabled={formBusy}
+                    aria-label={getEnhanceTooltip("subject")}
+                    data-tooltip={getEnhanceTooltip("subject")}
                   >
                     {enhancingField === "subject" ? (
                       <span className="button-spinner" aria-hidden="true" />
                     ) : (
                       <Sparkles aria-hidden="true" />
                     )}
-                    Improve subject
                   </button>
-                  {enhanceError.subject ? <p className="template-optimize-card__error">{enhanceError.subject}</p> : null}
                 </div>
-                <div className={`template-optimize-card__field${highlightedField === "body" ? " field-enhanced" : ""}`}>
-                  <span>Email body</span>
-                  <strong>
-                    {wordCount} words · {readingTime} read
-                  </strong>
-                  <button
-                    className="button secondary"
-                    type="button"
-                    onClick={() => enhanceText("body", fields.htmlBody)}
-                    disabled={composerBusy}
-                    title={getEnhanceTooltip("body")}
-                  >
-                    {enhancingField === "body" ? <span className="button-spinner" aria-hidden="true" /> : <Sparkles aria-hidden="true" />}
-                    Improve body
-                  </button>
-                  {enhanceError.body ? <p className="template-optimize-card__error">{enhanceError.body}</p> : null}
-                </div>
-              </section>
-
-              <section className="template-optimize-card" aria-labelledby="spam-check-heading">
-                <div className="template-optimize-card__heading">
-                  <span className="template-optimize-card__icon">
-                    <ShieldCheck aria-hidden="true" />
-                  </span>
-                  <div>
-                    <h3 id="spam-check-heading">Spam check</h3>
-                    <p>Scan the subject and body for common signals that can hurt deliverability.</p>
-                  </div>
-                </div>
-                <button
-                  className="button secondary template-optimize-card__check"
-                  type="button"
-                  onClick={checkSpam}
-                  disabled={composerBusy}
-                >
-                  {checkingSpam ? <span className="button-spinner" aria-hidden="true" /> : <ShieldCheck aria-hidden="true" />}
-                  {checkingSpam ? "Checking message..." : spamAnalysis ? "Check again" : "Run spam check"}
-                </button>
-
-                {spamAnalysis ? (
-                  <div className="template-spam-results" aria-live="polite">
-                    <div className="template-spam-results__scores">
-                      <div>
-                        <span>Subject</span>
-                        {renderSpamScoreChip(spamAnalysis.subjectScore, spamAnalysis.subjectRisk)}
-                      </div>
-                      <div>
-                        <span>Body</span>
-                        {renderSpamScoreChip(spamAnalysis.bodyScore, spamAnalysis.bodyRisk)}
-                      </div>
-                    </div>
-                    {spamSignals.length ? (
-                      <ul>
-                        {spamSignals.map((signal) => (
-                          <li key={signal}>{signal}</li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p>No common spam signals found. The message is in good shape.</p>
-                    )}
-                  </div>
-                ) : (
-                  <div className="template-spam-empty">
-                    <Gauge aria-hidden="true" />
-                    <p>Your delivery health results will appear here after a check.</p>
-                  </div>
-                )}
-              </section>
+              </div>
+              <input
+                id="subject"
+                name="subject"
+                value={fields.subject}
+                onChange={(event) => {
+                  setEnhanceError((current) => ({ ...current, subject: undefined }));
+                  setSpamAnalysis(null);
+                  updateFields((current) => ({ ...current, subject: event.target.value }));
+                }}
+                placeholder="Hi {{name}}, quick question"
+                className={highlightedField === "subject" ? "field-enhanced" : undefined}
+                required
+              />
+              {enhanceError.subject ? <p className="field-inline-note">{enhanceError.subject}</p> : null}
             </div>
 
-            <div className="template-copy-health" aria-label="Copy health summary">
-              <div>
-                <span>Words</span>
-                <strong>{wordCount}</strong>
+            <div className="field template-compose-field">
+              <div className="field-label-row">
+                <label htmlFor="htmlBody">{getTemplateBodyLabel(fields.format)}</label>
+                <div className="field-label-row__actions">
+                  {spamAnalysis ? renderSpamScoreChip(spamAnalysis.bodyScore, spamAnalysis.bodyRisk) : null}
+                  <button
+                    className="field-icon-button"
+                    type="button"
+                    onClick={() => enhanceText("body", fields.htmlBody)}
+                    disabled={formBusy}
+                    aria-label={getEnhanceTooltip("body")}
+                    data-tooltip={getEnhanceTooltip("body")}
+                  >
+                    {enhancingField === "body" ? (
+                      <span className="button-spinner" aria-hidden="true" />
+                    ) : (
+                      <Sparkles aria-hidden="true" />
+                    )}
+                  </button>
+                </div>
               </div>
-              <div>
-                <span>Reading time</span>
-                <strong>{readingTime}</strong>
-              </div>
-              <div>
-                <span>Variables</span>
-                <strong>{previewVariables.length}</strong>
-              </div>
-              <div>
-                <span>Spam score</span>
-                <strong>{overallSpamScore === null ? "Not checked" : `${overallSpamScore}%`}</strong>
-              </div>
+              <textarea
+                id="htmlBody"
+                name="htmlBody"
+                value={fields.htmlBody}
+                placeholder={getTemplateBodyPlaceholder(fields.format)}
+                onChange={(event) => {
+                  setEnhanceError((current) => ({ ...current, body: undefined }));
+                  setSpamAnalysis(null);
+                  updateFields((current) => ({ ...current, htmlBody: event.target.value }));
+                }}
+                className={highlightedField === "body" ? "field-enhanced" : undefined}
+                required
+              />
+              <p className="field-inline-note">{renderBrandText(getTemplateBodyHint(fields.format))}</p>
+              {bodyValidationError ? <p className="field-inline-note">{bodyValidationError}</p> : null}
+              {enhanceError.body ? <p className="field-inline-note">{enhanceError.body}</p> : null}
             </div>
 
             <div className="template-wizard__actions">
-              <button className="button secondary" type="button" onClick={() => changeStep(0)} disabled={state.pending}>
+              <button
+                className="button secondary"
+                type="button"
+                onClick={() => {
+                  resetTemplateAssistState();
+                  onCancel?.();
+                }}
+                disabled={state.pending}
+              >
                 <ArrowLeft aria-hidden="true" />
-                Back
+                Back to templates
               </button>
-              <button className="button" type="button" onClick={() => changeStep(2)} disabled={state.pending}>
+              <button
+                className="button"
+                type="button"
+                onClick={() => changeStep(1)}
+                disabled={!composeComplete || state.pending}
+              >
                 Next: Preview
                 <ArrowRight aria-hidden="true" />
               </button>
@@ -955,20 +685,35 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
           </div>
         ) : null}
 
-        {activeStep === 2 ? (
+        {activeStep === 1 ? (
           <div className="template-wizard__step-content template-wizard-preview">
-            <div className="template-wizard-preview__summary" aria-label="Template summary">
+            <div className="template-wizard-preview__summary" aria-label="Template details">
               <div>
-                <span>Template</span>
+                <span>Template name</span>
                 <strong>{fields.name}</strong>
               </div>
               <div>
-                <span>Format</span>
+                <span>Message format</span>
                 <strong>{getTemplateFormatLabel(fields.format)}</strong>
               </div>
               <div>
                 <span>Spam score</span>
                 <strong>{overallSpamScore === null ? "Not checked" : `${overallSpamScore}%`}</strong>
+              </div>
+              <div className="template-wizard-preview__summary-item--wide">
+                <span>Subject</span>
+                <strong>{renderTemplateSubjectPreview(fields.subject, previewPayload)}</strong>
+              </div>
+            </div>
+
+            <div className="template-wizard-preview__variables">
+              <span>Variables / merge fields</span>
+              <div className="pill-row">
+                {(previewVariables.length ? previewVariables : ["None detected"]).map((variable) => (
+                  <span key={variable} className="pill">
+                    {variable}
+                  </span>
+                ))}
               </div>
             </div>
 
@@ -992,17 +737,6 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
               </div>
             </section>
 
-            <div className="template-wizard-preview__variables">
-              <span>Variables</span>
-              <div className="pill-row">
-                {(previewVariables.length ? previewVariables : ["None detected"]).map((variable) => (
-                  <span key={variable} className="pill">
-                    {variable}
-                  </span>
-                ))}
-              </div>
-            </div>
-
             {state.error ? (
               <p className="error-message" role="alert">
                 {state.error}
@@ -1010,9 +744,9 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
             ) : null}
 
             <div className="template-wizard__actions">
-              <button className="button secondary" type="button" onClick={() => changeStep(1)} disabled={state.pending}>
+              <button className="button secondary" type="button" onClick={() => changeStep(0)} disabled={state.pending}>
                 <ArrowLeft aria-hidden="true" />
-                Back
+                Back to Compose
               </button>
               <button className="button" type="submit" disabled={state.pending || Boolean(bodyValidationError)}>
                 {state.pending ? "Saving..." : isEditing ? "Save changes" : "Create template"}
@@ -1031,11 +765,7 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
           <span>{Math.round(((activeStep + 1) / TEMPLATE_WIZARD_STEPS.length) * 100)}%</span>
         </div>
         <div className="template-wizard__progress-track" aria-hidden="true">
-          <span
-            style={{
-              width: `${((activeStep + 1) / TEMPLATE_WIZARD_STEPS.length) * 100}%`
-            }}
-          />
+          <span style={{ width: `${((activeStep + 1) / TEMPLATE_WIZARD_STEPS.length) * 100}%` }} />
         </div>
         <ul className="template-wizard__checklist">
           {progressItems.map((item) => (
@@ -1045,7 +775,7 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
             </li>
           ))}
         </ul>
-        <p>Complete the message details first. Optimization is recommended, but you can create the template without a spam check.</p>
+        <p>Write the template, review the preview, then create it. Spam checking is available but optional.</p>
       </aside>
     </form>
   );

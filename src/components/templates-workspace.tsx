@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ChevronLeft, ChevronRight, Plus, Search, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Search, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -182,13 +182,9 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
             <p>
               {editingTemplate
                 ? "Refine the saved message, then review the updated version."
-                : "Build a reusable message in three focused steps."}
+                : "Write, review, and save a reusable message."}
             </p>
           </div>
-          <button className="button secondary template-wizard-page__back" type="button" onClick={handleCloseWizard}>
-            <ArrowLeft aria-hidden="true" />
-            Back to templates
-          </button>
         </header>
 
         <TemplateForm
