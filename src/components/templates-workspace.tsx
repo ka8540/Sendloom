@@ -138,38 +138,6 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
   const pageRangeStart = filteredTemplates.length ? (currentPage - 1) * TEMPLATE_PAGE_SIZE + 1 : 0;
   const pageRangeEnd = Math.min(filteredTemplates.length, currentPage * TEMPLATE_PAGE_SIZE);
 
-  const libraryStats = useMemo(() => {
-    const weekMs = 7 * 24 * 60 * 60 * 1000;
-    const now = Date.now();
-    let plainTextCount = 0;
-    let htmlCount = 0;
-    let updatedThisWeekCount = 0;
-
-    for (const template of templates) {
-      if (template.format === "PLAIN_TEXT") {
-        plainTextCount += 1;
-      } else if (template.format === "HTML") {
-        htmlCount += 1;
-      }
-
-      const updatedAt = template.updatedAt ? new Date(template.updatedAt).getTime() : Number.NaN;
-      if (!Number.isNaN(updatedAt) && now - updatedAt <= weekMs) {
-        updatedThisWeekCount += 1;
-      }
-    }
-
-    const stats = [{ label: "Total templates", value: templates.length }];
-    if (plainTextCount > 0) {
-      stats.push({ label: "Plain text", value: plainTextCount });
-    }
-    if (htmlCount > 0) {
-      stats.push({ label: "HTML", value: htmlCount });
-    }
-    stats.push({ label: "Updated this week", value: updatedThisWeekCount });
-
-    return stats;
-  }, [templates]);
-
   const handleSaved = (savedTemplate: EditableTemplate) => {
     const normalized = normalizeTemplate({ ...savedTemplate, updatedAt: new Date().toISOString() });
 
@@ -231,28 +199,15 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
   return (
     <div className="templates-library">
       <header className="templates-library__hero">
-        <div className="templates-library__hero-top">
-          <div className="templates-library__heading">
-            <span className="templates-library__kicker">Message library</span>
-            <h1>Templates</h1>
-            <p>Create, find, and refine the messages used across your sequences.</p>
-          </div>
-          <button className="button templates-library__create" type="button" onClick={handleStartCreating}>
-            <Plus aria-hidden="true" />
-            Create new template
-          </button>
+        <div className="templates-library__heading">
+          <span className="templates-library__kicker">Message library</span>
+          <h1>Templates</h1>
+          <p>Create, find, and refine the messages used across your sequences.</p>
         </div>
-
-        {hasTemplates ? (
-          <div className="templates-library__stats" role="list" aria-label="Library at a glance">
-            {libraryStats.map((stat) => (
-              <div key={stat.label} className="templates-library__stat" role="listitem">
-                <span className="templates-library__stat-value">{stat.value}</span>
-                <span className="templates-library__stat-label">{stat.label}</span>
-              </div>
-            ))}
-          </div>
-        ) : null}
+        <button className="button templates-library__create" type="button" onClick={handleStartCreating}>
+          <Plus aria-hidden="true" />
+          Create new template
+        </button>
       </header>
 
       <section className="card templates-library__card" aria-labelledby="saved-templates-heading">
@@ -296,7 +251,7 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
             const cardContent = getTemplateCardContent(template.format, template.htmlBody);
             const updatedDate = formatUpdatedDate(template.updatedAt);
             const variables = template.variableManifest;
-            const visibleVariables = variables.slice(0, 3);
+            const visibleVariables = variables.slice(0, 2);
             const hiddenVariableCount = variables.length - visibleVariables.length;
             const FormatIcon = getTemplateFormatIcon(template.format);
 
@@ -328,9 +283,7 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
                   </button>
                 </div>
 
-                <div className="template-list-item__excerpt">
-                  <p className="template-list-item__snippet">{cardContent.bodyPreview}</p>
-                </div>
+                <p className="template-list-item__snippet">{cardContent.bodyPreview}</p>
 
                 <footer className="template-list-item__meta" aria-label={`Details for ${template.name}`}>
                   {visibleVariables.length ? (
