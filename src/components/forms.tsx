@@ -484,7 +484,7 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
   ];
 
   return (
-    <form className="template-wizard" onSubmit={onSubmit}>
+    <form className="template-wizard" onSubmit={onSubmit} data-template-step={activeStep === 0 ? "compose" : "review"}>
       <article className="card template-wizard__card">
         <nav className="template-wizard__steps" aria-label="Template creation progress">
           {TEMPLATE_WIZARD_STEPS.map((step, index) => {
@@ -524,7 +524,7 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
 
         {activeStep === 0 ? (
           <div className="template-wizard__step-content">
-            <section className="template-form-toolbar" aria-labelledby="template-delivery-health">
+            <section className="template-form-toolbar" aria-labelledby="template-delivery-health" data-template-tour="compose-tools">
               <div className="template-form-toolbar__content">
                 <p className="template-form-toolbar__eyebrow" id="template-delivery-health">
                   Delivery health
@@ -548,7 +548,7 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
               </button>
             </section>
 
-            <div className="template-meta-grid">
+            <div className="template-meta-grid" data-template-tour="compose-basics">
               <div className="field template-meta-field">
                 <label htmlFor="name">Template name</label>
                 <input
@@ -588,7 +588,7 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
             </div>
             <p className="template-meta-hint">{renderBrandText(getTemplateBodyHint(fields.format))}</p>
 
-            <div className="field template-compose-field">
+            <div className="field template-compose-field" data-template-tour="compose-personalization">
               <div className="field-label-row">
                 <label htmlFor="subject">Subject</label>
                 <div className="field-label-row__actions">
@@ -682,6 +682,7 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
                 type="button"
                 onClick={() => changeStep(1)}
                 disabled={!composeComplete || state.pending}
+                data-template-tour="compose-next"
               >
                 Next: Preview
                 <ArrowRight aria-hidden="true" />
@@ -692,7 +693,7 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
 
         {activeStep === 1 ? (
           <div className="template-wizard__step-content template-wizard-preview">
-            <section className="template-review-summary" aria-labelledby="template-review-summary-heading">
+            <section className="template-review-summary" aria-labelledby="template-review-summary-heading" data-template-tour="review-summary">
               <header className="template-review-summary__header">
                 <div>
                   <span className="template-review-summary__eyebrow">Template summary</span>
@@ -737,7 +738,7 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
               </div>
             </section>
 
-            <section className="template-email-review" aria-labelledby="email-preview-heading">
+            <section className="template-email-review" aria-labelledby="email-preview-heading" data-template-tour="review-preview">
               <header className="template-email-review__header">
                 <div className="template-email-review__title">
                   <span className="template-email-review__icon" aria-hidden="true">
@@ -776,11 +777,22 @@ export function TemplateForm({ initialTemplate = null, value, onChange, onSaved,
             ) : null}
 
             <div className="template-wizard__actions">
-              <button className="button secondary" type="button" onClick={() => changeStep(0)} disabled={state.pending}>
+              <button
+                className="button secondary"
+                type="button"
+                onClick={() => changeStep(0)}
+                disabled={state.pending}
+                data-template-tour="review-back"
+              >
                 <ArrowLeft aria-hidden="true" />
                 Back to Compose
               </button>
-              <button className="button" type="submit" disabled={state.pending || Boolean(bodyValidationError)}>
+              <button
+                className="button"
+                type="submit"
+                disabled={state.pending || Boolean(bodyValidationError)}
+                data-template-tour="review-save"
+              >
                 {state.pending ? "Saving..." : isEditing ? "Save changes" : "Create template"}
               </button>
             </div>
