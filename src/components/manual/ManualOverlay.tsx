@@ -3,7 +3,7 @@
 import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, ArrowRight, Check } from "lucide-react";
+import { ArrowRight, Check } from "lucide-react";
 
 import { CircularCloseButton } from "@/components/circular-close-button";
 
@@ -179,7 +179,7 @@ function areGeometriesEqual(left: OverlayGeometry, right: OverlayGeometry) {
 }
 
 export function ManualOverlay() {
-  const { currentStepIndex, finishManual, isOpen, manual, nextStep, previousStep, skipManual, steps } = useManual();
+  const { currentStepIndex, finishManual, isOpen, manual, nextStep, skipManual, steps } = useManual();
   const popoverRef = useRef<HTMLElement | null>(null);
   const frameRef = useRef<number | null>(null);
   const scrollSettleFrameRef = useRef<number | null>(null);
@@ -465,32 +465,24 @@ export function ManualOverlay() {
             <button className={styles.skipButton} type="button" onClick={skipManual} data-manual-control="true">
               Skip
             </button>
-            <div className={styles.actionsRight}>
-              {currentStepIndex > 0 ? (
-                <button className={styles.backButton} type="button" onClick={previousStep} data-manual-control="true">
-                  <ArrowLeft aria-hidden="true" />
-                  Back
-                </button>
-              ) : null}
-              <button
-                className={styles.nextButton}
-                type="button"
-                onClick={isFinalStep ? finishManual : nextStep}
-                data-manual-control="true"
-              >
-                {isFinalStep ? (
-                  <>
-                    Finish
-                    <Check aria-hidden="true" />
-                  </>
-                ) : (
-                  <>
-                    Next
-                    <ArrowRight aria-hidden="true" />
-                  </>
-                )}
-              </button>
-            </div>
+            <button
+              className={styles.nextButton}
+              type="button"
+              onClick={isFinalStep ? finishManual : nextStep}
+              data-manual-control="true"
+            >
+              {isFinalStep ? (
+                <>
+                  Finish
+                  <Check aria-hidden="true" />
+                </>
+              ) : (
+                <>
+                  Next
+                  <ArrowRight aria-hidden="true" />
+                </>
+              )}
+            </button>
           </div>
         </div>
       </section>

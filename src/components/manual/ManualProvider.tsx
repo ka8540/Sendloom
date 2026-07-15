@@ -18,7 +18,6 @@ type ManualContextValue = {
   activeStage: string | null;
   finishManual: () => void;
   nextStep: () => void;
-  previousStep: () => void;
   openManual: () => void;
   openManualStage: (stage: string | null) => void;
   skipManual: () => void;
@@ -235,10 +234,6 @@ function ManualRuntime({ children }: { children: React.ReactNode }) {
     });
   }, [activeStage, manual, steps.length]);
 
-  const previousStep = useCallback(() => {
-    setCurrentStepIndex((stepIndex) => Math.max(0, stepIndex - 1));
-  }, []);
-
   const openManual = useCallback(() => {
     if (!manual) {
       return;
@@ -276,7 +271,6 @@ function ManualRuntime({ children }: { children: React.ReactNode }) {
       isStageComplete,
       manual,
       nextStep,
-      previousStep,
       openManual,
       openManualStage,
       skipManual,
@@ -290,7 +284,6 @@ function ManualRuntime({ children }: { children: React.ReactNode }) {
       isStageComplete,
       manual,
       nextStep,
-      previousStep,
       openManual,
       openManualStage,
       skipManual,
