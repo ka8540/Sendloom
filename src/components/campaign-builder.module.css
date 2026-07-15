@@ -181,35 +181,6 @@
   font-size: 0.92rem;
 }
 
-.searchControl {
-  position: relative;
-  display: block;
-}
-
-.searchControl > svg {
-  position: absolute;
-  left: 0.85rem;
-  top: 50%;
-  z-index: 1;
-  width: 0.95rem;
-  height: 0.95rem;
-  color: var(--muted);
-  pointer-events: none;
-  transform: translateY(-50%);
-}
-
-.searchControl > input {
-  padding-left: 2.45rem !important;
-}
-
-.templateList {
-  display: grid;
-  gap: 0.65rem;
-  max-height: 23rem;
-  padding-right: 0.15rem;
-  overflow-y: auto;
-}
-
 .audienceField {
   display: grid;
   gap: 0.45rem;
@@ -500,33 +471,60 @@
   line-height: 1.4;
 }
 
-.templateCard {
-  width: 100%;
+.templateTriggerMeta {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
   min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--surface-muted) 84%, transparent);
-  color: var(--text);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  transition: border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
 }
 
-.templateCard:hover,
-.templateCard:focus-visible {
-  border-color: color-mix(in srgb, var(--accent) 42%, var(--line));
+.templateTriggerSubject {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.templateCard:focus-visible {
-  outline: 2px solid var(--field-focus);
-  outline-offset: 2px;
+.templateOption {
+  min-height: 4.65rem;
 }
 
-.optionCardSelected {
-  border-color: color-mix(in srgb, var(--accent) 62%, var(--line));
-  background: color-mix(in srgb, var(--accent-soft) 58%, var(--surface-muted));
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 9%, transparent);
+.templateOptionCopy {
+  display: grid;
+  gap: 0.18rem;
+  min-width: 0;
+}
+
+.templateOptionTitle {
+  display: flex;
+  align-items: center;
+  gap: 0.48rem;
+  min-width: 0;
+}
+
+.templateOptionTitle strong {
+  overflow: hidden;
+  font-size: 0.84rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.templateSelectionSpacer {
+  width: 1.4rem;
+  height: 1.4rem;
+}
+
+.templateMenuHelper {
+  margin: 0;
+  padding: 0.5rem 0.62rem 0.35rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.templateMenuFooter {
+  margin-top: 0.35rem;
+  padding: 0.62rem 0.62rem 0.18rem;
+  border-top: 1px solid var(--line);
 }
 
 .fieldChips {
@@ -718,45 +716,23 @@
   min-width: 0;
 }
 
-.templateCard {
-  display: grid;
-  gap: 0.42rem;
-  padding: 0.9rem;
-}
-
-.templateHeader,
-.templateHeader > span:first-child {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  min-width: 0;
-}
-
-.templateHeader {
-  justify-content: space-between;
-}
-
-.templateHeader strong {
+.templateSubject {
   overflow: hidden;
-  font-size: 0.94rem;
+  color: var(--text);
+  font-size: 0.76rem;
+  font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.templateSubject {
-  color: var(--text);
-  font-size: 0.84rem;
-  font-weight: 650;
-}
-
 .templateSnippet {
-  display: -webkit-box;
+  display: block;
   overflow: hidden;
   color: var(--muted);
-  font-size: 0.81rem;
-  line-height: 1.45;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  font-size: 0.74rem;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .timingChoiceGroup {
@@ -1472,7 +1448,6 @@
   .stepButton,
   .audienceTrigger,
   .audienceOption,
-  .templateCard,
   .timingChoice,
   .progressTrack > span {
     transition: none;

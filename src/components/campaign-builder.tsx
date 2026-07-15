@@ -29,6 +29,7 @@ import {
 import { SequenceLimitDialog } from "@/components/sequence-limit-dialog";
 import {
   DEFAULT_AUDIENCE_LIMIT,
+  DEFAULT_TEMPLATE_LIMIT,
   WIZARD_STEPS,
   filterAudienceOptions,
   filterTemplateOptions,
@@ -115,6 +116,9 @@ export function CampaignBuilder(props: {
   const audienceSelectorRef = useRef<HTMLDivElement | null>(null);
   const audienceTriggerRef = useRef<HTMLButtonElement | null>(null);
   const audienceSearchRef = useRef<HTMLInputElement | null>(null);
+  const templateSelectorRef = useRef<HTMLDivElement | null>(null);
+  const templateTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const templateSearchRef = useRef<HTMLInputElement | null>(null);
   const hasMountedRef = useRef(false);
   const { showSuccess } = useErrorToast();
   const [state, setState] = useState<{ pending: boolean; error?: string }>({ pending: false });
@@ -123,6 +127,7 @@ export function CampaignBuilder(props: {
   const [audienceQuery, setAudienceQuery] = useState("");
   const [audienceMenuOpen, setAudienceMenuOpen] = useState(false);
   const [templateQuery, setTemplateQuery] = useState("");
+  const [templateMenuOpen, setTemplateMenuOpen] = useState(false);
   const [attachments, setAttachments] = useState<File[]>([]);
   const [selectedImportId, setSelectedImportId] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
@@ -221,6 +226,22 @@ export function CampaignBuilder(props: {
     return () => document.removeEventListener("pointerdown", handlePointerDown);
   }, [audienceMenuOpen]);
 
+  useEffect(() => {
+    if (!templateMenuOpen) return;
+
+    templateSearchRef.current?.focus();
+
+    function handlePointerDown(event: PointerEvent) {
+      if (event.target instanceof Node && !templateSelectorRef.current?.contains(event.target)) {
+        setTemplateMenuOpen(false);
+        setTemplateQuery("");
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [templateMenuOpen]);
+
   const selectedImport = props.imports.find((entry) => entry.id === selectedImportId) ?? null;
   const selectedTemplate = props.templates.find((entry) => entry.id === selectedTemplateId) ?? null;
   const selectedSender = props.senders.find((entry) => entry.id === selectedSenderId) ?? null;
@@ -230,6 +251,8 @@ export function CampaignBuilder(props: {
   const hasImports = props.imports.length > 0;
   const hasAudienceQuery = Boolean(audienceQuery.trim());
   const hasOlderAudiences = props.imports.length > DEFAULT_AUDIENCE_LIMIT;
+  const hasTemplateQuery = Boolean(templateQuery.trim());
+  const hasOlderTemplates = props.templates.length > DEFAULT_TEMPLATE_LIMIT;
   const needsReconnect = !hasSenders && (props.disconnectedSenderCount ?? 0) > 0;
   const audienceStepComplete = isAudienceStepComplete(sequenceName, selectedImportId, selectedMappingId);
   const timingStepComplete = isTimingStepComplete({
@@ -265,6 +288,24 @@ export function CampaignBuilder(props: {
     setAudienceQuery("");
     if (restoreFocus) {
       requestAnimationFrame(() => audienceTriggerRef.current?.focus());
+    }
+  }
+
+  function toggleTemplateMenu() {
+    if (templateMenuOpen) {
+      setTemplateMenuOpen(false);
+      setTemplateQuery("");
+      return;
+    }
+
+    setTemplateMenuOpen(true);
+  }
+
+  function closeTemplateMenu(restoreFocus = false) {
+    setTemplateMenuOpen(false);
+    setTemplateQuery("");
+    if (restoreFocus) {
+      requestAnimationFrame(() => templateTriggerRef.current?.focus());
     }
   }
 
@@ -307,6 +348,7 @@ export function CampaignBuilder(props: {
     setAudienceQuery("");
     setAudienceMenuOpen(false);
     setTemplateQuery("");
+    setTemplateMenuOpen(false);
     setAttachments([]);
     setSelectedImportId("");
     setSelectedMappingId("");
@@ -697,73 +739,126 @@ export function CampaignBuilder(props: {
                   <span><strong>{selectedImport?.label}</strong> · {contactCountFormatter.format(selectedImport?.rowCount ?? 0)} contacts</span>
                 </div>
 
-                {hasTemplates ? (
-                  <>
-                    <div className={`field ${styles.searchField}`}>
-                      <label htmlFor="template-search">Search templates</label>
-                      <span className={styles.searchControl}>
-                        <Search aria-hidden="true" />
-                        <input
-                          id="template-search"
-                          type="search"
-                          value={templateQuery}
-                          onChange={(event) => setTemplateQuery(event.target.value)}
-                          placeholder="Search by name, subject, or content"
-                        />
+                <div className={styles.audienceField}>
+                  <span className={styles.audienceLabel} id="template-selector-label">Message</span>
+                  <div
+                    className={styles.audienceSelector}
+                    ref={templateSelectorRef}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape" && templateMenuOpen) {
+                        event.preventDefault();
+                        closeTemplateMenu(true);
+                      }
+                    }}
+                  >
+                    <button
+                      ref={templateTriggerRef}
+                      className={styles.audienceTrigger}
+                      type="button"
+                      role="combobox"
+                      aria-haspopup="listbox"
+                      aria-expanded={templateMenuOpen}
+                      aria-controls="template-options-menu"
+                      aria-labelledby="template-selector-label template-selector-value"
+                      data-open={templateMenuOpen || undefined}
+                      onClick={toggleTemplateMenu}
+                    >
+                      <span className={styles.audienceTriggerIcon} aria-hidden="true"><Mail /></span>
+                      <span className={styles.audienceTriggerCopy}>
+                        <strong id="template-selector-value">
+                          {selectedTemplate?.label ?? "Choose a template"}
+                        </strong>
+                        {selectedTemplate ? (
+                          <span className={styles.templateTriggerMeta}>
+                            <span className={styles.formatBadge}>{selectedTemplate.formatLabel}</span>
+                            <span className={styles.templateTriggerSubject}>{selectedTemplate.subject || "No subject"}</span>
+                          </span>
+                        ) : (
+                          <span>{hasTemplates ? "Select from your recent templates" : "Create a template to continue"}</span>
+                        )}
                       </span>
-                    </div>
+                      <ChevronDown className={styles.audienceChevron} aria-hidden="true" />
+                    </button>
 
-                    <div className={styles.templateList} role="listbox" aria-label="Available email templates">
-                      {filteredTemplates.map((template) => {
-                        const selected = template.id === selectedTemplateId;
+                    {templateMenuOpen ? (
+                      <div className={styles.audienceMenu} id="template-options-menu">
+                        <div className={styles.audienceMenuSearch}>
+                          <Search aria-hidden="true" />
+                          <input
+                            ref={templateSearchRef}
+                            id="template-search"
+                            type="search"
+                            value={templateQuery}
+                            onChange={(event) => setTemplateQuery(event.target.value)}
+                            aria-label="Search templates"
+                            placeholder="Search by name, subject, or content"
+                            autoComplete="off"
+                          />
+                        </div>
 
-                        return (
-                          <button
-                            key={template.id}
-                            type="button"
-                            role="option"
-                            aria-selected={selected}
-                            className={`${styles.templateCard}${selected ? ` ${styles.optionCardSelected}` : ""}`}
-                            onClick={() => {
-                              setSelectedTemplateId(template.id);
-                              setState({ pending: false });
-                            }}
-                          >
-                            <span className={styles.templateHeader}>
-                              <span>
-                                <strong>{template.label}</strong>
-                                <span className={styles.formatBadge}>{template.formatLabel}</span>
-                              </span>
-                              <span className={styles.selectionMark} aria-hidden="true">{selected ? <Check /> : null}</span>
-                            </span>
-                            <span className={styles.templateSubject}>{template.subject || "No subject"}</span>
-                            <span className={styles.templateSnippet}>{template.snippet}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
+                        {filteredTemplates.length ? (
+                          <div className={styles.audienceOptions} role="listbox" aria-label="Available email templates">
+                            {filteredTemplates.map((template) => {
+                              const selected = template.id === selectedTemplateId;
 
-                    {!filteredTemplates.length ? (
-                      <div className={styles.emptyState}>
-                        <Search aria-hidden="true" />
-                        <strong>No templates match “{templateQuery}”</strong>
-                        <span>Try another name, subject, or phrase.</span>
+                              return (
+                                <button
+                                  key={template.id}
+                                  type="button"
+                                  role="option"
+                                  aria-selected={selected}
+                                  className={`${styles.audienceOption} ${styles.templateOption}${selected ? ` ${styles.audienceOptionSelected}` : ""}`}
+                                  onClick={() => {
+                                    setSelectedTemplateId(template.id);
+                                    setState({ pending: false });
+                                    closeTemplateMenu(true);
+                                  }}
+                                >
+                                  <span className={styles.templateOptionCopy}>
+                                    <span className={styles.templateOptionTitle}>
+                                      <strong>{template.label}</strong>
+                                      <span className={styles.formatBadge}>{template.formatLabel}</span>
+                                    </span>
+                                    <span className={styles.templateSubject}>{template.subject || "No subject"}</span>
+                                    <span className={styles.templateSnippet}>{template.snippet}</span>
+                                  </span>
+                                  {selected ? (
+                                    <span className={styles.selectionMark} aria-hidden="true"><Check /></span>
+                                  ) : (
+                                    <span className={styles.templateSelectionSpacer} aria-hidden="true" />
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ) : hasTemplateQuery ? (
+                          <div className={styles.audienceNoResults} role="status">
+                            <Search aria-hidden="true" />
+                            <span><strong>No matching templates</strong>Try another name, subject, format, or phrase.</span>
+                          </div>
+                        ) : (
+                          <div className={styles.audienceNoResults} role="status">
+                            <FileText aria-hidden="true" />
+                            <span><strong>No templates yet</strong>Create a new template to continue.</span>
+                          </div>
+                        )}
+
+                        {!hasTemplateQuery && hasOlderTemplates ? (
+                          <p className={styles.templateMenuHelper}>
+                            Showing latest {DEFAULT_TEMPLATE_LIMIT}. Search to find older templates.
+                          </p>
+                        ) : null}
+
+                        <div className={styles.templateMenuFooter}>
+                          <a className={styles.inlineAction} href="/templates">
+                            <Plus aria-hidden="true" />
+                            Create a new template
+                          </a>
+                        </div>
                       </div>
                     ) : null}
-
-                    <a className={styles.inlineAction} href="/templates">
-                      <Plus aria-hidden="true" />
-                      Create a new template
-                    </a>
-                  </>
-                ) : (
-                  <div className={styles.emptyState}>
-                    <FileText aria-hidden="true" />
-                    <strong>No email templates yet</strong>
-                    <span>Create a template before continuing this sequence.</span>
-                    <a className="button" href="/templates">Create a template</a>
                   </div>
-                )}
+                </div>
 
                 <div className={styles.stepActions}>
                   <button className={`button secondary ${styles.secondaryAction}`} type="button" onClick={() => changeStep(0)}>

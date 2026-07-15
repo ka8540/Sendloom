@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   DEFAULT_AUDIENCE_LIMIT,
+  DEFAULT_TEMPLATE_LIMIT,
   WIZARD_STEPS,
   filterAudienceOptions,
   filterTemplateOptions,
@@ -52,6 +53,15 @@ const templates: TemplateOption[] = [
     subject: "Following up",
     snippet: "A polished follow-up for design leaders."
   }
+];
+
+const manyTemplates: TemplateOption[] = [
+  ...templates,
+  { id: "latest-3", label: "Recruiter intro", formatLabel: "Plain text", subject: "Hello", snippet: "A short intro." },
+  { id: "latest-4", label: "Product follow-up", formatLabel: "HTML", subject: "Checking in", snippet: "A product note." },
+  { id: "latest-5", label: "Operator intro", formatLabel: "Plain text", subject: "Quick note", snippet: "An operator message." },
+  { id: "older-1", label: "Legacy sales", formatLabel: "Plain text", subject: "Older subject", snippet: "An archived sales pitch." },
+  { id: "older-2", label: "Legacy finance", formatLabel: "HTML", subject: "Finance role", snippet: "An archived finance message." }
 ];
 
 describe("Create Sequence wizard structure", () => {
@@ -200,21 +210,63 @@ describe("Step 1: Audience", () => {
 });
 
 describe("Step 2: Message", () => {
-  it("shows the selected audience summary and searchable template cards after Next", () => {
+  it("shows the selected audience summary and a closed-by-default template selector after Next", () => {
     expect(BUILDER).toContain("changeStep(1)");
-    expect(BUILDER).toContain('<label htmlFor="template-search">Search templates</label>');
+    expect(BUILDER).toContain('id="template-selector-label">Message</span>');
+    expect(BUILDER).toContain('aria-expanded={templateMenuOpen}');
+    expect(BUILDER).toContain('aria-controls="template-options-menu"');
+    expect(BUILDER).toContain('"Choose a template"');
+    expect(BUILDER).toContain('{templateMenuOpen ? (');
+    expect(BUILDER).toContain('placeholder="Search by name, subject, or content"');
     expect(BUILDER).toContain('aria-label="Available email templates"');
     expect(BUILDER).toContain("template.formatLabel");
     expect(BUILDER).toContain("template.subject");
     expect(BUILDER).toContain("template.snippet");
-    expect(BUILDER).toContain("No email templates yet");
+    expect(BUILDER).not.toContain("styles.templateCard");
+    expect(BUILDER_CSS).toMatch(/\.audienceMenu\s*\{[^}]*position:\s*absolute;/s);
   });
 
-  it("filters templates by name, format, subject, and preview content", () => {
+  it("shows only the latest five by default and searches every template field", () => {
+    expect(DEFAULT_TEMPLATE_LIMIT).toBe(5);
+    expect(filterTemplateOptions(manyTemplates, "").map((entry) => entry.id)).toEqual([
+      "plain",
+      "html",
+      "latest-3",
+      "latest-4",
+      "latest-5"
+    ]);
     expect(filterTemplateOptions(templates, "founder").map((entry) => entry.id)).toEqual(["plain"]);
     expect(filterTemplateOptions(templates, "HTML").map((entry) => entry.id)).toEqual(["html"]);
     expect(filterTemplateOptions(templates, "polished").map((entry) => entry.id)).toEqual(["html"]);
     expect(filterTemplateOptions(templates, "introduction").map((entry) => entry.id)).toEqual(["plain"]);
+    expect(filterTemplateOptions(manyTemplates, "archived sales").map((entry) => entry.id)).toEqual(["older-1"]);
+    expect(BUILDER).toContain("Showing latest {DEFAULT_TEMPLATE_LIMIT}. Search to find older templates.");
+  });
+
+  it("selects a compact row, closes the dropdown, and preserves a clean summary", () => {
+    const templateOption = BUILDER.slice(
+      BUILDER.indexOf("className={`${styles.audienceOption} ${styles.templateOption}"),
+      BUILDER.indexOf("</button>", BUILDER.indexOf("className={`${styles.audienceOption} ${styles.templateOption}"))
+    );
+    expect(templateOption).toContain("setSelectedTemplateId(template.id)");
+    expect(templateOption).toContain("closeTemplateMenu(true)");
+    expect(BUILDER).toContain("aria-selected={selected}");
+    expect(BUILDER).toContain("selectedTemplate.formatLabel");
+    expect(BUILDER).toContain("selectedTemplate.subject");
+    expect(BUILDER_CSS).toContain("text-overflow: ellipsis;");
+    expect(BUILDER_CSS).toContain("white-space: nowrap;");
+  });
+
+  it("keeps empty states and the create action inside the template dropdown", () => {
+    expect(BUILDER).toContain("No templates yet");
+    expect(BUILDER).toContain("Create a new template to continue.");
+    expect(BUILDER).toContain("No matching templates");
+    const templateFooter = BUILDER.slice(
+      BUILDER.indexOf("styles.templateMenuFooter"),
+      BUILDER.indexOf("</div>", BUILDER.indexOf("styles.templateMenuFooter"))
+    );
+    expect(templateFooter).toContain("Create a new template");
+    expect(templateFooter).toContain('href="/templates"');
   });
 
   it("requires a template before moving to timing", () => {
