@@ -3193,23 +3193,6 @@ html[data-sidebar-collapsed="true"] .sidebar .theme-menu--footer .theme-menu__pa
   font-weight: 700;
 }
 
-.import-card__actions {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  flex: 0 0 auto;
-  padding: 0.22rem;
-  border: 1px solid color-mix(in srgb, var(--line) 90%, transparent);
-  border-radius: 13px;
-  background: color-mix(in srgb, var(--surface) 82%, transparent);
-}
-
-.import-card__actions .field-icon-button {
-  width: 2.15rem;
-  height: 2.15rem;
-  border-radius: 10px;
-}
-
 .import-card__fields {
   display: flex;
   align-items: center;
@@ -4060,11 +4043,6 @@ html[data-sidebar-collapsed="true"] .sidebar .theme-menu--footer .theme-menu__pa
   .import-card__header {
     display: grid;
     gap: 0.7rem;
-  }
-
-  .import-card__actions {
-    justify-content: flex-start;
-    width: fit-content;
   }
 
   .import-card__fields {

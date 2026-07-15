@@ -21,6 +21,7 @@ import { useRouter } from "next/navigation";
 
 import { useErrorToast, useErrorToastEffect } from "@/components/error-toast-provider";
 import { AppConfirmDialog } from "@/components/app-confirm-dialog";
+import actionStyles from "@/components/campaign-card-actions.module.css";
 import { CircularCloseButton } from "@/components/circular-close-button";
 import editorStyles from "@/components/import-editor-dialog.module.css";
 import pickerStyles from "@/components/import-picker.module.css";
@@ -616,10 +617,10 @@ export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
                 </div>
               </div>
 
-              <div className="import-card__actions">
+              <div className={actionStyles.rail}>
                 <button
                   type="button"
-                  className="field-icon-button"
+                  className={`${actionStyles.action} ${actionStyles.open}`}
                   data-tooltip="Edit import"
                   data-imports-tour={isTourAnchor ? "edit-import" : undefined}
                   onClick={() => {
@@ -634,7 +635,7 @@ export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
 
                 <button
                   type="button"
-                  className="field-icon-button field-icon-button--danger"
+                  className={`${actionStyles.action} ${actionStyles.delete}`}
                   data-tooltip="Delete import"
                   data-imports-tour={isTourAnchor ? "delete-import" : undefined}
                   onClick={() => deletion.requestDeletion(item)}

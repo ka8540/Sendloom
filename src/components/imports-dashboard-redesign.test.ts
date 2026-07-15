@@ -54,4 +54,12 @@ describe("Imports dashboard redesign", () => {
     expect(LIBRARY).toContain('aria-label="Previous imports page"');
     expect(LIBRARY).toContain('aria-label="Next imports page"');
   });
+
+  it("reuses the Sequence action rail for import edit and delete controls", () => {
+    expect(LIBRARY).toContain('import actionStyles from "@/components/campaign-card-actions.module.css";');
+    expect(LIBRARY).toContain("<div className={actionStyles.rail}>");
+    expect(LIBRARY).toContain('className={`${actionStyles.action} ${actionStyles.open}`}');
+    expect(LIBRARY).toContain('className={`${actionStyles.action} ${actionStyles.delete}`}');
+    expect(LIBRARY).not.toContain('className="import-card__actions"');
+  });
 });
