@@ -215,7 +215,9 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
           <div className="saved-templates__heading">
             <div className="saved-templates__title">
               <h2 id="saved-templates-heading">Saved templates</h2>
-              <span aria-label={`${templates.length} saved templates`}>{templates.length}</span>
+              <span className="saved-templates__count" aria-label={`${templates.length} saved templates`}>
+                {templates.length}
+              </span>
             </div>
             <p>
               {isSearching
