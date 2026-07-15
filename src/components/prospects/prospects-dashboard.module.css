@@ -2706,6 +2706,16 @@
   margin-right: 0.5rem;
 }
 
+.quotaChipWrapHeader {
+  margin-right: 0;
+}
+
+.quotaChipHeaderAction {
+  cursor: default;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 /* Small premium stat chip: 34px pill, tabular digits, quiet at rest and
    accent-ringed on hover/keyboard focus (which also reveals the helper). */
 .quotaChip {
@@ -2758,7 +2768,7 @@
 }
 
 .quotaChipWrap:hover .companySearchTooltip,
-.quotaChipWrap:has(.quotaChip:focus-visible) .companySearchTooltip {
+.quotaChipWrap:has([data-discover-quota]:focus-visible) .companySearchTooltip {
   opacity: 1;
   transform: translateY(0);
 }

@@ -120,16 +120,27 @@ export function DisabledState() {
  * hover/focus helper card. Carries the same data-discover-tour/quota hooks as
  * QuotaIndicator so the detail tour keeps anchoring and reading it.
  */
-export function QuotaStatChip({ quota }: { quota: DiscoverQuota | null }) {
+export function QuotaStatChip({
+  quota,
+  variant = "compact"
+}: {
+  quota: DiscoverQuota | null;
+  variant?: "compact" | "headerAction";
+}) {
   const view = formatQuotaChip(quota);
   if (!view) {
     return null;
   }
+  const isHeaderAction = variant === "headerAction";
   return (
-    <span className={styles.quotaChipWrap}>
+    <span className={`${styles.quotaChipWrap} ${isHeaderAction ? styles.quotaChipWrapHeader : ""}`}>
       <span
         tabIndex={0}
-        className={`${styles.quotaChip} ${view.unlimited ? styles.quotaChipUnlimited : ""}`}
+        className={
+          isHeaderAction
+            ? `button secondary ${styles.quotaChipHeaderAction}`
+            : `${styles.quotaChip} ${view.unlimited ? styles.quotaChipUnlimited : ""}`
+        }
         aria-label={view.ariaLabel}
         data-discover-tour="quota"
         data-discover-quota={view.unlimited ? "unlimited" : "limited"}

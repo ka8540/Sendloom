@@ -344,10 +344,10 @@ export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean 
             <>
               {/* Compact "2/4" chip — the full sentence lives in its aria-label
                   and hover/focus helper card, so the action row stays quiet. */}
-              <QuotaStatChip quota={quota} />
+              <QuotaStatChip quota={quota} variant="headerAction" />
               <button
                 type="button"
-                className={styles.refreshButton}
+                className="button secondary"
                 onClick={refreshAll}
                 disabled={searchesLoading}
                 title="Refresh"
@@ -358,7 +358,7 @@ export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean 
               </button>
               <button
                 type="button"
-                className={styles.primaryButton}
+                className="button"
                 onClick={() => setShowNewSearch(true)}
                 data-discover-tour="new-search"
               >

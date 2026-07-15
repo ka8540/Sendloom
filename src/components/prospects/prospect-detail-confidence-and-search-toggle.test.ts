@@ -327,9 +327,11 @@ describe("compact header quota chip", () => {
 
   it("the Discover list header uses the same chip; Refresh/New search stay wired", () => {
     // The long sentence indicator is fully replaced on the list page.
-    expect(LIST_SOURCE).toContain("<QuotaStatChip quota={quota} />");
+    expect(LIST_SOURCE).toContain('<QuotaStatChip quota={quota} variant="headerAction" />');
     expect(LIST_SOURCE).not.toContain("QuotaIndicator");
-    // The existing actions are untouched.
+    // The actions use the exact primary/secondary classes from Sequences.
+    expect(LIST_SOURCE).toContain('className="button secondary"');
+    expect(LIST_SOURCE).toContain('className="button"');
     expect(LIST_SOURCE).toContain('data-discover-tour="refresh"');
     expect(LIST_SOURCE).toContain("onClick={refreshAll}");
     expect(LIST_SOURCE).toContain('data-discover-tour="new-search"');
@@ -349,9 +351,13 @@ describe("compact header quota chip", () => {
     expect(CSS).toMatch(/\.quotaChipWrap \{[^}]*margin-right: 0\.5rem/);
     // Its helper card opens from the left edge and shows on hover/keyboard focus.
     expect(CSS).toMatch(/\.quotaChipTooltip \{\s*\n\s*left: 0;\s*\n\s*right: auto;/);
-    expect(CSS).toMatch(
-      /\.quotaChipWrap:hover \.companySearchTooltip,\s*\n\s*\.quotaChipWrap:has\(\.quotaChip:focus-visible\) \.companySearchTooltip \{/
-    );
+    expect(CSS).toMatch(/\.quotaChipWrap:has\(\[data-discover-quota\]:focus-visible\) \.companySearchTooltip/);
+  });
+
+  it("the Discover header quota uses the shared secondary pill without extra spacing", () => {
+    expect(SHARED_SOURCE).toContain('variant?: "compact" | "headerAction"');
+    expect(SHARED_SOURCE).toContain('`button secondary ${styles.quotaChipHeaderAction}`');
+    expect(CSS).toMatch(/\.quotaChipWrapHeader \{[^}]*margin-right: 0;/);
   });
 });
 
