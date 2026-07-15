@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, FileText, Pencil, Plus, Search, SearchX, X } from "lucide-react";
+import { Braces, ChevronLeft, ChevronRight, Code2, FileText, Pencil, Plus, Search, SearchX, Type, X } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
@@ -49,6 +49,18 @@ function createDraft(template?: EditableTemplate | null): TemplateDraft {
     htmlBody: template?.htmlBody ?? getDefaultTemplateBody(format),
     previewPayload: normalizePreviewPayload(template?.previewPayload)
   };
+}
+
+function getTemplateFormatIcon(format: TemplateFormat) {
+  if (format === "PLAIN_TEXT") {
+    return Type;
+  }
+
+  if (format === "JSON") {
+    return Braces;
+  }
+
+  return Code2;
 }
 
 function getTemplateCardContent(format: TemplateFormat, body: string) {
@@ -123,6 +135,40 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
   const hasTemplates = templates.length > 0;
   const isSearching = normalizedSearchQuery.length > 0;
   const hasNoResults = isSearching && filteredTemplates.length === 0;
+  const pageRangeStart = filteredTemplates.length ? (currentPage - 1) * TEMPLATE_PAGE_SIZE + 1 : 0;
+  const pageRangeEnd = Math.min(filteredTemplates.length, currentPage * TEMPLATE_PAGE_SIZE);
+
+  const libraryStats = useMemo(() => {
+    const weekMs = 7 * 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    let plainTextCount = 0;
+    let htmlCount = 0;
+    let updatedThisWeekCount = 0;
+
+    for (const template of templates) {
+      if (template.format === "PLAIN_TEXT") {
+        plainTextCount += 1;
+      } else if (template.format === "HTML") {
+        htmlCount += 1;
+      }
+
+      const updatedAt = template.updatedAt ? new Date(template.updatedAt).getTime() : Number.NaN;
+      if (!Number.isNaN(updatedAt) && now - updatedAt <= weekMs) {
+        updatedThisWeekCount += 1;
+      }
+    }
+
+    const stats = [{ label: "Total templates", value: templates.length }];
+    if (plainTextCount > 0) {
+      stats.push({ label: "Plain text", value: plainTextCount });
+    }
+    if (htmlCount > 0) {
+      stats.push({ label: "HTML", value: htmlCount });
+    }
+    stats.push({ label: "Updated this week", value: updatedThisWeekCount });
+
+    return stats;
+  }, [templates]);
 
   const handleSaved = (savedTemplate: EditableTemplate) => {
     const normalized = normalizeTemplate({ ...savedTemplate, updatedAt: new Date().toISOString() });
@@ -185,15 +231,28 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
   return (
     <div className="templates-library">
       <header className="templates-library__hero">
-        <div className="templates-library__heading">
-          <span className="templates-library__kicker">Message library</span>
-          <h1>Templates</h1>
-          <p>Create, find, and refine the messages used across your sequences.</p>
+        <div className="templates-library__hero-top">
+          <div className="templates-library__heading">
+            <span className="templates-library__kicker">Message library</span>
+            <h1>Templates</h1>
+            <p>Create, find, and refine the messages used across your sequences.</p>
+          </div>
+          <button className="button templates-library__create" type="button" onClick={handleStartCreating}>
+            <Plus aria-hidden="true" />
+            Create new template
+          </button>
         </div>
-        <button className="button templates-library__create" type="button" onClick={handleStartCreating}>
-          <Plus aria-hidden="true" />
-          Create new template
-        </button>
+
+        {hasTemplates ? (
+          <div className="templates-library__stats" role="list" aria-label="Library at a glance">
+            {libraryStats.map((stat) => (
+              <div key={stat.label} className="templates-library__stat" role="listitem">
+                <span className="templates-library__stat-value">{stat.value}</span>
+                <span className="templates-library__stat-label">{stat.label}</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </header>
 
       <section className="card templates-library__card" aria-labelledby="saved-templates-heading">
@@ -203,7 +262,13 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
               <h2 id="saved-templates-heading">Saved templates</h2>
               <span aria-label={`${templates.length} saved templates`}>{templates.length}</span>
             </div>
-            <p>Reusable messages ready for your sequences.</p>
+            <p>
+              {isSearching
+                ? filteredTemplates.length
+                  ? `${filteredTemplates.length} ${filteredTemplates.length === 1 ? "match" : "matches"} for “${searchQuery.trim()}”`
+                  : `No matches for “${searchQuery.trim()}”`
+                : "Reusable messages ready for your sequences."}
+            </p>
           </div>
           <label className="saved-templates__search" aria-label="Search saved templates">
             <Search aria-hidden="true" />
@@ -227,18 +292,24 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
         </div>
 
         <div className="templates-list">
-          {pagedTemplates.map((template) => {
+          {pagedTemplates.map((template, index) => {
             const cardContent = getTemplateCardContent(template.format, template.htmlBody);
             const updatedDate = formatUpdatedDate(template.updatedAt);
-            const variableCount = template.variableManifest.length;
+            const variables = template.variableManifest;
+            const visibleVariables = variables.slice(0, 3);
+            const hiddenVariableCount = variables.length - visibleVariables.length;
+            const FormatIcon = getTemplateFormatIcon(template.format);
 
             return (
-              <article key={template.id} className="template-list-item">
+              <article key={template.id} className="template-list-item" style={{ animationDelay: `${index * 45}ms` }}>
                 <div className="template-list-item__header">
                   <div className="template-list-item__copy">
                     <div className="template-list-item__title">
                       <strong>{template.name}</strong>
-                      <span className="template-list-item__format">{getTemplateFormatLabel(template.format)}</span>
+                      <span className="template-list-item__format">
+                        <FormatIcon aria-hidden="true" />
+                        {getTemplateFormatLabel(template.format)}
+                      </span>
                     </div>
                     <div className="template-list-item__subject">
                       <span>Subject</span>
@@ -247,7 +318,7 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
                   </div>
 
                   <button
-                    className="button secondary template-list-item__button"
+                    className="template-list-item__button"
                     type="button"
                     aria-label={`Edit template ${template.name}`}
                     onClick={() => handleStartEditing(template)}
@@ -257,26 +328,36 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
                   </button>
                 </div>
 
-                <p className="template-list-item__snippet">{cardContent.bodyPreview}</p>
+                <div className="template-list-item__excerpt">
+                  <p className="template-list-item__snippet">{cardContent.bodyPreview}</p>
+                </div>
 
                 <footer className="template-list-item__meta" aria-label={`Details for ${template.name}`}>
-                  <span>{cardContent.wordCount} words</span>
-                  <span aria-hidden="true">·</span>
-                  <span>~{cardContent.readingMinutes} min read</span>
-                  {variableCount ? (
-                    <>
-                      <span aria-hidden="true">·</span>
-                      <span>
-                        {variableCount} {variableCount === 1 ? "variable" : "variables"}
-                      </span>
-                    </>
+                  {visibleVariables.length ? (
+                    <span
+                      className="template-list-item__variables"
+                      aria-label={`${variables.length} merge ${variables.length === 1 ? "variable" : "variables"}`}
+                    >
+                      {visibleVariables.map((variable) => (
+                        <code key={variable}>{`{{${variable}}}`}</code>
+                      ))}
+                      {hiddenVariableCount > 0 ? (
+                        <span className="template-list-item__variables-more">+{hiddenVariableCount}</span>
+                      ) : null}
+                    </span>
                   ) : null}
-                  {updatedDate ? (
-                    <>
-                      <span aria-hidden="true">·</span>
-                      <span>Updated {updatedDate}</span>
-                    </>
-                  ) : null}
+
+                  <span className="template-list-item__meta-stats">
+                    <span>{cardContent.wordCount} words</span>
+                    <span aria-hidden="true">·</span>
+                    <span>~{cardContent.readingMinutes} min read</span>
+                    {updatedDate ? (
+                      <>
+                        <span aria-hidden="true">·</span>
+                        <span>Updated {updatedDate}</span>
+                      </>
+                    ) : null}
+                  </span>
                 </footer>
               </article>
             );
@@ -309,6 +390,13 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
 
         {filteredTemplates.length > TEMPLATE_PAGE_SIZE ? (
           <div className="templates-pagination" aria-label="Template pages">
+            <p className="templates-pagination__summary">
+              Showing{" "}
+              <strong>
+                {pageRangeStart}–{pageRangeEnd}
+              </strong>{" "}
+              of {filteredTemplates.length}
+            </p>
             <div className="templates-pagination__controls">
               <button
                 className="templates-pagination__button"
