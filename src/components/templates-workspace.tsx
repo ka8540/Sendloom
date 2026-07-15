@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { TemplateForm, type EditableTemplate, type TemplateDraft } from "@/components/forms";
+import { WorkspacePageHeader } from "@/components/workspace-page-header";
 import { getDefaultTemplateBody, getTemplateFormatLabel, templateContentToPlainText, type TemplateFormat } from "@/lib/templates";
 import type { MergeVariables } from "@/lib/types";
 
@@ -198,17 +199,16 @@ export function TemplatesWorkspace({ templates: initialTemplates }: { templates:
 
   return (
     <div className="templates-library">
-      <header className="templates-library__hero">
-        <div className="templates-library__heading">
-          <span className="templates-library__kicker">Message library</span>
-          <h1>Templates</h1>
-          <p>Create, find, and refine the messages used across your sequences.</p>
-        </div>
-        <button className="button templates-library__create" type="button" onClick={handleStartCreating}>
-          <Plus aria-hidden="true" />
-          Create new template
-        </button>
-      </header>
+      <WorkspacePageHeader
+        title="Templates"
+        subtitle="Create, find, and refine the messages used across your sequences."
+        actions={
+          <button className="button" type="button" onClick={handleStartCreating}>
+            <Plus aria-hidden="true" />
+            Create new template
+          </button>
+        }
+      />
 
       <section className="card templates-library__card" aria-labelledby="saved-templates-heading">
         <div className="saved-templates__header">

@@ -1,0 +1,48 @@
+/* Exact shared form of the Sequences dashboard header. */
+
+.header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.heading {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.heading h1 {
+  margin: 0;
+  font-size: clamp(1.9rem, 3.4vw, 2.5rem);
+  letter-spacing: -0.05em;
+}
+
+.heading p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+
+.actions :global(.button) {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  white-space: nowrap;
+}
+
+.actions svg {
+  width: 1rem;
+  height: 1rem;
+}

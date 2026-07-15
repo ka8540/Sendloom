@@ -86,23 +86,24 @@ describe("Delivered/issues split math (#1, #2)", () => {
 });
 
 describe("Overview dashboard renders as one main block (#1, #2, #3)", () => {
-  // Everything between the hero opening and the summary cards — the main
-  // dashboard block. Analytics + health must live inside it.
+  // Everything between the command panel opening and the summary cards — the
+  // main dashboard block. Analytics + health must live inside it.
   const heroBlock = CENTER.slice(
-    CENTER.indexOf('data-overview-tour="page-intro"'),
+    CENTER.indexOf("<section className={styles.hero}"),
     CENTER.indexOf("<OverviewSummary")
   );
 
   it("the /workspace route renders the redesigned command center", () => {
     expect(WORKSPACE_PAGE).toContain('export { default } from "@/components/dashboard/overview-command-center"');
-    expect(CENTER).toContain("styles.heroTitle}>Overview</h1>");
+    expect(CENTER).toContain("<WorkspacePageHeader");
+    expect(CENTER).toContain('title="Overview"');
     expect(CENTER).toContain('data-overview-tour="page-intro"');
   });
 
   it("keeps identity, actions, and analytics inside the single hero block — no sibling sections", () => {
-    // No <section> opens inside the hero slice: the pulse and the health rail
-    // are children of the one main card, not separate deck cards.
-    expect((heroBlock.match(/<section/g) ?? []).length).toBe(0);
+    // Exactly one <section> opens in this slice: the command panel itself. The
+    // pulse and health rail remain children of it, not sibling deck cards.
+    expect((heroBlock.match(/<section/g) ?? []).length).toBe(1);
     expect(heroBlock).toContain("<AnalyticsPulse");
     expect(heroBlock).toContain("styles.heroActionCard");
     expect(heroBlock).toContain("styles.heroInsights");

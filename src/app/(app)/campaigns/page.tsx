@@ -13,6 +13,7 @@ import {
 
 import { ActiveRunRefresher } from "@/components/active-run-refresher";
 import { ErrorToastOnMount } from "@/components/error-toast-provider";
+import { WorkspacePageHeader } from "@/components/workspace-page-header";
 import { requireOperatorUser } from "@/lib/auth";
 import { getGmailDailySendWindow } from "@/lib/daily-send-limit";
 import { prisma } from "@/lib/db";
@@ -348,16 +349,16 @@ export default async function CampaignsPage({
         </div>
       ) : null}
 
-      <header className={styles.pageHeader}>
-        <div className={styles.pageHeading}>
-          <h1>Sequences</h1>
-          <p>Track delivery, replies, and runs that need attention.</p>
-        </div>
-        <Link className={`button ${styles.newSequenceButton}`} href="/campaigns/new">
-          <Plus aria-hidden="true" />
-          <span>New sequence</span>
-        </Link>
-      </header>
+      <WorkspacePageHeader
+        title="Sequences"
+        subtitle="Track delivery, replies, and runs that need attention."
+        actions={
+          <Link className="button" href="/campaigns/new">
+            <Plus aria-hidden="true" />
+            <span>New sequence</span>
+          </Link>
+        }
+      />
 
       <section className={styles.overviewGrid} aria-label="Sequence overview">
         <dl className={styles.summaryCards}>

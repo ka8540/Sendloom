@@ -21,6 +21,7 @@ import { OverviewSummary, type SendWindowSender, type TemplateFormatSlice } from
 import { OverviewTourLauncher } from "@/components/dashboard/overview-tour-launcher";
 import { SequencePanel } from "@/components/dashboard/sequence-panel";
 import { buildSequenceOutcomePresentation } from "@/components/dashboard/sequence-outcome";
+import { WorkspacePageHeader } from "@/components/workspace-page-header";
 import type {
   SequenceMetric,
   SequenceRowData,
@@ -779,17 +780,17 @@ export default async function OverviewCommandCenter() {
 
   return (
     <div className={styles.page}>
-      {/* One command panel: identity + live stat tiles on the left, the action
-          card on the right. The action card stacks the next-move CTAs over the
-          interactive analytics — nothing breaks out into sibling cards. */}
-      <section className={styles.hero} data-overview-tour="page-intro">
+      <WorkspacePageHeader
+        data-overview-tour="page-intro"
+        title="Overview"
+        subtitle="Launch, import, or review what needs attention."
+      />
+
+      {/* One command panel: live stat tiles on the left, the action card on the
+          right. The action card stacks the next-move CTAs over the interactive
+          analytics — nothing breaks out into sibling cards. */}
+      <section className={styles.hero}>
         <div className={styles.heroContent}>
-          <span className={styles.heroEyebrow}>
-            <span className={styles.heroPulse} />
-            Command center
-          </span>
-          <h1 className={styles.heroTitle}>Overview</h1>
-          <p className={styles.heroCopy}>Launch, import, or review what needs attention.</p>
           <div className={styles.heroHighlights}>
             <div className={styles.heroHighlight}>
               <span className={styles.heroHighlightLabel}>Active now</span>

@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { CircularCloseButton } from "@/components/circular-close-button";
 import { useErrorToast, useErrorToastEffect } from "@/components/error-toast-provider";
+import { WorkspacePageHeader } from "@/components/workspace-page-header";
 import styles from "@/components/hunter-dashboard.module.css";
 
 type HunterKeyStatus = {
@@ -742,26 +743,31 @@ export function HunterDashboard({ initialKeyStatus, initialDomainSearchHistory }
   return (
     <>
       <div className={styles.page}>
-        <section className={`hero ${styles.hero}`} data-finder-tour="page-intro">
-          <div className={styles.heroCopy}>
-            <p className={styles.eyebrow}>Prospecting workspace</p>
-            <h1>Email Finder</h1>
-            <p className="muted">
-              Use Hunter through a secure backend proxy to find one contact by name or search an entire company domain without
-              exposing your API key in the browser.
-            </p>
-          </div>
-          <div className={styles.heroActions}>
-            <div className={styles.keyStatus} data-finder-tour="status">
-              <span className={`${styles.keyDot} ${keyStatus.configured ? styles.keyDotReady : styles.keyDotMissing}`} aria-hidden="true" />
-              <span>{statusCopy}</span>
-            </div>
-            <button className="button secondary" type="button" onClick={() => setIsSettingsOpen(true)} data-finder-tour="settings">
-              <Settings2 aria-hidden="true" />
-              Hunter settings
-            </button>
-          </div>
-        </section>
+        <WorkspacePageHeader
+          data-finder-tour="page-intro"
+          title="Email Finder"
+          subtitle="Use Hunter through a secure backend proxy to find one contact by name or search an entire company domain without exposing your API key in the browser."
+          actions={
+            <>
+              <div className={styles.keyStatus} data-finder-tour="status">
+                <span
+                  className={`${styles.keyDot} ${keyStatus.configured ? styles.keyDotReady : styles.keyDotMissing}`}
+                  aria-hidden="true"
+                />
+                <span>{statusCopy}</span>
+              </div>
+              <button
+                className="button secondary"
+                type="button"
+                onClick={() => setIsSettingsOpen(true)}
+                data-finder-tour="settings"
+              >
+                <Settings2 aria-hidden="true" />
+                Hunter settings
+              </button>
+            </>
+          }
+        />
 
         <section className={`card ${styles.workspace}`}>
           <div className={styles.tabRow} role="tablist" aria-label="Hunter search modes" data-finder-tour="mode-tabs">

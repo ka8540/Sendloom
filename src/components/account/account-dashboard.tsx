@@ -6,6 +6,7 @@ import { KeyRound, Loader2, Mail, Plus, Trash2 } from "lucide-react";
 import { AppConfirmDialog } from "@/components/app-confirm-dialog";
 import { useErrorToast } from "@/components/error-toast-provider";
 import { LocalDateTime } from "@/components/local-date-time";
+import { WorkspacePageHeader } from "@/components/workspace-page-header";
 import {
   type AccountOverview,
   type AccountSenderView,
@@ -178,10 +179,10 @@ export function AccountDashboard({
 
   return (
     <div className={styles.page}>
-      <header className={styles.header}>
-        <h1 className={styles.title}>Account</h1>
-        <p className={styles.subtitle}>Manage your identity, connected Gmail senders, and security.</p>
-      </header>
+      <WorkspacePageHeader
+        title="Account"
+        subtitle="Manage your identity, connected Gmail senders, and security."
+      />
 
       {loadError ? (
         <p className={styles.loadError} role="alert">
