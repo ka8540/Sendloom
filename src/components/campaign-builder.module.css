@@ -1,7 +1,42 @@
-.hiddenInput {
+/* Four-step Create Sequence wizard. Only the active step is mounted; the
+   compact sender selector shares the same form state and stays in normal flow. */
+
+.builder {
+  min-width: 0;
+}
+
+.wizardLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(250px, 18.5rem);
+  gap: 1.15rem;
+  align-items: start;
+  min-width: 0;
+}
+
+.wizardCard,
+.senderSelector {
+  min-width: 0;
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 8%, transparent), transparent 30%),
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 92%, transparent), var(--surface));
+}
+
+.wizardCard {
+  display: grid;
+  gap: 1.35rem;
+  padding: 1.45rem;
+  border-radius: 26px;
+}
+
+/* Doubled class outranks the app-wide field sizing rule. */
+.hiddenInput.hiddenInput {
   position: absolute;
   width: 1px;
   height: 1px;
+  max-width: 1px;
+  max-height: 1px;
   padding: 0;
   margin: -1px;
   overflow: hidden;
@@ -10,204 +45,804 @@
   border: 0;
 }
 
-.attachmentComposer {
-  display: grid;
-  gap: 0.9rem;
-  padding: 1rem;
-  border: 1px solid var(--field-border);
-  border-radius: 16px;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-muted) 92%, transparent), color-mix(in srgb, var(--surface) 88%, transparent));
-}
-
-.attachmentHeader {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.9rem;
-}
-
-.attachmentCopy {
-  display: grid;
-  gap: 0.3rem;
+.stepNav {
   min-width: 0;
 }
 
-.attachmentCount {
-  display: inline-flex;
+.stepNav ol {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stepButton {
+  display: flex;
   align-items: center;
-  width: fit-content;
-  padding: 0.28rem 0.55rem;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line));
-  background: color-mix(in srgb, var(--accent-soft) 55%, transparent);
+  justify-content: center;
+  gap: 0.45rem;
+  width: 100%;
+  min-height: 2.65rem;
+  padding: 0.48rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-muted) 82%, transparent);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 750;
+  cursor: pointer;
+  transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease;
+}
+
+.stepButton:hover:not(:disabled),
+.stepButton:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--line));
   color: var(--text);
+}
+
+.stepButton:focus-visible {
+  outline: 2px solid var(--field-focus);
+  outline-offset: 2px;
+}
+
+.stepButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.stepButtonActive {
+  border-color: color-mix(in srgb, var(--accent) 56%, var(--line));
+  background: color-mix(in srgb, var(--accent-soft) 66%, var(--surface-muted));
+  color: var(--text);
+}
+
+.stepButtonComplete {
+  color: var(--accent-strong);
+}
+
+.stepNumber {
+  display: inline-grid;
+  place-items: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
+  background: color-mix(in srgb, var(--accent-soft) 72%, var(--surface));
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+
+.stepNumber svg {
+  width: 0.72rem;
+  height: 0.72rem;
+}
+
+.stepIntro {
+  display: grid;
+  gap: 0.35rem;
+  padding-bottom: 1.05rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.stepIntro > span {
+  color: var(--accent-strong);
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.stepIntro h2 {
+  width: fit-content;
+  margin: 0;
+  font-size: clamp(1.35rem, 2.2vw, 1.75rem);
+  letter-spacing: -0.035em;
+}
+
+.stepIntro h2:focus {
+  outline: none;
+}
+
+.stepIntro p {
+  max-width: 46rem;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.stepContent {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+  animation: wizard-step-enter 150ms ease-out;
+}
+
+.stepContent :global(.field) {
+  gap: 0.38rem;
+}
+
+.stepContent :global(.field) label,
+.senderSelector :global(.field) label {
+  color: var(--muted);
   font-size: 0.82rem;
   font-weight: 700;
 }
 
-.attachmentHelp {
-  margin: 0;
-  max-width: 45ch;
-  color: var(--muted);
+.stepContent :global(.field) input,
+.stepContent :global(.field) select,
+.senderSelector :global(.field) select {
+  padding: 0.78rem 0.9rem;
+  border-radius: 12px;
   font-size: 0.92rem;
-  line-height: 1.5;
 }
 
-.addButton {
-  flex-shrink: 0;
-  align-self: flex-start;
-  min-width: auto;
-  border-radius: 8px;
-  padding: 0.72rem 0.95rem;
-  box-shadow: none;
+.searchControl {
+  position: relative;
+  display: block;
 }
 
-.attachmentList {
+.searchControl > svg {
+  position: absolute;
+  left: 0.85rem;
+  top: 50%;
+  z-index: 1;
+  width: 0.95rem;
+  height: 0.95rem;
+  color: var(--muted);
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.searchControl > input {
+  padding-left: 2.45rem !important;
+}
+
+.templateList {
   display: grid;
   gap: 0.65rem;
+  max-height: 23rem;
+  padding-right: 0.15rem;
+  overflow-y: auto;
 }
 
-.attachmentItem {
+.audienceField {
+  display: grid;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.audienceLabel {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.audienceSelector {
+  position: relative;
+  min-width: 0;
+}
+
+.audienceTrigger {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 0.8rem;
   align-items: center;
+  gap: 0.72rem;
+  width: 100%;
   min-width: 0;
-  padding: 0.85rem 0.9rem;
+  min-height: 4rem;
+  padding: 0.7rem 0.82rem;
   border: 1px solid var(--line);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface-muted) 82%, transparent);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
 }
 
-.attachmentIcon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2.25rem;
-  height: 2.25rem;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--accent-soft) 72%, transparent);
+.audienceTrigger:hover:not(:disabled),
+.audienceTrigger[data-open],
+.audienceTrigger:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 52%, var(--line));
+  background: color-mix(in srgb, var(--accent-soft) 34%, var(--surface-muted));
+}
+
+.audienceTrigger:focus-visible {
+  outline: 2px solid var(--field-focus);
+  outline-offset: 2px;
+}
+
+.audienceTrigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.68;
+}
+
+.audienceTriggerIcon {
+  display: inline-grid;
+  place-items: center;
+  width: 2.15rem;
+  height: 2.15rem;
+  border-radius: 11px;
+  background: var(--accent-soft);
   color: var(--accent-strong);
 }
 
-.attachmentIcon svg,
-.removeButton svg {
+.audienceTriggerIcon svg {
   width: 1rem;
   height: 1rem;
 }
 
-.attachmentMeta {
+.audienceTriggerCopy {
+  display: grid;
+  gap: 0.22rem;
+  min-width: 0;
+}
+
+.audienceTriggerCopy > strong {
+  overflow: hidden;
+  font-size: 0.92rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audienceTriggerCopy > span {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.audienceTriggerMeta {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.audienceTriggerMeta > span:not(:first-child) {
+  padding: 0.08rem 0.34rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--line));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-soft) 42%, transparent);
+  font-size: 0.64rem;
+  font-weight: 750;
+}
+
+.audienceChevron {
+  width: 1rem;
+  height: 1rem;
+  color: var(--muted);
+  transition: transform 150ms ease;
+}
+
+.audienceTrigger[data-open] .audienceChevron {
+  transform: rotate(180deg);
+}
+
+.audienceMenu {
+  position: absolute;
+  top: calc(100% + 0.45rem);
+  left: 0;
+  z-index: 30;
+  width: 100%;
+  min-width: 0;
+  padding: 0.48rem;
+  border: 1px solid color-mix(in srgb, var(--line) 86%, var(--accent) 14%);
+  border-radius: 15px;
+  background: var(--surface-strong);
+  box-shadow: 0 18px 36px rgb(0 0 0 / 38%);
+  opacity: 1;
+  isolation: isolate;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.audienceMenuSearch {
+  position: relative;
+  margin-bottom: 0.4rem;
+}
+
+.audienceMenuSearch > svg {
+  position: absolute;
+  left: 0.7rem;
+  top: 50%;
+  z-index: 1;
+  width: 0.9rem;
+  height: 0.9rem;
+  color: var(--muted);
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.audienceMenuSearch > input {
+  width: 100%;
+  min-height: 2.55rem;
+  padding: 0.58rem 0.72rem 0.58rem 2.1rem !important;
+  border: 1px solid var(--field-border);
+  border-radius: 10px;
+  background: var(--bg-start);
+  color: var(--text);
+  font-size: 0.82rem !important;
+  outline: none;
+  box-shadow: none;
+}
+
+.audienceMenuSearch > input:focus,
+.audienceMenuSearch > input:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--field-border));
+  background: var(--bg-start);
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.audienceOptions {
+  display: grid;
+  gap: 0.2rem;
+  max-height: 17rem;
+  padding-right: 0.12rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.audienceOption {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  min-width: 0;
+  padding: 0.58rem 0.62rem;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.audienceOption:hover,
+.audienceOption:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 16%, var(--line));
+  background: color-mix(in srgb, var(--accent-soft) 22%, var(--surface-muted));
+}
+
+.audienceOption:focus-visible {
+  outline: 1px solid color-mix(in srgb, var(--accent) 34%, var(--line));
+  outline-offset: -1px;
+}
+
+.audienceOptionSelected {
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--line));
+  background: color-mix(in srgb, var(--accent-soft) 34%, var(--surface-muted));
+}
+
+.audienceOptionCopy {
   display: grid;
   gap: 0.28rem;
   min-width: 0;
 }
 
-.attachmentName {
-  line-height: 1.35;
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  word-break: break-word;
+.audienceOptionTitle {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.65rem;
+  min-width: 0;
 }
 
-.attachmentDetails {
+.audienceOptionTitle strong {
+  overflow: hidden;
+  font-size: 0.84rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audienceOptionTitle > span {
+  color: var(--muted);
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
+.audienceNoResults,
+.audienceEmpty {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.55rem;
+  color: var(--muted);
+}
+
+.audienceNoResults {
+  padding: 0.85rem 0.7rem;
+}
+
+.audienceEmpty {
+  padding: 0.68rem 0.76rem;
+  border: 1px dashed color-mix(in srgb, var(--muted) 34%, var(--line));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-muted) 68%, transparent);
+}
+
+.audienceNoResults > svg,
+.audienceEmpty > svg {
+  width: 1rem;
+  height: 1rem;
+  margin-top: 0.12rem;
+  color: var(--accent-strong);
+  flex: none;
+}
+
+.audienceNoResults > span,
+.audienceEmpty > span {
+  display: grid;
+  gap: 0.12rem;
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
+.audienceNoResults strong,
+.audienceEmpty strong {
+  color: var(--text);
+  font-size: 0.8rem;
+}
+
+.audienceHelper {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
+.templateCard {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface-muted) 84%, transparent);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
+}
+
+.templateCard:hover,
+.templateCard:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--line));
+}
+
+.templateCard:focus-visible {
+  outline: 2px solid var(--field-focus);
+  outline-offset: 2px;
+}
+
+.optionCardSelected {
+  border-color: color-mix(in srgb, var(--accent) 62%, var(--line));
+  background: color-mix(in srgb, var(--accent-soft) 58%, var(--surface-muted));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 9%, transparent);
+}
+
+.fieldChips {
+  display: flex;
+  gap: 0.32rem;
   flex-wrap: wrap;
 }
 
-.attachmentBadge {
+.fieldChips > span,
+.formatBadge {
   display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 1.55rem;
-  padding: 0.1rem 0.45rem;
+  width: fit-content;
+  padding: 0.15rem 0.42rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--line));
   border-radius: 999px;
-  border: 1px solid var(--line);
-  background: color-mix(in srgb, var(--surface-muted) 88%, transparent);
-  color: var(--text);
-  font-size: 0.74rem;
+  background: color-mix(in srgb, var(--accent-soft) 48%, transparent);
+  color: var(--muted);
+  font-size: 0.68rem;
   font-weight: 700;
 }
 
-.attachmentSize {
-  color: var(--muted);
-  font-size: 0.88rem;
+.selectionMark {
+  display: inline-grid;
+  place-items: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--line));
+  border-radius: 999px;
+  color: var(--accent-strong);
 }
 
-.removeButton {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2.25rem;
-  height: 2.25rem;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease, transform 140ms ease;
-}
-
-.removeButton:hover:not(:disabled),
-.removeButton:focus-visible {
-  outline: none;
-  transform: translateY(-1px);
-  border-color: color-mix(in srgb, #ff6d6d 40%, transparent);
-  background: color-mix(in srgb, rgba(255, 83, 83, 0.14) 72%, transparent);
-  color: #ffb1b1;
-}
-
-.removeButton:active:not(:disabled) {
-  transform: translateY(1px);
-}
-
-.removeButton:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.selectionMark svg {
+  width: 0.8rem;
+  height: 0.8rem;
 }
 
 .emptyState {
   display: grid;
-  gap: 0.35rem;
-  padding: 1rem;
-  border: 1px dashed color-mix(in srgb, var(--accent) 22%, var(--line));
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--surface) 56%, transparent);
+  justify-items: center;
+  gap: 0.5rem;
+  padding: 1.5rem;
+  border: 1px dashed color-mix(in srgb, var(--muted) 34%, var(--line));
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface-muted) 68%, transparent);
+  text-align: center;
 }
 
-.emptyTitle,
-.emptyCopy,
-.attachmentFooter {
-  margin: 0;
+.emptyState > svg {
+  width: 1.45rem;
+  height: 1.45rem;
+  color: var(--accent-strong);
 }
 
-.emptyTitle {
-  font-weight: 700;
-}
-
-.emptyCopy,
-.attachmentFooter {
+.emptyState > span {
+  max-width: 28rem;
   color: var(--muted);
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   line-height: 1.5;
 }
 
-.attachmentFooter {
-  border-top: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
-  padding-top: 0.8rem;
+.inlineAction,
+.connectAction {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: fit-content;
+  color: var(--link);
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.inlineAction:hover,
+.connectAction:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.18rem;
+}
+
+.inlineAction:focus-visible,
+.connectAction:focus-visible {
+  outline: 2px solid var(--field-focus);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.inlineAction svg,
+.connectAction svg {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
+.builderNote,
+.validationMessage,
+.readyMessage {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.68rem 0.78rem;
+  border: 1px solid var(--note-border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent-soft) 44%, transparent);
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.builderNote svg,
+.validationMessage svg,
+.readyMessage svg {
+  width: 0.92rem;
+  height: 0.92rem;
+  margin-top: 0.18rem;
+  color: var(--accent-strong);
+  flex: none;
+}
+
+.builderNote[data-tone="warning"],
+.validationMessage {
+  border-color: color-mix(in srgb, var(--warning) 34%, var(--line));
+  background: color-mix(in srgb, var(--warning-soft) 72%, transparent);
+}
+
+.builderNote[data-tone="warning"] svg,
+.validationMessage svg {
+  color: var(--warning);
+}
+
+.stepActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.secondaryAction,
+.primaryAction,
+.createButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-width: 7rem;
+  min-height: 2.75rem;
+}
+
+.secondaryAction svg,
+.primaryAction svg {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+.contextSummary,
+.summaryStrip {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent-soft) 38%, transparent);
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.contextSummary svg,
+.summaryStrip svg {
+  width: 0.9rem;
+  height: 0.9rem;
+  color: var(--accent-strong);
+  flex: none;
+}
+
+.contextSummary strong,
+.summaryStrip strong {
+  color: var(--text);
+}
+
+.summaryStrip {
+  flex-wrap: wrap;
+  gap: 0.8rem 1rem;
+}
+
+.summaryStrip > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.templateCard {
+  display: grid;
+  gap: 0.42rem;
+  padding: 0.9rem;
+}
+
+.templateHeader,
+.templateHeader > span:first-child {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.templateHeader {
+  justify-content: space-between;
+}
+
+.templateHeader strong {
+  overflow: hidden;
+  font-size: 0.94rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.templateSubject {
+  color: var(--text);
+  font-size: 0.84rem;
+  font-weight: 650;
+}
+
+.templateSnippet {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.81rem;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.timingChoiceGroup {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.timingChoiceGroup legend {
+  margin-bottom: 0.5rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.timingChoices {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.timingChoice {
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  gap: 0.4rem;
+  min-width: 0;
+  min-height: 8.4rem;
+  padding: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface-muted) 84%, transparent);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
+}
+
+.timingChoice > svg {
+  width: 1.05rem;
+  height: 1.05rem;
+  color: var(--accent-strong);
+}
+
+.timingChoice strong {
+  font-size: 0.9rem;
+}
+
+.timingChoice span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.timingChoice:hover,
+.timingChoice:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 44%, var(--line));
+}
+
+.timingChoice:focus-visible {
+  outline: 2px solid var(--field-focus);
+  outline-offset: 2px;
+}
+
+.timingChoiceSelected {
+  border-color: color-mix(in srgb, var(--accent) 62%, var(--line));
+  background: color-mix(in srgb, var(--accent-soft) 58%, var(--surface-muted));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 9%, transparent);
+}
+
+.timingFields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 0.75rem;
+  min-width: 0;
 }
 
 .weekdayField {
-  grid-column: 1 / -1;
+  min-width: 0;
 }
 
 .weekdayLabel {
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -216,64 +851,634 @@
 .weekdayGroup {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 0.45rem;
+  gap: 0.4rem;
 }
 
 .weekdayChip {
   min-width: 0;
-  min-height: 2.45rem;
-  padding: 0.55rem 0.35rem;
-  border-radius: 8px;
+  min-height: 2.35rem;
+  padding: 0.5rem 0.3rem;
   border: 1px solid var(--field-border);
+  border-radius: 9px;
   background: var(--field-bg);
   color: var(--muted);
   font: inherit;
-  font-size: 0.82rem;
-  font-weight: 850;
-  line-height: 1;
+  font-size: 0.78rem;
+  font-weight: 800;
   cursor: pointer;
-  transition:
-    border-color 160ms ease,
-    background-color 160ms ease,
-    color 160ms ease,
-    box-shadow 160ms ease;
 }
 
 .weekdayChip:hover,
 .weekdayChip:focus-visible {
-  border-color: color-mix(in srgb, var(--accent) 36%, var(--field-border));
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--field-border));
   color: var(--text);
-  outline: none;
+}
+
+.weekdayChip:focus-visible {
+  outline: 2px solid var(--field-focus);
+  outline-offset: 2px;
 }
 
 .weekdayChipSelected {
   border-color: color-mix(in srgb, var(--accent) 58%, var(--field-border));
   background: color-mix(in srgb, var(--accent-soft) 66%, var(--field-bg));
   color: var(--text);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
-@media (max-width: 640px) {
-  .attachmentHeader {
-    flex-direction: column;
-    align-items: stretch;
+.attachmentComposer {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.85rem;
+  border: 1px solid var(--field-border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface-muted) 82%, transparent);
+}
+
+.attachmentHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.attachmentHeader > span:first-child {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.attachmentHeader strong {
+  font-size: 0.88rem;
+}
+
+.attachmentHeader small {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.attachmentCount {
+  display: inline-flex;
+  padding: 0.18rem 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--line));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-soft) 52%, transparent);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.addButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  margin-left: auto;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--field-border);
+  border-radius: 10px;
+  background: var(--field-bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.addButton svg {
+  width: 0.9rem;
+  height: 0.9rem;
+  color: var(--accent-strong);
+}
+
+.addButton:hover:not(:disabled),
+.addButton:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--field-border));
+}
+
+.addButton:focus-visible {
+  outline: 2px solid var(--field-focus);
+  outline-offset: 2px;
+}
+
+.attachmentEmpty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.attachmentList {
+  display: grid;
+  gap: 0.42rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.attachmentItem {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+  padding: 0.48rem 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+}
+
+.attachmentIcon {
+  display: inline-grid;
+  place-items: center;
+  width: 1.85rem;
+  height: 1.85rem;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.attachmentIcon svg,
+.removeButton svg {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
+.attachmentName {
+  overflow: hidden;
+  font-size: 0.84rem;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachmentMeta,
+.attachmentFooter {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.removeButton {
+  display: inline-grid;
+  place-items: center;
+  width: 1.85rem;
+  height: 1.85rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.removeButton:hover:not(:disabled) {
+  border-color: color-mix(in srgb, #ff6d6d 40%, transparent);
+  background: color-mix(in srgb, rgba(255, 83, 83, 0.14) 72%, transparent);
+  color: #ffb1b1;
+}
+
+.removeButton:focus-visible {
+  outline: 2px solid var(--field-focus);
+  outline-offset: 2px;
+}
+
+.attachmentFooter {
+  margin: 0;
+  padding-top: 0.55rem;
+  border-top: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+}
+
+.reviewList {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem;
+  margin: 0;
+}
+
+.reviewList > div {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+  padding: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--surface-muted) 82%, transparent);
+}
+
+.reviewList dt {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.reviewList dd {
+  overflow-wrap: anywhere;
+  margin: 0;
+  font-size: 0.87rem;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+/* Compact sender selector: deliberately static/normal-flow. */
+.senderSelector {
+  align-self: start;
+  display: grid;
+  gap: 0.8rem;
+  padding: 1rem;
+  border-radius: 20px;
+}
+
+.senderHeading {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.senderHeading > span:last-child {
+  display: grid;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.senderHeading strong {
+  font-size: 0.95rem;
+}
+
+.senderHeading small {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.senderIcon {
+  display: inline-grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  flex: none;
+}
+
+.senderIcon svg {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+.senderSelectShell {
+  position: relative;
+  min-width: 0;
+  min-height: 3.35rem;
+  overflow: hidden;
+  border: 1px solid var(--field-border);
+  border-radius: 12px;
+  background: var(--field-bg);
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+.senderSelectShell:focus-within {
+  border-color: var(--field-focus);
+  background: var(--surface-strong);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.senderSelectIdentity {
+  display: grid;
+  gap: 0.08rem;
+  min-width: 0;
+  padding: 0.48rem 2.3rem 0.48rem 0.9rem;
+  pointer-events: none;
+}
+
+.senderSelectIdentity strong,
+.senderSelectIdentity span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.senderSelectIdentity strong {
+  color: var(--text);
+  font-size: 0.84rem;
+  line-height: 1.2;
+}
+
+.senderSelectIdentity span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.25;
+}
+
+.senderSelectChevron {
+  position: absolute;
+  top: 50%;
+  right: 0.85rem;
+  width: 0.9rem;
+  height: 0.9rem;
+  color: var(--muted);
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.senderSelectShell .senderNativeSelect {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  appearance: none;
+  background: transparent;
+  background-image: none;
+  box-shadow: none;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.senderSelectShell .senderNativeSelect:focus {
+  outline: none;
+  background: transparent;
+  box-shadow: none;
+}
+
+.selectedSender {
+  display: grid;
+  gap: 0.22rem;
+  min-width: 0;
+  padding: 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-muted) 84%, transparent);
+}
+
+.connectedRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.connectedRow strong {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 0.84rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.connectedRow > span {
+  display: inline-flex;
+  flex: none;
+  padding: 0.12rem 0.4rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--line));
+  border-radius: 999px;
+  color: var(--accent-strong);
+  font-size: 0.65rem;
+  font-weight: 750;
+}
+
+.senderEmail {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.76rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.senderEmpty {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.75rem;
+  border: 1px dashed color-mix(in srgb, var(--warning) 34%, var(--line));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--warning-soft) 62%, transparent);
+}
+
+.senderEmpty svg {
+  width: 1rem;
+  height: 1rem;
+  color: var(--warning);
+}
+
+.senderEmpty strong {
+  font-size: 0.84rem;
+}
+
+.senderEmpty span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.connectAction {
+  padding-top: 0.1rem;
+}
+
+.progressSummary {
+  display: grid;
+  gap: 0.55rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--line);
+}
+
+.progressHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.76rem;
+}
+
+.progressHeader > span {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.progressTrack {
+  display: block;
+  height: 0.24rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-muted);
+}
+
+.progressTrack > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 180ms ease;
+}
+
+.progressSummary ul {
+  display: grid;
+  gap: 0.42rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.progressSummary li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.45rem;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.progressSummary li[data-complete="true"] > span {
+  color: var(--accent-strong);
+}
+
+.progressSummary li strong {
+  overflow: hidden;
+  color: var(--text);
+  font-weight: 650;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes wizard-step-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 1024px) {
+  .wizardLayout {
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .addButton {
+  .senderSelector {
     width: 100%;
-    justify-content: center;
   }
 
-  .attachmentItem {
-    grid-template-columns: auto minmax(0, 1fr);
+  .progressSummary ul {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .removeButton {
-    grid-column: 2;
-    justify-self: end;
+  .progressSummary li {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .progressSummary li strong {
+    text-align: left;
+  }
+}
+
+@media (max-width: 700px) {
+  .wizardCard {
+    padding: 1.05rem;
+    border-radius: 20px;
+  }
+
+  .timingChoices {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .timingChoice {
+    min-height: 0;
+  }
+
+  .reviewList {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 560px) {
+  .stepNav ol {
+    gap: 0.35rem;
+  }
+
+  .stepButton {
+    flex-direction: column;
+    gap: 0.2rem;
+    min-height: 3.25rem;
+    padding: 0.4rem 0.2rem;
+    font-size: 0.68rem;
+  }
+
+  .audienceTrigger {
+    gap: 0.58rem;
+    padding-inline: 0.7rem;
+  }
+
+  .audienceOptionTitle {
+    display: grid;
+    gap: 0.08rem;
   }
 
   .weekdayGroup {
     grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .attachmentHeader {
+    align-items: flex-start;
+  }
+
+  .addButton {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .attachmentItem {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .attachmentMeta {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .attachmentName {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .stepActions {
+    align-items: stretch;
+  }
+
+  .secondaryAction,
+  .primaryAction,
+  .createButton {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .progressSummary ul {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stepButton,
+  .audienceTrigger,
+  .audienceOption,
+  .templateCard,
+  .timingChoice,
+  .progressTrack > span {
+    transition: none;
+  }
+
+  .stepContent {
+    animation: none;
   }
 }

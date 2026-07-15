@@ -1,0 +1,841 @@
+/* Sequence list: a compact control bar (count | search | Status dropdown |
+   Email accounts dropdown), a table-style list of 5 rows per page (name,
+   status, state, created, progress, performance, actions), and pagination
+   with page previews. Tone colors are declared once here and shared by dots,
+   menu options, and rows. */
+
+.dashboard {
+  --tone-attention: #e5484d;
+  --tone-paused: var(--warning);
+  --tone-active: var(--accent);
+  --tone-completed: var(--accent-strong);
+  --tone-scheduled: var(--link);
+  --tone-draft: var(--muted);
+  --tone-idle: var(--muted);
+
+  /* Shared column template so the header row and data rows stay aligned.
+     The board is a size container: the sidebar makes viewport width a bad
+     proxy for available space, so columns collapse on container width. */
+  --seq-cols: minmax(0, 1.8fr) 7.5rem 8rem 5.8rem minmax(4.5rem, 0.8fr) 10rem;
+  --seq-actions: 5.2rem;
+
+  container-type: inline-size;
+  display: grid;
+  gap: 1.05rem;
+  padding: 1.55rem;
+  border-radius: 28px;
+  border: 1px solid var(--line);
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 8%, transparent), transparent 32%),
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 90%, transparent), var(--surface));
+  box-shadow: var(--shadow);
+  min-width: 0;
+}
+
+.dashboard > * {
+  min-width: 0;
+}
+
+/* Control bar: total count | search | Status dropdown | Email accounts
+   dropdown. One row on desktop; wraps into stacked rows on narrow boards. */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.totalCount {
+  padding-right: 0.9rem;
+  border-right: 1px solid var(--line);
+  font-size: 0.95rem;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.filterControls {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+/* Dropdown trigger: styled like the app's fields, never a native select. */
+
+.select {
+  position: relative;
+  min-width: 0;
+}
+
+.selectTrigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  max-width: 17rem;
+  padding: 0.58rem 0.8rem 0.58rem 0.95rem;
+  border-radius: 999px;
+  border: 1px solid var(--field-border);
+  background: var(--field-bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 650;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: border-color 140ms ease, background-color 140ms ease, color 140ms ease;
+  white-space: nowrap;
+}
+
+.selectTrigger:hover {
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--field-border));
+}
+
+.selectTrigger:focus-visible {
+  outline: 2px solid var(--field-focus);
+  outline-offset: 2px;
+}
+
+.selectTrigger[aria-expanded="true"] {
+  border-color: var(--field-focus);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.selectTrigger[data-active="true"] {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--field-border));
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.selectValue {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selectChevron {
+  width: 0.9rem;
+  height: 0.9rem;
+  color: var(--muted);
+  flex-shrink: 0;
+  transition: transform 140ms ease;
+}
+
+.selectTrigger[aria-expanded="true"] .selectChevron {
+  transform: rotate(180deg);
+}
+
+.selectTrigger[data-active="true"] .selectChevron {
+  color: var(--accent-strong);
+}
+
+/* Dropdown menu: dark polished panel anchored under the trigger. */
+
+.selectMenu {
+  position: absolute;
+  top: calc(100% + 0.45rem);
+  left: 0;
+  z-index: 30;
+  display: grid;
+  gap: 0.12rem;
+  min-width: 100%;
+  width: max-content;
+  max-width: min(21rem, calc(100vw - 3rem));
+  padding: 0.4rem;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--surface-strong);
+  box-shadow: var(--shadow);
+}
+
+.selectOption {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.48rem 0.62rem;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+  min-width: 0;
+}
+
+.selectOption:hover {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.selectOption:focus-visible {
+  outline: 2px solid var(--field-focus);
+  outline-offset: -2px;
+}
+
+.selectOption[aria-selected="true"] {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.selectDot {
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 999px;
+  background: var(--muted);
+  flex-shrink: 0;
+}
+
+.selectDot[data-tone="all"] {
+  background: var(--text);
+}
+
+.selectDot[data-tone="active"] {
+  background: var(--tone-active);
+}
+
+.selectDot[data-tone="paused"] {
+  background: var(--tone-paused);
+}
+
+.selectDot[data-tone="attention"] {
+  background: var(--tone-attention);
+}
+
+.selectDot[data-tone="completed"] {
+  background: var(--tone-completed);
+}
+
+.selectDot[data-tone="scheduled"] {
+  background: var(--tone-scheduled);
+}
+
+.selectDot[data-tone="draft"] {
+  background: var(--tone-draft);
+}
+
+.optionLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.selectOption:has(.optionCount) {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(3ch, auto) 0.82rem;
+}
+
+.optionCount {
+  grid-column: 3;
+  justify-self: end;
+  min-width: 3ch;
+  margin-left: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.selectOption[aria-selected="true"] .optionCount {
+  color: var(--accent-strong);
+}
+
+.optionCheck {
+  width: 0.82rem;
+  height: 0.82rem;
+  color: var(--accent-strong);
+  flex-shrink: 0;
+}
+
+.selectOption .optionCheck {
+  margin-left: 0.1rem;
+}
+
+.selectOption:has(.optionCount) .optionCheck {
+  grid-column: 4;
+  margin-left: 0;
+}
+
+.selectOption:not(:has(.optionCount)) .optionCheck {
+  margin-left: auto;
+}
+
+.search {
+  position: relative;
+  flex: 0 1 16rem;
+  min-width: 11rem;
+}
+
+.searchIcon {
+  position: absolute;
+  top: 50%;
+  left: 0.8rem;
+  width: 0.95rem;
+  height: 0.95rem;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.searchInput {
+  width: 100%;
+  padding: 0.58rem 0.9rem 0.58rem 2.35rem;
+  border-radius: 999px;
+  border: 1px solid var(--field-border);
+  background: var(--field-bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.88rem;
+}
+
+.searchInput::placeholder {
+  color: var(--muted);
+}
+
+.searchInput:focus {
+  outline: none;
+  border-color: var(--field-focus);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+/* Range line above the list. */
+
+.rangeLine {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Table header row (visual only — each data row is a single link). */
+
+.tableHead {
+  display: grid;
+  grid-template-columns: var(--seq-cols) var(--seq-actions);
+  gap: 1rem;
+  padding: 0 0.4rem 0.15rem 1rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.tableHeadActions {
+  text-align: right;
+}
+
+/* The list: five compact table-style rows per page. */
+
+.list {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--seq-actions);
+  align-items: center;
+  gap: 1rem;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: var(--surface-muted);
+  transition: border-color 140ms ease, transform 140ms ease, box-shadow 140ms ease;
+}
+
+.row:hover {
+  border-color: color-mix(in srgb, var(--accent) 36%, var(--line));
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--text) 7%, transparent);
+  transform: translateY(-1px);
+}
+
+.row:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 46%, var(--line));
+}
+
+.rowLink {
+  display: grid;
+  grid-template-columns: var(--seq-cols);
+  align-items: center;
+  gap: 1rem;
+  padding: 0.72rem 0 0.72rem 1rem;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+  border-radius: inherit;
+}
+
+.rowLink:focus-visible {
+  outline: 2px solid var(--field-focus);
+  outline-offset: -2px;
+}
+
+.rowIdentity {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  min-width: 0;
+}
+
+.rowDot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--tone-idle);
+  flex-shrink: 0;
+}
+
+.rowDot[data-tone="active"] {
+  background: var(--tone-active);
+}
+
+.rowDot[data-tone="paused"] {
+  background: var(--tone-paused);
+}
+
+.rowDot[data-tone="attention"] {
+  background: var(--tone-attention);
+}
+
+.rowDot[data-tone="completed"] {
+  background: var(--tone-completed);
+}
+
+.rowDot[data-tone="scheduled"] {
+  background: var(--tone-scheduled);
+}
+
+.rowTitleBlock {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.rowName {
+  font-size: 0.96rem;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowLink:hover .rowName {
+  color: var(--accent-strong);
+}
+
+.rowMeta {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowStatus {
+  justify-self: start;
+  padding: 0.3rem 0.68rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.rowStatus[data-tone="active"] {
+  border-color: color-mix(in srgb, var(--tone-active) 36%, var(--line));
+  color: color-mix(in srgb, var(--tone-active) 80%, var(--text));
+  background: color-mix(in srgb, var(--tone-active) 9%, var(--surface));
+}
+
+.rowStatus[data-tone="paused"] {
+  border-color: color-mix(in srgb, var(--tone-paused) 40%, var(--line));
+  color: color-mix(in srgb, var(--tone-paused) 82%, var(--text));
+  background: color-mix(in srgb, var(--tone-paused) 10%, var(--surface));
+}
+
+.rowStatus[data-tone="attention"] {
+  border-color: color-mix(in srgb, var(--tone-attention) 38%, var(--line));
+  color: color-mix(in srgb, var(--tone-attention) 78%, var(--text));
+  background: color-mix(in srgb, var(--tone-attention) 9%, var(--surface));
+}
+
+.rowStatus[data-tone="completed"] {
+  border-color: color-mix(in srgb, var(--tone-completed) 34%, var(--line));
+  color: color-mix(in srgb, var(--tone-completed) 84%, var(--text));
+  background: color-mix(in srgb, var(--tone-completed) 8%, var(--surface));
+}
+
+.rowStatus[data-tone="scheduled"] {
+  border-color: color-mix(in srgb, var(--tone-scheduled) 36%, var(--line));
+  color: color-mix(in srgb, var(--tone-scheduled) 80%, var(--text));
+  background: color-mix(in srgb, var(--tone-scheduled) 9%, var(--surface));
+}
+
+.rowState {
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.rowCreated {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.rowProgress {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.rowProgressValue {
+  font-size: 0.86rem;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.rowTrack {
+  display: block;
+  height: 0.28rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 22%, transparent);
+  overflow: hidden;
+}
+
+.rowTrackFill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 60%, #8bdcb9));
+}
+
+.rowPerformance {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.rowStat {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.rowStat::after {
+  position: absolute;
+  bottom: calc(100% + 0.4rem);
+  left: 50%;
+  z-index: 10;
+  width: max-content;
+  max-width: 10rem;
+  padding: 0.3rem 0.48rem;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-strong);
+  box-shadow: 0 6px 16px rgb(0 0 0 / 24%);
+  color: var(--text);
+  content: attr(data-tooltip);
+  font-size: 0.7rem;
+  font-weight: 650;
+  line-height: 1.15;
+  opacity: 0;
+  visibility: hidden;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translate(-50%, 3px);
+  transition: opacity 120ms ease, transform 120ms ease, visibility 120ms;
+}
+
+.rowStat:hover::after,
+.rowStat:focus-visible::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
+}
+
+.rowStat:focus-visible {
+  border-radius: 5px;
+  outline: 2px solid var(--field-focus);
+  outline-offset: 2px;
+}
+
+.rowStat svg {
+  width: 0.82rem;
+  height: 0.82rem;
+  color: var(--accent-strong);
+  flex-shrink: 0;
+}
+
+.rowActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 0.8rem;
+}
+
+/* Pagination. */
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.9rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+
+.paginationHint {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.paginationControls {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.pageIndicator {
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pageButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.15rem;
+  height: 2.15rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface-muted);
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+
+.pageButton svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.pageButton:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 44%, var(--line));
+  background: var(--accent-soft);
+}
+
+.pageButton:focus-visible {
+  outline: 2px solid var(--field-focus);
+  outline-offset: 2px;
+}
+
+.pageButton:disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+
+/* Empty states. */
+
+.emptyState {
+  display: grid;
+  justify-items: center;
+  gap: 0.5rem;
+  padding: 2.6rem 1.4rem;
+  border-radius: 18px;
+  border: 1px dashed color-mix(in srgb, var(--muted) 34%, var(--line));
+  background: var(--surface-muted);
+  text-align: center;
+}
+
+.emptyIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.emptyIcon svg {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
+.emptyTitle {
+  font-size: 1.05rem;
+  letter-spacing: -0.02em;
+}
+
+.emptyCopy {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.emptyActions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+/* Responsive: wide boards show every column; below 64rem of board width the
+   state and created columns fold away; below 46rem rows collapse into
+   stacked cards (min-width: 0 all the way down so nothing widens the page). */
+
+@container (max-width: 64rem) {
+  .dashboard {
+    --seq-cols: minmax(0, 1.8fr) 7.5rem minmax(4.5rem, 0.8fr) 10rem;
+  }
+
+  .rowState,
+  .rowCreated,
+  .tableHead span:nth-child(3),
+  .tableHead span:nth-child(4) {
+    display: none;
+  }
+}
+
+@container (max-width: 46rem) {
+  .dashboard {
+    padding: 1.15rem;
+  }
+
+  .toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .totalCount {
+    padding-right: 0;
+    border-right: 0;
+  }
+
+  .search {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  /* The two dropdowns sit side-by-side and split the row; menus stay inside
+     the viewport via the max-width clamp above. */
+  .filterControls {
+    width: 100%;
+  }
+
+  .filterControls .select {
+    flex: 1 1 0;
+  }
+
+  .selectTrigger {
+    width: 100%;
+    max-width: none;
+    justify-content: space-between;
+  }
+
+  .selectValue {
+    margin-right: auto;
+  }
+
+  .tableHead {
+    display: none;
+  }
+
+  .rowLink {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.7rem;
+    padding: 0.9rem 1rem 0.45rem;
+  }
+
+  .row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .rowState,
+  .rowCreated {
+    display: block;
+  }
+
+  .rowStatus {
+    order: 2;
+  }
+
+  .rowActions {
+    justify-content: flex-end;
+    padding: 0 0.75rem 0.65rem;
+  }
+
+  .pagination {
+    justify-content: center;
+  }
+
+  .paginationHint {
+    width: 100%;
+    text-align: center;
+  }
+}
+
+@media (hover: none) {
+  .rowStat::after {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .row,
+  .rowLink,
+  .selectTrigger,
+  .selectChevron,
+  .selectOption,
+  .pageButton,
+  .rowStat::after {
+    transition: none;
+  }
+
+  .row:hover {
+    transform: none;
+  }
+}

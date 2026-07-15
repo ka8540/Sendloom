@@ -400,12 +400,12 @@ describe("Reduced motion + performance (#12)", () => {
 });
 
 describe("Scope: no unrelated routes changed (#14)", () => {
-  it("only the workspace route gained a loading state", () => {
+  it("only the workspace and campaigns routes have loading states", () => {
     const appDir = "src/app/(app)";
     const routesWithLoading = readdirSync(appDir).filter((entry) =>
       existsSync(path.join(appDir, entry, "loading.tsx"))
     );
-    expect(routesWithLoading).toEqual(["workspace"]);
+    expect(routesWithLoading).toEqual(["campaigns", "workspace"]);
   });
 
   it("the Analytics Pulse is only used by the Overview command center", () => {

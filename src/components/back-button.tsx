@@ -4,7 +4,12 @@ import { useCallback, useEffect, useRef } from "react";
 import { ArrowLeft } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 
-import { getDefaultBackFallback, shouldUseBrowserBack, type AppFallbackHref } from "@/lib/back-navigation";
+import {
+  getDefaultBackFallback,
+  getSequenceDetailReturnTo,
+  shouldUseBrowserBack,
+  type AppFallbackHref
+} from "@/lib/back-navigation";
 
 type BackButtonProps = {
   alwaysUseFallback?: boolean;
@@ -16,6 +21,8 @@ type BackButtonProps = {
 export function BackButton({ alwaysUseFallback = false, className, fallbackHref, label = "Go back" }: BackButtonProps) {
   const router = useRouter();
   const pathname = usePathname();
+  const isCreateSequencePage = pathname === "/campaigns/new" || pathname === "/sequences/new";
+  const resolvedLabel = isCreateSequencePage ? "Back to sequences" : label;
 
   // How many in-app client navigations have happened since this button mounted.
   // The back button lives in the persistent app shell, so this ref survives every
@@ -64,6 +71,20 @@ export function BackButton({ alwaysUseFallback = false, className, fallbackHref,
   }, [alwaysUseFallback, pathname]);
 
   const handleClick = useCallback(() => {
+    if (isCreateSequencePage) {
+      router.push("/sequences");
+      return;
+    }
+
+    const sequenceReturnTo =
+      typeof window === "undefined"
+        ? null
+        : getSequenceDetailReturnTo(pathname, new URLSearchParams(window.location.search));
+    if (sequenceReturnTo) {
+      router.push(sequenceReturnTo);
+      return;
+    }
+
     if (
       typeof window !== "undefined" &&
       shouldUseBrowserBack({ alwaysUseFallback, navigationDepth: navigationDepthRef.current })
@@ -73,13 +94,13 @@ export function BackButton({ alwaysUseFallback = false, className, fallbackHref,
     }
 
     router.push(fallbackHref ?? getDefaultBackFallback(pathname));
-  }, [alwaysUseFallback, fallbackHref, pathname, router]);
+  }, [alwaysUseFallback, fallbackHref, isCreateSequencePage, pathname, router]);
 
   return (
     <button
-      aria-label={label}
+      aria-label={resolvedLabel}
       className={`back-button${className ? ` ${className}` : ""}`}
-      title={label}
+      title={resolvedLabel}
       type="button"
       onClick={handleClick}
     >

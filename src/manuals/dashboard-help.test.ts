@@ -18,6 +18,18 @@ const DASHBOARD_ROUTES: Array<{ path: string; id: string; label: string; tooltip
   { path: "/imports", id: "imports", label: "Help with Imports", tooltip: "Imports guide" },
   { path: "/templates", id: "templates", label: "Help with Templates", tooltip: "Templates guide" },
   { path: "/campaigns", id: "campaigns", label: "Help with Sequences", tooltip: "Sequences guide" },
+  {
+    path: "/campaigns/new",
+    id: "campaign-create",
+    label: "Help with creating a sequence",
+    tooltip: "Create sequence guide"
+  },
+  {
+    path: "/sequences/new",
+    id: "campaign-create",
+    label: "Help with creating a sequence",
+    tooltip: "Create sequence guide"
+  },
   { path: "/campaigns/abc123", id: "campaign-detail", label: "Help with Sequences", tooltip: "Sequence guide" },
   { path: "/sequences/abc123", id: "campaign-detail", label: "Help with Sequences", tooltip: "Sequence guide" },
   { path: "/prospects", id: "discover-list", label: "Help with Discover", tooltip: "Discover guide" },

@@ -1,15 +1,21 @@
 "use client";
 
 import Link from "next/link";
+import type { Route } from "next";
 import { ArrowUpRight, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { AppConfirmDialog } from "@/components/app-confirm-dialog";
+import styles from "./campaign-card-actions.module.css";
 
 const DELETE_SEQUENCE_ERROR = "This sequence could not be deleted. Please try again.";
 
-export function CampaignCardActions(props: { campaignId: string; campaignName: string }) {
+export function CampaignCardActions(props: {
+  campaignId: string;
+  campaignName: string;
+  detailHref?: Route;
+}) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -45,10 +51,10 @@ export function CampaignCardActions(props: { campaignId: string; campaignName: s
   }
 
   return (
-    <div className="campaign-card-actions">
+    <div className={styles.rail}>
       <Link
-        className="field-icon-button campaign-card-action campaign-card-action--open"
-        href={`/campaigns/${props.campaignId}`}
+        className={`${styles.action} ${styles.open}`}
+        href={props.detailHref ?? `/campaigns/${props.campaignId}`}
         data-tooltip="Open sequence"
         aria-label={`Open sequence ${props.campaignName}`}
       >
@@ -56,7 +62,7 @@ export function CampaignCardActions(props: { campaignId: string; campaignName: s
       </Link>
       <button
         type="button"
-        className="field-icon-button campaign-card-action campaign-card-action--delete field-icon-button--danger"
+        className={`${styles.action} ${styles.delete}`}
         data-tooltip="Delete sequence"
         onClick={() => {
           setError(null);

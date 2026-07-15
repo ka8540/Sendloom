@@ -1,0 +1,69 @@
+/* Create Sequence page shell. The interactive wizard and compact sender
+   selector live together in CampaignBuilder so their state stays in sync. */
+
+.page {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.page > * {
+  min-width: 0;
+}
+
+.flashNotice {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.95rem 1.05rem;
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
+  background: color-mix(in srgb, var(--accent-soft) 58%, var(--surface));
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.flashNotice svg {
+  width: 1rem;
+  height: 1rem;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.pageHeader {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.pageHeading {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.pageHeading h1 {
+  margin: 0;
+  font-size: clamp(1.9rem, 3.4vw, 2.5rem);
+  letter-spacing: -0.05em;
+}
+
+.pageHeading p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.kicker {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  padding: 0.38rem 0.7rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}

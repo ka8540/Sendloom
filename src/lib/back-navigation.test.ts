@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { getDefaultBackFallback, shouldUseBrowserBack } from "@/lib/back-navigation";
+import {
+  getDefaultBackFallback,
+  getSequenceDetailReturnTo,
+  shouldUseBrowserBack
+} from "@/lib/back-navigation";
 
 describe("getDefaultBackFallback", () => {
   it("sends app routes back to overview by default", () => {
@@ -31,5 +35,48 @@ describe("shouldUseBrowserBack", () => {
 
   it("always falls back when the caller forces it", () => {
     expect(shouldUseBrowserBack({ alwaysUseFallback: true, navigationDepth: 5 })).toBe(false);
+  });
+});
+
+describe("getSequenceDetailReturnTo", () => {
+  it("restores a filtered Sequences dashboard URL from a detail page", () => {
+    const params = new URLSearchParams({
+      returnTo:
+        "/campaigns?status=needs-attention&page=4&q=amd&sender=kush.ahir2024%40gmail.com"
+    });
+
+    expect(getSequenceDetailReturnTo("/campaigns/seq-1", params)).toBe(
+      "/campaigns?status=needs-attention&page=4&q=amd&sender=kush.ahir2024%40gmail.com"
+    );
+  });
+
+  it("accepts the /sequences alias but rejects non-dashboard and external targets", () => {
+    expect(
+      getSequenceDetailReturnTo(
+        "/sequences/seq-1",
+        new URLSearchParams({ returnTo: "/sequences?status=paused&page=2" })
+      )
+    ).toBe("/sequences?status=paused&page=2");
+    expect(
+      getSequenceDetailReturnTo(
+        "/campaigns/seq-1",
+        new URLSearchParams({ returnTo: "/workspace" })
+      )
+    ).toBeNull();
+    expect(
+      getSequenceDetailReturnTo(
+        "/campaigns/seq-1",
+        new URLSearchParams({ returnTo: "https://example.com/campaigns" })
+      )
+    ).toBeNull();
+  });
+
+  it("ignores returnTo outside sequence-detail routes", () => {
+    expect(
+      getSequenceDetailReturnTo(
+        "/campaigns",
+        new URLSearchParams({ returnTo: "/campaigns?status=completed" })
+      )
+    ).toBeNull();
   });
 });

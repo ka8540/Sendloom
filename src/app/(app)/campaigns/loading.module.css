@@ -1,0 +1,308 @@
+/* CSS-only skeleton for the Sequences dashboard route. A single shimmer sweep
+   animates every bar; reduced-motion users get static placeholders. */
+
+.page {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.bar {
+  display: block;
+  border-radius: 999px;
+  background:
+    linear-gradient(
+      100deg,
+      color-mix(in srgb, var(--muted) 14%, transparent) 38%,
+      color-mix(in srgb, var(--muted) 26%, transparent) 50%,
+      color-mix(in srgb, var(--muted) 14%, transparent) 62%
+    );
+  background-size: 220% 100%;
+  animation: sequences-skeleton-shimmer 1.6s ease-in-out infinite;
+}
+
+@keyframes sequences-skeleton-shimmer {
+  from {
+    background-position: 130% 0;
+  }
+
+  to {
+    background-position: -30% 0;
+  }
+}
+
+.pageHeader {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.headingBlock {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.pageTitle {
+  width: min(14rem, 70%);
+  height: 2.4rem;
+  border-radius: 12px;
+}
+
+.panelTitle {
+  width: 11rem;
+  height: 1.3rem;
+  border-radius: 10px;
+}
+
+.lede {
+  width: min(24rem, 92%);
+  height: 0.95rem;
+}
+
+.newButton {
+  width: 10rem;
+  height: 2.6rem;
+  border-radius: 999px;
+}
+
+.overviewGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(300px, 1fr);
+  gap: 1.15rem;
+  align-items: stretch;
+}
+
+.summaryCards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.summaryCard,
+.healthPanel,
+.dashboard {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  min-width: 0;
+}
+
+.summaryCard {
+  display: grid;
+  gap: 0.8rem;
+  align-content: space-between;
+  padding: 1rem 1.1rem;
+  border-radius: 20px;
+}
+
+.summaryLabel {
+  width: 6rem;
+  height: 1.1rem;
+}
+
+.summaryValue {
+  width: 4.2rem;
+  height: 1.6rem;
+  border-radius: 10px;
+}
+
+.healthPanel {
+  display: grid;
+  align-content: start;
+  gap: 0.8rem;
+  padding: 1.1rem 1.2rem;
+  border-radius: 20px;
+}
+
+.healthItem {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+}
+
+.healthLine {
+  width: min(16rem, 85%);
+  height: 0.95rem;
+}
+
+.healthDetail {
+  width: min(12rem, 65%);
+  height: 0.8rem;
+}
+
+.dashboard {
+  display: grid;
+  gap: 1.05rem;
+  padding: 1.55rem;
+  border-radius: 28px;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+}
+
+.totalCount {
+  width: 7rem;
+  height: 1.1rem;
+}
+
+.filterControls {
+  display: flex;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.filterControl {
+  width: 7.4rem;
+  height: 2.25rem;
+}
+
+.search {
+  width: 16rem;
+  max-width: 100%;
+  height: 2.25rem;
+}
+
+.rangeLine {
+  width: 9.5rem;
+  height: 0.9rem;
+}
+
+.list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(8rem, 11rem) auto;
+  align-items: center;
+  gap: 1.1rem;
+  padding: 0.85rem 1rem;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+}
+
+.rowIdentity {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  min-width: 0;
+}
+
+.rowDot {
+  width: 0.5rem;
+  height: 0.5rem;
+  flex-shrink: 0;
+}
+
+.rowTitleBlock {
+  display: grid;
+  gap: 0.4rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.rowName {
+  width: min(15rem, 80%);
+  height: 1rem;
+}
+
+.rowChip {
+  width: min(9rem, 55%);
+  height: 0.85rem;
+}
+
+.rowHealth {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.rowValue {
+  width: 3rem;
+  height: 0.95rem;
+}
+
+.rowTrack {
+  width: 100%;
+  height: 0.3rem;
+}
+
+.rowStatus {
+  width: 5.6rem;
+  height: 1.6rem;
+}
+
+.rowAction {
+  width: 4.4rem;
+  height: 1.9rem;
+}
+
+.paginationBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.9rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+
+.paginationControls {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.pageButton {
+  width: 2.15rem;
+  height: 2.15rem;
+}
+
+.pageIndicator {
+  width: 5.4rem;
+  height: 1rem;
+}
+
+@media (max-width: 1080px) {
+  .overviewGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .rowStatus,
+  .rowAction {
+    justify-self: start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bar {
+    animation: none;
+    background-position: 50% 0;
+  }
+}
