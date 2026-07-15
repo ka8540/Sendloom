@@ -96,7 +96,7 @@ describe("Overview dashboard renders as one main block (#1, #2, #3)", () => {
   it("the /workspace route renders the redesigned command center", () => {
     expect(WORKSPACE_PAGE).toContain('export { default } from "@/components/dashboard/overview-command-center"');
     expect(CENTER).toContain("styles.heroTitle}>Overview</h1>");
-    expect(CENTER_CSS).toContain("font-size: clamp(2.1rem, 3.8vw, 3rem)");
+    expect(CENTER_CSS).toContain("font-size: clamp(2.75rem, 5vw, 4rem)");
     expect(CENTER).toContain('data-overview-tour="page-intro"');
   });
 
