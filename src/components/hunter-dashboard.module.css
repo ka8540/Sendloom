@@ -863,6 +863,9 @@
 
 .modalCard {
   width: min(100%, 38rem);
+  max-height: calc(100vh - 3rem);
+  max-height: calc(100dvh - 3rem);
+  overflow-y: auto;
   display: grid;
   gap: 1.4rem;
   padding: 1.6rem;

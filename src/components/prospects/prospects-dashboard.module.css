@@ -854,8 +854,8 @@
   inset: 0;
   z-index: 60;
   display: grid;
-  place-items: start center;
-  padding: clamp(1rem, 6vh, 5rem) 1rem 2rem;
+  place-items: center;
+  padding: 1rem;
   overflow-y: auto;
   background: color-mix(in srgb, #05070d 62%, transparent);
   backdrop-filter: blur(4px);
@@ -867,6 +867,9 @@
   gap: 0.9rem;
   width: 100%;
   max-width: 32rem;
+  max-height: calc(100vh - 2rem);
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
   box-shadow: 0 30px 60px -20px rgba(2, 6, 14, 0.65);
   animation: prospect-rise 160ms ease;
 }

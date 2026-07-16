@@ -11,6 +11,9 @@
 
 .card {
   width: min(32rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
   display: grid;
   gap: 1rem;
   padding: 1.4rem;
