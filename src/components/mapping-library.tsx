@@ -1,7 +1,10 @@
 "use client";
 
 import {
+  ArrowLeft,
+  ArrowRight,
   Check,
+  CheckCircle2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -25,6 +28,7 @@ import actionStyles from "@/components/campaign-card-actions.module.css";
 import { CircularCloseButton } from "@/components/circular-close-button";
 import editorStyles from "@/components/import-editor-dialog.module.css";
 import pickerStyles from "@/components/import-picker.module.css";
+import workflowStyles from "@/components/imports-workflow.module.css";
 import {
   DELETE_IMPORT_ERROR_MESSAGE,
   DELETE_IMPORT_SUCCESS_MESSAGE,
@@ -53,12 +57,12 @@ import {
 
 const IMPORTS_PAGE_SIZE = 5;
 
-type MappingColumn = {
+export type MappingColumn = {
   sourceName: string;
   normalized: string;
 };
 
-type TemplateFieldItem = {
+export type TemplateFieldItem = {
   importId: string;
   fileName: string;
   columns: MappingColumn[];
@@ -88,6 +92,17 @@ function formatColumnLabel(column: MappingColumn) {
   return column.sourceName === column.normalized
     ? column.sourceName
     : `${column.sourceName} (${column.normalized})`;
+}
+
+function formatColumnHumanLabel(column: MappingColumn) {
+  const sourceName = column.sourceName.trim();
+  if (sourceName && !/^[a-z0-9_-]+$/.test(sourceName)) {
+    return sourceName;
+  }
+
+  return (sourceName || column.normalized)
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
 type DeletableImport = {
@@ -177,9 +192,26 @@ function ImportDeleteDialog({ deletion }: { deletion: ReturnType<typeof useImpor
   );
 }
 
-export function TemplateFieldPicker(props: { imports: TemplateFieldItem[]; initialImportId?: string }) {
+type TemplateFieldPickerProps = {
+  imports: TemplateFieldItem[];
+  initialImportId?: string;
+  view: "map" | "review";
+  onBack: () => void;
+  onContinue: () => void;
+  onSelectionChange?: (ready: boolean) => void;
+  onSaved?: () => void;
+};
+
+type SavedFieldReview = {
+  fileName: string;
+  rowCount?: number;
+  columns: MappingColumn[];
+};
+
+export function TemplateFieldPicker(props: TemplateFieldPickerProps) {
   const router = useRouter();
   const [state, setState] = useState<{ pending: boolean; error?: string }>({ pending: false });
+  const [savedReview, setSavedReview] = useState<SavedFieldReview | null>(null);
   const [selectedImportId, setSelectedImportId] = useState(() =>
     props.initialImportId && props.imports.some((entry) => entry.importId === props.initialImportId)
       ? props.initialImportId
@@ -221,8 +253,20 @@ export function TemplateFieldPicker(props: { imports: TemplateFieldItem[]; initi
   useEffect(() => {
     setRemovedImportIds([]);
     setSelectedByImport(Object.fromEntries(props.imports.map((entry) => [entry.importId, entry.selectedColumns])));
-    setSelectedImportId((current) => (props.imports.some((entry) => entry.importId === current) ? current : ""));
-  }, [props.imports]);
+    setSelectedImportId((current) => {
+      if (props.imports.some((entry) => entry.importId === current)) {
+        return current;
+      }
+      if (props.initialImportId && props.imports.some((entry) => entry.importId === props.initialImportId)) {
+        return props.initialImportId;
+      }
+      return "";
+    });
+  }, [props.imports, props.initialImportId]);
+
+  useEffect(() => {
+    props.onSelectionChange?.(Boolean(selectedImport && selectedColumns.length));
+  }, [props.onSelectionChange, selectedColumns.length, selectedImport]);
 
   // Clicking anywhere outside the picker closes the panel — except while the
   // delete confirmation (a body-level portal) is up, so cancelling a delete
@@ -259,6 +303,7 @@ export function TemplateFieldPicker(props: { imports: TemplateFieldItem[]; initi
 
   function chooseImport(importId: string) {
     setSelectedImportId(importId);
+    setSavedReview(null);
     setState({ pending: false, error: undefined });
     closePicker();
   }
@@ -295,6 +340,8 @@ export function TemplateFieldPicker(props: { imports: TemplateFieldItem[]; initi
       return;
     }
 
+    setSavedReview(null);
+    setState({ pending: false });
     setSelectedByImport((current) => {
       const existing = current[selectedImport.importId] ?? [];
       const next = existing.includes(column)
@@ -325,146 +372,260 @@ export function TemplateFieldPicker(props: { imports: TemplateFieldItem[]; initi
 
     setState({ pending: true });
 
-    const response = await fetch(`/api/imports/${selectedImport.importId}/template-fields`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        selectedColumns: selectedColumnsForImport
-      })
-    });
+    let response: Response;
+    try {
+      response = await fetch(`/api/imports/${selectedImport.importId}/template-fields`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          selectedColumns: selectedColumnsForImport
+        })
+      });
+    } catch {
+      setState({ pending: false, error: "Could not save template columns." });
+      return;
+    }
 
     if (!response.ok) {
-      const payload = await response.json();
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
       setState({ pending: false, error: payload.error ?? "Could not save template columns." });
       return;
     }
 
+    setSavedReview({
+      fileName: selectedImport.fileName,
+      rowCount: selectedImport.rowCount,
+      columns: selectedImport.columns.filter((column) => selectedColumnsForImport.includes(column.normalized))
+    });
     setSelectedImportId("");
     router.refresh();
     setState({ pending: false });
+    props.onSaved?.();
   }
 
   return (
-    <form className="form imports-field-picker" onSubmit={onSubmit}>
-      <div className="field" data-imports-tour="pending-selector">
-        <label htmlFor={triggerId}>Import</label>
-        {visibleImports.length === 0 ? (
-          <div className={pickerStyles.empty}>
-            <span className={pickerStyles.emptyTitle}>{IMPORT_PICKER_EMPTY_TITLE}</span>
-            <span className={pickerStyles.emptyHint}>{IMPORT_PICKER_EMPTY_HINT}</span>
-          </div>
-        ) : (
-          <div className={pickerStyles.picker} ref={pickerRef}>
-            <button
-              ref={triggerRef}
-              id={triggerId}
-              type="button"
-              className={`${pickerStyles.trigger}${pickerOpen ? ` ${pickerStyles.triggerOpen}` : ""}`}
-              aria-haspopup="listbox"
-              aria-expanded={pickerOpen}
-              aria-label={IMPORT_PICKER_LABEL}
-              onClick={() => setPickerOpen((current) => !current)}
-              onKeyDown={onTriggerKeyDown}
-            >
-              <span
-                className={`${pickerStyles.triggerText}${selectedImport ? "" : ` ${pickerStyles.triggerPlaceholder}`}`}
-              >
-                {selectedImport ? selectedImport.fileName : IMPORT_PICKER_PLACEHOLDER}
-              </span>
-              <ChevronDown
-                className={`${pickerStyles.chevron}${pickerOpen ? ` ${pickerStyles.chevronOpen}` : ""}`}
-                aria-hidden="true"
-              />
-            </button>
-            {pickerOpen ? (
-              <div className={pickerStyles.panel} ref={panelRef} onKeyDown={onPanelKeyDown}>
-                <ul className={pickerStyles.list} aria-label="Imports awaiting template fields">
-                  {visibleImports.map((entry) => {
-                    const isSelected = entry.importId === selectedImportId;
-
-                    return (
-                      <li
-                        key={entry.importId}
-                        className={`${pickerStyles.row}${isSelected ? ` ${pickerStyles.rowSelected}` : ""}`}
-                      >
-                        <button
-                          type="button"
-                          data-import-option
-                          className={pickerStyles.rowSelect}
-                          aria-pressed={isSelected}
-                          onClick={() => chooseImport(entry.importId)}
-                        >
-                          <span className={pickerStyles.rowName}>
-                            <span className={pickerStyles.rowNameText} title={entry.fileName}>
-                              {entry.fileName}
-                            </span>
-                            {isSelected ? <Check className={pickerStyles.check} aria-hidden="true" /> : null}
-                          </span>
-                          <span className={pickerStyles.rowMeta}>
-                            {importPickerRowMeta({ rowCount: entry.rowCount, columnCount: entry.columns.length })}
-                          </span>
-                        </button>
-                        {/* A separate button, never nested in the row's select action —
-                            clicking the trash only stages the confirmation. */}
-                        <button
-                          type="button"
-                          className={pickerStyles.rowDelete}
-                          aria-label={deleteImportLabel(entry.fileName)}
-                          disabled={deletion.deletingImportId !== null}
-                          onClick={() =>
-                            deletion.requestDeletion({
-                              importId: entry.importId,
-                              fileName: entry.fileName,
-                              linkedCampaignCount: entry.linkedCampaignCount ?? 0
-                            })
-                          }
-                        >
-                          <Trash2 aria-hidden="true" />
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            ) : null}
-          </div>
-        )}
-      </div>
-      {selectedImport ? (
+    <form className={workflowStyles.mappingForm} onSubmit={onSubmit}>
+      {props.view === "map" ? (
         <>
-          <div className="selection-summary">
-            <strong>
-              {selectedColumns.length} / {MAX_TEMPLATE_COLUMNS} template fields selected
-            </strong>
-          </div>
-          <div className="checkbox-grid" data-imports-tour="active-field-selection">
-            {selectedImport.columns.map((column) => {
-              const checked = selectedColumns.includes(column.normalized);
-              const disableUnchecked = !checked && selectedColumns.length >= MAX_TEMPLATE_COLUMNS;
-
-              return (
-                <label key={column.normalized} className={`checkbox-card${checked ? " is-selected" : ""}${disableUnchecked ? " is-disabled" : ""}`}>
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    disabled={disableUnchecked}
-                    onChange={() => toggleColumn(column.normalized)}
+          <div className={workflowStyles.mappingField} data-imports-tour="pending-selector">
+            <label className={workflowStyles.fieldLabel} htmlFor={triggerId}>Import</label>
+            {visibleImports.length === 0 ? (
+              <div className={workflowStyles.emptyState}>
+                <FileSpreadsheet aria-hidden="true" />
+                <strong>{IMPORT_PICKER_EMPTY_TITLE}</strong>
+                <span>{IMPORT_PICKER_EMPTY_HINT}</span>
+              </div>
+            ) : (
+              <div className={pickerStyles.picker} ref={pickerRef}>
+                <button
+                  ref={triggerRef}
+                  id={triggerId}
+                  type="button"
+                  className={`${pickerStyles.trigger}${pickerOpen ? ` ${pickerStyles.triggerOpen}` : ""}`}
+                  aria-haspopup="listbox"
+                  aria-expanded={pickerOpen}
+                  aria-label={IMPORT_PICKER_LABEL}
+                  onClick={() => setPickerOpen((current) => !current)}
+                  onKeyDown={onTriggerKeyDown}
+                >
+                  <span
+                    className={`${pickerStyles.triggerText}${selectedImport ? "" : ` ${pickerStyles.triggerPlaceholder}`}`}
+                  >
+                    {selectedImport ? selectedImport.fileName : IMPORT_PICKER_PLACEHOLDER}
+                  </span>
+                  <ChevronDown
+                    className={`${pickerStyles.chevron}${pickerOpen ? ` ${pickerStyles.chevronOpen}` : ""}`}
+                    aria-hidden="true"
                   />
-                  <span>{formatColumnLabel(column)}</span>
-                </label>
-              );
-            })}
+                </button>
+                {pickerOpen ? (
+                  <div className={pickerStyles.panel} ref={panelRef} onKeyDown={onPanelKeyDown}>
+                    <ul className={pickerStyles.list} aria-label="Imports awaiting template fields">
+                      {visibleImports.map((entry) => {
+                        const isSelected = entry.importId === selectedImportId;
+
+                        return (
+                          <li
+                            key={entry.importId}
+                            className={`${pickerStyles.row}${isSelected ? ` ${pickerStyles.rowSelected}` : ""}`}
+                          >
+                            <button
+                              type="button"
+                              data-import-option
+                              className={pickerStyles.rowSelect}
+                              aria-pressed={isSelected}
+                              onClick={() => chooseImport(entry.importId)}
+                            >
+                              <span className={pickerStyles.rowName}>
+                                <span className={pickerStyles.rowNameText} title={entry.fileName}>
+                                  {entry.fileName}
+                                </span>
+                                {isSelected ? <Check className={pickerStyles.check} aria-hidden="true" /> : null}
+                              </span>
+                              <span className={pickerStyles.rowMeta}>
+                                {importPickerRowMeta({ rowCount: entry.rowCount, columnCount: entry.columns.length })}
+                              </span>
+                            </button>
+                            {/* A separate button, never nested in the row's select action —
+                                clicking the trash only stages the confirmation. */}
+                            <button
+                              type="button"
+                              className={pickerStyles.rowDelete}
+                              aria-label={deleteImportLabel(entry.fileName)}
+                              disabled={deletion.deletingImportId !== null}
+                              onClick={() =>
+                                deletion.requestDeletion({
+                                  importId: entry.importId,
+                                  fileName: entry.fileName,
+                                  linkedCampaignCount: entry.linkedCampaignCount ?? 0
+                                })
+                              }
+                            >
+                              <Trash2 aria-hidden="true" />
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+            )}
           </div>
+
+          {selectedImport ? (
+            <>
+              <div className={workflowStyles.selectionBar} aria-live="polite">
+                <span>Selected fields</span>
+                <strong>{selectedColumns.length} / {MAX_TEMPLATE_COLUMNS}</strong>
+              </div>
+              <div className={workflowStyles.fieldGrid} data-imports-tour="active-field-selection">
+                {selectedImport.columns.map((column) => {
+                  const checked = selectedColumns.includes(column.normalized);
+                  const disableUnchecked = !checked && selectedColumns.length >= MAX_TEMPLATE_COLUMNS;
+
+                  return (
+                    <label
+                      key={column.normalized}
+                      className={`${workflowStyles.fieldCard}${checked ? ` ${workflowStyles.fieldCardSelected}` : ""}${disableUnchecked ? ` ${workflowStyles.fieldCardDisabled}` : ""}`}
+                    >
+                      <input
+                        className={workflowStyles.fieldCheckbox}
+                        type="checkbox"
+                        checked={checked}
+                        disabled={disableUnchecked}
+                        onChange={() => toggleColumn(column.normalized)}
+                      />
+                      <span className={workflowStyles.fieldCardCopy}>
+                        <strong>{formatColumnHumanLabel(column)}</strong>
+                        <span>{column.normalized}</span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </>
+          ) : null}
+
+          <footer className={workflowStyles.stepActions}>
+            <button
+              className={`button secondary ${workflowStyles.secondaryAction}`}
+              type="button"
+              onClick={props.onBack}
+            >
+              <ArrowLeft aria-hidden="true" />
+              Back
+            </button>
+            <button
+              className={`button ${workflowStyles.primaryAction}`}
+              type="button"
+              disabled={!selectedImport || selectedColumns.length === 0}
+              onClick={props.onContinue}
+            >
+              Review fields
+              <ArrowRight aria-hidden="true" />
+            </button>
+          </footer>
         </>
-      ) : null}
-      <button
-        className="button"
-        type="submit"
-        data-imports-tour="save-template-fields"
-        disabled={state.pending || !selectedImport}
-      >
-        {state.pending ? "Saving fields..." : "Save template fields"}
-      </button>
+      ) : savedReview ? (
+        <>
+          <div className={workflowStyles.savedState} role="status">
+            <span className={workflowStyles.savedIcon} aria-hidden="true"><CheckCircle2 /></span>
+            <h3>Template fields saved</h3>
+            <p>{savedReview.fileName} is ready with {savedReview.columns.length} active template {savedReview.columns.length === 1 ? "field" : "fields"}.</p>
+          </div>
+          <footer className={workflowStyles.stepActions}>
+            <button
+              className={`button secondary ${workflowStyles.secondaryAction}`}
+              type="button"
+              onClick={props.onBack}
+            >
+              <ArrowLeft aria-hidden="true" />
+              Upload another
+            </button>
+          </footer>
+        </>
+      ) : selectedImport ? (
+        <>
+          <div className={workflowStyles.reviewCard}>
+            <div className={workflowStyles.reviewHeader}>
+              <span className={workflowStyles.reviewIcon} aria-hidden="true"><FileSpreadsheet /></span>
+              <span className={workflowStyles.reviewTitle}>
+                <strong>{selectedImport.fileName}</strong>
+                <span>
+                  {typeof selectedImport.rowCount === "number" ? `${selectedImport.rowCount} contacts · ` : ""}
+                  {selectedColumns.length} template {selectedColumns.length === 1 ? "field" : "fields"}
+                </span>
+              </span>
+            </div>
+            <div className={workflowStyles.reviewFields}>
+              <span>Selected fields</span>
+              <div className={workflowStyles.reviewChips}>
+                {selectedImport.columns
+                  .filter((column) => selectedColumns.includes(column.normalized))
+                  .map((column) => (
+                    <span className={workflowStyles.reviewChip} key={`${column.normalized}-review`}>
+                      <strong>{formatColumnHumanLabel(column)}</strong>
+                      <span>{column.normalized}</span>
+                    </span>
+                  ))}
+              </div>
+            </div>
+          </div>
+          <footer className={workflowStyles.stepActions}>
+            <button
+              className={`button secondary ${workflowStyles.secondaryAction}`}
+              type="button"
+              disabled={state.pending}
+              onClick={props.onBack}
+            >
+              <ArrowLeft aria-hidden="true" />
+              Back
+            </button>
+            <button
+              className={`button ${workflowStyles.primaryAction}`}
+              type="submit"
+              data-imports-tour="save-template-fields"
+              disabled={state.pending || selectedColumns.length === 0}
+            >
+              {state.pending ? (
+                <>
+                  <span className={workflowStyles.spinner} aria-hidden="true" />
+                  Saving…
+                </>
+              ) : (
+                "Save template fields"
+              )}
+            </button>
+          </footer>
+        </>
+      ) : (
+        <div className={workflowStyles.emptyState}>
+          <FileSpreadsheet aria-hidden="true" />
+          <strong>Select an import first</strong>
+          <span>Go back to choose an import and the fields you want to save.</span>
+        </div>
+      )}
       <ImportDeleteDialog deletion={deletion} />
     </form>
   );

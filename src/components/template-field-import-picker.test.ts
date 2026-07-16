@@ -18,6 +18,7 @@ import {
 const LIBRARY = readFileSync("src/components/mapping-library.tsx", "utf8");
 const PICKER_CSS = readFileSync("src/components/import-picker.module.css", "utf8");
 const PAGE = readFileSync("src/app/(app)/imports/page.tsx", "utf8");
+const WORKFLOW = readFileSync("src/components/imports-workflow.tsx", "utf8");
 
 function templateFieldPickerBlock(): string {
   const start = LIBRARY.indexOf("export function TemplateFieldPicker");
@@ -106,7 +107,7 @@ describe("Template fields uses a custom picker instead of the native select", ()
   });
 
   it("keeps Save disabled unless an import is selected (existing save flow intact)", () => {
-    expect(picker).toContain("disabled={state.pending || !selectedImport}");
+    expect(picker).toContain("disabled={state.pending || selectedColumns.length === 0}");
     expect(picker).toContain("/template-fields");
     expect(picker).toContain('data-imports-tour="save-template-fields"');
   });
@@ -189,6 +190,7 @@ describe("Picker styling is premium, theme-aware, and truncation-safe", () => {
   it("the Imports page feeds the picker its metadata for rows and delete copy", () => {
     expect(PAGE).toContain("rowCount: entry.rowCount");
     expect(PAGE).toContain("linkedCampaignCount: entry._count.campaigns");
-    expect(PAGE).toContain("<TemplateFieldPicker");
+    expect(PAGE).toContain("<ImportsWorkflow");
+    expect(WORKFLOW).toContain("<TemplateFieldPicker");
   });
 });

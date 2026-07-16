@@ -4,21 +4,42 @@ import { describe, expect, it } from "vitest";
 
 const PAGE = readFileSync("src/app/(app)/imports/page.tsx", "utf8");
 const LIBRARY = readFileSync("src/components/mapping-library.tsx", "utf8");
-const STYLES = readFileSync("src/app/globals.css", "utf8");
+const WORKFLOW = readFileSync("src/components/imports-workflow.tsx", "utf8");
+const WORKFLOW_STYLES = readFileSync("src/components/imports-workflow.module.css", "utf8");
+const FORMS = readFileSync("src/components/forms.tsx", "utf8");
 
 describe("Imports dashboard redesign", () => {
-  it("uses compact setup and people-list surfaces", () => {
+  it("uses one workflow card and keeps the people-list surface", () => {
     expect(PAGE).toContain('className="imports-dashboard"');
-    expect(PAGE).toContain('className="imports-setup-grid"');
+    expect(PAGE).toContain("<ImportsWorkflow");
     expect(PAGE).toContain('className="card imports-library-shell"');
+    expect(PAGE).not.toContain("imports-setup-grid");
+    expect(PAGE).not.toContain("imports-setup-card");
   });
 
-  it("keeps both desktop setup cards equal-height with bottom-aligned actions", () => {
-    expect(STYLES).toMatch(/\.imports-setup-grid\s*\{[^}]*align-items: stretch;/s);
-    expect(STYLES).toMatch(/\.imports-setup-card\s*\{[^}]*display: flex;[^}]*flex-direction: column;[^}]*height: 100%;/s);
-    expect(STYLES).toMatch(/\.import-upload-form,\s*\.imports-field-picker\s*\{[^}]*flex: 1 1 auto;/s);
-    expect(STYLES).toMatch(/\.import-upload-form > \.button,\s*\.imports-field-picker > \.button\s*\{[^}]*margin-top: auto;/s);
-    expect(STYLES).toMatch(/@media \(max-width: 960px\)[\s\S]*\.imports-setup-card\s*\{[^}]*height: auto;/);
+  it("presents Upload, Map fields, and Review as a real three-step flow", () => {
+    expect(WORKFLOW).toContain('const WORKFLOW_STEPS = ["Upload", "Map fields", "Review"]');
+    expect(WORKFLOW).toContain('aria-label="Import workflow progress"');
+    expect(WORKFLOW).toContain('view={activeStep === 2 ? "review" : "map"}');
+    expect(WORKFLOW_STYLES).toMatch(/\.workflowCard\s*\{[^}]*border-radius: 26px;/s);
+    expect(WORKFLOW_STYLES).toMatch(/\.stepNav ol\s*\{[^}]*grid-template-columns: repeat\(3,/s);
+  });
+
+  it("wraps the native file control in a polished dropzone without changing the upload endpoint", () => {
+    expect(FORMS).toContain('className={importStyles.fileInput}');
+    expect(FORMS).toContain('accept=".csv,.xls,.xlsx"');
+    expect(FORMS).toContain('fetch("/api/imports"');
+    expect(FORMS).toContain("Choose CSV or XLSX file");
+    expect(FORMS).toContain("CSV, XLSX supported");
+    expect(WORKFLOW_STYLES).toMatch(/\.fileInput\s*\{[^}]*position: absolute;[^}]*width: 1px;/s);
+  });
+
+  it("uses readable field cards with separate human labels and field keys", () => {
+    expect(LIBRARY).toContain("formatColumnHumanLabel(column)");
+    expect(LIBRARY).toContain("{column.normalized}");
+    expect(LIBRARY).toContain("workflowStyles.fieldCardCopy");
+    expect(WORKFLOW_STYLES).toMatch(/\.fieldCardCopy strong\s*\{[^}]*font-size: 0\.9rem;/s);
+    expect(WORKFLOW_STYLES).toMatch(/\.fieldCardCopy span\s*\{[^}]*font-size: 0\.74rem;/s);
   });
 
   it("keeps sample contacts collapsed until their real toggle is used", () => {

@@ -24,6 +24,7 @@ import {
 const IMPORTS_SOURCE = readFileSync("src/manuals/importsManual.ts", "utf8");
 const LIBRARY_SOURCE = readFileSync("src/components/mapping-library.tsx", "utf8");
 const PAGE_SOURCE = readFileSync("src/app/(app)/imports/page.tsx", "utf8");
+const WORKFLOW_SOURCE = readFileSync("src/components/imports-workflow.tsx", "utf8");
 
 function ids(steps: ManualStep[]): string[] {
   return steps.map((step) => step.id);
@@ -208,9 +209,9 @@ describe("What changed explains editing after the first processed import (#7)", 
 
 describe("Every targeted element is declared in the Imports surfaces", () => {
   it("the page declares the always-present targets", () => {
-    for (const target of ["upload", "template-fields", "imports-list"]) {
-      expect(PAGE_SOURCE).toContain(`data-imports-tour="${target}"`);
-    }
+    expect(WORKFLOW_SOURCE).toContain('data-imports-tour="upload"');
+    expect(WORKFLOW_SOURCE).toContain('data-imports-tour="template-fields"');
+    expect(PAGE_SOURCE).toContain('data-imports-tour="imports-list"');
   });
 
   it("the card declares the processed-import + pagination targets (static or first-card anchored)", () => {

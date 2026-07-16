@@ -1,7 +1,7 @@
-import { FileSpreadsheet, SlidersHorizontal, UploadCloud } from "lucide-react";
+import { FileSpreadsheet } from "lucide-react";
 
-import { UploadImportForm } from "@/components/forms";
-import { MappingLibrary, TemplateFieldPicker } from "@/components/mapping-library";
+import { ImportsWorkflow } from "@/components/imports-workflow";
+import { MappingLibrary } from "@/components/mapping-library";
 import { WorkspacePageHeader } from "@/components/workspace-page-header";
 import { requireOperatorUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
@@ -105,32 +105,11 @@ export default async function ImportsPage({
         subtitle="Upload, map, and manage the people lists that power your sequences."
       />
 
-      <section className="imports-setup-grid" aria-label="Import setup">
-        <article className="card imports-setup-card" id="import-upload" data-imports-tour="upload">
-          <header className="imports-setup-card__header">
-            <span className="imports-setup-card__icon" aria-hidden="true">
-              <UploadCloud />
-            </span>
-            <div>
-              <h2>Upload people</h2>
-              <p>Add a CSV or spreadsheet to create an audience.</p>
-            </div>
-          </header>
-          <UploadImportForm />
-        </article>
-        <article className="card imports-setup-card" data-imports-tour="template-fields">
-          <header className="imports-setup-card__header">
-            <span className="imports-setup-card__icon" aria-hidden="true">
-              <SlidersHorizontal />
-            </span>
-            <div>
-              <h2>Template fields</h2>
-              <p>Choose personalization fields for imports awaiting review.</p>
-            </div>
-          </header>
-          <TemplateFieldPicker imports={templateFieldItems} initialImportId={pendingImportId} />
-        </article>
-      </section>
+      <ImportsWorkflow
+        imports={templateFieldItems}
+        initialImportId={pendingImportId}
+        hasAnyImports={imports.length > 0}
+      />
 
       <section className="card imports-library-shell" data-imports-tour="imports-list" aria-labelledby="imports-library-heading">
         <header className="imports-library-shell__header">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type DragEvent, type FormEvent } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -8,14 +8,17 @@ import {
   Circle,
   Eye,
   EyeOff,
+  FileSpreadsheet,
   Mail,
-  Sparkles
+  Sparkles,
+  UploadCloud
 } from "lucide-react";
 import type { Route } from "next";
 import { useRouter } from "next/navigation";
 
 import { renderBrandText } from "@/components/brand-text";
 import { useErrorToastEffect } from "@/components/error-toast-provider";
+import importStyles from "@/components/imports-workflow.module.css";
 import { analyzeSpam, type SpamAnalysis } from "@/lib/spam-analysis";
 import {
   buildTemplatePreviewPayload,
@@ -206,16 +209,38 @@ export function SignupForm() {
   );
 }
 
-export function UploadImportForm() {
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+
+  const kilobytes = bytes / 1024;
+  if (kilobytes < 1024) {
+    return `${kilobytes.toFixed(kilobytes >= 10 ? 0 : 1)} KB`;
+  }
+
+  const megabytes = kilobytes / 1024;
+  return `${megabytes.toFixed(megabytes >= 10 ? 0 : 1)} MB`;
+}
+
+export function UploadImportForm({ onUploaded }: { onUploaded?: (importId: string) => void } = {}) {
   const router = useRouter();
   const [state, setState] = useState<ActionState>({ pending: false });
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [dragActive, setDragActive] = useState(false);
   useErrorToastEffect(state.error, "Import upload failed");
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!selectedFile) {
+      setState({ pending: false, error: "Choose a CSV or spreadsheet to upload." });
+      return;
+    }
+
     const form = event.currentTarget;
     setState({ pending: true });
     const formData = new FormData(form);
+    formData.set("file", selectedFile);
     const response = await fetch("/api/imports", {
       method: "POST",
       body: formData
@@ -227,20 +252,76 @@ export function UploadImportForm() {
       return;
     }
 
+    const payload = (await response.json().catch(() => ({}))) as { id?: string };
     form.reset();
+    setSelectedFile(null);
     setState({ pending: false });
+    if (payload.id) {
+      onUploaded?.(payload.id);
+    }
     router.refresh();
   }
 
+  function chooseDroppedFile(event: DragEvent<HTMLLabelElement>) {
+    event.preventDefault();
+    setDragActive(false);
+    const file = event.dataTransfer.files.item(0);
+    if (file) {
+      setSelectedFile(file);
+      setState({ pending: false });
+    }
+  }
+
   return (
-    <form className="form import-upload-form" onSubmit={onSubmit}>
-      <div className="field import-upload-form__field">
-        <label htmlFor="file">Spreadsheet</label>
-        <input id="file" name="file" type="file" accept=".csv,.xls,.xlsx" required />
+    <form className={importStyles.uploadForm} onSubmit={onSubmit}>
+      <div className={importStyles.uploadField}>
+        <span className={importStyles.fieldLabel}>Spreadsheet</span>
+        <label
+          className={`${importStyles.dropzone}${dragActive ? ` ${importStyles.dropzoneActive}` : ""}${selectedFile ? ` ${importStyles.dropzoneSelected}` : ""}`}
+          htmlFor="import-file"
+          onDragEnter={(event) => {
+            event.preventDefault();
+            setDragActive(true);
+          }}
+          onDragOver={(event) => event.preventDefault()}
+          onDragLeave={() => setDragActive(false)}
+          onDrop={chooseDroppedFile}
+        >
+          <input
+            className={importStyles.fileInput}
+            id="import-file"
+            name="file"
+            type="file"
+            accept=".csv,.xls,.xlsx"
+            disabled={state.pending}
+            onChange={(event) => {
+              setSelectedFile(event.target.files?.item(0) ?? null);
+              setState({ pending: false });
+            }}
+          />
+          <span className={importStyles.dropzoneIcon} aria-hidden="true">
+            {selectedFile ? <FileSpreadsheet /> : <UploadCloud />}
+          </span>
+          <span className={importStyles.dropzoneCopy}>
+            <strong>{selectedFile ? selectedFile.name : "Choose CSV or XLSX file"}</strong>
+            <span>{selectedFile ? `${formatFileSize(selectedFile.size)} · Choose another file` : "Drag and drop or browse"}</span>
+          </span>
+          <span className={importStyles.fileSupport}>CSV, XLSX supported</span>
+        </label>
       </div>
-      <button className="button" type="submit" disabled={state.pending}>
-        {state.pending ? "Processing..." : "Upload import"}
-      </button>
+      <div className={importStyles.stepActions}>
+        <span className={importStyles.actionHint}>Your file stays private to this workspace.</span>
+        <button className={`button ${importStyles.primaryAction}`} type="submit" disabled={state.pending || !selectedFile}>
+          {state.pending ? (
+            <>
+              <span className={importStyles.spinner} aria-hidden="true" />
+              Uploading…
+            </>
+          ) : (
+            "Upload import"
+          )}
+        </button>
+      </div>
     </form>
   );
 }
