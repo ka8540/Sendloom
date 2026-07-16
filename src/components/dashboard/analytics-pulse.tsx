@@ -95,10 +95,7 @@ function buildDeliveryDetail(selection: PulseMetricKey, split: DeliverySplit, ta
     stats: [issueStat, deliveredStat, targetedStat],
     actions:
       split.issues > 0
-        ? [
-            { label: "Review sequences", href: "/campaigns" as Route },
-            { label: "Open suppressions", href: "/suppressions" as Route }
-          ]
+        ? [{ label: "Review sequences", href: "/campaigns?status=needs-attention" as Route }]
         : [{ label: "View sequences", href: "/campaigns" as Route }]
   };
 }

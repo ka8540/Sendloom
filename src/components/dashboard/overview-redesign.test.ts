@@ -259,7 +259,9 @@ describe("Interactive metrics (#3, #4, #5, #6, #8, #9, #10)", () => {
     expect(issues).toContain("${split.issueLabel} need attention");
     expect(issues).toContain("${split.deliveredLabel} delivered");
     expect(issues).toContain("Review sequences");
-    expect(issues).toContain('"/suppressions"');
+    expect(issues).toContain('"/campaigns?status=needs-attention"');
+    expect(issues).not.toContain("Open suppressions");
+    expect(issues).not.toContain('"/suppressions"');
   });
 
   it("the ring center is minimal — one figure, no multi-line text (#7)", () => {
@@ -300,12 +302,14 @@ describe("Interactive metrics (#3, #4, #5, #6, #8, #9, #10)", () => {
     // The health detail includes count, share of all sequences, and the total.
     expect(PULSE).toContain('label: "Share"');
     expect(PULSE).toContain('label: "All sequences"');
-    // Only real routes — every detail action points at /campaigns or /suppressions.
+    // Every detail action stays within Sequences; the Issues action carries
+    // the Needs attention filter and no action links to Suppressions.
     const hrefs = [...PULSE.matchAll(/href: "([^"]+)" as Route/g)].map((match) => match[1]);
     expect(hrefs.length).toBeGreaterThan(0);
     for (const href of hrefs) {
-      expect(["/campaigns", "/suppressions"]).toContain(href);
+      expect(["/campaigns", "/campaigns?status=needs-attention"]).toContain(href);
     }
+    expect(hrefs).not.toContain("/suppressions");
   });
 
   it("the donut segments and health bar mirror the same toggle interactions (#7)", () => {

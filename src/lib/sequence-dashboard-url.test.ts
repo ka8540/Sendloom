@@ -7,10 +7,24 @@ import {
   readSequenceDashboardUrlState,
   updateSequenceDashboardSearchParams
 } from "@/lib/sequence-dashboard-url";
+import {
+  filterSequenceItems,
+  paginateSequenceItems,
+  type SequenceListItem
+} from "@/lib/sequence-dashboard";
 
 const SENDERS = ["kush.ahir2024@gmail.com", "outreach@sendloom.net"];
 
 describe("sequence dashboard URL state", () => {
+  it("defaults a normal /campaigns visit to All", () => {
+    expect(readSequenceDashboardUrlState(new URLSearchParams(), SENDERS)).toEqual({
+      filter: "all",
+      sender: "",
+      query: "",
+      page: 1
+    });
+  });
+
   it("restores status, sender, search, and page from search params", () => {
     const params = new URLSearchParams({
       status: "needs-attention",
@@ -25,6 +39,45 @@ describe("sequence dashboard URL state", () => {
       query: "amd",
       page: 4
     });
+  });
+
+  it("applies the Needs attention URL filter before pagination", () => {
+    const item = (id: string, failedCount: number): SequenceListItem => ({
+      id,
+      name: `Sequence ${id}`,
+      campaignStatus: "COMPLETED",
+      latestRunStatus: "COMPLETED",
+      listName: "Prospects",
+      templateName: "Intro",
+      senderName: "Sender",
+      senderEmail: "kush.ahir2024@gmail.com",
+      enrolledCount: 10,
+      healthPercent: 100,
+      progressPercent: 100,
+      failedCount,
+      invalidCount: 0,
+      deliveredCount: 10 - failedCount,
+      opensCount: 0,
+      repliedCount: 0,
+      createdAtIso: "2026-07-16T00:00:00.000Z",
+      updatedAtIso: "2026-07-16T00:00:00.000Z"
+    });
+    const items = [
+      item("healthy", 0),
+      ...Array.from({ length: 6 }, (_, index) => item(`issue-${index}`, 1))
+    ];
+    const state = readSequenceDashboardUrlState(
+      new URLSearchParams("status=needs-attention"),
+      SENDERS
+    );
+    const filtered = filterSequenceItems(items, state.filter, state.query, state.sender);
+    const firstPage = paginateSequenceItems(filtered, state.page);
+
+    expect(state.filter).toBe("attention");
+    expect(filtered.map(({ id }) => id)).not.toContain("healthy");
+    expect(filtered).toHaveLength(6);
+    expect(firstPage.rangeLabel).toBe("Showing 1–5 of 6");
+    expect(firstPage.totalPages).toBe(2);
   });
 
   it("resets only page when a filter changes and preserves the other filters", () => {
