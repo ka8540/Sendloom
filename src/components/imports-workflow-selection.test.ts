@@ -7,7 +7,6 @@ import {
 } from "@/components/imports-workflow-selection";
 
 const candidates: ImportSelectionCandidate[] = [
-  { importId: "latest-saved" },
   { importId: "discover-pending" },
   { importId: "older-pending" }
 ];
@@ -27,8 +26,12 @@ describe("Imports workflow context selection", () => {
     expect(getRequestedImportId({ audienceId: "audience-4" })).toBe("audience-4");
   });
 
-  it("selects the exact requested owned import even when it is already mapped", () => {
-    expect(resolveInitialImportId(candidates, "latest-saved")).toBe("latest-saved");
+  it("selects the exact requested import when it still needs mapping", () => {
+    expect(resolveInitialImportId(candidates, "discover-pending")).toBe("discover-pending");
+  });
+
+  it("does not reopen a saved import that is absent from the unmapped candidates", () => {
+    expect(resolveInitialImportId(candidates, "latest-saved")).toBeUndefined();
   });
 
   it("keeps normal direct page loads in library mode when no context is supplied", () => {

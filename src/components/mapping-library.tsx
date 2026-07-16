@@ -67,7 +67,6 @@ export type TemplateFieldItem = {
   fileName: string;
   columns: MappingColumn[];
   selectedColumns: string[];
-  needsFieldSelection: boolean;
   rowCount?: number;
   linkedCampaignCount?: number;
 };
@@ -255,11 +254,11 @@ export function TemplateFieldPicker(props: TemplateFieldPickerProps) {
     setRemovedImportIds([]);
     setSelectedByImport(Object.fromEntries(props.imports.map((entry) => [entry.importId, entry.selectedColumns])));
     setSelectedImportId((current) => {
-      if (props.imports.some((entry) => entry.importId === current)) {
-        return current;
-      }
       if (props.initialImportId && props.imports.some((entry) => entry.importId === props.initialImportId)) {
         return props.initialImportId;
+      }
+      if (props.imports.some((entry) => entry.importId === current)) {
+        return current;
       }
       return "";
     });

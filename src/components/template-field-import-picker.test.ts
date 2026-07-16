@@ -48,8 +48,8 @@ describe("Import picker copy helpers", () => {
 
   it("uses safe, non-technical copy for toast and empty state", () => {
     expect(DELETE_IMPORT_SUCCESS_MESSAGE).toBe("Import deleted.");
-    expect(IMPORT_PICKER_EMPTY_TITLE).toBe("No imports available");
-    expect(IMPORT_PICKER_EMPTY_HINT).toBe("Review or add an import first.");
+    expect(IMPORT_PICKER_EMPTY_TITLE).toBe("No imports need mapping");
+    expect(IMPORT_PICKER_EMPTY_HINT).toBe("Upload a new CSV or import contacts from Discover to map fields.");
     expect(IMPORT_PICKER_PLACEHOLDER).toBe("Select an import");
     expect(IMPORT_PICKER_LABEL).toBe("Select import");
   });
@@ -196,11 +196,21 @@ describe("Picker styling is premium, theme-aware, and truncation-safe", () => {
     expect(WORKFLOW).toContain("<TemplateFieldPicker");
   });
 
-  it("feeds all owned imports to the workflow and resolves the initial selection separately", () => {
-    expect(PAGE).toContain("const workflowItems = imports.map");
-    expect(PAGE).toContain("needsFieldSelection: importNeedsFieldSelection");
+  it("feeds only imports awaiting field selection to the workflow", () => {
+    expect(PAGE).toContain("const workflowItems = imports.flatMap");
+    expect(PAGE).toContain("if (!importNeedsFieldSelection(entry.status, mapping))");
+    expect(PAGE).not.toContain("needsFieldSelection:");
     expect(PAGE).toContain("resolveInitialImportId(workflowItems, requestedImportId)");
     expect(PAGE).toContain("workflowItems={workflowItems}");
     expect(WORKSPACE).toContain("imports={workflowItems}");
+  });
+
+  it("lets explicit route context replace any stale picker selection", () => {
+    const picker = templateFieldPickerBlock();
+    const explicitSelection = picker.indexOf("return props.initialImportId;");
+    const currentSelection = picker.indexOf("return current;", explicitSelection);
+
+    expect(explicitSelection).toBeGreaterThan(-1);
+    expect(currentSelection).toBeGreaterThan(explicitSelection);
   });
 });

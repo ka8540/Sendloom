@@ -40,20 +40,24 @@ export default async function ImportsPage({
     }
   }
 
-  const workflowItems = imports.map((entry) => {
+  const workflowItems = imports.flatMap((entry) => {
     const mapping = latestMappings.get(entry.id);
-    return {
+
+    if (!importNeedsFieldSelection(entry.status, mapping)) {
+      return [];
+    }
+
+    return [{
       importId: entry.id,
       fileName: entry.fileName,
       rowCount: entry.rowCount,
       linkedCampaignCount: entry._count.campaigns,
-      needsFieldSelection: importNeedsFieldSelection(entry.status, mapping),
       columns: entry.columns.map((column) => ({
         sourceName: column.sourceName,
         normalized: column.normalized
       })),
       selectedColumns: Object.values((mapping?.variableMap ?? {}) as Record<string, string>).slice(0, 10)
-    };
+    }];
   });
 
   const initialImportId = requestedImportId
