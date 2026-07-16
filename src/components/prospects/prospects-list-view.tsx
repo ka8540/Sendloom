@@ -47,6 +47,7 @@ import {
   PROSPECT_FINDER_TITLE,
   discoverPerSearchSentence,
   filterHistoryGroups,
+  effectiveSearchStatus,
   formatDateTime,
   formatFilteredGroupCountLabel,
   formatHistoryMatchesLabel,
@@ -633,7 +634,9 @@ function SearchHistoryTable({
                     {group.peopleCount}
                   </span>
                   <span data-label="Status" data-discover-tour={index === 0 ? "search-status" : undefined}>
-                    <BadgePill badge={groupStatusBadge(group.searches.map((search) => search.status))} />
+                    {/* Effective statuses: a zero-result child (NO_RESULTS, or a
+                        legacy READY row with nobody) must never read "Ready". */}
+                    <BadgePill badge={groupStatusBadge(group.searches.map((search) => effectiveSearchStatus(search)))} />
                   </span>
                   <span className={styles.historyCreatedCell} data-label="Updated">
                     {formatDateTime(group.latestActivityAt)}

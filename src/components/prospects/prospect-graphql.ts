@@ -24,6 +24,8 @@ export type ProspectSearchStatus =
   | "CLASSIFYING_POSITIONS"
   | "INFERRING_EMAIL_PATTERN"
   | "READY"
+  // Provider run succeeded but found nobody — neutral, retryable, never FAILED.
+  | "NO_RESULTS"
   | "FAILED"
   | "CANCELED";
 

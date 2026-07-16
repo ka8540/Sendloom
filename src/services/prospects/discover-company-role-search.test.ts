@@ -151,6 +151,15 @@ describe("Search this company — duplicate resolution (canonical role+location)
     expect(action).toEqual({ kind: "reuse-draft", searchId: "s_draft" });
   });
 
+  it("an identical NO_RESULTS search is reused — 'Search this company again' re-runs it", () => {
+    const action = resolveCompanyRoleSearchAction({
+      jobTitle: "Software Engineer",
+      location: "United States",
+      existingSearches: [candidate({ id: "s_no_results", status: "NO_RESULTS" })]
+    });
+    expect(action).toEqual({ kind: "reuse-draft", searchId: "s_no_results" });
+  });
+
   it("an identical FAILED search points at the existing retry flow (#9)", () => {
     const action = resolveCompanyRoleSearchAction({
       jobTitle: "Software Engineer",
