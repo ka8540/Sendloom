@@ -100,6 +100,11 @@ export function updateSequenceDashboardSearchParams(
   return params;
 }
 
+export function buildSequenceDashboardFilterHref(filter: SequenceFilterId): Route {
+  const query = updateSequenceDashboardSearchParams("", { filter }).toString();
+  return (query ? `/campaigns?${query}` : "/campaigns") as Route;
+}
+
 export function normalizeSequenceDashboardSearchParams(
   current: SearchParamsReader | string,
   state: SequenceDashboardUrlState,

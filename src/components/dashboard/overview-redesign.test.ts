@@ -292,7 +292,7 @@ describe("Interactive metrics (#3, #4, #5, #6, #8, #9, #10)", () => {
     expect(shareBadges).toBe(2);
   });
 
-  it("every sequence-health segment is activatable and reveals a breakdown with its share", () => {
+  it("every sequence-health bar segment is activatable and reveals a breakdown with its share", () => {
     expect(PULSE).toMatch(/aria-expanded=\{selected === slice\.key\}/);
     expect(PULSE).toMatch(/onClick=\{\(\) => toggle\(slice\.key\)\}/);
     expect(PULSE).toContain("View running sequences");
@@ -302,14 +302,20 @@ describe("Interactive metrics (#3, #4, #5, #6, #8, #9, #10)", () => {
     // The health detail includes count, share of all sequences, and the total.
     expect(PULSE).toContain('label: "Share"');
     expect(PULSE).toContain('label: "All sequences"');
-    // Every detail action stays within Sequences; the Issues action carries
-    // the Needs attention filter and no action links to Suppressions.
-    const hrefs = [...PULSE.matchAll(/href: "([^"]+)" as Route/g)].map((match) => match[1]);
-    expect(hrefs.length).toBeGreaterThan(0);
-    for (const href of hrefs) {
-      expect(["/campaigns", "/campaigns?status=needs-attention"]).toContain(href);
-    }
-    expect(hrefs).not.toContain("/suppressions");
+    expect(PULSE).toContain("href: HEALTH_FILTER_HREF_BY_KEY.running");
+    expect(PULSE).toContain("href: HEALTH_FILTER_HREF_BY_KEY.done");
+    expect(PULSE).toContain("href: HEALTH_FILTER_HREF_BY_KEY.review");
+    expect(PULSE).toContain("href: HEALTH_FILTER_HREF_BY_KEY.ready");
+    expect(PULSE).not.toContain('href: "/suppressions"');
+  });
+
+  it("links every health chip to the matching supported Sequences filter", () => {
+    expect(PULSE).toContain('running: "active"');
+    expect(PULSE).toContain('done: "completed"');
+    expect(PULSE).toContain('review: "attention"');
+    expect(PULSE).toContain('ready: "scheduled"');
+    expect(PULSE).toContain("href={HEALTH_FILTER_HREF_BY_KEY[slice.key]}");
+    expect(PULSE).toContain('aria-label={`View ${slice.label.toLowerCase()} sequences`}');
   });
 
   it("the donut segments and health bar mirror the same toggle interactions (#7)", () => {
@@ -331,10 +337,12 @@ describe("Interactive metrics (#3, #4, #5, #6, #8, #9, #10)", () => {
 });
 
 describe("Keyboard + screen-reader accessibility (#8, #11)", () => {
-  it("metric cards and legend entries are native buttons, so Enter/Space work without extra handlers", () => {
+  it("metric cards use native buttons and health chips use native links", () => {
     const buttonCount = (PULSE.match(/type="button"/g) ?? []).length;
-    // Delivered, Issues, 4 health segments (mapped once), and the detail close.
-    expect(buttonCount).toBeGreaterThanOrEqual(4);
+    // Delivered, Issues, and the detail close are native buttons; health
+    // chips are Links and therefore activate with keyboard and pointer input.
+    expect(buttonCount).toBeGreaterThanOrEqual(3);
+    expect(PULSE).toMatch(/<Link[\s\S]{0,260}className=\{styles\.healthChip\}/);
   });
 
   it("donut arcs and health-bar slices are named, focusable, keyboard-activatable buttons", () => {
@@ -350,10 +358,10 @@ describe("Keyboard + screen-reader accessibility (#8, #11)", () => {
   });
 
   it("selection is announced via aria-pressed on every interactive metric", () => {
-    // Delivered arc + card, issues arc + card, health slice + legend button.
+    // Delivered arc + card, issues arc + card, and the health-bar slice.
     expect((PULSE.match(/aria-pressed=\{selected === "delivered"\}/g) ?? []).length).toBe(2);
     expect((PULSE.match(/aria-pressed=\{selected === "issues"\}/g) ?? []).length).toBe(2);
-    expect((PULSE.match(/aria-pressed=\{selected === slice\.key\}/g) ?? []).length).toBe(2);
+    expect((PULSE.match(/aria-pressed=\{selected === slice\.key\}/g) ?? []).length).toBe(1);
   });
 
   it("panels are labelled regions, Escape closes, and the close control has a name", () => {

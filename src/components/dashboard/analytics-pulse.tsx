@@ -7,6 +7,8 @@ import { ArrowUpRight, BarChart3, PieChart, X } from "lucide-react";
 
 import { computeDeliverySplit, type DeliverySplit } from "@/components/dashboard/delivery-split";
 import { formatCompactNumber } from "@/components/dashboard/formatters";
+import type { SequenceFilterId } from "@/lib/sequence-dashboard";
+import { buildSequenceDashboardFilterHref } from "@/lib/sequence-dashboard-url";
 import styles from "./analytics-pulse.module.css";
 
 export type PulseHealthKey = "running" | "done" | "review" | "ready";
@@ -44,6 +46,20 @@ type DetailContent = {
 };
 
 const HEALTH_KEYS: PulseHealthKey[] = ["running", "done", "review", "ready"];
+const HEALTH_FILTER_BY_KEY: Record<PulseHealthKey, SequenceFilterId> = {
+  running: "active",
+  done: "completed",
+  review: "attention",
+  // The Sequences Scheduled filter includes both SCHEDULED and VALIDATED
+  // campaigns, so it is the existing filter for Overview's ready-to-launch set.
+  ready: "scheduled"
+};
+const HEALTH_FILTER_HREF_BY_KEY: Record<PulseHealthKey, Route> = {
+  running: buildSequenceDashboardFilterHref(HEALTH_FILTER_BY_KEY.running),
+  done: buildSequenceDashboardFilterHref(HEALTH_FILTER_BY_KEY.done),
+  review: buildSequenceDashboardFilterHref(HEALTH_FILTER_BY_KEY.review),
+  ready: buildSequenceDashboardFilterHref(HEALTH_FILTER_BY_KEY.ready)
+};
 
 function isHealthSelection(selection: PulseSelection): selection is PulseHealthKey {
   return (HEALTH_KEYS as string[]).includes(selection);
@@ -121,7 +137,12 @@ function buildHealthDetail(
         paired: null,
         note: count > 0 ? "Sending or queued for a slot." : "Nothing is sending right now.",
         stats,
-        actions: [{ label: count > 0 ? "View running sequences" : "Launch a sequence", href: "/campaigns" as Route }]
+        actions: [
+          {
+            label: count > 0 ? "View running sequences" : "Launch a sequence",
+            href: HEALTH_FILTER_HREF_BY_KEY.running
+          }
+        ]
       };
     case "done":
       return {
@@ -130,7 +151,7 @@ function buildHealthDetail(
         paired: null,
         note: count > 0 ? "Final delivery numbers locked in." : "Finished runs collect here.",
         stats,
-        actions: [{ label: "View completed sequences", href: "/campaigns" as Route }]
+        actions: [{ label: "View completed sequences", href: HEALTH_FILTER_HREF_BY_KEY.done }]
       };
     case "review":
       return {
@@ -142,7 +163,7 @@ function buildHealthDetail(
         paired: null,
         note: count > 0 ? "Failed, invalid, or suppressed recipients worth a look." : "All clear.",
         stats,
-        actions: count > 0 ? [{ label: "View review items", href: "/campaigns" as Route }] : []
+        actions: count > 0 ? [{ label: "View review items", href: HEALTH_FILTER_HREF_BY_KEY.review }] : []
       };
     case "ready":
     default:
@@ -152,7 +173,12 @@ function buildHealthDetail(
         paired: null,
         note: count > 0 ? "Validated and waiting on go." : "Validate a sequence to stage it.",
         stats,
-        actions: [{ label: count > 0 ? "Launch a sequence" : "Create a sequence", href: "/campaigns" as Route }]
+        actions: [
+          {
+            label: count > 0 ? "Launch a sequence" : "Create a sequence",
+            href: HEALTH_FILTER_HREF_BY_KEY.ready
+          }
+        ]
       };
   }
 }
@@ -160,7 +186,7 @@ function buildHealthDetail(
 /**
  * Interactive analytics deck for the Overview command center: a delivery
  * module (minimal ring + two selectable metric rows) beside a sequence-health
- * module (segmented bar + chip selectors). The delivered/issues split is one
+ * module (segmented bar + filter links). The delivered/issues split is one
  * complementary pair (see delivery-split.ts) shown outside the ring — the ring
  * center holds a single figure only. Hover/focus previews a segment; click
  * (or Enter/Space on the arcs and bar) pins a compact one-line insight strip.
@@ -189,7 +215,8 @@ export function AnalyticsPulse(props: AnalyticsPulseProps) {
   };
 
   // Enter/Space activation for the non-button interactive shapes (SVG arcs and
-  // health-bar slices); the metric rows and chips are native buttons.
+  // health-bar slices); the metric rows are native buttons and the health
+  // chips are native links to the matching Sequences filter.
   const segmentKeyDown = (selection: PulseSelection) => (event: KeyboardEvent<Element>) => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
@@ -383,6 +410,8 @@ export function AnalyticsPulse(props: AnalyticsPulseProps) {
                     tabIndex={0}
                     aria-label={`${slice.label}: ${formatCompactNumber(slice.value)} ${plural(slice.value, "sequence")}`}
                     aria-pressed={selected === slice.key}
+                    aria-expanded={selected === slice.key}
+                    aria-controls={healthPanelId}
                     style={{ width: `${slice.percent}%` }}
                     onClick={() => toggle(slice.key)}
                     onKeyDown={segmentKeyDown(slice.key)}
@@ -394,22 +423,20 @@ export function AnalyticsPulse(props: AnalyticsPulseProps) {
 
             <div className={styles.healthChips}>
               {health.map((slice) => (
-                <button
+                <Link
                   key={slice.key}
-                  type="button"
+                  href={HEALTH_FILTER_HREF_BY_KEY[slice.key]}
                   className={styles.healthChip}
                   data-key={slice.key}
                   data-state={metricState(slice.key)}
-                  aria-pressed={selected === slice.key}
-                  aria-expanded={selected === slice.key}
-                  aria-controls={healthPanelId}
-                  onClick={() => toggle(slice.key)}
+                  aria-label={`View ${slice.label.toLowerCase()} sequences`}
+                  title={`View ${slice.label.toLowerCase()} sequences`}
                   {...preview(slice.key)}
                 >
                   <i className={styles.metricDot} aria-hidden="true" />
                   <span className={styles.healthChipLabel}>{slice.label}</span>
                   <strong className={styles.healthChipValue}>{formatCompactNumber(slice.value)}</strong>
-                </button>
+                </Link>
               ))}
             </div>
 

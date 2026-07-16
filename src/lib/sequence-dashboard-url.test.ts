@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildSequenceDashboardFilterHref,
   buildSequenceDashboardReturnTo,
   buildSequenceDetailHref,
   normalizeSequenceDashboardSearchParams,
@@ -16,6 +17,25 @@ import {
 const SENDERS = ["kush.ahir2024@gmail.com", "outreach@sendloom.net"];
 
 describe("sequence dashboard URL state", () => {
+  it("builds canonical filter links for Overview health statuses", () => {
+    expect(buildSequenceDashboardFilterHref("active")).toBe("/campaigns?status=active");
+    expect(buildSequenceDashboardFilterHref("completed")).toBe("/campaigns?status=completed");
+    expect(buildSequenceDashboardFilterHref("attention")).toBe("/campaigns?status=needs-attention");
+    expect(buildSequenceDashboardFilterHref("scheduled")).toBe("/campaigns?status=scheduled");
+    expect(buildSequenceDashboardFilterHref("all")).toBe("/campaigns");
+  });
+
+  it.each([
+    ["active", "active"],
+    ["completed", "completed"],
+    ["needs-attention", "attention"],
+    ["scheduled", "scheduled"]
+  ] as const)("restores the %s query filter after navigation or refresh", (status, filter) => {
+    expect(
+      readSequenceDashboardUrlState(new URLSearchParams({ status }), SENDERS).filter
+    ).toBe(filter);
+  });
+
   it("defaults a normal /campaigns visit to All", () => {
     expect(readSequenceDashboardUrlState(new URLSearchParams(), SENDERS)).toEqual({
       filter: "all",
