@@ -1156,13 +1156,8 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     setReview(importResult.review);
     setReviewOpen(false);
     clearSelection();
-    const readyCount = importResult.review.exportableCount;
-    setActionNotice({
-      message: `${readyCount} ${readyCount === 1 ? "contact is" : "contacts are"} ready for field selection.`,
-      href: `/imports?pendingImportId=${encodeURIComponent(importResult.importId)}`,
-      label: "Review fields"
-    });
-  }, [buildCurrentSelectionInput, clearSelection, creatingImport, preparingExport]);
+    router.push(`/imports?pendingImportId=${encodeURIComponent(importResult.importId)}`);
+  }, [buildCurrentSelectionInput, clearSelection, creatingImport, preparingExport, router]);
 
   // ---- Render -------------------------------------------------------------
 

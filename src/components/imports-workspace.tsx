@@ -18,6 +18,7 @@ type ImportsWorkspaceProps = {
   workflowItems: TemplateFieldItem[];
   mappingItems: MappingLibraryItem[];
   initialImportId?: string;
+  missingImportId?: string;
   hasAnyImports: boolean;
 };
 
@@ -25,22 +26,26 @@ export function ImportsWorkspace({
   workflowItems,
   mappingItems,
   initialImportId,
+  missingImportId,
   hasAnyImports
 }: ImportsWorkspaceProps) {
   const router = useRouter();
-  const [mode, setMode] = useState<ImportsMode>(initialImportId ? "workflow" : "library");
+  const [mode, setMode] = useState<ImportsMode>(initialImportId || missingImportId ? "workflow" : "library");
 
   // An explicit import context (including Discover's pendingImportId) always
   // opens that import directly in Map fields, even after client navigation.
+  // A context id that can't be resolved still opens the workflow so the
+  // "import not found" state is shown instead of silently falling back to
+  // the library.
   useEffect(() => {
-    if (initialImportId) {
+    if (initialImportId || missingImportId) {
       setMode("workflow");
     }
-  }, [initialImportId]);
+  }, [initialImportId, missingImportId]);
 
   function openLibrary() {
     setMode("library");
-    if (initialImportId) {
+    if (initialImportId || missingImportId) {
       router.replace("/imports");
     }
   }
@@ -66,6 +71,7 @@ export function ImportsWorkspace({
         <ImportsWorkflow
           imports={workflowItems}
           initialImportId={initialImportId}
+          missingImportId={missingImportId}
           hasAnyImports={hasAnyImports}
           onExit={openLibrary}
         />

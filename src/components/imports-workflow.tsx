@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, LoaderCircle } from "lucide-react";
+import { AlertTriangle, Check, LoaderCircle } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { UploadImportForm } from "@/components/forms";
@@ -34,12 +34,13 @@ const STEP_CONTENT = [
 type ImportsWorkflowProps = {
   imports: TemplateFieldItem[];
   initialImportId?: string;
+  missingImportId?: string;
   hasAnyImports: boolean;
   onExit: () => void;
 };
 
-export function ImportsWorkflow({ imports, initialImportId, hasAnyImports, onExit }: ImportsWorkflowProps) {
-  const [activeStep, setActiveStep] = useState<WorkflowStep>(initialImportId ? 1 : 0);
+export function ImportsWorkflow({ imports, initialImportId, missingImportId, hasAnyImports, onExit }: ImportsWorkflowProps) {
+  const [activeStep, setActiveStep] = useState<WorkflowStep>(initialImportId || missingImportId ? 1 : 0);
   const [preferredImportId, setPreferredImportId] = useState(initialImportId);
   const [preparingImport, setPreparingImport] = useState(false);
   const [selectionReady, setSelectionReady] = useState(false);
@@ -67,6 +68,17 @@ export function ImportsWorkflow({ imports, initialImportId, hasAnyImports, onExi
     setReviewSaved(false);
     setActiveStep(1);
   }, [initialImportId]);
+
+  // A route context id that couldn't be resolved to a pending import still
+  // opens Map fields, so the "not found" state is visible instead of the
+  // request silently landing on the library or an unexplained empty picker.
+  useEffect(() => {
+    if (!missingImportId) {
+      return;
+    }
+
+    setActiveStep(1);
+  }, [missingImportId]);
 
   const handleSelectionChange = useCallback((ready: boolean) => {
     setSelectionReady(ready);
@@ -143,6 +155,15 @@ export function ImportsWorkflow({ imports, initialImportId, hasAnyImports, onExi
       </div>
 
       <div className={styles.stepContent} hidden={activeStep === 0} data-imports-tour="template-fields">
+        {missingImportId ? (
+          <div className={styles.missingImportNotice} role="alert">
+            <AlertTriangle aria-hidden="true" />
+            <span>
+              <strong>Import not found</strong>
+              The import this link pointed to isn&rsquo;t available to map. It may have failed, been removed, or already been saved. Choose an import below, or upload a new one.
+            </span>
+          </div>
+        ) : null}
         {preparingImport && !imports.some((entry) => entry.importId === preferredImportId) ? (
           <div className={styles.loadingState} role="status" aria-live="polite">
             <LoaderCircle aria-hidden="true" />

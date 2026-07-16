@@ -63,6 +63,7 @@ export default async function ImportsPage({
   const initialImportId = requestedImportId
     ? resolveInitialImportId(workflowItems, requestedImportId)
     : undefined;
+  const missingImportId = requestedImportId && !initialImportId ? requestedImportId : undefined;
 
   const mappingItems = imports.filter((entry) => importIsFinalized(entry.status)).map((entry) => {
     const mapping = latestMappings.get(entry.id);
@@ -97,6 +98,7 @@ export default async function ImportsPage({
       workflowItems={workflowItems}
       mappingItems={mappingItems}
       initialImportId={initialImportId}
+      missingImportId={missingImportId}
       hasAnyImports={imports.length > 0}
     />
   );
