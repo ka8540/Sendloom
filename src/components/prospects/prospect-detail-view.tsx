@@ -2734,7 +2734,7 @@ function AddMorePeopleDialog({
             </h2>
             <p className={styles.panelSubtitle}>{ADD_MORE_DIALOG_SUBTITLE}</p>
           </div>
-          <CircularCloseButton label="Close" onClick={onClose} disabled={expanding} />
+          <CircularCloseButton compact label="Close" onClick={onClose} disabled={expanding} />
         </div>
 
         {target.kind === "choose" && (

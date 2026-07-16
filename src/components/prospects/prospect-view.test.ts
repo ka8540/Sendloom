@@ -960,7 +960,7 @@ describe("Add more people dialog UI polish", () => {
   });
 
   it("keeps Cancel, the close X, and the confirm handler wired", () => {
-    expect(dialogSource).toContain('<CircularCloseButton label="Close" onClick={onClose} disabled={expanding} />');
+    expect(dialogSource).toContain('<CircularCloseButton compact label="Close" onClick={onClose} disabled={expanding} />');
     expect(dialogSource).toContain("onClick={onClose} disabled={expanding}>");
     expect(dialogSource).toContain("onConfirm(resolvedSearchId)");
     expect(dialogSource).toContain("disabled={expanding || !resolvedSearchId}");
@@ -993,7 +993,7 @@ describe("Add more people dialog UI polish", () => {
     expect(css).toMatch(/\.selectField\s*\{[^}]*appearance:\s*none/s);
     expect(css).toMatch(/\.selectField\s*\{[^}]*background-position:\s*right/s);
     // Dialog-scoped sizing keeps the selected text clear of the caret.
-    expect(css).toMatch(/\.addMoreCard \.selectField\s*\{[^}]*padding:\s*0 2\.5rem 0 0\.85rem/s);
+    expect(css).toMatch(/\.addMoreCard \.selectField\s*\{[^}]*padding:\s*0 2\.35rem 0 0\.8rem/s);
   });
 
   it("keeps the dialog typography compact (no oversized type)", () => {
@@ -1007,8 +1007,15 @@ describe("Add more people dialog UI polish", () => {
     }
   });
 
-  it("wraps the compact rows instead of squeezing them on narrow phones", () => {
-    expect(css).toMatch(/@media \(max-width: 22rem\)\s*\{\s*\.addMoreSummaryRow\s*\{\s*flex-wrap: wrap;/s);
+  it("uses compact Sequence control sizing and prevents the action row from overflowing", () => {
+    expect(css).toMatch(/\.addMoreCard \.modalActions :global\(\.button\)\s*\{[^}]*min-height: 2\.6rem;[^}]*padding: 0\.58rem 0\.9rem;[^}]*font-size: 0\.86rem;/s);
+    expect(css).toMatch(/\.addMoreCard \.modalActions\s*\{[^}]*width: 100%;[^}]*flex-wrap: nowrap;[^}]*min-width: 0;/s);
+    expect(css).toMatch(/\.addMoreCard \.modalActions :global\(\.button\)\s*\{[^}]*min-width: 0;[^}]*max-width: 100%;/s);
+  });
+
+  it("stacks the compact rows and actions instead of squeezing them on narrow phones", () => {
+    expect(css).toMatch(/@media \(max-width: 22rem\)\s*\{\s*\.addMoreSummaryRow\s*\{\s*grid-template-columns: 1fr;/s);
+    expect(css).toMatch(/@media \(max-width: 22rem\)[\s\S]*\.addMoreCard \.modalActions\s*\{\s*display: grid;\s*grid-template-columns: 1fr;/s);
   });
 });
 
