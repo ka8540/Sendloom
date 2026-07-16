@@ -25,6 +25,14 @@ describe("Imports dashboard redesign", () => {
     expect(WORKFLOW_STYLES).toMatch(/\.stepNav ol\s*\{[^}]*grid-template-columns: repeat\(3,/s);
   });
 
+  it("uses the full dashboard width with a controlled responsive field grid", () => {
+    expect(WORKFLOW_STYLES).toMatch(/\.workflowCard\s*\{[^}]*width: 100%;/s);
+    expect(WORKFLOW_STYLES).not.toContain("width: min(100%, 64rem)");
+    expect(WORKFLOW_STYLES).toMatch(/\.fieldGrid\s*\{[^}]*grid-template-columns: repeat\(4, minmax\(0, 1fr\)\);/s);
+    expect(WORKFLOW_STYLES).toMatch(/@media \(max-width: 900px\)[\s\S]*\.fieldGrid\s*\{[^}]*repeat\(2,/s);
+    expect(WORKFLOW_STYLES).toMatch(/@media \(max-width: 560px\)[\s\S]*\.fieldGrid\s*\{[^}]*grid-template-columns: 1fr;/s);
+  });
+
   it("wraps the native file control in a polished dropzone without changing the upload endpoint", () => {
     expect(FORMS).toContain('className={importStyles.fileInput}');
     expect(FORMS).toContain('accept=".csv,.xls,.xlsx"');
@@ -40,6 +48,25 @@ describe("Imports dashboard redesign", () => {
     expect(LIBRARY).toContain("workflowStyles.fieldCardCopy");
     expect(WORKFLOW_STYLES).toMatch(/\.fieldCardCopy strong\s*\{[^}]*font-size: 0\.9rem;/s);
     expect(WORKFLOW_STYLES).toMatch(/\.fieldCardCopy span\s*\{[^}]*font-size: 0\.74rem;/s);
+  });
+
+  it("keeps the exact active import visible beside its selected-field count", () => {
+    expect(LIBRARY).toContain("workflowStyles.selectionImport");
+    expect(LIBRARY).toContain("Selected import");
+    expect(LIBRARY).toContain("{selectedImport.fileName}");
+    expect(LIBRARY).toContain("workflowStyles.selectionCount");
+  });
+
+  it("moves a direct upload into mapping with the exact returned import id", () => {
+    expect(FORMS).toContain("onUploaded?.(payload.id)");
+    expect(WORKFLOW).toContain("setPreferredImportId(importId)");
+    expect(WORKFLOW).toContain("setPreparingImport(true)");
+    expect(WORKFLOW).toContain("setActiveStep(1)");
+    expect(WORKFLOW).toContain("initialImportId={preferredImportId}");
+  });
+
+  it("reapplies route import context when the mounted workflow receives a new id", () => {
+    expect(WORKFLOW).toMatch(/useEffect\(\(\) => \{[\s\S]*setPreferredImportId\(initialImportId\);[\s\S]*setActiveStep\(1\);[\s\S]*\}, \[initialImportId\]\);/);
   });
 
   it("keeps sample contacts collapsed until their real toggle is used", () => {

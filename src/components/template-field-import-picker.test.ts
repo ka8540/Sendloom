@@ -193,4 +193,11 @@ describe("Picker styling is premium, theme-aware, and truncation-safe", () => {
     expect(PAGE).toContain("<ImportsWorkflow");
     expect(WORKFLOW).toContain("<TemplateFieldPicker");
   });
+
+  it("feeds all owned imports to the workflow and resolves the initial selection separately", () => {
+    expect(PAGE).toContain("const workflowItems = imports.map");
+    expect(PAGE).toContain("needsFieldSelection: importNeedsFieldSelection");
+    expect(PAGE).toContain("resolveInitialImportId(workflowItems, requestedImportId)");
+    expect(PAGE).toContain("imports={workflowItems}");
+  });
 });

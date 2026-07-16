@@ -53,6 +53,20 @@ export function ImportsWorkflow({ imports, initialImportId, hasAnyImports }: Imp
     }
   }, [imports, preferredImportId]);
 
+  // Route context (including Discover's pendingImportId) remains authoritative
+  // even when client navigation updates this already-mounted workflow.
+  useEffect(() => {
+    if (!initialImportId) {
+      return;
+    }
+
+    setPreferredImportId(initialImportId);
+    setPreparingImport(false);
+    setSelectionReady(false);
+    setReviewSaved(false);
+    setActiveStep(1);
+  }, [initialImportId]);
+
   const handleSelectionChange = useCallback((ready: boolean) => {
     setSelectionReady(ready);
     if (ready) {

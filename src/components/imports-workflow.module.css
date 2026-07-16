@@ -1,7 +1,7 @@
 .workflowCard {
   display: grid;
   gap: 1.35rem;
-  width: min(100%, 64rem);
+  width: 100%;
   min-width: 0;
   padding: 1.45rem;
   border: 1px solid var(--line);
@@ -361,7 +361,39 @@
   font-size: 0.82rem;
 }
 
-.selectionBar strong {
+.selectionImport,
+.selectionCount {
+  display: grid;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.selectionImport {
+  flex: 1 1 auto;
+}
+
+.selectionImport > span,
+.selectionCount > span {
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.selectionImport strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 0.84rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selectionCount {
+  flex: none;
+  justify-items: end;
+  padding-left: 0.85rem;
+  border-left: 1px solid var(--line);
+}
+
+.selectionCount strong {
   color: var(--text);
   font-size: 0.84rem;
   font-variant-numeric: tabular-nums;
@@ -369,7 +401,7 @@
 
 .fieldGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14.5rem), 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.65rem;
   min-width: 0;
 }
@@ -603,6 +635,18 @@
   to { opacity: 1; transform: none; }
 }
 
+@media (max-width: 1180px) {
+  .fieldGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .fieldGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 700px) {
   .workflowCard {
     gap: 1.1rem;
@@ -621,6 +665,20 @@
     flex-direction: column-reverse;
   }
 
+  .selectionBar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .selectionCount {
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    justify-items: stretch;
+    padding: 0.65rem 0 0;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+
   .actionHint {
     text-align: center;
   }
@@ -628,6 +686,12 @@
   .primaryAction,
   .secondaryAction {
     width: 100%;
+  }
+}
+
+@media (max-width: 560px) {
+  .fieldGrid {
+    grid-template-columns: 1fr;
   }
 }
 

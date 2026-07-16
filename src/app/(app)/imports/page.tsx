@@ -1,6 +1,7 @@
 import { FileSpreadsheet } from "lucide-react";
 
 import { ImportsWorkflow } from "@/components/imports-workflow";
+import { getRequestedImportId, resolveInitialImportId } from "@/components/imports-workflow-selection";
 import { MappingLibrary } from "@/components/mapping-library";
 import { WorkspacePageHeader } from "@/components/workspace-page-header";
 import { requireOperatorUser } from "@/lib/auth";
@@ -10,13 +11,11 @@ import { importIsFinalized, importNeedsFieldSelection } from "@/lib/imports-view
 export default async function ImportsPage({
   searchParams
 }: {
-  searchParams?: Promise<{ pendingImportId?: string | string[] }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const user = await requireOperatorUser();
   const resolvedSearchParams = (await searchParams) ?? {};
-  const pendingImportIdParam = Array.isArray(resolvedSearchParams.pendingImportId)
-    ? resolvedSearchParams.pendingImportId[0]
-    : resolvedSearchParams.pendingImportId;
+  const requestedImportId = getRequestedImportId(resolvedSearchParams);
   const [imports, mappings] = await Promise.all([
     prisma.import.findMany({
       where: { userId: user.id },
@@ -45,30 +44,23 @@ export default async function ImportsPage({
     }
   }
 
-  const templateFieldItems = imports.flatMap((entry) => {
+  const workflowItems = imports.map((entry) => {
     const mapping = latestMappings.get(entry.id);
-
-    if (!importNeedsFieldSelection(entry.status, mapping)) {
-      return [];
-    }
-
-    return [{
+    return {
       importId: entry.id,
       fileName: entry.fileName,
       rowCount: entry.rowCount,
       linkedCampaignCount: entry._count.campaigns,
+      needsFieldSelection: importNeedsFieldSelection(entry.status, mapping),
       columns: entry.columns.map((column) => ({
         sourceName: column.sourceName,
         normalized: column.normalized
       })),
       selectedColumns: Object.values((mapping?.variableMap ?? {}) as Record<string, string>).slice(0, 10)
-    }];
+    };
   });
 
-  const pendingImportId =
-    pendingImportIdParam && templateFieldItems.some((item) => item.importId === pendingImportIdParam)
-      ? pendingImportIdParam
-      : undefined;
+  const initialImportId = resolveInitialImportId(workflowItems, requestedImportId);
 
   const mappingItems = imports.filter((entry) => importIsFinalized(entry.status)).map((entry) => {
     const mapping = latestMappings.get(entry.id);
@@ -106,8 +98,8 @@ export default async function ImportsPage({
       />
 
       <ImportsWorkflow
-        imports={templateFieldItems}
-        initialImportId={pendingImportId}
+        imports={workflowItems}
+        initialImportId={initialImportId}
         hasAnyImports={imports.length > 0}
       />
 

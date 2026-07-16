@@ -67,6 +67,7 @@ export type TemplateFieldItem = {
   fileName: string;
   columns: MappingColumn[];
   selectedColumns: string[];
+  needsFieldSelection: boolean;
   rowCount?: number;
   linkedCampaignCount?: number;
 };
@@ -496,8 +497,14 @@ export function TemplateFieldPicker(props: TemplateFieldPickerProps) {
           {selectedImport ? (
             <>
               <div className={workflowStyles.selectionBar} aria-live="polite">
-                <span>Selected fields</span>
-                <strong>{selectedColumns.length} / {MAX_TEMPLATE_COLUMNS}</strong>
+                <span className={workflowStyles.selectionImport}>
+                  <span>Selected import</span>
+                  <strong title={selectedImport.fileName}>{selectedImport.fileName}</strong>
+                </span>
+                <span className={workflowStyles.selectionCount}>
+                  <span>Selected fields</span>
+                  <strong>{selectedColumns.length} / {MAX_TEMPLATE_COLUMNS}</strong>
+                </span>
               </div>
               <div className={workflowStyles.fieldGrid} data-imports-tour="active-field-selection">
                 {selectedImport.columns.map((column) => {
