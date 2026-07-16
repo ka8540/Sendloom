@@ -1,9 +1,5 @@
-import { FileSpreadsheet } from "lucide-react";
-
-import { ImportsWorkflow } from "@/components/imports-workflow";
 import { getRequestedImportId, resolveInitialImportId } from "@/components/imports-workflow-selection";
-import { MappingLibrary } from "@/components/mapping-library";
-import { WorkspacePageHeader } from "@/components/workspace-page-header";
+import { ImportsWorkspace } from "@/components/imports-workspace";
 import { requireOperatorUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { importIsFinalized, importNeedsFieldSelection } from "@/lib/imports-view";
@@ -60,7 +56,9 @@ export default async function ImportsPage({
     };
   });
 
-  const initialImportId = resolveInitialImportId(workflowItems, requestedImportId);
+  const initialImportId = requestedImportId
+    ? resolveInitialImportId(workflowItems, requestedImportId)
+    : undefined;
 
   const mappingItems = imports.filter((entry) => importIsFinalized(entry.status)).map((entry) => {
     const mapping = latestMappings.get(entry.id);
@@ -91,35 +89,11 @@ export default async function ImportsPage({
   });
 
   return (
-    <div className="imports-dashboard">
-      <WorkspacePageHeader
-        title="Imports"
-        subtitle="Upload, map, and manage the people lists that power your sequences."
-      />
-
-      <ImportsWorkflow
-        imports={workflowItems}
-        initialImportId={initialImportId}
-        hasAnyImports={imports.length > 0}
-      />
-
-      <section className="card imports-library-shell" data-imports-tour="imports-list" aria-labelledby="imports-library-heading">
-        <header className="imports-library-shell__header">
-          <div className="imports-library-shell__heading">
-            <div className="imports-library-shell__title">
-              <span className="imports-library-shell__icon" aria-hidden="true">
-                <FileSpreadsheet />
-              </span>
-              <h2 id="imports-library-heading">People lists</h2>
-              <span className="imports-library-shell__count" aria-label={`${mappingItems.length} processed imports`}>
-                {mappingItems.length}
-              </span>
-            </div>
-            <p>Processed imports ready to review, edit, or use in a sequence.</p>
-          </div>
-        </header>
-        <MappingLibrary items={mappingItems} />
-      </section>
-    </div>
+    <ImportsWorkspace
+      workflowItems={workflowItems}
+      mappingItems={mappingItems}
+      initialImportId={initialImportId}
+      hasAnyImports={imports.length > 0}
+    />
   );
 }

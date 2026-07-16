@@ -72,7 +72,7 @@ export type TemplateFieldItem = {
   linkedCampaignCount?: number;
 };
 
-type MappingLibraryItem = {
+export type MappingLibraryItem = {
   importId: string;
   fileName: string;
   status: string;
@@ -568,7 +568,7 @@ export function TemplateFieldPicker(props: TemplateFieldPickerProps) {
               onClick={props.onBack}
             >
               <ArrowLeft aria-hidden="true" />
-              Upload another
+              Back to imports
             </button>
           </footer>
         </>
@@ -638,7 +638,7 @@ export function TemplateFieldPicker(props: TemplateFieldPickerProps) {
   );
 }
 
-export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
+export function MappingLibrary(props: { items: MappingLibraryItem[]; onAddImport: () => void }) {
   const [editingImportId, setEditingImportId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedPreviewIds, setExpandedPreviewIds] = useState<string[]>([]);
@@ -941,9 +941,9 @@ export function MappingLibrary(props: { items: MappingLibraryItem[] }) {
           </span>
           <strong>No imports yet</strong>
           <p>Upload a people list above, then choose its template fields.</p>
-          <a className="button imports-library__empty-action" href="#import-upload">
-            Upload people
-          </a>
+          <button className="button imports-library__empty-action" type="button" onClick={props.onAddImport}>
+            Add import
+          </button>
         </div>
       ) : hasNoResults ? (
         <div className="imports-library__empty" role="status">

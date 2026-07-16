@@ -6,7 +6,10 @@ const HEADER = readFileSync("src/components/workspace-page-header.tsx", "utf8");
 const HEADER_STYLES = readFileSync("src/components/workspace-page-header.module.css", "utf8");
 const SEQUENCES = readFileSync("src/app/(app)/campaigns/page.tsx", "utf8");
 const DISCOVER = readFileSync("src/components/prospects/prospects-list-view.tsx", "utf8");
-const IMPORTS = readFileSync("src/app/(app)/imports/page.tsx", "utf8");
+const IMPORTS = [
+  readFileSync("src/app/(app)/imports/page.tsx", "utf8"),
+  readFileSync("src/components/imports-workspace.tsx", "utf8")
+].join("\n");
 const TEMPLATES = readFileSync("src/components/templates-workspace.tsx", "utf8");
 const FINDER = readFileSync("src/components/hunter-dashboard.tsx", "utf8");
 const OVERVIEW = readFileSync("src/components/dashboard/overview-command-center.tsx", "utf8");

@@ -19,6 +19,7 @@ const LIBRARY = readFileSync("src/components/mapping-library.tsx", "utf8");
 const PICKER_CSS = readFileSync("src/components/import-picker.module.css", "utf8");
 const PAGE = readFileSync("src/app/(app)/imports/page.tsx", "utf8");
 const WORKFLOW = readFileSync("src/components/imports-workflow.tsx", "utf8");
+const WORKSPACE = readFileSync("src/components/imports-workspace.tsx", "utf8");
 
 function templateFieldPickerBlock(): string {
   const start = LIBRARY.indexOf("export function TemplateFieldPicker");
@@ -190,7 +191,8 @@ describe("Picker styling is premium, theme-aware, and truncation-safe", () => {
   it("the Imports page feeds the picker its metadata for rows and delete copy", () => {
     expect(PAGE).toContain("rowCount: entry.rowCount");
     expect(PAGE).toContain("linkedCampaignCount: entry._count.campaigns");
-    expect(PAGE).toContain("<ImportsWorkflow");
+    expect(PAGE).toContain("<ImportsWorkspace");
+    expect(WORKSPACE).toContain("<ImportsWorkflow");
     expect(WORKFLOW).toContain("<TemplateFieldPicker");
   });
 
@@ -198,6 +200,7 @@ describe("Picker styling is premium, theme-aware, and truncation-safe", () => {
     expect(PAGE).toContain("const workflowItems = imports.map");
     expect(PAGE).toContain("needsFieldSelection: importNeedsFieldSelection");
     expect(PAGE).toContain("resolveInitialImportId(workflowItems, requestedImportId)");
-    expect(PAGE).toContain("imports={workflowItems}");
+    expect(PAGE).toContain("workflowItems={workflowItems}");
+    expect(WORKSPACE).toContain("imports={workflowItems}");
   });
 });

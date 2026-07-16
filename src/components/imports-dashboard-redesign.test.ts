@@ -5,16 +5,35 @@ import { describe, expect, it } from "vitest";
 const PAGE = readFileSync("src/app/(app)/imports/page.tsx", "utf8");
 const LIBRARY = readFileSync("src/components/mapping-library.tsx", "utf8");
 const WORKFLOW = readFileSync("src/components/imports-workflow.tsx", "utf8");
+const WORKSPACE = readFileSync("src/components/imports-workspace.tsx", "utf8");
 const WORKFLOW_STYLES = readFileSync("src/components/imports-workflow.module.css", "utf8");
 const FORMS = readFileSync("src/components/forms.tsx", "utf8");
 
 describe("Imports dashboard redesign", () => {
-  it("uses one workflow card and keeps the people-list surface", () => {
-    expect(PAGE).toContain('className="imports-dashboard"');
-    expect(PAGE).toContain("<ImportsWorkflow");
-    expect(PAGE).toContain('className="card imports-library-shell"');
+  it("uses a library-first workspace and mounts the workflow only in workflow mode", () => {
+    expect(PAGE).toContain("<ImportsWorkspace");
+    expect(WORKSPACE).toContain('className="imports-dashboard"');
+    expect(WORKSPACE).toContain('mode === "workflow" ?');
+    expect(WORKSPACE).toContain("<ImportsWorkflow");
+    expect(WORKSPACE).toContain('className="card imports-library-shell"');
+    expect(WORKSPACE).toContain("<MappingLibrary");
     expect(PAGE).not.toContain("imports-setup-grid");
     expect(PAGE).not.toContain("imports-setup-card");
+  });
+
+  it("defaults to the saved library and starts the workflow from Add import", () => {
+    expect(WORKSPACE).toContain('useState<ImportsMode>(initialImportId ? "workflow" : "library")');
+    expect(WORKSPACE).toContain('data-imports-tour="add-import"');
+    expect(WORKSPACE).toContain("Add import");
+    expect(WORKSPACE).toContain("onClick={openWorkflow}");
+    expect(WORKSPACE).toContain('<h2 id="imports-library-heading">Saved imports</h2>');
+  });
+
+  it("opens explicit import context directly in workflow and clears it when returning", () => {
+    expect(PAGE).toMatch(/const initialImportId = requestedImportId[\s\S]*resolveInitialImportId/);
+    expect(WORKSPACE).toMatch(/if \(initialImportId\) \{[\s\S]*setMode\("workflow"\)/);
+    expect(WORKSPACE).toContain('router.replace("/imports")');
+    expect(WORKFLOW).toContain("onExit();");
   });
 
   it("presents Upload, Map fields, and Review as a real three-step flow", () => {

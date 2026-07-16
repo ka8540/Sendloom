@@ -228,6 +228,10 @@
   line-height: 1.45;
 }
 
+.actionHint {
+  margin: 0;
+}
+
 .fileSupport {
   display: inline-flex;
   padding: 0.24rem 0.5rem;

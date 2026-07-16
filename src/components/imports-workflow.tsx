@@ -35,9 +35,10 @@ type ImportsWorkflowProps = {
   imports: TemplateFieldItem[];
   initialImportId?: string;
   hasAnyImports: boolean;
+  onExit: () => void;
 };
 
-export function ImportsWorkflow({ imports, initialImportId, hasAnyImports }: ImportsWorkflowProps) {
+export function ImportsWorkflow({ imports, initialImportId, hasAnyImports, onExit }: ImportsWorkflowProps) {
   const [activeStep, setActiveStep] = useState<WorkflowStep>(initialImportId ? 1 : 0);
   const [preferredImportId, setPreferredImportId] = useState(initialImportId);
   const [preparingImport, setPreparingImport] = useState(false);
@@ -122,6 +123,7 @@ export function ImportsWorkflow({ imports, initialImportId, hasAnyImports }: Imp
 
       <div className={styles.stepContent} hidden={activeStep !== 0} data-imports-tour="upload">
         <UploadImportForm
+          onCancel={onExit}
           onUploaded={(importId) => {
             setPreferredImportId(importId);
             setPreparingImport(true);
@@ -156,7 +158,13 @@ export function ImportsWorkflow({ imports, initialImportId, hasAnyImports }: Imp
             imports={imports}
             initialImportId={preferredImportId}
             view={activeStep === 2 ? "review" : "map"}
-            onBack={() => setActiveStep(activeStep === 2 && !reviewSaved ? 1 : 0)}
+            onBack={() => {
+              if (activeStep === 2 && !reviewSaved) {
+                setActiveStep(1);
+                return;
+              }
+              onExit();
+            }}
             onContinue={() => setActiveStep(2)}
             onSelectionChange={handleSelectionChange}
             onSaved={() => {

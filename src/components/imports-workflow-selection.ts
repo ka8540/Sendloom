@@ -1,10 +1,15 @@
-export const IMPORT_CONTEXT_KEYS = ["pendingImportId", "importId", "listId", "audienceId"] as const;
+export const IMPORT_CONTEXT_KEYS = [
+  "pendingImportId",
+  "importId",
+  "selectedImportId",
+  "listId",
+  "audienceId"
+] as const;
 
 type ImportsSearchParams = Record<string, string | string[] | undefined>;
 
 export type ImportSelectionCandidate = {
   importId: string;
-  needsFieldSelection: boolean;
 };
 
 /**
@@ -26,18 +31,14 @@ export function getRequestedImportId(searchParams: ImportsSearchParams): string 
 }
 
 /**
- * Resolve only against imports already loaded for the current user. Explicit
- * route context wins, followed by the newest import that still needs field
- * selection, then the newest import overall. Callers provide newest-first
- * candidates, matching the Imports page query order.
+ * Resolve route context only against imports already loaded for the current
+ * user. With no valid explicit context, Imports stays in library mode.
  */
 export function resolveInitialImportId(
   candidates: ImportSelectionCandidate[],
   requestedImportId?: string
 ): string | undefined {
-  if (requestedImportId && candidates.some((candidate) => candidate.importId === requestedImportId)) {
-    return requestedImportId;
-  }
-
-  return candidates.find((candidate) => candidate.needsFieldSelection)?.importId ?? candidates[0]?.importId;
+  return requestedImportId && candidates.some((candidate) => candidate.importId === requestedImportId)
+    ? requestedImportId
+    : undefined;
 }

@@ -223,7 +223,13 @@ function formatFileSize(bytes: number) {
   return `${megabytes.toFixed(megabytes >= 10 ? 0 : 1)} MB`;
 }
 
-export function UploadImportForm({ onUploaded }: { onUploaded?: (importId: string) => void } = {}) {
+export function UploadImportForm({
+  onUploaded,
+  onCancel
+}: {
+  onUploaded?: (importId: string) => void;
+  onCancel?: () => void;
+} = {}) {
   const router = useRouter();
   const [state, setState] = useState<ActionState>({ pending: false });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -309,8 +315,19 @@ export function UploadImportForm({ onUploaded }: { onUploaded?: (importId: strin
           <span className={importStyles.fileSupport}>CSV, XLSX supported</span>
         </label>
       </div>
+      <p className={importStyles.actionHint}>Your file stays private to this workspace.</p>
       <div className={importStyles.stepActions}>
-        <span className={importStyles.actionHint}>Your file stays private to this workspace.</span>
+        {onCancel ? (
+          <button
+            className={`button secondary ${importStyles.secondaryAction}`}
+            type="button"
+            disabled={state.pending}
+            onClick={onCancel}
+          >
+            <ArrowLeft aria-hidden="true" />
+            Back to imports
+          </button>
+        ) : <span />}
         <button className={`button ${importStyles.primaryAction}`} type="submit" disabled={state.pending || !selectedFile}>
           {state.pending ? (
             <>
