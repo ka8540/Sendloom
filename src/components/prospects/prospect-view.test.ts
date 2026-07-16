@@ -9,7 +9,8 @@ import type {
   ProspectSearchNode
 } from "@/components/prospects/prospect-graphql";
 import {
-  ADD_MORE_DIALOG_BODY,
+  ADD_MORE_DIALOG_NOTE,
+  ADD_MORE_DIALOG_SUBTITLE,
   ADD_MORE_PEOPLE_LABEL,
   ANY_LOCATION_LABEL,
   COMPANY_SEARCH_LOADING_LABEL,
@@ -855,9 +856,9 @@ describe("Add 10 more presentation helpers", () => {
     expect(formatSearchesRemainingLine(quota({ unlimited: true }))).toBe("Searches remaining today: Unlimited");
   });
 
-  it("explains in the dialog that one daily slot is used (#3)", () => {
-    expect(ADD_MORE_DIALOG_BODY).toContain("1 of your daily Discover searches");
-    expect(ADD_MORE_DIALOG_BODY).toContain("Existing people will not be repeated");
+  it("keeps the dialog copy short: a one-line subtitle plus a small muted note (#3)", () => {
+    expect(ADD_MORE_DIALOG_SUBTITLE).toBe("Find up to 10 more matching contacts for this role.");
+    expect(ADD_MORE_DIALOG_NOTE).toBe("Existing people won't be repeated.");
     expect(ADD_MORE_PEOPLE_LABEL).toBe("Add 10 more");
   });
 });
@@ -932,11 +933,15 @@ describe("Add more people dialog UI polish", () => {
   const dialogSource =
     detailSource.match(/function AddMorePeopleDialog\([\s\S]*?\nfunction ProspectReviewDialog\(/)?.[0] ?? "";
 
-  it("renders the dialog with its title, description, and both stat cards", () => {
+  it("renders the short title/subtitle/note copy plus the compact summary rows", () => {
     expect(dialogSource).toContain("ADD_MORE_DIALOG_TITLE");
-    expect(dialogSource).toContain("ADD_MORE_DIALOG_BODY");
+    expect(dialogSource).toContain("ADD_MORE_DIALOG_SUBTITLE");
+    expect(dialogSource).toContain("ADD_MORE_DIALOG_NOTE");
+    // No leftover reference to the old multi-sentence paragraph constant.
+    expect(dialogSource).not.toContain("ADD_MORE_DIALOG_BODY");
+    expect(dialogSource).toContain("<dt>Role / location</dt>");
     expect(dialogSource).toContain("<dt>Current people</dt>");
-    expect(dialogSource).toContain("<dt>Searches remaining today</dt>");
+    expect(dialogSource).toContain("<dt>Searches left</dt>");
     // The stat values are untouched.
     expect(dialogSource).toContain("{Math.max(0, peopleCount)}");
     expect(dialogSource).toContain('{quota && !quota.unlimited ? quota.searchesRemaining : "Unlimited"}');
@@ -961,10 +966,23 @@ describe("Add more people dialog UI polish", () => {
     expect(dialogSource).toContain("disabled={expanding || !resolvedSearchId}");
   });
 
-  it("scopes every polish rule under .addMoreCard so other dialogs are untouched", () => {
+  it("uses the exact shared Sequence-page pill button classes for Cancel and Confirm", () => {
+    // Same global .button / .button.secondary classes the Sequences page uses
+    // for its primary/secondary actions — not a locally-styled button.
+    expect(dialogSource).toContain('className="button secondary"');
+    expect(dialogSource).toContain('className="button"');
+    expect(dialogSource).not.toContain("styles.ghostButton");
+    expect(dialogSource).not.toContain("styles.primaryButton");
+  });
+
+  it("scopes every polish rule under .addMoreCard/.addMoreSummary so other dialogs are untouched", () => {
     expect(dialogSource).toContain("styles.addMoreCard");
-    // The block exists and only ships .addMoreCard-prefixed selectors.
-    const rules = css.match(/^\.addMoreCard[^{]*\{/gm) ?? [];
+    expect(dialogSource).toContain("styles.addMoreSummary");
+    expect(dialogSource).toContain("styles.addMoreSummaryRow");
+    expect(dialogSource).toContain("styles.addMoreNote");
+    // The block exists and only ships .addMoreCard-prefixed selectors (plus the
+    // dedicated .addMoreSummary* / .addMoreNote classes it introduces).
+    const rules = css.match(/^\.addMoreCard[^{]*\{|^\.addMoreSummary[^{]*\{|^\.addMoreNote[^{]*\{/gm) ?? [];
     expect(rules.length).toBeGreaterThanOrEqual(8);
   });
 
@@ -979,18 +997,18 @@ describe("Add more people dialog UI polish", () => {
   });
 
   it("keeps the dialog typography compact (no oversized type)", () => {
-    const blocks = css.match(/\.addMoreCard[^{]*\{[^}]*\}/gs) ?? [];
+    const blocks = css.match(/\.addMoreCard[^{]*\{[^}]*\}|\.addMoreSummary[^{]*\{[^}]*\}|\.addMoreNote[^{]*\{[^}]*\}/gs) ?? [];
     expect(blocks.length).toBeGreaterThanOrEqual(8);
     for (const block of blocks) {
       const size = block.match(/font-size:\s*([\d.]+)rem/);
       if (size) {
-        expect(Number.parseFloat(size[1])).toBeLessThanOrEqual(1.25);
+        expect(Number.parseFloat(size[1])).toBeLessThanOrEqual(1.1);
       }
     }
   });
 
-  it("stacks the stat cards on narrow phones", () => {
-    expect(css).toMatch(/@media \(max-width: 26rem\)\s*\{\s*\.addMoreCard \.reviewGrid\s*\{\s*grid-template-columns: 1fr;/s);
+  it("wraps the compact rows instead of squeezing them on narrow phones", () => {
+    expect(css).toMatch(/@media \(max-width: 22rem\)\s*\{\s*\.addMoreSummaryRow\s*\{\s*flex-wrap: wrap;/s);
   });
 });
 

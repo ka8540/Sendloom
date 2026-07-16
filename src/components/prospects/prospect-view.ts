@@ -1150,9 +1150,9 @@ export function isProcessQuotaBlocked(
 // ---------------------------------------------------------------------------
 
 export const ADD_MORE_PEOPLE_LABEL = "Add 10 more";
-export const ADD_MORE_DIALOG_TITLE = "Add more people?";
-export const ADD_MORE_DIALOG_BODY =
-  "Discover will add up to 10 new people matching this company, role, and location. Existing people will not be repeated. This uses 1 of your daily Discover searches.";
+export const ADD_MORE_DIALOG_TITLE = "Add more people";
+export const ADD_MORE_DIALOG_SUBTITLE = "Find up to 10 more matching contacts for this role.";
+export const ADD_MORE_DIALOG_NOTE = "Existing people won't be repeated.";
 export const ADD_MORE_CONFIRM_LABEL = "Add up to 10 people";
 export const ADD_MORE_CANCEL_LABEL = "Cancel";
 export const ADD_MORE_LOADING_LABEL = "Adding new people…";

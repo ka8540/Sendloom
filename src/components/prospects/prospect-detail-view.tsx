@@ -74,7 +74,8 @@ import {
   ADD_MORE_CANCEL_LABEL,
   ADD_MORE_CHOOSE_ROLE_HINT,
   ADD_MORE_CONFIRM_LABEL,
-  ADD_MORE_DIALOG_BODY,
+  ADD_MORE_DIALOG_NOTE,
+  ADD_MORE_DIALOG_SUBTITLE,
   ADD_MORE_DIALOG_TITLE,
   ADD_MORE_LOADING_LABEL,
   ADD_MORE_PEOPLE_LABEL,
@@ -2731,7 +2732,7 @@ function AddMorePeopleDialog({
             <h2 id="discover-add-more-title" className={styles.panelTitle}>
               {ADD_MORE_DIALOG_TITLE}
             </h2>
-            <p className={styles.panelSubtitle}>{ADD_MORE_DIALOG_BODY}</p>
+            <p className={styles.panelSubtitle}>{ADD_MORE_DIALOG_SUBTITLE}</p>
           </div>
           <CircularCloseButton label="Close" onClick={onClose} disabled={expanding} />
         </div>
@@ -2755,33 +2756,33 @@ function AddMorePeopleDialog({
             <span className={styles.fieldHint}>{ADD_MORE_CHOOSE_ROLE_HINT}</span>
           </label>
         )}
-        {target.kind === "search" && (
-          <dl className={styles.reviewGrid}>
-            <div>
-              <dt>Role group</dt>
+
+        <dl className={styles.addMoreSummary}>
+          {target.kind === "search" && (
+            <div className={styles.addMoreSummaryRow}>
+              <dt>Role / location</dt>
               <dd>{addMoreSearchLabel(target.search)}</dd>
             </div>
-          </dl>
-        )}
-
-        <dl className={styles.reviewGrid}>
-          <div>
+          )}
+          <div className={styles.addMoreSummaryRow}>
             <dt>Current people</dt>
             <dd>{Math.max(0, peopleCount)}</dd>
           </div>
-          <div>
-            <dt>Searches remaining today</dt>
+          <div className={styles.addMoreSummaryRow}>
+            <dt>Searches left</dt>
             <dd>{quota && !quota.unlimited ? quota.searchesRemaining : "Unlimited"}</dd>
           </div>
         </dl>
 
+        <p className={styles.addMoreNote}>{ADD_MORE_DIALOG_NOTE}</p>
+
         <div className={styles.modalActions}>
-          <button type="button" className={styles.ghostButton} onClick={onClose} disabled={expanding}>
+          <button type="button" className="button secondary" onClick={onClose} disabled={expanding}>
             {ADD_MORE_CANCEL_LABEL}
           </button>
           <button
             type="button"
-            className={styles.primaryButton}
+            className="button"
             onClick={() => resolvedSearchId && onConfirm(resolvedSearchId)}
             disabled={expanding || !resolvedSearchId}
           >
