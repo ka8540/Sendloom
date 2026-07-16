@@ -458,6 +458,7 @@ const STATUS_LABELS: Record<ProspectSearchStatus, string> = {
   CLASSIFYING_POSITIONS: "Classifying roles",
   INFERRING_EMAIL_PATTERN: "Inferring email format",
   READY: "Ready",
+  NO_RESULTS: "No results",
   FAILED: "Failed",
   CANCELED: "Canceled"
 };
@@ -470,6 +471,11 @@ export function statusBadge(status: ProspectSearchStatus): Badge {
   if (status === "READY") {
     return { label: STATUS_LABELS.READY, tone: "verified", hint: "Search completed." };
   }
+  if (status === "NO_RESULTS") {
+    // Neutral, never the green "Ready" or the red "Failed": the search itself
+    // completed fine — it just found nobody.
+    return { label: STATUS_LABELS.NO_RESULTS, tone: "muted", hint: "Search completed, but no people were found." };
+  }
   if (status === "FAILED") {
     return { label: STATUS_LABELS.FAILED, tone: "blocked", hint: "Search failed." };
   }
@@ -477,6 +483,32 @@ export function statusBadge(status: ProspectSearchStatus): Badge {
     return { label: STATUS_LABELS.CANCELED, tone: "muted", hint: "Search canceled." };
   }
   return { label: statusLabel(status), tone: "inferred", hint: "Search in progress." };
+}
+
+/**
+ * True for a completed search with nobody found. Covers BOTH the explicit
+ * NO_RESULTS status and legacy zero-result rows that predate it (stored as
+ * READY with nothing processed) — those must never render as a normal "Ready"
+ * search either.
+ */
+export function isNoResultsSearch(
+  search: Pick<ProspectSearchNode, "status" | "peopleCount">
+): boolean {
+  if (search.status === "NO_RESULTS") {
+    return true;
+  }
+  return search.status === "READY" && (search.peopleCount ?? 0) <= 0;
+}
+
+/**
+ * Status a search should DISPLAY as. Identical to the stored status except for
+ * legacy zero-result READY rows, which read as NO_RESULTS everywhere (history
+ * badges, headers, detail states).
+ */
+export function effectiveSearchStatus(
+  search: Pick<ProspectSearchNode, "status" | "peopleCount">
+): ProspectSearchStatus {
+  return isNoResultsSearch(search) ? "NO_RESULTS" : search.status;
 }
 
 export function isProcessingStatus(status: ProspectSearchStatus): boolean {
@@ -506,7 +538,11 @@ function isActivelyProcessing(status: ProspectSearchStatus): boolean {
  *      group is NOT marked failed because one role search failed).
  *   3. Ready — at least one child is ready, none running or failed.
  *   4. Failed — every (non-canceled) child failed.
- *   5. Draft, then Canceled.
+ *   5. No results — no child found people, but none failed either.
+ *   6. Draft, then Canceled.
+ *
+ * Callers should pass EFFECTIVE statuses (effectiveSearchStatus) so a legacy
+ * zero-result READY child reads as NO_RESULTS here too.
  */
 export function groupStatusBadge(statuses: ProspectSearchStatus[]): Badge {
   const active = statuses.filter((status) => status !== "CANCELED");
@@ -526,6 +562,9 @@ export function groupStatusBadge(statuses: ProspectSearchStatus[]): Badge {
   }
   if (considered.some((status) => status === "READY")) {
     return statusBadge("READY");
+  }
+  if (considered.some((status) => status === "NO_RESULTS")) {
+    return statusBadge("NO_RESULTS");
   }
   if (considered.some((status) => status === "DRAFT")) {
     return { label: statusLabel("DRAFT"), tone: "muted", hint: "Draft search — open it to fetch people." };
@@ -581,7 +620,7 @@ export function filterHistoryGroups(
       group.company?.officialDomain,
       ...group.requestedRoles,
       ...(group.locations.length > 0 ? group.locations : ["Any location"]),
-      groupStatusBadge(group.searches.map((search) => search.status)).label,
+      groupStatusBadge(group.searches.map((search) => effectiveSearchStatus(search))).label,
       formatDateTime(group.latestActivityAt)
     ]
       .filter(Boolean)
@@ -637,6 +676,19 @@ export function formatSearchError(
 }
 
 // ---------------------------------------------------------------------------
+// Zero-result search state (a completed search that found nobody).
+// ---------------------------------------------------------------------------
+
+// Neutral no-results copy: the search worked, it just found nobody — never an
+// error voice and never provider/backend terminology.
+export const NO_RESULTS_TITLE = "Couldn't find any people for this search.";
+export const NO_RESULTS_BODY = "Try a different job title, location, or company spelling.";
+export const NO_RESULTS_COMPLETED_NOTE = "The search completed successfully — no matching people were found.";
+export const NO_RESULTS_RETRY_LABEL = "Search this company again";
+export const NO_RESULTS_RETRYING_LABEL = "Searching again…";
+export const NO_RESULTS_BACK_LABEL = "Back to Discover";
+
+// ---------------------------------------------------------------------------
 // View-state resolvers (drive which card/empty-state renders).
 // ---------------------------------------------------------------------------
 
@@ -659,10 +711,10 @@ export function resolveProspectPageState(input: {
   return "ready";
 }
 
-export type SelectedSearchView = "none" | "processing" | "failed" | "canceled" | "ready";
+export type SelectedSearchView = "none" | "processing" | "failed" | "canceled" | "no-results" | "ready";
 
 export function resolveSelectedSearchView(
-  search: Pick<ProspectSearchNode, "status" | "company"> | null
+  search: Pick<ProspectSearchNode, "status" | "peopleCount" | "company"> | null
 ): SelectedSearchView {
   if (!search) {
     return "none";
@@ -672,6 +724,11 @@ export function resolveSelectedSearchView(
   }
   if (search.status === "CANCELED") {
     return "canceled";
+  }
+  // NO_RESULTS and legacy zero-result READY rows both render the clean
+  // no-results state — never the normal results dashboard.
+  if (isNoResultsSearch(search)) {
+    return "no-results";
   }
   if (search.status === "READY" && search.company) {
     return "ready";

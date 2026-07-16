@@ -99,6 +99,12 @@ import {
   FILTERED_PEOPLE_EMPTY_BODY,
   FILTERED_PEOPLE_EMPTY_TITLE,
   INFERRED_EMAIL_NOTICE,
+  NO_RESULTS_BACK_LABEL,
+  NO_RESULTS_BODY,
+  NO_RESULTS_COMPLETED_NOTE,
+  NO_RESULTS_RETRY_LABEL,
+  NO_RESULTS_RETRYING_LABEL,
+  NO_RESULTS_TITLE,
   addMoreDisabledReason,
   addMoreSearchLabel,
   buildLocationFilterOptions,
@@ -107,6 +113,8 @@ import {
   companySearchDisabledReason,
   companySearchSuccessMessage,
   confidenceBadge,
+  effectiveSearchStatus,
+  isNoResultsSearch,
   createEmptyProspectSelection,
   deriveDiscoverQualitySummary,
   describeQualitySummary,
@@ -179,6 +187,11 @@ type DetailStage = "ready" | "draft" | "processing" | "failed";
 
 function resolveDetailStage(search: ProspectSearchNode | null): DetailStage | null {
   if (!search) {
+    return null;
+  }
+  // A zero-result search (NO_RESULTS, or a legacy READY row with nobody) has
+  // none of the ready-stage targets on the page — no guided tour applies.
+  if (isNoResultsSearch(search)) {
     return null;
   }
   if (search.status === "READY") {
@@ -381,7 +394,9 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
       setNotFound(false);
       setSearch(node);
       setSearchLoading(false);
-      if (node.status === "READY" && node.company) {
+      // A zero-result search renders the clean no-results state only — never
+      // load the company dashboard or an empty people table for it.
+      if (node.status === "READY" && node.company && !isNoResultsSearch(node)) {
         peopleAfterCursors.current = [null];
         await loadCompany(node.company.id);
         await loadPeople({ companyId: node.company.id, category, location, pageIndex: 0, after: null });
@@ -1222,12 +1237,14 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
               {roleLabel} · {locationLabel}
             </p>
             <div className={styles.detailHeaderMeta}>
-              <BadgePill badge={statusBadge(search.status)} />
+              {/* Effective status: a legacy zero-result READY row must read
+                  "No results" here, never "Ready". */}
+              <BadgePill badge={statusBadge(effectiveSearchStatus(search))} />
               <span className={styles.detailHeaderMetaItem}>
                 <Users aria-hidden="true" /> {headerPeopleCount} {headerPeopleCount === 1 ? "person" : "people"}
               </span>
               <span className={styles.detailHeaderMetaItem}>
-                {selectedView === "ready" && search.completedAt
+                {(selectedView === "ready" || selectedView === "no-results") && search.completedAt
                   ? `Completed ${formatDateTime(search.completedAt)}`
                   : `Created ${formatDateTime(search.createdAt)}`}
               </span>
@@ -1324,7 +1341,10 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
         </div>
       )}
 
-      {(selectedView === "processing" || selectedView === "canceled" || selectedView === "failed") && (
+      {(selectedView === "processing" ||
+        selectedView === "canceled" ||
+        selectedView === "failed" ||
+        selectedView === "no-results") && (
         <StatusCard
           search={search}
           quota={quota}
@@ -2293,13 +2313,21 @@ function StatusCard({
   onProcess: () => void;
   onCancel: () => void;
 }) {
-  const badge = statusBadge(search.status);
+  // Effective status: a legacy zero-result READY row reads as NO_RESULTS.
+  const noResults = isNoResultsSearch(search);
+  const badge = statusBadge(effectiveSearchStatus(search));
   const failed = search.status === "FAILED";
   const canceled = search.status === "CANCELED";
   const error = failed ? formatSearchError(search) : null;
   const perSearch = quota?.resultsPerSearch ?? 10;
   const quotaBlocked = isProcessQuotaBlocked(quota, search.status);
   const resetLabel = formatQuotaReset(quota);
+  const noResultsContext = [
+    search.requestedTitles.length > 0
+      ? search.requestedTitles.map((title) => titleCaseLabel(title)).join(", ")
+      : "Any role",
+    search.requestedLocations[0] ? titleCaseLabel(search.requestedLocations[0]) : "Any location"
+  ].join(" · ");
   return (
     <div className={`card ${styles.statusCard}`} data-discover-tour="status-summary">
       <div className={styles.statusHead}>
@@ -2317,6 +2345,16 @@ function StatusCard({
             <strong>{error?.title}</strong>
           </p>
           <p className={styles.statusBody}>{error?.message}</p>
+        </>
+      ) : noResults ? (
+        <>
+          <p className={styles.statusBody}>
+            <strong>{NO_RESULTS_TITLE}</strong>
+          </p>
+          <p className={styles.statusBody}>{noResultsContext}</p>
+          <p className={styles.statusBody}>
+            {NO_RESULTS_COMPLETED_NOTE} {NO_RESULTS_BODY}
+          </p>
         </>
       ) : canceled ? (
         <p className={styles.statusBody}>This search was canceled. Create a new one to discover people.</p>
@@ -2340,21 +2378,25 @@ function StatusCard({
             data-discover-tour="process-action"
           >
             {processing ? <LoaderCircle aria-hidden="true" className={styles.spin} /> : null}
-            {failed
+            {noResults
               ? processing
-                ? "Retrying search…"
-                : "Retry search"
-              : processing
-                ? "Processing…"
-                : "Process search"}
+                ? NO_RESULTS_RETRYING_LABEL
+                : NO_RESULTS_RETRY_LABEL
+              : failed
+                ? processing
+                  ? "Retrying search…"
+                  : "Retry search"
+                : processing
+                  ? "Processing…"
+                  : "Process search"}
           </button>
         )}
-        {failed && (
+        {(failed || noResults) && (
           <Link href="/prospects" className={styles.secondaryButton}>
-            Back to Discover
+            {NO_RESULTS_BACK_LABEL}
           </Link>
         )}
-        {!canceled && !failed && (
+        {!canceled && !failed && !noResults && (
           <button type="button" className={styles.secondaryButton} onClick={onCancel} disabled={processing}>
             Cancel
           </button>

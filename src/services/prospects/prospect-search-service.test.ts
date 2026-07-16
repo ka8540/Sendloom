@@ -1771,13 +1771,14 @@ describe("Discover retry", () => {
 
     const s1 = await service.createSearch(USER_ID, APPLIED_MATERIALS);
     const r1 = await service.processSearch(USER_ID, s1.id, { actorEmail: "u@test.dev" });
-    expect(r1.status).toBe("READY");
-    expect(r1.totalProcessed).toBe(0); // a genuine zero-result run
+    expect(r1.status).toBe("NO_RESULTS"); // a genuine zero-result run is never "Ready"
+    expect(r1.totalProcessed).toBe(0);
 
     const s2 = await service.createSearch(USER_ID, APPLIED_MATERIALS);
     const r2 = await service.processSearch(USER_ID, s2.id, { actorEmail: "u@test.dev" });
     // The empty cache entry must NOT short-circuit the provider.
     expect(run).toHaveBeenCalledTimes(2);
+    expect(r2.status).toBe("READY");
     expect(r2.totalProcessed).toBe(1);
   });
 
@@ -1794,6 +1795,204 @@ describe("Discover retry", () => {
     expect(run).toHaveBeenCalledTimes(1); // the second search reused the cache
     expect(r2.resultSource).toBe("CACHE");
     expect(r2.totalProcessed).toBe(1);
+  });
+});
+
+describe("zero-result searches (provider succeeded, nobody found)", () => {
+  const ZERO_AI = {
+    responses: {
+      role_classification: {
+        classifications: [
+          {
+            rawTitle: "Software Engineer",
+            normalizedTitle: "software engineer",
+            category: "SOFTWARE_ENGINEERING",
+            displayName: "Software Engineering",
+            confidence: "HIGH"
+          }
+        ]
+      },
+      email_pattern: {
+        selectedEmailDomain: "appliedmaterials.com",
+        selectedPattern: "first_last",
+        confidence: "HIGH",
+        decisionCode: "SOURCE_MAJORITY",
+        evidenceIndexesUsed: [0]
+      }
+    }
+  };
+
+  function zeroEvidence(findEvidence: EmailEvidenceProvider["findEvidence"]): EmailEvidenceProvider {
+    return { findEvidence };
+  }
+
+  it("marks the search NO_RESULTS and skips email-format discovery entirely (#zero-1)", async () => {
+    const run = vi.fn<ApifyRunner["run"]>(async () => ({ runId: "run-zero", datasetId: "ds-zero", items: [] }));
+    const findEvidence = vi.fn(async () => ({ domainEvidence: [], patternEvidence: [] }));
+    const { service, ai } = buildService(prisma, { run } as ApifyRunner, ZERO_AI, zeroEvidence(findEvidence));
+
+    const created = await service.createSearch(USER_ID, APPLIED_MATERIALS);
+    const result = await service.processSearch(USER_ID, created.id);
+
+    // Neutral outcome: never READY, never FAILED, no error surface.
+    expect(result.status).toBe("NO_RESULTS");
+    expect(result.totalProcessed).toBe(0);
+    expect(result.errorCode).toBeNull();
+    expect(result.errorMessage).toBeNull();
+    expect(result.completedAt).toBeTruthy();
+
+    // Provider run metadata is preserved for diagnostics.
+    expect(result.apifyRunId).toBe("run-zero");
+    expect(result.apifyDatasetId).toBe("ds-zero");
+    expect(result.totalFound).toBe(0);
+
+    // The paid email-format stage never ran: no AI calls, no public-evidence
+    // lookup, and no inferred email-quality records were created.
+    expect(ai.callsOfType("email_pattern")).toHaveLength(0);
+    expect(ai.calls).toHaveLength(0);
+    expect(findEvidence).not.toHaveBeenCalled();
+    expect(prisma._state.people).toHaveLength(0);
+    expect(prisma._state.positions).toHaveLength(0);
+    expect(prisma._state.searchPeople).toHaveLength(0);
+  });
+
+  it("marks the search NO_RESULTS when every provider item is filtered out (#zero-2)", async () => {
+    // The provider returned people, but none belong to the requested company —
+    // ingestion filters them all, which is still a no-result outcome.
+    const items = [profile("other1", "Alex", "Chen", "Software Engineer", "Totally Different Corp")];
+    const run = vi.fn<ApifyRunner["run"]>(async () => ({ runId: "run-f", datasetId: "ds-f", items }));
+    const findEvidence = vi.fn(async () => ({ domainEvidence: [], patternEvidence: [] }));
+    const { service, ai } = buildService(prisma, { run } as ApifyRunner, ZERO_AI, zeroEvidence(findEvidence));
+
+    const created = await service.createSearch(USER_ID, APPLIED_MATERIALS);
+    const result = await service.processSearch(USER_ID, created.id);
+
+    expect(result.status).toBe("NO_RESULTS");
+    expect(result.totalProcessed).toBe(0);
+    expect(result.totalFound).toBe(1); // the raw provider count stays diagnosable
+    expect(ai.callsOfType("email_pattern")).toHaveLength(0);
+    expect(findEvidence).not.toHaveBeenCalled();
+    expect(prisma._state.people).toHaveLength(0);
+  });
+
+  it("re-processing a NO_RESULTS search re-runs the provider and can become READY (#zero-3)", async () => {
+    let calls = 0;
+    const run = vi.fn<ApifyRunner["run"]>(async () => {
+      calls += 1;
+      return {
+        runId: `r${calls}`,
+        datasetId: `d${calls}`,
+        items: calls === 1 ? [] : [profile("am1", "Jane", "Doe", "Software Engineer", "Applied Materials")]
+      };
+    });
+    const findEvidence = vi.fn(async () => ({
+      domainEvidence: [
+        {
+          emailDomain: "amat.com",
+          sourceName: "format page",
+          sourceUrl: "https://example.test/amat",
+          sourceType: "public_format_page" as const,
+          observedPattern: "first_last" as const,
+          percentage: 91,
+          confidence: "HIGH" as const,
+          observedAt: "2026-06-18T00:00:00.000Z"
+        }
+      ],
+      patternEvidence: [
+        {
+          pattern: "first_last" as const,
+          emailDomain: "amat.com",
+          percentage: 91,
+          sourceName: "format page",
+          sourceUrl: "https://example.test/amat",
+          sourceType: "public_format_page" as const,
+          confidence: "HIGH" as const,
+          observedAt: "2026-06-18T00:00:00.000Z"
+        }
+      ]
+    }));
+    const quota = makeQuotaReserver();
+    const { service } = buildService(
+      prisma,
+      { run } as ApifyRunner,
+      {
+        responses: {
+          role_classification: { classifications: [] },
+          email_pattern: {
+            selectedEmailDomain: "amat.com",
+            selectedPattern: "first_last",
+            confidence: "HIGH",
+            decisionCode: "SOURCE_MAJORITY",
+            evidenceIndexesUsed: [0, 1]
+          }
+        }
+      },
+      zeroEvidence(findEvidence),
+      quota.reserve,
+      passthroughCache
+    );
+
+    const created = await service.createSearch(USER_ID, APPLIED_MATERIALS);
+    const first = await service.processSearch(USER_ID, created.id, { actorEmail: "u@test.dev" });
+    expect(first.status).toBe("NO_RESULTS");
+    expect(findEvidence).not.toHaveBeenCalled();
+
+    // "Search this company again": the SAME record re-runs the whole pipeline.
+    const retried = await service.processSearch(USER_ID, created.id, {
+      actorEmail: "u@test.dev",
+      idempotencyKey: "again-1"
+    });
+
+    expect(retried.id).toBe(created.id); // no duplicate Search History row
+    expect(retried.status).toBe("READY"); // people found this time → normal flow
+    expect(retried.totalProcessed).toBe(1);
+    expect(run).toHaveBeenCalledTimes(2); // the provider genuinely ran again
+    expect(quota.consumed.size).toBe(1); // the retry never consumed a second slot
+  });
+
+  it("re-processes a legacy zero-result row stored as READY (#zero-4)", async () => {
+    let calls = 0;
+    const run = vi.fn<ApifyRunner["run"]>(async () => {
+      calls += 1;
+      return {
+        runId: `r${calls}`,
+        datasetId: `d${calls}`,
+        items: calls === 1 ? [] : [profile("am1", "Jane", "Doe", "Software Engineer", "Applied Materials")]
+      };
+    });
+    const { service } = buildService(prisma, { run } as ApifyRunner, ZERO_AI, undefined);
+
+    const created = await service.createSearch(USER_ID, APPLIED_MATERIALS);
+    await service.processSearch(USER_ID, created.id);
+
+    // Simulate a pre-NO_RESULTS row: READY with nothing processed.
+    const row = prisma._state.searches.find((search) => search.id === created.id)!;
+    row.status = "READY";
+    row.totalProcessed = 0;
+
+    const retried = await service.processSearch(USER_ID, created.id, { idempotencyKey: "legacy-1" });
+    expect(run).toHaveBeenCalledTimes(2); // legacy zero-result READY is retryable
+    expect(retried.totalProcessed).toBe(1);
+  });
+
+  it("a completed NO_RESULTS search cannot be canceled, and a provider failure stays FAILED (#zero-5)", async () => {
+    const run = vi.fn<ApifyRunner["run"]>(async () => ({ runId: "rz", datasetId: "dz", items: [] }));
+    const { service } = buildService(prisma, { run } as ApifyRunner, ZERO_AI, undefined);
+
+    const created = await service.createSearch(USER_ID, APPLIED_MATERIALS);
+    const result = await service.processSearch(USER_ID, created.id);
+    expect(result.status).toBe("NO_RESULTS");
+    await expect(service.cancelSearch(USER_ID, created.id)).rejects.toMatchObject({ code: "INVALID_STATE" });
+
+    // A genuine provider error is a FAILED search — never NO_RESULTS.
+    const failingRun = vi.fn<ApifyRunner["run"]>(async () => {
+      throw new Error("provider exploded");
+    });
+    const { service: failingService } = buildService(prisma, { run: failingRun } as ApifyRunner, { enabled: false });
+    const failing = await failingService.createSearch(USER_ID, ESRI);
+    const failed = await failingService.processSearch(USER_ID, failing.id);
+    expect(failed.status).toBe("FAILED");
+    expect(failed.errorCode).toBe("PROVIDER_ERROR");
   });
 });
 
@@ -2060,8 +2259,12 @@ describe("Discover zero-result reprocessing (stored dataset repair)", () => {
   async function seedZeroResultSearch(service: ProspectSearchService) {
     const created = await service.createSearch(USER_ID, APPLIED_MATERIALS);
     const ready = await service.processSearch(USER_ID, created.id, { actorEmail: "u@test.dev" });
-    expect(ready.status).toBe("READY");
+    // A live run that surfaces zero items now finalizes as NO_RESULTS (never a
+    // "Ready" search with nobody); the stored dataset id is still preserved for
+    // the repair below.
+    expect(ready.status).toBe("NO_RESULTS");
     expect(ready.totalProcessed).toBe(0);
+    expect(ready.apifyDatasetId).toBe("stored-ds");
     expect(prisma._state.searchPeople).toHaveLength(0);
     return ready;
   }

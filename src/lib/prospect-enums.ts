@@ -46,6 +46,9 @@ export const PROSPECT_SEARCH_STATUSES = [
   "CLASSIFYING_POSITIONS",
   "INFERRING_EMAIL_PATTERN",
   "READY",
+  // The provider run succeeded but found nobody — a neutral outcome, never a
+  // failure. The search can be re-processed (retried) like a FAILED one.
+  "NO_RESULTS",
   "FAILED",
   "CANCELED"
 ] as const;

@@ -326,7 +326,7 @@ export class ProspectSearchService {
     if (search.status === "CANCELED") {
       return search;
     }
-    if (search.status === "READY") {
+    if (search.status === "READY" || search.status === "NO_RESULTS") {
       throw new ProspectError("INVALID_STATE", "A completed search cannot be canceled.");
     }
     return this.prisma.prospectSearch.update({
@@ -377,12 +377,17 @@ export class ProspectSearchService {
   ): Promise<ProspectSearch> {
     const search = await this.requireOwnedSearch(userId, searchId);
 
-    if (search.status === "READY") {
+    // A legacy zero-result search may predate the NO_RESULTS status and sit at
+    // READY with nothing processed — "Search this company again" must be able
+    // to re-run it (the shared cache never reuses a zero-people entry).
+    const isLegacyZeroResultReady = search.status === "READY" && (search.totalProcessed ?? 0) === 0;
+    if (search.status === "READY" && !isLegacyZeroResultReady) {
       return search;
     }
-    // A FAILED search is intentionally NOT terminal — retrying it re-runs the
-    // whole pipeline against the SAME record (no duplicate Search History row).
-    if (TERMINAL_STATUSES.has(search.status)) {
+    // A FAILED or NO_RESULTS search is intentionally NOT terminal — retrying it
+    // re-runs the whole pipeline against the SAME record (no duplicate Search
+    // History row).
+    if (TERMINAL_STATUSES.has(search.status) && !isLegacyZeroResultReady) {
       throw new ProspectError("INVALID_STATE", `A ${search.status} search cannot be processed.`);
     }
 
@@ -440,25 +445,29 @@ export class ProspectSearchService {
         where: { id: search.id },
         data: { lastAttemptCompletedAt: this.now() }
       });
+      // A successful attempt ends READY (people found) or NO_RESULTS (the
+      // provider succeeded but found nobody) — never assume READY here.
+      const newStatus = outcome.search.status === "NO_RESULTS" ? "NO_RESULTS" : "READY";
       this.logProcessingEvent({
         searchId: search.id,
         userId,
         attemptId,
         attemptNumber,
         previousStatus,
-        newStatus: "READY",
+        newStatus,
         cacheHit: outcome.cacheHit,
         providerCalled: outcome.providerCalled,
         providerResultCount: outcome.resultCount,
         errorCategory: null,
-        retryable: false,
+        // A no-result search stays retryable — a later run may find people.
+        retryable: newStatus === "NO_RESULTS",
         durationMs: this.now().getTime() - startedAtMs
       });
       await this.safeAudit(isRetry ? "discover.retry_completed" : "discover.search_completed", userId, options.actorEmail, search.id, {
         attemptId,
         attemptNumber,
         previousStatus,
-        newStatus: "READY",
+        newStatus,
         providerCalled: outcome.providerCalled,
         resultCount: outcome.resultCount
       });
@@ -679,7 +688,52 @@ export class ProspectSearchService {
       throw error;
     }
 
-    // 4) Resolve email format independently from the people cache. A cache hit
+    const cacheHit = cacheResult.source === "CACHE";
+
+    // 4) Zero-result guard. The provider run SUCCEEDED but found nobody (or
+    // every returned item was filtered out during normalization — the
+    // ingestion diagnostics above record exactly why). This is a neutral
+    // outcome, never a failure, and there is nothing to generate emails for,
+    // so the paid email-format stage (AI web search / public-evidence lookup)
+    // and materialization are skipped entirely. Provider run metadata
+    // (apifyRunId/apifyDatasetId/totalFound) was already persisted by
+    // runProviderDataset. The search stays retryable: the shared cache never
+    // reuses a zero-people entry, so re-processing re-runs the provider.
+    if (cacheResult.dataset.people.length === 0) {
+      logDiscoverZeroResultEvent(search.id, userId);
+      const updated = await this.prisma.prospectSearch.update({
+        where: { id: search.id },
+        data: {
+          status: "NO_RESULTS",
+          totalProcessed: 0,
+          completedAt: new Date(),
+          errorCode: null,
+          errorMessage: null,
+          resultSource: cacheResult.source,
+          sharedCacheId: cacheResult.cacheId,
+          cacheFingerprint: fingerprint,
+          cacheFetchedAt: cacheResult.fetchedAt
+        }
+      });
+      logDiscoverCacheEvent({
+        event: cacheHit
+          ? "DISCOVER_CACHE_HIT"
+          : cacheResult.refreshedStale
+            ? "DISCOVER_CACHE_REFRESHED"
+            : "DISCOVER_CACHE_MISS",
+        searchId: search.id,
+        userId,
+        fingerprint,
+        cacheHit,
+        cacheAgeDays: discoverCacheAgeDays(cacheResult.fetchedAt, startedAt),
+        resultCount: 0,
+        providerCalled: !cacheHit,
+        processingLatencyMs: Date.now() - startedAt
+      });
+      return { search: updated, providerCalled: !cacheHit, resultCount: 0, cacheHit };
+    }
+
+    // 5) Resolve email format independently from the people cache. A cache hit
     // may reuse public people while its format is missing, stale, or a prior
     // transient failure; in that case only format discovery is rerun (no Apify,
     // no extra Discover quota).
@@ -694,7 +748,7 @@ export class ProspectSearchService {
     });
     const resolvedDataset: ResolvedDataset = { ...cacheResult.dataset, emailFormat };
 
-    // 5) Materialize the shared dataset into THIS user's own records. The shared
+    // 6) Materialize the shared dataset into THIS user's own records. The shared
     // cache only holds normalized public data — the user-owned company/people/
     // search records (and their ownership, exports, suppression) stay private.
     // Allocation is CAPPED: the shared pool may hold many more candidates (other
@@ -708,7 +762,6 @@ export class ProspectSearchService {
       cacheResult.source === "CACHE" ? "CACHE" : "PROVIDER"
     );
 
-    const cacheHit = cacheResult.source === "CACHE";
     logDiscoverCacheEvent({
       event: cacheHit
         ? "DISCOVER_CACHE_HIT"
@@ -732,7 +785,7 @@ export class ProspectSearchService {
       people: resolvedDataset.people
     });
 
-    // 6) Done — record internal result provenance (never exposed via GraphQL).
+    // 7) Done — record internal result provenance (never exposed via GraphQL).
     const updated = await this.prisma.prospectSearch.update({
       where: { id: search.id },
       data: {
@@ -1061,7 +1114,9 @@ export class ProspectSearchService {
     return this.prisma.prospectSearch.update({
       where: { id: search.id },
       data: {
-        status: "READY",
+        // A reprocess that still yields nobody is a neutral no-result outcome —
+        // never a "Ready" search with zero people.
+        status: processed > 0 ? "READY" : "NO_RESULTS",
         totalProcessed: processed,
         totalFound: items.length,
         completedAt: this.now(),
@@ -1761,7 +1816,7 @@ type DiscoverProcessingLogEvent = {
   attemptId: string;
   attemptNumber: number;
   previousStatus: string;
-  newStatus: "READY" | "FAILED";
+  newStatus: "READY" | "NO_RESULTS" | "FAILED";
   cacheHit: boolean;
   /** Whether the paid provider ran (null when the attempt failed before the cache stage). */
   providerCalled: boolean | null;
@@ -1783,6 +1838,20 @@ function logDiscoverProcessingEvent(event: DiscoverProcessingLogEvent): void {
     return;
   }
   console.info(`[discover-process] ${JSON.stringify(event)}`);
+}
+
+/**
+ * Explicit cost-control marker: the pipeline stopped before the email-format
+ * stage because there is nobody to generate emails for. No AI/web-search
+ * tokens are ever spent on a zero-result search. Silent in tests.
+ */
+function logDiscoverZeroResultEvent(searchId: string, userId: string): void {
+  if (process.env.NODE_ENV === "test") {
+    return;
+  }
+  console.info(
+    `[discover] provider returned 0 people; skipping email format inference ${JSON.stringify({ searchId, userId })}`
+  );
 }
 
 type DiscoverIngestionLogEvent = ApifyIngestionDiagnostics & {

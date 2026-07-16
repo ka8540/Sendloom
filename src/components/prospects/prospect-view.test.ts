@@ -16,6 +16,11 @@ import {
   EXTERNAL_LINK_REL,
   EXTERNAL_LINK_TARGET,
   INFERRED_EMAIL_NOTICE,
+  NO_RESULTS_BACK_LABEL,
+  NO_RESULTS_BODY,
+  NO_RESULTS_COMPLETED_NOTE,
+  NO_RESULTS_RETRY_LABEL,
+  NO_RESULTS_TITLE,
   PROSPECT_FINDER_SUBTITLE,
   PROSPECT_FINDER_TAGLINE,
   PROSPECT_FINDER_TITLE,
@@ -27,6 +32,7 @@ import {
   companySearchDisabledReason,
   companySearchSuccessMessage,
   confidenceBadge,
+  effectiveSearchStatus,
   formatCurrentPeopleLine,
   formatGroupCountLabel,
   formatSearchesRemainingLine,
@@ -53,6 +59,7 @@ import {
   formatSearchError,
   formatShowingLabel,
   isEmailCopyable,
+  isNoResultsSearch,
   isProcessQuotaBlocked,
   getPageSelectionState,
   getProspectSelectionCount,
@@ -338,6 +345,56 @@ describe("status badges", () => {
     expect(statusBadge("READY").tone).toBe("verified");
     expect(statusBadge("FAILED").tone).toBe("blocked");
     expect(statusBadge("SEARCHING_PEOPLE").tone).toBe("inferred");
+  });
+
+  it("marks NO_RESULTS as a neutral muted badge — never Ready green or Failed red", () => {
+    const badge = statusBadge("NO_RESULTS");
+    expect(badge.label).toBe("No results");
+    expect(badge.tone).toBe("muted");
+    expect(badge.tone).not.toBe("verified");
+    expect(badge.tone).not.toBe("blocked");
+  });
+});
+
+describe("zero-result search state", () => {
+  it("detects the explicit NO_RESULTS status", () => {
+    expect(isNoResultsSearch({ status: "NO_RESULTS", peopleCount: 0 })).toBe(true);
+  });
+
+  it("detects a legacy zero-result row stored as READY with nobody processed", () => {
+    expect(isNoResultsSearch({ status: "READY", peopleCount: 0 })).toBe(true);
+  });
+
+  it("never flags a normal READY search or an unfinished one", () => {
+    expect(isNoResultsSearch({ status: "READY", peopleCount: 3 })).toBe(false);
+    expect(isNoResultsSearch({ status: "SEARCHING_PEOPLE", peopleCount: 0 })).toBe(false);
+    expect(isNoResultsSearch({ status: "FAILED", peopleCount: 0 })).toBe(false);
+    expect(isNoResultsSearch({ status: "DRAFT", peopleCount: 0 })).toBe(false);
+  });
+
+  it("effectiveSearchStatus overlays NO_RESULTS onto legacy READY+0 rows only", () => {
+    expect(effectiveSearchStatus({ status: "READY", peopleCount: 0 })).toBe("NO_RESULTS");
+    expect(effectiveSearchStatus({ status: "NO_RESULTS", peopleCount: 0 })).toBe("NO_RESULTS");
+    expect(effectiveSearchStatus({ status: "READY", peopleCount: 5 })).toBe("READY");
+    expect(effectiveSearchStatus({ status: "FAILED", peopleCount: 0 })).toBe("FAILED");
+  });
+
+  it("resolves the 'no-results' view for NO_RESULTS and legacy READY+0 searches", () => {
+    expect(resolveSelectedSearchView(search({ status: "NO_RESULTS", peopleCount: 0 }))).toBe("no-results");
+    expect(resolveSelectedSearchView(search({ status: "READY", peopleCount: 0 }))).toBe("no-results");
+    // A normal ready search is untouched.
+    expect(resolveSelectedSearchView(search())).toBe("ready");
+  });
+
+  it("keeps the no-results copy neutral and free of backend terminology", () => {
+    expect(NO_RESULTS_TITLE).toBe("Couldn't find any people for this search.");
+    expect(NO_RESULTS_BODY).toBe("Try a different job title, location, or company spelling.");
+    expect(NO_RESULTS_RETRY_LABEL).toBe("Search this company again");
+    expect(NO_RESULTS_BACK_LABEL).toBe("Back to Discover");
+    for (const copy of [NO_RESULTS_TITLE, NO_RESULTS_BODY, NO_RESULTS_COMPLETED_NOTE]) {
+      expect(copy).not.toMatch(/provider|apify|pipeline|graph|resolver/i);
+      expect(copy).not.toMatch(/fail/i);
+    }
   });
 });
 
@@ -1002,6 +1059,16 @@ describe("grouped Search History helpers", () => {
 
   it("derives Draft for an all-draft group (#26)", () => {
     expect(groupStatusBadge(["DRAFT"]).label).toBe("Draft");
+  });
+
+  it("derives No results when children completed but nobody was found", () => {
+    expect(groupStatusBadge(["NO_RESULTS"]).label).toBe("No results");
+    expect(groupStatusBadge(["NO_RESULTS", "CANCELED"]).label).toBe("No results");
+    // A sibling with people still wins; a running sibling still reads Processing.
+    expect(groupStatusBadge(["NO_RESULTS", "READY"]).label).toBe("Ready");
+    expect(groupStatusBadge(["NO_RESULTS", "SEARCHING_PEOPLE"]).label).toBe("Processing");
+    // A failed sibling next to a no-result one still needs attention.
+    expect(groupStatusBadge(["NO_RESULTS", "FAILED"]).label).toBe("Needs attention");
   });
 
   it("opens the newest READY child, else the newest actionable child (#28)", () => {

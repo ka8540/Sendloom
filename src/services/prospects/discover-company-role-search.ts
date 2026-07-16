@@ -92,11 +92,13 @@ const RUNNING_STATUSES = new Set([
  * normalized role OR location is always allowed through as "create".
  *
  * Duplicate precedence when several same-key siblings exist:
- *   READY   → point the user at "Add 10 more" (the group already has people);
- *   running → tell them it is already in flight (never start a twin);
- *   DRAFT   → silently reuse the draft (also makes a replayed mutation
- *             idempotent: the replay finds the row the first call created);
- *   FAILED  → direct them to the existing retry flow for that search.
+ *   READY      → point the user at "Add 10 more" (the group already has people);
+ *   running    → tell them it is already in flight (never start a twin);
+ *   DRAFT      → silently reuse the draft (also makes a replayed mutation
+ *                idempotent: the replay finds the row the first call created);
+ *   NO_RESULTS → silently reuse that search — re-processing it is the
+ *                "Search this company again" retry;
+ *   FAILED     → direct them to the existing retry flow for that search.
  * CANCELED siblings never block — the user abandoned them.
  */
 export function resolveCompanyRoleSearchAction(input: {
@@ -142,6 +144,15 @@ export function resolveCompanyRoleSearchAction(input: {
   const draft = matches.find((search) => search.status === "DRAFT");
   if (draft) {
     return { kind: "reuse-draft", searchId: draft.id };
+  }
+  // A NO_RESULTS sibling is reused the same way a DRAFT is: submitting the
+  // identical role+location re-processes THAT search ("Search this company
+  // again") instead of erroring or adding a duplicate row. Re-processing is
+  // quota-idempotent per search id, and the shared cache never reuses a
+  // zero-people entry, so the provider genuinely runs again.
+  const noResults = matches.find((search) => search.status === "NO_RESULTS");
+  if (noResults) {
+    return { kind: "reuse-draft", searchId: noResults.id };
   }
   // Only FAILED (or an unknown legacy status, treated conservatively) remains.
   return {
