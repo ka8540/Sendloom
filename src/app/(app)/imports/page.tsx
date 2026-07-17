@@ -1,8 +1,5 @@
-import { FileSpreadsheet, SlidersHorizontal, UploadCloud } from "lucide-react";
-
-import { UploadImportForm } from "@/components/forms";
-import { MappingLibrary, TemplateFieldPicker } from "@/components/mapping-library";
-import { WorkspacePageHeader } from "@/components/workspace-page-header";
+import { getRequestedImportId, resolveInitialImportId } from "@/components/imports-workflow-selection";
+import { ImportsWorkspace } from "@/components/imports-workspace";
 import { requireOperatorUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { importIsFinalized, importNeedsFieldSelection } from "@/lib/imports-view";
@@ -10,13 +7,11 @@ import { importIsFinalized, importNeedsFieldSelection } from "@/lib/imports-view
 export default async function ImportsPage({
   searchParams
 }: {
-  searchParams?: Promise<{ pendingImportId?: string | string[] }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const user = await requireOperatorUser();
   const resolvedSearchParams = (await searchParams) ?? {};
-  const pendingImportIdParam = Array.isArray(resolvedSearchParams.pendingImportId)
-    ? resolvedSearchParams.pendingImportId[0]
-    : resolvedSearchParams.pendingImportId;
+  const requestedImportId = getRequestedImportId(resolvedSearchParams);
   const [imports, mappings] = await Promise.all([
     prisma.import.findMany({
       where: { userId: user.id },
@@ -45,7 +40,7 @@ export default async function ImportsPage({
     }
   }
 
-  const templateFieldItems = imports.flatMap((entry) => {
+  const workflowItems = imports.flatMap((entry) => {
     const mapping = latestMappings.get(entry.id);
 
     if (!importNeedsFieldSelection(entry.status, mapping)) {
@@ -65,10 +60,10 @@ export default async function ImportsPage({
     }];
   });
 
-  const pendingImportId =
-    pendingImportIdParam && templateFieldItems.some((item) => item.importId === pendingImportIdParam)
-      ? pendingImportIdParam
-      : undefined;
+  const initialImportId = requestedImportId
+    ? resolveInitialImportId(workflowItems, requestedImportId)
+    : undefined;
+  const missingImportId = requestedImportId && !initialImportId ? requestedImportId : undefined;
 
   const mappingItems = imports.filter((entry) => importIsFinalized(entry.status)).map((entry) => {
     const mapping = latestMappings.get(entry.id);
@@ -99,56 +94,12 @@ export default async function ImportsPage({
   });
 
   return (
-    <div className="imports-dashboard">
-      <WorkspacePageHeader
-        title="Imports"
-        subtitle="Upload, map, and manage the people lists that power your sequences."
-      />
-
-      <section className="imports-setup-grid" aria-label="Import setup">
-        <article className="card imports-setup-card" id="import-upload" data-imports-tour="upload">
-          <header className="imports-setup-card__header">
-            <span className="imports-setup-card__icon" aria-hidden="true">
-              <UploadCloud />
-            </span>
-            <div>
-              <h2>Upload people</h2>
-              <p>Add a CSV or spreadsheet to create an audience.</p>
-            </div>
-          </header>
-          <UploadImportForm />
-        </article>
-        <article className="card imports-setup-card" data-imports-tour="template-fields">
-          <header className="imports-setup-card__header">
-            <span className="imports-setup-card__icon" aria-hidden="true">
-              <SlidersHorizontal />
-            </span>
-            <div>
-              <h2>Template fields</h2>
-              <p>Choose personalization fields for imports awaiting review.</p>
-            </div>
-          </header>
-          <TemplateFieldPicker imports={templateFieldItems} initialImportId={pendingImportId} />
-        </article>
-      </section>
-
-      <section className="card imports-library-shell" data-imports-tour="imports-list" aria-labelledby="imports-library-heading">
-        <header className="imports-library-shell__header">
-          <div className="imports-library-shell__heading">
-            <div className="imports-library-shell__title">
-              <span className="imports-library-shell__icon" aria-hidden="true">
-                <FileSpreadsheet />
-              </span>
-              <h2 id="imports-library-heading">People lists</h2>
-              <span className="imports-library-shell__count" aria-label={`${mappingItems.length} processed imports`}>
-                {mappingItems.length}
-              </span>
-            </div>
-            <p>Processed imports ready to review, edit, or use in a sequence.</p>
-          </div>
-        </header>
-        <MappingLibrary items={mappingItems} />
-      </section>
-    </div>
+    <ImportsWorkspace
+      workflowItems={workflowItems}
+      mappingItems={mappingItems}
+      initialImportId={initialImportId}
+      missingImportId={missingImportId}
+      hasAnyImports={imports.length > 0}
+    />
   );
 }

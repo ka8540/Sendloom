@@ -2,23 +2,108 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+const BACK_BUTTON = readFileSync("src/components/back-button.tsx", "utf8");
 const PAGE = readFileSync("src/app/(app)/imports/page.tsx", "utf8");
 const LIBRARY = readFileSync("src/components/mapping-library.tsx", "utf8");
-const STYLES = readFileSync("src/app/globals.css", "utf8");
+const WORKFLOW = readFileSync("src/components/imports-workflow.tsx", "utf8");
+const WORKSPACE = readFileSync("src/components/imports-workspace.tsx", "utf8");
+const WORKFLOW_STYLES = readFileSync("src/components/imports-workflow.module.css", "utf8");
+const FORMS = readFileSync("src/components/forms.tsx", "utf8");
 
 describe("Imports dashboard redesign", () => {
-  it("uses compact setup and people-list surfaces", () => {
-    expect(PAGE).toContain('className="imports-dashboard"');
-    expect(PAGE).toContain('className="imports-setup-grid"');
-    expect(PAGE).toContain('className="card imports-library-shell"');
+  it("uses a library-first workspace and mounts the workflow only in workflow mode", () => {
+    expect(PAGE).toContain("<ImportsWorkspace");
+    expect(WORKSPACE).toContain('className="imports-dashboard"');
+    expect(WORKSPACE).toContain('mode === "workflow" ?');
+    expect(WORKSPACE).toContain("<ImportsWorkflow");
+    expect(WORKSPACE).toContain('className="card imports-library-shell"');
+    expect(WORKSPACE).toContain("<MappingLibrary");
+    expect(PAGE).not.toContain("imports-setup-grid");
+    expect(PAGE).not.toContain("imports-setup-card");
   });
 
-  it("keeps both desktop setup cards equal-height with bottom-aligned actions", () => {
-    expect(STYLES).toMatch(/\.imports-setup-grid\s*\{[^}]*align-items: stretch;/s);
-    expect(STYLES).toMatch(/\.imports-setup-card\s*\{[^}]*display: flex;[^}]*flex-direction: column;[^}]*height: 100%;/s);
-    expect(STYLES).toMatch(/\.import-upload-form,\s*\.imports-field-picker\s*\{[^}]*flex: 1 1 auto;/s);
-    expect(STYLES).toMatch(/\.import-upload-form > \.button,\s*\.imports-field-picker > \.button\s*\{[^}]*margin-top: auto;/s);
-    expect(STYLES).toMatch(/@media \(max-width: 960px\)[\s\S]*\.imports-setup-card\s*\{[^}]*height: auto;/);
+  it("defaults to the saved library and starts the workflow from Add import", () => {
+    expect(WORKSPACE).toContain('useState<ImportsMode>(initialImportId || missingImportId ? "workflow" : "library")');
+    expect(WORKSPACE).toContain('data-imports-tour="add-import"');
+    expect(WORKSPACE).toContain("Add import");
+    expect(WORKSPACE).toContain("onClick={openWorkflow}");
+    expect(WORKSPACE).toContain('<h2 id="imports-library-heading">Saved imports</h2>');
+  });
+
+  it("opens explicit import context directly in workflow and clears it when returning", () => {
+    expect(PAGE).toMatch(/const initialImportId = requestedImportId[\s\S]*resolveInitialImportId/);
+    expect(WORKSPACE).toContain('setMode(inWorkflowRoute ? "workflow" : "library")');
+    expect(WORKSPACE).toContain('router.replace("/imports")');
+    expect(WORKFLOW).toContain("onExit();");
+  });
+
+  it("routes imports workflow exits explicitly instead of using browser history", () => {
+    const importsWorkflowExit = BACK_BUTTON.slice(
+      BACK_BUTTON.indexOf("if (isImportsWorkflowPage)"),
+      BACK_BUTTON.indexOf("const sequenceReturnTo")
+    );
+
+    expect(BACK_BUTTON).toContain('pathname === "/imports" && hasImportWorkflowContext(searchParams)');
+    // `replace`, not `push`: the workflow entry must be consumed so a later back
+    // press leaves Imports instead of re-entering the workflow just exited.
+    expect(importsWorkflowExit).toContain('router.replace("/imports")');
+    expect(importsWorkflowExit).not.toContain('router.push("/imports")');
+    expect(importsWorkflowExit).not.toContain("router.back()");
+    expect(importsWorkflowExit).not.toContain("history.back");
+    expect(WORKSPACE).toContain('router.push("/imports?step=upload")');
+    expect(WORKSPACE).not.toContain("router.back()");
+  });
+
+  it("presents Upload, Map fields, and Review as a real three-step flow", () => {
+    expect(WORKFLOW).toContain('const WORKFLOW_STEPS = ["Upload", "Map fields", "Review"]');
+    expect(WORKFLOW).toContain('aria-label="Import workflow progress"');
+    expect(WORKFLOW).toContain('view={activeStep === 2 ? "review" : "map"}');
+    expect(WORKFLOW_STYLES).toMatch(/\.workflowCard\s*\{[^}]*border-radius: 26px;/s);
+    expect(WORKFLOW_STYLES).toMatch(/\.stepNav ol\s*\{[^}]*grid-template-columns: repeat\(3,/s);
+  });
+
+  it("uses the full dashboard width with a controlled responsive field grid", () => {
+    expect(WORKFLOW_STYLES).toMatch(/\.workflowCard\s*\{[^}]*width: 100%;/s);
+    expect(WORKFLOW_STYLES).not.toContain("width: min(100%, 64rem)");
+    expect(WORKFLOW_STYLES).toMatch(/\.fieldGrid\s*\{[^}]*grid-template-columns: repeat\(4, minmax\(0, 1fr\)\);/s);
+    expect(WORKFLOW_STYLES).toMatch(/@media \(max-width: 900px\)[\s\S]*\.fieldGrid\s*\{[^}]*repeat\(2,/s);
+    expect(WORKFLOW_STYLES).toMatch(/@media \(max-width: 560px\)[\s\S]*\.fieldGrid\s*\{[^}]*grid-template-columns: 1fr;/s);
+  });
+
+  it("wraps the native file control in a polished dropzone without changing the upload endpoint", () => {
+    expect(FORMS).toContain('className={importStyles.fileInput}');
+    expect(FORMS).toContain('accept=".csv,.xls,.xlsx"');
+    expect(FORMS).toContain('fetch("/api/imports"');
+    expect(FORMS).toContain("Choose CSV or XLSX file");
+    expect(FORMS).toContain("CSV, XLSX supported");
+    expect(WORKFLOW_STYLES).toMatch(/\.fileInput\s*\{[^}]*position: absolute;[^}]*width: 1px;/s);
+  });
+
+  it("uses readable field cards with separate human labels and field keys", () => {
+    expect(LIBRARY).toContain("formatColumnHumanLabel(column)");
+    expect(LIBRARY).toContain("{column.normalized}");
+    expect(LIBRARY).toContain("workflowStyles.fieldCardCopy");
+    expect(WORKFLOW_STYLES).toMatch(/\.fieldCardCopy strong\s*\{[^}]*font-size: 0\.9rem;/s);
+    expect(WORKFLOW_STYLES).toMatch(/\.fieldCardCopy span\s*\{[^}]*font-size: 0\.74rem;/s);
+  });
+
+  it("keeps the exact active import visible beside its selected-field count", () => {
+    expect(LIBRARY).toContain("workflowStyles.selectionImport");
+    expect(LIBRARY).toContain("Selected import");
+    expect(LIBRARY).toContain("{selectedImport.fileName}");
+    expect(LIBRARY).toContain("workflowStyles.selectionCount");
+  });
+
+  it("moves a direct upload into mapping with the exact returned import id", () => {
+    expect(FORMS).toContain("onUploaded?.(payload.id)");
+    expect(WORKFLOW).toContain("setPreferredImportId(importId)");
+    expect(WORKFLOW).toContain("setPreparingImport(true)");
+    expect(WORKFLOW).toContain("setActiveStep(1)");
+    expect(WORKFLOW).toContain("initialImportId={preferredImportId}");
+  });
+
+  it("reapplies route import context when the mounted workflow receives a new id", () => {
+    expect(WORKFLOW).toMatch(/useEffect\(\(\) => \{[\s\S]*setPreferredImportId\(initialImportId\);[\s\S]*setActiveStep\(1\);[\s\S]*\}, \[initialImportId\]\);/);
   });
 
   it("keeps sample contacts collapsed until their real toggle is used", () => {

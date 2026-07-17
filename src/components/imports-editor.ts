@@ -18,8 +18,8 @@ export const DELETE_IMPORT_SUCCESS_MESSAGE = "Import deleted.";
 // Copy for the Template fields import picker, centralized like the editor copy.
 export const IMPORT_PICKER_LABEL = "Select import";
 export const IMPORT_PICKER_PLACEHOLDER = "Select an import";
-export const IMPORT_PICKER_EMPTY_TITLE = "No imports available";
-export const IMPORT_PICKER_EMPTY_HINT = "Review or add an import first.";
+export const IMPORT_PICKER_EMPTY_TITLE = "No imports need mapping";
+export const IMPORT_PICKER_EMPTY_HINT = "Upload a new CSV or import contacts from Discover to map fields.";
 
 /** Accessible label for a picker row's trash action, e.g. "Delete import AMD SDE". */
 export function deleteImportLabel(fileName: string): string {

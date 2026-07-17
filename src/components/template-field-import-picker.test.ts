@@ -18,6 +18,8 @@ import {
 const LIBRARY = readFileSync("src/components/mapping-library.tsx", "utf8");
 const PICKER_CSS = readFileSync("src/components/import-picker.module.css", "utf8");
 const PAGE = readFileSync("src/app/(app)/imports/page.tsx", "utf8");
+const WORKFLOW = readFileSync("src/components/imports-workflow.tsx", "utf8");
+const WORKSPACE = readFileSync("src/components/imports-workspace.tsx", "utf8");
 
 function templateFieldPickerBlock(): string {
   const start = LIBRARY.indexOf("export function TemplateFieldPicker");
@@ -46,8 +48,8 @@ describe("Import picker copy helpers", () => {
 
   it("uses safe, non-technical copy for toast and empty state", () => {
     expect(DELETE_IMPORT_SUCCESS_MESSAGE).toBe("Import deleted.");
-    expect(IMPORT_PICKER_EMPTY_TITLE).toBe("No imports available");
-    expect(IMPORT_PICKER_EMPTY_HINT).toBe("Review or add an import first.");
+    expect(IMPORT_PICKER_EMPTY_TITLE).toBe("No imports need mapping");
+    expect(IMPORT_PICKER_EMPTY_HINT).toBe("Upload a new CSV or import contacts from Discover to map fields.");
     expect(IMPORT_PICKER_PLACEHOLDER).toBe("Select an import");
     expect(IMPORT_PICKER_LABEL).toBe("Select import");
   });
@@ -106,7 +108,7 @@ describe("Template fields uses a custom picker instead of the native select", ()
   });
 
   it("keeps Save disabled unless an import is selected (existing save flow intact)", () => {
-    expect(picker).toContain("disabled={state.pending || !selectedImport}");
+    expect(picker).toContain("disabled={state.pending || selectedColumns.length === 0}");
     expect(picker).toContain("/template-fields");
     expect(picker).toContain('data-imports-tour="save-template-fields"');
   });
@@ -189,6 +191,26 @@ describe("Picker styling is premium, theme-aware, and truncation-safe", () => {
   it("the Imports page feeds the picker its metadata for rows and delete copy", () => {
     expect(PAGE).toContain("rowCount: entry.rowCount");
     expect(PAGE).toContain("linkedCampaignCount: entry._count.campaigns");
-    expect(PAGE).toContain("<TemplateFieldPicker");
+    expect(PAGE).toContain("<ImportsWorkspace");
+    expect(WORKSPACE).toContain("<ImportsWorkflow");
+    expect(WORKFLOW).toContain("<TemplateFieldPicker");
+  });
+
+  it("feeds only imports awaiting field selection to the workflow", () => {
+    expect(PAGE).toContain("const workflowItems = imports.flatMap");
+    expect(PAGE).toContain("if (!importNeedsFieldSelection(entry.status, mapping))");
+    expect(PAGE).not.toContain("needsFieldSelection:");
+    expect(PAGE).toContain("resolveInitialImportId(workflowItems, requestedImportId)");
+    expect(PAGE).toContain("workflowItems={workflowItems}");
+    expect(WORKSPACE).toContain("imports={workflowItems}");
+  });
+
+  it("lets explicit route context replace any stale picker selection", () => {
+    const picker = templateFieldPickerBlock();
+    const explicitSelection = picker.indexOf("return props.initialImportId;");
+    const currentSelection = picker.indexOf("return current;", explicitSelection);
+
+    expect(explicitSelection).toBeGreaterThan(-1);
+    expect(currentSelection).toBeGreaterThan(explicitSelection);
   });
 });

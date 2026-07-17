@@ -1153,16 +1153,15 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
       return;
     }
     const importResult = result.data.createProspectImport;
+    if (!importResult.importId?.trim()) {
+      setReviewError("The import was created but its id was missing, so field mapping could not open. Check the Imports page.");
+      return;
+    }
     setReview(importResult.review);
     setReviewOpen(false);
     clearSelection();
-    const readyCount = importResult.review.exportableCount;
-    setActionNotice({
-      message: `${readyCount} ${readyCount === 1 ? "contact is" : "contacts are"} ready for field selection.`,
-      href: `/imports?pendingImportId=${encodeURIComponent(importResult.importId)}`,
-      label: "Review fields"
-    });
-  }, [buildCurrentSelectionInput, clearSelection, creatingImport, preparingExport]);
+    router.push(`/imports?pendingImportId=${encodeURIComponent(importResult.importId)}&step=map`);
+  }, [buildCurrentSelectionInput, clearSelection, creatingImport, preparingExport, router]);
 
   // ---- Render -------------------------------------------------------------
 

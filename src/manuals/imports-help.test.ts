@@ -24,6 +24,8 @@ import {
 const IMPORTS_SOURCE = readFileSync("src/manuals/importsManual.ts", "utf8");
 const LIBRARY_SOURCE = readFileSync("src/components/mapping-library.tsx", "utf8");
 const PAGE_SOURCE = readFileSync("src/app/(app)/imports/page.tsx", "utf8");
+const WORKFLOW_SOURCE = readFileSync("src/components/imports-workflow.tsx", "utf8");
+const WORKSPACE_SOURCE = readFileSync("src/components/imports-workspace.tsx", "utf8");
 
 function ids(steps: ManualStep[]): string[] {
   return steps.map((step) => step.id);
@@ -131,11 +133,15 @@ describe("Sample contacts + delete are explained with accurate behavior", () => 
 // --------------------------------------------------------------------------
 
 describe("State-dependent steps are optional and skipped safely (#6, #8)", () => {
-  it("every processed-card + pending-picker step is optional", () => {
+  it("every workflow, processed-card, and pending-picker step is optional when its mode is hidden", () => {
     const optionalIds = [
+      "add-import",
+      "upload",
+      "template-fields",
       "pending-selector",
       "active-field-selection",
       "save-template-fields",
+      "imports-list",
       "import-card",
       "active-template-fields",
       "other-detected-columns",
@@ -150,10 +156,11 @@ describe("State-dependent steps are optional and skipped safely (#6, #8)", () =>
   });
 
   it("drops the pencil + card steps when there is no processed import (#6)", () => {
-    const present = new Set([sel("upload"), sel("template-fields"), sel("imports-list")]);
+    const present = new Set([sel("add-import"), sel("imports-list")]);
     const shown = ids(filterAvailableManualSteps(importsFullSteps(), (selector) => present.has(selector)));
-    expect(shown).toContain("upload");
+    expect(shown).toContain("add-import");
     expect(shown).toContain("imports-list");
+    expect(shown).not.toContain("upload");
     expect(shown).not.toContain("edit-import");
     expect(shown).not.toContain("active-template-fields");
     expect(shown).not.toContain("other-detected-columns");
@@ -161,7 +168,7 @@ describe("State-dependent steps are optional and skipped safely (#6, #8)", () =>
 
   it("keeps the pencil + card steps when a processed card is present (#1)", () => {
     const present = new Set(
-      ["upload", "template-fields", "imports-list", "import-card", "edit-import", "active-template-fields", "sample-contacts", "delete-import"].map(sel)
+      ["add-import", "imports-list", "import-card", "edit-import", "active-template-fields", "sample-contacts", "delete-import"].map(sel)
     );
     const shown = ids(filterAvailableManualSteps(importsFullSteps(), (selector) => present.has(selector)));
     expect(shown).toContain("edit-import");
@@ -173,10 +180,10 @@ describe("State-dependent steps are optional and skipped safely (#6, #8)", () =>
     const quick = importsQuickSteps();
     expect(quick.find((entry) => entry.id === "edit-import")?.optional).toBe(true);
 
-    const empty = new Set([sel("upload"), sel("template-fields"), sel("imports-list")]);
+    const empty = new Set([sel("add-import"), sel("imports-list")]);
     expect(ids(filterAvailableManualSteps(quick, (selector) => empty.has(selector)))).not.toContain("edit-import");
 
-    const ready = new Set([sel("upload"), sel("template-fields"), sel("imports-list"), sel("edit-import")]);
+    const ready = new Set([sel("add-import"), sel("imports-list"), sel("edit-import")]);
     expect(ids(filterAvailableManualSteps(quick, (selector) => ready.has(selector)))).toContain("edit-import");
   });
 });
@@ -208,9 +215,14 @@ describe("What changed explains editing after the first processed import (#7)", 
 
 describe("Every targeted element is declared in the Imports surfaces", () => {
   it("the page declares the always-present targets", () => {
-    for (const target of ["upload", "template-fields", "imports-list"]) {
-      expect(PAGE_SOURCE).toContain(`data-imports-tour="${target}"`);
-    }
+    expect(WORKSPACE_SOURCE).toContain('data-imports-tour="add-import"');
+    expect(WORKSPACE_SOURCE).toContain('data-imports-tour="imports-list"');
+  });
+
+  it("the workflow declares its conditional targets", () => {
+    expect(WORKFLOW_SOURCE).toContain('data-imports-tour="upload"');
+    expect(WORKFLOW_SOURCE).toContain('data-imports-tour="template-fields"');
+    expect(PAGE_SOURCE).toContain("<ImportsWorkspace");
   });
 
   it("the card declares the processed-import + pagination targets (static or first-card anchored)", () => {

@@ -1,7 +1,7 @@
 import type { ManualConfig, ManualStep } from "@/components/manual/manualTypes";
 
 // Imports (/imports) guided help. Three menu modes share one config:
-//   - "starter" → a short Quick start (upload → choose fields → save → it appears)
+//   - "starter" → a short Quick start (library → add → map → save)
 //   - "full"    → the complete page tour, adapted to the visible state
 //   - "changed" → a contextual tour of the processed card + pencil editor, offered
 //                 once the user has at least one processed import
@@ -19,13 +19,25 @@ function sel(target: string): string {
 
 // ---- Reusable steps --------------------------------------------------------
 
+function addImportStep(): ManualStep {
+  return {
+    id: "add-import",
+    title: "Add a people list",
+    body: "Saved imports are shown first. Choose Add import when you want to open the upload, field mapping, and review workflow.",
+    selector: sel("add-import"),
+    placement: "left",
+    optional: true
+  };
+}
+
 function uploadStep(): ManualStep {
   return {
     id: "upload",
     title: "Start with your people list",
     body: "Imports are the starting point for outreach. Upload a CSV or spreadsheet and Sendloom reads the file and prepares its recipient rows for review.",
     selector: sel("upload"),
-    placement: "right"
+    placement: "right",
+    optional: true
   };
 }
 
@@ -35,7 +47,8 @@ function templateFieldsStep(): ManualStep {
     title: "Choose template fields",
     body: "After a file is read, pick the columns templates can personalize against — names, companies, and any custom variables you want available at send time.",
     selector: sel("template-fields"),
-    placement: "left"
+    placement: "left",
+    optional: true
   };
 }
 
@@ -78,7 +91,8 @@ function importsListStep(): ManualStep {
     title: "Manage your imported audiences",
     body: "Processed imports appear here after their template fields are saved. Each card shows the audience size, sequence usage, active template fields, detected columns, and sample contacts.",
     selector: sel("imports-list"),
-    placement: "top"
+    placement: "top",
+    optional: true
   };
 }
 
@@ -162,22 +176,24 @@ function paginationStep(): ManualStep {
 // ---- Stage builders --------------------------------------------------------
 
 /**
- * Quick start — upload → choose fields → save → it appears below. The pencil edit
+ * Quick start — library → add → upload → choose fields → save. The pencil edit
  * step is appended but `optional`, so a first-time user with no processed import
  * never sees it (the overlay filters it out); a user who already has one gets the
  * short edit explainer.
  */
 export function importsQuickSteps(): ManualStep[] {
   return [
+    addImportStep(),
     uploadStep(),
     templateFieldsStep(),
     saveTemplateFieldsStep(),
     {
       id: "imports-list",
       title: "Your processed imports land here",
-      body: "Once template fields are saved, the import appears in the list below with its contacts and template fields, ready to power a sequence.",
+      body: "Once template fields are saved, return to the library to find the import with its contacts and template fields, ready to power a sequence.",
       selector: sel("imports-list"),
-      placement: "top"
+      placement: "top",
+      optional: true
     },
     editImportStep()
   ];
@@ -186,6 +202,7 @@ export function importsQuickSteps(): ManualStep[] {
 /** Full tour — every visible section and control, adapted to the page state. */
 export function importsFullSteps(): ManualStep[] {
   return [
+    addImportStep(),
     uploadStep(),
     templateFieldsStep(),
     pendingSelectorStep(),
