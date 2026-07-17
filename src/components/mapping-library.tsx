@@ -12,11 +12,9 @@ import {
   FileSpreadsheet,
   Loader2,
   PencilLine,
-  Search,
   SearchX,
   Trash2,
-  Users,
-  X
+  Users
 } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { createPortal } from "react-dom";
@@ -637,9 +635,13 @@ export function TemplateFieldPicker(props: TemplateFieldPickerProps) {
   );
 }
 
-export function MappingLibrary(props: { items: MappingLibraryItem[]; onAddImport: () => void }) {
+export function MappingLibrary(props: {
+  items: MappingLibraryItem[];
+  onAddImport: () => void;
+  searchQuery: string;
+  onClearSearch: () => void;
+}) {
   const [editingImportId, setEditingImportId] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
   const [expandedPreviewIds, setExpandedPreviewIds] = useState<string[]>([]);
   const [expandedColumnIds, setExpandedColumnIds] = useState<string[]>([]);
   const deletion = useImportDeletion({
@@ -654,7 +656,7 @@ export function MappingLibrary(props: { items: MappingLibraryItem[]; onAddImport
   const [page, setPage] = useState(1);
   const [error, setError] = useState<string | null>(null);
   useErrorToastEffect(error, "Import update failed");
-  const normalizedSearchQuery = searchQuery.trim().toLowerCase();
+  const normalizedSearchQuery = props.searchQuery.trim().toLowerCase();
   const filteredItems = useMemo(() => {
     if (!normalizedSearchQuery) {
       return props.items;
@@ -719,30 +721,6 @@ export function MappingLibrary(props: { items: MappingLibraryItem[]; onAddImport
 
   return (
     <div className="imports-library">
-      {props.items.length ? (
-        <div className="imports-library__toolbar">
-          <p className="imports-library__result-count" aria-live="polite">
-            {isSearching
-              ? `${filteredItems.length} ${filteredItems.length === 1 ? "match" : "matches"}`
-              : `${props.items.length} ${props.items.length === 1 ? "import" : "imports"}`}
-          </p>
-          <label className="imports-library__search" aria-label="Search imports">
-            <Search aria-hidden="true" />
-            <input
-              type="search"
-              value={searchQuery}
-              placeholder="Search lists, fields, or contacts..."
-              onChange={(event) => setSearchQuery(event.target.value)}
-            />
-            {searchQuery ? (
-              <button type="button" aria-label="Clear import search" onClick={() => setSearchQuery("")}>
-                <X aria-hidden="true" />
-              </button>
-            ) : null}
-          </label>
-        </div>
-      ) : null}
-
       {visibleItems.map((item, index) => {
         // The first visible card carries the guided-tour targets, so the Imports
         // help guide always finds an anchor when any processed import is shown.
@@ -951,7 +929,7 @@ export function MappingLibrary(props: { items: MappingLibraryItem[]; onAddImport
           </span>
           <strong>No matching imports</strong>
           <p>Try another list name, field, or contact.</p>
-          <button className="button secondary imports-library__empty-action" type="button" onClick={() => setSearchQuery("")}>
+          <button className="button secondary imports-library__empty-action" type="button" onClick={props.onClearSearch}>
             Clear search
           </button>
         </div>

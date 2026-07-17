@@ -1,6 +1,6 @@
 "use client";
 
-import { FileSpreadsheet, Plus } from "lucide-react";
+import { FileSpreadsheet, Plus, Search, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -33,6 +33,7 @@ export function ImportsWorkspace({
   const router = useRouter();
   const searchParams = useSearchParams();
   const [mode, setMode] = useState<ImportsMode>(initialImportId || missingImportId ? "workflow" : "library");
+  const [searchQuery, setSearchQuery] = useState("");
 
   // The workflow is always URL-identifiable: import context ids (including
   // Discover's pendingImportId) arrive from links, and Add import stamps
@@ -100,8 +101,29 @@ export function ImportsWorkspace({
               </div>
               <p>People lists ready to review, edit, or use in a sequence.</p>
             </div>
+            {mappingItems.length ? (
+              <label className="imports-library__search" aria-label="Search imports">
+                <Search aria-hidden="true" />
+                <input
+                  type="search"
+                  value={searchQuery}
+                  placeholder="Search lists, fields, or contacts..."
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                />
+                {searchQuery ? (
+                  <button type="button" aria-label="Clear import search" onClick={() => setSearchQuery("")}>
+                    <X aria-hidden="true" />
+                  </button>
+                ) : null}
+              </label>
+            ) : null}
           </header>
-          <MappingLibrary items={mappingItems} onAddImport={openWorkflow} />
+          <MappingLibrary
+            items={mappingItems}
+            onAddImport={openWorkflow}
+            searchQuery={searchQuery}
+            onClearSearch={() => setSearchQuery("")}
+          />
         </section>
       )}
     </div>
