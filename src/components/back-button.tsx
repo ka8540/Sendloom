@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { ArrowLeft } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
+import { hasImportWorkflowContext } from "@/components/imports-workflow-selection";
 import {
   getDefaultBackFallback,
   getSequenceDetailReturnTo,
@@ -24,11 +25,14 @@ export function BackButton({ alwaysUseFallback = false, className, fallbackHref,
   const searchParams = useSearchParams();
   const isCreateSequencePage = pathname === "/campaigns/new" || pathname === "/sequences/new";
   const isTemplateWizardPage = pathname === "/templates" && searchParams.get("wizard") === "template";
+  const isImportsWorkflowPage = pathname === "/imports" && hasImportWorkflowContext(searchParams);
   const resolvedLabel = isCreateSequencePage
     ? "Back to sequences"
     : isTemplateWizardPage
       ? "Back to templates"
-      : label;
+      : isImportsWorkflowPage
+        ? "Back to imports"
+        : label;
 
   // How many in-app client navigations have happened since this button mounted.
   // The back button lives in the persistent app shell, so this ref survives every
@@ -87,6 +91,16 @@ export function BackButton({ alwaysUseFallback = false, className, fallbackHref,
       return;
     }
 
+    // The Imports workflow (Upload / Map fields / Review) always exits to the
+    // imports library, never to wherever the user came from (e.g. Discover).
+    // `replace` (matching the workflow's own exit in imports-workspace) consumes
+    // the workflow entry: a later back press then leaves Imports instead of
+    // dropping the user back into the workflow they just exited.
+    if (isImportsWorkflowPage) {
+      router.replace("/imports");
+      return;
+    }
+
     const sequenceReturnTo =
       typeof window === "undefined"
         ? null
@@ -105,7 +119,7 @@ export function BackButton({ alwaysUseFallback = false, className, fallbackHref,
     }
 
     router.push(fallbackHref ?? getDefaultBackFallback(pathname));
-  }, [alwaysUseFallback, fallbackHref, isCreateSequencePage, isTemplateWizardPage, pathname, router]);
+  }, [alwaysUseFallback, fallbackHref, isCreateSequencePage, isImportsWorkflowPage, isTemplateWizardPage, pathname, router]);
 
   return (
     <button

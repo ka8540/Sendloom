@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   getRequestedImportId,
+  hasImportWorkflowContext,
   resolveInitialImportId,
   type ImportSelectionCandidate
 } from "@/components/imports-workflow-selection";
@@ -41,5 +42,19 @@ describe("Imports workflow context selection", () => {
   it("never selects an unknown query id outside the loaded user imports", () => {
     expect(resolveInitialImportId(candidates, "not-owned-or-missing")).toBeUndefined();
     expect(resolveInitialImportId([], "not-owned-or-missing")).toBeUndefined();
+  });
+
+  it("recognizes the workflow from any import context id or step marker", () => {
+    expect(hasImportWorkflowContext(new URLSearchParams("pendingImportId=abc&step=map"))).toBe(true);
+    expect(hasImportWorkflowContext(new URLSearchParams("importId=import-2"))).toBe(true);
+    expect(hasImportWorkflowContext(new URLSearchParams("listId=list-3"))).toBe(true);
+    expect(hasImportWorkflowContext(new URLSearchParams("audienceId=audience-4"))).toBe(true);
+    expect(hasImportWorkflowContext(new URLSearchParams("step=upload"))).toBe(true);
+  });
+
+  it("treats a plain or unrelated /imports query as the library", () => {
+    expect(hasImportWorkflowContext(new URLSearchParams(""))).toBe(false);
+    expect(hasImportWorkflowContext(new URLSearchParams("foo=bar"))).toBe(false);
+    expect(hasImportWorkflowContext(new URLSearchParams("step=%20"))).toBe(false);
   });
 });

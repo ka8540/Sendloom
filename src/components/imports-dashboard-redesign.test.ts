@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
+const BACK_BUTTON = readFileSync("src/components/back-button.tsx", "utf8");
 const PAGE = readFileSync("src/app/(app)/imports/page.tsx", "utf8");
 const LIBRARY = readFileSync("src/components/mapping-library.tsx", "utf8");
 const WORKFLOW = readFileSync("src/components/imports-workflow.tsx", "utf8");
@@ -22,7 +23,7 @@ describe("Imports dashboard redesign", () => {
   });
 
   it("defaults to the saved library and starts the workflow from Add import", () => {
-    expect(WORKSPACE).toContain('useState<ImportsMode>(initialImportId ? "workflow" : "library")');
+    expect(WORKSPACE).toContain('useState<ImportsMode>(initialImportId || missingImportId ? "workflow" : "library")');
     expect(WORKSPACE).toContain('data-imports-tour="add-import"');
     expect(WORKSPACE).toContain("Add import");
     expect(WORKSPACE).toContain("onClick={openWorkflow}");
@@ -31,9 +32,26 @@ describe("Imports dashboard redesign", () => {
 
   it("opens explicit import context directly in workflow and clears it when returning", () => {
     expect(PAGE).toMatch(/const initialImportId = requestedImportId[\s\S]*resolveInitialImportId/);
-    expect(WORKSPACE).toMatch(/if \(initialImportId\) \{[\s\S]*setMode\("workflow"\)/);
+    expect(WORKSPACE).toContain('setMode(inWorkflowRoute ? "workflow" : "library")');
     expect(WORKSPACE).toContain('router.replace("/imports")');
     expect(WORKFLOW).toContain("onExit();");
+  });
+
+  it("routes imports workflow exits explicitly instead of using browser history", () => {
+    const importsWorkflowExit = BACK_BUTTON.slice(
+      BACK_BUTTON.indexOf("if (isImportsWorkflowPage)"),
+      BACK_BUTTON.indexOf("const sequenceReturnTo")
+    );
+
+    expect(BACK_BUTTON).toContain('pathname === "/imports" && hasImportWorkflowContext(searchParams)');
+    // `replace`, not `push`: the workflow entry must be consumed so a later back
+    // press leaves Imports instead of re-entering the workflow just exited.
+    expect(importsWorkflowExit).toContain('router.replace("/imports")');
+    expect(importsWorkflowExit).not.toContain('router.push("/imports")');
+    expect(importsWorkflowExit).not.toContain("router.back()");
+    expect(importsWorkflowExit).not.toContain("history.back");
+    expect(WORKSPACE).toContain('router.push("/imports?step=upload")');
+    expect(WORKSPACE).not.toContain("router.back()");
   });
 
   it("presents Upload, Map fields, and Review as a real three-step flow", () => {

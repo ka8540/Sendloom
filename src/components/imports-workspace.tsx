@@ -2,9 +2,10 @@
 
 import { FileSpreadsheet, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import { ImportsWorkflow } from "@/components/imports-workflow";
+import { hasImportWorkflowContext } from "@/components/imports-workflow-selection";
 import {
   MappingLibrary,
   type MappingLibraryItem,
@@ -30,28 +31,33 @@ export function ImportsWorkspace({
   hasAnyImports
 }: ImportsWorkspaceProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [mode, setMode] = useState<ImportsMode>(initialImportId || missingImportId ? "workflow" : "library");
 
-  // An explicit import context (including Discover's pendingImportId) always
-  // opens that import directly in Map fields, even after client navigation.
-  // A context id that can't be resolved still opens the workflow so the
-  // "import not found" state is shown instead of silently falling back to
-  // the library.
+  // The workflow is always URL-identifiable: import context ids (including
+  // Discover's pendingImportId) arrive from links, and Add import stamps
+  // step=upload. An explicit context always opens the workflow — a context id
+  // that can't be resolved still does, so the "import not found" state is
+  // shown instead of silently falling back to the library. Syncing mode both
+  // ways lets any explicit navigation to plain /imports (the shell back
+  // button, Back to imports) land on the library instead of replaying
+  // browser history.
+  const inWorkflowRoute = Boolean(initialImportId || missingImportId) || hasImportWorkflowContext(searchParams);
+
   useEffect(() => {
-    if (initialImportId || missingImportId) {
-      setMode("workflow");
-    }
-  }, [initialImportId, missingImportId]);
+    setMode(inWorkflowRoute ? "workflow" : "library");
+  }, [inWorkflowRoute]);
 
   function openLibrary() {
     setMode("library");
-    if (initialImportId || missingImportId) {
+    if (inWorkflowRoute) {
       router.replace("/imports");
     }
   }
 
   function openWorkflow() {
     setMode("workflow");
+    router.push("/imports?step=upload");
   }
 
   return (
