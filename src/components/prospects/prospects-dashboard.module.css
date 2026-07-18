@@ -519,14 +519,20 @@
   flex-direction: column;
   /* Keep the 7 columns readable; the wrapper scrolls horizontally on narrower
      widths (e.g. sidebar open) instead of cramping. Reset at the card breakpoint. */
-  min-width: 52rem;
+  min-width: 66rem;
 }
 
 .historyHeadRow,
 .historyRow {
   display: grid;
   grid-template-columns:
-    minmax(0, 1.6fr) minmax(0, 1.5fr) minmax(0, 1.1fr) 3.5rem minmax(0, auto) minmax(0, 0.9fr) 4rem;
+    minmax(12rem, 1.4fr)
+    minmax(15rem, 1.2fr)
+    minmax(9rem, 0.8fr)
+    4rem
+    7rem
+    8rem
+    4rem;
   gap: 1rem;
   align-items: center;
   padding: 0.8rem 0.4rem;
@@ -634,6 +640,22 @@
 
 .historyPeopleCell {
   font-weight: 600;
+}
+
+/* Status is a fixed track shared by every independently gridded row. Centering
+   the wrapper keeps every pill aligned without its label affecting neighbors. */
+.historyHeadRow > :nth-child(5),
+.historyRow > [data-label="Status"] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+}
+
+.historyRow > [data-label="Status"] .badge {
+  min-height: 1.75rem;
+  justify-content: center;
+  white-space: nowrap;
 }
 
 .historyViewCell {
@@ -2471,6 +2493,10 @@
     font-weight: 700;
     color: var(--muted);
     margin-bottom: 0.2rem;
+  }
+
+  .historyRow > [data-label="Status"] {
+    display: block;
   }
 
   .cellTitle,
