@@ -401,10 +401,10 @@ describe("premium styling contract", () => {
   });
 
   it("the dialog card is compact — never full content width on desktop", () => {
-    // ~608px card in the 560–720px band, big radius, confirm-dialog surface.
+    // ~608px card in the 560–720px band, dialog radius, confirm-dialog surface.
     expect(CSS).toMatch(/\.companySearchCard \{[^}]*max-width: 38rem/);
-    expect(CSS).toMatch(/\.companySearchCard \{[^}]*border-radius: 26px/);
-    expect(CSS).toMatch(/\.companySearchCard \{[^}]*radial-gradient/);
+    expect(CSS).toMatch(/\.companySearchCard \{[^}]*border-radius: var\(--radius-dialog\)/);
+    expect(CSS).toMatch(/\.companySearchCard \{[^}]*background: var\(--surface-strong\)/);
   });
 
   it("the reveal card animates in and honors reduced motion", () => {

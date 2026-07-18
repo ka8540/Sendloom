@@ -5,7 +5,7 @@
    menu options, and rows. */
 
 .dashboard {
-  --tone-attention: #e5484d;
+  --tone-attention: var(--danger);
   --tone-paused: var(--warning);
   --tone-active: var(--accent);
   --tone-completed: var(--accent-strong);
@@ -23,11 +23,9 @@
   display: grid;
   gap: 1.05rem;
   padding: 1.55rem;
-  border-radius: 28px;
+  border-radius: var(--radius-dialog);
   border: 1px solid var(--line);
-  background:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 8%, transparent), transparent 32%),
-    linear-gradient(180deg, color-mix(in srgb, var(--surface) 90%, transparent), var(--surface));
+  background: var(--surface);
   box-shadow: var(--shadow);
   min-width: 0;
 }
@@ -51,7 +49,7 @@
   padding-right: 0.9rem;
   border-right: 1px solid var(--line);
   font-size: 0.95rem;
-  font-weight: 750;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
   white-space: nowrap;
@@ -83,7 +81,7 @@
   color: var(--text);
   font: inherit;
   font-size: 0.86rem;
-  font-weight: 650;
+  font-weight: 500;
   line-height: 1.2;
   cursor: pointer;
   transition: border-color 140ms ease, background-color 140ms ease, color 140ms ease;
@@ -145,7 +143,7 @@
   width: max-content;
   max-width: min(21rem, calc(100vw - 3rem));
   padding: 0.4rem;
-  border-radius: 14px;
+  border-radius: 12px;
   border: 1px solid var(--line);
   background: var(--surface-strong);
   box-shadow: var(--shadow);
@@ -244,7 +242,7 @@
   background: transparent;
   color: var(--muted);
   font-size: 0.75rem;
-  font-weight: 700;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   text-align: right;
   flex-shrink: 0;
@@ -331,7 +329,7 @@
   padding: 0 0.4rem 0.15rem 1rem;
   color: var(--muted);
   font-size: 0.72rem;
-  font-weight: 750;
+  font-weight: 600;
   letter-spacing: 0.07em;
   text-transform: uppercase;
 }
@@ -364,8 +362,7 @@
 
 .row:hover {
   border-color: color-mix(in srgb, var(--accent) 36%, var(--line));
-  box-shadow: 0 10px 24px color-mix(in srgb, var(--text) 7%, transparent);
-  transform: translateY(-1px);
+  box-shadow: var(--shadow);
 }
 
 .row:focus-within {
@@ -432,7 +429,7 @@
 
 .rowName {
   font-size: 0.96rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: -0.015em;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -460,7 +457,7 @@
   background: var(--surface);
   color: var(--muted);
   font-size: 0.76rem;
-  font-weight: 700;
+  font-weight: 600;
   white-space: nowrap;
 }
 
@@ -516,7 +513,7 @@
 
 .rowProgressValue {
   font-size: 0.86rem;
-  font-weight: 750;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
 }
@@ -533,7 +530,7 @@
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 60%, #8bdcb9));
+  background: var(--accent-soft);
 }
 
 .rowPerformance {
@@ -550,7 +547,7 @@
   gap: 0.28rem;
   color: var(--muted);
   font-size: 0.8rem;
-  font-weight: 700;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -570,7 +567,7 @@
   color: var(--text);
   content: attr(data-tooltip);
   font-size: 0.7rem;
-  font-weight: 650;
+  font-weight: 500;
   line-height: 1.15;
   opacity: 0;
   visibility: hidden;
@@ -635,7 +632,7 @@
 .pageIndicator {
   color: var(--muted);
   font-size: 0.84rem;
-  font-weight: 650;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -681,7 +678,7 @@
   justify-items: center;
   gap: 0.5rem;
   padding: 2.6rem 1.4rem;
-  border-radius: 18px;
+  border-radius: 16px;
   border: 1px dashed color-mix(in srgb, var(--muted) 34%, var(--line));
   background: var(--surface-muted);
   text-align: center;

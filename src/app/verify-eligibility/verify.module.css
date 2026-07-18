@@ -5,18 +5,13 @@
   min-height: 100dvh;
   padding: 2rem;
   background: var(--bg);
-  background-image:
-    radial-gradient(ellipse 60% 50% at 50% 0%, hsl(142 50% 20% / 0.15), transparent),
-    radial-gradient(ellipse 40% 40% at 80% 80%, hsl(220 40% 20% / 0.1), transparent);
 }
 
 .card {
   width: 100%;
   max-width: 520px;
-  background: hsl(220 14% 12% / 0.7);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border: 1px solid hsl(220 14% 20% / 0.5);
+  background: var(--surface);
+  border: 1px solid var(--line);
   border-radius: 20px;
   padding: 2.5rem 2rem;
   text-align: center;
@@ -43,13 +38,13 @@
   height: 64px;
   margin: 0 auto 1.25rem;
   border-radius: 16px;
-  background: hsl(142 50% 40% / 0.12);
+  background: var(--accent-soft);
   color: var(--accent);
 }
 
 .blockedIcon {
-  background: hsl(0 50% 40% / 0.12);
-  color: hsl(0 70% 65%);
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .title {
@@ -63,7 +58,7 @@
 .subtitle {
   font-size: 0.925rem;
   line-height: 1.6;
-  color: hsl(220 20% 65%);
+  color: var(--muted);
   margin: 0 0 1.75rem;
   max-width: 420px;
   margin-inline: auto;
@@ -71,9 +66,9 @@
 
 .error {
   font-size: 0.85rem;
-  color: hsl(0 70% 65%);
-  background: hsl(0 50% 40% / 0.1);
-  border: 1px solid hsl(0 50% 40% / 0.2);
+  color: var(--danger);
+  background: var(--danger-soft);
+  border: 1px solid color-mix(in srgb, var(--danger) 24%, var(--line));
   border-radius: 10px;
   padding: 0.75rem 1rem;
   margin-bottom: 1.25rem;
@@ -93,18 +88,18 @@
   gap: 0.75rem;
   font-size: 0.9rem;
   line-height: 1.5;
-  color: hsl(220 20% 75%);
+  color: var(--text-secondary);
   cursor: pointer;
   padding: 0.75rem 1rem;
   border-radius: 12px;
-  border: 1px solid hsl(220 14% 20% / 0.4);
-  background: hsl(220 14% 10% / 0.4);
+  border: 1px solid var(--line);
+  background: var(--field-bg);
   transition: border-color 0.2s, background 0.2s;
 }
 
 .checkboxLabel:hover {
-  border-color: hsl(142 40% 40% / 0.3);
-  background: hsl(220 14% 12% / 0.6);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  background: var(--surface);
 }
 
 .checkbox {
@@ -113,7 +108,7 @@
   width: 20px;
   height: 20px;
   min-width: 20px;
-  border: 2px solid hsl(220 14% 30%);
+  border: 2px solid var(--divider);
   border-radius: 6px;
   background: transparent;
   cursor: pointer;
@@ -159,7 +154,7 @@
   padding: 0.875rem 1.5rem;
   border: none;
   border-radius: 12px;
-  background: linear-gradient(135deg, var(--accent), hsl(142 55% 38%));
+  background: var(--text);
   color: white;
   font-size: 0.95rem;
   font-weight: 600;
@@ -181,13 +176,13 @@
 .ineligibleSection {
   margin-top: 1.25rem;
   padding-top: 1.25rem;
-  border-top: 1px solid hsl(220 14% 18% / 0.5);
+  border-top: 1px solid var(--line);
 }
 
 .ineligibleButton {
   background: none;
   border: none;
-  color: hsl(220 20% 55%);
+  color: var(--muted-deep);
   font-size: 0.825rem;
   cursor: pointer;
   text-decoration: underline;
@@ -197,7 +192,7 @@
 }
 
 .ineligibleButton:hover {
-  color: hsl(220 20% 70%);
+  color: var(--muted);
 }
 
 .ineligibleButton:disabled {
@@ -208,7 +203,7 @@
 .blockedMessage {
   font-size: 0.925rem;
   line-height: 1.6;
-  color: hsl(220 20% 65%);
+  color: var(--muted);
   margin: 0 0 1.5rem;
   max-width: 380px;
   margin-inline: auto;
@@ -232,40 +227,40 @@
 
 /* Light theme */
 :global([data-theme="light"]) .card {
-  background: hsl(0 0% 100% / 0.85);
-  border-color: hsl(220 14% 85%);
+  background: var(--bg);
+  border-color: var(--text-secondary);
 }
 
 :global([data-theme="light"]) .subtitle,
 :global([data-theme="light"]) .blockedMessage {
-  color: hsl(220 15% 45%);
+  color: var(--muted-deep);
 }
 
 :global([data-theme="light"]) .checkboxLabel {
-  color: hsl(220 15% 35%);
-  border-color: hsl(220 14% 85%);
-  background: hsl(220 14% 97%);
+  color: var(--disabled);
+  border-color: var(--text-secondary);
+  background: var(--text);
 }
 
 :global([data-theme="light"]) .checkboxLabel:hover {
-  border-color: hsl(142 40% 50% / 0.4);
-  background: hsl(220 14% 95%);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  background: var(--text);
 }
 
 :global([data-theme="light"]) .checkbox {
-  border-color: hsl(220 14% 75%);
+  border-color: var(--text-secondary);
 }
 
 :global([data-theme="light"]) .ineligibleButton {
-  color: hsl(220 15% 50%);
+  color: var(--muted-deep);
 }
 
 :global([data-theme="light"]) .ineligibleSection {
-  border-top-color: hsl(220 14% 90%);
+  border-top-color: var(--text);
 }
 
 :global([data-theme="light"]) .error {
-  background: hsl(0 50% 95%);
-  border-color: hsl(0 50% 85%);
-  color: hsl(0 60% 45%);
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--danger);
 }

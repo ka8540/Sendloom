@@ -47,8 +47,8 @@
 
 .delete:hover:not(:disabled),
 .delete:focus-visible {
-  background: color-mix(in srgb, #e5484d 14%, var(--surface));
-  color: color-mix(in srgb, #e5484d 78%, var(--text));
+  background: color-mix(in srgb, var(--danger) 14%, var(--surface));
+  color: color-mix(in srgb, var(--danger) 78%, var(--text));
 }
 
 .delete:disabled {
@@ -71,12 +71,11 @@
   background: var(--surface-strong);
   color: var(--text);
   font-size: 0.72rem;
-  font-weight: 650;
+  font-weight: 500;
   line-height: 1;
   white-space: nowrap;
   box-shadow: 0 8px 18px color-mix(in srgb, var(--text) 8%, transparent);
   opacity: 0;
-  transform: translateY(-2px);
   pointer-events: none;
   transition: opacity 140ms ease, transform 140ms ease;
 }

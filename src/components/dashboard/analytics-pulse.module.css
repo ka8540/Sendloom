@@ -37,7 +37,7 @@
   min-width: 0;
   color: var(--muted);
   font-size: 0.72rem;
-  font-weight: 750;
+  font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   white-space: nowrap;
@@ -53,7 +53,7 @@
 .moduleValue {
   color: var(--text);
   font-size: 0.86rem;
-  font-weight: 650;
+  font-weight: 500;
   letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -108,8 +108,8 @@
 }
 
 .donutSegment[data-key="issues"] {
-  stroke: #d96952;
-  color: #d96952;
+  stroke: var(--danger);
+  color: var(--danger);
 }
 
 .donutSegment[data-state="active"] {
@@ -140,7 +140,7 @@
    Issues re-runs the entry animation; static under reduced motion. */
 .donutCenterValue {
   font-size: 1.32rem;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1;
   letter-spacing: -0.05em;
   font-variant-numeric: tabular-nums;
@@ -152,7 +152,7 @@
 }
 
 .donutCenterValue[data-mode="issues"] {
-  color: #d96952;
+  color: var(--danger);
 }
 
 @keyframes pulse-center-in {
@@ -170,14 +170,14 @@
 .donutCaption {
   color: var(--muted);
   font-size: 0.62rem;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   animation: pulse-center-in 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .donutCaption[data-mode="issues"] {
-  color: color-mix(in srgb, #d96952 72%, var(--muted));
+  color: color-mix(in srgb, var(--danger) 72%, var(--muted));
 }
 
 /* Selectable metric rows: dot · label · count · share chip, split by a
@@ -185,7 +185,7 @@
 .metricRows {
   display: grid;
   min-width: 0;
-  border-radius: 14px;
+  border-radius: 12px;
   border: 1px solid color-mix(in srgb, var(--line) 85%, transparent);
   background: color-mix(in srgb, var(--surface-soft) 55%, transparent);
   overflow: hidden;
@@ -227,7 +227,7 @@
 }
 
 .metricRow[data-key="issues"] {
-  --metric-color: #d96952;
+  --metric-color: var(--danger);
 }
 
 .metricRow:hover,
@@ -264,7 +264,7 @@
   overflow: hidden;
   color: var(--muted);
   font-size: 0.72rem;
-  font-weight: 750;
+  font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   text-overflow: ellipsis;
@@ -273,7 +273,7 @@
 
 .metricValue {
   font-size: 1rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -287,7 +287,7 @@
   background: color-mix(in srgb, var(--metric-color, var(--accent)) 12%, transparent);
   color: color-mix(in srgb, var(--metric-color, var(--accent)) 78%, var(--text));
   font-size: 0.68rem;
-  font-weight: 800;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   text-align: center;
   white-space: nowrap;
@@ -347,8 +347,8 @@
 .healthChip[data-key="review"],
 .detailCard[data-tone="review"],
 .detailCard[data-tone="issues"] {
-  --slice-color: #d96952;
-  --metric-color: #d96952;
+  --slice-color: var(--danger);
+  --metric-color: var(--danger);
 }
 
 .healthSlice[data-key="ready"],
@@ -396,7 +396,6 @@
 }
 
 .healthChip[data-state="active"] {
-  transform: translateY(-1px);
 }
 
 .healthChip[data-state="dim"] {
@@ -418,7 +417,7 @@
   overflow: hidden;
   color: var(--muted);
   font-size: 0.68rem;
-  font-weight: 750;
+  font-weight: 600;
   letter-spacing: 0.09em;
   text-transform: uppercase;
   white-space: nowrap;
@@ -427,7 +426,7 @@
 
 .healthChipValue {
   font-size: 0.88rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
 }
@@ -476,14 +475,9 @@
   gap: 0.5rem;
   min-width: 0;
   padding: 0.7rem 0.8rem;
-  border-radius: 14px;
+  border-radius: 12px;
   border: 1px solid color-mix(in srgb, var(--metric-color, var(--accent)) 26%, var(--line));
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--metric-color, var(--accent)) 10%, transparent),
-      color-mix(in srgb, var(--surface-muted) 90%, transparent)
-    );
+  background: var(--surface-muted);
   box-shadow: inset 0 1px 0 color-mix(in srgb, white 5%, transparent);
   animation: pulse-detail-in 200ms cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -515,7 +509,7 @@
   min-width: 0;
   color: var(--muted);
   font-size: 0.66rem;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0.11em;
   text-transform: uppercase;
 }
@@ -536,7 +530,7 @@
 
 .detailHeadline strong {
   font-size: 1.05rem;
-  font-weight: 750;
+  font-weight: 600;
   letter-spacing: -0.035em;
   line-height: 1.15;
   font-variant-numeric: tabular-nums;
@@ -554,7 +548,7 @@
   background: color-mix(in srgb, var(--pair-color, var(--accent)) 12%, transparent);
   color: var(--text);
   font-size: 0.7rem;
-  font-weight: 700;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -572,7 +566,7 @@
 }
 
 .detailPaired[data-key="issues"] {
-  --pair-color: #d96952;
+  --pair-color: var(--danger);
 }
 
 .detailNote {
@@ -643,7 +637,7 @@
 .detailStat dt {
   color: var(--muted);
   font-size: 0.64rem;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -651,7 +645,7 @@
 .detailStat dd {
   margin: 0;
   font-size: 0.88rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
 }
@@ -673,7 +667,7 @@
   background: color-mix(in srgb, var(--surface-soft) 82%, color-mix(in srgb, var(--metric-color, var(--accent)) 24%, transparent) 18%);
   color: var(--text);
   font-size: 0.78rem;
-  font-weight: 650;
+  font-weight: 500;
   white-space: nowrap;
   transition: transform 160ms ease, border-color 180ms ease, background-color 180ms ease, box-shadow 180ms ease;
 }
@@ -686,7 +680,6 @@
 
 .detailAction:hover,
 .detailAction:focus-visible {
-  transform: translateY(-1px);
   border-color: color-mix(in srgb, var(--metric-color, var(--accent)) 48%, var(--line));
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.14);
   outline: none;

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Bebas_Neue, Space_Grotesk } from "next/font/google";
+import { Inter } from "next/font/google";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { Analytics } from "@vercel/analytics/next";
 
@@ -11,15 +11,9 @@ import { PublicLoadScreen } from "@/components/public-load-screen";
 import { loadScreenInitScript } from "@/lib/load-screen";
 import { themeInitScript } from "@/lib/theme";
 
-const loaderDisplayFont = Bebas_Neue({
-  weight: "400",
+const interFont = Inter({
   subsets: ["latin"],
-  variable: "--font-loader-display"
-});
-
-const loaderBodyFont = Space_Grotesk({
-  subsets: ["latin"],
-  variable: "--font-loader-body"
+  variable: "--font-sans"
 });
 
 export const metadata: Metadata = {
@@ -32,7 +26,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${loaderDisplayFont.variable} ${loaderBodyFont.variable}`}
+      className={interFont.variable}
     >
       <head>
         <meta

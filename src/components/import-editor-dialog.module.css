@@ -13,7 +13,6 @@
   place-items: center;
   padding: 1rem;
   background: color-mix(in srgb, var(--background) 76%, transparent);
-  backdrop-filter: blur(12px);
 }
 
 .card {
@@ -22,11 +21,9 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border-radius: 22px;
+  border-radius: var(--radius-dialog);
   border: 1px solid var(--line);
-  background:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 9%, transparent), transparent 34%),
-    color-mix(in srgb, var(--surface) 94%, var(--surface-strong) 6%);
+  background: var(--surface-strong);
   box-shadow: var(--shadow);
   animation: import-editor-enter 180ms ease-out;
 }
@@ -79,7 +76,7 @@
 .field label,
 .groupLabel {
   font-size: 0.8rem;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted);
@@ -93,7 +90,7 @@
   background: color-mix(in srgb, var(--surface-strong) 88%, transparent);
   color: var(--text);
   font: inherit;
-  font-weight: 700;
+  font-weight: 600;
   font-size: 1.02rem;
   letter-spacing: -0.02em;
   outline: none;
@@ -128,15 +125,15 @@
   background: color-mix(in srgb, var(--accent-soft) 40%, transparent);
   color: var(--text);
   font-size: 0.82rem;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .error {
   margin: 0;
   padding: 0.7rem 0.85rem;
-  border-radius: 14px;
-  border: 1px solid color-mix(in srgb, var(--danger, #d6455d) 38%, var(--line));
-  background: color-mix(in srgb, var(--danger, #d6455d) 12%, transparent);
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--danger) 38%, var(--line));
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
   color: var(--text);
   font-size: 0.88rem;
   line-height: 1.45;
@@ -198,7 +195,7 @@
 
 @media (max-width: 640px) {
   .card {
-    border-radius: 20px;
+    border-radius: 16px;
   }
 
   .footer {

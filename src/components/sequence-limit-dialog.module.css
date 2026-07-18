@@ -6,7 +6,6 @@
   place-items: center;
   padding: 1rem;
   background: color-mix(in srgb, var(--background) 76%, transparent);
-  backdrop-filter: blur(12px);
 }
 
 .card {
@@ -18,10 +17,8 @@
   gap: 1rem;
   padding: 1.4rem;
   border: 1px solid var(--line);
-  border-radius: 22px;
-  background:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 9%, transparent), transparent 36%),
-    color-mix(in srgb, var(--surface) 94%, var(--surface-strong) 6%);
+  border-radius: var(--radius-dialog);
+  background: var(--surface-strong);
   box-shadow: var(--shadow);
 }
 
@@ -46,7 +43,7 @@
   width: 2.6rem;
   height: 2.6rem;
   border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line));
-  border-radius: 14px;
+  border-radius: 12px;
   background: var(--accent-soft);
   color: var(--accent);
 }
@@ -67,7 +64,7 @@
   margin: 0;
   padding: 0.7rem 0.85rem;
   border: 1px solid var(--error-toast-border);
-  border-radius: 14px;
+  border-radius: 12px;
   background: var(--error-toast-icon-bg);
   color: var(--text);
   font-size: 0.88rem;
@@ -94,7 +91,7 @@
 }
 
 @media (max-width: 640px) {
-  .card { border-radius: 20px; }
+  .card { border-radius: 16px; }
   .actions { display: grid; grid-template-columns: 1fr; }
   .actions :global(.button) { width: 100%; }
 }

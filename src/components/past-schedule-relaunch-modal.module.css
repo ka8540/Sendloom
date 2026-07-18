@@ -6,7 +6,6 @@
   place-items: center;
   padding: 1rem;
   background: color-mix(in srgb, var(--background) 76%, transparent);
-  backdrop-filter: blur(12px);
 }
 
 .modalCard {
@@ -16,11 +15,9 @@
   display: grid;
   gap: 0;
   padding: 0;
-  border-radius: 22px;
+  border-radius: var(--radius-dialog);
   border: 1px solid var(--line);
-  background:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 9%, transparent), transparent 34%),
-    color-mix(in srgb, var(--surface) 94%, var(--surface-strong) 6%);
+  background: var(--surface-strong);
   box-shadow: var(--shadow);
   animation: past-schedule-modal-enter 180ms ease-out;
 }
@@ -39,7 +36,7 @@
   flex: 0 0 auto;
   width: 2.6rem;
   height: 2.6rem;
-  border-radius: 14px;
+  border-radius: 12px;
   border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line));
   background: var(--accent-soft);
   color: var(--accent);
@@ -113,7 +110,7 @@
 
 @media (max-width: 640px) {
   .modalCard {
-    border-radius: 20px;
+    border-radius: 16px;
   }
 
   .modalActions {

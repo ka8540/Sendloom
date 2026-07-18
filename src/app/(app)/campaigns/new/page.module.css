@@ -15,7 +15,7 @@
   align-items: center;
   gap: 0.8rem;
   padding: 0.95rem 1.05rem;
-  border-radius: 18px;
+  border-radius: 16px;
   border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
   background: color-mix(in srgb, var(--accent-soft) 58%, var(--surface));
   color: var(--text);
@@ -63,7 +63,7 @@
   background: var(--accent-soft);
   color: var(--accent-strong);
   font-size: 0.78rem;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }

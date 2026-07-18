@@ -18,18 +18,18 @@ export function SendloomLogo({ className }: SendloomLogoProps) {
       xmlns="http://www.w3.org/2000/svg"
     >
       <defs>
+        {/* Flat brand tile — ids kept for markup compatibility. */}
         <linearGradient id={gradientId} x1="8" y1="6" x2="40" y2="42" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#23A774" />
-          <stop offset="1" stopColor="#167C5A" />
+          <stop stopColor="#2563EB" />
+          <stop offset="1" stopColor="#2563EB" />
         </linearGradient>
         <radialGradient id={glowId} cx="0" cy="0" r="1" gradientTransform="translate(16 14) rotate(42) scale(26 26)" gradientUnits="userSpaceOnUse">
-          <stop stopColor="white" stopOpacity="0.22" />
+          <stop stopColor="white" stopOpacity="0" />
           <stop offset="1" stopColor="white" stopOpacity="0" />
         </radialGradient>
       </defs>
 
-      <rect x="2" y="2" width="44" height="44" rx="16" fill={`url(#${gradientId})`} />
-      <rect x="2" y="2" width="44" height="44" rx="16" fill={`url(#${glowId})`} />
+      <rect x="2" y="2" width="44" height="44" rx="14" fill={`url(#${gradientId})`} />
       <path d="M16.5 12.5v23" stroke="rgba(255,255,255,0.34)" strokeWidth="2.2" strokeLinecap="round" />
       <path d="M24 11.5v25" stroke="rgba(255,255,255,0.48)" strokeWidth="2.4" strokeLinecap="round" />
       <path d="M31.5 12.5v23" stroke="rgba(255,255,255,0.34)" strokeWidth="2.2" strokeLinecap="round" />

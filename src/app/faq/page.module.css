@@ -126,7 +126,7 @@
   border: 1px solid color-mix(in srgb, var(--accent) 16%, var(--line));
   border-radius: 20px;
   background:
-    linear-gradient(135deg, color-mix(in srgb, var(--surface) 90%, var(--accent-soft)), var(--surface-ghost));
+    var(--surface);
 }
 
 .contactCopy {
@@ -170,7 +170,7 @@
   color: white;
   font-weight: 700;
   white-space: nowrap;
-  box-shadow: 0 14px 28px color-mix(in srgb, var(--accent) 24%, transparent);
+  box-shadow: var(--shadow);
   transition:
     transform 140ms ease,
     background-color 160ms ease,
@@ -185,7 +185,7 @@
 .contactButton:hover,
 .contactButton:focus-visible {
   background: var(--accent-strong);
-  box-shadow: 0 18px 32px color-mix(in srgb, var(--accent) 28%, transparent);
+  box-shadow: var(--shadow);
   outline: none;
   transform: translateY(-1px);
 }

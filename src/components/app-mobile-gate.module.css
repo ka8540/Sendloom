@@ -4,10 +4,7 @@
   isolation: isolate;
   overflow-x: clip;
   color: var(--text);
-  background:
-    radial-gradient(circle at 18% 14%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 18rem),
-    radial-gradient(circle at 82% 18%, color-mix(in srgb, #5b8dff 12%, transparent), transparent 20rem),
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-strong) 96%, #09111c), color-mix(in srgb, var(--surface) 96%, #0c1624));
+  background: var(--surface-strong);
 }
 
 .page::before,
@@ -29,13 +26,7 @@
 }
 
 .page::after {
-  background:
-    radial-gradient(circle at 12% 22%, color-mix(in srgb, var(--accent) 28%, transparent) 0 0.14rem, transparent 0.18rem),
-    radial-gradient(circle at 20% 72%, color-mix(in srgb, var(--accent) 22%, transparent) 0 0.12rem, transparent 0.16rem),
-    radial-gradient(circle at 34% 34%, color-mix(in srgb, #5b8dff 18%, transparent) 0 0.14rem, transparent 0.18rem),
-    radial-gradient(circle at 52% 58%, color-mix(in srgb, var(--accent) 18%, transparent) 0 0.12rem, transparent 0.16rem),
-    radial-gradient(circle at 72% 30%, color-mix(in srgb, #5b8dff 16%, transparent) 0 0.14rem, transparent 0.18rem),
-    radial-gradient(circle at 88% 66%, color-mix(in srgb, var(--accent) 22%, transparent) 0 0.12rem, transparent 0.16rem);
+  background: var(--accent-soft);
   opacity: 0.88;
 }
 
@@ -57,20 +48,18 @@
   align-items: center;
   gap: 0.9rem;
   padding: 0.95rem 1rem;
-  border-radius: 22px;
+  border-radius: 16px;
   border: 1px solid color-mix(in srgb, var(--line) 86%, transparent);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface) 92%, transparent), color-mix(in srgb, var(--surface-ghost) 96%, transparent));
-  box-shadow: 0 18px 36px rgba(7, 18, 33, 0.18);
-  backdrop-filter: blur(18px);
+  background: var(--surface-ghost);
+  box-shadow: var(--shadow);
 }
 
 .brandMark {
   width: 3rem;
   height: 3rem;
   flex: 0 0 auto;
-  border-radius: 18px;
-  box-shadow: 0 16px 32px rgba(15, 77, 63, 0.2);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
 }
 
 .brandCopy {
@@ -98,14 +87,10 @@
 
 .copyPanel,
 .devicePanel {
-  border-radius: 30px;
+  border-radius: var(--radius-dialog);
   border: 1px solid color-mix(in srgb, var(--line) 88%, transparent);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface) 92%, transparent), color-mix(in srgb, var(--surface-ghost) 96%, transparent));
-  box-shadow:
-    0 28px 54px rgba(6, 15, 28, 0.22),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(18px);
+  background: var(--surface-ghost);
+  box-shadow: var(--shadow);
 }
 
 .copyPanel {
@@ -123,7 +108,7 @@
   background: color-mix(in srgb, var(--accent-soft) 76%, transparent);
   color: var(--accent-strong);
   font-size: 0.78rem;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -158,7 +143,7 @@
   min-height: 3.25rem;
   padding: 0.9rem 1.25rem;
   border-radius: 16px;
-  font-weight: 700;
+  font-weight: 600;
   transition:
     transform 140ms ease,
     box-shadow 160ms ease,
@@ -167,9 +152,9 @@
 }
 
 .primaryAction {
-  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  background: var(--accent);
   color: white;
-  box-shadow: 0 18px 30px rgba(15, 77, 63, 0.24);
+  box-shadow: var(--shadow);
 }
 
 .secondaryAction {
@@ -183,7 +168,6 @@
 .secondaryAction:hover,
 .secondaryAction:focus-visible {
   outline: none;
-  transform: translateY(-1px);
 }
 
 .noteGrid {
@@ -196,17 +180,16 @@
   display: grid;
   gap: 0.45rem;
   padding: 1rem;
-  border-radius: 22px;
+  border-radius: 16px;
   border: 1px solid color-mix(in srgb, var(--line) 86%, transparent);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-strong) 94%, transparent), color-mix(in srgb, var(--surface) 94%, transparent));
+  background: var(--surface-strong);
 }
 
 .noteLabel,
 .deviceEyebrow {
   color: var(--accent);
   font-size: 0.74rem;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -237,10 +220,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 18px;
+  border-radius: 16px;
   background: color-mix(in srgb, var(--accent-soft) 72%, transparent);
   color: var(--accent-strong);
-  box-shadow: 0 14px 28px rgba(15, 77, 63, 0.16);
+  box-shadow: var(--shadow);
 }
 
 .deviceIcon svg {
@@ -270,10 +253,9 @@
   align-items: flex-start;
   gap: 0.7rem;
   padding: 0.95rem 1rem;
-  border-radius: 18px;
+  border-radius: 16px;
   border: 1px solid color-mix(in srgb, var(--line) 86%, transparent);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-strong) 95%, transparent), color-mix(in srgb, var(--surface) 94%, transparent));
+  background: var(--surface-strong);
   color: var(--text);
 }
 

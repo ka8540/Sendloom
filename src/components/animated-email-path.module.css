@@ -4,9 +4,9 @@
   z-index: 1;
   pointer-events: none;
   overflow: hidden;
-  --email-path-base: color-mix(in srgb, var(--text) 12%, transparent);
-  --email-path-active: color-mix(in srgb, var(--text) 28%, transparent);
-  --email-path-icon: color-mix(in srgb, var(--text) 34%, transparent);
+  --email-path-base: color-mix(in srgb, var(--text) 6%, transparent);
+  --email-path-active: color-mix(in srgb, var(--text) 14%, transparent);
+  --email-path-icon: color-mix(in srgb, var(--text) 20%, transparent);
 }
 
 .canvas {

@@ -6,25 +6,25 @@
   display: grid;
   gap: 1.35rem;
 
-  --sev-error-color: #c0353a;
-  --sev-error-soft: rgba(229, 72, 77, 0.1);
-  --tone-violet: #6d4fd6;
-  --tone-violet-soft: rgba(124, 92, 255, 0.12);
+  --sev-error-color: var(--danger);
+  --sev-error-soft: color-mix(in srgb, var(--danger) 10%, transparent);
+  --tone-violet: var(--accent);
+  --tone-violet-soft: var(--accent-soft);
 }
 
 :global([data-theme="dark"]) .page {
-  --sev-error-color: #ff9d8a;
-  --sev-error-soft: rgba(255, 139, 115, 0.14);
-  --tone-violet: #a99bff;
-  --tone-violet-soft: rgba(169, 155, 255, 0.14);
+  --sev-error-color: var(--danger);
+  --sev-error-soft: var(--danger-soft);
+  --tone-violet: var(--accent);
+  --tone-violet-soft: var(--accent-soft);
 }
 
 @media (prefers-color-scheme: dark) {
   :global(:root:not([data-theme])) .page {
-    --sev-error-color: #ff9d8a;
-    --sev-error-soft: rgba(255, 139, 115, 0.14);
-    --tone-violet: #a99bff;
-    --tone-violet-soft: rgba(169, 155, 255, 0.14);
+    --sev-error-color: var(--danger);
+    --sev-error-soft: var(--danger-soft);
+    --tone-violet: var(--accent);
+    --tone-violet-soft: var(--accent-soft);
   }
 }
 
@@ -64,7 +64,7 @@
   color: var(--accent-strong);
   padding: 0.45rem 0.85rem;
   font-size: 0.82rem;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0.02em;
 }
 
@@ -100,7 +100,7 @@
   margin: 0;
   color: var(--accent-strong);
   font-size: 0.78rem;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -201,7 +201,6 @@
   background: var(--accent-soft);
   border-color: color-mix(in srgb, var(--accent) 16%, transparent);
   outline: none;
-  transform: translateY(-1px);
 }
 
 .userItemSelected,
@@ -219,7 +218,7 @@
   background: var(--accent-soft-strong);
   color: var(--accent-strong);
   font-size: 0.74rem;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0.04em;
   flex-shrink: 0;
 }
@@ -231,7 +230,7 @@
 }
 
 .userItemEmail {
-  font-weight: 700;
+  font-weight: 600;
   font-size: 0.9rem;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -264,7 +263,7 @@
   background: var(--surface-muted);
   color: var(--text);
   font-size: 0.74rem;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1;
   white-space: nowrap;
 }
@@ -343,7 +342,7 @@
   border-radius: 16px;
   background: var(--accent-soft-strong);
   color: var(--accent-strong);
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0.04em;
   flex-shrink: 0;
 }
@@ -385,7 +384,7 @@
 .selectedUserMeta dt {
   color: var(--muted);
   font-size: 0.78rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
@@ -393,7 +392,7 @@
 .selectedUserMeta dd {
   margin: 0;
   font-size: 0.85rem;
-  font-weight: 700;
+  font-weight: 600;
   text-align: right;
 }
 
@@ -401,7 +400,7 @@
   justify-self: start;
   color: var(--accent-strong);
   font-size: 0.88rem;
-  font-weight: 700;
+  font-weight: 600;
   transition: transform 130ms ease;
 }
 
@@ -486,7 +485,7 @@
 .statTileValue {
   margin: 0;
   font-size: 1.45rem;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: -0.01em;
   line-height: 1.1;
 }
@@ -514,12 +513,7 @@
 
 .statTileSkeleton {
   min-height: 6.4rem;
-  background: linear-gradient(
-    100deg,
-    var(--surface-muted) 40%,
-    color-mix(in srgb, var(--surface-hover) 60%, var(--surface-muted)) 50%,
-    var(--surface-muted) 60%
-  );
+  background: var(--surface-muted);
   background-size: 200% 100%;
   animation: shimmer 1.4s ease-in-out infinite;
 }
@@ -567,7 +561,7 @@
   color: var(--text);
   padding: 0.5rem 0.95rem;
   font-size: 0.86rem;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
   flex-shrink: 0;
   transition: background-color 150ms ease, border-color 150ms ease, transform 130ms ease;
@@ -578,7 +572,6 @@
   background: var(--accent-soft);
   border-color: color-mix(in srgb, var(--accent) 22%, var(--line));
   outline: none;
-  transform: translateY(-1px);
 }
 
 .refreshButton:disabled {
@@ -622,7 +615,7 @@
   color: var(--muted);
   padding: 0.34rem 0.72rem;
   font-size: 0.8rem;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
   transition: background-color 140ms ease, color 140ms ease;
@@ -676,7 +669,7 @@
   color: var(--text);
   padding: 0.45rem 0.95rem;
   font-size: 0.84rem;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
   transition: background-color 150ms ease, border-color 150ms ease;
 }
@@ -706,7 +699,7 @@
 
 .dayLabel {
   font-size: 0.78rem;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--accent-strong);
@@ -722,7 +715,7 @@
 .dayCount {
   color: var(--muted);
   font-size: 0.76rem;
-  font-weight: 700;
+  font-weight: 600;
   white-space: nowrap;
 }
 
@@ -835,7 +828,7 @@
   gap: 0.3rem;
   min-width: 0;
   padding: 0.3rem 0.4rem 0.45rem;
-  border-radius: 14px;
+  border-radius: 12px;
   transition: background-color 140ms ease;
 }
 
@@ -872,7 +865,7 @@
 
 .eventTitle {
   font-size: 0.94rem;
-  font-weight: 750;
+  font-weight: 600;
 }
 
 .eventTime {
@@ -954,7 +947,7 @@
 
 .eventDetails {
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: 12px;
   background: var(--surface-muted);
   padding: 0.8rem 0.9rem;
   margin-top: 0.2rem;
@@ -978,7 +971,7 @@
 .eventDetailGrid dt {
   color: var(--muted);
   font-size: 0.68rem;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0.07em;
   text-transform: uppercase;
   margin-bottom: 0.22rem;
@@ -1007,14 +1000,13 @@
   color: var(--accent-strong);
   padding: 0.6rem 1.4rem;
   font-size: 0.88rem;
-  font-weight: 750;
+  font-weight: 600;
   cursor: pointer;
   transition: background-color 150ms ease, transform 130ms ease;
 }
 
 .loadMoreButton:hover:not(:disabled) {
   background: var(--accent-soft-strong);
-  transform: translateY(-1px);
 }
 
 .loadMoreButton:disabled {
@@ -1080,7 +1072,7 @@
   color: var(--text);
   padding: 0.45rem 1.1rem;
   font-size: 0.84rem;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
   transition: background-color 150ms ease;
 }
@@ -1131,12 +1123,7 @@
 .skeletonAvatar,
 .skeletonLine,
 .skeletonNode {
-  background: linear-gradient(
-    100deg,
-    var(--surface-muted) 40%,
-    color-mix(in srgb, var(--surface-hover) 60%, var(--surface-muted)) 50%,
-    var(--surface-muted) 60%
-  );
+  background: var(--surface-muted);
   background-size: 200% 100%;
   animation: shimmer 1.4s ease-in-out infinite;
 }

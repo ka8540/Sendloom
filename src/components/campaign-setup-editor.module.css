@@ -41,7 +41,7 @@
   border-color: color-mix(in srgb, var(--accent) 32%, transparent);
   background: color-mix(in srgb, var(--accent-soft) 84%, var(--surface-strong) 16%);
   color: var(--accent-strong);
-  box-shadow: 0 10px 22px rgba(28, 42, 70, 0.08);
+  box-shadow: var(--shadow);
 }
 
 .headerIconActionPrimary:hover:not(:disabled),
@@ -88,7 +88,7 @@
 .configList {
   display: grid;
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: 12px;
   background: var(--surface-muted);
 }
 
@@ -122,7 +122,7 @@
 .configLabel {
   color: var(--muted);
   font-size: 0.7rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.07em;
   text-transform: uppercase;
 }
@@ -130,7 +130,7 @@
 .configValue {
   color: var(--text);
   font-size: 0.94rem;
-  font-weight: 650;
+  font-weight: 500;
   letter-spacing: -0.01em;
   overflow-wrap: anywhere;
 }
@@ -144,7 +144,7 @@
 .warningText {
   color: var(--warning);
   font-size: 0.8rem;
-  font-weight: 650;
+  font-weight: 500;
   line-height: 1.45;
 }
 
@@ -210,7 +210,6 @@
   box-shadow: var(--shadow);
   opacity: 0;
   pointer-events: none;
-  transform: translateY(-3px);
   transition: opacity 140ms ease, transform 140ms ease;
 }
 
@@ -316,7 +315,7 @@ select.fieldControl option {
   background: var(--surface-muted);
   color: var(--muted);
   font-size: 0.76rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.01em;
 }
 
@@ -331,7 +330,7 @@ select.fieldControl option {
   background: var(--field-bg);
   color: var(--text);
   font-size: 0.82rem;
-  font-weight: 650;
+  font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
   transition:
@@ -348,11 +347,10 @@ select.fieldControl option {
 
 .addButton:hover:not(:disabled),
 .addButton:focus-visible {
-  transform: translateY(-1px);
   border-color: color-mix(in srgb, var(--accent) 34%, var(--field-border));
   background: color-mix(in srgb, var(--accent-soft) 60%, var(--field-bg));
   color: var(--accent-strong);
-  box-shadow: 0 8px 18px rgba(28, 42, 70, 0.1);
+  box-shadow: none;
   outline: none;
 }
 
@@ -423,7 +421,7 @@ select.fieldControl option {
 .attachmentName {
   color: var(--text);
   font-size: 0.88rem;
-  font-weight: 650;
+  font-weight: 500;
   letter-spacing: -0.01em;
   white-space: nowrap;
   overflow: hidden;
@@ -440,7 +438,7 @@ select.fieldControl option {
 
 .attachmentSubPending {
   color: var(--accent-strong);
-  font-weight: 650;
+  font-weight: 500;
 }
 
 .attachmentActions {
@@ -476,7 +474,6 @@ select.fieldControl option {
 
 .rowAction:hover:not(:disabled),
 .rowAction:focus-visible {
-  transform: translateY(-1px);
   border-color: color-mix(in srgb, var(--accent) 32%, var(--field-border));
   background: color-mix(in srgb, var(--accent-soft) 58%, var(--field-bg));
   color: var(--accent-strong);
@@ -494,13 +491,13 @@ select.fieldControl option {
 
 .rowActionDanger:hover:not(:disabled),
 .rowActionDanger:focus-visible {
-  border-color: color-mix(in srgb, #d96952 42%, var(--field-border));
-  background: color-mix(in srgb, #d96952 12%, transparent);
-  color: #e0796a;
+  border-color: color-mix(in srgb, var(--danger) 42%, var(--field-border));
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
 }
 
 .rowActionDanger:focus-visible {
-  outline-color: color-mix(in srgb, #d96952 38%, transparent);
+  outline-color: color-mix(in srgb, var(--danger) 38%, transparent);
 }
 
 .attachmentEmpty {

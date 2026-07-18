@@ -58,7 +58,7 @@ describe("Imports dashboard redesign", () => {
     expect(WORKFLOW).toContain('const WORKFLOW_STEPS = ["Upload", "Map fields", "Review"]');
     expect(WORKFLOW).toContain('aria-label="Import workflow progress"');
     expect(WORKFLOW).toContain('view={activeStep === 2 ? "review" : "map"}');
-    expect(WORKFLOW_STYLES).toMatch(/\.workflowCard\s*\{[^}]*border-radius: 26px;/s);
+    expect(WORKFLOW_STYLES).toMatch(/\.workflowCard\s*\{[^}]*border-radius: var\(--radius-dialog\);/s);
     expect(WORKFLOW_STYLES).toMatch(/\.stepNav ol\s*\{[^}]*grid-template-columns: repeat\(3,/s);
   });
 

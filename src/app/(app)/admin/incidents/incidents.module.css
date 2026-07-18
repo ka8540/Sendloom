@@ -61,7 +61,7 @@
   align-items: center;
   gap: 0.55rem;
   padding: 0.6rem 0.85rem;
-  border-radius: 13px;
+  border-radius: 12px;
   border: 1px solid var(--line);
   background: color-mix(in srgb, var(--surface-strong) 70%, transparent);
 }
@@ -327,7 +327,7 @@
 .skeletonRow {
   height: 2.6rem;
   border-radius: 10px;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--surface) 70%, transparent), color-mix(in srgb, var(--surface-strong) 60%, transparent), color-mix(in srgb, var(--surface) 70%, transparent));
+  background: var(--surface-strong);
 }
 
 .empty,
@@ -349,7 +349,7 @@
   height: 3rem;
   align-items: center;
   justify-content: center;
-  border-radius: 14px;
+  border-radius: 12px;
   border: 1px solid var(--line);
   background: var(--accent-soft);
   color: var(--accent);
@@ -384,7 +384,6 @@
   place-items: center;
   padding: 1rem;
   background: color-mix(in srgb, var(--bg) 70%, transparent);
-  backdrop-filter: blur(12px);
 }
 
 .modalCard {
@@ -394,11 +393,9 @@
   display: grid;
   gap: 1rem;
   padding: 1.4rem;
-  border-radius: 22px;
+  border-radius: 16px;
   border: 1px solid var(--line);
-  background:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 9%, transparent), transparent 30%),
-    color-mix(in srgb, var(--surface) 94%, var(--surface-strong) 6%);
+  background: var(--surface-strong);
   box-shadow: var(--shadow);
 }
 
@@ -414,7 +411,7 @@
   text-transform: uppercase;
   letter-spacing: 0.06em;
   font-size: 0.72rem;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--muted);
 }
 
@@ -469,7 +466,7 @@
   display: grid;
   gap: 0.5rem;
   padding: 0.9rem 1rem;
-  border-radius: 14px;
+  border-radius: 12px;
   border: 1px solid var(--line);
   background: color-mix(in srgb, var(--surface) 70%, transparent);
 }
@@ -534,7 +531,7 @@
   width: 100%;
   resize: vertical;
   padding: 0.7rem 0.85rem;
-  border-radius: 14px;
+  border-radius: 12px;
   border: 1px solid var(--line);
   background: color-mix(in srgb, var(--surface-strong) 70%, transparent);
   color: var(--text);

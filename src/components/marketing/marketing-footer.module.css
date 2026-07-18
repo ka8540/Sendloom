@@ -16,46 +16,34 @@
    ============================================================ */
 
 .footer {
-  /* -------- LIGHT THEME (default): frosted glass on a bright page -------- */
-  --mf-ink: #16233a;
-  --mf-muted: #5a6b86;
-  --mf-heading: #0f7a58;
-  --mf-link: #16233a;
-  --mf-link-hover: #0f7a58;
-  --mf-accent: #16906a;
-  --mf-band:
-    radial-gradient(120% 90% at 8% -12%, rgba(22, 124, 90, 0.16), transparent 52%),
-    radial-gradient(120% 100% at 94% -4%, rgba(33, 83, 194, 0.13), transparent 56%),
-    radial-gradient(160% 130% at 50% 128%, rgba(22, 124, 90, 0.1), transparent 60%),
-    linear-gradient(180deg, #eef4fb 0%, #e4edf6 100%);
-  --mf-band-border: rgba(20, 32, 51, 0.08);
-  --mf-band-inset: rgba(255, 255, 255, 0.7);
-  --mf-grid: rgba(20, 32, 51, 0.05);
-  --mf-blob-teal: rgba(22, 124, 90, 0.26);
-  --mf-blob-blue: rgba(33, 83, 194, 0.22);
-  --mf-glow: rgba(22, 124, 90, 0.16);
-  --mf-wordmark-opacity: 0.2;
-  --mf-wordmark-grad:
-    linear-gradient(
-      100deg,
-      rgba(22, 124, 90, 0.92) 0%,
-      rgba(35, 167, 116, 0.98) 26%,
-      rgba(33, 83, 194, 0.78) 52%,
-      rgba(22, 124, 90, 0.92) 78%,
-      rgba(35, 167, 116, 0.98) 100%
-    );
-  --mf-panel-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.74), rgba(255, 255, 255, 0.52));
-  --mf-panel-border: rgba(255, 255, 255, 0.85);
-  --mf-panel-shadow: 0 34px 70px rgba(20, 40, 70, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.9);
-  --mf-spot-rgb: 22, 124, 90;
-  --mf-spot-max: 0.16;
-  --mf-rim-opacity: 0.55;
-  --mf-line: rgba(20, 32, 51, 0.12);
-  --mf-badge-bg: rgba(255, 255, 255, 0.5);
-  --mf-badge-border: rgba(20, 32, 51, 0.12);
-  --mf-badge-hover-bg: rgba(22, 124, 90, 0.1);
-  --mf-chip-bg: rgba(255, 255, 255, 0.55);
-  --mf-focus-ring: rgba(22, 124, 90, 0.4);
+  /* Theme-aware via the global tokens — one monochrome treatment. */
+  --mf-ink: var(--text);
+  --mf-muted: var(--muted);
+  --mf-heading: var(--muted-deep);
+  --mf-link: var(--text-secondary);
+  --mf-link-hover: var(--text);
+  --mf-accent: var(--accent);
+  --mf-band: var(--surface-muted);
+  --mf-band-border: var(--line);
+  --mf-band-inset: transparent;
+  --mf-grid: color-mix(in srgb, var(--text) 4%, transparent);
+  --mf-blob-teal: transparent;
+  --mf-blob-blue: transparent;
+  --mf-glow: transparent;
+  --mf-wordmark-opacity: 0.5;
+  --mf-wordmark-grad: linear-gradient(180deg, color-mix(in srgb, var(--text) 10%, transparent), color-mix(in srgb, var(--text) 3%, transparent));
+  --mf-panel-bg: var(--surface);
+  --mf-panel-border: var(--line);
+  --mf-panel-shadow: none;
+  --mf-spot-rgb: 96, 165, 250;
+  --mf-spot-max: 0;
+  --mf-rim-opacity: 0;
+  --mf-line: var(--line);
+  --mf-badge-bg: transparent;
+  --mf-badge-border: var(--line);
+  --mf-badge-hover-bg: var(--surface-hover);
+  --mf-chip-bg: var(--surface-muted);
+  --mf-focus-ring: var(--accent-soft-strong);
 
   --mf-spot-opacity: 0;
   --mf-glow-opacity: 0;
@@ -72,93 +60,6 @@
   border-top: 1px solid var(--mf-band-border);
   box-shadow: inset 0 1px 0 var(--mf-band-inset);
   font-family: var(--font-loader-body), "Space Grotesk", ui-sans-serif, system-ui, -apple-system, sans-serif;
-}
-
-/* -------- DARK THEME: deep navy with teal/blue glow -------- */
-:global(:root[data-theme="dark"]) .footer {
-  --mf-ink: #e9f1ff;
-  --mf-muted: #94a8c5;
-  --mf-heading: #8be7bf;
-  --mf-link: #e9f1ff;
-  --mf-link-hover: #8be7bf;
-  --mf-accent: #2fc48a;
-  --mf-band:
-    radial-gradient(120% 90% at 10% -10%, rgba(47, 196, 138, 0.2), transparent 52%),
-    radial-gradient(120% 100% at 92% 0%, rgba(108, 151, 255, 0.18), transparent 56%),
-    radial-gradient(160% 130% at 50% 130%, rgba(47, 196, 138, 0.14), transparent 60%),
-    linear-gradient(180deg, #0c1320 0%, #060910 100%);
-  --mf-band-border: rgba(255, 255, 255, 0.09);
-  --mf-band-inset: rgba(255, 255, 255, 0.06);
-  --mf-grid: rgba(151, 169, 198, 0.05);
-  --mf-blob-teal: rgba(47, 196, 138, 0.5);
-  --mf-blob-blue: rgba(108, 151, 255, 0.42);
-  --mf-glow: rgba(47, 196, 138, 0.12);
-  --mf-wordmark-opacity: 0.12;
-  --mf-wordmark-grad:
-    linear-gradient(
-      100deg,
-      rgba(47, 196, 138, 0.85) 0%,
-      rgba(139, 231, 191, 0.95) 26%,
-      rgba(108, 151, 255, 0.82) 52%,
-      rgba(47, 196, 138, 0.85) 78%,
-      rgba(139, 231, 191, 0.95) 100%
-    );
-  --mf-panel-bg: linear-gradient(180deg, rgba(24, 37, 57, 0.62), rgba(12, 19, 31, 0.5));
-  --mf-panel-border: rgba(255, 255, 255, 0.09);
-  --mf-panel-shadow: 0 34px 70px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  --mf-spot-rgb: 139, 231, 191;
-  --mf-spot-max: 0.18;
-  --mf-rim-opacity: 0.7;
-  --mf-line: rgba(151, 169, 198, 0.16);
-  --mf-badge-bg: rgba(255, 255, 255, 0.04);
-  --mf-badge-border: rgba(151, 169, 198, 0.16);
-  --mf-badge-hover-bg: rgba(47, 196, 138, 0.1);
-  --mf-chip-bg: rgba(255, 255, 255, 0.04);
-  --mf-focus-ring: rgba(47, 196, 138, 0.4);
-}
-
-@media (prefers-color-scheme: dark) {
-  :global(:root:not([data-theme])) .footer {
-    --mf-ink: #e9f1ff;
-    --mf-muted: #94a8c5;
-    --mf-heading: #8be7bf;
-    --mf-link: #e9f1ff;
-    --mf-link-hover: #8be7bf;
-    --mf-accent: #2fc48a;
-    --mf-band:
-      radial-gradient(120% 90% at 10% -10%, rgba(47, 196, 138, 0.2), transparent 52%),
-      radial-gradient(120% 100% at 92% 0%, rgba(108, 151, 255, 0.18), transparent 56%),
-      radial-gradient(160% 130% at 50% 130%, rgba(47, 196, 138, 0.14), transparent 60%),
-      linear-gradient(180deg, #0c1320 0%, #060910 100%);
-    --mf-band-border: rgba(255, 255, 255, 0.09);
-    --mf-band-inset: rgba(255, 255, 255, 0.06);
-    --mf-grid: rgba(151, 169, 198, 0.05);
-    --mf-blob-teal: rgba(47, 196, 138, 0.5);
-    --mf-blob-blue: rgba(108, 151, 255, 0.42);
-    --mf-glow: rgba(47, 196, 138, 0.12);
-    --mf-wordmark-opacity: 0.12;
-    --mf-wordmark-grad:
-      linear-gradient(
-        100deg,
-        rgba(47, 196, 138, 0.85) 0%,
-        rgba(139, 231, 191, 0.95) 26%,
-        rgba(108, 151, 255, 0.82) 52%,
-        rgba(47, 196, 138, 0.85) 78%,
-        rgba(139, 231, 191, 0.95) 100%
-      );
-    --mf-panel-bg: linear-gradient(180deg, rgba(24, 37, 57, 0.62), rgba(12, 19, 31, 0.5));
-    --mf-panel-border: rgba(255, 255, 255, 0.09);
-    --mf-panel-shadow: 0 34px 70px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.08);
-    --mf-spot-rgb: 139, 231, 191;
-    --mf-spot-max: 0.18;
-    --mf-rim-opacity: 0.7;
-    --mf-line: rgba(151, 169, 198, 0.16);
-    --mf-badge-bg: rgba(255, 255, 255, 0.04);
-    --mf-badge-border: rgba(151, 169, 198, 0.16);
-    --mf-badge-hover-bg: rgba(47, 196, 138, 0.1);
-    --mf-chip-bg: rgba(255, 255, 255, 0.04);
-    --mf-focus-ring: rgba(47, 196, 138, 0.4);
-  }
 }
 
 /* faint engineering grid, masked so it melts into the band */
@@ -305,47 +206,14 @@
   display: grid;
   gap: clamp(1.7rem, 3vw, 2.6rem);
   padding: clamp(1.8rem, 3.6vw, 3rem);
-  border-radius: clamp(22px, 2.4vw, 30px);
+  border-radius: var(--radius-card);
   border: 1px solid var(--mf-panel-border);
-  background:
-    radial-gradient(
-      460px 340px at var(--mf-mx, 50%) var(--mf-my, 0%),
-      rgba(var(--mf-spot-rgb), calc(var(--mf-spot-max) * var(--mf-spot-opacity))),
-      transparent 60%
-    ),
-    var(--mf-panel-bg);
-  backdrop-filter: blur(24px) saturate(1.3);
-  -webkit-backdrop-filter: blur(24px) saturate(1.3);
-  box-shadow: var(--mf-panel-shadow);
+  background: var(--mf-panel-bg);
 }
 
-/* animated rim sheen */
+/* rim sheen removed — flat panel */
 .panel::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 1px;
-  background: linear-gradient(
-    100deg,
-    transparent 16%,
-    rgba(47, 196, 138, 0.55) 42%,
-    rgba(139, 231, 191, 0.78) 50%,
-    rgba(108, 151, 255, 0.55) 58%,
-    transparent 84%
-  );
-  background-size: 220% 100%;
-  -webkit-mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  mask-composite: exclude;
-  opacity: var(--mf-rim-opacity);
-  pointer-events: none;
-  animation: mfShimmer 9s ease-in-out infinite;
+  content: none;
 }
 
 /* ----------------------- top: brand + columns ----------------------- */
@@ -373,15 +241,7 @@
 .brandMark {
   width: 2.9rem;
   height: 2.9rem;
-  border-radius: 16px;
-  box-shadow: 0 14px 30px rgba(22, 124, 90, 0.28);
-  transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1), filter 320ms ease;
-}
-
-.brand:hover .brandMark,
-.brand:focus-visible .brandMark {
-  transform: rotate(-6deg) scale(1.07);
-  filter: drop-shadow(0 0 14px rgba(47, 196, 138, 0.5));
+  border-radius: 12px;
 }
 
 .brandName {
@@ -432,7 +292,7 @@
   width: 100%;
   height: 1.5px;
   border-radius: 2px;
-  background: linear-gradient(90deg, var(--mf-accent), var(--mf-heading));
+  background: var(--mf-accent);
   transform: scaleX(0);
   transform-origin: left center;
   transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -442,7 +302,6 @@
 .link:focus-visible {
   color: var(--mf-link-hover);
   outline: none;
-  text-shadow: 0 0 18px rgba(47, 196, 138, 0.28);
 }
 
 .link:hover::after,
@@ -492,10 +351,8 @@
 }
 
 .badge:hover {
-  transform: translateY(-2px);
-  border-color: color-mix(in srgb, var(--mf-accent) 50%, var(--mf-badge-border));
+  border-color: var(--divider);
   background: var(--mf-badge-hover-bg);
-  box-shadow: 0 8px 20px rgba(22, 124, 90, 0.14);
 }
 
 .badgeDot {

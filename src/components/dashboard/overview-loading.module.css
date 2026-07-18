@@ -50,11 +50,9 @@
   grid-template-columns: minmax(0, 1.05fr) minmax(21rem, 0.95fr);
   gap: 1.5rem;
   padding: 1.5rem;
-  border-radius: 28px;
+  border-radius: var(--radius-dialog);
   border: 1px solid var(--line);
-  background:
-    radial-gradient(120% 130% at 100% 0%, color-mix(in srgb, var(--accent) 6%, transparent), transparent 46%),
-    linear-gradient(180deg, color-mix(in srgb, var(--surface) 92%, transparent), var(--surface));
+  background: var(--surface);
   box-shadow: var(--shadow);
   overflow: hidden;
 }
@@ -116,7 +114,7 @@
   align-content: start;
   min-width: 0;
   padding: 1.2rem;
-  border-radius: 22px;
+  border-radius: 16px;
   border: 1px solid color-mix(in srgb, var(--line) 94%, transparent);
   background: color-mix(in srgb, var(--surface-soft) 94%, transparent);
 }
@@ -215,7 +213,7 @@
 
 .metricRow {
   height: 2.85rem;
-  border-radius: 14px;
+  border-radius: 12px;
 }
 
 .railBar {
@@ -250,10 +248,9 @@
   align-content: start;
   min-height: 13rem;
   padding: 1.15rem;
-  border-radius: 24px;
+  border-radius: var(--radius-dialog);
   border: 1px solid var(--line);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface) 94%, transparent), var(--surface-muted));
+  background: var(--surface-muted);
   box-shadow: var(--shadow);
 }
 
@@ -313,10 +310,9 @@
   gap: 1rem;
   align-content: start;
   padding: 1.35rem;
-  border-radius: 30px;
+  border-radius: var(--radius-dialog);
   border: 1px solid var(--line);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface) 94%, transparent), var(--surface-muted));
+  background: var(--surface-muted);
   box-shadow: var(--shadow);
   min-width: 0;
 }
@@ -329,7 +325,7 @@
 
 .toolbar {
   height: 4.8rem;
-  border-radius: 24px;
+  border-radius: var(--radius-dialog);
 }
 
 .rowCard {
@@ -337,7 +333,7 @@
   grid-template-columns: minmax(0, 1fr) minmax(9rem, 12rem);
   gap: 1.2rem;
   padding: 1.1rem 1.15rem;
-  border-radius: 26px;
+  border-radius: var(--radius-dialog);
   border: 1px solid var(--line);
   background: color-mix(in srgb, var(--surface-muted) 84%, transparent);
 }
@@ -426,7 +422,7 @@
   .hero,
   .panel {
     padding: 1.1rem;
-    border-radius: 24px;
+    border-radius: var(--radius-dialog);
   }
 
   .highlightRow {

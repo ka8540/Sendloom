@@ -33,7 +33,7 @@
 .metricValue {
   margin: 0;
   font-size: 2rem;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0;
 }
 
@@ -98,7 +98,7 @@
   margin: 0;
   color: var(--accent-strong);
   font-size: 0.78rem;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -111,7 +111,7 @@
   color: var(--accent-strong);
   padding: 0.4rem 0.7rem;
   font-size: 0.84rem;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .donutLayout {
@@ -151,7 +151,7 @@
   position: relative;
   z-index: 1;
   font-size: 2rem;
-  font-weight: 850;
+  font-weight: 600;
 }
 
 .legendList {
@@ -164,7 +164,7 @@
   align-items: center;
   gap: 0.55rem;
   color: var(--muted);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .legendList i {
@@ -219,7 +219,7 @@
   display: block;
   block-size: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent-strong) 68%, white 4%));
+  background: var(--accent-soft);
 }
 
 .managementSection {
@@ -308,7 +308,7 @@
   white-space: nowrap;
   color: var(--muted);
   font-size: 0.84rem;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .paginationControls {
@@ -340,7 +340,7 @@
   text-align: center;
   color: var(--muted);
   font-size: 0.82rem;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .paginationControls svg,
@@ -353,7 +353,6 @@
 .paginationControls button:focus-visible,
 .rowActionButton:hover,
 .rowActionButton:focus-visible {
-  transform: translateY(-1px);
   border-color: color-mix(in srgb, var(--accent) 26%, var(--line));
   background: color-mix(in srgb, var(--accent-soft) 52%, var(--surface-muted) 48%);
   outline: none;
@@ -388,7 +387,7 @@
 .userTable th {
   color: var(--muted);
   font-size: 0.7rem;
-  font-weight: 850;
+  font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -446,7 +445,7 @@
   color: var(--text);
   cursor: pointer;
   font: inherit;
-  font-weight: 800;
+  font-weight: 600;
   text-align: left;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -484,7 +483,7 @@
 
 .emptyTableCell {
   color: var(--muted);
-  font-weight: 800;
+  font-weight: 600;
   text-align: center;
 }
 
@@ -496,7 +495,7 @@
   border: 1px solid var(--line);
   background: var(--surface-muted);
   font-size: 0.78rem;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1;
   white-space: nowrap;
 }
@@ -537,7 +536,7 @@
 .detailCard {
   min-width: 0;
   padding: 0.68rem 0.75rem;
-  border-radius: 14px;
+  border-radius: 12px;
   background: var(--surface-muted);
   border: 1px solid var(--line);
 }
@@ -546,7 +545,7 @@
   display: block;
   margin-bottom: 0.45rem;
   font-size: 0.7rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--muted);
@@ -556,7 +555,7 @@
   display: block;
   min-width: 0;
   font-size: 0.92rem;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.35;
   white-space: normal;
 }
@@ -575,7 +574,7 @@
 .countItem {
   min-width: 0;
   padding: 0.62rem 0.68rem;
-  border-radius: 14px;
+  border-radius: 12px;
   background: var(--surface-muted);
   border: 1px solid var(--line);
 }
@@ -648,22 +647,21 @@
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  border: 1px solid color-mix(in srgb, #c53b2d 30%, var(--line));
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, var(--line));
   border-radius: 999px;
   min-height: 2.2rem;
   padding: 0.56rem 0.74rem;
-  background: color-mix(in srgb, #c53b2d 14%, var(--surface-strong));
-  color: #992d21;
+  background: color-mix(in srgb, var(--danger) 14%, var(--surface-strong));
+  color: var(--danger);
   cursor: pointer;
   font-size: 0.82rem;
-  font-weight: 700;
+  font-weight: 600;
   transition: transform 140ms ease, box-shadow 140ms ease, background-color 160ms ease;
 }
 
 .deleteButton:hover:not(:disabled),
 .deleteButton:focus-visible {
-  transform: translateY(-1px);
-  box-shadow: 0 10px 18px rgba(197, 59, 45, 0.12);
+  box-shadow: 0 10px 18px color-mix(in srgb, var(--danger) 12%, transparent);
   outline: none;
 }
 
@@ -687,12 +685,12 @@
 .emptyDetailText {
   margin: 0;
   padding: 0.72rem 0.78rem;
-  border-radius: 14px;
+  border-radius: 12px;
   border: 1px solid color-mix(in srgb, var(--warning) 22%, var(--line));
   background: color-mix(in srgb, var(--warning-soft) 48%, var(--surface-muted) 52%);
   color: var(--warning);
   font-size: 0.86rem;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .emptyDetailText {
@@ -702,7 +700,7 @@
 }
 
 .errorText {
-  color: #c53b2d;
+  color: var(--danger);
 }
 
 .successText {
@@ -815,7 +813,7 @@
 .adminBadgeEmail {
   margin: 0;
   font-size: 0.96rem;
-  font-weight: 700;
+  font-weight: 600;
   word-break: break-all;
 }
 
@@ -840,7 +838,7 @@
 .healthStripTitle {
   margin: 0.15rem 0 0;
   font-size: 1rem;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .healthDots {
@@ -883,7 +881,7 @@
   color: var(--accent-strong);
   font: inherit;
   font-size: 0.82rem;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
   text-align: left;
   width: fit-content;
@@ -928,7 +926,7 @@
   padding: 0.4rem 0.78rem;
   font: inherit;
   font-size: 0.82rem;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
   transition: transform 140ms ease, background-color 160ms ease, border-color 160ms ease, opacity 160ms ease;
 }
@@ -941,7 +939,6 @@
 
 .recheckButton:hover:not(:disabled),
 .recheckButton:focus-visible {
-  transform: translateY(-1px);
   background: color-mix(in srgb, var(--accent-soft) 70%, var(--accent) 30%);
   border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
   outline: none;
@@ -1010,7 +1007,7 @@
 .healthCheckLabel {
   margin: 0;
   font-size: 0.98rem;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .healthCheckMessage {
@@ -1112,7 +1109,7 @@
 .restrictionsPanelEmail {
   margin: 0;
   font-size: 1.05rem;
-  font-weight: 700;
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

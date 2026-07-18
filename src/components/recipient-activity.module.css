@@ -102,9 +102,9 @@
 }
 
 .iconTile[data-tone="danger"] {
-  background: color-mix(in srgb, #d96952 15%, transparent);
-  color: color-mix(in srgb, #d96952 62%, var(--text));
-  border-color: color-mix(in srgb, #d96952 32%, transparent);
+  background: color-mix(in srgb, var(--danger) 15%, transparent);
+  color: color-mix(in srgb, var(--danger) 62%, var(--text));
+  border-color: color-mix(in srgb, var(--danger) 32%, transparent);
 }
 
 .iconTile[data-tone="neutral"] {
@@ -124,7 +124,7 @@
   min-width: 0;
   color: var(--text);
   font-size: 0.9rem;
-  font-weight: 650;
+  font-weight: 500;
   letter-spacing: -0.01em;
   white-space: nowrap;
   overflow: hidden;
@@ -149,7 +149,7 @@
   border-radius: 999px;
   border: 1px solid transparent;
   font-size: 0.72rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.02em;
   white-space: nowrap;
 }
@@ -173,9 +173,9 @@
 }
 
 .badge[data-tone="danger"] {
-  background: color-mix(in srgb, #d96952 15%, var(--surface));
-  color: color-mix(in srgb, #d96952 60%, var(--text));
-  border-color: color-mix(in srgb, #d96952 34%, var(--line));
+  background: color-mix(in srgb, var(--danger) 15%, var(--surface));
+  color: color-mix(in srgb, var(--danger) 60%, var(--text));
+  border-color: color-mix(in srgb, var(--danger) 34%, var(--line));
 }
 
 .badge[data-tone="neutral"] {
@@ -224,9 +224,9 @@
 }
 
 .detailStrip[data-tone="danger"] {
-  background: color-mix(in srgb, #d96952 10%, var(--surface));
-  border-top-color: color-mix(in srgb, #d96952 22%, var(--line));
-  color: color-mix(in srgb, #d96952 48%, var(--text));
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
+  border-top-color: color-mix(in srgb, var(--danger) 22%, var(--line));
+  color: color-mix(in srgb, var(--danger) 48%, var(--text));
 }
 
 .detailFlag {
@@ -237,7 +237,7 @@
   background: color-mix(in srgb, currentColor 16%, transparent);
   color: inherit;
   font-size: 0.68rem;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
@@ -302,7 +302,6 @@
 
 .pageButton:hover:not(:disabled),
 .pageButton:focus-visible {
-  transform: translateY(-1px);
   border-color: color-mix(in srgb, var(--accent) 34%, var(--field-border));
   background: color-mix(in srgb, var(--accent-soft) 58%, var(--field-bg));
   color: var(--accent-strong);
@@ -324,7 +323,7 @@
   text-align: center;
   color: var(--muted);
   font-size: 0.78rem;
-  font-weight: 650;
+  font-weight: 500;
   letter-spacing: -0.01em;
 }
 
@@ -332,7 +331,7 @@
   margin: 0;
   font-size: 0.8rem;
   font-weight: 550;
-  color: color-mix(in srgb, #d96952 58%, var(--text));
+  color: color-mix(in srgb, var(--danger) 58%, var(--text));
 }
 
 @media (max-width: 600px) {

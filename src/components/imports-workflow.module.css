@@ -5,10 +5,8 @@
   min-width: 0;
   padding: 1.45rem;
   border: 1px solid var(--line);
-  border-radius: 26px;
-  background:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 8%, transparent), transparent 30%),
-    linear-gradient(180deg, color-mix(in srgb, var(--surface) 92%, transparent), var(--surface));
+  border-radius: var(--radius-dialog);
+  background: var(--surface);
   box-shadow: var(--shadow);
 }
 
@@ -39,7 +37,7 @@
   color: var(--muted);
   font: inherit;
   font-size: 0.8rem;
-  font-weight: 750;
+  font-weight: 600;
   cursor: pointer;
   transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease;
 }
@@ -98,7 +96,7 @@
 .stepIntro > span {
   color: var(--accent-strong);
   font-size: 0.72rem;
-  font-weight: 850;
+  font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -147,7 +145,7 @@
 .fieldLabel {
   color: var(--muted);
   font-size: 0.82rem;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .fileInput {
@@ -169,7 +167,7 @@
   min-width: 0;
   padding: clamp(1.4rem, 3.5vw, 2.15rem);
   border: 1px dashed color-mix(in srgb, var(--muted) 42%, var(--line));
-  border-radius: 18px;
+  border-radius: 16px;
   background: color-mix(in srgb, var(--surface-muted) 74%, transparent);
   color: var(--text);
   text-align: center;
@@ -196,7 +194,7 @@
   width: 2.8rem;
   height: 2.8rem;
   border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line));
-  border-radius: 14px;
+  border-radius: 12px;
   background: color-mix(in srgb, var(--accent-soft) 74%, var(--surface));
   color: var(--accent-strong);
 }
@@ -276,7 +274,7 @@
   gap: 0.7rem;
   padding: 0.75rem 0.85rem;
   border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line));
-  border-radius: 13px;
+  border-radius: 12px;
   background: color-mix(in srgb, var(--accent-soft) 34%, transparent);
   color: var(--muted);
   font-size: 0.82rem;
@@ -302,7 +300,7 @@
   background: var(--accent-soft-strong);
   color: var(--accent-strong);
   font-size: 0.72rem;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .missingImportNotice {
@@ -311,7 +309,7 @@
   gap: 0.7rem;
   padding: 0.75rem 0.85rem;
   border: 1px solid var(--error-toast-border);
-  border-radius: 13px;
+  border-radius: 12px;
   background: var(--error-toast-icon-bg);
   color: var(--muted);
   font-size: 0.82rem;
@@ -322,7 +320,7 @@
   width: 1.15rem;
   height: 1.15rem;
   flex: none;
-  color: #e5484d;
+  color: var(--danger);
 }
 
 .missingImportNotice > span {
@@ -370,8 +368,8 @@
   grid-column: 1 / -1;
   height: 3.6rem;
   margin-top: 0.75rem;
-  border-radius: 13px;
-  background: linear-gradient(90deg, var(--surface-muted), var(--surface-hover), var(--surface-muted));
+  border-radius: 12px;
+  background: var(--surface-muted);
   background-size: 220% 100%;
   animation: shimmer 1.25s ease-in-out infinite;
 }
@@ -447,7 +445,7 @@
   min-height: 4rem;
   padding: 0.72rem 0.8rem;
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: 12px;
   background: color-mix(in srgb, var(--surface-muted) 82%, transparent);
   color: var(--text);
   cursor: pointer;
@@ -540,8 +538,8 @@
   gap: 1rem;
   padding: 1rem;
   border: 1px solid color-mix(in srgb, var(--line) 88%, transparent);
-  border-radius: 18px;
-  background: linear-gradient(135deg, color-mix(in srgb, var(--surface-muted) 92%, transparent), color-mix(in srgb, var(--surface) 80%, transparent));
+  border-radius: 16px;
+  background: var(--surface-muted);
   box-shadow: inset 0 1px 0 color-mix(in srgb, white 5%, transparent);
 }
 
@@ -599,7 +597,7 @@
 .reviewFields > span {
   color: var(--muted);
   font-size: 0.78rem;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .reviewChips {
@@ -633,7 +631,7 @@
   gap: 0.35rem;
   padding: 1.65rem 1rem;
   border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line));
-  border-radius: 18px;
+  border-radius: 16px;
   background: color-mix(in srgb, var(--accent-soft) 42%, var(--surface));
   text-align: center;
 }
@@ -684,7 +682,7 @@
   .workflowCard {
     gap: 1.1rem;
     padding: 1rem;
-    border-radius: 20px;
+    border-radius: 16px;
   }
 
   .stepButton {

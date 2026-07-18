@@ -21,13 +21,10 @@
 .toolbarBar,
 .tableCard,
 .sidePanel {
-  border-radius: 24px;
+  border-radius: var(--radius-dialog);
   border: 1px solid color-mix(in srgb, var(--line) 86%, transparent);
   background: color-mix(in srgb, var(--surface-strong) 95%, transparent);
-  box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.04) inset,
-    0 20px 56px rgba(0, 0, 0, 0.16);
-  backdrop-filter: blur(18px);
+  box-shadow: var(--shadow);
 }
 
 .formCard {
@@ -49,7 +46,7 @@
   gap: 0.35rem;
   color: var(--accent-strong);
   font-size: 0.67rem;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0.19em;
   text-transform: uppercase;
 }
@@ -74,7 +71,7 @@
   justify-content: center;
   width: 2.25rem;
   height: 2.25rem;
-  border-radius: 14px;
+  border-radius: 12px;
   border: 1px solid color-mix(in srgb, var(--accent-soft-strong) 36%, transparent);
   background: color-mix(in srgb, var(--accent-soft) 54%, transparent);
   color: var(--accent-strong);
@@ -135,7 +132,7 @@
   color: var(--muted);
   font-size: 0.82rem;
   line-height: 1;
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow);
   transition:
     transform 180ms ease,
     border-color 180ms ease,
@@ -147,10 +144,9 @@
 .metaChip:hover,
 .logMetric:hover,
 .logTimestamp:hover {
-  transform: translateY(-1px);
   border-color: color-mix(in srgb, var(--field-focus) 40%, var(--line));
   background: color-mix(in srgb, var(--surface-hover) 88%, transparent);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--shadow);
 }
 
 .metaChipValue,
@@ -158,7 +154,7 @@
 .logTimestamp strong {
   color: var(--text);
   font-size: 0.96rem;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: -0.04em;
   line-height: 1;
 }
@@ -167,7 +163,7 @@
 .logMetric small,
 .logTimestamp small {
   font-size: 0.68rem;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   line-height: 1;
@@ -211,7 +207,7 @@
 .sidePanelMeta dt {
   color: var(--muted);
   font-size: 0.71rem;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
@@ -224,7 +220,7 @@
 }
 
 .characterCount {
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .inputShell,
@@ -252,14 +248,14 @@
 .toolbarSearch input {
   min-height: 3.15rem;
   padding: 0 1rem 0 2.85rem;
-  border-radius: 18px;
+  border-radius: 16px;
 }
 
 .textareaShell textarea {
   min-height: 5.5rem;
   resize: vertical;
   padding: 0.95rem 1rem 1rem 2.85rem;
-  border-radius: 18px;
+  border-radius: 16px;
 }
 
 .toolbarField select {
@@ -288,9 +284,7 @@
 .toolbarField select:focus-visible {
   outline: none;
   border-color: color-mix(in srgb, var(--field-focus) 88%, transparent);
-  box-shadow:
-    0 0 0 4px color-mix(in srgb, var(--accent-soft-strong) 46%, transparent),
-    0 12px 32px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--shadow);
 }
 
 .inputIcon {
@@ -310,8 +304,8 @@
 }
 
 .fieldError {
-  border-color: rgba(215, 79, 79, 0.56) !important;
-  box-shadow: 0 0 0 4px rgba(215, 79, 79, 0.1);
+  border-color: color-mix(in srgb, var(--danger) 56%, transparent) !important;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 10%, transparent);
 }
 
 .reasonPills {
@@ -331,7 +325,7 @@
   background: color-mix(in srgb, var(--surface-muted) 92%, transparent);
   color: var(--muted);
   font-size: 0.86rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: -0.02em;
   cursor: pointer;
   transition:
@@ -342,7 +336,6 @@
 }
 
 .reasonPill:hover {
-  transform: translateY(-1px);
   border-color: color-mix(in srgb, var(--field-focus) 42%, var(--field-border));
 }
 
@@ -382,7 +375,7 @@
   gap: 0.6rem;
   min-height: 3.05rem;
   border-radius: 16px;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: -0.02em;
   cursor: pointer;
 }
@@ -390,11 +383,9 @@
 .primaryButton {
   width: 100%;
   border: 1px solid color-mix(in srgb, var(--accent-strong) 36%, transparent);
-  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 88%, transparent), color-mix(in srgb, var(--accent-strong) 76%, transparent));
-  color: #f7fff9;
-  box-shadow:
-    0 16px 30px color-mix(in srgb, var(--accent-soft-strong) 52%, transparent),
-    0 1px 0 rgba(255, 255, 255, 0.14) inset;
+  background: var(--accent-soft);
+  color: var(--accent-contrast);
+  box-shadow: var(--shadow);
 }
 
 .secondaryButton,
@@ -410,9 +401,9 @@
 }
 
 .destructiveButton {
-  border: 1px solid rgba(190, 79, 67, 0.28);
-  background: rgba(190, 79, 67, 0.1);
-  color: #f1b4ac;
+  border: 1px solid color-mix(in srgb, var(--danger) 28%, transparent);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--danger);
 }
 
 .iconButton,
@@ -422,7 +413,7 @@
   justify-content: center;
   width: 2.45rem;
   height: 2.45rem;
-  border-radius: 14px;
+  border-radius: 12px;
   border: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
   background: color-mix(in srgb, var(--surface-muted) 92%, transparent);
   color: var(--muted);
@@ -436,7 +427,7 @@
 }
 
 .rowActionButtonDanger {
-  color: #f0a79f;
+  color: var(--danger);
 }
 
 .primaryButton:hover:not(:disabled),
@@ -445,7 +436,6 @@
 .destructiveButton:hover:not(:disabled),
 .iconButton:hover:not(:disabled),
 .rowActionButton:hover:not(:disabled) {
-  transform: translateY(-1px);
 }
 
 .primaryButton:active:not(:disabled),
@@ -480,7 +470,7 @@
 }
 
 .errorText {
-  color: #f0a79f;
+  color: var(--danger);
 }
 
 .successText {
@@ -554,7 +544,7 @@
   border: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
   background: color-mix(in srgb, var(--surface-muted) 92%, transparent);
   color: var(--muted);
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: -0.02em;
   cursor: pointer;
   transition:
@@ -570,7 +560,6 @@
 }
 
 .toolbarClearButton:hover {
-  transform: translateY(-1px);
   border-color: color-mix(in srgb, var(--field-focus) 42%, var(--field-border));
   color: var(--text);
 }
@@ -594,7 +583,7 @@
   gap: 1rem;
   margin: 0 1.15rem;
   padding: 0.9rem 1rem;
-  border-radius: 18px;
+  border-radius: 16px;
   border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
   background: color-mix(in srgb, var(--surface-muted) 96%, transparent);
 }
@@ -605,8 +594,8 @@
 }
 
 .feedbackError {
-  border-color: rgba(190, 79, 67, 0.24);
-  background: rgba(190, 79, 67, 0.1);
+  border-color: color-mix(in srgb, var(--danger) 24%, transparent);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
 }
 
 .undoCopy {
@@ -660,7 +649,7 @@
 .paginationCount {
   color: var(--muted);
   font-size: 0.84rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: -0.02em;
 }
 
@@ -694,7 +683,6 @@
 }
 
 .paginationButton:hover:not(:disabled) {
-  transform: translateY(-1px);
   border-color: color-mix(in srgb, var(--field-focus) 40%, var(--line));
   background: color-mix(in srgb, var(--surface-hover) 88%, transparent);
   color: var(--accent-strong);
@@ -736,7 +724,7 @@
 .emailValue {
   display: block;
   font-size: 0.96rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: -0.02em;
   word-break: break-word;
 }
@@ -758,32 +746,32 @@
   border-radius: 999px;
   border: 1px solid transparent;
   font-size: 0.77rem;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0.04em;
 }
 
 .badgeAmber {
-  color: #ffd28b;
-  background: rgba(173, 111, 23, 0.18);
-  border-color: rgba(173, 111, 23, 0.28);
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 18%, transparent);
+  border-color: color-mix(in srgb, var(--warning) 28%, transparent);
 }
 
 .badgeRed {
-  color: #ffb2a8;
-  background: rgba(170, 67, 58, 0.18);
-  border-color: rgba(170, 67, 58, 0.28);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 28%, transparent);
 }
 
 .badgeRose {
-  color: #ffc8d0;
-  background: rgba(158, 73, 108, 0.18);
-  border-color: rgba(158, 73, 108, 0.28);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 28%, transparent);
 }
 
 .badgeBlue {
-  color: #b9d5ff;
-  background: rgba(55, 103, 194, 0.18);
-  border-color: rgba(55, 103, 194, 0.28);
+  color: var(--accent-strong);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
 .badgeNeutral,
@@ -847,7 +835,7 @@
   display: grid;
   gap: 0.45rem;
   padding: 0.95rem;
-  border-radius: 18px;
+  border-radius: 16px;
   border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
   background: color-mix(in srgb, var(--surface-muted) 92%, transparent);
 }
@@ -958,7 +946,7 @@
   .toolbarBar,
   .tableCard,
   .sidePanel {
-    border-radius: 20px;
+    border-radius: 16px;
   }
 
   .toolbarControls {

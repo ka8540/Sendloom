@@ -4,5 +4,5 @@
 }
 
 .loom {
-  color: #23a774;
+  color: var(--accent);
 }

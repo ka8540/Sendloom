@@ -444,7 +444,7 @@ describe("review import dialog UI", () => {
     const number = CSS.match(/\.reviewCard \.reviewGrid dd\s*\{[^}]*\}/s)?.[0] ?? "";
     const numberSize = Number.parseFloat(number.match(/font-size:\s*([\d.]+)rem/)?.[1] ?? "99");
     expect(numberSize).toBeLessThanOrEqual(1.5);
-    expect(number).toContain("font-weight: 700");
+    expect(number).toContain("font-weight: 600");
     // Footer buttons are a comfortable, tappable size (not the compact scale).
     expect(CSS).toMatch(/\.reviewCard \.modalActions \.primaryButton\s*\{[^}]*font-size:\s*1rem/s);
   });
