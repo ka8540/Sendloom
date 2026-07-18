@@ -106,6 +106,20 @@ describe("Imports dashboard redesign", () => {
     expect(WORKFLOW).toMatch(/useEffect\(\(\) => \{[\s\S]*setPreferredImportId\(initialImportId\);[\s\S]*setActiveStep\(1\);[\s\S]*\}, \[initialImportId\]\);/);
   });
 
+  it("returns successful field saves to the plain imports library", () => {
+    const savedHandler = WORKFLOW.slice(
+      WORKFLOW.indexOf("onSaved={() =>"),
+      WORKFLOW.indexOf("/>", WORKFLOW.indexOf("onSaved={() =>"))
+    );
+
+    expect(savedHandler).toContain("setPreferredImportId(undefined)");
+    expect(savedHandler).toContain("setSelectionReady(false)");
+    expect(savedHandler).toContain("setActiveStep(0)");
+    expect(savedHandler).toContain("onExit()");
+    expect(WORKSPACE).toContain('router.replace("/imports")');
+    expect(WORKSPACE).not.toContain('router.replace("/import")');
+  });
+
   it("keeps sample contacts collapsed until their real toggle is used", () => {
     expect(LIBRARY).toContain('useState<string[]>([])');
     expect(LIBRARY).toContain('aria-expanded={showPreview}');

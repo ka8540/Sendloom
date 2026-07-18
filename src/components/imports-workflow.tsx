@@ -189,8 +189,12 @@ export function ImportsWorkflow({ imports, initialImportId, missingImportId, has
             onContinue={() => setActiveStep(2)}
             onSelectionChange={handleSelectionChange}
             onSaved={() => {
-              setReviewSaved(true);
+              setPreferredImportId(undefined);
+              setPreparingImport(false);
               setSelectionReady(false);
+              setReviewSaved(false);
+              setActiveStep(0);
+              onExit();
             }}
           />
         )}
