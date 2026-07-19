@@ -265,6 +265,28 @@ describe("delivery-failure classification", () => {
     expect(result.suppressRecipient).toBe(false);
   });
 
+  it("550 5.4.1 recipient address rejected beats generic access-denied policy wording", () => {
+    const result = classifyDeliveryFailure({
+      action: "failed",
+      status: "5.4.1",
+      diagnosticCode: "smtp; 550 5.4.1 Recipient address rejected: Access denied"
+    });
+    expect(result.category).toBe("HARD_BOUNCE_MAILBOX_NOT_FOUND");
+    expect(result.permanence).toBe("permanent");
+    expect(result.suppressRecipient).toBe(true);
+  });
+
+  it("421 recipient rejection stays temporary even when the text names the address", () => {
+    const result = classifyDeliveryFailure({
+      action: "failed",
+      status: "4.7.1",
+      diagnosticCode: "smtp; 421 4.7.1 Recipient address rejected: try again later"
+    });
+    expect(result.category).toBe("SOFT_BOUNCE_TEMPORARY_FAILURE");
+    expect(result.permanence).toBe("temporary");
+    expect(result.suppressRecipient).toBe(false);
+  });
+
   it("mailbox-full is a soft bounce, even at 5.2.2", () => {
     for (const status of ["4.2.2", "5.2.2"]) {
       const result = classifyDeliveryFailure({ action: "failed", status, diagnosticCode: "mailbox is full" });

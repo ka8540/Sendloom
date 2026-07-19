@@ -76,13 +76,10 @@ export function findInvalidRecipientEvidence(job: {
 
   // 2. The sanitized provider diagnostic (or the stored lastError) names the
   //    recipient address as the problem.
-  const diagnosticText = [
-    readString(metadata.providerErrorMessage),
-    readString(lastInternalError.message),
-    readString(job.lastError)
-  ]
-    .filter(Boolean)
-    .join(" ");
+  const providerDiagnostics = [readString(metadata.providerErrorMessage), readString(lastInternalError.message)].filter(
+    (value): value is string => Boolean(value)
+  );
+  const diagnosticText = [...providerDiagnostics, readString(job.lastError)].filter(Boolean).join(" ");
   if (diagnosticText && isInvalidRecipientDiagnosticText(diagnosticText)) {
     return {
       failureCategory: "HARD_BOUNCE_INVALID_RECIPIENT",
@@ -93,14 +90,19 @@ export function findInvalidRecipientEvidence(job: {
 
   // 3. Older send rows only stored the safe generic copy even when Gmail
   // treated the recipient rejection as terminal. Keep this narrow: it must be
-  // a non-retryable Gmail recipient rejection with no policy/spam category.
+  // a non-retryable Gmail recipient rejection with no policy/spam category and
+  // no more-specific provider diagnostic that points to a payload/system error.
   const nonRetryable =
     metadata.retryable === false || lastInternalError.retryable === false || /permanent/i.test(diagnosticText);
+  const hasOnlyGenericProviderCopy =
+    providerDiagnostics.length === 0 ||
+    providerDiagnostics.every((message) => /gmail rejected this recipient/i.test(message));
   if (
     failureCode === "GMAIL_SEND_REJECTED" &&
-    !failureCategory &&
+    (!failureCategory || failureCategory === "GMAIL_SEND_REJECTED") &&
     nonRetryable &&
-    /gmail rejected this recipient/i.test(diagnosticText)
+    /gmail rejected this recipient/i.test(diagnosticText) &&
+    hasOnlyGenericProviderCopy
   ) {
     return {
       failureCategory: "HARD_BOUNCE_INVALID_RECIPIENT",

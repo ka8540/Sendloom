@@ -123,6 +123,17 @@ describe("retry policy", () => {
   });
 
   it.each([
+    "421 4.7.1 Recipient address rejected: try again later",
+    "450 Recipient address rejected temporarily",
+    "451 Recipient not found during a temporary directory failure",
+    "452 Mailbox unavailable until storage recovers"
+  ])("keeps temporary SMTP recipient wording retryable: %s", (message) => {
+    const code = classifySendFailure(new Error(message), { senderConnected: true });
+    expect(code).toBe("GMAIL_TEMPORARY_FAILURE");
+    expect(isRetryableFailure(code)).toBe(true);
+  });
+
+  it.each([
     "550 5.1.0 Address rejected",
     "550 #5.1.0 Address rejected.",
     "550 5.1.1 The email account that you tried to reach does not exist",
@@ -131,6 +142,7 @@ describe("retry policy", () => {
     "Your message wasn't delivered because the address couldn't be found, or is unable to receive mail.",
     "553 No such user here",
     "550 Recipient address rejected: undeliverable address",
+    "550 5.4.1 Recipient address rejected: Access denied",
     "550 5.2.1 Mailbox unavailable",
     "Invalid to header"
   ])("classifies %s as an invalid recipient address (skipped, suppressed, never retried)", (message) => {

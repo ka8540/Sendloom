@@ -274,6 +274,7 @@ const INVALID_RECIPIENT_TEXT_PATTERN =
 // but only when it is not the SENDER address being rejected (5.1.7/5.1.8).
 const ADDRESS_REJECTED_PATTERN = /address rejected/i;
 const SENDER_ADDRESS_REJECTED_PATTERN = /(?:sender|from)(?: address)? rejected|5\.1\.[78]\b/i;
+const TEMPORARY_SMTP_RECIPIENT_PATTERN = /\b4\.\d{1,3}\.\d{1,3}\b|\b(?:421|450|451|452)\b/i;
 
 /**
  * True when free-form delivery/send diagnostic text names the RECIPIENT
@@ -284,6 +285,12 @@ const SENDER_ADDRESS_REJECTED_PATTERN = /(?:sender|from)(?: address)? rejected|5
  */
 export function isInvalidRecipientDiagnosticText(text: string): boolean {
   if (!text) {
+    return false;
+  }
+  // Recipient wording does not make an explicit SMTP 4xx response permanent.
+  // Keep this guard in the shared helper so live sends, DSN processing, and
+  // persisted-row repair all preserve temporary failures as retryable.
+  if (TEMPORARY_SMTP_RECIPIENT_PATTERN.test(text)) {
     return false;
   }
   if (INVALID_RECIPIENT_ENHANCED_CODE_PATTERN.test(text) || INVALID_RECIPIENT_TEXT_PATTERN.test(text)) {

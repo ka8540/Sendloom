@@ -7,6 +7,8 @@
 // action, status, bounded diagnostic). Callers must never persist raw bodies —
 // nothing here retains or returns full message content.
 
+import { isInvalidRecipientDiagnosticText } from "@/lib/gmail-errors";
+
 // ---------------------------------------------------------------------------
 // Gmail API payload shapes (subset used here).
 // ---------------------------------------------------------------------------
@@ -423,8 +425,6 @@ export type DeliveryFailureClassification = {
   suppressRecipient: boolean;
 };
 
-const MAILBOX_NOT_FOUND_PATTERN =
-  /user unknown|no such user|address not found|does(n't| not) exist|couldn't be found|unknown user|invalid mailbox|invalid recipient|recipient not found|bad destination mailbox|unable to receive mail|recipient address rejected|address rejected/i;
 const DOMAIN_NOT_FOUND_PATTERN = /domain not found|host(?: or domain name)? not found|no mx|nxdomain|domain does not exist/i;
 const MAILBOX_FULL_PATTERN = /mailbox (is )?full|over ?quota|quota exceeded|insufficient (system )?storage/i;
 const POLICY_PATTERN = /policy|prohibited|not authorized|access denied|blocked|blacklist|denylist|administrative/i;
@@ -481,6 +481,22 @@ export function classifyDeliveryFailure(input: {
       return { category: "SENDER_AUTHENTICATION_FAILURE", permanence: "indeterminate", suppressRecipient: false };
     }
   }
+
+  // A specific permanent RECIPIENT-address rejection wins over generic policy
+  // wording in the same diagnostic. For example, Exchange reports a missing
+  // recipient as "550 5.4.1 Recipient address rejected: Access denied". The
+  // address evidence is authoritative; "access denied" alone remains policy.
+  // This uses the same narrow signature helper as synchronous Gmail failures
+  // and the persisted-row repair path so all three entry points agree.
+  const invalidRecipientDiagnostic = isInvalidRecipientDiagnosticText(`${status} ${diagnostic}`);
+  if ((statusClass === 5 || (!status && action === "failed")) && invalidRecipientDiagnostic) {
+    return permanentFailure(
+      /^5\.1\.2$/.test(status) || DOMAIN_NOT_FOUND_PATTERN.test(diagnostic)
+        ? "HARD_BOUNCE_DOMAIN_NOT_FOUND"
+        : "HARD_BOUNCE_MAILBOX_NOT_FOUND"
+    );
+  }
+
   if (status.startsWith("5.7") || POLICY_PATTERN.test(diagnostic)) {
     if (SPAM_PATTERN.test(diagnostic)) {
       return { category: "SPAM_REJECTION", permanence: "indeterminate", suppressRecipient: false };
@@ -491,24 +507,12 @@ export function classifyDeliveryFailure(input: {
     return { category: "SPAM_REJECTION", permanence: "indeterminate", suppressRecipient: false };
   }
 
-  // Permanent recipient failures (5.x.x or a clear textual reason).
+  // Permanent recipient failures identified by code alone. Recipient-specific
+  // diagnostics (including all 5.1.x address wordings) were handled above.
   const enhanced = status;
-  if (/^5\.1\.(1|3|6|10)$/.test(enhanced) || (statusClass === 5 && MAILBOX_NOT_FOUND_PATTERN.test(diagnostic))) {
-    // Covers the real Gmail wordings "550 5.1.1 User Unknown" and
-    // "550 5.1.0 Address Rejected" / "Address not found" — the 5.1.0 case
-    // qualifies through the recipient-fault diagnostic, never the code alone.
-    return permanentFailure(
-      DOMAIN_NOT_FOUND_PATTERN.test(diagnostic) ? "HARD_BOUNCE_DOMAIN_NOT_FOUND" : "HARD_BOUNCE_MAILBOX_NOT_FOUND"
-    );
-  }
-  if (/^5\.1\.2$/.test(enhanced) || (statusClass === 5 && DOMAIN_NOT_FOUND_PATTERN.test(diagnostic))) {
-    return permanentFailure("HARD_BOUNCE_DOMAIN_NOT_FOUND");
-  }
   // Remaining 5.1.x codes are NOT recipient faults by code alone: 5.1.0 is
-  // "other address status" (ambiguous without a diagnostic — handled above when
-  // recipient-fault evidence exists) and 5.1.7/5.1.8 are SENDER-address
-  // problems. Without corroborating diagnostics they fall through to UNKNOWN
-  // below and never suppress a possibly-valid address.
+  // "other address status" and 5.1.7/5.1.8 are SENDER-address problems.
+  // Without corroborating recipient diagnostics they fall through to UNKNOWN.
   if (/^5\.2\.1$/.test(enhanced)) {
     // Mailbox disabled — permanent recipient failure.
     return permanentFailure("HARD_BOUNCE_PERMANENT_MAILBOX_FAILURE");
@@ -517,14 +521,6 @@ export function classifyDeliveryFailure(input: {
     // Full mailbox: not proof the address is invalid — keep it retryable.
     return temporary("SOFT_BOUNCE_MAILBOX_FULL");
   }
-  if (statusClass === 5 && MAILBOX_NOT_FOUND_PATTERN.test(diagnostic)) {
-    return permanentFailure("HARD_BOUNCE_MAILBOX_NOT_FOUND");
-  }
-  if (!enhanced && MAILBOX_NOT_FOUND_PATTERN.test(diagnostic) && action === "failed") {
-    // Text-fallback path: Gmail's "Address not found" wording without a code.
-    return permanentFailure("HARD_BOUNCE_MAILBOX_NOT_FOUND");
-  }
-
   // Everything else in 5.x.x (or codeless) is ambiguous — never auto-suppress.
   return { category: "UNKNOWN_DELIVERY_FAILURE", permanence: "indeterminate", suppressRecipient: false };
 }

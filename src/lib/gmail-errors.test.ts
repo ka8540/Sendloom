@@ -82,7 +82,7 @@ describe("invalid recipient detection", () => {
       "the address couldn't be found, or is unable to receive mail",
       "user unknown",
       "No such user here",
-      "Recipient address rejected: undeliverable",
+      "550 5.4.1 Recipient address rejected: Access denied",
       "Mailbox unavailable",
       "Invalid to header"
     ]) {

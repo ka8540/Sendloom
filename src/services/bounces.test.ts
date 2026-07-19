@@ -516,6 +516,37 @@ describe("bounce processing", () => {
     });
   });
 
+  it("classifies Exchange 550 5.4.1 recipient access denial as Invalid, not a failed send", async () => {
+    const sender = seedSender();
+    const failed = seedJob({
+      status: "FAILED",
+      metadata: { rfcMessageId: "sendloom-abc123@techsmail.com", failureCode: "GMAIL_SEND_REJECTED" },
+      lastError: "Gmail rejected this recipient."
+    });
+    impl.fetchMetadata = async () => bounceMetadata();
+    impl.fetchFull = async () =>
+      bounceFull({
+        status: "5.4.1",
+        diagnostic: "550 5.4.1 Recipient address rejected: Access denied",
+        references: "<sendloom-abc123@techsmail.com>"
+      });
+
+    const result = await processBounce(sender, [failed]);
+
+    expect(result).toMatchObject({ outcome: "processed", permanentFailures: 1, temporaryFailures: 0 });
+    expect(state.suppressions[0]).toMatchObject({
+      reason: "HARD_BOUNCE",
+      enhancedStatusCode: "5.4.1",
+      failureCategory: "HARD_BOUNCE_MAILBOX_NOT_FOUND"
+    });
+    expect(calls.markRecipientAttempt[0]).toMatchObject({
+      jobId: failed.id,
+      status: "SUPPRESSED",
+      failureCode: "HARD_BOUNCE_RECIPIENT",
+      lastError: "Address not found"
+    });
+  });
+
   it("heals a falsely-OPENED recipient — a hard-bounced message was never delivered, so its 'open' is bogus", async () => {
     const sender = seedSender();
     // Gmail's image proxy fetches the tracking pixel again when the sender

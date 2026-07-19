@@ -30,6 +30,7 @@ describe("isManuallyRetriableFailedJob", () => {
       "DUPLICATE_RECIPIENT",
       "SUPPRESSED_RECIPIENT",
       "UNSUBSCRIBED_RECIPIENT",
+      "HARD_BOUNCE_RECIPIENT",
       "MISSING_TEMPLATE_VARIABLE",
       "UNRESOLVED_TEMPLATE_VARIABLE"
     ]) {

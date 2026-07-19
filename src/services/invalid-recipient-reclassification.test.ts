@@ -99,13 +99,13 @@ describe("findInvalidRecipientEvidence", () => {
       findInvalidRecipientEvidence({
         metadata: {
           failureCode: "GMAIL_SEND_REJECTED",
-          providerErrorMessage: "550-5.1.1 The email account that you tried to reach does not exist"
+          providerErrorMessage: "550 5.4.1 Recipient address rejected: Access denied"
         },
         lastError: "Gmail rejected this recipient."
       })
     ).toMatchObject({
       failureCategory: "HARD_BOUNCE_INVALID_RECIPIENT",
-      enhancedStatusCode: "5.1.1",
+      enhancedStatusCode: "5.4.1",
       evidenceSource: "provider-diagnostic"
     });
   });
@@ -115,7 +115,12 @@ describe("findInvalidRecipientEvidence", () => {
       findInvalidRecipientEvidence({
         metadata: {
           failureCode: "GMAIL_SEND_REJECTED",
-          retryable: false
+          failureCategory: "GMAIL_SEND_REJECTED",
+          retryable: false,
+          lastInternalError: {
+            message: "Gmail rejected this recipient.",
+            retryable: false
+          }
         },
         lastError: "Gmail rejected this recipient."
       })
@@ -123,6 +128,33 @@ describe("findInvalidRecipientEvidence", () => {
       failureCategory: "HARD_BOUNCE_INVALID_RECIPIENT",
       evidenceSource: "nonretryable-gmail-rejection"
     });
+  });
+
+  it("does not treat generic UI copy as invalid when a specific system diagnostic contradicts it", () => {
+    expect(
+      findInvalidRecipientEvidence({
+        metadata: {
+          failureCode: "GMAIL_SEND_REJECTED",
+          failureCategory: "GMAIL_SEND_REJECTED",
+          retryable: false,
+          providerErrorMessage: "Malformed Gmail message payload"
+        },
+        lastError: "Gmail rejected this recipient."
+      })
+    ).toBeNull();
+  });
+
+  it("does not reclassify an explicit temporary SMTP recipient rejection", () => {
+    expect(
+      findInvalidRecipientEvidence({
+        metadata: {
+          failureCode: "GMAIL_TEMPORARY_FAILURE",
+          providerErrorMessage: "421 4.7.1 Recipient address rejected: try again later",
+          retryable: true
+        },
+        lastError: "Temporary Gmail delivery failure."
+      })
+    ).toBeNull();
   });
 
   it("returns null for generic, policy, transient, and system failures", () => {
