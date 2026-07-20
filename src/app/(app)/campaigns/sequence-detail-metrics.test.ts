@@ -79,6 +79,8 @@ describe("sequence detail metric cards — truthful recipient rollups", () => {
     expect(ACTION_FILES[1]).toContain('pending ? "Deleting…" : "Delete"');
     expect(ACTION_FILES[2]).toContain('props.label === "Relaunch sequence" ? "Relaunch" : "Launch"');
     expect(ACTION_FILES[3]).toContain('props.isPaused ? "Relaunch" : "Pause"');
+    expect(ACTION_FILES[3]).toContain('props.isPaused ? "run" : "pause"');
+    expect(DETAIL_CSS).toContain('.sequence-detail-action[data-action="pause"]');
     expect(ACTION_FILES[4]).toContain('pending ? "Retrying…" : "Retry"');
     expect(ACTION_FILES[5]).toContain('className="sequence-detail-action__label">Edit</span>');
     expect(ACTION_FILES.join("\n")).toContain(

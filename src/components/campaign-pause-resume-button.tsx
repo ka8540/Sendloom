@@ -82,7 +82,7 @@ export function CampaignPauseResumeButton(props: {
         onClick={() => void toggle()}
         disabled={pending}
         aria-label={props.iconOnly ? (pending ? "Updating sequence" : props.label) : undefined}
-        data-action={props.iconOnly ? "run" : undefined}
+        data-action={props.iconOnly ? (props.isPaused ? "run" : "pause") : undefined}
       >
         {props.iconOnly ? (
           <>

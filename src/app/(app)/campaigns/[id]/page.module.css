@@ -430,6 +430,11 @@
   --detail-action-label-width: 5.2rem;
 }
 
+.actionBar :global(.sequence-detail-action[data-action="pause"]) {
+  --detail-action-expanded-width: 6.8rem;
+  --detail-action-label-width: 3.2rem;
+}
+
 .actionBar :global(.sequence-detail-action[data-action="refresh"]) {
   --detail-action-expanded-width: 7.6rem;
   --detail-action-label-width: 4.4rem;
