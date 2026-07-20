@@ -1,6 +1,6 @@
 "use client";
 
-import { SendHorizontal } from "lucide-react";
+import { Play } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -168,7 +168,7 @@ export function CampaignLaunchButton(props: {
         {props.iconOnly ? (
           <>
             <span className="sequence-detail-action__icon">
-              {pending ? <span className="button-spinner" aria-hidden="true" /> : <SendHorizontal aria-hidden="true" />}
+              {pending ? <span className="button-spinner" aria-hidden="true" /> : <Play aria-hidden="true" />}
             </span>
             <span className="sequence-detail-action__label">{pending ? "Launching…" : visibleLabel}</span>
           </>
