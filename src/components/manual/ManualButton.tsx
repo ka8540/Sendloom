@@ -1,7 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CircleHelp, Compass, GraduationCap, MessageSquare, Sparkles } from "lucide-react";
+import {
+  CircleHelp,
+  Compass,
+  GraduationCap,
+  MessageSquare,
+  Sparkles
+} from "lucide-react";
 
 import { HelpReportDialog } from "@/components/incident/help-report-dialog";
 import type { ManualConfig } from "@/components/manual/manualTypes";
@@ -201,7 +207,7 @@ function DashboardHelpButton({ label, tooltip, manual }: { label: string; toolti
               <GraduationCap aria-hidden="true" />
               <span>
                 <strong>Quick start</strong>
-                <small>Replay the first-time walkthrough</small>
+                <small>{manual.helpQuickStartDescription ?? "Replay the first-time walkthrough"}</small>
               </span>
             </button>
           ) : null}

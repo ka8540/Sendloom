@@ -40,6 +40,8 @@ export type ManualConfig = {
    * guide is completed/dismissed.
    */
   helpQuickStart?: boolean;
+  /** Optional page-specific description beneath the shared Quick start action. */
+  helpQuickStartDescription?: string;
   /** Stage the menu's "Quick start" opens (default "starter"). */
   quickStartStage?: string;
   /** Stage the menu's "Full page tour" opens (default "full"). */

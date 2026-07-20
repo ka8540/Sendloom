@@ -1,5 +1,6 @@
 "use client";
 
+import { Pause, Play } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -12,6 +13,7 @@ export function CampaignPauseResumeButton(props: {
   isPaused: boolean;
   label: string;
   className?: string;
+  iconOnly?: boolean;
 }) {
   const router = useRouter();
   const { showError, showSuccess } = useErrorToast();
@@ -72,8 +74,36 @@ export function CampaignPauseResumeButton(props: {
 
   return (
     <>
-      <button className={`button secondary${props.className ? ` ${props.className}` : ""}`} type="button" onClick={() => void toggle()} disabled={pending}>
-        {pending ? "Working…" : props.label}
+      <button
+        className={`${props.iconOnly ? "sequence-detail-action sequence-detail-action--primary" : "button secondary"}${
+          props.className ? ` ${props.className}` : ""
+        }`}
+        type="button"
+        onClick={() => void toggle()}
+        disabled={pending}
+        aria-label={props.iconOnly ? (pending ? "Updating sequence" : props.label) : undefined}
+        data-action={props.iconOnly ? (props.isPaused ? "run" : "pause") : undefined}
+      >
+        {props.iconOnly ? (
+          <>
+            <span className="sequence-detail-action__icon">
+              {pending ? (
+                <span className="button-spinner" aria-hidden="true" />
+              ) : props.isPaused ? (
+                <Play aria-hidden="true" />
+              ) : (
+                <Pause aria-hidden="true" />
+              )}
+            </span>
+            <span className="sequence-detail-action__label">
+              {pending ? "Updating…" : props.isPaused ? "Relaunch" : "Pause"}
+            </span>
+          </>
+        ) : pending ? (
+          "Working…"
+        ) : (
+          props.label
+        )}
       </button>
       <SequenceLimitDialog
         open={limitOpen}

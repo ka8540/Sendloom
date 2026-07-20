@@ -371,7 +371,7 @@ export default async function CampaignDetailPage({
   // Delivered comes from the same per-recipient classification as the other
   // cards, so an address that later hard-bounced (a Skipped outcome, even if a
   // false "open" left the row in an engagement status) never counts as
-  // delivered — the four cards always add up truthfully.
+  // delivered — the three cards always add up truthfully.
   const deliveredCount = dispositionCounts.sent;
   const launchButtonLabel = dailyLimitActive
     ? "Waiting for Gmail safety window"
@@ -382,10 +382,11 @@ export default async function CampaignDetailPage({
       : isPausedRun
         ? "Sequence paused"
         : latestRun
-          ? "Launch again"
+          ? "Relaunch sequence"
           : "Launch sequence";
   const validationButtonLabel = campaign.lastValidatedAt ? "Refresh validation" : "Validate sequence";
-  const pauseButtonLabel = isPausedRun ? "Resume sequence" : "Pause sequence";
+  const validationVisibleLabel = campaign.lastValidatedAt ? "Revalidate" : "Validate";
+  const pauseButtonLabel = isPausedRun ? "Relaunch sequence" : "Pause sequence";
   // Retry-failed action: only surfaces when the latest run has finished and still
   // has retryable failed recipients, with nothing actively sending, paused, or
   // blocked. The eligible count is computed off the run's own recipient jobs.
@@ -422,6 +423,25 @@ export default async function CampaignDetailPage({
   const blockingValidationChecks = validationChecks.filter(
     (check) => check.severity === "BLOCKER" || check.severity === "ERROR"
   );
+  const sequenceStatusLabel =
+    issueCount > 0 && !isActiveRun && !isPausedRun
+      ? "Needs attention"
+      : formatSequenceStatus(campaign.status);
+  const sequenceStatusTone =
+    issueCount > 0 && !isActiveRun && !isPausedRun
+      ? "attention"
+      : isPausedRun
+        ? "paused"
+        : isActiveRun || isWaitingForSlot
+          ? "active"
+          : campaign.status === "COMPLETED"
+            ? "completed"
+            : "neutral";
+  const validationStateLabel = blockingValidationChecks.length
+    ? `${blockingValidationChecks.length} blocker${blockingValidationChecks.length === 1 ? "" : "s"}`
+    : validatedAtValue
+      ? "Validated"
+      : "Not validated";
   const reconnectHref = `/api/auth/google/connect?email=${encodeURIComponent(campaign.senderProfile.fromEmail)}&next=${encodeURIComponent(`/campaigns/${campaign.id}`)}`;
   // First page of recipient activity — later pages load client-side without a route navigation.
   const initialRecipientJobs = displayRun
@@ -554,10 +574,16 @@ export default async function CampaignDetailPage({
           </div>
         </aside>
       ) : null}
-      <section className={styles.overview}>
-        <div className={styles.overviewMain}>
-          <div className={styles.kicker}>Sequence overview</div>
-          <h1>{campaign.name}</h1>
+      <section className={styles.overview} aria-label="Sequence overview">
+        <div className={styles.overviewMain} data-tour-sequence-detail="overview">
+          <span className={styles.kicker}>Sequence overview</span>
+          <div className={styles.titleRow}>
+            <h1>{campaign.name}</h1>
+            <span className={styles.statusPill} data-tone={sequenceStatusTone}>
+              <span aria-hidden="true" />
+              {sequenceStatusLabel}
+            </span>
+          </div>
           <p className={styles.lede}>
             Delivery posture, setup context, and live run health for this sequence in one place.
           </p>
@@ -578,7 +604,7 @@ export default async function CampaignDetailPage({
           </div>
         </div>
 
-        <aside className={styles.overviewRail}>
+        <aside className={styles.commandCenter}>
           {senderNeedsReconnect ? (
             <div className={styles.reconnectNotice}>
               <strong>Sender needs reconnect</strong>
@@ -591,54 +617,64 @@ export default async function CampaignDetailPage({
               </a>
             </div>
           ) : null}
-          <div className={styles.statusWrap}>
-            <span className="badge" title={campaign.status === "WAITING_FOR_SLOT" ? "This sequence will start automatically when an execution slot becomes available." : undefined}>
-              {formatSequenceStatus(campaign.status)}
-            </span>
-            <span className={styles.statusNote}>
-              {isWaitingForSlot ? (
-                "This sequence will start automatically when an execution slot becomes available."
-              ) : isActiveRun ? (
-                "Auto-refreshing every 8 seconds while this run is active."
-              ) : latestRunValue ? (
-                <>
-                  Last updated <LocalDateTime value={latestRunValue} />.
-                </>
-              ) : (
-                "Waiting to launch."
-              )}
-            </span>
-          </div>
 
-          <div className={styles.summaryList}>
-            <div className={styles.summaryItem}>
+          <div className={styles.stateGrid} data-tour-sequence-detail="run-health">
+            <div className={styles.stateItem}>
               <CalendarClock aria-hidden="true" />
               <div>
                 <span>Send timing</span>
                 <strong>{scheduleLabel}</strong>
               </div>
             </div>
-            <div className={styles.summaryItem}>
+            <div className={styles.stateItem}>
               <RefreshCcw aria-hidden="true" />
               <div>
-                <span>Validated</span>
-                <strong>{validatedAtValue ? <LocalDateTime value={validatedAtValue} /> : "Not validated yet"}</strong>
+                <span>Validation</span>
+                <strong>{validationStateLabel}</strong>
+                {validatedAtValue ? <small><LocalDateTime value={validatedAtValue} /></small> : null}
               </div>
             </div>
-            <div className={styles.summaryItem}>
+            <div className={styles.stateItem}>
               <SendHorizontal aria-hidden="true" />
               <div>
                 <span>Current run</span>
                 <strong>{latestRun ? formatSequenceStatus(latestRun.status) : "Not launched yet"}</strong>
+                {latestRunValue ? <small>Updated <LocalDateTime value={latestRunValue} /></small> : null}
               </div>
             </div>
           </div>
 
-          <div className={styles.actionGroup}>
-            <div className={styles.actionSecondaryRow}>
-              <form action={validate.bind(null, campaign.id)} className={styles.actionSecondaryItem}>
-                <button className="button secondary" type="submit">
-                  {validationButtonLabel}
+          <p className={styles.statusNote}>
+            {isWaitingForSlot
+              ? "Starts automatically when an execution slot becomes available."
+              : isActiveRun
+                ? "Live run · auto-refreshing every 8 seconds."
+                : latestRunValue
+                  ? "Controls and run health are up to date."
+                  : "Ready for its first launch."}
+          </p>
+
+          <div className={styles.actionBar} data-tour-sequence-detail="actions">
+            <div className={styles.utilityActions} aria-label="Sequence actions">
+              {!senderNeedsReconnect && !isActiveRun && !isPausedRun && !dailyLimitActive ? (
+                <div className={styles.actionItem}>
+                  <CampaignLaunchButton
+                    campaignId={campaign.id}
+                    label={launchButtonLabel}
+                    disabled={false}
+                    iconOnly
+                  />
+                </div>
+              ) : null}
+              <form action={validate.bind(null, campaign.id)} className={styles.actionItem}>
+                <button
+                  className="sequence-detail-action"
+                  type="submit"
+                  aria-label={validationButtonLabel}
+                  data-action="refresh"
+                >
+                  <span className="sequence-detail-action__icon"><RefreshCcw aria-hidden="true" /></span>
+                  <span className="sequence-detail-action__label">{validationVisibleLabel}</span>
                 </button>
               </form>
               {/* Post-send bounce check — reads Gmail delivery-status reports
@@ -648,97 +684,77 @@ export default async function CampaignDetailPage({
               <CampaignBounceCheckButton
                 campaignId={campaign.id}
                 senderNeedsReconnect={senderNeedsReconnect}
-                className={styles.actionSecondaryItem}
+                className={styles.actionItem}
+                iconOnly
               />
               {latestRun && (isActiveRun || isPausedRun) ? (
                 <CampaignPauseResumeButton
                   campaignId={campaign.id}
                   isPaused={isPausedRun}
                   label={pauseButtonLabel}
-                  className={styles.actionSecondaryItem}
+                  className={styles.actionItem}
+                  iconOnly
                 />
               ) : null}
               <CampaignScheduleEditor
                 campaignId={campaign.id}
                 canEdit={canEditSchedule}
-                className={styles.actionSecondaryItem}
+                className={styles.actionItem}
                 disabledMessage={SCHEDULE_EDIT_DISABLED_MESSAGE}
                 initialSchedule={scheduleConfig}
+                iconOnly
               />
-              <CampaignDetailDeleteButton campaignId={campaign.id} campaignName={campaign.name} />
               {canRetryFailed ? (
                 <CampaignRetryFailedButton
                   campaignId={campaign.id}
                   failedCount={retryableFailedCount}
-                  className={styles.actionSecondaryItem}
+                  className={styles.actionItem}
+                  iconOnly
                 />
               ) : null}
             </div>
 
-            <div className={styles.actionPrimaryRow}>
-              {senderNeedsReconnect ? (
-                <a className="button" href={reconnectHref}>
-                  Reconnect to launch
-                </a>
-              ) : (
-                <CampaignLaunchButton
-                  campaignId={campaign.id}
-                  label={launchButtonLabel}
-                  disabled={isActiveRun || isPausedRun || dailyLimitActive}
-                />
-              )}
+            <div className={styles.dangerAction}>
+              <CampaignDetailDeleteButton campaignId={campaign.id} campaignName={campaign.name} iconOnly />
             </div>
           </div>
         </aside>
       </section>
 
-      <section className={styles.metrics}>
+      <section className={styles.metrics} data-tour-sequence-detail="delivery-stats">
         <article className={styles.metricCard}>
           <div className={styles.metricIcon}>
             <Users aria-hidden="true" />
           </div>
-          <span className={styles.metricLabel}>Audience size</span>
+          <div className={styles.metricCopy}>
+            <span className={styles.metricLabel}>Audience size</span>
+            <span className={styles.metricMeta}>
+              {isFromPreviousRun ? "Last run" : "This run"}
+              {skippedCount > 0 ? ` · ${skippedCount} skipped` : " · Ready to contact"}
+            </span>
+          </div>
           <strong className={styles.metricValue}>{displayRun?.totalRecipients ?? campaign.import.rowCount ?? 0}</strong>
-          <span className={styles.metricMeta}>
-            {isFromPreviousRun ? "Last run" : "This run"}
-            {skippedCount > 0 ? ` · ${skippedCount} skipped (invalid or excluded)` : ""}
-          </span>
         </article>
         <article className={styles.metricCard}>
           <div className={styles.metricIcon}>
             <SendHorizontal aria-hidden="true" />
           </div>
-          <span className={styles.metricLabel}>Delivered</span>
+          <div className={styles.metricCopy}>
+            <span className={styles.metricLabel}>Delivered</span>
+            <span className={styles.metricMeta}>{isFromPreviousRun ? "Last run" : "Sent + opened + clicked"}</span>
+          </div>
           <strong className={styles.metricValue}>{deliveredCount}</strong>
-          <span className={styles.metricMeta}>{isFromPreviousRun ? "Last run" : "Sent + opened + clicked"}</span>
         </article>
         <article className={styles.metricCard}>
           <div className={styles.metricIcon}>
-            <Mail aria-hidden="true" />
+            <ShieldAlert aria-hidden="true" />
           </div>
-          <span className={styles.metricLabel}>Replies</span>
-          <strong className={styles.metricValue}>{replyCount}</strong>
-          <span className={styles.metricMeta}>{isFromPreviousRun ? "Last run" : "This run"}</span>
-        </article>
-        {issueCount > 0 ? (
-          <article className={styles.metricCard}>
-            <div className={styles.metricIcon}>
-              <ShieldAlert aria-hidden="true" />
-            </div>
-            <span className={styles.metricLabel}>Needs attention</span>
-            <strong className={styles.metricValue}>{issueCount}</strong>
-            <span className={styles.metricMeta}>Failed sends &amp; retries</span>
-          </article>
-        ) : (
-          <article className={styles.metricCard}>
-            <div className={styles.metricIcon}>
-              <ShieldAlert aria-hidden="true" />
-            </div>
+          <div className={styles.metricCopy}>
             <span className={styles.metricLabel}>Skipped / invalid</span>
-            <strong className={styles.metricValue}>{skippedCount}</strong>
             <span className={styles.metricMeta}>Invalid or excluded recipients</span>
-          </article>
-        )}
+          </div>
+          <strong className={styles.metricValue}>{skippedCount}</strong>
+        </article>
       </section>
       {validationChecks.length ? (
         <section className={styles.validationBand}>
@@ -779,7 +795,7 @@ export default async function CampaignDetailPage({
         </section>
       ) : null}
       <section className={styles.detailGrid}>
-        <article className={styles.panel}>
+        <article className={styles.panel} data-tour-sequence-detail="setup">
           <CampaignSetupEditor
             campaignId={campaign.id}
             currentSenderNeedsReconnect={senderNeedsReconnect}
@@ -792,7 +808,10 @@ export default async function CampaignDetailPage({
           />
         </article>
 
-        <article className={`${styles.panel} ${styles.jobPanel}`}>
+        <article
+          className={`${styles.panel} ${styles.jobPanel}`}
+          data-tour-sequence-detail="recipient-activity"
+        >
           <div className={styles.panelHeader}>
             <div>
               <h2>Recent recipient activity</h2>

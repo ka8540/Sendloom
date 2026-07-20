@@ -192,6 +192,7 @@ export function CampaignScheduleEditor(props: {
   canEdit: boolean;
   className?: string;
   disabledMessage: string;
+  iconOnly?: boolean;
   initialSchedule: ScheduleConfig;
 }) {
   const router = useRouter();
@@ -305,13 +306,23 @@ export function CampaignScheduleEditor(props: {
       <div className={props.className}>
         <button
           aria-disabled={!props.canEdit}
-          className={`button secondary ${styles.scheduleButton}${!props.canEdit ? ` ${styles.blockedButton}` : ""}`}
+          aria-label={props.iconOnly ? "Edit sequence" : undefined}
+          className={`${props.iconOnly ? "sequence-detail-action" : "button secondary"} ${styles.scheduleButton}${!props.canEdit ? ` ${styles.blockedButton}` : ""}`}
+          data-action={props.iconOnly ? "edit" : undefined}
           type="button"
           onClick={openEditor}
-          title={props.canEdit ? "Edit sequence timing" : props.disabledMessage}
         >
-          <PencilLine aria-hidden="true" />
-          <span>Edit sequence</span>
+          {props.iconOnly ? (
+            <>
+              <span className="sequence-detail-action__icon"><PencilLine aria-hidden="true" /></span>
+              <span className="sequence-detail-action__label">Edit</span>
+            </>
+          ) : (
+            <>
+              <PencilLine aria-hidden="true" />
+              <span>Edit sequence</span>
+            </>
+          )}
         </button>
       </div>
 
