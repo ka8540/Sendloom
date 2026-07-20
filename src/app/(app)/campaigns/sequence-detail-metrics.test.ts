@@ -9,6 +9,15 @@ import { describe, expect, it } from "vitest";
 // recipient bounces can never inflate Delivered or vanish from the summary.
 
 const DETAIL_PAGE = readFileSync("src/app/(app)/campaigns/[id]/page.tsx", "utf8");
+const DETAIL_CSS = readFileSync("src/app/(app)/campaigns/[id]/page.module.css", "utf8");
+const ACTION_FILES = [
+  "src/components/campaign-bounce-check-button.tsx",
+  "src/components/campaign-detail-delete-button.tsx",
+  "src/components/campaign-launch-button.tsx",
+  "src/components/campaign-pause-resume-button.tsx",
+  "src/components/campaign-retry-failed-button.tsx",
+  "src/components/campaign-schedule-editor.tsx"
+].map((file) => readFileSync(file, "utf8"));
 
 describe("sequence detail metric cards — truthful recipient rollups", () => {
   it("classifies recipients with the shared overview disposition helper", () => {
@@ -36,5 +45,21 @@ describe("sequence detail metric cards — truthful recipient rollups", () => {
     expect(DETAIL_PAGE).toContain("const issueCount = dispositionCounts.needsAttention");
     expect(DETAIL_PAGE).toMatch(/issueCount > 0 && !isActiveRun && !isPausedRun/);
     expect(DETAIL_PAGE).toContain('data-tone={sequenceStatusTone}');
+  });
+
+  it("uses a non-interactive run-state treatment and icon-only actions", () => {
+    expect(DETAIL_PAGE).toContain("className={styles.runState}");
+    expect(DETAIL_PAGE).not.toContain("className={styles.primaryAction}");
+    expect(DETAIL_PAGE).toContain("iconOnly");
+    expect(DETAIL_CSS).toContain(".actionBar :global(.field-icon-button)");
+    expect(ACTION_FILES.every((source) => source.includes("iconOnly?: boolean"))).toBe(true);
+  });
+
+  it("keeps every icon action named for assistive technology and hover tooltips", () => {
+    expect(DETAIL_PAGE).toContain("data-tooltip={validationButtonLabel}");
+    for (const actionSource of ACTION_FILES) {
+      expect(actionSource).toContain("aria-label=");
+      expect(actionSource).toContain("data-tooltip=");
+    }
   });
 });

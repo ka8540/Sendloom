@@ -46,10 +46,10 @@ describe("Check bounces button", () => {
 describe("sequence detail controls", () => {
   it("renders Check bounces alongside the existing controls", () => {
     expect(DETAIL_PAGE).toContain("<CampaignBounceCheckButton");
-    // Placed in the secondary action row, right after Refresh validation.
+    // Placed in the compact utility action cluster, right after Refresh validation.
     const row = DETAIL_PAGE.slice(
-      DETAIL_PAGE.indexOf("actionSecondaryRow"),
-      DETAIL_PAGE.indexOf("actionPrimaryRow")
+      DETAIL_PAGE.indexOf("utilityActions"),
+      DETAIL_PAGE.indexOf("dangerAction")
     );
     expect(row).toContain("validationButtonLabel");
     expect(row).toContain("CampaignBounceCheckButton");

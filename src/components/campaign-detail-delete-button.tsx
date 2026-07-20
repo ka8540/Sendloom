@@ -8,7 +8,11 @@ import { AppConfirmDialog } from "@/components/app-confirm-dialog";
 
 const DELETE_SEQUENCE_ERROR = "This sequence could not be deleted. Please try again.";
 
-export function CampaignDetailDeleteButton(props: { campaignId: string; campaignName: string }) {
+export function CampaignDetailDeleteButton(props: {
+  campaignId: string;
+  campaignName: string;
+  iconOnly?: boolean;
+}) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -46,16 +50,28 @@ export function CampaignDetailDeleteButton(props: { campaignId: string; campaign
     <div className="campaign-detail-delete">
       <button
         type="button"
-        className="button secondary campaign-detail-delete__button"
+        className={
+          props.iconOnly
+            ? "field-icon-button field-icon-button--danger campaign-detail-delete__button"
+            : "button secondary campaign-detail-delete__button"
+        }
         onClick={() => {
           setError(null);
           setConfirmOpen(true);
         }}
         disabled={pending}
-        aria-label={`Delete ${props.campaignName}`}
+        aria-label={
+          props.iconOnly
+            ? pending
+              ? `Deleting ${props.campaignName}`
+              : "Delete sequence"
+            : `Delete ${props.campaignName}`
+        }
+        data-tooltip={props.iconOnly ? (pending ? "Deleting sequence…" : "Delete sequence") : undefined}
+        title={props.iconOnly ? "Delete sequence" : undefined}
       >
         {pending ? <span className="button-spinner" aria-hidden="true" /> : <Trash2 aria-hidden="true" />}
-        <span>{pending ? "Deleting..." : "Delete sequence"}</span>
+        {props.iconOnly ? null : <span>{pending ? "Deleting..." : "Delete sequence"}</span>}
       </button>
 
       <AppConfirmDialog

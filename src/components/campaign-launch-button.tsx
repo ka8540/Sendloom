@@ -1,5 +1,6 @@
 "use client";
 
+import { SendHorizontal } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -22,7 +23,12 @@ import { SEQUENCE_CONCURRENCY_LIMIT_CODE } from "@/lib/sequence-limit-codes";
  * ErrorRecoveryPanel, whose Retry simply re-runs this same launch call — the server's
  * "already running" guard means a retry never creates a duplicate run.
  */
-export function CampaignLaunchButton(props: { campaignId: string; label: string; disabled: boolean }) {
+export function CampaignLaunchButton(props: {
+  campaignId: string;
+  label: string;
+  disabled: boolean;
+  iconOnly?: boolean;
+}) {
   const router = useRouter();
   const { showError, showSuccess } = useErrorToast();
   const recovery = useErrorRecovery({ feature: "Sequences", operation: "Launch sequence" });
@@ -150,8 +156,20 @@ export function CampaignLaunchButton(props: { campaignId: string; label: string;
 
   return (
     <>
-      <button className="button" type="button" onClick={() => void handleLaunch()} disabled={props.disabled || pending}>
-        {props.label}
+      <button
+        className={props.iconOnly ? "field-icon-button" : "button"}
+        type="button"
+        onClick={() => void handleLaunch()}
+        disabled={props.disabled || pending}
+        aria-label={props.iconOnly ? (pending ? "Launching sequence" : props.label) : undefined}
+        data-tooltip={props.iconOnly ? (pending ? "Launching sequence…" : props.label) : undefined}
+        title={props.iconOnly ? props.label : undefined}
+      >
+        {props.iconOnly ? (
+          pending ? <span className="button-spinner" aria-hidden="true" /> : <SendHorizontal aria-hidden="true" />
+        ) : (
+          props.label
+        )}
       </button>
 
       {recovery.error ? (

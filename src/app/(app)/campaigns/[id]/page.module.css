@@ -1,6 +1,6 @@
 .page {
   display: grid;
-  gap: 1rem;
+  gap: 1.15rem;
 }
 
 .page > * {
@@ -89,8 +89,8 @@
 .overview {
   display: grid;
   grid-template-columns: minmax(17rem, 0.82fr) minmax(35rem, 1.18fr);
-  gap: 1.25rem;
-  padding: 1.2rem 1.3rem;
+  gap: 1.65rem;
+  padding: 1.55rem 1.65rem;
   border-radius: 20px;
   border: 1px solid var(--line);
   background:
@@ -101,14 +101,14 @@
 
 .overviewMain {
   display: grid;
-  gap: 0.62rem;
+  gap: 0.82rem;
   align-content: center;
   min-width: 0;
 }
 
 .kicker {
   color: var(--accent-strong);
-  font-size: 0.69rem;
+  font-size: 0.78rem;
   font-weight: 800;
   letter-spacing: 0.09em;
   text-transform: uppercase;
@@ -117,7 +117,7 @@
 .titleRow {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: 0.78rem;
   min-width: 0;
   flex-wrap: wrap;
 }
@@ -126,7 +126,7 @@
   min-width: 0;
   margin: 0;
   color: var(--text);
-  font-size: clamp(1.9rem, 3.4vw, 2.5rem);
+  font-size: clamp(2.05rem, 3.4vw, 2.65rem);
   line-height: 1.04;
   letter-spacing: -0.05em;
   overflow-wrap: anywhere;
@@ -136,13 +136,13 @@
   display: inline-flex;
   align-items: center;
   gap: 0.38rem;
-  min-height: 1.65rem;
-  padding: 0.22rem 0.58rem;
+  min-height: 1.85rem;
+  padding: 0.28rem 0.68rem;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--surface-muted);
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: 0.8rem;
   font-weight: 750;
   white-space: nowrap;
 }
@@ -182,35 +182,36 @@
   max-width: 38rem;
   margin: 0;
   color: var(--muted);
-  font-size: 0.86rem;
-  line-height: 1.5;
+  font-size: 0.98rem;
+  line-height: 1.55;
 }
 
 .metaRow {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
+  gap: 0.58rem;
+  margin-top: 0.08rem;
 }
 
 .metaChip {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.48rem;
   max-width: 100%;
-  min-height: 1.85rem;
-  padding: 0.3rem 0.58rem;
+  min-height: 2.15rem;
+  padding: 0.4rem 0.72rem;
   border-radius: 999px;
   border: 1px solid var(--line);
   background: color-mix(in srgb, var(--surface-muted) 82%, transparent);
   color: var(--text);
-  font-size: 0.76rem;
+  font-size: 0.87rem;
   font-weight: 650;
   overflow-wrap: anywhere;
 }
 
 .metaChip svg {
-  width: 0.82rem;
-  height: 0.82rem;
+  width: 0.95rem;
+  height: 0.95rem;
   color: var(--accent-strong);
   flex-shrink: 0;
 }
@@ -218,9 +219,9 @@
 .commandCenter {
   display: grid;
   align-content: center;
-  gap: 0.62rem;
+  gap: 0.82rem;
   min-width: 0;
-  padding-left: 1.25rem;
+  padding-left: 1.55rem;
   border-left: 1px solid var(--line);
 }
 
@@ -256,53 +257,53 @@
 .stateGrid {
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(0, 0.9fr) minmax(0, 0.9fr);
-  gap: 0.45rem;
+  gap: 0.62rem;
   min-width: 0;
 }
 
 .stateItem {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 0.52rem;
+  gap: 0.65rem;
   align-items: start;
   min-width: 0;
-  padding: 0.58rem 0.62rem;
+  padding: 0.78rem 0.82rem;
   border: 1px solid color-mix(in srgb, var(--line) 86%, transparent);
   border-radius: 11px;
   background: color-mix(in srgb, var(--surface-muted) 78%, transparent);
 }
 
 .stateItem > svg {
-  width: 0.9rem;
-  height: 0.9rem;
-  margin-top: 0.12rem;
+  width: 1.05rem;
+  height: 1.05rem;
+  margin-top: 0.1rem;
   color: var(--accent-strong);
 }
 
 .stateItem div {
   display: grid;
-  gap: 0.08rem;
+  gap: 0.12rem;
   min-width: 0;
 }
 
 .stateItem span,
 .stateItem small {
   color: var(--muted);
-  font-size: 0.68rem;
-  line-height: 1.3;
+  font-size: 0.77rem;
+  line-height: 1.35;
 }
 
 .stateItem span {
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.035em;
   text-transform: uppercase;
 }
 
 .stateItem strong {
   min-width: 0;
   color: var(--text);
-  font-size: 0.8rem;
-  line-height: 1.32;
+  font-size: 0.92rem;
+  line-height: 1.38;
   letter-spacing: -0.01em;
   overflow-wrap: anywhere;
 }
@@ -310,20 +311,19 @@
 .statusNote {
   margin: 0;
   color: var(--muted);
-  font-size: 0.74rem;
-  line-height: 1.4;
+  font-size: 0.86rem;
+  line-height: 1.45;
 }
 
 .actionBar {
   display: flex;
   align-items: center;
-  gap: 0.32rem;
+  gap: 0.68rem;
   min-width: 0;
-  padding-top: 0.62rem;
+  padding-top: 0.86rem;
   border-top: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
 }
 
-.primaryAction,
 .actionItem,
 .dangerAction {
   flex-shrink: 0;
@@ -333,38 +333,81 @@
 .utilityActions {
   display: flex;
   align-items: center;
-  gap: 0.32rem;
+  gap: 0.5rem;
   min-width: 0;
   flex-wrap: wrap;
 }
 
-.actionBar :global(.button) {
-  min-height: 2.05rem;
-  padding: 0.46rem 0.62rem;
-  font-size: 0.72rem;
-  line-height: 1.1;
+.runState {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.48rem;
+  min-height: 2.45rem;
+  padding: 0.5rem 0.78rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 750;
   white-space: nowrap;
+}
+
+.runState > span {
+  width: 0.48rem;
+  height: 0.48rem;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 0 0.2rem color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.runState[data-tone="active"] {
+  border-color: color-mix(in srgb, var(--success) 30%, var(--line));
+  background: color-mix(in srgb, var(--accent-soft) 78%, var(--surface));
+  color: var(--accent-strong);
+}
+
+.runState[data-tone="paused"] {
+  border-color: color-mix(in srgb, var(--warning) 30%, var(--line));
+  background: color-mix(in srgb, var(--warning-soft) 70%, var(--surface));
+  color: var(--warning);
+}
+
+.runState[data-tone="completed"] {
+  border-color: color-mix(in srgb, var(--accent) 24%, var(--line));
+  background: color-mix(in srgb, var(--accent-soft) 54%, var(--surface));
+  color: var(--accent-strong);
+}
+
+.runState[data-tone="attention"] {
+  border-color: color-mix(in srgb, #d96952 32%, var(--line));
+  background: color-mix(in srgb, #d96952 10%, var(--surface));
+  color: color-mix(in srgb, #d96952 72%, var(--text));
+}
+
+.actionBar :global(.field-icon-button) {
+  width: 2.65rem;
+  height: 2.65rem;
+  min-height: 2.65rem;
+  padding: 0;
+  border-radius: 13px;
   box-shadow: none;
 }
 
-.actionBar :global(.button) svg {
-  width: 0.88rem;
-  height: 0.88rem;
-}
-
-.primaryAction :global(.button) {
-  padding-inline: 0.74rem;
+.actionBar :global(.field-icon-button) svg {
+  width: 1.05rem;
+  height: 1.05rem;
 }
 
 .dangerAction {
   margin-left: auto;
-  padding-left: 0.34rem;
+  padding-left: 0.68rem;
   border-left: 1px solid var(--line);
 }
 
 .dangerAction :global(.campaign-detail-delete__button) {
-  width: auto;
-  padding-inline: 0.6rem;
+  width: 2.65rem;
+  padding: 0;
 }
 
 /* Three dense run metrics, aligned like the compact summary surfaces on the
@@ -372,16 +415,17 @@
 .metrics {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.7rem;
+  gap: 0.9rem;
 }
 
 .metricCard {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 0.72rem;
+  gap: 0.9rem;
   align-items: center;
   min-width: 0;
-  padding: 0.78rem 0.9rem;
+  min-height: 5.2rem;
+  padding: 1rem 1.1rem;
   border-radius: 14px;
   border: 1px solid var(--line);
   background: var(--surface);
@@ -392,34 +436,34 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2rem;
-  height: 2rem;
-  border-radius: 9px;
+  width: 2.45rem;
+  height: 2.45rem;
+  border-radius: 11px;
   background: var(--accent-soft);
   color: var(--accent-strong);
 }
 
 .metricIcon svg {
-  width: 0.95rem;
-  height: 0.95rem;
+  width: 1.08rem;
+  height: 1.08rem;
 }
 
 .metricCopy {
   display: grid;
-  gap: 0.12rem;
+  gap: 0.2rem;
   min-width: 0;
 }
 
 .metricLabel {
   color: var(--text);
-  font-size: 0.85rem;
+  font-size: 0.98rem;
   font-weight: 720;
   letter-spacing: -0.01em;
 }
 
 .metricValue {
   color: var(--text);
-  font-size: 1.55rem;
+  font-size: 1.9rem;
   font-variant-numeric: tabular-nums;
   line-height: 1;
   letter-spacing: -0.045em;
@@ -428,8 +472,8 @@
 .metricMeta {
   min-width: 0;
   color: var(--muted);
-  font-size: 0.72rem;
-  line-height: 1.35;
+  font-size: 0.86rem;
+  line-height: 1.4;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -442,7 +486,7 @@
 .detailGrid {
   display: grid;
   grid-template-columns: minmax(320px, 0.78fr) minmax(0, 1.22fr);
-  gap: 0.8rem;
+  gap: 1rem;
   align-items: start;
 }
 
@@ -450,9 +494,9 @@
   display: grid;
   align-content: start;
   align-self: start;
-  gap: 0.9rem;
+  gap: 1.05rem;
   min-width: 0;
-  padding: 1.05rem;
+  padding: 1.28rem;
   border-radius: 18px;
   border: 1px solid var(--line);
   background: var(--surface);
@@ -474,13 +518,14 @@
 
 .panelHeader h2 {
   margin: 0;
-  font-size: 1.2rem;
+  font-size: 1.35rem;
   letter-spacing: -0.035em;
 }
 
 .panelHeader p {
   margin: 0.25rem 0 0;
   color: var(--muted);
+  font-size: 0.92rem;
 }
 
 .panelNote {
@@ -489,7 +534,7 @@
   border-radius: 6px;
   background: var(--accent-soft);
   color: var(--accent-strong) !important;
-  font-size: 0.72rem;
+  font-size: 0.8rem;
   font-weight: 700;
 }
 
@@ -663,26 +708,12 @@
 
   .actionBar,
   .utilityActions {
-    align-items: stretch;
-  }
-
-  .primaryAction,
-  .utilityActions,
-  .actionItem,
-  .dangerAction {
-    width: 100%;
-  }
-
-  .actionBar :global(.button),
-  .dangerAction :global(.campaign-detail-delete__button) {
-    width: 100%;
+    align-items: center;
+    flex-wrap: wrap;
   }
 
   .dangerAction {
-    padding-top: 0.42rem;
-    padding-left: 0;
-    border-top: 1px solid var(--line);
-    border-left: 0;
+    margin-left: 0;
   }
 
   .metaRow {

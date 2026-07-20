@@ -17,6 +17,7 @@ export function CampaignBounceCheckButton(props: {
   campaignId: string;
   senderNeedsReconnect: boolean;
   className?: string;
+  iconOnly?: boolean;
 }) {
   const router = useRouter();
   const { showError, showSuccess } = useErrorToast();
@@ -83,13 +84,21 @@ export function CampaignBounceCheckButton(props: {
       }}
     >
       <button
-        className="button secondary"
+        className={props.iconOnly ? "field-icon-button" : "button secondary"}
         type="submit"
         disabled={pending}
-        aria-label="Check already-sent emails for bounces"
+        aria-label={
+          props.iconOnly
+            ? pending
+              ? "Checking bounces"
+              : "Check bounces"
+            : "Check already-sent emails for bounces"
+        }
+        data-tooltip={props.iconOnly ? (pending ? "Checking bounces…" : "Check bounces") : undefined}
+        title={props.iconOnly ? "Check bounces" : undefined}
       >
         {pending ? <span className="button-spinner" aria-hidden="true" /> : <MailWarning aria-hidden="true" />}
-        <span>{pending ? "Checking bounces…" : "Check bounces"}</span>
+        {props.iconOnly ? null : <span>{pending ? "Checking bounces…" : "Check bounces"}</span>}
       </button>
     </form>
   );

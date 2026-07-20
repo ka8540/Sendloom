@@ -12,6 +12,7 @@ export function CampaignRetryFailedButton(props: {
   campaignId: string;
   failedCount: number;
   className?: string;
+  iconOnly?: boolean;
 }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
@@ -99,9 +100,16 @@ export function CampaignRetryFailedButton(props: {
         void handleRetry();
       }}
     >
-      <button className="button secondary" type="submit" disabled={pending} aria-label="Retry failed recipients">
+      <button
+        className={props.iconOnly ? "field-icon-button" : "button secondary"}
+        type="submit"
+        disabled={pending}
+        aria-label={pending ? "Retrying failed recipients" : label}
+        data-tooltip={props.iconOnly ? (pending ? "Retrying failed recipients…" : label) : undefined}
+        title={props.iconOnly ? label : undefined}
+      >
         {pending ? <span className="button-spinner" aria-hidden="true" /> : <RotateCcw aria-hidden="true" />}
-        <span>{pending ? "Retrying..." : label}</span>
+        {props.iconOnly ? null : <span>{pending ? "Retrying..." : label}</span>}
       </button>
     </form>
     <SequenceLimitDialog

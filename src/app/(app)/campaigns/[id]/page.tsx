@@ -371,7 +371,7 @@ export default async function CampaignDetailPage({
   // Delivered comes from the same per-recipient classification as the other
   // cards, so an address that later hard-bounced (a Skipped outcome, even if a
   // false "open" left the row in an engagement status) never counts as
-  // delivered — the four cards always add up truthfully.
+  // delivered — the three cards always add up truthfully.
   const deliveredCount = dispositionCounts.sent;
   const launchButtonLabel = dailyLimitActive
     ? "Waiting for Gmail safety window"
@@ -382,10 +382,21 @@ export default async function CampaignDetailPage({
       : isPausedRun
         ? "Sequence paused"
         : latestRun
-          ? "Launch again"
+          ? "Relaunch sequence"
           : "Launch sequence";
+  const runStateLabel = dailyLimitActive
+    ? "Waiting for Gmail window"
+    : isWaitingForSlot
+      ? "Waiting for slot"
+      : isActiveRun
+        ? "Processing"
+        : isPausedRun
+          ? "Paused"
+          : latestRun
+            ? formatSequenceStatus(latestRun.status)
+            : "Ready";
   const validationButtonLabel = campaign.lastValidatedAt ? "Refresh validation" : "Validate sequence";
-  const pauseButtonLabel = isPausedRun ? "Resume sequence" : "Pause sequence";
+  const pauseButtonLabel = isPausedRun ? "Relaunch sequence" : "Pause sequence";
   // Retry-failed action: only surfaces when the latest run has finished and still
   // has retryable failed recipients, with nothing actively sending, paused, or
   // blocked. The eligible count is computed off the run's own recipient jobs.
@@ -654,25 +665,35 @@ export default async function CampaignDetailPage({
           </p>
 
           <div className={styles.actionBar}>
-            <div className={styles.primaryAction}>
-              {senderNeedsReconnect ? (
-                <a className="button" href={reconnectHref}>
-                  Reconnect to launch
-                </a>
-              ) : (
-                <CampaignLaunchButton
-                  campaignId={campaign.id}
-                  label={launchButtonLabel}
-                  disabled={isActiveRun || isPausedRun || dailyLimitActive}
-                />
-              )}
+            <div
+              className={styles.runState}
+              data-tone={sequenceStatusTone}
+              aria-label={`Current run status: ${runStateLabel}`}
+            >
+              <span aria-hidden="true" />
+              <strong>{runStateLabel}</strong>
             </div>
 
-            <div className={styles.utilityActions}>
+            <div className={styles.utilityActions} aria-label="Sequence actions">
+              {!senderNeedsReconnect && !isActiveRun && !isPausedRun && !dailyLimitActive ? (
+                <div className={styles.actionItem}>
+                  <CampaignLaunchButton
+                    campaignId={campaign.id}
+                    label={launchButtonLabel}
+                    disabled={false}
+                    iconOnly
+                  />
+                </div>
+              ) : null}
               <form action={validate.bind(null, campaign.id)} className={styles.actionItem}>
-                <button className="button secondary" type="submit">
+                <button
+                  className="field-icon-button"
+                  type="submit"
+                  aria-label={validationButtonLabel}
+                  data-tooltip={validationButtonLabel}
+                  title={validationButtonLabel}
+                >
                   <RefreshCcw aria-hidden="true" />
-                  {validationButtonLabel}
                 </button>
               </form>
               {/* Post-send bounce check — reads Gmail delivery-status reports
@@ -683,6 +704,7 @@ export default async function CampaignDetailPage({
                 campaignId={campaign.id}
                 senderNeedsReconnect={senderNeedsReconnect}
                 className={styles.actionItem}
+                iconOnly
               />
               {latestRun && (isActiveRun || isPausedRun) ? (
                 <CampaignPauseResumeButton
@@ -690,6 +712,7 @@ export default async function CampaignDetailPage({
                   isPaused={isPausedRun}
                   label={pauseButtonLabel}
                   className={styles.actionItem}
+                  iconOnly
                 />
               ) : null}
               <CampaignScheduleEditor
@@ -698,18 +721,20 @@ export default async function CampaignDetailPage({
                 className={styles.actionItem}
                 disabledMessage={SCHEDULE_EDIT_DISABLED_MESSAGE}
                 initialSchedule={scheduleConfig}
+                iconOnly
               />
               {canRetryFailed ? (
                 <CampaignRetryFailedButton
                   campaignId={campaign.id}
                   failedCount={retryableFailedCount}
                   className={styles.actionItem}
+                  iconOnly
                 />
               ) : null}
             </div>
 
             <div className={styles.dangerAction}>
-              <CampaignDetailDeleteButton campaignId={campaign.id} campaignName={campaign.name} />
+              <CampaignDetailDeleteButton campaignId={campaign.id} campaignName={campaign.name} iconOnly />
             </div>
           </div>
         </aside>
