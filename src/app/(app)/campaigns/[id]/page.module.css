@@ -338,53 +338,6 @@
   flex-wrap: nowrap;
 }
 
-.runState {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.48rem;
-  min-height: 2.45rem;
-  padding: 0.5rem 0.78rem;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--surface-muted);
-  color: var(--muted);
-  font-size: 0.86rem;
-  font-weight: 750;
-  white-space: nowrap;
-}
-
-.runState > span {
-  width: 0.48rem;
-  height: 0.48rem;
-  border-radius: 999px;
-  background: currentColor;
-  box-shadow: 0 0 0 0.2rem color-mix(in srgb, currentColor 12%, transparent);
-}
-
-.runState[data-tone="active"] {
-  border-color: color-mix(in srgb, var(--success) 30%, var(--line));
-  background: color-mix(in srgb, var(--accent-soft) 78%, var(--surface));
-  color: var(--accent-strong);
-}
-
-.runState[data-tone="paused"] {
-  border-color: color-mix(in srgb, var(--warning) 30%, var(--line));
-  background: color-mix(in srgb, var(--warning-soft) 70%, var(--surface));
-  color: var(--warning);
-}
-
-.runState[data-tone="completed"] {
-  border-color: color-mix(in srgb, var(--accent) 24%, var(--line));
-  background: color-mix(in srgb, var(--accent-soft) 54%, var(--surface));
-  color: var(--accent-strong);
-}
-
-.runState[data-tone="attention"] {
-  border-color: color-mix(in srgb, #d96952 32%, var(--line));
-  background: color-mix(in srgb, #d96952 10%, var(--surface));
-  color: color-mix(in srgb, #d96952 72%, var(--text));
-}
-
 /* Detail-page action controls mirror the Overview sequence rail: a generous
    circular resting state that reveals its label by expanding into a true pill.
    Labels live inside the button, so there is no tooltip layer or native title
@@ -898,11 +851,6 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
-  }
-
-  .runState {
-    grid-column: 1 / -1;
-    justify-self: start;
   }
 
   .utilityActions {

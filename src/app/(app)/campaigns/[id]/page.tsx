@@ -384,17 +384,6 @@ export default async function CampaignDetailPage({
         : latestRun
           ? "Relaunch sequence"
           : "Launch sequence";
-  const runStateLabel = dailyLimitActive
-    ? "Waiting for Gmail window"
-    : isWaitingForSlot
-      ? "Waiting for slot"
-      : isActiveRun
-        ? "Processing"
-        : isPausedRun
-          ? "Paused"
-          : latestRun
-            ? formatSequenceStatus(latestRun.status)
-            : "Ready";
   const validationButtonLabel = campaign.lastValidatedAt ? "Refresh validation" : "Validate sequence";
   const validationVisibleLabel = campaign.lastValidatedAt ? "Refresh" : "Validate";
   const pauseButtonLabel = isPausedRun ? "Relaunch sequence" : "Pause sequence";
@@ -666,15 +655,6 @@ export default async function CampaignDetailPage({
           </p>
 
           <div className={styles.actionBar}>
-            <div
-              className={styles.runState}
-              data-tone={sequenceStatusTone}
-              aria-label={`Current run status: ${runStateLabel}`}
-            >
-              <span aria-hidden="true" />
-              <strong>{runStateLabel}</strong>
-            </div>
-
             <div className={styles.utilityActions} aria-label="Sequence actions">
               {!senderNeedsReconnect && !isActiveRun && !isPausedRun && !dailyLimitActive ? (
                 <div className={styles.actionItem}>

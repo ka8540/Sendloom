@@ -47,8 +47,10 @@ describe("sequence detail metric cards — truthful recipient rollups", () => {
     expect(DETAIL_PAGE).toContain('data-tone={sequenceStatusTone}');
   });
 
-  it("uses a non-interactive run-state treatment and icon-only actions", () => {
-    expect(DETAIL_PAGE).toContain("className={styles.runState}");
+  it("avoids a duplicate run-state pill while keeping icon-only actions", () => {
+    expect(DETAIL_PAGE).not.toContain("className={styles.runState}");
+    expect(DETAIL_PAGE).toContain("<span>Current run</span>");
+    expect(DETAIL_PAGE).toContain('data-tone={sequenceStatusTone}');
     expect(DETAIL_PAGE).not.toContain("className={styles.primaryAction}");
     expect(DETAIL_PAGE).toContain("iconOnly");
     expect(DETAIL_CSS).toContain(".actionBar :global(.sequence-detail-action)");
