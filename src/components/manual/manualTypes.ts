@@ -15,13 +15,13 @@ export type ManualStep = {
   optional?: boolean;
 };
 
-export type ManualHelpMenuIcon = "overview" | "controls" | "stats" | "activity" | "setup" | "help";
+export type ManualHelpMenuIcon = "overview" | "activity" | "actions";
 
 export type ManualHelpMenuItem = {
   title: string;
   description: string;
   icon: ManualHelpMenuIcon;
-  action?: "report";
+  stage?: string;
 };
 
 export type ManualConfig = {

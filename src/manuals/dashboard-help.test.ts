@@ -95,23 +95,13 @@ describe("Sequence detail guide menu", () => {
     const manual = getManualForPathname("/campaigns/abc123");
     const items = manual?.helpMenuItems ?? [];
 
-    expect(items.map((item) => item.title)).toEqual([
-      "Sequence overview",
-      "Run controls",
-      "Delivery stats",
-      "Recipient activity",
-      "Setup details",
-      "Need help?"
-    ]);
+    expect(items.map((item) => item.title)).toEqual(["Overview", "Activity", "Actions"]);
     expect(items.map((item) => item.description)).toEqual([
-      "View the sequence name, status, audience, template, sender, timing, and current run state.",
-      "Refresh validation, check bounces, pause, relaunch, edit, or delete this sequence.",
-      "Track audience size, delivered emails, and skipped or invalid recipients.",
-      "Review each recipient’s latest status, including queued, sent, opened, invalid, or skipped.",
-      "Confirm the contact list, email template, sender account, timing, and attachments.",
-      "Report an issue if something looks wrong on this sequence."
+      "Check the audience, template, sender, timing, and run status.",
+      "See queued, sent, opened, skipped, and invalid recipients.",
+      "Refresh validation, check bounces, pause, relaunch, edit, or delete."
     ]);
-    expect(items.at(-1)?.action).toBe("report");
+    expect(items).toHaveLength(3);
   });
 });
 

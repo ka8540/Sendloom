@@ -3,13 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Activity,
-  BarChart3,
   CircleHelp,
   Compass,
   GraduationCap,
   LayoutDashboard,
   MessageSquare,
-  Settings2,
   SlidersHorizontal,
   Sparkles,
   type LucideIcon
@@ -37,11 +35,8 @@ const GUIDE_CONTEXT_BY_ID: Record<string, string> = {
 
 const HELP_MENU_ICONS: Record<ManualHelpMenuIcon, LucideIcon> = {
   overview: LayoutDashboard,
-  controls: SlidersHorizontal,
-  stats: BarChart3,
   activity: Activity,
-  setup: Settings2,
-  help: MessageSquare
+  actions: SlidersHorizontal
 };
 
 function guideContextForManual(manual: ManualConfig): string {
@@ -95,9 +90,6 @@ function DashboardHelpButton({ label, tooltip, manual }: { label: string; toolti
   const hasQuickStart = Boolean(manual.helpQuickStart);
   const customHelpItems = manual.helpMenuItems ?? [];
   const hasCustomHelpMenu = customHelpItems.length > 0;
-  const customInfoItems = customHelpItems.filter((item) => item.action !== "report");
-  const customReportItem = customHelpItems.find((item) => item.action === "report");
-  const CustomReportIcon = customReportItem ? HELP_MENU_ICONS[customReportItem.icon] : MessageSquare;
   // Manuals whose "page" changes by internal state rather than the URL (the
   // Templates library vs. its create/edit wizard steps) opt into `contextualStages`
   // so the menu's guide actions target whatever surface is on screen. The stage is
@@ -212,44 +204,31 @@ function DashboardHelpButton({ label, tooltip, manual }: { label: string; toolti
         <div
           ref={menuRef}
           className={styles.overviewMenu}
-          role={hasCustomHelpMenu ? "dialog" : "menu"}
-          aria-label={hasCustomHelpMenu ? tooltip : `${tooltip} options`}
+          role="menu"
+          aria-label={`${tooltip} options`}
           data-tour-help-menu="true"
         >
           <p className={styles.overviewMenuTitle}>{tooltip}</p>
           {hasCustomHelpMenu ? (
-            <>
-              {customInfoItems.map((item) => {
-                const Icon = HELP_MENU_ICONS[item.icon];
+            customHelpItems.map((item) => {
+              const Icon = HELP_MENU_ICONS[item.icon];
 
-                return (
-                  <div className={`${styles.overviewMenuItem} ${styles.overviewMenuInfo}`} key={item.title}>
-                    <Icon aria-hidden="true" />
-                    <span>
-                      <strong>{item.title}</strong>
-                      <small>{item.description}</small>
-                    </span>
-                  </div>
-                );
-              })}
-              {customReportItem ? (
-                <>
-                  <div className={styles.overviewMenuDivider} role="separator" aria-hidden="true" />
-                  <button
-                    className={styles.overviewMenuItem}
-                    type="button"
-                    onClick={openReport}
-                    data-tour-report-issue="true"
-                  >
-                    <CustomReportIcon aria-hidden="true" />
-                    <span>
-                      <strong>{customReportItem.title}</strong>
-                      <small>{customReportItem.description}</small>
-                    </span>
-                  </button>
-                </>
-              ) : null}
-            </>
+              return (
+                <button
+                  className={styles.overviewMenuItem}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => startStage(item.stage ?? fullTourStage)}
+                  key={item.title}
+                >
+                  <Icon aria-hidden="true" />
+                  <span>
+                    <strong>{item.title}</strong>
+                    <small>{item.description}</small>
+                  </span>
+                </button>
+              );
+            })
           ) : (
             <>
               {hasQuickStart ? (
@@ -292,22 +271,22 @@ function DashboardHelpButton({ label, tooltip, manual }: { label: string; toolti
                   </span>
                 </button>
               ) : null}
-              <div className={styles.overviewMenuDivider} role="separator" aria-hidden="true" />
-              <button
-                className={styles.overviewMenuItem}
-                type="button"
-                role="menuitem"
-                onClick={openReport}
-                data-tour-report-issue="true"
-              >
-                <MessageSquare aria-hidden="true" />
-                <span>
-                  <strong>Report issue</strong>
-                  <small>Tell us what went wrong on this page</small>
-                </span>
-              </button>
             </>
           )}
+          <div className={styles.overviewMenuDivider} role="separator" aria-hidden="true" />
+          <button
+            className={styles.overviewMenuItem}
+            type="button"
+            role="menuitem"
+            onClick={openReport}
+            data-tour-report-issue="true"
+          >
+            <MessageSquare aria-hidden="true" />
+            <span>
+              <strong>Report issue</strong>
+              <small>Tell us what went wrong on this page</small>
+            </span>
+          </button>
         </div>
       ) : null}
 
@@ -319,7 +298,7 @@ function DashboardHelpButton({ label, tooltip, manual }: { label: string; toolti
         type="button"
         onClick={handleTrigger}
         aria-label={label}
-        aria-haspopup={hasCustomHelpMenu ? "dialog" : "menu"}
+        aria-haspopup="menu"
         aria-expanded={menuOpen}
         data-manual-help-button="true"
         data-open={menuOpen ? "true" : "false"}

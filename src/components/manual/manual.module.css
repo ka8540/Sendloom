@@ -249,16 +249,6 @@
   outline: none;
 }
 
-.overviewMenuInfo {
-  cursor: default;
-}
-
-.overviewMenuInfo:hover {
-  transform: none;
-  border-color: transparent;
-  background: transparent;
-}
-
 /* Hairline separating the guide/tour actions from the "Report issue" action. */
 .overviewMenuDivider {
   height: 1px;

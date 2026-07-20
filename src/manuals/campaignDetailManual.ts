@@ -9,35 +9,22 @@ export const campaignDetailManual: ManualConfig = {
   helpVariant: "premium",
   helpMenuItems: [
     {
-      title: "Sequence overview",
-      description: "View the sequence name, status, audience, template, sender, timing, and current run state.",
-      icon: "overview"
+      title: "Overview",
+      description: "Check the audience, template, sender, timing, and run status.",
+      icon: "overview",
+      stage: "starter"
     },
     {
-      title: "Run controls",
-      description: "Refresh validation, check bounces, pause, relaunch, edit, or delete this sequence.",
-      icon: "controls"
+      title: "Activity",
+      description: "See queued, sent, opened, skipped, and invalid recipients.",
+      icon: "activity",
+      stage: "full"
     },
     {
-      title: "Delivery stats",
-      description: "Track audience size, delivered emails, and skipped or invalid recipients.",
-      icon: "stats"
-    },
-    {
-      title: "Recipient activity",
-      description: "Review each recipient’s latest status, including queued, sent, opened, invalid, or skipped.",
-      icon: "activity"
-    },
-    {
-      title: "Setup details",
-      description: "Confirm the contact list, email template, sender account, timing, and attachments.",
-      icon: "setup"
-    },
-    {
-      title: "Need help?",
-      description: "Report an issue if something looks wrong on this sequence.",
-      icon: "help",
-      action: "report"
+      title: "Actions",
+      description: "Refresh validation, check bounces, pause, relaunch, edit, or delete.",
+      icon: "actions",
+      stage: "full"
     }
   ],
   helpQuickStart: true,
