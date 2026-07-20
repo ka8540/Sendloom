@@ -389,8 +389,8 @@
 }
 
 .actionBar :global(.sequence-detail-action[data-action="refresh"]) {
-  --detail-action-expanded-width: 7.6rem;
-  --detail-action-label-width: 4.4rem;
+  --detail-action-expanded-width: 8.8rem;
+  --detail-action-label-width: 5.25rem;
 }
 
 .actionBar :global(.sequence-detail-action[data-action="bounces"]) {
