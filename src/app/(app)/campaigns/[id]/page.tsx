@@ -687,13 +687,13 @@ export default async function CampaignDetailPage({
               ) : null}
               <form action={validate.bind(null, campaign.id)} className={styles.actionItem}>
                 <button
-                  className="field-icon-button"
+                  className="sequence-detail-action"
                   type="submit"
                   aria-label={validationButtonLabel}
-                  data-tooltip={validationButtonLabel}
-                  title={validationButtonLabel}
+                  data-action="refresh"
                 >
-                  <RefreshCcw aria-hidden="true" />
+                  <span className="sequence-detail-action__icon"><RefreshCcw aria-hidden="true" /></span>
+                  <span className="sequence-detail-action__label">{validationButtonLabel}</span>
                 </button>
               </form>
               {/* Post-send bounce check — reads Gmail delivery-status reports

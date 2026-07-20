@@ -157,16 +157,20 @@ export function CampaignLaunchButton(props: {
   return (
     <>
       <button
-        className={props.iconOnly ? "field-icon-button" : "button"}
+        className={props.iconOnly ? "sequence-detail-action sequence-detail-action--primary" : "button"}
         type="button"
         onClick={() => void handleLaunch()}
         disabled={props.disabled || pending}
         aria-label={props.iconOnly ? (pending ? "Launching sequence" : props.label) : undefined}
-        data-tooltip={props.iconOnly ? (pending ? "Launching sequence…" : props.label) : undefined}
-        title={props.iconOnly ? props.label : undefined}
+        data-action={props.iconOnly ? "run" : undefined}
       >
         {props.iconOnly ? (
-          pending ? <span className="button-spinner" aria-hidden="true" /> : <SendHorizontal aria-hidden="true" />
+          <>
+            <span className="sequence-detail-action__icon">
+              {pending ? <span className="button-spinner" aria-hidden="true" /> : <SendHorizontal aria-hidden="true" />}
+            </span>
+            <span className="sequence-detail-action__label">{pending ? "Launching…" : props.label}</span>
+          </>
         ) : (
           props.label
         )}

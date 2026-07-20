@@ -52,7 +52,7 @@ export function CampaignDetailDeleteButton(props: {
         type="button"
         className={
           props.iconOnly
-            ? "field-icon-button field-icon-button--danger campaign-detail-delete__button"
+            ? "sequence-detail-action sequence-detail-action--danger campaign-detail-delete__button"
             : "button secondary campaign-detail-delete__button"
         }
         onClick={() => {
@@ -67,11 +67,21 @@ export function CampaignDetailDeleteButton(props: {
               : "Delete sequence"
             : `Delete ${props.campaignName}`
         }
-        data-tooltip={props.iconOnly ? (pending ? "Deleting sequence…" : "Delete sequence") : undefined}
-        title={props.iconOnly ? "Delete sequence" : undefined}
+        data-action={props.iconOnly ? "delete" : undefined}
       >
-        {pending ? <span className="button-spinner" aria-hidden="true" /> : <Trash2 aria-hidden="true" />}
-        {props.iconOnly ? null : <span>{pending ? "Deleting..." : "Delete sequence"}</span>}
+        {props.iconOnly ? (
+          <>
+            <span className="sequence-detail-action__icon">
+              {pending ? <span className="button-spinner" aria-hidden="true" /> : <Trash2 aria-hidden="true" />}
+            </span>
+            <span className="sequence-detail-action__label">{pending ? "Deleting…" : "Delete"}</span>
+          </>
+        ) : (
+          <>
+            {pending ? <span className="button-spinner" aria-hidden="true" /> : <Trash2 aria-hidden="true" />}
+            <span>{pending ? "Deleting..." : "Delete sequence"}</span>
+          </>
+        )}
       </button>
 
       <AppConfirmDialog

@@ -101,15 +101,25 @@ export function CampaignRetryFailedButton(props: {
       }}
     >
       <button
-        className={props.iconOnly ? "field-icon-button" : "button secondary"}
+        className={props.iconOnly ? "sequence-detail-action" : "button secondary"}
         type="submit"
         disabled={pending}
         aria-label={pending ? "Retrying failed recipients" : label}
-        data-tooltip={props.iconOnly ? (pending ? "Retrying failed recipients…" : label) : undefined}
-        title={props.iconOnly ? label : undefined}
+        data-action={props.iconOnly ? "retry" : undefined}
       >
-        {pending ? <span className="button-spinner" aria-hidden="true" /> : <RotateCcw aria-hidden="true" />}
-        {props.iconOnly ? null : <span>{pending ? "Retrying..." : label}</span>}
+        {props.iconOnly ? (
+          <>
+            <span className="sequence-detail-action__icon">
+              {pending ? <span className="button-spinner" aria-hidden="true" /> : <RotateCcw aria-hidden="true" />}
+            </span>
+            <span className="sequence-detail-action__label">{pending ? "Retrying…" : label}</span>
+          </>
+        ) : (
+          <>
+            {pending ? <span className="button-spinner" aria-hidden="true" /> : <RotateCcw aria-hidden="true" />}
+            <span>{pending ? "Retrying..." : label}</span>
+          </>
+        )}
       </button>
     </form>
     <SequenceLimitDialog

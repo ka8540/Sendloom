@@ -75,24 +75,28 @@ export function CampaignPauseResumeButton(props: {
   return (
     <>
       <button
-        className={`${props.iconOnly ? "field-icon-button" : "button secondary"}${
+        className={`${props.iconOnly ? "sequence-detail-action sequence-detail-action--primary" : "button secondary"}${
           props.className ? ` ${props.className}` : ""
         }`}
         type="button"
         onClick={() => void toggle()}
         disabled={pending}
         aria-label={props.iconOnly ? (pending ? "Updating sequence" : props.label) : undefined}
-        data-tooltip={props.iconOnly ? (pending ? "Updating sequence…" : props.label) : undefined}
-        title={props.iconOnly ? props.label : undefined}
+        data-action={props.iconOnly ? "run" : undefined}
       >
         {props.iconOnly ? (
-          pending ? (
-            <span className="button-spinner" aria-hidden="true" />
-          ) : props.isPaused ? (
-            <Play aria-hidden="true" />
-          ) : (
-            <Pause aria-hidden="true" />
-          )
+          <>
+            <span className="sequence-detail-action__icon">
+              {pending ? (
+                <span className="button-spinner" aria-hidden="true" />
+              ) : props.isPaused ? (
+                <Play aria-hidden="true" />
+              ) : (
+                <Pause aria-hidden="true" />
+              )}
+            </span>
+            <span className="sequence-detail-action__label">{pending ? "Updating…" : props.label}</span>
+          </>
         ) : pending ? (
           "Working…"
         ) : (

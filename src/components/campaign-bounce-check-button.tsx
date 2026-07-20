@@ -84,7 +84,7 @@ export function CampaignBounceCheckButton(props: {
       }}
     >
       <button
-        className={props.iconOnly ? "field-icon-button" : "button secondary"}
+        className={props.iconOnly ? "sequence-detail-action" : "button secondary"}
         type="submit"
         disabled={pending}
         aria-label={
@@ -94,11 +94,21 @@ export function CampaignBounceCheckButton(props: {
               : "Check bounces"
             : "Check already-sent emails for bounces"
         }
-        data-tooltip={props.iconOnly ? (pending ? "Checking bounces…" : "Check bounces") : undefined}
-        title={props.iconOnly ? "Check bounces" : undefined}
+        data-action={props.iconOnly ? "bounces" : undefined}
       >
-        {pending ? <span className="button-spinner" aria-hidden="true" /> : <MailWarning aria-hidden="true" />}
-        {props.iconOnly ? null : <span>{pending ? "Checking bounces…" : "Check bounces"}</span>}
+        {props.iconOnly ? (
+          <>
+            <span className="sequence-detail-action__icon">
+              {pending ? <span className="button-spinner" aria-hidden="true" /> : <MailWarning aria-hidden="true" />}
+            </span>
+            <span className="sequence-detail-action__label">{pending ? "Checking…" : "Check bounces"}</span>
+          </>
+        ) : (
+          <>
+            {pending ? <span className="button-spinner" aria-hidden="true" /> : <MailWarning aria-hidden="true" />}
+            <span>{pending ? "Checking bounces…" : "Check bounces"}</span>
+          </>
+        )}
       </button>
     </form>
   );

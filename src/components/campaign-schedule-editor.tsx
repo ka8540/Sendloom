@@ -307,14 +307,22 @@ export function CampaignScheduleEditor(props: {
         <button
           aria-disabled={!props.canEdit}
           aria-label={props.iconOnly ? "Edit sequence" : undefined}
-          className={`${props.iconOnly ? "field-icon-button" : "button secondary"} ${styles.scheduleButton}${!props.canEdit ? ` ${styles.blockedButton}` : ""}`}
-          data-tooltip={props.iconOnly ? "Edit sequence" : undefined}
+          className={`${props.iconOnly ? "sequence-detail-action" : "button secondary"} ${styles.scheduleButton}${!props.canEdit ? ` ${styles.blockedButton}` : ""}`}
+          data-action={props.iconOnly ? "edit" : undefined}
           type="button"
           onClick={openEditor}
-          title={props.canEdit ? "Edit sequence timing" : props.disabledMessage}
         >
-          <PencilLine aria-hidden="true" />
-          {props.iconOnly ? null : <span>Edit sequence</span>}
+          {props.iconOnly ? (
+            <>
+              <span className="sequence-detail-action__icon"><PencilLine aria-hidden="true" /></span>
+              <span className="sequence-detail-action__label">Edit sequence</span>
+            </>
+          ) : (
+            <>
+              <PencilLine aria-hidden="true" />
+              <span>Edit sequence</span>
+            </>
+          )}
         </button>
       </div>
 

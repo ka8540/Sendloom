@@ -51,15 +51,24 @@ describe("sequence detail metric cards — truthful recipient rollups", () => {
     expect(DETAIL_PAGE).toContain("className={styles.runState}");
     expect(DETAIL_PAGE).not.toContain("className={styles.primaryAction}");
     expect(DETAIL_PAGE).toContain("iconOnly");
-    expect(DETAIL_CSS).toContain(".actionBar :global(.field-icon-button)");
+    expect(DETAIL_CSS).toContain(".actionBar :global(.sequence-detail-action)");
+    expect(DETAIL_CSS).toContain("border-radius: 999px");
+    expect(DETAIL_CSS).toContain("width: 3.15rem");
+    expect(DETAIL_CSS).toContain("width: var(--detail-action-expanded-width)");
+    expect(DETAIL_CSS).toContain(".sequence-detail-action:disabled");
     expect(ACTION_FILES.every((source) => source.includes("iconOnly?: boolean"))).toBe(true);
   });
 
-  it("keeps every icon action named for assistive technology and hover tooltips", () => {
-    expect(DETAIL_PAGE).toContain("data-tooltip={validationButtonLabel}");
+  it("keeps actions accessible while using inline hover labels instead of duplicate tooltips", () => {
+    expect(DETAIL_PAGE).toContain('className="sequence-detail-action__label"');
+    expect(DETAIL_PAGE).not.toContain("data-tooltip={validationButtonLabel}");
     for (const actionSource of ACTION_FILES) {
+      const actionButton = actionSource.match(/<button[\s\S]*?data-action=[\s\S]*?<\/button>/)?.[0] ?? "";
       expect(actionSource).toContain("aria-label=");
-      expect(actionSource).toContain("data-tooltip=");
+      expect(actionSource).toContain("sequence-detail-action__label");
+      expect(actionButton).not.toBe("");
+      expect(actionButton).not.toContain("data-tooltip=");
+      expect(actionButton).not.toContain("title=");
     }
   });
 });

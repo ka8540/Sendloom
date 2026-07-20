@@ -318,7 +318,7 @@
 .actionBar {
   display: flex;
   align-items: center;
-  gap: 0.68rem;
+  gap: 0.82rem;
   min-width: 0;
   padding-top: 0.86rem;
   border-top: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
@@ -333,9 +333,9 @@
 .utilityActions {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.62rem;
   min-width: 0;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .runState {
@@ -385,18 +385,160 @@
   color: color-mix(in srgb, #d96952 72%, var(--text));
 }
 
-.actionBar :global(.field-icon-button) {
-  width: 2.65rem;
-  height: 2.65rem;
-  min-height: 2.65rem;
-  padding: 0;
-  border-radius: 13px;
-  box-shadow: none;
+/* Detail-page action controls mirror the Overview sequence rail: a generous
+   circular resting state that reveals its label by expanding into a true pill.
+   Labels live inside the button, so there is no tooltip layer or native title
+   bubble competing with the interaction. */
+.actionBar :global(.sequence-detail-action) {
+  --detail-action-expanded-width: 9.5rem;
+  --detail-action-label-width: 6rem;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  width: 3.15rem;
+  min-width: 3.15rem;
+  height: 3.15rem;
+  min-height: 3.15rem;
+  padding: 0.88rem;
+  border: 1px solid var(--field-border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--field-bg) 88%, var(--surface));
+  color: var(--text);
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 700;
+  line-height: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 7px 18px rgba(28, 42, 70, 0.055);
+  transition:
+    width 190ms ease,
+    gap 190ms ease,
+    padding 190ms ease,
+    transform 160ms ease,
+    border-color 180ms ease,
+    background-color 180ms ease,
+    color 180ms ease,
+    box-shadow 180ms ease;
 }
 
-.actionBar :global(.field-icon-button) svg {
-  width: 1.05rem;
-  height: 1.05rem;
+.actionBar :global(.sequence-detail-action[data-action="run"]) {
+  --detail-action-expanded-width: 11.5rem;
+  --detail-action-label-width: 8.2rem;
+}
+
+.actionBar :global(.sequence-detail-action[data-action="refresh"]) {
+  --detail-action-expanded-width: 10.6rem;
+  --detail-action-label-width: 7.3rem;
+}
+
+.actionBar :global(.sequence-detail-action[data-action="bounces"]) {
+  --detail-action-expanded-width: 9.75rem;
+  --detail-action-label-width: 6.45rem;
+}
+
+.actionBar :global(.sequence-detail-action[data-action="edit"]) {
+  --detail-action-expanded-width: 9.15rem;
+  --detail-action-label-width: 5.85rem;
+}
+
+.actionBar :global(.sequence-detail-action[data-action="retry"]) {
+  --detail-action-expanded-width: 10.6rem;
+  --detail-action-label-width: 7.3rem;
+}
+
+.actionBar :global(.sequence-detail-action[data-action="delete"]) {
+  --detail-action-expanded-width: 7.25rem;
+  --detail-action-label-width: 3.95rem;
+}
+
+.actionBar :global(.sequence-detail-action__icon) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.18rem;
+  height: 1.18rem;
+  flex: 0 0 1.18rem;
+  line-height: 0;
+}
+
+.actionBar :global(.sequence-detail-action__icon svg) {
+  width: 1.18rem;
+  height: 1.18rem;
+}
+
+.actionBar :global(.sequence-detail-action__label) {
+  display: inline-block;
+  max-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateX(-0.24rem);
+  white-space: nowrap;
+  transition:
+    max-width 190ms ease,
+    opacity 160ms ease,
+    transform 190ms ease;
+}
+
+.actionBar :global(.sequence-detail-action--primary) {
+  border-color: color-mix(in srgb, var(--accent) 24%, var(--field-border));
+  background: color-mix(in srgb, var(--accent-soft) 70%, var(--field-bg));
+  color: var(--accent-strong);
+}
+
+.actionBar :global(.sequence-detail-action--danger) {
+  border-color: color-mix(in srgb, #d96952 26%, var(--field-border));
+  background: color-mix(in srgb, #d96952 9%, var(--field-bg));
+  color: color-mix(in srgb, #d96952 72%, var(--text));
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .actionBar :global(.sequence-detail-action:hover:not(:disabled):not([aria-disabled="true"])),
+  .actionBar :global(.sequence-detail-action:focus-visible:not(:disabled):not([aria-disabled="true"])) {
+    z-index: 3;
+    width: var(--detail-action-expanded-width);
+    gap: 0.5rem;
+    padding-inline: 0.92rem 1.05rem;
+    justify-content: flex-start;
+    transform: translateY(-1px);
+    border-color: color-mix(in srgb, var(--accent) 30%, var(--field-border));
+    background: color-mix(in srgb, var(--field-bg) 68%, var(--accent-soft) 32%);
+    box-shadow: 0 12px 25px rgba(28, 42, 70, 0.13);
+    outline: none;
+  }
+
+  .actionBar :global(.sequence-detail-action:hover:not(:disabled):not([aria-disabled="true"]) .sequence-detail-action__label),
+  .actionBar :global(.sequence-detail-action:focus-visible:not(:disabled):not([aria-disabled="true"]) .sequence-detail-action__label) {
+    max-width: var(--detail-action-label-width);
+    opacity: 1;
+    transform: translateX(0);
+  }
+
+  .actionBar :global(.sequence-detail-action.sequence-detail-action--danger:hover:not(:disabled):not([aria-disabled="true"])),
+  .actionBar :global(.sequence-detail-action.sequence-detail-action--danger:focus-visible:not(:disabled):not([aria-disabled="true"])) {
+    border-color: color-mix(in srgb, #d96952 40%, var(--field-border));
+    background: color-mix(in srgb, #d96952 14%, var(--field-bg));
+    color: color-mix(in srgb, #d96952 80%, var(--text));
+  }
+}
+
+.actionBar :global(.sequence-detail-action:focus-visible) {
+  outline: 3px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  outline-offset: 2px;
+}
+
+.actionBar :global(.sequence-detail-action:active:not(:disabled)) {
+  transform: translateY(1px) scale(0.985);
+}
+
+.actionBar :global(.sequence-detail-action:disabled),
+.actionBar :global(.sequence-detail-action[aria-disabled="true"]) {
+  opacity: 0.48;
+  cursor: not-allowed;
+  box-shadow: none;
 }
 
 .dangerAction {
@@ -406,8 +548,16 @@
 }
 
 .dangerAction :global(.campaign-detail-delete__button) {
-  width: 2.65rem;
-  padding: 0;
+  width: 3.15rem;
+  padding: 0.88rem;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .dangerAction :global(.campaign-detail-delete__button:hover:not(:disabled)),
+  .dangerAction :global(.campaign-detail-delete__button:focus-visible:not(:disabled)) {
+    width: var(--detail-action-expanded-width);
+    padding-inline: 0.92rem 1.05rem;
+  }
 }
 
 /* Three dense run metrics, aligned like the compact summary surfaces on the
@@ -644,6 +794,39 @@
   background: rgba(47, 196, 138, 0.11);
 }
 
+:global(:root[data-theme="dark"]) .actionBar :global(.sequence-detail-action) {
+  border-color: rgba(151, 169, 198, 0.2);
+  background: rgba(17, 27, 39, 0.88);
+  box-shadow: inset 0 1px 0 rgba(232, 240, 255, 0.025);
+}
+
+:global(:root[data-theme="dark"]) .actionBar :global(.sequence-detail-action--primary) {
+  border-color: rgba(47, 196, 138, 0.27);
+  background: rgba(47, 196, 138, 0.1);
+}
+
+:global(:root[data-theme="dark"]) .actionBar :global(.sequence-detail-action--danger) {
+  border-color: rgba(217, 105, 82, 0.28);
+  background: rgba(217, 105, 82, 0.08);
+  color: #f0a29a;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  :global(:root[data-theme="dark"]) .actionBar :global(.sequence-detail-action:hover:not(:disabled):not([aria-disabled="true"])),
+  :global(:root[data-theme="dark"]) .actionBar :global(.sequence-detail-action:focus-visible:not(:disabled):not([aria-disabled="true"])) {
+    border-color: rgba(47, 196, 138, 0.28);
+    background: rgba(22, 42, 49, 0.96);
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2);
+  }
+
+  :global(:root[data-theme="dark"]) .actionBar :global(.sequence-detail-action.sequence-detail-action--danger:hover:not(:disabled):not([aria-disabled="true"])),
+  :global(:root[data-theme="dark"]) .actionBar :global(.sequence-detail-action.sequence-detail-action--danger:focus-visible:not(:disabled):not([aria-disabled="true"])) {
+    border-color: rgba(217, 105, 82, 0.42);
+    background: rgba(75, 37, 38, 0.72);
+    color: #ffb0a4;
+  }
+}
+
 @media (prefers-color-scheme: dark) {
   :global(:root:not([data-theme])) .overview {
     border-color: color-mix(in srgb, var(--accent) 10%, var(--line));
@@ -706,13 +889,24 @@
     padding: 0.65rem 0.72rem;
   }
 
-  .actionBar,
-  .utilityActions {
+  .actionBar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
-    flex-wrap: wrap;
+  }
+
+  .runState {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
+  .utilityActions {
+    grid-column: 1;
+    flex-wrap: nowrap;
   }
 
   .dangerAction {
+    grid-column: 2;
     margin-left: 0;
   }
 
@@ -732,5 +926,38 @@
   .reconnectNotice :global(.button) {
     grid-column: 1;
     grid-row: auto;
+  }
+}
+
+@media (max-width: 560px) {
+  .utilityActions {
+    flex-wrap: wrap;
+  }
+
+  /* Touch-sized layouts keep the controls circular even when keyboard focus
+     is present. Their aria-labels preserve the full action name, and avoiding
+     expansion here prevents a long label from forcing horizontal overflow. */
+  .actionBar :global(.sequence-detail-action:hover:not(:disabled):not([aria-disabled="true"])),
+  .actionBar :global(.sequence-detail-action:focus-visible:not(:disabled):not([aria-disabled="true"])),
+  .dangerAction :global(.campaign-detail-delete__button:hover:not(:disabled):not([aria-disabled="true"])),
+  .dangerAction :global(.campaign-detail-delete__button:focus-visible:not(:disabled):not([aria-disabled="true"])) {
+    width: 3.15rem;
+    gap: 0;
+    padding: 0.88rem;
+    justify-content: center;
+  }
+
+  .actionBar :global(.sequence-detail-action:hover:not(:disabled):not([aria-disabled="true"]) .sequence-detail-action__label),
+  .actionBar :global(.sequence-detail-action:focus-visible:not(:disabled):not([aria-disabled="true"]) .sequence-detail-action__label) {
+    max-width: 0;
+    opacity: 0;
+    transform: translateX(-0.24rem);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .actionBar :global(.sequence-detail-action),
+  .actionBar :global(.sequence-detail-action__label) {
+    transition: none;
   }
 }
