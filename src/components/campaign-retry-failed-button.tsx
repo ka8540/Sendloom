@@ -112,7 +112,7 @@ export function CampaignRetryFailedButton(props: {
             <span className="sequence-detail-action__icon">
               {pending ? <span className="button-spinner" aria-hidden="true" /> : <RotateCcw aria-hidden="true" />}
             </span>
-            <span className="sequence-detail-action__label">{pending ? "Retrying…" : label}</span>
+            <span className="sequence-detail-action__label">{pending ? "Retrying…" : "Retry"}</span>
           </>
         ) : (
           <>

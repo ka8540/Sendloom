@@ -396,6 +396,7 @@ export default async function CampaignDetailPage({
             ? formatSequenceStatus(latestRun.status)
             : "Ready";
   const validationButtonLabel = campaign.lastValidatedAt ? "Refresh validation" : "Validate sequence";
+  const validationVisibleLabel = campaign.lastValidatedAt ? "Refresh" : "Validate";
   const pauseButtonLabel = isPausedRun ? "Relaunch sequence" : "Pause sequence";
   // Retry-failed action: only surfaces when the latest run has finished and still
   // has retryable failed recipients, with nothing actively sending, paused, or
@@ -693,7 +694,7 @@ export default async function CampaignDetailPage({
                   data-action="refresh"
                 >
                   <span className="sequence-detail-action__icon"><RefreshCcw aria-hidden="true" /></span>
-                  <span className="sequence-detail-action__label">{validationButtonLabel}</span>
+                  <span className="sequence-detail-action__label">{validationVisibleLabel}</span>
                 </button>
               </form>
               {/* Post-send bounce check — reads Gmail delivery-status reports

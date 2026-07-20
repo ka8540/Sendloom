@@ -95,7 +95,9 @@ export function CampaignPauseResumeButton(props: {
                 <Pause aria-hidden="true" />
               )}
             </span>
-            <span className="sequence-detail-action__label">{pending ? "Updating…" : props.label}</span>
+            <span className="sequence-detail-action__label">
+              {pending ? "Updating…" : props.isPaused ? "Relaunch" : "Pause"}
+            </span>
           </>
         ) : pending ? (
           "Working…"

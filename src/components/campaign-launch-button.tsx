@@ -29,6 +29,7 @@ export function CampaignLaunchButton(props: {
   disabled: boolean;
   iconOnly?: boolean;
 }) {
+  const visibleLabel = props.label === "Relaunch sequence" ? "Relaunch" : "Launch";
   const router = useRouter();
   const { showError, showSuccess } = useErrorToast();
   const recovery = useErrorRecovery({ feature: "Sequences", operation: "Launch sequence" });
@@ -169,7 +170,7 @@ export function CampaignLaunchButton(props: {
             <span className="sequence-detail-action__icon">
               {pending ? <span className="button-spinner" aria-hidden="true" /> : <SendHorizontal aria-hidden="true" />}
             </span>
-            <span className="sequence-detail-action__label">{pending ? "Launching…" : props.label}</span>
+            <span className="sequence-detail-action__label">{pending ? "Launching…" : visibleLabel}</span>
           </>
         ) : (
           props.label

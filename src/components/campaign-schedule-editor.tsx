@@ -315,7 +315,7 @@ export function CampaignScheduleEditor(props: {
           {props.iconOnly ? (
             <>
               <span className="sequence-detail-action__icon"><PencilLine aria-hidden="true" /></span>
-              <span className="sequence-detail-action__label">Edit sequence</span>
+              <span className="sequence-detail-action__label">Edit</span>
             </>
           ) : (
             <>

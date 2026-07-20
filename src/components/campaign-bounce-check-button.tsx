@@ -101,7 +101,7 @@ export function CampaignBounceCheckButton(props: {
             <span className="sequence-detail-action__icon">
               {pending ? <span className="button-spinner" aria-hidden="true" /> : <MailWarning aria-hidden="true" />}
             </span>
-            <span className="sequence-detail-action__label">{pending ? "Checking…" : "Check bounces"}</span>
+            <span className="sequence-detail-action__label">{pending ? "Checking…" : "Bounces"}</span>
           </>
         ) : (
           <>

@@ -61,6 +61,7 @@ describe("sequence detail metric cards — truthful recipient rollups", () => {
 
   it("keeps actions accessible while using inline hover labels instead of duplicate tooltips", () => {
     expect(DETAIL_PAGE).toContain('className="sequence-detail-action__label"');
+    expect(DETAIL_PAGE).toContain('campaign.lastValidatedAt ? "Refresh" : "Validate"');
     expect(DETAIL_PAGE).not.toContain("data-tooltip={validationButtonLabel}");
     for (const actionSource of ACTION_FILES) {
       const actionButton = actionSource.match(/<button[\s\S]*?data-action=[\s\S]*?<\/button>/)?.[0] ?? "";
@@ -70,5 +71,19 @@ describe("sequence detail metric cards — truthful recipient rollups", () => {
       expect(actionButton).not.toContain("data-tooltip=");
       expect(actionButton).not.toContain("title=");
     }
+  });
+
+  it("uses short, non-wrapping visible labels while preserving descriptive accessible names", () => {
+    expect(DETAIL_CSS).toContain("white-space: nowrap");
+    expect(ACTION_FILES[0]).toContain('pending ? "Checking…" : "Bounces"');
+    expect(ACTION_FILES[1]).toContain('pending ? "Deleting…" : "Delete"');
+    expect(ACTION_FILES[2]).toContain('props.label === "Relaunch sequence" ? "Relaunch" : "Launch"');
+    expect(ACTION_FILES[3]).toContain('props.isPaused ? "Relaunch" : "Pause"');
+    expect(ACTION_FILES[4]).toContain('pending ? "Retrying…" : "Retry"');
+    expect(ACTION_FILES[5]).toContain('className="sequence-detail-action__label">Edit</span>');
+    expect(ACTION_FILES.join("\n")).toContain(
+      'aria-label={props.iconOnly ? (pending ? "Launching sequence" : props.label) : undefined}'
+    );
+    expect(ACTION_FILES.join("\n")).toContain('aria-label={props.iconOnly ? "Edit sequence" : undefined}');
   });
 });

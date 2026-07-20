@@ -426,33 +426,33 @@
 }
 
 .actionBar :global(.sequence-detail-action[data-action="run"]) {
-  --detail-action-expanded-width: 11.5rem;
-  --detail-action-label-width: 8.2rem;
+  --detail-action-expanded-width: 8.4rem;
+  --detail-action-label-width: 5.2rem;
 }
 
 .actionBar :global(.sequence-detail-action[data-action="refresh"]) {
-  --detail-action-expanded-width: 10.6rem;
-  --detail-action-label-width: 7.3rem;
+  --detail-action-expanded-width: 7.6rem;
+  --detail-action-label-width: 4.4rem;
 }
 
 .actionBar :global(.sequence-detail-action[data-action="bounces"]) {
-  --detail-action-expanded-width: 9.75rem;
-  --detail-action-label-width: 6.45rem;
+  --detail-action-expanded-width: 7.8rem;
+  --detail-action-label-width: 4.5rem;
 }
 
 .actionBar :global(.sequence-detail-action[data-action="edit"]) {
-  --detail-action-expanded-width: 9.15rem;
-  --detail-action-label-width: 5.85rem;
+  --detail-action-expanded-width: 6.25rem;
+  --detail-action-label-width: 3rem;
 }
 
 .actionBar :global(.sequence-detail-action[data-action="retry"]) {
-  --detail-action-expanded-width: 10.6rem;
-  --detail-action-label-width: 7.3rem;
+  --detail-action-expanded-width: 6.6rem;
+  --detail-action-label-width: 3.4rem;
 }
 
 .actionBar :global(.sequence-detail-action[data-action="delete"]) {
-  --detail-action-expanded-width: 7.25rem;
-  --detail-action-label-width: 3.95rem;
+  --detail-action-expanded-width: 6.8rem;
+  --detail-action-label-width: 3.6rem;
 }
 
 .actionBar :global(.sequence-detail-action__icon) {
