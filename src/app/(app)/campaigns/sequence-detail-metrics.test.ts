@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 
 const DETAIL_PAGE = readFileSync("src/app/(app)/campaigns/[id]/page.tsx", "utf8");
 const DETAIL_CSS = readFileSync("src/app/(app)/campaigns/[id]/page.module.css", "utf8");
+const SETUP_CSS = readFileSync("src/components/campaign-setup-editor.module.css", "utf8");
 const ACTION_FILES = [
   "src/components/campaign-bounce-check-button.tsx",
   "src/components/campaign-detail-delete-button.tsx",
@@ -89,5 +90,10 @@ describe("sequence detail metric cards — truthful recipient rollups", () => {
       'aria-label={props.iconOnly ? (pending ? "Launching sequence" : props.label) : undefined}'
     );
     expect(ACTION_FILES.join("\n")).toContain('aria-label={props.iconOnly ? "Edit sequence" : undefined}');
+  });
+
+  it("keeps Sequence setup icon controls fully rounded", () => {
+    expect(SETUP_CSS).toMatch(/\.headerIconAction\s*\{[^}]*border-radius:\s*999px/);
+    expect(SETUP_CSS).toMatch(/\.rowAction\s*\{[^}]*border-radius:\s*999px/);
   });
 });
