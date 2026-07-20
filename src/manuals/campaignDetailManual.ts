@@ -8,8 +8,7 @@ export const campaignDetailManual: ManualConfig = {
   helpTooltip: "Sequence guide",
   helpVariant: "premium",
   helpQuickStart: true,
-  helpQuickStartDescription:
-    "Check run status, validate, check bounces, pause or relaunch, edit setup, review activity, and delete only when needed.",
+  helpQuickStartDescription: "Review run status, key controls, setup, and recipient activity.",
   quickStartStage: "starter",
   fullTourStage: "full",
   version: "v3",

@@ -97,7 +97,7 @@ describe("Sequence detail guide menu", () => {
 
     expect(manual?.helpQuickStart).toBe(true);
     expect(manual?.helpQuickStartDescription).toBe(
-      "Check run status, validate, check bounces, pause or relaunch, edit setup, review activity, and delete only when needed."
+      "Review run status, key controls, setup, and recipient activity."
     );
     expect(BUTTON_SOURCE).toContain("Quick start");
     expect(BUTTON_SOURCE).toContain("Full page tour");
