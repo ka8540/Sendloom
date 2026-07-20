@@ -575,7 +575,7 @@ export default async function CampaignDetailPage({
         </aside>
       ) : null}
       <section className={styles.overview} aria-label="Sequence overview">
-        <div className={styles.overviewMain}>
+        <div className={styles.overviewMain} data-tour-sequence-detail="overview">
           <span className={styles.kicker}>Sequence overview</span>
           <div className={styles.titleRow}>
             <h1>{campaign.name}</h1>
@@ -618,7 +618,7 @@ export default async function CampaignDetailPage({
             </div>
           ) : null}
 
-          <div className={styles.stateGrid}>
+          <div className={styles.stateGrid} data-tour-sequence-detail="run-health">
             <div className={styles.stateItem}>
               <CalendarClock aria-hidden="true" />
               <div>
@@ -654,7 +654,7 @@ export default async function CampaignDetailPage({
                   : "Ready for its first launch."}
           </p>
 
-          <div className={styles.actionBar}>
+          <div className={styles.actionBar} data-tour-sequence-detail="actions">
             <div className={styles.utilityActions} aria-label="Sequence actions">
               {!senderNeedsReconnect && !isActiveRun && !isPausedRun && !dailyLimitActive ? (
                 <div className={styles.actionItem}>
@@ -721,7 +721,7 @@ export default async function CampaignDetailPage({
         </aside>
       </section>
 
-      <section className={styles.metrics}>
+      <section className={styles.metrics} data-tour-sequence-detail="delivery-stats">
         <article className={styles.metricCard}>
           <div className={styles.metricIcon}>
             <Users aria-hidden="true" />
@@ -795,7 +795,7 @@ export default async function CampaignDetailPage({
         </section>
       ) : null}
       <section className={styles.detailGrid}>
-        <article className={styles.panel}>
+        <article className={styles.panel} data-tour-sequence-detail="setup">
           <CampaignSetupEditor
             campaignId={campaign.id}
             currentSenderNeedsReconnect={senderNeedsReconnect}
@@ -808,7 +808,10 @@ export default async function CampaignDetailPage({
           />
         </article>
 
-        <article className={`${styles.panel} ${styles.jobPanel}`}>
+        <article
+          className={`${styles.panel} ${styles.jobPanel}`}
+          data-tour-sequence-detail="recipient-activity"
+        >
           <div className={styles.panelHeader}>
             <div>
               <h2>Recent recipient activity</h2>

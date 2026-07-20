@@ -7,59 +7,55 @@ export const campaignDetailManual: ManualConfig = {
   helpLabel: "Help with Sequences",
   helpTooltip: "Sequence guide",
   helpVariant: "premium",
-  helpMenuItems: [
-    {
-      title: "Overview",
-      description: "Check the audience, template, sender, timing, and run status.",
-      icon: "overview",
-      stage: "starter"
-    },
-    {
-      title: "Activity",
-      description: "See queued, sent, opened, skipped, and invalid recipients.",
-      icon: "activity",
-      stage: "full"
-    },
-    {
-      title: "Actions",
-      description: "Refresh validation, check bounces, pause, relaunch, edit, or delete.",
-      icon: "actions",
-      stage: "full"
-    }
-  ],
   helpQuickStart: true,
+  helpQuickStartDescription:
+    "Check run status, validate, check bounces, pause or relaunch, edit setup, review activity, and delete only when needed.",
   quickStartStage: "starter",
   fullTourStage: "full",
-  version: "v2",
+  version: "v3",
   resolveStage: () => "starter",
-  resolveSteps: (stage) => quickAndFullSteps(campaignDetailManual.steps, 2)(stage),
+  resolveSteps: (stage) => quickAndFullSteps(campaignDetailManual.steps, 3)(stage),
   steps: [
     {
       id: "overview",
-      title: "Monitor one sequence",
-      body: "This detail view is the operating record for a sequence: setup context, sender state, schedule, validation, and current run status in one place.",
-      selector: "main.content section:first-of-type",
+      title: "Sequence overview",
+      body: "See the sequence name and status alongside its audience, template, sender, and send timing.",
+      selector: '[data-tour-sequence-detail="overview"]',
       placement: "bottom"
     },
     {
-      id: "controls",
-      title: "Validate, pause, or launch",
-      body: "Use validation before sending, pause active work when needed, and launch only when the sender is connected and setup is unlocked.",
-      selector: "main.content form button, main.content a.button",
+      id: "run-health",
+      title: "Run health and status",
+      body: "Read send timing, validation status, current run state, and the live auto-refresh indicator while a run is active.",
+      selector: '[data-tour-sequence-detail="run-health"]',
+      placement: "bottom"
+    },
+    {
+      id: "actions",
+      title: "Action controls",
+      body: "Refresh validation, check bounces, pause or relaunch, edit the sequence, retry failed recipients when available, or delete the sequence when needed.",
+      selector: '[data-tour-sequence-detail="actions"]',
       placement: "left"
     },
     {
       id: "metrics",
-      title: "Read delivery state",
-      body: "Audience, delivered count, replies, and needs-attention metrics summarize whether the run is moving cleanly or requires operator review.",
-      selector: "main.content section:nth-of-type(2)",
+      title: "Delivery stats",
+      body: "Track audience size, delivered emails, and recipients skipped because they are invalid or excluded.",
+      selector: '[data-tour-sequence-detail="delivery-stats"]',
       placement: "bottom"
     },
     {
+      id: "setup",
+      title: "Sequence setup",
+      body: "Confirm the contact list, email template, sender account, send timing, and attachment preview or download options.",
+      selector: '[data-tour-sequence-detail="setup"]',
+      placement: "right"
+    },
+    {
       id: "recipients",
-      title: "Inspect recipient activity",
-      body: "Recipient rows expose the actual delivery state, last error, reply matching, and pagination for the latest run so issues can be handled precisely.",
-      selector: "main.content article:last-of-type",
+      title: "Recent recipient activity",
+      body: "Review each recipient’s queued, sent, opened, invalid, or skipped state, including the latest status message and pagination.",
+      selector: '[data-tour-sequence-detail="recipient-activity"]',
       placement: "left"
     }
   ]

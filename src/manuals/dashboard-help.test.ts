@@ -9,6 +9,7 @@ import { adminManual, adminSteps, resolveAdminSectionFromDom } from "@/manuals/a
 
 const BUTTON_SOURCE = readFileSync("src/components/manual/ManualButton.tsx", "utf8");
 const ADMIN_SOURCE = readFileSync("src/manuals/adminManual.ts", "utf8");
+const SEQUENCE_DETAIL_SOURCE = readFileSync("src/app/(app)/campaigns/[id]/page.tsx", "utf8");
 
 // Every authenticated dashboard route that should carry the shared premium Help
 // button, with the route-specific label/tooltip it must show.
@@ -91,17 +92,52 @@ describe("Shared dashboard Help button reaches every authenticated route (#1, #2
 });
 
 describe("Sequence detail guide menu", () => {
-  it("uses page-specific help content instead of generic tour actions", () => {
+  it("uses the shared compact actions with page-specific Quick start copy", () => {
     const manual = getManualForPathname("/campaigns/abc123");
-    const items = manual?.helpMenuItems ?? [];
 
-    expect(items.map((item) => item.title)).toEqual(["Overview", "Activity", "Actions"]);
-    expect(items.map((item) => item.description)).toEqual([
-      "Check the audience, template, sender, timing, and run status.",
-      "See queued, sent, opened, skipped, and invalid recipients.",
-      "Refresh validation, check bounces, pause, relaunch, edit, or delete."
+    expect(manual?.helpQuickStart).toBe(true);
+    expect(manual?.helpQuickStartDescription).toBe(
+      "Check run status, validate, check bounces, pause or relaunch, edit setup, review activity, and delete only when needed."
+    );
+    expect(BUTTON_SOURCE).toContain("Quick start");
+    expect(BUTTON_SOURCE).toContain("Full page tour");
+    expect(BUTTON_SOURCE).toContain("Report issue");
+  });
+
+  it("covers every important section in the six-step full tour", () => {
+    const manual = getManualForPathname("/campaigns/abc123");
+    const fullSteps = manual?.resolveSteps?.("full") ?? [];
+    const quickSteps = manual?.resolveSteps?.("starter") ?? [];
+
+    expect(fullSteps.map((step) => step.title)).toEqual([
+      "Sequence overview",
+      "Run health and status",
+      "Action controls",
+      "Delivery stats",
+      "Sequence setup",
+      "Recent recipient activity"
     ]);
-    expect(items).toHaveLength(3);
+    expect(quickSteps.map((step) => step.id)).toEqual(["overview", "run-health", "actions"]);
+    expect(fullSteps.map((step) => step.selector)).toEqual([
+      '[data-tour-sequence-detail="overview"]',
+      '[data-tour-sequence-detail="run-health"]',
+      '[data-tour-sequence-detail="actions"]',
+      '[data-tour-sequence-detail="delivery-stats"]',
+      '[data-tour-sequence-detail="setup"]',
+      '[data-tour-sequence-detail="recipient-activity"]'
+    ]);
+    for (const target of ["overview", "run-health", "actions", "delivery-stats", "setup", "recipient-activity"]) {
+      expect(SEQUENCE_DETAIL_SOURCE).toContain(`data-tour-sequence-detail="${target}"`);
+    }
+
+    const tourCopy = fullSteps.map((step) => `${step.title} ${step.body}`).join(" ");
+    expect(tourCopy).toMatch(/refresh validation/i);
+    expect(tourCopy).toMatch(/check bounces/i);
+    expect(tourCopy).toMatch(/pause or relaunch/i);
+    expect(tourCopy).toMatch(/edit the sequence/i);
+    expect(tourCopy).toMatch(/delete the sequence/i);
+    expect(tourCopy).toMatch(/attachment/i);
+    expect(tourCopy).toMatch(/queued, sent, opened, invalid, or skipped/i);
   });
 });
 

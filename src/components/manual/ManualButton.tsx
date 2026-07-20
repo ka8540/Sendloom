@@ -2,19 +2,15 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Activity,
   CircleHelp,
   Compass,
   GraduationCap,
-  LayoutDashboard,
   MessageSquare,
-  SlidersHorizontal,
-  Sparkles,
-  type LucideIcon
+  Sparkles
 } from "lucide-react";
 
 import { HelpReportDialog } from "@/components/incident/help-report-dialog";
-import type { ManualConfig, ManualHelpMenuIcon } from "@/components/manual/manualTypes";
+import type { ManualConfig } from "@/components/manual/manualTypes";
 import { useManual } from "@/components/manual/ManualProvider";
 import styles from "@/components/manual/manual.module.css";
 
@@ -31,12 +27,6 @@ const GUIDE_CONTEXT_BY_ID: Record<string, string> = {
   campaigns: "sequences_guide_menu",
   "campaign-detail": "sequence_detail_guide_menu",
   admin: "admin_guide_menu"
-};
-
-const HELP_MENU_ICONS: Record<ManualHelpMenuIcon, LucideIcon> = {
-  overview: LayoutDashboard,
-  activity: Activity,
-  actions: SlidersHorizontal
 };
 
 function guideContextForManual(manual: ManualConfig): string {
@@ -88,8 +78,6 @@ export function ManualButton() {
 function DashboardHelpButton({ label, tooltip, manual }: { label: string; tooltip: string; manual: ManualConfig }) {
   const { openManualStage, isStageComplete } = useManual();
   const hasQuickStart = Boolean(manual.helpQuickStart);
-  const customHelpItems = manual.helpMenuItems ?? [];
-  const hasCustomHelpMenu = customHelpItems.length > 0;
   // Manuals whose "page" changes by internal state rather than the URL (the
   // Templates library vs. its create/edit wizard steps) opt into `contextualStages`
   // so the menu's guide actions target whatever surface is on screen. The stage is
@@ -209,70 +197,46 @@ function DashboardHelpButton({ label, tooltip, manual }: { label: string; toolti
           data-tour-help-menu="true"
         >
           <p className={styles.overviewMenuTitle}>{tooltip}</p>
-          {hasCustomHelpMenu ? (
-            customHelpItems.map((item) => {
-              const Icon = HELP_MENU_ICONS[item.icon];
-
-              return (
-                <button
-                  className={styles.overviewMenuItem}
-                  type="button"
-                  role="menuitem"
-                  onClick={() => startStage(item.stage ?? fullTourStage)}
-                  key={item.title}
-                >
-                  <Icon aria-hidden="true" />
-                  <span>
-                    <strong>{item.title}</strong>
-                    <small>{item.description}</small>
-                  </span>
-                </button>
-              );
-            })
-          ) : (
-            <>
-              {hasQuickStart ? (
-                <button
-                  className={styles.overviewMenuItem}
-                  type="button"
-                  role="menuitem"
-                  onClick={() => startStage(quickStartStage)}
-                >
-                  <GraduationCap aria-hidden="true" />
-                  <span>
-                    <strong>Quick start</strong>
-                    <small>Replay the first-time walkthrough</small>
-                  </span>
-                </button>
-              ) : null}
-              <button
-                className={styles.overviewMenuItem}
-                type="button"
-                role="menuitem"
-                onClick={() => startStage(fullTourStage)}
-              >
-                <Compass aria-hidden="true" />
-                <span>
-                  <strong>Full page tour</strong>
-                  <small>Walk every visible section and control</small>
-                </span>
-              </button>
-              {changedStage ? (
-                <button
-                  className={styles.overviewMenuItem}
-                  type="button"
-                  role="menuitem"
-                  onClick={() => startStage(changedStage)}
-                >
-                  <Sparkles aria-hidden="true" />
-                  <span>
-                    <strong>What changed</strong>
-                    <small>See the newly relevant sections</small>
-                  </span>
-                </button>
-              ) : null}
-            </>
-          )}
+          {hasQuickStart ? (
+            <button
+              className={styles.overviewMenuItem}
+              type="button"
+              role="menuitem"
+              onClick={() => startStage(quickStartStage)}
+            >
+              <GraduationCap aria-hidden="true" />
+              <span>
+                <strong>Quick start</strong>
+                <small>{manual.helpQuickStartDescription ?? "Replay the first-time walkthrough"}</small>
+              </span>
+            </button>
+          ) : null}
+          <button
+            className={styles.overviewMenuItem}
+            type="button"
+            role="menuitem"
+            onClick={() => startStage(fullTourStage)}
+          >
+            <Compass aria-hidden="true" />
+            <span>
+              <strong>Full page tour</strong>
+              <small>Walk every visible section and control</small>
+            </span>
+          </button>
+          {changedStage ? (
+            <button
+              className={styles.overviewMenuItem}
+              type="button"
+              role="menuitem"
+              onClick={() => startStage(changedStage)}
+            >
+              <Sparkles aria-hidden="true" />
+              <span>
+                <strong>What changed</strong>
+                <small>See the newly relevant sections</small>
+              </span>
+            </button>
+          ) : null}
           <div className={styles.overviewMenuDivider} role="separator" aria-hidden="true" />
           <button
             className={styles.overviewMenuItem}
