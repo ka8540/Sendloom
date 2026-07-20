@@ -422,6 +422,25 @@ export default async function CampaignDetailPage({
   const blockingValidationChecks = validationChecks.filter(
     (check) => check.severity === "BLOCKER" || check.severity === "ERROR"
   );
+  const sequenceStatusLabel =
+    issueCount > 0 && !isActiveRun && !isPausedRun
+      ? "Needs attention"
+      : formatSequenceStatus(campaign.status);
+  const sequenceStatusTone =
+    issueCount > 0 && !isActiveRun && !isPausedRun
+      ? "attention"
+      : isPausedRun
+        ? "paused"
+        : isActiveRun || isWaitingForSlot
+          ? "active"
+          : campaign.status === "COMPLETED"
+            ? "completed"
+            : "neutral";
+  const validationStateLabel = blockingValidationChecks.length
+    ? `${blockingValidationChecks.length} blocker${blockingValidationChecks.length === 1 ? "" : "s"}`
+    : validatedAtValue
+      ? "Validated"
+      : "Not validated";
   const reconnectHref = `/api/auth/google/connect?email=${encodeURIComponent(campaign.senderProfile.fromEmail)}&next=${encodeURIComponent(`/campaigns/${campaign.id}`)}`;
   // First page of recipient activity — later pages load client-side without a route navigation.
   const initialRecipientJobs = displayRun
@@ -554,10 +573,16 @@ export default async function CampaignDetailPage({
           </div>
         </aside>
       ) : null}
-      <section className={styles.overview}>
+      <section className={styles.overview} aria-label="Sequence overview">
         <div className={styles.overviewMain}>
-          <div className={styles.kicker}>Sequence overview</div>
-          <h1>{campaign.name}</h1>
+          <span className={styles.kicker}>Sequence overview</span>
+          <div className={styles.titleRow}>
+            <h1>{campaign.name}</h1>
+            <span className={styles.statusPill} data-tone={sequenceStatusTone}>
+              <span aria-hidden="true" />
+              {sequenceStatusLabel}
+            </span>
+          </div>
           <p className={styles.lede}>
             Delivery posture, setup context, and live run health for this sequence in one place.
           </p>
@@ -578,7 +603,7 @@ export default async function CampaignDetailPage({
           </div>
         </div>
 
-        <aside className={styles.overviewRail}>
+        <aside className={styles.commandCenter}>
           {senderNeedsReconnect ? (
             <div className={styles.reconnectNotice}>
               <strong>Sender needs reconnect</strong>
@@ -591,91 +616,45 @@ export default async function CampaignDetailPage({
               </a>
             </div>
           ) : null}
-          <div className={styles.statusWrap}>
-            <span className="badge" title={campaign.status === "WAITING_FOR_SLOT" ? "This sequence will start automatically when an execution slot becomes available." : undefined}>
-              {formatSequenceStatus(campaign.status)}
-            </span>
-            <span className={styles.statusNote}>
-              {isWaitingForSlot ? (
-                "This sequence will start automatically when an execution slot becomes available."
-              ) : isActiveRun ? (
-                "Auto-refreshing every 8 seconds while this run is active."
-              ) : latestRunValue ? (
-                <>
-                  Last updated <LocalDateTime value={latestRunValue} />.
-                </>
-              ) : (
-                "Waiting to launch."
-              )}
-            </span>
-          </div>
 
-          <div className={styles.summaryList}>
-            <div className={styles.summaryItem}>
+          <div className={styles.stateGrid}>
+            <div className={styles.stateItem}>
               <CalendarClock aria-hidden="true" />
               <div>
                 <span>Send timing</span>
                 <strong>{scheduleLabel}</strong>
               </div>
             </div>
-            <div className={styles.summaryItem}>
+            <div className={styles.stateItem}>
               <RefreshCcw aria-hidden="true" />
               <div>
-                <span>Validated</span>
-                <strong>{validatedAtValue ? <LocalDateTime value={validatedAtValue} /> : "Not validated yet"}</strong>
+                <span>Validation</span>
+                <strong>{validationStateLabel}</strong>
+                {validatedAtValue ? <small><LocalDateTime value={validatedAtValue} /></small> : null}
               </div>
             </div>
-            <div className={styles.summaryItem}>
+            <div className={styles.stateItem}>
               <SendHorizontal aria-hidden="true" />
               <div>
                 <span>Current run</span>
                 <strong>{latestRun ? formatSequenceStatus(latestRun.status) : "Not launched yet"}</strong>
+                {latestRunValue ? <small>Updated <LocalDateTime value={latestRunValue} /></small> : null}
               </div>
             </div>
           </div>
 
-          <div className={styles.actionGroup}>
-            <div className={styles.actionSecondaryRow}>
-              <form action={validate.bind(null, campaign.id)} className={styles.actionSecondaryItem}>
-                <button className="button secondary" type="submit">
-                  {validationButtonLabel}
-                </button>
-              </form>
-              {/* Post-send bounce check — reads Gmail delivery-status reports
-                  for already-sent emails; deliberately separate from Refresh
-                  validation (which checks setup before a launch) and always
-                  available, including for completed sequences. */}
-              <CampaignBounceCheckButton
-                campaignId={campaign.id}
-                senderNeedsReconnect={senderNeedsReconnect}
-                className={styles.actionSecondaryItem}
-              />
-              {latestRun && (isActiveRun || isPausedRun) ? (
-                <CampaignPauseResumeButton
-                  campaignId={campaign.id}
-                  isPaused={isPausedRun}
-                  label={pauseButtonLabel}
-                  className={styles.actionSecondaryItem}
-                />
-              ) : null}
-              <CampaignScheduleEditor
-                campaignId={campaign.id}
-                canEdit={canEditSchedule}
-                className={styles.actionSecondaryItem}
-                disabledMessage={SCHEDULE_EDIT_DISABLED_MESSAGE}
-                initialSchedule={scheduleConfig}
-              />
-              <CampaignDetailDeleteButton campaignId={campaign.id} campaignName={campaign.name} />
-              {canRetryFailed ? (
-                <CampaignRetryFailedButton
-                  campaignId={campaign.id}
-                  failedCount={retryableFailedCount}
-                  className={styles.actionSecondaryItem}
-                />
-              ) : null}
-            </div>
+          <p className={styles.statusNote}>
+            {isWaitingForSlot
+              ? "Starts automatically when an execution slot becomes available."
+              : isActiveRun
+                ? "Live run · auto-refreshing every 8 seconds."
+                : latestRunValue
+                  ? "Controls and run health are up to date."
+                  : "Ready for its first launch."}
+          </p>
 
-            <div className={styles.actionPrimaryRow}>
+          <div className={styles.actionBar}>
+            <div className={styles.primaryAction}>
               {senderNeedsReconnect ? (
                 <a className="button" href={reconnectHref}>
                   Reconnect to launch
@@ -688,6 +667,50 @@ export default async function CampaignDetailPage({
                 />
               )}
             </div>
+
+            <div className={styles.utilityActions}>
+              <form action={validate.bind(null, campaign.id)} className={styles.actionItem}>
+                <button className="button secondary" type="submit">
+                  <RefreshCcw aria-hidden="true" />
+                  {validationButtonLabel}
+                </button>
+              </form>
+              {/* Post-send bounce check — reads Gmail delivery-status reports
+                  for already-sent emails; deliberately separate from Refresh
+                  validation (which checks setup before a launch) and always
+                  available, including for completed sequences. */}
+              <CampaignBounceCheckButton
+                campaignId={campaign.id}
+                senderNeedsReconnect={senderNeedsReconnect}
+                className={styles.actionItem}
+              />
+              {latestRun && (isActiveRun || isPausedRun) ? (
+                <CampaignPauseResumeButton
+                  campaignId={campaign.id}
+                  isPaused={isPausedRun}
+                  label={pauseButtonLabel}
+                  className={styles.actionItem}
+                />
+              ) : null}
+              <CampaignScheduleEditor
+                campaignId={campaign.id}
+                canEdit={canEditSchedule}
+                className={styles.actionItem}
+                disabledMessage={SCHEDULE_EDIT_DISABLED_MESSAGE}
+                initialSchedule={scheduleConfig}
+              />
+              {canRetryFailed ? (
+                <CampaignRetryFailedButton
+                  campaignId={campaign.id}
+                  failedCount={retryableFailedCount}
+                  className={styles.actionItem}
+                />
+              ) : null}
+            </div>
+
+            <div className={styles.dangerAction}>
+              <CampaignDetailDeleteButton campaignId={campaign.id} campaignName={campaign.name} />
+            </div>
           </div>
         </aside>
       </section>
@@ -697,48 +720,35 @@ export default async function CampaignDetailPage({
           <div className={styles.metricIcon}>
             <Users aria-hidden="true" />
           </div>
-          <span className={styles.metricLabel}>Audience size</span>
+          <div className={styles.metricCopy}>
+            <span className={styles.metricLabel}>Audience size</span>
+            <span className={styles.metricMeta}>
+              {isFromPreviousRun ? "Last run" : "This run"}
+              {skippedCount > 0 ? ` · ${skippedCount} skipped` : " · Ready to contact"}
+            </span>
+          </div>
           <strong className={styles.metricValue}>{displayRun?.totalRecipients ?? campaign.import.rowCount ?? 0}</strong>
-          <span className={styles.metricMeta}>
-            {isFromPreviousRun ? "Last run" : "This run"}
-            {skippedCount > 0 ? ` · ${skippedCount} skipped (invalid or excluded)` : ""}
-          </span>
         </article>
         <article className={styles.metricCard}>
           <div className={styles.metricIcon}>
             <SendHorizontal aria-hidden="true" />
           </div>
-          <span className={styles.metricLabel}>Delivered</span>
+          <div className={styles.metricCopy}>
+            <span className={styles.metricLabel}>Delivered</span>
+            <span className={styles.metricMeta}>{isFromPreviousRun ? "Last run" : "Sent + opened + clicked"}</span>
+          </div>
           <strong className={styles.metricValue}>{deliveredCount}</strong>
-          <span className={styles.metricMeta}>{isFromPreviousRun ? "Last run" : "Sent + opened + clicked"}</span>
         </article>
         <article className={styles.metricCard}>
           <div className={styles.metricIcon}>
-            <Mail aria-hidden="true" />
+            <ShieldAlert aria-hidden="true" />
           </div>
-          <span className={styles.metricLabel}>Replies</span>
-          <strong className={styles.metricValue}>{replyCount}</strong>
-          <span className={styles.metricMeta}>{isFromPreviousRun ? "Last run" : "This run"}</span>
-        </article>
-        {issueCount > 0 ? (
-          <article className={styles.metricCard}>
-            <div className={styles.metricIcon}>
-              <ShieldAlert aria-hidden="true" />
-            </div>
-            <span className={styles.metricLabel}>Needs attention</span>
-            <strong className={styles.metricValue}>{issueCount}</strong>
-            <span className={styles.metricMeta}>Failed sends &amp; retries</span>
-          </article>
-        ) : (
-          <article className={styles.metricCard}>
-            <div className={styles.metricIcon}>
-              <ShieldAlert aria-hidden="true" />
-            </div>
+          <div className={styles.metricCopy}>
             <span className={styles.metricLabel}>Skipped / invalid</span>
-            <strong className={styles.metricValue}>{skippedCount}</strong>
             <span className={styles.metricMeta}>Invalid or excluded recipients</span>
-          </article>
-        )}
+          </div>
+          <strong className={styles.metricValue}>{skippedCount}</strong>
+        </article>
       </section>
       {validationChecks.length ? (
         <section className={styles.validationBand}>

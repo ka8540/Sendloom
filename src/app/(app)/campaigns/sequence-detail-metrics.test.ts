@@ -22,17 +22,19 @@ describe("sequence detail metric cards — truthful recipient rollups", () => {
     expect(DETAIL_PAGE).not.toMatch(/sentCount\s*\?\?\s*0\)\s*\+\s*\(run\?\.openedCount/);
   });
 
-  it("shows the skipped/invalid count on the summary cards", () => {
-    // The fourth card surfaces Skipped / invalid whenever there are no real
-    // failures, and the audience card always carries the skipped sublabel.
+  it("shows exactly three compact summary cards with no Replies card", () => {
+    expect(DETAIL_PAGE.match(/<article className=\{styles\.metricCard\}>/g)).toHaveLength(3);
+    expect(DETAIL_PAGE).toContain("Audience size");
+    expect(DETAIL_PAGE).toContain("Delivered");
     expect(DETAIL_PAGE).toContain("Skipped / invalid");
     expect(DETAIL_PAGE).toContain("Invalid or excluded recipients");
-    expect(DETAIL_PAGE).toMatch(/skippedCount > 0 \? ` · \$\{skippedCount\} skipped/);
+    expect(DETAIL_PAGE).not.toContain('<span className={styles.metricLabel}>Replies</span>');
+    expect(DETAIL_PAGE).toMatch(/skippedCount > 0 \? ` · \$\{skippedCount\} skipped`/);
   });
 
-  it("keeps Needs attention for real failures only (disposition-based, shown when present)", () => {
+  it("keeps Needs attention for real failures only without replacing the skipped metric", () => {
     expect(DETAIL_PAGE).toContain("const issueCount = dispositionCounts.needsAttention");
-    expect(DETAIL_PAGE).toMatch(/issueCount > 0 \? \(/);
-    expect(DETAIL_PAGE).toContain("Failed sends &amp; retries");
+    expect(DETAIL_PAGE).toMatch(/issueCount > 0 && !isActiveRun && !isPausedRun/);
+    expect(DETAIL_PAGE).toContain('data-tone={sequenceStatusTone}');
   });
 });
