@@ -1,10 +1,22 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CircleHelp, Compass, GraduationCap, MessageSquare, Sparkles } from "lucide-react";
+import {
+  Activity,
+  BarChart3,
+  CircleHelp,
+  Compass,
+  GraduationCap,
+  LayoutDashboard,
+  MessageSquare,
+  Settings2,
+  SlidersHorizontal,
+  Sparkles,
+  type LucideIcon
+} from "lucide-react";
 
 import { HelpReportDialog } from "@/components/incident/help-report-dialog";
-import type { ManualConfig } from "@/components/manual/manualTypes";
+import type { ManualConfig, ManualHelpMenuIcon } from "@/components/manual/manualTypes";
 import { useManual } from "@/components/manual/ManualProvider";
 import styles from "@/components/manual/manual.module.css";
 
@@ -21,6 +33,15 @@ const GUIDE_CONTEXT_BY_ID: Record<string, string> = {
   campaigns: "sequences_guide_menu",
   "campaign-detail": "sequence_detail_guide_menu",
   admin: "admin_guide_menu"
+};
+
+const HELP_MENU_ICONS: Record<ManualHelpMenuIcon, LucideIcon> = {
+  overview: LayoutDashboard,
+  controls: SlidersHorizontal,
+  stats: BarChart3,
+  activity: Activity,
+  setup: Settings2,
+  help: MessageSquare
 };
 
 function guideContextForManual(manual: ManualConfig): string {
@@ -72,6 +93,11 @@ export function ManualButton() {
 function DashboardHelpButton({ label, tooltip, manual }: { label: string; tooltip: string; manual: ManualConfig }) {
   const { openManualStage, isStageComplete } = useManual();
   const hasQuickStart = Boolean(manual.helpQuickStart);
+  const customHelpItems = manual.helpMenuItems ?? [];
+  const hasCustomHelpMenu = customHelpItems.length > 0;
+  const customInfoItems = customHelpItems.filter((item) => item.action !== "report");
+  const customReportItem = customHelpItems.find((item) => item.action === "report");
+  const CustomReportIcon = customReportItem ? HELP_MENU_ICONS[customReportItem.icon] : MessageSquare;
   // Manuals whose "page" changes by internal state rather than the URL (the
   // Templates library vs. its create/edit wizard steps) opt into `contextualStages`
   // so the menu's guide actions target whatever surface is on screen. The stage is
@@ -186,65 +212,102 @@ function DashboardHelpButton({ label, tooltip, manual }: { label: string; toolti
         <div
           ref={menuRef}
           className={styles.overviewMenu}
-          role="menu"
-          aria-label={`${tooltip} options`}
+          role={hasCustomHelpMenu ? "dialog" : "menu"}
+          aria-label={hasCustomHelpMenu ? tooltip : `${tooltip} options`}
           data-tour-help-menu="true"
         >
           <p className={styles.overviewMenuTitle}>{tooltip}</p>
-          {hasQuickStart ? (
-            <button
-              className={styles.overviewMenuItem}
-              type="button"
-              role="menuitem"
-              onClick={() => startStage(quickStartStage)}
-            >
-              <GraduationCap aria-hidden="true" />
-              <span>
-                <strong>Quick start</strong>
-                <small>Replay the first-time walkthrough</small>
-              </span>
-            </button>
-          ) : null}
-          <button
-            className={styles.overviewMenuItem}
-            type="button"
-            role="menuitem"
-            onClick={() => startStage(fullTourStage)}
-          >
-            <Compass aria-hidden="true" />
-            <span>
-              <strong>Full page tour</strong>
-              <small>Walk every visible section and control</small>
-            </span>
-          </button>
-          {changedStage ? (
-            <button
-              className={styles.overviewMenuItem}
-              type="button"
-              role="menuitem"
-              onClick={() => startStage(changedStage)}
-            >
-              <Sparkles aria-hidden="true" />
-              <span>
-                <strong>What changed</strong>
-                <small>See the newly relevant sections</small>
-              </span>
-            </button>
-          ) : null}
-          <div className={styles.overviewMenuDivider} role="separator" aria-hidden="true" />
-          <button
-            className={styles.overviewMenuItem}
-            type="button"
-            role="menuitem"
-            onClick={openReport}
-            data-tour-report-issue="true"
-          >
-            <MessageSquare aria-hidden="true" />
-            <span>
-              <strong>Report issue</strong>
-              <small>Tell us what went wrong on this page</small>
-            </span>
-          </button>
+          {hasCustomHelpMenu ? (
+            <>
+              {customInfoItems.map((item) => {
+                const Icon = HELP_MENU_ICONS[item.icon];
+
+                return (
+                  <div className={`${styles.overviewMenuItem} ${styles.overviewMenuInfo}`} key={item.title}>
+                    <Icon aria-hidden="true" />
+                    <span>
+                      <strong>{item.title}</strong>
+                      <small>{item.description}</small>
+                    </span>
+                  </div>
+                );
+              })}
+              {customReportItem ? (
+                <>
+                  <div className={styles.overviewMenuDivider} role="separator" aria-hidden="true" />
+                  <button
+                    className={styles.overviewMenuItem}
+                    type="button"
+                    onClick={openReport}
+                    data-tour-report-issue="true"
+                  >
+                    <CustomReportIcon aria-hidden="true" />
+                    <span>
+                      <strong>{customReportItem.title}</strong>
+                      <small>{customReportItem.description}</small>
+                    </span>
+                  </button>
+                </>
+              ) : null}
+            </>
+          ) : (
+            <>
+              {hasQuickStart ? (
+                <button
+                  className={styles.overviewMenuItem}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => startStage(quickStartStage)}
+                >
+                  <GraduationCap aria-hidden="true" />
+                  <span>
+                    <strong>Quick start</strong>
+                    <small>Replay the first-time walkthrough</small>
+                  </span>
+                </button>
+              ) : null}
+              <button
+                className={styles.overviewMenuItem}
+                type="button"
+                role="menuitem"
+                onClick={() => startStage(fullTourStage)}
+              >
+                <Compass aria-hidden="true" />
+                <span>
+                  <strong>Full page tour</strong>
+                  <small>Walk every visible section and control</small>
+                </span>
+              </button>
+              {changedStage ? (
+                <button
+                  className={styles.overviewMenuItem}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => startStage(changedStage)}
+                >
+                  <Sparkles aria-hidden="true" />
+                  <span>
+                    <strong>What changed</strong>
+                    <small>See the newly relevant sections</small>
+                  </span>
+                </button>
+              ) : null}
+              <div className={styles.overviewMenuDivider} role="separator" aria-hidden="true" />
+              <button
+                className={styles.overviewMenuItem}
+                type="button"
+                role="menuitem"
+                onClick={openReport}
+                data-tour-report-issue="true"
+              >
+                <MessageSquare aria-hidden="true" />
+                <span>
+                  <strong>Report issue</strong>
+                  <small>Tell us what went wrong on this page</small>
+                </span>
+              </button>
+            </>
+          )}
         </div>
       ) : null}
 
@@ -256,7 +319,7 @@ function DashboardHelpButton({ label, tooltip, manual }: { label: string; toolti
         type="button"
         onClick={handleTrigger}
         aria-label={label}
-        aria-haspopup="menu"
+        aria-haspopup={hasCustomHelpMenu ? "dialog" : "menu"}
         aria-expanded={menuOpen}
         data-manual-help-button="true"
         data-open={menuOpen ? "true" : "false"}

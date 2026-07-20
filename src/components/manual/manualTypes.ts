@@ -15,6 +15,15 @@ export type ManualStep = {
   optional?: boolean;
 };
 
+export type ManualHelpMenuIcon = "overview" | "controls" | "stats" | "activity" | "setup" | "help";
+
+export type ManualHelpMenuItem = {
+  title: string;
+  description: string;
+  icon: ManualHelpMenuIcon;
+  action?: "report";
+};
+
 export type ManualConfig = {
   id: string;
   routeLabel: string;
@@ -27,6 +36,8 @@ export type ManualConfig = {
   helpLabel?: string;
   /** Tooltip text for the floating help button (default "Help"). */
   helpTooltip?: string;
+  /** Optional page-specific guide content shown instead of the generic tour actions. */
+  helpMenuItems?: ManualHelpMenuItem[];
   /**
    * Optional presentation override for the floating help button. Every
    * dashboard manual now uses the premium hover-expanding pill + guide menu by

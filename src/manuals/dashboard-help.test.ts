@@ -90,6 +90,31 @@ describe("Shared dashboard Help button reaches every authenticated route (#1, #2
   });
 });
 
+describe("Sequence detail guide menu", () => {
+  it("uses page-specific help content instead of generic tour actions", () => {
+    const manual = getManualForPathname("/campaigns/abc123");
+    const items = manual?.helpMenuItems ?? [];
+
+    expect(items.map((item) => item.title)).toEqual([
+      "Sequence overview",
+      "Run controls",
+      "Delivery stats",
+      "Recipient activity",
+      "Setup details",
+      "Need help?"
+    ]);
+    expect(items.map((item) => item.description)).toEqual([
+      "View the sequence name, status, audience, template, sender, timing, and current run state.",
+      "Refresh validation, check bounces, pause, relaunch, edit, or delete this sequence.",
+      "Track audience size, delivered emails, and skipped or invalid recipients.",
+      "Review each recipient’s latest status, including queued, sent, opened, invalid, or skipped.",
+      "Confirm the contact list, email template, sender account, timing, and attachments.",
+      "Report an issue if something looks wrong on this sequence."
+    ]);
+    expect(items.at(-1)?.action).toBe("report");
+  });
+});
+
 describe("Admin guide is route-adaptive and safely worded (#17, admin coverage)", () => {
   it("only normal-user routes resolve user guides; admin routes resolve the admin guide", () => {
     expect(getManualForPathname("/admin")).toBe(adminManual);
