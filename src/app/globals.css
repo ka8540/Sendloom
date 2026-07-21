@@ -29,6 +29,17 @@
   --field-border: rgba(20, 32, 51, 0.12);
   --field-focus: rgba(22, 124, 90, 0.55);
   --button-secondary-bg: rgba(20, 32, 51, 0.06);
+  /* Shared button geometry follows the Sequence/Campaign controls. Text
+     actions are pills; equal-sided icon actions use the same radius to form
+     a true circle. Local components may choose the regular or compact height,
+     but should not introduce a different corner shape. */
+  --button-radius: 999px;
+  --button-height: 2.75rem;
+  --button-height-compact: 2.25rem;
+  --button-padding-inline: 1.2rem;
+  --button-gap: 0.5rem;
+  --button-font-size: 0.9rem;
+  --button-font-weight: 700;
   --note-bg: linear-gradient(135deg, rgba(22, 124, 90, 0.1), rgba(33, 83, 194, 0.08));
   --note-border: rgba(22, 124, 90, 0.1);
   --link: #175cd3;
@@ -222,6 +233,23 @@
   box-sizing: border-box;
 }
 
+button {
+  font-family: inherit;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--field-focus);
+  outline-offset: 2px;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+button > svg {
+  flex-shrink: 0;
+}
+
 /*
  * Guided-tour targets: keep a safe gap above/below when the help overlay scrolls
  * one into view, so a page heading is never clipped against the viewport top.
@@ -363,7 +391,7 @@ html[data-sidebar-collapsed="true"] .shell {
   width: 2.5rem;
   height: 2.5rem;
   border: 0;
-  border-radius: 14px;
+  border-radius: var(--button-radius);
   background: transparent;
   color: var(--muted);
   cursor: pointer;
@@ -377,6 +405,10 @@ html[data-sidebar-collapsed="true"] .shell {
   color: var(--text);
   transform: translateY(-1px);
   outline: none;
+}
+
+.sidebar-toggle:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
 .sidebar-toggle:active {
@@ -550,7 +582,7 @@ html[data-sidebar-collapsed="true"] .sidebar .nav-item-button {
   height: 3.35rem;
   justify-content: center;
   padding: 0;
-  border-radius: 16px;
+  border-radius: var(--button-radius);
 }
 
 .sidebar.is-collapsed .nav-footer,
@@ -959,11 +991,12 @@ html[data-sidebar-collapsed="true"] .sidebar .nav-footer-divider {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.65rem;
+  gap: var(--button-gap);
   flex: 0 0 auto;
+  min-height: var(--button-height);
   padding: 0.72rem 0.95rem;
   border: 1px solid color-mix(in srgb, var(--line) 84%, transparent);
-  border-radius: 12px;
+  border-radius: var(--button-radius);
   background: color-mix(in srgb, var(--surface) 90%, transparent);
   color: var(--text);
   font: inherit;
@@ -1071,7 +1104,7 @@ html[data-sidebar-collapsed="true"] .sidebar .nav-footer-divider {
   height: 2.55rem;
   padding: 0;
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: var(--button-radius);
   background: color-mix(in srgb, var(--surface-strong) 84%, transparent);
   color: var(--text);
   cursor: pointer;
@@ -1115,6 +1148,12 @@ html[data-sidebar-collapsed="true"] .sidebar .nav-footer-divider {
   background: color-mix(in srgb, var(--accent-soft) 58%, var(--surface-strong) 42%);
   box-shadow: 0 10px 22px rgba(28, 42, 70, 0.08);
   outline: none;
+}
+
+.field-icon-button:focus-visible {
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent),
+    0 10px 22px rgba(28, 42, 70, 0.08);
 }
 
 .field-icon-button:active:not(:disabled) {
@@ -1176,23 +1215,34 @@ html[data-sidebar-collapsed="true"] .sidebar .nav-footer-divider {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
+  gap: var(--button-gap);
   border: 0;
-  border-radius: 999px;
-  padding: 0.8rem 1.2rem;
+  border-radius: var(--button-radius);
+  min-height: var(--button-height);
+  padding: 0.8rem var(--button-padding-inline);
   background: var(--accent);
-  color: white;
+  color: var(--accent-contrast);
   cursor: pointer;
-  font-weight: 700;
+  font-size: var(--button-font-size);
+  font-weight: var(--button-font-weight);
+  line-height: 1;
+  white-space: nowrap;
   box-shadow: 0 12px 24px rgba(22, 124, 90, 0.2);
   transform-origin: center;
   transition: transform 140ms ease, box-shadow 140ms ease, background-color 160ms ease, filter 160ms ease;
 }
 
-.button:hover:not(:disabled),
-.button:focus-visible {
+.button:hover:not(:disabled) {
   transform: translateY(-1px);
   box-shadow: 0 16px 28px rgba(22, 124, 90, 0.24);
+  filter: saturate(1.03);
+}
+
+.button:focus-visible {
+  transform: translateY(-1px);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent),
+    0 16px 28px rgba(22, 124, 90, 0.24);
   filter: saturate(1.03);
   outline: none;
 }
@@ -1209,10 +1259,30 @@ html[data-sidebar-collapsed="true"] .sidebar .nav-footer-divider {
   box-shadow: none;
 }
 
-.button.secondary:hover:not(:disabled),
-.button.secondary:focus-visible {
+.button.secondary:hover:not(:disabled) {
   background: color-mix(in srgb, var(--button-secondary-bg) 78%, var(--accent-soft) 22%);
   box-shadow: 0 14px 24px rgba(28, 42, 70, 0.1);
+}
+
+.button.secondary:focus-visible {
+  background: color-mix(in srgb, var(--button-secondary-bg) 78%, var(--accent-soft) 22%);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--accent) 24%, transparent),
+    0 14px 24px rgba(28, 42, 70, 0.1);
+}
+
+.button.danger {
+  border: 1px solid var(--error-toast-border);
+  background: var(--error-toast-icon-bg);
+  color: var(--error-toast-icon-color);
+  box-shadow: none;
+}
+
+.button.danger:hover:not(:disabled),
+.button.danger:focus-visible {
+  border-color: var(--error-toast-icon-color);
+  background: color-mix(in srgb, var(--error-toast-icon-bg) 84%, var(--surface-strong));
+  box-shadow: 0 12px 24px color-mix(in srgb, var(--error-toast-icon-color) 12%, transparent);
 }
 
 .button.secondary:active:not(:disabled) {
@@ -1252,7 +1322,7 @@ html[data-sidebar-collapsed="true"] .sidebar .nav-footer-divider {
   height: 3rem;
   padding: 0;
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: var(--button-radius);
   background: var(--surface-ghost);
   color: var(--text);
   cursor: pointer;
@@ -1273,6 +1343,12 @@ html[data-sidebar-collapsed="true"] .sidebar .nav-footer-divider {
   transform: translateY(-1px);
   background: var(--surface);
   border-color: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.back-button:focus-visible {
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent),
+    var(--shadow);
 }
 
 .back-button:active {
@@ -1666,12 +1742,13 @@ html[data-sidebar-collapsed="true"] .sidebar .theme-menu--footer .theme-menu__pa
   min-height: 2.65rem;
   padding: 0.48rem 0.6rem;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--button-radius);
   background: color-mix(in srgb, var(--surface-muted) 82%, transparent);
   color: var(--muted);
   font: inherit;
   font-size: 0.8rem;
   font-weight: 750;
+  white-space: nowrap;
   cursor: pointer;
   transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease;
 }
@@ -3188,7 +3265,7 @@ html[data-sidebar-collapsed="true"] .sidebar .theme-menu--footer .theme-menu__pa
   min-height: 2rem;
   padding: 0.38rem 0.62rem;
   border: 1px solid color-mix(in srgb, var(--line) 90%, transparent);
-  border-radius: 10px;
+  border-radius: var(--button-radius);
   background: color-mix(in srgb, var(--surface) 78%, transparent);
   color: var(--muted);
   font: inherit;

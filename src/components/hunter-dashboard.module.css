@@ -74,13 +74,15 @@
 .tabButton {
   display: inline-flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: var(--button-gap);
+  min-height: var(--button-height);
   padding: 0.8rem 1rem;
   border: 0;
-  border-radius: 0.8rem;
+  border-radius: var(--button-radius);
   background: transparent;
   color: var(--muted);
-  font-weight: 600;
+  font-weight: var(--button-font-weight);
+  white-space: nowrap;
   cursor: pointer;
   transition:
     background 140ms ease,
@@ -93,6 +95,10 @@
   background: var(--surface-hover);
   color: var(--text);
   outline: none;
+}
+
+.tabButton:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 26%, transparent);
 }
 
 .tabButtonActive {
@@ -815,9 +821,9 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
+  gap: var(--button-gap);
   border: 1px solid var(--line);
-  border-radius: 0.85rem;
+  border-radius: var(--button-radius);
   background: var(--surface-strong);
   color: var(--text);
   cursor: pointer;
@@ -834,8 +840,10 @@
 
 .copyButtonSecondary {
   flex: none;
+  min-height: var(--button-height);
   padding: 0.78rem 1rem;
-  font-weight: 600;
+  font-weight: var(--button-font-weight);
+  white-space: nowrap;
 }
 
 .copyButton:hover,
@@ -848,6 +856,12 @@
   border-color: var(--field-focus);
   outline: none;
   transform: translateY(-1px);
+}
+
+.copyButton:focus-visible,
+.copyButtonSecondary:focus-visible,
+.modalClose:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 26%, transparent);
 }
 
 .modalBackdrop {

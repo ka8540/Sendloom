@@ -136,7 +136,7 @@ export function AppConfirmDialog({
           </button>
           <button
             type="button"
-            className={`${styles.button} ${styles.confirm}${destructive ? ` ${styles.confirmDestructive}` : ""}`}
+            className={`button ${styles.button} ${styles.confirm}${destructive ? ` danger ${styles.confirmDestructive}` : ""}`}
             onClick={() => void onConfirm()}
             disabled={loading}
           >

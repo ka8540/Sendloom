@@ -139,14 +139,16 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
-  border-radius: 0.8rem;
+  gap: var(--button-gap);
+  min-height: var(--button-height);
+  border-radius: var(--button-radius);
   border: 1px solid var(--line);
   background: var(--surface-strong);
   color: var(--text);
-  font-weight: 600;
+  font-weight: var(--button-font-weight);
   cursor: pointer;
   padding: 0.6rem 0.95rem;
+  white-space: nowrap;
   transition: background 140ms ease, border-color 140ms ease, transform 140ms ease, opacity 140ms ease;
 }
 
@@ -203,14 +205,16 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.4rem;
+  gap: var(--button-gap);
+  min-height: var(--button-height);
   padding: 0.45rem 0.7rem;
-  border-radius: 0.8rem;
+  border-radius: var(--button-radius);
   border: 1px solid transparent;
   background: transparent;
   color: var(--muted);
   font-size: 0.86rem;
-  font-weight: 600;
+  font-weight: var(--button-font-weight);
+  white-space: nowrap;
   cursor: pointer;
   transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
 }
@@ -238,8 +242,10 @@
 }
 
 .pagerButton:disabled,
+.refreshButton:disabled,
 .primaryButton:disabled,
 .secondaryButton:disabled,
+.ghostButton:disabled,
 .dangerButton:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -1082,7 +1088,7 @@
   width: 2.15rem;
   height: 2.15rem;
   flex: none;
-  border-radius: 0.6rem;
+  border-radius: var(--button-radius);
   border: 1px solid var(--line);
   background: var(--surface-strong);
   color: var(--muted);
@@ -1791,12 +1797,13 @@
   gap: 0.35rem;
   height: 2.625rem;
   padding: 0 0.8rem;
-  border-radius: 12px;
+  border-radius: var(--button-radius);
   border: 1px solid transparent;
   background: transparent;
   color: var(--muted);
   font-size: 0.84rem;
   font-weight: 600;
+  white-space: nowrap;
   cursor: pointer;
   transition: color 140ms ease, border-color 140ms ease, background 140ms ease;
 }
@@ -1895,8 +1902,9 @@
   justify-content: center;
   gap: 0.4rem;
   flex: none;
+  min-height: var(--button-height-compact);
   padding: 0.4rem 0.85rem;
-  border-radius: 0.65rem;
+  border-radius: var(--button-radius);
   border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
   background: color-mix(in srgb, var(--accent-soft) 62%, var(--surface));
   color: var(--link);
@@ -2097,7 +2105,7 @@
   width: 1.9rem;
   height: 1.9rem;
   flex: none;
-  border-radius: 0.55rem;
+  border-radius: var(--button-radius);
   border: 1px solid var(--line);
   background: var(--surface-strong);
   color: var(--muted);
@@ -2139,7 +2147,7 @@
   justify-content: center;
   width: 2rem;
   height: 2rem;
-  border-radius: 0.55rem;
+  border-radius: var(--button-radius);
   border: 1px solid var(--line);
   background: var(--surface-strong);
   color: var(--link);
@@ -2182,7 +2190,7 @@
   width: 2.1rem;
   height: 2.1rem;
   flex: none;
-  border-radius: 0.6rem;
+  border-radius: var(--button-radius);
   border: 1px solid var(--line);
   background: var(--surface-strong);
   color: var(--text);

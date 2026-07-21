@@ -43,15 +43,17 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.4rem;
+  gap: var(--button-gap);
   justify-self: start;
+  min-height: var(--button-height-compact);
   padding: 0.4rem 0.7rem;
-  border-radius: 0.7rem;
+  border-radius: var(--button-radius);
   border: 1px solid var(--line);
   background: var(--surface-strong);
   color: var(--text);
   font-size: 0.8rem;
-  font-weight: 600;
+  font-weight: var(--button-font-weight);
+  white-space: nowrap;
   cursor: pointer;
   transition: background 140ms ease, border-color 140ms ease;
 }

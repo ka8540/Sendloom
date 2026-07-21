@@ -331,10 +331,11 @@ select.fieldControl option {
 .addButton {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: var(--button-gap);
   flex-shrink: 0;
+  min-height: var(--button-height-compact);
   padding: 0.44rem 0.78rem;
-  border-radius: 10px;
+  border-radius: var(--button-radius);
   border: 1px solid var(--field-border);
   background: var(--field-bg);
   color: var(--text);

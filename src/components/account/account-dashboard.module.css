@@ -373,7 +373,7 @@
   width: 2.15rem;
   height: 2.15rem;
   flex-shrink: 0;
-  border-radius: 11px;
+  border-radius: var(--button-radius);
   cursor: pointer;
   color: var(--muted);
   background: transparent;
@@ -392,6 +392,10 @@
   background: color-mix(in srgb, #e5484d 10%, transparent);
   border-color: color-mix(in srgb, #e5484d 24%, var(--line));
   outline: none;
+}
+
+.removeButton:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--error-toast-icon-color) 28%, transparent);
 }
 
 :global(:root[data-theme="dark"]) .removeButton:hover,

@@ -379,10 +379,11 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.6rem;
+  gap: var(--button-gap);
   min-height: 3.05rem;
-  border-radius: 16px;
-  font-weight: 800;
+  border-radius: var(--button-radius);
+  font-weight: var(--button-font-weight);
+  white-space: nowrap;
   letter-spacing: -0.02em;
   cursor: pointer;
 }
@@ -422,7 +423,7 @@
   justify-content: center;
   width: 2.45rem;
   height: 2.45rem;
-  border-radius: 14px;
+  border-radius: var(--button-radius);
   border: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
   background: color-mix(in srgb, var(--surface-muted) 92%, transparent);
   color: var(--muted);
@@ -547,14 +548,15 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.45rem;
+  gap: var(--button-gap);
   min-height: 3.15rem;
   padding: 0 1rem;
-  border-radius: 16px;
+  border-radius: var(--button-radius);
   border: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
   background: color-mix(in srgb, var(--surface-muted) 92%, transparent);
   color: var(--muted);
   font-weight: 700;
+  white-space: nowrap;
   letter-spacing: -0.02em;
   cursor: pointer;
   transition:

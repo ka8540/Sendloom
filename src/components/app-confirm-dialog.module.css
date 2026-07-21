@@ -103,21 +103,23 @@
 .button {
   width: auto;
   min-width: 8rem;
-  min-height: 2.8rem;
+  min-height: var(--button-height);
   padding: 0.68rem 1rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
+  gap: var(--button-gap);
+  white-space: nowrap;
 }
 
 .confirm {
-  border-radius: 14px;
+  border-radius: var(--button-radius);
   border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
   background: var(--accent);
   color: var(--accent-contrast, #ffffff);
-  font: inherit;
-  font-weight: 700;
+  font-size: var(--button-font-size);
+  font-weight: var(--button-font-weight);
+  line-height: 1;
   cursor: pointer;
   transition: transform 140ms ease, box-shadow 160ms ease, background-color 160ms ease, border-color 160ms ease;
 }

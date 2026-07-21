@@ -110,9 +110,10 @@
 }
 
 .segmented button {
+  min-height: var(--button-height-compact);
   padding: 0.4rem 0.7rem;
   border: none;
-  border-radius: 9px;
+  border-radius: var(--button-radius);
   background: transparent;
   color: var(--muted);
   font: inherit;
@@ -129,14 +130,17 @@
 .refreshButton {
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
+  gap: var(--button-gap);
+  min-height: var(--button-height-compact);
   padding: 0.5rem 0.85rem;
-  border-radius: 11px;
+  border-radius: var(--button-radius);
   border: 1px solid var(--line);
   background: color-mix(in srgb, var(--surface-strong) 70%, transparent);
   color: var(--text);
   font: inherit;
   font-size: 0.85rem;
+  font-weight: var(--button-font-weight);
+  white-space: nowrap;
   cursor: pointer;
   margin-left: auto;
 }
@@ -298,12 +302,15 @@
 }
 
 .loadMoreButton {
+  min-height: var(--button-height);
   padding: 0.55rem 1.1rem;
-  border-radius: 11px;
+  border-radius: var(--button-radius);
   border: 1px solid var(--line);
   background: color-mix(in srgb, var(--surface-strong) 70%, transparent);
   color: var(--text);
   font: inherit;
+  font-weight: var(--button-font-weight);
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -360,13 +367,16 @@
 }
 
 .panelError button {
+  min-height: var(--button-height-compact);
   padding: 0.45rem 0.9rem;
-  border-radius: 10px;
+  border-radius: var(--button-radius);
   border: 1px solid var(--line);
   background: transparent;
   color: var(--text);
   cursor: pointer;
   font: inherit;
+  font-weight: var(--button-font-weight);
+  white-space: nowrap;
 }
 
 .inlineError {
@@ -503,13 +513,16 @@
 }
 
 .statusButton {
+  min-height: var(--button-height-compact);
   padding: 0.5rem 0.9rem;
-  border-radius: 11px;
+  border-radius: var(--button-radius);
   border: 1px solid var(--line);
   background: color-mix(in srgb, var(--surface-strong) 70%, transparent);
   color: var(--text);
   font: inherit;
   font-size: 0.85rem;
+  font-weight: var(--button-font-weight);
+  white-space: nowrap;
   cursor: pointer;
 }
 

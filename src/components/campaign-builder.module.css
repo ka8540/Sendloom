@@ -67,12 +67,13 @@
   min-height: 2.65rem;
   padding: 0.48rem 0.6rem;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--button-radius);
   background: color-mix(in srgb, var(--surface-muted) 82%, transparent);
   color: var(--muted);
   font: inherit;
   font-size: 0.8rem;
   font-weight: 750;
+  white-space: nowrap;
   cursor: pointer;
   transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease;
 }
@@ -835,7 +836,7 @@
   min-height: 2.35rem;
   padding: 0.5rem 0.3rem;
   border: 1px solid var(--field-border);
-  border-radius: 9px;
+  border-radius: var(--button-radius);
   background: var(--field-bg);
   color: var(--muted);
   font: inherit;
@@ -908,16 +909,18 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.4rem;
+  gap: var(--button-gap);
   margin-left: auto;
+  min-height: var(--button-height-compact);
   padding: 0.5rem 0.75rem;
   border: 1px solid var(--field-border);
-  border-radius: 10px;
+  border-radius: var(--button-radius);
   background: var(--field-bg);
   color: var(--text);
   font: inherit;
   font-size: 0.82rem;
   font-weight: 700;
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -1000,7 +1003,7 @@
   width: 1.85rem;
   height: 1.85rem;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--button-radius);
   background: transparent;
   color: var(--muted);
   cursor: pointer;

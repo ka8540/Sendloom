@@ -157,8 +157,9 @@
   justify-content: center;
   min-height: 3.25rem;
   padding: 0.9rem 1.25rem;
-  border-radius: 16px;
+  border-radius: var(--button-radius);
   font-weight: 700;
+  white-space: nowrap;
   transition:
     transform 140ms ease,
     box-shadow 160ms ease,

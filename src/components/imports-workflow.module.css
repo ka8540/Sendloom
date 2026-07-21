@@ -34,12 +34,13 @@
   min-height: 2.65rem;
   padding: 0.48rem 0.6rem;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--button-radius);
   background: color-mix(in srgb, var(--surface-muted) 82%, transparent);
   color: var(--muted);
   font: inherit;
   font-size: 0.8rem;
   font-weight: 750;
+  white-space: nowrap;
   cursor: pointer;
   transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease;
 }

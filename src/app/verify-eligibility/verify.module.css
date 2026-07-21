@@ -156,13 +156,15 @@
 
 .continueButton {
   width: 100%;
+  min-height: var(--button-height);
   padding: 0.875rem 1.5rem;
   border: none;
-  border-radius: 12px;
+  border-radius: var(--button-radius);
   background: linear-gradient(135deg, var(--accent), hsl(142 55% 38%));
   color: white;
   font-size: 0.95rem;
-  font-weight: 600;
+  font-weight: var(--button-font-weight);
+  white-space: nowrap;
   cursor: pointer;
   transition: opacity 0.2s, transform 0.15s;
   letter-spacing: 0.01em;

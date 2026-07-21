@@ -822,15 +822,16 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.7rem;
+  gap: var(--button-gap);
   width: 100%;
   min-height: 3rem;
   padding: 0.85rem 1.1rem;
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: var(--button-radius);
   background: color-mix(in srgb, var(--surface-strong) 94%, transparent);
   color: var(--text);
   font-weight: 700;
+  white-space: nowrap;
   overflow: hidden;
   transition:
     transform 140ms ease,
@@ -1150,7 +1151,7 @@
   }
 
   .formWrap :global(.form .button) {
-    min-height: 2.6rem;
+    min-height: var(--button-height);
   }
 }
 
