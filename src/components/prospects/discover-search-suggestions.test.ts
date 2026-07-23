@@ -70,6 +70,14 @@ describe("SuggestionInput behaviour contract", () => {
   it("closes on outside click", () => {
     expect(SUGGESTION_INPUT).toContain('addEventListener("mousedown"');
     expect(SUGGESTION_INPUT).toContain("!wrapperRef.current.contains");
+    expect(SUGGESTION_INPUT).toContain("!listRef.current?.contains");
+  });
+
+  it("can portal a modal dropdown to the body and keep it anchored on scroll/resize", () => {
+    expect(SUGGESTION_INPUT).toContain("createPortal(suggestionList, document.body)");
+    expect(SUGGESTION_INPUT).toContain("input.getBoundingClientRect()");
+    expect(SUGGESTION_INPUT).toContain('addEventListener("resize"');
+    expect(SUGGESTION_INPUT).toContain('addEventListener("scroll"');
   });
 
   it("applies a suggestion to the current comma-token only for multi-token fields (#20)", () => {
@@ -129,6 +137,16 @@ describe("Inside-company card wiring (#26, #27, #28, #29, #30)", () => {
 
   it("single-token: the same-company search does not comma-split roles/locations", () => {
     expect(DETAIL_SOURCE).not.toContain('type="ROLE"\n              companyId={companyId}\n              multiToken');
+  });
+
+  it("portals both same-company suggestion lists above the modal scroller", () => {
+    const card = DETAIL_SOURCE.slice(
+      DETAIL_SOURCE.indexOf("function SearchCompanyCard"),
+      DETAIL_SOURCE.indexOf("function StatusCard")
+    );
+    expect(card.match(/portalToBody/g)).toHaveLength(2);
+    expect(CSS).toMatch(/\.suggestionListPortal\s*{[^}]*position:\s*fixed/s);
+    expect(CSS).toMatch(/\.suggestionListPortal\s*{[^}]*z-index:\s*70/s);
   });
 });
 

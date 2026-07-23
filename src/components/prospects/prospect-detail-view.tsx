@@ -2251,6 +2251,7 @@ function SearchCompanyCard({
               placeholder={COMPANY_SEARCH_ROLE_PLACEHOLDER}
               ariaLabel={COMPANY_SEARCH_ROLE_LABEL}
               disabled={searching}
+              portalToBody
             />
           </div>
           <div className={styles.field}>
@@ -2263,6 +2264,7 @@ function SearchCompanyCard({
               placeholder={COMPANY_SEARCH_LOCATION_PLACEHOLDER}
               ariaLabel={COMPANY_SEARCH_LOCATION_LABEL}
               disabled={searching}
+              portalToBody
             />
           </div>
         </form>

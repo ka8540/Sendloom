@@ -1379,6 +1379,15 @@
   animation: prospect-fade 120ms ease;
 }
 
+/* The same-company modal opts into a body portal so the shared modal card's
+   overflow scroller cannot clip its list. z 70 is above the modal (60) while
+   remaining below app dialogs, critical alerts, and toasts (120+). */
+.suggestionListPortal {
+  position: fixed;
+  right: auto;
+  z-index: 70;
+}
+
 .suggestionItem {
   display: flex;
   align-items: center;

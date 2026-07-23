@@ -19,10 +19,12 @@ import {
   useId,
   useRef,
   useState,
+  type CSSProperties,
   type MutableRefObject,
   type Ref,
   type KeyboardEvent as ReactKeyboardEvent
 } from "react";
+import { createPortal } from "react-dom";
 import { Sparkles } from "lucide-react";
 
 import {
@@ -34,6 +36,10 @@ import { activeToken, replaceActiveToken } from "@/services/prospects/discover-s
 import styles from "@/components/prospects/prospects-dashboard.module.css";
 
 const DEBOUNCE_MS = 200;
+const PORTAL_VIEWPORT_MARGIN_PX = 8;
+const PORTAL_DROPDOWN_GAP_PX = 5;
+const PORTAL_DROPDOWN_MAX_HEIGHT_REM = 13;
+const PORTAL_DROPDOWN_MIN_HEIGHT_PX = 48;
 // Company matches on a single strong letter (domains are short); roles/locations
 // wait for two so a lone character never spams the dropdown.
 const DEFAULT_MIN_CHARS: Record<DiscoverSuggestionType, number> = { COMPANY: 1, ROLE: 2, LOCATION: 2 };
@@ -57,6 +63,8 @@ export type SuggestionInputProps = {
   autoFocus?: boolean;
   disabled?: boolean;
   ariaLabel?: string;
+  /** Escape an overflow-clipped modal/card while preserving the input anchor. */
+  portalToBody?: boolean;
 };
 
 function assignRef(ref: Ref<HTMLInputElement> | undefined, node: HTMLInputElement | null) {
@@ -85,7 +93,8 @@ export function SuggestionInput({
   required,
   autoFocus,
   disabled,
-  ariaLabel
+  ariaLabel,
+  portalToBody = false
 }: SuggestionInputProps) {
   const reactId = useId();
   const listId = `${reactId}-suggestions`;
@@ -98,10 +107,12 @@ export function SuggestionInput({
 
   const internalRef = useRef<HTMLInputElement | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const listRef = useRef<HTMLUListElement | null>(null);
   const caretRef = useRef<number>(value.length);
   // Set right after a selection so the resulting value change does not instantly
   // re-open the dropdown for the value we just filled in.
   const suppressRef = useRef(false);
+  const [portalStyle, setPortalStyle] = useState<CSSProperties | null>(null);
 
   const setInputNode = useCallback(
     (node: HTMLInputElement | null) => {
@@ -152,7 +163,12 @@ export function SuggestionInput({
       return;
     }
     const onDocMouseDown = (event: MouseEvent) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (
+        wrapperRef.current &&
+        !wrapperRef.current.contains(target) &&
+        !listRef.current?.contains(target)
+      ) {
         setOpen(false);
         setActiveIndex(-1);
       }
@@ -226,6 +242,121 @@ export function SuggestionInput({
 
   const showDropdown = open && focused && suggestions.length > 0;
 
+  // The same-company modal scrolls internally, so its absolutely positioned
+  // descendants are clipped at the card edge. For that modal only, anchor the
+  // list to the input in viewport coordinates and render it through <body>.
+  // Capture-phase scroll tracking also catches the modal's own scroll container.
+  useEffect(() => {
+    if (!showDropdown || !portalToBody) {
+      setPortalStyle(null);
+      return;
+    }
+
+    let frame = 0;
+    const updatePosition = () => {
+      const input = internalRef.current;
+      if (!input) {
+        return;
+      }
+      const rect = input.getBoundingClientRect();
+      const rootFontSize = Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize) || 16;
+      const availableHeight =
+        window.innerHeight - rect.bottom - PORTAL_DROPDOWN_GAP_PX - PORTAL_VIEWPORT_MARGIN_PX;
+      const maxHeight = Math.max(
+        PORTAL_DROPDOWN_MIN_HEIGHT_PX,
+        Math.min(PORTAL_DROPDOWN_MAX_HEIGHT_REM * rootFontSize, availableHeight)
+      );
+      const width = Math.min(rect.width, window.innerWidth - PORTAL_VIEWPORT_MARGIN_PX * 2);
+      const left = Math.max(
+        PORTAL_VIEWPORT_MARGIN_PX,
+        Math.min(rect.left, window.innerWidth - width - PORTAL_VIEWPORT_MARGIN_PX)
+      );
+      const nextStyle = {
+        top: rect.bottom + PORTAL_DROPDOWN_GAP_PX,
+        left,
+        width,
+        maxHeight
+      };
+      setPortalStyle((current) =>
+        current?.top === nextStyle.top &&
+        current.left === nextStyle.left &&
+        current.width === nextStyle.width &&
+        current.maxHeight === nextStyle.maxHeight
+          ? current
+          : nextStyle
+      );
+    };
+    const schedulePositionUpdate = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(updatePosition);
+    };
+
+    updatePosition();
+    window.addEventListener("resize", schedulePositionUpdate);
+    window.addEventListener("scroll", schedulePositionUpdate, true);
+    const resizeObserver = new ResizeObserver(schedulePositionUpdate);
+    if (internalRef.current) {
+      resizeObserver.observe(internalRef.current);
+    }
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", schedulePositionUpdate);
+      window.removeEventListener("scroll", schedulePositionUpdate, true);
+      resizeObserver.disconnect();
+    };
+  }, [portalToBody, showDropdown]);
+
+  const suggestionList = showDropdown ? (
+    <ul
+      ref={listRef}
+      id={listId}
+      role="listbox"
+      className={`${styles.suggestionList} ${portalToBody ? styles.suggestionListPortal : ""}`}
+      style={portalToBody && portalStyle ? portalStyle : undefined}
+    >
+      {suggestions.map((suggestion, index) => {
+        const isCorrection = suggestion.kind === "CORRECTION";
+        const rowClass = [
+          styles.suggestionItem,
+          index === activeIndex ? styles.suggestionItemActive : "",
+          isCorrection ? styles.suggestionCorrection : ""
+        ]
+          .filter(Boolean)
+          .join(" ");
+        return (
+          <li key={`${suggestion.kind}-${suggestion.value}-${index}`} role="option" aria-selected={index === activeIndex}>
+            <button
+              type="button"
+              id={`${listId}-${index}`}
+              className={rowClass}
+              // Keep focus on the input so the click lands before blur closes us.
+              onMouseDown={(event) => event.preventDefault()}
+              onMouseEnter={() => setActiveIndex(index)}
+              onClick={() => applySuggestion(suggestion)}
+            >
+              {isCorrection ? (
+                <span className={styles.suggestionCorrectionText}>
+                  <Sparkles aria-hidden="true" className={styles.suggestionCorrectionIcon} />
+                  <span>
+                    Did you mean <strong>{suggestion.value}</strong>?
+                  </span>
+                </span>
+              ) : (
+                // Clean, minimal rows: the value, plus a company's domain as
+                // muted subtext. No usage counts, no "previous search" badge.
+                <span className={styles.suggestionMain}>
+                  <span className={styles.suggestionValue}>{suggestion.value}</span>
+                  {suggestion.detail && <span className={styles.suggestionDetail}>{suggestion.detail}</span>}
+                </span>
+              )}
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  ) : null;
+
   return (
     <div ref={wrapperRef} className={styles.suggestionField}>
       <input
@@ -261,49 +392,11 @@ export function SuggestionInput({
         aria-autocomplete="list"
         aria-activedescendant={showDropdown && activeIndex >= 0 ? `${listId}-${activeIndex}` : undefined}
       />
-      {showDropdown && (
-        <ul id={listId} role="listbox" className={styles.suggestionList}>
-          {suggestions.map((suggestion, index) => {
-            const isCorrection = suggestion.kind === "CORRECTION";
-            const rowClass = [
-              styles.suggestionItem,
-              index === activeIndex ? styles.suggestionItemActive : "",
-              isCorrection ? styles.suggestionCorrection : ""
-            ]
-              .filter(Boolean)
-              .join(" ");
-            return (
-              <li key={`${suggestion.kind}-${suggestion.value}-${index}`} role="option" aria-selected={index === activeIndex}>
-                <button
-                  type="button"
-                  id={`${listId}-${index}`}
-                  className={rowClass}
-                  // Keep focus on the input so the click lands before blur closes us.
-                  onMouseDown={(event) => event.preventDefault()}
-                  onMouseEnter={() => setActiveIndex(index)}
-                  onClick={() => applySuggestion(suggestion)}
-                >
-                  {isCorrection ? (
-                    <span className={styles.suggestionCorrectionText}>
-                      <Sparkles aria-hidden="true" className={styles.suggestionCorrectionIcon} />
-                      <span>
-                        Did you mean <strong>{suggestion.value}</strong>?
-                      </span>
-                    </span>
-                  ) : (
-                    // Clean, minimal rows: the value, plus a company's domain as
-                    // muted subtext. No usage counts, no "previous search" badge.
-                    <span className={styles.suggestionMain}>
-                      <span className={styles.suggestionValue}>{suggestion.value}</span>
-                      {suggestion.detail && <span className={styles.suggestionDetail}>{suggestion.detail}</span>}
-                    </span>
-                  )}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      {suggestionList && portalToBody
+        ? portalStyle && typeof document !== "undefined"
+          ? createPortal(suggestionList, document.body)
+          : null
+        : suggestionList}
     </div>
   );
 }
