@@ -211,6 +211,32 @@ describe("Scalable People filter controls (#21-#27)", () => {
     expect(DETAIL_SOURCE).not.toMatch(/shouldShowAddMore\(\{[\s\S]*exhausted/);
   });
 
+  it("reports an add-more that found nobody inside the People section", () => {
+    expect(DETAIL_SOURCE).toContain("ADD_MORE_NO_RESULTS_TITLE");
+    expect(DETAIL_SOURCE).toContain("ADD_MORE_NO_RESULTS_BODY");
+    expect(DETAIL_SOURCE).toContain("isEmptyAddMoreResult(expansion)");
+    // Sits between the filters and the table, inside the People card.
+    expect(DETAIL_SOURCE).toMatch(/peopleFilterBar[\s\S]*addMoreFoundNobody[\s\S]*peopleTableShell/);
+    // The action reuses the existing "Search this company" dialog — no second
+    // modal, no new form.
+    expect(DETAIL_SOURCE).toContain("onClick={handleOpenCompanySearch}");
+    expect(DETAIL_SOURCE).toContain("COMPANY_SEARCH_BUTTON_LABEL");
+    // Reported once: an empty run does not also raise the generic notice.
+    expect(DETAIL_SOURCE).toMatch(/isEmptyAddMoreResult\(expansion\)\) \{[\s\S]{0,120}\} else \{[\s\S]{0,160}setActionNotice/);
+  });
+
+  it("an empty add-more changes no count and takes nothing away", () => {
+    // People totals come only from the server connection; the expansion
+    // payload's own totals are never added to anything client-side.
+    expect(DETAIL_SOURCE).not.toContain("expansion.totalPeopleCount");
+    expect(DETAIL_SOURCE).toContain("setPeopleTotal(connection.totalCount)");
+    // Visibility still takes no result-count input, so the button survives an
+    // empty run and the user can try another role/location.
+    expect(DETAIL_SOURCE).toMatch(/hasTarget: addMoreTarget\.kind !== "none"/);
+    // The card is scoped to the role/location it ran for.
+    expect(DETAIL_SOURCE).toContain("setAddMoreFoundNobody(false)");
+  });
+
   it("names the company being extended in the add-more dialog", () => {
     expect(DETAIL_SOURCE).toMatch(/companyName=\{company\?\.name \?\? search\.company\?\.name/);
     expect(DETAIL_SOURCE).toContain("companyDomain=");

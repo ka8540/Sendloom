@@ -1202,6 +1202,26 @@ export const ADD_MORE_LOADING_LABEL = "Adding new people…";
 export const ADD_MORE_EXHAUSTED_MESSAGE = "No more unique people are available for this search.";
 
 /**
+ * Shown in the People section after an "Add 10 more" that persisted nobody —
+ * whether the provider returned nothing at all or everything it returned was a
+ * duplicate/unusable. Nothing about the company changes in that case (no rows,
+ * no counts, no role groups), so the run needs to say so plainly instead of
+ * looking like a no-op.
+ */
+export const ADD_MORE_NO_RESULTS_TITLE = "No more people found";
+export const ADD_MORE_NO_RESULTS_BODY = "Try another role or location from Search this company.";
+
+/**
+ * Whether an expansion added nobody. `addedCount` is the number of people the
+ * server actually persisted and allocated, so this covers both empty-provider
+ * and everything-was-a-duplicate runs with one test. Written defensively (not
+ * `=== 0`) so a missing or negative count never reads as a success.
+ */
+export function isEmptyAddMoreResult(result: { addedCount: number }): boolean {
+  return !(result.addedCount > 0);
+}
+
+/**
  * Whether the "Add 10 more" button should be shown at all: a READY search view
  * with a resolvable search context (`hasTarget`) — nothing else. Everything
  * situational (quota, an in-flight expansion, a search with nothing left to

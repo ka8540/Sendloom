@@ -12,6 +12,8 @@ import {
   ADD_MORE_DIALOG_NOTE,
   ADD_MORE_DIALOG_SUBTITLE,
   ADD_MORE_EXHAUSTED_MESSAGE,
+  ADD_MORE_NO_RESULTS_BODY,
+  ADD_MORE_NO_RESULTS_TITLE,
   ADD_MORE_PEOPLE_LABEL,
   ANY_LOCATION_LABEL,
   COMPANY_SEARCH_LOADING_LABEL,
@@ -41,6 +43,7 @@ import {
   groupStatusBadge,
   groupedRoleLabels,
   isAddMoreTargetExhausted,
+  isEmptyAddMoreResult,
   resolveAddMoreTarget,
   resolveGroupOpenTarget,
   shouldShowAddMore,
@@ -868,6 +871,21 @@ describe("Add 10 more presentation helpers", () => {
     expect(addMoreDisabledReason(quota({ unlimited: true, searchesRemaining: 0 }), false)).toBeNull();
     // An in-flight expansion still outranks the exhausted reason.
     expect(addMoreDisabledReason(quota({ searchesRemaining: 3 }), true, true)).toBe("Adding new people…");
+  });
+
+  it("treats a run that persisted nobody as an empty result", () => {
+    // addedCount is what the server actually persisted, so one test covers an
+    // empty provider run AND a run where every result was a duplicate.
+    expect(isEmptyAddMoreResult({ addedCount: 0 })).toBe(true);
+    expect(isEmptyAddMoreResult({ addedCount: 3 })).toBe(false);
+    // Defensive: a missing or negative count never reads as a success.
+    expect(isEmptyAddMoreResult({ addedCount: -1 })).toBe(true);
+    expect(isEmptyAddMoreResult({ addedCount: Number.NaN })).toBe(true);
+  });
+
+  it("says plainly that nothing was found and points at Search this company", () => {
+    expect(ADD_MORE_NO_RESULTS_TITLE).toBe("No more people found");
+    expect(ADD_MORE_NO_RESULTS_BODY).toBe("Try another role or location from Search this company.");
   });
 
   it("renders the current people count and remaining quota for the dialog (#4)", () => {

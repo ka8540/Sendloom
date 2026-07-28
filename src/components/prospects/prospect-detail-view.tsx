@@ -78,6 +78,8 @@ import {
   ADD_MORE_DIALOG_SUBTITLE,
   ADD_MORE_DIALOG_TITLE,
   ADD_MORE_LOADING_LABEL,
+  ADD_MORE_NO_RESULTS_BODY,
+  ADD_MORE_NO_RESULTS_TITLE,
   ADD_MORE_PEOPLE_LABEL,
   ALL_LOCATIONS_LABEL,
   ALL_ROLES_LABEL,
@@ -133,6 +135,7 @@ import {
   groupedRoleLabels,
   isAddMoreTargetExhausted,
   isEmailCopyable,
+  isEmptyAddMoreResult,
   isProcessQuotaBlocked,
   isProspectSelected,
   personLocation,
@@ -267,6 +270,9 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
   // Child-search ids an expansion reported exhausted in this session, keyed by
   // search id — exhaustion belongs to ONE role group, never to the whole page.
   const [sessionExhaustedIds, setSessionExhaustedIds] = useState<ReadonlySet<string>>(() => new Set<string>());
+  // An "Add 10 more" that persisted nobody. Scoped to the role/location it ran
+  // for, so changing either filter (or adding people) clears it.
+  const [addMoreFoundNobody, setAddMoreFoundNobody] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [companyPendingDeletion, setCompanyPendingDeletion] = useState<CompanyDetail | null>(null);
   const [deleteCompanyError, setDeleteCompanyError] = useState<string | null>(null);
@@ -424,6 +430,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     setActionNotice(null);
     setSelection(createEmptyProspectSelection());
     setActiveLocation(null);
+    setAddMoreFoundNobody(false);
     setCompanySearchOpen(false);
     setCompanyRoleTitle("");
     setCompanyRoleLocation("");
@@ -469,6 +476,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
       setActiveCategory(category);
       peopleAfterCursors.current = [null];
       setPeopleFilter("");
+      setAddMoreFoundNobody(false);
       void loadPeople({ companyId: company.id, category, location: activeLocation, pageIndex: 0, after: null });
     },
     [activeLocation, company, loadPeople]
@@ -484,6 +492,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
       setActiveLocation(location);
       peopleAfterCursors.current = [null];
       setPeopleFilter("");
+      setAddMoreFoundNobody(false);
       void loadPeople({ companyId: company.id, category: activeCategory, location, pageIndex: 0, after: null });
     },
     [activeCategory, company, loadPeople]
@@ -496,6 +505,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     setActiveCategory(null);
     setActiveLocation(null);
     setPeopleFilter("");
+    setAddMoreFoundNobody(false);
     peopleAfterCursors.current = [null];
     void loadPeople({ companyId: company.id, category: null, location: null, pageIndex: 0, after: null });
   }, [company, loadPeople]);
@@ -663,6 +673,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     setExpanding(true);
     setActionError(null);
     setActionNotice(null);
+    setAddMoreFoundNobody(false);
 
     const result = await prospectGraphql<{ addMoreDiscoverPeople: DiscoverSearchExpansion }>(
       ADD_MORE_DISCOVER_PEOPLE_MUTATION,
@@ -686,7 +697,14 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     if (expansion.exhausted) {
       setSessionExhaustedIds((current) => new Set(current).add(expansion.searchId));
     }
-    setActionNotice({ message: expansion.message ?? `${expansion.addedCount} new people were added.` });
+    // Nobody persisted (empty provider run, or every result a duplicate): the
+    // company is completely unchanged, so say so in the People section itself
+    // rather than as a transient banner that reads like something happened.
+    if (isEmptyAddMoreResult(expansion)) {
+      setAddMoreFoundNobody(true);
+    } else {
+      setActionNotice({ message: expansion.message ?? `${expansion.addedCount} new people were added.` });
+    }
 
     // Refresh counts + people in place (new people land on later pages).
     if (search.company) {
@@ -713,6 +731,13 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
   const handleCloseCompanySearch = useCallback(() => {
     setCompanySearchOpen(false);
     companySearchTriggerRef.current?.focus();
+  }, []);
+
+  // Opens (never toggles) the existing "Search this company" dialog — the
+  // no-more-people card hands the user straight to the one action that can
+  // find a different role or location.
+  const handleOpenCompanySearch = useCallback(() => {
+    setCompanySearchOpen(true);
   }, []);
 
   // "Search this company": run the SAME company again with a new role/location.
@@ -1511,6 +1536,24 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
                   </button>
                 )}
               </div>
+
+              {/* An "Add 10 more" that found nobody. Sits between the filters
+                  and the table because it describes THAT role/location, and it
+                  reports only — no row, count, or role group changed. */}
+              {addMoreFoundNobody && (
+                <EmptyState
+                  icon={<UserPlus aria-hidden="true" />}
+                  title={ADD_MORE_NO_RESULTS_TITLE}
+                  body={ADD_MORE_NO_RESULTS_BODY}
+                  compact
+                  action={
+                    <button type="button" className={styles.secondaryButton} onClick={handleOpenCompanySearch}>
+                      <Search aria-hidden="true" />
+                      <span>{COMPANY_SEARCH_BUTTON_LABEL}</span>
+                    </button>
+                  }
+                />
+              )}
 
               <div className={styles.noticeBanner} role="note" data-discover-tour="inferred-warning">
                 <AlertCircle aria-hidden="true" />
