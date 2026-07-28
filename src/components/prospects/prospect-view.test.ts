@@ -1088,6 +1088,57 @@ describe("Add more people dialog UI polish", () => {
   });
 });
 
+describe("No more people found dialog", () => {
+  const detailSource = readFileSync("src/components/prospects/prospect-detail-view.tsx", "utf8");
+  const css = readFileSync("src/components/prospects/prospects-dashboard.module.css", "utf8");
+  const dialogSource =
+    detailSource.match(/function NoMorePeopleDialog\([\s\S]*?\nfunction ProspectReviewDialog\(/)?.[0] ?? "";
+
+  it("composes as medallion + title row, then a full-width sentence, then the hint band", () => {
+    expect(dialogSource).toContain("styles.outcomeIcon");
+    expect(dialogSource).toContain("styles.outcomeTitle");
+    expect(dialogSource).toContain("styles.outcomeBody");
+    expect(dialogSource).toContain("styles.outcomeHint");
+    // The sentence is a sibling of the head, not a cell inside it — that is what
+    // keeps it off the narrow gutter left by the close button.
+    expect(dialogSource).toMatch(/<\/div>\s*\n\s*<p id="discover-no-more-people-body" className=\{styles\.outcomeBody\}>/);
+  });
+
+  it("offers the way forward as the primary action, not a lone OK", () => {
+    expect(dialogSource).toContain("{COMPANY_SEARCH_BUTTON_LABEL}");
+    expect(dialogSource).toContain("onClick={onSearchCompany}");
+    expect(dialogSource).toContain('className="button secondary"');
+    // The parent hands that action to the existing same-company search panel.
+    expect(detailSource).toMatch(/onSearchCompany=\{\(\) => \{[\s\S]*?setCompanySearchOpen\(true\);/);
+  });
+
+  it("behaves like the app's other dialogs: escape, backdrop, and focus on the way out", () => {
+    expect(dialogSource).toContain('event.key === "Escape"');
+    expect(dialogSource).toContain("event.target === event.currentTarget");
+    expect(dialogSource).toContain("primaryRef.current?.focus()");
+    expect(dialogSource).toContain('aria-describedby="discover-no-more-people-body"');
+  });
+
+  it("scopes every rule under .outcome* so the other dialogs keep their shape", () => {
+    expect(dialogSource).toContain("styles.outcomeCard");
+    const rules = css.match(/^\.outcome[^{]*\{/gm) ?? [];
+    expect(rules.length).toBeGreaterThanOrEqual(6);
+    // Compact type, same scale as the dialog it answers.
+    const blocks = css.match(/\.outcome[^{]*\{[^}]*\}/gs) ?? [];
+    for (const block of blocks) {
+      const size = block.match(/font-size:\s*([\d.]+)rem/);
+      if (size) {
+        expect(Number.parseFloat(size[1])).toBeLessThanOrEqual(1.1);
+      }
+    }
+  });
+
+  it("keeps the action row on one row until the card is genuinely too narrow", () => {
+    expect(css).toMatch(/\.outcomeCard \.modalActions\s*\{[^}]*flex-wrap: nowrap;[^}]*min-width: 0;/s);
+    expect(css).toMatch(/@media \(max-width: 24rem\)[\s\S]*\.outcomeCard \.modalActions\s*\{\s*display: grid;\s*grid-template-columns: 1fr;/s);
+  });
+});
+
 describe("Discover list/detail split contracts", () => {
   const listSource = readFileSync("src/components/prospects/prospects-list-view.tsx", "utf8");
   const detailSource = readFileSync("src/components/prospects/prospect-detail-view.tsx", "utf8");

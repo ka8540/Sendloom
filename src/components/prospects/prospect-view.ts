@@ -1198,8 +1198,12 @@ export const ADD_MORE_EXHAUSTED_MESSAGE = "No more unique people are available f
 // A finished expansion that added nobody. Answered in a centered dialog so the
 // People card is never rewritten — and so the button that opened it stays put.
 export const ADD_MORE_NO_RESULTS_TITLE = "No more people found";
+/** What happened, in one sentence. Never blames the user, never alarms. */
 export const ADD_MORE_NO_RESULTS_BODY =
-  "We couldn't find any new people for this search. Nobody was added — try another role or location for this company.";
+  "Everyone we can reach for this role and location is already on your list. Nobody new was added.";
+/** Why the dialog's primary action is worth taking. */
+export const ADD_MORE_NO_RESULTS_HINT =
+  "A different role or location usually surfaces new people at the same company.";
 export const ADD_MORE_NO_RESULTS_CLOSE_LABEL = "Close";
 
 /**

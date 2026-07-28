@@ -16,6 +16,7 @@ import {
   Building2,
   Check,
   ChevronDown,
+  Compass,
   ChevronLeft,
   ChevronRight,
   Copy,
@@ -28,6 +29,7 @@ import {
   Sparkles,
   Trash2,
   UserPlus,
+  UserRoundSearch,
   Users,
   X
 } from "lucide-react";
@@ -80,6 +82,7 @@ import {
   ADD_MORE_LOADING_LABEL,
   ADD_MORE_NO_RESULTS_BODY,
   ADD_MORE_NO_RESULTS_CLOSE_LABEL,
+  ADD_MORE_NO_RESULTS_HINT,
   ADD_MORE_NO_RESULTS_TITLE,
   ADD_MORE_PEOPLE_LABEL,
   ALL_LOCATIONS_LABEL,
@@ -1634,7 +1637,17 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
         onConfirm={handleAddMore}
         onClose={() => setShowAddMoreDialog(false)}
       />
-      <NoMorePeopleDialog open={noMorePeopleOpen} onClose={() => setNoMorePeopleOpen(false)} />
+      <NoMorePeopleDialog
+        open={noMorePeopleOpen}
+        onClose={() => setNoMorePeopleOpen(false)}
+        // The way out of an empty result: hand the user straight to the
+        // same-company search, pre-cleared, instead of a dead-end OK.
+        onSearchCompany={() => {
+          setNoMorePeopleOpen(false);
+          setCompanySearchNotice(null);
+          setCompanySearchOpen(true);
+        }}
+      />
       <AppConfirmDialog
         open={companyPendingDeletion !== null}
         title="Delete this company?"
@@ -2813,33 +2826,95 @@ function AddMorePeopleDialog({
 /**
  * The answer to an "Add 10 more" that added nobody: a centered dialog over the
  * page. Deliberately NOT an inline message in the People card and deliberately
- * not a reason to hide the button — the user can run it again (a dry search is a
- * free server no-op) or narrow to another role from "Search this company".
+ * not a reason to hide the button.
+ *
+ * Composed as a notice, not an alarm — medallion, one-measure sentence, then the
+ * route out. The empty result is almost always "this role and location are
+ * covered", so the primary action opens the same-company search rather than
+ * leaving the user at an OK button with nowhere to go.
  */
-function NoMorePeopleDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+function NoMorePeopleDialog({
+  open,
+  onClose,
+  onSearchCompany
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSearchCompany: () => void;
+}) {
+  const primaryRef = useRef<HTMLButtonElement>(null);
+
+  // Escape dismisses, like every other dialog on this page.
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  // Focus the way forward, not the dismissal: nothing here is destructive.
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => primaryRef.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, [open]);
+
   if (!open) {
     return null;
   }
+
   return (
-    <div className={styles.modalOverlay} role="presentation">
+    <div
+      className={styles.modalOverlay}
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
       <div
-        className={`card ${styles.modalCard} ${styles.addMoreCard}`}
+        className={`card ${styles.modalCard} ${styles.outcomeCard}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="discover-no-more-people-title"
+        aria-describedby="discover-no-more-people-body"
+        onMouseDown={(event) => event.stopPropagation()}
       >
-        <div className={styles.panelHeader}>
-          <div>
-            <h2 id="discover-no-more-people-title" className={styles.panelTitle}>
-              {ADD_MORE_NO_RESULTS_TITLE}
-            </h2>
-            <p className={styles.panelSubtitle}>{ADD_MORE_NO_RESULTS_BODY}</p>
-          </div>
+        <div className={styles.outcomeHead}>
+          <span className={styles.outcomeIcon} aria-hidden="true">
+            <UserRoundSearch />
+          </span>
+          <h2 id="discover-no-more-people-title" className={styles.outcomeTitle}>
+            {ADD_MORE_NO_RESULTS_TITLE}
+          </h2>
           <CircularCloseButton compact label="Close" onClick={onClose} />
         </div>
+
+        <p id="discover-no-more-people-body" className={styles.outcomeBody}>
+          {ADD_MORE_NO_RESULTS_BODY}
+        </p>
+
+        <p className={styles.outcomeHint}>
+          <Compass aria-hidden="true" />
+          <span>{ADD_MORE_NO_RESULTS_HINT}</span>
+        </p>
+
         <div className={styles.modalActions}>
-          <button type="button" className="button" onClick={onClose}>
+          <button type="button" className="button secondary" onClick={onClose}>
             {ADD_MORE_NO_RESULTS_CLOSE_LABEL}
+          </button>
+          <button type="button" className="button" ref={primaryRef} onClick={onSearchCompany}>
+            <Search aria-hidden="true" />
+            <span>{COMPANY_SEARCH_BUTTON_LABEL}</span>
           </button>
         </div>
       </div>
