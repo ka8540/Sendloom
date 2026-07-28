@@ -598,17 +598,6 @@ export class DiscoverExpansionService {
       where: { userId, sourceProfileId: { in: people.map((person) => person.sourceProfileId) } }
     });
     const existingByProfileId = new Map(existingPeople.map((person) => [person.sourceProfileId, person]));
-    const suppressions = await this.prisma.suppression.findMany({
-      where: {
-        userId,
-        email: {
-          in: existingPeople
-            .map((person) => person.inferredEmail?.trim().toLowerCase())
-            .filter((email): email is string => Boolean(email))
-        }
-      }
-    });
-    const suppressedEmails = new Set(suppressions.map((row) => row.email.trim().toLowerCase()));
 
     let added = 0;
     for (const [index, person] of people.entries()) {
@@ -618,14 +607,13 @@ export class DiscoverExpansionService {
         continue;
       }
       // New/eligible people use the canonical company format. Existing
-      // verified, trusted, invalid, or suppressed addresses are preserved.
+      // verified/trusted addresses are preserved; a generated address that has
+      // since failed is not — the failure stays on that address in the
+      // suppression list and is overlaid at read time.
       const existingPerson = existingByProfileId.get(person.sourceProfileId);
       const emailFields = resolveProspectPersonEmail(existingPerson ?? person, company, {
         allowLowConfidence,
-        regenerateExistingInferred: true,
-        suppressed: Boolean(
-          existingPerson?.inferredEmail && suppressedEmails.has(existingPerson.inferredEmail.trim().toLowerCase())
-        )
+        regenerateExistingInferred: true
       });
       const fields = {
         companyId: company.id,
