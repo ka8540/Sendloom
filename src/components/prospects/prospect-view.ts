@@ -68,6 +68,31 @@ export function resolvePageCount(totalCount: number, pageSize: number): number {
   return Math.max(1, Math.ceil(totalCount / pageSize));
 }
 
+/**
+ * Keep a stored page index inside the pages that actually exist. A shrinking
+ * result set (a new search query, a deleted row) must never leave the user on a
+ * page past the end.
+ */
+export function clampPageIndex(pageIndex: number, pageCount: number): number {
+  if (!Number.isFinite(pageIndex) || pageIndex <= 0) {
+    return 0;
+  }
+  return Math.min(Math.floor(pageIndex), Math.max(0, pageCount - 1));
+}
+
+/**
+ * Slice one page out of an ALREADY-FILTERED list. Filtering always happens over
+ * the full dataset first; this is the last step, so a match anywhere in the
+ * history can surface on page 1 of the filtered result.
+ */
+export function paginateHistoryGroups<T>(rows: T[], pageIndex: number, pageSize: number): T[] {
+  if (pageSize <= 0) {
+    return rows;
+  }
+  const start = clampPageIndex(pageIndex, resolvePageCount(rows.length, pageSize)) * pageSize;
+  return rows.slice(start, start + pageSize);
+}
+
 // Compact pager label, e.g. "Page 1 of 3". Never the words "Previous"/"Next" —
 // the controls themselves are chevron icon buttons.
 export function formatPageLabel(input: { pageIndex: number; pageCount: number }): string {
@@ -599,11 +624,14 @@ export function formatGroupCountLabel(totalCount: number): string {
 }
 
 /**
- * Local, case-insensitive text filter over the already-loaded page of Search
- * History company groups. Matches what the row displays: company name, domain,
- * requested role labels, locations (or the "Any location" fallback), the
- * derived status label, and the formatted updated date. Never calls the
- * backend — an empty or whitespace-only query returns the page untouched.
+ * Local, case-insensitive text filter over the WHOLE Search History dataset —
+ * every company group the user has, not just the rows on the visible page (the
+ * list page loads all groups up front and paginates them locally, so a match on
+ * "page 7" is found while the user sits on page 1). Matches what the row
+ * displays: company name, domain, requested role labels, locations (or the
+ * "Any location" fallback), the derived status label, and the formatted updated
+ * date. Never calls the backend — an empty or whitespace-only query returns the
+ * groups untouched.
  */
 export function filterHistoryGroups(
   groups: DiscoverCompanyGroupNode[],
@@ -633,7 +661,7 @@ export function filterHistoryGroups(
 /**
  * Subtitle under the Search History title. Unfiltered it stays the plain
  * "30 companies"; while the user is filtering it becomes "6 of 30 companies"
- * (matches on the loaded page against the untouched backend total).
+ * (matches across the whole history against the untouched backend total).
  */
 export function formatFilteredGroupCountLabel(input: {
   filteredCount: number;
@@ -647,14 +675,23 @@ export function formatFilteredGroupCountLabel(input: {
 }
 
 /**
- * Replaces the "Showing X–Y of Z" pager label while a history filter is active,
- * since the unfiltered range would misdescribe what is visible.
+ * Pager label for Search History. Because the search filters the ENTIRE history
+ * before it is paginated, both the range and the total describe the matched set
+ * — never just the rows that happen to be on the current page.
  */
-export function formatHistoryMatchesLabel(matchCount: number): string {
-  if (matchCount <= 0) {
-    return "No matches on this page";
+export function formatHistoryShowingLabel(input: {
+  offset: number;
+  rowCount: number;
+  matchCount: number;
+  hasQuery: boolean;
+}): string {
+  if (input.matchCount <= 0 || input.rowCount <= 0) {
+    return input.hasQuery ? "No matching companies" : "No companies to show";
   }
-  return `${matchCount} ${matchCount === 1 ? "match" : "matches"} on this page`;
+  const start = input.offset + 1;
+  const end = input.offset + input.rowCount;
+  const noun = input.hasQuery ? (input.matchCount === 1 ? "match" : "matches") : "companies";
+  return `Showing ${start}–${end} of ${input.matchCount} ${noun}`;
 }
 
 /**

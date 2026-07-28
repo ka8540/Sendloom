@@ -39,23 +39,25 @@ import {
   prospectGraphql,
   type Connection,
   type DiscoverCompanyGroupNode,
+  type GraphQLResult,
   type DiscoverQuota,
   type DiscoverSuggestion
 } from "@/components/prospects/prospect-graphql";
 import {
   PROSPECT_FINDER_SUBTITLE,
   PROSPECT_FINDER_TITLE,
+  clampPageIndex,
   discoverPerSearchSentence,
   filterHistoryGroups,
   effectiveSearchStatus,
   formatDateTime,
   formatFilteredGroupCountLabel,
-  formatHistoryMatchesLabel,
+  formatHistoryShowingLabel,
   formatPageLabel,
   formatQuotaRemaining,
   formatQuotaReset,
-  formatShowingLabel,
   groupStatusBadge,
+  paginateHistoryGroups,
   resolveGroupOpenTarget,
   resolveHistoryPageAfterDelete,
   resolvePageCount,
@@ -80,19 +82,30 @@ function isLikelyDomain(value: string): boolean {
   return /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(value.trim());
 }
 
+// Search History is fetched in full (all company groups) and then filtered +
+// paginated locally, so the header search covers EVERY row — not just the page
+// on screen. The rows are small (one entry per company) and only SEARCHES_PAGE_SIZE
+// of them are ever rendered, so this keeps the DOM identical to before.
+// The connection caps `first` at 100, hence the cursor walk.
+const HISTORY_FETCH_SIZE = 100;
+// Hard stop so a broken cursor can never spin forever (100 x 50 = 5,000 companies).
+const HISTORY_MAX_FETCH_PAGES = 50;
+
 export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean }) {
   const router = useRouter();
   const [disabled, setDisabled] = useState(!featureEnabled);
 
-  // One row per company: the grouped Search History read model.
+  // One row per company: the grouped Search History read model. This holds the
+  // user's COMPLETE history (every page), so searching and paging are both
+  // derived from it below.
   const [searches, setSearches] = useState<DiscoverCompanyGroupNode[]>([]);
   const [searchesLoading, setSearchesLoading] = useState(true);
   const [searchesError, setSearchesError] = useState<string | null>(null);
-  const [searchesHasNext, setSearchesHasNext] = useState(false);
-  const [searchesEndCursor, setSearchesEndCursor] = useState<string | null>(null);
   const [searchesTotal, setSearchesTotal] = useState(0);
   const [historyPageIndex, setHistoryPageIndex] = useState(0);
-  const historyAfterCursors = useRef<(string | null)[]>([null]);
+  // The Search History header search. Lives here (not in the table) because it
+  // filters the full dataset BEFORE pagination slices a page out of it.
+  const [historyQuery, setHistoryQuery] = useState("");
   const searchesReq = useRef(0);
 
   const [quota, setQuota] = useState<DiscoverQuota | null>(null);
@@ -130,62 +143,83 @@ export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean 
     }
   }, []);
 
-  const loadSearches = useCallback(async (options: { pageIndex?: number; after?: string | null } = {}) => {
-    const pageIndex = options.pageIndex ?? 0;
-    const after = options.after ?? null;
+  // Walks the connection to the end so `searches` always holds the user's whole
+  // history. Uses the existing query/cursor contract — no new backend surface.
+  const loadSearches = useCallback(async () => {
     const req = ++searchesReq.current;
     setSearchesLoading(true);
     setSearchesError(null);
-    const result = await prospectGraphql<{ discoverCompanyGroups: Connection<DiscoverCompanyGroupNode> }>(
-      DISCOVER_COMPANY_GROUPS_QUERY,
-      buildSearchesVariables({ after })
-    );
-    if (req !== searchesReq.current) {
-      return;
+    const collected: DiscoverCompanyGroupNode[] = [];
+    let after: string | null = null;
+    let totalCount = 0;
+    for (let fetched = 0; fetched < HISTORY_MAX_FETCH_PAGES; fetched += 1) {
+      // Annotated because the cursor feeds the next request: without it the
+      // compiler chases `after` back into this call's own result type.
+      const result: GraphQLResult<{ discoverCompanyGroups: Connection<DiscoverCompanyGroupNode> }> =
+        await prospectGraphql(
+          DISCOVER_COMPANY_GROUPS_QUERY,
+          buildSearchesVariables({ first: HISTORY_FETCH_SIZE, after })
+        );
+      // A newer load (or a refresh) started while this one was in flight.
+      if (req !== searchesReq.current) {
+        return;
+      }
+      if (result.disabled) {
+        setDisabled(true);
+        setSearchesLoading(false);
+        return;
+      }
+      setDisabled(false);
+      if (result.error || !result.data) {
+        setSearchesError(result.error ?? "Could not load searches.");
+        setSearchesLoading(false);
+        return;
+      }
+      const connection = result.data.discoverCompanyGroups;
+      collected.push(...connection.edges.map((edge) => edge.node));
+      totalCount = connection.totalCount;
+      if (!connection.pageInfo.hasNextPage || !connection.pageInfo.endCursor) {
+        break;
+      }
+      after = connection.pageInfo.endCursor;
     }
-    if (result.disabled) {
-      setDisabled(true);
-      setSearchesLoading(false);
-      return;
-    }
-    setDisabled(false);
-    if (result.error || !result.data) {
-      setSearchesError(result.error ?? "Could not load searches.");
-      setSearchesLoading(false);
-      return;
-    }
-    const connection = result.data.discoverCompanyGroups;
-    setSearches(connection.edges.map((edge) => edge.node));
-    setSearchesHasNext(connection.pageInfo.hasNextPage);
-    setSearchesEndCursor(connection.pageInfo.endCursor);
-    setSearchesTotal(connection.totalCount);
-    setHistoryPageIndex(pageIndex);
+    setSearches(collected);
+    setSearchesTotal(totalCount);
     setSearchesLoading(false);
   }, []);
 
+  // Search first (over EVERY loaded row), then paginate the matches — never the
+  // other way round, which is what limited the old filter to the visible page.
+  const matchedSearches = useMemo(() => filterHistoryGroups(searches, historyQuery), [searches, historyQuery]);
+  const historyPageCount = resolvePageCount(matchedSearches.length, SEARCHES_PAGE_SIZE);
+  const historyPageIndexSafe = clampPageIndex(historyPageIndex, historyPageCount);
+  const historyOffset = historyPageIndexSafe * SEARCHES_PAGE_SIZE;
+  const visibleSearches = useMemo(
+    () => paginateHistoryGroups(matchedSearches, historyPageIndexSafe, SEARCHES_PAGE_SIZE),
+    [matchedSearches, historyPageIndexSafe]
+  );
+  const hasHistoryQuery = historyQuery.trim().length > 0;
+
+  // A changed query always restarts at page 1 so the first matches are visible.
+  const handleHistoryQueryChange = useCallback((value: string) => {
+    setHistoryQuery(value);
+    setHistoryPageIndex(0);
+  }, []);
+
   const handleHistoryNext = useCallback(() => {
-    if (!searchesHasNext || searchesLoading) {
-      return;
-    }
-    const after = searchesEndCursor;
-    historyAfterCursors.current[historyPageIndex + 1] = after;
-    void loadSearches({ pageIndex: historyPageIndex + 1, after });
-  }, [historyPageIndex, loadSearches, searchesEndCursor, searchesHasNext, searchesLoading]);
+    setHistoryPageIndex(Math.min(historyPageCount - 1, historyPageIndexSafe + 1));
+  }, [historyPageCount, historyPageIndexSafe]);
 
   const handleHistoryPrev = useCallback(() => {
-    if (historyPageIndex === 0 || searchesLoading) {
-      return;
-    }
-    const after = historyAfterCursors.current[historyPageIndex - 1] ?? null;
-    void loadSearches({ pageIndex: historyPageIndex - 1, after });
-  }, [historyPageIndex, loadSearches, searchesLoading]);
+    setHistoryPageIndex(Math.max(0, historyPageIndexSafe - 1));
+  }, [historyPageIndexSafe]);
 
   const refreshAll = useCallback(() => {
     setActionError(null);
     setActionNotice(null);
-    void loadSearches({ pageIndex: historyPageIndex, after: historyAfterCursors.current[historyPageIndex] ?? null });
+    void loadSearches();
     void loadQuota();
-  }, [historyPageIndex, loadQuota, loadSearches]);
+  }, [loadQuota, loadSearches]);
 
   // Open the in-app delete confirmation for a row. Never deletes here and never
   // navigates to the detail page; it just records which company group is pending
@@ -250,15 +284,19 @@ export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean 
     setSearchPendingDeletion(null);
     setActionError(null);
     setActionNotice({ message: `${group.company?.name ?? group.displayName} was removed from Discover.` });
-    // Pagination edge: if that emptied a page beyond the first, step back.
-    const next = resolveHistoryPageAfterDelete({ remainingOnPage: remaining.length, pageIndex: historyPageIndex });
+    // Pagination edge: if that emptied a page beyond the first, step back. The
+    // remaining rows are measured against the ACTIVE search, since that is what
+    // the pager is walking.
+    const remainingOnPage = paginateHistoryGroups(
+      filterHistoryGroups(remaining, historyQuery),
+      historyPageIndexSafe,
+      SEARCHES_PAGE_SIZE
+    ).length;
+    const next = resolveHistoryPageAfterDelete({ remainingOnPage, pageIndex: historyPageIndexSafe });
     if (next.goToPreviousPage) {
-      void loadSearches({
-        pageIndex: next.pageIndex,
-        after: historyAfterCursors.current[next.pageIndex] ?? null
-      });
+      setHistoryPageIndex(next.pageIndex);
     }
-  }, [deleting, historyPageIndex, loadSearches, searches, searchPendingDeletion]);
+  }, [deleting, historyPageIndexSafe, historyQuery, searches, searchPendingDeletion]);
 
   const handleCreate = useCallback(
     async (event: FormEvent) => {
@@ -331,9 +369,6 @@ export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean 
     openManualStage(stage);
   }, [discoverManual, manualOpen, showNewSearch, pageState, openManualStage, isStageComplete]);
 
-  const historyPageCount = resolvePageCount(searchesTotal, SEARCHES_PAGE_SIZE);
-  const historyOffset = historyPageIndex * SEARCHES_PAGE_SIZE;
-
   return (
     <div className={styles.page}>
       <WorkspacePageHeader
@@ -405,14 +440,19 @@ export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean 
 
       {(pageState === "ready" || pageState === "loading") && (
         <SearchHistoryTable
-          searches={searches}
+          visibleSearches={visibleSearches}
+          historyCount={searches.length}
+          matchCount={matchedSearches.length}
           total={searchesTotal}
+          query={historyQuery}
+          hasQuery={hasHistoryQuery}
+          onQueryChange={handleHistoryQueryChange}
           loading={searchesLoading}
           error={searchesError}
-          pageIndex={historyPageIndex}
+          pageIndex={historyPageIndexSafe}
           pageCount={historyPageCount}
           offset={historyOffset}
-          hasNext={searchesHasNext}
+          hasNext={historyPageIndexSafe + 1 < historyPageCount}
           onRequestDelete={handleRequestDelete}
           onPrev={handleHistoryPrev}
           onNext={handleHistoryNext}
@@ -460,8 +500,13 @@ export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean 
 // ---------------------------------------------------------------------------
 
 function SearchHistoryTable({
-  searches,
+  visibleSearches,
+  historyCount,
+  matchCount,
   total,
+  query,
+  hasQuery,
+  onQueryChange,
   loading,
   error,
   pageIndex,
@@ -472,8 +517,16 @@ function SearchHistoryTable({
   onPrev,
   onNext
 }: {
-  searches: DiscoverCompanyGroupNode[];
+  /** The current page of the MATCHED rows (already filtered + sliced upstream). */
+  visibleSearches: DiscoverCompanyGroupNode[];
+  /** Company groups loaded in total, before any search. */
+  historyCount: number;
+  /** Matches across the whole history, not just this page. */
+  matchCount: number;
   total: number;
+  query: string;
+  hasQuery: boolean;
+  onQueryChange: (value: string) => void;
   loading: boolean;
   error: string | null;
   pageIndex: number;
@@ -484,18 +537,15 @@ function SearchHistoryTable({
   onPrev: () => void;
   onNext: () => void;
 }) {
-  // Client-side filter over the rows already loaded for this page. Typing never
-  // calls the backend; it only narrows what is visible, and the pager still
-  // moves between server pages with the filter kept applied.
-  const [filterQuery, setFilterQuery] = useState("");
+  // The input only drives local query state — the parent runs it against every
+  // loaded row and re-paginates, so typing never calls the backend and never
+  // stops at the page boundary.
   const filterInputRef = useRef<HTMLInputElement | null>(null);
-  const hasFilterQuery = filterQuery.trim().length > 0;
-  const visibleSearches = useMemo(() => filterHistoryGroups(searches, filterQuery), [searches, filterQuery]);
 
   const clearFilter = useCallback(() => {
-    setFilterQuery("");
+    onQueryChange("");
     filterInputRef.current?.focus();
-  }, []);
+  }, [onQueryChange]);
 
   return (
     <section className={`card ${styles.historyPanel}`} aria-label="Search history" data-discover-tour="search-history">
@@ -504,9 +554,9 @@ function SearchHistoryTable({
           <h2 className={styles.panelTitle}>Search history</h2>
           <p className={styles.panelSubtitle} aria-live="polite">
             {formatFilteredGroupCountLabel({
-              filteredCount: visibleSearches.length,
+              filteredCount: matchCount,
               totalCount: total,
-              hasQuery: hasFilterQuery
+              hasQuery
             })}
           </p>
         </div>
@@ -516,14 +566,14 @@ function SearchHistoryTable({
             ref={filterInputRef}
             type="text"
             className={styles.historySearchInput}
-            value={filterQuery}
-            onChange={(event) => setFilterQuery(event.target.value)}
+            value={query}
+            onChange={(event) => onQueryChange(event.target.value)}
             onKeyDown={(event) => {
               // Escape clears the filter (only intercepted while there is one).
-              if (event.key === "Escape" && filterQuery) {
+              if (event.key === "Escape" && query) {
                 event.preventDefault();
                 event.stopPropagation();
-                setFilterQuery("");
+                onQueryChange("");
               }
             }}
             placeholder="Search company, role, domain, or location"
@@ -531,7 +581,7 @@ function SearchHistoryTable({
             autoComplete="off"
             spellCheck={false}
           />
-          {filterQuery && (
+          {query && (
             <button
               type="button"
               className={styles.historySearchClear}
@@ -552,16 +602,16 @@ function SearchHistoryTable({
               <div key={index} className={styles.skeletonRow} />
             ))}
           </div>
-        ) : searches.length === 0 ? (
+        ) : historyCount === 0 ? (
           <EmptyState
             icon={<Inbox aria-hidden="true" />}
             title="No prospect searches yet"
             body="Create a search to start discovering relevant people."
             compact
           />
-        ) : visibleSearches.length === 0 ? (
-          // History exists but the current filter has no matches — distinct
-          // from the no-history-at-all state above.
+        ) : matchCount === 0 ? (
+          // History exists but the search matched nothing ANYWHERE in it —
+          // distinct from the no-history-at-all state above.
           <EmptyState
             icon={<SearchX aria-hidden="true" />}
             title="No matching searches"
@@ -667,9 +717,12 @@ function SearchHistoryTable({
       </div>
       <div className={styles.paginationRow} data-discover-tour={pageCount > 1 ? "history-pagination" : undefined}>
         <span className={styles.peopleShowing}>
-          {hasFilterQuery
-            ? formatHistoryMatchesLabel(visibleSearches.length)
-            : formatShowingLabel({ offset, pageCount: searches.length, totalCount: total })}
+          {formatHistoryShowingLabel({
+            offset,
+            rowCount: visibleSearches.length,
+            matchCount,
+            hasQuery
+          })}
         </span>
         <div className={styles.pager}>
           <button

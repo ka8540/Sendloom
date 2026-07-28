@@ -49,12 +49,14 @@ import {
   discoverPerSearchSentence,
   emailFormatEvidenceSummary,
   emailStatusBadge,
+  clampPageIndex,
   filterHistoryGroups,
   filterPeopleByText,
   formatDateTime,
   formatFilteredGroupCountLabel,
-  formatHistoryMatchesLabel,
+  formatHistoryShowingLabel,
   formatPageLabel,
+  paginateHistoryGroups,
   formatQuotaRemaining,
   formatQuotaReset,
   formatSearchError,
@@ -1358,6 +1360,53 @@ describe("filterHistoryGroups", () => {
   });
 });
 
+describe("Search History searches the whole history, then paginates", () => {
+  const PAGE_SIZE = 10;
+  // 25 companies = 3 pages of 10. The needle sits on what would be page 3.
+  const history = Array.from({ length: 25 }, (_, index) =>
+    historyGroup({
+      id: `group-${index}`,
+      displayName: index === 22 ? "NVIDIA" : `Company ${index}`,
+      company: null
+    })
+  );
+
+  it("finds a company that lives past the first page while the user is on page 1", () => {
+    expect(paginateHistoryGroups(history, 0, PAGE_SIZE).some((group) => group.displayName === "NVIDIA")).toBe(false);
+    // Filter over the FULL dataset first, then slice the page the user is on.
+    const matches = filterHistoryGroups(history, "nvidia");
+    expect(matches).toHaveLength(1);
+    expect(paginateHistoryGroups(matches, 0, PAGE_SIZE)).toEqual([history[22]]);
+  });
+
+  it("would miss it if the visible page were filtered instead (the bug this replaces)", () => {
+    expect(filterHistoryGroups(paginateHistoryGroups(history, 0, PAGE_SIZE), "nvidia")).toEqual([]);
+  });
+
+  it("paginates the matches, not the raw history", () => {
+    const matches = filterHistoryGroups(history, "company 1"); // Company 1 + 10–19
+    expect(matches).toHaveLength(11);
+    expect(resolvePageCount(matches.length, PAGE_SIZE)).toBe(2);
+    expect(paginateHistoryGroups(matches, 0, PAGE_SIZE)).toHaveLength(10);
+    expect(paginateHistoryGroups(matches, 1, PAGE_SIZE)).toHaveLength(1);
+  });
+
+  it("clearing the query restores the full paginated list", () => {
+    expect(filterHistoryGroups(history, "")).toHaveLength(25);
+    expect(resolvePageCount(history.length, PAGE_SIZE)).toBe(3);
+    expect(paginateHistoryGroups(history, 2, PAGE_SIZE)).toHaveLength(5);
+  });
+
+  it("never strands the user past the last page of a shrunken result set", () => {
+    const matches = filterHistoryGroups(history, "nvidia");
+    // Was on page 3 when the query narrowed the set to a single page.
+    expect(clampPageIndex(2, resolvePageCount(matches.length, PAGE_SIZE))).toBe(0);
+    expect(paginateHistoryGroups(matches, 2, PAGE_SIZE)).toEqual([history[22]]);
+    expect(clampPageIndex(-1, 3)).toBe(0);
+    expect(clampPageIndex(1, 3)).toBe(1);
+  });
+});
+
 describe("Search History filtered count labels", () => {
   it("keeps the plain count when no filter is active", () => {
     expect(formatFilteredGroupCountLabel({ filteredCount: 30, totalCount: 30, hasQuery: false })).toBe("30 companies");
@@ -1369,10 +1418,29 @@ describe("Search History filtered count labels", () => {
     expect(formatFilteredGroupCountLabel({ filteredCount: 0, totalCount: 1, hasQuery: true })).toBe("0 of 1 company");
   });
 
-  it("describes per-page matches for the pager label", () => {
-    expect(formatHistoryMatchesLabel(0)).toBe("No matches on this page");
-    expect(formatHistoryMatchesLabel(1)).toBe("1 match on this page");
-    expect(formatHistoryMatchesLabel(6)).toBe("6 matches on this page");
+  it("describes the pager range against the whole matched set, not the page", () => {
+    expect(formatHistoryShowingLabel({ offset: 0, rowCount: 10, matchCount: 72, hasQuery: false })).toBe(
+      "Showing 1–10 of 72 companies"
+    );
+    expect(formatHistoryShowingLabel({ offset: 10, rowCount: 10, matchCount: 72, hasQuery: false })).toBe(
+      "Showing 11–20 of 72 companies"
+    );
+    // While searching, the total is the match count across every page.
+    expect(formatHistoryShowingLabel({ offset: 0, rowCount: 10, matchCount: 23, hasQuery: true })).toBe(
+      "Showing 1–10 of 23 matches"
+    );
+    expect(formatHistoryShowingLabel({ offset: 0, rowCount: 1, matchCount: 1, hasQuery: true })).toBe(
+      "Showing 1–1 of 1 match"
+    );
+  });
+
+  it("falls back to an empty-range label", () => {
+    expect(formatHistoryShowingLabel({ offset: 0, rowCount: 0, matchCount: 0, hasQuery: true })).toBe(
+      "No matching companies"
+    );
+    expect(formatHistoryShowingLabel({ offset: 0, rowCount: 0, matchCount: 0, hasQuery: false })).toBe(
+      "No companies to show"
+    );
   });
 });
 
@@ -1396,13 +1464,32 @@ describe("Discover Search History filter UI", () => {
   });
 
   it("filters client-side only — the input drives local state, never a backend call", () => {
-    expect(listSource).toContain("filterHistoryGroups(searches, filterQuery)");
-    expect(listSource).toContain("setFilterQuery(event.target.value)");
+    expect(listSource).toContain("filterHistoryGroups(searches, historyQuery)");
+    expect(listSource).toContain("onQueryChange(event.target.value)");
+  });
+
+  it("searches the whole history and paginates the matches, never the visible page", () => {
+    // `searches` holds every loaded group: the loader walks the connection to the end.
+    expect(listSource).toContain("connection.pageInfo.hasNextPage");
+    expect(listSource).toContain("after = connection.pageInfo.endCursor");
+    // Filter first over everything, then slice the current page out of the matches.
+    expect(listSource).toContain(
+      "const matchedSearches = useMemo(() => filterHistoryGroups(searches, historyQuery), [searches, historyQuery])"
+    );
+    expect(listSource).toContain("paginateHistoryGroups(matchedSearches, historyPageIndexSafe, SEARCHES_PAGE_SIZE)");
+    expect(listSource).toContain("resolvePageCount(matchedSearches.length, SEARCHES_PAGE_SIZE)");
+    // The rendered rows are never re-filtered.
+    expect(listSource).not.toContain("filterHistoryGroups(visibleSearches");
+  });
+
+  it("resets to page 1 whenever the query changes", () => {
+    expect(listSource).toContain("const handleHistoryQueryChange = useCallback((value: string) => {");
+    expect(listSource).toMatch(/setHistoryQuery\(value\);\s*setHistoryPageIndex\(0\);/);
   });
 
   it("clear button and Escape both reset the filter", () => {
     expect(listSource).toContain("const clearFilter = useCallback");
-    expect(listSource).toContain('event.key === "Escape" && filterQuery');
+    expect(listSource).toContain('event.key === "Escape" && query');
   });
 
   it("shows the filtered empty state with a clear action, separate from the no-history state", () => {
@@ -1412,9 +1499,10 @@ describe("Discover Search History filter UI", () => {
     expect(listSource).toContain('title="No prospect searches yet"');
   });
 
-  it("shows the filtered count in the subtitle", () => {
+  it("shows the filtered count in the subtitle and the pager", () => {
     expect(listSource).toContain("formatFilteredGroupCountLabel");
-    expect(listSource).toContain("formatHistoryMatchesLabel");
+    expect(listSource).toContain("filteredCount: matchCount");
+    expect(listSource).toContain("formatHistoryShowingLabel");
   });
 
   it("keeps row open and delete wiring on the filtered rows", () => {
