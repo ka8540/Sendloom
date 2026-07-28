@@ -15,6 +15,13 @@ export type AppConfirmDialogProps = {
   /** Label shown on the confirm button while the action runs. */
   loadingLabel?: string;
   destructive?: boolean;
+  /**
+   * Acknowledge-only: the dialog reports something rather than asking, so it
+   * drops Cancel and shows its single action alone (focused on open, since
+   * there is no safer control to land on). Escape and the backdrop still
+   * dismiss it, both routed through onCancel like every other dialog.
+   */
+  acknowledge?: boolean;
   loading?: boolean;
   /** A safe, user-facing error shown inside the dialog (never raw backend detail). */
   error?: string | null;
@@ -40,6 +47,7 @@ export function AppConfirmDialog({
   cancelLabel = "Cancel",
   loadingLabel,
   destructive = false,
+  acknowledge = false,
   loading = false,
   error = null,
   confirmIcon,
@@ -50,6 +58,7 @@ export function AppConfirmDialog({
   const titleId = useId();
   const descId = useId();
   const cancelRef = useRef<HTMLButtonElement>(null);
+  const confirmRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -75,7 +84,14 @@ export function AppConfirmDialog({
     if (!open) {
       return;
     }
-    const frame = window.requestAnimationFrame(() => cancelRef.current?.focus());
+    const frame = window.requestAnimationFrame(() => {
+      // An acknowledge-only dialog has no Cancel to land on — focus its one action.
+      if (!cancelRef.current) {
+        confirmRef.current?.focus();
+        return;
+      }
+      cancelRef.current?.focus();
+    });
     return () => window.cancelAnimationFrame(frame);
   }, [open]);
 
@@ -125,16 +141,19 @@ export function AppConfirmDialog({
         ) : null}
 
         <div className={styles.actions}>
+          {acknowledge ? null : (
+            <button
+              ref={cancelRef}
+              type="button"
+              className={`button secondary ${styles.button}`}
+              onClick={onCancel}
+              disabled={loading}
+            >
+              {cancelLabel}
+            </button>
+          )}
           <button
-            ref={cancelRef}
-            type="button"
-            className={`button secondary ${styles.button}`}
-            onClick={onCancel}
-            disabled={loading}
-          >
-            {cancelLabel}
-          </button>
-          <button
+            ref={confirmRef}
             type="button"
             className={`${styles.button} ${styles.confirm}${destructive ? ` ${styles.confirmDestructive}` : ""}`}
             onClick={() => void onConfirm()}

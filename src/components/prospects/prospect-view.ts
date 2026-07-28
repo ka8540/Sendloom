@@ -1202,18 +1202,19 @@ export const ADD_MORE_LOADING_LABEL = "Adding new people…";
 export const ADD_MORE_EXHAUSTED_MESSAGE = "No more unique people are available for this search.";
 
 /**
- * Shown in the People section after an "Add 10 more" that persisted nobody —
+ * Copy for the dialog raised after an "Add 10 more" that persisted nobody —
  * whether the provider returned nothing at all or everything it returned was a
  * duplicate/unusable. Nothing about the company changes in that case (no rows,
- * no counts, no role groups), so the run needs to say so plainly instead of
- * looking like a no-op.
+ * no counts, no role groups), so the run reports through the app's shared
+ * confirm dialog instead of quietly looking like a no-op.
  *
- * The body points back at the controls already on the page rather than
- * carrying its own action — the card reports, it does not duplicate a button
- * the user can reach a few rows above it.
+ * Acknowledge-only: it points back at the controls already on the page rather
+ * than carrying an action of its own.
  */
 export const ADD_MORE_NO_RESULTS_TITLE = "No more people found";
-export const ADD_MORE_NO_RESULTS_BODY = "Try another role or location from the search controls above.";
+export const ADD_MORE_NO_RESULTS_BODY =
+  "We couldn’t find any new unique people for this role and location. Try another role or location from the search controls above.";
+export const ADD_MORE_NO_RESULTS_ACK_LABEL = "Got it";
 
 /**
  * Whether an expansion added nobody. `addedCount` is the number of people the

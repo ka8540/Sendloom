@@ -36,6 +36,7 @@ import {
 const DETAIL_SOURCE = readFileSync("src/components/prospects/prospect-detail-view.tsx", "utf8");
 const CSS = readFileSync("src/components/prospects/prospects-dashboard.module.css", "utf8");
 const SCHEMA = readFileSync("src/graphql/schema.ts", "utf8");
+const CONFIRM_DIALOG_SOURCE = readFileSync("src/components/app-confirm-dialog.tsx", "utf8");
 
 describe("Search this company section (detail page) (#16-#18)", () => {
   it("renders the compact same-company search card with both fields and the submit", () => {
@@ -212,52 +213,40 @@ describe("Scalable People filter controls (#21-#27)", () => {
     expect(DETAIL_SOURCE).not.toMatch(/shouldShowAddMore\(\{[\s\S]*exhausted/);
   });
 
-  it("reports an add-more that found nobody inside the People section", () => {
-    expect(DETAIL_SOURCE).toContain("ADD_MORE_NO_RESULTS_TITLE");
-    expect(DETAIL_SOURCE).toContain("ADD_MORE_NO_RESULTS_BODY");
+  it("reports an add-more that found nobody through the shared confirm dialog", () => {
     expect(DETAIL_SOURCE).toContain("isEmptyAddMoreResult(expansion)");
-    // Sits between the filters and the table, inside the People card.
-    expect(DETAIL_SOURCE).toMatch(/peopleFilterBar[\s\S]*addMoreFoundNobody[\s\S]*peopleTableShell/);
+    // Same modal system as "Delete this company?" — acknowledge-only and NOT
+    // destructive, since nothing was destroyed (or created).
+    expect(DETAIL_SOURCE).toMatch(
+      /<AppConfirmDialog\s+open=\{addMoreFoundNobody\}[\s\S]{0,400}acknowledge/
+    );
+    expect(DETAIL_SOURCE).toMatch(/open=\{addMoreFoundNobody\}[\s\S]{0,400}confirmLabel=\{ADD_MORE_NO_RESULTS_ACK_LABEL\}/);
+    expect(DETAIL_SOURCE).not.toMatch(/open=\{addMoreFoundNobody\}[\s\S]{0,400}destructive/);
+    // Both dismissal paths just close it; neither runs an action.
+    expect(DETAIL_SOURCE).toMatch(/onConfirm=\{\(\) => setAddMoreFoundNobody\(false\)\}/);
+    expect(DETAIL_SOURCE).toMatch(/onCancel=\{\(\) => setAddMoreFoundNobody\(false\)\}/);
     // Reported once: an empty run does not also raise the generic notice.
     expect(DETAIL_SOURCE).toMatch(/isEmptyAddMoreResult\(expansion\)\) \{[\s\S]{0,120}\} else \{[\s\S]{0,160}setActionNotice/);
   });
 
-  it("reports it as an alert section, never an empty state", () => {
-    // The table keeps its place: an alert card between the filters and the
-    // warning, NOT an EmptyState takeover of the People section.
-    expect(DETAIL_SOURCE).toContain("addMoreEmptyCard");
+  it("leaves nothing behind inside the People section", () => {
+    // No inline card, banner, or empty state may sit in the People card: the
+    // filters, warning, page filter, and table keep their exact places.
+    expect(DETAIL_SOURCE).not.toContain("addMoreEmptyCard");
+    expect(CSS).not.toContain(".addMoreEmptyCard");
+    expect(CSS).not.toContain(".addMoreEmptyIcon");
     expect(DETAIL_SOURCE).not.toMatch(/<EmptyState[\s\S]{0,400}ADD_MORE_NO_RESULTS_TITLE/);
-    expect(DETAIL_SOURCE).toMatch(/addMoreEmptyCard[\s\S]{0,900}noticeBanner/);
-    // Same head/body anatomy as AppConfirmDialog: a rounded icon tile beside
-    // the title, description underneath.
-    expect(DETAIL_SOURCE).toMatch(/addMoreEmptyHead[\s\S]{0,200}addMoreEmptyIcon[\s\S]{0,200}addMoreEmptyTitle/);
-    expect(DETAIL_SOURCE).toMatch(/addMoreEmptyTitle[\s\S]{0,200}addMoreEmptyHint/);
-    expect(CSS).toMatch(/\.addMoreEmptyIcon \{[^}]*border-radius: 14px/);
-    expect(CSS).toMatch(/\.addMoreEmptyIcon \{[^}]*width: 2\.4rem/);
-    expect(CSS).toMatch(/\.addMoreEmptyHead \{[^}]*gap: 0\.85rem/);
-    // Card surface uses the shared dialog radius and tokens, so both themes
-    // stay consistent with the rest of Discover.
-    expect(CSS).toMatch(/\.addMoreEmptyCard \{[^}]*border-radius: var\(--app-radius-dialog\)/);
-    expect(CSS).toMatch(/\.addMoreEmptyCard \{[^}]*border: 1px solid var\(--line\)/);
-    expect(CSS).toMatch(/\.addMoreEmptyCard \{[^}]*background: var\(--surface-soft\)/);
-    // Nothing that would open up empty-state vertical space.
-    expect(CSS).not.toMatch(/\.addMoreEmptyCard \{[^}]*min-height/);
-    expect(CSS).not.toMatch(/\.addMoreEmptyCard \{[^}]*text-align: center/);
+    expect(DETAIL_SOURCE).toMatch(/peopleFilterBar[\s\S]*noticeBanner[\s\S]*peopleTableShell/);
+    // And no duplicate search action anywhere in the section.
+    expect(DETAIL_SOURCE).not.toContain("handleOpenCompanySearch");
   });
 
-  it("carries no action — the search control it points at is already on the page", () => {
-    // A duplicate "Search this company" button inside the card would be the
-    // third way to reach the same dialog from one screen.
-    const cardRegion = DETAIL_SOURCE.slice(
-      DETAIL_SOURCE.indexOf("styles.addMoreEmptyCard"),
-      DETAIL_SOURCE.indexOf("styles.noticeBanner")
-    );
-    expect(cardRegion).toContain("ADD_MORE_NO_RESULTS_TITLE");
-    expect(cardRegion).not.toContain("<button");
-    expect(cardRegion).not.toContain("COMPANY_SEARCH_BUTTON_LABEL");
-    expect(DETAIL_SOURCE).not.toContain("handleOpenCompanySearch");
-    // The card copy sends the user upward instead.
-    expect(ADD_MORE_NO_RESULTS_BODY).toBe("Try another role or location from the search controls above.");
+  it("acknowledge mode drops Cancel and focuses the single action", () => {
+    // The shared dialog gains the mode additively — every existing call site
+    // keeps both buttons.
+    expect(CONFIRM_DIALOG_SOURCE).toContain("acknowledge = false");
+    expect(CONFIRM_DIALOG_SOURCE).toMatch(/\{acknowledge \? null : \([\s\S]{0,400}ref=\{cancelRef\}/);
+    expect(CONFIRM_DIALOG_SOURCE).toContain("confirmRef.current?.focus()");
   });
 
   it("an empty add-more changes no count and takes nothing away", () => {

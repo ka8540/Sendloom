@@ -1846,64 +1846,6 @@
   flex: none;
 }
 
-/* Status card for an "Add 10 more" that found nobody. Borrows the quality
-   tile's metrics exactly (same padding, radius, border, soft fill) so it reads
-   as one of the page's small status cards — never an empty state, and never a
-   full-width banner: justify-self keeps it sized to its own text so it does
-   not compete with the inferred-email warning directly below it. It carries no
-   action, because the search control it points at already sits above. */
-.addMoreEmptyCard {
-  display: grid;
-  gap: 0.6rem;
-  padding: 1rem 1.1rem;
-  border-radius: var(--app-radius-dialog);
-  border: 1px solid var(--line);
-  background: var(--surface-soft);
-}
-
-/* Icon tile + title on one row, description beneath — the same head/body
-   anatomy AppConfirmDialog uses, at section scale. The tile stays neutral
-   rather than accent-tinted: this reports an outcome, it does not celebrate
-   one. */
-.addMoreEmptyHead {
-  display: flex;
-  align-items: center;
-  gap: 0.85rem;
-}
-
-.addMoreEmptyIcon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  width: 2.4rem;
-  height: 2.4rem;
-  border-radius: 14px;
-  border: 1px solid var(--line);
-  background: var(--surface);
-  color: var(--muted);
-}
-
-.addMoreEmptyIcon svg {
-  width: 1.2rem;
-  height: 1.2rem;
-}
-
-.addMoreEmptyTitle {
-  margin: 0;
-  font-size: 1rem;
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  line-height: 1.2;
-  color: var(--text);
-}
-
-.addMoreEmptyHint {
-  margin: 0;
-  font-size: 0.9rem;
-  line-height: 1.55;
-  color: var(--muted);
-}
 
 .peopleToolbar {
   display: flex;

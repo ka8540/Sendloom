@@ -12,6 +12,7 @@ import {
   ADD_MORE_DIALOG_NOTE,
   ADD_MORE_DIALOG_SUBTITLE,
   ADD_MORE_EXHAUSTED_MESSAGE,
+  ADD_MORE_NO_RESULTS_ACK_LABEL,
   ADD_MORE_NO_RESULTS_BODY,
   ADD_MORE_NO_RESULTS_TITLE,
   ADD_MORE_PEOPLE_LABEL,
@@ -883,9 +884,13 @@ describe("Add 10 more presentation helpers", () => {
     expect(isEmptyAddMoreResult({ addedCount: Number.NaN })).toBe(true);
   });
 
-  it("says plainly that nothing was found and points at Search this company", () => {
+  it("says plainly that nothing was found and points at the controls already on the page", () => {
     expect(ADD_MORE_NO_RESULTS_TITLE).toBe("No more people found");
-    expect(ADD_MORE_NO_RESULTS_BODY).toBe("Try another role or location from the search controls above.");
+    expect(ADD_MORE_NO_RESULTS_BODY).toBe(
+      "We couldn\u2019t find any new unique people for this role and location. Try another role or location from the search controls above."
+    );
+    // Acknowledge-only: the dialog closes, it does not act.
+    expect(ADD_MORE_NO_RESULTS_ACK_LABEL).toBe("Got it");
   });
 
   it("renders the current people count and remaining quota for the dialog (#4)", () => {

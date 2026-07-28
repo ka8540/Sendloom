@@ -78,6 +78,7 @@ import {
   ADD_MORE_DIALOG_SUBTITLE,
   ADD_MORE_DIALOG_TITLE,
   ADD_MORE_LOADING_LABEL,
+  ADD_MORE_NO_RESULTS_ACK_LABEL,
   ADD_MORE_NO_RESULTS_BODY,
   ADD_MORE_NO_RESULTS_TITLE,
   ADD_MORE_PEOPLE_LABEL,
@@ -1530,22 +1531,6 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
                 )}
               </div>
 
-              {/* Feedback for the last "Add 10 more", between the filters and
-                  the table because it describes THAT role/location. A one-row
-                  strip, not an empty state — the table below is untouched, and
-                  so are its rows, counts, and role groups. */}
-              {addMoreFoundNobody && (
-                <div className={styles.addMoreEmptyCard} role="status">
-                  <div className={styles.addMoreEmptyHead}>
-                    <span className={styles.addMoreEmptyIcon} aria-hidden="true">
-                      <UserPlus />
-                    </span>
-                    <h3 className={styles.addMoreEmptyTitle}>{ADD_MORE_NO_RESULTS_TITLE}</h3>
-                  </div>
-                  <p className={styles.addMoreEmptyHint}>{ADD_MORE_NO_RESULTS_BODY}</p>
-                </div>
-              )}
-
               <div className={styles.noticeBanner} role="note" data-discover-tour="inferred-warning">
                 <AlertCircle aria-hidden="true" />
                 <span>{INFERRED_EMAIL_NOTICE}</span>
@@ -1677,6 +1662,19 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
         target={addMoreTarget}
         onConfirm={handleAddMore}
         onClose={() => setShowAddMoreDialog(false)}
+      />
+      {/* An "Add 10 more" that persisted nobody reports through the same modal
+          system as every other Discover dialog — acknowledge-only, non
+          destructive, and it changes nothing behind it: the table, its counts,
+          and its role groups are exactly as they were. */}
+      <AppConfirmDialog
+        open={addMoreFoundNobody}
+        title={ADD_MORE_NO_RESULTS_TITLE}
+        description={ADD_MORE_NO_RESULTS_BODY}
+        confirmLabel={ADD_MORE_NO_RESULTS_ACK_LABEL}
+        acknowledge
+        onConfirm={() => setAddMoreFoundNobody(false)}
+        onCancel={() => setAddMoreFoundNobody(false)}
       />
       <AppConfirmDialog
         open={companyPendingDeletion !== null}
