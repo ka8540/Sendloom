@@ -222,22 +222,25 @@ describe("Scalable People filter controls (#21-#27)", () => {
     expect(DETAIL_SOURCE).toMatch(/isEmptyAddMoreResult\(expansion\)\) \{[\s\S]{0,120}\} else \{[\s\S]{0,160}setActionNotice/);
   });
 
-  it("reports it as a small status card, never an empty state or CTA banner", () => {
-    // The table keeps its place: a compact card between the filters and the
+  it("reports it as an alert section, never an empty state", () => {
+    // The table keeps its place: an alert card between the filters and the
     // warning, NOT an EmptyState takeover of the People section.
     expect(DETAIL_SOURCE).toContain("addMoreEmptyCard");
     expect(DETAIL_SOURCE).not.toMatch(/<EmptyState[\s\S]{0,400}ADD_MORE_NO_RESULTS_TITLE/);
     expect(DETAIL_SOURCE).toMatch(/addMoreEmptyCard[\s\S]{0,900}noticeBanner/);
-    // Same metrics as the quality tiles, so it reads as one of the page's
-    // existing small status cards in both themes.
-    expect(CSS).toMatch(/\.addMoreEmptyCard \{[^}]*padding: 0\.7rem 0\.8rem/);
-    expect(CSS).toMatch(/\.addMoreEmptyCard \{[^}]*border-radius: 0\.75rem/);
+    // Same head/body anatomy as AppConfirmDialog: a rounded icon tile beside
+    // the title, description underneath.
+    expect(DETAIL_SOURCE).toMatch(/addMoreEmptyHead[\s\S]{0,200}addMoreEmptyIcon[\s\S]{0,200}addMoreEmptyTitle/);
+    expect(DETAIL_SOURCE).toMatch(/addMoreEmptyTitle[\s\S]{0,200}addMoreEmptyHint/);
+    expect(CSS).toMatch(/\.addMoreEmptyIcon \{[^}]*border-radius: 14px/);
+    expect(CSS).toMatch(/\.addMoreEmptyIcon \{[^}]*width: 2\.4rem/);
+    expect(CSS).toMatch(/\.addMoreEmptyHead \{[^}]*gap: 0\.85rem/);
+    // Card surface uses the shared dialog radius and tokens, so both themes
+    // stay consistent with the rest of Discover.
+    expect(CSS).toMatch(/\.addMoreEmptyCard \{[^}]*border-radius: var\(--app-radius-dialog\)/);
     expect(CSS).toMatch(/\.addMoreEmptyCard \{[^}]*border: 1px solid var\(--line\)/);
     expect(CSS).toMatch(/\.addMoreEmptyCard \{[^}]*background: var\(--surface-soft\)/);
-    expect(CSS).toMatch(/\.qualityStat \{[^}]*padding: 0\.7rem 0\.8rem/);
-    // Sized to its own text — not another full-width banner under the filters.
-    expect(CSS).toMatch(/\.addMoreEmptyCard \{[^}]*justify-self: start/);
-    // Nothing that would open up vertical space.
+    // Nothing that would open up empty-state vertical space.
     expect(CSS).not.toMatch(/\.addMoreEmptyCard \{[^}]*min-height/);
     expect(CSS).not.toMatch(/\.addMoreEmptyCard \{[^}]*text-align: center/);
   });

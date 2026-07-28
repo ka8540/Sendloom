@@ -1536,11 +1536,13 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
                   so are its rows, counts, and role groups. */}
               {addMoreFoundNobody && (
                 <div className={styles.addMoreEmptyCard} role="status">
-                  <UserPlus aria-hidden="true" />
-                  <div className={styles.addMoreEmptyText}>
-                    <span className={styles.addMoreEmptyTitle}>{ADD_MORE_NO_RESULTS_TITLE}</span>
-                    <span className={styles.addMoreEmptyHint}>{ADD_MORE_NO_RESULTS_BODY}</span>
+                  <div className={styles.addMoreEmptyHead}>
+                    <span className={styles.addMoreEmptyIcon} aria-hidden="true">
+                      <UserPlus />
+                    </span>
+                    <h3 className={styles.addMoreEmptyTitle}>{ADD_MORE_NO_RESULTS_TITLE}</h3>
                   </div>
+                  <p className={styles.addMoreEmptyHint}>{ADD_MORE_NO_RESULTS_BODY}</p>
                 </div>
               )}
 
