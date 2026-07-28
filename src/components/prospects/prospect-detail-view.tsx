@@ -78,6 +78,9 @@ import {
   ADD_MORE_DIALOG_SUBTITLE,
   ADD_MORE_DIALOG_TITLE,
   ADD_MORE_LOADING_LABEL,
+  ADD_MORE_NO_RESULTS_BODY,
+  ADD_MORE_NO_RESULTS_CLOSE_LABEL,
+  ADD_MORE_NO_RESULTS_TITLE,
   ADD_MORE_PEOPLE_LABEL,
   ALL_LOCATIONS_LABEL,
   ALL_ROLES_LABEL,
@@ -111,6 +114,7 @@ import {
   buildLocationFilterOptions,
   buildProspectSelectionInput,
   buildQualitySegments,
+  canSearchCompanyAgain,
   companySearchDisabledReason,
   companySearchSuccessMessage,
   confidenceBadge,
@@ -263,7 +267,9 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
   );
   const [expanding, setExpanding] = useState(false);
   const [showAddMoreDialog, setShowAddMoreDialog] = useState(false);
-  const [sessionExhausted, setSessionExhausted] = useState(false);
+  // A completed expansion that added nobody answers in a centered dialog — never
+  // by taking the button away and never as an inline note in the People card.
+  const [noMorePeopleOpen, setNoMorePeopleOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [companyPendingDeletion, setCompanyPendingDeletion] = useState<CompanyDetail | null>(null);
   const [deleteCompanyError, setDeleteCompanyError] = useState<string | null>(null);
@@ -433,7 +439,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
 
   // Auto-open the detail guide once per stage when the page is settled.
   useEffect(() => {
-    if (!discoverManual || manualOpen || searchLoading || notFound || reviewOpen || showAddMoreDialog || processing) {
+    if (!discoverManual || manualOpen || searchLoading || notFound || reviewOpen || showAddMoreDialog || processing || noMorePeopleOpen) {
       return;
     }
     const stage = resolveDetailStage(search);
@@ -452,6 +458,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     notFound,
     reviewOpen,
     showAddMoreDialog,
+    noMorePeopleOpen,
     processing,
     search,
     openManualStage,
@@ -678,12 +685,14 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     }
 
     const expansion = result.data.addMoreDiscoverPeople;
-    // Exhaustion is per child search — only mirror it locally when it applies
-    // to the search this page is routed on.
-    if (expansion.exhausted && expansion.searchId === search.id) {
-      setSessionExhausted(true);
+    // Added nobody → centered dialog, and the button stays exactly where it is.
+    // Exhaustion is never mirrored into visibility: re-running a dry search is a
+    // free server no-op that simply re-opens this dialog.
+    if (expansion.addedCount <= 0) {
+      setNoMorePeopleOpen(true);
+    } else {
+      setActionNotice({ message: expansion.message ?? `${expansion.addedCount} new people were added.` });
     }
-    setActionNotice({ message: expansion.message ?? `${expansion.addedCount} new people were added.` });
 
     // Refresh counts + people in place (new people land on later pages).
     if (search.company) {
@@ -942,14 +951,18 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
   const peopleOffset = peoplePageIndex * PEOPLE_PAGE_SIZE;
   const peoplePageCount = resolvePageCount(peopleTotal, PEOPLE_PAGE_SIZE);
 
-  const searchExhausted = Boolean(search && (search.exhausted || sessionExhausted));
+  // Add-more visibility depends ONLY on whether this company can be searched
+  // again — never on the people currently rendered. Filters (role/location),
+  // email status/confidence, invalid or inferred rows, a changed email format, a
+  // reset invalid status, missing role groups, an empty filtered page: all of
+  // them are invisible here on purpose. A provider that has run dry disables
+  // nothing either; the request is a free no-op that answers with a dialog.
   const showAddMore =
     search !== null &&
     shouldShowAddMore({
       view: selectedView,
       status: search.status,
-      hasResults: (company?.peopleCount ?? search.peopleCount) > 0,
-      exhausted: searchExhausted
+      canSearchAgain: canSearchCompanyAgain(company ?? search.company)
     });
   const addMoreDisabled = addMoreDisabledReason(quota, expanding);
 
@@ -1621,6 +1634,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
         onConfirm={handleAddMore}
         onClose={() => setShowAddMoreDialog(false)}
       />
+      <NoMorePeopleDialog open={noMorePeopleOpen} onClose={() => setNoMorePeopleOpen(false)} />
       <AppConfirmDialog
         open={companyPendingDeletion !== null}
         title="Delete this company?"
@@ -2789,6 +2803,43 @@ function AddMorePeopleDialog({
           >
             {expanding ? <LoaderCircle aria-hidden="true" className={styles.spin} /> : <UserPlus aria-hidden="true" />}
             <span>{expanding ? ADD_MORE_LOADING_LABEL : ADD_MORE_CONFIRM_LABEL}</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The answer to an "Add 10 more" that added nobody: a centered dialog over the
+ * page. Deliberately NOT an inline message in the People card and deliberately
+ * not a reason to hide the button — the user can run it again (a dry search is a
+ * free server no-op) or narrow to another role from "Search this company".
+ */
+function NoMorePeopleDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  if (!open) {
+    return null;
+  }
+  return (
+    <div className={styles.modalOverlay} role="presentation">
+      <div
+        className={`card ${styles.modalCard} ${styles.addMoreCard}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="discover-no-more-people-title"
+      >
+        <div className={styles.panelHeader}>
+          <div>
+            <h2 id="discover-no-more-people-title" className={styles.panelTitle}>
+              {ADD_MORE_NO_RESULTS_TITLE}
+            </h2>
+            <p className={styles.panelSubtitle}>{ADD_MORE_NO_RESULTS_BODY}</p>
+          </div>
+          <CircularCloseButton compact label="Close" onClick={onClose} />
+        </div>
+        <div className={styles.modalActions}>
+          <button type="button" className="button" onClick={onClose}>
+            {ADD_MORE_NO_RESULTS_CLOSE_LABEL}
           </button>
         </div>
       </div>

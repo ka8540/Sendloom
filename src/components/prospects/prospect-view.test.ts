@@ -30,6 +30,7 @@ import {
   addMoreDisabledReason,
   addMoreSearchLabel,
   buildLocationFilterOptions,
+  canSearchCompanyAgain,
   companySearchDisabledReason,
   companySearchSuccessMessage,
   confidenceBadge,
@@ -829,17 +830,83 @@ describe("Discover quota presentation helpers", () => {
 });
 
 describe("Add 10 more presentation helpers", () => {
-  it("shows the button only for a READY search with results that is not exhausted (#1, #2, #10)", () => {
-    // READY + results + not exhausted → shown (#1).
-    expect(shouldShowAddMore({ view: "ready", status: "READY", hasResults: true, exhausted: false })).toBe(true);
+  it("shows the button for any READY search whose company can be searched again (#1, #2)", () => {
+    expect(shouldShowAddMore({ view: "ready", status: "READY", canSearchAgain: true })).toBe(true);
     // DRAFT / PROCESSING / FAILED → hidden (#2).
-    expect(shouldShowAddMore({ view: "none", status: "DRAFT", hasResults: false, exhausted: false })).toBe(false);
-    expect(shouldShowAddMore({ view: "processing", status: "SEARCHING_PEOPLE", hasResults: false, exhausted: false })).toBe(false);
-    expect(shouldShowAddMore({ view: "failed", status: "FAILED", hasResults: false, exhausted: false })).toBe(false);
-    // READY but no results yet → hidden.
-    expect(shouldShowAddMore({ view: "ready", status: "READY", hasResults: false, exhausted: false })).toBe(false);
-    // Exhausted → hidden (#10).
-    expect(shouldShowAddMore({ view: "ready", status: "READY", hasResults: true, exhausted: true })).toBe(false);
+    expect(shouldShowAddMore({ view: "none", status: "DRAFT", canSearchAgain: true })).toBe(false);
+    expect(shouldShowAddMore({ view: "processing", status: "SEARCHING_PEOPLE", canSearchAgain: true })).toBe(false);
+    expect(shouldShowAddMore({ view: "failed", status: "FAILED", canSearchAgain: true })).toBe(false);
+    // Nothing to search again with (no company identity at all) → hidden.
+    expect(shouldShowAddMore({ view: "ready", status: "READY", canSearchAgain: false })).toBe(false);
+  });
+
+  it("resolves can-search-again from company identity only", () => {
+    expect(canSearchCompanyAgain({ name: "Compa" })).toBe(true);
+    // A domain alone is enough — a blank name never removes the button.
+    expect(canSearchCompanyAgain({ name: "   ", officialDomain: "compa.com" })).toBe(true);
+    expect(canSearchCompanyAgain({ officialWebsiteDomain: "compa.com" })).toBe(true);
+    expect(canSearchCompanyAgain({ emailDomain: "compa.com" })).toBe(true);
+    expect(canSearchCompanyAgain({ name: "", officialDomain: null, emailDomain: null })).toBe(false);
+    expect(canSearchCompanyAgain(null)).toBe(false);
+  });
+
+  /**
+   * The regression this guards: successive email-format / invalid-status work
+   * kept wiring row-level state into Add-more visibility, and the button
+   * vanished. Visibility is a property of the SEARCH, so none of the people /
+   * filter / email-status inputs may even be accepted by the helper.
+   */
+  it("never hides Add 10 more for people, filter, or email state (#10)", () => {
+    const visible = { view: "ready", status: "READY", canSearchAgain: true } as const;
+    // An exhausted provider, an empty filtered page, all-invalid emails: the
+    // helper cannot see any of them, so it still shows the button.
+    expect(shouldShowAddMore(visible)).toBe(true);
+
+    // The helper's contract is the whole guard: it takes company searchability
+    // and search state — nothing that describes the rows on screen.
+    const source = readFileSync("src/components/prospects/prospect-view.ts", "utf8");
+    const helper = source.match(/export function shouldShowAddMore\([\s\S]*?\n\}/)?.[0] ?? "";
+    expect(helper).toContain("canSearchAgain");
+    for (const banned of [
+      "hasResults",
+      "peopleCount",
+      "filteredPeople",
+      "paginatedPeople",
+      "visiblePeople",
+      "validPeople",
+      "invalidPeople",
+      "roleGroups",
+      "selectedRole",
+      "activeCategory",
+      "emailStatus",
+      "emailConfidence",
+      "exhausted"
+    ]) {
+      expect(helper).not.toContain(banned);
+    }
+  });
+
+  it("keeps the detail page's Add-more visibility off row/filter state", () => {
+    const detailSource = readFileSync("src/components/prospects/prospect-detail-view.tsx", "utf8");
+    const call = detailSource.match(/const showAddMore =[\s\S]*?\}\);/)?.[0] ?? "";
+    expect(call).toContain("canSearchCompanyAgain");
+    for (const banned of [
+      "hasResults",
+      "peopleCount",
+      "visiblePeople",
+      "people.length",
+      "activeCategory",
+      "activeLocation",
+      "emailStatus",
+      "exhausted"
+    ]) {
+      expect(call).not.toContain(banned);
+    }
+    // A 0-result expansion answers in the centered dialog, and never by
+    // freezing the button out of the header.
+    expect(detailSource).toContain("NoMorePeopleDialog");
+    expect(detailSource).toContain("setNoMorePeopleOpen(true)");
+    expect(detailSource).not.toContain("sessionExhausted");
   });
 
   it("disables the button while expanding or when the daily allowance is spent (#5)", () => {
