@@ -201,8 +201,6 @@ export type CompanySearchNode = {
   positionCategories: PositionCategory[];
   peopleCount: number;
   createdAt: string;
-  /** Whether this role group's search can yield no more unique people. */
-  exhausted: boolean;
 };
 
 export type CompanyDetail = {
@@ -531,9 +529,6 @@ export const COMPANY_DETAIL_QUERY = /* GraphQL */ `
         positionCategories
         peopleCount
         createdAt
-        # Per role group, so one spent group never hides "Add 10 more" for the
-        # company's other groups.
-        exhausted
       }
     }
   }
@@ -726,9 +721,6 @@ export const REFRESH_COMPANY_EMAIL_FORMAT_MUTATION = /* GraphQL */ `
         positionCategories
         peopleCount
         createdAt
-        # Per role group, so one spent group never hides "Add 10 more" for the
-        # company's other groups.
-        exhausted
       }
     }
   }
@@ -793,9 +785,6 @@ export const DISCOVER_COMPANY_EMAIL_FORMAT_MUTATION = /* GraphQL */ `
         positionCategories
         peopleCount
         createdAt
-        # Per role group, so one spent group never hides "Add 10 more" for the
-        # company's other groups.
-        exhausted
       }
     }
   }
@@ -872,9 +861,6 @@ export const SET_COMPANY_EMAIL_INFERENCE_OVERRIDE_MUTATION = /* GraphQL */ `
         positionCategories
         peopleCount
         createdAt
-        # Per role group, so one spent group never hides "Add 10 more" for the
-        # company's other groups.
-        exhausted
       }
     }
   }

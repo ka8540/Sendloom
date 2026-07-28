@@ -945,34 +945,35 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
   const peopleOffset = peoplePageIndex * PEOPLE_PAGE_SIZE;
   const peoplePageCount = resolvePageCount(peopleTotal, PEOPLE_PAGE_SIZE);
 
-  // The grouped company's child searches (this user's only). Falls back to the
-  // routed search so a company payload without siblings still targets itself.
+  // The grouped company's child searches (this user's only), ALWAYS including
+  // the search this page is routed on.
+  //
+  // The routed search is not merely a fallback for an empty payload: an older
+  // record whose company row was merged or repaired can be absent from the
+  // company's sibling list, and dropping it there left the page with no
+  // extendable target at all — which is how "Add 10 more" went missing on
+  // previous searches. Its own requested roles/locations stand in for the
+  // grouping metadata newer searches carry.
   const companySearches = useMemo<AddMoreCandidateSearch[]>(() => {
-    if (company?.searches && company.searches.length > 0) {
-      return company.searches.map((child) => ({
-        id: child.id,
-        status: child.status,
-        requestedTitles: child.requestedTitles,
-        requestedLocations: child.requestedLocations,
-        positionCategories: child.positionCategories,
-        createdAt: child.createdAt,
-        exhausted: child.exhausted
-      }));
-    }
-    if (!search) {
-      return [];
-    }
-    return [
-      {
+    const candidates: AddMoreCandidateSearch[] = (company?.searches ?? []).map((child) => ({
+      id: child.id,
+      status: child.status,
+      requestedTitles: child.requestedTitles,
+      requestedLocations: child.requestedLocations,
+      positionCategories: child.positionCategories,
+      createdAt: child.createdAt
+    }));
+    if (search && !candidates.some((candidate) => candidate.id === search.id)) {
+      candidates.push({
         id: search.id,
         status: search.status,
         requestedTitles: search.requestedTitles,
         requestedLocations: search.requestedLocations,
         positionCategories: [],
-        createdAt: search.createdAt,
-        exhausted: search.exhausted
-      }
-    ];
+        createdAt: search.createdAt
+      });
+    }
+    return candidates;
   }, [company, search]);
 
   // Which child search "Add 10 more" extends (or whether the user must choose).
@@ -990,20 +991,20 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
   );
 
   // "Add 10 more" follows the SEARCH CONTEXT the action would extend — never
-  // the rows currently on screen. A role or location filter that matches nobody
-  // yet still resolves a target, so the button stays put and keeps working;
-  // only a target with nothing left to offer removes it, and that exhaustion is
-  // scoped to that one role group.
+  // the rows currently on screen, and never how old the search is. Whenever the
+  // People section renders, the routed search is READY and resolves a target,
+  // so the button holds its place in the header on every company detail page,
+  // old or new. A spent target only disables it (with the reason on the
+  // button), scoped to that one role group.
   const searchExhausted = isAddMoreTargetExhausted(addMoreTarget, sessionExhaustedIds);
   const showAddMore =
     search !== null &&
     shouldShowAddMore({
       view: selectedView,
       status: search.status,
-      hasTarget: addMoreTarget.kind !== "none",
-      exhausted: searchExhausted
+      hasTarget: addMoreTarget.kind !== "none"
     });
-  const addMoreDisabled = addMoreDisabledReason(quota, expanding);
+  const addMoreDisabled = addMoreDisabledReason(quota, expanding, searchExhausted);
 
   // Location chips: distinct requested locations across this company's READY
   // searches (canonically deduped — never two chips for one location).
@@ -1624,6 +1625,16 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
       />
       <AddMorePeopleDialog
         open={showAddMoreDialog}
+        // Which company the batch lands in, named in the dialog so extending an
+        // older search is never a leap of faith.
+        companyName={company?.name ?? search.company?.name ?? search.requestedCompany}
+        companyDomain={
+          company?.emailDomain ??
+          company?.officialDomain ??
+          company?.officialWebsiteDomain ??
+          search.company?.officialDomain ??
+          null
+        }
         // With a role/location filter active the dialog counts THAT context
         // (0 included), so "Current people" matches what the user is looking at.
         peopleCount={filtersActive ? peopleTotal : company?.peopleCount ?? search.peopleCount ?? 0}
@@ -2700,6 +2711,8 @@ function PeopleTable({
 
 function AddMorePeopleDialog({
   open,
+  companyName,
+  companyDomain,
   peopleCount,
   quota,
   expanding,
@@ -2708,6 +2721,8 @@ function AddMorePeopleDialog({
   onClose
 }: {
   open: boolean;
+  companyName: string;
+  companyDomain: string | null;
   peopleCount: number;
   quota: DiscoverQuota | null;
   expanding: boolean;
@@ -2771,6 +2786,10 @@ function AddMorePeopleDialog({
         )}
 
         <dl className={styles.addMoreSummary}>
+          <div className={styles.addMoreSummaryRow}>
+            <dt>Company</dt>
+            <dd>{companyDomain ? `${companyName} · ${companyDomain}` : companyName}</dd>
+          </div>
           {target.kind === "search" && (
             <div className={styles.addMoreSummaryRow}>
               <dt>Role / location</dt>

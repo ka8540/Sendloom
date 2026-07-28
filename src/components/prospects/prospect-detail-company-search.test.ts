@@ -187,12 +187,34 @@ describe("Scalable People filter controls (#21-#27)", () => {
     expect(DETAIL_SOURCE).toMatch(/peopleFilterBar[\s\S]*peopleTableShell/);
   });
 
-  it("scopes add-more exhaustion to the targeted role group, not the whole page", () => {
+  it("scopes add-more exhaustion to the targeted role group, and only disables", () => {
     expect(DETAIL_SOURCE).toContain("isAddMoreTargetExhausted(addMoreTarget, sessionExhaustedIds)");
     // An expansion result is recorded against the search it extended.
     expect(DETAIL_SOURCE).toMatch(/new Set\(current\)\.add\(expansion\.searchId\)/);
     expect(DETAIL_SOURCE).not.toContain("setSessionExhausted(true)");
-    expect(COMPANY_DETAIL_QUERY).toContain("exhausted");
+    // Exhaustion feeds the DISABLED reason, never the visibility test — a
+    // spent search must explain itself, not disappear.
+    expect(DETAIL_SOURCE).toContain("addMoreDisabledReason(quota, expanding, searchExhausted)");
+    expect(DETAIL_SOURCE).not.toMatch(/exhausted: searchExhausted/);
+    // The server's stored per-search flag is not consulted at all, so the
+    // company payload no longer pays for it.
+    expect(COMPANY_DETAIL_QUERY).not.toContain("exhausted");
+  });
+
+  it("keeps Add 10 more on previous searches — the routed search is always a target", () => {
+    // An older record whose company row was merged/repaired can be missing
+    // from company.searches; it must still be an extendable candidate, or the
+    // page resolves no target and the button vanishes.
+    expect(DETAIL_SOURCE).toMatch(/!candidates\.some\(\(candidate\) => candidate\.id === search\.id\)/);
+    // Visibility cannot depend on the stored flag or on how complete the
+    // legacy metadata is.
+    expect(DETAIL_SOURCE).not.toMatch(/shouldShowAddMore\(\{[\s\S]*exhausted/);
+  });
+
+  it("names the company being extended in the add-more dialog", () => {
+    expect(DETAIL_SOURCE).toMatch(/companyName=\{company\?\.name \?\? search\.company\?\.name/);
+    expect(DETAIL_SOURCE).toContain("companyDomain=");
+    expect(DETAIL_SOURCE).toContain("<dt>Company</dt>");
   });
 
   it("offers every role group in the dropdown, including one with no people yet", () => {

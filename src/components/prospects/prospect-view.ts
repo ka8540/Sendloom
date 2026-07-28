@@ -1203,33 +1203,45 @@ export const ADD_MORE_EXHAUSTED_MESSAGE = "No more unique people are available f
 
 /**
  * Whether the "Add 10 more" button should be shown at all: a READY search view
- * with a resolvable search context (`hasTarget`) that is not confirmed
- * exhausted. Quota / in-flight state only DISABLE the button (so the user still
- * sees it) — see addMoreDisabledReason.
+ * with a resolvable search context (`hasTarget`) — nothing else. Everything
+ * situational (quota, an in-flight expansion, a search with nothing left to
+ * offer) only DISABLES the button, with a reason, so it never simply vanishes
+ * from the People header — see addMoreDisabledReason.
  *
  * Deliberately NOT derived from the people currently rendered (page rows,
  * filtered rows, or any result count): a role or location filter that matches
- * nobody yet is exactly when the user needs "Add 10 more" most. Visibility
- * follows the target the action would extend — see resolveAddMoreTarget.
+ * nobody yet is exactly when the user needs "Add 10 more" most. Nor from how
+ * old the search is or how complete its metadata is — a pre-grouping search
+ * resolves a target the same way a fresh one does (resolveAddMoreTarget).
  */
 export function shouldShowAddMore(args: {
   view: SelectedSearchView;
   status: ProspectSearchStatus;
   /** An add-more target resolved from the active role/location context. */
   hasTarget: boolean;
-  exhausted: boolean;
 }): boolean {
-  return args.view === "ready" && args.status === "READY" && args.hasTarget && !args.exhausted;
+  return args.view === "ready" && args.status === "READY" && args.hasTarget;
 }
 
 /**
  * A reason the visible "Add 10 more" button is disabled, or null when it is
- * actionable. Disabled while an expansion runs (prevents duplicate requests) and
- * when the daily Discover allowance is spent (exempt accounts are never blocked).
+ * actionable. Disabled while an expansion runs (prevents duplicate requests),
+ * once an expansion in this session reported the target spent, and when the
+ * daily Discover allowance is spent (exempt accounts are never blocked).
+ *
+ * `exhausted` is deliberately a DISABLE reason rather than a hide reason, and
+ * deliberately session-observed only — see isAddMoreTargetExhausted.
  */
-export function addMoreDisabledReason(quota: DiscoverQuota | null, expanding: boolean): string | null {
+export function addMoreDisabledReason(
+  quota: DiscoverQuota | null,
+  expanding: boolean,
+  exhausted = false
+): string | null {
   if (expanding) {
     return ADD_MORE_LOADING_LABEL;
+  }
+  if (exhausted) {
+    return ADD_MORE_EXHAUSTED_MESSAGE;
   }
   if (quota && !quota.unlimited && quota.searchesRemaining <= 0) {
     return "You've used today's Discover searches.";
@@ -1315,12 +1327,6 @@ export type AddMoreCandidateSearch = {
   requestedLocations: string[];
   positionCategories: PositionCategory[];
   createdAt: string;
-  /**
-   * Whether this child search can yield no more unique people. Exhaustion is
-   * per search — one spent role group must never hide "Add 10 more" for the
-   * company's other role groups. Absent (legacy payload) reads as "not spent".
-   */
-  exhausted?: boolean;
 };
 
 /**
@@ -1370,10 +1376,7 @@ function canonicalRoleGroupRepresentatives(
     const representative = bucket.find((search) => search.id === currentSearchId) ?? bucket[0];
     return {
       ...representative,
-      positionCategories: [...new Set(bucket.flatMap((search) => search.positionCategories))],
-      // Siblings share one canonical query, so the group only has nothing left
-      // to offer when every member of it is spent.
-      exhausted: bucket.every((search) => search.exhausted === true)
+      positionCategories: [...new Set(bucket.flatMap((search) => search.positionCategories))]
     };
   });
 }
@@ -1431,22 +1434,35 @@ export function resolveAddMoreTarget(input: {
  *
  * Scoped to the RESOLVED TARGET, never to the search the page happens to be
  * routed on: a grouped company detail shows every role group, so a spent
- * "Recruiting" search must not hide the action while viewing "Software
- * Engineer" (and vice versa). `sessionExhaustedIds` carries the ids reported
- * exhausted by expansions run in this session, before a reload refreshes the
- * server flag.
+ * "Recruiting" search must not disable the action while viewing "Software
+ * Engineer" (and vice versa).
+ *
+ * Session-observed ONLY — `sessionExhaustedIds` holds the ids an expansion
+ * answered "nothing new" for in this session. The server's stored exhausted
+ * flag is deliberately not consulted: for a search created before people were
+ * allocated per search it falls back to comparing the role's cached people
+ * against the user's people for the WHOLE company (every role group), so an
+ * older grouped company reports "spent" while its groups still have people to
+ * fetch. A first-hand answer to this user's own click is the only signal here
+ * that cannot be wrong.
+ *
+ * Letting that click through costs the user nothing: the expansion service
+ * short-circuits a request that cannot add anyone BEFORE reserving a daily
+ * slot, and answers with the same exhausted flag we then record here.
  */
 export function isAddMoreTargetExhausted(
   target: AddMoreTarget,
   sessionExhaustedIds: ReadonlySet<string> = new Set()
 ): boolean {
-  const spent = (search: AddMoreCandidateSearch) => search.exhausted === true || sessionExhaustedIds.has(search.id);
+  if (sessionExhaustedIds.size === 0) {
+    return false;
+  }
   if (target.kind === "search") {
-    return spent(target.search);
+    return sessionExhaustedIds.has(target.search.id);
   }
   // The chooser still has something to offer unless EVERY option is spent.
   if (target.kind === "choose") {
-    return target.options.every(spent);
+    return target.options.every((option) => sessionExhaustedIds.has(option.id));
   }
   return false;
 }
