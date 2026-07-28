@@ -225,6 +225,23 @@ describe("Scalable People filter controls (#21-#27)", () => {
     expect(DETAIL_SOURCE).toMatch(/isEmptyAddMoreResult\(expansion\)\) \{[\s\S]{0,120}\} else \{[\s\S]{0,160}setActionNotice/);
   });
 
+  it("reports it as a compact strip, never as a page-empty state", () => {
+    // The table keeps its place: this is a one-row banner between the filters
+    // and the warning, NOT an EmptyState takeover of the People section.
+    expect(DETAIL_SOURCE).toContain("addMoreEmptyCard");
+    expect(DETAIL_SOURCE).not.toMatch(/<EmptyState[\s\S]{0,400}ADD_MORE_NO_RESULTS_TITLE/);
+    expect(DETAIL_SOURCE).toMatch(/addMoreEmptyCard[\s\S]{0,1400}noticeBanner/);
+    // Laid out as an inline strip — content left, action right, one row high.
+    expect(CSS).toMatch(/\.addMoreEmptyCard \{[^}]*justify-content: space-between/);
+    expect(CSS).toMatch(/\.addMoreEmptyCard \{[^}]*padding: 0\.7rem 0\.9rem/);
+    // Themed with the shared tokens, so light and dark both work.
+    expect(CSS).toMatch(/\.addMoreEmptyCard \{[^}]*border: 1px solid var\(--line\)/);
+    expect(CSS).toMatch(/\.addMoreEmptyCard \{[^}]*background: var\(--surface-strong\)/);
+    // No fixed min-height or centering that would open up vertical space.
+    expect(CSS).not.toMatch(/\.addMoreEmptyCard \{[^}]*min-height/);
+    expect(CSS).not.toMatch(/\.addMoreEmptyCard \{[^}]*text-align: center/);
+  });
+
   it("an empty add-more changes no count and takes nothing away", () => {
     // People totals come only from the server connection; the expansion
     // payload's own totals are never added to anything client-side.

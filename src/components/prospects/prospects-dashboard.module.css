@@ -1846,6 +1846,58 @@
   flex: none;
 }
 
+/* Feedback strip for an "Add 10 more" that found nobody. Deliberately an
+   inline one-line-tall banner, NEVER a page-empty state: the People table
+   underneath must stay exactly where it was, so this only reports the last
+   attempt and takes a row of height to do it. */
+.addMoreEmptyCard {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+  padding: 0.7rem 0.9rem;
+  border-radius: 0.8rem;
+  border: 1px solid var(--line);
+  background: var(--surface-strong);
+}
+
+.addMoreEmptyBody {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.addMoreEmptyBody svg {
+  width: 1.05rem;
+  height: 1.05rem;
+  flex: none;
+  color: var(--muted);
+}
+
+.addMoreEmptyText {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.addMoreEmptyTitle {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.addMoreEmptyHint {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.addMoreEmptyCard .secondaryButton {
+  padding: 0.45rem 0.8rem;
+  font-size: 0.86rem;
+}
+
 .peopleToolbar {
   display: flex;
   align-items: center;

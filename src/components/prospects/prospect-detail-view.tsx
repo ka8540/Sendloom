@@ -1537,22 +1537,24 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
                 )}
               </div>
 
-              {/* An "Add 10 more" that found nobody. Sits between the filters
-                  and the table because it describes THAT role/location, and it
-                  reports only — no row, count, or role group changed. */}
+              {/* Feedback for the last "Add 10 more", between the filters and
+                  the table because it describes THAT role/location. A one-row
+                  strip, not an empty state — the table below is untouched, and
+                  so are its rows, counts, and role groups. */}
               {addMoreFoundNobody && (
-                <EmptyState
-                  icon={<UserPlus aria-hidden="true" />}
-                  title={ADD_MORE_NO_RESULTS_TITLE}
-                  body={ADD_MORE_NO_RESULTS_BODY}
-                  compact
-                  action={
-                    <button type="button" className={styles.secondaryButton} onClick={handleOpenCompanySearch}>
-                      <Search aria-hidden="true" />
-                      <span>{COMPANY_SEARCH_BUTTON_LABEL}</span>
-                    </button>
-                  }
-                />
+                <div className={styles.addMoreEmptyCard} role="status">
+                  <div className={styles.addMoreEmptyBody}>
+                    <UserPlus aria-hidden="true" />
+                    <div className={styles.addMoreEmptyText}>
+                      <span className={styles.addMoreEmptyTitle}>{ADD_MORE_NO_RESULTS_TITLE}</span>
+                      <span className={styles.addMoreEmptyHint}>{ADD_MORE_NO_RESULTS_BODY}</span>
+                    </div>
+                  </div>
+                  <button type="button" className={styles.secondaryButton} onClick={handleOpenCompanySearch}>
+                    <Search aria-hidden="true" />
+                    <span>{COMPANY_SEARCH_BUTTON_LABEL}</span>
+                  </button>
+                </div>
               )}
 
               <div className={styles.noticeBanner} role="note" data-discover-tour="inferred-warning">
