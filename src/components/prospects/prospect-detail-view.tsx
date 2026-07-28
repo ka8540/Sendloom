@@ -131,6 +131,7 @@ import {
   getPageSelectionState,
   getProspectSelectionCount,
   groupedRoleLabels,
+  isAddMoreTargetExhausted,
   isEmailCopyable,
   isProcessQuotaBlocked,
   isProspectSelected,
@@ -263,7 +264,9 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
   );
   const [expanding, setExpanding] = useState(false);
   const [showAddMoreDialog, setShowAddMoreDialog] = useState(false);
-  const [sessionExhausted, setSessionExhausted] = useState(false);
+  // Child-search ids an expansion reported exhausted in this session, keyed by
+  // search id — exhaustion belongs to ONE role group, never to the whole page.
+  const [sessionExhaustedIds, setSessionExhaustedIds] = useState<ReadonlySet<string>>(() => new Set<string>());
   const [deleting, setDeleting] = useState(false);
   const [companyPendingDeletion, setCompanyPendingDeletion] = useState<CompanyDetail | null>(null);
   const [deleteCompanyError, setDeleteCompanyError] = useState<string | null>(null);
@@ -678,10 +681,10 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     }
 
     const expansion = result.data.addMoreDiscoverPeople;
-    // Exhaustion is per child search — only mirror it locally when it applies
-    // to the search this page is routed on.
-    if (expansion.exhausted && expansion.searchId === search.id) {
-      setSessionExhausted(true);
+    // Exhaustion is per child search — record it against the search that was
+    // actually extended, so it only ever hides the action for THAT role group.
+    if (expansion.exhausted) {
+      setSessionExhaustedIds((current) => new Set(current).add(expansion.searchId));
     }
     setActionNotice({ message: expansion.message ?? `${expansion.addedCount} new people were added.` });
 
@@ -935,23 +938,12 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
   );
 
   const visiblePeople = useMemo(() => filterPeopleByText(people, peopleFilter), [people, peopleFilter]);
-  const visibleCategories = useMemo(
-    () => (company ? company.positions.filter((position) => position.peopleCount > 0) : []),
-    [company]
-  );
+  // Every role group this company has, including one whose people are all
+  // filtered out (or that has none yet) — an empty group must stay selectable
+  // so the user can point "Add 10 more" at it.
+  const visibleCategories = useMemo(() => (company ? company.positions : []), [company]);
   const peopleOffset = peoplePageIndex * PEOPLE_PAGE_SIZE;
   const peoplePageCount = resolvePageCount(peopleTotal, PEOPLE_PAGE_SIZE);
-
-  const searchExhausted = Boolean(search && (search.exhausted || sessionExhausted));
-  const showAddMore =
-    search !== null &&
-    shouldShowAddMore({
-      view: selectedView,
-      status: search.status,
-      hasResults: (company?.peopleCount ?? search.peopleCount) > 0,
-      exhausted: searchExhausted
-    });
-  const addMoreDisabled = addMoreDisabledReason(quota, expanding);
 
   // The grouped company's child searches (this user's only). Falls back to the
   // routed search so a company payload without siblings still targets itself.
@@ -963,7 +955,8 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
         requestedTitles: child.requestedTitles,
         requestedLocations: child.requestedLocations,
         positionCategories: child.positionCategories,
-        createdAt: child.createdAt
+        createdAt: child.createdAt,
+        exhausted: child.exhausted
       }));
     }
     if (!search) {
@@ -976,7 +969,8 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
         requestedTitles: search.requestedTitles,
         requestedLocations: search.requestedLocations,
         positionCategories: [],
-        createdAt: search.createdAt
+        createdAt: search.createdAt,
+        exhausted: search.exhausted
       }
     ];
   }, [company, search]);
@@ -994,6 +988,22 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
       }),
     [activeCategory, activeLocation, companySearches, search?.id]
   );
+
+  // "Add 10 more" follows the SEARCH CONTEXT the action would extend — never
+  // the rows currently on screen. A role or location filter that matches nobody
+  // yet still resolves a target, so the button stays put and keeps working;
+  // only a target with nothing left to offer removes it, and that exhaustion is
+  // scoped to that one role group.
+  const searchExhausted = isAddMoreTargetExhausted(addMoreTarget, sessionExhaustedIds);
+  const showAddMore =
+    search !== null &&
+    shouldShowAddMore({
+      view: selectedView,
+      status: search.status,
+      hasTarget: addMoreTarget.kind !== "none",
+      exhausted: searchExhausted
+    });
+  const addMoreDisabled = addMoreDisabledReason(quota, expanding);
 
   // Location chips: distinct requested locations across this company's READY
   // searches (canonically deduped — never two chips for one location).
@@ -1614,7 +1624,9 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
       />
       <AddMorePeopleDialog
         open={showAddMoreDialog}
-        peopleCount={company?.peopleCount ?? search.peopleCount ?? 0}
+        // With a role/location filter active the dialog counts THAT context
+        // (0 included), so "Current people" matches what the user is looking at.
+        peopleCount={filtersActive ? peopleTotal : company?.peopleCount ?? search.peopleCount ?? 0}
         quota={quota}
         expanding={expanding}
         target={addMoreTarget}

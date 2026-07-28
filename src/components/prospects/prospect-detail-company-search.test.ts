@@ -23,9 +23,14 @@ import {
   COMPANY_SEARCH_ROLE_PLACEHOLDER,
   COMPANY_SEARCH_SUBTITLE,
   COMPANY_SEARCH_TITLE,
+  FILTERED_PEOPLE_EMPTY_BODY,
   FILTERED_PEOPLE_EMPTY_TITLE
 } from "@/components/prospects/prospect-view";
-import { PEOPLE_QUERY, SEARCH_COMPANY_ROLE_MUTATION } from "@/components/prospects/prospect-graphql";
+import {
+  COMPANY_DETAIL_QUERY,
+  PEOPLE_QUERY,
+  SEARCH_COMPANY_ROLE_MUTATION
+} from "@/components/prospects/prospect-graphql";
 
 const DETAIL_SOURCE = readFileSync("src/components/prospects/prospect-detail-view.tsx", "utf8");
 const CSS = readFileSync("src/components/prospects/prospects-dashboard.module.css", "utf8");
@@ -163,7 +168,41 @@ describe("Scalable People filter controls (#21-#27)", () => {
 
   it("shows the filtered empty state — never a blank table (#26, #27)", () => {
     expect(DETAIL_SOURCE).toContain("FILTERED_PEOPLE_EMPTY_TITLE");
-    expect(FILTERED_PEOPLE_EMPTY_TITLE).toBe("No people match these filters.");
+    expect(FILTERED_PEOPLE_EMPTY_TITLE).toBe("No people found for this role yet.");
+    // The copy points at "Add 10 more" (still in the section header) rather
+    // than only offering a retreat out of the filter.
+    expect(FILTERED_PEOPLE_EMPTY_BODY).toBe(
+      "Add more people to search this company for the selected role and location."
+    );
+  });
+
+  it("keeps Add 10 more visible for a role/location filter with 0 rows (empty-role bug)", () => {
+    // Visibility follows the resolved search context, never the rendered rows:
+    // no people/filtered/paginated count may feed shouldShowAddMore.
+    expect(DETAIL_SOURCE).toMatch(/hasTarget: addMoreTarget\.kind !== "none"/);
+    expect(DETAIL_SOURCE).not.toMatch(/hasResults:/);
+    expect(DETAIL_SOURCE).not.toMatch(/showAddMore[\s\S]{0,200}(visiblePeople|people)\.length/);
+    // The filter bar and the button live outside the table, so an empty table
+    // never takes them down with it.
+    expect(DETAIL_SOURCE).toMatch(/peopleFilterBar[\s\S]*peopleTableShell/);
+  });
+
+  it("scopes add-more exhaustion to the targeted role group, not the whole page", () => {
+    expect(DETAIL_SOURCE).toContain("isAddMoreTargetExhausted(addMoreTarget, sessionExhaustedIds)");
+    // An expansion result is recorded against the search it extended.
+    expect(DETAIL_SOURCE).toMatch(/new Set\(current\)\.add\(expansion\.searchId\)/);
+    expect(DETAIL_SOURCE).not.toContain("setSessionExhausted(true)");
+    expect(COMPANY_DETAIL_QUERY).toContain("exhausted");
+  });
+
+  it("offers every role group in the dropdown, including one with no people yet", () => {
+    // A group whose people are all filtered out (or that has none yet) must
+    // stay selectable — otherwise the empty-role case is unreachable.
+    expect(DETAIL_SOURCE).not.toContain("position.peopleCount > 0");
+  });
+
+  it("counts the selected role/location in the add-more dialog", () => {
+    expect(DETAIL_SOURCE).toMatch(/peopleCount=\{filtersActive \? peopleTotal :/);
   });
 
   it("long role/location labels truncate inside the control (#1, #2, #3-edge)", () => {

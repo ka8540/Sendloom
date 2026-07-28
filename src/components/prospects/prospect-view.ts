@@ -836,9 +836,15 @@ export const ALL_ROLES_LABEL = "All roles";
 /** Chip label for the group of searches that were run WITHOUT a location. */
 export const ANY_LOCATION_LABEL = "Any location";
 export const CLEAR_FILTERS_LABEL = "Clear filters";
-export const FILTERED_PEOPLE_EMPTY_TITLE = "No people match these filters.";
+/**
+ * Shown when the active role/location filter matches nobody. The copy points at
+ * "Add 10 more" (which stays visible in the section header) rather than only
+ * offering a retreat — an empty role group is a reason to search, not a dead
+ * end. "Clear filters" remains available alongside it.
+ */
+export const FILTERED_PEOPLE_EMPTY_TITLE = "No people found for this role yet.";
 export const FILTERED_PEOPLE_EMPTY_BODY =
-  "Try a different role or location, or clear the filters to see everyone.";
+  "Add more people to search this company for the selected role and location.";
 
 export type LocationFilterOption = {
   /** Canonical location key (normalizeRoleGroupToken); "" = "Any location". */
@@ -1196,17 +1202,24 @@ export const ADD_MORE_LOADING_LABEL = "Adding new people…";
 export const ADD_MORE_EXHAUSTED_MESSAGE = "No more unique people are available for this search.";
 
 /**
- * Whether the "Add 10 more" button should be shown at all: a READY search with
- * existing results that is not confirmed exhausted. Quota / in-flight state only
- * DISABLE the button (so the user still sees it) — see addMoreDisabledReason.
+ * Whether the "Add 10 more" button should be shown at all: a READY search view
+ * with a resolvable search context (`hasTarget`) that is not confirmed
+ * exhausted. Quota / in-flight state only DISABLE the button (so the user still
+ * sees it) — see addMoreDisabledReason.
+ *
+ * Deliberately NOT derived from the people currently rendered (page rows,
+ * filtered rows, or any result count): a role or location filter that matches
+ * nobody yet is exactly when the user needs "Add 10 more" most. Visibility
+ * follows the target the action would extend — see resolveAddMoreTarget.
  */
 export function shouldShowAddMore(args: {
   view: SelectedSearchView;
   status: ProspectSearchStatus;
-  hasResults: boolean;
+  /** An add-more target resolved from the active role/location context. */
+  hasTarget: boolean;
   exhausted: boolean;
 }): boolean {
-  return args.view === "ready" && args.status === "READY" && args.hasResults && !args.exhausted;
+  return args.view === "ready" && args.status === "READY" && args.hasTarget && !args.exhausted;
 }
 
 /**
@@ -1302,6 +1315,12 @@ export type AddMoreCandidateSearch = {
   requestedLocations: string[];
   positionCategories: PositionCategory[];
   createdAt: string;
+  /**
+   * Whether this child search can yield no more unique people. Exhaustion is
+   * per search — one spent role group must never hide "Add 10 more" for the
+   * company's other role groups. Absent (legacy payload) reads as "not spent".
+   */
+  exhausted?: boolean;
 };
 
 /**
@@ -1351,7 +1370,10 @@ function canonicalRoleGroupRepresentatives(
     const representative = bucket.find((search) => search.id === currentSearchId) ?? bucket[0];
     return {
       ...representative,
-      positionCategories: [...new Set(bucket.flatMap((search) => search.positionCategories))]
+      positionCategories: [...new Set(bucket.flatMap((search) => search.positionCategories))],
+      // Siblings share one canonical query, so the group only has nothing left
+      // to offer when every member of it is spent.
+      exhausted: bucket.every((search) => search.exhausted === true)
     };
   });
 }
@@ -1402,6 +1424,31 @@ export function resolveAddMoreTarget(input: {
     }
   }
   return { kind: "choose", options: groups };
+}
+
+/**
+ * Whether the search "Add 10 more" would extend has nothing left to offer.
+ *
+ * Scoped to the RESOLVED TARGET, never to the search the page happens to be
+ * routed on: a grouped company detail shows every role group, so a spent
+ * "Recruiting" search must not hide the action while viewing "Software
+ * Engineer" (and vice versa). `sessionExhaustedIds` carries the ids reported
+ * exhausted by expansions run in this session, before a reload refreshes the
+ * server flag.
+ */
+export function isAddMoreTargetExhausted(
+  target: AddMoreTarget,
+  sessionExhaustedIds: ReadonlySet<string> = new Set()
+): boolean {
+  const spent = (search: AddMoreCandidateSearch) => search.exhausted === true || sessionExhaustedIds.has(search.id);
+  if (target.kind === "search") {
+    return spent(target.search);
+  }
+  // The chooser still has something to offer unless EVERY option is spent.
+  if (target.kind === "choose") {
+    return target.options.every(spent);
+  }
+  return false;
 }
 
 /**

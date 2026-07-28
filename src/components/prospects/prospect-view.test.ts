@@ -39,6 +39,7 @@ import {
   formatSearchesRemainingLine,
   groupStatusBadge,
   groupedRoleLabels,
+  isAddMoreTargetExhausted,
   resolveAddMoreTarget,
   resolveGroupOpenTarget,
   shouldShowAddMore,
@@ -829,17 +830,25 @@ describe("Discover quota presentation helpers", () => {
 });
 
 describe("Add 10 more presentation helpers", () => {
-  it("shows the button only for a READY search with results that is not exhausted (#1, #2, #10)", () => {
-    // READY + results + not exhausted → shown (#1).
-    expect(shouldShowAddMore({ view: "ready", status: "READY", hasResults: true, exhausted: false })).toBe(true);
+  it("shows the button only for a READY search with a target that is not exhausted (#1, #2, #10)", () => {
+    // READY + a resolvable target + not exhausted → shown (#1).
+    expect(shouldShowAddMore({ view: "ready", status: "READY", hasTarget: true, exhausted: false })).toBe(true);
     // DRAFT / PROCESSING / FAILED → hidden (#2).
-    expect(shouldShowAddMore({ view: "none", status: "DRAFT", hasResults: false, exhausted: false })).toBe(false);
-    expect(shouldShowAddMore({ view: "processing", status: "SEARCHING_PEOPLE", hasResults: false, exhausted: false })).toBe(false);
-    expect(shouldShowAddMore({ view: "failed", status: "FAILED", hasResults: false, exhausted: false })).toBe(false);
-    // READY but no results yet → hidden.
-    expect(shouldShowAddMore({ view: "ready", status: "READY", hasResults: false, exhausted: false })).toBe(false);
+    expect(shouldShowAddMore({ view: "none", status: "DRAFT", hasTarget: false, exhausted: false })).toBe(false);
+    expect(shouldShowAddMore({ view: "processing", status: "SEARCHING_PEOPLE", hasTarget: false, exhausted: false })).toBe(false);
+    expect(shouldShowAddMore({ view: "failed", status: "FAILED", hasTarget: false, exhausted: false })).toBe(false);
+    // READY but nothing to extend (no ready child search) → hidden.
+    expect(shouldShowAddMore({ view: "ready", status: "READY", hasTarget: false, exhausted: false })).toBe(false);
     // Exhausted → hidden (#10).
-    expect(shouldShowAddMore({ view: "ready", status: "READY", hasResults: true, exhausted: true })).toBe(false);
+    expect(shouldShowAddMore({ view: "ready", status: "READY", hasTarget: true, exhausted: true })).toBe(false);
+  });
+
+  it("stays visible for a role/location filter that currently matches nobody (empty-role bug)", () => {
+    // The regression: visibility was derived from the people on screen, so
+    // filtering to a role with 0 rows hid the one action that could fill it.
+    // Visibility now follows the resolved target, which an empty filter still
+    // has — the row count is not an input at all.
+    expect(shouldShowAddMore({ view: "ready", status: "READY", hasTarget: true, exhausted: false })).toBe(true);
   });
 
   it("disables the button while expanding or when the daily allowance is spent (#5)", () => {
@@ -1137,6 +1146,7 @@ describe("role-targeted Add 10 more (#35-#38)", () => {
       requestedLocations: [],
       positionCategories: ["SOFTWARE_ENGINEERING"],
       createdAt: "2026-07-04T10:00:00.000Z",
+      exhausted: false,
       ...overrides
     };
   }
@@ -1561,6 +1571,7 @@ describe("location-aware Add 10 more (#28, #29)", () => {
       requestedLocations: ["United States"],
       positionCategories: ["SOFTWARE_ENGINEERING"],
       createdAt: "2026-07-04T10:00:00.000Z",
+      exhausted: false,
       ...overrides
     };
   }
@@ -1623,6 +1634,68 @@ describe("location-aware Add 10 more (#28, #29)", () => {
     const labels = target.kind === "choose" ? target.options.map((option) => addMoreSearchLabel(option)) : [];
     expect(labels).toEqual(["Software Engineer · Canada", "Software Engineer · United States"]);
     expect(new Set(labels).size).toBe(labels.length);
+  });
+});
+
+describe("per-role-group Add 10 more exhaustion", () => {
+  function candidate(overrides: Partial<AddMoreCandidateSearch> & { id: string }): AddMoreCandidateSearch {
+    return {
+      status: "READY",
+      requestedTitles: ["Software Engineer"],
+      requestedLocations: [],
+      positionCategories: ["SOFTWARE_ENGINEERING"],
+      createdAt: "2026-07-04T10:00:00.000Z",
+      exhausted: false,
+      ...overrides
+    };
+  }
+
+  it("reads exhaustion off the targeted search, not the page", () => {
+    const spent = candidate({ id: "s_recruiter", exhausted: true });
+    const fresh = candidate({ id: "s_engineer" });
+    expect(isAddMoreTargetExhausted({ kind: "search", search: spent })).toBe(true);
+    expect(isAddMoreTargetExhausted({ kind: "search", search: fresh })).toBe(false);
+  });
+
+  it("a spent role group never hides the action for another group (empty-role bug)", () => {
+    // Routing in on an exhausted Recruiting search used to hide "Add 10 more"
+    // for the whole company detail — including Software Engineer, which still
+    // has people to fetch.
+    const engineer = candidate({ id: "s_engineer" });
+    expect(isAddMoreTargetExhausted({ kind: "search", search: engineer }, new Set(["s_recruiter"]))).toBe(false);
+  });
+
+  it("mirrors a session expansion result for that search id only", () => {
+    const engineer = candidate({ id: "s_engineer" });
+    expect(isAddMoreTargetExhausted({ kind: "search", search: engineer }, new Set(["s_engineer"]))).toBe(true);
+  });
+
+  it("keeps the chooser until EVERY option is spent", () => {
+    const spent = candidate({ id: "s_a", exhausted: true });
+    const fresh = candidate({ id: "s_b", requestedTitles: ["Recruiter"] });
+    expect(isAddMoreTargetExhausted({ kind: "choose", options: [spent, fresh] })).toBe(false);
+    expect(isAddMoreTargetExhausted({ kind: "choose", options: [spent, { ...fresh, exhausted: true }] })).toBe(true);
+  });
+
+  it("treats a target-less page as not exhausted (visibility is gated by hasTarget)", () => {
+    expect(isAddMoreTargetExhausted({ kind: "none" })).toBe(false);
+  });
+
+  it("a group is spent only when all of its sibling searches are (canonical dedupe)", () => {
+    // Two searches for the same role collapse into one group; the group can
+    // still be extended while any sibling has results left.
+    const spent = candidate({ id: "s_eng_1", exhausted: true, createdAt: "2026-07-04T10:00:00.000Z" });
+    const fresh = candidate({ id: "s_eng_2", createdAt: "2026-07-05T10:00:00.000Z" });
+    const target = resolveAddMoreTarget({ activeCategory: null, searches: [spent, fresh], currentSearchId: "" });
+    expect(target.kind).toBe("search");
+    expect(isAddMoreTargetExhausted(target)).toBe(false);
+
+    const allSpent = resolveAddMoreTarget({
+      activeCategory: null,
+      searches: [spent, { ...fresh, exhausted: true }],
+      currentSearchId: ""
+    });
+    expect(isAddMoreTargetExhausted(allSpent)).toBe(true);
   });
 });
 
