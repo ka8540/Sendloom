@@ -1104,18 +1104,28 @@ describe("No more people found dialog", () => {
     expect(dialogSource).toMatch(/<\/div>\s*\n\s*<p id="discover-no-more-people-body" className=\{styles\.outcomeBody\}>/);
   });
 
-  it("offers the way forward as the primary action, not a lone OK", () => {
-    expect(dialogSource).toContain("{COMPANY_SEARCH_BUTTON_LABEL}");
-    expect(dialogSource).toContain("onClick={onSearchCompany}");
-    expect(dialogSource).toContain('className="button secondary"');
-    // The parent hands that action to the existing same-company search panel.
-    expect(detailSource).toMatch(/onSearchCompany=\{\(\) => \{[\s\S]*?setCompanySearchOpen\(true\);/);
+  /**
+   * Close is the ONLY action, by explicit product decision: this dialog reports
+   * an outcome, it does not sell the next search. Starting one belongs to the
+   * page's own "Search this company" control.
+   */
+  it("offers exactly one action — Close — and never launches another search", () => {
+    expect(dialogSource).toContain("{ADD_MORE_NO_RESULTS_CLOSE_LABEL}");
+    const buttons = dialogSource.match(/<button\b/g) ?? [];
+    expect(buttons).toHaveLength(1);
+    expect(dialogSource).not.toContain("COMPANY_SEARCH_BUTTON_LABEL");
+    expect(dialogSource).not.toContain("onSearchCompany");
+    expect(dialogSource).not.toContain("setCompanySearchOpen");
+    // The parent mounts it with a close handler and nothing else.
+    expect(detailSource).toContain(
+      "<NoMorePeopleDialog open={noMorePeopleOpen} onClose={() => setNoMorePeopleOpen(false)} />"
+    );
   });
 
   it("behaves like the app's other dialogs: escape, backdrop, and focus on the way out", () => {
     expect(dialogSource).toContain('event.key === "Escape"');
     expect(dialogSource).toContain("event.target === event.currentTarget");
-    expect(dialogSource).toContain("primaryRef.current?.focus()");
+    expect(dialogSource).toContain("closeRef.current?.focus()");
     expect(dialogSource).toContain('aria-describedby="discover-no-more-people-body"');
   });
 

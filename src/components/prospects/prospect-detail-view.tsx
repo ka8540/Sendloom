@@ -1637,17 +1637,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
         onConfirm={handleAddMore}
         onClose={() => setShowAddMoreDialog(false)}
       />
-      <NoMorePeopleDialog
-        open={noMorePeopleOpen}
-        onClose={() => setNoMorePeopleOpen(false)}
-        // The way out of an empty result: hand the user straight to the
-        // same-company search, pre-cleared, instead of a dead-end OK.
-        onSearchCompany={() => {
-          setNoMorePeopleOpen(false);
-          setCompanySearchNotice(null);
-          setCompanySearchOpen(true);
-        }}
-      />
+      <NoMorePeopleDialog open={noMorePeopleOpen} onClose={() => setNoMorePeopleOpen(false)} />
       <AppConfirmDialog
         open={companyPendingDeletion !== null}
         title="Delete this company?"
@@ -2828,21 +2818,13 @@ function AddMorePeopleDialog({
  * page. Deliberately NOT an inline message in the People card and deliberately
  * not a reason to hide the button.
  *
- * Composed as a notice, not an alarm — medallion, one-measure sentence, then the
- * route out. The empty result is almost always "this role and location are
- * covered", so the primary action opens the same-company search rather than
- * leaving the user at an OK button with nowhere to go.
+ * Composed as a notice, not an alarm — medallion, one-measure sentence, one line
+ * of guidance. It reports an outcome and gets out of the way: Close is the ONLY
+ * action, deliberately. Starting another search belongs to the page's own
+ * "Search this company" control, not to a dialog the user is trying to dismiss.
  */
-function NoMorePeopleDialog({
-  open,
-  onClose,
-  onSearchCompany
-}: {
-  open: boolean;
-  onClose: () => void;
-  onSearchCompany: () => void;
-}) {
-  const primaryRef = useRef<HTMLButtonElement>(null);
+function NoMorePeopleDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const closeRef = useRef<HTMLButtonElement>(null);
 
   // Escape dismisses, like every other dialog on this page.
   useEffect(() => {
@@ -2858,12 +2840,12 @@ function NoMorePeopleDialog({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  // Focus the way forward, not the dismissal: nothing here is destructive.
+  // Focus the only action, so Enter dismisses immediately.
   useEffect(() => {
     if (!open) {
       return;
     }
-    const frame = window.requestAnimationFrame(() => primaryRef.current?.focus());
+    const frame = window.requestAnimationFrame(() => closeRef.current?.focus());
     return () => window.cancelAnimationFrame(frame);
   }, [open]);
 
@@ -2909,12 +2891,8 @@ function NoMorePeopleDialog({
         </p>
 
         <div className={styles.modalActions}>
-          <button type="button" className="button secondary" onClick={onClose}>
+          <button type="button" className="button" ref={closeRef} onClick={onClose}>
             {ADD_MORE_NO_RESULTS_CLOSE_LABEL}
-          </button>
-          <button type="button" className="button" ref={primaryRef} onClick={onSearchCompany}>
-            <Search aria-hidden="true" />
-            <span>{COMPANY_SEARCH_BUTTON_LABEL}</span>
           </button>
         </div>
       </div>
