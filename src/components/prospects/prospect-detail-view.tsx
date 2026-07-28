@@ -733,13 +733,6 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     companySearchTriggerRef.current?.focus();
   }, []);
 
-  // Opens (never toggles) the existing "Search this company" dialog — the
-  // no-more-people card hands the user straight to the one action that can
-  // find a different role or location.
-  const handleOpenCompanySearch = useCallback(() => {
-    setCompanySearchOpen(true);
-  }, []);
-
   // "Search this company": run the SAME company again with a new role/location.
   // A duplicate role+location never reaches the backend — the client pre-check
   // answers instantly with the same copy the server would return — and the
@@ -1543,17 +1536,11 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
                   so are its rows, counts, and role groups. */}
               {addMoreFoundNobody && (
                 <div className={styles.addMoreEmptyCard} role="status">
-                  <div className={styles.addMoreEmptyBody}>
-                    <UserPlus aria-hidden="true" />
-                    <div className={styles.addMoreEmptyText}>
-                      <span className={styles.addMoreEmptyTitle}>{ADD_MORE_NO_RESULTS_TITLE}</span>
-                      <span className={styles.addMoreEmptyHint}>{ADD_MORE_NO_RESULTS_BODY}</span>
-                    </div>
+                  <UserPlus aria-hidden="true" />
+                  <div className={styles.addMoreEmptyText}>
+                    <span className={styles.addMoreEmptyTitle}>{ADD_MORE_NO_RESULTS_TITLE}</span>
+                    <span className={styles.addMoreEmptyHint}>{ADD_MORE_NO_RESULTS_BODY}</span>
                   </div>
-                  <button type="button" className={styles.secondaryButton} onClick={handleOpenCompanySearch}>
-                    <Search aria-hidden="true" />
-                    <span>{COMPANY_SEARCH_BUTTON_LABEL}</span>
-                  </button>
                 </div>
               )}
 

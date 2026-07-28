@@ -1846,56 +1846,48 @@
   flex: none;
 }
 
-/* Feedback strip for an "Add 10 more" that found nobody. Deliberately an
-   inline one-line-tall banner, NEVER a page-empty state: the People table
-   underneath must stay exactly where it was, so this only reports the last
-   attempt and takes a row of height to do it. */
+/* Status card for an "Add 10 more" that found nobody. Borrows the quality
+   tile's metrics exactly (same padding, radius, border, soft fill) so it reads
+   as one of the page's small status cards — never an empty state, and never a
+   full-width banner: justify-self keeps it sized to its own text so it does
+   not compete with the inferred-email warning directly below it. It carries no
+   action, because the search control it points at already sits above. */
 .addMoreEmptyCard {
+  justify-self: start;
+  max-width: 100%;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.85rem;
-  flex-wrap: wrap;
-  padding: 0.7rem 0.9rem;
-  border-radius: 0.8rem;
+  gap: 0.6rem;
+  padding: 0.7rem 0.8rem;
+  border-radius: 0.75rem;
   border: 1px solid var(--line);
-  background: var(--surface-strong);
+  background: var(--surface-soft);
 }
 
-.addMoreEmptyBody {
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
-  min-width: 0;
-}
-
-.addMoreEmptyBody svg {
-  width: 1.05rem;
-  height: 1.05rem;
+.addMoreEmptyCard svg {
+  width: 1rem;
+  height: 1rem;
   flex: none;
   color: var(--muted);
 }
 
 .addMoreEmptyText {
   display: grid;
-  gap: 0.1rem;
+  gap: 0.15rem;
   min-width: 0;
 }
 
 .addMoreEmptyTitle {
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   font-weight: 700;
+  line-height: 1.25;
   color: var(--text);
 }
 
 .addMoreEmptyHint {
-  font-size: 0.82rem;
+  font-size: 0.8rem;
+  line-height: 1.35;
   color: var(--muted);
-}
-
-.addMoreEmptyCard .secondaryButton {
-  padding: 0.45rem 0.8rem;
-  font-size: 0.86rem;
 }
 
 .peopleToolbar {

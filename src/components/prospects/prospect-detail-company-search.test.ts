@@ -23,6 +23,7 @@ import {
   COMPANY_SEARCH_ROLE_PLACEHOLDER,
   COMPANY_SEARCH_SUBTITLE,
   COMPANY_SEARCH_TITLE,
+  ADD_MORE_NO_RESULTS_BODY,
   FILTERED_PEOPLE_EMPTY_BODY,
   FILTERED_PEOPLE_EMPTY_TITLE
 } from "@/components/prospects/prospect-view";
@@ -217,29 +218,43 @@ describe("Scalable People filter controls (#21-#27)", () => {
     expect(DETAIL_SOURCE).toContain("isEmptyAddMoreResult(expansion)");
     // Sits between the filters and the table, inside the People card.
     expect(DETAIL_SOURCE).toMatch(/peopleFilterBar[\s\S]*addMoreFoundNobody[\s\S]*peopleTableShell/);
-    // The action reuses the existing "Search this company" dialog — no second
-    // modal, no new form.
-    expect(DETAIL_SOURCE).toContain("onClick={handleOpenCompanySearch}");
-    expect(DETAIL_SOURCE).toContain("COMPANY_SEARCH_BUTTON_LABEL");
     // Reported once: an empty run does not also raise the generic notice.
     expect(DETAIL_SOURCE).toMatch(/isEmptyAddMoreResult\(expansion\)\) \{[\s\S]{0,120}\} else \{[\s\S]{0,160}setActionNotice/);
   });
 
-  it("reports it as a compact strip, never as a page-empty state", () => {
-    // The table keeps its place: this is a one-row banner between the filters
-    // and the warning, NOT an EmptyState takeover of the People section.
+  it("reports it as a small status card, never an empty state or CTA banner", () => {
+    // The table keeps its place: a compact card between the filters and the
+    // warning, NOT an EmptyState takeover of the People section.
     expect(DETAIL_SOURCE).toContain("addMoreEmptyCard");
     expect(DETAIL_SOURCE).not.toMatch(/<EmptyState[\s\S]{0,400}ADD_MORE_NO_RESULTS_TITLE/);
-    expect(DETAIL_SOURCE).toMatch(/addMoreEmptyCard[\s\S]{0,1400}noticeBanner/);
-    // Laid out as an inline strip — content left, action right, one row high.
-    expect(CSS).toMatch(/\.addMoreEmptyCard \{[^}]*justify-content: space-between/);
-    expect(CSS).toMatch(/\.addMoreEmptyCard \{[^}]*padding: 0\.7rem 0\.9rem/);
-    // Themed with the shared tokens, so light and dark both work.
+    expect(DETAIL_SOURCE).toMatch(/addMoreEmptyCard[\s\S]{0,900}noticeBanner/);
+    // Same metrics as the quality tiles, so it reads as one of the page's
+    // existing small status cards in both themes.
+    expect(CSS).toMatch(/\.addMoreEmptyCard \{[^}]*padding: 0\.7rem 0\.8rem/);
+    expect(CSS).toMatch(/\.addMoreEmptyCard \{[^}]*border-radius: 0\.75rem/);
     expect(CSS).toMatch(/\.addMoreEmptyCard \{[^}]*border: 1px solid var\(--line\)/);
-    expect(CSS).toMatch(/\.addMoreEmptyCard \{[^}]*background: var\(--surface-strong\)/);
-    // No fixed min-height or centering that would open up vertical space.
+    expect(CSS).toMatch(/\.addMoreEmptyCard \{[^}]*background: var\(--surface-soft\)/);
+    expect(CSS).toMatch(/\.qualityStat \{[^}]*padding: 0\.7rem 0\.8rem/);
+    // Sized to its own text — not another full-width banner under the filters.
+    expect(CSS).toMatch(/\.addMoreEmptyCard \{[^}]*justify-self: start/);
+    // Nothing that would open up vertical space.
     expect(CSS).not.toMatch(/\.addMoreEmptyCard \{[^}]*min-height/);
     expect(CSS).not.toMatch(/\.addMoreEmptyCard \{[^}]*text-align: center/);
+  });
+
+  it("carries no action — the search control it points at is already on the page", () => {
+    // A duplicate "Search this company" button inside the card would be the
+    // third way to reach the same dialog from one screen.
+    const cardRegion = DETAIL_SOURCE.slice(
+      DETAIL_SOURCE.indexOf("styles.addMoreEmptyCard"),
+      DETAIL_SOURCE.indexOf("styles.noticeBanner")
+    );
+    expect(cardRegion).toContain("ADD_MORE_NO_RESULTS_TITLE");
+    expect(cardRegion).not.toContain("<button");
+    expect(cardRegion).not.toContain("COMPANY_SEARCH_BUTTON_LABEL");
+    expect(DETAIL_SOURCE).not.toContain("handleOpenCompanySearch");
+    // The card copy sends the user upward instead.
+    expect(ADD_MORE_NO_RESULTS_BODY).toBe("Try another role or location from the search controls above.");
   });
 
   it("an empty add-more changes no count and takes nothing away", () => {

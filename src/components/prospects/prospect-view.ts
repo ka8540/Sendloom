@@ -1207,9 +1207,13 @@ export const ADD_MORE_EXHAUSTED_MESSAGE = "No more unique people are available f
  * duplicate/unusable. Nothing about the company changes in that case (no rows,
  * no counts, no role groups), so the run needs to say so plainly instead of
  * looking like a no-op.
+ *
+ * The body points back at the controls already on the page rather than
+ * carrying its own action — the card reports, it does not duplicate a button
+ * the user can reach a few rows above it.
  */
 export const ADD_MORE_NO_RESULTS_TITLE = "No more people found";
-export const ADD_MORE_NO_RESULTS_BODY = "Try another role or location from Search this company.";
+export const ADD_MORE_NO_RESULTS_BODY = "Try another role or location from the search controls above.";
 
 /**
  * Whether an expansion added nobody. `addedCount` is the number of people the

@@ -885,7 +885,7 @@ describe("Add 10 more presentation helpers", () => {
 
   it("says plainly that nothing was found and points at Search this company", () => {
     expect(ADD_MORE_NO_RESULTS_TITLE).toBe("No more people found");
-    expect(ADD_MORE_NO_RESULTS_BODY).toBe("Try another role or location from Search this company.");
+    expect(ADD_MORE_NO_RESULTS_BODY).toBe("Try another role or location from the search controls above.");
   });
 
   it("renders the current people count and remaining quota for the dialog (#4)", () => {
