@@ -87,20 +87,16 @@ export const personQueries = {
       context.prisma.prospectPerson.count({ where })
     ]);
 
-    const derivedRows = await Promise.all(
-      rows.map(async (person) => {
-        const suppressionReason = person.inferredEmail
-          ? await context.loaders.suppressionReasonByEmail.load(person.inferredEmail.trim().toLowerCase())
-          : null;
-        return {
-          ...person,
-          ...resolveProspectPersonEmail(person, company, {
-            allowLowConfidence: env.PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS,
-            suppressed: Boolean(suppressionReason)
-          })
-        };
+    // Addresses always follow the company's CURRENT format; the suppression
+    // state of whatever address a row used to hold never pins it to that
+    // address. ProspectPerson.emailStatus then overlays the suppression list
+    // onto the address actually being shown.
+    const derivedRows = rows.map((person) => ({
+      ...person,
+      ...resolveProspectPersonEmail(person, company, {
+        allowLowConfidence: env.PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS
       })
-    );
+    }));
 
     return buildConnection(derivedRows, first, totalCount);
   }

@@ -103,7 +103,11 @@ export type ProspectSearchNode = {
   errorMessage: string | null;
   retryable: boolean;
   peopleCount: number;
-  /** True when no more unique people can be added (drives the Add-more button). */
+  /**
+   * True when no more unique people can be added. Informational only — it never
+   * hides "Add 10 more": an expansion against a dry search is a free server
+   * no-op that answers with the "no more people" dialog.
+   */
   exhausted: boolean;
   createdAt: string;
   completedAt: string | null;

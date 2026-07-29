@@ -147,17 +147,12 @@ export const Company = {
     // blocked) before aggregating, using the same precedence as the per-person
     // resolver — the summary and the table always agree. Unknown stored
     // statuses coerce to UNAVAILABLE so the enum contract holds for legacy rows.
-    const storedReasons = await Promise.all(
-      rows.map((row) =>
-        row.inferredEmail
-          ? context.loaders.suppressionReasonByEmail.load(row.inferredEmail.trim().toLowerCase())
-          : Promise.resolve(null)
-      )
-    );
-    const derivedRows = rows.map((row, index) =>
+    // Derive from the current company format FIRST, then look suppression up
+    // by the derived address — so the counts describe the addresses the table
+    // is showing, not addresses these rows used to hold.
+    const derivedRows = rows.map((row) =>
       resolveProspectPersonEmail(row, parent, {
-        allowLowConfidence: env.PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS,
-        suppressed: Boolean(storedReasons[index])
+        allowLowConfidence: env.PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS
       })
     );
     const derivedReasons = await Promise.all(
@@ -252,18 +247,12 @@ export const CompanyPosition = {
       throw notFoundError("Company not found.");
     }
     return Promise.all(
-      people.map(async (person) => {
-        const reason = person.inferredEmail
-          ? await context.loaders.suppressionReasonByEmail.load(person.inferredEmail.trim().toLowerCase())
-          : null;
-        return {
-          ...person,
-          ...resolveProspectPersonEmail(person, company, {
-            allowLowConfidence: env.PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS,
-            suppressed: Boolean(reason)
-          })
-        };
-      })
+      people.map(async (person) => ({
+        ...person,
+        ...resolveProspectPersonEmail(person, company, {
+          allowLowConfidence: env.PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS
+        })
+      }))
     );
   },
   peopleCount(parent: ProspectCompanyPosition, _args: unknown, context: GraphQLContext) {

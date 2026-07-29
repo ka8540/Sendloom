@@ -1189,19 +1189,6 @@ export class ProspectSearchService {
         })
       : [];
     const existingByProfileId = new Map(existingPeople.map((person) => [person.sourceProfileId, person]));
-    const suppressions = existingPeople.length
-      ? await this.prisma.suppression.findMany({
-          where: {
-            userId,
-            email: {
-              in: existingPeople
-                .map((person) => person.inferredEmail?.trim().toLowerCase())
-                .filter((email): email is string => Boolean(email))
-            }
-          }
-        })
-      : [];
-    const suppressedEmails = new Set(suppressions.map((row) => row.email.trim().toLowerCase()));
 
     // One position node per category that has allocated people.
     const rawTitlesByCategory = new Map<PositionCategory, Set<string>>();
@@ -1243,10 +1230,7 @@ export class ProspectSearchService {
       const currentEmail = existingPerson ?? person;
       const emailFields = resolveProspectPersonEmail(currentEmail, updatedCompany, {
         allowLowConfidence,
-        regenerateExistingInferred: true,
-        suppressed: Boolean(
-          existingPerson?.inferredEmail && suppressedEmails.has(existingPerson.inferredEmail.trim().toLowerCase())
-        )
+        regenerateExistingInferred: true
       });
       const fields = {
         companyId: updatedCompany.id,
@@ -1702,29 +1686,18 @@ export class ProspectSearchService {
   private async regenerateCompanyEmails(
     userId: string,
     updatedCompany: ProspectCompany,
-    db: Pick<Prisma.TransactionClient, "prospectPerson" | "suppression"> = this.prisma
+    db: Pick<Prisma.TransactionClient, "prospectPerson"> = this.prisma
   ): Promise<void> {
     const allowLowConfidence = env.PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS;
     const people = await db.prospectPerson.findMany({ where: { companyId: updatedCompany.id, userId } });
-    const suppressions = await db.suppression.findMany({
-      where: {
-        userId,
-        email: {
-          in: people
-            .map((person) => person.inferredEmail?.trim().toLowerCase())
-            .filter((email): email is string => Boolean(email))
-        }
-      }
-    });
-    const suppressedEmails = new Set(suppressions.map((row) => row.email.trim().toLowerCase()));
 
+    // Every generated address moves to the new format, including one whose
+    // previous address had bounced: that failure belongs to the old address and
+    // stays recorded against it, not against the person.
     for (const person of people) {
       const emailFields = resolveProspectPersonEmail(person, updatedCompany, {
         allowLowConfidence,
-        regenerateExistingInferred: true,
-        suppressed: Boolean(
-          person.inferredEmail && suppressedEmails.has(person.inferredEmail.trim().toLowerCase())
-        )
+        regenerateExistingInferred: true
       });
       await db.prospectPerson.update({
         where: { id: person.id },

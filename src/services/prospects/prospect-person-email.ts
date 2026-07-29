@@ -33,8 +33,21 @@ const REGENERATABLE_STATUSES = new Set([
   "INFERRED_LOW"
 ]);
 
-export function shouldRegenerateProspectEmail(person: ProspectPersonEmailInput, suppressed = false): boolean {
-  if (suppressed || !REGENERATABLE_STATUSES.has(person.emailStatus)) {
+/**
+ * Whether this person's address is Sendloom's own generated guess, and so must
+ * follow the company's current format.
+ *
+ * Deliberately NOT gated on whether the person's CURRENT address is
+ * suppressed/bounced. A failure belongs to the address that failed, not to the
+ * person: freezing the row on a spent address meant a new pattern could never
+ * be applied to them, so a corrected email format left the old dead address —
+ * and its Invalid pill — on screen forever. The record of the failure lives in
+ * the suppression list, keyed by address, and is overlaid at read time onto
+ * whatever address is current; switch the pattern back and the same address is
+ * regenerated and reads Invalid again.
+ */
+export function shouldRegenerateProspectEmail(person: ProspectPersonEmailInput): boolean {
+  if (!REGENERATABLE_STATUSES.has(person.emailStatus)) {
     return false;
   }
   // PATTERN is Sendloom's deterministic candidate source. Any other populated
@@ -50,9 +63,9 @@ export function shouldRegenerateProspectEmail(person: ProspectPersonEmailInput, 
 export function resolveProspectPersonEmail(
   person: ProspectPersonEmailInput,
   company: ProspectCompanyEmailInput,
-  options: { allowLowConfidence: boolean; suppressed?: boolean; regenerateExistingInferred?: boolean }
+  options: { allowLowConfidence: boolean; regenerateExistingInferred?: boolean }
 ): ProspectPersonEmailFields {
-  if (!shouldRegenerateProspectEmail(person, options.suppressed)) {
+  if (!shouldRegenerateProspectEmail(person)) {
     return {
       inferredEmail: person.inferredEmail,
       emailStatus: person.emailStatus,

@@ -30,6 +30,7 @@ import {
   addMoreDisabledReason,
   addMoreSearchLabel,
   buildLocationFilterOptions,
+  canSearchCompanyAgain,
   companySearchDisabledReason,
   companySearchSuccessMessage,
   confidenceBadge,
@@ -829,17 +830,83 @@ describe("Discover quota presentation helpers", () => {
 });
 
 describe("Add 10 more presentation helpers", () => {
-  it("shows the button only for a READY search with results that is not exhausted (#1, #2, #10)", () => {
-    // READY + results + not exhausted → shown (#1).
-    expect(shouldShowAddMore({ view: "ready", status: "READY", hasResults: true, exhausted: false })).toBe(true);
+  it("shows the button for any READY search whose company can be searched again (#1, #2)", () => {
+    expect(shouldShowAddMore({ view: "ready", status: "READY", canSearchAgain: true })).toBe(true);
     // DRAFT / PROCESSING / FAILED → hidden (#2).
-    expect(shouldShowAddMore({ view: "none", status: "DRAFT", hasResults: false, exhausted: false })).toBe(false);
-    expect(shouldShowAddMore({ view: "processing", status: "SEARCHING_PEOPLE", hasResults: false, exhausted: false })).toBe(false);
-    expect(shouldShowAddMore({ view: "failed", status: "FAILED", hasResults: false, exhausted: false })).toBe(false);
-    // READY but no results yet → hidden.
-    expect(shouldShowAddMore({ view: "ready", status: "READY", hasResults: false, exhausted: false })).toBe(false);
-    // Exhausted → hidden (#10).
-    expect(shouldShowAddMore({ view: "ready", status: "READY", hasResults: true, exhausted: true })).toBe(false);
+    expect(shouldShowAddMore({ view: "none", status: "DRAFT", canSearchAgain: true })).toBe(false);
+    expect(shouldShowAddMore({ view: "processing", status: "SEARCHING_PEOPLE", canSearchAgain: true })).toBe(false);
+    expect(shouldShowAddMore({ view: "failed", status: "FAILED", canSearchAgain: true })).toBe(false);
+    // Nothing to search again with (no company identity at all) → hidden.
+    expect(shouldShowAddMore({ view: "ready", status: "READY", canSearchAgain: false })).toBe(false);
+  });
+
+  it("resolves can-search-again from company identity only", () => {
+    expect(canSearchCompanyAgain({ name: "Compa" })).toBe(true);
+    // A domain alone is enough — a blank name never removes the button.
+    expect(canSearchCompanyAgain({ name: "   ", officialDomain: "compa.com" })).toBe(true);
+    expect(canSearchCompanyAgain({ officialWebsiteDomain: "compa.com" })).toBe(true);
+    expect(canSearchCompanyAgain({ emailDomain: "compa.com" })).toBe(true);
+    expect(canSearchCompanyAgain({ name: "", officialDomain: null, emailDomain: null })).toBe(false);
+    expect(canSearchCompanyAgain(null)).toBe(false);
+  });
+
+  /**
+   * The regression this guards: successive email-format / invalid-status work
+   * kept wiring row-level state into Add-more visibility, and the button
+   * vanished. Visibility is a property of the SEARCH, so none of the people /
+   * filter / email-status inputs may even be accepted by the helper.
+   */
+  it("never hides Add 10 more for people, filter, or email state (#10)", () => {
+    const visible = { view: "ready", status: "READY", canSearchAgain: true } as const;
+    // An exhausted provider, an empty filtered page, all-invalid emails: the
+    // helper cannot see any of them, so it still shows the button.
+    expect(shouldShowAddMore(visible)).toBe(true);
+
+    // The helper's contract is the whole guard: it takes company searchability
+    // and search state — nothing that describes the rows on screen.
+    const source = readFileSync("src/components/prospects/prospect-view.ts", "utf8");
+    const helper = source.match(/export function shouldShowAddMore\([\s\S]*?\n\}/)?.[0] ?? "";
+    expect(helper).toContain("canSearchAgain");
+    for (const banned of [
+      "hasResults",
+      "peopleCount",
+      "filteredPeople",
+      "paginatedPeople",
+      "visiblePeople",
+      "validPeople",
+      "invalidPeople",
+      "roleGroups",
+      "selectedRole",
+      "activeCategory",
+      "emailStatus",
+      "emailConfidence",
+      "exhausted"
+    ]) {
+      expect(helper).not.toContain(banned);
+    }
+  });
+
+  it("keeps the detail page's Add-more visibility off row/filter state", () => {
+    const detailSource = readFileSync("src/components/prospects/prospect-detail-view.tsx", "utf8");
+    const call = detailSource.match(/const showAddMore =[\s\S]*?\}\);/)?.[0] ?? "";
+    expect(call).toContain("canSearchCompanyAgain");
+    for (const banned of [
+      "hasResults",
+      "peopleCount",
+      "visiblePeople",
+      "people.length",
+      "activeCategory",
+      "activeLocation",
+      "emailStatus",
+      "exhausted"
+    ]) {
+      expect(call).not.toContain(banned);
+    }
+    // A 0-result expansion answers in the centered dialog, and never by
+    // freezing the button out of the header.
+    expect(detailSource).toContain("NoMorePeopleDialog");
+    expect(detailSource).toContain("setNoMorePeopleOpen(true)");
+    expect(detailSource).not.toContain("sessionExhausted");
   });
 
   it("disables the button while expanding or when the daily allowance is spent (#5)", () => {
@@ -1018,6 +1085,67 @@ describe("Add more people dialog UI polish", () => {
   it("stacks the compact rows and actions instead of squeezing them on narrow phones", () => {
     expect(css).toMatch(/@media \(max-width: 22rem\)\s*\{\s*\.addMoreSummaryRow\s*\{\s*grid-template-columns: 1fr;/s);
     expect(css).toMatch(/@media \(max-width: 22rem\)[\s\S]*\.addMoreCard \.modalActions\s*\{\s*display: grid;\s*grid-template-columns: 1fr;/s);
+  });
+});
+
+describe("No more people found dialog", () => {
+  const detailSource = readFileSync("src/components/prospects/prospect-detail-view.tsx", "utf8");
+  const css = readFileSync("src/components/prospects/prospects-dashboard.module.css", "utf8");
+  const dialogSource =
+    detailSource.match(/function NoMorePeopleDialog\([\s\S]*?\nfunction ProspectReviewDialog\(/)?.[0] ?? "";
+
+  it("composes as medallion + title row, then a full-width sentence, then the hint band", () => {
+    expect(dialogSource).toContain("styles.outcomeIcon");
+    expect(dialogSource).toContain("styles.outcomeTitle");
+    expect(dialogSource).toContain("styles.outcomeBody");
+    expect(dialogSource).toContain("styles.outcomeHint");
+    // The sentence is a sibling of the head, not a cell inside it — that is what
+    // keeps it off the narrow gutter left by the close button.
+    expect(dialogSource).toMatch(/<\/div>\s*\n\s*<p id="discover-no-more-people-body" className=\{styles\.outcomeBody\}>/);
+  });
+
+  /**
+   * Close is the ONLY action, by explicit product decision: this dialog reports
+   * an outcome, it does not sell the next search. Starting one belongs to the
+   * page's own "Search this company" control.
+   */
+  it("offers exactly one action — Close — and never launches another search", () => {
+    expect(dialogSource).toContain("{ADD_MORE_NO_RESULTS_CLOSE_LABEL}");
+    const buttons = dialogSource.match(/<button\b/g) ?? [];
+    expect(buttons).toHaveLength(1);
+    expect(dialogSource).not.toContain("COMPANY_SEARCH_BUTTON_LABEL");
+    expect(dialogSource).not.toContain("onSearchCompany");
+    expect(dialogSource).not.toContain("setCompanySearchOpen");
+    // The parent mounts it with a close handler and nothing else.
+    expect(detailSource).toContain(
+      "<NoMorePeopleDialog open={noMorePeopleOpen} onClose={() => setNoMorePeopleOpen(false)} />"
+    );
+  });
+
+  it("behaves like the app's other dialogs: escape, backdrop, and focus on the way out", () => {
+    expect(dialogSource).toContain('event.key === "Escape"');
+    expect(dialogSource).toContain("event.target === event.currentTarget");
+    expect(dialogSource).toContain("closeRef.current?.focus()");
+    expect(dialogSource).toContain('aria-describedby="discover-no-more-people-body"');
+  });
+
+  it("scopes every rule under .outcome* so the other dialogs keep their shape", () => {
+    expect(dialogSource).toContain("styles.outcomeCard");
+    const rules = css.match(/^\.outcome[^{]*\{/gm) ?? [];
+    expect(rules.length).toBeGreaterThanOrEqual(6);
+    // Compact type, same scale as the dialog it answers.
+    const blocks = css.match(/\.outcome[^{]*\{[^}]*\}/gs) ?? [];
+    for (const block of blocks) {
+      const size = block.match(/font-size:\s*([\d.]+)rem/);
+      if (size) {
+        expect(Number.parseFloat(size[1])).toBeLessThanOrEqual(1.1);
+      }
+    }
+  });
+
+  it("keeps the action row on one row until the card is genuinely too narrow", () => {
+    expect(css).toMatch(/\.outcomeCard \.modalActions\s*\{[^}]*flex-wrap: nowrap;[^}]*min-width: 0;/s);
+    expect(css).toMatch(/@media \(max-width: 24rem\)[\s\S]*\.outcomeCard \.modalActions\s*\{\s*display: grid;\s*grid-template-columns: 1fr;/s);
   });
 });
 

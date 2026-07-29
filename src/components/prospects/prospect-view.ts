@@ -1195,18 +1195,57 @@ export const ADD_MORE_CANCEL_LABEL = "Cancel";
 export const ADD_MORE_LOADING_LABEL = "Adding new people…";
 export const ADD_MORE_EXHAUSTED_MESSAGE = "No more unique people are available for this search.";
 
+// A finished expansion that added nobody. Answered in a centered dialog so the
+// People card is never rewritten — and so the button that opened it stays put.
+export const ADD_MORE_NO_RESULTS_TITLE = "No more people found";
+/** What happened, in one sentence. Never blames the user, never alarms. */
+export const ADD_MORE_NO_RESULTS_BODY =
+  "Everyone we can reach for this role and location is already on your list. Nobody new was added.";
+/** Why the dialog's primary action is worth taking. */
+export const ADD_MORE_NO_RESULTS_HINT =
+  "A different role or location usually surfaces new people at the same company.";
+export const ADD_MORE_NO_RESULTS_CLOSE_LABEL = "Close";
+
 /**
- * Whether the "Add 10 more" button should be shown at all: a READY search with
- * existing results that is not confirmed exhausted. Quota / in-flight state only
- * DISABLE the button (so the user still sees it) — see addMoreDisabledReason.
+ * Whether the company on screen can be searched again at all: it needs an
+ * identity the provider can query — a name, or a domain to fall back on.
+ *
+ * Deliberately blind to the people currently rendered. A role filter with no
+ * rows, an all-invalid email column, a changed email format, a legacy row with
+ * no role groups: none of those say anything about whether more people exist to
+ * fetch, so none of them may take "Add 10 more" away.
+ */
+export function canSearchCompanyAgain(
+  company: {
+    name?: string | null;
+    officialDomain?: string | null;
+    officialWebsiteDomain?: string | null;
+    emailDomain?: string | null;
+  } | null
+): boolean {
+  if (!company) {
+    return false;
+  }
+  return [company.name, company.officialDomain, company.officialWebsiteDomain, company.emailDomain].some((value) =>
+    Boolean(value && value.trim())
+  );
+}
+
+/**
+ * Whether the "Add 10 more" button should be shown at all: a READY search whose
+ * company can be searched again (canSearchCompanyAgain).
+ *
+ * Visibility is a property of the SEARCH, never of the rows on the page. Quota,
+ * in-flight state, and a provider that has run dry only DISABLE the button or
+ * answer with the "no more people" dialog — the user always keeps the control
+ * they used to have. Filter/email-status state must never reach this function.
  */
 export function shouldShowAddMore(args: {
   view: SelectedSearchView;
   status: ProspectSearchStatus;
-  hasResults: boolean;
-  exhausted: boolean;
+  canSearchAgain: boolean;
 }): boolean {
-  return args.view === "ready" && args.status === "READY" && args.hasResults && !args.exhausted;
+  return args.view === "ready" && args.status === "READY" && args.canSearchAgain;
 }
 
 /**

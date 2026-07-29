@@ -1264,6 +1264,132 @@
   }
 }
 
+/* --- "No more people found" outcome dialog ------------------------------- *
+ * The answer to an expansion that added nobody. It is a NOTICE, not an alarm:
+ * a calm medallion anchors the card, the sentence sits on ONE readable measure
+ * instead of ragging down the middle of an over-wide box, and the footer offers
+ * the real next move (same company, different role or location) so the dialog
+ * stops being a dead end behind a single Close. Every rule is scoped under
+ * .outcomeCard so the other dialogs keep their own shape. */
+.outcomeCard {
+  max-width: 25.5rem;
+  gap: 0.85rem;
+  padding: 1.15rem 1.2rem 1.05rem;
+}
+
+/* Row 1 is identity only — medallion, title, dismiss. The sentence lives on its
+   own full-width line below, so it is never squeezed into the gutter the close
+   button leaves behind. */
+.outcomeHead {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.outcomeIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: none;
+  border-radius: 0.8rem;
+  border: 1px solid var(--accent-soft-strong);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.outcomeIcon svg {
+  width: 1.2rem;
+  height: 1.2rem;
+}
+
+.outcomeTitle {
+  margin: 0;
+  min-width: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+}
+
+.outcomeBody {
+  /* A measure, not a gutter: the sentence breaks where a sentence should. */
+  margin: -0.25rem 0 0;
+  max-width: 46ch;
+  font-size: 0.84rem;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+/* Why the footer's action helps — one quiet band, so the card reads as
+   happened → why → do it instead of a paragraph with an OK button. */
+.outcomeHint {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.6rem 0.7rem;
+  border-radius: 0.7rem;
+  border: 1px solid var(--line);
+  background: var(--surface-soft);
+  font-size: 0.76rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.outcomeHint svg {
+  width: 0.95rem;
+  height: 0.95rem;
+  margin-top: 0.12rem;
+  flex: none;
+  color: var(--accent);
+}
+
+.outcomeCard .modalActions {
+  width: 100%;
+  gap: 0.55rem;
+  margin-top: 0.05rem;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+/* Same compact control height/type as the Add-more dialog it answers. */
+.outcomeCard .modalActions :global(.button) {
+  width: auto;
+  min-width: 0;
+  min-height: 2.6rem;
+  max-width: 100%;
+  gap: 0.45rem;
+  padding: 0.58rem 0.9rem;
+  font-size: 0.86rem;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.outcomeCard .modalActions :global(.button) svg {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+}
+
+/* Narrow phones: the two actions stack rather than shrinking into stubs. */
+@media (max-width: 24rem) {
+  .outcomeHead {
+    gap: 0.65rem;
+  }
+
+  .outcomeCard .modalActions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .outcomeCard .modalActions :global(.button) {
+    width: 100%;
+  }
+}
+
 @keyframes prospect-fade {
   from {
     opacity: 0;

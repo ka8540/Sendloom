@@ -258,16 +258,12 @@ export async function resolveProspectSelection(
 
   const company = await loadOwnedCompany(prisma, userId, input.companyId);
   const selectedPeople = await resolveSelectedPeople(prisma, userId, input);
-  const storedSuppressedEmails = await loadSuppressedEmails(
-    prisma,
-    userId,
-    selectedPeople.map((person) => normalizeEmail(person.inferredEmail)).filter(Boolean)
-  );
+  // Derive from the current company format, then check suppression against the
+  // DERIVED addresses below — a spent address never pins a person to itself.
   const derivedPeople = selectedPeople.map((person) => ({
     ...person,
     ...resolveProspectPersonEmail(person, company, {
-      allowLowConfidence: env.PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS,
-      suppressed: Boolean(person.inferredEmail && storedSuppressedEmails.has(normalizeEmail(person.inferredEmail)))
+      allowLowConfidence: env.PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS
     })
   }));
   const selectedWithPositions = await attachPositions(prisma, userId, derivedPeople);
