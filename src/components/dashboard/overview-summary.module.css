@@ -1,14 +1,12 @@
 /* ===========================================================================
-   Overview summary — four compact "command center" cards in one row.
-   Theme-aware via global tokens. `--danger` / `--info` are the two accents the
-   global palette leaves to components. Responsive via a container query so the
-   row adapts to the real content width (sidebar open or closed), not just the
-   viewport.
+   Overview summary — four uniform metric cards in one row.
+   Minimal dashboard system: flat surfaces, hairline borders, one padding scale,
+   identical internal rhythm (head / label / value / unit / visual / footer).
+   See docs/uiux-overview-navbar-redesign.md §10. Responsive via a container
+   query so the row tracks the real content width, not just the viewport.
    =========================================================================== */
 
 .summary {
-  --danger: #d96952;
-  --info: #3b82f6;
   container-type: inline-size;
   min-width: 0;
 }
@@ -16,35 +14,44 @@
 .grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 1rem;
+  gap: var(--ui-gap-grid);
   align-items: stretch;
   min-width: 0;
 }
 
-/* Tone routing — scoped under .grid so the attribute selectors never leak. */
+/* Tone routing — scoped under .grid so the attribute selectors never leak.
+   Every tone resolves to a solid + soft token pair from the shared palette. */
 .grid [data-tone="accent"] {
-  --tone: var(--accent);
+  --tone: var(--ui-accent);
+  --tone-soft: var(--ui-accent-soft);
 }
 .grid [data-tone="info"] {
-  --tone: var(--info);
+  --tone: var(--ui-info);
+  --tone-soft: var(--ui-info-soft);
 }
 .grid [data-tone="warning"] {
-  --tone: var(--warning);
+  --tone: var(--ui-warning);
+  --tone-soft: var(--ui-warning-soft);
 }
 .grid [data-tone="danger"] {
-  --tone: var(--danger);
+  --tone: var(--ui-danger);
+  --tone-soft: var(--ui-danger-soft);
 }
 .grid [data-tone="muted"] {
-  --tone: color-mix(in srgb, var(--muted) 78%, transparent);
+  --tone: var(--ui-text-muted);
+  --tone-soft: var(--ui-surface-hover);
 }
 .grid [data-format="0"] {
-  --tone: var(--accent);
+  --tone: var(--ui-accent);
+  --tone-soft: var(--ui-accent-soft);
 }
 .grid [data-format="1"] {
-  --tone: var(--info);
+  --tone: var(--ui-info);
+  --tone-soft: var(--ui-info-soft);
 }
 .grid [data-format="2"] {
-  --tone: var(--warning);
+  --tone: var(--ui-warning);
+  --tone-soft: var(--ui-warning-soft);
 }
 
 /* ----- Card shell ----- */
@@ -52,150 +59,116 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 0.85rem;
+  gap: var(--ui-gap-stack);
   min-width: 0;
-  padding: 1.15rem 1.2rem 1rem;
-  border-radius: 22px;
-  border: 1px solid var(--line);
-  background:
-    radial-gradient(circle at top right, color-mix(in srgb, var(--accent) 7%, transparent), transparent 14rem),
-    linear-gradient(180deg, color-mix(in srgb, var(--surface) 95%, transparent), var(--surface-muted));
-  box-shadow: var(--shadow);
+  padding: var(--ui-pad-card);
+  border-radius: var(--ui-radius-card);
+  border: 1px solid var(--ui-border);
+  background: var(--ui-surface);
+  box-shadow: var(--ui-shadow-card);
   color: inherit;
   text-decoration: none;
   overflow: hidden;
-  transition: transform 160ms ease, border-color 180ms ease, box-shadow 180ms ease;
+  transition: border-color 140ms ease, background-color 140ms ease;
 }
 
-.card::before {
-  content: "";
-  position: absolute;
-  inset: 0 0 auto 0;
-  height: 3px;
-  background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 10%, transparent));
-  opacity: 0.5;
-  transition: opacity 180ms ease;
-  pointer-events: none;
+.card:hover {
+  border-color: var(--ui-border-strong);
 }
 
-.card:hover,
 .card:focus-visible {
-  transform: translateY(-2px);
-  border-color: color-mix(in srgb, var(--accent) 26%, var(--line));
-  box-shadow:
-    0 22px 44px rgba(28, 42, 70, 0.16),
-    0 0 0 1px color-mix(in srgb, var(--accent) 14%, transparent);
   outline: none;
+  border-color: var(--ui-border-strong);
+  box-shadow: 0 0 0 3px var(--ui-focus-ring);
 }
 
-.card:hover::before,
-.card:focus-visible::before {
-  opacity: 1;
-}
-
-/* ----- Head: icon + status pill only; the label lives on its own line below. */
+/* ----- Head: icon + status chip only; the label lives on its own line below. */
 .cardHead {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.6rem;
+  gap: 8px;
 }
 
 .iconBadge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2.2rem;
-  height: 2.2rem;
-  border-radius: 13px;
-  color: var(--accent);
-  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--accent-soft) 96%, transparent),
-    color-mix(in srgb, var(--accent-soft) 58%, transparent)
-  );
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, white 20%, transparent),
-    0 6px 14px color-mix(in srgb, var(--accent) 12%, transparent);
-  transition: transform 180ms ease, box-shadow 180ms ease;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--ui-radius-control);
+  color: var(--ui-text-muted);
+  border: 1px solid var(--ui-border);
+  background: var(--ui-surface-subtle);
 }
 
 .iconBadge svg {
-  width: 1.05rem;
-  height: 1.05rem;
-}
-
-.card:hover .iconBadge {
-  transform: translateY(-1px) scale(1.04);
+  width: 16px;
+  height: 16px;
 }
 
 .statusPill {
-  --tone: var(--muted);
+  --tone: var(--ui-text-muted);
+  --tone-soft: var(--ui-surface-hover);
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  padding: 0.28rem 0.6rem;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--tone) 26%, transparent);
-  background: color-mix(in srgb, var(--tone) 13%, transparent);
+  gap: 6px;
+  height: var(--ui-chip-h);
+  padding: 0 10px;
+  border-radius: var(--ui-radius-chip);
+  background: var(--tone-soft);
   color: var(--tone);
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.01em;
+  font-size: var(--ui-text-chip);
+  font-weight: 600;
   white-space: nowrap;
 }
 
-.statusPill[data-tone="muted"] {
-  color: var(--muted);
-}
-
 .pulseDot {
-  width: 0.45rem;
-  height: 0.45rem;
-  border-radius: 999px;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--ui-radius-chip);
   background: var(--tone);
-  box-shadow: 0 0 0 0 color-mix(in srgb, var(--tone) 40%, transparent);
   animation: summaryPulse 1.8s ease-out infinite;
 }
 
 /* ----- Stat (label + number) ----- */
 .stat {
   display: grid;
-  gap: 0.2rem;
+  gap: 4px;
 }
 
 /* Full card width — wraps rather than truncating, so titles never clip. */
 .statLabel {
-  color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.09em;
-  line-height: 1.25;
+  color: var(--ui-text-muted);
+  font-size: var(--ui-text-label);
+  font-weight: 600;
+  letter-spacing: var(--ui-tracking-label);
+  line-height: var(--ui-leading-label);
   text-transform: uppercase;
 }
 
 .statValue {
-  font-size: 2.15rem;
-  line-height: 1;
-  font-weight: 800;
-  letter-spacing: -0.05em;
-  color: var(--text);
+  font-size: var(--ui-text-metric);
+  line-height: 1.1;
+  font-weight: 650;
+  letter-spacing: var(--ui-tracking-tight);
+  color: var(--ui-text-strong);
   font-variant-numeric: tabular-nums;
 }
 
 .statValueOf {
-  font-size: 1.1rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  color: var(--muted);
+  font-size: var(--ui-text-section);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--ui-text-muted);
 }
 
 .statUnit {
-  color: var(--muted);
-  font-size: 0.82rem;
-  font-weight: 600;
+  color: var(--ui-text-muted);
+  font-size: var(--ui-text-secondary);
+  font-weight: 400;
+  line-height: var(--ui-leading-body);
 }
 
 /* ----- Visual middle area (stretches so footers align) ----- */
@@ -203,62 +176,64 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 0.6rem;
+  gap: 10px;
   flex: 1;
   min-height: 2.6rem;
 }
 
 .calm {
   margin: 0;
-  color: var(--muted);
-  font-size: 0.82rem;
-  line-height: 1.45;
+  color: var(--ui-text-muted);
+  font-size: var(--ui-text-secondary);
+  line-height: var(--ui-leading-body);
 }
 
 /* ----- Segmented status rail (active + template formats) ----- */
 .rail {
   display: flex;
   gap: 3px;
-  height: 0.5rem;
+  height: 6px;
 }
 
 .railSegment {
-  --tone: var(--muted);
+  --tone: var(--ui-text-muted);
   min-width: 8px;
-  border-radius: 999px;
+  border-radius: var(--ui-radius-chip);
   background: var(--tone);
 }
 
 .chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
+  gap: 6px;
 }
 
 .chip {
-  --tone: var(--muted);
+  --tone: var(--ui-text-muted);
+  --tone-soft: var(--ui-surface-hover);
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  padding: 0.24rem 0.55rem;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--tone) 22%, var(--line));
-  background: color-mix(in srgb, var(--tone) 9%, transparent);
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: var(--muted);
+  gap: 6px;
+  height: var(--ui-chip-h);
+  padding: 0 10px;
+  border-radius: var(--ui-radius-chip);
+  background: var(--ui-surface-subtle);
+  border: 1px solid var(--ui-border);
+  font-size: var(--ui-text-chip);
+  font-weight: 500;
+  color: var(--ui-text-muted);
 }
 
 .chip b {
-  color: var(--text);
-  font-weight: 800;
+  color: var(--ui-text-strong);
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
 .chipDot {
-  width: 0.42rem;
-  height: 0.42rem;
-  border-radius: 999px;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--ui-radius-chip);
   background: var(--tone);
 }
 
@@ -266,14 +241,14 @@
 .ringRow {
   display: flex;
   align-items: center;
-  gap: 0.9rem;
+  gap: var(--ui-pad-card-sm);
 }
 
 .ring {
-  --tone: var(--accent);
+  --tone: var(--ui-accent);
   position: relative;
-  width: 3.3rem;
-  height: 3.3rem;
+  width: 52px;
+  height: 52px;
   flex-shrink: 0;
 }
 
@@ -285,14 +260,14 @@
 
 .ringTrack {
   fill: none;
-  stroke: color-mix(in srgb, var(--muted) 24%, transparent);
-  stroke-width: 3.4;
+  stroke: var(--ui-border);
+  stroke-width: 3;
 }
 
 .ringValue {
   fill: none;
   stroke: var(--tone);
-  stroke-width: 3.4;
+  stroke-width: 3;
   stroke-linecap: round;
   transition: stroke-dasharray 600ms cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -302,97 +277,96 @@
   inset: 0;
   display: grid;
   place-items: center;
-  font-size: 0.74rem;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  color: var(--text);
+  font-size: var(--ui-text-chip);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ui-text-strong);
   font-variant-numeric: tabular-nums;
 }
 
 .miniChips {
   display: grid;
-  gap: 0.3rem;
+  gap: 4px;
   min-width: 0;
 }
 
 .miniChip {
-  --tone: var(--muted);
+  --tone: var(--ui-text-muted);
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  font-size: 0.76rem;
-  font-weight: 600;
-  color: var(--muted);
+  gap: 6px;
+  font-size: var(--ui-text-secondary);
+  font-weight: 400;
+  color: var(--ui-text-muted);
   white-space: nowrap;
 }
 
 .miniChip b {
-  color: var(--text);
-  font-weight: 800;
+  color: var(--ui-text-strong);
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
 /* ----- Send-window meter ----- */
 .meter {
-  --tone: var(--accent);
+  --tone: var(--ui-accent);
   position: relative;
   width: 100%;
-  height: 0.55rem;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--button-secondary-bg) 80%, transparent);
-  box-shadow: inset 0 1px 2px color-mix(in srgb, var(--text) 8%, transparent);
+  height: 6px;
+  border-radius: var(--ui-radius-chip);
+  background: var(--ui-surface-hover);
+  box-shadow: inset 0 0 0 1px var(--ui-border);
   overflow: hidden;
 }
 
 .meterFill {
   position: absolute;
   inset: 0 auto 0 0;
-  border-radius: 999px;
-  background: linear-gradient(90deg, var(--tone), color-mix(in srgb, var(--tone) 62%, transparent));
-  box-shadow: inset 0 1px 0 color-mix(in srgb, white 28%, transparent);
+  border-radius: var(--ui-radius-chip);
+  background: var(--tone);
   transition: width 320ms ease;
 }
 
 .meterMeta {
   display: grid;
-  gap: 0.1rem;
+  gap: 2px;
   margin: 0;
 }
 
 .meterRemaining {
-  color: var(--muted);
-  font-size: 0.8rem;
-  font-weight: 600;
+  color: var(--ui-text-muted);
+  font-size: var(--ui-text-secondary);
+  font-weight: 400;
 }
 
 .meterRemaining strong {
-  color: var(--text);
-  font-weight: 800;
+  color: var(--ui-text-strong);
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
 .meterReset {
-  color: var(--muted);
-  font-size: 0.74rem;
-  font-weight: 600;
+  color: var(--ui-text-muted);
+  font-size: var(--ui-text-chip);
+  font-weight: 400;
 }
 
 /* ----- Footer ----- */
 .cardFoot {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding-top: 0.7rem;
-  border-top: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
-  color: var(--muted);
-  font-size: 0.78rem;
-  font-weight: 600;
+  gap: 8px;
+  padding-top: var(--ui-gap-stack);
+  border-top: 1px solid var(--ui-border);
+  color: var(--ui-text-muted);
+  font-size: var(--ui-text-secondary);
+  font-weight: 400;
 }
 
 .cardFootText {
   flex: 1;
   min-width: 0;
-  line-height: 1.3;
+  line-height: var(--ui-leading-body);
   /* Wrap helper copy up to two lines instead of clipping it on one. */
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -402,33 +376,32 @@
 
 .cardFootBadge {
   flex-shrink: 0;
-  padding: 0.18rem 0.5rem;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: color-mix(in srgb, var(--surface) 70%, transparent);
-  color: var(--muted);
-  font-size: 0.7rem;
-  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: var(--ui-radius-chip);
+  border: 1px solid var(--ui-border);
+  background: var(--ui-surface-subtle);
+  color: var(--ui-text-muted);
+  font-size: var(--ui-text-chip);
+  font-weight: 600;
 }
 
 .cardFootArrow {
-  width: 0.95rem;
-  height: 0.95rem;
+  width: 16px;
+  height: 16px;
   flex-shrink: 0;
-  color: var(--muted);
-  transition: transform 160ms ease, color 160ms ease;
+  color: var(--ui-text-muted);
+  transition: color 140ms ease;
 }
 
 .card:hover .cardFootArrow,
 .card:focus-visible .cardFootArrow {
-  transform: translate(2px, -2px);
-  color: var(--accent-strong);
+  color: var(--ui-text-strong);
 }
 
 /* ----- Keyframes ----- */
 @keyframes summaryPulse {
   0% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--tone) 42%, transparent);
+    box-shadow: 0 0 0 0 var(--tone-soft);
   }
   70% {
     box-shadow: 0 0 0 6px transparent;
@@ -469,7 +442,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .card,
-  .iconBadge,
   .meterFill,
   .ringValue,
   .cardFootArrow {

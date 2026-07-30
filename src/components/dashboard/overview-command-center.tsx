@@ -846,12 +846,10 @@ export default async function OverviewCommandCenter() {
                 <Link href="/imports" className={styles.heroCta}>
                   <FileSpreadsheet aria-hidden="true" />
                   <span>Import List</span>
-                  <ArrowRight className={styles.heroCtaArrow} aria-hidden="true" />
                 </Link>
                 <Link href="/campaigns" className={`${styles.heroCta} ${styles.heroCtaGhost}`}>
                   <SendHorizontal aria-hidden="true" />
                   <span>Create Sequence</span>
-                  <ArrowRight className={styles.heroCtaArrow} aria-hidden="true" />
                 </Link>
               </div>
             </div>
@@ -867,12 +865,10 @@ export default async function OverviewCommandCenter() {
                 <Link href="/campaigns" className={styles.heroCta}>
                   <SendHorizontal aria-hidden="true" />
                   <span>Create Sequence</span>
-                  <ArrowRight className={styles.heroCtaArrow} aria-hidden="true" />
                 </Link>
                 <Link href="/imports" className={`${styles.heroCta} ${styles.heroCtaGhost}`}>
                   <FileSpreadsheet aria-hidden="true" />
                   <span>Import List</span>
-                  <ArrowRight className={styles.heroCtaArrow} aria-hidden="true" />
                 </Link>
               </div>
               <div
@@ -925,7 +921,7 @@ export default async function OverviewCommandCenter() {
                 <strong>No sequences yet</strong>
                 <p>Import a list and create your first sequence to turn this dashboard into a live control surface.</p>
               </div>
-              <Link href="/campaigns" className="button">
+              <Link href="/campaigns" className={styles.sequenceEmptyCta}>
                 Create Sequence
               </Link>
             </div>

@@ -7,8 +7,22 @@ dist
 *.log
 prisma/dev.db
 prisma/dev.db-journal
-.claude/
 .codex/
 .vercel
 .env*
-docs/
+
+# AI tool artifacts — never commit these
+.claude/
+.claude/**
+CLAUDE.md
+AGENTS.md
+.cursor/
+.cursor/**
+memory.md
+.memories/
+*.skill.md
+skill.md
+
+# Local scratch docs stay untracked, but the UI/UX design system is source of truth.
+docs/*
+!docs/uiux-overview-navbar-redesign.md

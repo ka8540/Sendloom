@@ -96,7 +96,9 @@ describe("Overview dashboard renders as one main block (#1, #2, #3)", () => {
   it("the /workspace route renders the redesigned command center", () => {
     expect(WORKSPACE_PAGE).toContain('export { default } from "@/components/dashboard/overview-command-center"');
     expect(CENTER).toContain("styles.heroTitle}>Overview</h1>");
-    expect(CENTER_CSS).toContain("font-size: clamp(2.75rem, 5vw, 4rem)");
+    // The minimal redesign sizes the page title from the shared type scale
+    // (40/32/28px) instead of the old oversized display clamp.
+    expect(CENTER_CSS).toContain("font-size: var(--ui-text-page-title)");
     expect(CENTER).toContain('data-overview-tour="page-intro"');
   });
 

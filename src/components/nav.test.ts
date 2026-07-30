@@ -94,11 +94,12 @@ describe("session controls footer order", () => {
 });
 
 describe("divider styling matches the dark UI", () => {
-  it("is a subtle 1px line using the shared line token, with breathing room", () => {
+  it("is a subtle 1px line using the shared border token, with breathing room", () => {
     const start = GLOBALS.indexOf(".nav-footer-divider {");
     const block = GLOBALS.slice(start, GLOBALS.indexOf("}", start));
     expect(block).toMatch(/height:\s*1px/);
-    expect(block).toContain("var(--line)");
+    // The minimal dashboard system owns the sidebar's hairline token.
+    expect(block).toContain("var(--ui-border)");
     expect(block).toMatch(/margin:/);
   });
 
