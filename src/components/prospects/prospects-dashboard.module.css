@@ -147,7 +147,7 @@
   color: var(--text);
   font-weight: 600;
   cursor: pointer;
-  padding: 0.6rem 0.95rem;
+  padding: 0.6rem 1.2rem;
   transition: background 140ms ease, border-color 140ms ease, transform 140ms ease, opacity 140ms ease;
 }
 
@@ -186,7 +186,7 @@
 
 .ghostButton {
   background: transparent;
-  padding: 0.45rem 0.7rem;
+  padding: 0.6rem 1.1rem;
 }
 
 .dangerButton {
@@ -194,7 +194,7 @@
   border-color: var(--error-toast-border);
   background: var(--error-toast-icon-bg);
   color: var(--error-toast-icon-color);
-  padding: 0.5rem 0.7rem;
+  padding: 0.5rem 1.05rem;
   font-size: 0.86rem;
 }
 
@@ -206,7 +206,7 @@
   justify-content: center;
   gap: 0.4rem;
   min-height: 2.75rem;
-  padding: 0.45rem 0.7rem;
+  padding: 0.45rem 1.05rem;
   border-radius: 999px;
   border: 1px solid transparent;
   background: transparent;
@@ -1828,6 +1828,40 @@
   container-type: inline-size;
 }
 
+.addMoreButtonWrap {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+.addMoreButtonTooltip {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  z-index: 50;
+  width: max-content;
+  max-width: 17rem;
+  padding: 0.55rem 0.72rem;
+  border-radius: 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
+  background: color-mix(in srgb, var(--surface) 94%, var(--surface-strong) 6%);
+  color: var(--muted);
+  box-shadow: var(--shadow);
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.4;
+  opacity: 0;
+  transform: translateY(-0.25rem);
+  pointer-events: none;
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.addMoreButtonWrap:hover .addMoreButtonTooltip,
+.addMoreButtonWrap:focus-within .addMoreButtonTooltip {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 /* ---- People filter bar (compact role + location pill controls) ---------- */
 /* Each control is ONE quiet pill: a muted inline label ("Role", "Location")
    next to a native <select> with the browser chrome stripped. The pill owns
@@ -2745,6 +2779,7 @@
   .ghostButton,
   .dangerButton,
   .dangerGhostButton,
+  .addMoreButtonTooltip,
   .peopleFilterControl,
   .peopleFilterClear,
   .pagerButton,
@@ -2808,13 +2843,18 @@
   box-shadow: 0 4px 12px var(--accent-soft);
   backdrop-filter: blur(14px) saturate(1.08);
   -webkit-backdrop-filter: blur(14px) saturate(1.08);
-  transition: transform 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+  transition:
+    padding 160ms ease,
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    background-color 160ms ease;
 }
 
 /* Hover/focus: slight lift, a touch brighter surface, and a clearly greener
    ring — refined intent feedback, never a big glow. */
 .companySearchTrigger:hover,
 .companySearchTrigger:focus-visible {
+  padding-inline: 1.05rem;
   transform: translateY(-1px);
   box-shadow: 0 8px 20px var(--accent-soft-strong);
   background:
@@ -2867,6 +2907,7 @@
 
 /* Open state: a gentle accent tint — enough to read as active, no big glow. */
 .companySearchTriggerOpen {
+  padding-inline: 1.05rem;
   background:
     linear-gradient(180deg, var(--accent-soft), var(--accent-soft)) padding-box,
     linear-gradient(

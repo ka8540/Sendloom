@@ -11,7 +11,9 @@ import type {
 import {
   ADD_MORE_DIALOG_NOTE,
   ADD_MORE_DIALOG_SUBTITLE,
+  ADD_MORE_PEOPLE_BUTTON_LABEL,
   ADD_MORE_PEOPLE_LABEL,
+  ADD_MORE_PEOPLE_TOOLTIP,
   ANY_LOCATION_LABEL,
   COMPANY_SEARCH_LOADING_LABEL,
   EXTERNAL_LINK_REL,
@@ -929,6 +931,8 @@ describe("Add 10 more presentation helpers", () => {
     expect(ADD_MORE_DIALOG_SUBTITLE).toBe("Find up to 10 more matching contacts for this role.");
     expect(ADD_MORE_DIALOG_NOTE).toBe("Existing people won't be repeated.");
     expect(ADD_MORE_PEOPLE_LABEL).toBe("Add 10 more");
+    expect(ADD_MORE_PEOPLE_BUTTON_LABEL).toBe("Add 10");
+    expect(ADD_MORE_PEOPLE_TOOLTIP).toBe("Adds 10 more people for the selected role and location.");
   });
 });
 
@@ -958,6 +962,7 @@ describe("Discover create modal contracts (list page)", () => {
 describe("Add 10 more detail-page wiring", () => {
   const detailSource = readFileSync("src/components/prospects/prospect-detail-view.tsx", "utf8");
   const listSource = readFileSync("src/components/prospects/prospects-list-view.tsx", "utf8");
+  const css = readFileSync("src/components/prospects/prospects-dashboard.module.css", "utf8");
 
   it("renders the Add-more button only on the detail page with a stable help target (existing #1)", () => {
     expect(detailSource).toContain('data-discover-tour="add-more-people"');
@@ -976,6 +981,22 @@ describe("Add 10 more detail-page wiring", () => {
   it("opens a confirmation dialog before expanding", () => {
     expect(detailSource).toContain("AddMorePeopleDialog");
     expect(detailSource).toContain("setShowAddMoreDialog(true)");
+  });
+
+  it("uses a compact visible label and explains the action in a tooltip", () => {
+    expect(detailSource).toContain("ADD_MORE_PEOPLE_BUTTON_LABEL");
+    expect(detailSource).toContain("ADD_MORE_PEOPLE_TOOLTIP");
+    expect(detailSource).toContain('role="tooltip"');
+    expect(detailSource).toContain('aria-describedby={addMoreDisabled === null ? "discover-add-more-tooltip" : undefined}');
+    expect(css).toMatch(/\.addMoreButtonWrap:hover \.addMoreButtonTooltip/);
+    expect(css).toMatch(/\.addMoreButtonWrap:focus-within \.addMoreButtonTooltip/);
+    expect(css).toMatch(/\.addMoreButtonTooltip \{[^}]*pointer-events: none/s);
+  });
+
+  it("gives Discover text buttons breathing room inside their pill ends", () => {
+    expect(css).toMatch(/\.dangerButton \{[^}]*padding: 0\.5rem 1\.05rem/s);
+    expect(css).toMatch(/\.ghostButton \{[^}]*padding: 0\.6rem 1\.1rem/s);
+    expect(css).toMatch(/\.dangerGhostButton \{[^}]*padding: 0\.45rem 1\.05rem/s);
   });
 
   it("updates counts + people in place without a full-page reload (existing #6, #7, #9)", () => {
