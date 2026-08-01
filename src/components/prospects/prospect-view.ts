@@ -93,12 +93,12 @@ export function paginateHistoryGroups<T>(rows: T[], pageIndex: number, pageSize:
   return rows.slice(start, start + pageSize);
 }
 
-// Compact pager label, e.g. "Page 1 of 3". Never the words "Previous"/"Next" —
-// the controls themselves are chevron icon buttons.
+// Compact pager label, e.g. "1/3". The full previous/next descriptions stay on
+// the chevron buttons' accessible labels instead of adding visual text.
 export function formatPageLabel(input: { pageIndex: number; pageCount: number }): string {
   const current = Math.max(1, input.pageIndex + 1);
   const total = Math.max(current, input.pageCount);
-  return `Page ${current} of ${total}`;
+  return `${current}/${total}`;
 }
 
 export type BadgeTone = "verified" | "inferred" | "neutral" | "warning" | "muted" | "blocked";

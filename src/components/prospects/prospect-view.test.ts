@@ -508,14 +508,14 @@ describe("people pagination helpers", () => {
   });
 
   it("formats a compact page label, never Previous/Next text (#8)", () => {
-    expect(formatPageLabel({ pageIndex: 0, pageCount: 2 })).toBe("Page 1 of 2");
-    expect(formatPageLabel({ pageIndex: 1, pageCount: 2 })).toBe("Page 2 of 2");
+    expect(formatPageLabel({ pageIndex: 0, pageCount: 2 })).toBe("1/2");
+    expect(formatPageLabel({ pageIndex: 1, pageCount: 2 })).toBe("2/2");
     const label = formatPageLabel({ pageIndex: 0, pageCount: 3 });
     expect(label).not.toMatch(/previous|next/i);
   });
 
   it("keeps the page index in range when the count lags behind", () => {
-    expect(formatPageLabel({ pageIndex: 2, pageCount: 1 })).toBe("Page 3 of 3");
+    expect(formatPageLabel({ pageIndex: 2, pageCount: 1 })).toBe("3/3");
   });
 
   it("composes the 10-per-page range and page label for the toolbar", () => {
@@ -526,7 +526,7 @@ describe("people pagination helpers", () => {
     expect(formatShowingLabel({ offset: pageIndex * pageSize, pageCount: pageSize, totalCount: total })).toBe(
       "Showing 1–10 of 24"
     );
-    expect(formatPageLabel({ pageIndex, pageCount })).toBe("Page 1 of 3");
+    expect(formatPageLabel({ pageIndex, pageCount })).toBe("1/3");
   });
 });
 

@@ -140,7 +140,8 @@
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  border-radius: 0.8rem;
+  min-height: 2.75rem;
+  border-radius: 999px;
   border: 1px solid var(--line);
   background: var(--surface-strong);
   color: var(--text);
@@ -204,8 +205,9 @@
   align-items: center;
   justify-content: center;
   gap: 0.4rem;
+  min-height: 2.75rem;
   padding: 0.45rem 0.7rem;
-  border-radius: 0.8rem;
+  border-radius: 999px;
   border: 1px solid transparent;
   background: transparent;
   color: var(--muted);
@@ -238,8 +240,10 @@
 }
 
 .pagerButton:disabled,
+.refreshButton:disabled,
 .primaryButton:disabled,
 .secondaryButton:disabled,
+.ghostButton:disabled,
 .dangerButton:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -1082,7 +1086,7 @@
   width: 2.15rem;
   height: 2.15rem;
   flex: none;
-  border-radius: 0.6rem;
+  border-radius: 999px;
   border: 1px solid var(--line);
   background: var(--surface-strong);
   color: var(--muted);
@@ -1847,7 +1851,7 @@
   gap: 0.5rem;
   height: 2.625rem; /* 42px — compact control-bar height */
   padding: 0 2rem 0 0.9rem;
-  border-radius: 12px;
+  border-radius: 999px;
   border: 1px solid var(--line);
   background: var(--surface-soft);
   min-width: 0;
@@ -1926,7 +1930,7 @@
   gap: 0.35rem;
   height: 2.625rem;
   padding: 0 0.8rem;
-  border-radius: 12px;
+  border-radius: 999px;
   border: 1px solid transparent;
   background: transparent;
   color: var(--muted);
@@ -2031,7 +2035,7 @@
   gap: 0.4rem;
   flex: none;
   padding: 0.4rem 0.85rem;
-  border-radius: 0.65rem;
+  border-radius: 999px;
   border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
   background: color-mix(in srgb, var(--accent-soft) 62%, var(--surface));
   color: var(--link);
@@ -2232,7 +2236,7 @@
   width: 1.9rem;
   height: 1.9rem;
   flex: none;
-  border-radius: 0.55rem;
+  border-radius: 999px;
   border: 1px solid var(--line);
   background: var(--surface-strong);
   color: var(--muted);
@@ -2274,7 +2278,7 @@
   justify-content: center;
   width: 2rem;
   height: 2rem;
-  border-radius: 0.55rem;
+  border-radius: 999px;
   border: 1px solid var(--line);
   background: var(--surface-strong);
   color: var(--link);
@@ -2317,7 +2321,7 @@
   width: 2.1rem;
   height: 2.1rem;
   flex: none;
-  border-radius: 0.6rem;
+  border-radius: 999px;
   border: 1px solid var(--line);
   background: var(--surface-strong);
   color: var(--text);
@@ -2335,8 +2339,9 @@
   color: var(--muted);
   font-weight: 600;
   white-space: nowrap;
-  min-width: 6rem;
+  min-width: 2.75rem;
   text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---- Status / empty / disabled cards ------------------------------------ */
