@@ -122,7 +122,7 @@ describe("Scalable People filter controls (#21-#27)", () => {
     expect(CSS).not.toContain(".peopleFilterFieldLabel");
     // Compact control metrics: 42px pills, 14px value text.
     expect(CSS).toMatch(/\.peopleFilterControl \{[^}]*height: 2\.625rem/);
-    expect(CSS).toMatch(/\.peopleFilterSelect \{[^}]*font-size: 0\.88rem/);
+    expect(CSS).toMatch(/\.peopleFilterValue \{[^}]*font-size: 0\.88rem/);
   });
 
   it("builds the role dropdown from server-side groups, labels only — no counts (#2, #3)", () => {
@@ -167,15 +167,19 @@ describe("Scalable People filter controls (#21-#27)", () => {
   });
 
   it("long role/location labels truncate inside the control (#1, #2, #3-edge)", () => {
-    // Size from the selected value instead of the longest option. On narrow
-    // screens the controls stay compact, with a cap for long active labels.
-    expect(DETAIL_SOURCE).toContain("peopleFilterSelect");
-    expect(CSS).toContain("field-sizing: content");
+    // The visible value—not the native option list—sets the compact width.
+    expect(DETAIL_SOURCE).toContain("peopleFilterValue");
+    expect(CSS).toContain(".peopleFilterValue");
+    expect(CSS).toContain("max-width: 12rem");
     expect(CSS).toContain("text-overflow: ellipsis");
     expect(CSS).toMatch(/@media \(max-width: 640px\)[\s\S]*\.peopleFilterControl \{\s*\n\s*width: auto;/);
+  });
+
+  it("makes the full Role and Location control clickable", () => {
     expect(CSS).toMatch(
-      /@media \(max-width: 640px\)[\s\S]*\.peopleFilterSelect \{\s*\n\s*width: auto;\s*\n\s*max-width: 12rem;/
+      /\.peopleFilterSelect \{[\s\S]*position: absolute;[\s\S]*inset: 0;[\s\S]*width: 100%;[\s\S]*height: 100%;[\s\S]*opacity: 0;/
     );
+    expect(DETAIL_SOURCE.match(/className=\{styles\.peopleFilterValue\}/g)).toHaveLength(2);
   });
 
   it("Add 10 more targets the active role/location group (#28)", () => {

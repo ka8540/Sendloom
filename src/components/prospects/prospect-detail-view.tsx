@@ -1457,6 +1457,12 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
                   }`}
                 >
                   <span className={styles.peopleFilterPrefix}>Role</span>
+                  <span className={styles.peopleFilterValue} aria-hidden="true">
+                    {activeCategory === null
+                      ? ALL_ROLES_LABEL
+                      : visibleCategories.find((position) => position.category === activeCategory)?.displayName ??
+                        ALL_ROLES_LABEL}
+                  </span>
                   <select
                     className={styles.peopleFilterSelect}
                     aria-label="Filter by role"
@@ -1484,6 +1490,11 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
                     data-discover-tour="location-filters"
                   >
                     <span className={styles.peopleFilterPrefix}>Location</span>
+                    <span className={styles.peopleFilterValue} aria-hidden="true">
+                      {activeLocation === null
+                        ? ALL_LOCATIONS_LABEL
+                        : locationOptions.find((option) => option.key === activeLocation)?.label ?? ALL_LOCATIONS_LABEL}
+                    </span>
                     <select
                       className={styles.peopleFilterSelect}
                       aria-label="Filter by location"
