@@ -1882,6 +1882,7 @@
 .peopleFilterSelect {
   appearance: none;
   -webkit-appearance: none;
+  field-sizing: content;
   border: none;
   background: transparent;
   color: var(--text);
@@ -3132,18 +3133,17 @@
     display: none;
   }
 
-  /* People filter pills stack full width; the select stretches so long
-     labels truncate inside the pill instead of overflowing the viewport.
-     flex-basis 0 (not auto) keeps the widest <option>'s intrinsic width
-     from inflating the pill/bar min-content and pushing past the card. */
+  /* Keep the filters compact on narrow screens too. They wrap naturally,
+     while long selected values still truncate before reaching the card edge. */
   .peopleFilterControl {
-    width: 100%;
+    width: auto;
+    max-width: 100%;
   }
 
   .peopleFilterSelect {
-    max-width: none;
-    width: 0;
-    flex: 1 1 0%;
+    width: auto;
+    max-width: 12rem;
+    flex: 0 1 auto;
   }
 
   .peopleFilterClear {

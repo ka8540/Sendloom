@@ -167,11 +167,15 @@ describe("Scalable People filter controls (#21-#27)", () => {
   });
 
   it("long role/location labels truncate inside the control (#1, #2, #3-edge)", () => {
-    // The select clips overflow with an ellipsis instead of widening the bar,
-    // and drops its max-width on mobile so it fills the row cleanly.
+    // Size from the selected value instead of the longest option. On narrow
+    // screens the controls stay compact, with a cap for long active labels.
     expect(DETAIL_SOURCE).toContain("peopleFilterSelect");
+    expect(CSS).toContain("field-sizing: content");
     expect(CSS).toContain("text-overflow: ellipsis");
-    expect(CSS).toMatch(/@media \(max-width: 640px\)[\s\S]*\.peopleFilterSelect \{\s*\n\s*max-width: none;/);
+    expect(CSS).toMatch(/@media \(max-width: 640px\)[\s\S]*\.peopleFilterControl \{\s*\n\s*width: auto;/);
+    expect(CSS).toMatch(
+      /@media \(max-width: 640px\)[\s\S]*\.peopleFilterSelect \{\s*\n\s*width: auto;\s*\n\s*max-width: 12rem;/
+    );
   });
 
   it("Add 10 more targets the active role/location group (#28)", () => {
