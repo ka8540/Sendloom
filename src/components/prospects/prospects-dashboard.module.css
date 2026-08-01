@@ -1840,14 +1840,14 @@
   right: 0;
   z-index: 50;
   width: max-content;
-  max-width: 17rem;
-  padding: 0.55rem 0.72rem;
-  border-radius: 0.75rem;
+  max-width: 13rem;
+  padding: 0.45rem 0.65rem;
+  border-radius: 0.65rem;
   border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
   background: color-mix(in srgb, var(--surface) 94%, var(--surface-strong) 6%);
   color: var(--muted);
   box-shadow: var(--shadow);
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   font-weight: 600;
   line-height: 1.4;
   opacity: 0;

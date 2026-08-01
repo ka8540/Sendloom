@@ -1187,8 +1187,8 @@ export function isProcessQuotaBlocked(
 // ---------------------------------------------------------------------------
 
 export const ADD_MORE_PEOPLE_LABEL = "Add 10 more";
-export const ADD_MORE_PEOPLE_BUTTON_LABEL = "Add 10";
-export const ADD_MORE_PEOPLE_TOOLTIP = "Adds 10 more people for the selected role and location.";
+export const ADD_MORE_PEOPLE_BUTTON_LABEL = "+10";
+export const ADD_MORE_PEOPLE_TOOLTIP = "Add 10 more people";
 export const ADD_MORE_DIALOG_TITLE = "Add more people";
 export const ADD_MORE_DIALOG_SUBTITLE = "Find up to 10 more matching contacts for this role.";
 export const ADD_MORE_DIALOG_NOTE = "Existing people won't be repeated.";
