@@ -931,7 +931,7 @@ describe("Add 10 more presentation helpers", () => {
     expect(ADD_MORE_DIALOG_SUBTITLE).toBe("Find up to 10 more matching contacts for this role.");
     expect(ADD_MORE_DIALOG_NOTE).toBe("Existing people won't be repeated.");
     expect(ADD_MORE_PEOPLE_LABEL).toBe("Add 10 more");
-    expect(ADD_MORE_PEOPLE_BUTTON_LABEL).toBe("+10");
+    expect(ADD_MORE_PEOPLE_BUTTON_LABEL).toBe("Add");
     expect(ADD_MORE_PEOPLE_TOOLTIP).toBe("Add 10 more people");
   });
 });
