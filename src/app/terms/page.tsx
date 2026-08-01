@@ -108,6 +108,25 @@ const sections = [
     note: "This section is product policy information and not legal advice."
   },
   {
+    id: "ai-assisted-features",
+    title: "AI-Assisted Features",
+    paragraphs: [
+      "Sendloom may provide AI-assisted and automated features, including tools that generate or refine outreach content, analyze deliverability or spam risk, resolve company or domain information, classify professional roles, search for or parse public-source URLs, infer Discover email formats, generate inferred email addresses, or suggest workflow improvements.",
+      "AI-assisted outputs are provided for convenience and productivity only. They are not legal, compliance, employment, financial, or other professional advice and may be inaccurate, incomplete, outdated, inappropriate, or unsuitable for your use."
+    ],
+    bullets: [
+      "You must review, edit as needed, and approve all AI-assisted outputs before using or sending them. You are solely responsible for the content, communications, contact lists, imported data, and decisions you make through the service.",
+      "You are responsible for ensuring that your emails, outreach practices, and use of Sendloom comply with applicable anti-spam, privacy, consent, employment, platform, email-provider, and other legal or third-party requirements.",
+      "You represent that you have the rights, permissions, and lawful basis needed to upload, import, or otherwise use contact, prospect, company, and other data in Sendloom.",
+      "You may not use AI-assisted features to create or facilitate deceptive, unlawful, discriminatory, harmful, infringing, impersonating, spammy, or misleading content or conduct.",
+      "You may not misrepresent AI-generated or automated communications as human-generated where disclosure is required by applicable law or third-party rules.",
+      "Third-party AI, model, web-search, or infrastructure providers may process inputs, outputs, and related metadata on Sendloom's behalf as service providers or subprocessors.",
+      "Sendloom may suspend, restrict, or terminate access when AI-assisted or outreach features are misused or create risk to the service, its users, recipients, or third parties."
+    ],
+    note:
+      "Sendloom does not guarantee deliverability, response rates, inferred email-address or email-format accuracy, data availability or currency, spam-check scores or risk assessments, source parsing, AI outputs, or legal and compliance outcomes."
+  },
+  {
     id: "google-and-connected-email",
     title: "Google and connected email accounts",
     paragraphs: [
@@ -173,7 +192,7 @@ export default function TermsPage() {
       guideBody="This version keeps the substance of the original terms intact, but organizes the reading path around the questions operators usually have before they connect a sender or launch outreach."
       guideTitle="The quick read"
       highlights={highlights}
-      lastUpdated="July 8, 2026"
+      lastUpdated="August 1, 2026"
       quickFacts={quickFacts}
       relatedHref="/privacy"
       relatedLabel="Read privacy policy"
