@@ -140,13 +140,14 @@
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  border-radius: 0.8rem;
+  min-height: 2.75rem;
+  border-radius: 999px;
   border: 1px solid var(--line);
   background: var(--surface-strong);
   color: var(--text);
   font-weight: 600;
   cursor: pointer;
-  padding: 0.6rem 0.95rem;
+  padding: 0.6rem 1.2rem;
   transition: background 140ms ease, border-color 140ms ease, transform 140ms ease, opacity 140ms ease;
 }
 
@@ -185,7 +186,7 @@
 
 .ghostButton {
   background: transparent;
-  padding: 0.45rem 0.7rem;
+  padding: 0.6rem 1.1rem;
 }
 
 .dangerButton {
@@ -193,7 +194,7 @@
   border-color: var(--error-toast-border);
   background: var(--error-toast-icon-bg);
   color: var(--error-toast-icon-color);
-  padding: 0.5rem 0.7rem;
+  padding: 0.5rem 1.05rem;
   font-size: 0.86rem;
 }
 
@@ -204,8 +205,9 @@
   align-items: center;
   justify-content: center;
   gap: 0.4rem;
-  padding: 0.45rem 0.7rem;
-  border-radius: 0.8rem;
+  min-height: 2.75rem;
+  padding: 0.45rem 1.05rem;
+  border-radius: 999px;
   border: 1px solid transparent;
   background: transparent;
   color: var(--muted);
@@ -238,8 +240,10 @@
 }
 
 .pagerButton:disabled,
+.refreshButton:disabled,
 .primaryButton:disabled,
 .secondaryButton:disabled,
+.ghostButton:disabled,
 .dangerButton:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -1082,7 +1086,7 @@
   width: 2.15rem;
   height: 2.15rem;
   flex: none;
-  border-radius: 0.6rem;
+  border-radius: 999px;
   border: 1px solid var(--line);
   background: var(--surface-strong);
   color: var(--muted);
@@ -1824,6 +1828,40 @@
   container-type: inline-size;
 }
 
+.addMoreButtonWrap {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+.addMoreButtonTooltip {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  z-index: 50;
+  width: max-content;
+  max-width: 13rem;
+  padding: 0.45rem 0.65rem;
+  border-radius: 0.65rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
+  background: color-mix(in srgb, var(--surface) 94%, var(--surface-strong) 6%);
+  color: var(--muted);
+  box-shadow: var(--shadow);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.4;
+  opacity: 0;
+  transform: translateY(-0.25rem);
+  pointer-events: none;
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.addMoreButtonWrap:hover .addMoreButtonTooltip,
+.addMoreButtonWrap:focus-within .addMoreButtonTooltip {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 /* ---- People filter bar (compact role + location pill controls) ---------- */
 /* Each control is ONE quiet pill: a muted inline label ("Role", "Location")
    next to a native <select> with the browser chrome stripped. The pill owns
@@ -1873,23 +1911,34 @@
   white-space: nowrap;
 }
 
-/* Long role/location labels truncate inside the pill (text-overflow) rather
-   than stretching the bar; the browser's own option list shows them in full. */
-.peopleFilterSelect {
-  appearance: none;
-  -webkit-appearance: none;
-  border: none;
-  background: transparent;
+/* The visible value sizes the compact control and truncates long selections.
+   The transparent native select then covers the WHOLE control, so a click in
+   any corner opens the value list instead of only the text-sized area. */
+.peopleFilterValue {
   color: var(--text);
   font-size: 0.88rem;
   font-weight: 600;
-  height: 100%;
   min-width: 0;
   max-width: 12rem;
-  padding: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.peopleFilterSelect {
+  appearance: none;
+  -webkit-appearance: none;
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  opacity: 0;
   cursor: pointer;
 }
 
@@ -1914,7 +1963,7 @@
   background: color-mix(in srgb, var(--accent-soft) 55%, var(--surface-soft));
 }
 
-.peopleFilterControlActive .peopleFilterSelect,
+.peopleFilterControlActive .peopleFilterValue,
 .peopleFilterControlActive .peopleFilterChevron {
   color: var(--accent-strong);
 }
@@ -1926,7 +1975,7 @@
   gap: 0.35rem;
   height: 2.625rem;
   padding: 0 0.8rem;
-  border-radius: 12px;
+  border-radius: 999px;
   border: 1px solid transparent;
   background: transparent;
   color: var(--muted);
@@ -2031,7 +2080,7 @@
   gap: 0.4rem;
   flex: none;
   padding: 0.4rem 0.85rem;
-  border-radius: 0.65rem;
+  border-radius: 999px;
   border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
   background: color-mix(in srgb, var(--accent-soft) 62%, var(--surface));
   color: var(--link);
@@ -2232,7 +2281,7 @@
   width: 1.9rem;
   height: 1.9rem;
   flex: none;
-  border-radius: 0.55rem;
+  border-radius: 999px;
   border: 1px solid var(--line);
   background: var(--surface-strong);
   color: var(--muted);
@@ -2274,7 +2323,7 @@
   justify-content: center;
   width: 2rem;
   height: 2rem;
-  border-radius: 0.55rem;
+  border-radius: 999px;
   border: 1px solid var(--line);
   background: var(--surface-strong);
   color: var(--link);
@@ -2317,7 +2366,7 @@
   width: 2.1rem;
   height: 2.1rem;
   flex: none;
-  border-radius: 0.6rem;
+  border-radius: 999px;
   border: 1px solid var(--line);
   background: var(--surface-strong);
   color: var(--text);
@@ -2335,8 +2384,9 @@
   color: var(--muted);
   font-weight: 600;
   white-space: nowrap;
-  min-width: 6rem;
+  min-width: 2.75rem;
   text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---- Status / empty / disabled cards ------------------------------------ */
@@ -2729,6 +2779,7 @@
   .ghostButton,
   .dangerButton,
   .dangerGhostButton,
+  .addMoreButtonTooltip,
   .peopleFilterControl,
   .peopleFilterClear,
   .pagerButton,
@@ -2792,13 +2843,18 @@
   box-shadow: 0 4px 12px var(--accent-soft);
   backdrop-filter: blur(14px) saturate(1.08);
   -webkit-backdrop-filter: blur(14px) saturate(1.08);
-  transition: transform 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+  transition:
+    padding 160ms ease,
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    background-color 160ms ease;
 }
 
 /* Hover/focus: slight lift, a touch brighter surface, and a clearly greener
    ring — refined intent feedback, never a big glow. */
 .companySearchTrigger:hover,
 .companySearchTrigger:focus-visible {
+  padding-inline: 1.05rem;
   transform: translateY(-1px);
   box-shadow: 0 8px 20px var(--accent-soft-strong);
   background:
@@ -2851,6 +2907,7 @@
 
 /* Open state: a gentle accent tint — enough to read as active, no big glow. */
 .companySearchTriggerOpen {
+  padding-inline: 1.05rem;
   background:
     linear-gradient(180deg, var(--accent-soft), var(--accent-soft)) padding-box,
     linear-gradient(
@@ -3127,18 +3184,11 @@
     display: none;
   }
 
-  /* People filter pills stack full width; the select stretches so long
-     labels truncate inside the pill instead of overflowing the viewport.
-     flex-basis 0 (not auto) keeps the widest <option>'s intrinsic width
-     from inflating the pill/bar min-content and pushing past the card. */
+  /* Keep the filters compact on narrow screens too. They wrap naturally,
+     while long selected values still truncate before reaching the card edge. */
   .peopleFilterControl {
-    width: 100%;
-  }
-
-  .peopleFilterSelect {
-    max-width: none;
-    width: 0;
-    flex: 1 1 0%;
+    width: auto;
+    max-width: 100%;
   }
 
   .peopleFilterClear {

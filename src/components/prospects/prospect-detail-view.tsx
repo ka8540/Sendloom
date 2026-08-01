@@ -84,7 +84,9 @@ import {
   ADD_MORE_NO_RESULTS_CLOSE_LABEL,
   ADD_MORE_NO_RESULTS_HINT,
   ADD_MORE_NO_RESULTS_TITLE,
+  ADD_MORE_PEOPLE_BUTTON_LABEL,
   ADD_MORE_PEOPLE_LABEL,
+  ADD_MORE_PEOPLE_TOOLTIP,
   ALL_LOCATIONS_LABEL,
   ALL_ROLES_LABEL,
   CLEAR_FILTERS_LABEL,
@@ -1427,22 +1429,30 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
                   </p>
                 </div>
                 {showAddMore && (
-                  <button
-                    type="button"
-                    className={styles.secondaryButton}
-                    data-discover-tour="add-more-people"
-                    onClick={() => setShowAddMoreDialog(true)}
-                    disabled={addMoreDisabled !== null}
-                    title={addMoreDisabled ?? undefined}
-                    aria-label={ADD_MORE_PEOPLE_LABEL}
-                  >
-                    {expanding ? (
-                      <LoaderCircle className={styles.spin} aria-hidden="true" />
-                    ) : (
-                      <UserPlus aria-hidden="true" />
+                  <span className={styles.addMoreButtonWrap}>
+                    <button
+                      type="button"
+                      className={styles.secondaryButton}
+                      data-discover-tour="add-more-people"
+                      onClick={() => setShowAddMoreDialog(true)}
+                      disabled={addMoreDisabled !== null}
+                      title={addMoreDisabled ?? undefined}
+                      aria-label={ADD_MORE_PEOPLE_LABEL}
+                      aria-describedby={addMoreDisabled === null ? "discover-add-more-tooltip" : undefined}
+                    >
+                      {expanding ? (
+                        <LoaderCircle className={styles.spin} aria-hidden="true" />
+                      ) : (
+                        <UserPlus aria-hidden="true" />
+                      )}
+                      <span>{expanding ? ADD_MORE_LOADING_LABEL : ADD_MORE_PEOPLE_BUTTON_LABEL}</span>
+                    </button>
+                    {addMoreDisabled === null && (
+                      <span id="discover-add-more-tooltip" role="tooltip" className={styles.addMoreButtonTooltip}>
+                        {ADD_MORE_PEOPLE_TOOLTIP}
+                      </span>
                     )}
-                    <span>{expanding ? ADD_MORE_LOADING_LABEL : ADD_MORE_PEOPLE_LABEL}</span>
-                  </button>
+                  </span>
                 )}
               </div>
 
@@ -1457,6 +1467,12 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
                   }`}
                 >
                   <span className={styles.peopleFilterPrefix}>Role</span>
+                  <span className={styles.peopleFilterValue} aria-hidden="true">
+                    {activeCategory === null
+                      ? ALL_ROLES_LABEL
+                      : visibleCategories.find((position) => position.category === activeCategory)?.displayName ??
+                        ALL_ROLES_LABEL}
+                  </span>
                   <select
                     className={styles.peopleFilterSelect}
                     aria-label="Filter by role"
@@ -1484,6 +1500,11 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
                     data-discover-tour="location-filters"
                   >
                     <span className={styles.peopleFilterPrefix}>Location</span>
+                    <span className={styles.peopleFilterValue} aria-hidden="true">
+                      {activeLocation === null
+                        ? ALL_LOCATIONS_LABEL
+                        : locationOptions.find((option) => option.key === activeLocation)?.label ?? ALL_LOCATIONS_LABEL}
+                    </span>
                     <select
                       className={styles.peopleFilterSelect}
                       aria-label="Filter by location"
