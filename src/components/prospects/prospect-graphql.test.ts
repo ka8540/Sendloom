@@ -59,10 +59,14 @@ describe("prospect graphql helper", () => {
       expect(vars.after).toBe("cursor-1");
     });
 
+    it("passes a trimmed server-side People search through", () => {
+      expect(buildPeopleVariables({ companyId: "c1", search: "  Louis  " }).search).toBe("Louis");
+      expect(buildPeopleVariables({ companyId: "c1", search: "   " }).search).toBeNull();
+    });
+
     it("declares a parameterised People query", () => {
-      expect(PEOPLE_QUERY).toContain(
-        "people(companyId: $companyId, positionCategory: $category, location: $location, first: $first"
-      );
+      expect(PEOPLE_QUERY).toContain("$search: String");
+      expect(PEOPLE_QUERY).toContain("search: $search");
     });
   });
 

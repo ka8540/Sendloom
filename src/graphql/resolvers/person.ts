@@ -1,4 +1,4 @@
-import type { ProspectPerson as ProspectPersonRow } from "@prisma/client";
+import type { Prisma, ProspectPerson as ProspectPersonRow } from "@prisma/client";
 
 import type { GraphQLContext } from "@/graphql/context";
 import { notFoundError, requireUser } from "@/graphql/errors";
@@ -60,6 +60,7 @@ export const personQueries = {
       companyId: string;
       positionCategory?: string | null;
       location?: string | null;
+      search?: string | null;
       first?: number | null;
       after?: string | null;
     },
@@ -72,14 +73,31 @@ export const personQueries = {
     const first = resolveFirst(args.first, 50);
     const afterId = decodeCursor(args.after);
     const locationPersonIds = await resolveLocationPersonIds(context, user.id, args.companyId, args.location);
+    const search = args.search?.trim();
 
-    const where = {
+    const where: Prisma.ProspectPersonWhereInput = {
       userId: user.id,
       companyId: args.companyId,
       ...(args.positionCategory && isPositionCategory(args.positionCategory)
         ? { position: { category: args.positionCategory } }
         : {}),
-      ...(locationPersonIds !== null ? { id: { in: locationPersonIds } } : {})
+      ...(locationPersonIds !== null ? { id: { in: locationPersonIds } } : {}),
+      ...(search
+        ? {
+            OR: [
+              { fullName: { contains: search, mode: "insensitive" } },
+              { firstName: { contains: search, mode: "insensitive" } },
+              { lastName: { contains: search, mode: "insensitive" } },
+              { currentTitle: { contains: search, mode: "insensitive" } },
+              { normalizedTitle: { contains: search, mode: "insensitive" } },
+              { inferredEmail: { contains: search, mode: "insensitive" } },
+              { location: { contains: search, mode: "insensitive" } },
+              { city: { contains: search, mode: "insensitive" } },
+              { state: { contains: search, mode: "insensitive" } },
+              { country: { contains: search, mode: "insensitive" } }
+            ]
+          }
+        : {})
     };
 
     const [rows, totalCount] = await Promise.all([

@@ -539,8 +539,8 @@ export const COMPANY_DETAIL_QUERY = /* GraphQL */ `
 `;
 
 export const PEOPLE_QUERY = /* GraphQL */ `
-  query People($companyId: ID!, $category: PositionCategory, $location: String, $first: Int!, $after: String) {
-    people(companyId: $companyId, positionCategory: $category, location: $location, first: $first, after: $after) {
+  query People($companyId: ID!, $category: PositionCategory, $location: String, $search: String, $first: Int!, $after: String) {
+    people(companyId: $companyId, positionCategory: $category, location: $location, search: $search, first: $first, after: $after) {
       totalCount
       edges {
         cursor
@@ -925,6 +925,7 @@ export type PeopleQueryVariables = {
   companyId: string;
   category?: PositionCategory | null;
   location?: string | null;
+  search?: string | null;
   first: number;
   after?: string | null;
 };
@@ -940,6 +941,7 @@ export function buildPeopleVariables(args: {
   companyId: string;
   category?: PositionCategory | null;
   location?: string | null;
+  search?: string | null;
   first?: number;
   after?: string | null;
 }): PeopleQueryVariables {
@@ -947,6 +949,7 @@ export function buildPeopleVariables(args: {
     companyId: args.companyId,
     category: args.category ?? null,
     location: args.location ?? null,
+    search: args.search?.trim() || null,
     first: args.first ?? PEOPLE_PAGE_SIZE,
     after: args.after ?? null
   };

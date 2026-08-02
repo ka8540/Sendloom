@@ -391,11 +391,13 @@ export const typeDefs = /* GraphQL */ `
     # location filters people to the role/location group(s) whose normalized
     # requested location matches (people are matched through their per-search
     # allocations). Omitted/null = all locations; "" = the searches that were
-    # run WITHOUT a location ("Any location"). Combines with positionCategory.
+    # run WITHOUT a location ("Any location"). search is applied across the
+    # full matching result set BEFORE pagination. All filters combine.
     people(
       companyId: ID!
       positionCategory: PositionCategory
       location: String
+      search: String
       first: Int = 50
       after: String
     ): ProspectPersonConnection!

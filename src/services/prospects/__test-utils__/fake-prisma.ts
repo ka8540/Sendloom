@@ -29,6 +29,13 @@ function valueMatches(actual: unknown, expected: unknown): boolean {
       if ("gte" in operators && !(a >= (toComparable(operators.gte) as number))) return false;
       return true;
     }
+    if ("contains" in operators) {
+      const actualText = typeof actual === "string" ? actual : "";
+      const expectedText = String(operators.contains ?? "");
+      return operators.mode === "insensitive"
+        ? actualText.toLowerCase().includes(expectedText.toLowerCase())
+        : actualText.includes(expectedText);
+    }
   }
   return actual === expected;
 }
@@ -51,6 +58,13 @@ export function createFakePrisma() {
 
   function matchPerson(row: Row, where: Row): boolean {
     for (const [key, expected] of Object.entries(where)) {
+      if (key === "OR") {
+        const alternatives = Array.isArray(expected) ? expected : [];
+        if (!alternatives.some((alternative) => matchPerson(row, alternative))) {
+          return false;
+        }
+        continue;
+      }
       if (key === "position") {
         const position = positions.find((p) => p.id === row.positionId);
         if (!position || !valueMatches(position.category, (expected as Row).category)) {

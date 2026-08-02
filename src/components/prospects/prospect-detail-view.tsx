@@ -131,7 +131,6 @@ import {
   emailConfidenceFromUsableRate,
   emailFormatEvidenceSummary,
   emailStatusBadge,
-  filterPeopleByText,
   formatDateTime,
   formatPageLabel,
   formatQuotaReset,
@@ -192,6 +191,7 @@ const COMPANY_SEARCH_PANEL_ID = "discover-company-search-panel";
 // double-underscore values can never match a real option.
 const ALL_ROLES_VALUE = "__all_roles__";
 const ALL_LOCATIONS_VALUE = "__all_locations__";
+const PEOPLE_SEARCH_DEBOUNCE_MS = 250;
 
 type DetailStage = "ready" | "draft" | "processing" | "failed";
 
@@ -245,8 +245,10 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
   const [peoplePageIndex, setPeoplePageIndex] = useState(0);
   const peopleAfterCursors = useRef<(string | null)[]>([null]);
   const peopleReq = useRef(0);
+  const peopleFilterTimer = useRef<number | null>(null);
 
   const [peopleFilter, setPeopleFilter] = useState("");
+  const [peopleQuery, setPeopleQuery] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [selection, setSelection] = useState<ProspectSelectionState>(() => createEmptyProspectSelection());
   const [reviewOpen, setReviewOpen] = useState(false);
@@ -326,6 +328,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
       companyId: string;
       category: PositionCategory | null;
       location: string | null;
+      search?: string | null;
       pageIndex: number;
       after: string | null;
     }) => {
@@ -338,6 +341,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
           companyId: args.companyId,
           category: args.category,
           location: args.location,
+          search: args.search,
           after: args.after
         })
       );
@@ -365,6 +369,15 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     []
   );
 
+  const clearPeopleTextSearch = useCallback(() => {
+    if (peopleFilterTimer.current !== null) {
+      window.clearTimeout(peopleFilterTimer.current);
+      peopleFilterTimer.current = null;
+    }
+    setPeopleFilter("");
+    setPeopleQuery("");
+  }, []);
+
   const resetPeopleState = useCallback(() => {
     peopleAfterCursors.current = [null];
     setPeople([]);
@@ -372,16 +385,17 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     setPeopleHasNext(false);
     setPeopleEndCursor(null);
     setPeoplePageIndex(0);
-    setPeopleFilter("");
-  }, []);
+    clearPeopleTextSearch();
+  }, [clearPeopleTextSearch]);
 
   // Load the search by route id, then its company + people when it is READY.
   // Preserves the active category/location on a silent refresh (keeps the
   // current view).
   const loadDetail = useCallback(
-    async (options: { category?: PositionCategory | null; location?: string | null } = {}) => {
+    async (options: { category?: PositionCategory | null; location?: string | null; search?: string | null } = {}) => {
       const category = options.category ?? null;
       const location = options.location ?? null;
+      const textSearch = options.search ?? null;
       const req = ++searchReq.current;
       setSearchLoading(true);
       const result = await prospectGraphql<{ prospectSearch: ProspectSearchNode | null }>(PROSPECT_SEARCH_BY_ID_QUERY, {
@@ -411,7 +425,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
       if (node.status === "READY" && node.company && !isNoResultsSearch(node)) {
         peopleAfterCursors.current = [null];
         await loadCompany(node.company.id);
-        await loadPeople({ companyId: node.company.id, category, location, pageIndex: 0, after: null });
+        await loadPeople({ companyId: node.company.id, category, location, search: textSearch, pageIndex: 0, after: null });
       } else {
         setCompany(null);
         resetPeopleState();
@@ -431,6 +445,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     setActionError(null);
     setActionNotice(null);
     setSelection(createEmptyProspectSelection());
+    clearPeopleTextSearch();
     setActiveLocation(null);
     setCompanySearchOpen(false);
     setCompanyRoleTitle("");
@@ -441,6 +456,15 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     // Reload whenever the route's searchId changes (e.g. client-side nav).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchId]);
+
+  useEffect(
+    () => () => {
+      if (peopleFilterTimer.current !== null) {
+        window.clearTimeout(peopleFilterTimer.current);
+      }
+    },
+    []
+  );
 
   // Auto-open the detail guide once per stage when the page is settled.
   useEffect(() => {
@@ -477,10 +501,10 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
       }
       setActiveCategory(category);
       peopleAfterCursors.current = [null];
-      setPeopleFilter("");
+      clearPeopleTextSearch();
       void loadPeople({ companyId: company.id, category, location: activeLocation, pageIndex: 0, after: null });
     },
-    [activeLocation, company, loadPeople]
+    [activeLocation, clearPeopleTextSearch, company, loadPeople]
   );
 
   // Role and location filters combine: selecting a location keeps the active
@@ -492,10 +516,10 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
       }
       setActiveLocation(location);
       peopleAfterCursors.current = [null];
-      setPeopleFilter("");
+      clearPeopleTextSearch();
       void loadPeople({ companyId: company.id, category: activeCategory, location, pageIndex: 0, after: null });
     },
-    [activeCategory, company, loadPeople]
+    [activeCategory, clearPeopleTextSearch, company, loadPeople]
   );
 
   const handleClearFilters = useCallback(() => {
@@ -504,10 +528,63 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     }
     setActiveCategory(null);
     setActiveLocation(null);
-    setPeopleFilter("");
+    clearPeopleTextSearch();
     peopleAfterCursors.current = [null];
     void loadPeople({ companyId: company.id, category: null, location: null, pageIndex: 0, after: null });
-  }, [company, loadPeople]);
+  }, [clearPeopleTextSearch, company, loadPeople]);
+
+  const handlePeopleSearchChange = useCallback(
+    (value: string) => {
+      setPeopleFilter(value);
+      if (peopleFilterTimer.current !== null) {
+        window.clearTimeout(peopleFilterTimer.current);
+        peopleFilterTimer.current = null;
+      }
+
+      const nextSearch = value.trim();
+      if (!company || nextSearch === peopleQuery) {
+        return;
+      }
+
+      // A whole-result selection cannot safely follow a narrower text search,
+      // because the bulk API is scoped only by company + role. Explicit row
+      // selections remain valid across result pages.
+      setSelection((current) => (current.mode === "allMatching" ? createEmptyProspectSelection() : current));
+      setReview(null);
+      setReviewError(null);
+
+      peopleFilterTimer.current = window.setTimeout(() => {
+        peopleFilterTimer.current = null;
+        setPeopleQuery(nextSearch);
+        peopleAfterCursors.current = [null];
+        void loadPeople({
+          companyId: company.id,
+          category: activeCategory,
+          location: activeLocation,
+          search: nextSearch || null,
+          pageIndex: 0,
+          after: null
+        });
+      }, PEOPLE_SEARCH_DEBOUNCE_MS);
+    },
+    [activeCategory, activeLocation, company, loadPeople, peopleQuery]
+  );
+
+  const handleClearPeopleSearch = useCallback(() => {
+    clearPeopleTextSearch();
+    if (!company) {
+      return;
+    }
+    peopleAfterCursors.current = [null];
+    void loadPeople({
+      companyId: company.id,
+      category: activeCategory,
+      location: activeLocation,
+      search: null,
+      pageIndex: 0,
+      after: null
+    });
+  }, [activeCategory, activeLocation, clearPeopleTextSearch, company, loadPeople]);
 
   const handlePeopleNext = useCallback(() => {
     if (!company || !peopleHasNext) {
@@ -519,10 +596,11 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
       companyId: company.id,
       category: activeCategory,
       location: activeLocation,
+      search: peopleQuery || null,
       pageIndex: peoplePageIndex + 1,
       after
     });
-  }, [activeCategory, activeLocation, company, loadPeople, peopleEndCursor, peopleHasNext, peoplePageIndex]);
+  }, [activeCategory, activeLocation, company, loadPeople, peopleEndCursor, peopleHasNext, peoplePageIndex, peopleQuery]);
 
   const handlePeoplePrev = useCallback(() => {
     if (!company || peoplePageIndex === 0) {
@@ -533,10 +611,11 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
       companyId: company.id,
       category: activeCategory,
       location: activeLocation,
+      search: peopleQuery || null,
       pageIndex: peoplePageIndex - 1,
       after
     });
-  }, [activeCategory, activeLocation, company, loadPeople, peoplePageIndex]);
+  }, [activeCategory, activeLocation, company, loadPeople, peoplePageIndex, peopleQuery]);
 
   const handleCopyEmail = useCallback(async (person: PersonNode) => {
     if (!person.inferredEmail) {
@@ -554,9 +633,9 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
   const refreshAll = useCallback(() => {
     setActionError(null);
     setActionNotice(null);
-    void loadDetail({ category: activeCategory, location: activeLocation });
+    void loadDetail({ category: activeCategory, location: activeLocation, search: peopleQuery });
     void loadQuota();
-  }, [activeCategory, activeLocation, loadDetail, loadQuota]);
+  }, [activeCategory, activeLocation, loadDetail, loadQuota, peopleQuery]);
 
   const handleProcess = useCallback(async () => {
     // Guard against a double-click launching a second processing run — the
@@ -649,11 +728,12 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
         companyId: updatedCompany.id,
         category: activeCategory,
         location: activeLocation,
+        search: peopleQuery || null,
         pageIndex: 0,
         after: null
       });
     },
-    [activeCategory, activeLocation, loadPeople]
+    [activeCategory, activeLocation, loadPeople, peopleQuery]
   );
 
   // Extends ONE user-owned child search — the one resolved from the active role
@@ -707,12 +787,13 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
         companyId: search.company.id,
         category: activeCategory,
         location: activeLocation,
+        search: peopleQuery || null,
         pageIndex: 0,
         after: null
       });
     }
-    await loadDetail({ category: activeCategory, location: activeLocation });
-  }, [activeCategory, activeLocation, expanding, loadCompany, loadDetail, loadPeople, loadQuota, search]);
+    await loadDetail({ category: activeCategory, location: activeLocation, search: peopleQuery });
+  }, [activeCategory, activeLocation, expanding, loadCompany, loadDetail, loadPeople, loadQuota, peopleQuery, search]);
 
   // Disclosure for the "Search this company" panel. Opening is a plain toggle;
   // closing hands focus back to the header trigger so keyboard users are never
@@ -798,7 +879,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     const created = result.data.searchCompanyRole;
     if (created.status === "FAILED") {
       setCompanySearchNotice({ tone: "error", message: formatSearchError(created).message });
-      await loadDetail({ category: activeCategory, location: activeLocation });
+      await loadDetail({ category: activeCategory, location: activeLocation, search: peopleQuery });
       return;
     }
     // Success: the new role/location group now belongs to this company page.
@@ -808,7 +889,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     setCompanyRoleTitle("");
     setCompanyRoleLocation("");
     setActionNotice({ message: companySearchSuccessMessage(validated.jobTitle, validated.location) });
-    await loadDetail({ category: activeCategory, location: activeLocation });
+    await loadDetail({ category: activeCategory, location: activeLocation, search: peopleQuery });
   }, [
     activeCategory,
     activeLocation,
@@ -817,7 +898,8 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     companyRoleTitle,
     companySearching,
     loadDetail,
-    loadQuota
+    loadQuota,
+    peopleQuery
   ]);
 
   // Opens/closes the source-url or manual-fix editor. Pressing the active
@@ -948,13 +1030,15 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     [manualConfidence, manualEmailDomain, manualEmailPattern, refreshingFormat, reloadCompanyPeople]
   );
 
-  const visiblePeople = useMemo(() => filterPeopleByText(people, peopleFilter), [people, peopleFilter]);
+  const visiblePeople = people;
   const visibleCategories = useMemo(
     () => (company ? company.positions.filter((position) => position.peopleCount > 0) : []),
     [company]
   );
   const peopleOffset = peoplePageIndex * PEOPLE_PAGE_SIZE;
   const peoplePageCount = resolvePageCount(peopleTotal, PEOPLE_PAGE_SIZE);
+  const peopleSearchPending = peopleFilter.trim() !== peopleQuery;
+  const peopleSearchActive = peopleQuery.length > 0;
 
   // Add-more visibility depends ONLY on whether this company can be searched
   // again — never on the people currently rendered. Filters (role/location),
@@ -1045,6 +1129,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     company &&
       selection.mode !== "allMatching" &&
       activeLocation === null &&
+      !peopleSearchActive &&
       peopleTotal > selectedPageIds.length &&
       selectedPageIds.length > 0 &&
       pageSelectionState === "checked"
@@ -1549,9 +1634,10 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
                   <input
                     type="search"
                     value={peopleFilter}
-                    placeholder="Filter this page by name, title, or email"
-                    onChange={(event) => setPeopleFilter(event.target.value)}
-                    aria-label="Filter people on this page"
+                    placeholder="Search all people by name, title, email, or location"
+                    onChange={(event) => handlePeopleSearchChange(event.target.value)}
+                    aria-label="Search all people"
+                    maxLength={200}
                   />
                 </div>
               </div>
@@ -1584,14 +1670,16 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
               <div className={styles.peopleTableShell} data-discover-tour="people-table">
                 <PeopleTable
                   people={visiblePeople}
-                  loading={peopleLoading}
+                  loading={peopleLoading || peopleSearchPending}
                   error={peopleError}
                   copiedId={copiedId}
                   pageSelectionState={pageSelectionState}
                   selectionScope={selectionScope}
                   selection={selection}
                   filtersActive={filtersActive}
+                  searchActive={peopleSearchActive}
                   onClearFilters={handleClearFilters}
+                  onClearSearch={handleClearPeopleSearch}
                   onTogglePage={handleTogglePageSelection}
                   onTogglePerson={handleTogglePersonSelection}
                   onCopy={handleCopyEmail}
@@ -1607,7 +1695,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
                     type="button"
                     className={styles.pagerButton}
                     onClick={handlePeoplePrev}
-                    disabled={peoplePageIndex === 0 || peopleLoading}
+                    disabled={peoplePageIndex === 0 || peopleLoading || peopleSearchPending}
                     aria-label="Previous page"
                     title="Previous page"
                   >
@@ -1620,7 +1708,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
                     type="button"
                     className={styles.pagerButton}
                     onClick={handlePeopleNext}
-                    disabled={!peopleHasNext || peopleLoading}
+                    disabled={!peopleHasNext || peopleLoading || peopleSearchPending}
                     aria-label="Next page"
                     title="Next page"
                   >
@@ -2558,7 +2646,9 @@ function PeopleTable({
   selectionScope,
   selection,
   filtersActive,
+  searchActive,
   onClearFilters,
+  onClearSearch,
   onTogglePage,
   onTogglePerson,
   onCopy
@@ -2571,7 +2661,9 @@ function PeopleTable({
   selectionScope: { companyId: string; positionCategory: PositionCategory | null };
   selection: ProspectSelectionState;
   filtersActive: boolean;
+  searchActive: boolean;
   onClearFilters: () => void;
+  onClearSearch: () => void;
   onTogglePage: () => void;
   onTogglePerson: (personId: string) => void;
   onCopy: (person: PersonNode) => void;
@@ -2608,6 +2700,21 @@ function PeopleTable({
     return <p className={styles.errorText}>{error}</p>;
   }
   if (people.length === 0) {
+    if (searchActive) {
+      return (
+        <EmptyState
+          icon={<Users aria-hidden="true" />}
+          title="No people match your search"
+          body="Try a different name, title, email, or location."
+          compact
+          action={
+            <button type="button" className={styles.secondaryButton} onClick={onClearSearch}>
+              Clear search
+            </button>
+          }
+        />
+      );
+    }
     // With active role/location filters the empty state names them and offers a
     // one-click reset — never a blank table.
     if (filtersActive) {

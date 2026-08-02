@@ -1356,6 +1356,42 @@ describe("people query location filter (role/location groups)", () => {
     });
   });
 
+  it("searches the full matching set before pagination", async () => {
+    const prisma = seedLocationGraph();
+    const personBase = {
+      userId: "user_A",
+      companyId: "comp_A",
+      positionId: "pos_se",
+      lastName: "Person",
+      currentTitle: "Software Engineer",
+      inferredEmail: null,
+      emailStatus: "UNAVAILABLE",
+      emailConfidence: "UNAVAILABLE",
+      createdAt: new Date()
+    };
+    for (let index = 0; index < 6; index += 1) {
+      prisma._state.people.push({
+        ...personBase,
+        id: `p_filler_${index}`,
+        firstName: `Filler${index}`,
+        fullName: `Filler${index} Person`,
+        linkedinUrl: `https://www.linkedin.com/in/filler-${index}`
+      });
+    }
+    prisma._state.people.push({
+      ...personBase,
+      id: "p_louis",
+      firstName: "Louis",
+      fullName: "Louis Armstrong",
+      linkedinUrl: "https://www.linkedin.com/in/louis-armstrong"
+    });
+
+    const firstPage = await queryPeople(prisma, "");
+    expect(firstPage.totalCount).toBe(11);
+    expect(firstPage.ids).not.toContain("p_louis");
+    expect(await queryPeople(prisma, `, search: "lOuIs"`)).toEqual({ totalCount: 1, ids: ["p_louis"] });
+  });
+
   it("an unknown location matches nothing — never leaks other groups", async () => {
     const prisma = seedLocationGraph();
     expect(await queryPeople(prisma, `, location: "Mars"`)).toEqual({ totalCount: 0, ids: [] });

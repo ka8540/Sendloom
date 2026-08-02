@@ -889,21 +889,6 @@ export function buildLocationFilterOptions(
   return options;
 }
 
-/** Local text filter over an already-loaded page of people. */
-export function filterPeopleByText(people: PersonNode[], query: string): PersonNode[] {
-  const trimmed = query.trim().toLowerCase();
-  if (!trimmed) {
-    return people;
-  }
-  return people.filter((person) => {
-    const haystack = [person.fullName, person.currentTitle, person.inferredEmail, personLocation(person)]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
-    return haystack.includes(trimmed);
-  });
-}
-
 // ---------------------------------------------------------------------------
 // Selection helpers.
 // ---------------------------------------------------------------------------

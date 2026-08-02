@@ -54,7 +54,6 @@ import {
   emailStatusBadge,
   clampPageIndex,
   filterHistoryGroups,
-  filterPeopleByText,
   formatDateTime,
   formatFilteredGroupCountLabel,
   formatHistoryShowingLabel,
@@ -420,12 +419,6 @@ describe("formatting helpers", () => {
     expect(personLocation(person({ city: null, state: null, country: null, location: null }))).toBe("—");
   });
 
-  it("filters people locally by name, title or email", () => {
-    const people = [person({ id: "a", fullName: "Ada Lovelace" }), person({ id: "b", fullName: "Alan Turing", inferredEmail: "alan@x.com" })];
-    expect(filterPeopleByText(people, "turing").map((p) => p.id)).toEqual(["b"]);
-    expect(filterPeopleByText(people, "alan@x").map((p) => p.id)).toEqual(["b"]);
-    expect(filterPeopleByText(people, "")).toHaveLength(2);
-  });
 });
 
 describe("Discover product copy", () => {
@@ -1002,11 +995,13 @@ describe("Add 10 more detail-page wiring", () => {
   it("updates counts + people in place without a full-page reload (existing #6, #7, #9)", () => {
     expect(detailSource).toContain("ADD_MORE_DISCOVER_PEOPLE_MUTATION");
     // Refreshes company (totals), people (pagination), and the search in place,
-    // preserving BOTH active filters (role + location).
+    // preserving role, location, and the server-side People search.
     expect(detailSource).toMatch(
-      /await loadPeople\(\{\s*companyId: search\.company\.id,\s*category: activeCategory,\s*location: activeLocation,\s*pageIndex: 0,\s*after: null\s*\}\)/
+      /await loadPeople\(\{\s*companyId: search\.company\.id,\s*category: activeCategory,\s*location: activeLocation,\s*search: peopleQuery \|\| null,\s*pageIndex: 0,\s*after: null\s*\}\)/
     );
-    expect(detailSource).toContain("await loadDetail({ category: activeCategory, location: activeLocation })");
+    expect(detailSource).toContain(
+      "await loadDetail({ category: activeCategory, location: activeLocation, search: peopleQuery })"
+    );
     // No hard navigation / full reload.
     expect(detailSource).not.toContain("window.location.reload");
   });

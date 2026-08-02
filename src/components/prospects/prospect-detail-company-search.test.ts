@@ -187,7 +187,9 @@ describe("Scalable People filter controls (#21-#27)", () => {
   });
 
   it("bulk select-all stays role-scoped only — hidden while a location filter is active", () => {
-    expect(DETAIL_SOURCE).toMatch(/activeLocation === null &&\s*\n\s*peopleTotal > selectedPageIds.length/);
+    expect(DETAIL_SOURCE).toMatch(
+      /activeLocation === null &&\s*\n\s*!peopleSearchActive &&\s*\n\s*peopleTotal > selectedPageIds.length/
+    );
   });
 });
 
@@ -210,10 +212,13 @@ describe("Detail page regressions (#31-#35)", () => {
     expect(DETAIL_SOURCE).toContain("as PositionCategory");
   });
 
-  it("keeps Add 10 more and the per-page table search intact (#12, #13)", () => {
+  it("keeps Add 10 more and searches People before pagination (#12, #13)", () => {
     expect(DETAIL_SOURCE).toContain("ADD_MORE_PEOPLE_LABEL");
     expect(DETAIL_SOURCE).toContain('data-discover-tour="add-more-people"');
-    expect(DETAIL_SOURCE).toContain("Filter this page by name, title, or email");
-    expect(DETAIL_SOURCE).toContain("setPeopleFilter");
+    expect(DETAIL_SOURCE).toContain("Search all people by name, title, email, or location");
+    expect(DETAIL_SOURCE).toContain("handlePeopleSearchChange");
+    expect(PEOPLE_QUERY).toContain("search: $search");
+    expect(DETAIL_SOURCE).toContain("search: peopleQuery || null");
+    expect(DETAIL_SOURCE).not.toContain("filterPeopleByText");
   });
 });
