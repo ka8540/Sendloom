@@ -35,6 +35,26 @@ describe("primary product navigation", () => {
   });
 });
 
+describe("selected navigation styling", () => {
+  function cssBlock(selector: string): string {
+    const start = GLOBALS.indexOf(`${selector} {`);
+    return GLOBALS.slice(start, GLOBALS.indexOf("}", start));
+  }
+
+  it("uses a solid green background with white text for the selected item", () => {
+    const activeBlock = cssBlock(".nav-item.is-active");
+
+    expect(activeBlock).toContain("background: #2f8f68");
+    expect(activeBlock).toContain("color: #ffffff");
+    expect(activeBlock).not.toContain("transparent");
+    expect(activeBlock).not.toContain("var(--accent-soft");
+  });
+
+  it("keeps unselected navigation content dark", () => {
+    expect(cssBlock(".nav-item")).toContain("color: var(--text)");
+  });
+});
+
 describe("Account moved to the lower account/utility section", () => {
   it("renders Account as a nav item passed into the footer utility slot (not admin)", () => {
     expect(NAV_SOURCE).toContain('const accountHref = "/account" as Route;');

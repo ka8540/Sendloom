@@ -428,16 +428,18 @@ html[data-sidebar-collapsed="true"] .shell {
 }
 
 .nav-item.is-active {
-  background: var(--accent-soft-strong);
-  border-color: color-mix(in srgb, var(--accent) 24%, transparent);
-  color: var(--accent-strong);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 6%, transparent);
+  background: #2f8f68;
+  border-color: #2f8f68;
+  color: #ffffff;
+  box-shadow: 0 8px 20px rgba(22, 124, 90, 0.2);
 }
 
 .nav-item.is-active:hover,
 .nav-item.is-active:focus-visible {
-  background: color-mix(in srgb, var(--accent-soft-strong) 82%, var(--accent) 18%);
-  color: var(--accent-strong);
+  background: #287b5a;
+  border-color: #287b5a;
+  color: #ffffff;
+  box-shadow: 0 10px 24px rgba(22, 124, 90, 0.26);
 }
 
 .nav-footer {
