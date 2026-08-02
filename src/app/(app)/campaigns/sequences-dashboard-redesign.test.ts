@@ -496,24 +496,36 @@ describe("control bar (#7, #8, #10, #11)", () => {
 
   it("changing search, status, or email account resets pagination (#9)", () => {
     const searchHandler = DASH.slice(DASH.indexOf("function onSearchChange"), DASH.indexOf("function clearFilters"));
+    expect(searchHandler).toContain("setSearchQuery(value)");
     expect(searchHandler).toContain("setPage(1)");
-    expect(searchHandler).toContain("replaceUrlState({ query: value, page: 1 })");
+    expect(searchHandler).not.toContain("router.replace");
     const filterHandler = DASH.slice(DASH.indexOf("function selectFilter"), DASH.indexOf("function selectSender"));
     expect(filterHandler).toContain("setPage(1)");
-    expect(filterHandler).toContain("replaceUrlState({ filter: next as SequenceFilterId, page: 1 })");
+    expect(filterHandler).toContain("replaceUrlState({ filter: next as SequenceFilterId, query: searchQuery, page: 1 })");
     const senderHandler = DASH.slice(DASH.indexOf("function selectSender"), DASH.indexOf("function onSearchChange"));
     expect(senderHandler).toContain("setPage(1)");
-    expect(senderHandler).toContain("replaceUrlState({ sender: next, page: 1 })");
+    expect(senderHandler).toContain("replaceUrlState({ sender: next, query: searchQuery, page: 1 })");
     // Both dropdowns drive the shared filter pipeline (#6, #7, #8).
     expect(DASH).toContain("onChange={selectFilter}");
     expect(DASH).toContain("onChange={selectSender}");
-    expect(DASH).toContain("filterSequenceItems(items, filter, query, sender)");
+    expect(DASH).toContain("filterSequenceItems(items, filter, deferredSearchQuery, sender)");
     // Clearing filters removes all three URL params plus the page.
     const clear = DASH.slice(DASH.indexOf("function clearFilters"), DASH.indexOf("const hasSequences"));
     expect(clear).toContain('filter: "all"');
     expect(clear).toContain("sender: ALL_SENDER_ACCOUNTS");
     expect(clear).toContain('query: ""');
     expect(clear).toContain("page: 1");
+  });
+
+  it("keeps rapid search input local while debouncing URL synchronization", () => {
+    expect(DASH).toContain("const SEQUENCE_SEARCH_DEBOUNCE_MS = 200");
+    expect(DASH).toContain("const [searchQuery, setSearchQuery] = useState(query)");
+    expect(DASH).toContain("const deferredSearchQuery = useDeferredValue(searchQuery)");
+    expect(DASH).toContain("value={searchQuery}");
+    expect(DASH).toContain("window.setTimeout(() =>");
+    expect(DASH).toContain("replaceSearchQuery(searchQuery)");
+    expect(DASH).toContain("window.history.replaceState");
+    expect(DASH).toContain("if (searchQuery !== query)");
   });
 
   it("pages change on click with no pagination preview tooltip", () => {

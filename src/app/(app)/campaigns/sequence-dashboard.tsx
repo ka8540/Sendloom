@@ -11,6 +11,7 @@ import type { Route } from "next";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   useCallback,
+  useDeferredValue,
   useEffect,
   useId,
   useMemo,
@@ -57,6 +58,7 @@ import {
 import styles from "./sequence-dashboard.module.css";
 
 const countFormatter = new Intl.NumberFormat("en-US");
+const SEQUENCE_SEARCH_DEBOUNCE_MS = 200;
 
 function formatCount(value: number) {
   return countFormatter.format(value);
@@ -329,12 +331,15 @@ export function SequenceDashboard({ items }: { items: SequenceListItem[] }) {
     [searchParams, senderEmails]
   );
   const { filter, sender, query, page: urlPage } = urlState;
+  const [searchQuery, setSearchQuery] = useState(query);
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+  const committedSearchQueryRef = useRef(query);
   const [page, setPage] = useState(urlPage);
   const [listMinHeight, setListMinHeight] = useState<number | null>(null);
   const listRef = useRef<HTMLUListElement | null>(null);
   const filtered = useMemo(
-    () => filterSequenceItems(items, filter, query, sender),
-    [items, filter, query, sender]
+    () => filterSequenceItems(items, filter, deferredSearchQuery, sender),
+    [items, filter, deferredSearchQuery, sender]
   );
   const slice = paginateSequenceItems(filtered, page);
   const normalizedSearchParams = useMemo(
@@ -372,11 +377,51 @@ export function SequenceDashboard({ items }: { items: SequenceListItem[] }) {
     [pathname]
   );
 
+  const replaceSearchQuery = useCallback(
+    (nextQuery: string) => {
+      const currentParams = new URLSearchParams(window.location.search);
+      const nextParams = updateSequenceDashboardSearchParams(currentParams, {
+        query: nextQuery,
+        page: 1
+      });
+      const queryString = nextParams.toString();
+      const href = queryString ? `${pathname}?${queryString}` : pathname;
+      window.history.replaceState(window.history.state, "", href);
+    },
+    [pathname]
+  );
+
   useEffect(() => {
     setPage(urlPage);
   }, [urlPage]);
 
   useEffect(() => {
+    if (query === committedSearchQueryRef.current) {
+      return;
+    }
+
+    committedSearchQueryRef.current = query;
+    setSearchQuery(query);
+  }, [query]);
+
+  useEffect(() => {
+    if (searchQuery === query) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      committedSearchQueryRef.current = searchQuery;
+      replaceSearchQuery(searchQuery);
+    }, SEQUENCE_SEARCH_DEBOUNCE_MS);
+
+    return () => window.clearTimeout(timeout);
+  }, [query, replaceSearchQuery, searchQuery]);
+
+  useEffect(() => {
+    if (searchQuery !== query) {
+      return;
+    }
+
     const browserSearch = new URLSearchParams(window.location.search).toString();
     if (normalizedSearch === browserSearch) {
       return;
@@ -384,7 +429,7 @@ export function SequenceDashboard({ items }: { items: SequenceListItem[] }) {
 
     const href = normalizedSearch ? `${pathname}?${normalizedSearch}` : pathname;
     router.replace(href as Route, { scroll: false });
-  }, [normalizedSearch, pathname, router]);
+  }, [normalizedSearch, pathname, query, router, searchQuery]);
 
   // Draft is only offered when draft sequences exist; the six core statuses
   // always appear in the dropdown, including zero counts.
@@ -403,24 +448,27 @@ export function SequenceDashboard({ items }: { items: SequenceListItem[] }) {
   ];
 
   function selectFilter(next: string) {
+    committedSearchQueryRef.current = searchQuery;
     setPage(1);
     setListMinHeight(null);
-    replaceUrlState({ filter: next as SequenceFilterId, page: 1 });
+    replaceUrlState({ filter: next as SequenceFilterId, query: searchQuery, page: 1 });
   }
 
   function selectSender(next: string) {
+    committedSearchQueryRef.current = searchQuery;
     setPage(1);
     setListMinHeight(null);
-    replaceUrlState({ sender: next, page: 1 });
+    replaceUrlState({ sender: next, query: searchQuery, page: 1 });
   }
 
   function onSearchChange(value: string) {
+    setSearchQuery(value);
     setPage(1);
     setListMinHeight(null);
-    replaceUrlState({ query: value, page: 1 });
   }
 
   function clearFilters() {
+    setSearchQuery("");
     setPage(1);
     setListMinHeight(null);
     replaceUrlState({
@@ -446,7 +494,7 @@ export function SequenceDashboard({ items }: { items: SequenceListItem[] }) {
           <input
             type="search"
             className={styles.searchInput}
-            value={query}
+            value={searchQuery}
             onChange={(event) => onSearchChange(event.target.value)}
             placeholder="Search a sequence…"
             aria-label="Search sequences by name, list, template, or sender"
