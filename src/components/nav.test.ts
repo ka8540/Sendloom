@@ -41,26 +41,47 @@ describe("selected navigation styling", () => {
     return GLOBALS.slice(start, GLOBALS.indexOf("}", start));
   }
 
-  it("uses a designed green treatment with white text for the selected item", () => {
+  it("uses a restrained theme-aware treatment for the selected item", () => {
     const activeBlock = cssBlock(".nav-item.is-active");
 
-    expect(activeBlock).toContain("background: var(--nav-active-background)");
-    expect(activeBlock).toContain("color: #ffffff");
-    expect(activeBlock).not.toContain("var(--accent-soft");
-    expect(activeBlock).toContain("box-shadow: var(--nav-active-shadow)");
-    expect(GLOBALS).toContain(".nav-item.is-active::before");
-    expect(GLOBALS).toContain(".nav-item.is-active svg");
+    expect(activeBlock).toContain("border-radius: 13px");
+    expect(activeBlock).toContain("background: var(--accent-soft)");
+    expect(activeBlock).toContain("color: var(--accent-strong)");
+    expect(activeBlock).toContain("box-shadow: none");
+    expect(activeBlock).not.toContain("gradient");
   });
 
   it("keeps unselected navigation content dark", () => {
     expect(cssBlock(".nav-item")).toContain("color: var(--text)");
   });
 
-  it("defines dedicated active-state treatments for light, dark, and system-dark themes", () => {
-    expect(GLOBALS.match(/--nav-active-background:/g)).toHaveLength(3);
-    expect(GLOBALS.match(/--nav-active-shadow:/g)).toHaveLength(3);
-    expect(GLOBALS).toContain("--nav-active-border: #277e5b");
-    expect(GLOBALS).toContain("--nav-active-border: #4cad85");
+  it("marks the active item with a slim left-side accent rail", () => {
+    const indicatorBlock = cssBlock(".nav-item.is-active::before");
+
+    expect(indicatorBlock).toContain("left: -1px");
+    expect(indicatorBlock).toContain("width: 4px");
+    expect(indicatorBlock).toContain("background: var(--accent)");
+    expect(indicatorBlock).toContain("border-radius: 0 999px 999px 0");
+  });
+
+  it("removes the oversized icon tile, gradient tokens, shadow, and movement", () => {
+    expect(GLOBALS).not.toContain(".nav-item.is-active svg");
+    expect(GLOBALS).not.toContain("--nav-active-background");
+    expect(GLOBALS).not.toContain("--nav-active-shadow");
+    expect(cssBlock(".nav-item")).not.toContain("transform");
+  });
+
+  it("keeps a visible focus ring that does not rely on background color", () => {
+    const focusBlock = cssBlock(".nav-item:focus-visible");
+
+    expect(focusBlock).toContain("outline: 2px solid");
+    expect(focusBlock).toContain("outline-offset: 2px");
+  });
+
+  it("keeps the restrained active radius in collapsed mode", () => {
+    expect(GLOBALS).toMatch(
+      /\.sidebar\.is-collapsed \.nav-item\.is-active,[\s\S]*?border-radius:\s*13px/
+    );
   });
 });
 
