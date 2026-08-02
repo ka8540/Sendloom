@@ -41,17 +41,26 @@ describe("selected navigation styling", () => {
     return GLOBALS.slice(start, GLOBALS.indexOf("}", start));
   }
 
-  it("uses a solid green background with white text for the selected item", () => {
+  it("uses a designed green treatment with white text for the selected item", () => {
     const activeBlock = cssBlock(".nav-item.is-active");
 
-    expect(activeBlock).toContain("background: #2f8f68");
+    expect(activeBlock).toContain("background: var(--nav-active-background)");
     expect(activeBlock).toContain("color: #ffffff");
-    expect(activeBlock).not.toContain("transparent");
     expect(activeBlock).not.toContain("var(--accent-soft");
+    expect(activeBlock).toContain("box-shadow: var(--nav-active-shadow)");
+    expect(GLOBALS).toContain(".nav-item.is-active::before");
+    expect(GLOBALS).toContain(".nav-item.is-active svg");
   });
 
   it("keeps unselected navigation content dark", () => {
     expect(cssBlock(".nav-item")).toContain("color: var(--text)");
+  });
+
+  it("defines dedicated active-state treatments for light, dark, and system-dark themes", () => {
+    expect(GLOBALS.match(/--nav-active-background:/g)).toHaveLength(3);
+    expect(GLOBALS.match(/--nav-active-shadow:/g)).toHaveLength(3);
+    expect(GLOBALS).toContain("--nav-active-border: #277e5b");
+    expect(GLOBALS).toContain("--nav-active-border: #4cad85");
   });
 });
 
