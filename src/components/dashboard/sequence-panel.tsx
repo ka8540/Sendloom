@@ -112,14 +112,14 @@ export function SequencePanel({ rows }: { rows: SequenceRowData[] }) {
   }
 
   return (
-    <section className={styles.sequenceSection} data-overview-tour="recent-sequences">
+    <section className={styles.sequenceSection}>
       <div className={styles.sequenceHead}>
         <div className={styles.sectionIntro}>
           <h2 className={styles.sectionTitle}>Recent sequences</h2>
           <p className={styles.sectionCopy}>Open, pause, or manage your recent runs.</p>
         </div>
         <div className={styles.sequenceTools}>
-          <div className={styles.sequenceSearch}>
+          <div className={styles.sequenceSearch} data-overview-tour="sequence-search">
             <Search aria-hidden="true" />
             <input
               type="text"
@@ -129,7 +129,7 @@ export function SequencePanel({ rows }: { rows: SequenceRowData[] }) {
               placeholder="Search sequences…"
             />
           </div>
-          <Link href="/campaigns" className={styles.viewAllButton} data-overview-tour="view-all-sequences">
+          <Link href="/campaigns" className={styles.viewAllButton}>
             View all sequences
             <ArrowRight aria-hidden="true" />
           </Link>

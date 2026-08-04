@@ -14,7 +14,7 @@ export function ActivityFeed({ items }: { items: ActivityItem[] }) {
   const visibleItems = items.slice(0, OVERVIEW_ACTIVITY_LIMIT);
 
   return (
-    <section className={styles.activitySection} data-overview-tour="live-system">
+    <section className={styles.activitySection} data-overview-tour="recent-activity">
       <div className={styles.activityHead}>
         <h2 className={styles.sideTitle}>Recent activity</h2>
       </div>
@@ -26,11 +26,7 @@ export function ActivityFeed({ items }: { items: ActivityItem[] }) {
             const visualTone = getActivityTone(item);
 
             return (
-              <li
-                key={item.id}
-                className={styles.activityEntry}
-                data-overview-tour={index === 0 ? "activity-row" : undefined}
-              >
+              <li key={item.id} className={styles.activityEntry}>
                 <Link href={item.href} className={styles.activityItem}>
                   <span className={styles.activityIcon} data-tone={visualTone} aria-hidden="true">
                     <Icon aria-hidden="true" />

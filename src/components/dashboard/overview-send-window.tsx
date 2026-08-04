@@ -83,7 +83,7 @@ export function SendWindowCard({ combined, senders }: { combined: DailySendWindo
           </p>
           <p className={styles.sendUnit}>sent · rolling 24h</p>
 
-          <div className={styles.sendVisual} data-overview-tour="gmail-progress">
+          <div className={styles.sendVisual}>
             <div
               className={styles.sendMeter}
               data-tone={tone}
@@ -119,7 +119,7 @@ export function SendWindowCard({ combined, senders }: { combined: DailySendWindo
         </>
       )}
 
-      <div className={styles.sendSender} data-overview-tour="sender-breakdown">
+      <div className={styles.sendSender}>
         <span className={styles.sendSenderIcon} aria-hidden="true">
           <GoogleIcon />
         </span>

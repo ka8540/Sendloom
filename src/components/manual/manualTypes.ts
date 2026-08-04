@@ -66,6 +66,11 @@ export type ManualConfig = {
   contextualStages?: boolean;
   /** Appended to the completion storage key so the manual can be re-versioned. */
   version?: string;
+  /**
+   * Label for the final step's confirm button. Defaults to "Finish", which every
+   * existing guide keeps; the Overview guide opts into "Done".
+   */
+  finishLabel?: string;
   /** Resolve the current stage id from page state (e.g. reading the DOM). */
   resolveStage?: () => string | null;
   /** Return the steps for a stage. Falls back to `steps` when omitted. */

@@ -34,7 +34,6 @@ describe("Page header (#8, #9, #10)", () => {
     expect(WORKSPACE_PAGE).toContain('export { default } from "@/components/dashboard/overview-command-center"');
     expect(CENTER).toContain("styles.pageTitle}>Overview</h1>");
     expect(CENTER).toContain("Here’s what’s happening with your outreach.");
-    expect(CENTER).toContain('data-overview-tour="page-intro"');
   });
 
   it("keeps the heading prominent but not enormous — the giant hero is gone", () => {
@@ -88,11 +87,8 @@ describe("Summary strip (#11–#15)", () => {
     expect(CENTER_CSS).toMatch(/\.summaryCell \+ \.summaryCell \{\s*border-left: 1px solid var\(--line\);/);
   });
 
-  it("keeps the tour anchors on the strip sections", () => {
-    expect(strip).toContain('data-overview-tour="workspace-health"');
-    expect(strip).toContain('data-overview-tour="active-sequences"');
-    expect(strip).toContain('data-overview-tour="needs-attention"');
-    expect(strip).toContain('data-overview-tour="lists-ready"');
+  it("carries the tour anchor for the whole strip", () => {
+    expect(strip).toContain('data-overview-tour="summary"');
   });
 });
 
@@ -233,8 +229,6 @@ describe("Gmail send window (#16, #17)", () => {
       expect(SEND_WINDOW).toContain(piece);
     }
     expect(SEND_WINDOW).toContain('data-overview-tour="gmail-send-window"');
-    expect(SEND_WINDOW).toContain('data-overview-tour="gmail-progress"');
-    expect(SEND_WINDOW).toContain('data-overview-tour="sender-breakdown"');
   });
 
   it("keeps the app's real Google mark, not a generic or redrawn mail icon", () => {
@@ -257,8 +251,7 @@ describe("Recent activity (#31, #32)", () => {
     for (const piece of ["getActivityIcon", "getActivityTone", "item.title", "item.description", "item.timeLabel"]) {
       expect(ACTIVITY).toContain(piece);
     }
-    expect(ACTIVITY).toContain('data-overview-tour="live-system"');
-    expect(ACTIVITY).toContain('data-overview-tour={index === 0 ? "activity-row" : undefined}');
+    expect(ACTIVITY).toContain('data-overview-tour="recent-activity"');
     // No invented View-all route — /admin/activity is admin-gated, so the
     // operator-facing Overview has no valid activity destination to link to.
     expect(ACTIVITY).not.toMatch(/View all/);

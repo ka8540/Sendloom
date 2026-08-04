@@ -729,7 +729,7 @@ export default async function OverviewCommandCenter() {
       {/* Compact page header: identity on the left, the two primary workspace
           actions on the right. No hero block — the operational summary strip
           below carries the at-a-glance numbers. */}
-      <header className={styles.pageHeader} data-overview-tour="page-intro">
+      <header className={styles.pageHeader}>
         <div className={styles.pageHeading}>
           <h1 className={styles.pageTitle}>Overview</h1>
           <p className={styles.pageSubtitle}>Here’s what’s happening with your outreach.</p>
@@ -748,8 +748,8 @@ export default async function OverviewCommandCenter() {
 
       {/* One restrained strip, four operational sections split by hairlines.
           Gmail send capacity intentionally lives only in the right-column card. */}
-      <section className={styles.summaryStrip} aria-label="Workspace summary" data-overview-tour="workspace-health">
-        <Link href="/campaigns" className={styles.summaryCell} data-overview-tour="active-sequences">
+      <section className={styles.summaryStrip} aria-label="Workspace summary" data-overview-tour="summary">
+        <Link href="/campaigns" className={styles.summaryCell}>
           <div className={styles.summaryBody}>
             <span className={styles.summaryLabel} data-tone="accent">
               <span className={styles.summaryDot} aria-hidden="true" />
@@ -781,7 +781,6 @@ export default async function OverviewCommandCenter() {
           href="/campaigns"
           className={styles.summaryCell}
           data-tone={needsAttentionCount > 0 ? "warn" : "ok"}
-          data-overview-tour="needs-attention"
         >
           <div className={styles.summaryBody}>
             <span className={styles.summaryLabel} data-tone="warn">
@@ -796,7 +795,7 @@ export default async function OverviewCommandCenter() {
           </span>
         </Link>
 
-        <Link href="/imports" className={styles.summaryCell} data-overview-tour="lists-ready">
+        <Link href="/imports" className={styles.summaryCell}>
           <div className={styles.summaryBody}>
             <span className={styles.summaryLabel} data-tone="lists">
               <span className={styles.summaryDot} aria-hidden="true" />

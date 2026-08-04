@@ -39,7 +39,6 @@ export function SequenceRow({
       onClick={navigate}
       onKeyDown={handleKeyDown}
       aria-label={`Open ${sequence.name}`}
-      data-overview-tour={tourTarget ? "recent-sequence-card" : undefined}
     >
       <span className={styles.sequenceGlyph} aria-hidden="true">
         <Send aria-hidden="true" />
@@ -73,7 +72,9 @@ export function SequenceRow({
         {sequence.lastActivityLabel}
       </time>
 
-      <div className={styles.sequenceActions}>
+      {/* The tour highlights the whole action area (every control plus Open),
+          not a single icon — stamped on the first row only. */}
+      <div className={styles.sequenceActions} data-overview-tour={tourTarget ? "sequence-actions" : undefined}>
         <SequenceRowActions
           href={sequence.href}
           campaignId={sequence.id}

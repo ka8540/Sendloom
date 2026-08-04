@@ -473,7 +473,7 @@ export function ManualOverlay() {
             >
               {isFinalStep ? (
                 <>
-                  Finish
+                  {manual.finishLabel ?? "Finish"}
                   <Check aria-hidden="true" />
                 </>
               ) : (

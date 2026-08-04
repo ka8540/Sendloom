@@ -1,16 +1,15 @@
 import type { ManualConfig, ManualStep } from "@/components/manual/manualTypes";
 
 // The authenticated Overview dashboard (/workspace) uses the shared floating
-// Help button + overlay. Its guide is state-aware: a brand-new workspace is
-// onboarded with a focused beginner tour, and short one-time contextual tours
-// introduce newly relevant cards as imports, templates, sequences, activity and
-// attention items appear. A manual Help click always replays the complete guide
-// for whatever is currently rendered.
+// Help button + overlay. The guide is a short, six-step walk-through of the
+// redesigned page: the summary strip, quick actions, the recent-sequence search
+// and row actions, the Gmail send window, and recent activity. It is
+// state-aware only in that a brand-new workspace and a working one get the same
+// steps filtered down to whatever is actually on screen.
 //
-// Every step targets a stable `data-overview-tour="..."` attribute (or, for the
-// untouched app sidebar, an existing semantic selector). State-dependent steps
-// are marked `optional` so the shared overlay drops them when their target is
-// absent — the tour never points at an empty or missing component.
+// Every step targets a stable `data-overview-tour="..."` attribute. Steps whose
+// component only exists once there is data are marked `optional`, so the shared
+// overlay drops them rather than pointing at a missing element.
 
 // ---------------------------------------------------------------------------
 // Targets + state
@@ -21,10 +20,6 @@ export function overviewSelector(target: string): string {
 }
 
 const sel = overviewSelector;
-
-// The app sidebar must not be modified, so its tour step reuses the existing
-// semantic navigation landmark rather than adding an attribute to that file.
-const SIDEBAR_SELECTOR = "nav[aria-label='Main navigation']";
 
 /** Auto-opening progressive onboarding phases, in priority order. */
 export type OverviewAutoStage = "starter" | "foundations" | "first-sequence" | "attention";
@@ -90,46 +85,19 @@ export function resolveOverviewChangedStage(state: OverviewTourState): Exclude<O
 }
 
 // ---------------------------------------------------------------------------
-// Reusable step builders (one per Overview surface)
+// The six Overview steps
 // ---------------------------------------------------------------------------
+//
+// Each one describes a component that exists on the redesigned page, and the
+// copy stays with what is literally visible on screen — no wording carried over
+// from the charts, roll-ups and log framing the redesign removed.
 
-function sidebarStep(): ManualStep {
+function summaryStep(): ManualStep {
   return {
-    id: "sidebar",
-    title: "Move through your workspace",
-    body: "Use the sidebar to discover contacts, import people, create templates, build sequences, and return here to monitor everything in one place.",
-    selector: SIDEBAR_SELECTOR,
-    placement: "right",
-    optional: true
-  };
-}
-
-function workspaceHealthStep(): ManualStep {
-  return {
-    id: "workspace-health",
-    title: "Your workspace at a glance",
-    body: "This summary strip shows the current state of your workspace — active sequences, recent send volume, anything that needs attention, and lists ready to launch. Empty or zero values are normal until you create your first list, template, or sequence.",
-    selector: sel("workspace-health"),
-    placement: "bottom"
-  };
-}
-
-function activeSequencesStep(): ManualStep {
-  return {
-    id: "active-sequences",
-    title: "Active sequences",
-    body: "Shows how many sequences are currently running or queued, so you can tell live sending apart from everything else. Opening the section takes you to the full Sequences page.",
-    selector: sel("active-sequences"),
-    placement: "bottom"
-  };
-}
-
-function listsReadyStep(): ManualStep {
-  return {
-    id: "lists-ready",
-    title: "Lists ready",
-    body: "Shows how many processed imports already have a field mapping and are ready to use in a sequence. Opening the section takes you to Imports — this figure is a summary, not the editor.",
-    selector: sel("lists-ready"),
+    id: "summary",
+    title: "Overview at a glance",
+    body: "See what is running, how many emails were sent in the last 24 hours, what needs attention, and how many lists are ready to launch.",
+    selector: sel("summary"),
     placement: "bottom"
   };
 }
@@ -137,310 +105,104 @@ function listsReadyStep(): ManualStep {
 function quickActionsStep(): ManualStep {
   return {
     id: "quick-actions",
-    title: "Start something new",
-    body: "Quick actions are shortcuts to the three main workflows: create a sequence, import a list, or create a template. Each opens the matching workspace page.",
+    title: "Start something quickly",
+    body: "Create a sequence, import a contact list, or create a template without leaving the Overview page.",
     selector: sel("quick-actions"),
     placement: "bottom"
   };
 }
 
-function gmailSendWindowStep(): ManualStep {
+function sequenceSearchStep(): ManualStep {
+  return {
+    id: "sequence-search",
+    title: "Find a recent sequence",
+    body: "Search recent sequences by sequence name, list, template, or sender.",
+    selector: sel("sequence-search"),
+    placement: "bottom"
+  };
+}
+
+function sequenceActionsStep(): ManualStep {
+  return {
+    id: "sequence-actions",
+    title: "Manage a sequence",
+    body: "Use these controls to view, pause, resume or relaunch, delete, or open a sequence. Available actions depend on the sequence status.",
+    selector: sel("sequence-actions"),
+    placement: "top",
+    optional: true
+  };
+}
+
+function sendWindowStep(): ManualStep {
   return {
     id: "gmail-send-window",
-    title: "Gmail sending capacity",
-    body: "Shows how much sending capacity has been used in the rolling 24-hour safety window for your connected Gmail senders, plus the remaining capacity and when it resets. Sendloom uses this to pace outreach and reduce provider throttling.",
+    title: "Check your sending capacity",
+    body: "See how many emails were sent in the rolling 24-hour window, how many remain, and when capacity resets for the connected Gmail sender.",
     selector: sel("gmail-send-window"),
-    placement: "bottom"
-  };
-}
-
-function gmailProgressStep(): ManualStep {
-  return {
-    id: "gmail-progress",
-    title: "Capacity used and remaining",
-    body: "The progress bar fills as sends are recorded in the rolling window. The figures beside it show how much capacity remains and when the earliest counted sends age out, easing the window back open.",
-    selector: sel("gmail-progress"),
-    placement: "bottom",
-    optional: true
-  };
-}
-
-function senderBreakdownStep(): ManualStep {
-  return {
-    id: "sender-breakdown",
-    title: "Connected senders",
-    body: "Summarizes the Gmail sender behind this window. When more than one sender is connected, the badge shows how many additional senders share your workspace capacity.",
-    selector: sel("sender-breakdown"),
-    placement: "top",
-    optional: true
-  };
-}
-
-function recentSequencesStep(): ManualStep {
-  return {
-    id: "recent-sequences",
-    title: "Track recently changed sequences",
-    body: "Recent Sequences previews the three workflows that changed most recently. Use the search field to find a sequence by name, list, template, or sender, or open View all sequences for the complete list.",
-    selector: sel("recent-sequences"),
-    placement: "top"
-  };
-}
-
-function recentSequenceCardStep(): ManualStep {
-  return {
-    id: "recent-sequence-card",
-    title: "Read a sequence at a glance",
-    body: "Each row shows the sequence name, its list, template, and sender, the current status, and the last update time. The action buttons let you view, pause, resume, relaunch, or delete the sequence. Open the row for full recipient and delivery details.",
-    selector: sel("recent-sequence-card"),
-    placement: "top",
-    optional: true
-  };
-}
-
-function viewAllSequencesStep(): ManualStep {
-  return {
-    id: "view-all-sequences",
-    title: "Open all sequences",
-    body: "Use this action when you need to search, filter, edit, relaunch, or inspect sequences beyond the recent items shown here. It opens the full Sequences page.",
-    selector: sel("view-all-sequences"),
-    placement: "bottom"
-  };
-}
-
-function liveSystemStep(): ManualStep {
-  return {
-    id: "live-system",
-    title: "Watch workspace activity",
-    body: "This section shows recent workspace events — imports, template updates, sequence launches, and sending progress — as they occur, so you can confirm changes were saved and follow what the workspace is doing.",
-    selector: sel("live-system"),
     placement: "left"
   };
 }
 
-function activityRowStep(): ManualStep {
+function recentActivityStep(): ManualStep {
   return {
-    id: "activity-row",
-    title: "Read an activity entry",
-    body: "Each entry pairs an icon and tone with a short description and a timestamp. Failures and attention events stand out so issues are easy to spot. Select an entry to open the related sequence, import, or template.",
-    selector: sel("activity-row"),
-    placement: "left",
-    optional: true
+    id: "recent-activity",
+    title: "See what changed recently",
+    body: "Review the latest sequence updates, imports, Discover searches, and other recent work. The Overview shows only the newest activity items.",
+    selector: sel("recent-activity"),
+    placement: "left"
   };
 }
-
-function needsAttentionStep(): ManualStep {
-  return {
-    id: "needs-attention",
-    title: "Items that need attention",
-    body: "This highlights Gmail authorization, retryable delivery, queue, server, configuration, paused, or other review-required problems. Retryable failures may be attempted again; action-required problems may need your review, and not every retry will succeed. Permanent invalid addresses, unsubscribed, and suppressed recipients are safely skipped instead. When it reads zero, nothing currently needs your review.",
-    selector: sel("needs-attention"),
-    placement: "bottom"
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Preserved original Overview steps (must remain intact — extended, not replaced)
-// ---------------------------------------------------------------------------
-
-/**
- * The three original Workspace overview steps, unchanged. Every state-aware
- * guide and the full manual tour build on top of these rather than replacing
- * them, so existing explanations are never lost.
- */
-export const preservedOverviewSteps: ManualStep[] = [
-  {
-    id: "command-center",
-    title: "Command center",
-    body: "Use this page as the live operating surface. It rolls up active sequences, recent send volume, validation posture, and anything that needs attention.",
-    selector: "main.content > div:not(.content-toolbar)",
-    placement: "right"
-  },
-  {
-    id: "metrics",
-    title: "Read the operating signals",
-    body: "The top metrics show whether the workspace is moving: active workflows, usable lists, and template inventory. Treat them as quick health checks before launching more sends.",
-    selector:
-      "main.content a[href='/campaigns']:not(.button), main.content a[href='/imports']:not(.button), main.content a[href='/templates']:not(.button)",
-    placement: "bottom"
-  },
-  {
-    id: "sequence-entry",
-    title: "Jump into live work",
-    body: "Recent sequence rows are entry points into the campaigns that changed most recently. Open one to review setup, delivery state, replies, and controls.",
-    selector: "main.content a[href^='/sequences/'], main.content a[href='/campaigns']",
-    placement: "top"
-  }
-];
 
 // ---------------------------------------------------------------------------
 // Stage step builders
 // ---------------------------------------------------------------------------
+//
+// Every stage is a subset of the same six steps, so no phase can ever describe a
+// component the redesigned Overview does not render.
 
 /**
- * Phase 1 — brand-new, empty workspace. A focused beginner walk-through of the
- * page, navigation, summary cards, and the empty Recent Sequences / Live System
- * sections, ending on a "what to do next" prompt.
- */
-export function overviewStarterSteps(): ManualStep[] {
-  return [
-    {
-      id: "page-intro",
-      title: "Welcome to your Sendloom Overview",
-      body: "This page gives you a live summary of your outreach workspace. As you create lists, templates, and sequences, the cards and activity sections here update automatically.",
-      selector: sel("page-intro"),
-      placement: "bottom"
-    },
-    sidebarStep(),
-    workspaceHealthStep(),
-    activeSequencesStep(),
-    listsReadyStep(),
-    quickActionsStep(),
-    gmailSendWindowStep(),
-    {
-      id: "recent-sequences",
-      title: "Your recent sequences will appear here",
-      body: "After you create or launch a sequence, this section gives you a quick view of its status and progress. Open a sequence when you need full recipient and delivery details.",
-      selector: sel("recent-sequences"),
-      placement: "top"
-    },
-    {
-      id: "live-system",
-      title: "Watch workspace activity",
-      body: "This section shows recent workspace events such as imports, template updates, sequence activity, and sending progress as they occur.",
-      selector: sel("live-system"),
-      placement: "left"
-    },
-    {
-      id: "build-first-workflow",
-      title: "Build your first workflow",
-      body: "Start by preparing a contact list, creating a template, and building a sequence. Return to Overview to monitor its progress.",
-      placement: "center"
-    }
-  ];
-}
-
-/**
- * Phase 2 — first imports or templates exist, but no sequences yet. A short
- * contextual note on the newly meaningful Lists and Templates cards and the
- * activity they produced. Not a replay of the beginner tour.
- */
-export function overviewFoundationsSteps(): ManualStep[] {
-  return [
-    {
-      id: "lists-ready",
-      title: "Your lists are taking shape",
-      body: "The Lists ready count reflects processed imports that already have a field mapping and can launch. Opening the section takes you to Imports — this figure is a summary, not the full editor.",
-      selector: sel("lists-ready"),
-      placement: "bottom"
-    },
-    {
-      id: "quick-actions",
-      title: "Templates and sequences start here",
-      body: "Use Quick actions to create a template or build a sequence from the lists you imported. Each shortcut opens the matching workspace page.",
-      selector: sel("quick-actions"),
-      placement: "bottom"
-    },
-    {
-      id: "live-system",
-      title: "Changes show up in activity",
-      body: "New imports and templates appear in Recent Activity so you can quickly confirm that workspace changes were saved.",
-      selector: sel("live-system"),
-      placement: "left"
-    }
-  ];
-}
-
-/**
- * Phase 3 — the first sequence now exists and is visible on Overview. Explains
- * how it is tracked across Active Sequences, Sequence health, the Recent
- * Sequences card, Live System, and the Gmail send window.
- */
-export function overviewFirstSequenceSteps(): ManualStep[] {
-  return [
-    {
-      id: "active-sequences",
-      title: "Your sequence is now tracked here",
-      body: "The main number shows sequences that are currently running or queued. The status badge on each recent sequence row explains paused, ready, completed, or review states.",
-      selector: sel("active-sequences"),
-      placement: "bottom"
-    },
-    recentSequencesStep(),
-    recentSequenceCardStep(),
-    viewAllSequencesStep(),
-    {
-      id: "live-system",
-      title: "Follow sequence activity",
-      body: "Launches, sends, status changes, retries, and related sequence events appear here so you can understand what the workspace is doing.",
-      selector: sel("live-system"),
-      placement: "left"
-    },
-    {
-      id: "gmail-send-window",
-      title: "Sending updates the capacity window",
-      body: "Launching a sequence may update the send-window usage gradually as messages go out — not all recipients send at once. Watch the remaining capacity here as sending progresses.",
-      selector: sel("gmail-send-window"),
-      placement: "bottom"
-    }
-  ];
-}
-
-/**
- * Phase 4 — attention-related data has appeared (operational failures,
- * paused work, or Gmail capacity pressure). Explains the attention surfaces and
- * what retryable versus action-required means, without overpromising.
- */
-export function overviewAttentionSteps(): ManualStep[] {
-  return [
-    needsAttentionStep(),
-    {
-      id: "gmail-send-window",
-      title: "Gmail safety status",
-      body: "When the send window is near capacity, Sendloom may delay queued sends until capacity becomes available. The queue stays attached to the sequence and continues when the sending window allows it.",
-      selector: sel("gmail-send-window"),
-      placement: "bottom",
-      optional: true
-    },
-    {
-      id: "view-all-sequences",
-      title: "Open sequences to resolve issues",
-      body: "This opens the full Sequences page, where you can review a flagged sequence, retry or fix recipients, and relaunch. It navigates there — it does not change anything on its own.",
-      selector: sel("view-all-sequences"),
-      placement: "bottom"
-    }
-  ];
-}
-
-/**
- * The complete manual tour for a Help click — the preserved original steps
- * followed by every detailed Overview step, grouped from navigation through to
- * attention. Optional steps are dropped by the overlay when their target is not
- * currently rendered, so this single list adapts to whatever Overview shows.
+ * The complete Overview guide, in reading order: the summary strip, then the
+ * left column top-to-bottom, then the right column top-to-bottom.
  */
 export function overviewFullSteps(): ManualStep[] {
   return [
-    ...preservedOverviewSteps,
-    // Workspace navigation
-    sidebarStep(),
-    // Core workspace summary
-    workspaceHealthStep(),
-    activeSequencesStep(),
-    // Imports and quick actions
-    listsReadyStep(),
+    summaryStep(),
     quickActionsStep(),
-    // Gmail sending capacity
-    gmailSendWindowStep(),
-    gmailProgressStep(),
-    senderBreakdownStep(),
-    // Recent sequences
-    recentSequencesStep(),
-    recentSequenceCardStep(),
-    viewAllSequencesStep(),
-    // Recent activity
-    liveSystemStep(),
-    activityRowStep(),
-    // Attention and recovery
-    needsAttentionStep()
+    sequenceSearchStep(),
+    sequenceActionsStep(),
+    sendWindowStep(),
+    recentActivityStep()
   ];
+}
+
+/**
+ * Phase 1 — brand-new, empty workspace. The same short guide; the optional
+ * sequence-action step drops out automatically while there are no rows.
+ */
+export function overviewStarterSteps(): ManualStep[] {
+  return overviewFullSteps();
+}
+
+/**
+ * Phase 2 — first imports or templates exist, but no sequences yet. Points at
+ * what is now meaningful without replaying the whole guide.
+ */
+export function overviewFoundationsSteps(): ManualStep[] {
+  return [summaryStep(), quickActionsStep(), recentActivityStep()];
+}
+
+/**
+ * Phase 3 — the first sequence now exists and is visible on Overview.
+ */
+export function overviewFirstSequenceSteps(): ManualStep[] {
+  return [summaryStep(), sequenceSearchStep(), sequenceActionsStep(), sendWindowStep()];
+}
+
+/**
+ * Phase 4 — something needs review, or Gmail capacity is under pressure.
+ */
+export function overviewAttentionSteps(): ManualStep[] {
+  return [summaryStep(), sequenceActionsStep(), sendWindowStep()];
 }
 
 export function overviewStepsForStage(stage: string | null): ManualStep[] {
@@ -471,13 +233,15 @@ export const workspaceManual: ManualConfig = {
   helpVariant: "premium",
   helpQuickStart: true,
   // Reveal targets with the minimum scroll (block: "nearest") instead of the
-  // default "center", so highlighting an in-hero visual like Sequence health
-  // never re-centres the page into a stretched-looking reframe.
+  // default "center", so highlighting a card never re-centres the page into a
+  // stretched-looking reframe.
   scrollBlock: "nearest",
   // The Overview page drives the progressive auto-open phases itself (so it can
   // wait for data + a settled layout), so the generic provider auto-open is off.
   autoOpen: false,
-  version: "v4",
+  version: "v5",
+  // Overview's guide ends on "Done"; every other guide keeps "Finish".
+  finishLabel: "Done",
   steps: overviewFullSteps(),
   // A manual Help click always resolves to the complete current-state tour.
   resolveStage: () => "full",
