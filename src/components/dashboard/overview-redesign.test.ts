@@ -340,8 +340,56 @@ describe("Loading skeleton", () => {
 describe("Theming, motion, and layout", () => {
   it("both columns come from one grid with a clearly wider main column", () => {
     expect(cssRule(CENTER_CSS, ".mainGrid")).toContain("minmax(0, 2.15fr) minmax(20.5rem, 1fr)");
-    // Stacks on smaller screens without horizontal overflow.
-    expect(CENTER_CSS).toMatch(/@media \(max-width: 1240px\) \{\s*\.mainGrid \{\s*grid-template-columns: 1fr;/);
+    // Stacks when the content area itself runs out of room.
+    expect(CENTER_CSS).toMatch(/@container \(max-width: 62rem\) \{\s*\.mainGrid \{\s*grid-template-columns: 1fr;/);
+  });
+
+  it("matches the two columns' heights on desktop and releases it when stacked", () => {
+    // The grid stretches peers; the left column hands the slack to the row
+    // list, while the right column's cards keep their natural height.
+    expect(cssRule(CENTER_CSS, ".mainGrid")).toContain("align-items: stretch");
+    expect(cssRule(CENTER_CSS, ".mainColumn")).toContain("grid-template-rows: auto minmax(0, 1fr)");
+    expect(cssRule(CENTER_CSS, ".sequenceSection")).toContain("grid-template-rows: auto minmax(0, 1fr)");
+    expect(cssRule(CENTER_CSS, ".sideColumn")).toContain("align-content: start");
+    // Rows absorb the slack themselves, so no dead gap forms under the third.
+    expect(cssRule(CENTER_CSS, ".sequenceList")).toContain("grid-auto-rows: minmax(5.25rem, 1fr)");
+    // Once stacked, heights are natural again.
+    const stacked = CENTER_CSS.slice(CENTER_CSS.indexOf("@container (max-width: 62rem)"));
+    expect(stacked).toMatch(/\.mainColumn,\s*\.sequenceSection \{\s*grid-template-rows: none;/);
+    expect(stacked).toMatch(/\.sequenceList \{\s*grid-auto-rows: auto;/);
+    // No viewport-height or fixed-pixel panel heights anywhere.
+    expect(CENTER_CSS).not.toMatch(/100vh|min-height:\s*\d{3}px/);
+  });
+
+  it("adapts to the sidebar via container width, never by duplicating its size", () => {
+    // The page and the sequence panel are their own containers, so the same
+    // rules cover an expanded/collapsed sidebar and every screen size.
+    expect(cssRule(CENTER_CSS, ".page")).toContain("container-type: inline-size");
+    expect(cssRule(CENTER_CSS, ".sequenceSection")).toContain("container-type: inline-size");
+    // The shell owns the sidebar columns — those widths must not reappear here.
+    expect(CENTER_CSS).not.toMatch(/292px|92px/);
+    expect(CENTER_CSS).not.toMatch(/data-sidebar-collapsed/);
+    // Narrow panel: actions fall back to icon-only and the rail shrinks, which
+    // is what frees the width the metadata needs.
+    const narrow = CENTER_CSS.slice(CENTER_CSS.indexOf("@container (max-width: 52rem)"));
+    expect(narrow).toContain("11.5rem");
+    expect(narrow).toMatch(/\.actionButton:hover \.actionLabel[\s\S]{0,120}max-width: 0/);
+    // Everything that can shrink is allowed to.
+    for (const selector of [".mainGrid", ".mainColumn", ".sideColumn", ".sequenceSection", ".sequenceList"]) {
+      expect(cssRule(CENTER_CSS, selector)).toContain("min-width: 0");
+    }
+  });
+
+  it("lets long names and chips truncate instead of clipping or overflowing", () => {
+    expect(cssRule(CENTER_CSS, ".sequenceName")).toContain("text-overflow: ellipsis");
+    const chip = cssRule(CENTER_CSS, ".sequenceMetaChip");
+    expect(chip).toContain("text-overflow: ellipsis");
+    // Shrinkable with no floor, so a chip ellipsizes rather than forcing overflow.
+    expect(chip).toContain("flex: 0 1 auto");
+    expect(chip).toContain("min-width: 0");
+    // Metadata wraps as a last resort; it is never clipped by a hidden overflow.
+    expect(cssRule(CENTER_CSS, ".sequenceMeta")).toContain("flex-wrap: wrap");
+    expect(cssRule(CENTER_CSS, ".sequenceMeta")).not.toContain("overflow: hidden");
   });
 
   it("dark mode reuses theme tokens instead of a hardcoded second palette", () => {

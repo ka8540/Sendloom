@@ -12,6 +12,10 @@
 .page {
   display: grid;
   gap: 1.5rem;
+  /* Layout decisions below key off the real content width, which already
+     reflects the shell's sidebar column, so an expanded sidebar and a smaller
+     screen are handled by one rule instead of duplicated sidebar widths. */
+  container-type: inline-size;
   /* Tone palette derived from theme tokens; only the danger pair needs an
      explicit dark override below (no theme token exists for red). */
   --ov-accent: var(--accent);
@@ -249,22 +253,30 @@
  * Main two-column layout
  * ------------------------------------------------------------------------ */
 
+/* Both columns stretch to the taller of the two, then each column decides
+   internally where the slack goes: the sequence list absorbs it on the left,
+   while the right column's cards keep their natural height. Column widths come
+   from the shell's own grid (minmax(0, 1fr) content column), so the sidebar's
+   expanded/collapsed width is never duplicated here. */
 .mainGrid {
   display: grid;
   grid-template-columns: minmax(0, 2.15fr) minmax(20.5rem, 1fr);
   gap: 1.5rem;
-  align-items: start;
+  align-items: stretch;
   min-width: 0;
 }
 
 .mainColumn {
   display: grid;
+  /* Quick actions keep their height; Recent sequences takes the remainder. */
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 1.6rem;
   min-width: 0;
 }
 
 .sideColumn {
   display: grid;
+  align-content: start;
   gap: 1.25rem;
   min-width: 0;
 }
@@ -360,12 +372,12 @@
   min-width: 0;
 }
 
+/* Wraps rather than ellipsizing: "Create sequence" must stay readable when the
+   expanded sidebar narrows the three cards. */
 .quickTitle {
   font-size: 0.94rem;
   font-weight: 650;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.25;
 }
 
 .quickCopy {
@@ -397,8 +409,15 @@
 
 .sequenceSection {
   display: grid;
+  /* Header keeps its height; the row list fills whatever is left so the panel
+     bottom lands near the activity card instead of stopping short. */
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 1rem;
   min-width: 0;
+  /* Rows respond to THIS panel's width, so the same rules cover an expanded or
+     collapsed sidebar and every desktop size without knowing the sidebar's
+     width or reading its state. */
+  container-type: inline-size;
 }
 
 .sequenceHead {
@@ -482,9 +501,14 @@
   height: 0.92rem;
 }
 
+/* The three rows share the leftover height evenly (1fr never shrinks below the
+   row's own content), so extra space reads as comfortable rows rather than a
+   dead gap under the last one. No rows are added to fill space. */
 .sequenceList {
   display: grid;
-  gap: 0.85rem;
+  grid-auto-rows: minmax(5.25rem, 1fr);
+  gap: 0.9rem;
+  min-width: 0;
 }
 
 .sequenceRow {
@@ -493,7 +517,7 @@
      leftward inside it without colliding with the time column. */
   grid-template-columns: auto minmax(0, 1fr) auto auto 16rem;
   align-items: center;
-  gap: 1rem;
+  gap: 0.85rem;
   padding: 1rem 1.2rem;
   background: var(--surface);
   border: 1px solid var(--line);
@@ -539,17 +563,23 @@
   white-space: nowrap;
 }
 
+/* Chips stay on one line while they fit and wrap only when the content column
+   genuinely runs out of room (expanded sidebar / narrower desktop). Each chip
+   can also shrink and ellipsize on its own line, so nothing is ever clipped by
+   the row — the stretched row height absorbs a second line for free. */
 .sequenceMeta {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.35rem;
   flex-wrap: wrap;
   min-width: 0;
 }
 
 .sequenceMetaChip {
   display: inline-block;
-  max-width: 10.5rem;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 9.5rem;
   padding: 0.2rem 0.62rem;
   border-radius: 999px;
   border: 1px solid var(--line);
@@ -765,6 +795,31 @@
   background: var(--ov-danger-soft);
   color: var(--ov-danger);
   border-color: color-mix(in srgb, var(--ov-danger) 45%, var(--line));
+}
+
+/* Narrow panel (typically the sidebar expanded, or a smaller desktop): the
+   16rem reservation for a hover-expanded capsule costs more than it is worth,
+   so the rail shrinks to the four resting circles and the actions stay
+   icon-only. Every action remains present, focusable, and named by its
+   aria-label + tooltip — only the inline label is withheld. */
+@container (max-width: 52rem) {
+  .sequenceRow {
+    grid-template-columns: auto minmax(0, 1fr) auto auto 11.5rem;
+  }
+
+  .actionButton:hover,
+  .actionButton:focus-visible {
+    width: 2.5rem;
+    gap: 0;
+    padding-inline: 0;
+    justify-content: center;
+  }
+
+  .actionButton:hover .actionLabel,
+  .actionButton:focus-visible .actionLabel {
+    max-width: 0;
+    opacity: 0;
+  }
 }
 
 .spin {
@@ -1143,9 +1198,21 @@
  * Responsive
  * ------------------------------------------------------------------------ */
 
-@media (max-width: 1240px) {
+/* Not enough room for two columns in the actual content area — which happens on
+   a smaller screen OR at a normal size with the sidebar expanded. Stack, and
+   stop matching heights so each section sizes to its own content. */
+@container (max-width: 62rem) {
   .mainGrid {
     grid-template-columns: 1fr;
+  }
+
+  .mainColumn,
+  .sequenceSection {
+    grid-template-rows: none;
+  }
+
+  .sequenceList {
+    grid-auto-rows: auto;
   }
 
   .sideColumn {
@@ -1206,6 +1273,12 @@
     border-top: 1px solid var(--line);
   }
 
+}
+
+/* The panel itself is too narrow for the single-line row grid — the identity,
+   status, time and four actions no longer fit across. Keyed to the panel so it
+   triggers on a small screen and on a narrow content column alike. */
+@container (max-width: 42rem) {
   .sequenceHead {
     flex-direction: column;
     align-items: stretch;
@@ -1216,7 +1289,7 @@
   }
 
   /* Search takes its own line so neither control is squeezed to a few
-     characters when the window is narrow. */
+     characters when the panel is narrow. */
   .sequenceSearch {
     flex: 1 1 100%;
   }
