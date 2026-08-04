@@ -193,26 +193,43 @@ function DateRangeControl({
 
 function MetricStrip({ data }: { data: AnalysisResponse }) {
   return (
-    <section className={styles.metricStrip} aria-label="Analysis summary metrics">
-      {data.metrics.map((item) => {
-        const Icon = METRIC_ICONS[item.icon];
-        return (
-          <article key={item.key} data-tone={item.tone} className={item.unavailable ? styles.metricUnavailable : ""}>
-            <span className={styles.metricIcon}><Icon aria-hidden={true} /></span>
-            <div className={styles.metricCopy}>
-              <div className={styles.metricLabel}>
-                <span>{item.label}</span>
-                <AnalysisInfo label={`About ${item.label}`}>{item.info}</AnalysisInfo>
+    <div className={styles.metricStripShell}>
+      <section className={styles.metricStrip} aria-label="Analysis summary metrics">
+        {data.metrics.map((item) => {
+          const Icon = METRIC_ICONS[item.icon];
+          return (
+            <article key={item.key} data-tone={item.tone} className={item.unavailable ? styles.metricUnavailable : ""}>
+              <span className={styles.metricIcon}><Icon aria-hidden={true} /></span>
+              <div className={styles.metricCopy}>
+                <div className={styles.metricLabel}>
+                  <span>{item.label}</span>
+                  <AnalysisInfo label={`About ${item.label}`} title={item.label}>{item.info}</AnalysisInfo>
+                </div>
+                <strong>{item.unavailable ? "—" : item.format === "percent" ? `${item.value.toFixed(1)}%` : formatAnalysisNumber(item.value)}</strong>
+                <small>{item.detail}</small>
+                {item.comparison ? (
+                  <em data-direction={item.comparison.direction}>
+                    <ComparisonText label={item.comparison.label} />
+                  </em>
+                ) : null}
               </div>
-              <strong>{item.unavailable ? "—" : item.format === "percent" ? `${item.value.toFixed(1)}%` : formatAnalysisNumber(item.value)}</strong>
-              <small>{item.detail}</small>
-              {item.comparison ? <em data-direction={item.comparison.direction}>{item.comparison.label}</em> : null}
-            </div>
-            <ChartNoAxesCombined className={styles.metricTrendIcon} aria-hidden="true" />
-          </article>
-        );
-      })}
-    </section>
+              <ChartNoAxesCombined className={styles.metricTrendIcon} aria-hidden="true" />
+            </article>
+          );
+        })}
+      </section>
+    </div>
+  );
+}
+
+function ComparisonText({ label }: { label: string }) {
+  const index = label.indexOf(" vs ");
+  if (index === -1) return <span className={styles.keepTogether}>{label}</span>;
+  return (
+    <>
+      <span className={styles.keepTogether}>{label.slice(0, index)}</span>{" "}
+      <span className={styles.keepTogether}>{label.slice(index + 1)}</span>
+    </>
   );
 }
 
