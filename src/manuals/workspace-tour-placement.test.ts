@@ -21,24 +21,24 @@ const CASES: Case[] = [
     label: "sidebar expanded",
     minLeft: 292,
     rects: {
-      summary: { top: 125, left: 332, right: 1400, bottom: 240, width: 1068, height: 115 },
-      "quick-actions": { top: 264, left: 332, right: 1045, bottom: 432, width: 713, height: 168 },
-      "sequence-search": { top: 522, left: 332, right: 596, bottom: 566, width: 264, height: 44 },
-      "sequence-actions": { top: 618, left: 840, right: 1024, bottom: 658, width: 184, height: 40 },
-      "gmail-send-window": { top: 264, left: 1069, right: 1400, bottom: 523, width: 331, height: 258 },
-      "recent-activity": { top: 543, left: 1069, right: 1400, bottom: 947, width: 331, height: 404 }
+      summary: { top: 32, left: 332, right: 1400, bottom: 147, width: 1068, height: 115 },
+      "quick-actions": { top: 171, left: 332, right: 1045, bottom: 339, width: 713, height: 168 },
+      "recent-sequences": { top: 365, left: 332, right: 1045, bottom: 854, width: 713, height: 489 },
+      "sequence-actions": { top: 524, left: 840, right: 1024, bottom: 564, width: 184, height: 40 },
+      "gmail-send-window": { top: 171, left: 1069, right: 1400, bottom: 430, width: 331, height: 258 },
+      "recent-activity": { top: 450, left: 1069, right: 1400, bottom: 854, width: 331, height: 404 }
     }
   },
   {
     label: "sidebar collapsed",
     minLeft: 92,
     rects: {
-      summary: { top: 125, left: 132, right: 1400, bottom: 240, width: 1268, height: 115 },
-      "quick-actions": { top: 264, left: 132, right: 981, bottom: 413, width: 849, height: 149 },
-      "sequence-search": { top: 444, left: 516, right: 780, bottom: 488, width: 264, height: 44 },
-      "sequence-actions": { top: 550, left: 705, right: 961, bottom: 590, width: 256, height: 40 },
-      "gmail-send-window": { top: 264, left: 1005, right: 1400, bottom: 523, width: 395, height: 258 },
-      "recent-activity": { top: 543, left: 1005, right: 1400, bottom: 929, width: 395, height: 386 }
+      summary: { top: 32, left: 132, right: 1400, bottom: 147, width: 1268, height: 115 },
+      "quick-actions": { top: 171, left: 132, right: 981, bottom: 320, width: 849, height: 149 },
+      "recent-sequences": { top: 346, left: 132, right: 981, bottom: 817, width: 849, height: 472 },
+      "sequence-actions": { top: 445, left: 705, right: 961, bottom: 485, width: 256, height: 40 },
+      "gmail-send-window": { top: 171, left: 1005, right: 1400, bottom: 430, width: 395, height: 258 },
+      "recent-activity": { top: 450, left: 1005, right: 1400, bottom: 817, width: 395, height: 368 }
     }
   }
 ];

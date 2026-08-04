@@ -171,7 +171,7 @@ describe("Mobile fallback + design preserved (#16, #18, #20)", () => {
     expect(overviewFullSteps().map((step) => step.id)).toEqual([
       "summary",
       "quick-actions",
-      "sequence-search",
+      "recent-sequences",
       "sequence-actions",
       "gmail-send-window",
       "recent-activity"

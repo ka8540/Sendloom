@@ -112,14 +112,16 @@ export function SequencePanel({ rows }: { rows: SequenceRowData[] }) {
   }
 
   return (
-    <section className={styles.sequenceSection}>
+    // The whole section is the tour target — heading, search controls and rows
+    // highlighted as one logical unit, never a single control inside it.
+    <section className={styles.sequenceSection} data-overview-tour="recent-sequences">
       <div className={styles.sequenceHead}>
         <div className={styles.sectionIntro}>
           <h2 className={styles.sectionTitle}>Recent sequences</h2>
           <p className={styles.sectionCopy}>Open, pause, or manage your recent runs.</p>
         </div>
         <div className={styles.sequenceTools}>
-          <div className={styles.sequenceSearch} data-overview-tour="sequence-search">
+          <div className={styles.sequenceSearch}>
             <Search aria-hidden="true" />
             <input
               type="text"

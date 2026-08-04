@@ -96,7 +96,7 @@ function summaryStep(): ManualStep {
   return {
     id: "summary",
     title: "Overview at a glance",
-    body: "See what is running, how many emails were sent in the last 24 hours, what needs attention, and how many lists are ready to launch.",
+    body: "See how many sequences are active, how many emails were sent in the last 24 hours, what needs attention, and how many lists are ready to launch.",
     selector: sel("summary"),
     placement: "bottom"
   };
@@ -112,13 +112,15 @@ function quickActionsStep(): ManualStep {
   };
 }
 
-function sequenceSearchStep(): ManualStep {
+// Targets the Recent sequences section as a whole — heading, search controls
+// and rows highlighted as one logical unit — rather than any single control.
+function recentSequencesStep(): ManualStep {
   return {
-    id: "sequence-search",
-    title: "Find a recent sequence",
-    body: "Search recent sequences by sequence name, list, template, or sender.",
-    selector: sel("sequence-search"),
-    placement: "bottom"
+    id: "recent-sequences",
+    title: "Continue recent work",
+    body: "Open one of your recent sequences to review its setup, status, sender, template, and available actions.",
+    selector: sel("recent-sequences"),
+    placement: "top"
   };
 }
 
@@ -168,7 +170,7 @@ export function overviewFullSteps(): ManualStep[] {
   return [
     summaryStep(),
     quickActionsStep(),
-    sequenceSearchStep(),
+    recentSequencesStep(),
     sequenceActionsStep(),
     sendWindowStep(),
     recentActivityStep()
@@ -195,7 +197,7 @@ export function overviewFoundationsSteps(): ManualStep[] {
  * Phase 3 — the first sequence now exists and is visible on Overview.
  */
 export function overviewFirstSequenceSteps(): ManualStep[] {
-  return [summaryStep(), sequenceSearchStep(), sequenceActionsStep(), sendWindowStep()];
+  return [summaryStep(), recentSequencesStep(), sequenceActionsStep(), sendWindowStep()];
 }
 
 /**
@@ -239,9 +241,11 @@ export const workspaceManual: ManualConfig = {
   // The Overview page drives the progressive auto-open phases itself (so it can
   // wait for data + a settled layout), so the generic provider auto-open is off.
   autoOpen: false,
-  version: "v5",
+  version: "v6",
   // Overview's guide ends on "Done"; every other guide keeps "Finish".
   finishLabel: "Done",
+  // v6: the summary copy and the section-level Recent sequences step replaced
+  // the earlier wording, so anyone who completed v5 is offered the new guide.
   steps: overviewFullSteps(),
   // A manual Help click always resolves to the complete current-state tour.
   resolveStage: () => "full",

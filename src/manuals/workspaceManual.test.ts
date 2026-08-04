@@ -71,14 +71,14 @@ const GMAIL_WARNING_STATE: OverviewTourState = { ...COMPLETED_SEQUENCE_STATE, ha
 
 /** The six targets the redesigned Overview actually renders. */
 const ALL_TARGETS = new Set<string>(
-  ["summary", "quick-actions", "sequence-search", "sequence-actions", "gmail-send-window", "recent-activity"].map(
+  ["summary", "quick-actions", "recent-sequences", "sequence-actions", "gmail-send-window", "recent-activity"].map(
     (target) => overviewSelector(target)
   )
 );
 
 /** A brand-new workspace: no sequence rows exist, so no row action group. */
 const EMPTY_DASHBOARD_TARGETS = new Set<string>(
-  ["summary", "quick-actions", "sequence-search", "gmail-send-window", "recent-activity"].map((target) =>
+  ["summary", "quick-actions", "recent-sequences", "gmail-send-window", "recent-activity"].map((target) =>
     overviewSelector(target)
   )
 );
@@ -108,7 +108,7 @@ describe("Overview manual registration + Help button (#1, #31)", () => {
     expect(workspaceManual.helpQuickStart).toBe(true);
     expect(workspaceManual.autoOpen).toBe(false);
     // Rewritten content must not be suppressed by a completed older version.
-    expect(workspaceManual.version).toBe("v5");
+    expect(workspaceManual.version).toBe("v6");
   });
 
   it("ends on Done without changing the label for any other guide (#25, #31)", () => {
@@ -135,7 +135,7 @@ describe("The tour is exactly the six approved Overview steps (#1, #26)", () => 
     expect(ids(overviewFullSteps())).toEqual([
       "summary",
       "quick-actions",
-      "sequence-search",
+      "recent-sequences",
       "sequence-actions",
       "gmail-send-window",
       "recent-activity"
@@ -148,7 +148,7 @@ describe("The tour is exactly the six approved Overview steps (#1, #26)", () => 
 
     expect(byId.summary.title).toBe("Overview at a glance");
     expect(byId.summary.body).toBe(
-      "See what is running, how many emails were sent in the last 24 hours, what needs attention, and how many lists are ready to launch."
+      "See how many sequences are active, how many emails were sent in the last 24 hours, what needs attention, and how many lists are ready to launch."
     );
 
     expect(byId["quick-actions"].title).toBe("Start something quickly");
@@ -156,9 +156,9 @@ describe("The tour is exactly the six approved Overview steps (#1, #26)", () => 
       "Create a sequence, import a contact list, or create a template without leaving the Overview page."
     );
 
-    expect(byId["sequence-search"].title).toBe("Find a recent sequence");
-    expect(byId["sequence-search"].body).toBe(
-      "Search recent sequences by sequence name, list, template, or sender."
+    expect(byId["recent-sequences"].title).toBe("Continue recent work");
+    expect(byId["recent-sequences"].body).toBe(
+      "Open one of your recent sequences to review its setup, status, sender, template, and available actions."
     );
 
     expect(byId["sequence-actions"].title).toBe("Manage a sequence");
@@ -245,7 +245,7 @@ describe("Targets are stable data attributes on the real components (#19)", () =
   it("each target is rendered by the component the step describes", () => {
     expect(CENTER_SOURCE).toContain('data-overview-tour="summary"');
     expect(CENTER_SOURCE).toContain('data-overview-tour="quick-actions"');
-    expect(PANEL_SOURCE).toContain('data-overview-tour="sequence-search"');
+    expect(PANEL_SOURCE).toContain('data-overview-tour="recent-sequences"');
     expect(SEND_WINDOW_SOURCE).toContain('data-overview-tour="gmail-send-window"');
     expect(ACTIVITY_SOURCE).toContain('data-overview-tour="recent-activity"');
     // The highlight covers the whole action area, not one icon, and only the
@@ -262,8 +262,8 @@ describe("Targets are stable data attributes on the real components (#19)", () =
       "gmail-send-window",
       "quick-actions",
       "recent-activity",
+      "recent-sequences",
       "sequence-actions",
-      "sequence-search",
       "summary"
     ]);
   });
@@ -326,7 +326,7 @@ describe("Optional targets are filtered safely (#11, #12)", () => {
     const filtered = ids(filterAvailableManualSteps(overviewFullSteps(), present(EMPTY_DASHBOARD_TARGETS)));
     expect(filtered).not.toContain("sequence-actions");
     // Everything always-present survives.
-    expect(filtered).toEqual(["summary", "quick-actions", "sequence-search", "gmail-send-window", "recent-activity"]);
+    expect(filtered).toEqual(["summary", "quick-actions", "recent-sequences", "gmail-send-window", "recent-activity"]);
   });
 
   it("includes every step once the dashboard is populated", () => {
