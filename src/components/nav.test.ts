@@ -35,6 +35,79 @@ describe("primary product navigation", () => {
   });
 });
 
+describe("selected navigation styling", () => {
+  function cssBlock(selector: string): string {
+    const start = GLOBALS.indexOf(`${selector} {`);
+    return GLOBALS.slice(start, GLOBALS.indexOf("}", start));
+  }
+
+  it("uses a transparent row with green icon and label when selected", () => {
+    const activeBlock = cssBlock(".nav-item.is-active");
+
+    expect(activeBlock).toContain("position: relative");
+    expect(activeBlock).toContain("background: transparent");
+    expect(activeBlock).toContain("color: var(--accent)");
+    expect(activeBlock).not.toContain("box-shadow");
+    expect(activeBlock).not.toContain("gradient");
+    expect(activeBlock).not.toContain("border-radius");
+    expect(activeBlock).not.toContain("var(--accent-soft)");
+  });
+
+  it("keeps unselected navigation content dark", () => {
+    expect(cssBlock(".nav-item")).toContain("color: var(--text)");
+  });
+
+  it("renders exactly one slim left accent bar inside the active row", () => {
+    const barBlock = cssBlock(".nav-item.is-active::before");
+
+    expect(barBlock).toContain('content: ""');
+    expect(barBlock).toContain("position: absolute");
+    expect(barBlock).toContain("left: 0");
+    expect(barBlock).toContain("top: 50%");
+    expect(barBlock).toContain("width: 3px");
+    expect(barBlock).toContain("height: 30px");
+    expect(barBlock).toContain("border-radius: 999px");
+    expect(barBlock).toContain("background: var(--accent)");
+    expect(barBlock).toContain("transform: translateY(-50%)");
+    expect(GLOBALS).not.toContain(".nav-item.is-active::after");
+  });
+
+  it("avoids an icon tile, gradient, and movement", () => {
+    expect(GLOBALS).not.toContain(".nav-item.is-active svg");
+    expect(GLOBALS).not.toContain("--nav-active-background");
+    expect(GLOBALS).not.toContain("--nav-active-shadow");
+    expect(cssBlock(".nav-item")).not.toContain("transform");
+  });
+
+  it("keeps the active row transparent on hover and focus (no bespoke fill tokens)", () => {
+    expect(GLOBALS).toMatch(
+      /\.nav-item\.is-active:hover,\n\.nav-item\.is-active:focus-visible \{[\s\S]*?background: transparent;[\s\S]*?color: var\(--accent-strong\);[\s\S]*?\}/
+    );
+    expect(GLOBALS).not.toContain("--sidebar-nav-active-");
+  });
+
+  it("keeps inactive hover restrained and shadow-free", () => {
+    const hoverBlock = cssBlock(".nav-item:hover");
+
+    expect(cssBlock(".nav-item")).toContain("border-radius: 12px");
+    expect(hoverBlock).toContain("background: var(--surface-hover)");
+    expect(hoverBlock).not.toContain("box-shadow");
+    expect(hoverBlock).not.toContain("transform");
+  });
+
+  it("keeps a visible focus ring that does not rely on background color", () => {
+    const focusBlock = cssBlock(".nav-item:focus-visible");
+
+    expect(focusBlock).toContain("outline: 2px solid");
+    expect(focusBlock).toContain("outline-offset: 2px");
+  });
+
+  it("preserves the existing collapsed navigation dimensions", () => {
+    expect(GLOBALS).toMatch(/\.sidebar\.is-collapsed \.nav-item,[\s\S]*?width:\s*3\.35rem/);
+    expect(GLOBALS).toMatch(/\.sidebar\.is-collapsed \.nav-item,[\s\S]*?height:\s*3\.35rem/);
+  });
+});
+
 describe("Account moved to the lower account/utility section", () => {
   it("renders Account as a nav item passed into the footer utility slot (not admin)", () => {
     expect(NAV_SOURCE).toContain('const accountHref = "/account" as Route;');
