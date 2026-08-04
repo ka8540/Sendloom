@@ -665,29 +665,18 @@ function buildBestDays(summary: PeriodSummary) {
 }
 
 function buildOutcomeMix(summary: PeriodSummary): AnalysisBreakdownItem[] {
+  const replied = summary.activities.filter((item) => Boolean(item.repliedAt)).length;
+  const openedOnly = summary.activities.filter((item) => !item.repliedAt && Boolean(item.openedAt)).length;
   const categories: Array<{ name: string; value: number; tone: AnalysisMetric["tone"] }> = [
-    { name: "Replied", value: summary.activities.filter((item) => Boolean(item.repliedAt)).length, tone: "green" as const },
+    { name: "Replied", value: replied, tone: "green" as const },
+    { name: "Opened", value: openedOnly, tone: "blue" as const },
     {
-      name: "Clicked",
-      value: summary.activities.filter((item) => !item.repliedAt && Boolean(item.clickedAt)).length,
+      name: "No tracked engagement",
+      value: Math.max(0, summary.sent - replied - openedOnly),
       tone: "purple" as const
-    },
-    {
-      name: "Opened",
-      value: summary.activities.filter((item) => !item.repliedAt && !item.clickedAt && Boolean(item.openedAt)).length,
-      tone: "blue" as const
-    },
-    {
-      name: "Bounced",
-      value: summary.activities.filter((item) => item.status === "BOUNCED" || item.status === "COMPLAINED").length,
-      tone: "orange" as const
     }
   ];
-  const assigned = categories.reduce((sum, item) => sum + item.value, 0);
-  categories.push({ name: "Other", value: Math.max(0, summary.sent - assigned), tone: "red" });
-  return categories
-    .filter((item) => item.value > 0)
-    .map((item) => ({ ...item, percent: calculateRate(item.value, summary.sent) }));
+  return categories.map((item) => ({ ...item, percent: calculateRate(item.value, summary.sent) }));
 }
 
 function buildOverview(

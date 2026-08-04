@@ -45,6 +45,7 @@ import {
   HorizontalRateCard,
   JourneyCard,
   OperationalEventsCard,
+  OutcomeMixCard,
   PacingCard,
   RankedListCard,
   ScheduleTypeCard,
@@ -238,7 +239,7 @@ function OverviewVisuals({ data }: { data: AnalysisOverviewResponse }) {
     <>
       <div className={styles.twoColumnWideLeft}>
         <TrendsCard title="Outreach activity" data={data.trends} />
-        <DonutCard title="Outcome mix" data={data.outcomeMix} centerValue={data.metrics[0]?.value ?? 0} centerLabel="Total sent" info="Mutually exclusive recipient outcomes: replied, clicked, opened, bounced, then other." />
+        <OutcomeMixCard data={data.outcomeMix} totalSent={data.metrics[0]?.value ?? 0} rangeLabel={data.range.label} />
       </div>
       <div className={styles.threeColumn}>
         <JourneyCard title="Journey funnel" stages={data.journey} info="Targeted recipients through confirmed sends, tracked opens, and unique matched replies." />

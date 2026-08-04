@@ -1,6 +1,7 @@
 "use client";
 
-import { Fragment, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import {
   Area,
   AreaChart,
@@ -250,6 +251,225 @@ export function DonutCard({
           </div>
         </div>
       )}
+    </AnalysisCard>
+  );
+}
+
+const outcomeMeta: Record<string, { key: string; definition: (count: string) => string }> = {
+  Replied: { key: "replied", definition: (count) => `${count} recipients sent at least one matched reply.` },
+  Opened: { key: "openedOnly", definition: (count) => `${count} recipients opened the email but did not send a matched reply.` },
+  "No tracked engagement": {
+    key: "noEngagement",
+    definition: (count) => `${count} recipients have no tracked open and no matched reply.`
+  }
+};
+
+const outcomeInfo =
+  "Shows mutually exclusive outcomes from confirmed sends. Replied recipients are not counted again under Opened. Open tracking can be affected by email privacy settings.";
+
+type OutcomeSegment = {
+  key: string;
+  name: string;
+  value: number;
+  percent: number;
+  definition: string;
+};
+
+function OutcomeTooltip({
+  anchor,
+  segment,
+  total,
+  rangeLabel,
+  id
+}: {
+  anchor: HTMLElement;
+  segment: OutcomeSegment;
+  total: number;
+  rangeLabel?: string;
+  id: string;
+}) {
+  const tipRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
+
+  const place = useCallback(() => {
+    const tip = tipRef.current;
+    if (!tip) return;
+    const box = anchor.getBoundingClientRect();
+    const tipBox = tip.getBoundingClientRect();
+    const pad = 16;
+    let top = box.top - tipBox.height - 10;
+    if (top < pad) top = box.bottom + 10;
+    const left = Math.max(pad, Math.min(box.left + box.width / 2 - tipBox.width / 2, window.innerWidth - tipBox.width - pad));
+    setPosition((prev) => (prev && Math.abs(prev.top - top) < 0.5 && Math.abs(prev.left - left) < 0.5 ? prev : { top, left }));
+  }, [anchor]);
+
+  useLayoutEffect(() => {
+    place();
+  }, [place]);
+
+  useEffect(() => {
+    let frame = 0;
+    const track = () => {
+      place();
+      frame = requestAnimationFrame(track);
+    };
+    frame = requestAnimationFrame(track);
+    return () => cancelAnimationFrame(frame);
+  }, [place]);
+
+  return createPortal(
+    <div
+      ref={tipRef}
+      id={id}
+      role="tooltip"
+      className={styles.outcomeTooltip}
+      style={position ? { top: `${position.top}px`, left: `${position.left}px` } : { top: 0, left: 0, visibility: "hidden" }}
+    >
+      <strong>
+        <i data-outcome={segment.key} aria-hidden="true" />
+        {segment.name}
+      </strong>
+      <p>{segment.definition}</p>
+      <span>
+        {segment.percent.toFixed(1)}% of {total.toLocaleString()} confirmed sends
+      </span>
+      {rangeLabel ? <small>{rangeLabel}</small> : null}
+    </div>,
+    document.body
+  );
+}
+
+export function OutcomeMixCard({
+  data,
+  totalSent,
+  rangeLabel
+}: {
+  data: AnalysisBreakdownItem[];
+  totalSent: number;
+  rangeLabel?: string;
+}) {
+  const tooltipId = useId();
+  const [activeKey, setActiveKey] = useState<string | null>(null);
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const [revealed, setRevealed] = useState(false);
+
+  const segments: OutcomeSegment[] = data.map((item) => {
+    const meta = outcomeMeta[item.name];
+    return {
+      key: meta?.key ?? item.name,
+      name: item.name,
+      value: item.value,
+      percent: totalSent > 0 ? (item.value / totalSent) * 100 : 0,
+      definition: (meta?.definition ?? ((count: string) => `${count} recipients.`))(item.value.toLocaleString())
+    };
+  });
+  const signature = `${totalSent}:${segments.map((segment) => segment.value).join("-")}`;
+
+  useEffect(() => {
+    setRevealed(false);
+    const frame = requestAnimationFrame(() => setRevealed(true));
+    return () => cancelAnimationFrame(frame);
+  }, [signature]);
+
+  useEffect(() => {
+    if (!activeKey) return;
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setActiveKey(null);
+      anchor?.focus();
+    };
+    document.addEventListener("keydown", onEscape);
+    return () => document.removeEventListener("keydown", onEscape);
+  }, [activeKey, anchor]);
+
+  const open = (segment: OutcomeSegment) => (event: { currentTarget: HTMLElement }) => {
+    setAnchor(event.currentTarget);
+    setActiveKey(segment.key);
+  };
+  const close = () => {
+    setActiveKey(null);
+    setAnchor(null);
+  };
+
+  const active = segments.find((segment) => segment.key === activeKey) ?? null;
+  const summary = totalSent
+    ? `Outcome mix of ${totalSent.toLocaleString()} confirmed sends: ${segments
+        .map((segment) => `${segment.name} ${segment.value.toLocaleString()} (${segment.percent.toFixed(1)}%)`)
+        .join(", ")}.`
+    : "Outcome mix has no confirmed sends in the selected date range.";
+
+  const triggerProps = (segment: OutcomeSegment, className: string) => ({
+    type: "button" as const,
+    className,
+    "aria-describedby": activeKey === segment.key ? tooltipId : undefined,
+    onMouseEnter: open(segment),
+    onMouseLeave: close,
+    onFocus: open(segment),
+    onBlur: close,
+    onClick: open(segment)
+  });
+
+  return (
+    <AnalysisCard
+      title="Outcome mix"
+      info={outcomeInfo}
+      summary={summary}
+      action={totalSent ? <span className={styles.chartFrequency}>{formatAnalysisNumber(totalSent)} total sent</span> : null}
+    >
+      {!totalSent ? (
+        <div className={styles.outcomeEmpty} role="status">
+          <strong>No outcome data</strong>
+          <p>No confirmed sends are available for the selected date range.</p>
+        </div>
+      ) : (
+        <div className={styles.outcomeBody}>
+          <div className={styles.outcomeSummary}>
+            <strong>{totalSent.toLocaleString()}</strong>
+            <span>Confirmed sends in selected range</span>
+          </div>
+
+          <div className={styles.outcomeBar}>
+            <div className={styles.outcomeBarTrack} aria-hidden="true">
+              {segments.map((segment) => (
+                <span
+                  key={segment.key}
+                  data-outcome={segment.key}
+                  data-empty={segment.value === 0 ? "true" : undefined}
+                  style={{ width: revealed ? `${segment.percent}%` : "0%", opacity: revealed ? 1 : 0 }}
+                />
+              ))}
+            </div>
+            <div className={styles.outcomeHits}>
+              {segments
+                .filter((segment) => segment.value > 0)
+                .map((segment) => (
+                  <button
+                    key={segment.key}
+                    {...triggerProps(segment, styles.outcomeHit)}
+                    style={{ flexBasis: `${segment.percent}%` }}
+                    aria-label={`${segment.name}: ${segment.value.toLocaleString()} recipients, ${segment.percent.toFixed(1)} percent of confirmed sends`}
+                  />
+                ))}
+            </div>
+          </div>
+
+          <div className={styles.outcomeRows}>
+            {segments.map((segment) => (
+              <button key={segment.key} {...triggerProps(segment, styles.outcomeRow)}>
+                <i data-outcome={segment.key} aria-hidden="true" />
+                <span>{segment.name}</span>
+                <strong>{segment.percent.toFixed(1)}%</strong>
+                <small>({segment.value.toLocaleString()})</small>
+              </button>
+            ))}
+          </div>
+
+          <p className={styles.outcomeFootnote}>Tracking-based engagement may be affected by email privacy settings.</p>
+        </div>
+      )}
+      {active && anchor ? (
+        <OutcomeTooltip id={tooltipId} anchor={anchor} segment={active} total={totalSent} rangeLabel={rangeLabel} />
+      ) : null}
     </AnalysisCard>
   );
 }
