@@ -255,59 +255,64 @@ export function SequenceRowActions({
     <div className={styles.sequenceActionGroup} onClick={(event) => event.stopPropagation()}>
       <Link
         href={href}
-        className={styles.actionButton}
+        className={`${styles.actionButton} ${styles.actionButtonView}`}
         aria-label={`View ${campaignName}`}
         title="View"
       >
         <Eye aria-hidden="true" />
+        <span className={styles.actionLabel}>View</span>
       </Link>
 
       {isDailyLimitBlocked ? (
         /* Auto-paused by daily safety limit — no manual action makes sense; show a clear waiting affordance. */
         <button
           type="button"
-          className={styles.actionButton}
+          className={`${styles.actionButton} ${styles.actionButtonWait}`}
           disabled
           aria-label={`${campaignName} waiting for Gmail safety window to reset`}
           title="Waiting for the Gmail safety window to reset"
         >
           <ShieldAlert aria-hidden="true" />
+          <span className={styles.actionLabel}>Wait</span>
         </button>
       ) : isActiveRun ? (
         /* Active QUEUED / RUNNING → offer Pause */
         <button
           type="button"
-          className={styles.actionButton}
+          className={`${styles.actionButton} ${styles.actionButtonPause}`}
           onClick={(event) => void handlePause(event)}
           disabled={Boolean(pendingAction)}
           aria-label={`Pause ${campaignName}`}
           title="Pause"
         >
           {pendingAction === "pause" ? <LoaderCircle className={styles.spin} aria-hidden="true" /> : <Pause aria-hidden="true" />}
+          <span className={styles.actionLabel}>Pause</span>
         </button>
       ) : isPausedRun ? (
         /* PAUSED → offer Resume (returns to scheduled/queued state without sending immediately) */
         <button
           type="button"
-          className={styles.actionButton}
+          className={`${styles.actionButton} ${styles.actionButtonGo} ${styles.actionButtonResume}`}
           onClick={(event) => void handleResume(event)}
           disabled={Boolean(pendingAction)}
           aria-label={`Resume ${campaignName}`}
           title="Resume"
         >
           {pendingAction === "resume" ? <LoaderCircle className={styles.spin} aria-hidden="true" /> : <Play aria-hidden="true" />}
+          <span className={styles.actionLabel}>Resume</span>
         </button>
       ) : (
         /* COMPLETED / ready → offer Relaunch */
         <button
           type="button"
-          className={styles.actionButton}
+          className={`${styles.actionButton} ${styles.actionButtonGo} ${styles.actionButtonRelaunch}`}
           onClick={(event) => void handleRelaunch(event)}
           disabled={!canRelaunch || Boolean(pendingAction)}
           aria-label={canRelaunch ? `Relaunch ${campaignName}` : `Relaunch unavailable for ${campaignName}`}
           title={canRelaunch ? "Relaunch" : "Relaunch unavailable"}
         >
           {pendingAction === "launch" ? <LoaderCircle className={styles.spin} aria-hidden="true" /> : <Play aria-hidden="true" />}
+          <span className={styles.actionLabel}>Relaunch</span>
         </button>
       )}
 
@@ -320,6 +325,7 @@ export function SequenceRowActions({
         title="Delete"
       >
         {pendingAction === "delete" ? <LoaderCircle className={styles.spin} aria-hidden="true" /> : <Trash2 aria-hidden="true" />}
+        <span className={styles.actionLabel}>Delete</span>
       </button>
     </div>
     <PastScheduleRelaunchModal

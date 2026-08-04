@@ -176,7 +176,7 @@ describe("Recent sequences preview (#21–#28)", () => {
   });
 
   it("actions are circular, labelled icon buttons with all states preserved", () => {
-    const rule = cssRule(CENTER_CSS, ".actionButton");
+    const rule = cssRule(CENTER_CSS, ".actionButton {");
     expect(rule).toContain("width: 2.5rem");
     expect(rule).toContain("height: 2.5rem");
     expect(rule).toContain("border-radius: 999px");
@@ -194,6 +194,28 @@ describe("Recent sequences preview (#21–#28)", () => {
     // existing confirm dialog.
     expect(ACTIONS).toContain("actionButtonDanger");
     expect(ACTIONS).toContain("<AppConfirmDialog");
+  });
+
+  it("actions expand on hover/focus into labelled capsules without transforms", () => {
+    // Every action carries its expanded label; the Open arrow is a real link.
+    for (const label of ["View", "Pause", "Resume", "Relaunch", "Delete"]) {
+      expect(ACTIONS).toContain(`<span className={styles.actionLabel}>${label}</span>`);
+    }
+    expect(ROW).toContain("<span className={styles.actionLabel}>Open</span>");
+    expect(ROW).toContain("aria-label={`Open ${sequence.name}`}");
+    // Width-based expansion with the label revealed via max-width/opacity.
+    expect(CENTER_CSS).toMatch(/\.actionButton:hover,\s*\.actionButton:focus-visible \{[^}]*width: var\(--action-expanded-width\)/);
+    expect(CENTER_CSS).toMatch(/\.actionButton:hover \.actionLabel,\s*\.actionButton:focus-visible \.actionLabel \{[^}]*max-width/);
+    // No transform/scale/shadow animation on the buttons themselves.
+    const actionRules = CENTER_CSS.slice(CENTER_CSS.indexOf(".actionButton {"), CENTER_CSS.indexOf(".spin {"));
+    expect(actionRules).not.toMatch(/transform|scale\(|box-shadow/);
+    // The rail is right-anchored so expansion never reflows the row.
+    expect(cssRule(CENTER_CSS, ".sequenceActions")).toContain("justify-content: flex-end");
+    // Tooltips stay available for the compact state.
+    for (const title of ['title="View"', 'title="Pause"', 'title="Resume"', 'title="Delete"']) {
+      expect(ACTIONS).toContain(title);
+    }
+    expect(ROW).toContain('title="Open"');
   });
 });
 

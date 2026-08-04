@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { ArrowUpRight, Send } from "lucide-react";
 import { useRouter } from "next/navigation";
 import type { KeyboardEvent } from "react";
@@ -83,9 +84,16 @@ export function SequenceRow({
           isDailyLimitBlocked={Boolean(sequence.dailyLimitBlock)}
           onRelaunch={onRelaunch}
         />
-        <span className={styles.sequenceArrow} aria-hidden="true">
+        <Link
+          href={sequence.href}
+          className={`${styles.actionButton} ${styles.actionButtonOpen}`}
+          aria-label={`Open ${sequence.name}`}
+          title="Open"
+          onClick={(event) => event.stopPropagation()}
+        >
           <ArrowUpRight aria-hidden="true" />
-        </span>
+          <span className={styles.actionLabel}>Open</span>
+        </Link>
       </div>
     </article>
   );
