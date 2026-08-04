@@ -42,6 +42,35 @@ describe("Analysis date ranges", () => {
     expect(reversed.from).toBe("2026-07-29");
     expect(overlong.to).toBe("2026-08-04");
   });
+
+  it("keeps the thirty-day preset and rejects anything longer", () => {
+    const now = new Date("2026-08-04T17:00:00.000Z");
+    const thirty = normalizeAnalysisDateRange({ from: "2026-07-06", to: "2026-08-04" }, now);
+    const ninety = normalizeAnalysisDateRange({ from: "2026-05-07", to: "2026-08-04" }, now);
+
+    expect(thirty.days).toBe(30);
+    expect(thirty.from).toBe("2026-07-06");
+    expect(ninety.days).toBe(7);
+    expect(ninety.from).toBe("2026-07-29");
+  });
+
+  it("rejects unsupported custom spans and future end dates", () => {
+    const now = new Date("2026-08-04T17:00:00.000Z");
+    const twenty = normalizeAnalysisDateRange({ from: "2026-07-16", to: "2026-08-04" }, now);
+    const future = normalizeAnalysisDateRange({ from: "2026-08-05", to: "2026-08-11" }, now);
+
+    expect(twenty.days).toBe(7);
+    expect(twenty.from).toBe("2026-07-29");
+    expect(future.days).toBe(7);
+    expect(future.to).toBe("2026-08-04");
+  });
+
+  it("labels ranges by preset instead of absolute dates", () => {
+    const now = new Date("2026-08-04T17:00:00.000Z");
+
+    expect(normalizeAnalysisDateRange({ from: null, to: null }, now).label).toBe("Last 7 days");
+    expect(normalizeAnalysisDateRange({ from: "2026-07-06", to: "2026-08-04" }, now).label).toBe("Last 30 days");
+  });
 });
 
 describe("Analysis metric formulas", () => {

@@ -1,4 +1,8 @@
-export const ANALYSIS_MAX_RANGE_DAYS = 366;
+/** Analysis supports two presets only. Longer periods are not queryable. */
+export const ANALYSIS_PRESET_DAYS = [7, 30] as const;
+export type AnalysisPresetDays = (typeof ANALYSIS_PRESET_DAYS)[number];
+export const ANALYSIS_DEFAULT_DAYS: AnalysisPresetDays = 7;
+export const ANALYSIS_MAX_RANGE_DAYS = 30;
 export const ANALYSIS_MIN_RANKING_SENDS = 20;
 
 export const analysisPages = ["overview", "engagement", "sequences", "reliability", "senders"] as const;
@@ -54,7 +58,16 @@ function parseDateKey(value: string | null | undefined) {
   return Number.isNaN(date.getTime()) || toUtcDateKey(date) !== value ? null : date;
 }
 
-function formatRangeLabel(start: Date, inclusiveEnd: Date) {
+function isPresetDays(days: number): days is AnalysisPresetDays {
+  return (ANALYSIS_PRESET_DAYS as readonly number[]).includes(days);
+}
+
+export function analysisPresetLabel(days: AnalysisPresetDays) {
+  return `Last ${days} days`;
+}
+
+/** Absolute span, e.g. "Jul 29 – Aug 4, 2026". Shown inside the picker, not on the closed control. */
+export function formatAnalysisRangeLabel(start: Date, inclusiveEnd: Date) {
   const formatter = new Intl.DateTimeFormat("en-US", {
     month: "short",
     day: "numeric",
@@ -72,27 +85,31 @@ function formatRangeLabel(start: Date, inclusiveEnd: Date) {
 }
 
 /**
- * Normalize an inclusive, UTC calendar-day Analysis range. Invalid, reversed,
- * or overlong custom ranges fall back to the latest seven UTC calendar days.
+ * Normalize an inclusive, UTC calendar-day Analysis range. Only the supported
+ * presets are queryable: anything else — a reversed range, a future end date, an
+ * arbitrary custom span, or a period longer than 30 days — falls back to the
+ * latest seven UTC calendar days rather than running an unbounded query.
  */
 export function normalizeAnalysisDateRange(
   input: { from?: string | null; to?: string | null },
   now = new Date()
 ): AnalysisRange {
   const today = startOfUtcDay(now);
-  const fallbackStart = new Date(today.getTime() - 6 * DAY_MS);
   const requestedStart = parseDateKey(input.from);
   const requestedEnd = parseDateKey(input.to);
-  let start = requestedStart ?? fallbackStart;
-  let inclusiveEnd = requestedEnd ?? today;
-  const requestedDays = Math.floor((inclusiveEnd.getTime() - start.getTime()) / DAY_MS) + 1;
+  const requestedDays =
+    requestedStart && requestedEnd
+      ? Math.floor((requestedEnd.getTime() - requestedStart.getTime()) / DAY_MS) + 1
+      : 0;
+  const supported =
+    requestedStart !== null &&
+    requestedEnd !== null &&
+    isPresetDays(requestedDays) &&
+    requestedEnd.getTime() <= today.getTime();
 
-  if (requestedDays < 1 || requestedDays > ANALYSIS_MAX_RANGE_DAYS) {
-    start = fallbackStart;
-    inclusiveEnd = today;
-  }
-
-  const days = Math.floor((inclusiveEnd.getTime() - start.getTime()) / DAY_MS) + 1;
+  const inclusiveEnd = supported ? (requestedEnd as Date) : today;
+  const days: AnalysisPresetDays = supported ? (requestedDays as AnalysisPresetDays) : ANALYSIS_DEFAULT_DAYS;
+  const start = new Date(inclusiveEnd.getTime() - (days - 1) * DAY_MS);
   const endExclusive = new Date(inclusiveEnd.getTime() + DAY_MS);
   const previousEndExclusive = new Date(start);
   const previousStart = new Date(previousEndExclusive.getTime() - days * DAY_MS);
@@ -105,7 +122,7 @@ export function normalizeAnalysisDateRange(
     previousStart,
     previousEndExclusive,
     days,
-    label: formatRangeLabel(start, inclusiveEnd)
+    label: analysisPresetLabel(days)
   };
 }
 

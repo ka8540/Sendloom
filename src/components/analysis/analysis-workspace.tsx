@@ -9,6 +9,7 @@ import {
   BarChart3,
   CalendarDays,
   ChartNoAxesCombined,
+  Check,
   ChevronDown,
   CircleCheck,
   CirclePause,
@@ -24,8 +25,14 @@ import {
   TrendingUp
 } from "lucide-react";
 
-import type { AnalysisPage } from "@/lib/analysis";
-import { normalizeAnalysisDateRange, toUtcDateKey } from "@/lib/analysis";
+import type { AnalysisPage, AnalysisPresetDays } from "@/lib/analysis";
+import {
+  ANALYSIS_PRESET_DAYS,
+  analysisPresetLabel,
+  formatAnalysisRangeLabel,
+  normalizeAnalysisDateRange,
+  toUtcDateKey
+} from "@/lib/analysis";
 import { buildAnalysisCsv } from "@/lib/analysis-export";
 import type {
   AnalysisMetric,
@@ -87,105 +94,106 @@ const METRIC_ICONS: Record<AnalysisMetric["icon"], ComponentType<{ "aria-hidden"
   capacity: Gauge
 };
 
-function presetRange(days: number) {
+const PRESET_DESCRIPTIONS: Record<AnalysisPresetDays, string> = {
+  7: "Recent outreach performance",
+  30: "Monthly outreach performance"
+};
+
+function presetRange(days: AnalysisPresetDays) {
   const now = new Date();
   const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  return {
-    from: toUtcDateKey(new Date(today.getTime() - (days - 1) * 86_400_000)),
-    to: toUtcDateKey(today)
-  };
+  const start = new Date(today.getTime() - (days - 1) * 86_400_000);
+  return { from: toUtcDateKey(start), to: toUtcDateKey(today), start, end: today };
 }
 
 function DateRangeControl({
-  from,
-  to,
-  label,
+  days,
   onChange
 }: {
-  from: string;
-  to: string;
-  label: string;
+  days: AnalysisPresetDays;
   onChange: (next: { from: string; to: string }) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [customFrom, setCustomFrom] = useState(from);
-  const [customTo, setCustomTo] = useState(to);
   const shellRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    setCustomFrom(from);
-    setCustomTo(to);
-  }, [from, to]);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
     const closeOnOutside = (event: MouseEvent) => {
       if (!shellRef.current?.contains(event.target as Node)) setOpen(false);
     };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+        triggerRef.current?.focus();
+        return;
+      }
+      if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+      const options = [...(menuRef.current?.querySelectorAll<HTMLButtonElement>("button") ?? [])];
+      if (!options.length) return;
+      event.preventDefault();
+      const current = options.indexOf(document.activeElement as HTMLButtonElement);
+      const next = event.key === "ArrowDown" ? current + 1 : current - 1;
+      options[(next + options.length) % options.length]?.focus();
     };
     document.addEventListener("mousedown", closeOnOutside);
-    document.addEventListener("keydown", closeOnEscape);
+    document.addEventListener("keydown", onKeyDown);
     return () => {
       document.removeEventListener("mousedown", closeOnOutside);
-      document.removeEventListener("keydown", closeOnEscape);
+      document.removeEventListener("keydown", onKeyDown);
     };
   }, [open]);
 
-  const choosePreset = (days: number) => {
-    onChange(presetRange(days));
+  useEffect(() => {
+    if (!open) return;
+    menuRef.current?.querySelector<HTMLButtonElement>("[aria-checked='true']")?.focus();
+  }, [open]);
+
+  const choosePreset = (nextDays: AnalysisPresetDays) => {
+    const next = presetRange(nextDays);
+    onChange({ from: next.from, to: next.to });
     setOpen(false);
+    triggerRef.current?.focus();
   };
-  const customValid = customFrom <= customTo;
 
   return (
     <div className={styles.rangeShell} ref={shellRef}>
       <button
-        className={styles.controlButton}
+        ref={triggerRef}
+        className={styles.rangeTrigger}
         type="button"
         onClick={() => setOpen((value) => !value)}
-        aria-label={`Analysis date range: ${label}`}
-        aria-haspopup="dialog"
+        aria-label={`Analysis date range: ${analysisPresetLabel(days)}`}
+        aria-haspopup="menu"
         aria-expanded={open}
       >
         <CalendarDays aria-hidden="true" />
-        <span>{label}</span>
+        <span>{analysisPresetLabel(days)}</span>
         <ChevronDown aria-hidden="true" />
       </button>
       {open ? (
-        <div className={styles.rangePopover} role="dialog" aria-label="Choose Analysis date range">
-          <strong>Date range</strong>
-          <div className={styles.presetGrid}>
-            {[7, 30, 90].map((days) => (
-              <button type="button" key={days} onClick={() => choosePreset(days)}>
-                Last {days} days
+        <div className={styles.rangeMenu} role="menu" aria-label="Analysis date range" ref={menuRef}>
+          {ANALYSIS_PRESET_DAYS.map((preset) => {
+            const span = presetRange(preset);
+            return (
+              <button
+                key={preset}
+                type="button"
+                role="menuitemradio"
+                aria-checked={preset === days}
+                className={styles.rangeOption}
+                onClick={() => choosePreset(preset)}
+                title={`${analysisPresetLabel(preset)} · ${formatAnalysisRangeLabel(span.start, span.end)}`}
+              >
+                <span>
+                  <strong>{analysisPresetLabel(preset)}</strong>
+                  <small>{PRESET_DESCRIPTIONS[preset]}</small>
+                </span>
+                {preset === days ? <Check aria-hidden="true" /> : null}
               </button>
-            ))}
-          </div>
-          <div className={styles.customRange}>
-            <span>Custom range</span>
-            <label>
-              <span>From</span>
-              <input type="date" value={customFrom} max={customTo} onChange={(event) => setCustomFrom(event.target.value)} />
-            </label>
-            <label>
-              <span>To</span>
-              <input type="date" value={customTo} min={customFrom} onChange={(event) => setCustomTo(event.target.value)} />
-            </label>
-            <button
-              type="button"
-              className={styles.applyRange}
-              disabled={!customFrom || !customTo || !customValid}
-              onClick={() => {
-                onChange({ from: customFrom, to: customTo });
-                setOpen(false);
-              }}
-            >
-              Apply range
-            </button>
-          </div>
-          <small>Up to 366 calendar days · UTC</small>
+            );
+          })}
         </div>
       ) : null}
     </div>
@@ -332,18 +340,19 @@ export function AnalysisWorkspace({ page }: { page: AnalysisPage }) {
     () => normalizeAnalysisDateRange({ from: searchParams.get("from"), to: searchParams.get("to") }),
     [searchParams]
   );
-  const [range, setRange] = useState({ from: initial.from, to: initial.to, label: initial.label });
+  const [range, setRange] = useState({ from: initial.from, to: initial.to, days: initial.days as AnalysisPresetDays });
   const [data, setData] = useState<AnalysisResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     const normalized = normalizeAnalysisDateRange({ from: searchParams.get("from"), to: searchParams.get("to") });
     setRange((current) =>
       current.from === normalized.from && current.to === normalized.to
         ? current
-        : { from: normalized.from, to: normalized.to, label: normalized.label }
+        : { from: normalized.from, to: normalized.to, days: normalized.days as AnalysisPresetDays }
     );
   }, [searchParams]);
 
@@ -376,7 +385,7 @@ export function AnalysisWorkspace({ page }: { page: AnalysisPage }) {
   const updateRange = useCallback(
     (next: { from: string; to: string }) => {
       const normalized = normalizeAnalysisDateRange(next);
-      setRange({ from: normalized.from, to: normalized.to, label: normalized.label });
+      setRange({ from: normalized.from, to: normalized.to, days: normalized.days as AnalysisPresetDays });
       const params = new URLSearchParams(searchParams.toString());
       params.set("from", normalized.from);
       params.set("to", normalized.to);
@@ -386,16 +395,21 @@ export function AnalysisWorkspace({ page }: { page: AnalysisPage }) {
   );
 
   const exportCsv = () => {
-    if (!data) return;
-    const blob = new Blob([buildAnalysisCsv(data)], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `sendloom-analysis-${data.page}-${data.range.from}-to-${data.range.to}.csv`;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    URL.revokeObjectURL(url);
+    if (!data || exporting) return;
+    setExporting(true);
+    try {
+      const blob = new Blob([buildAnalysisCsv(data)], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `sendloom-analysis-${data.page}-${data.range.from}-to-${data.range.to}.csv`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExporting(false);
+    }
   };
 
   const visuals = data?.page === "overview"
@@ -418,10 +432,16 @@ export function AnalysisWorkspace({ page }: { page: AnalysisPage }) {
           <p>{PAGE_META[page].subtitle}</p>
         </div>
         <div className={styles.headerControls}>
-          <DateRangeControl from={range.from} to={range.to} label={range.label} onChange={updateRange} />
-          <button className={styles.controlButton} type="button" onClick={exportCsv} disabled={!data || loading} aria-label="Export current Analysis page as CSV">
-            <Download aria-hidden="true" />
-            <span>Export</span>
+          <DateRangeControl days={range.days} onChange={updateRange} />
+          <button
+            className={styles.toolbarButton}
+            type="button"
+            onClick={exportCsv}
+            disabled={!data || loading || exporting}
+            aria-label="Export current Analysis page as CSV"
+          >
+            {exporting ? <RefreshCw className={styles.toolbarSpinner} aria-hidden="true" /> : <Download aria-hidden="true" />}
+            <span>{exporting ? "Exporting…" : "Export"}</span>
           </button>
         </div>
       </header>
