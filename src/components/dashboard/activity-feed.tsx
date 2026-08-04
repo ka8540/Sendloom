@@ -1,20 +1,27 @@
 import Link from "next/link";
-import { Activity } from "lucide-react";
 
 import { getActivityIcon, getActivityTone } from "@/components/dashboard/activity-icons";
 import type { ActivityItem } from "@/components/dashboard/types";
 import styles from "./overview-command-center.module.css";
 
+// Presentation-only cap: the Overview panel shows just the newest few events so
+// it stays compact beside the send-window card. The builder's ordering and the
+// underlying records are untouched — the rest stay available on their own pages.
+const OVERVIEW_ACTIVITY_LIMIT = 4;
+
 export function ActivityFeed({ items }: { items: ActivityItem[] }) {
+  // items arrive newest-first from buildActivityItems; take the leading slice.
+  const visibleItems = items.slice(0, OVERVIEW_ACTIVITY_LIMIT);
+
   return (
     <section className={styles.activitySection} data-overview-tour="live-system">
       <div className={styles.activityHead}>
         <h2 className={styles.sideTitle}>Recent activity</h2>
       </div>
 
-      {items.length ? (
+      {visibleItems.length ? (
         <ol className={styles.activityList} aria-label="Recent activity">
-          {items.map((item, index) => {
+          {visibleItems.map((item, index) => {
             const Icon = getActivityIcon(item);
             const visualTone = getActivityTone(item);
 
@@ -45,15 +52,7 @@ export function ActivityFeed({ items }: { items: ActivityItem[] }) {
           })}
         </ol>
       ) : (
-        <div className={styles.activityEmpty}>
-          <span className={styles.activityEmptyIcon}>
-            <Activity aria-hidden="true" />
-          </span>
-          <div>
-            <strong>No recent activity yet</strong>
-            <p>Create or launch a sequence to see updates here.</p>
-          </div>
-        </div>
+        <p className={styles.activityEmpty}>No recent activity yet.</p>
       )}
     </section>
   );

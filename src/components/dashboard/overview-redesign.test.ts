@@ -259,10 +259,33 @@ describe("Recent activity (#31, #32)", () => {
     }
     expect(ACTIVITY).toContain('data-overview-tour="live-system"');
     expect(ACTIVITY).toContain('data-overview-tour={index === 0 ? "activity-row" : undefined}');
-    // No invented View-all route — there is no user-facing activity page.
+    // No invented View-all route — /admin/activity is admin-gated, so the
+    // operator-facing Overview has no valid activity destination to link to.
     expect(ACTIVITY).not.toMatch(/View all/);
-    // The concise subset limit lives in the shared builder.
-    expect(readFileSync("src/components/dashboard/activity-builder.ts", "utf8")).toContain("const ACTIVITY_LIMIT = 7");
+  });
+
+  it("renders at most the four newest items, without pagination or a scroller", () => {
+    expect(ACTIVITY).toContain("const OVERVIEW_ACTIVITY_LIMIT = 4;");
+    expect(ACTIVITY).toContain("items.slice(0, OVERVIEW_ACTIVITY_LIMIT)");
+    // The capped list is what renders — never the full array.
+    expect(ACTIVITY).toContain("visibleItems.length ?");
+    expect(ACTIVITY).toContain("visibleItems.map(");
+    expect(ACTIVITY).not.toMatch(/items\.map\(/);
+    // Presentation-only: the builder and its ordering are untouched.
+    const builder = readFileSync("src/components/dashboard/activity-builder.ts", "utf8");
+    expect(builder).toContain("const ACTIVITY_LIMIT = 7");
+    expect(ACTIVITY).not.toMatch(/sort\(|reverse\(/);
+    // No pagination controls and no internal scroll container in the panel.
+    expect(ACTIVITY).not.toMatch(/pagination|ChevronLeft|ChevronRight|currentPage/i);
+    expect(cssRule(CENTER_CSS, ".activityList")).not.toMatch(/overflow-y|max-height/);
+    expect(cssRule(CENTER_CSS, ".activitySection")).not.toMatch(/overflow-y|max-height/);
+  });
+
+  it("collapses to a single compact line when there is no activity", () => {
+    expect(ACTIVITY).toContain("No recent activity yet.");
+    // One <p>, not the old icon + heading + paragraph block.
+    expect(ACTIVITY).not.toContain("activityEmptyIcon");
+    expect(CENTER_CSS).not.toContain(".activityEmptyIcon");
   });
 });
 
