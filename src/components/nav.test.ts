@@ -41,14 +41,15 @@ describe("selected navigation styling", () => {
     return GLOBALS.slice(start, GLOBALS.indexOf("}", start));
   }
 
-  it("uses a softly asymmetric solid green tab with white icon and text", () => {
+  it("uses a transparent row with green icon and label when selected", () => {
     const activeBlock = cssBlock(".nav-item.is-active");
 
-    expect(activeBlock).toContain("border-radius: 14px 18px 18px 14px");
-    expect(activeBlock).toContain("background: var(--sidebar-nav-active-bg)");
-    expect(activeBlock).toContain("color: #ffffff");
-    expect(activeBlock).toContain("box-shadow: var(--sidebar-nav-active-shadow)");
+    expect(activeBlock).toContain("position: relative");
+    expect(activeBlock).toContain("background: transparent");
+    expect(activeBlock).toContain("color: var(--accent)");
+    expect(activeBlock).not.toContain("box-shadow");
     expect(activeBlock).not.toContain("gradient");
+    expect(activeBlock).not.toContain("border-radius");
     expect(activeBlock).not.toContain("var(--accent-soft)");
   });
 
@@ -56,29 +57,39 @@ describe("selected navigation styling", () => {
     expect(cssBlock(".nav-item")).toContain("color: var(--text)");
   });
 
-  it("has no side bars or detached indicators on the active tab", () => {
-    expect(GLOBALS).not.toContain(".nav-item.is-active::before");
+  it("renders exactly one slim left accent bar inside the active row", () => {
+    const barBlock = cssBlock(".nav-item.is-active::before");
+
+    expect(barBlock).toContain('content: ""');
+    expect(barBlock).toContain("position: absolute");
+    expect(barBlock).toContain("left: 0");
+    expect(barBlock).toContain("top: 50%");
+    expect(barBlock).toContain("width: 3px");
+    expect(barBlock).toContain("height: 30px");
+    expect(barBlock).toContain("border-radius: 999px");
+    expect(barBlock).toContain("background: var(--accent)");
+    expect(barBlock).toContain("transform: translateY(-50%)");
     expect(GLOBALS).not.toContain(".nav-item.is-active::after");
-    expect(GLOBALS).not.toContain("--sidebar-nav-active-side-cap");
   });
 
-  it("forces the active icon white and avoids gradients or movement", () => {
-    expect(cssBlock(".nav-item.is-active svg")).toContain("color: #ffffff");
+  it("avoids an icon tile, gradient, and movement", () => {
+    expect(GLOBALS).not.toContain(".nav-item.is-active svg");
     expect(GLOBALS).not.toContain("--nav-active-background");
     expect(GLOBALS).not.toContain("--nav-active-shadow");
     expect(cssBlock(".nav-item")).not.toContain("transform");
   });
 
-  it("defines solid active colors for light, dark, and system-dark themes", () => {
-    expect(GLOBALS.match(/--sidebar-nav-active-bg:/g)).toHaveLength(3);
-    expect(GLOBALS).toContain("--sidebar-nav-active-bg: var(--accent)");
-    expect(GLOBALS).toContain("--sidebar-nav-active-bg: color-mix(in srgb, var(--accent) 55%, #06281b)");
+  it("keeps the active row transparent on hover and focus (no bespoke fill tokens)", () => {
+    expect(GLOBALS).toMatch(
+      /\.nav-item\.is-active:hover,\n\.nav-item\.is-active:focus-visible \{[\s\S]*?background: transparent;[\s\S]*?color: var\(--accent-strong\);[\s\S]*?\}/
+    );
+    expect(GLOBALS).not.toContain("--sidebar-nav-active-");
   });
 
   it("keeps inactive hover restrained and shadow-free", () => {
     const hoverBlock = cssBlock(".nav-item:hover");
 
-    expect(cssBlock(".nav-item")).toContain("border-radius: 14px");
+    expect(cssBlock(".nav-item")).toContain("border-radius: 12px");
     expect(hoverBlock).toContain("background: var(--surface-hover)");
     expect(hoverBlock).not.toContain("box-shadow");
     expect(hoverBlock).not.toContain("transform");
