@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "prisma migrate deploy && prisma generate && next build",
+    "typecheck": "tsc --noEmit",
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",
@@ -43,6 +44,7 @@
     "nodemailer": "^9.0.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "recharts": "^3.10.1",
     "resend": "^4.3.0",
     "sanitize-html": "^2.17.4",
     "three": "^0.183.2",

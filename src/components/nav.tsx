@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useState } from "react";
 import type { Route } from "next";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import {
   Activity,
+  ChartNoAxesCombined,
   CircleUserRound,
   FileSpreadsheet,
   History,
@@ -132,7 +133,16 @@ export function AppNav({ initialCollapsed = false, isAdmin = false }: { initialC
         { href: "/imports" as Route, label: "Imports", icon: FileSpreadsheet },
         { href: "/templates" as Route, label: "Templates", icon: ScrollText },
         { href: "/campaigns" as Route, label: "Sequences", icon: SendHorizontal },
+        { href: "/analysis" as Route, label: "Analysis", icon: ChartNoAxesCombined },
       ];
+
+  const analysisItems: Array<{ href: Route; label: string }> = [
+    { href: "/analysis" as Route, label: "Overview" },
+    { href: "/analysis/engagement" as Route, label: "Engagement" },
+    { href: "/analysis/sequences" as Route, label: "Sequences" },
+    { href: "/analysis/reliability" as Route, label: "Reliability" },
+    { href: "/analysis/senders" as Route, label: "Senders" }
+  ];
 
   // Account is a settings/utility item, deliberately kept OUT of the primary
   // product navigation. Non-admins get it in the lower footer section (below
@@ -190,17 +200,38 @@ export function AppNav({ initialCollapsed = false, isAdmin = false }: { initialC
             : pathname === item.href || pathname.startsWith(`${item.href}/`);
           const Icon = item.icon;
 
+          const isAnalysis = String(item.href) === "/analysis";
+
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`nav-item${active ? " is-active" : ""}`}
-              aria-current={active ? "page" : undefined}
-              title={collapsed ? item.label : undefined}
-            >
-              <Icon aria-hidden="true" />
-              <span>{item.label}</span>
-            </Link>
+            <Fragment key={item.href}>
+              <Link
+                href={item.href}
+                className={`nav-item${active ? " is-active" : ""}`}
+                aria-current={active && !isAnalysis ? "page" : undefined}
+                title={collapsed ? item.label : undefined}
+              >
+                <Icon aria-hidden="true" />
+                <span>{item.label}</span>
+              </Link>
+              {isAnalysis && active && !collapsed ? (
+                <div className="nav-submenu" aria-label="Analysis navigation">
+                  {analysisItems.map((analysisItem) => {
+                    const childActive = pathname === analysisItem.href;
+                    return (
+                      <Link
+                        key={analysisItem.href}
+                        href={analysisItem.href}
+                        className={`nav-submenu-item${childActive ? " is-active" : ""}`}
+                        aria-current={childActive ? "page" : undefined}
+                      >
+                        <span aria-hidden="true" />
+                        {analysisItem.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </Fragment>
           );
         })}
       </nav>

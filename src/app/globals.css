@@ -457,6 +457,53 @@ html[data-sidebar-collapsed="true"] .shell {
   color: var(--accent-strong);
 }
 
+/* Analysis is the only primary workspace section with peer views. These
+   nested links reuse the existing sidebar typography and neutral hover state;
+   the parent row, spacing, icon system, and collapse behavior stay unchanged. */
+.nav-submenu {
+  display: grid;
+  gap: 0.12rem;
+  padding: 0 0.25rem 0.25rem 2.55rem;
+}
+
+.nav-submenu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.62rem;
+  min-height: 2rem;
+  padding: 0.38rem 0.5rem;
+  border-radius: 9px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+
+.nav-submenu-item > span {
+  width: 0.32rem;
+  height: 0.32rem;
+  border-radius: 999px;
+  background: currentColor;
+  flex: 0 0 auto;
+}
+
+.nav-submenu-item:hover,
+.nav-submenu-item:focus-visible {
+  outline: none;
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.nav-submenu-item:focus-visible {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 42%, transparent);
+}
+
+.nav-submenu-item.is-active {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-weight: 750;
+}
+
 .nav-footer {
   display: grid;
   gap: 0.75rem;
@@ -556,6 +603,11 @@ html[data-sidebar-collapsed="true"] .sidebar .nav-item-button span {
 .sidebar.is-collapsed .nav,
 html[data-sidebar-collapsed="true"] .sidebar .nav {
   justify-items: center;
+}
+
+.sidebar.is-collapsed .nav-submenu,
+html[data-sidebar-collapsed="true"] .sidebar .nav-submenu {
+  display: none;
 }
 
 .sidebar.is-collapsed .nav-item,
