@@ -484,7 +484,12 @@ export function JourneyCard({ title, stages, info }: { title: string; stages: An
         <div className={styles.journey}>
           {stages.map((stage, index) => (
             <Fragment key={stage.name}>
-              <div className={`${styles.journeyStage} ${stage.unavailable ? styles.unavailable : ""}`}>
+              <div
+                className={`${styles.journeyStage} ${stage.unavailable ? styles.unavailable : ""}`}
+                title={`${stage.name}\n${stage.unavailable ? "Unavailable" : `${stage.value.toLocaleString()} recipients`}${
+                  stage.conversion !== null && !stage.unavailable ? `\n${stage.conversion.toFixed(1)}% converted from the previous stage` : ""
+                }`}
+              >
                 <span>{stage.name}</span>
                 <strong>{stage.unavailable ? "Unavailable" : stage.value.toLocaleString()}</strong>
                 {stage.conversion !== null && !stage.unavailable ? <small>{stage.conversion.toFixed(1)}% converted</small> : null}
@@ -525,7 +530,9 @@ export function BestDaysCard({ data }: { data: Array<{ name: string; sent: numbe
           ))}
         </div>
       )}
-      <div className={styles.scale}><span>Lower</span><i /><span>Higher</span></div>
+      {data.some((item) => item.sent > 0) ? (
+        <div className={styles.scale}><span>Lower</span><i /><span>Higher</span></div>
+      ) : null}
     </AnalysisCard>
   );
 }
@@ -542,7 +549,7 @@ export function RankedListCard({ title, data, info }: { title: string; data: Ana
               <span className={styles.rank}>{index + 1}</span>
               <span className={styles.rankIcon}><Send aria-hidden="true" /></span>
               <span className={styles.rankCopy}>
-                <strong>{item.name}</strong>
+                <strong title={item.name}>{item.name}</strong>
                 <small>{item.sent.toLocaleString()} sent · {item.replies.toLocaleString()} replied</small>
               </span>
               <span className={styles.rankRate}>

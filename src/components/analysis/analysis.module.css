@@ -9,6 +9,7 @@
   --analysis-grid: color-mix(in srgb, var(--line) 72%, transparent);
   --analysis-grid-strong: color-mix(in srgb, var(--muted) 48%, transparent);
   --analysis-muted-fill: color-mix(in srgb, var(--muted) 20%, transparent);
+  container: analysisContent / inline-size;
   display: grid;
   gap: 1.25rem;
   width: min(100%, 1620px);
@@ -440,7 +441,19 @@ button.controlButton:disabled {
 
 .twoColumn { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .twoColumnWideLeft { grid-template-columns: minmax(0, 1.18fr) minmax(22rem, 0.96fr); }
-.threeColumn { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(18rem, 1.05fr); }
+.threeColumn { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+/* The Summary bottom row follows the Analysis content width, not the viewport,
+   so an expanded sidebar drops it to two columns before the cards get cramped. */
+@container analysisContent (max-width: 1240px) {
+  .threeColumn { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .threeColumn > :last-child { grid-column: 1 / -1; }
+}
+
+@container analysisContent (max-width: 900px) {
+  .threeColumn { grid-template-columns: minmax(0, 1fr); }
+  .threeColumn > :last-child { grid-column: auto; }
+}
 .engagementBottom { grid-template-columns: minmax(24rem, 1.18fr) minmax(22rem, 1fr) minmax(19rem, 0.92fr); }
 .sequenceBottom { grid-template-columns: minmax(20rem, 0.9fr) minmax(22rem, 1fr) minmax(22rem, 1.12fr); }
 .reliabilityBottom { grid-template-columns: minmax(26rem, 1.35fr) minmax(18rem, 0.72fr) minmax(20rem, 0.86fr); }
@@ -965,47 +978,66 @@ button.controlButton:disabled {
   background: color-mix(in srgb, var(--analysis-purple) 50%, var(--muted));
 }
 
+/* Stage columns are equal fractions of the card, so any stage count fits without
+   a horizontal scroller clipping the last stage. */
 .journey {
-  display: flex;
+  --journey-notch: 0.8rem;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
   align-items: stretch;
+  gap: 0.25rem;
   min-height: 12.5rem;
-  padding-top: 1rem;
-  overflow-x: auto;
+  min-width: 0;
+  padding: 1rem 0.35rem 0.25rem 0.25rem;
 }
 
 .journeyStage {
   display: grid;
   align-content: center;
   justify-items: center;
-  gap: 0.65rem;
-  min-width: 6.5rem;
-  flex: 1 0 0;
-  padding: 0.85rem 0.55rem;
+  gap: 0.6rem;
+  min-width: 0;
+  padding: 0.85rem calc(var(--journey-notch) + 0.2rem);
   border: 1px solid color-mix(in srgb, var(--analysis-green) 15%, var(--line));
-  clip-path: polygon(0 0, calc(100% - 0.8rem) 0, 100% 50%, calc(100% - 0.8rem) 100%, 0 100%, 0.8rem 50%);
+  clip-path: polygon(0 0, calc(100% - var(--journey-notch)) 0, 100% 50%, calc(100% - var(--journey-notch)) 100%, 0 100%, var(--journey-notch) 50%);
   background: color-mix(in srgb, var(--analysis-green) 9%, var(--surface));
   text-align: center;
 }
 
 .journeyStage:first-child {
-  clip-path: polygon(0 0, calc(100% - 0.8rem) 0, 100% 50%, calc(100% - 0.8rem) 100%, 0 100%);
+  padding-left: 0.6rem;
+  clip-path: polygon(0 0, calc(100% - var(--journey-notch)) 0, 100% 50%, calc(100% - var(--journey-notch)) 100%, 0 100%);
 }
 
 .journeyStage:nth-of-type(3n) { background: color-mix(in srgb, var(--analysis-blue) 9%, var(--surface)); }
 .journeyStage:nth-of-type(4n) { background: color-mix(in srgb, var(--analysis-purple) 9%, var(--surface)); }
-.journeyStage span { color: var(--muted); font-size: 0.72rem; font-weight: 750; }
-.journeyStage strong { font-size: 1.15rem; }
-.journeyStage small { color: var(--muted); font-size: 0.65rem; }
+.journeyStage span,
+.journeyStage strong,
+.journeyStage small { max-width: 100%; word-break: normal; overflow-wrap: normal; hyphens: none; }
+.journeyStage span { color: var(--muted); font-size: 0.72rem; font-weight: 750; white-space: nowrap; }
+.journeyStage strong { font-size: 1.15rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.journeyStage small { color: var(--muted); font-size: 0.65rem; line-height: 1.3; font-variant-numeric: tabular-nums; }
 .journeyStage.unavailable { opacity: 0.64; }
 .journeyArrow { display: none; }
+
+/* Tightest case: three columns on a narrower content width. Spacing gives way
+   before type size does. */
+@container analysisContent (min-width: 901px) and (max-width: 1500px) {
+  .journey { --journey-notch: 0.5rem; gap: 0.15rem; padding-inline: 0.15rem 0.25rem; }
+  .journeyStage { gap: 0.45rem; padding-inline: 0.7rem; }
+  .journeyStage:first-child { padding-left: 0.45rem; }
+  .journeyStage strong { font-size: 1.05rem; }
+}
 
 .weekdayChart {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
   align-items: end;
-  gap: 0.55rem;
+  gap: 0.3rem;
   min-height: 12rem;
-  padding: 1rem 0.4rem 0;
+  min-width: 0;
+  padding: 1rem 0.25rem 0;
 }
 
 .weekdayChart button {
@@ -1013,6 +1045,7 @@ button.controlButton:disabled {
   grid-template-rows: minmax(7.5rem, 1fr) auto;
   align-items: end;
   gap: 0.55rem;
+  min-width: 0;
   height: 100%;
   padding: 0;
   border: 0;
@@ -1020,6 +1053,12 @@ button.controlButton:disabled {
   color: var(--muted);
   cursor: help;
   font-size: 0.68rem;
+}
+
+.weekdayChart button span {
+  display: block;
+  min-width: 0;
+  white-space: nowrap;
 }
 
 .weekdayChart button:focus-visible {
@@ -1031,7 +1070,9 @@ button.controlButton:disabled {
 .weekdayChart i {
   display: block;
   width: 100%;
+  max-width: 3.4rem;
   min-height: 0.5rem;
+  margin-inline: auto;
   border-radius: 7px 7px 2px 2px;
   background: color-mix(in srgb, var(--analysis-green) 18%, var(--surface));
 }
@@ -1047,13 +1088,16 @@ button.controlButton:disabled {
 
 .scale {
   display: grid;
-  grid-template-columns: auto minmax(3rem, 1fr) auto;
+  grid-template-columns: auto minmax(1.5rem, 1fr) auto;
   align-items: center;
-  gap: 0.65rem;
-  margin-top: 0.65rem;
+  gap: 0.55rem;
+  min-width: 0;
+  margin-top: 0.75rem;
   color: var(--muted);
   font-size: 0.65rem;
 }
+
+.scale > span { white-space: nowrap; }
 
 .scale i {
   height: 0.45rem;
@@ -1074,6 +1118,7 @@ button.controlButton:disabled {
   grid-template-columns: auto auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 0.6rem;
+  min-width: 0;
   padding: 0.6rem 0.7rem;
   border: 1px solid var(--line);
   border-radius: 13px;
@@ -1102,12 +1147,17 @@ button.controlButton:disabled {
 }
 
 .rankIcon svg { width: 0.9rem; height: 0.9rem; }
+.rank,
+.rankIcon { flex: none; }
 .rankCopy,
 .rankRate { display: grid; gap: 0.12rem; min-width: 0; }
 .rankCopy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.75rem; }
 .rankCopy small,
 .rankRate small { color: var(--muted); font-size: 0.62rem; }
-.rankRate { justify-items: end; text-align: right; }
+.rankCopy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.rankRate { justify-items: end; min-width: 4.1rem; text-align: right; }
+.rankRate strong,
+.rankRate small { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .rankRate strong { font-size: 0.82rem; }
 
 .heatmapWrap {
@@ -1460,7 +1510,6 @@ button.controlButton:disabled {
 @keyframes analysisShimmer { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
 
 @media (max-width: 1420px) {
-  .threeColumn,
   .engagementBottom,
   .sequenceBottom,
   .reliabilityBottom,
@@ -1468,7 +1517,6 @@ button.controlButton:disabled {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .threeColumn > :last-child,
   .engagementBottom > :last-child,
   .sequenceBottom > :last-child,
   .reliabilityBottom > :last-child,
@@ -1488,12 +1536,10 @@ button.controlButton:disabled {
   .pageHeader { align-items: flex-start; }
   .headerControls { width: 100%; justify-content: flex-start; margin-left: 0; }
   .tabs { width: 100%; grid-template-columns: repeat(5, minmax(7.5rem, 1fr)); }
-  .threeColumn,
   .engagementBottom,
   .sequenceBottom,
   .reliabilityBottom,
   .sendersBottom { grid-template-columns: 1fr; }
-  .threeColumn > :last-child,
   .engagementBottom > :last-child,
   .sequenceBottom > :last-child,
   .reliabilityBottom > :last-child,
@@ -1516,7 +1562,6 @@ button.controlButton:disabled {
   .outcomeRow { gap: 0.4rem; font-size: 0.74rem; }
   .outcomeRow > strong { min-width: 2.8rem; }
   .outcomeRow > small { min-width: 3rem; }
-  .journeyStage { min-width: 7rem; }
   .scheduleGrid { grid-template-columns: 1fr; }
   .heatmapWrap { overflow-x: auto; }
   .chartLarge { height: 14rem; }
