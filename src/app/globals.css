@@ -391,7 +391,7 @@ html[data-sidebar-collapsed="true"] .shell {
     height: 100dvh;
     max-height: 100dvh;
     overflow: hidden;
-    padding: 0.65rem 1rem 0.75rem;
+    padding: 1.5rem 1rem 0.75rem;
     gap: 0.45rem;
   }
 
@@ -400,6 +400,7 @@ html[data-sidebar-collapsed="true"] .shell {
     align-items: flex-start;
     justify-content: space-between;
     gap: 0.55rem;
+    padding-bottom: 0.5rem;
     flex-shrink: 0;
   }
 
@@ -456,6 +457,10 @@ html[data-sidebar-collapsed="true"] .shell {
   background: transparent;
   border: 1px solid transparent;
   color: var(--text);
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
   font-weight: 600;
   transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, outline-color 160ms ease;
 }
@@ -495,7 +500,6 @@ html[data-sidebar-collapsed="true"] .shell {
   appearance: none;
   cursor: pointer;
   text-align: left;
-  font: inherit;
 }
 
 .nav-analysis-chevron {
@@ -543,7 +547,7 @@ html[data-sidebar-collapsed="true"] .shell {
 .nav-submenu {
   display: grid;
   gap: 0.25rem;
-  padding: 0 0.25rem 0.2rem 2.55rem;
+  padding: 0.25rem 0.25rem 0.2rem 2.55rem;
 }
 
 .nav-submenu[hidden] {
@@ -554,8 +558,8 @@ html[data-sidebar-collapsed="true"] .shell {
   display: flex;
   align-items: center;
   gap: 0.62rem;
-  min-height: 2rem;
-  padding: 0.38rem 0.5rem;
+  min-height: 1.625rem;
+  padding: 0.2rem 0.5rem;
   border-radius: 9px;
   color: var(--muted);
   font-size: 0.78rem;

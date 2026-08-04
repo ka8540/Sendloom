@@ -86,6 +86,36 @@ describe("expanded sidebar height structure", () => {
     expect(GLOBALS).toMatch(/\.sidebar:not\(\.is-collapsed\) \.sidebar-top \{[\s\S]*?align-items:\s*flex-start;[\s\S]*?justify-content:\s*space-between/);
     expect(GLOBALS).toMatch(/\.sidebar:not\(\.is-collapsed\) \.brand \{[\s\S]*?flex:\s*1 1 auto/);
   });
+
+  it("gives only the expanded brand header balanced top and bottom breathing room", () => {
+    expect(GLOBALS).toMatch(/\.sidebar:not\(\.is-collapsed\) \{[\s\S]*?padding:\s*1\.5rem 1rem 0\.75rem/);
+    expect(GLOBALS).toMatch(/\.sidebar:not\(\.is-collapsed\) \.sidebar-top \{[\s\S]*?padding-bottom:\s*0\.5rem/);
+  });
+});
+
+describe("expanded Analysis visual consistency", () => {
+  function cssBlock(selector: string): string {
+    const start = GLOBALS.indexOf(`${selector} {`);
+    return GLOBALS.slice(start, GLOBALS.indexOf("}", start));
+  }
+
+  it("uses the shared primary navigation typography without an Analysis-specific font reset", () => {
+    const primaryItemBlock = cssBlock(".nav-item");
+    const analysisToggleBlock = cssBlock(".nav-analysis-toggle");
+
+    expect(primaryItemBlock).toContain("font-family: inherit");
+    expect(primaryItemBlock).toContain("font-size: inherit");
+    expect(primaryItemBlock).toContain("line-height: inherit");
+    expect(primaryItemBlock).toContain("letter-spacing: inherit");
+    expect(primaryItemBlock).toContain("font-weight: 600");
+    expect(analysisToggleBlock).not.toContain("font:");
+  });
+
+  it("keeps the Analysis submenu compact and readable", () => {
+    expect(cssBlock(".nav-submenu")).toContain("gap: 0.25rem");
+    expect(cssBlock(".nav-submenu")).toContain("padding: 0.25rem 0.25rem 0.2rem 2.55rem");
+    expect(cssBlock(".nav-submenu-item")).toContain("min-height: 1.625rem");
+  });
 });
 
 describe("selected navigation styling", () => {
