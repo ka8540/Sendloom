@@ -34,10 +34,9 @@ describe("workspace page header", () => {
     }
   });
 
-  it("keeps Overview as its purpose-built command-center hero", () => {
+  it("keeps Overview as its purpose-built dashboard header", () => {
     expect(OVERVIEW).not.toContain("<WorkspacePageHeader");
-    expect(OVERVIEW).toContain("styles.heroEyebrow");
-    expect(OVERVIEW).toContain("styles.heroTitle}>Overview</h1>");
+    expect(OVERVIEW).toContain("styles.pageTitle}>Overview</h1>");
   });
 
   it("removes dashboard eyebrow labels without changing create/detail flows", () => {

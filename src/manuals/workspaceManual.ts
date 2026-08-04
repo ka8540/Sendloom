@@ -108,9 +108,9 @@ function workspaceHealthStep(): ManualStep {
   return {
     id: "workspace-health",
     title: "Your workspace at a glance",
-    body: "These visuals summarize the current state of your workspace — targeted recipients, delivery success, and overall sequence health. Empty or zero values are normal until you create your first list, template, or sequence.",
+    body: "This summary strip shows the current state of your workspace — active sequences, recent send volume, anything that needs attention, and lists ready to launch. Empty or zero values are normal until you create your first list, template, or sequence.",
     selector: sel("workspace-health"),
-    placement: "left"
+    placement: "bottom"
   };
 }
 
@@ -118,20 +118,9 @@ function activeSequencesStep(): ManualStep {
   return {
     id: "active-sequences",
     title: "Active sequences",
-    body: "Shows how many sequences are currently running or queued. The status pill and the breakdown rail separate active work from paused, scheduled, and total workflows so you can tell live sending apart from everything else.",
+    body: "Shows how many sequences are currently running or queued, so you can tell live sending apart from everything else. Opening the section takes you to the full Sequences page.",
     selector: sel("active-sequences"),
     placement: "bottom"
-  };
-}
-
-function sequenceHealthStep(): ManualStep {
-  return {
-    id: "sequence-health",
-    title: "Sequence health",
-    body: "This segmented bar summarizes how your sequence workflows are distributed across running, done, review, and ready states, helping you see active work and anything that needs review at a glance.",
-    selector: sel("sequence-health"),
-    placement: "left",
-    optional: true
   };
 }
 
@@ -139,18 +128,18 @@ function listsReadyStep(): ManualStep {
   return {
     id: "lists-ready",
     title: "Lists ready",
-    body: "Shows how many processed imports are ready to map, validate, or use in a sequence. The ring and chips summarize ready versus needs-mapping lists, plus anything new this week. Opening the card takes you to Imports — the card itself is a summary, not the editor.",
+    body: "Shows how many processed imports already have a field mapping and are ready to use in a sequence. Opening the section takes you to Imports — this figure is a summary, not the editor.",
     selector: sel("lists-ready"),
     placement: "bottom"
   };
 }
 
-function templatesLiveStep(): ManualStep {
+function quickActionsStep(): ManualStep {
   return {
-    id: "templates-live",
-    title: "Templates live",
-    body: "Shows the email templates available in your workspace. The format breakdown tells you how many are HTML, plain text, or other supported formats. Opening the card takes you to Templates, where copy is created and later connected to sequences.",
-    selector: sel("templates-live"),
+    id: "quick-actions",
+    title: "Start something new",
+    body: "Quick actions are shortcuts to the three main workflows: create a sequence, import a list, or create a template. Each opens the matching workspace page.",
+    selector: sel("quick-actions"),
     placement: "bottom"
   };
 }
@@ -191,7 +180,7 @@ function recentSequencesStep(): ManualStep {
   return {
     id: "recent-sequences",
     title: "Track recently changed sequences",
-    body: "Recent Sequences highlights the workflows that changed most recently. Use the search, status, focus, type, and sort controls to find a sequence, then open it to check status, progress, and delivery details.",
+    body: "Recent Sequences previews the three workflows that changed most recently. Use the search field to find a sequence by name, list, template, or sender, or open View all sequences for the complete list.",
     selector: sel("recent-sequences"),
     placement: "top"
   };
@@ -201,19 +190,8 @@ function recentSequenceCardStep(): ManualStep {
   return {
     id: "recent-sequence-card",
     title: "Read a sequence at a glance",
-    body: "Each card shows the sequence name, its list, template, and sender, the processed, delivered, opened, and issue metrics, a progress bar, a health note, the current status, and the last update time. Any attention state is flagged here. Open the card for full recipient and delivery details.",
+    body: "Each row shows the sequence name, its list, template, and sender, the current status, and the last update time. The action buttons let you view, pause, resume, relaunch, or delete the sequence. Open the row for full recipient and delivery details.",
     selector: sel("recent-sequence-card"),
-    placement: "top",
-    optional: true
-  };
-}
-
-function recentSequencesPaginationStep(): ManualStep {
-  return {
-    id: "recent-sequences-pagination",
-    title: "Browse more sequences",
-    body: "Recent Sequences shows a few workflows per page. Use the arrow controls to move through the rest of the matching sequences.",
-    selector: sel("recent-sequences-pagination"),
     placement: "top",
     optional: true
   };
@@ -243,7 +221,7 @@ function activityRowStep(): ManualStep {
   return {
     id: "activity-row",
     title: "Read an activity entry",
-    body: "Each entry pairs an icon and tone with a short system log line and a timestamp. Failures and attention events stand out so issues are easy to spot. Select an entry to open the related sequence, import, or template.",
+    body: "Each entry pairs an icon and tone with a short description and a timestamp. Failures and attention events stand out so issues are easy to spot. Select an entry to open the related sequence, import, or template.",
     selector: sel("activity-row"),
     placement: "left",
     optional: true
@@ -254,20 +232,9 @@ function needsAttentionStep(): ManualStep {
   return {
     id: "needs-attention",
     title: "Items that need attention",
-    body: "This highlights Gmail authorization, retryable delivery, queue, server, configuration, paused, or other review-required problems. Invalid, unsubscribed, and suppressed recipients are safely skipped instead. When it reads zero, nothing currently needs your review.",
+    body: "This highlights Gmail authorization, retryable delivery, queue, server, configuration, paused, or other review-required problems. Retryable failures may be attempted again; action-required problems may need your review, and not every retry will succeed. Permanent invalid addresses, unsubscribed, and suppressed recipients are safely skipped instead. When it reads zero, nothing currently needs your review.",
     selector: sel("needs-attention"),
     placement: "bottom"
-  };
-}
-
-function deliveryIssuesStep(): ManualStep {
-  return {
-    id: "delivery-issues",
-    title: "Delivery success and issues",
-    body: "The success ring and issues figure summarize delivery across your sequences. Issues include only operational failures that may need a retry, reconnect, or review. Permanent invalid addresses, unsubscribes, and suppressions are shown separately as Skipped and do not use warning styling.",
-    selector: sel("delivery-issues"),
-    placement: "left",
-    optional: true
   };
 }
 
@@ -327,7 +294,7 @@ export function overviewStarterSteps(): ManualStep[] {
     workspaceHealthStep(),
     activeSequencesStep(),
     listsReadyStep(),
-    templatesLiveStep(),
+    quickActionsStep(),
     gmailSendWindowStep(),
     {
       id: "recent-sequences",
@@ -362,15 +329,15 @@ export function overviewFoundationsSteps(): ManualStep[] {
     {
       id: "lists-ready",
       title: "Your lists are taking shape",
-      body: "The Lists ready count reflects your processed imports. Ready lists already have a field mapping; needs-mapping lists still need one before launch. Opening the card takes you to Imports — this card is a summary, not the full editor.",
+      body: "The Lists ready count reflects processed imports that already have a field mapping and can launch. Opening the section takes you to Imports — this figure is a summary, not the full editor.",
       selector: sel("lists-ready"),
       placement: "bottom"
     },
     {
-      id: "templates-live",
-      title: "Your templates are counted here",
-      body: "The Templates live count and format breakdown reflect the email copy in your workspace. Opening the card takes you to Templates, where copy is edited and later connected to a sequence.",
-      selector: sel("templates-live"),
+      id: "quick-actions",
+      title: "Templates and sequences start here",
+      body: "Use Quick actions to create a template or build a sequence from the lists you imported. Each shortcut opens the matching workspace page.",
+      selector: sel("quick-actions"),
       placement: "bottom"
     },
     {
@@ -393,11 +360,10 @@ export function overviewFirstSequenceSteps(): ManualStep[] {
     {
       id: "active-sequences",
       title: "Your sequence is now tracked here",
-      body: "The main number shows sequences that are currently running or queued. Supporting statuses help you understand paused, ready, completed, or review states.",
+      body: "The main number shows sequences that are currently running or queued. The status badge on each recent sequence row explains paused, ready, completed, or review states.",
       selector: sel("active-sequences"),
       placement: "bottom"
     },
-    sequenceHealthStep(),
     recentSequencesStep(),
     recentSequenceCardStep(),
     viewAllSequencesStep(),
@@ -427,14 +393,6 @@ export function overviewAttentionSteps(): ManualStep[] {
   return [
     needsAttentionStep(),
     {
-      id: "delivery-issues",
-      title: "Retryable versus action required",
-      body: "Issues here include only operational problems: retryable failures may be attempted again, while action-required Gmail authorization, queue, server, or configuration problems may need your review. Not every retry will succeed. Permanent invalid addresses, unsubscribes, and suppressions appear as Skipped and require no warning icon.",
-      selector: sel("delivery-issues"),
-      placement: "left",
-      optional: true
-    },
-    {
       id: "gmail-send-window",
       title: "Gmail safety status",
       body: "When the send window is near capacity, Sendloom may delay queued sends until capacity becomes available. The queue stays attached to the sequence and continues when the sending window allows it.",
@@ -463,13 +421,12 @@ export function overviewFullSteps(): ManualStep[] {
     ...preservedOverviewSteps,
     // Workspace navigation
     sidebarStep(),
-    // Core workspace health
+    // Core workspace summary
     workspaceHealthStep(),
     activeSequencesStep(),
-    sequenceHealthStep(),
-    // Imports and templates
+    // Imports and quick actions
     listsReadyStep(),
-    templatesLiveStep(),
+    quickActionsStep(),
     // Gmail sending capacity
     gmailSendWindowStep(),
     gmailProgressStep(),
@@ -477,14 +434,12 @@ export function overviewFullSteps(): ManualStep[] {
     // Recent sequences
     recentSequencesStep(),
     recentSequenceCardStep(),
-    recentSequencesPaginationStep(),
     viewAllSequencesStep(),
-    // Live system activity
+    // Recent activity
     liveSystemStep(),
     activityRowStep(),
     // Attention and recovery
-    needsAttentionStep(),
-    deliveryIssuesStep()
+    needsAttentionStep()
   ];
 }
 
@@ -522,7 +477,7 @@ export const workspaceManual: ManualConfig = {
   // The Overview page drives the progressive auto-open phases itself (so it can
   // wait for data + a settled layout), so the generic provider auto-open is off.
   autoOpen: false,
-  version: "v3",
+  version: "v4",
   steps: overviewFullSteps(),
   // A manual Help click always resolves to the complete current-state tour.
   resolveStage: () => "full",

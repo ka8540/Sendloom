@@ -30,7 +30,7 @@ const PROVIDER_SOURCE = readFileSync("src/components/manual/ManualProvider.tsx",
 const OVERLAY_SOURCE = readFileSync("src/components/manual/ManualOverlay.tsx", "utf8");
 const LAUNCHER_SOURCE = readFileSync("src/components/dashboard/overview-tour-launcher.tsx", "utf8");
 const CENTER_SOURCE = readFileSync("src/components/dashboard/overview-command-center.tsx", "utf8");
-const SUMMARY_SOURCE = readFileSync("src/components/dashboard/overview-summary.tsx", "utf8");
+const SEND_WINDOW_SOURCE = readFileSync("src/components/dashboard/overview-send-window.tsx", "utf8");
 const PANEL_SOURCE = readFileSync("src/components/dashboard/sequence-panel.tsx", "utf8");
 const ROW_SOURCE = readFileSync("src/components/dashboard/sequence-row.tsx", "utf8");
 const ACTIVITY_SOURCE = readFileSync("src/components/dashboard/activity-feed.tsx", "utf8");
@@ -80,20 +80,17 @@ const ALL_TARGETS = new Set<string>([
   "page-intro",
   "workspace-health",
   "active-sequences",
-  "sequence-health",
   "lists-ready",
-  "templates-live",
+  "quick-actions",
   "gmail-send-window",
   "gmail-progress",
   "sender-breakdown",
   "recent-sequences",
   "recent-sequence-card",
-  "recent-sequences-pagination",
   "view-all-sequences",
   "live-system",
   "activity-row",
-  "needs-attention",
-  "delivery-issues"
+  "needs-attention"
 ].map((target) => overviewSelector(target)));
 
 // The brand-new / empty dashboard: cards + empty sections render, but there are
@@ -102,16 +99,14 @@ const EMPTY_DASHBOARD_TARGETS = new Set<string>([
   "page-intro",
   "workspace-health",
   "active-sequences",
-  "sequence-health",
   "lists-ready",
-  "templates-live",
+  "quick-actions",
   "gmail-send-window",
   "sender-breakdown",
   "recent-sequences",
   "view-all-sequences",
   "live-system",
-  "needs-attention",
-  "delivery-issues"
+  "needs-attention"
 ].map((target) => overviewSelector(target)));
 
 function present(targets: Set<string>) {
@@ -137,7 +132,7 @@ describe("Overview manual registration + redesigned Help button (#1, #2, #4)", (
     expect(workspaceManual.helpVariant).toBe("premium");
     expect(workspaceManual.helpQuickStart).toBe(true);
     expect(workspaceManual.autoOpen).toBe(false);
-    expect(workspaceManual.version).toBe("v3");
+    expect(workspaceManual.version).toBe("v4");
   });
 
   it("renders the shared premium dashboard Help button (#1)", () => {
@@ -192,7 +187,7 @@ describe("Premium button motion + accessibility (#5, #21, #22, #23, #24, #25)", 
     expect(CSS_SOURCE).toMatch(/\.overviewHelpRoot\s*\{[^}]*right:/);
     expect(CSS_SOURCE).toMatch(/\.overviewHelpRoot\s*\{[^}]*bottom:/);
     expect(CENTER_SOURCE).not.toContain("helpButton");
-    expect(SUMMARY_SOURCE).not.toContain("CircleHelp");
+    expect(SEND_WINDOW_SOURCE).not.toContain("CircleHelp");
   });
 
   it("closes the guide on Escape and returns focus to the Help button (#24, #25)", () => {
@@ -226,17 +221,15 @@ describe("Existing Overview steps are preserved + extended (#6, #7)", () => {
       "sidebar",
       "workspace-health",
       "active-sequences",
-      "sequence-health",
       "lists-ready",
-      "templates-live",
+      "quick-actions",
       "gmail-send-window",
       "recent-sequences",
       "recent-sequence-card",
       "view-all-sequences",
       "live-system",
       "activity-row",
-      "needs-attention",
-      "delivery-issues"
+      "needs-attention"
     ]) {
       expect(fullIds).toContain(id);
     }
@@ -291,7 +284,7 @@ describe("State-aware auto-open phases (#8, #9, #10, #13, #14, #17)", () => {
     // Skip + finish both mark the active stage complete with a versioned key.
     expect(PROVIDER_SOURCE).toMatch(/skipManual[\s\S]{0,160}markManualComplete/);
     expect(PROVIDER_SOURCE).toMatch(/versionSuffix/);
-    expect(workspaceManual.version).toBe("v3");
+    expect(workspaceManual.version).toBe("v4");
   });
 
   it("waits for a settled layout and never opens over an existing tour/menu", () => {
@@ -303,20 +296,19 @@ describe("State-aware auto-open phases (#8, #9, #10, #13, #14, #17)", () => {
 });
 
 describe("Phase step content matches the rendered UI (#15, #16, #18)", () => {
-  it("foundations explains the now-meaningful Lists, Templates, and Activity", () => {
+  it("foundations explains the now-meaningful Lists, Quick actions, and Activity", () => {
     const steps = overviewFoundationsSteps();
-    expect(ids(steps)).toEqual(["lists-ready", "templates-live", "live-system"]);
-    expect(steps[0].body).toMatch(/needs-mapping|mapping/i);
+    expect(ids(steps)).toEqual(["lists-ready", "quick-actions", "live-system"]);
+    expect(steps[0].body).toMatch(/mapping/i);
     expect(steps[0].body).toMatch(/Imports/);
-    expect(steps[1].body).toMatch(/Templates/);
+    expect(steps[1].body).toMatch(/template/i);
     expect(steps[2].body).toMatch(/Recent Activity/i);
   });
 
-  it("the first-sequence phase explains Active, Health, Recent card, and Gmail (#14, #18)", () => {
+  it("the first-sequence phase explains Active, the Recent card, and Gmail (#14, #18)", () => {
     const steps = overviewFirstSequenceSteps();
     expect(ids(steps)).toEqual([
       "active-sequences",
-      "sequence-health",
       "recent-sequences",
       "recent-sequence-card",
       "view-all-sequences",
@@ -325,14 +317,14 @@ describe("Phase step content matches the rendered UI (#15, #16, #18)", () => {
     ]);
   });
 
-  it("explains every part of the recent sequence card when it is visible (#15)", () => {
+  it("explains every part of the recent sequence row when it is visible (#15)", () => {
     const card = overviewFirstSequenceSteps().find((step) => step.id === "recent-sequence-card");
     expect(card).toBeDefined();
     const body = card?.body ?? "";
     expect(body).toMatch(/name/i);
+    expect(body).toMatch(/list/i);
+    expect(body).toMatch(/sender/i);
     expect(body).toMatch(/status/i);
-    expect(body).toMatch(/progress/i);
-    expect(body).toMatch(/delivered/i);
     expect(body).toMatch(/last update/i);
     expect(body).toMatch(/open/i);
     // It is optional so it never points at a missing row.
@@ -353,22 +345,21 @@ describe("Phase step content matches the rendered UI (#15, #16, #18)", () => {
     expect(allText).not.toMatch(/guaranteed (?:gmail )?limit/i);
   });
 
-  it("marks pagination optional so it is explained only when multiple pages exist (#16)", () => {
-    const pagination = overviewFullSteps().find((step) => step.id === "recent-sequences-pagination");
-    expect(pagination?.optional).toBe(true);
-    // The panel only stamps the target when there is more than one page.
-    expect(PANEL_SOURCE).toMatch(/totalPages > 1 \? "recent-sequences-pagination" : undefined/);
+  it("matches the three-item preview — no pagination step or target exists (#16)", () => {
+    expect(overviewFullSteps().find((step) => step.id === "recent-sequences-pagination")).toBeUndefined();
+    expect(PANEL_SOURCE).toContain("const RECENT_SEQUENCES_LIMIT = 3;");
+    expect(PANEL_SOURCE).not.toMatch(/pagination/i);
   });
 
   it("the attention phase explains retryable vs action-required vs invalid (#17)", () => {
     const steps = overviewAttentionSteps();
     expect(ids(steps)).toContain("needs-attention");
-    const retry = steps.find((step) => step.id === "delivery-issues");
-    expect(retry?.body).toMatch(/retryable/i);
-    expect(retry?.body).toMatch(/action[- ]required/i);
-    expect(retry?.body).toMatch(/invalid/i);
+    const attention = steps.find((step) => step.id === "needs-attention");
+    expect(attention?.body).toMatch(/retryable/i);
+    expect(attention?.body).toMatch(/action[- ]required/i);
+    expect(attention?.body).toMatch(/invalid/i);
     // Never overpromises retries.
-    expect(retry?.body).toMatch(/not every retry will succeed/i);
+    expect(attention?.body).toMatch(/not every retry will succeed/i);
   });
 });
 
@@ -384,7 +375,6 @@ describe("Optional targets are filtered safely (#11, #12, #16, #19, #20)", () =>
   it("drops sequence-only targets on an empty dashboard (#12)", () => {
     const filtered = ids(filterAvailableManualSteps(overviewFullSteps(), present(EMPTY_DASHBOARD_TARGETS)));
     expect(filtered).not.toContain("recent-sequence-card");
-    expect(filtered).not.toContain("recent-sequences-pagination");
     expect(filtered).not.toContain("activity-row");
     expect(filtered).not.toContain("gmail-progress");
     // The always-present anchors survive.
@@ -395,7 +385,7 @@ describe("Optional targets are filtered safely (#11, #12, #16, #19, #20)", () =>
 
   it("includes every optional target once the dashboard is fully populated", () => {
     const filtered = ids(filterAvailableManualSteps(overviewFullSteps(), present(ALL_TARGETS)));
-    for (const id of ["recent-sequence-card", "recent-sequences-pagination", "activity-row", "gmail-progress", "delivery-issues"]) {
+    for (const id of ["recent-sequence-card", "activity-row", "gmail-progress"]) {
       expect(filtered).toContain(id);
     }
   });
@@ -437,7 +427,7 @@ describe("Beginner guide content (#8)", () => {
       "workspace-health",
       "active-sequences",
       "lists-ready",
-      "templates-live",
+      "quick-actions",
       "gmail-send-window",
       "recent-sequences",
       "live-system",
@@ -481,14 +471,12 @@ describe("No backend work + no Overview behaviour change (#26, #27, #28)", () =>
   });
 
   it("leaves Overview data calculations untouched — only data-* targets added (#27)", () => {
-    // buildDeliveryMix/buildAnalyticsPulse moved into the pulse client
-    // component as computeDeliverySplit during the command-center redesign.
-    for (const fn of ["buildSequenceHealth", "buildActivityItems"]) {
+    for (const fn of ["buildActivityItems", "summarizeOverviewRun", "buildSequenceOutcomePresentation"]) {
       expect(CENTER_SOURCE).toContain(fn);
     }
     // The tour additions are inert data attributes, not logic.
     expect(CENTER_SOURCE).toContain('data-overview-tour="page-intro"');
-    expect(SUMMARY_SOURCE).toContain('data-overview-tour="active-sequences"');
+    expect(CENTER_SOURCE).toContain('data-overview-tour="active-sequences"');
     expect(ROW_SOURCE).toContain('tourTarget ? "recent-sequence-card" : undefined');
     expect(ACTIVITY_SOURCE).toContain('index === 0 ? "activity-row" : undefined');
   });

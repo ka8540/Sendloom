@@ -1,745 +1,485 @@
+/*
+ * Overview dashboard — minimal operational layout.
+ *
+ * Structure: compact page header, one four-part summary strip, then a wide
+ * main column (quick actions + recent sequences) beside a narrow right column
+ * (Gmail send window + recent activity). Radius hierarchy: page actions,
+ * search, and view-all are fully rounded pills; sequence rows are generously
+ * rounded cards; right-column cards and quick actions are moderately rounded;
+ * icon actions are circles.
+ */
+
 .page {
   display: grid;
-  gap: 1.25rem;
-}
-
-/* One command panel: identity + live stat tiles beside the action/analytics
-   stack. A single bordered block — inner sections split by hairlines, never
-   broken out into sibling cards. */
-.hero {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(21rem, 0.95fr);
   gap: 1.5rem;
-  padding: 1.5rem;
-  border-radius: 28px;
-  border: 1px solid var(--line);
-  background:
-    radial-gradient(120% 130% at 100% 0%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 46%),
-    linear-gradient(180deg, color-mix(in srgb, var(--surface) 92%, transparent), var(--surface));
-  box-shadow: var(--shadow);
-  overflow: hidden;
+  /* Tone palette derived from theme tokens; only the danger pair needs an
+     explicit dark override below (no theme token exists for red). */
+  --ov-accent: var(--accent);
+  --ov-accent-soft: var(--accent-soft);
+  --ov-info: var(--link);
+  --ov-info-soft: color-mix(in srgb, var(--link) 11%, transparent);
+  --ov-warn: var(--warning);
+  --ov-warn-soft: var(--warning-soft);
+  --ov-lists: var(--muted);
+  --ov-lists-soft: color-mix(in srgb, var(--muted) 14%, transparent);
+  --ov-danger: #c0353a;
+  --ov-danger-soft: rgba(229, 72, 77, 0.12);
 }
 
-.hero::after {
-  content: "";
-  position: absolute;
-  inset: auto -12% -58% 42%;
-  height: 18rem;
-  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 10%, transparent), transparent 65%);
-  pointer-events: none;
+:global(html[data-theme="dark"]) .page {
+  --ov-danger: #ff9d94;
+  --ov-danger-soft: rgba(255, 139, 115, 0.16);
 }
 
-.heroContent,
-.heroActions {
-  position: relative;
-  z-index: 1;
+@media (prefers-color-scheme: dark) {
+  :global(html:not([data-theme])) .page {
+    --ov-danger: #ff9d94;
+    --ov-danger-soft: rgba(255, 139, 115, 0.16);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Page header
+ * ------------------------------------------------------------------------ */
+
+.pageHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.pageHeading {
+  display: grid;
+  gap: 0.3rem;
   min-width: 0;
 }
 
-.heroContent {
-  display: grid;
-  gap: 0.85rem;
-  align-content: center;
-}
-
-.heroEyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  color: var(--accent-strong);
-  font-size: 0.68rem;
-  font-weight: 800;
-  line-height: 1;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-}
-
-.heroPulse {
-  width: 0.44rem;
-  height: 0.44rem;
-  border-radius: 999px;
-  background: var(--accent);
-  box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 34%, transparent);
-  animation: dashboard-pulse 1.8s ease-out infinite;
-}
-
-.heroTitle {
+.pageTitle {
   margin: 0;
-  font-size: clamp(2.75rem, 5vw, 4rem);
-  line-height: 0.98;
-  letter-spacing: -0.055em;
+  font-size: clamp(1.9rem, 3vw, 2.35rem);
+  font-weight: 700;
+  line-height: 1.08;
+  letter-spacing: -0.03em;
 }
 
-.heroCopy {
+.pageSubtitle {
   margin: 0;
   color: var(--muted);
   font-size: 0.95rem;
   line-height: 1.55;
 }
 
-/* Compact stat tiles under the title: label / figure / one-line meta. */
-.heroHighlights {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.6rem;
-  max-width: 31rem;
-  margin-top: 0.3rem;
-}
-
-.heroHighlight {
-  position: relative;
-  display: grid;
-  gap: 0.4rem;
-  align-content: start;
-  min-width: 0;
-  padding: 0.85rem 0.9rem;
-  border-radius: 16px;
-  border: 1px solid color-mix(in srgb, var(--line) 90%, transparent);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-muted) 80%, transparent), color-mix(in srgb, var(--surface-soft) 92%, transparent));
-  box-shadow: inset 0 1px 0 color-mix(in srgb, white 5%, transparent);
-  overflow: hidden;
-  transition: transform 160ms ease, border-color 180ms ease, box-shadow 180ms ease;
-}
-
-.heroHighlight::before {
-  content: "";
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 2px;
-  background: linear-gradient(180deg, var(--highlight-color, var(--accent)), color-mix(in srgb, var(--highlight-color, var(--accent)) 22%, transparent));
-}
-
-.heroHighlight:hover {
-  transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--highlight-color, var(--accent)) 26%, var(--line));
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, white 6%, transparent),
-    0 14px 28px rgba(0, 0, 0, 0.16);
-}
-
-.heroHighlightLabel {
-  color: var(--muted);
-  font-size: 0.64rem;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  line-height: 1.2;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.heroHighlightValue {
-  font-size: 1.6rem;
-  font-weight: 750;
-  line-height: 0.95;
-  letter-spacing: -0.045em;
-  font-variant-numeric: tabular-nums;
-}
-
-.heroHighlightMeta {
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 0.74rem;
-  font-weight: 600;
-  line-height: 1.25;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.heroHighlight[data-tone="warn"] {
-  --highlight-color: #d96952;
-}
-
-.heroHighlight[data-tone="warn"] .heroHighlightValue {
-  color: #d96952;
-}
-
-.heroHighlight[data-tone="ok"] .heroHighlightMeta {
-  color: color-mix(in srgb, var(--success) 72%, var(--muted));
-}
-
-.heroActions {
-  display: grid;
-  align-content: start;
-}
-
-/* The action card: next-move CTAs over the embedded analytics stack. A faint
-   grid fades in from the top-right corner for depth — content sits above it. */
-.heroActionCard {
-  position: relative;
-  display: grid;
-  gap: 0.95rem;
-  align-content: start;
-  padding: 1.2rem;
-  border-radius: 22px;
-  border: 1px solid color-mix(in srgb, var(--line) 94%, transparent);
-  background:
-    radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--accent) 6%, transparent), transparent 44%),
-    color-mix(in srgb, var(--surface-soft) 94%, transparent);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, white 6%, transparent);
-  backdrop-filter: blur(10px);
-  overflow: hidden;
-}
-
-.heroActionCard::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(color-mix(in srgb, var(--line) 55%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--line) 55%, transparent) 1px, transparent 1px);
-  background-size: 24px 24px;
-  opacity: 0.16;
-  mask-image: radial-gradient(130% 90% at 100% 0%, black 20%, transparent 74%);
-  pointer-events: none;
-}
-
-.heroActionCard > * {
-  position: relative;
-  z-index: 1;
-}
-
-.heroActionHead {
+.pageActions {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem 0.75rem;
-  min-width: 0;
-}
-
-.heroActionTitle {
-  font-size: 1.05rem;
-  font-weight: 750;
-  letter-spacing: -0.03em;
-}
-
-.heroActionCopy {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.92rem;
-  line-height: 1.55;
-}
-
-/* Tiny status chip beside the card title, e.g. "3 validated". */
-.heroActionChip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.28rem 0.62rem;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--success) 30%, var(--line));
-  background: color-mix(in srgb, var(--success) 10%, transparent);
-  color: var(--text);
-  font-size: 0.7rem;
-  font-weight: 750;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.heroActionChip::before {
-  content: "";
-  width: 0.38rem;
-  height: 0.38rem;
-  border-radius: 999px;
-  background: var(--success);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 14%, transparent);
-}
-
-/* The embedded analytics stack, split from the CTAs by a hairline. */
-.heroInsights {
-  display: grid;
-  gap: 0.95rem;
-  min-width: 0;
-  padding-top: 1rem;
-  border-top: 1px solid color-mix(in srgb, var(--line) 85%, transparent);
-}
-
-.heroButtons {
-  display: flex;
-  flex-wrap: wrap;
   gap: 0.75rem;
+  flex-wrap: wrap;
 }
 
-/* Premium command CTAs: layered gradient fill, a shine sweep on hover, and an
-   arrow that slides in — all transform/opacity only. */
-.heroCta {
-  position: relative;
+.primaryAction,
+.secondaryAction {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  min-height: 2.75rem;
-  padding: 0.68rem 1.15rem;
+  height: 2.9rem;
+  padding: 0 1.4rem;
   border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--accent) 52%, transparent);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, white 16%, transparent), transparent 58%),
-    linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 74%, #0b4a34));
-  color: var(--accent-contrast);
-  font-size: 0.95rem;
-  font-weight: 750;
-  letter-spacing: -0.01em;
+  font-size: 0.92rem;
+  font-weight: 650;
+  text-decoration: none;
   white-space: nowrap;
-  overflow: hidden;
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, white 26%, transparent),
-    0 14px 30px color-mix(in srgb, var(--accent) 24%, transparent);
-  transition: transform 160ms ease, box-shadow 180ms ease, border-color 180ms ease, filter 180ms ease;
+  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
 }
 
-.heroCta svg {
-  width: 1rem;
-  height: 1rem;
-  flex-shrink: 0;
-  transition: transform 200ms ease;
+.primaryAction svg,
+.secondaryAction svg {
+  width: 1.05rem;
+  height: 1.05rem;
 }
 
-.heroCta::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(115deg, transparent 32%, rgba(255, 255, 255, 0.22) 50%, transparent 64%);
-  transform: translateX(-130%);
-  transition: transform 620ms ease;
-  pointer-events: none;
+.primaryAction {
+  background: var(--accent);
+  border: 1px solid transparent;
+  color: var(--accent-contrast);
 }
 
-.heroCta:hover,
-.heroCta:focus-visible {
-  transform: translateY(-2px);
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, white 30%, transparent),
-    0 18px 38px color-mix(in srgb, var(--accent) 32%, transparent);
-  outline: none;
+.primaryAction:hover {
+  background: var(--accent-strong);
 }
 
-.heroCta:focus-visible {
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, white 30%, transparent),
-    0 0 0 3px color-mix(in srgb, var(--accent) 38%, transparent),
-    0 18px 38px color-mix(in srgb, var(--accent) 30%, transparent);
-}
-
-.heroCta:hover::after,
-.heroCta:focus-visible::after {
-  transform: translateX(130%);
-}
-
-.heroCta:hover svg:first-of-type,
-.heroCta:focus-visible svg:first-of-type {
-  transform: translateX(2px) scale(1.05);
-}
-
-.heroCta:active {
-  transform: translateY(0) scale(0.99);
-}
-
-.heroCta .heroCtaArrow {
-  width: 0;
-  opacity: 0;
-  transform: translateX(-6px);
-  transition: width 200ms ease, opacity 200ms ease, transform 200ms ease;
-}
-
-.heroCta:hover .heroCtaArrow,
-.heroCta:focus-visible .heroCtaArrow {
-  width: 1rem;
-  opacity: 1;
-  transform: translateX(0);
-}
-
-.heroCtaGhost {
-  border-color: var(--line);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-soft) 90%, transparent), color-mix(in srgb, var(--surface-muted) 94%, transparent));
+.secondaryAction {
+  background: var(--surface-strong);
+  border: 1px solid var(--line);
   color: var(--text);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, white 6%, transparent);
 }
 
-.heroCtaGhost::after {
-  background: linear-gradient(115deg, transparent 32%, rgba(255, 255, 255, 0.08) 50%, transparent 64%);
+.secondaryAction:hover {
+  background: var(--surface-hover);
 }
 
-.heroCtaGhost:hover,
-.heroCtaGhost:focus-visible {
-  border-color: color-mix(in srgb, var(--accent) 30%, var(--line));
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-soft) 74%, var(--accent-soft) 26%), color-mix(in srgb, var(--surface-muted) 92%, transparent));
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, white 8%, transparent),
-    0 16px 32px rgba(0, 0, 0, 0.18);
-}
+/* ---------------------------------------------------------------------------
+ * Summary strip
+ * ------------------------------------------------------------------------ */
 
-.heroCtaGhost:focus-visible {
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, white 8%, transparent),
-    0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);
-}
-
-/* ---- Blank-workspace card: "Start your outreach system" ------------------- */
-
-.heroEmptyCard {
-  gap: 1rem;
-  max-width: 38rem;
-}
-
-.heroEmptyBadge {
-  display: inline-flex;
-  width: fit-content;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.46rem 0.78rem;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
-  background: color-mix(in srgb, var(--accent-soft) 72%, transparent);
-  color: var(--accent-strong);
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
-.heroEmptyBadge svg {
-  width: 0.88rem;
-  height: 0.88rem;
-}
-
-.heroEmptySteps {
+.summaryStrip {
   display: grid;
-  gap: 0.5rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  overflow: hidden;
 }
 
-.heroEmptySteps li {
+.summaryCell {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  justify-content: space-between;
+  gap: 0.9rem;
+  padding: 1.3rem 1.4rem;
   min-width: 0;
-  padding: 0.62rem 0.75rem;
-  border-radius: 14px;
-  border: 1px solid var(--line);
-  background: color-mix(in srgb, var(--surface-muted) 78%, transparent);
-  color: var(--text);
-  font-size: 0.9rem;
-  font-weight: 600;
-  transition: border-color 180ms ease, background-color 180ms ease, transform 160ms ease;
+  color: inherit;
+  text-decoration: none;
+  transition: background 0.16s ease;
 }
 
-.heroEmptySteps li:hover {
-  transform: translateX(2px);
-  border-color: color-mix(in srgb, var(--accent) 20%, var(--line));
-  background: color-mix(in srgb, var(--surface-muted) 72%, var(--accent-soft) 28%);
+.summaryCell:hover {
+  background: var(--surface-hover);
 }
 
-.heroEmptySteps li[data-done="true"] {
-  border-color: color-mix(in srgb, var(--success) 26%, var(--line));
-  color: var(--muted);
+.summaryCell + .summaryCell {
+  border-left: 1px solid var(--line);
 }
 
-.heroEmptySteps li em {
-  margin-left: auto;
-  color: var(--success);
-  font-size: 0.7rem;
-  font-weight: 800;
-  font-style: normal;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.heroEmptyStepMark {
+.summaryBody {
   display: grid;
-  place-items: center;
-  width: 1.7rem;
-  height: 1.7rem;
+  gap: 0.32rem;
+  min-width: 0;
+}
+
+.summaryLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.summaryDot {
+  width: 0.44rem;
+  height: 0.44rem;
   border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
-  background: color-mix(in srgb, var(--accent-soft) 78%, transparent);
-  color: var(--accent-strong);
-  font-size: 0.78rem;
-  font-weight: 800;
   flex-shrink: 0;
 }
 
-.heroEmptySteps li[data-done="true"] .heroEmptyStepMark {
-  border-color: color-mix(in srgb, var(--success) 32%, var(--line));
-  background: color-mix(in srgb, var(--success) 14%, transparent);
-  color: var(--success);
+.summaryLabel[data-tone="accent"] .summaryDot {
+  background: var(--ov-accent);
 }
 
-.heroEmptyStepMark svg {
-  width: 0.85rem;
-  height: 0.85rem;
+.summaryLabel[data-tone="info"] .summaryDot {
+  background: var(--ov-info);
 }
 
-.sequenceArrow svg,
-.activityIcon svg,
-.activityEmpty svg {
-  width: 1rem;
-  height: 1rem;
+.summaryLabel[data-tone="warn"] .summaryDot {
+  background: var(--ov-warn);
 }
+
+.summaryLabel[data-tone="lists"] .summaryDot {
+  background: var(--ov-lists);
+}
+
+.summaryValue {
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  color: var(--text);
+}
+
+.summaryMeta {
+  color: var(--muted);
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.summaryIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.7rem;
+  height: 2.7rem;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.summaryIcon svg {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
+.summaryIcon[data-tone="accent"] {
+  background: var(--ov-accent-soft);
+  color: var(--ov-accent);
+}
+
+.summaryIcon[data-tone="info"] {
+  background: var(--ov-info-soft);
+  color: var(--ov-info);
+}
+
+.summaryIcon[data-tone="warn"] {
+  background: var(--ov-warn-soft);
+  color: var(--ov-warn);
+}
+
+.summaryIcon[data-tone="lists"] {
+  background: var(--ov-lists-soft);
+  color: var(--ov-lists);
+}
+
+/* ---------------------------------------------------------------------------
+ * Main two-column layout
+ * ------------------------------------------------------------------------ */
 
 .mainGrid {
   display: grid;
-  grid-template-columns: minmax(0, 1.36fr) minmax(20.75rem, 0.94fr);
-  gap: 1rem;
+  grid-template-columns: minmax(0, 2.15fr) minmax(20.5rem, 1fr);
+  gap: 1.5rem;
   align-items: start;
-}
-
-.sequenceSection,
-.activitySection {
-  display: grid;
-  gap: 1rem;
-  padding: 1.35rem;
-  border-radius: 30px;
-  border: 1px solid var(--line);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface) 94%, transparent), var(--surface-muted));
-  box-shadow: var(--shadow);
-  min-width: 0;
-  overflow: hidden;
-}
-
-.sequenceSection {
-  /* Establish a query container so the filter toolbar can size its columns to
-     the section's real width. The main column is narrow when the activity rail
-     sits beside it and much wider once the rail stacks below — a relationship
-     viewport media queries can't track, so the toolbar queries this container. */
-  container: filtersToolbar / inline-size;
-}
-
-.sectionTop {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: flex-start;
-  gap: 1rem;
-}
-
-.sectionTop > :first-child {
   min-width: 0;
 }
 
-.sectionKicker {
-  display: inline-flex;
-  width: fit-content;
-  align-items: center;
-  padding: 0.42rem 0.72rem;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--accent) 16%, transparent);
-  background: color-mix(in srgb, var(--accent-soft) 68%, transparent);
-  color: var(--accent-strong);
-  font-size: 0.78rem;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+.mainColumn {
+  display: grid;
+  gap: 1.6rem;
+  min-width: 0;
+}
+
+.sideColumn {
+  display: grid;
+  gap: 1.25rem;
+  min-width: 0;
+}
+
+.sectionIntro {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
 }
 
 .sectionTitle {
-  margin: 0.65rem 0 0;
-  font-size: clamp(1.8rem, 4vw, 2.5rem);
-  line-height: 0.98;
-  letter-spacing: -0.06em;
+  margin: 0;
+  font-size: 1.28rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
 .sectionCopy {
-  margin: 0.6rem 0 0;
-  max-width: 42rem;
+  margin: 0;
   color: var(--muted);
-  line-height: 1.65;
+  font-size: 0.88rem;
+  line-height: 1.5;
 }
 
-.sequenceSection .sectionKicker {
-  font-size: 0.72rem;
-  font-weight: 600;
-  line-height: 1;
-  letter-spacing: 0.08em;
+/* ---------------------------------------------------------------------------
+ * Quick actions
+ * ------------------------------------------------------------------------ */
+
+.quickSection {
+  display: grid;
+  gap: 0.9rem;
 }
 
-.sequenceSection .sectionTitle {
-  font-size: clamp(1.65rem, 3vw, 2.2rem);
-  font-weight: 600;
-  line-height: 1.08;
-  letter-spacing: -0.035em;
+.quickGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
 }
 
-.sequenceSection .sectionCopy {
-  font-size: 0.98rem;
-  font-weight: 400;
-  line-height: 1.6;
-  letter-spacing: 0;
-}
-
-.sectionTopMeta {
+.quickCard {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  gap: 0.85rem;
+  min-height: 4.9rem;
+  padding: 0.9rem 1.05rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  color: inherit;
+  text-decoration: none;
   min-width: 0;
+  transition: background 0.16s ease, border-color 0.16s ease;
 }
 
-.sectionLink {
+.quickCard:hover {
+  background: var(--surface-hover);
+  border-color: color-mix(in srgb, var(--text) 18%, transparent);
+}
+
+.quickIcon {
   display: inline-flex;
   align-items: center;
-  gap: 0.55rem;
-  min-height: 2.85rem;
-  padding: 0.68rem 0.85rem 0.68rem 0.95rem;
-  border-radius: 18px;
-  border: 1px solid var(--line);
-  background: color-mix(in srgb, var(--surface-muted) 84%, transparent);
-  color: var(--muted);
-  font-size: 0.9rem;
-  font-weight: 600;
-  white-space: nowrap;
-  max-width: 100%;
-  transition: color 160ms ease, transform 160ms ease, border-color 180ms ease, background-color 180ms ease;
-}
-
-.sectionLink:hover,
-.sectionLink:focus-visible {
-  color: var(--text);
-  transform: translateX(1px);
-  border-color: color-mix(in srgb, var(--accent) 18%, var(--line));
-  background: color-mix(in srgb, var(--surface-muted) 72%, var(--accent-soft) 28%);
-  outline: none;
-}
-
-.toolbar {
-  display: grid;
-  /* Column count snaps to the toolbar's real container width (see the
-     `container` declaration on .sequenceSection). Base is a single full-width
-     column; the @container rules below promote it to 2 then 4 columns only when
-     there is room for the selected labels to show in full. The search field
-     always spans the whole row via .toolbarFieldWide. */
-  grid-template-columns: minmax(0, 1fr);
-  gap: 0.8rem;
-  align-items: end;
-  padding: 1rem;
-  border-radius: 24px;
-  border: 1px solid var(--line);
-  background: color-mix(in srgb, var(--surface-muted) 86%, transparent);
-}
-
-/* Two-up once the section is wide enough that each dropdown keeps its full
-   label (e.g. "Send immediately", "Latest activity") without truncation. */
-@container filtersToolbar (min-width: 29rem) {
-  .toolbar {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-/* Four-up only on genuinely wide sections, so the four filters share one row
-   without cramping or clipping. Skips an awkward 3-column state entirely. */
-@container filtersToolbar (min-width: 56rem) {
-  .toolbar {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-}
-
-.toolbarField {
-  display: grid;
-  gap: 0.45rem;
-  min-width: 0;
-}
-
-.toolbarFieldWide {
-  grid-column: 1 / -1;
-}
-
-.toolbarLabel {
-  color: var(--muted);
-  font-size: 0.7rem;
-  font-weight: 600;
-  line-height: 1.2;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.toolbarSearch {
-  display: flex;
-  align-items: center;
-  gap: 0.7rem;
-  padding: 0 1rem;
-  border-radius: 20px;
-  border: 1px solid var(--field-border);
-  background: var(--field-bg);
-  min-width: 0;
-  transition: border-color 180ms ease, box-shadow 180ms ease, transform 160ms ease;
-}
-
-.toolbarSearch:focus-within {
-  border-color: var(--field-focus);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--field-focus) 18%, transparent);
-  transform: translateY(-1px);
-}
-
-.toolbarSearch svg {
-  width: 1.05rem;
-  height: 1.05rem;
-  color: var(--muted);
+  justify-content: center;
+  width: 2.55rem;
+  height: 2.55rem;
+  border-radius: 999px;
   flex-shrink: 0;
 }
 
-.toolbarSearch input,
-.toolbarField select {
-  width: 100%;
-  min-height: 3.25rem;
-  border: 0;
-  background: transparent;
-  color: var(--text);
-  font-size: 0.95rem;
-  font-weight: 500;
-  line-height: 1.4;
-  letter-spacing: 0;
-  outline: none;
+.quickIcon svg {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.quickIcon[data-tone="accent"] {
+  background: var(--ov-accent-soft);
+  color: var(--ov-accent);
+}
+
+.quickIcon[data-tone="info"] {
+  background: var(--ov-info-soft);
+  color: var(--ov-info);
+}
+
+.quickIcon[data-tone="warn"] {
+  background: var(--ov-warn-soft);
+  color: var(--ov-warn);
+}
+
+.quickText {
+  display: grid;
+  gap: 0.14rem;
   min-width: 0;
 }
 
-.toolbarSearch input::placeholder {
-  color: color-mix(in srgb, var(--muted) 84%, transparent);
-  font-weight: 400;
+.quickTitle {
+  font-size: 0.94rem;
+  font-weight: 650;
+  overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.toolbarSelect {
-  position: relative;
-  min-width: 0;
+.quickCopy {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
 }
 
-.toolbarSelect svg {
-  position: absolute;
-  right: 1rem;
-  top: 50%;
+.quickArrow {
   width: 1rem;
   height: 1rem;
+  margin-left: auto;
   color: var(--muted);
-  transform: translateY(-50%);
+  flex-shrink: 0;
+  transition: color 0.16s ease;
+}
+
+.quickCard:hover .quickArrow {
+  color: var(--text);
+}
+
+/* ---------------------------------------------------------------------------
+ * Recent sequences
+ * ------------------------------------------------------------------------ */
+
+.sequenceSection {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.sequenceHead {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.sequenceTools {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.sequenceSearch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.sequenceSearch svg {
+  position: absolute;
+  left: 0.95rem;
+  width: 0.95rem;
+  height: 0.95rem;
+  color: var(--muted);
   pointer-events: none;
 }
 
-.toolbarField select {
-  appearance: none;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  padding: 0 3rem 0 1rem;
-  border-radius: 20px;
+.sequenceSearch input {
+  height: 2.75rem;
+  width: clamp(12rem, 22vw, 16.5rem);
+  padding: 0 1.1rem 0 2.55rem;
+  border-radius: 999px;
   border: 1px solid var(--field-border);
   background: var(--field-bg);
-  text-overflow: ellipsis;
-  cursor: pointer;
-  transition: border-color 180ms ease, box-shadow 180ms ease, transform 160ms ease;
+  color: var(--text);
+  font-size: 0.88rem;
+  font-family: inherit;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
 }
 
-.toolbarField select:hover {
-  transform: translateY(-1px);
+.sequenceSearch input::placeholder {
+  color: var(--muted);
 }
 
-.toolbarField select:focus {
+.sequenceSearch input:focus {
+  outline: none;
   border-color: var(--field-focus);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--field-focus) 18%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.viewAllButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  height: 2.75rem;
+  padding: 0 1.2rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface-strong);
+  color: var(--text);
+  font-size: 0.87rem;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.16s ease, border-color 0.16s ease;
+}
+
+.viewAllButton:hover {
+  background: var(--surface-hover);
+}
+
+.viewAllButton svg {
+  width: 0.92rem;
+  height: 0.92rem;
 }
 
 .sequenceList {
@@ -749,715 +489,243 @@
 
 .sequenceRow {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(19rem, 21rem);
-  gap: 1.35rem;
-  align-items: stretch;
-  padding: 1.1rem 1.15rem;
-  border-radius: 26px;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.2rem;
+  background: var(--surface);
   border: 1px solid var(--line);
-  background: color-mix(in srgb, var(--surface-muted) 84%, transparent);
+  border-radius: 24px;
   cursor: pointer;
-  transition: transform 160ms ease, border-color 180ms ease, background-color 180ms ease, box-shadow 180ms ease;
-}
-
-.sequenceRow:hover,
-.sequenceRow:focus-visible {
-  transform: translateY(-2px);
-  border-color: color-mix(in srgb, var(--accent) 20%, var(--line));
-  background: color-mix(in srgb, var(--surface-muted) 72%, var(--accent-soft) 28%);
-  box-shadow: 0 24px 40px rgba(28, 42, 70, 0.16);
-  outline: none;
-}
-
-.sequenceIdentity {
-  display: grid;
-  gap: 0.85rem;
   min-width: 0;
+  transition: background 0.16s ease, border-color 0.16s ease;
 }
 
-.sequenceMain {
+.sequenceRow:hover {
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--line));
+}
+
+.sequenceGlyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 999px;
+  background: var(--ov-accent-soft);
+  color: var(--ov-accent);
+  flex-shrink: 0;
+}
+
+.sequenceGlyph svg {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.sequenceInfo {
   display: grid;
-  gap: 1rem;
+  gap: 0.42rem;
   min-width: 0;
-}
-
-.sequenceTitleBlock {
-  display: grid;
-  gap: 0.45rem;
-}
-
-.sequenceTitleRow {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
 }
 
 .sequenceName {
   margin: 0;
-  font-size: 1.1rem;
-  font-weight: 600;
-  line-height: 1.22;
-  letter-spacing: -0.025em;
+  font-size: 0.98rem;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sequenceMeta {
   display: flex;
   align-items: center;
   gap: 0.4rem;
+  flex-wrap: wrap;
   min-width: 0;
-  overflow: hidden;
 }
 
 .sequenceMetaChip {
-  min-width: 0;
-  max-width: 13rem;
-  flex: 0 1 auto;
-  padding: 0.16rem 0.5rem;
-  border-radius: 8px;
-  font-size: 0.76rem;
-  font-weight: 500;
-  line-height: 1.45;
+  display: inline-block;
+  max-width: 10.5rem;
+  padding: 0.2rem 0.62rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface-muted);
   color: var(--muted);
-  background: color-mix(in srgb, var(--surface-soft) 70%, transparent);
-  border: 1px solid color-mix(in srgb, var(--line) 65%, transparent);
-  white-space: nowrap;
+  font-size: 0.72rem;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.sequenceMetaChipPrimary {
-  color: var(--text);
-  font-weight: 600;
-  background: color-mix(in srgb, var(--accent-soft) 55%, var(--surface-soft) 45%);
-  border-color: color-mix(in srgb, var(--accent) 16%, var(--line));
-}
-
-.sequenceLimitNote {
-  margin: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.34rem 0.62rem;
-  border-radius: 999px;
-  font-size: 0.78rem;
-  font-weight: 600;
-  line-height: 1;
-  background: color-mix(in srgb, var(--warning-soft) 70%, var(--surface-soft) 30%);
-  color: color-mix(in srgb, var(--warning) 78%, var(--text) 22%);
-  border: 1px solid color-mix(in srgb, var(--warning) 22%, transparent);
-  width: fit-content;
-  max-width: 100%;
   white-space: nowrap;
-}
-
-.sequenceLimitNote svg {
-  width: 0.82rem;
-  height: 0.82rem;
-  stroke-width: 2;
-}
-
-.sequenceLimitText,
-.sequenceLimitResume {
-  min-width: 0;
-}
-
-.sequenceLimitResume {
-  color: var(--muted);
-  font-weight: 500;
-}
-
-.sequenceLimitResume::before {
-  content: "·";
-  margin-right: 0.4rem;
-  color: color-mix(in srgb, var(--warning) 58%, var(--muted) 42%);
 }
 
 .sequenceStatus {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  padding: 0.52rem 0.78rem;
+  padding: 0.32rem 0.72rem;
   border-radius: 999px;
-  border: 1px solid transparent;
-  font-size: 0.7rem;
-  font-weight: 600;
-  line-height: 1;
-  letter-spacing: 0.055em;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   white-space: nowrap;
 }
 
-.sequenceStatusRunning {
-  background: color-mix(in srgb, var(--accent-soft) 86%, transparent);
+.sequenceStatus[data-tone="running"],
+.sequenceStatus[data-tone="completed"] {
+  background: var(--ov-accent-soft);
   color: var(--accent-strong);
-  border-color: color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
-.sequenceStatusWaiting {
-  background: color-mix(in srgb, var(--accent-soft) 72%, transparent);
-  color: var(--accent);
-  border-color: color-mix(in srgb, var(--accent) 24%, transparent);
+.sequenceStatus[data-tone="waiting"],
+.sequenceStatus[data-tone="scheduled"] {
+  background: var(--ov-info-soft);
+  color: var(--ov-info);
 }
 
-.sequenceStatusCompleted {
-  background: color-mix(in srgb, var(--success) 14%, transparent);
-  color: var(--success);
-  border-color: color-mix(in srgb, var(--success) 16%, transparent);
+.sequenceStatus[data-tone="paused"] {
+  background: var(--ov-warn-soft);
+  color: var(--ov-warn);
 }
 
-.sequenceStatusFailed {
-  background: color-mix(in srgb, #d96952 14%, transparent);
-  color: #f2b2a8;
-  border-color: color-mix(in srgb, #d96952 18%, transparent);
+.sequenceStatus[data-tone="failed"] {
+  background: var(--ov-danger-soft);
+  color: var(--ov-danger);
 }
 
-.sequenceStatusScheduled,
-.sequenceStatusPaused {
-  background: color-mix(in srgb, var(--warning-soft) 92%, transparent);
-  color: var(--warning);
-  border-color: color-mix(in srgb, var(--warning) 18%, transparent);
-}
-
-.sequenceStatusDraft {
-  background: color-mix(in srgb, var(--button-secondary-bg) 92%, transparent);
-  color: var(--muted);
-  border-color: var(--line);
-}
-
-.sequenceProgressGroup {
-  display: grid;
-  gap: 0.55rem;
-}
-
-.sequenceMetrics {
-  margin: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.3rem 1.3rem;
-}
-
-.sequenceMetric {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 0.34rem;
-  min-width: 0;
-}
-
-.sequenceMetricLabel {
-  margin: 0;
-  font-size: 0.68rem;
-  font-weight: 600;
-  line-height: 1.2;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+.sequenceStatus[data-tone="draft"] {
+  background: var(--ov-lists-soft);
   color: var(--muted);
 }
 
-.sequenceMetricValue {
-  margin: 0;
-  font-size: 0.95rem;
-  font-weight: 650;
-  line-height: 1.2;
-  letter-spacing: -0.01em;
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
-}
-
-.sequenceMetricIssues .sequenceMetricValue {
-  color: var(--warning);
-}
-
-.sequenceHealth {
-  margin: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  font-size: 0.82rem;
-  font-weight: 500;
-  line-height: 1.3;
+.sequenceTime {
   color: var(--muted);
+  font-size: 0.8rem;
+  white-space: nowrap;
 }
 
-.sequenceHealthDot {
-  width: 0.44rem;
-  height: 0.44rem;
-  border-radius: 999px;
-  background: currentColor;
-  flex-shrink: 0;
-}
-
-.sequenceHealthClean {
-  color: color-mix(in srgb, var(--success) 78%, var(--muted) 22%);
-}
-
-.sequenceHealthIssues {
-  color: var(--warning);
-}
-
-.sequenceHealthSkipped {
-  color: var(--muted);
-}
-
-.sequenceHealthSyncing {
-  color: color-mix(in srgb, var(--accent) 70%, var(--muted) 30%);
-}
-
-.sequenceHealthIdle {
-  color: var(--muted);
-}
-
-.sequenceHealthSyncing .sequenceHealthDot {
-  animation: sequenceHealthPulse 1.4s ease-in-out infinite;
-}
-
-@keyframes sequenceHealthPulse {
-  0%,
-  100% {
-    opacity: 0.35;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-
-.sequenceProgressTrack {
-  position: relative;
-  height: 0.5rem;
-  border-radius: 999px;
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--button-secondary-bg) 96%, transparent),
-    color-mix(in srgb, var(--button-secondary-bg) 74%, transparent)
-  );
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 52%, transparent);
-  overflow: hidden;
-}
-
-.sequenceProgressFill {
-  position: absolute;
-  inset: 0 auto 0 0;
-  border-radius: inherit;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, white 24%, transparent), transparent 58%),
-    linear-gradient(90deg, var(--accent) 0%, color-mix(in srgb, var(--accent) 55%, white) 100%);
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, white 30%, transparent),
-    inset 0 -1px 1px color-mix(in srgb, black 14%, transparent);
-  transition: width 600ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-/* Indeterminate loading while a run's first metrics are still syncing:
-   hide the determinate fill and sweep a subtle accent shimmer across the track. */
-.sequenceProgressTrackSyncing .sequenceProgressFill {
-  display: none;
-}
-
-.sequenceProgressTrackSyncing::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    color-mix(in srgb, var(--accent) 32%, transparent) 50%,
-    transparent 100%
-  );
-  transform: translateX(-100%);
-  animation: sequenceProgressIndeterminate 1.6s ease-in-out infinite;
-}
-
-@keyframes sequenceProgressIndeterminate {
-  0% {
-    transform: translateX(-100%);
-  }
-  100% {
-    transform: translateX(100%);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .sequenceProgressFill {
-    transition: none;
-  }
-
-  .sequenceProgressTrackSyncing::after {
-    transform: none;
-    animation: none;
-    background: color-mix(in srgb, var(--accent) 16%, transparent);
-  }
-
-  .heroPulse,
-  .liveDot {
-    animation: none;
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
-  }
-
-  .heroCta,
-  .heroCta svg,
-  .heroCta::after,
-  .heroCta .heroCtaArrow,
-  .heroHighlight,
-  .heroEmptySteps li {
-    transition: none;
-  }
-
-  .heroCta:hover,
-  .heroCta:focus-visible,
-  .heroCta:hover svg:first-of-type,
-  .heroCta:focus-visible svg:first-of-type,
-  .heroHighlight:hover,
-  .heroEmptySteps li:hover {
-    transform: none;
-  }
-
-  .heroCta:hover::after,
-  .heroCta:focus-visible::after {
-    transform: translateX(-130%);
-  }
-
-  .heroCta .heroCtaArrow {
-    width: 1rem;
-    opacity: 1;
-    transform: none;
-  }
-}
-
-.sequenceSidebar {
-  display: grid;
-  gap: 1rem;
-  min-width: 0;
-  align-content: space-between;
-}
-
-.sequenceSidebarTop {
-  display: grid;
-  gap: 0.95rem;
-  justify-items: start;
-}
-
-.sequenceActivity {
-  display: grid;
-  gap: 0.2rem;
-  justify-items: start;
-  min-width: 0;
-}
-
-.sequenceActivity span {
-  color: var(--muted);
-  font-size: 0.7rem;
-  font-weight: 600;
-  line-height: 1.2;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.sequenceActivity strong {
-  font-size: 1rem;
-  font-weight: 600;
-  line-height: 1.25;
-  letter-spacing: -0.025em;
-}
-
-.sequenceActivity small {
-  color: var(--muted);
-  font-size: 0.82rem;
-  font-weight: 400;
-  line-height: 1.35;
-}
-
-.sequenceInteractiveRail {
+.sequenceActions {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 0.7rem;
-  min-width: 0;
-  width: 100%;
-  align-self: end;
-  justify-self: end;
+  gap: 0.5rem;
 }
 
 .sequenceActionGroup {
   display: flex;
-  flex-wrap: nowrap;
   align-items: center;
-  justify-content: flex-end;
-  flex: 0 0 14rem;
-  width: 14rem;
-  gap: 0.55rem;
-  min-width: 0;
-  opacity: 0;
-  transform: translateY(4px);
-  transition: opacity 180ms ease, transform 180ms ease;
+  gap: 0.5rem;
 }
 
-.sequenceRow:hover .sequenceActionGroup,
-.sequenceRow:focus-visible .sequenceActionGroup {
-  opacity: 1;
-  transform: translateY(0);
-}
-
-.sequenceActionButton {
-  --sequence-action-expanded-width: 8.1rem;
-  --sequence-action-label-width: 4.5rem;
+.actionButton {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0;
-  min-height: 2.75rem;
-  min-width: 2.75rem;
-  width: 2.75rem;
-  flex: 0 0 auto;
-  padding: 0.62rem;
-  border-radius: 999px;
-  border: 1px solid var(--field-border);
-  background: var(--field-bg);
-  color: var(--text);
-  font-size: 0.88rem;
-  font-weight: 600;
-  line-height: 1;
-  overflow: hidden;
-  white-space: nowrap;
-  transition:
-    width 180ms ease,
-    padding 180ms ease,
-    gap 180ms ease,
-    transform 160ms ease,
-    border-color 180ms ease,
-    background-color 180ms ease,
-    box-shadow 180ms ease;
-}
-
-.sequenceActionButton svg {
-  display: block;
-  width: 0.92rem;
-  height: 0.92rem;
-}
-
-.sequenceActionIconWrap {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1rem;
-  height: 1rem;
-  flex-shrink: 0;
-  line-height: 0;
-}
-
-.sequenceActionLabel {
-  max-width: 0;
-  overflow: hidden;
-  opacity: 0;
-  transform: translateX(-0.25rem);
-  transition: max-width 180ms ease, opacity 180ms ease, transform 180ms ease;
-}
-
-.sequenceActionButtonView {
-  --sequence-action-expanded-width: 6.2rem;
-  --sequence-action-label-width: 2.7rem;
-}
-
-.sequenceActionButtonPause {
-  --sequence-action-expanded-width: 6.35rem;
-  --sequence-action-label-width: 2.9rem;
-}
-
-.sequenceActionButtonWaiting {
-  --sequence-action-expanded-width: 5.55rem;
-  --sequence-action-label-width: 2.1rem;
-}
-
-.sequenceActionButtonResume {
-  --sequence-action-expanded-width: 7.0rem;
-  --sequence-action-label-width: 3.55rem;
-}
-
-.sequenceActionButtonLaunch {
-  --sequence-action-expanded-width: 8.45rem;
-  --sequence-action-label-width: 4.9rem;
-}
-
-.sequenceActionButtonDelete {
-  --sequence-action-expanded-width: 6.95rem;
-  --sequence-action-label-width: 3.4rem;
-}
-
-.sequenceActionButton:hover,
-.sequenceActionButton:focus-visible {
-  z-index: 2;
-  width: var(--sequence-action-expanded-width);
-  gap: 0.4rem;
-  padding-inline: 0.88rem 1rem;
-  justify-content: flex-start;
-}
-
-.sequenceActionButton:hover:not(:disabled),
-.sequenceActionButton:focus-visible {
-  transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--accent) 18%, var(--field-border));
-  background: color-mix(in srgb, var(--field-bg) 74%, var(--accent-soft) 26%);
-  box-shadow: 0 12px 24px rgba(28, 42, 70, 0.14);
-  outline: none;
-}
-
-.sequenceActionButton:hover .sequenceActionLabel,
-.sequenceActionButton:focus-visible .sequenceActionLabel {
-  max-width: var(--sequence-action-label-width);
-  opacity: 1;
-  transform: translateX(0);
-}
-
-.sequenceActionButton:active:not(:disabled) {
-  transform: translateY(1px) scale(0.985);
-}
-
-.sequenceActionButton:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.sequenceActionView {
-  background: color-mix(in srgb, var(--accent-soft) 68%, transparent);
-  color: var(--accent-strong);
-  border-color: color-mix(in srgb, var(--accent) 18%, transparent);
-}
-
-.sequenceActionDanger {
-  color: #f0a29a;
-  border-color: color-mix(in srgb, #d96952 20%, var(--field-border));
-}
-
-.sequenceActionDanger:hover:not(:disabled),
-.sequenceActionDanger:focus-visible {
-  background: color-mix(in srgb, #d96952 12%, transparent);
-  border-color: color-mix(in srgb, #d96952 28%, var(--field-border));
-}
-
-.sequenceActionError {
-  width: 100%;
-  color: #f0a29a;
-  font-size: 0.85rem;
-}
-
-.sequencePagination {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 1rem;
-  padding-top: 0.2rem;
-}
-
-.sequencePaginationPage {
-  color: var(--muted);
-  font-size: 0.88rem;
-  font-weight: 500;
-}
-
-.sequencePaginationControls {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.sequencePaginationButton {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2.75rem;
-  height: 2.75rem;
-  padding: 0;
+  width: 2.5rem;
+  height: 2.5rem;
   border-radius: 999px;
   border: 1px solid var(--line);
-  background: color-mix(in srgb, var(--surface-soft) 92%, transparent);
-  color: var(--text);
-  transition: transform 160ms ease, border-color 180ms ease, background-color 180ms ease, box-shadow 180ms ease;
+  background: var(--surface-strong);
+  color: var(--muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
 }
 
-.sequencePaginationButton svg {
+.actionButton svg {
   width: 0.95rem;
   height: 0.95rem;
 }
 
-.sequencePaginationButton:hover:not(:disabled),
-.sequencePaginationButton:focus-visible {
-  transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--accent) 18%, var(--line));
-  background: color-mix(in srgb, var(--surface-soft) 72%, var(--accent-soft) 28%);
-  box-shadow: 0 12px 24px rgba(28, 42, 70, 0.14);
-  outline: none;
+.actionButton:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--text) 22%, transparent);
 }
 
-.sequencePaginationButton:active:not(:disabled) {
-  transform: translateY(1px) scale(0.985);
-}
-
-.sequencePaginationButton:disabled {
-  opacity: 0.42;
+.actionButton:disabled {
+  opacity: 0.45;
   cursor: not-allowed;
+}
+
+.actionButtonDanger {
+  color: var(--ov-danger);
+  border-color: color-mix(in srgb, var(--ov-danger) 28%, var(--line));
+}
+
+.actionButtonDanger:hover:not(:disabled) {
+  background: var(--ov-danger-soft);
+  color: var(--ov-danger);
+  border-color: color-mix(in srgb, var(--ov-danger) 45%, var(--line));
 }
 
 .sequenceArrow {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2.4rem;
-  height: 2.4rem;
+  width: 2.5rem;
+  height: 2.5rem;
   border-radius: 999px;
   border: 1px solid var(--line);
-  background: color-mix(in srgb, var(--surface-soft) 92%, transparent);
+  background: var(--surface-strong);
   color: var(--muted);
-  transition: transform 180ms ease, border-color 180ms ease, color 180ms ease, background-color 180ms ease;
   flex-shrink: 0;
+  transition: color 0.16s ease, border-color 0.16s ease;
 }
 
-.sequenceRow:hover .sequenceArrow,
-.sequenceRow:focus-visible .sequenceArrow {
-  transform: translate(3px, -3px);
-  color: var(--text);
-  border-color: color-mix(in srgb, var(--accent) 18%, var(--line));
-  background: color-mix(in srgb, var(--surface-soft) 72%, var(--accent-soft) 28%);
+.sequenceArrow svg {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+.sequenceRow:hover .sequenceArrow {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+}
+
+.spin {
+  animation: overview-action-spin 0.9s linear infinite;
+}
+
+@keyframes overview-action-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .sequenceEmpty {
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 1rem;
-  min-height: 17rem;
-  padding: 2rem;
-  border-radius: 26px;
+  flex-wrap: wrap;
+  padding: 1.5rem 1.4rem;
+  background: var(--surface);
   border: 1px dashed var(--line);
-  background: color-mix(in srgb, var(--surface-muted) 76%, transparent);
-  text-align: center;
+  border-radius: 24px;
 }
 
 .sequenceEmpty strong {
-  font-size: 1.2rem;
-  letter-spacing: -0.04em;
+  display: block;
+  font-size: 0.95rem;
 }
 
 .sequenceEmpty p {
-  margin: 0;
-  max-width: 30rem;
+  margin: 0.2rem 0 0;
   color: var(--muted);
-  line-height: 1.65;
+  font-size: 0.85rem;
 }
 
 .sequenceEmptyCompact {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  min-height: 6rem;
-  padding: 1.5rem;
-  border-radius: 18px;
+  gap: 0.6rem;
+  padding: 1.1rem 1.3rem;
+  background: var(--surface);
   border: 1px dashed var(--line);
-  background: color-mix(in srgb, var(--surface-muted) 76%, transparent);
+  border-radius: 24px;
   color: var(--muted);
-  font-size: 0.95rem;
-  font-weight: 500;
-  text-align: center;
+  font-size: 0.88rem;
 }
 
 .sequenceEmptyCompact svg {
@@ -1465,433 +733,499 @@
   height: 1rem;
 }
 
-.activitySection {
-  align-content: start;
+/* ---------------------------------------------------------------------------
+ * Right column cards
+ * ------------------------------------------------------------------------ */
+
+.sideTitle {
+  margin: 0;
+  font-size: 1.02rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.sendCard {
+  display: grid;
+  gap: 0.45rem;
+  padding: 1.35rem 1.4rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  color: inherit;
+  text-decoration: none;
   min-width: 0;
+  transition: border-color 0.16s ease;
 }
 
-.activitySection .sectionKicker {
-  font-size: 0.72rem;
-  font-weight: 650;
-  line-height: 1;
-  letter-spacing: 0.08em;
+.sendCard:hover {
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--line));
 }
 
-.activitySection .sectionTitle {
-  font-size: clamp(1.45rem, 2.4vw, 1.9rem);
-  font-weight: 650;
-  line-height: 1.08;
-  letter-spacing: -0.035em;
+.sendHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
 }
 
-.activitySection .sectionCopy {
-  font-size: 0.94rem;
-  line-height: 1.58;
-}
-
-.liveBadge {
+.sendStatus {
   display: inline-flex;
   align-items: center;
-  gap: 0.55rem;
-  padding: 0.6rem 0.8rem;
+  padding: 0.3rem 0.7rem;
   border-radius: 999px;
-  border: 1px solid var(--line);
-  background: color-mix(in srgb, var(--surface-muted) 92%, transparent);
-  color: var(--muted);
+  font-size: 0.7rem;
   font-weight: 700;
   white-space: nowrap;
 }
 
-.liveDot {
-  width: 0.55rem;
-  height: 0.55rem;
+.sendStatus[data-tone="ok"] {
+  background: var(--ov-accent-soft);
+  color: var(--accent-strong);
+}
+
+.sendStatus[data-tone="near"] {
+  background: var(--ov-warn-soft);
+  color: var(--ov-warn);
+}
+
+.sendStatus[data-tone="blocked"] {
+  background: var(--ov-danger-soft);
+  color: var(--ov-danger);
+}
+
+.sendStatus[data-tone="paused"] {
+  background: var(--ov-lists-soft);
+  color: var(--muted);
+}
+
+.sendValue {
+  margin: 0.35rem 0 0;
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+
+.sendValueOf {
+  color: var(--muted);
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.sendUnit {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.sendVisual {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.sendMeter {
+  height: 0.5rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 9%, transparent);
+  overflow: hidden;
+}
+
+.sendMeterFill {
+  display: block;
+  height: 100%;
   border-radius: 999px;
   background: var(--accent);
-  box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 32%, transparent);
-  animation: dashboard-pulse 1.8s ease-out infinite;
+  transition: width 0.4s ease;
+}
+
+.sendMeter[data-tone="near"] .sendMeterFill {
+  background: var(--ov-warn);
+}
+
+.sendMeter[data-tone="blocked"] .sendMeterFill {
+  background: var(--ov-danger);
+}
+
+.sendRemaining {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.sendRemaining strong {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.sendReset {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.sendSender {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.65rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+  min-width: 0;
+}
+
+.sendSenderIcon {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.sendSenderIcon svg {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.sendSenderName {
+  font-size: 0.88rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.sendSenderBadge {
+  padding: 0.16rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface-muted);
+  color: var(--muted);
+  font-size: 0.7rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.sendSenderArrow {
+  width: 1rem;
+  height: 1rem;
+  margin-left: auto;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+/* ---------------------------------------------------------------------------
+ * Recent activity
+ * ------------------------------------------------------------------------ */
+
+.activitySection {
+  display: grid;
+  gap: 0.4rem;
+  padding: 1.35rem 1.4rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  min-width: 0;
+}
+
+.activityHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
 }
 
 .activityList {
-  display: grid;
-  gap: 0;
+  list-style: none;
   margin: 0;
   padding: 0;
-  list-style: none;
-  border: 1px solid var(--line);
-  border-radius: 22px;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-muted) 88%, transparent), color-mix(in srgb, var(--surface) 94%, transparent));
-  overflow: hidden;
-  min-width: 0;
+  display: grid;
 }
 
-.activityTimelineEntry {
-  position: relative;
-  min-width: 0;
-}
-
-.activityTimelineEntry + .activityTimelineEntry {
-  border-top: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+.activityEntry + .activityEntry {
+  border-top: 1px solid var(--line);
 }
 
 .activityItem {
-  position: relative;
   display: grid;
-  grid-template-columns: 2.4rem minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: start;
-  gap: 0.8rem;
-  padding: 0.9rem 0.95rem;
-  min-width: 0;
-  background: color-mix(in srgb, var(--surface-muted) 72%, transparent);
-  transition: background-color 180ms ease, box-shadow 180ms ease;
+  gap: 0.75rem;
+  padding: 0.85rem 0;
+  color: inherit;
+  text-decoration: none;
+  border-radius: 12px;
 }
 
-.activityItem:hover,
-.activityItem:focus-visible {
-  background: color-mix(in srgb, var(--surface-soft) 76%, var(--accent-soft) 24%);
-  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--accent) 70%, transparent);
-  outline: none;
-}
-
-.activityItem:focus-visible {
-  box-shadow:
-    inset 3px 0 0 color-mix(in srgb, var(--accent) 70%, transparent),
-    0 0 0 2px color-mix(in srgb, var(--accent) 28%, transparent);
-}
-
-.activityTimelineMark {
-  position: relative;
-  display: flex;
-  justify-content: center;
-  min-height: 100%;
-  padding-top: 0.05rem;
-}
-
-.activityTimelineMark::after {
-  content: "";
-  position: absolute;
-  top: 2.1rem;
-  bottom: -1rem;
-  left: 50%;
-  width: 1px;
-  transform: translateX(-50%);
-  background: color-mix(in srgb, var(--line) 78%, transparent);
-}
-
-.activityTimelineEntry:last-child .activityTimelineMark::after {
-  display: none;
-}
-
-.activityIcon {
-  position: relative;
-  z-index: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.9rem;
-  height: 1.9rem;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, currentColor 20%, var(--line));
-  background: color-mix(in srgb, var(--surface) 92%, transparent);
-  box-shadow:
-    0 0 0 4px color-mix(in srgb, var(--surface-muted) 86%, transparent),
-    inset 0 1px 0 color-mix(in srgb, white 8%, transparent);
-}
-
-.activityIcon svg {
-  width: 0.92rem;
-  height: 0.92rem;
-  stroke-width: 2.2;
-}
-
-.activityIconAccent {
-  background: color-mix(in srgb, var(--accent-soft) 88%, transparent);
+.activityItem:hover .activityTitle {
   color: var(--accent);
 }
 
-.activityIconSuccess {
-  background: color-mix(in srgb, var(--success) 14%, transparent);
-  color: var(--success);
+.activityIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 999px;
+  flex-shrink: 0;
 }
 
-.activityIconWarning {
-  background: color-mix(in srgb, var(--warning-soft) 92%, transparent);
-  color: var(--warning);
+.activityIcon svg {
+  width: 0.95rem;
+  height: 0.95rem;
 }
 
-.activityIconMuted {
-  background: color-mix(in srgb, var(--button-secondary-bg) 92%, transparent);
+.activityIcon[data-tone="accent"] {
+  background: var(--ov-accent-soft);
+  color: var(--ov-accent);
+}
+
+.activityIcon[data-tone="success"] {
+  background: var(--ov-accent-soft);
+  color: var(--accent-strong);
+}
+
+.activityIcon[data-tone="warning"] {
+  background: var(--ov-warn-soft);
+  color: var(--ov-warn);
+}
+
+.activityIcon[data-tone="muted"] {
+  background: var(--ov-lists-soft);
   color: var(--muted);
 }
 
 .activityContent {
   display: grid;
-  gap: 0.28rem;
-  min-width: 0;
-  padding-top: 0.02rem;
-}
-
-.activityHeading {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: baseline;
-  gap: 0.65rem;
+  gap: 0.14rem;
   min-width: 0;
 }
 
 .activityTitle {
-  display: block;
-  min-width: 0;
+  font-size: 0.87rem;
+  font-weight: 650;
   overflow: hidden;
-  color: var(--text);
-  font-size: 0.95rem;
-  font-weight: 680;
-  line-height: 1.32;
-  letter-spacing: -0.015em;
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition: color 0.16s ease;
 }
 
-.activityTime,
-.activityTimeDetail {
+.activityCopy {
   color: var(--muted);
+  font-size: 0.79rem;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
 }
 
 .activityTime {
-  font-size: 0.78rem;
-  font-weight: 650;
-  line-height: 1.3;
-  white-space: nowrap;
-}
-
-.activityLog {
-  display: -webkit-box;
-  overflow: hidden;
   color: var(--muted);
-  font-size: 0.84rem;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.activityLogPrefix {
-  color: color-mix(in srgb, var(--text) 72%, var(--muted));
-  font-weight: 650;
-}
-
-.activityTimeDetail {
-  overflow: hidden;
-  font-size: 0.75rem;
-  line-height: 1.3;
-  text-overflow: ellipsis;
+  font-size: 0.74rem;
   white-space: nowrap;
+  padding-top: 0.2rem;
 }
 
 .activityEmpty {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: start;
+  display: flex;
+  align-items: center;
   gap: 0.8rem;
-  padding: 1rem;
-  border-radius: 20px;
-  border: 1px dashed var(--line);
-  background: color-mix(in srgb, var(--surface-muted) 76%, transparent);
+  padding: 0.9rem 0 0.4rem;
 }
 
 .activityEmptyIcon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.9rem;
-  height: 1.9rem;
+  width: 2.4rem;
+  height: 2.4rem;
   border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--muted) 18%, var(--line));
+  background: var(--ov-lists-soft);
   color: var(--muted);
-  background: color-mix(in srgb, var(--surface) 92%, transparent);
   flex-shrink: 0;
+}
+
+.activityEmptyIcon svg {
+  width: 1rem;
+  height: 1rem;
 }
 
 .activityEmpty strong {
   display: block;
-  margin-bottom: 0.3rem;
-  font-size: 0.96rem;
-  letter-spacing: -0.01em;
+  font-size: 0.88rem;
 }
 
 .activityEmpty p {
-  margin: 0;
+  margin: 0.15rem 0 0;
   color: var(--muted);
-  font-size: 0.86rem;
-  line-height: 1.55;
+  font-size: 0.8rem;
 }
 
-.spin {
-  animation: dashboard-spin 0.8s linear infinite;
+/* ---------------------------------------------------------------------------
+ * Focus visibility
+ * ------------------------------------------------------------------------ */
+
+.primaryAction:focus-visible,
+.secondaryAction:focus-visible,
+.summaryCell:focus-visible,
+.quickCard:focus-visible,
+.viewAllButton:focus-visible,
+.sequenceRow:focus-visible,
+.actionButton:focus-visible,
+.sendCard:focus-visible,
+.activityItem:focus-visible {
+  outline: 2px solid var(--field-focus);
+  outline-offset: 2px;
 }
 
-@keyframes dashboard-pulse {
-  0% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 32%, transparent);
-  }
-
-  70% {
-    box-shadow: 0 0 0 10px transparent;
-  }
-
-  100% {
-    box-shadow: 0 0 0 0 transparent;
-  }
+.summaryCell:focus-visible {
+  outline-offset: -2px;
 }
 
-@keyframes dashboard-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
+/* ---------------------------------------------------------------------------
+ * Responsive
+ * ------------------------------------------------------------------------ */
 
-@media (max-width: 1380px) {
-  .mainGrid {
-    grid-template-columns: minmax(0, 1.18fr) minmax(19.5rem, 0.9fr);
-  }
-
-  .sequenceSection .sectionTop {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .sequenceSection .sectionTopMeta {
-    justify-content: flex-start;
-  }
-
-  .activityHeading {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 0.2rem;
-  }
-
-  .activityTime {
-    white-space: normal;
-  }
-}
-
-@media (max-width: 1200px) {
+@media (max-width: 1240px) {
   .mainGrid {
     grid-template-columns: 1fr;
   }
 
-  .sectionTop {
-    grid-template-columns: 1fr;
-  }
-
-  .sectionTopMeta {
-    justify-content: flex-start;
+  .sideColumn {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
   }
 }
 
-@media (max-width: 1080px) {
-  .hero {
-    grid-template-columns: 1fr;
-    gap: 1.25rem;
+@media (max-width: 1100px) {
+  .summaryStrip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .heroHighlights {
-    max-width: none;
+  .summaryCell:nth-child(odd) {
+    border-left: 0;
+  }
+
+  .summaryCell:nth-child(n + 3) {
+    border-top: 1px solid var(--line);
   }
 }
 
 @media (max-width: 900px) {
-  .sequenceRow {
+  .quickGrid {
     grid-template-columns: 1fr;
   }
 
-  .sequenceSidebar {
-    align-content: start;
+  .quickCard {
+    min-height: 0;
   }
 
-  .sequenceInteractiveRail {
-    width: auto;
-    min-width: 0;
-    flex-direction: column;
-    align-items: stretch;
-    justify-self: stretch;
-  }
-
-  .sequenceActionGroup {
-    opacity: 1;
-    transform: none;
-    justify-content: flex-start;
-    min-width: 0;
-  }
-
-  .sequenceActionButton:hover,
-  .sequenceActionButton:focus-visible {
-    width: var(--sequence-action-expanded-width);
+  .sideColumn {
+    grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 760px) {
-  .hero,
-  .sequenceSection,
-  .activitySection {
-    padding: 1.1rem;
-    border-radius: 24px;
+  .pageHeader {
+    align-items: stretch;
+    flex-direction: column;
   }
 
-  .heroButtons,
-  .sectionTopMeta {
+  .pageActions {
     width: 100%;
   }
 
-  .heroHighlights {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0.5rem;
+  .primaryAction,
+  .secondaryAction {
+    flex: 1;
   }
 
-  .heroHighlight {
-    padding: 0.7rem 0.75rem;
-  }
-
-  .heroHighlightValue {
-    font-size: 1.35rem;
-  }
-
-  .heroCta,
-  .sequenceActionButton {
-    width: 100%;
-  }
-
-  .sequenceActionButton:hover,
-  .sequenceActionButton:focus-visible {
-    width: 100%;
-    justify-content: center;
-  }
-
-  .activityHeading {
+  .summaryStrip {
     grid-template-columns: 1fr;
-    gap: 0.3rem;
   }
 
-  .activityList {
-    border-radius: 20px;
+  .summaryCell + .summaryCell {
+    border-left: 0;
+    border-top: 1px solid var(--line);
   }
 
-  .activityItem {
-    grid-template-columns: 2.15rem minmax(0, 1fr);
-    gap: 0.65rem;
-    padding: 0.85rem 0.8rem;
+  .sequenceHead {
+    flex-direction: column;
+    align-items: stretch;
   }
 
-  .activityTimelineMark::after {
-    top: 2rem;
+  .sequenceTools {
+    width: 100%;
   }
 
+  .sequenceSearch {
+    flex: 1;
+  }
+
+  .sequenceSearch input {
+    width: 100%;
+  }
+
+  .sequenceRow {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "glyph info status"
+      "glyph info time"
+      "actions actions actions";
+    row-gap: 0.6rem;
+  }
+
+  .sequenceGlyph {
+    grid-area: glyph;
+  }
+
+  .sequenceInfo {
+    grid-area: info;
+  }
+
+  .sequenceStatus {
+    grid-area: status;
+    justify-self: end;
+  }
+
+  .sequenceTime {
+    grid-area: time;
+    justify-self: end;
+  }
+
+  .sequenceActions {
+    grid-area: actions;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .sequenceArrow {
+    margin-left: auto;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Reduced motion
+ * ------------------------------------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  .primaryAction,
+  .secondaryAction,
+  .summaryCell,
+  .quickCard,
+  .quickArrow,
+  .viewAllButton,
+  .sequenceRow,
+  .sequenceSearch input,
+  .actionButton,
+  .sequenceArrow,
+  .sendCard,
+  .sendMeterFill,
   .activityTitle {
-    display: -webkit-box;
-    white-space: normal;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
+    transition: none;
   }
 
-  .activityTime {
-    white-space: normal;
+  .spin {
+    animation: none;
   }
 }

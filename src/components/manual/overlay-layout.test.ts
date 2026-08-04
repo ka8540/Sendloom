@@ -171,7 +171,7 @@ describe("Mobile fallback + design preserved (#16, #18, #20)", () => {
     expect(overviewFullSteps().slice(0, 3).map((step) => step.id)).toEqual(
       preservedOverviewSteps.map((step) => step.id)
     );
-    expect(overviewFullSteps().some((step) => step.id === "sequence-health")).toBe(true);
+    expect(overviewFullSteps().some((step) => step.id === "gmail-send-window")).toBe(true);
   });
 
   it("keeps every route on the shared premium button (never the simple fallback) (#20)", () => {
