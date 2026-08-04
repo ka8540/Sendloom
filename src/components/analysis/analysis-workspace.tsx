@@ -62,7 +62,7 @@ import { AnalysisInfo, formatAnalysisNumber } from "@/components/analysis/analys
 import styles from "./analysis.module.css";
 
 const PAGE_META: Record<AnalysisPage, { label: string; subtitle: string; href: Route }> = {
-  overview: { label: "Overview", subtitle: "A quick view of outreach performance.", href: "/analysis" as Route },
+  overview: { label: "Summary", subtitle: "A quick view of outreach performance.", href: "/analysis" as Route },
   engagement: { label: "Engagement", subtitle: "Track engagement across your outreach.", href: "/analysis/engagement" as Route },
   sequences: { label: "Sequences", subtitle: "Compare sequence and template performance.", href: "/analysis/sequences" as Route },
   reliability: { label: "Reliability", subtitle: "Understand failures, pauses, and sending health.", href: "/analysis/reliability" as Route },

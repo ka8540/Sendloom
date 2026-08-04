@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useLayoutEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Route } from "next";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -8,6 +8,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   Activity,
   ChartNoAxesCombined,
+  ChevronDown,
   CircleUserRound,
   FileSpreadsheet,
   History,
@@ -31,6 +32,7 @@ import { SessionControls } from "@/components/session-controls";
 const SIDEBAR_COLLAPSED_STORAGE_KEY = "sendloom.sidebarCollapsed";
 const SIDEBAR_COLLAPSED_COOKIE_NAME = "sendloom_sidebar_collapsed";
 const SIDEBAR_COLLAPSED_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
+const ANALYSIS_NAVIGATION_ID = "analysis-sidebar-navigation";
 const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 function readStoredCookieSidebarCollapsed() {
@@ -103,6 +105,9 @@ type NavItem = {
 export function AppNav({ initialCollapsed = false, isAdmin = false }: { initialCollapsed?: boolean; isAdmin?: boolean }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(initialCollapsed);
+  const analysisRouteActive = pathname === "/analysis" || pathname.startsWith("/analysis/");
+  const [analysisOpen, setAnalysisOpen] = useState(analysisRouteActive);
+  const previousPathnameRef = useRef(pathname);
   const toggleCollapsed = useCallback(() => {
     setCollapsed((current) => {
       const nextCollapsed = !current;
@@ -116,6 +121,15 @@ export function AppNav({ initialCollapsed = false, isAdmin = false }: { initialC
     setCollapsed(storedCollapsed);
     storeSidebarCollapsed(storedCollapsed);
   }, [initialCollapsed]);
+
+  useEffect(() => {
+    if (previousPathnameRef.current === pathname) {
+      return;
+    }
+
+    previousPathnameRef.current = pathname;
+    setAnalysisOpen(analysisRouteActive);
+  }, [analysisRouteActive, pathname]);
 
   const items: NavItem[] = isAdmin
     ? [
@@ -137,7 +151,7 @@ export function AppNav({ initialCollapsed = false, isAdmin = false }: { initialC
       ];
 
   const analysisItems: Array<{ href: Route; label: string }> = [
-    { href: "/analysis" as Route, label: "Overview" },
+    { href: "/analysis" as Route, label: "Summary" },
     { href: "/analysis/engagement" as Route, label: "Engagement" },
     { href: "/analysis/sequences" as Route, label: "Sequences" },
     { href: "/analysis/reliability" as Route, label: "Reliability" },
@@ -202,19 +216,30 @@ export function AppNav({ initialCollapsed = false, isAdmin = false }: { initialC
 
           const isAnalysis = String(item.href) === "/analysis";
 
-          return (
-            <Fragment key={item.href}>
-              <Link
-                href={item.href}
-                className={`nav-item${active ? " is-active" : ""}`}
-                aria-current={active && !isAnalysis ? "page" : undefined}
-                title={collapsed ? item.label : undefined}
-              >
-                <Icon aria-hidden="true" />
-                <span>{item.label}</span>
-              </Link>
-              {isAnalysis && active && !collapsed ? (
-                <div className="nav-submenu" aria-label="Analysis navigation">
+          if (isAnalysis && !collapsed) {
+            return (
+              <Fragment key={item.href}>
+                <button
+                  className={`nav-item nav-analysis-toggle${active ? " is-active" : ""}`}
+                  type="button"
+                  onClick={() => setAnalysisOpen((current) => !current)}
+                  aria-expanded={analysisOpen}
+                  aria-controls={ANALYSIS_NAVIGATION_ID}
+                  aria-label={`${analysisOpen ? "Collapse" : "Expand"} Analysis navigation`}
+                >
+                  <Icon aria-hidden="true" />
+                  <span>{item.label}</span>
+                  <ChevronDown
+                    className={`nav-analysis-chevron${analysisOpen ? " is-open" : ""}`}
+                    aria-hidden="true"
+                  />
+                </button>
+                <div
+                  id={ANALYSIS_NAVIGATION_ID}
+                  className="nav-submenu"
+                  aria-label="Analysis navigation"
+                  hidden={!analysisOpen}
+                >
                   {analysisItems.map((analysisItem) => {
                     const childActive = pathname === analysisItem.href;
                     return (
@@ -230,8 +255,21 @@ export function AppNav({ initialCollapsed = false, isAdmin = false }: { initialC
                     );
                   })}
                 </div>
-              ) : null}
-            </Fragment>
+              </Fragment>
+            );
+          }
+
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`nav-item${active ? " is-active" : ""}`}
+              aria-current={active && !isAnalysis ? "page" : undefined}
+              title={collapsed ? item.label : undefined}
+            >
+              <Icon aria-hidden="true" />
+              <span>{item.label}</span>
+            </Link>
           );
         })}
       </nav>

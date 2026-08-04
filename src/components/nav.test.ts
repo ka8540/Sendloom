@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 // style used across the codebase for client components.
 const NAV_SOURCE = readFileSync("src/components/nav.tsx", "utf8");
 const SESSION_SOURCE = readFileSync("src/components/session-controls.tsx", "utf8");
+const ANALYSIS_WORKSPACE_SOURCE = readFileSync("src/components/analysis/analysis-workspace.tsx", "utf8");
 const GLOBALS = readFileSync("src/app/globals.css", "utf8");
 
 function operatorNavBlock(): string {
@@ -32,6 +33,58 @@ describe("primary product navigation", () => {
     expect(NAV_SOURCE).toContain("pathname === item.href");
     expect(NAV_SOURCE).toContain('pathname.startsWith(`${item.href}/`)');
     expect(NAV_SOURCE).toContain('className={`nav-item${active ? " is-active" : ""}`}');
+  });
+});
+
+describe("expanded Analysis navigation", () => {
+  it("renames only the Analysis overview label to Summary", () => {
+    expect(operatorNavBlock()).toContain('{ href: "/workspace" as Route, label: "Overview"');
+    expect(NAV_SOURCE).toContain('{ href: "/analysis" as Route, label: "Summary" }');
+    expect(ANALYSIS_WORKSPACE_SOURCE).toContain('overview: { label: "Summary"');
+    expect(ANALYSIS_WORKSPACE_SOURCE).toContain('href: "/analysis" as Route');
+  });
+
+  it("uses an accessible button and chevron only for the expanded Analysis parent", () => {
+    expect(NAV_SOURCE).toContain("if (isAnalysis && !collapsed)");
+    expect(NAV_SOURCE).toContain('className={`nav-item nav-analysis-toggle${active ? " is-active" : ""}`}');
+    expect(NAV_SOURCE).toContain("aria-expanded={analysisOpen}");
+    expect(NAV_SOURCE).toContain("aria-controls={ANALYSIS_NAVIGATION_ID}");
+    expect(NAV_SOURCE).toContain('aria-label={`${analysisOpen ? "Collapse" : "Expand"} Analysis navigation`}');
+    expect(NAV_SOURCE).toContain("<ChevronDown");
+    expect(NAV_SOURCE).toContain("hidden={!analysisOpen}");
+  });
+
+  it("opens automatically on Analysis routes and closes by default elsewhere", () => {
+    expect(NAV_SOURCE).toContain('pathname === "/analysis" || pathname.startsWith("/analysis/")');
+    expect(NAV_SOURCE).toContain("useState(analysisRouteActive)");
+    expect(NAV_SOURCE).toContain("previousPathnameRef.current === pathname");
+    expect(NAV_SOURCE).toContain("setAnalysisOpen(analysisRouteActive)");
+    expect(NAV_SOURCE).toContain("onClick={() => setAnalysisOpen((current) => !current)}");
+  });
+
+  it("preserves the collapsed Analysis link and tooltip behavior", () => {
+    expect(NAV_SOURCE).toContain('title={collapsed ? item.label : undefined}');
+    expect(NAV_SOURCE).toContain('href={item.href}');
+    expect(GLOBALS).toMatch(/\.sidebar\.is-collapsed \.nav-submenu,[\s\S]*?display:\s*none/);
+  });
+});
+
+describe("expanded sidebar height structure", () => {
+  it("uses a viewport-bound flex column without making the whole expanded sidebar scroll", () => {
+    expect(GLOBALS).toMatch(/\.sidebar:not\(\.is-collapsed\) \{[\s\S]*?height:\s*100dvh;[\s\S]*?overflow:\s*hidden;/);
+    expect(GLOBALS).toMatch(/\.sidebar:not\(\.is-collapsed\) \.sidebar-top \{[\s\S]*?display:\s*flex;[\s\S]*?flex-shrink:\s*0;/);
+    expect(GLOBALS).toMatch(/\.sidebar:not\(\.is-collapsed\) \.nav-footer \{[\s\S]*?flex-shrink:\s*0;/);
+  });
+
+  it("limits short-height overflow to the middle navigation and hides its scrollbar", () => {
+    expect(GLOBALS).toMatch(/\.sidebar:not\(\.is-collapsed\) \.nav \{[\s\S]*?min-height:\s*0;[\s\S]*?overflow-y:\s*auto;/);
+    expect(GLOBALS).toContain("scrollbar-width: none");
+    expect(GLOBALS).toMatch(/\.sidebar:not\(\.is-collapsed\) \.nav::\-webkit-scrollbar \{[\s\S]*?display:\s*none/);
+  });
+
+  it("groups the expanded brand and collapse control in one compact row", () => {
+    expect(GLOBALS).toMatch(/\.sidebar:not\(\.is-collapsed\) \.sidebar-top \{[\s\S]*?align-items:\s*flex-start;[\s\S]*?justify-content:\s*space-between/);
+    expect(GLOBALS).toMatch(/\.sidebar:not\(\.is-collapsed\) \.brand \{[\s\S]*?flex:\s*1 1 auto/);
   });
 });
 
