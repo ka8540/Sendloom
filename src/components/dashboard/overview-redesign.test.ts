@@ -344,14 +344,36 @@ describe("Theming, motion, and layout", () => {
     expect(cssRule(CENTER_CSS, ".mainColumn")).toContain("grid-template-rows: auto minmax(0, 1fr)");
     expect(cssRule(CENTER_CSS, ".sequenceSection")).toContain("grid-template-rows: auto minmax(0, 1fr)");
     expect(cssRule(CENTER_CSS, ".sideColumn")).toContain("align-content: start");
-    // Rows absorb the slack themselves, so no dead gap forms under the third.
-    expect(cssRule(CENTER_CSS, ".sequenceList")).toContain("grid-auto-rows: minmax(5.25rem, 1fr)");
     // Once stacked, heights are natural again.
     const stacked = CENTER_CSS.slice(CENTER_CSS.indexOf("@container (max-width: 62rem)"));
     expect(stacked).toMatch(/\.mainColumn,\s*\.sequenceSection \{\s*grid-template-rows: none;/);
-    expect(stacked).toMatch(/\.sequenceList \{\s*grid-auto-rows: auto;/);
     // No viewport-height or fixed-pixel panel heights anywhere.
     expect(CENTER_CSS).not.toMatch(/100vh|min-height:\s*\d{3}px/);
+  });
+
+  it("keeps every row compact — a filtered result never stretches to fill (#1-#5)", () => {
+    const list = cssRule(CENTER_CSS, ".sequenceList");
+    // Rows size to their own content and stay pinned to the top; the list does
+    // not absorb the panel's flexible track.
+    expect(list).toContain("grid-auto-rows: max-content");
+    expect(list).toContain("align-content: start");
+    expect(list).toContain("align-self: start");
+    expect(list).not.toContain("1fr");
+    expect(list).not.toMatch(/space-between|justify-content: center|place-items/);
+    // One consistent row height regardless of how many results are showing.
+    const row = cssRule(CENTER_CSS, ".sequenceRow");
+    expect(row).toContain("min-height: 6.75rem");
+    expect(row).not.toMatch(/height: 100%|flex: 1|flex-grow/);
+    // The empty states sit at the top too, never centred in a tall blank panel.
+    expect(cssRule(CENTER_CSS, ".sequenceEmpty")).toContain("align-self: start");
+    expect(cssRule(CENTER_CSS, ".sequenceEmptyCompact")).toContain("align-self: start");
+  });
+
+  it("offers a compact, actionable no-results state", () => {
+    expect(PANEL).toContain("No sequences match your search.");
+    expect(PANEL).toContain('onClick={() => setQuery("")}');
+    expect(PANEL).toContain("Clear search");
+    expect(PANEL).toContain('role="status"');
   });
 
   it("adapts to the sidebar via container width, never by duplicating its size", () => {

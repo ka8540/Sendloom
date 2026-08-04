@@ -160,7 +160,10 @@ export function SequencePanel({ rows }: { rows: SequenceRowData[] }) {
       ) : (
         <div className={styles.sequenceEmptyCompact} role="status">
           <Search aria-hidden="true" />
-          <span>No sequences found</span>
+          <span>No sequences match your search.</span>
+          <button type="button" className={styles.sequenceClearSearch} onClick={() => setQuery("")}>
+            Clear search
+          </button>
         </div>
       )}
     </section>
