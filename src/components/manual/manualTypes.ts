@@ -71,18 +71,6 @@ export type ManualConfig = {
    * existing guide keeps; the Overview guide opts into "Done".
    */
   finishLabel?: string;
-  /**
-   * When true, the overlay shows a Back button once the user is past the first
-   * step. Defaults to false so every existing guide keeps its Skip/Next-only
-   * controls; the Analysis guide opts in.
-   */
-  showBackButton?: boolean;
-  /**
-   * When true, the Skip button is hidden on the final step (where the confirm
-   * button already closes the guide). Defaults to false so every existing
-   * guide keeps Skip visible throughout; the Analysis guide opts in.
-   */
-  hideSkipOnFinalStep?: boolean;
   /** Resolve the current stage id from page state (e.g. reading the DOM). */
   resolveStage?: () => string | null;
   /** Return the steps for a stage. Falls back to `steps` when omitted. */

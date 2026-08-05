@@ -98,10 +98,6 @@ export const analysisManual: ManualConfig = {
   version: "v1",
   // Analysis ends its guide on "Done", matching the Overview guide.
   finishLabel: "Done",
-  // The Analysis guide offers Back after the first step and drops Skip on the
-  // final step; both flags default off so every other guide is unchanged.
-  showBackButton: true,
-  hideSkipOnFinalStep: true,
   steps: analysisFullSteps(),
   // A manual Help click always resolves to the complete six-step guide.
   resolveStage: () => "full"

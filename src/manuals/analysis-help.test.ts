@@ -141,17 +141,13 @@ describe("Analysis tour copy rules", () => {
 });
 
 describe("Analysis tour controls and behavior", () => {
-  it("ends on Done, offers Back after the first step, and drops Skip on the final step", () => {
+  it("ends on Done and keeps the shared Skip + Next controls unchanged", () => {
     expect(analysisManual.finishLabel).toBe("Done");
-    expect(analysisManual.showBackButton).toBe(true);
-    expect(analysisManual.hideSkipOnFinalStep).toBe(true);
-  });
-
-  it("the shared overlay implements Back, Skip, and the opt-in final-step variants", () => {
-    expect(OVERLAY_SOURCE).toContain("prevStep");
-    expect(OVERLAY_SOURCE).toMatch(/ArrowLeft[\s\S]{0,40}Back/);
-    expect(OVERLAY_SOURCE).toContain("showBackButton");
-    expect(OVERLAY_SOURCE).toContain("hideSkipOnFinalStep");
+    // No extra controls: the overlay renders only Skip and Next/Done.
+    expect(OVERLAY_SOURCE).toContain("skipManual");
+    expect(OVERLAY_SOURCE).toContain("nextStep");
+    expect(OVERLAY_SOURCE).not.toContain("prevStep");
+    expect(OVERLAY_SOURCE).not.toMatch(/>\s*Back\s*</);
     // Escape still closes the tour and the progress indicator is preserved.
     expect(OVERLAY_SOURCE).toContain('event.key === "Escape"');
     expect(OVERLAY_SOURCE).toContain("progressDot");

@@ -466,37 +466,6 @@
   color: var(--muted);
 }
 
-/* Opt-in Back control (Analysis guide): same quiet ghost styling as Skip. */
-.backButton {
-  flex-shrink: 0;
-  display: inline-flex;
-  min-height: 2.65rem;
-  align-items: center;
-  justify-content: center;
-  gap: 0.45rem;
-  padding: 0.68rem 0.9rem;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--surface-muted) 86%, transparent);
-  color: var(--muted);
-  cursor: pointer;
-  font-weight: 800;
-  transition: transform 140ms ease, border-color 160ms ease, background-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
-}
-
-.backButton svg {
-  width: 0.96rem;
-  height: 0.96rem;
-}
-
-.backButton:hover,
-.backButton:focus-visible {
-  transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--accent) 16%, var(--line));
-  color: var(--text);
-  outline: none;
-}
-
 .nextButton {
   padding: 0.72rem 1rem;
   border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
@@ -566,7 +535,6 @@
   .helpButton,
   .iconButton,
   .skipButton,
-  .backButton,
   .nextButton,
   .progressDot,
   .overviewHelpButton,
