@@ -233,7 +233,8 @@
 [data-imports-tour],
 [data-templates-tour],
 [data-sequences-tour],
-[data-admin-tour] {
+[data-admin-tour],
+[data-tour^="analysis-"] {
   scroll-margin-top: 28px;
   scroll-margin-bottom: 28px;
 }

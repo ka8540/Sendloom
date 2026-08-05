@@ -88,6 +88,15 @@ const PAGE_META: Record<AnalysisPage, { label: string; subtitle: string; href: R
   senders: { label: "Senders", subtitle: "Compare connected Gmail senders and capacity.", href: "/analysis/senders" as Route }
 };
 
+// Stable help-tour targets for the Analysis guide: one per tab, keyed by page.
+const TAB_TOUR_TARGETS: Record<AnalysisPage, string> = {
+  overview: "analysis-tab-summary",
+  engagement: "analysis-tab-engagement",
+  sequences: "analysis-tab-sequences",
+  reliability: "analysis-tab-reliability",
+  senders: "analysis-tab-senders"
+};
+
 const METRIC_ICONS: Record<AnalysisMetric["icon"], ComponentType<{ "aria-hidden"?: boolean }>> = {
   send: Send,
   open: Mail,
@@ -708,7 +717,7 @@ export function AnalysisWorkspace({ page }: { page: AnalysisPage }) {
 
   return (
     <div className={styles.workspace} aria-busy={loading}>
-      <header className={styles.pageHeader}>
+      <header className={styles.pageHeader} data-tour="analysis-header">
         <div>
           <h1>Analysis</h1>
           <p>{PAGE_META[page].subtitle}</p>
@@ -735,6 +744,7 @@ export function AnalysisWorkspace({ page }: { page: AnalysisPage }) {
             href={{ pathname: item.href, query: { from: range.from, to: range.to } }}
             className={page === key ? styles.activeTab : ""}
             aria-current={page === key ? "page" : undefined}
+            data-tour={TAB_TOUR_TARGETS[key as AnalysisPage]}
           >
             {item.label}
           </Link>

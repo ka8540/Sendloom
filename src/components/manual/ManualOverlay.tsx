@@ -3,7 +3,7 @@
 import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowRight, Check } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check } from "lucide-react";
 
 import { CircularCloseButton } from "@/components/circular-close-button";
 
@@ -179,7 +179,7 @@ function areGeometriesEqual(left: OverlayGeometry, right: OverlayGeometry) {
 }
 
 export function ManualOverlay() {
-  const { currentStepIndex, finishManual, isOpen, manual, nextStep, skipManual, steps } = useManual();
+  const { currentStepIndex, finishManual, isOpen, manual, nextStep, prevStep, skipManual, steps } = useManual();
   const popoverRef = useRef<HTMLElement | null>(null);
   const frameRef = useRef<number | null>(null);
   const scrollSettleFrameRef = useRef<number | null>(null);
@@ -190,6 +190,11 @@ export function ManualOverlay() {
 
   const step = steps[currentStepIndex] ?? null;
   const isFinalStep = steps.length > 0 && currentStepIndex === steps.length - 1;
+  // Opt-in control variants (both default off, so existing guides are
+  // unchanged): Back appears once past the first step, and Skip can be
+  // dropped on the final step where Done/Finish already closes the guide.
+  const showBackButton = Boolean(manual?.showBackButton) && currentStepIndex > 0;
+  const showSkipButton = !(isFinalStep && manual?.hideSkipOnFinalStep);
 
   // Escape closes the tour; focus moves into the popover when it opens so
   // keyboard and screen-reader users land on the guidance.
@@ -462,9 +467,17 @@ export function ManualOverlay() {
           </div>
 
           <div className={styles.actions}>
-            <button className={styles.skipButton} type="button" onClick={skipManual} data-manual-control="true">
-              Skip
-            </button>
+            {showBackButton ? (
+              <button className={styles.backButton} type="button" onClick={prevStep} data-manual-control="true">
+                <ArrowLeft aria-hidden="true" />
+                Back
+              </button>
+            ) : null}
+            {showSkipButton ? (
+              <button className={styles.skipButton} type="button" onClick={skipManual} data-manual-control="true">
+                Skip
+              </button>
+            ) : null}
             <button
               className={styles.nextButton}
               type="button"
