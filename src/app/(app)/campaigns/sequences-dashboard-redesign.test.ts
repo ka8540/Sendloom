@@ -67,6 +67,7 @@ function makeItem(overrides: Partial<SequenceListItem> = {}): SequenceListItem {
     deliveredCount: 23,
     opensCount: 9,
     repliedCount: 1,
+    sentLast24h: false,
     createdAtIso: "2026-05-02T10:00:00.000Z",
     updatedAtIso: "2026-06-02T10:00:00.000Z",
     ...overrides
@@ -451,6 +452,7 @@ describe("control bar (#7, #8, #10, #11)", () => {
     expect(SEQUENCE_FILTERS.map((entry) => entry.id)).toEqual([
       "all",
       "active",
+      "sent",
       "paused",
       "attention",
       "completed",
@@ -641,7 +643,7 @@ describe("empty states", () => {
   });
 
   it("an empty filter result offers to clear filters", () => {
-    expect(DASH).toContain("No sequences match this filter");
+    expect(DASH).toContain("{describeEmptySequenceFilter(filter)}");
     expect(DASH).toContain("Try another status, email account, or search.");
     expect(DASH).toContain("Clear filters");
     expect(DASH).toContain("onClick={clearFilters}");

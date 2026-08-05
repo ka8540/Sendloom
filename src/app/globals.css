@@ -233,7 +233,8 @@
 [data-imports-tour],
 [data-templates-tour],
 [data-sequences-tour],
-[data-admin-tour] {
+[data-admin-tour],
+[data-tour^="analysis-"] {
   scroll-margin-top: 28px;
   scroll-margin-bottom: 28px;
 }
@@ -383,11 +384,68 @@ html[data-sidebar-collapsed="true"] .shell {
   transform: translateY(1px) scale(0.97);
 }
 
+/* Expanded desktop rail: keep the brand and utility controls fixed while the
+   primary navigation owns the only short-viewport overflow fallback. Collapsed
+   and compact-device rules retain their existing layout below. */
+@media (min-width: 961px) {
+  html:not([data-sidebar-collapsed="true"]) .sidebar:not(.is-collapsed) {
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow: hidden;
+    padding: 1.5rem 1rem 0.75rem;
+    gap: 0.45rem;
+  }
+
+  html:not([data-sidebar-collapsed="true"]) .sidebar:not(.is-collapsed) .sidebar-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.55rem;
+    padding-bottom: 1.1rem;
+    flex-shrink: 0;
+  }
+
+  html:not([data-sidebar-collapsed="true"]) .sidebar:not(.is-collapsed) .brand {
+    flex: 1 1 auto;
+    gap: 0.7rem;
+  }
+
+  html:not([data-sidebar-collapsed="true"]) .sidebar:not(.is-collapsed) .brand-copy {
+    gap: 0.05rem;
+    padding-top: 0.05rem;
+  }
+
+  html:not([data-sidebar-collapsed="true"]) .sidebar:not(.is-collapsed) .brand p {
+    max-width: 10.5rem;
+    font-size: 0.78rem;
+    line-height: 1.35;
+  }
+
+  html:not([data-sidebar-collapsed="true"]) .sidebar:not(.is-collapsed) .sidebar-toggle {
+    margin-top: -0.15rem;
+  }
+}
+
 .nav {
   display: grid;
   gap: 0.35rem;
   flex: 1;
   align-content: start;
+}
+
+@media (min-width: 961px) {
+  html:not([data-sidebar-collapsed="true"]) .sidebar:not(.is-collapsed) .nav {
+    min-height: 0;
+    gap: 0.55rem;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+  }
+
+  html:not([data-sidebar-collapsed="true"]) .sidebar:not(.is-collapsed) .nav::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 .nav-item {
@@ -400,6 +458,10 @@ html[data-sidebar-collapsed="true"] .shell {
   background: transparent;
   border: 1px solid transparent;
   color: var(--text);
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
   font-weight: 600;
   transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, outline-color 160ms ease;
 }
@@ -414,6 +476,13 @@ html[data-sidebar-collapsed="true"] .shell {
   white-space: nowrap;
 }
 
+@media (min-width: 961px) {
+  html:not([data-sidebar-collapsed="true"]) .sidebar:not(.is-collapsed) .nav > .nav-item {
+    min-height: 3.25rem;
+    padding: 0.8rem 0.85rem;
+  }
+}
+
 .nav-item:hover {
   background: var(--surface-hover);
   border-color: transparent;
@@ -426,6 +495,23 @@ html[data-sidebar-collapsed="true"] .shell {
   color: var(--text);
   outline: 2px solid color-mix(in srgb, var(--accent) 48%, transparent);
   outline-offset: 2px;
+}
+
+.nav-analysis-toggle {
+  appearance: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.nav-analysis-chevron {
+  margin-left: auto;
+  color: var(--muted);
+  transform: rotate(0deg);
+  transition: transform 160ms ease, color 160ms ease;
+}
+
+.nav-analysis-chevron.is-open {
+  transform: rotate(180deg);
 }
 
 /* Selected route: transparent row with a single slim left accent bar and
@@ -457,6 +543,71 @@ html[data-sidebar-collapsed="true"] .shell {
   color: var(--accent-strong);
 }
 
+/* Analysis is the only primary workspace section with peer views. These
+   nested links reuse the existing sidebar typography and neutral hover state. */
+.nav-submenu {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.25rem 0.25rem 0.2rem 2.55rem;
+}
+
+.nav-submenu[hidden] {
+  display: none;
+}
+
+.nav-submenu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.62rem;
+  min-height: 1.625rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 9px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+
+.nav-submenu-item > span {
+  width: 0.32rem;
+  height: 0.32rem;
+  border-radius: 999px;
+  background: currentColor;
+  flex: 0 0 auto;
+}
+
+.nav-submenu-item:hover,
+.nav-submenu-item:focus-visible {
+  outline: none;
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.nav-submenu-item:focus-visible {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 42%, transparent);
+}
+
+.nav-submenu-item.is-active {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-weight: 750;
+}
+
+/* Expanded desktop rail: give the Analysis submenu the same breathing-room
+    treatment as the primary rows while keeping it visibly nested and compact.
+    Collapsed and compact-device layouts keep the global rules above. */
+@media (min-width: 961px) {
+  html:not([data-sidebar-collapsed="true"]) .sidebar:not(.is-collapsed) .nav-submenu {
+    gap: 0.35rem;
+    padding: 0.7rem 0.25rem 0.6rem 2.55rem;
+  }
+
+  html:not([data-sidebar-collapsed="true"]) .sidebar:not(.is-collapsed) .nav-submenu-item {
+    min-height: 2.625rem;
+    padding: 0.55rem 0.5rem;
+  }
+}
+
 .nav-footer {
   display: grid;
   gap: 0.75rem;
@@ -464,6 +615,14 @@ html[data-sidebar-collapsed="true"] .shell {
   padding-top: 0.5rem;
   position: relative;
   z-index: 2;
+}
+
+@media (min-width: 961px) {
+  html:not([data-sidebar-collapsed="true"]) .sidebar:not(.is-collapsed) .nav-footer {
+    flex-shrink: 0;
+    gap: 0.4rem;
+    padding-top: 0.2rem;
+  }
 }
 
 .nav-footer-theme {
@@ -558,6 +717,11 @@ html[data-sidebar-collapsed="true"] .sidebar .nav {
   justify-items: center;
 }
 
+.sidebar.is-collapsed .nav-submenu,
+html[data-sidebar-collapsed="true"] .sidebar .nav-submenu {
+  display: none;
+}
+
 .sidebar.is-collapsed .nav-item,
 .sidebar.is-collapsed .nav-item-button,
 html[data-sidebar-collapsed="true"] .sidebar .nav-item,
@@ -587,6 +751,12 @@ html[data-sidebar-collapsed="true"] .sidebar .nav-footer-theme {
 html[data-sidebar-collapsed="true"] .sidebar .nav-footer-divider {
   width: 1.75rem;
   margin-inline: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-analysis-chevron {
+    transition: none;
+  }
 }
 
 .content {

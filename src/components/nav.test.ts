@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 // style used across the codebase for client components.
 const NAV_SOURCE = readFileSync("src/components/nav.tsx", "utf8");
 const SESSION_SOURCE = readFileSync("src/components/session-controls.tsx", "utf8");
+const ANALYSIS_WORKSPACE_SOURCE = readFileSync("src/components/analysis/analysis-workspace.tsx", "utf8");
 const GLOBALS = readFileSync("src/app/globals.css", "utf8");
 
 function operatorNavBlock(): string {
@@ -32,6 +33,103 @@ describe("primary product navigation", () => {
     expect(NAV_SOURCE).toContain("pathname === item.href");
     expect(NAV_SOURCE).toContain('pathname.startsWith(`${item.href}/`)');
     expect(NAV_SOURCE).toContain('className={`nav-item${active ? " is-active" : ""}`}');
+  });
+});
+
+describe("expanded Analysis navigation", () => {
+  it("renames only the Analysis overview label to Summary", () => {
+    expect(operatorNavBlock()).toContain('{ href: "/workspace" as Route, label: "Overview"');
+    expect(NAV_SOURCE).toContain('{ href: "/analysis" as Route, label: "Summary" }');
+    expect(ANALYSIS_WORKSPACE_SOURCE).toContain('overview: { label: "Summary"');
+    expect(ANALYSIS_WORKSPACE_SOURCE).toContain('href: "/analysis" as Route');
+  });
+
+  it("uses an accessible button and chevron only for the expanded Analysis parent", () => {
+    expect(NAV_SOURCE).toContain("if (isAnalysis && !collapsed)");
+    expect(NAV_SOURCE).toContain('className={`nav-item nav-analysis-toggle${active ? " is-active" : ""}`}');
+    expect(NAV_SOURCE).toContain("aria-expanded={analysisOpen}");
+    expect(NAV_SOURCE).toContain("aria-controls={ANALYSIS_NAVIGATION_ID}");
+    expect(NAV_SOURCE).toContain('aria-label={`${analysisOpen ? "Collapse" : "Expand"} Analysis navigation`}');
+    expect(NAV_SOURCE).toContain("<ChevronDown");
+    expect(NAV_SOURCE).toContain("hidden={!analysisOpen}");
+  });
+
+  it("opens automatically on Analysis routes and closes by default elsewhere", () => {
+    expect(NAV_SOURCE).toContain('pathname === "/analysis" || pathname.startsWith("/analysis/")');
+    expect(NAV_SOURCE).toContain("useState(analysisRouteActive)");
+    expect(NAV_SOURCE).toContain("previousPathnameRef.current === pathname");
+    expect(NAV_SOURCE).toContain("setAnalysisOpen(analysisRouteActive)");
+    expect(NAV_SOURCE).toContain("onClick={() => setAnalysisOpen((current) => !current)}");
+  });
+
+  it("preserves the collapsed Analysis link and tooltip behavior", () => {
+    expect(NAV_SOURCE).toContain('title={collapsed ? item.label : undefined}');
+    expect(NAV_SOURCE).toContain('href={item.href}');
+    expect(GLOBALS).toMatch(/\.sidebar\.is-collapsed \.nav-submenu,[\s\S]*?display:\s*none/);
+  });
+});
+
+describe("expanded sidebar height structure", () => {
+  it("uses a viewport-bound flex column without making the whole expanded sidebar scroll", () => {
+    expect(GLOBALS).toMatch(/\.sidebar:not\(\.is-collapsed\) \{[\s\S]*?height:\s*100dvh;[\s\S]*?overflow:\s*hidden;/);
+    expect(GLOBALS).toMatch(/\.sidebar:not\(\.is-collapsed\) \.sidebar-top \{[\s\S]*?display:\s*flex;[\s\S]*?flex-shrink:\s*0;/);
+    expect(GLOBALS).toMatch(/\.sidebar:not\(\.is-collapsed\) \.nav-footer \{[\s\S]*?flex-shrink:\s*0;/);
+  });
+
+  it("limits short-height overflow to the middle navigation and hides its scrollbar", () => {
+    expect(GLOBALS).toMatch(/\.sidebar:not\(\.is-collapsed\) \.nav \{[\s\S]*?min-height:\s*0;[\s\S]*?overflow-y:\s*auto;/);
+    expect(GLOBALS).toContain("scrollbar-width: none");
+    expect(GLOBALS).toMatch(/\.sidebar:not\(\.is-collapsed\) \.nav::\-webkit-scrollbar \{[\s\S]*?display:\s*none/);
+  });
+
+  it("groups the expanded brand and collapse control in one compact row", () => {
+    expect(GLOBALS).toMatch(/\.sidebar:not\(\.is-collapsed\) \.sidebar-top \{[\s\S]*?align-items:\s*flex-start;[\s\S]*?justify-content:\s*space-between/);
+    expect(GLOBALS).toMatch(/\.sidebar:not\(\.is-collapsed\) \.brand \{[\s\S]*?flex:\s*1 1 auto/);
+  });
+
+  it("gives only the expanded brand header balanced top and bottom breathing room", () => {
+    expect(GLOBALS).toMatch(/\.sidebar:not\(\.is-collapsed\) \{[\s\S]*?padding:\s*1\.5rem 1rem 0\.75rem/);
+    expect(GLOBALS).toMatch(/\.sidebar:not\(\.is-collapsed\) \.sidebar-top \{[\s\S]*?padding-bottom:\s*1\.1rem/);
+  });
+});
+
+describe("expanded Analysis visual consistency", () => {
+  function cssBlock(selector: string): string {
+    const start = GLOBALS.indexOf(`${selector} {`);
+    return GLOBALS.slice(start, GLOBALS.indexOf("}", start));
+  }
+
+  it("uses the shared primary navigation typography without an Analysis-specific font reset", () => {
+    const primaryItemBlock = cssBlock(".nav-item");
+    const analysisToggleBlock = cssBlock(".nav-analysis-toggle");
+
+    expect(primaryItemBlock).toContain("font-family: inherit");
+    expect(primaryItemBlock).toContain("font-size: inherit");
+    expect(primaryItemBlock).toContain("line-height: inherit");
+    expect(primaryItemBlock).toContain("letter-spacing: inherit");
+    expect(primaryItemBlock).toContain("font-weight: 600");
+    expect(analysisToggleBlock).not.toContain("font:");
+  });
+
+  it("keeps the Analysis submenu compact and readable", () => {
+    expect(cssBlock(".nav-submenu")).toContain("gap: 0.25rem");
+    expect(cssBlock(".nav-submenu")).toContain("padding: 0.25rem 0.25rem 0.2rem 2.55rem");
+    expect(cssBlock(".nav-submenu-item")).toContain("min-height: 1.625rem");
+  });
+
+  it("gives expanded primary rows and Analysis children extra vertical breathing room", () => {
+    // Expanded-desktop-only overrides; collapsed and compact layouts keep the
+    // global dimensions asserted above.
+    expect(GLOBALS).toMatch(/\.sidebar:not\(\.is-collapsed\) \.nav \{[\s\S]*?gap:\s*0\.55rem/);
+    expect(GLOBALS).toMatch(
+      /\.sidebar:not\(\.is-collapsed\) \.nav > \.nav-item \{[\s\S]*?min-height:\s*3\.25rem;[\s\S]*?padding:\s*0\.8rem 0\.85rem/
+    );
+    expect(GLOBALS).toMatch(
+      /\.sidebar:not\(\.is-collapsed\) \.nav-submenu \{[\s\S]*?gap:\s*0\.35rem;[\s\S]*?padding:\s*0\.7rem 0\.25rem 0\.6rem 2\.55rem/
+    );
+    expect(GLOBALS).toMatch(
+      /\.sidebar:not\(\.is-collapsed\) \.nav-submenu-item \{[\s\S]*?min-height:\s*2\.625rem;[\s\S]*?padding:\s*0\.55rem 0\.5rem/
+    );
   });
 });
 

@@ -15,7 +15,11 @@ import { ActiveRunRefresher } from "@/components/active-run-refresher";
 import { ErrorToastOnMount } from "@/components/error-toast-provider";
 import { WorkspacePageHeader } from "@/components/workspace-page-header";
 import { requireOperatorUser } from "@/lib/auth";
-import { getGmailDailySendWindow } from "@/lib/daily-send-limit";
+import {
+  getGmailDailySendWindow,
+  listCampaignIdsWithConfirmedSendsSince,
+  ROLLING_WINDOW_MS
+} from "@/lib/daily-send-limit";
 import { prisma } from "@/lib/db";
 import {
   buildSequenceAttentionItems,
@@ -159,7 +163,8 @@ export default async function CampaignsPage({
     "/campaigns",
     dashboardSearchParams
   );
-  const [campaigns, repliesCount, scheduledRunCount, sendWindow] = await Promise.all([
+  const sendWindowStart = new Date(Date.now() - ROLLING_WINDOW_MS);
+  const [campaigns, repliesCount, scheduledRunCount, sendWindow, campaignIdsSentLast24h] = await Promise.all([
     prisma.campaign.findMany({
       where: { userId: user.id },
       orderBy: { updatedAt: "desc" },
@@ -191,7 +196,10 @@ export default async function CampaignsPage({
         status: { in: ["QUEUED", "WAITING_FOR_SLOT"] }
       }
     }),
-    getGmailDailySendWindow({ userId: user.id })
+    getGmailDailySendWindow({ userId: user.id }),
+    // Same confirmed-send source as the Sent (24h) metric, so the "Sent in
+    // last 24h" filter can never contradict the number that links to it.
+    listCampaignIdsWithConfirmedSendsSince({ userId: user.id }, sendWindowStart)
   ]);
 
   if (
@@ -294,6 +302,7 @@ export default async function CampaignsPage({
       // OPENED and CLICKED are exclusive recipient statuses, so opens = both.
       opensCount: (displayRunSnapshot?.openedCount ?? 0) + (displayRunSnapshot?.clickedCount ?? 0),
       repliedCount: displayRunSnapshot?.repliedCount ?? 0,
+      sentLast24h: campaignIdsSentLast24h.has(campaign.id),
       createdAtIso: campaign.createdAt.toISOString(),
       updatedAtIso: campaign.updatedAt.toISOString()
     };

@@ -1,6 +1,7 @@
 "use client";
 
-import { ChevronDown, ChevronLeft, ChevronRight, Search } from "lucide-react";
+import Link from "next/link";
+import { ArrowRight, Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
@@ -8,7 +9,9 @@ import type { SequenceRowData } from "@/components/dashboard/types";
 import { SequenceRow } from "./sequence-row";
 import styles from "./overview-command-center.module.css";
 
-const RECENT_SEQUENCES_PAGE_SIZE = 5;
+// The Overview preview intentionally shows only the three most recent
+// sequences; the full list lives on the Sequences page behind "View all".
+const RECENT_SEQUENCES_LIMIT = 3;
 const OVERVIEW_REFRESH_INTERVAL_MS = 4_000;
 const RELAUNCH_REFRESH_WINDOW_MS = 30_000;
 const RESUME_REFRESH_DELAY_MS = 250;
@@ -21,69 +24,25 @@ export function SequencePanel({ rows }: { rows: SequenceRowData[] }) {
   const router = useRouter();
   const [isRefreshing, startRefresh] = useTransition();
   const [query, setQuery] = useState("");
-  const [status, setStatus] = useState("all");
-  const [focus, setFocus] = useState("recent");
-  const [scheduleType, setScheduleType] = useState("all");
-  const [sort, setSort] = useState("activity");
-  const [currentPage, setCurrentPage] = useState(1);
   const [refreshUntil, setRefreshUntil] = useState<number | null>(null);
   const refreshInFlightRef = useRef(false);
   const resumeTimeoutRef = useRef<number | null>(null);
 
-  const filteredRows = useMemo(() => {
+  const visibleRows = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
 
     const nextRows = rows.filter((row) => {
-      const matchesQuery =
+      return (
         !normalizedQuery ||
         row.name.toLowerCase().includes(normalizedQuery) ||
-        row.summary.toLowerCase().includes(normalizedQuery);
-      const matchesStatus = status === "all" || row.statusTone === status;
-      const matchesFocus =
-        focus === "recent" ||
-        (focus === "attention" && row.needsAttention) ||
-        (focus === "validated" && row.isValidated) ||
-        (focus === "running" && row.statusTone === "running");
-      const matchesScheduleType = scheduleType === "all" || row.scheduleType === scheduleType;
-
-      return matchesQuery && matchesStatus && matchesFocus && matchesScheduleType;
+        row.summary.toLowerCase().includes(normalizedQuery)
+      );
     });
 
-    nextRows.sort((left, right) => {
-      if (sort === "name") {
-        return left.name.localeCompare(right.name);
-      }
+    nextRows.sort((left, right) => right.updatedAtValue - left.updatedAtValue);
 
-      if (sort === "progress") {
-        return right.progressPercent - left.progressPercent;
-      }
-
-      return right.updatedAtValue - left.updatedAtValue;
-    });
-
-    return nextRows;
-  }, [focus, query, rows, scheduleType, sort, status]);
-
-  const totalPages = Math.max(1, Math.ceil(filteredRows.length / RECENT_SEQUENCES_PAGE_SIZE));
-  const clampedPage = Math.min(currentPage, totalPages);
-  const pagedRows = useMemo(
-    () =>
-      filteredRows.slice(
-        (clampedPage - 1) * RECENT_SEQUENCES_PAGE_SIZE,
-        clampedPage * RECENT_SEQUENCES_PAGE_SIZE
-      ),
-    [clampedPage, filteredRows]
-  );
-
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [query, status, focus, scheduleType, sort]);
-
-  useEffect(() => {
-    if (currentPage > totalPages) {
-      setCurrentPage(totalPages);
-    }
-  }, [currentPage, totalPages]);
+    return nextRows.slice(0, RECENT_SEQUENCES_LIMIT);
+  }, [query, rows]);
 
   const hasActiveRuns = rows.some((row) => row.statusTone === "running");
 
@@ -153,123 +112,62 @@ export function SequencePanel({ rows }: { rows: SequenceRowData[] }) {
   }
 
   return (
-    <>
-      <div className={styles.toolbar}>
-        <label className={`${styles.toolbarField} ${styles.toolbarFieldWide}`}>
-          <span className={styles.toolbarLabel}>Search</span>
-          <div className={styles.toolbarSearch}>
+    // The whole section is the tour target — heading, search controls and rows
+    // highlighted as one logical unit, never a single control inside it.
+    <section className={styles.sequenceSection} data-overview-tour="recent-sequences">
+      <div className={styles.sequenceHead}>
+        <div className={styles.sectionIntro}>
+          <h2 className={styles.sectionTitle}>Recent sequences</h2>
+          <p className={styles.sectionCopy}>Open, pause, or manage your recent runs.</p>
+        </div>
+        <div className={styles.sequenceTools}>
+          <div className={styles.sequenceSearch}>
             <Search aria-hidden="true" />
             <input
               type="text"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               aria-label="Search recent sequences"
-              placeholder="Search sequence, template, or sender"
+              placeholder="Search sequences…"
             />
           </div>
-        </label>
-        <label className={styles.toolbarField}>
-          <span className={styles.toolbarLabel}>Status</span>
-          <div className={styles.toolbarSelect}>
-            <select aria-label="Filter recent sequences by status" value={status} onChange={(event) => setStatus(event.target.value)}>
-              <option value="all">All states</option>
-              <option value="running">Running</option>
-              <option value="completed">Completed</option>
-              <option value="failed">Needs attention</option>
-              <option value="scheduled">Scheduled</option>
-              <option value="draft">Draft</option>
-            </select>
-            <ChevronDown aria-hidden="true" />
-          </div>
-        </label>
-        <label className={styles.toolbarField}>
-          <span className={styles.toolbarLabel}>Focus</span>
-          <div className={styles.toolbarSelect}>
-            <select aria-label="Filter recent sequences by focus" value={focus} onChange={(event) => setFocus(event.target.value)}>
-              <option value="recent">All recent</option>
-              <option value="running">Running now</option>
-              <option value="validated">Validated</option>
-              <option value="attention">Needs attention</option>
-            </select>
-            <ChevronDown aria-hidden="true" />
-          </div>
-        </label>
-        <label className={styles.toolbarField}>
-          <span className={styles.toolbarLabel}>Type</span>
-          <div className={styles.toolbarSelect}>
-            <select
-              aria-label="Filter recent sequences by schedule type"
-              value={scheduleType}
-              onChange={(event) => setScheduleType(event.target.value)}
-            >
-              <option value="all">All types</option>
-              <option value="immediate">Send immediately</option>
-              <option value="once">Schedule once</option>
-              <option value="recurring">Repeat schedule</option>
-            </select>
-            <ChevronDown aria-hidden="true" />
-          </div>
-        </label>
-        <label className={styles.toolbarField}>
-          <span className={styles.toolbarLabel}>Sort</span>
-          <div className={styles.toolbarSelect}>
-            <select aria-label="Sort recent sequences" value={sort} onChange={(event) => setSort(event.target.value)}>
-              <option value="activity">Latest activity</option>
-              <option value="progress">Progress</option>
-              <option value="name">Name</option>
-            </select>
-            <ChevronDown aria-hidden="true" />
-          </div>
-        </label>
+          <Link href="/campaigns" className={styles.viewAllButton}>
+            View all sequences
+            <ArrowRight aria-hidden="true" />
+          </Link>
+        </div>
       </div>
 
-      {filteredRows.length ? (
-        <>
-          <div className={styles.sequenceList}>
-            {pagedRows.map((sequence, index) => (
-              <SequenceRow
-                key={sequence.id}
-                sequence={sequence}
-                onRelaunch={startRefreshWindow}
-                tourTarget={index === 0}
-              />
-            ))}
+      {rows.length === 0 ? (
+        <div className={styles.sequenceEmpty}>
+          <div>
+            <strong>No sequences yet</strong>
+            <p>Import a list and create your first sequence to see it here.</p>
           </div>
-          <div
-            className={styles.sequencePagination}
-            data-overview-tour={totalPages > 1 ? "recent-sequences-pagination" : undefined}
-          >
-            <div className={styles.sequencePaginationControls}>
-              <button
-                type="button"
-                className={styles.sequencePaginationButton}
-                onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
-                disabled={clampedPage === 1}
-                aria-label="Previous recent sequences page"
-              >
-                <ChevronLeft aria-hidden="true" />
-              </button>
-              <span className={styles.sequencePaginationPage}>
-                {clampedPage} / {totalPages}
-              </span>
-              <button
-                type="button"
-                className={styles.sequencePaginationButton}
-                onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
-                disabled={clampedPage === totalPages}
-                aria-label="Next recent sequences page"
-              >
-                <ChevronRight aria-hidden="true" />
-              </button>
-            </div>
-          </div>
-        </>
+          <Link href="/campaigns" className="button">
+            Create Sequence
+          </Link>
+        </div>
+      ) : visibleRows.length ? (
+        <div className={styles.sequenceList}>
+          {visibleRows.map((sequence, index) => (
+            <SequenceRow
+              key={sequence.id}
+              sequence={sequence}
+              onRelaunch={startRefreshWindow}
+              tourTarget={index === 0}
+            />
+          ))}
+        </div>
       ) : (
         <div className={styles.sequenceEmptyCompact} role="status">
           <Search aria-hidden="true" />
-          <span>No sequences found</span>
+          <span>No sequences match your search.</span>
+          <button type="button" className={styles.sequenceClearSearch} onClick={() => setQuery("")}>
+            Clear search
+          </button>
         </div>
       )}
-    </>
+    </section>
   );
 }

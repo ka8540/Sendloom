@@ -20,6 +20,9 @@ export type SequenceListItem = {
   deliveredCount: number;
   opensCount: number;
   repliedCount: number;
+  // True when this sequence has at least one confirmed send inside the same
+  // rolling 24-hour window the Overview "Sent (24h)" metric counts.
+  sentLast24h: boolean;
   createdAtIso: string;
   updatedAtIso: string;
 };
@@ -30,6 +33,7 @@ export function getSequenceIssueCount(item: SequenceListItem): number {
 
 export type SequenceStatusFlags = {
   active: boolean;
+  sent: boolean;
   paused: boolean;
   attention: boolean;
   completed: boolean;
@@ -47,6 +51,7 @@ export function getSequenceStatusFlags(item: SequenceListItem): SequenceStatusFl
       item.campaignStatus === "RUNNING" ||
       item.campaignStatus === "WAITING_FOR_SLOT" ||
       ACTIVE_RUN_STATUSES.has(run),
+    sent: item.sentLast24h,
     paused: item.campaignStatus === "PAUSED" || run === "PAUSED",
     attention: item.campaignStatus === "FAILED" || run === "FAILED" || getSequenceIssueCount(item) > 0,
     completed: item.campaignStatus === "COMPLETED" || run === "COMPLETED",
@@ -185,6 +190,7 @@ export function buildSequenceAttentionItems(
 export const SEQUENCE_FILTERS = [
   { id: "all", label: "All" },
   { id: "active", label: "Active" },
+  { id: "sent", label: "Sent in last 24h" },
   { id: "paused", label: "Paused" },
   { id: "attention", label: "Needs attention" },
   { id: "completed", label: "Completed" },
@@ -210,6 +216,7 @@ export function countSequenceFilters(
   const counts: Record<SequenceFilterId, number> = {
     all: items.length,
     active: 0,
+    sent: 0,
     paused: 0,
     attention: 0,
     completed: 0,
@@ -220,6 +227,7 @@ export function countSequenceFilters(
   for (const item of items) {
     const flags = getSequenceStatusFlags(item);
     if (flags.active) counts.active += 1;
+    if (flags.sent) counts.sent += 1;
     if (flags.paused) counts.paused += 1;
     if (flags.attention) counts.attention += 1;
     if (flags.completed) counts.completed += 1;
@@ -228,6 +236,24 @@ export function countSequenceFilters(
   }
 
   return counts;
+}
+
+// Empty-state headline for the currently selected category, so a filtered list
+// with no rows explains the category it is empty for rather than reading as a
+// generic "nothing matched".
+const SEQUENCE_FILTER_EMPTY_TITLES: Record<SequenceFilterId, string> = {
+  all: "No sequences match this filter",
+  active: "No active sequences were found.",
+  sent: "No sequences sent emails in the last 24 hours.",
+  paused: "No paused sequences were found.",
+  attention: "No sequences currently need attention.",
+  completed: "No completed sequences were found.",
+  scheduled: "No scheduled sequences were found.",
+  draft: "No draft sequences were found."
+};
+
+export function describeEmptySequenceFilter(filterId: SequenceFilterId): string {
+  return SEQUENCE_FILTER_EMPTY_TITLES[filterId] ?? SEQUENCE_FILTER_EMPTY_TITLES.all;
 }
 
 // Sender email account filter. The empty string means "all email accounts";

@@ -1,5 +1,6 @@
 import type { ManualConfig } from "@/components/manual/manualTypes";
 import { adminManual } from "@/manuals/adminManual";
+import { analysisManual } from "@/manuals/analysisManual";
 import { campaignDetailManual } from "@/manuals/campaignDetailManual";
 import { campaignCreateManual, campaignsManual } from "@/manuals/campaignsManual";
 import { discoverDetailManual, discoverListManual } from "@/manuals/discoverManual";
@@ -32,6 +33,13 @@ export function getManualForPathname(pathname: string): ManualConfig | null {
   // shares one adaptive guide; its steps are filtered to the visible section.
   if (pathname === "/admin" || pathname.startsWith("/admin/")) {
     return adminManual;
+  }
+
+  // Every Analysis route (Summary, Engagement, Sequences, Reliability, Senders)
+  // shares the same six-step guide; its tab steps highlight the visible tabs in
+  // place instead of navigating between routes.
+  if (pathname === "/analysis" || pathname.startsWith("/analysis/")) {
+    return analysisManual;
   }
 
   // Discover detail workspace (/prospects/[searchId]) gets the search-specific

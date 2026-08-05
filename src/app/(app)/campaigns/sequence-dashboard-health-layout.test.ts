@@ -31,6 +31,7 @@ function makeItem(overrides: Partial<SequenceListItem> = {}): SequenceListItem {
     deliveredCount: 23,
     opensCount: 9,
     repliedCount: 1,
+    sentLast24h: false,
     createdAtIso: "2026-05-02T10:00:00.000Z",
     updatedAtIso: "2026-06-02T10:00:00.000Z",
     ...overrides

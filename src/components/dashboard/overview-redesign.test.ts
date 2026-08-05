@@ -1,434 +1,481 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import path from "node:path";
+import { existsSync, readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
-import { computeDeliverySplit } from "@/components/dashboard/delivery-split";
-
-// Unit tests for the delivered/issues percentage pairing plus source-level
-// assertions for the Overview command-center redesign, following the repo's
-// node-only source-assertion convention (no DOM in the test env). Covers:
-// rendering wiring, the interactive Analytics Pulse, the route-level loading
-// skeleton, empty states, accessibility, reduced motion, and the
-// no-hardcoded-numbers / no-unrelated-routes guarantees.
+// Source-level assertions for the minimal Overview redesign, following the
+// repo's node-only source-assertion convention (no DOM in the test env).
+// Pins: the compact header + pill actions, the four-part summary strip (no
+// duplicated send capacity), quick actions before recent sequences, the
+// three-item sequence preview with one rounded search + one View all button,
+// the right-column Gmail send window + concise activity feed, the loading
+// skeleton, accessibility, reduced motion, and the no-hardcoded-numbers /
+// no-new-dependencies guarantees.
 
 const CENTER = readFileSync("src/components/dashboard/overview-command-center.tsx", "utf8");
 const CENTER_CSS = readFileSync("src/components/dashboard/overview-command-center.module.css", "utf8");
-const PULSE = readFileSync("src/components/dashboard/analytics-pulse.tsx", "utf8");
-const PULSE_CSS = readFileSync("src/components/dashboard/analytics-pulse.module.css", "utf8");
+const PANEL = readFileSync("src/components/dashboard/sequence-panel.tsx", "utf8");
+const ROW = readFileSync("src/components/dashboard/sequence-row.tsx", "utf8");
+const ACTIONS = readFileSync("src/components/dashboard/sequence-row-actions.tsx", "utf8");
+const ACTIVITY = readFileSync("src/components/dashboard/activity-feed.tsx", "utf8");
+const SEND_WINDOW = readFileSync("src/components/dashboard/overview-send-window.tsx", "utf8");
 const LOADING = readFileSync("src/components/dashboard/overview-loading.tsx", "utf8");
 const LOADING_CSS = readFileSync("src/components/dashboard/overview-loading.module.css", "utf8");
 const WORKSPACE_PAGE = readFileSync("src/app/(app)/workspace/page.tsx", "utf8");
 const WORKSPACE_LOADING = readFileSync("src/app/(app)/workspace/loading.tsx", "utf8");
 
-describe("Delivered/issues split math (#1, #2)", () => {
-  it("pairs the delivered percent with its issue complement (screenshot-scale example)", () => {
-    const split = computeDeliverySplit(8200, 299);
-    expect(split).not.toBeNull();
-    expect(split!.deliveredLabel).toBe("96%");
-    expect(split!.issueLabel).toBe("4%");
-    expect(split!.deliveredPercent + split!.issuePercent).toBe(100);
+function cssRule(css: string, selector: string): string {
+  const start = css.indexOf(selector);
+  expect(start, `selector ${selector} exists`).toBeGreaterThanOrEqual(0);
+  return css.slice(start, css.indexOf("}", start));
+}
+
+describe("Page header (#8, #9, #10)", () => {
+  it("the /workspace route renders the redesigned Overview", () => {
+    expect(WORKSPACE_PAGE).toContain('export { default } from "@/components/dashboard/overview-command-center"');
+    expect(CENTER).toContain("styles.pageTitle}>Overview</h1>");
+    expect(CENTER).toContain("Here’s what’s happening with your outreach.");
   });
 
-  it("always sums the rounded pair to exactly 100", () => {
-    const pairs: Array<[number, number]> = [
-      [1, 1],
-      [965, 35],
-      [2, 998],
-      [7, 3],
-      [123456, 6543],
-      [1, 199],
-      [3517, 96483]
-    ];
-    for (const [delivered, issues] of pairs) {
-      const split = computeDeliverySplit(delivered, issues)!;
-      expect(split.deliveredPercent + split.issuePercent).toBe(100);
-      expect(Math.round(split.deliveredShare + split.issueShare)).toBe(100);
+  it("keeps the heading prominent but not enormous — the giant hero is gone", () => {
+    // Source of truth: the Sequences page header. Both titles must resolve to
+    // the same computed type, so this pins the shared declarations.
+    const sharedHeading = readFileSync("src/components/workspace-page-header.module.css", "utf8");
+    const overviewTitle = cssRule(CENTER_CSS, ".pageTitle");
+    const sequencesTitle = cssRule(sharedHeading, ".heading h1");
+    for (const declaration of ["font-size:", "letter-spacing:", "margin:"]) {
+      const value = (rule: string) =>
+        rule
+          .slice(rule.indexOf("{") + 1)
+          .split(";")
+          .find((line) => line.includes(declaration))
+          ?.trim();
+      expect(value(overviewTitle)).toBe(value(sequencesTitle));
+    }
+    expect(overviewTitle).toContain("clamp(1.9rem, 3.4vw, 2.5rem)");
+    // No extra weight/line-height overrides — both inherit the same h1 defaults.
+    expect(overviewTitle).not.toContain("font-weight");
+    expect(overviewTitle).not.toContain("line-height");
+    expect(CENTER).not.toContain("Command center");
+    expect(CENTER).not.toContain("heroEyebrow");
+    expect(CENTER_CSS).not.toMatch(/font-size: clamp\(2\.75rem/);
+  });
+
+  it("Create Sequence and Import List are visibly rounded pills with preserved routes", () => {
+    expect(CENTER).toMatch(/href="\/campaigns" className=\{styles\.primaryAction\}[\s\S]{0,160}Create Sequence/);
+    expect(CENTER).toMatch(/href="\/imports" className=\{styles\.secondaryAction\}[\s\S]{0,160}Import List/);
+    const shared = cssRule(CENTER_CSS, ".primaryAction,");
+    expect(shared).toContain("border-radius: 999px");
+    // No gradient, glow, or scale animation on the page actions.
+    expect(shared).not.toMatch(/gradient|scale\(/);
+  });
+});
+
+describe("Summary strip (#11–#15)", () => {
+  const strip = CENTER.slice(CENTER.indexOf("styles.summaryStrip"), CENTER.indexOf("styles.mainGrid"));
+
+  it("contains exactly the four operational sections", () => {
+    for (const label of ["Active sequences", "Sent (24h)", "Needs attention", "Lists ready"]) {
+      expect(strip).toContain(label);
+    }
+    expect((strip.match(/styles\.summaryCell/g) ?? []).length).toBe(4);
+  });
+
+  it("renders live values, never the mockup numbers", () => {
+    expect(strip).toContain("formatCompactNumber(activeSequenceCount)");
+    expect(strip).toContain("formatCompactNumber(sentLastDayCount)");
+    expect(strip).toContain("formatCompactNumber(needsAttentionCount)");
+    expect(strip).toContain("formatCompactNumber(readyListCount)");
+    for (const source of [CENTER, PANEL, ROW, ACTIVITY, SEND_WINDOW, LOADING]) {
+      expect(source).not.toMatch(/[>"'\s]155[<"'\s]/);
+      expect(source).not.toMatch(/[>"'\s]450[<"'\s]/);
+      expect(source).not.toMatch(/[>"'\s]295[<"'\s]/);
     }
   });
 
-  it("keeps sub-1% issue shares visible as <1% with a >99% counterpart (edge #4)", () => {
-    const split = computeDeliverySplit(9990, 10)!;
-    expect(split.issueLabel).toBe("<1%");
-    expect(split.deliveredLabel).toBe(">99%");
-    // The rounded pair still holds — a non-zero side never reads 0 or 100.
-    expect(split.issuePercent).toBe(1);
-    expect(split.deliveredPercent).toBe(99);
+  it("does not duplicate Gmail send capacity in the strip", () => {
+    expect(strip).not.toContain("Gmail");
+    expect(strip).not.toContain("sentLast24h");
+    expect(strip).not.toContain(".limit");
+    expect(strip).not.toContain("remaining");
   });
 
-  it("mirrors the clamp when delivered is the sub-1% side", () => {
-    const split = computeDeliverySplit(1, 500)!;
-    expect(split.deliveredLabel).toBe("<1%");
-    expect(split.issueLabel).toBe(">99%");
+  it("is one bordered container with hairline dividers, not floating cards", () => {
+    expect(cssRule(CENTER_CSS, ".summaryStrip")).toContain("border: 1px solid var(--line)");
+    expect(CENTER_CSS).toMatch(/\.summaryCell \+ \.summaryCell \{\s*border-left: 1px solid var\(--line\);/);
   });
 
-  it("returns null with no outcome data so the UI can show its empty state (edge #1)", () => {
-    expect(computeDeliverySplit(0, 0)).toBeNull();
-    expect(computeDeliverySplit(-5, 0)).toBeNull();
+  it("carries the tour anchor for the whole strip", () => {
+    expect(strip).toContain('data-overview-tour="summary"');
   });
 
-  it("handles one-sided outcomes (edges #2 and #3)", () => {
-    const allDelivered = computeDeliverySplit(1200, 0)!;
-    expect(allDelivered.deliveredLabel).toBe("100%");
-    expect(allDelivered.issueLabel).toBe("0%");
-
-    const allIssues = computeDeliverySplit(0, 42)!;
-    expect(allIssues.deliveredLabel).toBe("0%");
-    expect(allIssues.issueLabel).toBe("100%");
+  it("each sequence card links to its own filtered Sequences view", () => {
+    // URL-driven: the shared builder is the single source of the filter links,
+    // so the destination can never disagree with the Sequences page parsing.
+    expect(CENTER).toContain('from "@/lib/sequence-dashboard-url"');
+    for (const filter of ["active", "sent", "attention"]) {
+      expect(strip).toContain(`href={buildSequenceDashboardFilterHref("${filter}")}`);
+    }
+    for (const label of [
+      "View active sequences",
+      "View sequences with sends in the last 24 hours",
+      "View sequences needing attention"
+    ]) {
+      expect(strip).toContain(`aria-label="${label}"`);
+    }
+    // Semantic links only — no click handlers on non-interactive elements.
+    expect(strip).not.toContain("onClick");
   });
 
-  it("handles very large totals without drift (edge #5)", () => {
-    const split = computeDeliverySplit(12_400_000, 517_000)!;
-    expect(split.deliveredPercent + split.issuePercent).toBe(100);
-    expect(split.total).toBe(12_917_000);
-    expect(split.issueLabel).toBe("4%");
-  });
-});
-
-describe("Overview dashboard renders as one main block (#1, #2, #3)", () => {
-  // Everything between the hero opening and the summary cards — the main
-  // dashboard block. Analytics + health must live inside it.
-  const heroBlock = CENTER.slice(
-    CENTER.indexOf('data-overview-tour="page-intro"'),
-    CENTER.indexOf("<OverviewSummary")
-  );
-
-  it("the /workspace route renders the redesigned command center", () => {
-    expect(WORKSPACE_PAGE).toContain('export { default } from "@/components/dashboard/overview-command-center"');
-    expect(CENTER).toContain("styles.heroTitle}>Overview</h1>");
-    expect(CENTER_CSS).toContain("font-size: clamp(2.75rem, 5vw, 4rem)");
-    expect(CENTER).toContain('data-overview-tour="page-intro"');
-  });
-
-  it("keeps identity, actions, and analytics inside the single hero block — no sibling sections", () => {
-    // No <section> opens inside the hero slice: the pulse and the health rail
-    // are children of the one main card, not separate deck cards.
-    expect((heroBlock.match(/<section/g) ?? []).length).toBe(0);
-    expect(heroBlock).toContain("<AnalyticsPulse");
-    expect(heroBlock).toContain("styles.heroActionCard");
-    expect(heroBlock).toContain("styles.heroInsights");
-    // The old split-layout sections are gone.
-    expect(CENTER).not.toContain("pulseDeck");
-    expect(CENTER).not.toContain("startSection");
-  });
-
-  it("mounts the interactive Analytics Pulse inside the hero insights", () => {
-    expect(CENTER).toContain("<AnalyticsPulse");
-    expect(CENTER).toContain('data-overview-tour="workspace-health"');
-    // The sequence-health module renders inside the same client component the
-    // hero embeds, so it also stays inside the main block.
-    expect(PULSE).toContain('data-overview-tour="sequence-health"');
-  });
-
-  it("keeps hero copy short — the long launch paragraph stays gone", () => {
-    expect(CENTER).toContain("Launch, import, or review what needs attention.");
-    expect(CENTER).not.toContain("jump straight into a recent run");
-    expect(CENTER).not.toContain("Move from signal to action");
+  it("leaves Lists ready pointing at Imports with no filter", () => {
+    const listsReady = strip.slice(strip.indexOf("Lists ready") - 400);
+    expect(listsReady).toContain('href="/imports"');
+    expect(listsReady).not.toContain("buildSequenceDashboardFilterHref");
   });
 });
 
-describe("Loading skeleton (#2, #3)", () => {
-  it("the workspace route has a dedicated loading state", () => {
+describe("Quick actions (#18, #19, #20)", () => {
+  it("appear before Recent sequences in the main column", () => {
+    expect(CENTER.indexOf("Quick actions")).toBeGreaterThan(0);
+    expect(CENTER.indexOf("Quick actions")).toBeLessThan(CENTER.indexOf("<SequencePanel"));
+    expect(CENTER).toContain("Start something new.");
+  });
+
+  it("exactly three compact cards with existing routes and line icons", () => {
+    const quick = CENTER.slice(CENTER.indexOf("styles.quickGrid"), CENTER.indexOf("<SequencePanel"));
+    expect((quick.match(/styles\.quickCard/g) ?? []).length).toBe(3);
+    expect(quick).toContain('href="/campaigns"');
+    expect(quick).toContain('href="/imports"');
+    expect(quick).toContain('href="/templates"');
+    for (const icon of ["CirclePlus", "FileUp", "FileText"]) {
+      expect(quick).toContain(`<${icon} `);
+    }
+    // Compact height and no hover movement.
+    expect(cssRule(CENTER_CSS, ".quickCard")).toContain("min-height: 4.9rem");
+    expect(CENTER_CSS).not.toMatch(/quickCard:hover \{[^}]*transform/);
+  });
+});
+
+describe("Recent sequences preview (#21–#28)", () => {
+  it("shows at most three rows and has no pagination", () => {
+    expect(PANEL).toContain("const RECENT_SEQUENCES_LIMIT = 3;");
+    expect(PANEL).toContain(".slice(0, RECENT_SEQUENCES_LIMIT)");
+    expect(PANEL).not.toMatch(/pagination|ChevronLeft|ChevronRight|currentPage/i);
+  });
+
+  it("has exactly one rounded View all sequences button", () => {
+    expect((PANEL.match(/View all sequences/g) ?? []).length).toBe(1);
+    expect(PANEL).toMatch(/href="\/campaigns" className=\{styles\.viewAllButton\}/);
+    expect(cssRule(CENTER_CSS, ".viewAllButton")).toContain("border-radius: 999px");
+  });
+
+  it("keeps a labelled, rounded search field with preserved client-side behavior", () => {
+    expect(PANEL).toContain('aria-label="Search recent sequences"');
+    expect(PANEL).toContain('placeholder="Search sequences…"');
+    expect(PANEL).toMatch(/row\.name\.toLowerCase\(\)\.includes\(normalizedQuery\)/);
+    expect(PANEL).toMatch(/row\.summary\.toLowerCase\(\)\.includes\(normalizedQuery\)/);
+    expect(cssRule(CENTER_CSS, ".sequenceSearch input")).toContain("border-radius: 999px");
+    // Focus keeps the shape and adds a visible ring without layout shift.
+    expect(CENTER_CSS).toMatch(/\.sequenceSearch input:focus \{[^}]*box-shadow/);
+    // The dropped filter/sort toolbar stays gone.
+    expect(PANEL).not.toMatch(/toolbarSelect|scheduleType|setSort|setStatus/);
+  });
+
+  it("preserves the live-refresh behavior for active runs", () => {
+    expect(PANEL).toContain("OVERVIEW_REFRESH_INTERVAL_MS");
+    expect(PANEL).toContain("router.refresh()");
+    expect(PANEL).toContain("visibilitychange");
+    expect(PANEL).toContain("startRefreshWindow");
+  });
+
+  it("rows are generously rounded cards showing name, chips, status, and time from real data", () => {
+    expect(cssRule(CENTER_CSS, ".sequenceRow")).toContain("border-radius: 24px");
+    for (const piece of [
+      "sequence.name",
+      "sequence.meta.list",
+      "sequence.meta.template",
+      "sequence.meta.sender",
+      "sequence.statusLabel",
+      "sequence.lastActivityLabel"
+    ]) {
+      expect(ROW).toContain(piece);
+    }
+    expect(ROW).toContain('data-tone={sequence.statusTone}');
+    // The row stays keyboard-activatable.
+    expect(ROW).toContain("tabIndex={0}");
+    expect(ROW).toMatch(/event\.key === "Enter" \|\| event\.key === " "/);
+  });
+
+  it("status badges are compact rounded pills with semantic tones", () => {
+    expect(cssRule(CENTER_CSS, ".sequenceStatus")).toContain("border-radius: 999px");
+    for (const tone of ["running", "completed", "paused", "failed", "scheduled", "draft"]) {
+      expect(CENTER_CSS).toContain(`.sequenceStatus[data-tone="${tone}"]`);
+    }
+  });
+
+  it("actions are circular, labelled icon buttons with all states preserved", () => {
+    const rule = cssRule(CENTER_CSS, ".actionButton {");
+    expect(rule).toContain("width: 2.5rem");
+    expect(rule).toContain("height: 2.5rem");
+    expect(rule).toContain("border-radius: 999px");
+    for (const piece of [
+      "aria-label={`View ${campaignName}`}",
+      "aria-label={`Pause ${campaignName}`}",
+      "aria-label={`Resume ${campaignName}`}",
+      "aria-label={`Delete ${campaignName}`}",
+      "handleRelaunch",
+      "isDailyLimitBlocked"
+    ]) {
+      expect(ACTIONS).toContain(piece);
+    }
+    // Delete stays restrained: an icon button with a tinted treatment, plus the
+    // existing confirm dialog.
+    expect(ACTIONS).toContain("actionButtonDanger");
+    expect(ACTIONS).toContain("<AppConfirmDialog");
+  });
+
+  it("actions expand on hover/focus into labelled capsules without transforms", () => {
+    // Every action carries its expanded label; the Open arrow is a real link.
+    for (const label of ["View", "Pause", "Resume", "Relaunch", "Delete"]) {
+      expect(ACTIONS).toContain(`<span className={styles.actionLabel}>${label}</span>`);
+    }
+    expect(ROW).toContain("<span className={styles.actionLabel}>Open</span>");
+    expect(ROW).toContain("aria-label={`Open ${sequence.name}`}");
+    // Width-based expansion with the label revealed via max-width/opacity.
+    expect(CENTER_CSS).toMatch(/\.actionButton:hover,\s*\.actionButton:focus-visible \{[^}]*width: var\(--action-expanded-width\)/);
+    expect(CENTER_CSS).toMatch(/\.actionButton:hover \.actionLabel,\s*\.actionButton:focus-visible \.actionLabel \{[^}]*max-width/);
+    // No transform/scale/shadow animation on the buttons themselves.
+    const actionRules = CENTER_CSS.slice(CENTER_CSS.indexOf(".actionButton {"), CENTER_CSS.indexOf(".spin {"));
+    expect(actionRules).not.toMatch(/transform|scale\(|box-shadow/);
+    // The rail is right-anchored so expansion never reflows the row.
+    expect(cssRule(CENTER_CSS, ".sequenceActions")).toContain("justify-content: flex-end");
+    // Tooltips stay available for the compact state.
+    for (const title of ['title="View"', 'title="Pause"', 'title="Resume"', 'title="Delete"']) {
+      expect(ACTIONS).toContain(title);
+    }
+    expect(ROW).toContain('title="Open"');
+  });
+});
+
+describe("Gmail send window (#16, #17)", () => {
+  it("stays in the right column with real windowed data", () => {
+    expect(CENTER).toMatch(/<aside className=\{styles\.sideColumn\}>[\s\S]{0,200}<SendWindowCard/);
+    for (const piece of [
+      "combined.sentLast24h.toLocaleString()",
+      "combined.limit.toLocaleString()",
+      "combined.remaining.toLocaleString()",
+      'role="progressbar"',
+      "LocalDateTime",
+      "ledgerAvailable"
+    ]) {
+      expect(SEND_WINDOW).toContain(piece);
+    }
+    expect(SEND_WINDOW).toContain('data-overview-tour="gmail-send-window"');
+  });
+
+  it("keeps the app's real Google mark, not a generic or redrawn mail icon", () => {
+    for (const fill of ["#4285F4", "#34A853", "#FBBC04", "#EA4335"]) {
+      expect(SEND_WINDOW).toContain(`fill="${fill}"`);
+    }
+    // The exact paths from the existing auth-page asset.
+    expect(SEND_WINDOW).toContain("M17.64 9.2c0-.64-.06-1.25-.17-1.84H9v3.48h4.84");
+    expect(SEND_WINDOW).not.toMatch(/<Mail\b|MailCheck/);
+  });
+});
+
+describe("Recent activity (#31, #32)", () => {
+  it("drops the raw System log prefix and the noisy live badge", () => {
+    expect(ACTIVITY).not.toContain("System log:");
+    expect(ACTIVITY).not.toContain("Flowing now");
+  });
+
+  it("keeps concise icon + title + description + timestamp rows from real items", () => {
+    for (const piece of ["getActivityIcon", "getActivityTone", "item.title", "item.description", "item.timeLabel"]) {
+      expect(ACTIVITY).toContain(piece);
+    }
+    expect(ACTIVITY).toContain('data-overview-tour="recent-activity"');
+    // No invented View-all route — /admin/activity is admin-gated, so the
+    // operator-facing Overview has no valid activity destination to link to.
+    expect(ACTIVITY).not.toMatch(/View all/);
+  });
+
+  it("renders at most the four newest items, without pagination or a scroller", () => {
+    expect(ACTIVITY).toContain("const OVERVIEW_ACTIVITY_LIMIT = 4;");
+    expect(ACTIVITY).toContain("items.slice(0, OVERVIEW_ACTIVITY_LIMIT)");
+    // The capped list is what renders — never the full array.
+    expect(ACTIVITY).toContain("visibleItems.length ?");
+    expect(ACTIVITY).toContain("visibleItems.map(");
+    expect(ACTIVITY).not.toMatch(/items\.map\(/);
+    // Presentation-only: the builder and its ordering are untouched.
+    const builder = readFileSync("src/components/dashboard/activity-builder.ts", "utf8");
+    expect(builder).toContain("const ACTIVITY_LIMIT = 7");
+    expect(ACTIVITY).not.toMatch(/sort\(|reverse\(/);
+    // No pagination controls and no internal scroll container in the panel.
+    expect(ACTIVITY).not.toMatch(/pagination|ChevronLeft|ChevronRight|currentPage/i);
+    expect(cssRule(CENTER_CSS, ".activityList")).not.toMatch(/overflow-y|max-height/);
+    expect(cssRule(CENTER_CSS, ".activitySection")).not.toMatch(/overflow-y|max-height/);
+  });
+
+  it("collapses to a single compact line when there is no activity", () => {
+    expect(ACTIVITY).toContain("No recent activity yet.");
+    // One <p>, not the old icon + heading + paragraph block.
+    expect(ACTIVITY).not.toContain("activityEmptyIcon");
+    expect(CENTER_CSS).not.toContain(".activityEmptyIcon");
+  });
+});
+
+describe("Removed analytics presentation (#36, #37)", () => {
+  it("the Analytics Pulse and old summary cards are gone from the Overview", () => {
+    expect(CENTER).not.toMatch(/AnalyticsPulse|analytics-pulse|OverviewSummary|delivery-split|buildSequenceHealth/);
+    expect(existsSync("src/components/dashboard/analytics-pulse.tsx")).toBe(false);
+    expect(existsSync("src/components/dashboard/overview-summary.tsx")).toBe(false);
+    expect(existsSync("src/components/dashboard/delivery-split.ts")).toBe(false);
+  });
+
+  it("no charts or chart libraries were added", () => {
+    for (const source of [CENTER, PANEL, ROW, ACTIVITY, SEND_WINDOW, LOADING]) {
+      expect(source).not.toMatch(/from "(three|gsap|lottie|framer-motion|chart\.js|recharts|d3)/i);
+      expect(source).not.toMatch(/donut|<svg viewBox="0 0 36 36"/i);
+    }
+  });
+
+  it("no analytics page or route was created", () => {
+    expect(existsSync("src/app/(app)/analytics")).toBe(false);
+  });
+});
+
+describe("Loading skeleton", () => {
+  it("the workspace route keeps a dedicated CSS-only loading state", () => {
     expect(WORKSPACE_LOADING).toContain('export { default } from "@/components/dashboard/overview-loading"');
-  });
-
-  it("announces loading accessibly without a text-only or spinner-only state", () => {
     expect(LOADING).toContain('role="status"');
     expect(LOADING).toContain('aria-busy="true"');
     expect(LOADING).toContain("srOnly");
-    // No generic spinner: nothing spins, and the shimmer is a background sweep.
-    expect(LOADING).not.toMatch(/spinner|Loader2|dashboard-spin/);
-    expect(LOADING_CSS).not.toMatch(/rotate\(360deg\)|animation:[^;]*spin/);
+    expect(LOADING).not.toContain('"use client"');
+    expect(LOADING).not.toMatch(/useState|useEffect|spinner|Loader2/);
+    expect(LOADING_CSS).toContain("overview-skeleton-shimmer");
   });
 
-  it("mirrors the compact panel: identity + stat tiles, action card with ring and health rail", () => {
+  it("mirrors the new layout: header pills, summary strip, quick cards, rows, side cards", () => {
     for (const piece of [
-      "heroIdentity",
-      "highlightRow",
-      "actionCard",
-      "ctaRow",
-      "insightStack",
-      "donutRing",
-      "donutCore",
-      "metricRow",
-      "railBar",
-      "healthChips",
-      "summaryRow",
-      "mainGrid",
+      "pageHeader",
+      "actionPill",
+      "summaryStrip",
+      "quickGrid",
+      "sequenceHead",
+      "searchPill",
+      "rowCard",
+      "sideCard",
       "activityRow"
     ]) {
       expect(LOADING).toContain(piece);
     }
-    // The skeleton is CSS-only — a server component with zero client JS.
-    expect(LOADING).not.toContain('"use client"');
-    expect(LOADING).not.toMatch(/useState|useEffect|canvas|three|lottie/i);
-    expect(LOADING_CSS).toContain("overview-skeleton-shimmer");
-  });
-
-  it("keeps the skeleton's ring and health rail inside the one hero block (#10)", () => {
-    const heroSkeleton = LOADING.slice(LOADING.indexOf("styles.hero}"), LOADING.indexOf("</section>"));
-    expect((heroSkeleton.match(/<section/g) ?? []).length).toBe(0);
-    expect(heroSkeleton).toContain("donutRing");
-    expect(heroSkeleton).toContain("healthChips");
-    expect(LOADING).not.toContain("pulseDeck");
-    expect(LOADING).not.toContain("statStrip");
   });
 });
 
-describe("Primary actions (#4, #5)", () => {
-  it("Create Sequence routes to /campaigns with a premium CTA", () => {
-    expect(CENTER).toMatch(/href="\/campaigns" className=\{styles\.heroCta\}[\s\S]{0,220}Create Sequence/);
+describe("Theming, motion, and layout", () => {
+  it("both columns come from one grid with a clearly wider main column", () => {
+    expect(cssRule(CENTER_CSS, ".mainGrid")).toContain("minmax(0, 2.15fr) minmax(20.5rem, 1fr)");
+    // Stacks when the content area itself runs out of room.
+    expect(CENTER_CSS).toMatch(/@container \(max-width: 62rem\) \{\s*\.mainGrid \{\s*grid-template-columns: 1fr;/);
   });
 
-  it("Import List routes to /imports", () => {
-    expect(CENTER).toMatch(/href="\/imports" className=[\s\S]{0,220}Import List/);
+  it("matches the two columns' heights on desktop and releases it when stacked", () => {
+    // The grid stretches peers; the left column hands the slack to the row
+    // list, while the right column's cards keep their natural height.
+    expect(cssRule(CENTER_CSS, ".mainGrid")).toContain("align-items: stretch");
+    expect(cssRule(CENTER_CSS, ".mainColumn")).toContain("grid-template-rows: auto minmax(0, 1fr)");
+    expect(cssRule(CENTER_CSS, ".sequenceSection")).toContain("grid-template-rows: auto minmax(0, 1fr)");
+    expect(cssRule(CENTER_CSS, ".sideColumn")).toContain("align-content: start");
+    // Once stacked, heights are natural again.
+    const stacked = CENTER_CSS.slice(CENTER_CSS.indexOf("@container (max-width: 62rem)"));
+    expect(stacked).toMatch(/\.mainColumn,\s*\.sequenceSection \{\s*grid-template-rows: none;/);
+    // No viewport-height or fixed-pixel panel heights anywhere.
+    expect(CENTER_CSS).not.toMatch(/100vh|min-height:\s*\d{3}px/);
   });
 
-  it("both actions also exist in the blank-workspace empty state", () => {
-    const emptyCard = CENTER.slice(CENTER.indexOf("Start your outreach system"));
-    expect(emptyCard).toContain('href="/imports"');
-    expect(emptyCard).toContain('href="/campaigns"');
-    expect(emptyCard).toContain("Import List");
-    expect(emptyCard).toContain("Create Sequence");
-  });
-});
-
-describe("Metrics come from live data (#6, #13)", () => {
-  it("the pulse receives only raw computed dashboard counts", () => {
-    expect(CENTER).toContain("targeted={runTotals.recipients}");
-    expect(CENTER).toContain("delivered={runTotals.delivered}");
-    expect(CENTER).toContain("issues={analyticsIssueCount}");
-    expect(CENTER).toContain("health={sequenceHealth}");
-    // No precomputed percentages cross the boundary — the paired split has a
-    // single owner inside the client component.
-    expect(CENTER).not.toContain("successPercent=");
-    expect(PULSE).toContain('from "@/components/dashboard/delivery-split"');
-    expect(PULSE).toMatch(/useMemo\(\(\) => computeDeliverySplit\(delivered, issues\)/);
+  it("keeps every row compact — a filtered result never stretches to fill (#1-#5)", () => {
+    const list = cssRule(CENTER_CSS, ".sequenceList");
+    // Rows size to their own content and stay pinned to the top; the list does
+    // not absorb the panel's flexible track.
+    expect(list).toContain("grid-auto-rows: max-content");
+    expect(list).toContain("align-content: start");
+    expect(list).toContain("align-self: start");
+    expect(list).not.toContain("1fr");
+    expect(list).not.toMatch(/space-between|justify-content: center|place-items/);
+    // One consistent row height regardless of how many results are showing.
+    const row = cssRule(CENTER_CSS, ".sequenceRow");
+    expect(row).toContain("min-height: 6.75rem");
+    expect(row).not.toMatch(/height: 100%|flex: 1|flex-grow/);
+    // The empty states sit at the top too, never centred in a tall blank panel.
+    expect(cssRule(CENTER_CSS, ".sequenceEmpty")).toContain("align-self: start");
+    expect(cssRule(CENTER_CSS, ".sequenceEmptyCompact")).toContain("align-self: start");
   });
 
-  it("keeps the derived helpers that feed the charts", () => {
-    expect(CENTER).toContain("buildSequenceHealth");
+  it("offers a compact, actionable no-results state", () => {
+    expect(PANEL).toContain("No sequences match your search.");
+    expect(PANEL).toContain('onClick={() => setQuery("")}');
+    expect(PANEL).toContain("Clear search");
+    expect(PANEL).toContain('role="status"');
   });
 
-  it("never hardcodes the screenshot values (8.7K / 8.2K / 299 / 155 / 96%)", () => {
-    for (const source of [CENTER, PULSE, LOADING]) {
-      expect(source).not.toMatch(/8\.7K|8\.2K/);
-      expect(source).not.toMatch(/[>"'\s]299[<"'\s]/);
-      expect(source).not.toMatch(/[>"'\s]155[<"'\s]/);
-      expect(source).not.toMatch(/[>"'\s]96%/);
+  it("adapts to the sidebar via container width, never by duplicating its size", () => {
+    // The page and the sequence panel are their own containers, so the same
+    // rules cover an expanded/collapsed sidebar and every screen size.
+    expect(cssRule(CENTER_CSS, ".page")).toContain("container-type: inline-size");
+    expect(cssRule(CENTER_CSS, ".sequenceSection")).toContain("container-type: inline-size");
+    // The shell owns the sidebar columns — those widths must not reappear here.
+    expect(CENTER_CSS).not.toMatch(/292px|92px/);
+    expect(CENTER_CSS).not.toMatch(/data-sidebar-collapsed/);
+    // Narrow panel: actions fall back to icon-only and the rail shrinks, which
+    // is what frees the width the metadata needs.
+    const narrow = CENTER_CSS.slice(CENTER_CSS.indexOf("@container (max-width: 52rem)"));
+    expect(narrow).toContain("11.5rem");
+    expect(narrow).toMatch(/\.actionButton:hover \.actionLabel[\s\S]{0,120}max-width: 0/);
+    // Everything that can shrink is allowed to.
+    for (const selector of [".mainGrid", ".mainColumn", ".sideColumn", ".sequenceSection", ".sequenceList"]) {
+      expect(cssRule(CENTER_CSS, selector)).toContain("min-width: 0");
     }
   });
-});
 
-describe("Empty states (#7)", () => {
-  it("a blank workspace gets the premium 'Start your outreach system' card instead of zeroed charts", () => {
-    expect(CENTER).toContain("const isBlankWorkspace = campaignCount === 0 && processedImportCount === 0;");
-    expect(CENTER).toContain("Start your outreach system");
-    expect(CENTER).toContain("Import a list, create a template, then launch your first sequence.");
-    // The charts render only on the non-blank branch.
-    expect(CENTER).toMatch(/isBlankWorkspace \? \([\s\S]*?\) : \([\s\S]*?<AnalyticsPulse/);
+  it("lets long names and chips truncate instead of clipping or overflowing", () => {
+    expect(cssRule(CENTER_CSS, ".sequenceName")).toContain("text-overflow: ellipsis");
+    const chip = cssRule(CENTER_CSS, ".sequenceMetaChip");
+    expect(chip).toContain("text-overflow: ellipsis");
+    // Shrinkable with no floor, so a chip ellipsizes rather than forcing overflow.
+    expect(chip).toContain("flex: 0 1 auto");
+    expect(chip).toContain("min-width: 0");
+    // Metadata wraps as a last resort; it is never clipped by a hidden overflow.
+    expect(cssRule(CENTER_CSS, ".sequenceMeta")).toContain("flex-wrap: wrap");
+    expect(cssRule(CENTER_CSS, ".sequenceMeta")).not.toContain("overflow: hidden");
   });
 
-  it("the pulse itself degrades gracefully when a workspace has partial data", () => {
-    // A null split (zero outcomes) renders the empty state instead of charts.
-    expect(PULSE).toMatch(/\{split \? \(/);
-    expect(PULSE).toContain("No delivery data yet");
-    expect(PULSE).toContain("hasSequences");
-    expect(PULSE).toContain("No sequences yet");
-  });
-});
-
-describe("Interactive metrics (#3, #4, #5, #6, #8, #9, #10)", () => {
-  it("activating Delivered pins a detail that pairs the success percent with the issue share", () => {
-    expect(PULSE).toMatch(/aria-expanded=\{selected === "delivered"\}/);
-    expect(PULSE).toMatch(/onClick=\{\(\) => toggle\("delivered"\)\}/);
-    const delivered = PULSE.slice(PULSE.indexOf('eyebrow: "Delivered"'), PULSE.indexOf('eyebrow: "Issues"'));
-    expect(delivered).toContain("${split.deliveredLabel} successful");
-    expect(delivered).toContain("${split.issueLabel} issues");
-    expect(delivered).toContain("stats: [deliveredStat, issueStat, targetedStat]");
-    expect(delivered).toContain("View sequences");
-    expect(delivered).toContain('"/campaigns"');
-    // The stats always include the delivered count, issue count, and targeted total.
-    expect(PULSE).toContain('{ label: "Targeted", value: formatCompactNumber(Math.max(targeted, split.total)) }');
+  it("dark mode reuses theme tokens instead of a hardcoded second palette", () => {
+    expect(CENTER_CSS).toContain("var(--surface)");
+    expect(CENTER_CSS).toContain("var(--line)");
+    expect(CENTER_CSS).toContain("var(--accent)");
+    expect(CENTER_CSS).toContain(':global(html[data-theme="dark"]) .page');
+    expect(CENTER_CSS).toContain("@media (prefers-color-scheme: dark)");
   });
 
-  it("activating Issues pins a detail that pairs the issue percent with the delivered share", () => {
-    expect(PULSE).toMatch(/aria-expanded=\{selected === "issues"\}/);
-    expect(PULSE).toMatch(/onClick=\{\(\) => toggle\("issues"\)\}/);
-    const issues = PULSE.slice(PULSE.indexOf('eyebrow: "Issues"'), PULSE.indexOf("function buildHealthDetail"));
-    expect(issues).toContain("${split.issueLabel} need attention");
-    expect(issues).toContain("${split.deliveredLabel} delivered");
-    expect(issues).toContain("Review sequences");
-    expect(issues).toContain('"/campaigns?status=needs-attention"');
-    expect(issues).not.toContain("Open suppressions");
-    expect(issues).not.toContain('"/suppressions"');
-  });
-
-  it("the ring center is minimal — one figure, no multi-line text (#7)", () => {
-    // The center holds a single <strong>; the mode word sits below the ring
-    // (donutCaption) and the paired share lives in the metric rows beside it.
-    const center = PULSE.slice(PULSE.indexOf("styles.donutCenter}"), PULSE.indexOf("styles.donutCaption"));
-    expect((center.match(/<strong/g) ?? []).length).toBe(1);
-    expect(center).not.toContain("<small");
-    expect(center).not.toContain("<em");
-    expect(PULSE).not.toContain("donutCenterPaired");
-    // Keyed swap so switching Delivered <-> Issues animates the reading.
-    expect(PULSE).toMatch(/<strong key=\{centerMode\}/);
-    expect(PULSE_CSS).toContain("pulse-center-in");
-  });
-
-  it("both shares stay visible outside the chart at rest", () => {
-    // The metric rows always render count + share for BOTH sides, so a 0%
-    // issues state reads as a compact row, never crammed into the circle.
-    expect(PULSE).toContain("{split.deliveredLabel}");
-    expect(PULSE).toContain("{split.issueLabel}");
-    expect(PULSE).toMatch(/metricRow[\s\S]{0,900}\{split\.deliveredLabel\}/);
-    expect(PULSE).toMatch(/data-key="issues"[\s\S]{0,900}\{split\.issueLabel\}/);
-  });
-
-  it("both metric cards show count and share side by side", () => {
-    expect(PULSE).toContain("metricShare");
-    const shareBadges = (PULSE.match(/styles\.metricShare/g) ?? []).length;
-    expect(shareBadges).toBe(2);
-  });
-
-  it("every sequence-health bar segment is activatable and reveals a breakdown with its share", () => {
-    expect(PULSE).toMatch(/aria-expanded=\{selected === slice\.key\}/);
-    expect(PULSE).toMatch(/onClick=\{\(\) => toggle\(slice\.key\)\}/);
-    expect(PULSE).toContain("View running sequences");
-    expect(PULSE).toContain("View completed sequences");
-    expect(PULSE).toContain("View review items");
-    expect(PULSE).toContain("Launch a sequence");
-    // The health detail includes count, share of all sequences, and the total.
-    expect(PULSE).toContain('label: "Share"');
-    expect(PULSE).toContain('label: "All sequences"');
-    expect(PULSE).toContain("href: HEALTH_FILTER_HREF_BY_KEY.running");
-    expect(PULSE).toContain("href: HEALTH_FILTER_HREF_BY_KEY.done");
-    expect(PULSE).toContain("href: HEALTH_FILTER_HREF_BY_KEY.review");
-    expect(PULSE).toContain("href: HEALTH_FILTER_HREF_BY_KEY.ready");
-    expect(PULSE).not.toContain('href: "/suppressions"');
-  });
-
-  it("links every health chip to the matching supported Sequences filter", () => {
-    expect(PULSE).toContain('running: "active"');
-    expect(PULSE).toContain('done: "completed"');
-    expect(PULSE).toContain('review: "attention"');
-    expect(PULSE).toContain('ready: "scheduled"');
-    expect(PULSE).toContain("href={HEALTH_FILTER_HREF_BY_KEY[slice.key]}");
-    expect(PULSE).toContain('aria-label={`View ${slice.label.toLowerCase()} sequences`}');
-  });
-
-  it("the donut segments and health bar mirror the same toggle interactions (#7)", () => {
-    expect(PULSE).toMatch(/donutSegment[\s\S]{0,900}onClick=\{\(\) => toggle\("delivered"\)\}/);
-    expect(PULSE).toMatch(/healthSlice[\s\S]{0,900}onClick=\{\(\) => toggle\(slice\.key\)\}/);
-    // Hover/focus previews the matching segment before a click pins it.
-    expect(PULSE).toContain("onMouseEnter: () => setHovered(selection)");
-    expect(PULSE).toContain("onFocus: () => setHovered(selection)");
-  });
-
-  it("switching selections re-animates the pinned detail card", () => {
-    expect(PULSE).toMatch(/<DetailCard key=\{selected\}/);
-  });
-
-  it("keeps the guided-tour anchors on the interactive chart sections", () => {
-    expect(PULSE).toContain('data-overview-tour="delivery-issues"');
-    expect(PULSE).toContain('data-overview-tour="sequence-health"');
-  });
-});
-
-describe("Keyboard + screen-reader accessibility (#8, #11)", () => {
-  it("metric cards use native buttons and health chips use native links", () => {
-    const buttonCount = (PULSE.match(/type="button"/g) ?? []).length;
-    // Delivered, Issues, and the detail close are native buttons; health
-    // chips are Links and therefore activate with keyboard and pointer input.
-    expect(buttonCount).toBeGreaterThanOrEqual(3);
-    expect(PULSE).toMatch(/<Link[\s\S]{0,260}className=\{styles\.healthChip\}/);
-  });
-
-  it("donut arcs and health-bar slices are named, focusable, keyboard-activatable buttons", () => {
-    // Two SVG arcs + the mapped bar slice — each with role, tab stop, name, and pressed state.
-    expect((PULSE.match(/role="button"/g) ?? []).length).toBe(3);
-    expect((PULSE.match(/tabIndex=\{0\}/g) ?? []).length).toBe(3);
-    expect(PULSE).toMatch(/aria-label=\{`Delivered segment: \$\{split\.deliveredLabel\}/);
-    expect(PULSE).toMatch(/aria-label=\{`Issues segment: \$\{split\.issueLabel\}/);
-    expect(PULSE).toMatch(/aria-label=\{`\$\{slice\.label\}: /);
-    // Enter/Space activate through the shared segment handler.
-    expect(PULSE).toContain('event.key === "Enter" || event.key === " "');
-    expect((PULSE.match(/onKeyDown=\{segmentKeyDown\(/g) ?? []).length).toBe(3);
-  });
-
-  it("selection is announced via aria-pressed on every interactive metric", () => {
-    // Delivered arc + card, issues arc + card, and the health-bar slice.
-    expect((PULSE.match(/aria-pressed=\{selected === "delivered"\}/g) ?? []).length).toBe(2);
-    expect((PULSE.match(/aria-pressed=\{selected === "issues"\}/g) ?? []).length).toBe(2);
-    expect((PULSE.match(/aria-pressed=\{selected === slice\.key\}/g) ?? []).length).toBe(1);
-  });
-
-  it("panels are labelled regions, Escape closes, and the close control has a name", () => {
-    expect(PULSE).toContain('role="region"');
-    expect(PULSE).toMatch(/aria-controls=\{(deliveryPanelId|healthPanelId)\}/);
-    expect(PULSE).toContain('event.key === "Escape"');
-    expect(PULSE).toContain('aria-label="Close details"');
-  });
-
-  it("charts carry readable text alternatives naming both shares", () => {
-    expect(PULSE).toMatch(/role="group"[\s\S]{0,260}aria-label=\{`Delivery outcomes: \$\{split\.deliveredLabel\} delivered/);
-    expect(PULSE).toMatch(/role="group"[\s\S]{0,200}aria-label=\{`Sequence health:/);
-    // The detail names its metric in text, so color is never the only signal.
-    expect(PULSE).toContain("detailEyebrow");
-  });
-
-  it("focus states are visible on the new interactive controls, including SVG segments", () => {
+  it("focus is visible on every interactive control", () => {
     for (const selector of [
-      ".metricRow:focus-visible",
-      ".healthChip:focus-visible",
-      ".detailAction:focus-visible",
-      ".donutSegment:focus-visible",
-      ".healthSlice:focus-visible"
+      ".primaryAction:focus-visible",
+      ".secondaryAction:focus-visible",
+      ".quickCard:focus-visible",
+      ".viewAllButton:focus-visible",
+      ".sequenceRow:focus-visible",
+      ".actionButton:focus-visible",
+      ".sendCard:focus-visible",
+      ".activityItem:focus-visible"
     ]) {
-      expect(PULSE_CSS).toContain(selector);
+      expect(CENTER_CSS).toContain(selector);
     }
-    expect(CENTER_CSS).toContain(".heroCta:focus-visible");
   });
-});
 
-describe("Reduced motion + performance (#12)", () => {
-  it("every new stylesheet honours prefers-reduced-motion", () => {
-    for (const css of [PULSE_CSS, LOADING_CSS, CENTER_CSS]) {
+  it("honours prefers-reduced-motion in both stylesheets", () => {
+    for (const css of [CENTER_CSS, LOADING_CSS]) {
       expect(css).toContain("@media (prefers-reduced-motion: reduce)");
+      const reduced = css.slice(css.indexOf("@media (prefers-reduced-motion: reduce)"));
+      expect(reduced).toMatch(/animation:\s*none|transition:\s*none/);
     }
-    const reducedLoading = LOADING_CSS.slice(LOADING_CSS.indexOf("@media (prefers-reduced-motion: reduce)"));
-    expect(reducedLoading).toMatch(/animation:\s*none/);
-    const reducedPulse = PULSE_CSS.slice(PULSE_CSS.indexOf("@media (prefers-reduced-motion: reduce)"));
-    expect(reducedPulse).toMatch(/animation:\s*none/);
-    expect(reducedPulse).toMatch(/transition:\s*none/);
-  });
-
-  it("adds no heavy dependencies or extra data fetching to the dashboard", () => {
-    for (const source of [PULSE, LOADING, CENTER]) {
-      expect(source).not.toMatch(/three|gsap|lottie|framer-motion|chart\.js|recharts|d3/i);
-    }
-    expect(PULSE).not.toMatch(/fetch\(|useSWR|useQuery|setInterval/);
-  });
-});
-
-describe("Scope: no unrelated routes changed (#14)", () => {
-  it("only the workspace and campaigns routes have loading states", () => {
-    const appDir = "src/app/(app)";
-    const routesWithLoading = readdirSync(appDir).filter((entry) =>
-      existsSync(path.join(appDir, entry, "loading.tsx"))
-    );
-    expect(routesWithLoading).toEqual(["campaigns", "workspace"]);
-  });
-
-  it("the Analytics Pulse is only used by the Overview command center", () => {
-    const componentFiles = readdirSync("src/components", { recursive: true }) as string[];
-    const importers = componentFiles
-      .filter((file) => /\.(ts|tsx)$/.test(file) && !file.includes(".test."))
-      .filter((file) => {
-        const contents = readFileSync(path.join("src/components", file), "utf8");
-        return contents.includes('from "@/components/dashboard/analytics-pulse"');
-      });
-    expect(importers).toEqual(["dashboard/overview-command-center.tsx"]);
   });
 });

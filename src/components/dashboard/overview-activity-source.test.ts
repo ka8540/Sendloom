@@ -43,11 +43,14 @@ describe("overview activity loader — only safe audit actions are surfaced", ()
 });
 
 describe("overview activity loader — feed structure is preserved", () => {
-  it("keeps the single 7-row slice (no extra visible rows, no new section)", () => {
-    // The limit/section live in the shared builder + ActivityFeed; the loader
-    // must not introduce a second feed.
+  it("keeps one feed: the builder's slice, capped to 4 rows by the panel", () => {
+    // The builder still assembles its 7-item slice (ordering + records
+    // unchanged); the Overview panel renders only the newest 4 of them. The
+    // loader must not introduce a second feed.
     const BUILDER = readFileSync("src/components/dashboard/activity-builder.ts", "utf8");
     expect(BUILDER).toContain("const ACTIVITY_LIMIT = 7");
+    const FEED = readFileSync("src/components/dashboard/activity-feed.tsx", "utf8");
+    expect(FEED).toContain("const OVERVIEW_ACTIVITY_LIMIT = 4;");
     expect((LOADER.match(/<ActivityFeed\b/g) ?? []).length).toBe(1);
   });
 

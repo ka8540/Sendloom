@@ -17,6 +17,7 @@ export type SequenceDashboardUrlState = {
 const STATUS_PARAM_BY_FILTER: Record<SequenceFilterId, string | null> = {
   all: null,
   active: "active",
+  sent: "sent",
   paused: "paused",
   attention: "needs-attention",
   completed: "completed",
@@ -26,6 +27,8 @@ const STATUS_PARAM_BY_FILTER: Record<SequenceFilterId, string | null> = {
 
 const FILTER_BY_STATUS_PARAM = new Map<string, SequenceFilterId>([
   ["active", "active"],
+  ["sent", "sent"],
+  ["sent-24h", "sent"],
   ["paused", "paused"],
   ["needs-attention", "attention"],
   ["attention", "attention"],

@@ -13,7 +13,7 @@ import {
   type ViewportSize
 } from "@/components/manual/overlayPosition";
 import { getManualForPathname } from "@/manuals";
-import { overviewFullSteps, preservedOverviewSteps, workspaceManual } from "@/manuals/workspaceManual";
+import { overviewFullSteps, workspaceManual } from "@/manuals/workspaceManual";
 
 // The tour overlay is a "use client" component with React/CSS-module imports, so
 // (matching the repo's node test env) layout behaviour is verified two ways:
@@ -168,10 +168,14 @@ describe("Mobile fallback + design preserved (#16, #18, #20)", () => {
 
   it("leaves Overview step content + order untouched (#18)", () => {
     // The fix only changed positioning/scroll — steps are identical.
-    expect(overviewFullSteps().slice(0, 3).map((step) => step.id)).toEqual(
-      preservedOverviewSteps.map((step) => step.id)
-    );
-    expect(overviewFullSteps().some((step) => step.id === "sequence-health")).toBe(true);
+    expect(overviewFullSteps().map((step) => step.id)).toEqual([
+      "summary",
+      "quick-actions",
+      "recent-sequences",
+      "sequence-actions",
+      "gmail-send-window",
+      "recent-activity"
+    ]);
   });
 
   it("keeps every route on the shared premium button (never the simple fallback) (#20)", () => {

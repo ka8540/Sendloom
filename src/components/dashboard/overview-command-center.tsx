@@ -3,21 +3,25 @@ import Link from "next/link";
 import { after } from "next/server";
 import type { CampaignStatus, RecipientJobStatus, RunStatus } from "@prisma/client";
 import {
+  Activity,
   ArrowRight,
-  Check,
-  FileSpreadsheet,
-  SendHorizontal,
-  Sparkles
+  CirclePlus,
+  FileText,
+  FileUp,
+  Plus,
+  Send,
+  TriangleAlert,
+  Upload,
+  UsersRound
 } from "lucide-react";
 
 import { requireOperatorUser } from "@/lib/auth";
 import { getGmailDailySendWindow } from "@/lib/daily-send-limit";
 import { prisma } from "@/lib/db";
 import { ActivityFeed } from "@/components/dashboard/activity-feed";
-import { AnalyticsPulse, type PulseHealthSlice } from "@/components/dashboard/analytics-pulse";
 import { buildActivityItems } from "@/components/dashboard/activity-builder";
 import { formatCompactNumber, formatRelativeTime, buildTrend, humanizeEnum } from "@/components/dashboard/formatters";
-import { OverviewSummary, type SendWindowSender, type TemplateFormatSlice } from "@/components/dashboard/overview-summary";
+import { SendWindowCard, type SendWindowSender } from "@/components/dashboard/overview-send-window";
 import { OverviewTourLauncher } from "@/components/dashboard/overview-tour-launcher";
 import { SequencePanel } from "@/components/dashboard/sequence-panel";
 import { buildSequenceOutcomePresentation } from "@/components/dashboard/sequence-outcome";
@@ -26,6 +30,7 @@ import type {
   SequenceRowData,
   SequenceScheduleType
 } from "@/components/dashboard/types";
+import { buildSequenceDashboardFilterHref } from "@/lib/sequence-dashboard-url";
 import { processPendingCampaignWork, readDailyLimitPauseInfo, resumeCampaignRunsBlockedByDailyLimit } from "@/services/campaigns";
 import { listHunterDomainSearchesForUser } from "@/services/hunter-domain-searches";
 import {
@@ -154,7 +159,8 @@ export default async function OverviewCommandCenter() {
         }
       }
     }),
-    // Template count by format, for the Templates card breakdown.
+    // Template count by format. Kept alongside the other workspace counts so the
+    // shared query batch stays stable for the future Analytics page.
     prisma.template.groupBy({
       by: ["format"],
       where: { userId: user.id },
@@ -453,30 +459,6 @@ export default async function OverviewCommandCenter() {
   const sentLastDayCount = userSendWindow.sentLast24h;
   const sentPreviousDayCount = sentPreviousDay._sum.sentCount ?? 0;
   const sentTrend = buildTrend(sentLastDayCount, sentPreviousDayCount, "day");
-  const runTotals = overviewCampaigns.reduce(
-    (totals, campaign) => {
-      const latestRun = campaign.latestRun;
-
-      if (!latestRun) {
-        return totals;
-      }
-
-      totals.delivered += getDeliveredCount(latestRun);
-      totals.needsAttention += latestRun.overviewDispositionCounts?.needsAttention ?? 0;
-      totals.recipients += latestRun.totalRecipients;
-
-      return totals;
-    },
-    {
-      delivered: 0,
-      needsAttention: 0,
-      recipients: 0
-    }
-  );
-  // The delivered/issues percentage split itself is derived inside the
-  // AnalyticsPulse client component (computeDeliverySplit), so the paired
-  // delivered-with-issues presentation has a single owner.
-  const analyticsIssueCount = runTotals.needsAttention;
 
   const sequenceRows: SequenceRowData[] = overviewCampaigns.map((campaign) => {
     const latestRun = campaign.latestRun; // display run (metrics)
@@ -716,43 +698,11 @@ export default async function OverviewCommandCenter() {
       updatedAt: row.updatedAt
     }))
   });
-  const sequenceHealth = buildSequenceHealth(sequenceRows);
 
-  // ----- Summary-card data -----
-  // Active-status breakdown is derived from the campaigns already loaded above
-  // (no extra query); the rest reuse the scoped counts fetched for this user.
-  const activeBreakdown = overviewCampaigns.reduce(
-    (acc, campaign) => {
-      const runStatus = campaign.actualLatestRunStatus;
-      if (runStatus === "RUNNING") {
-        acc.running += 1;
-      } else if (runStatus === "QUEUED") {
-        acc.queued += 1;
-      } else if (runStatus === "PAUSED" || campaign.status === "PAUSED") {
-        acc.paused += 1;
-      } else if (campaign.status === "SCHEDULED") {
-        acc.scheduled += 1;
-      }
-      return acc;
-    },
-    { running: 0, queued: 0, paused: 0, scheduled: 0 }
-  );
-  const summaryActive = {
-    activeNow: activeBreakdown.running + activeBreakdown.queued,
-    total: campaignCount,
-    ...activeBreakdown
-  };
-  const summaryLists = {
-    processed: processedImportCount,
-    ready: Math.min(processedImportCount, mappedProcessedImportCount),
-    needsMapping: Math.max(0, processedImportCount - mappedProcessedImportCount),
-    recent: importCountThisWeek
-  };
-  const summaryTemplates = {
-    total: templateCount,
-    formats: buildTemplateFormatSummary(templateFormatGroups),
-    updatedThisWeek: templateCountThisWeek
-  };
+  // ----- Summary-strip data -----
+  // Lists ready = processed imports that already carry a field mapping, i.e.
+  // ready to map into a sequence and launch. Reuses the scoped counts above.
+  const readyListCount = Math.min(processedImportCount, mappedProcessedImportCount);
 
   // Snapshot of what is currently rendered, derived only from data already
   // loaded above, so the contextual help tours never hit the backend. Drives
@@ -775,203 +725,154 @@ export default async function OverviewCommandCenter() {
     hasMultipleSequencePages: sequenceRows.length > 5
   };
 
-  const isBlankWorkspace = campaignCount === 0 && processedImportCount === 0;
-
   return (
     <div className={styles.page}>
-      {/* One command panel: identity + live stat tiles on the left, the action
-          card on the right. The action card stacks the next-move CTAs over the
-          interactive analytics — nothing breaks out into sibling cards. */}
-      <section className={styles.hero} data-overview-tour="page-intro">
-        <div className={styles.heroContent}>
-          <span className={styles.heroEyebrow}>
-            <span className={styles.heroPulse} />
-            Command center
+      {/* Compact page header: identity on the left, the two primary workspace
+          actions on the right. No hero block — the operational summary strip
+          below carries the at-a-glance numbers. */}
+      <header className={styles.pageHeader}>
+        <div className={styles.pageHeading}>
+          <h1 className={styles.pageTitle}>Overview</h1>
+          <p className={styles.pageSubtitle}>Here’s what’s happening with your outreach.</p>
+        </div>
+        <div className={styles.pageActions}>
+          <Link href="/campaigns" className={styles.primaryAction}>
+            <Plus aria-hidden="true" />
+            <span>Create Sequence</span>
+          </Link>
+          <Link href="/imports" className={styles.secondaryAction}>
+            <Upload aria-hidden="true" />
+            <span>Import List</span>
+          </Link>
+        </div>
+      </header>
+
+      {/* One restrained strip, four operational sections split by hairlines.
+          Gmail send capacity intentionally lives only in the right-column card. */}
+      <section className={styles.summaryStrip} aria-label="Workspace summary" data-overview-tour="summary">
+        <Link
+          href={buildSequenceDashboardFilterHref("active")}
+          className={styles.summaryCell}
+          aria-label="View active sequences"
+        >
+          <div className={styles.summaryBody}>
+            <span className={styles.summaryLabel} data-tone="accent">
+              <span className={styles.summaryDot} aria-hidden="true" />
+              Active sequences
+            </span>
+            <strong className={styles.summaryValue}>{formatCompactNumber(activeSequenceCount)}</strong>
+            <span className={styles.summaryMeta}>Running or queued</span>
+          </div>
+          <span className={styles.summaryIcon} data-tone="accent">
+            <Activity aria-hidden="true" />
           </span>
-          <h1 className={styles.heroTitle}>Overview</h1>
-          <p className={styles.heroCopy}>Launch, import, or review what needs attention.</p>
-          <div className={styles.heroHighlights}>
-            <div className={styles.heroHighlight}>
-              <span className={styles.heroHighlightLabel}>Active now</span>
-              <strong className={styles.heroHighlightValue}>{formatCompactNumber(activeSequenceCount)}</strong>
-              <span className={styles.heroHighlightMeta}>Running or queued</span>
-            </div>
-            <div className={styles.heroHighlight}>
-              <span className={styles.heroHighlightLabel}>Sent · 24h</span>
-              <strong className={styles.heroHighlightValue}>{formatCompactNumber(sentLastDayCount)}</strong>
-              <span className={styles.heroHighlightMeta}>{sentTrend.label}</span>
-            </div>
-            <div
-              className={styles.heroHighlight}
-              data-tone={needsAttentionCount > 0 ? "warn" : "ok"}
-              data-overview-tour="needs-attention"
-            >
-              <span className={styles.heroHighlightLabel}>Attention</span>
-              <strong className={styles.heroHighlightValue}>{formatCompactNumber(needsAttentionCount)}</strong>
-              <span className={styles.heroHighlightMeta}>{needsAttentionCount ? "Review required" : "All clear"}</span>
-            </div>
-          </div>
-        </div>
+        </Link>
 
-        <div className={styles.heroActions}>
-          {isBlankWorkspace ? (
-            <div
-              className={`${styles.heroActionCard} ${styles.heroEmptyCard}`}
-              data-overview-tour="workspace-health"
-            >
-              <span className={styles.heroEmptyBadge}>
-                <Sparkles aria-hidden="true" />
-                Getting started
-              </span>
-              <strong className={styles.heroActionTitle}>Start your outreach system</strong>
-              <p className={styles.heroActionCopy}>Import a list, create a template, then launch your first sequence.</p>
-              <ol className={styles.heroEmptySteps}>
-                <li data-done="false">
-                  <span className={styles.heroEmptyStepMark}>1</span>
-                  Import a list
-                </li>
-                <li data-done={templateCount > 0 ? "true" : "false"}>
-                  <span className={styles.heroEmptyStepMark}>
-                    {templateCount > 0 ? <Check aria-hidden="true" /> : 2}
-                  </span>
-                  Create a template
-                  {templateCount > 0 ? <em>Done</em> : null}
-                </li>
-                <li data-done="false">
-                  <span className={styles.heroEmptyStepMark}>3</span>
-                  Launch a sequence
-                </li>
-              </ol>
-              <div className={styles.heroButtons}>
-                <Link href="/imports" className={styles.heroCta}>
-                  <FileSpreadsheet aria-hidden="true" />
-                  <span>Import List</span>
-                  <ArrowRight className={styles.heroCtaArrow} aria-hidden="true" />
-                </Link>
-                <Link href="/campaigns" className={`${styles.heroCta} ${styles.heroCtaGhost}`}>
-                  <SendHorizontal aria-hidden="true" />
-                  <span>Create Sequence</span>
-                  <ArrowRight className={styles.heroCtaArrow} aria-hidden="true" />
-                </Link>
-              </div>
+        <Link
+          href={buildSequenceDashboardFilterHref("sent")}
+          className={styles.summaryCell}
+          aria-label="View sequences with sends in the last 24 hours"
+        >
+          <div className={styles.summaryBody}>
+            <span className={styles.summaryLabel} data-tone="info">
+              <span className={styles.summaryDot} aria-hidden="true" />
+              Sent (24h)
+            </span>
+            <strong className={styles.summaryValue}>{formatCompactNumber(sentLastDayCount)}</strong>
+            <span className={styles.summaryMeta}>{sentTrend.label}</span>
+          </div>
+          <span className={styles.summaryIcon} data-tone="info">
+            <Send aria-hidden="true" />
+          </span>
+        </Link>
+
+        <Link
+          href={buildSequenceDashboardFilterHref("attention")}
+          className={styles.summaryCell}
+          data-tone={needsAttentionCount > 0 ? "warn" : "ok"}
+          aria-label="View sequences needing attention"
+        >
+          <div className={styles.summaryBody}>
+            <span className={styles.summaryLabel} data-tone="warn">
+              <span className={styles.summaryDot} aria-hidden="true" />
+              Needs attention
+            </span>
+            <strong className={styles.summaryValue}>{formatCompactNumber(needsAttentionCount)}</strong>
+            <span className={styles.summaryMeta}>{needsAttentionCount ? "Action required" : "All clear"}</span>
+          </div>
+          <span className={styles.summaryIcon} data-tone="warn">
+            <TriangleAlert aria-hidden="true" />
+          </span>
+        </Link>
+
+        <Link href="/imports" className={styles.summaryCell}>
+          <div className={styles.summaryBody}>
+            <span className={styles.summaryLabel} data-tone="lists">
+              <span className={styles.summaryDot} aria-hidden="true" />
+              Lists ready
+            </span>
+            <strong className={styles.summaryValue}>{formatCompactNumber(readyListCount)}</strong>
+            <span className={styles.summaryMeta}>Ready to launch</span>
+          </div>
+          <span className={styles.summaryIcon} data-tone="lists">
+            <UsersRound aria-hidden="true" />
+          </span>
+        </Link>
+      </section>
+
+      <div className={styles.mainGrid}>
+        <div className={styles.mainColumn}>
+          <section className={styles.quickSection} aria-label="Quick actions" data-overview-tour="quick-actions">
+            <div className={styles.sectionIntro}>
+              <h2 className={styles.sectionTitle}>Quick actions</h2>
+              <p className={styles.sectionCopy}>Start something new.</p>
             </div>
-          ) : (
-            <div className={styles.heroActionCard}>
-              <div className={styles.heroActionHead}>
-                <strong className={styles.heroActionTitle}>Pick the next move</strong>
-                <span className={styles.heroActionChip}>
-                  {formatCompactNumber(validatedSequenceCount)} validated
+            <div className={styles.quickGrid}>
+              <Link href="/campaigns" className={styles.quickCard}>
+                <span className={styles.quickIcon} data-tone="accent">
+                  <CirclePlus aria-hidden="true" />
                 </span>
-              </div>
-              <div className={styles.heroButtons}>
-                <Link href="/campaigns" className={styles.heroCta}>
-                  <SendHorizontal aria-hidden="true" />
-                  <span>Create Sequence</span>
-                  <ArrowRight className={styles.heroCtaArrow} aria-hidden="true" />
-                </Link>
-                <Link href="/imports" className={`${styles.heroCta} ${styles.heroCtaGhost}`}>
-                  <FileSpreadsheet aria-hidden="true" />
-                  <span>Import List</span>
-                  <ArrowRight className={styles.heroCtaArrow} aria-hidden="true" />
-                </Link>
-              </div>
-              <div
-                className={styles.heroInsights}
-                aria-label="Workspace analytics summary"
-                data-overview-tour="workspace-health"
-              >
-                <AnalyticsPulse
-                  targeted={runTotals.recipients}
-                  delivered={runTotals.delivered}
-                  issues={analyticsIssueCount}
-                  sequenceTotal={sequenceRows.length}
-                  health={sequenceHealth}
-                />
-              </div>
-            </div>
-          )}
-        </div>
-      </section>
-
-      <OverviewSummary
-        active={summaryActive}
-        lists={summaryLists}
-        templates={summaryTemplates}
-        sendWindow={{ combined: userSendWindow, senders: sendWindowSenders }}
-      />
-
-      <section className={styles.mainGrid}>
-        <div className={styles.sequenceSection} data-overview-tour="recent-sequences">
-          <div className={styles.sectionTop}>
-            <div>
-              <span className={styles.sectionKicker}>Recent sequences</span>
-              <h2 className={styles.sectionTitle}>Jump back in</h2>
-              <p className={styles.sectionCopy}>Open, relaunch, or clean up recent runs.</p>
-            </div>
-            <div className={styles.sectionTopMeta}>
-              <Link href="/campaigns" className={styles.sectionLink} data-overview-tour="view-all-sequences">
-                View all sequences
-                <ArrowRight aria-hidden="true" />
+                <span className={styles.quickText}>
+                  <strong className={styles.quickTitle}>Create sequence</strong>
+                  <span className={styles.quickCopy}>Build a new outreach sequence</span>
+                </span>
+                <ArrowRight className={styles.quickArrow} aria-hidden="true" />
+              </Link>
+              <Link href="/imports" className={styles.quickCard}>
+                <span className={styles.quickIcon} data-tone="info">
+                  <FileUp aria-hidden="true" />
+                </span>
+                <span className={styles.quickText}>
+                  <strong className={styles.quickTitle}>Import list</strong>
+                  <span className={styles.quickCopy}>Upload a CSV or spreadsheet</span>
+                </span>
+                <ArrowRight className={styles.quickArrow} aria-hidden="true" />
+              </Link>
+              <Link href="/templates" className={styles.quickCard}>
+                <span className={styles.quickIcon} data-tone="warn">
+                  <FileText aria-hidden="true" />
+                </span>
+                <span className={styles.quickText}>
+                  <strong className={styles.quickTitle}>Create template</strong>
+                  <span className={styles.quickCopy}>Design your email template</span>
+                </span>
+                <ArrowRight className={styles.quickArrow} aria-hidden="true" />
               </Link>
             </div>
-          </div>
+          </section>
 
-          {sequenceRows.length ? (
-            <SequencePanel rows={sequenceRows} />
-          ) : (
-            <div className={styles.sequenceEmpty}>
-              <Sparkles aria-hidden="true" />
-              <div>
-                <strong>No sequences yet</strong>
-                <p>Import a list and create your first sequence to turn this dashboard into a live control surface.</p>
-              </div>
-              <Link href="/campaigns" className="button">
-                Create Sequence
-              </Link>
-            </div>
-          )}
+          <SequencePanel rows={sequenceRows} />
         </div>
 
-        <ActivityFeed items={activityItems} />
-      </section>
+        <aside className={styles.sideColumn}>
+          <SendWindowCard combined={userSendWindow} senders={sendWindowSenders} />
+          <ActivityFeed items={activityItems} />
+        </aside>
+      </div>
 
       <OverviewTourLauncher state={tourState} />
     </div>
   );
-}
-
-const TEMPLATE_FORMAT_ORDER = ["HTML", "PLAIN_TEXT", "JSON"] as const;
-const TEMPLATE_FORMAT_LABEL: Record<string, string> = {
-  HTML: "HTML",
-  PLAIN_TEXT: "Plain text",
-  JSON: "JSON"
-};
-
-// Collapse the Template.format groupBy into ordered, non-empty slices for the
-// Templates card. Known formats keep a friendly label and canonical order;
-// anything unexpected falls back to its raw value so nothing is dropped.
-function buildTemplateFormatSummary(
-  groups: Array<{ format: string; _count: number }>
-): TemplateFormatSlice[] {
-  const counts = new Map<string, number>();
-  for (const group of groups) {
-    counts.set(group.format, (counts.get(group.format) ?? 0) + group._count);
-  }
-
-  const slices: TemplateFormatSlice[] = [];
-  for (const format of TEMPLATE_FORMAT_ORDER) {
-    const count = counts.get(format) ?? 0;
-    if (count > 0) {
-      slices.push({ key: format, label: TEMPLATE_FORMAT_LABEL[format] ?? format, count });
-    }
-    counts.delete(format);
-  }
-  for (const [format, count] of counts) {
-    if (count > 0) {
-      slices.push({ key: format, label: TEMPLATE_FORMAT_LABEL[format] ?? format, count });
-    }
-  }
-  return slices;
 }
 
 // Normalize the raw Campaign.scheduleType column into the closed set the UI
@@ -1047,46 +948,6 @@ function deriveSequenceStatus(campaignStatus: CampaignStatus, runStatus?: RunSta
     label: humanizeEnum(campaignStatus),
     tone: "draft" as const
   };
-}
-
-function buildSequenceHealth(rows: SequenceRowData[]): PulseHealthSlice[] {
-  const total = rows.length;
-  const values = [
-    {
-      key: "running" as const,
-      label: "Running",
-      value: rows.filter((row) => row.statusTone === "running").length
-    },
-    {
-      key: "done" as const,
-      label: "Done",
-      value: rows.filter((row) => row.statusTone === "completed").length
-    },
-    {
-      key: "review" as const,
-      label: "Review",
-      value: rows.filter((row) => row.needsAttention).length
-    },
-    {
-      key: "ready" as const,
-      label: "Ready",
-      value: rows.filter((row) => row.isValidated && row.statusTone !== "running" && row.statusTone !== "completed").length
-    }
-  ];
-
-  return values.map((item) => ({
-    ...item,
-    // Non-zero slices keep a 4% floor so tiny counts stay visible/clickable.
-    percent: item.value > 0 ? Math.max(4, getPercent(item.value, total)) : 0
-  }));
-}
-
-function getPercent(value: number, total: number) {
-  if (total <= 0) {
-    return 0;
-  }
-
-  return Math.min(100, Math.round((value / total) * 100));
 }
 
 // Safely coerce a Prisma JSON column (requestedTitles / requestedLocations) into

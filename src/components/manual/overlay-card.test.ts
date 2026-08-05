@@ -142,21 +142,21 @@ describe("Placement stays on screen and off the target (#9, #10, #11, #14)", () 
   });
 });
 
-describe("Templates Live regression — the screenshot step (#12, #13)", () => {
-  it("the Templates live step exists and its copy is unchanged (#21)", () => {
-    const step = overviewFullSteps().find((entry) => entry.id === "templates-live");
-    expect(step?.title).toBe("Templates live");
-    expect(step?.body).toMatch(/email templates available/);
+describe("Summary-strip regression — the screenshot step (#12, #13)", () => {
+  it("the summary step exists and its copy matches the strip (#21)", () => {
+    const step = overviewFullSteps().find((entry) => entry.id === "summary");
+    expect(step?.title).toBe("Overview at a glance");
+    expect(step?.body).toMatch(/ready to launch/);
   });
 
-  it("is fully visible and never covers the Templates card it explains (#12, #13)", () => {
+  it("is fully visible and never covers the summary strip it explains (#12, #13)", () => {
     const vp = viewport(1366, 768);
-    // Templates Live: 3rd of 4 summary cards, lower band, right-of-centre.
-    const templatesCard = rect(720, 470, 300, 150);
+    // The summary strip: full-width band near the top of the content column.
+    const summaryStrip = rect(320, 140, 1000, 120);
     for (const placement of ["bottom", "top", "right", "left"] as const) {
-      const pos = getPopoverStyle(templatesCard, placement, vp, POPOVER);
+      const pos = getPopoverStyle(summaryStrip, placement, vp, POPOVER);
       expect(withinViewport(pos, vp, POPOVER)).toBe(true);
-      expect(popoverOverlapsTarget(pos, POPOVER, templatesCard)).toBe(false);
+      expect(popoverOverlapsTarget(pos, POPOVER, summaryStrip)).toBe(false);
     }
   });
 });
@@ -196,8 +196,8 @@ describe("Responsive + reposition + isolation preserved (#15–#20, #22)", () =>
 
   it("does not change tour content/order or any other guide (#21, #22)", () => {
     // Step set + order is untouched by this presentation fix.
-    expect(overviewFullSteps()[0].id).toBe("command-center");
-    expect(overviewFullSteps().some((s) => s.id === "templates-live")).toBe(true);
+    expect(overviewFullSteps()[0].id).toBe("summary");
+    expect(overviewFullSteps().some((s) => s.id === "gmail-send-window")).toBe(true);
     for (const path of ["/finder", "/imports", "/templates", "/campaigns", "/prospects"]) {
       const manual = getManualForPathname(path);
       expect(manual?.helpVariant).not.toBe("simple");
