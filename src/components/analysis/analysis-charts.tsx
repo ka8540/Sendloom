@@ -93,6 +93,27 @@ function ChartTooltipContent({
   );
 }
 
+/** Hover card for a donut slice: category, count, and share of the total. */
+function DonutSliceTooltip({ active, payload, totalLabel }: { active?: boolean; payload?: TooltipEntry[]; totalLabel?: string }) {
+  const slice = payload?.[0]?.payload as AnalysisBreakdownItem | undefined;
+  if (!active || !slice || typeof slice.value !== "number") return null;
+  return (
+    <div className={styles.chartTooltip}>
+      <strong>{slice.name}</strong>
+      <dl>
+        <div>
+          <dt>{totalLabel ?? "Count"}</dt>
+          <dd>{slice.value.toLocaleString()}</dd>
+        </div>
+        <div>
+          <dt>Share</dt>
+          <dd>{slice.percent.toFixed(1)}%</dd>
+        </div>
+      </dl>
+    </div>
+  );
+}
+
 /** Hover card for the sequence bar and bubble charts: same fields, full sentences. */
 function SequenceHoverTooltip({ active, payload }: { active?: boolean; payload?: TooltipEntry[] }) {
   const point = payload?.[0]?.payload as AnalysisRankedItem | undefined;
@@ -247,6 +268,7 @@ export function DonutCard({
   insight?: string;
 }) {
   const positive = data.filter((item) => item.value > 0);
+  const [hovered, setHovered] = useState(false);
   return (
     <AnalysisCard title={title} info={info} summary={`${title}: ${positive.map((item) => `${item.name} ${item.value}`).join(", ") || "no data"}.`}>
       {helper ? <p className={styles.cardHelper}>{helper}</p> : null}
@@ -257,15 +279,32 @@ export function DonutCard({
           <div className={styles.donutChart}>
             <ResponsiveContainer width="100%" height="100%">
               <PieChart accessibilityLayer>
-                <Pie data={positive} dataKey="value" nameKey="name" innerRadius="60%" outerRadius="88%" paddingAngle={1.4} stroke="var(--analysis-card)">
+                <Pie
+                  data={positive}
+                  dataKey="value"
+                  nameKey="name"
+                  innerRadius="60%"
+                  outerRadius="88%"
+                  paddingAngle={1.4}
+                  stroke="var(--analysis-card)"
+                  onMouseEnter={() => setHovered(true)}
+                  onMouseLeave={() => setHovered(false)}
+                >
                   {positive.map((entry, index) => (
                     <Cell key={entry.name} fill={toneColors[index % toneColors.length]} />
                   ))}
                 </Pie>
-                <Tooltip content={<ChartTooltipContent />} allowEscapeViewBox={{ x: false, y: true }} />
+                <Tooltip
+                  content={<DonutSliceTooltip totalLabel={centerLabel} />}
+                  offset={18}
+                  allowEscapeViewBox={{ x: false, y: true }}
+                  wrapperStyle={{ zIndex: 40, pointerEvents: "none" }}
+                />
               </PieChart>
             </ResponsiveContainer>
-            <div className={styles.donutCenter} aria-hidden="true">
+            {/* Decorative total: hidden while a slice is hovered so the hover card
+                never reads as overlapping text. */}
+            <div className={styles.donutCenter} data-dimmed={hovered ? "true" : undefined} aria-hidden="true">
               <strong>{formatAnalysisNumber(centerValue)}</strong>
               <span>{centerLabel}</span>
             </div>

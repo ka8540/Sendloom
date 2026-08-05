@@ -766,6 +766,11 @@ button.controlButton:disabled {
   gap: 0.15rem;
   transform: translate(-50%, -50%);
   pointer-events: none;
+  transition: opacity 140ms ease;
+}
+
+.donutCenter[data-dimmed="true"] {
+  opacity: 0;
 }
 
 .donutCenter strong {
