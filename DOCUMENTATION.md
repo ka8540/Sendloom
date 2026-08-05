@@ -1,5 +1,21 @@
 # Sendloom Production Documentation
 
+## Documentation Status
+
+Documentation verified against `bbbea8ee0980237e123adec02e2ea80ede32951d` on `feature/overview-redesign-analysis-foundation` on `2026-08-04`.
+
+| Field | Value |
+| --- | --- |
+| Verified on | 2026-08-04 |
+| Branch | `feature/overview-redesign-analysis-foundation` |
+| HEAD commit | `bbbea8e` — *Filter Sequences from the Overview metric cards* |
+| Documentation baseline | `de665f08` (last commit touching `README.md`, 2026-07-04) and `effaf5cf` (last commit touching `DOCUMENTATION.md`, 2026-07-05) |
+| Range audited | `de665f08..HEAD` — 228 commits, 274 changed files |
+
+Behavior in this document was verified by reading the current source, Prisma schema, migrations, and Vitest suites on this branch. Commit messages were used only to locate changes, never as evidence. Nothing here describes planned work, design mockups, or code that exists only on another branch.
+
+Verification commands run for this revision: `npm test` (135 files, 2,105 tests, all passing), `npm run typecheck` (clean), `git diff --check` (clean), and a Mermaid parse of all 15 diagrams across both documents.
+
 ## Table Of Contents
 
 - [1. Executive Summary](#1-executive-summary)
@@ -27,6 +43,12 @@
 - [23. Prospect Graph Backend (Local GraphQL Prototype)](#23-prospect-graph-backend-local-graphql-prototype)
 - [24. Dashboard Help System (in-app guided tours)](#24-dashboard-help-system-in-app-guided-tours)
 - [25. Error Recovery and Incident Reporting](#25-error-recovery-and-incident-reporting)
+- [26. Automatic Delivery-Failure Detection (Gmail Bounce Monitoring)](#26-automatic-delivery-failure-detection-gmail-bounce-monitoring)
+- [27. Analysis Workspace](#27-analysis-workspace)
+- [28. Account Workspace And Sender Management](#28-account-workspace-and-sender-management)
+- [29. Attachment Lifecycle](#29-attachment-lifecycle)
+- [30. Sequences Workspace](#30-sequences-workspace)
+- [31. Navigation And Shared Page Shell](#31-navigation-and-shared-page-shell)
 
 ## 1. Executive Summary
 
@@ -34,7 +56,7 @@ Sendloom is a full-stack outreach operations platform where users import contact
 
 In production terms, Sendloom is the system of record for a user's outbound run. A sequence is assembled from an import, a mapping, a template, a connected Gmail sender, optional attachments, and a schedule. The platform validates that configuration, creates recipient-level jobs, sends through the user's OAuth-connected Gmail account, records delivery state, applies retry and pacing rules, and surfaces opens, clicks, replies, failures, and safety pauses back into the dashboard.
 
-The current codebase is a Next.js App Router application with React, TypeScript, Prisma, PostgreSQL, Redis, BullMQ-compatible queues, Gmail OAuth, Hunter integration, optional OpenAI template assistance, and local or Cloudflare R2 object storage. The active product surface includes the Overview dashboard, Finder, Imports, Templates, Sequences, Eligibility verification, Legal / Anti-Abuse pages, and Admin workspaces.
+The current codebase is a Next.js App Router application with React, TypeScript, Prisma, PostgreSQL, Redis, BullMQ-compatible queues, Gmail OAuth, Hunter integration, Apify-backed prospect discovery, optional OpenAI assistance, Recharts visualizations, and local or Cloudflare R2 object storage. The active product surface includes the Overview dashboard, Finder, Discover, Imports, Templates, Sequences, the five-page Analysis workspace, the Account workspace, Eligibility verification, Legal / Anti-Abuse pages, and Admin workspaces.
 
 The npm package name remains `mergepilot`, but the product, UI, routes, and documentation identify the application as Sendloom.
 
@@ -114,6 +136,26 @@ git show --stat afaf337
 | `179d654` and PR #8 | Auth redesign | Redesigned auth pages, added pointer effects/video preview, and added password visibility toggles. | Improved onboarding presentation without changing core auth rules. |
 | `6d227d0` through `4e129e0` | Footer/legal presentation | Replaced inline marketing/legal footers with a reusable animated glass `MarketingFooter`, full-width behavior, and theme-aware styling. | Unified public/legal navigation and presentation. |
 | `d97c3b4`, `0ce62cf`, `cad7688`, `afaf337` | Past schedule relaunch and overview filters | Added confirmation for relaunching past one-time schedules, conversion to immediate on opt-in, launch tests, schedule-type filter for Recent Sequences, and dropdown layout fixes. | Prevented stale past schedules from blocking relaunch and improved recent-sequence scanning. |
+| `de665f08..b7e2237` (2026-07-04 → 2026-08-04) | Documentation refresh era — see the table below | Overview redesign, Analysis workspace, Sequences dashboard redesign, Account workspace, attachment dedupe, automatic bounce monitoring, Discover refinements. | Documented in this revision. |
+
+### 2026-07 / 2026-08 Documentation Refresh
+
+The 227 commits between the previous documentation baseline and this revision group into the following areas. This lists shipped, user-visible or operator-visible behavior, not every commit.
+
+| Area | What changed |
+| --- | --- |
+| Product navigation | Analysis added to the operator sidebar with a nested, expandable five-item submenu; Account added as a footer utility item below the theme control; Discover split into a list route and a detail route; a shared `WorkspacePageHeader` now provides the title/subtitle/actions block on list and dashboard pages. |
+| Overview | `/workspace` was rebuilt around a compact page header, a four-cell operational summary strip, quick actions, a three-row recent-sequence preview with client-side search, a Gmail send-window card, and a derived recent-activity feed. The previous analytics-pulse and overview-summary modules were removed. Summary metrics now link into the Sequences dashboard with a preselected status filter. |
+| Analysis | New five-page reporting workspace (`/analysis`, `/analysis/engagement`, `/analysis/sequences`, `/analysis/reliability`, `/analysis/senders`) with a shared shell, 7/30-day presets, prior-period comparisons, per-metric information tooltips, Recharts visualizations, a `GET /api/analysis/[page]` aggregation endpoint, a client-side CSV export, and a six-step guided tour. |
+| Sequences | `/campaigns` was rebuilt as a dashboard-only surface: four summary cards, a health panel, a control bar with search plus Status and Email-account dropdowns, 5-row pagination, and full URL state. `/campaigns/new` became a dedicated creation route. Sequence detail gained a **Check bounces** action and reworked delivery metrics. |
+| Account | New `/account` workspace with profile details, password set/change (session-rotating), and connected-sender management, backed by `GET /api/account`, `POST /api/account/password`, and `DELETE /api/account/senders/[id]`. |
+| Imports | The imports route now hosts both a searchable library and an explicit, URL-identifiable Upload → Map fields → Review workflow, with a unified per-import editor and a custom import picker for template fields. |
+| Discover | Per-search person allocations became the ownership boundary against the shared cache; company-level grouping, canonical role-group keys with duplicate collapse, role-label normalization, inline same-company search with role/location filters, autocomplete with conservative typo correction, derived email-confidence display, and a typed email-format discovery status. |
+| Help system | The premium help button, guide menu, and coachmark engine were extended to Analysis; a manual **Report issue** dialog was added to the guide menu on every dashboard route. |
+| Attachments | Attachment uploads became content-addressed and deduplicated per user through the new `AttachmentAsset` model, with campaign snapshots unchanged for backward compatibility. |
+| Sending reliability | Automatic per-sequence bounce monitoring now runs on every cron/scheduler tick; send-time invalid-recipient rejections are classified as skipped rather than failed; open/click tracking can no longer resurrect terminal recipient outcomes. |
+| Infrastructure | The boot splash was replaced with a readiness-driven overlay; `.env.example` was added to the repository; the scheduler and cron route gained isolated error handling for monitoring work. |
+| Security and legal | Signed-in visitors are redirected away from the public landing and auth pages; the incident-report path gained a user-initiated entry point; legal, privacy, and FAQ copy was updated. |
 
 ### Inferred Version Summary
 
@@ -125,21 +167,113 @@ git show --stat afaf337
 
 ## 4. Current Product Surface
 
+### Product Navigation Map
+
+```mermaid
+flowchart TD
+    Public["Public: / · /login · /signup · /faq · /privacy · /terms · /abuse"] --> Gate["/verify-eligibility"]
+    Gate --> Shell["Authenticated app shell"]
+    Shell --> OV["Overview /workspace"]
+    Shell --> FI["Finder /finder"]
+    Shell --> DI["Discover /prospects"]
+    DI --> DID["Discover search detail"]
+    Shell --> IM["Imports /imports"]
+    Shell --> TE["Templates /templates"]
+    Shell --> SE["Sequences /campaigns"]
+    SE --> SEN["New sequence"]
+    SE --> SED["Sequence detail"]
+    Shell --> AN["Analysis /analysis"]
+    AN --> AN1["Engagement"]
+    AN --> AN2["Sequences"]
+    AN --> AN3["Reliability"]
+    AN --> AN4["Senders"]
+    Shell --> AC["Account /account"]
+    Shell --> AD["Admin /admin ..."]
+```
+
+Seven items appear in the operator product nav (Overview, Finder, Discover, Imports, Templates, Sequences, Analysis). Account sits in the sidebar footer as a utility item rather than in the product nav. Admin accounts see the admin nav instead of the operator nav. Public and legal pages are outside the shell and carry the marketing navigation.
+
 ### Overview
 
-The operator overview lives at `/workspace`. It shows aggregate metrics, live-refreshing recent sequence cards, recent recipient activity, send-window status, and quick entry points back into the current work. Recent sequences can be filtered by search, status, focus, schedule type, and sort order.
+The operator overview lives at `/workspace` and is rendered by the `OverviewCommandCenter` server component (`src/components/dashboard/overview-command-center.tsx`).
+
+Layout, top to bottom:
+
+1. **Page header** — title "Overview", subtitle "Here's what's happening with your outreach.", and two actions: **Create Sequence** (`/campaigns`) and **Import List** (`/imports`).
+2. **Summary strip** — four cells split by hairlines, each a link:
+
+   | Cell | Value | Meaning | Links to |
+   | --- | --- | --- | --- |
+   | Active sequences | Campaigns whose status is `RUNNING`, or that own a `QUEUED`/`RUNNING` run holding an `executionSlotClaimedAt` | "Running or queued" | `/campaigns?status=active` |
+   | Sent (24h) | Confirmed sends in the rolling 24-hour window from `SendLedger`, with a trend label against the preceding 24 hours | Confirmed Gmail sends, not delivered mail | `/campaigns?status=sent` |
+   | Needs attention | Sequences with a failed run, failed sends, or invalid recipients | "Action required" / "All clear" | `/campaigns?status=needs-attention` |
+   | Lists ready | Processed imports that already carry a field mapping | "Ready to launch" | `/imports` |
+
+3. **Quick actions** — Create sequence, Import list, Create template.
+4. **Recent sequences** — the three most recently updated sequences with a client-side search over name and summary, per-row status/progress/metrics, row actions (view, pause/resume, relaunch, delete), and a "View all sequences" link. Refresh polls every 4 seconds while a run is live, pauses while the tab is hidden, and resumes shortly after the tab becomes visible again.
+5. **Gmail send window card** — rolling 24-hour usage for the combined user window plus the primary connected sender, with a tone of Healthy / Near limit / Blocked / Paused. "Near limit" starts at 80% of the configured per-sender limit.
+6. **Recent activity** — derived from domain tables (runs, imports, templates, Discover searches and expansions, Finder domain searches, prepared Discover exports, and confirmed permanent delivery failures). It is not the admin audit console; only two audit actions (`hunter.email_search`, `discover.results_exported`) are read, because those activities have no durable domain row.
+
+Empty states: each section renders its own empty copy rather than hiding; the send-window card renders an unavailable state when the send ledger table cannot be read. Both themes are supported through the shared token layer; no Overview surface is light- or dark-only.
+
+Guided help auto-opens a contextual onboarding phase at most once per visit, chosen from a state snapshot built entirely from data already loaded on the page — the tour never issues its own backend requests.
+
+#### Metric-to-filter navigation
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant OV as Overview
+    participant URL as sequence-dashboard-url
+    participant R as Next.js router
+    participant SP as /campaigns (server)
+    participant SD as SequenceDashboard (client)
+    User->>OV: Click "Active sequences" / "Sent (24h)" / "Needs attention"
+    OV->>URL: buildSequenceDashboardFilterHref(filter)
+    URL-->>OV: /campaigns?status=active, sent, or needs-attention
+    OV->>R: Link navigation
+    R->>SP: Render with the status param only
+    SP->>SD: items + confirmed-send flags
+    SD->>URL: readSequenceDashboardUrlState(searchParams, senderEmails)
+    URL-->>SD: { filter, sender: "", query: "", page: 1 }
+    SD-->>User: Filtered list, Status dropdown preselected
+```
+
+Because the generated href carries only `status`, the search box starts empty and pagination starts at page 1. The dashboard then normalizes the URL with `history.replaceState`, so the filtered view is deep-linkable and reload-safe while browser Back still returns to Overview. Unknown or malformed `status` values fall back to `all`. The parameter `sent-24h` is accepted as an alias of `sent`.
+
+The "Sent (24h)" metric and the `sent` filter read the same confirmed-send source (`listCampaignIdsWithConfirmedSendsSince`, backed by `SendLedger`), so the number and the filtered list cannot disagree. Confirmed sends recorded before campaign attribution existed carry no campaign id and therefore appear in the count but in no sequence row.
 
 Important routes:
 
 - UI: `/workspace`
 - API: `/api/send-window`, `/api/campaigns/[id]/status`
-- Data: `Campaign`, `CampaignRun`, `RecipientJob`, `SendLedger`, `SenderProfile`, `Import`, `Template`
+- Data: `Campaign`, `CampaignRun`, `RecipientJob`, `SendLedger`, `SenderProfile`, `Import`, `Template`, `Suppression`, `ProspectSearch`, `HunterDomainSearch`
 
 Production notes:
 
-- Active runs can trigger background processing during status refreshes.
+- Rendering `/workspace` calls `resumeCampaignRunsBlockedByDailyLimit` and schedules pending campaign work, so an active workspace tab advances runs even without cron.
 - Send-window status is per connected Gmail sender plus a user rollup.
 - Schedule type is normalized to `immediate`, `once`, or `recurring`; legacy null values fall back to immediate in dashboard display.
+
+### Analysis
+
+The reporting workspace lives at `/analysis` with four sibling routes. All five render the same client shell (`AnalysisWorkspace`) with a different `page` prop. Full detail is in [§27](#27-analysis-workspace).
+
+Important routes:
+
+- UI: `/analysis`, `/analysis/engagement`, `/analysis/sequences`, `/analysis/reliability`, `/analysis/senders`
+- API: `GET /api/analysis/[page]`
+- Data: `SendLedger`, `RecipientJob`, `CampaignRun`, `Campaign`, `Template`, `InboundReply`, `ProviderEvent`, `SenderProfile`, `AuditLog`
+
+### Account
+
+The account workspace lives at `/account`: profile summary, password set/change, and connected Gmail sender management. Full detail is in [§28](#28-account-workspace-and-sender-management).
+
+Important routes:
+
+- UI: `/account`
+- API: `GET /api/account`, `POST /api/account/password`, `DELETE /api/account/senders/[id]`, `GET /api/auth/google/connect`
+- Data: `User`, `SenderProfile`, `Campaign`, `AuditLog`
 
 ### Finder
 
@@ -160,6 +294,15 @@ Production notes:
 ### Imports
 
 Imports are the contact-ingestion module. Users upload CSV/XLS/XLSX files, preview rows, inspect columns, choose template fields, and save field mappings.
+
+The route hosts two modes behind one URL:
+
+- **Library** — the default. A searchable list of finalized imports, each with row count, linked-sequence count, selected template fields, preview rows, a single pencil-icon editor (rename plus template fields in one dialog), and a delete action.
+- **Workflow** — a three-step flow: **Upload** → **Map fields** → **Review**. The step strip is clickable, but step 2 requires an import and step 3 requires a saved mapping.
+
+The active mode is derived from the URL, not from component state alone: an import context id (including Discover's `pendingImportId`) or `step=upload` opens the workflow, and a context id that cannot be resolved still opens it so the "import not found" state is shown instead of silently falling back. Leaving the workflow uses `router.replace`, so a subsequent browser Back press does not re-enter it.
+
+Discover can stage a **pending import** — an `Import` row created with status `UPLOADING` and an empty mapping — which is finalized to `PROCESSED` when template fields are saved.
 
 Important routes:
 
@@ -200,7 +343,7 @@ Production notes:
 
 ### Sequences
 
-The active sequence workspace is `/campaigns`. `/sequences` and `/sequences/[id]` act as aliases/redirect surfaces.
+The active sequence workspace is `/campaigns`, with a dedicated creation route at `/campaigns/new` and a detail route at `/campaigns/[id]`. `/sequences`, `/sequences/new`, and `/sequences/[id]` are aliases — the index redirects (preserving query parameters) and the other two re-export the campaign pages. Full detail is in [§30](#30-sequences-workspace).
 
 A sequence is built from:
 
@@ -214,15 +357,16 @@ A sequence is built from:
 Important routes:
 
 - UI: `/campaigns`, `/campaigns/[id]`, `/sequences`, `/sequences/[id]`
-- API: `/api/campaigns`, `/api/campaigns/[id]`, `/api/campaigns/[id]/validate`, `/api/campaigns/[id]/launch`, `/api/campaigns/[id]/pause`, `/api/campaigns/[id]/resume`, `/api/campaigns/[id]/retry-failed`, `/api/campaigns/[id]/status`, `/api/campaigns/[id]/recipient-activity`, `/api/campaigns/[id]/attachments/[attachmentIndex]`
+- API: `/api/campaigns`, `/api/campaigns/[id]`, `/api/campaigns/[id]/validate`, `/api/campaigns/[id]/launch`, `/api/campaigns/[id]/wait-for-slot`, `/api/campaigns/[id]/pause`, `/api/campaigns/[id]/resume`, `/api/campaigns/[id]/retry-failed`, `/api/campaigns/[id]/sync-bounces`, `/api/campaigns/[id]/status`, `/api/campaigns/[id]/recipient-activity`, `/api/campaigns/[id]/attachments/[attachmentIndex]`
 - Data: `Campaign`, `CampaignRun`, `RecipientJob`, `InboundReply`, `ProviderEvent`, `Suppression`, `SendLedger`
 
 Production notes:
 
-- Attachments are limited to 10 MB each.
+- Attachments are limited to 10 MB each and are deduplicated per user by content ([§29](#29-attachment-lifecycle)).
 - Setup editing is blocked while a run is actively sending.
 - Validation checks system health, sender connection, mapping, template variables, invalid recipients, suppressions, schedule validity, and attachment readability.
 - Relaunching a past one-time schedule returns `PAST_SCHEDULE_CONFIRMATION_REQUIRED` until the user confirms conversion to immediate send.
+- Sequence detail exposes a **Check bounces** action that reads the connected sender's Gmail delivery-status notifications on demand ([§26](#26-automatic-delivery-failure-detection-gmail-bounce-monitoring)).
 
 ### Eligibility Verification
 
@@ -402,7 +546,7 @@ Runtime shape:
 
 | Route | Purpose | Auth | Notes |
 | --- | --- | --- | --- |
-| `/` | Marketing landing page | Public | Product narrative, workflow, capabilities, trust points, CTA. |
+| `/` | Marketing landing page | Public; redirects signed-in visitors to `/workspace` | Product narrative, workflow, capabilities, trust points, CTA. |
 | `/signup` | Account creation | Public; redirects if already signed in | Email/password signup plus Google path via auth page. |
 | `/login` | Account sign-in | Public; redirects if already signed in | Email/password and Google sign-in. |
 | `/faq` | Frequently asked questions | Public | Uses marketing/legal nav and footer. |
@@ -410,8 +554,8 @@ Runtime shape:
 | `/terms` | Terms of Service | Public | Includes lawful-use, sender responsibility, age requirement. |
 | `/abuse` | Anti-Abuse Policy | Public | Prohibited uses, enforcement, reporting, minors prohibition. |
 | `/verify-eligibility` | Eligibility confirmation | Signed-in user expected | Redirects unauthenticated users to login through API status check. |
-| `/track/open/[token]` | Open pixel | Public signed token | Invalid tokens still return a pixel without DB update. |
-| `/track/click/[token]` | Click redirect | Public signed token | Redirect is constrained to same-origin URL. |
+| `/track/open/[token]` | Open pixel | Public signed token | Invalid tokens still return a pixel without DB update. Advances only `SENT` recipients. |
+| `/track/click/[token]` | Click redirect | Public signed token | Redirect is constrained to same-origin URL. Advances only `SENT`/`OPENED` recipients. |
 | `/unsubscribe/[token]` | Legacy unsubscribe route | Public signed token | Adds suppression for the campaign owner if token is valid. |
 
 ### Authenticated Operator Routes
@@ -420,13 +564,22 @@ Runtime shape:
 | --- | --- | --- | --- |
 | `/workspace` | Overview dashboard | Verified non-admin user | Admin users redirect to admin surface. |
 | `/finder` | Hunter Finder | Verified user | Requires saved Hunter key for searches. |
-| `/prospects` | Prospect Finder | Verified user | User-facing dashboard to review discovered people and inferred work emails. Feature-flagged by `PROSPECT_GRAPH_ENABLED`; consumes `POST /api/graphql`; search history and people are separate server-paginated tables at 10/page; no backend/debug status shown. |
-| `/imports` | Import and mapping workflow | Verified user | CSV/XLS/XLSX upload and mapping. |
+| `/prospects` | Discover — Search History | Verified user | One row per company, grouped from that company's searches. Feature-flagged by `PROSPECT_GRAPH_ENABLED`; consumes `POST /api/graphql`; server-paginated at 10/page. |
+| `/prospects/[searchId]` | Discover — search detail | Verified owner | Company summary, email-format editor, role groups, people table, inline same-company search, Add 10 more, XLSX export. |
+| `/imports` | Import library and workflow | Verified user | CSV/XLS/XLSX upload, mapping, and template fields; mode is URL-identifiable. |
 | `/templates` | Template workspace | Verified user | Plain text, HTML, JSON, AI/spam assistance. |
-| `/campaigns` | Sequence list and builder | Verified user | Main sequence surface. |
-| `/campaigns/[id]` | Sequence detail | Verified owner | Setup editor, schedule editor, launch controls, activity, replies. |
-| `/sequences` | Alias to campaigns | Verified user | Redirect/alias surface. |
-| `/sequences/[id]` | Alias to campaign detail | Verified owner | Redirect/alias surface. |
+| `/campaigns` | Sequences dashboard | Verified user | Summary cards, health panel, filterable/paginated list. |
+| `/campaigns/new` | Sequence creation wizard | Verified user | Import + mapping + template + sender + schedule + attachments. |
+| `/campaigns/[id]` | Sequence detail | Verified owner | Setup editor, schedule editor, launch controls, bounce check, activity, replies. |
+| `/analysis` | Analysis — Summary | Verified user | Shared Analysis shell; see [§27](#27-analysis-workspace). |
+| `/analysis/engagement` | Analysis — Engagement | Verified user | Opens, unopened, replies, timing heatmap, schedule mix. |
+| `/analysis/sequences` | Analysis — Sequences | Verified user | Sequence and template comparison. |
+| `/analysis/reliability` | Analysis — Reliability | Verified user | Failure categories, run states, operational events, pacing, attention rules. |
+| `/analysis/senders` | Analysis — Senders | Verified user | Per-sender capacity, volume, reply rate, health, recent changes. |
+| `/account` | Account workspace | Verified user | Profile, password, connected senders; see [§28](#28-account-workspace-and-sender-management). |
+| `/sequences` | Alias to campaigns | Verified user | Server redirect that preserves query parameters. |
+| `/sequences/new` | Alias to campaign creation | Verified user | Re-exports `/campaigns/new`. |
+| `/sequences/[id]` | Alias to campaign detail | Verified owner | Re-exports `/campaigns/[id]`. |
 | `/suppressions` | Hidden/internal suppression UI | Verified user | Redirects to `/workspace`; backend APIs remain. |
 
 The app shell also blocks compact touch devices for the dashboard with a desktop-only guidance screen.
@@ -440,6 +593,7 @@ The app shell also blocks compact touch devices for the dashboard with a desktop
 | `/admin/restrictions` | Restriction management | Admin only | Dedicated restriction picker and panel. |
 | `/admin/system-health` | System health UI | Admin only | Database, Redis, storage, OAuth, mail provider, cron checks. |
 | `/admin/activity` | User activity logs | Admin only | Search users and inspect audit events. |
+| `/admin/incidents` | Incident report triage | Admin only | Review privacy-preserving error and manual issue reports. |
 
 ### API Routes
 
@@ -455,6 +609,9 @@ The app shell also blocks compact touch devices for the dashboard with a desktop
 | `GET /api/auth/eligibility-status` | Read eligibility state | Signed-in user | Used by verification page. |
 | `POST /api/auth/verify-eligibility` | Accept 18+/policies | Signed-in user + CSRF | Writes compliance timestamps. |
 | `POST /api/auth/report-ineligible` | Self-report under 18 | Signed-in user + CSRF | Blocks user and clears session. |
+| `GET /api/account` | Account profile + connected senders | Verified user | Returns `hasPassword` only — never a hash; never an OAuth token. |
+| `POST /api/account/password` | Set or change the password | Verified user + CSRF | 10/15min per IP, 5/15min per user. Changing an existing password requires the current one. Rotates the session on success. Errors are generic. |
+| `DELETE /api/account/senders/[id]` | Remove a connected sender | Verified owner + CSRF | 404 not found; 409 when it is the only sender or active/scheduled sequences reference it. Deletes when unreferenced, otherwise detaches and revokes send access. Audit logged. |
 | `POST /api/imports` | Upload import | Verified user + `importsWrite` | 25 MB, CSV/XLS/XLSX, 10/min user. |
 | `PATCH /api/imports/[id]` | Rename import | Verified owner + `importsWrite` | Audit logged. |
 | `DELETE /api/imports/[id]` | Delete import | Verified owner + `importsWrite` | Deletes dependent sequences and object. |
@@ -474,7 +631,16 @@ The app shell also blocks compact touch devices for the dashboard with a desktop
 | `POST /api/campaigns/[id]/retry-failed` | Retry eligible failed recipients | Verified owner + `campaignLaunch` | Does not duplicate successful recipients. |
 | `GET /api/campaigns/[id]/status` | Read/advance status | Verified owner | Ownership checked before background work. |
 | `GET /api/campaigns/[id]/recipient-activity` | Paginated recipient activity | Verified owner | Requires run id. |
-| `GET /api/campaigns/[id]/attachments/[attachmentIndex]` | Authenticated attachment download | Verified owner | Private/no-store, safe content disposition. |
+| `POST /api/campaigns/[id]/wait-for-slot` | Enter the execution waiting queue | Verified owner + `campaignLaunch` | Used when concurrency capacity is full. |
+| `POST /api/campaigns/[id]/sync-bounces` | Manual delivery-status check | Verified owner + CSRF | 6/min per user, `maxDuration` 60s. Returns counts only — never Gmail message content. 409 for non-Gmail or disconnected senders, 503 for a transient Gmail failure. Audit logged. |
+| `GET /api/campaigns/[id]/attachments/[attachmentIndex]` | Authenticated attachment download | Verified owner | Private/no-store, safe content disposition, inline only for image/audio/video, PDF, and plain text. |
+| `GET /api/analysis/[page]` | Aggregated Analysis payload | Verified user | `page` ∈ `overview`, `engagement`, `sequences`, `reliability`, `senders`; unknown values 404. `from`/`to` are UTC date keys; unsupported ranges normalize to the last 7 days rather than erroring. `Cache-Control: private, no-store`. Aggregation failure returns a generic 500. |
+| `POST /api/senders/[id]/sync-bounces` | Per-sender delivery-status sync | Verified owner + CSRF | Bounded, incremental Gmail history read. |
+| `POST /api/incidents` | File an incident report | Verified user + CSRF | Used by the automatic error recovery flow and the manual Report issue dialog. Idempotency key per open. |
+| `POST /api/incidents/events` | Record incident lifecycle events | Verified user + CSRF | Supporting telemetry for the recovery flow. |
+| `GET /api/prospects/exports/[id]` | Download a prepared prospect export | Verified owner | XLSX; 404 when `PROSPECT_GRAPH_ENABLED` is false. Row count capped by `PROSPECT_EXPORT_MAX_ROWS`. |
+| `DELETE /api/prospects/exports/[id]` | Discard a prepared export | Verified owner | Same feature gate. |
+| `POST /api/graphql` | Discover graph | Verified user | Gated by `PROSPECT_GRAPH_ENABLED`; see [§23](#23-prospect-graph-backend-local-graphql-prototype). |
 | `GET /api/send-window` | Gmail daily send windows | Verified user | Per sender plus user rollup. |
 | `POST /api/send` | Test email to own account | Verified user | Locked to authenticated user's email, not a relay. |
 | `POST /api/save-api-key` | Save Hunter API key | Verified user | 10/min user, encrypted at rest. |
@@ -490,6 +656,8 @@ The app shell also blocks compact touch devices for the dashboard with a desktop
 | `GET /api/admin/users/search` | Search users for activity | Admin API | 60/min admin. |
 | `GET /api/admin/users/[id]/summary` | User activity summary | Admin API | Audit logs view action. |
 | `GET /api/admin/users/[id]/activity` | Paginated activity events | Admin API | Filters category/severity/type/search/date. |
+| `GET /api/admin/incidents` | List incident reports | Admin API | Triage queue for automatic and manual reports. |
+| `PATCH /api/admin/incidents/[id]` | Update incident state | Admin API | Triage status changes. |
 | `GET /api/admin/system-health` | Detailed health report | Admin API | Detailed checks hidden from public health. |
 | `GET /api/health` | Public health | Public | Returns only `{ status: "ok" }`. |
 | `GET /api/csrf` | Issue CSRF cookie/token | Public | Used by fetch patch and verification page. |
@@ -498,11 +666,12 @@ The app shell also blocks compact touch devices for the dashboard with a desktop
 
 | Route | Purpose | Auth Requirement | Notes |
 | --- | --- | --- | --- |
-| `GET /api/cron/campaigns` | Process campaign work and reply sync | `Authorization: Bearer <CRON_SECRET>` or `x-cron-secret` | Fails closed in production when missing secret. |
+| `GET /api/cron/campaigns` | Campaign work, reply sync, watch renewal, bounce sync, disposition repair, automatic bounce monitoring | `Authorization: Bearer <CRON_SECRET>` or `x-cron-secret` | Fails closed in production when the secret is missing. Each stage is individually guarded and reports into the response; monitoring runs last and never blocks send work. |
 | `POST /api/cron/campaigns` | Same as GET | Same | Useful for external cron services. |
+| `POST /api/webhooks/gmail-pubsub` | Gmail mailbox watch push | Shared-secret query token or Pub/Sub OIDC token | Rejects everything unless `GMAIL_PUBSUB_VERIFICATION_TOKEN` or `GMAIL_PUBSUB_AUDIENCE` is configured. |
 | `POST /api/webhooks/resend` | Normalize Resend events | HMAC signature with `RESEND_WEBHOOK_SECRET` | Present even though current send path is Gmail-centered. |
-| `GET /track/open/[token]` | Open tracking pixel | Signed tracking token | Updates `RecipientJob` to `OPENED`. |
-| `GET /track/click/[token]` | Click tracking redirect | Signed tracking token | Updates `RecipientJob` to `CLICKED`; same-origin redirect only. |
+| `GET /track/open/[token]` | Open tracking pixel | Signed tracking token | Conditional write: advances `SENT` → `OPENED` only. Terminal outcomes are never resurrected. |
+| `GET /track/click/[token]` | Click tracking redirect | Signed tracking token | Conditional write: advances `SENT`/`OPENED` → `CLICKED` only; same-origin redirect. The redirect still happens even when the status is not advanced. |
 | `GET /unsubscribe/[token]` | Unsubscribe/suppress | Signed tracking token | Adds `UNSUBSCRIBED` suppression. |
 
 ## 9. Data Model Documentation
@@ -526,6 +695,23 @@ The app shell also blocks compact touch devices for the dashboard with a desktop
 | `SendLedger` | Source of truth for confirmed Gmail sends. | Stores optional user/sender/campaign/run/recipient references. | Used for rolling 24-hour daily safety cap. Indexed by sender/time and user/time. |
 | `AuditLog` | Admin-grade operational and security audit trail. | References actors by `actorUserId` and/or `actorEmail`. | Metadata is sanitized; older rows may only have legacy fields. |
 | `HunterDomainSearch` | Saved Hunter domain search history. | Belongs to `User`. | Unique by `(userId, domain)` and stores result JSON. Code handles missing table gracefully. |
+| `AttachmentAsset` | One row per unique attachment file a user has uploaded. | Belongs to `User` (`onDelete: Cascade`). | Unique on `(userId, sha256, sizeBytes, contentType)`; indexed on `(userId, createdAt)`. `storageKey` is content-addressed. Dedupe is per user and never cross-user. Campaign snapshots reference `storageKey`, so many sequences can share one object. |
+| `IncidentReport` | Privacy-preserving error and manual issue reports. | Referenced by admin triage. | Reporter identity is stored as an HMAC pseudonym plus an encrypted internal reference; diagnostics are allow-listed and redacted. See [§25](#25-error-recovery-and-incident-reporting). |
+| `ProspectSearchPerson` | The per-search allocation grant: one row per person granted to one user-owned search action. | Belongs to `ProspectSearch` and `ProspectPerson`. | Unique on `(searchId, personId)`. This is the ownership boundary between the shared cross-user cache and what a user actually receives; every user-facing count derives from these rows, never from cache pool size. `allocationSource` records `CACHE`, `PROVIDER`, `ADD_MORE_CACHE`, `ADD_MORE_PROVIDER`, or `BACKFILL`. |
+| `DiscoverSearchCache` | Shared, cross-user cache of normalized Discover provider results. | Keyed by a canonical search fingerprint. | Stores no requester identity. Carries its own email-format discovery status/TTL fields so people-cache freshness never suppresses a format retry. |
+| `DiscoverSearchExpansion` | One "Add 10 more" request against a READY search. | Belongs to `ProspectSearch` and `User`. | Idempotent per client-supplied key, so a retry never consumes a second daily slot. |
+
+Notable field-level changes in this revision:
+
+| Model | Field | Meaning |
+| --- | --- | --- |
+| `User` | `attachmentAssets` | Relation to the new dedupe rows. |
+| `ProspectCompany` | `canonicalKey` | Tenant-local canonical identity. Resolved domains are authoritative; normalized names are a fallback while a domain is unknown. Replaces `(userId, normalizedName)` as the unique key; `normalizedName` remains indexed. |
+| `ProspectCompany` | `emailFormatAuthority` | `MANUAL`, `SOURCE`, `AI`, `SHARED_CACHE`, or `UNRESOLVED`. Prevents a lower-authority update from erasing stronger evidence. |
+| `ProspectCompany` | `emailFormatDiscoveryStatus` / `...Reason` / `...At` | Typed outcome of the most recent discovery attempt, so provider, config, and parser failures stay distinct from genuine no-evidence. |
+| `DiscoverSearchCache` | `emailFormatDiscoveryStatus` / `...Reason` / `...At` / `...ExpiresAt` | Independent email-format discovery state and TTL, indexed on status. |
+| `ProspectPerson` | `allocations` | Relation to `ProspectSearchPerson`. |
+| `CampaignRun` | `progressSnapshot.bounceMonitor` | Automatic bounce-monitoring cadence checkpoint. Schema-free JSON slot shared with the daily-limit pause info; every writer spread-merges so the keys coexist. |
 
 ### Important Migrations
 
@@ -544,6 +730,13 @@ The app shell also blocks compact touch devices for the dashboard with a desktop
 | `20260525013000_repair_send_ledger_timestamps` | Repairs legacy ledger sent times from recipient metadata. | Improves accuracy of rolling 24-hour window. |
 | `20260609170000_audit_event_log` | Admin-grade audit fields, indexes, backfill/categorization. | User activity logs and admin audit UI. |
 | `20260612235800_user_compliance_fields` | Eligibility, policy, block, and restriction columns. | 18+ gate, policy acceptance, anti-abuse enforcement. |
+| `20260627120000_add_incident_reporting` | Incident report storage. | Privacy-preserving error and issue reports. |
+| `20260701120000_gmail_bounce_monitoring` | Gmail watch/history/bounce-sync columns on `SenderProfile`. | Delivery-status notification pipeline. |
+| `20260704090000_free_sequence_limits` | Execution slot claim and waiting-queue columns. | Retained-sequence and concurrency limits. |
+| `20260704120000_discover_search_person_allocations` | `ProspectSearchPerson` plus backfill. | Caps each Discover search at its granted people and hides the shared pool. |
+| `20260704200000_canonical_company_email_format` | `ProspectCompany.canonicalKey`, `emailFormatAuthority`, new unique key. | Collapses duplicate company rows and protects email-format evidence. |
+| `20260706003000_fresh_discover_email_format_status` | Typed email-format discovery status/reason/timestamps on company and cache. | Stops empty discoveries from being stamped as fresh, which previously produced "Ready but unavailable" formats. |
+| `20260707120000_attachment_assets` | `AttachmentAsset` table, unique dedupe index, user index, cascade FK. | Per-user content-addressed attachment deduplication. |
 
 ## 10. Gmail Sending System
 
@@ -963,19 +1156,19 @@ Auth pages use `AuthPage` with:
 
 ### Dashboard Sidebar
 
-The app sidebar:
-
-- Persists collapsed state in cookie/localStorage.
-- Uses different nav items for admin vs operator users.
-- Blocks compact touch dashboard usage via `AppMobileGate`.
+Full behavior is documented in [§31](#31-navigation-and-shared-page-shell). In summary, the sidebar persists its collapsed state in both a cookie and `localStorage`, swaps the entire nav for admin accounts, and blocks compact touch layouts via `AppMobileGate`.
 
 Operator nav:
 
-- Overview
-- Finder
-- Imports
-- Templates
-- Sequences
+- Overview (`/workspace`)
+- Finder (`/finder`)
+- Discover (`/prospects`)
+- Imports (`/imports`)
+- Templates (`/templates`)
+- Sequences (`/campaigns`)
+- Analysis (`/analysis`) — expandable to Summary, Engagement, Sequences, Reliability, Senders
+
+Sidebar footer (non-admin): theme control, **Account** (`/account`), logout.
 
 Admin nav:
 
@@ -984,6 +1177,15 @@ Admin nav:
 - Restrictions
 - System Health
 - Activity Logs
+- Incident Reports
+
+### Startup Overlay
+
+A readiness-driven boot overlay covers the first paint. It is dismissed from wall-clock time plus an app-ready signal (`setTimeout` + `Date.now()`), never from animation callbacks, so a hidden or throttled tab cannot leave it stuck. A hard maximum-visible ceiling always removes it, and returning to a hidden tab reconciles the stage and dismisses immediately. It never re-mounts a second overlay.
+
+### Shared Page Header
+
+`WorkspacePageHeader` (`src/components/workspace-page-header.tsx`) renders the canonical title / subtitle / actions block. Its layout comes from the Sequences dashboard, so list and dashboard pages stay aligned without page-specific title systems. The Overview and Analysis pages render their own headers because they carry different controls.
 
 ### Sequence Detail UI
 
@@ -1032,6 +1234,17 @@ Theme support appears across landing, legal pages, dashboard, auth, footer, and 
 | `GMAIL_DAILY_SEND_SAFETY_LIMIT` | Optional | Rolling 24-hour successful sends per sender. | `450` | Raising it can exceed Gmail limits. |
 | `GMAIL_SENDS_PER_MINUTE` | Optional | Per-minute sends per connected sender. | `3` | Keep conservative. Higher values can mass-fail large sequences. |
 | `GMAIL_SENDER_CONCURRENCY` | Optional | Simultaneous Gmail sends in worker. | `2` | Concurrency never bypasses per-minute pacing. |
+| `GMAIL_PUBSUB_TOPIC` | For bounce monitoring | Cloud Pub/Sub topic the Gmail mailbox watch publishes to. | None | Without it, mailbox watches cannot be registered and bounce detection falls back to bounded polling. |
+| `GMAIL_PUBSUB_VERIFICATION_TOKEN` | One of this or the audience | Shared secret appended to the push endpoint URL (`?token=…`). | None | The webhook rejects every request unless this or `GMAIL_PUBSUB_AUDIENCE` is configured. |
+| `GMAIL_PUBSUB_AUDIENCE` | One of this or the token | Expected audience of the Pub/Sub OIDC push token, usually the webhook URL. | None | Preferred over the shared-secret form where OIDC push is available. |
+| `GMAIL_PUBSUB_SERVICE_ACCOUNT` | Optional | Service-account email the OIDC push token must carry. | None | Tightens webhook acceptance to one publisher identity. |
+| `REPORT_PSEUDONYM_SECRET` | Required in production | HMAC key for the anonymous incident-reporter pseudonym. | Falls back to `SESSION_SECRET` in development | Server-only. Never prefix with `NEXT_PUBLIC_`. Rotating it breaks continuity of existing pseudonyms. |
+| `REPORT_IDENTITY_ENCRYPTION_KEY` | Required in production | AES-256-GCM key for the reversible internal reporter reference. | Falls back to `SESSION_SECRET` in development | Server-only. Use a 32-byte random value. Rotating it makes existing encrypted references unreadable. |
+| `PROSPECT_EXPORT_MAX_ROWS` | Optional | Maximum rows in one prospect export. | `5000` | Exceeding it returns a forbidden error rather than a partial file. |
+
+Discover and prospect-graph variables (`PROSPECT_GRAPH_ENABLED`, `GRAPHQL_GRAPHIQL_ENABLED`, `LOCAL_PROSPECT_MAX_RESULTS`, the `DISCOVER_*` family, the `PROSPECT_AI_*` family, `PROSPECT_EMAIL_*`, `WEB_SEARCH_PROVIDER`, `SERPER_API_KEY`, `BRAVE_SEARCH_API_KEY`, `APIFY_API_TOKEN`, `APIFY_PROSPECT_ACTOR_ID`) are documented with their defaults in [§23](#23-prospect-graph-backend-local-graphql-prototype) and in the README environment tables. `.env.example` at the repository root is the authoritative starting point; it contains placeholders only.
+
+`GMAIL_USER` and `GMAIL_APP_PASSWORD` still appear in `.env.example` but are not read anywhere in the current source. Gmail sending uses OAuth exclusively.
 
 ## 18. Local Development
 
@@ -1069,9 +1282,11 @@ Useful scripts:
 Development notes:
 
 - The app can process campaign work inline during launches/status refreshes.
-- A separate worker/scheduler is useful for long-running local testing.
+- A separate worker/scheduler is useful for long-running local testing. The standalone scheduler also runs automatic sequence bounce monitoring after send work, in its own error guard.
 - Local uploads default to `./uploads`.
-- Do not commit `.env` files; the repository intentionally has no current `.env.example`.
+- Copy `.env.example` to `.env` and fill it in. Never commit `.env` files or real secrets.
+
+> **Warning:** `npm run build` runs `prisma migrate deploy` before compiling, so it applies migrations to whatever `DATABASE_URL` points at. Use `npx next build` when you only want to verify that the app compiles.
 
 ## 19. Deployment Notes
 
@@ -1137,6 +1352,13 @@ Secrets rotation:
 | Retry failed unavailable | Retry button returns no failures/run active/sender disconnected. | Latest run active/paused, no eligible failed jobs, sender disconnected, daily cap active. | `/api/campaigns/[id]/retry-failed` response, latest `CampaignRun`, `RecipientJob.metadata`. | Wait for active run, resume paused sequence, reconnect sender, or wait for daily cap reset. |
 | Validation blocks launch | Launch returns 409 with validation report. | Missing sender/import/mapping/template/schedule/storage/system config. | Validation UI, `validationSnapshot`, `/api/campaigns/[id]/validate`. | Fix primary blocker and revalidate. |
 | Attachment download 404 | User cannot preview/download attachment. | Wrong owner, missing object, unsafe key, attachment index changed. | Campaign `templateSnapshot.attachments`, storage bucket, route response. | Re-upload attachment through sequence setup. |
+| Analysis page shows a different range than requested | The date range snaps back to the last 7 days. | Only the 7-day and 30-day presets are queryable; anything else normalizes. | `normalizeAnalysisDateRange` in `src/lib/analysis.ts`, the `from`/`to` query parameters. | Use one of the two presets. This is intended behavior, not a failure. |
+| Analysis shows fewer sequences than expected | A sequence is missing from a ranked list or template comparison. | Rankings require at least 20 confirmed sends in the period. | `ANALYSIS_MIN_RANKING_SENDS`, the sequence's confirmed sends in `SendLedger`. | None needed. Low-volume sequences are excluded to avoid misleading rates. |
+| Analysis fails to load | The workspace shows "Analysis couldn't load." with a retry button. | Aggregation error or an interrupted request. | `[analysis] Failed to aggregate page.` in server logs, `GET /api/analysis/[page]` response. | Retry from the inline button. Investigate the logged aggregation error; the endpoint never returns internals to the browser. |
+| Bounce check reports a Gmail failure | **Check bounces** returns "Couldn't check bounces. Please try again." | Transient Gmail outage, rate limit, or stale authorization for that sender. | `POST /api/campaigns/[id]/sync-bounces` response code, `SenderProfile.oauthRefreshToken`, `bounceLastSyncedAt`. | Retry later, or reconnect Gmail if the response code is `SENDER_DISCONNECTED`. The check never sends email and is safe to repeat. |
+| Automatic bounce monitoring appears idle | A sequence's invalid recipients are not being reclassified. | The run is not `RUNNING` or recently completed, the per-run cadence has not elapsed, or the completion checks are already consumed. | `CampaignRun.progressSnapshot.bounceMonitor`, cron response `bounceMonitor`. | Use the manual **Check bounces** button. Automatic checks stop by design once a run has been completed for more than 24 hours. |
+| Sender cannot be removed | `/account` refuses removal with a 409. | It is the user's only connected sender, or active/scheduled sequences reference it. | `SenderProfile` count for the user, `Campaign.status` and run statuses for that sender. | Connect another Gmail account first, or pause/repoint the referencing sequences. Both checks are enforced server-side regardless of the button state. |
+| Attachment appears reused unexpectedly | Two sequences point at the same stored object. | Intended: attachments are deduplicated per user by content hash. | `AttachmentAsset` row, campaign `templateSnapshot.attachments[].assetId`. | No action. Display name and content type are preserved per upload, so recipients see what was uploaded. |
 
 ## 21. Known Limitations
 
@@ -1155,6 +1377,15 @@ Secrets rotation:
 - `MAIL_PROVIDER` includes `resend`, and a Resend webhook exists, but current `sendEmail()` throws for `MAIL_PROVIDER=resend`; Gmail is the active send path.
 - `RateLimitWindow` remains in the schema, while active rate limiting uses Redis.
 - Admin activity logs sanitize metadata, but audit completeness begins only when events were actually recorded by the code at that time.
+- Analysis supports only 7-day and 30-day presets. There is no custom range and no 90-day option; anything else normalizes to the last 7 days.
+- Analysis is computed in UTC from stored data. It is not real-time: sender capacity is a current rolling value, but every other number reflects what has already been persisted.
+- Analysis "Sent" counts confirmed sends, "Opened" counts tracked opens, and "Replied" counts matched replies. None of the three proves inbox delivery, human reading, or complete reply capture.
+- Analysis click metrics only appear when at least one click was recorded in the period; otherwise the click series is suppressed rather than shown as zero.
+- Analysis export is generated in the browser from the payload already on screen. There is no server-side export endpoint and no cross-page or multi-range export.
+- Automatic bounce monitoring is bounded per tick (at most 3 sequences, ~25 s budget) and stops for runs completed more than 24 hours ago; the manual button owns those.
+- Attachment deduplication is scoped per user. Identical files uploaded by different users are stored separately, by design.
+- Removing a sender that historical sequences reference detaches and revokes it rather than deleting the row, because the campaign foreign key is `Restrict`.
+- The account page shows no display name because `User` has no name column; it is surfaced as null rather than invented.
 
 ## 22. Roadmap / Future Improvements
 
@@ -1162,7 +1393,8 @@ Grounded future work that is not currently claimed as done:
 
 - Add a stronger audit-log export and retention UI for admins.
 - Re-introduce a polished suppression/unsubscribe management workspace if compliance workflows need an operator-facing surface.
-- Add deeper analytics for reply rate, domain performance, template performance, and sender pacing history.
+- Extend Analysis beyond the 7/30-day presets (custom ranges, longer periods) and add recipient-domain performance, which the current five pages do not cover.
+- Add a server-side Analysis export so exports are not limited to the payload already rendered in the browser.
 - Add sender reputation guidance and pre-launch capacity recommendations based on historical Gmail throttling.
 - Add better retry controls, including retry-by-failure-category and retry preview before action.
 - Add team/workspace support if multi-seat collaboration becomes a goal.
@@ -1174,14 +1406,14 @@ Grounded future work that is not currently claimed as done:
 
 ## 23. Prospect Graph Backend (Local GraphQL Prototype)
 
-> **Phase status: local-first prototype, disabled by default (and in
-> production).** It now has a read-only review dashboard at `/prospects` (see
-> 23.8), but still does no CSV export, no sequence creation, no imports, and no
-> automatic outreach. It is exercised through the dashboard, GraphiQL, Vitest, and
-> a local CLI script. See the README's
-> [Prospect Graph Backend](./README.md#prospect-graph-backend-local-graphql-prototype)
-> and [Prospects dashboard](./README.md#prospects-dashboard) sections for the
-> walkthrough and full environment variable list.
+> **Phase status: feature-flagged, disabled by default (and in production).**
+> The surface is now split into a Search History list at `/prospects` and a
+> per-search detail workspace at `/prospects/[searchId]` (see 23.8). It supports
+> reviewing results, editing the company email format, adding people to an
+> import, and exporting to XLSX. It still creates no sequences and sends no
+> outreach automatically. It is exercised through the dashboard, GraphiQL,
+> Vitest, and a local CLI script. Environment variables are listed in the
+> [README](./README.md#discover-and-prospect-graph).
 
 ### 23.1 Purpose
 
@@ -1741,68 +1973,80 @@ failures), and the GraphQL layer
 batching, disabled-feature rejection). Use `npm run prospect:test` for a live
 end-to-end smoke test against the real providers.
 
-### 23.8 Frontend dashboard (`/prospects`) — "Prospect Finder"
+### 23.8 Frontend surface — "Discover"
 
-The page at `/prospects` is the user-facing **Prospect Finder** dashboard for
-reviewing discovered people and inferred work emails. It is intentionally a
-product surface, not a debug tool: it never shows backend/debug language (no
-"Prospect Graph" or "Graph enabled"); when the backend is off it shows a clean
-"Prospect Finder is not available right now." card. Layout is a single
-responsive column — full-width summary cards, a compact horizontal search-history
-strip, and a full-width people table — that holds up with the app sidebar open or
-closed in both themes. New searches open in a modal (`Create prospect search`),
-never inline (the single primary New search action lives in the header). Search
-history and people are two separate full-width tables that each paginate
-**10 per page** with compact chevron controls (`Showing 1–10 of N`, `Page X of
-Y`) and independent pagination state; the page creates no sequences/imports and
-sends nothing.
-
-It is a client component (`src/components/prospects/prospects-dashboard.tsx`) that
-calls the existing `POST /api/graphql` endpoint through a small typed helper
+The Discover surface is split across two routes. Both are client components that
+call `POST /api/graphql` through a small typed helper
 (`src/components/prospects/prospect-graphql.ts`); CSRF is handled by the global
 `window.fetch` patch, so no token is attached by hand and CSRF is never bypassed.
-Pure presentation/branching logic lives in
-`src/components/prospects/prospect-view.ts` and is unit-tested (node env, no DOM).
+Pure presentation and branching logic lives in
+`src/components/prospects/prospect-view.ts` and is unit-tested in the node
+environment with no DOM. When the feature flag is off, both routes render a clean
+"Prospect Finder is not available right now." card — never backend or debug
+language.
 
-Behavior:
+**`/prospects` — Search History list**
+(`src/components/prospects/prospects-list-view.tsx`)
 
-- Lists previous searches; selecting a `READY` search loads the company summary,
-  separate website/email domains, position-category breakdown (empty categories
-  hidden), and people.
-- Search history and people are **two separate full-width tables**, each
-  server-paginated at **10 per page** (`first: 10`) with **independent** cursor
-  stacks — paging one never affects the other, and the selected company survives
-  history paging. The people table stays 10/page for every `positionCategory`.
-- Inferred emails are labelled **inferred, not verified** — only a real
-  `VERIFIED` status uses the green badge — with a persistent banner above the
-  table. Copy controls render only when an address is present; missing addresses
-  show "Unavailable". LinkedIn links open in a new tab with `rel="noopener noreferrer"`.
-- If the website domain differs from the employee email domain, both are shown
-  clearly. Applied Materials is the regression example: website
-  `appliedmaterials.com`, employee email domain `amat.com`, pattern
-  `first_last`.
-- The company card exposes three email-format controls: **Find with AI**
-  (`discoverCompanyEmailFormat`, GPT-5.5 web search — the primary path; relabelled
-  **Refresh with AI** once a format exists, which forces past the cache), **Use
-  source URL** (a direct public page such as
-  `https://rocketreach.co/esri-email-format_b5c60d6df42e0c51` calls
-  `refreshCompanyEmailFormat`, parses the source deterministically with no web
-  search), and **Fix manually**. On success the card shows the email domain,
-  pattern, confidence, source chips, and a compact agreement/conflict count; no
-  generated evidence narrative is displayed or requested. When unavailable it
-  shows "No email format found yet. Use AI web search, paste a public source URL,
-  or set it manually." All three paths regenerate existing people emails as
-  inferred (never `VERIFIED`). Rate-limit / not-configured errors surface as safe
-  messages.
-- Handles the disabled flag (clean "not enabled" card), processing/failed/
-  canceled searches (safe `errorCode`/message, never raw GraphQL errors), and
-  empty states. It creates **no** sequences or imports and sends nothing.
-  Optional, clearly-gated create/process/cancel/delete controls reuse existing
-  mutations. Delete removes the owned company prospect graph and related
-  prospect searches only.
-- Matches the dashboard theme (glass panels, green/teal accents, dark/light) and
-  is responsive with the sidebar open or collapsed (the people table collapses to
-  stacked cards on narrow viewports).
+- Page intro, a Refresh action, and a single primary **New search** action that
+  opens a modal, never an inline form.
+- One row per **company**, grouped from all of that user's searches for that
+  company, with a header search box that filters the loaded groups.
+- Client-side pagination with compact chevron controls.
+- The list never renders company details, the People table, or selection and
+  export actions — selecting a row navigates to the detail route.
+
+**`/prospects/[searchId]` — search detail**
+(`src/components/prospects/prospect-detail-view.tsx`)
+
+- Company summary with separate website and employee email domains shown clearly
+  when they differ, plus a derived email-confidence reading computed at render
+  time from the usable-address rate rather than stored as a field.
+- An exclusive email-format action shell offering **Find with AI**
+  (`discoverCompanyEmailFormat`, GPT-5.5 web search — relabelled **Refresh with
+  AI** once a format exists, which forces past the cache), **Use source URL** (a
+  direct public page parsed deterministically by `refreshCompanyEmailFormat`, no
+  web search), and **Fix manually**. On success the card shows email domain,
+  pattern, confidence, source chips, and a compact agreement/conflict count. When
+  unavailable it explains the three options. All three paths regenerate existing
+  people emails as inferred, never `VERIFIED`. Rate-limit and not-configured
+  errors surface as safe messages.
+- **Search this company** — a header-triggered disclosure, closed by default, that
+  runs the same resolved company again with a new role and location. Role and
+  location are pill-select filters. A duplicate role + location combination is
+  rejected by a resolver shared between the server mutation and the client
+  pre-check, so both sides return identical copy.
+- **Add 10 more** extends one role group in place; when several groups exist the
+  user chooses which one to extend.
+- Role-group filters over the People table. Groups are keyed by a canonical
+  role + location fold, so formatting differences collapse into one group while
+  genuinely different roles and locations stay separate.
+- People table with selection, **Export** to XLSX (prepared server-side, then
+  downloaded through `/api/prospects/exports/[id]`), and **Add to Imports**, which
+  stages a pending `Import` finalized when template fields are saved.
+- Inferred emails are labelled **inferred, not verified**; only a real `VERIFIED`
+  status uses the green badge. Copy controls render only when an address is
+  present; missing addresses show "Unavailable". LinkedIn links open in a new tab
+  with `rel="noopener noreferrer"`.
+- Addresses with a confirmed permanent delivery failure stay visible with an
+  explanatory badge, are never counted as usable, and are skipped by export and
+  Add to Imports ([§26](#26-automatic-delivery-failure-detection-gmail-bounce-monitoring)).
+- Delete removes the owned company prospect graph and its related searches only.
+
+**Search input suggestions.** Company, role, and location inputs
+(`src/components/prospects/suggestion-input.tsx`) offer autocomplete with
+conservative typo correction. Ranking and correction are pure and shared by the
+server resolver and the client input. Corrections are deliberately hard to
+trigger — a minimum query length, a length-scaled edit-distance budget, and an
+absolute cap — and never map one distinct value onto another: "Software Engineer"
+and "Data Engineer", "Recruiter" and "Recruiting Manager", "India" and "Indiana",
+"United States" and "United Kingdom" all stay distinct. Company suggestions are
+global across stored companies and the shared cache; roles and locations are
+scoped to the requesting user.
+
+Both routes match the dashboard theme in light and dark, and remain usable with
+the sidebar open or collapsed; the People table collapses to stacked cards on
+narrow viewports.
 
 ## 24. Dashboard Help System (in-app guided tours)
 
@@ -1830,10 +2074,37 @@ Authenticated layout (ManualProvider, mounted once in src/app/layout.tsx)
 ### 24.2 Route registry
 
 `getManualForPathname(pathname)` returns the config for: `/workspace` (Overview),
-`/finder`, `/imports`, `/templates`, `/campaigns` (Sequences), `/campaigns|/sequences/[id]`
-(Sequence detail), `/prospects` + `/prospects/[id]` (Discover list/detail), and every
-`/admin*` route (one adaptive admin guide). Public/auth/legal routes return `null`,
-so the button never appears off the dashboard.
+`/finder`, `/imports`, `/templates`, `/campaigns` (Sequences),
+`/campaigns/new` + `/sequences/new` (sequence creation), `/campaigns|/sequences/[id]`
+(Sequence detail), `/prospects` + `/prospects/[id]` (Discover list/detail), every
+`/analysis*` route (one shared Analysis guide), and every `/admin*` route (one
+adaptive admin guide). Public/auth/legal routes return `null`, so the button never
+appears off the dashboard.
+
+Match order matters: `/campaigns/new` is tested before the `/campaigns/[id]` pattern
+because they share a URL shape.
+
+The Analysis guide is six steps — one introduction on the workspace header (covering
+the date selector and Export), then one step per tab. It never navigates between
+Analysis routes: each tab step highlights the visible tab in place via
+`data-tour="analysis-tab-*"`. Individual charts are deliberately not explained,
+because every chart already carries its own information tooltip. Its controls are
+Skip plus Next/Done — there is no Back button in any guide.
+
+### 24.2.1 Report issue dialog
+
+The guide menu also opens a manual **Report issue** dialog
+(`src/components/incident/help-report-dialog.tsx`), reusing the same authenticated
+`/api/incidents` endpoint and privacy guarantees as the automatic error report. The
+user chooses an issue type (Bug, Confusing UI, Wrong data, Loading/performance,
+Guide/tour issue, Other) and writes a note of at most 1,000 characters. Only that
+type, the note, the current pathname, the human page label, a stable machine guide
+context (for example `sequences_guide_menu`), coarse browser and platform families,
+and a per-open idempotency key are sent. No page data, DOM, cookies, tokens, or
+contacts are attached; the server redacts the note and derives everything else.
+The dialog is a portal-rendered `role="dialog"`, moves focus to the first control on
+open, closes on Escape unless a submit is in flight, tracks online/offline state, and
+regenerates its idempotency key on every open.
 
 ### 24.3 Premium Help button
 
@@ -2119,6 +2390,80 @@ Person email statuses are overlaid at read time (`overlayEmailCandidateStatus` p
 
 "Sync recent delivery failures" (sender card on /campaigns → `POST /api/senders/[id]/sync-bounces`) scans only likely DSN messages from the last 30 days, capped at 200, idempotent per message, and marks `bounceBackfillCompletedAt` so it never rescans.
 
+### Per-sequence checks: manual and automatic
+
+Two entry points run the *same* shared service, `checkSequenceBounces`
+(`src/services/sequence-bounce-check.ts`): one classifier, one suppression writer,
+one rollup resync. Neither ever sends email, and neither returns Gmail message
+content — the result is counts only.
+
+The service performs a one-time recent backfill for mailboxes that predate bounce
+monitoring (a no-op afterwards), a forced incremental sync from the stored history
+position, and a broader but bounded scan limited to the sequence's run window and
+scoped to that campaign's jobs. It then repairs stored rows whose evidence already
+proves an invalid address, covering bounces an earlier idempotency gate consumed.
+Running it twice reports zero updates the second time.
+
+Outcomes are typed: `not_found`, `sender_unavailable` (non-Gmail sender),
+`sender_disconnected` (no refresh token), `gmail_unavailable` (transient outage or
+rate limit that repaired nothing), or `ok` with a summary of Gmail messages checked,
+DSNs found, rows reclassified, recipients newly marked invalid, suppressions written,
+whether rollups changed, recipients already known invalid, and how many missing Gmail
+messages or threads were skipped.
+
+**Manual.** The **Check bounces** button on sequence detail posts to
+`/api/campaigns/[id]/sync-bounces` (6 requests/min per user, `maxDuration` 60 s). It
+is deliberately separate from the Refresh-validation action — validation checks setup
+*before* a launch, this reads delivery reports for messages already sent — and stays
+available for completed sequences.
+
+**Automatic.** `runAutomaticSequenceBounceChecks`
+(`src/services/sequence-bounce-monitor.ts`) runs on every backend campaign tick — the
+cron route in production, the standalone scheduler locally — *after* send work and in
+its own error guard, so monitoring and sending never mask each other's failures. No
+browser tab, page poll, or button click is involved.
+
+Cadence is enforced by a per-run checkpoint under
+`CampaignRun.progressSnapshot.bounceMonitor`:
+
+| Constant | Value | Meaning |
+| --- | --- | --- |
+| `ACTIVE_BOUNCE_CHECK_INTERVAL_MS` | 5 minutes | While a run is `RUNNING`, at most one check per interval. |
+| `COMPLETION_FOLLOW_UP_DELAY_MS` | 10 minutes | Delay before the single post-completion follow-up, for late-arriving bounces. |
+| `MAX_COMPLETION_CHECKS` | 2 | One immediate final check plus one follow-up, then automatic checks stop. |
+| `COMPLETED_RUN_LOOKBACK_MS` | 24 hours | Runs completed longer ago than this are left to the manual button. |
+
+Per-tick bounds (at most 3 campaigns, a ~25 s budget, and a 50-candidate scan limit)
+keep monitoring from crowding out sending; a backlog simply drains over later ticks.
+Selection is purely status- and time-based — no company, domain, sender, or recipient
+is ever special-cased.
+
+```mermaid
+sequenceDiagram
+    participant Cron as Cron / scheduler tick
+    participant Mon as sequence-bounce-monitor
+    participant Chk as sequence-bounce-check
+    participant GM as Gmail API
+    participant DSN as gmail-dsn parser
+    participant DB as Prisma
+    participant UI as Sequence UI
+    Cron->>Mon: after send work, guarded
+    Mon->>DB: read candidate runs + bounceMonitor checkpoint
+    DB-->>Mon: runs due for a check
+    loop bounded per tick
+        Mon->>Chk: checkSequenceBounces(campaignId, userId)
+        Chk->>GM: bounded history / DSN scan
+        GM-->>Chk: candidate messages
+        Chk->>DSN: parse + classify
+        DSN-->>Chk: permanent / temporary
+        Chk->>DB: reclassify jobs, write INVALID_EMAIL suppressions, resync rollups
+        Chk-->>Mon: counts only
+        Mon->>DB: update checkpoint (lastCheckAt, outcome, counters)
+    end
+    Mon-->>Cron: bounceMonitor result in the response
+    UI->>DB: next render shows Skipped recipients
+```
+
 ### Troubleshooting
 
 - **Permission required** → the sender predates the read scope; reconnect Gmail.
@@ -2128,3 +2473,469 @@ Person email statuses are overlaid at read time (`overlayEmailCandidateStatus` p
 - **Unmatched bounces** → recorded as `gmail-dsn` ProviderEvents with `matched: false` and logged as `[bounce-sync] Delivery notification could not be correlated.`; no recipient state is changed.
 - **No `[bounce-sync]` logs at all** → the sync never ran: check that the deployed environment actually executes `/api/cron/campaigns` (Vercel cron runs only on the production deployment — a branch preview gets no cron), or trigger "Sync recent delivery failures" on the sender card.
 - **A bounce shows as a reply** (recipient marked replied) → predates the DSN exclusion; reprocessing the message through any bounce sync heals the stored reply automatically.
+
+## 27. Analysis Workspace
+
+Analysis is the reporting surface: five pages over the user's own stored outreach data, answering "what happened, and is it getting better or worse?". It is read-only. It never sends, retries, pauses, or modifies anything.
+
+### 27.1 Routes and shared shell
+
+| Page | Route | `page` key | Subtitle in the UI |
+| --- | --- | --- | --- |
+| Summary | `/analysis` | `overview` | A quick view of outreach performance. |
+| Engagement | `/analysis/engagement` | `engagement` | Track engagement across your outreach. |
+| Sequences | `/analysis/sequences` | `sequences` | Compare sequence and template performance. |
+| Reliability | `/analysis/reliability` | `reliability` | Understand failures, pauses, and sending health. |
+| Senders | `/analysis/senders` | `senders` | Compare connected Gmail senders and capacity. |
+
+Each route is a thin server component that calls `requireUser()` and renders `<AnalysisWorkspace page="…" />`. Everything else lives in the shared client shell (`src/components/analysis/analysis-workspace.tsx`):
+
+- **Header** — "Analysis", the page subtitle, the date-range control, and the Export button. Carries `data-tour="analysis-header"`.
+- **Tab bar** — the five pages as links that preserve the current `from`/`to` in the query string. The active tab is marked `aria-current="page"` and tracked by an animated underline; each tab carries a stable `data-tour="analysis-tab-*"` attribute for the guided tour. The underline is driven by two near-critically-damped springs whose position and velocity live at module scope, because the five routes are separate pages and the workspace remounts on every tab switch. Under `prefers-reduced-motion: reduce` the underline snaps instead of animating.
+- **Metric strip** — the page's headline metrics, each with an icon, value, detail line, an information tooltip, and (where meaningful) a prior-period comparison.
+- **Visuals** — the page-specific chart grid.
+- **Footer note** — an information tooltip about freshness plus the standing caveat that analytics are calculated in UTC and may not reflect real-time data.
+
+States: a skeleton layout while the first payload loads; a full-page error card with **Try again** when nothing has loaded; an inline error strip with **Retry** when a refresh fails but stale data is still on screen; and an "Updating Analysis…" bar during a background refresh. Every metric that cannot be computed renders an em dash rather than a misleading zero.
+
+### 27.2 Architecture
+
+```mermaid
+flowchart LR
+    B["Browser: /analysis/*"] --> W["AnalysisWorkspace (client)"]
+    W --> N["normalizeAnalysisDateRange"]
+    W --> F["fetch /api/analysis/[page]?from&to"]
+    F --> R["Route handler: requireApiUser + page validation"]
+    R --> S["getAnalysisPageData (src/services/analysis.ts)"]
+    S --> P["Prisma"]
+    P --> PG["PostgreSQL: SendLedger, RecipientJob, CampaignRun, Campaign, Template, InboundReply, ProviderEvent, SenderProfile, AuditLog"]
+    S --> Pay["Normalized page payload"]
+    Pay --> W
+    W --> C["Recharts visuals + metric strip"]
+    W --> X["buildAnalysisCsv → client download"]
+```
+
+The client owns range state and rendering; the service owns aggregation. The route handler is thin: authenticate, validate the page key, normalize the range, delegate, and return `private, no-store` JSON.
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant UI as Analysis UI
+    participant API as GET /api/analysis/[page]
+    participant SVC as Analysis service
+    participant DB as Prisma / PostgreSQL
+    participant EXP as buildAnalysisCsv
+    User->>UI: Open a page or change the range
+    UI->>UI: normalizeAnalysisDateRange(from, to)
+    UI->>API: fetch with credentials, AbortController
+    API->>API: requireApiUser, isAnalysisPage, normalize range
+    API->>SVC: getAnalysisPageData(userId, page, range)
+    SVC->>DB: load current + prior period, campaigns, senders
+    DB-->>SVC: rows
+    SVC-->>API: normalized payload
+    API-->>UI: JSON (private, no-store)
+    UI-->>User: metric strip + charts
+    User->>UI: Click Export
+    UI->>EXP: buildAnalysisCsv(payload)
+    EXP-->>UI: CSV text
+    UI-->>User: Blob download named for the page and range
+```
+
+Every fetch is aborted when the page, range, or retry key changes, so a slow request cannot overwrite newer data.
+
+### 27.3 Date range
+
+Only two presets are queryable, defined in `src/lib/analysis.ts`:
+
+| Preset | `days` | Description shown in the picker |
+| --- | --- | --- |
+| Last 7 days | 7 | Recent outreach performance |
+| Last 30 days | 30 | Monthly outreach performance |
+
+`normalizeAnalysisDateRange` accepts `from`/`to` as `YYYY-MM-DD` UTC date keys and falls back to the latest seven UTC calendar days whenever the request is not one of the presets — a reversed range, a future end date, an arbitrary custom span, a period longer than 30 days, or a malformed key. There is no custom-range picker and no 90-day option. The same function runs on the client and inside the API route, so the UI and the payload can never disagree about the effective range.
+
+Ranges are inclusive UTC calendar days. Each range also computes an immediately preceding equal-length **prior period** used for every comparison. Changing the preset rewrites `from`/`to` with `router.replace` (no scroll, no new history entry), so the range survives reload and deep links.
+
+The picker is a `role="menu"` with `menuitemradio` options: Escape closes and returns focus to the trigger, Arrow Up/Down cycle options, and clicking outside closes it.
+
+### 27.4 Metric definitions
+
+These definitions apply across all five pages.
+
+| Term | Precise meaning |
+| --- | --- |
+| **Confirmed send** | A `SendLedger` row inside the range, deduplicated by recipient job (`job:<recipientJobId>`, or `ledger:<id>` when no job is linked), keeping the earliest send time. Gmail accepted the message. It is **not** proof of delivery to an inbox. |
+| **Unique tracked open** | A confirmed-send recipient with a recorded `OPENED` provider event, or (as a fallback) a recipient job whose status is `OPENED` and whose `updatedAt` falls in range. Directional only — image blocking suppresses opens, and proxy prefetching can inflate them. |
+| **Open rate** | Unique tracked opens ÷ confirmed sends, as a percentage rounded to one decimal. |
+| **Unopened** | Confirmed sends minus unique tracked opens, floored at zero. Engagement page only. |
+| **Unique matched reply** | A confirmed-send recipient with at least one `InboundReply` correlated back to their recipient job. Mailbox replies that cannot be matched to a recipient job are not counted. |
+| **Reply rate** | Unique matched replies ÷ confirmed sends. |
+| **Targeted recipients** | Sum of `CampaignRun.totalRecipients` across runs active in the range — people queued for outreach, before any send occurred. |
+| **Needs attention** (Summary) | Permanent failures plus suppressed recipients. Pacing and safety waits are excluded. |
+| **Retryable failure** (Reliability) | A recipient diagnostic classified `retryable`: Gmail temporary failures, queue/database errors, explicit rate limits, `RETRYING` status, or `metadata.retryable === true`. |
+| **Permanent failure** (Reliability) | A recipient diagnostic classified `permanent`: invalid recipient, missing template variables, sender disconnected, attachment/storage problem, provider rejection, or an unclassifiable `FAILED` row. |
+| **Safety pause** | A run whose `progressSnapshot.pauseReason` is `DAILY_SEND_LIMIT` or `GMAIL_SENDER_LIMIT`, paused inside the range. Never a recipient failure. |
+| **Sender capacity** | The current rolling 24-hour Sendloom safety window for that sender (`GMAIL_DAILY_SEND_SAFETY_LIMIT`), not Gmail's official quota. Sendloom cannot read Gmail's real quota. |
+| **Sequence status** | The status of the sequence's most recently updated run in range, falling back to the campaign status. `WAITING_FOR_SLOT` is displayed as "Waiting". |
+| **Schedule type** | `Campaign.scheduleType` normalized to Immediate, Once, or Recurring; unknown or null values become Immediate. |
+| **Prior-period comparison** | Counts render as a percentage change; rates render as a percentage-point change. With no prior activity the label is "New activity" or "No prior data"; identical values render "Flat vs prior period". |
+| **Ranking minimum** | `ANALYSIS_MIN_RANKING_SENDS = 20`. Sequences, runs, templates, and best-day cells below this are excluded from rankings or marked as not meeting the minimum, so a 1-of-1 reply never shows as a 100% leader. |
+
+Failure classification lives in `classifyAnalysisFailure` and reads only stored diagnostics: `metadata.blockedBy`, failure codes, provider error reason/status, `lastError`, and the recipient status. Pacing markers (`DAILY_SEND_LIMIT`, `GMAIL_SENDER_LIMIT`, `GMAIL_SENDER_PACING`) are classified as *pacing*, never as failures.
+
+### 27.5 Summary (`/analysis`)
+
+Answers: how is outreach performing overall, and what changed?
+
+- **Metrics:** Sent, Opened (with open rate), Replies (with reply rate), Needs attention.
+- **Outreach activity** — daily sent/opened/replied series across the range.
+- **Outcome mix** — three mutually exclusive categories: Replied, Opened (without a reply), and No tracked engagement. They always sum to confirmed sends.
+- **Journey funnel** — Targeted → Sent → Opened → Replied, each stage carrying its conversion against the previous meaningful stage.
+- **Best days** — confirmed sends and reply rate by UTC weekday (Monday first), flagged when a day meets the 20-send minimum.
+- **Top movers** — up to four qualified sequences ranked by reply-rate change against the prior period; with no prior sample, unique replies break the tie and the detail line says so.
+
+Empty state: with no sends and no targeted recipients, `hasData` is false and the visuals render their own empty copy.
+
+### 27.6 Engagement (`/analysis/engagement`)
+
+Answers: how do recipients interact, and when?
+
+- **Metrics:** Sent, Opened, Unopened, Replied.
+- **Engagement trends** and **Rate trends** — absolute counts and open/click/reply rates over the range. The click series appears only when at least one click was recorded in the period (`clickAvailable`); otherwise it is omitted rather than drawn as a flat zero.
+- **Engagement journey** — the Summary funnel plus the Unopened stage, with a plain-language insight line.
+- **Send-time heatmap** — UTC weekday × six four-hour blocks, coloured by reply rate, with each cell marked for whether it meets the 20-send minimum.
+- **Schedule type mix** — confirmed sends split across Immediate, Once, and Recurring.
+
+### 27.7 Sequences (`/analysis/sequences`)
+
+Answers: which sequences and templates actually earn replies?
+
+- **Metrics:** Total sequences (distinct sequences created or carrying run/send activity in range), Running now, Best reply rate (unavailable until a sequence clears 20 sends), Needs review.
+- **Needs review** counts sequences with a permanent recipient failure, a failed state, or under a 5% reply rate after clearing the minimum sample.
+- **Top sequences by reply rate** — up to six qualified sequences.
+- **Volume vs replies scatter** — one point per sequence with sends, carrying targeted count and current status.
+- **Template performance** — up to six templates with at least 20 sends, ranked by reply rate, including how many sequences used each.
+- **Sequence status mix** — current status distribution of the runs in range.
+- **Standout runs** — up to five individual runs with at least 20 sends, ranked by reply rate then volume.
+
+### 27.8 Reliability (`/analysis/reliability`)
+
+Answers: what went wrong, what is retryable, and what is merely waiting?
+
+- **Metrics:** Successful sends, Retryable issues, Permanent failures, Safety pauses.
+- **Failure reasons** — the top eight diagnostic categories with counts and shares: Invalid recipient, Gmail temporary failure, Rate limited, Suppressed, Sender disconnected, Missing variables, Permanent provider rejection, Attachment or storage issue, Unknown.
+- **Run state distribution** — current state of every run active in range.
+- **Operational events** — daily retries, safety pauses, and resumed runs, derived from retry counts, pause snapshots, and audit actions.
+- **Pacing** — recipients currently held by pacing rules (a live query, not a range aggregate), send-window pauses in range, and the next recovery time.
+- **Attention** — up to four rules raised only when stored diagnostics cross a threshold: high invalid recipients (≥5% of handled recipients), increased safety pauses vs the prior period, rising permanent failures, senders needing reconnect, and mapping-related skips.
+
+Pacing waits are never presented as failures anywhere on this page.
+
+### 27.9 Senders (`/analysis/senders`)
+
+Answers: how is each connected Gmail sender doing?
+
+- **Metrics:** Connected senders, Total sent, Avg reply rate, Remaining capacity (percent of the combined rolling 24-hour window, with the absolute remaining/total in the detail line; unavailable when no connected sender reports a limit).
+- **Per-sender rows** carry sent, opened, replied, reply rate, and a capacity block (limit, used, remaining, percent used, reset time, availability).
+- **Health** is derived from stored connection facts only:
+
+  | Health | Condition |
+  | --- | --- |
+  | Reconnect needed | No refresh token, a watch status of `RECONNECT_REQUIRED`/`PERMISSION_REQUIRED`/`RENEWAL_FAILED`, or a stored reply-sync error |
+  | Pacing wait | A run in range is paused for this sender with a daily/sender-limit reason |
+  | Synced | A recorded reply sync, bounce sync, or an active Gmail watch |
+  | Healthy | Connected with none of the above signals |
+
+- **Recent changes** — up to five deduplicated, most-recent-first events inside the range: reconnect required, replies synchronized, delivery-health status refreshed, and sender entered a pacing wait.
+
+Credentials are never returned to this page. Capacity is read per sender through the same rolling-window helper the send path uses; a capacity read failure is logged server-side and the sender simply reports zero limit rather than failing the page.
+
+### 27.10 Export
+
+Export is a client-side CSV built by `buildAnalysisCsv` (`src/lib/analysis-export.ts`) from the payload already on screen. There is no server export endpoint.
+
+- **Scope:** the current page and the current range only.
+- **Filename:** `sendloom-analysis-<page>-<from>-to-<to>.csv`.
+- **Header block:** a title row with the page key, a UTC date-range row, then a blank row.
+- **Metric block:** `Metric, Value, Detail` for every metric in the strip; percentages are written with a `%` suffix.
+- **Page block:**
+
+  | Page | Columns |
+  | --- | --- |
+  | Summary, Engagement | Date, Sent, Opened, Clicked, Replied, Open rate, Click rate, Reply rate |
+  | Sequences | Sequence, Sent, Replies, Reply rate, Status |
+  | Reliability | Failure / outcome category, Count, Share |
+  | Senders | Sender, Sent, Opened, Replied, Reply rate, 24h used, 24h limit, Health |
+
+- Values containing a comma, quote, or newline are quoted and internal quotes doubled.
+- With no data the file still contains the header and metric blocks; the page block is simply empty.
+- The button is disabled until a payload has loaded, and while loading or exporting.
+- Authentication applies to the underlying data fetch. The export itself is a local Blob download and issues no additional request.
+
+### 27.11 Responsive, theme, and accessibility behavior
+
+The workspace is a fluid grid: chart rows collapse from two or three columns to one on narrow viewports, the metric strip scrolls horizontally rather than squeezing, and the tab bar scrolls the active tab into view. Because the sidebar is a layout sibling rather than an overlay, collapsing or expanding it re-measures the tab underline through a `ResizeObserver`, so the indicator stays aligned in both sidebar states.
+
+Colors come from the shared `--analysis-*` token layer scoped to the workspace, so charts read correctly in both light and dark themes. Tooltips rendered through a portal must redeclare those tokens, since they escape the scoping element.
+
+Every metric label carries an `AnalysisInfo` tooltip explaining what the number counts and its known limits; charts carry their own tooltips and short insight lines. The tour deliberately does not repeat that per-chart content.
+
+## 28. Account Workspace And Sender Management
+
+`/account` is the operator's own settings surface. It is not part of the product nav — the sidebar footer links to it below the theme control and above logout. Admin accounts do not get the item.
+
+The page calls `requireOperatorUser()` and renders `AccountDashboard` with a server-built overview.
+
+### 28.1 Profile
+
+| Field | Source | Notes |
+| --- | --- | --- |
+| Email | `User.email` | Read-only. |
+| Name | — | Always `null`. `User` has no name column, so the UI shows no invented value. |
+| Account type | Derived from `Boolean(User.passwordHash)` | "Password account" or "Google account". Derived from one stored fact; no linked-Google state is claimed that cannot be proven. |
+| Created | `User.createdAt` | |
+| Last login | `User.lastLoginAt` | |
+| Last seen | `User.lastSeenAt` | |
+
+There are no editable profile fields today. The password hash never leaves the server: `getAccountOverview` returns only the derived `hasPassword` boolean.
+
+### 28.2 Password
+
+`POST /api/account/password` handles both cases.
+
+- **Change** (the account already has a password): the current password is required and verified with bcrypt.
+- **Set** (a Google-only account): no current password is required.
+
+Validation is shared with the client through `validatePasswordChange` in `src/lib/account.ts`: minimum 8 characters (mirroring signup), and the new password must match its confirmation. Error copy is a fixed set of user-safe strings.
+
+Security behavior:
+
+- Rate limited at 10 requests / 15 minutes per IP and 5 / 15 minutes per user.
+- A wrong current password returns the same generic message as any other failure, so the response never confirms which field was wrong. That attempt is audit logged as `auth.password_change_failed` with `WARNING` severity.
+- On success the session is rotated: `sessionIssuedAt` advances (revoking older JWTs everywhere) and a fresh cookie is issued so the current browser stays signed in.
+- Success is audit logged as `auth.password_changed` or `auth.password_set`.
+
+### 28.3 Connected senders
+
+Each sender row shows the display name, the from-address, a friendly provider label (`google_oauth` → "Gmail"), a connection status, and the connected-at time. Status is derived from a single stored fact: a sender with no `oauthRefreshToken` is `reconnect_required`, because it cannot send.
+
+Connecting another mailbox reuses the Gmail OAuth kickoff with a return path, so a newly connected sender appears on the account page (`/api/auth/google/connect?next=/account`; the callback appends `?gmail=connected`).
+
+Removal is gated by three rules, all enforced **server-side inside one transaction** — never by the disabled button alone:
+
+1. The sender must belong to the authenticated user.
+2. The user must keep at least one sender.
+3. No campaign with status `SCHEDULED`, `WAITING_FOR_SLOT`, `RUNNING`, or `PAUSED` — and no run with status `QUEUED`, `WAITING_FOR_SLOT`, `RUNNING`, or `PAUSED` — may reference it.
+
+```mermaid
+flowchart TD
+    A["User clicks Remove"] --> B["Confirmation dialog"]
+    B -->|Cancel| Z["No change"]
+    B -->|Confirm| C["DELETE /api/account/senders/[id]"]
+    C --> D{"Belongs to this user?"}
+    D -->|No| E["404 not_found"]
+    D -->|Yes| F{"More than one sender?"}
+    F -->|No| G["409 only_sender"]
+    F -->|Yes| H{"Active or scheduled sequences?"}
+    H -->|Yes| I["409 active_campaigns"]
+    H -->|No| J{"Any sequence references it at all?"}
+    J -->|No| K["Hard delete the row"]
+    J -->|Yes| L["Detach from user, clear refresh token"]
+    K --> M["Audit sender.removed (mode deleted)"]
+    L --> N["Audit sender.removed (mode disconnected)"]
+```
+
+The disconnect path exists because the `Campaign → SenderProfile` foreign key is `Restrict`: deleting a referenced sender would break historical sequences. Detaching sets `userId = null` and clears the refresh token, which removes it from the account and revokes send access while the row and campaign snapshots stay intact. A hard delete is only taken when no sequence references it at all; the sole remaining relation, `InboundReply`, cascades.
+
+Removal confirmation uses the shared `AppConfirmDialog` — the codebase contains no native `window.confirm` calls, and a test enforces that.
+
+## 29. Attachment Lifecycle
+
+Sequence attachments are content-addressed and deduplicated per user, so uploading the same résumé to twenty sequences stores one object.
+
+### 29.1 Model and keys
+
+`AttachmentAsset` holds one row per unique file per user, unique on `(userId, sha256, sizeBytes, contentType)` and indexed on `(userId, createdAt)`. The storage key is `users/<userId>/attachments/<sha256>` in the attachments bucket, so identical bytes always resolve to the identical object.
+
+The dedupe key is the server-computed SHA-256 plus size plus a **normalized** content type (parameters stripped, lowercased), never the filename — so `APPLICATION/PDF` and `application/pdf; charset=utf-8` do not split one file into two rows.
+
+### 29.2 Upload and reuse
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant UI as Sequence builder / setup editor
+    participant API as POST /api/campaigns or PATCH /api/campaigns/[id]
+    participant SVC as findOrCreateAttachmentAsset
+    participant DB as Prisma
+    participant OS as Object storage
+    User->>UI: Attach a file (≤ 10 MB)
+    UI->>API: multipart/form-data
+    API->>SVC: userId + buffer + fileName + contentType
+    SVC->>SVC: sha256(buffer), normalize content type
+    SVC->>DB: findUnique on the dedupe key
+    alt Existing asset
+        DB-->>SVC: asset
+        SVC-->>API: { asset, reused: true }
+    else New content
+        SVC->>OS: uploadObject(users/<userId>/attachments/<sha256>)
+        OS-->>SVC: key
+        SVC->>DB: create AttachmentAsset
+        DB-->>SVC: asset (or P2002 → re-read the winner)
+        SVC-->>API: { asset, reused: false }
+    end
+    API->>DB: write templateSnapshot.attachments entry
+```
+
+The upload happens **before** the insert on purpose: a failed insert leaves only an idempotent orphan object, healed on the next attach, whereas insert-first could leave a row pointing at a missing object and break sends. Concurrent duplicates write identical bytes to the identical key, so the race is safe; a unique-constraint violation is resolved by re-reading the winning row.
+
+Attachment upload is deliberately deferred until the free-sequence retention gate passes, so a rejected create leaves no draft and no orphaned upload.
+
+### 29.3 Snapshots and backward compatibility
+
+Each campaign's `templateSnapshot.attachments[]` entry keeps the per-upload display name and the raw content type, plus `storagePath`, `assetId`, and `sizeBytes`. Reusing an asset therefore never changes what the user sees or what Gmail receives. Snapshots written before dedupe shipped carry only `fileName`, `storagePath`, and `contentType`, and continue to work unchanged — nothing reads `assetId` as required.
+
+### 29.4 Download and preview
+
+Attachments are always fetched through `GET /api/campaigns/[id]/attachments/[attachmentIndex]`, which requires an authenticated session and campaign ownership before touching storage. There is no public object URL.
+
+- Responses are private and `no-store`.
+- Content-Disposition is built RFC 5987/6266-safe: a stripped ASCII `filename=` fallback plus a percent-encoded `filename*=UTF-8''`, with CR/LF rejected in both forms to prevent header injection.
+- Only `image/*`, `audio/*`, `video/*`, `application/pdf`, and `text/plain` render `inline`. Everything else is force-downloaded, so an uploaded `.html`, `.svg`, `.xml`, or `.js` file can never render as same-origin content inside the app.
+- The in-app preview supports PDFs and images; other types offer download only. Preview navigation uses the shared back-navigation helper so closing a preview returns to the sequence rather than the browser's previous site.
+
+### 29.5 Limits, ownership, and deletion
+
+- 10 MB per attachment, enforced before any upload work. Multipart bodies larger than about 10 MB can fail at the platform layer before the route sees them.
+- Assets are owned by the user (`onDelete: Cascade`), so deleting an account removes its asset rows.
+- Launch validation reads every attachment from storage and surfaces unreadable objects before sending, which is why the attach path does not perform its own per-attach existence check.
+- Deleting a sequence does not delete shared asset rows or objects, because other sequences may still reference the same content. There is no reference-counted garbage collection today; storage lifecycle policies remain the operational lever.
+
+## 30. Sequences Workspace
+
+### 30.1 Dashboard (`/campaigns`)
+
+The page renders a header (`WorkspacePageHeader` with a **New sequence** action), an overview grid, and the sequence list.
+
+**Summary cards.** Active (sequences matching the active filter), Replies (total received), Sent (confirmed sends in the rolling 24-hour window, or an em dash when the send ledger is unreadable), and Scheduled (`QUEUED`/`WAITING_FOR_SLOT` runs).
+
+**Sequences health.** A panel listing at most **two** attention items with a total count badge, each with the sequence name, a title (Run failed / Failed sends detected / Invalid recipients skipped), a plain-language detail, a severity chip, and a "Review sequence" link that carries the current dashboard state as a return path. Critical entries sort before warnings. When more exist, the panel says how many remain under the Needs attention filter. With none, it shows an "All clear" state. Attention items derive only from observed delivery facts — a failed run, failed sends, or invalid recipients. A paused sequence alone is never an alert, because the reason for a manual pause is unknowable.
+
+**Control bar and list.** Result count, a debounced search box, a Status dropdown, and an Email accounts dropdown, over a list of **5 rows per page**. Both dropdowns are custom listbox controls, never a native `select`: the trigger announces the selection, options are real buttons, Arrow/Home/End move focus, and Escape closes and returns focus.
+
+Each row shows the sequence name, list and sender, a status pill, the current state, the created date, a progress bar, and mini performance metrics (delivered, opens, replies), plus a row action menu.
+
+**Filters.** Filters overlap by design — a sequence can match several — and counts are shown per option.
+
+| Filter | Matches |
+| --- | --- |
+| All | Everything |
+| Active | Campaign `RUNNING`/`WAITING_FOR_SLOT`, or latest run `QUEUED`/`WAITING_FOR_SLOT`/`RUNNING` |
+| Sent in last 24h | At least one confirmed send in the rolling 24-hour window |
+| Paused | Campaign or latest run `PAUSED` |
+| Needs attention | Campaign or run `FAILED`, or any failed/invalid recipients |
+| Completed | Campaign or latest run `COMPLETED` |
+| Scheduled | Campaign `SCHEDULED` or `VALIDATED` |
+| Draft | Campaign `DRAFT` — only offered when draft sequences exist |
+
+Each filter has its own empty-state headline, so a filtered list with no rows explains the category it is empty for.
+
+The status **pill** shows one primary tone per sequence, resolved by priority: attention → paused → active → completed → scheduled → draft → idle. A completed run with failures still reads "Needs attention". The **current state** column is a separate human sentence (Sending, Waiting for a send slot, Queued to send, Manually paused, Last run failed, Cancelled, Finished sending, Scheduled, Ready to launch, Draft, Not launched yet) in which run status wins over campaign status, because the run reflects the most recent launch.
+
+**URL state.** Filter, sender, search, and page map to `status`, `sender`, `q`, and `page`. Defaults are omitted from the URL entirely (no `status=all`, no `page=1`). Search is debounced at 200 ms and, like pagination, written with `history.replaceState` so typing and paging do not flood browser history; filter and sender changes use `router.replace`. Changing the filter, the sender, or the search resets to page 1. An out-of-range page clamps into range. Sender values are matched case-insensitively against the senders actually present, so a stale sender in the URL falls back to "All email accounts".
+
+**Sorting.** The list is server-ordered by `Campaign.updatedAt` descending. There is no user-facing sort control on this dashboard.
+
+**Row actions.** View (opens detail with a return path back to the current filtered view), pause/resume, relaunch, and delete. Deletion uses the shared confirmation dialog.
+
+### 30.2 Creation (`/campaigns/new`)
+
+The creation wizard assembles a sequence from a processed import, its mapping, a template, a connected Gmail sender, a schedule, and optional attachments. It validates the selection before allowing a launch, surfaces Gmail connection state inline (including a reconnect prompt and the `?gmail=connected` flash), and reports bounce-monitoring readiness for the chosen sender. Creating a sequence is subject to the free-account retention gate described in [§12](#12-sequence-scheduling); attachment uploads only happen after that gate passes.
+
+### 30.3 Detail (`/campaigns/[id]`)
+
+Layout:
+
+- **Overview** — sequence name, status pill, and meta chips for the import file, template, and sender address.
+- **Command centre** — a reconnect notice when the sender's access was revoked; a state grid of Send timing, Validation (with the last validated time), and Current run (with the last update); and a status note that distinguishes waiting-for-slot, a live auto-refreshing run, and an idle sequence.
+- **Action bar** — Launch (only when there is no active run, no pause, no daily-limit block, and the sender is connected), Refresh validation, **Check bounces**, Pause/Resume, Edit schedule, Retry failed (when eligible), and Delete as a separated destructive action.
+- **Delivery metrics** — audience size (with skipped count), sends, opens, replies, and failures for the displayed run. When the newest run has not processed anyone yet and a previous completed run exists, the previous run's numbers are shown and labelled "Last run".
+- **Setup panel** — import, mapping, template, sender, schedule, and attachments, with editing blocked while a run is actively sending.
+- **Recipient activity** — paginated per-recipient state including retrying, waiting for the send window, skipped, and failed.
+
+A live run auto-refreshes every 8 seconds. Back navigation honours the `returnTo` parameter written by the dashboard, so returning lands on the same filtered, paged view. The sequence-detail guided tour targets stable `data-tour-sequence-detail` attributes on the overview, run health, actions, delivery stats, setup, and recipient activity regions.
+
+### 30.4 Lifecycle
+
+```mermaid
+stateDiagram-v2
+    [*] --> DRAFT
+    DRAFT --> VALIDATED: validate passes
+    VALIDATED --> SCHEDULED: schedule once or recurring
+    VALIDATED --> WAITING_FOR_SLOT: launch, no capacity
+    SCHEDULED --> WAITING_FOR_SLOT: due, no capacity
+    VALIDATED --> RUNNING: launch, slot claimed
+    SCHEDULED --> RUNNING: due, slot claimed
+    WAITING_FOR_SLOT --> RUNNING: promoted FIFO
+    RUNNING --> PAUSED: manual pause or safety pause
+    PAUSED --> RUNNING: resume or auto-resume
+    RUNNING --> COMPLETED: all recipients processed
+    RUNNING --> FAILED: run-level failure
+    RUNNING --> CANCELLED: cancelled
+    COMPLETED --> VALIDATED: relaunch
+    FAILED --> VALIDATED: revalidate
+    COMPLETED --> [*]
+    CANCELLED --> [*]
+```
+
+These are the `CampaignStatus` and `RunStatus` values the code actually uses. "Needs attention" is a derived display tone, not a stored state. A safety pause is an ordinary `PAUSED` run carrying a `pauseReason` in `progressSnapshot`; a manual pause carries none, which is exactly how auto-resume tells them apart.
+
+### 30.5 Send and reliability pipeline
+
+```mermaid
+flowchart TD
+    L["Launch or due schedule"] --> S{"Execution slot available?"}
+    S -->|No| W["WAITING_FOR_SLOT (sends nothing)"]
+    W --> S
+    S -->|Yes| Q["Create recipient jobs"]
+    Q --> T["Tick: cron, inline processor, or worker"]
+    T --> SU{"Suppressed?"}
+    SU -->|Yes| SK["SUPPRESSED — Gmail never called, no capacity used"]
+    SU -->|No| D{"Rolling 24h capacity left?"}
+    D -->|No| DP["Pause run: DAILY_SEND_LIMIT + pauseResumesAt"]
+    D -->|Yes| P{"Per-minute window open?"}
+    P -->|No| PW["Defer: nextRetryAt + GMAIL_SENDER_PACING (no retry burned)"]
+    P -->|Yes| G["Send via Gmail"]
+    G -->|Accepted| OK["SENT + SendLedger row"]
+    G -->|Invalid address| HB["Skipped + INVALID_EMAIL suppression, never retried"]
+    G -->|Retryable| RT["RETRYING with backoff"]
+    G -->|Permanent| F["FAILED with diagnostics"]
+    OK --> BM["Automatic bounce monitoring"]
+    BM -->|DSN proves invalid| HB
+```
+
+Pacing waits and safety pauses delay work; they never mark a recipient failed. Only address-quality outcomes produce the Skipped disposition.
+
+## 31. Navigation And Shared Page Shell
+
+### 31.1 Sidebar
+
+`AppNav` (`src/components/nav.tsx`) renders the brand block, a collapse toggle, the nav list, and the session controls footer.
+
+**Collapsed state** persists in both a cookie (`sendloom_sidebar_collapsed`, one year) and `localStorage` (`sendloom.sidebarCollapsed`). The cookie lets the server render the correct initial width, avoiding a flash; the client reconciles on mount and writes both, plus a `data-sidebar-collapsed` attribute on the document element for CSS. Either storage failing degrades to an in-memory state rather than breaking the sidebar.
+
+**Active state** is matched from the current pathname: exact match or a `/<href>/` prefix, except for admin Overview, which is exact-only so it does not light up on every admin sub-page. The active row is drawn with a left accent bar and a coloured icon and label on a transparent row background — the solid-fill treatment and the wider layout variant were both evaluated and reverted.
+
+**Analysis navigation** is nested. When the sidebar is expanded, Analysis renders as a `button` with `aria-expanded` and `aria-controls` pointing at a submenu containing Summary, Engagement, Sequences, Reliability, and Senders. The submenu opens automatically when the route is under `/analysis` and follows the route on navigation, but a manual toggle is respected while the user stays on the same path. Child links match exactly, so only the visible page is marked `aria-current="page"`. When the sidebar is collapsed the submenu is not rendered; Analysis becomes a plain link to `/analysis` with a `title` tooltip, as every other collapsed item does.
+
+**Account** is deliberately outside the product nav. It is passed to `SessionControls` as a utility item and appears in the footer below the theme control and above logout, for non-admin users only.
+
+On desktop widths (≥961px) with the sidebar expanded, the nav list gets its own vertical scroll region, so a long nav — including the open Analysis submenu — never pushes the theme or logout controls out of reach. The sidebar itself is sticky and full height.
+
+### 31.2 Page headings
+
+Main list and dashboard pages use `WorkspacePageHeader` for a consistent title, subtitle, and action cluster. Overview and Analysis render their own headers because they carry different controls (workspace actions; date range and export). Sequence detail uses a page-specific overview block rather than the shared header, because its title sits alongside a status pill and meta chips.
+
+### 31.3 Back navigation
+
+Back controls use the shared back-navigation helper rather than raw `history.back()`, so a deep link opened directly still returns somewhere sensible inside the app. The Sequences dashboard encodes its full filtered state into a `returnTo` parameter on every detail link, so returning from a sequence lands on the same filter, sender, search, and page. The Imports workflow exits with `router.replace` specifically so that a Back press does not re-enter the workflow the user just left.
