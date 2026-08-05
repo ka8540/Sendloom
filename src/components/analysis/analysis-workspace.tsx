@@ -294,17 +294,98 @@ function EngagementVisuals({ data }: { data: AnalysisEngagementResponse }) {
   );
 }
 
+function topSequencesInsight(items: AnalysisSequencesResponse["topSequences"]) {
+  if (!items.length) return undefined;
+  const replied = items.filter((item) => item.replies > 0);
+  if (!replied.length) return "No sequence received a matched reply in this period.";
+  const leader = replied[0];
+  return `${leader.name} leads with a ${leader.replyRate.toFixed(1)}% reply rate, and ${
+    replied.length === 1 ? "it is the only sequence" : `${replied.length} sequences`
+  } with at least one reply.`;
+}
+
+function sequenceVolumeInsight(points: AnalysisSequencesResponse["sequencePoints"]) {
+  const active = points.filter((point) => point.sent > 0);
+  if (!active.length) return undefined;
+  const replied = active.filter((point) => point.replies > 0);
+  if (!replied.length) return "No sequence recorded a matched reply during this period.";
+  const bestRate = [...replied].sort((a, b) => b.replyRate - a.replyRate)[0];
+  const highestVolume = [...active].sort((a, b) => b.sent - a.sent)[0];
+  if (bestRate.name === highestVolume.name) {
+    return `${bestRate.name} led on both sending volume and reply rate at ${bestRate.replyRate.toFixed(1)}%.`;
+  }
+  return `${bestRate.name} had the strongest reply rate at ${bestRate.replyRate.toFixed(1)}%, while ${
+    highestVolume.name
+  } sent the most at ${highestVolume.sent.toLocaleString()} confirmed sends.`;
+}
+
+function templateInsight(items: AnalysisSequencesResponse["templates"]) {
+  if (!items.length) return undefined;
+  const leader = [...items].sort((a, b) => b.replyRate - a.replyRate)[0];
+  return `${leader.name} has the highest reply rate at ${leader.replyRate.toFixed(1)}% across ${
+    leader.usageCount
+  } sequence${leader.usageCount === 1 ? "" : "s"}.`;
+}
+
+function statusMixInsight(items: AnalysisSequencesResponse["statusMix"]) {
+  const positive = items.filter((item) => item.value > 0);
+  const total = positive.reduce((sum, item) => sum + item.value, 0);
+  if (!total) return undefined;
+  const [leader, runnerUp] = [...positive].sort((a, b) => b.value - a.value);
+  const lead = `${leader.value.toLocaleString()} of ${total.toLocaleString()} selected run${
+    total === 1 ? " is" : "s are"
+  } ${leader.name.toLowerCase()}`;
+  return runnerUp
+    ? `${lead}, while ${runnerUp.value.toLocaleString()} ${runnerUp.value === 1 ? "is" : "are"} ${runnerUp.name.toLowerCase()}.`
+    : `${lead}.`;
+}
+
+function standoutRunsInsight(items: AnalysisSequencesResponse["standoutRuns"]) {
+  if (!items.length) return undefined;
+  const replied = items.filter((item) => item.replies > 0).length;
+  if (!replied) return "None of the listed runs recorded a matched reply.";
+  return `${replied} of the ${items.length} listed run${items.length === 1 ? "" : "s"} received at least one reply.`;
+}
+
 function SequencesVisuals({ data }: { data: AnalysisSequencesResponse }) {
   return (
     <>
       <div className={styles.twoColumn}>
-        <HorizontalRateCard title="Top sequences by reply rate" data={data.topSequences} info="Unique matched replies divided by confirmed sends. Sequences require at least 20 confirmed sends." />
-        <SequenceScatterCard data={data.sequencePoints} />
+        <HorizontalRateCard
+          title="Top sequences by reply rate"
+          data={data.topSequences}
+          info="Sequences are ranked by the percentage of confirmed recipients who sent at least one matched reply. Sequences with fewer than 20 confirmed sends are excluded to prevent misleading results."
+          helper="Highest reply rates among sequences with meaningful send volume."
+          insight={topSequencesInsight(data.topSequences)}
+        />
+        <SequenceScatterCard
+          data={data.sequencePoints}
+          helper="Compare sending volume with recipient response across sequences."
+          insight={sequenceVolumeInsight(data.sequencePoints)}
+        />
       </div>
       <div className={styles.sequenceBottom}>
-        <TemplatePerformanceCard data={data.templates} />
-        <DonutCard title="Sequence status mix" data={data.statusMix} centerValue={data.statusMix.reduce((sum, item) => sum + item.value, 0)} centerLabel="Selected runs" info="Real campaign-run states with Waiting for Slot normalized to Waiting." />
-        <RankedListCard title="Standout runs" data={data.standoutRuns} info="Selected-period runs with at least 20 confirmed sends, ranked by unique-recipient reply rate." />
+        <TemplatePerformanceCard
+          data={data.templates}
+          helper="See which saved templates generated the strongest reply rates."
+          insight={templateInsight(data.templates)}
+        />
+        <DonutCard
+          title="Sequence status mix"
+          data={data.statusMix}
+          centerValue={data.statusMix.reduce((sum, item) => sum + item.value, 0)}
+          centerLabel="Selected runs"
+          info="This chart shows the current status distribution of the sequence runs included in the selected date range. Waiting for Slot is grouped under Waiting."
+          helper="Distribution of selected runs by their current status."
+          insight={statusMixInsight(data.statusMix)}
+        />
+        <RankedListCard
+          title="Standout runs"
+          data={data.standoutRuns}
+          info="These runs are ranked by reply rate and confirmed sending volume during the selected period. Runs need at least 20 confirmed sends to appear."
+          helper="Runs with the strongest reply performance in the selected period."
+          insight={standoutRunsInsight(data.standoutRuns)}
+        />
       </div>
     </>
   );

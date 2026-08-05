@@ -93,6 +93,32 @@ function ChartTooltipContent({
   );
 }
 
+/** Hover card for the sequence bar and bubble charts: same fields, full sentences. */
+function SequenceHoverTooltip({ active, payload }: { active?: boolean; payload?: TooltipEntry[] }) {
+  const point = payload?.[0]?.payload as AnalysisRankedItem | undefined;
+  if (!active || !point || typeof point.sent !== "number") return null;
+  return (
+    <div className={styles.chartTooltip}>
+      <strong>{point.name}</strong>
+      <dl>
+        <div>
+          <dt>Confirmed sends</dt>
+          <dd>{point.sent.toLocaleString()}</dd>
+        </div>
+        <div>
+          <dt>Recipients who replied</dt>
+          <dd>{point.replies.toLocaleString()}</dd>
+        </div>
+        <div>
+          <dt>Reply rate</dt>
+          <dd>{point.replyRate.toFixed(1)}%</dd>
+        </div>
+      </dl>
+      {point.replies === 0 ? <small>No matched replies in the selected period.</small> : null}
+    </div>
+  );
+}
+
 function Legend({ items }: { items: Array<{ label: string; color: string }> }) {
   return (
     <div className={styles.legend} aria-hidden="true">
@@ -208,17 +234,22 @@ export function DonutCard({
   data,
   centerValue,
   centerLabel,
-  info
+  info,
+  helper,
+  insight
 }: {
   title: string;
   data: AnalysisBreakdownItem[];
   centerValue: number;
   centerLabel: string;
   info: string;
+  helper?: string;
+  insight?: string;
 }) {
   const positive = data.filter((item) => item.value > 0);
   return (
     <AnalysisCard title={title} info={info} summary={`${title}: ${positive.map((item) => `${item.name} ${item.value}`).join(", ") || "no data"}.`}>
+      {helper ? <p className={styles.cardHelper}>{helper}</p> : null}
       {!positive.length ? (
         <AnalysisEmpty />
       ) : (
@@ -251,6 +282,7 @@ export function DonutCard({
           </div>
         </div>
       )}
+      {positive.length && insight ? <p className={styles.cardInsight}>{insight}</p> : null}
     </AnalysisCard>
   );
 }
@@ -548,9 +580,22 @@ export function BestDaysCard({ data }: { data: Array<{ name: string; sent: numbe
   );
 }
 
-export function RankedListCard({ title, data, info }: { title: string; data: AnalysisRankedItem[]; info: string }) {
+export function RankedListCard({
+  title,
+  data,
+  info,
+  helper,
+  insight
+}: {
+  title: string;
+  data: AnalysisRankedItem[];
+  info: string;
+  helper?: string;
+  insight?: string;
+}) {
   return (
     <AnalysisCard title={title} info={info} summary={`${title}: ${data.map((item) => `${item.name} ${item.replyRate}%`).join(", ") || "no qualified results"}.`}>
+      {helper ? <p className={styles.cardHelper}>{helper}</p> : null}
       {!data.length ? (
         <AnalysisEmpty>No sequences meet the 20-confirmed-send minimum in this range.</AnalysisEmpty>
       ) : (
@@ -571,6 +616,7 @@ export function RankedListCard({ title, data, info }: { title: string; data: Ana
           ))}
         </ol>
       )}
+      {data.length && insight ? <p className={styles.cardInsight}>{insight}</p> : null}
     </AnalysisCard>
   );
 }
@@ -665,9 +711,22 @@ export function ScheduleTypeCard({ data }: { data: AnalysisBreakdownItem[] }) {
   );
 }
 
-export function HorizontalRateCard({ title, data, info }: { title: string; data: AnalysisRankedItem[]; info: string }) {
+export function HorizontalRateCard({
+  title,
+  data,
+  info,
+  helper,
+  insight
+}: {
+  title: string;
+  data: AnalysisRankedItem[];
+  info: string;
+  helper?: string;
+  insight?: string;
+}) {
   return (
     <AnalysisCard title={title} info={info} summary={`${title}: ${data.map((item) => `${item.name} ${item.replyRate}%`).join(", ") || "no qualified sequences"}.`}>
+      {helper ? <p className={styles.cardHelper}>{helper}</p> : null}
       {!data.length ? (
         <AnalysisEmpty>No sequences meet the 20-confirmed-send minimum in this range.</AnalysisEmpty>
       ) : (
@@ -677,7 +736,7 @@ export function HorizontalRateCard({ title, data, info }: { title: string; data:
               <CartesianGrid stroke="var(--analysis-grid)" horizontal={false} />
               <XAxis type="number" domain={[0, "auto"]} tickFormatter={(value: number) => `${value}%`} tickLine={false} axisLine={false} tick={{ fill: "var(--muted)", fontSize: 11 }} />
               <YAxis type="category" dataKey="name" width={126} tickLine={false} axisLine={false} tick={{ fill: "var(--muted)", fontSize: 11 }} />
-              <Tooltip content={<ChartTooltipContent valueSuffix="%" />} allowEscapeViewBox={{ x: false, y: true }} />
+              <Tooltip content={<SequenceHoverTooltip />} allowEscapeViewBox={{ x: false, y: true }} />
               <Bar dataKey="replyRate" name="Reply rate" fill={analysisColors.green} radius={[0, 8, 8, 0]} maxBarSize={24}>
                 {data.map((item, index) => <Cell key={item.name} fill={index < 2 ? analysisColors.green : toneColors[(index + 1) % toneColors.length]} />)}
                 <LabelList dataKey="replyRate" position="right" formatter={(value: unknown) => `${Number(value).toFixed(1)}%`} fill="var(--text)" fontSize={11} fontWeight={700} />
@@ -686,18 +745,29 @@ export function HorizontalRateCard({ title, data, info }: { title: string; data:
           </ResponsiveContainer>
         </div>
       )}
+      {data.length && insight ? <p className={styles.cardInsight}>{insight}</p> : null}
     </AnalysisCard>
   );
 }
 
-export function SequenceScatterCard({ data }: { data: AnalysisSequencePoint[] }) {
+export function SequenceScatterCard({
+  data,
+  helper,
+  insight
+}: {
+  data: AnalysisSequencePoint[];
+  helper?: string;
+  insight?: string;
+}) {
+  const hasData = data.some((item) => item.sent > 0);
   return (
     <AnalysisCard
       title="Sequence volume vs replies"
-      info="Each bubble is a sequence. X is confirmed sends, Y is unique-recipient reply rate, and bubble size reflects replies."
+      info="Each bubble represents one sequence. The horizontal axis shows confirmed sends, the vertical axis shows the percentage of recipients who replied, and the bubble size represents the number of recipients who replied. Hover over a bubble to see its sequence name, confirmed sends, replies, and reply rate."
       summary={data.map((item) => `${item.name}: ${item.sent} sent and ${item.replyRate}% replies`).join(", ") || "No sequence activity."}
     >
-      {!data.some((item) => item.sent > 0) ? (
+      {helper ? <p className={styles.cardHelper}>{helper}</p> : null}
+      {!hasData ? (
         <AnalysisEmpty />
       ) : (
         <div className={styles.chartLarge}>
@@ -707,7 +777,7 @@ export function SequenceScatterCard({ data }: { data: AnalysisSequencePoint[] })
               <XAxis type="number" dataKey="sent" name="Sent" tickLine={false} axisLine={false} tick={{ fill: "var(--muted)", fontSize: 11 }} tickFormatter={formatAnalysisNumber} />
               <YAxis type="number" dataKey="replyRate" name="Reply rate" unit="%" tickLine={false} axisLine={false} tick={{ fill: "var(--muted)", fontSize: 11 }} />
               <ZAxis type="number" dataKey="replies" range={[70, 620]} name="Replies" />
-              <Tooltip cursor={{ strokeDasharray: "3 3" }} content={<ChartTooltipContent />} allowEscapeViewBox={{ x: false, y: true }} />
+              <Tooltip cursor={{ strokeDasharray: "3 3" }} content={<SequenceHoverTooltip />} allowEscapeViewBox={{ x: false, y: true }} />
               <Scatter name="Sequences" data={data} fill={analysisColors.purple}>
                 {data.map((item, index) => <Cell key={item.name} fill={toneColors[index % toneColors.length]} />)}
               </Scatter>
@@ -715,32 +785,50 @@ export function SequenceScatterCard({ data }: { data: AnalysisSequencePoint[] })
           </ResponsiveContainer>
         </div>
       )}
+      {hasData && insight ? <p className={styles.cardInsight}>{insight}</p> : null}
     </AnalysisCard>
   );
 }
 
-export function TemplatePerformanceCard({ data }: { data: AnalysisTemplateItem[] }) {
+export function TemplatePerformanceCard({
+  data,
+  helper,
+  insight
+}: {
+  data: AnalysisTemplateItem[];
+  helper?: string;
+  insight?: string;
+}) {
   const max = Math.max(1, ...data.map((item) => item.replyRate));
   return (
     <AnalysisCard
       title="Template performance"
-      info="Reply rate grouped by saved template identity across campaign snapshots. Historical campaign snapshots remain stable after template edits."
+      info="Compare templates using the reply rate from sequences that used each template during the selected period. Results can include more than one saved version of a template if it was edited over time."
       summary={data.map((item) => `${item.name} ${item.replyRate}% across ${item.usageCount} sequences`).join(", ") || "No qualified templates."}
     >
+      {helper ? <p className={styles.cardHelper}>{helper}</p> : null}
       {!data.length ? (
-        <AnalysisEmpty>No templates meet the 20-confirmed-send minimum in this range.</AnalysisEmpty>
+        <AnalysisEmpty>No template performance data is available for this period.</AnalysisEmpty>
       ) : (
         <div className={styles.templateList}>
+          <div className={styles.templateListHead} aria-hidden="true">
+            <span>Template</span>
+            <span>Reply rate</span>
+          </div>
           {data.map((item, index) => (
             <div key={item.name}>
               <span className={styles.templateIcon} style={{ color: toneColors[index % toneColors.length] }}><Mail aria-hidden="true" /></span>
-              <span className={styles.templateName}><strong>{item.name}</strong><small>{item.usageCount} sequence{item.usageCount === 1 ? "" : "s"}</small></span>
+              <span className={styles.templateName}>
+                <strong title={item.name}>{item.name}</strong>
+                <small>{item.usageCount} sequence{item.usageCount === 1 ? "" : "s"}</small>
+              </span>
               <i><b style={{ width: `${(item.replyRate / max) * 100}%`, background: toneColors[index % toneColors.length] }} /></i>
               <strong>{item.replyRate.toFixed(1)}%</strong>
             </div>
           ))}
         </div>
       )}
+      {data.length && insight ? <p className={styles.cardInsight}>{insight}</p> : null}
     </AnalysisCard>
   );
 }

@@ -500,7 +500,19 @@ button.controlButton:disabled {
   .threeColumn > :last-child { grid-column: auto; }
 }
 .engagementBottom { grid-template-columns: minmax(24rem, 1.18fr) minmax(22rem, 1fr) minmax(19rem, 0.92fr); }
-.sequenceBottom { grid-template-columns: minmax(20rem, 0.9fr) minmax(22rem, 1fr) minmax(22rem, 1.12fr); }
+.sequenceBottom { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+/* Follows the Analysis content width so an expanded sidebar drops to two
+   columns before the Sequences cards get cramped. */
+@container analysisContent (max-width: 1240px) {
+  .sequenceBottom { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sequenceBottom > :last-child { grid-column: 1 / -1; }
+}
+
+@container analysisContent (max-width: 900px) {
+  .sequenceBottom { grid-template-columns: minmax(0, 1fr); }
+  .sequenceBottom > :last-child { grid-column: auto; }
+}
 .reliabilityBottom { grid-template-columns: minmax(26rem, 1.35fr) minmax(18rem, 0.72fr) minmax(20rem, 0.86fr); }
 .sendersBottom { grid-template-columns: minmax(27rem, 1.35fr) minmax(17rem, 0.78fr) minmax(22rem, 1.1fr); }
 
@@ -667,6 +679,12 @@ button.controlButton:disabled {
 .chartTooltip > strong {
   display: block;
   margin-bottom: 0.45rem;
+}
+
+.chartTooltip > small {
+  display: block;
+  margin-top: 0.45rem;
+  color: var(--muted);
 }
 
 .chartTooltip dl,
@@ -1223,6 +1241,23 @@ button.controlButton:disabled {
   grid-template-rows: auto 1fr auto auto;
 }
 
+/* Sequences bottom row: the visual takes the free height so the insight line
+   settles at the foot of the card instead of floating mid-card. */
+.sequenceBottom > .card {
+  display: flex;
+  flex-direction: column;
+}
+
+.sequenceBottom .templateList,
+.sequenceBottom .donutLayout,
+.sequenceBottom .rankedList {
+  flex: 1 1 auto;
+}
+
+.sequenceBottom .cardInsight {
+  margin-top: auto;
+}
+
 /* Short muted lines that keep the Engagement cards from reading as empty. */
 .cardHelper,
 .cardInsight {
@@ -1350,16 +1385,32 @@ button.controlButton:disabled {
 
 .templateList {
   display: grid;
-  gap: 0.65rem;
-  padding-top: 0.4rem;
+  align-content: start;
+  gap: 0.8rem;
+  min-width: 0;
+  padding-top: 0.2rem;
 }
 
 .templateList > div {
   display: grid;
-  grid-template-columns: auto minmax(6rem, 0.75fr) minmax(5rem, 1fr) auto;
+  grid-template-columns: auto minmax(0, 0.75fr) minmax(3.5rem, 1fr) auto;
   align-items: center;
   gap: 0.55rem;
+  min-width: 0;
 }
+
+.templateListHead {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.55rem;
+  color: var(--muted);
+  font-size: 0.6rem;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.templateListHead > span:last-child { text-align: right; }
 
 .templateIcon {
   display: inline-grid;
@@ -1613,14 +1664,12 @@ button.controlButton:disabled {
 
 @media (max-width: 1420px) {
   .engagementBottom,
-  .sequenceBottom,
   .reliabilityBottom,
   .sendersBottom {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .engagementBottom > :last-child,
-  .sequenceBottom > :last-child,
   .reliabilityBottom > :last-child,
   .sendersBottom > :last-child {
     grid-column: 1 / -1;
@@ -1639,11 +1688,9 @@ button.controlButton:disabled {
   .headerControls { width: 100%; justify-content: flex-start; margin-left: 0; }
   .tabs { width: 100%; grid-template-columns: repeat(5, minmax(7.5rem, 1fr)); }
   .engagementBottom,
-  .sequenceBottom,
   .reliabilityBottom,
   .sendersBottom { grid-template-columns: 1fr; }
   .engagementBottom > :last-child,
-  .sequenceBottom > :last-child,
   .reliabilityBottom > :last-child,
   .sendersBottom > :last-child { grid-column: auto; }
   .loadingCharts,
