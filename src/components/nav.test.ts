@@ -89,7 +89,7 @@ describe("expanded sidebar height structure", () => {
 
   it("gives only the expanded brand header balanced top and bottom breathing room", () => {
     expect(GLOBALS).toMatch(/\.sidebar:not\(\.is-collapsed\) \{[\s\S]*?padding:\s*1\.5rem 1rem 0\.75rem/);
-    expect(GLOBALS).toMatch(/\.sidebar:not\(\.is-collapsed\) \.sidebar-top \{[\s\S]*?padding-bottom:\s*0\.5rem/);
+    expect(GLOBALS).toMatch(/\.sidebar:not\(\.is-collapsed\) \.sidebar-top \{[\s\S]*?padding-bottom:\s*1\.1rem/);
   });
 });
 
@@ -115,6 +115,21 @@ describe("expanded Analysis visual consistency", () => {
     expect(cssBlock(".nav-submenu")).toContain("gap: 0.25rem");
     expect(cssBlock(".nav-submenu")).toContain("padding: 0.25rem 0.25rem 0.2rem 2.55rem");
     expect(cssBlock(".nav-submenu-item")).toContain("min-height: 1.625rem");
+  });
+
+  it("gives expanded primary rows and Analysis children extra vertical breathing room", () => {
+    // Expanded-desktop-only overrides; collapsed and compact layouts keep the
+    // global dimensions asserted above.
+    expect(GLOBALS).toMatch(/\.sidebar:not\(\.is-collapsed\) \.nav \{[\s\S]*?gap:\s*0\.55rem/);
+    expect(GLOBALS).toMatch(
+      /\.sidebar:not\(\.is-collapsed\) \.nav > \.nav-item \{[\s\S]*?min-height:\s*3\.25rem;[\s\S]*?padding:\s*0\.8rem 0\.85rem/
+    );
+    expect(GLOBALS).toMatch(
+      /\.sidebar:not\(\.is-collapsed\) \.nav-submenu \{[\s\S]*?gap:\s*0\.35rem;[\s\S]*?padding:\s*0\.7rem 0\.25rem 0\.6rem 2\.55rem/
+    );
+    expect(GLOBALS).toMatch(
+      /\.sidebar:not\(\.is-collapsed\) \.nav-submenu-item \{[\s\S]*?min-height:\s*2\.625rem;[\s\S]*?padding:\s*0\.55rem 0\.5rem/
+    );
   });
 });
 
