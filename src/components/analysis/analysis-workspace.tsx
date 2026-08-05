@@ -266,9 +266,9 @@ function OverviewVisuals({ data }: { data: AnalysisOverviewResponse }) {
         <OutcomeMixCard data={data.outcomeMix} totalSent={data.metrics[0]?.value ?? 0} rangeLabel={data.range.label} />
       </div>
       <div className={styles.threeColumn}>
-        <JourneyCard title="Journey funnel" stages={data.journey} info="Targeted recipients through confirmed sends, tracked opens, and unique matched replies." />
+        <JourneyCard title="Journey funnel" stages={data.journey} info="Shows the path from targeted recipients through confirmed sends, tracked opens, and unique matched replies." />
         <BestDaysCard data={data.bestDays} />
-        <RankedListCard title="Top movers" data={data.topMovers} info="Qualified sequences ranked by reply-rate change against the preceding equal-length period; without a prior sample, unique replies break ties." />
+        <RankedListCard title="Top movers" data={data.topMovers} info="Ranks qualified sequences by reply-rate change against the preceding equal-length period. When no prior-period sample exists, unique replies break ties." />
       </div>
     </>
   );
@@ -285,7 +285,7 @@ function EngagementVisuals({ data }: { data: AnalysisEngagementResponse }) {
         <JourneyCard
           title="Engagement journey"
           stages={data.journey}
-          info="Targeted recipients through confirmed sends, unique tracked opens, sends without a tracked open, and unique matched replies."
+          info="Shows the path from targeted recipients through confirmed sends, unique tracked opens, sends without a tracked open, and unique matched replies."
           insight={buildJourneyInsight(data.journey)}
         />
         <HeatmapCard data={data.heatmap} />
@@ -377,7 +377,7 @@ function SequencesVisuals({ data }: { data: AnalysisSequencesResponse }) {
           data={data.statusMix}
           centerValue={data.statusMix.reduce((sum, item) => sum + item.value, 0)}
           centerLabel="Selected runs"
-          info="This chart shows the current status distribution of the sequence runs included in the selected date range. Waiting for Slot is grouped under Waiting."
+          info="This chart shows the current status distribution of the sequence runs included in the selected date range. Runs waiting for a send slot are grouped under Waiting."
           helper="Distribution of selected runs by their current status."
           insight={statusMixInsight(data.statusMix)}
         />

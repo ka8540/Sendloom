@@ -545,7 +545,7 @@ function buildCoreMetrics(current: PeriodSummary, previous: PeriodSummary, inclu
       value: current.sent,
       format: "number",
       detail: "Confirmed Gmail sends",
-      info: "Unique confirmed recipient sends recorded in SendLedger during the selected UTC date range.",
+      info: "Unique confirmed recipient sends recorded during the selected UTC date range.",
       comparison: buildCountComparison(current.sent, previous.sent),
       tone: "green",
       icon: "send"
@@ -589,7 +589,7 @@ function buildCoreMetrics(current: PeriodSummary, previous: PeriodSummary, inclu
       value: current.replied,
       format: "number",
       detail: `${current.replyRate.toFixed(1)}% reply rate`,
-      info: "Unique confirmed-send recipients with at least one matched Gmail reply divided by confirmed sends.",
+      info: "The percentage of confirmed-send recipients who sent at least one matched Gmail reply.",
       comparison: buildRateComparison(current.replyRate, previous.replyRate),
       tone: "purple",
       icon: "reply"
@@ -1131,7 +1131,7 @@ async function buildReliability(
       label: "Successful sends",
       value: currentSummary.sent,
       format: "number",
-      detail: "Confirmed in SendLedger",
+      detail: "Confirmed sends only",
       info: "Confirmed Gmail sends only. Failed, invalid, suppressed, skipped, and pacing-wait recipients are excluded.",
       comparison: buildCountComparison(currentSummary.sent, previousSummary.sent),
       tone: "green",
@@ -1221,7 +1221,7 @@ function buildRecentSenderChanges(
     if (sender.lastReplySyncAt && inRange(sender.lastReplySyncAt, range.start, range.endExclusive)) {
       changes.push({
         title: "Gmail replies synchronized successfully",
-        detail: `${sender.fromEmail} · Reply synchronization completed.`,
+        detail: `${sender.fromEmail} · The latest reply sync completed.`,
         at: sender.lastReplySyncAt.toISOString(),
         tone: "blue"
       });
@@ -1358,8 +1358,8 @@ async function buildSenders(
         label: "Avg reply rate",
         value: currentSummary.replyRate,
         format: "percent",
-        detail: `${currentSummary.replied.toLocaleString()} unique replied`,
-        info: "Unique matched replied recipients divided by confirmed sends across all selected sender activity.",
+        detail: `${currentSummary.replied.toLocaleString()} unique ${currentSummary.replied === 1 ? "recipient" : "recipients"} replied`,
+        info: "Unique recipients who replied divided by confirmed sends across all connected senders in the selected period.",
         comparison: buildRateComparison(currentSummary.replyRate, previousSummary.replyRate),
         tone: "purple",
         icon: "reply"

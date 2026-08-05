@@ -736,6 +736,12 @@ button.controlButton:disabled {
   color: var(--muted);
 }
 
+.chartTooltip > strong + small {
+  margin-top: -0.3rem;
+  margin-bottom: 0.45rem;
+  word-break: break-all;
+}
+
 .chartTooltip dl,
 .chartTooltip dl div {
   display: grid;

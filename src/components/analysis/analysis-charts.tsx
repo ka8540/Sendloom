@@ -50,6 +50,14 @@ const toneColors = [
   analysisColors.teal
 ];
 
+/**
+ * Theme-aware hover cursor for bar charts. Recharts' default cursor is a
+ * rectangle with a hardcoded #ccc stroke and the SVG default black fill,
+ * which reads as an ugly gray/black plot background on top of the card.
+ * This keeps the plot area transparent so it inherits the card surface.
+ */
+const barTooltipCursor = { fill: "var(--analysis-muted-fill)", stroke: "transparent" } as const;
+
 type TooltipEntry = {
   name?: string;
   value?: string | number;
@@ -196,7 +204,7 @@ export function TrendsCard({
   return (
     <AnalysisCard
       title={title}
-      info={rate ? "Daily unique engagement counts divided by that day's confirmed sends." : "Confirmed sends and unique tracked engagement events grouped by UTC date."}
+      info={rate ? "Rates are daily unique engagement counts divided by that day's confirmed sends." : "Shows confirmed sends and unique tracked engagement events grouped by UTC date."}
       summary={summary}
       action={<span className={styles.chartFrequency}>Daily</span>}
     >
@@ -796,7 +804,7 @@ export function HorizontalRateCard({
               <CartesianGrid stroke="var(--analysis-grid)" horizontal={false} />
               <XAxis type="number" domain={[0, "auto"]} tickFormatter={(value: number) => `${value}%`} tickLine={false} axisLine={false} tick={{ fill: "var(--muted)", fontSize: 11 }} />
               <YAxis type="category" dataKey="name" width={126} tickLine={false} axisLine={false} tick={{ fill: "var(--muted)", fontSize: 11 }} />
-              <Tooltip content={<SequenceHoverTooltip />} allowEscapeViewBox={{ x: false, y: true }} />
+              <Tooltip content={<SequenceHoverTooltip />} cursor={barTooltipCursor} allowEscapeViewBox={{ x: false, y: true }} />
               <Bar dataKey="replyRate" name="Reply rate" fill={analysisColors.green} radius={[0, 8, 8, 0]} maxBarSize={24}>
                 {data.map((item, index) => <Cell key={item.name} fill={index < 2 ? analysisColors.green : toneColors[(index + 1) % toneColors.length]} />)}
                 <LabelList dataKey="replyRate" position="right" formatter={(value: unknown) => `${Number(value).toFixed(1)}%`} fill="var(--text)" fontSize={11} fontWeight={700} />
@@ -837,7 +845,7 @@ export function SequenceScatterCard({
               <XAxis type="number" dataKey="sent" name="Sent" tickLine={false} axisLine={false} tick={{ fill: "var(--muted)", fontSize: 11 }} tickFormatter={formatAnalysisNumber} />
               <YAxis type="number" dataKey="replyRate" name="Reply rate" unit="%" tickLine={false} axisLine={false} tick={{ fill: "var(--muted)", fontSize: 11 }} />
               <ZAxis type="number" dataKey="replies" range={[70, 620]} name="Replies" />
-              <Tooltip cursor={{ strokeDasharray: "3 3" }} content={<SequenceHoverTooltip />} allowEscapeViewBox={{ x: false, y: true }} />
+              <Tooltip cursor={{ stroke: "var(--analysis-grid-strong)", strokeDasharray: "3 3" }} content={<SequenceHoverTooltip />} allowEscapeViewBox={{ x: false, y: true }} />
               <Scatter name="Sequences" data={data} fill={analysisColors.purple}>
                 {data.map((item, index) => <Cell key={item.name} fill={toneColors[index % toneColors.length]} />)}
               </Scatter>
@@ -918,7 +926,7 @@ export function FailureReasonsCard({
               <CartesianGrid stroke="var(--analysis-grid)" horizontal={false} />
               <XAxis type="number" tickLine={false} axisLine={false} tick={{ fill: "var(--muted)", fontSize: 11 }} />
               <YAxis type="category" dataKey="name" width={150} tickLine={false} axisLine={false} tick={{ fill: "var(--muted)", fontSize: 11 }} />
-              <Tooltip content={<FailureReasonTooltip />} allowEscapeViewBox={{ x: false, y: true }} />
+              <Tooltip content={<FailureReasonTooltip />} cursor={barTooltipCursor} allowEscapeViewBox={{ x: false, y: true }} />
               <Bar dataKey="value" name="Recipients" radius={[0, 7, 7, 0]} maxBarSize={24}>
                 {data.map((item, index) => <Cell key={item.name} fill={toneColors[index % toneColors.length]} />)}
                 <LabelList dataKey="value" position="right" fill="var(--text)" fontSize={11} fontWeight={700} />
@@ -959,7 +967,7 @@ export function OperationalEventsCard({
               <CartesianGrid stroke="var(--analysis-grid)" vertical={false} />
               <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: "var(--muted)", fontSize: 11 }} />
               <YAxis tickLine={false} axisLine={false} tick={{ fill: "var(--muted)", fontSize: 11 }} />
-              <Tooltip content={<ChartTooltipContent />} allowEscapeViewBox={{ x: false, y: true }} />
+              <Tooltip content={<ChartTooltipContent />} cursor={barTooltipCursor} allowEscapeViewBox={{ x: false, y: true }} />
               <Bar dataKey="retries" name="Retries" fill={analysisColors.green} radius={[5, 5, 0, 0]} />
               <Bar dataKey="pauses" name="Pauses" fill={analysisColors.purple} radius={[5, 5, 0, 0]} />
               <Bar dataKey="resumed" name="Resumed runs" fill={analysisColors.blue} radius={[5, 5, 0, 0]} />
@@ -1046,6 +1054,12 @@ function senderAxisLabel(sender: AnalysisSenderItem) {
   return shortDomain ? `${shortLocal}@${shortDomain}` : shortLocal;
 }
 
+/** Sender name when it adds information beyond the email address. */
+function senderDisplayName(sender: AnalysisSenderItem) {
+  const name = sender.name.trim();
+  return name && name.toLocaleLowerCase() !== sender.email.toLocaleLowerCase() ? name : null;
+}
+
 function senderCount(value: number) {
   return `${value.toLocaleString()} sender${value === 1 ? "" : "s"}`;
 }
@@ -1090,13 +1104,13 @@ function SenderCapacityTooltip({ anchor, sender, id }: { anchor: HTMLElement; se
       className={styles.senderFloatingTooltip}
       style={position ? { top: `${position.top}px`, left: `${position.left}px` } : { top: 0, left: 0, visibility: "hidden" }}
     >
-      <strong>Sender capacity</strong>
-      <small>{sender.email}</small>
+      <strong>{senderDisplayName(sender) ?? sender.email}</strong>
+      {senderDisplayName(sender) ? <small>{sender.email}</small> : null}
       <dl>
-        <div><dt>Used sends</dt><dd>{sender.capacity.used.toLocaleString()}</dd></div>
+        <div><dt>Confirmed sends used</dt><dd>{sender.capacity.used.toLocaleString()} of {sender.capacity.limit.toLocaleString()}</dd></div>
         <div><dt>Remaining sends</dt><dd>{sender.capacity.remaining.toLocaleString()}</dd></div>
         <div><dt>Configured limit</dt><dd>{sender.capacity.limit.toLocaleString()}</dd></div>
-        <div><dt>Usage</dt><dd>{sender.capacity.percentUsed.toFixed(1)}%</dd></div>
+        <div><dt>Capacity used</dt><dd>{sender.capacity.percentUsed.toFixed(1)}% of rolling capacity</dd></div>
       </dl>
     </div>,
     document.body
@@ -1151,12 +1165,14 @@ function SenderCapacityGauge({ sender, color }: { sender: AnalysisSenderItem; co
 function SenderReplyTooltip({ active, payload, rangeLabel }: { active?: boolean; payload?: TooltipEntry[]; rangeLabel: string }) {
   const sender = payload?.[0]?.payload as (AnalysisSenderItem & { axisLabel: string }) | undefined;
   if (!active || !sender) return null;
+  const displayName = senderDisplayName(sender);
   return (
     <div className={styles.chartTooltip} role="tooltip">
-      <strong>{sender.email}</strong>
+      <strong>{displayName ?? sender.email}</strong>
+      {displayName ? <small>{sender.email}</small> : null}
       <dl>
         <div><dt>Confirmed sends</dt><dd>{sender.sent.toLocaleString()}</dd></div>
-        <div><dt>Unique replied recipients</dt><dd>{sender.replied.toLocaleString()}</dd></div>
+        <div><dt>Unique recipients who replied</dt><dd>{sender.replied.toLocaleString()}</dd></div>
         <div><dt>Reply rate</dt><dd>{sender.replyRate.toFixed(1)}%</dd></div>
         <div><dt>Selected date range</dt><dd>{rangeLabel}</dd></div>
       </dl>
@@ -1167,14 +1183,16 @@ function SenderReplyTooltip({ active, payload, rangeLabel }: { active?: boolean;
 function SenderVolumeTooltip({ active, payload, rangeLabel }: { active?: boolean; payload?: TooltipEntry[]; rangeLabel: string }) {
   const sender = payload?.[0]?.payload as (AnalysisSenderItem & { axisLabel: string }) | undefined;
   if (!active || !sender) return null;
+  const displayName = senderDisplayName(sender);
   const openRate = sender.sent > 0 ? (sender.opened / sender.sent) * 100 : 0;
   return (
     <div className={styles.chartTooltip} role="tooltip">
-      <strong>{sender.email}</strong>
+      <strong>{displayName ?? sender.email}</strong>
+      {displayName ? <small>{sender.email}</small> : null}
       <dl>
-        <div><dt>Sent</dt><dd>{sender.sent.toLocaleString()}</dd></div>
-        <div><dt>Opened</dt><dd>{sender.opened.toLocaleString()}</dd></div>
-        <div><dt>Replied</dt><dd>{sender.replied.toLocaleString()}</dd></div>
+        <div><dt>Confirmed sends</dt><dd>{sender.sent.toLocaleString()}</dd></div>
+        <div><dt>Unique tracked opens</dt><dd>{sender.opened.toLocaleString()}</dd></div>
+        <div><dt>Unique recipients who replied</dt><dd>{sender.replied.toLocaleString()}</dd></div>
         <div><dt>Open rate</dt><dd>{openRate.toFixed(1)}%</dd></div>
         <div><dt>Reply rate</dt><dd>{sender.replyRate.toFixed(1)}%</dd></div>
         <div><dt>Selected date range</dt><dd>{rangeLabel}</dd></div>
@@ -1192,7 +1210,7 @@ export function SenderCapacityCard({ data }: { data: AnalysisSenderItem[] }) {
   return (
     <AnalysisCard
       title="Sender capacity"
-      info="Shows confirmed Gmail sends within each sender’s rolling 24-hour safety window compared with the configured sending limit."
+      info="Shows how much of each sender’s rolling 24-hour Gmail sending capacity has been used. The remaining value is based on the configured safety limit for that sender."
       summary={data.map((item) => `${item.email}: ${item.capacity.used} used, ${item.capacity.remaining} remaining, ${item.capacity.limit} limit`).join(", ") || "No senders."}
     >
       <p className={styles.cardHelper}>See how much of each sender’s rolling 24-hour capacity has been used.</p>
@@ -1218,10 +1236,10 @@ export function SenderReplyRateCard({ data, rangeLabel }: { data: AnalysisSender
   const totalSent = data.reduce((sum, sender) => sum + sender.sent, 0);
   const totalReplied = data.reduce((sum, sender) => sum + sender.replied, 0);
   const replyInsight = data.length === 1
-    ? `${totalReplied.toLocaleString()} recipients replied from ${totalSent.toLocaleString()} confirmed sends in this period.`
-    : `${totalReplied.toLocaleString()} recipients replied across ${senderCount(data.length)} in this period.`;
+    ? `${totalReplied.toLocaleString()} unique ${totalReplied === 1 ? "recipient" : "recipients"} replied from ${totalSent.toLocaleString()} confirmed sends in this period.`
+    : `${totalReplied.toLocaleString()} unique ${totalReplied === 1 ? "recipient" : "recipients"} replied across ${senderCount(data.length)} in this period.`;
   return (
-    <AnalysisCard title="Reply rate by sender" info="Reply rate is the percentage of confirmed recipients who sent at least one matched Gmail reply for a sender during the selected period." summary={data.map((item) => `${item.email}: ${item.replied} unique replied recipients from ${item.sent} confirmed sends, ${item.replyRate}%`).join(", ") || "No sender activity."}>
+    <AnalysisCard title="Reply rate by sender" info="Compares the percentage of confirmed recipients who sent at least one matched Gmail reply for each connected sender during the selected period." summary={data.map((item) => `${item.email}: ${item.replied} unique recipients who replied from ${item.sent} confirmed sends, ${item.replyRate}% reply rate`).join(", ") || "No sender activity."}>
       <p className={styles.cardHelper}>Compare the percentage of recipients who replied for each sender.</p>
       {!data.some((item) => item.sent > 0) ? (
         <AnalysisEmpty />
@@ -1232,7 +1250,7 @@ export function SenderReplyRateCard({ data, rangeLabel }: { data: AnalysisSender
               <CartesianGrid stroke="var(--analysis-grid)" vertical={false} />
               <XAxis dataKey="axisLabel" tickLine={false} axisLine={false} tick={{ fill: "var(--muted)", fontSize: 11 }} interval={0} tickMargin={10} />
               <YAxis domain={[0, upperDomain]} tickCount={6} tickFormatter={(value: number) => `${Number(value.toFixed(2))}%`} tickLine={false} axisLine={false} width={48} tick={{ fill: "var(--muted)", fontSize: 11 }} />
-              <Tooltip content={<SenderReplyTooltip rangeLabel={rangeLabel} />} portal={tooltipPortal} allowEscapeViewBox={{ x: false, y: false }} wrapperStyle={{ zIndex: 130, pointerEvents: "none" }} />
+              <Tooltip content={<SenderReplyTooltip rangeLabel={rangeLabel} />} cursor={barTooltipCursor} portal={tooltipPortal} allowEscapeViewBox={{ x: false, y: false }} wrapperStyle={{ zIndex: 130, pointerEvents: "none" }} />
               <Bar dataKey="replyRate" name="Reply rate" fill={analysisColors.purple} radius={[7, 7, 0, 0]} maxBarSize={data.length === 1 ? 112 : 84}>
                 <LabelList dataKey="replyRate" position="top" formatter={(value: unknown) => `${Number(value).toFixed(1)}%`} fill="var(--text)" fontSize={11} fontWeight={700} />
               </Bar>
@@ -1253,7 +1271,7 @@ export function SenderVolumeCard({ data, rangeLabel }: { data: AnalysisSenderIte
   const totalOpened = data.reduce((sum, sender) => sum + sender.opened, 0);
   const totalReplied = data.reduce((sum, sender) => sum + sender.replied, 0);
   return (
-    <AnalysisCard title="Send volume by sender" info="Shows confirmed sends, unique tracked opens, and unique matched replies associated with each Gmail sender." summary={data.map((item) => `${item.email}: ${item.sent} sent, ${item.opened} opened, ${item.replied} replied`).join(", ") || "No sender activity."}>
+    <AnalysisCard title="Send volume by sender" info="Compares confirmed sends, unique tracked opens, and unique matched replies for each connected Gmail sender during the selected period." summary={data.map((item) => `${item.email}: ${item.sent} confirmed sends, ${item.opened} unique tracked opens, ${item.replied} unique recipients who replied`).join(", ") || "No sender activity."}>
       <p className={styles.cardHelper}>Compare confirmed sends, tracked opens, and matched replies by sender.</p>
       <Legend items={[{ label: "Sent", color: analysisColors.green }, { label: "Opened", color: analysisColors.blue }, { label: "Replied", color: analysisColors.purple }]} />
       {!data.some((item) => item.sent > 0) ? (
@@ -1265,7 +1283,7 @@ export function SenderVolumeCard({ data, rangeLabel }: { data: AnalysisSenderIte
               <CartesianGrid stroke="var(--analysis-grid)" vertical={false} />
               <XAxis dataKey="axisLabel" tickLine={false} axisLine={false} tick={{ fill: "var(--muted)", fontSize: 10 }} interval={0} tickMargin={10} />
               <YAxis domain={[0, Math.max(1, highestStack * 1.12)]} allowDecimals={false} tickLine={false} axisLine={false} width={46} tick={{ fill: "var(--muted)", fontSize: 11 }} tickFormatter={formatAnalysisNumber} />
-              <Tooltip content={<SenderVolumeTooltip rangeLabel={rangeLabel} />} portal={tooltipPortal} allowEscapeViewBox={{ x: false, y: false }} wrapperStyle={{ zIndex: 130, pointerEvents: "none" }} />
+              <Tooltip content={<SenderVolumeTooltip rangeLabel={rangeLabel} />} cursor={barTooltipCursor} portal={tooltipPortal} allowEscapeViewBox={{ x: false, y: false }} wrapperStyle={{ zIndex: 130, pointerEvents: "none" }} />
               <Bar dataKey="sent" name="Sent" stackId="volume" fill={analysisColors.green} maxBarSize={data.length === 1 ? 148 : 100} />
               <Bar dataKey="opened" name="Opened" stackId="volume" fill={analysisColors.blue} maxBarSize={data.length === 1 ? 148 : 100} />
               <Bar dataKey="replied" name="Replied" stackId="volume" fill={analysisColors.purple} radius={[6, 6, 0, 0]} maxBarSize={data.length === 1 ? 148 : 100} />
@@ -1273,7 +1291,7 @@ export function SenderVolumeCard({ data, rangeLabel }: { data: AnalysisSenderIte
           </ResponsiveContainer>
         </div>
       )}
-      {totalSent > 0 ? <p className={styles.cardInsight}>{totalSent.toLocaleString()} confirmed sends produced {totalOpened.toLocaleString()} tracked opens and {totalReplied.toLocaleString()} matched replies.</p> : null}
+      {totalSent > 0 ? <p className={styles.cardInsight}>{totalSent.toLocaleString()} confirmed sends produced {totalOpened.toLocaleString()} unique tracked {totalOpened === 1 ? "open" : "opens"} and {totalReplied.toLocaleString()} unique matched {totalReplied === 1 ? "reply" : "replies"}.</p> : null}
     </AnalysisCard>
   );
 }
@@ -1285,6 +1303,12 @@ export function SenderHealthCard({ data }: { data: AnalysisBreakdownItem[] }) {
     "Pacing wait": <Clock3 />,
     Healthy: <CheckCircle2 />
   };
+  const healthStateDescriptions: Record<string, string> = {
+    Synced: "The sender completed its latest Gmail reply synchronization successfully.",
+    Healthy: "No active connection or sending-health issues were detected.",
+    "Pacing wait": "The sender is temporarily waiting for the next allowed sending window.",
+    "Reconnect needed": "The Gmail connection must be restored before sending can continue."
+  };
   const total = data.reduce((sum, item) => sum + item.value, 0);
   const reconnectCount = data.find((item) => item.name === "Reconnect needed")?.value ?? 0;
   const pacingCount = data.find((item) => item.name === "Pacing wait")?.value ?? 0;
@@ -1294,12 +1318,20 @@ export function SenderHealthCard({ data }: { data: AnalysisBreakdownItem[] }) {
       ? `${senderCount(pacingCount)} currently ${pacingCount === 1 ? "has" : "have"} an active pacing wait.`
       : `No health issues were detected across ${senderCount(total)}.`;
   return (
-    <AnalysisCard title="Sender health" info="Summarizes Gmail connection status, reply synchronization, pacing waits, and issues that require the sender to reconnect." summary={data.map((item) => `${item.name} ${item.value}`).join(", ") || "No senders."}>
+    <AnalysisCard title="Sender health" info="Summarizes Gmail connection status, reply synchronization, pacing waits, delivery-health checks, and issues that require the sender to reconnect." summary={data.map((item) => `${item.name} ${item.value}`).join(", ") || "No senders."}>
       <p className={styles.cardHelper}>Review connection, synchronization, and sending-status issues.</p>
       {!data.length ? <AnalysisEmpty /> : (
         <div className={styles.senderHealthBody}>
           <div className={styles.healthList}>
-            {data.map((item, index) => <div key={item.name} aria-label={`${item.name}: ${senderCount(item.value)}`}><span style={{ color: toneColors[index] }}>{healthIcon[item.name] ?? <CheckCircle2 />}</span><strong>{item.name}</strong><b>{item.value}</b></div>)}
+            {data.map((item, index) => (
+              <div
+                key={item.name}
+                title={healthStateDescriptions[item.name]}
+                aria-label={`${item.name}: ${senderCount(item.value)}.${healthStateDescriptions[item.name] ? ` ${healthStateDescriptions[item.name]}` : ""}`}
+              >
+                <span style={{ color: toneColors[index] }}>{healthIcon[item.name] ?? <CheckCircle2 />}</span><strong>{item.name}</strong><b>{item.value}</b>
+              </div>
+            ))}
           </div>
           <div className={styles.senderHealthSummary}>
             {reconnectCount > 0 ? <AlertTriangle aria-hidden="true" /> : pacingCount > 0 ? <Clock3 aria-hidden="true" /> : <ShieldCheck aria-hidden="true" />}
@@ -1319,6 +1351,10 @@ function relativeTime(value: string) {
   return `${Math.round(hours / 24)}d ago`;
 }
 
+function exactTime(value: string) {
+  return new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+}
+
 export function SenderChangesCard({ data }: { data: AnalysisSenderChange[] }) {
   const seen = new Set<string>();
   const changes = data.filter((item) => {
@@ -1329,16 +1365,16 @@ export function SenderChangesCard({ data }: { data: AnalysisSenderChange[] }) {
   }).slice(0, 5);
   const hasAttentionChange = changes.some((item) => item.tone === "orange" || item.tone === "purple");
   return (
-    <AnalysisCard title="Recent sender changes" info="Shows recent connection, synchronization, pacing, and health events for Gmail senders." summary={changes.map((item) => `${item.title}. ${item.detail} ${relativeTime(item.at)}`).join(" ") || "No sender changes."}>
+    <AnalysisCard title="Recent sender changes" info="Shows recent Gmail connection, synchronization, pacing, and sender-health events for connected senders." summary={changes.map((item) => `${item.title}. ${item.detail} ${relativeTime(item.at)}`).join(" ") || "No sender changes."}>
       <p className={styles.cardHelper}>Recent connection, synchronization, pacing, and sender-health changes.</p>
       {!changes.length ? <div className={styles.senderSparseState} role="status"><strong>No sender changes recorded</strong><p>No connection, synchronization, pacing, or health changes were recorded in this period.</p></div> : (
         <>
           <div className={styles.changesList}>
           {changes.map((item, index) => (
-            <div key={`${item.title}-${item.at}-${index}`} aria-label={`${item.title}. ${item.detail} ${relativeTime(item.at)}`}>
+            <div key={`${item.title}-${item.at}-${index}`} title={`${item.title}\n${item.detail}\n${exactTime(item.at)}`} aria-label={`${item.title}. ${item.detail} ${relativeTime(item.at)}`}>
               <span data-tone={item.tone}>{item.tone === "orange" ? <AlertTriangle /> : item.tone === "purple" ? <Clock3 /> : item.tone === "blue" ? <RefreshCw /> : <CheckCircle2 />}</span>
               <p><strong>{item.title}</strong><small title={item.detail}>{item.detail}</small></p>
-              <time dateTime={item.at} title={new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(item.at))}>{relativeTime(item.at)}</time>
+              <time dateTime={item.at} title={exactTime(item.at)}>{relativeTime(item.at)}</time>
             </div>
           ))}
           </div>
