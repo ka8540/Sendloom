@@ -328,27 +328,15 @@ button.controlButton:disabled {
   /* The nav has zero vertical padding, so the links' bottom edge (where the
      previous ::after underline sat) aligns with the nav's padding-box bottom. */
   bottom: 0;
-  width: 0;
+  /* 1px base: the rendered width comes from scaleX, driven by the spring in
+     analysis-workspace.tsx so every frame stays on the compositor. */
+  width: 1px;
   height: 3px;
   border-radius: 999px 999px 0 0;
   background: var(--accent);
   pointer-events: none;
+  transform-origin: left center;
   will-change: transform;
-  /* easeOutExpo with a small lag on the width: the bar glides fast, stretches
-     slightly toward the target tab, then softly settles into place. */
-  transition:
-    transform 520ms cubic-bezier(0.16, 1, 0.3, 1),
-    width 520ms cubic-bezier(0.16, 1, 0.3, 1) 70ms;
-}
-
-.activeUnderline:not([data-ready="true"]) {
-  transition: none;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .activeUnderline {
-    transition: none;
-  }
 }
 
 .metricStripShell {

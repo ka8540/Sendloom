@@ -74,11 +74,11 @@ import styles from "./analysis.module.css";
 
 const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
-// Last measured underline geometry. The Analysis tab routes render separate
-// pages (no shared layout), so the workspace remounts on every tab switch;
-// caching the geometry lets the remounted underline start beneath the
-// previously active tab and slide to the newly selected one.
-let lastUnderlineGeometry: { left: number; width: number } | null = null;
+// Underline spring state. The Analysis tab routes render separate pages (no
+// shared layout), so the workspace remounts on every tab switch; keeping the
+// position AND velocity at module scope lets the spring continue smoothly
+// from where it was instead of restarting on each navigation.
+const underlineMotion = { x: 0, w: 0, vx: 0, vw: 0, initialized: false };
 
 const PAGE_META: Record<AnalysisPage, { label: string; subtitle: string; href: Route }> = {
   overview: { label: "Summary", subtitle: "A quick view of outreach performance.", href: "/analysis" as Route },
@@ -535,22 +535,79 @@ export function AnalysisWorkspace({ page }: { page: AnalysisPage }) {
   const [exporting, setExporting] = useState(false);
   const tabsRef = useRef<HTMLElement | null>(null);
   const underlineRef = useRef<HTMLSpanElement | null>(null);
-  const [initialUnderline] = useState(() => lastUnderlineGeometry);
+  const underlineRaf = useRef(0);
+  const underlineLastFrame = useRef<number | undefined>(undefined);
+  const [initialUnderline] = useState(() =>
+    underlineMotion.initialized ? { x: underlineMotion.x, w: underlineMotion.w } : null
+  );
 
   useIsomorphicLayoutEffect(() => {
     const nav = tabsRef.current;
     const underline = underlineRef.current;
     if (!nav || !underline) return;
+    const motion = underlineMotion;
+
+    let targetX = motion.x;
+    let targetW = motion.w;
+
+    const render = () => {
+      underline.style.transform = `translate3d(${motion.x}px, 0, 0) scaleX(${motion.w})`;
+    };
+
+    // Two near-critically-damped springs: position glides without overshoot,
+    // while the width spring is slightly softer so the bar stretches toward
+    // the target tab before settling (liquid feel). Transform-only updates
+    // keep every frame on the compositor.
+    const step = (now: number) => {
+      const last = underlineLastFrame.current;
+      const dt = Math.min(last === undefined ? 1 / 60 : (now - last) / 1000, 0.064);
+      underlineLastFrame.current = now;
+      motion.vx += (-300 * (motion.x - targetX) - 36 * motion.vx) * dt;
+      motion.x += motion.vx * dt;
+      motion.vw += (-190 * (motion.w - targetW) - 28 * motion.vw) * dt;
+      motion.w += motion.vw * dt;
+      const settled =
+        Math.abs(motion.x - targetX) < 0.05 && Math.abs(motion.vx) < 2 &&
+        Math.abs(motion.w - targetW) < 0.05 && Math.abs(motion.vw) < 2;
+      if (settled) {
+        motion.x = targetX;
+        motion.w = targetW;
+        motion.vx = 0;
+        motion.vw = 0;
+        underlineRaf.current = 0;
+        render();
+        return;
+      }
+      render();
+      underlineRaf.current = requestAnimationFrame(step);
+    };
+
+    const animateTo = (x: number, w: number) => {
+      targetX = x;
+      targetW = w;
+      if (!motion.initialized || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        cancelAnimationFrame(underlineRaf.current);
+        underlineRaf.current = 0;
+        motion.x = x;
+        motion.w = w;
+        motion.vx = 0;
+        motion.vw = 0;
+        motion.initialized = true;
+        render();
+        return;
+      }
+      motion.initialized = true;
+      if (!underlineRaf.current) {
+        underlineLastFrame.current = undefined;
+        underlineRaf.current = requestAnimationFrame(step);
+      }
+    };
 
     const updateUnderline = () => {
       const active = nav.querySelector<HTMLAnchorElement>('a[aria-current="page"]');
       if (!active) return;
       const tabWidth = active.offsetWidth;
-      const left = active.offsetLeft + tabWidth * 0.18;
-      const width = tabWidth * 0.64;
-      lastUnderlineGeometry = { left, width };
-      underline.style.width = `${width}px`;
-      underline.style.transform = `translateX(${left}px)`;
+      animateTo(active.offsetLeft + tabWidth * 0.18, tabWidth * 0.64);
       const linkRight = active.offsetLeft + tabWidth;
       if (active.offsetLeft < nav.scrollLeft) {
         nav.scrollLeft = active.offsetLeft;
@@ -559,25 +616,14 @@ export function AnalysisWorkspace({ page }: { page: AnalysisPage }) {
       }
     };
 
-    if (initialUnderline) {
-      // Remount after a tab switch: the underline was rendered beneath the
-      // previous tab, so enable the transition up front (flushing styles so
-      // the cached position becomes the transition start) and let it slide.
-      underline.dataset.ready = "true";
-      void underline.offsetWidth;
-    }
     updateUnderline();
-    // Enable the slide transition only after the initial position has been
-    // painted, so the underline never animates in from the edge on page load.
-    const readyFrame = requestAnimationFrame(() => {
-      underline.dataset.ready = "true";
-    });
     const observer = new ResizeObserver(updateUnderline);
     observer.observe(nav);
     nav.querySelectorAll("a").forEach((link) => observer.observe(link));
     window.addEventListener("resize", updateUnderline);
     return () => {
-      cancelAnimationFrame(readyFrame);
+      cancelAnimationFrame(underlineRaf.current);
+      underlineRaf.current = 0;
       observer.disconnect();
       window.removeEventListener("resize", updateUnderline);
     };
@@ -699,7 +745,7 @@ export function AnalysisWorkspace({ page }: { page: AnalysisPage }) {
           aria-hidden="true"
           style={
             initialUnderline
-              ? { width: `${initialUnderline.width}px`, transform: `translateX(${initialUnderline.left}px)` }
+              ? { transform: `translate3d(${initialUnderline.x}px, 0, 0) scaleX(${initialUnderline.w})` }
               : undefined
           }
         />
