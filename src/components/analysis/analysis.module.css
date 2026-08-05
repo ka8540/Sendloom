@@ -275,6 +275,7 @@ button.controlButton:disabled {
 }
 
 .tabs {
+  position: relative;
   display: grid;
   grid-template-columns: repeat(5, minmax(7rem, 1fr));
   width: min(100%, 760px);
@@ -321,15 +322,30 @@ button.controlButton:disabled {
   color: var(--accent-strong);
 }
 
-.tabs a.activeTab::after {
-  content: "";
+.activeUnderline {
   position: absolute;
-  left: 18%;
-  right: 18%;
+  left: 0;
+  /* The nav has zero vertical padding, so the links' bottom edge (where the
+     previous ::after underline sat) aligns with the nav's padding-box bottom. */
   bottom: 0;
+  width: 0;
   height: 3px;
   border-radius: 999px 999px 0 0;
   background: var(--accent);
+  pointer-events: none;
+  transition:
+    transform 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    width 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.activeUnderline:not([data-ready="true"]) {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .activeUnderline {
+    transition: none;
+  }
 }
 
 .metricStripShell {

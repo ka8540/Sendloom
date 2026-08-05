@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import type { Route } from "next";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -71,6 +71,14 @@ import {
 import { AnalysisInfo, formatAnalysisNumber } from "@/components/analysis/analysis-ui";
 
 import styles from "./analysis.module.css";
+
+const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
+
+// Last measured underline geometry. The Analysis tab routes render separate
+// pages (no shared layout), so the workspace remounts on every tab switch;
+// caching the geometry lets the remounted underline start beneath the
+// previously active tab and slide to the newly selected one.
+let lastUnderlineGeometry: { left: number; width: number } | null = null;
 
 const PAGE_META: Record<AnalysisPage, { label: string; subtitle: string; href: Route }> = {
   overview: { label: "Summary", subtitle: "A quick view of outreach performance.", href: "/analysis" as Route },
@@ -525,6 +533,55 @@ export function AnalysisWorkspace({ page }: { page: AnalysisPage }) {
   const [error, setError] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
   const [exporting, setExporting] = useState(false);
+  const tabsRef = useRef<HTMLElement | null>(null);
+  const underlineRef = useRef<HTMLSpanElement | null>(null);
+  const [initialUnderline] = useState(() => lastUnderlineGeometry);
+
+  useIsomorphicLayoutEffect(() => {
+    const nav = tabsRef.current;
+    const underline = underlineRef.current;
+    if (!nav || !underline) return;
+
+    const updateUnderline = () => {
+      const active = nav.querySelector<HTMLAnchorElement>('a[aria-current="page"]');
+      if (!active) return;
+      const tabWidth = active.offsetWidth;
+      const left = active.offsetLeft + tabWidth * 0.18;
+      const width = tabWidth * 0.64;
+      lastUnderlineGeometry = { left, width };
+      underline.style.width = `${width}px`;
+      underline.style.transform = `translateX(${left}px)`;
+      const linkRight = active.offsetLeft + tabWidth;
+      if (active.offsetLeft < nav.scrollLeft) {
+        nav.scrollLeft = active.offsetLeft;
+      } else if (linkRight > nav.scrollLeft + nav.clientWidth) {
+        nav.scrollLeft = linkRight - nav.clientWidth;
+      }
+    };
+
+    if (initialUnderline) {
+      // Remount after a tab switch: the underline was rendered beneath the
+      // previous tab, so enable the transition up front (flushing styles so
+      // the cached position becomes the transition start) and let it slide.
+      underline.dataset.ready = "true";
+      void underline.offsetWidth;
+    }
+    updateUnderline();
+    // Enable the slide transition only after the initial position has been
+    // painted, so the underline never animates in from the edge on page load.
+    const readyFrame = requestAnimationFrame(() => {
+      underline.dataset.ready = "true";
+    });
+    const observer = new ResizeObserver(updateUnderline);
+    observer.observe(nav);
+    nav.querySelectorAll("a").forEach((link) => observer.observe(link));
+    window.addEventListener("resize", updateUnderline);
+    return () => {
+      cancelAnimationFrame(readyFrame);
+      observer.disconnect();
+      window.removeEventListener("resize", updateUnderline);
+    };
+  }, [page]);
 
   useEffect(() => {
     const normalized = normalizeAnalysisDateRange({ from: searchParams.get("from"), to: searchParams.get("to") });
@@ -625,7 +682,7 @@ export function AnalysisWorkspace({ page }: { page: AnalysisPage }) {
         </div>
       </header>
 
-      <nav className={styles.tabs} aria-label="Analysis pages">
+      <nav className={styles.tabs} aria-label="Analysis pages" ref={tabsRef}>
         {Object.entries(PAGE_META).map(([key, item]) => (
           <Link
             key={key}
@@ -636,6 +693,16 @@ export function AnalysisWorkspace({ page }: { page: AnalysisPage }) {
             {item.label}
           </Link>
         ))}
+        <span
+          ref={underlineRef}
+          className={styles.activeUnderline}
+          aria-hidden="true"
+          style={
+            initialUnderline
+              ? { width: `${initialUnderline.width}px`, transform: `translateX(${initialUnderline.left}px)` }
+              : undefined
+          }
+        />
       </nav>
 
       {error && !data ? (
