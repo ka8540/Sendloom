@@ -79,6 +79,7 @@ describe("sequence dashboard URL state", () => {
       deliveredCount: 10 - failedCount,
       opensCount: 0,
       repliedCount: 0,
+      sentLast24h: false,
       createdAtIso: "2026-07-16T00:00:00.000Z",
       updatedAtIso: "2026-07-16T00:00:00.000Z"
     });
@@ -166,5 +167,112 @@ describe("sequence dashboard URL state", () => {
     expect(href).toBe(
       "/campaigns/seq%2Fwith%20spaces?returnTo=%2Fcampaigns%3Fstatus%3Dneeds-attention%26page%3D4%26q%3Damd%26sender%3Dkush.ahir2024%2540gmail.com"
     );
+  });
+});
+
+describe("Overview metric-card navigation", () => {
+  const item = (
+    id: string,
+    overrides: Partial<SequenceListItem> = {}
+  ): SequenceListItem => ({
+    id,
+    name: `Sequence ${id}`,
+    campaignStatus: "COMPLETED",
+    latestRunStatus: "COMPLETED",
+    listName: "Prospects",
+    templateName: "Intro",
+    senderName: "Sender",
+    senderEmail: "kush.ahir2024@gmail.com",
+    enrolledCount: 10,
+    healthPercent: 100,
+    progressPercent: 100,
+    failedCount: 0,
+    invalidCount: 0,
+    deliveredCount: 10,
+    opensCount: 0,
+    repliedCount: 0,
+    sentLast24h: false,
+    createdAtIso: "2026-07-16T00:00:00.000Z",
+    updatedAtIso: "2026-07-16T00:00:00.000Z",
+    ...overrides
+  });
+
+  it.each([
+    ["active", "/campaigns?status=active"],
+    ["sent", "/campaigns?status=sent"],
+    ["attention", "/campaigns?status=needs-attention"]
+  ] as const)("the %s card links to its own filtered dashboard URL", (filter, href) => {
+    expect(buildSequenceDashboardFilterHref(filter)).toBe(href);
+  });
+
+  it.each([
+    ["status=active", "active"],
+    ["status=sent", "sent"],
+    ["status=needs-attention", "attention"]
+  ] as const)("opening %s selects that filter and page 1 with no search", (search, filter) => {
+    const state = readSequenceDashboardUrlState(new URLSearchParams(search), SENDERS);
+
+    // A metric-card link carries only the category, so a previously selected
+    // status, search text, or page cannot survive the navigation.
+    expect(state).toEqual({ filter, sender: "", query: "", page: 1 });
+  });
+
+  it("falls back to the default view for an unsupported category", () => {
+    expect(
+      readSequenceDashboardUrlState(new URLSearchParams("status=totally-made-up"), SENDERS).filter
+    ).toBe("all");
+  });
+
+  it("Active shows only running or queued sequences", () => {
+    const items = [
+      item("running", { campaignStatus: "RUNNING", latestRunStatus: "RUNNING" }),
+      item("queued", { campaignStatus: "SCHEDULED", latestRunStatus: "QUEUED" }),
+      item("done")
+    ];
+    const state = readSequenceDashboardUrlState(new URLSearchParams("status=active"), SENDERS);
+
+    expect(
+      filterSequenceItems(items, state.filter, state.query, state.sender).map(({ id }) => id)
+    ).toEqual(["running", "queued"]);
+  });
+
+  it("Sent uses the rolling 24h send flag, not the completed status", () => {
+    const items = [
+      item("completed-old"),
+      item("completed-recent", { sentLast24h: true }),
+      item("running-recent", {
+        campaignStatus: "RUNNING",
+        latestRunStatus: "RUNNING",
+        sentLast24h: true
+      })
+    ];
+    const state = readSequenceDashboardUrlState(new URLSearchParams("status=sent"), SENDERS);
+
+    expect(
+      filterSequenceItems(items, state.filter, state.query, state.sender).map(({ id }) => id)
+    ).toEqual(["completed-recent", "running-recent"]);
+  });
+
+  it("Needs attention shows only sequences with failed or invalid sends", () => {
+    const items = [item("healthy"), item("failed-sends", { failedCount: 2 })];
+    const state = readSequenceDashboardUrlState(
+      new URLSearchParams("status=needs-attention"),
+      SENDERS
+    );
+
+    expect(
+      filterSequenceItems(items, state.filter, state.query, state.sender).map(({ id }) => id)
+    ).toEqual(["failed-sends"]);
+  });
+
+  it("keeps the email-account filter available alongside a category", () => {
+    const params = updateSequenceDashboardSearchParams("status=sent", {
+      sender: "outreach@sendloom.net",
+      page: 1
+    });
+
+    expect(params.get("status")).toBe("sent");
+    expect(params.get("sender")).toBe("outreach@sendloom.net");
+    expect(params.get("page")).toBeNull();
   });
 });

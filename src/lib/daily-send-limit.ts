@@ -114,9 +114,20 @@ function getRecipientConfirmedSendAt(metadata: unknown) {
   return parseDate(record.resolvedAt) ?? parseDate(record.sentAt) ?? parseDate(record.lastAttemptAt);
 }
 
-async function readDbCount(scope: DailySendLimitScope, since: Date) {
+type ConfirmedSend = {
+  sentAt: Date;
+  campaignId: string | null;
+};
+
+// The single confirmed-send reader behind both the rolling-window count and
+// the per-sequence "sent in the last 24h" lookup, so the Overview metric and
+// the Sequences filter can never disagree about what counts as a send.
+async function collectConfirmedSends(
+  scope: DailySendLimitScope,
+  since: Date
+): Promise<{ sends: ConfirmedSend[]; ledgerAvailable: boolean }> {
   if (!isScopeAddressable(scope)) {
-    return { count: 0, oldest: null as Date | null, ledgerAvailable: true };
+    return { sends: [], ledgerAvailable: true };
   }
 
   const where = buildWhere(scope, since);
@@ -128,7 +139,8 @@ async function readDbCount(scope: DailySendLimitScope, since: Date) {
         id: true,
         sentAt: true,
         messageId: true,
-        recipientJobId: true
+        recipientJobId: true,
+        campaignId: true
       }
     });
     const ledgerRecipientJobIds = [
@@ -153,13 +165,15 @@ async function readDbCount(scope: DailySendLimitScope, since: Date) {
             ).map((job) => [job.id, getRecipientConfirmedSendAt(job.metadata)])
           )
         : new Map<string, Date | null>();
-    const ledgerSendDates = ledgerEntries.flatMap((entry) => {
+    const ledgerSends = ledgerEntries.flatMap<ConfirmedSend>((entry) => {
+      const at = (sentAt: Date): ConfirmedSend[] => [{ sentAt, campaignId: entry.campaignId }];
+
       if (!entry.messageId) {
         return [];
       }
 
       if (!entry.recipientJobId) {
-        return [entry.sentAt];
+        return at(entry.sentAt);
       }
 
       if (!successfulLedgerRecipientSendAts.has(entry.recipientJobId)) {
@@ -168,33 +182,56 @@ async function readDbCount(scope: DailySendLimitScope, since: Date) {
 
       const recipientSendAt = successfulLedgerRecipientSendAts.get(entry.recipientJobId);
       if (recipientSendAt) {
-        return [recipientSendAt];
+        return at(recipientSendAt);
       }
 
-      return entry.id.startsWith("legacy_") ? [] : [entry.sentAt];
+      return entry.id.startsWith("legacy_") ? [] : at(entry.sentAt);
     });
     const legacyRecipients = await prisma.recipientJob.findMany({
       where: buildLegacyRecipientWhere(scope, ledgerRecipientJobIds),
-      select: { metadata: true }
+      select: { metadata: true, campaignRun: { select: { campaignId: true } } }
     });
-    const legacySendDates = legacyRecipients
-      .map((recipient) => getRecipientConfirmedSendAt(recipient.metadata))
-      .filter((sendAt): sendAt is Date => Boolean(sendAt));
-    const countedSendDates = [...ledgerSendDates, ...legacySendDates].filter((sendAt) => sendAt >= since);
+    const legacySends = legacyRecipients.flatMap<ConfirmedSend>((recipient) => {
+      const sentAt = getRecipientConfirmedSendAt(recipient.metadata);
+      return sentAt ? [{ sentAt, campaignId: recipient.campaignRun?.campaignId ?? null }] : [];
+    });
 
     return {
-      count: countedSendDates.length,
-      oldest: minDate(countedSendDates),
+      sends: [...ledgerSends, ...legacySends].filter((send) => send.sentAt >= since),
       ledgerAvailable: true
     };
   } catch (error) {
     if (isMissingSendLedgerTableError(error)) {
       warnMissingSendLedgerTable();
-      return { count: 0, oldest: null as Date | null, ledgerAvailable: false };
+      return { sends: [], ledgerAvailable: false };
     }
 
     throw error;
   }
+}
+
+async function readDbCount(scope: DailySendLimitScope, since: Date) {
+  const { sends, ledgerAvailable } = await collectConfirmedSends(scope, since);
+
+  return {
+    count: sends.length,
+    oldest: minDate(sends.map((send) => send.sentAt)),
+    ledgerAvailable
+  };
+}
+
+/**
+ * Campaign ids that have at least one confirmed send since `since`, read from
+ * the same ledger the rolling send-window count uses. Sends that predate
+ * campaign attribution (no campaignId on the ledger row) are simply absent.
+ */
+export async function listCampaignIdsWithConfirmedSendsSince(
+  scope: DailySendLimitScope,
+  since: Date
+): Promise<Set<string>> {
+  const { sends } = await collectConfirmedSends(scope, since);
+
+  return new Set(sends.flatMap((send) => (send.campaignId ? [send.campaignId] : [])));
 }
 
 /**

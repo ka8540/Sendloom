@@ -60,12 +60,14 @@
   min-width: 0;
 }
 
+/* Typography is the Sequences page header verbatim (see
+   workspace-page-header.module.css `.heading h1`) so both page titles render at
+   exactly the same size. Only the declarations below differ from the browser
+   h1 defaults, which both headings share. */
 .pageTitle {
   margin: 0;
-  font-size: clamp(1.9rem, 3vw, 2.35rem);
-  font-weight: 700;
-  line-height: 1.08;
-  letter-spacing: -0.03em;
+  font-size: clamp(1.9rem, 3.4vw, 2.5rem);
+  letter-spacing: -0.05em;
 }
 
 .pageSubtitle {

@@ -8,6 +8,7 @@
   --tone-attention: #e5484d;
   --tone-paused: var(--warning);
   --tone-active: var(--accent);
+  --tone-sent: var(--link);
   --tone-completed: var(--accent-strong);
   --tone-scheduled: var(--link);
   --tone-draft: var(--muted);
@@ -199,6 +200,10 @@
 
 .selectDot[data-tone="active"] {
   background: var(--tone-active);
+}
+
+.selectDot[data-tone="sent"] {
+  background: var(--tone-sent);
 }
 
 .selectDot[data-tone="paused"] {

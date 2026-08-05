@@ -39,6 +39,7 @@ import {
   SEQUENCE_TONE_LABELS,
   collectSequenceSenderEmails,
   countSequenceFilters,
+  describeEmptySequenceFilter,
   describeSequenceState,
   filterSequenceItems,
   getSequenceOpenRatePercent,
@@ -542,7 +543,7 @@ export function SequenceDashboard({ items }: { items: SequenceListItem[] }) {
           <span className={styles.emptyIcon} aria-hidden="true">
             <Search />
           </span>
-          <strong className={styles.emptyTitle}>No sequences match this filter</strong>
+          <strong className={styles.emptyTitle}>{describeEmptySequenceFilter(filter)}</strong>
           <p className={styles.emptyCopy}>Try another status, email account, or search.</p>
           <div className={styles.emptyActions}>
             <button type="button" className="button secondary" onClick={clearFilters}>

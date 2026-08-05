@@ -37,7 +37,24 @@ describe("Page header (#8, #9, #10)", () => {
   });
 
   it("keeps the heading prominent but not enormous — the giant hero is gone", () => {
-    expect(cssRule(CENTER_CSS, ".pageTitle")).toContain("clamp(1.9rem, 3vw, 2.35rem)");
+    // Source of truth: the Sequences page header. Both titles must resolve to
+    // the same computed type, so this pins the shared declarations.
+    const sharedHeading = readFileSync("src/components/workspace-page-header.module.css", "utf8");
+    const overviewTitle = cssRule(CENTER_CSS, ".pageTitle");
+    const sequencesTitle = cssRule(sharedHeading, ".heading h1");
+    for (const declaration of ["font-size:", "letter-spacing:", "margin:"]) {
+      const value = (rule: string) =>
+        rule
+          .slice(rule.indexOf("{") + 1)
+          .split(";")
+          .find((line) => line.includes(declaration))
+          ?.trim();
+      expect(value(overviewTitle)).toBe(value(sequencesTitle));
+    }
+    expect(overviewTitle).toContain("clamp(1.9rem, 3.4vw, 2.5rem)");
+    // No extra weight/line-height overrides — both inherit the same h1 defaults.
+    expect(overviewTitle).not.toContain("font-weight");
+    expect(overviewTitle).not.toContain("line-height");
     expect(CENTER).not.toContain("Command center");
     expect(CENTER).not.toContain("heroEyebrow");
     expect(CENTER_CSS).not.toMatch(/font-size: clamp\(2\.75rem/);
@@ -89,6 +106,30 @@ describe("Summary strip (#11–#15)", () => {
 
   it("carries the tour anchor for the whole strip", () => {
     expect(strip).toContain('data-overview-tour="summary"');
+  });
+
+  it("each sequence card links to its own filtered Sequences view", () => {
+    // URL-driven: the shared builder is the single source of the filter links,
+    // so the destination can never disagree with the Sequences page parsing.
+    expect(CENTER).toContain('from "@/lib/sequence-dashboard-url"');
+    for (const filter of ["active", "sent", "attention"]) {
+      expect(strip).toContain(`href={buildSequenceDashboardFilterHref("${filter}")}`);
+    }
+    for (const label of [
+      "View active sequences",
+      "View sequences with sends in the last 24 hours",
+      "View sequences needing attention"
+    ]) {
+      expect(strip).toContain(`aria-label="${label}"`);
+    }
+    // Semantic links only — no click handlers on non-interactive elements.
+    expect(strip).not.toContain("onClick");
+  });
+
+  it("leaves Lists ready pointing at Imports with no filter", () => {
+    const listsReady = strip.slice(strip.indexOf("Lists ready") - 400);
+    expect(listsReady).toContain('href="/imports"');
+    expect(listsReady).not.toContain("buildSequenceDashboardFilterHref");
   });
 });
 

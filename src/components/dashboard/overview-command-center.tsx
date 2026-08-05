@@ -30,6 +30,7 @@ import type {
   SequenceRowData,
   SequenceScheduleType
 } from "@/components/dashboard/types";
+import { buildSequenceDashboardFilterHref } from "@/lib/sequence-dashboard-url";
 import { processPendingCampaignWork, readDailyLimitPauseInfo, resumeCampaignRunsBlockedByDailyLimit } from "@/services/campaigns";
 import { listHunterDomainSearchesForUser } from "@/services/hunter-domain-searches";
 import {
@@ -749,7 +750,11 @@ export default async function OverviewCommandCenter() {
       {/* One restrained strip, four operational sections split by hairlines.
           Gmail send capacity intentionally lives only in the right-column card. */}
       <section className={styles.summaryStrip} aria-label="Workspace summary" data-overview-tour="summary">
-        <Link href="/campaigns" className={styles.summaryCell}>
+        <Link
+          href={buildSequenceDashboardFilterHref("active")}
+          className={styles.summaryCell}
+          aria-label="View active sequences"
+        >
           <div className={styles.summaryBody}>
             <span className={styles.summaryLabel} data-tone="accent">
               <span className={styles.summaryDot} aria-hidden="true" />
@@ -763,7 +768,11 @@ export default async function OverviewCommandCenter() {
           </span>
         </Link>
 
-        <Link href="/campaigns" className={styles.summaryCell}>
+        <Link
+          href={buildSequenceDashboardFilterHref("sent")}
+          className={styles.summaryCell}
+          aria-label="View sequences with sends in the last 24 hours"
+        >
           <div className={styles.summaryBody}>
             <span className={styles.summaryLabel} data-tone="info">
               <span className={styles.summaryDot} aria-hidden="true" />
@@ -778,9 +787,10 @@ export default async function OverviewCommandCenter() {
         </Link>
 
         <Link
-          href="/campaigns"
+          href={buildSequenceDashboardFilterHref("attention")}
           className={styles.summaryCell}
           data-tone={needsAttentionCount > 0 ? "warn" : "ok"}
+          aria-label="View sequences needing attention"
         >
           <div className={styles.summaryBody}>
             <span className={styles.summaryLabel} data-tone="warn">
