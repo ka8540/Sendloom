@@ -114,6 +114,27 @@ function DonutSliceTooltip({ active, payload, totalLabel }: { active?: boolean; 
   );
 }
 
+/** Hover card for a failure-reason bar: recipients affected and share of diagnostics. */
+function FailureReasonTooltip({ active, payload }: { active?: boolean; payload?: TooltipEntry[] }) {
+  const reason = payload?.[0]?.payload as AnalysisBreakdownItem | undefined;
+  if (!active || !reason || typeof reason.value !== "number") return null;
+  return (
+    <div className={styles.chartTooltip}>
+      <strong>{reason.name}</strong>
+      <dl>
+        <div>
+          <dt>Recipients</dt>
+          <dd>{reason.value.toLocaleString()}</dd>
+        </div>
+        <div>
+          <dt>Share of diagnostics</dt>
+          <dd>{reason.percent.toFixed(1)}%</dd>
+        </div>
+      </dl>
+    </div>
+  );
+}
+
 /** Hover card for the sequence bar and bubble charts: same fields, full sentences. */
 function SequenceHoverTooltip({ active, payload }: { active?: boolean; payload?: TooltipEntry[] }) {
   const point = payload?.[0]?.payload as AnalysisRankedItem | undefined;
@@ -872,13 +893,22 @@ export function TemplatePerformanceCard({
   );
 }
 
-export function FailureReasonsCard({ data }: { data: AnalysisBreakdownItem[] }) {
+export function FailureReasonsCard({
+  data,
+  helper,
+  insight
+}: {
+  data: AnalysisBreakdownItem[];
+  helper?: string;
+  insight?: string;
+}) {
   return (
     <AnalysisCard
       title="Failure reasons"
-      info="Recipient diagnostics grouped deterministically. Suppressions are shown as a separate outcome; pacing and daily-cap waits are excluded from failure totals."
+      info="Recipients are grouped by the diagnostic recorded when their send did not complete. Suppressions are counted as their own outcome, and pacing or daily-cap waits are excluded because they are delays rather than failures."
       summary={data.map((item) => `${item.name} ${item.value}`).join(", ") || "No failure diagnostics."}
     >
+      {helper ? <p className={styles.cardHelper}>{helper}</p> : null}
       {!data.length ? (
         <AnalysisEmpty>No failure diagnostics are available for this range.</AnalysisEmpty>
       ) : (
@@ -888,7 +918,7 @@ export function FailureReasonsCard({ data }: { data: AnalysisBreakdownItem[] }) 
               <CartesianGrid stroke="var(--analysis-grid)" horizontal={false} />
               <XAxis type="number" tickLine={false} axisLine={false} tick={{ fill: "var(--muted)", fontSize: 11 }} />
               <YAxis type="category" dataKey="name" width={150} tickLine={false} axisLine={false} tick={{ fill: "var(--muted)", fontSize: 11 }} />
-              <Tooltip content={<ChartTooltipContent />} allowEscapeViewBox={{ x: false, y: true }} />
+              <Tooltip content={<FailureReasonTooltip />} allowEscapeViewBox={{ x: false, y: true }} />
               <Bar dataKey="value" name="Recipients" radius={[0, 7, 7, 0]} maxBarSize={24}>
                 {data.map((item, index) => <Cell key={item.name} fill={toneColors[index % toneColors.length]} />)}
                 <LabelList dataKey="value" position="right" fill="var(--text)" fontSize={11} fontWeight={700} />
@@ -897,19 +927,30 @@ export function FailureReasonsCard({ data }: { data: AnalysisBreakdownItem[] }) 
           </ResponsiveContainer>
         </div>
       )}
+      {data.length && insight ? <p className={styles.cardInsight}>{insight}</p> : null}
     </AnalysisCard>
   );
 }
 
-export function OperationalEventsCard({ data }: { data: AnalysisOperationalPoint[] }) {
+export function OperationalEventsCard({
+  data,
+  helper,
+  insight
+}: {
+  data: AnalysisOperationalPoint[];
+  helper?: string;
+  insight?: string;
+}) {
+  const hasEvents = hasPositiveValues(data as unknown as Array<Record<string, unknown>>, ["retries", "pauses", "resumed"]);
   return (
     <AnalysisCard
       title="Operational events over time"
-      info="Retry attempts and recorded safety-pause/resume events grouped by UTC date. Resume counts appear only when an explicit audit event exists."
+      info="Retry attempts, safety pauses, and resumed runs are grouped by the UTC date on which they happened. A run is only counted as resumed when an audit event recorded it."
       summary="Daily retry attempts, safety pauses, and recorded resumed-run events."
     >
+      {helper ? <p className={styles.cardHelper}>{helper}</p> : null}
       <Legend items={[{ label: "Retries", color: analysisColors.green }, { label: "Pauses", color: analysisColors.purple }, { label: "Resumed runs", color: analysisColors.blue }]} />
-      {!hasPositiveValues(data as unknown as Array<Record<string, unknown>>, ["retries", "pauses", "resumed"]) ? (
+      {!hasEvents ? (
         <AnalysisEmpty>No operational events were recorded in this range.</AnalysisEmpty>
       ) : (
         <div className={styles.chartMedium}>
@@ -926,29 +967,57 @@ export function OperationalEventsCard({ data }: { data: AnalysisOperationalPoint
           </ResponsiveContainer>
         </div>
       )}
+      {hasEvents && insight ? <p className={styles.cardInsight}>{insight}</p> : null}
     </AnalysisCard>
   );
 }
 
-export function PacingCard({ waiting, pauses, nextRecoveryAt }: { waiting: number; pauses: number; nextRecoveryAt: string | null }) {
+export function PacingCard({
+  waiting,
+  pauses,
+  nextRecoveryAt,
+  helper,
+  insight
+}: {
+  waiting: number;
+  pauses: number;
+  nextRecoveryAt: string | null;
+  helper?: string;
+  insight?: string;
+}) {
   return (
     <AnalysisCard
       title="Pacing and daily limit"
-      info="Current pending recipients with explicit Gmail pacing/safety metadata plus selected-period safety-pause events. These are waits, not failures."
+      info="Recipients that are currently waiting because of Gmail pacing or a daily sending limit, together with the safety pauses recorded during the selected period. These are waits, not failures."
       summary={`${waiting} recipients are currently waiting for sender capacity and ${pauses} safety pauses occurred in range.`}
     >
+      {helper ? <p className={styles.cardHelper}>{helper}</p> : null}
       <div className={styles.pacingList}>
         <div><span className={`${styles.roundIcon} ${styles.green}`}><Clock3 /></span><span><small>Current waiting recipients</small><strong>{waiting.toLocaleString()}</strong><em>Awaiting sender capacity</em></span></div>
         <div><span className={`${styles.roundIcon} ${styles.purple}`}><RefreshCw /></span><span><small>Send-window pauses</small><strong>{pauses.toLocaleString()}</strong><em>Selected UTC range</em></span></div>
         <p>{nextRecoveryAt ? `Next known recovery ${new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: "UTC", timeZoneName: "short" }).format(new Date(nextRecoveryAt))}` : "No future recovery timestamp is currently stored."}</p>
       </div>
+      {insight ? <p className={styles.cardInsight}>{insight}</p> : null}
     </AnalysisCard>
   );
 }
 
-export function AttentionCard({ data }: { data: AnalysisAttentionItem[] }) {
+export function AttentionCard({
+  data,
+  helper,
+  insight
+}: {
+  data: AnalysisAttentionItem[];
+  helper?: string;
+  insight?: string;
+}) {
   return (
-    <AnalysisCard title="Attention areas" info="Deterministic issue cards shown only when stored data crosses a defined condition; no generated advice is used." summary={data.map((item) => item.title).join(", ") || "No attention rules triggered."}>
+    <AnalysisCard
+      title="Attention areas"
+      info="Each item appears only when stored data crosses a defined threshold. Nothing shown here is generated advice."
+      summary={data.map((item) => item.title).join(", ") || "No attention rules triggered."}
+    >
+      {helper ? <p className={styles.cardHelper}>{helper}</p> : null}
       {!data.length ? (
         <div className={styles.allClear}><ShieldCheck aria-hidden="true" /><strong>No attention rules triggered</strong><p>Stored diagnostics are within the defined thresholds for this range.</p></div>
       ) : (
@@ -961,6 +1030,7 @@ export function AttentionCard({ data }: { data: AnalysisAttentionItem[] }) {
           ))}
         </div>
       )}
+      {data.length && insight ? <p className={styles.cardInsight}>{insight}</p> : null}
     </AnalysisCard>
   );
 }

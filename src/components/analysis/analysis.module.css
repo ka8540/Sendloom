@@ -513,7 +513,17 @@ button.controlButton:disabled {
   .sequenceBottom { grid-template-columns: minmax(0, 1fr); }
   .sequenceBottom > :last-child { grid-column: auto; }
 }
-.reliabilityBottom { grid-template-columns: minmax(26rem, 1.35fr) minmax(18rem, 0.72fr) minmax(20rem, 0.86fr); }
+.reliabilityBottom { grid-template-columns: minmax(0, 1.35fr) minmax(0, 0.72fr) minmax(0, 0.86fr); }
+
+@container analysisContent (max-width: 1240px) {
+  .reliabilityBottom { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .reliabilityBottom > :last-child { grid-column: 1 / -1; }
+}
+
+@container analysisContent (max-width: 900px) {
+  .reliabilityBottom { grid-template-columns: minmax(0, 1fr); }
+  .reliabilityBottom > :last-child { grid-column: auto; }
+}
 .sendersBottom { grid-template-columns: minmax(27rem, 1.35fr) minmax(17rem, 0.78fr) minmax(22rem, 1.1fr); }
 
 .card {
@@ -1246,20 +1256,31 @@ button.controlButton:disabled {
   grid-template-rows: auto 1fr auto auto;
 }
 
-/* Sequences bottom row: the visual takes the free height so the insight line
-   settles at the foot of the card instead of floating mid-card. */
-.sequenceBottom > .card {
+/* Sequences and Reliability bottom rows: the visual takes the free height so the
+   insight line settles at the foot of the card instead of floating mid-card. */
+.sequenceBottom > .card,
+.reliabilityBottom > .card {
   display: flex;
   flex-direction: column;
 }
 
 .sequenceBottom .templateList,
 .sequenceBottom .donutLayout,
-.sequenceBottom .rankedList {
+.sequenceBottom .rankedList,
+.reliabilityBottom .pacingList,
+.reliabilityBottom .attentionList,
+.reliabilityBottom .allClear {
   flex: 1 1 auto;
 }
 
-.sequenceBottom .cardInsight {
+/* Rows keep their natural height; the spare space goes under them. */
+.reliabilityBottom .attentionList,
+.reliabilityBottom .pacingList {
+  align-content: start;
+}
+
+.sequenceBottom .cardInsight,
+.reliabilityBottom .cardInsight {
   margin-top: auto;
 }
 
@@ -1669,13 +1690,11 @@ button.controlButton:disabled {
 
 @media (max-width: 1420px) {
   .engagementBottom,
-  .reliabilityBottom,
   .sendersBottom {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .engagementBottom > :last-child,
-  .reliabilityBottom > :last-child,
   .sendersBottom > :last-child {
     grid-column: 1 / -1;
   }
@@ -1693,10 +1712,8 @@ button.controlButton:disabled {
   .headerControls { width: 100%; justify-content: flex-start; margin-left: 0; }
   .tabs { width: 100%; grid-template-columns: repeat(5, minmax(7.5rem, 1fr)); }
   .engagementBottom,
-  .reliabilityBottom,
   .sendersBottom { grid-template-columns: 1fr; }
   .engagementBottom > :last-child,
-  .reliabilityBottom > :last-child,
   .sendersBottom > :last-child { grid-column: auto; }
   .loadingCharts,
   .loadingChartsSmall { grid-template-columns: 1fr; }

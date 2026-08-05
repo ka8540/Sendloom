@@ -36,6 +36,7 @@ import {
 } from "@/lib/analysis";
 import { buildAnalysisCsv } from "@/lib/analysis-export";
 import type {
+  AnalysisBreakdownItem,
   AnalysisJourneyStage,
   AnalysisMetric,
   AnalysisResponse,
@@ -327,7 +328,8 @@ function templateInsight(items: AnalysisSequencesResponse["templates"]) {
   } sequence${leader.usageCount === 1 ? "" : "s"}.`;
 }
 
-function statusMixInsight(items: AnalysisSequencesResponse["statusMix"]) {
+/** Shared by the Sequences status mix and the Reliability run-state donut. */
+function statusMixInsight(items: AnalysisBreakdownItem[]) {
   const positive = items.filter((item) => item.value > 0);
   const total = positive.reduce((sum, item) => sum + item.value, 0);
   if (!total) return undefined;
@@ -391,17 +393,93 @@ function SequencesVisuals({ data }: { data: AnalysisSequencesResponse }) {
   );
 }
 
+function failureReasonsInsight(items: AnalysisReliabilityResponse["failureReasons"]) {
+  const positive = items.filter((item) => item.value > 0);
+  if (!positive.length) return undefined;
+  const total = positive.reduce((sum, item) => sum + item.value, 0);
+  const [leader, runnerUp] = [...positive].sort((a, b) => b.value - a.value);
+  const lead = `${leader.name} accounts for ${leader.value.toLocaleString()} of ${total.toLocaleString()} recorded diagnostic${
+    total === 1 ? "" : "s"
+  }`;
+  return runnerUp ? `${lead}, ahead of ${runnerUp.name} at ${runnerUp.value.toLocaleString()}.` : `${lead}.`;
+}
+
+function operationalEventsInsight(points: AnalysisReliabilityResponse["operationalEvents"]) {
+  const totals = points.reduce(
+    (sum, point) => ({
+      retries: sum.retries + point.retries,
+      pauses: sum.pauses + point.pauses,
+      resumed: sum.resumed + point.resumed
+    }),
+    { retries: 0, pauses: 0, resumed: 0 }
+  );
+  const recorded = totals.retries + totals.pauses + totals.resumed;
+  if (!recorded) return undefined;
+  const busiest = [...points].sort(
+    (a, b) => b.retries + b.pauses + b.resumed - (a.retries + a.pauses + a.resumed)
+  )[0];
+  const parts = [
+    `${totals.retries.toLocaleString()} retr${totals.retries === 1 ? "y" : "ies"}`,
+    `${totals.pauses.toLocaleString()} pause${totals.pauses === 1 ? "" : "s"}`,
+    `${totals.resumed.toLocaleString()} resumed run${totals.resumed === 1 ? "" : "s"}`
+  ];
+  return `${parts.join(", ")} in this range, with the most activity on ${busiest.label}.`;
+}
+
+function pacingInsight(pacing: AnalysisReliabilityResponse["pacing"]) {
+  const waiting = pacing.waitingRecipients
+    ? `${pacing.waitingRecipients.toLocaleString()} recipient${
+        pacing.waitingRecipients === 1 ? " is" : "s are"
+      } waiting on sender capacity`
+    : "No recipients are waiting on sender capacity";
+  const pauses = pacing.sendWindowPauses
+    ? `${pacing.sendWindowPauses.toLocaleString()} send-window pause${pacing.sendWindowPauses === 1 ? "" : "s"} occurred in this range.`
+    : "no send-window pauses occurred in this range.";
+  return `${waiting}, and ${pauses}`;
+}
+
+function attentionInsight(items: AnalysisReliabilityResponse["attention"]) {
+  if (!items.length) return undefined;
+  return `${items.length} attention rule${items.length === 1 ? " is" : "s are"} currently triggered by stored diagnostics.`;
+}
+
 function ReliabilityVisuals({ data }: { data: AnalysisReliabilityResponse }) {
   return (
     <>
       <div className={styles.twoColumnWideLeft}>
-        <FailureReasonsCard data={data.failureReasons} />
-        <DonutCard title="Run state distribution" data={data.runStates} centerValue={data.runStates.reduce((sum, item) => sum + item.value, 0)} centerLabel="Selected runs" info="Real states for campaign runs active in the selected UTC range." />
+        <FailureReasonsCard
+          data={data.failureReasons}
+          helper="Why recipients did not receive a send during the selected period."
+          insight={failureReasonsInsight(data.failureReasons)}
+        />
+        <DonutCard
+          title="Run state distribution"
+          data={data.runStates}
+          centerValue={data.runStates.reduce((sum, item) => sum + item.value, 0)}
+          centerLabel="Selected runs"
+          info="This chart shows the current state of every campaign run that was active during the selected date range."
+          helper="Distribution of selected runs by their current state."
+          insight={statusMixInsight(data.runStates)}
+        />
       </div>
       <div className={styles.reliabilityBottom}>
-        <OperationalEventsCard data={data.operationalEvents} />
-        <PacingCard waiting={data.pacing.waitingRecipients} pauses={data.pacing.sendWindowPauses} nextRecoveryAt={data.pacing.nextRecoveryAt} />
-        <AttentionCard data={data.attention} />
+        <OperationalEventsCard
+          data={data.operationalEvents}
+          helper="Daily retries, safety pauses, and resumed runs."
+          insight={operationalEventsInsight(data.operationalEvents)}
+        />
+        <PacingCard
+          waiting={data.pacing.waitingRecipients}
+          pauses={data.pacing.sendWindowPauses}
+          nextRecoveryAt={data.pacing.nextRecoveryAt}
+          helper="Recipients held by pacing rules rather than failing."
+          insight={pacingInsight(data.pacing)}
+        />
+        <AttentionCard
+          data={data.attention}
+          helper="Raised only when stored diagnostics cross a defined threshold."
+          insight={attentionInsight(data.attention)}
+        />
       </div>
     </>
   );
