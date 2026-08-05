@@ -1064,12 +1064,6 @@ function senderCount(value: number) {
   return `${value.toLocaleString()} sender${value === 1 ? "" : "s"}`;
 }
 
-function useChartTooltipPortal() {
-  const [portal, setPortal] = useState<HTMLElement | null>(null);
-  useEffect(() => setPortal(document.body), []);
-  return portal;
-}
-
 function SenderCapacityTooltip({ anchor, sender, id }: { anchor: HTMLElement; sender: AnalysisSenderItem; id: string }) {
   const tipRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
@@ -1229,7 +1223,6 @@ export function SenderCapacityCard({ data }: { data: AnalysisSenderItem[] }) {
 }
 
 export function SenderReplyRateCard({ data, rangeLabel }: { data: AnalysisSenderItem[]; rangeLabel: string }) {
-  const tooltipPortal = useChartTooltipPortal();
   const chartData = data.map((sender) => ({ ...sender, axisLabel: senderAxisLabel(sender) }));
   const highestRate = Math.max(0, ...data.map((sender) => sender.replyRate));
   const upperDomain = Math.min(100, Math.max(0.1, highestRate * 1.25));
@@ -1250,7 +1243,7 @@ export function SenderReplyRateCard({ data, rangeLabel }: { data: AnalysisSender
               <CartesianGrid stroke="var(--analysis-grid)" vertical={false} />
               <XAxis dataKey="axisLabel" tickLine={false} axisLine={false} tick={{ fill: "var(--muted)", fontSize: 11 }} interval={0} tickMargin={10} />
               <YAxis domain={[0, upperDomain]} tickCount={6} tickFormatter={(value: number) => `${Number(value.toFixed(2))}%`} tickLine={false} axisLine={false} width={48} tick={{ fill: "var(--muted)", fontSize: 11 }} />
-              <Tooltip content={<SenderReplyTooltip rangeLabel={rangeLabel} />} cursor={barTooltipCursor} portal={tooltipPortal} allowEscapeViewBox={{ x: false, y: false }} wrapperStyle={{ zIndex: 130, pointerEvents: "none" }} />
+              <Tooltip content={<SenderReplyTooltip rangeLabel={rangeLabel} />} cursor={barTooltipCursor} allowEscapeViewBox={{ x: false, y: false }} wrapperStyle={{ zIndex: 130, pointerEvents: "none" }} />
               <Bar dataKey="replyRate" name="Reply rate" fill={analysisColors.purple} radius={[7, 7, 0, 0]} maxBarSize={data.length === 1 ? 112 : 84}>
                 <LabelList dataKey="replyRate" position="top" formatter={(value: unknown) => `${Number(value).toFixed(1)}%`} fill="var(--text)" fontSize={11} fontWeight={700} />
               </Bar>
@@ -1264,7 +1257,6 @@ export function SenderReplyRateCard({ data, rangeLabel }: { data: AnalysisSender
 }
 
 export function SenderVolumeCard({ data, rangeLabel }: { data: AnalysisSenderItem[]; rangeLabel: string }) {
-  const tooltipPortal = useChartTooltipPortal();
   const chartData = data.map((sender) => ({ ...sender, axisLabel: senderAxisLabel(sender) }));
   const highestStack = Math.max(0, ...data.map((sender) => sender.sent + sender.opened + sender.replied));
   const totalSent = data.reduce((sum, sender) => sum + sender.sent, 0);
@@ -1283,7 +1275,7 @@ export function SenderVolumeCard({ data, rangeLabel }: { data: AnalysisSenderIte
               <CartesianGrid stroke="var(--analysis-grid)" vertical={false} />
               <XAxis dataKey="axisLabel" tickLine={false} axisLine={false} tick={{ fill: "var(--muted)", fontSize: 10 }} interval={0} tickMargin={10} />
               <YAxis domain={[0, Math.max(1, highestStack * 1.12)]} allowDecimals={false} tickLine={false} axisLine={false} width={46} tick={{ fill: "var(--muted)", fontSize: 11 }} tickFormatter={formatAnalysisNumber} />
-              <Tooltip content={<SenderVolumeTooltip rangeLabel={rangeLabel} />} cursor={barTooltipCursor} portal={tooltipPortal} allowEscapeViewBox={{ x: false, y: false }} wrapperStyle={{ zIndex: 130, pointerEvents: "none" }} />
+              <Tooltip content={<SenderVolumeTooltip rangeLabel={rangeLabel} />} cursor={barTooltipCursor} allowEscapeViewBox={{ x: false, y: false }} wrapperStyle={{ zIndex: 130, pointerEvents: "none" }} />
               <Bar dataKey="sent" name="Sent" stackId="volume" fill={analysisColors.green} maxBarSize={data.length === 1 ? 148 : 100} />
               <Bar dataKey="opened" name="Opened" stackId="volume" fill={analysisColors.blue} maxBarSize={data.length === 1 ? 148 : 100} />
               <Bar dataKey="replied" name="Replied" stackId="volume" fill={analysisColors.purple} radius={[6, 6, 0, 0]} maxBarSize={data.length === 1 ? 148 : 100} />
