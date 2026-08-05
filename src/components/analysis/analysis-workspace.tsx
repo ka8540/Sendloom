@@ -488,12 +488,12 @@ function ReliabilityVisuals({ data }: { data: AnalysisReliabilityResponse }) {
 function SendersVisuals({ data }: { data: AnalysisSendersResponse }) {
   return (
     <>
-      <div className={styles.twoColumnWideLeft}>
+      <div className={styles.sendersTop}>
         <SenderCapacityCard data={data.senders} />
-        <SenderReplyRateCard data={data.senders} />
+        <SenderReplyRateCard data={data.senders} rangeLabel={data.range.label} />
       </div>
       <div className={styles.sendersBottom}>
-        <SenderVolumeCard data={data.senders} />
+        <SenderVolumeCard data={data.senders} rangeLabel={data.range.label} />
         <SenderHealthCard data={data.health} />
         <SenderChangesCard data={data.recentChanges} />
       </div>

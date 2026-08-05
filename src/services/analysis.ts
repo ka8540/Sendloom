@@ -1212,24 +1212,24 @@ function buildRecentSenderChanges(
       (!sender.connected || ["RECONNECT_REQUIRED", "PERMISSION_REQUIRED", "RENEWAL_FAILED"].includes(sender.gmailWatchStatus ?? ""))
     ) {
       changes.push({
-        title: `${sender.fromEmail} needs reconnect`,
-        detail: sender.lastReplySyncError ? "Reply sync needs attention" : "Gmail connection needs attention",
+        title: "Gmail reconnect required",
+        detail: `${sender.fromEmail} · ${sender.lastReplySyncError ? "Reply synchronization needs attention." : "The Gmail connection needs attention."}`,
         at: sender.updatedAt.toISOString(),
         tone: "orange"
       });
     }
     if (sender.lastReplySyncAt && inRange(sender.lastReplySyncAt, range.start, range.endExclusive)) {
       changes.push({
-        title: `${sender.fromEmail} synced`,
-        detail: "Replies synced successfully",
+        title: "Gmail replies synchronized successfully",
+        detail: `${sender.fromEmail} · Reply synchronization completed.`,
         at: sender.lastReplySyncAt.toISOString(),
         tone: "blue"
       });
     }
     if (sender.bounceLastSyncedAt && inRange(sender.bounceLastSyncedAt, range.start, range.endExclusive)) {
       changes.push({
-        title: `${sender.fromEmail} delivery health synced`,
-        detail: "Recent bounce status refreshed",
+        title: "Delivery-health status refreshed",
+        detail: `${sender.fromEmail} · Recent bounce status synchronized.`,
         at: sender.bounceLastSyncedAt.toISOString(),
         tone: "green"
       });
@@ -1238,15 +1238,24 @@ function buildRecentSenderChanges(
       const run = period.runs.find((candidate) => getSnapshotString(candidate.progressSnapshot, "pausedSenderProfileId") === sender.id);
       if (run) {
         changes.push({
-          title: `${sender.fromEmail} entered pacing`,
-          detail: "Waiting for Gmail sender capacity",
+          title: "Sender entered a pacing wait",
+          detail: `${sender.fromEmail} · Waiting for Gmail sender capacity.`,
           at: getSnapshotString(run.progressSnapshot, "pausedAt") ?? run.updatedAt.toISOString(),
           tone: "purple"
         });
       }
     }
   }
-  return changes.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime()).slice(0, 6);
+  const seen = new Set<string>();
+  return changes
+    .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+    .filter((change) => {
+      const key = `${change.title}\u0000${change.detail}\u0000${change.at}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 5);
 }
 
 async function buildSenders(
