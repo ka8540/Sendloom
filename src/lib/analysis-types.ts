@@ -9,7 +9,7 @@ export type AnalysisMetric = {
   info: string;
   comparison?: MetricComparison;
   tone: "green" | "blue" | "purple" | "orange" | "red";
-  icon: "send" | "open" | "reply" | "click" | "attention" | "sequence" | "play" | "trend" | "check" | "retry" | "failure" | "pause" | "sender" | "capacity";
+  icon: "send" | "open" | "unopened" | "reply" | "click" | "attention" | "sequence" | "play" | "trend" | "check" | "retry" | "failure" | "pause" | "sender" | "capacity";
   unavailable?: boolean;
 };
 
@@ -46,6 +46,8 @@ export type AnalysisJourneyStage = {
   value: number;
   conversion: number | null;
   unavailable?: boolean;
+  /** Short explanation surfaced in the stage tooltip. */
+  detail?: string;
 };
 
 export type AnalysisHeatmapCell = {

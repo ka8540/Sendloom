@@ -528,7 +528,16 @@ async function loadContext(userId: string, range: AnalysisRange) {
   };
 }
 
-function buildCoreMetrics(current: PeriodSummary, previous: PeriodSummary, includeClicks = false) {
+/** Confirmed sends without a tracked open. Derived — never a stored counter. */
+function unopenedCount(summary: PeriodSummary) {
+  return Math.max(0, summary.sent - summary.opened);
+}
+
+function unopenedRate(summary: PeriodSummary) {
+  return calculateRate(unopenedCount(summary), summary.sent);
+}
+
+function buildCoreMetrics(current: PeriodSummary, previous: PeriodSummary, includeUnopened = false) {
   const metrics: AnalysisMetric[] = [
     metric({
       key: "sent",
@@ -554,19 +563,21 @@ function buildCoreMetrics(current: PeriodSummary, previous: PeriodSummary, inclu
     })
   ];
 
-  if (includeClicks) {
+  if (includeUnopened) {
     metrics.push(
       metric({
-        key: "clicked",
-        label: "Clicked",
-        value: current.clicked,
+        key: "unopened",
+        label: "Unopened",
+        value: unopenedCount(current),
         format: "number",
-        detail: current.clicked > 0 ? `${current.clickRate.toFixed(1)}% click rate` : "No tracked clicks",
-        info: "Unique confirmed-send recipients with a real tracked click. This remains unavailable when no click events are stored.",
-        comparison: buildRateComparison(current.clickRate, previous.clickRate),
-        tone: "purple",
-        icon: "click",
-        unavailable: current.clicked === 0
+        detail: `${unopenedRate(current).toFixed(1)}% not opened yet`,
+        info: "Confirmed sends without a tracked open, derived as sent minus unique opened. Email-client privacy settings can suppress opens, so this is directional.",
+        comparison:
+          previous.sent > 0
+            ? buildRateComparison(unopenedRate(current), unopenedRate(previous))
+            : { label: "No prior data", direction: "neutral" as const },
+        tone: "orange",
+        icon: "unopened"
       })
     );
   }
@@ -574,7 +585,7 @@ function buildCoreMetrics(current: PeriodSummary, previous: PeriodSummary, inclu
   metrics.push(
     metric({
       key: "replied",
-      label: includeClicks ? "Replied" : "Replies",
+      label: includeUnopened ? "Replied" : "Replies",
       value: current.replied,
       format: "number",
       detail: `${current.replyRate.toFixed(1)}% reply rate`,
@@ -587,24 +598,35 @@ function buildCoreMetrics(current: PeriodSummary, previous: PeriodSummary, inclu
   return metrics;
 }
 
-function buildJourney(summary: PeriodSummary, includeClicks: boolean): AnalysisJourneyStage[] {
+function buildJourney(summary: PeriodSummary, includeUnopened: boolean): AnalysisJourneyStage[] {
   const stages: AnalysisJourneyStage[] = [
-    { name: "Targeted", value: summary.targeted, conversion: null },
-    { name: "Sent", value: summary.sent, conversion: calculateRate(summary.sent, summary.targeted) },
-    { name: "Opened", value: summary.opened, conversion: calculateRate(summary.opened, summary.sent) }
+    { name: "Targeted", value: summary.targeted, conversion: null, detail: "Total people queued for outreach" },
+    {
+      name: "Sent",
+      value: summary.sent,
+      conversion: calculateRate(summary.sent, summary.targeted),
+      detail: "Confirmed Gmail sends"
+    },
+    {
+      name: "Opened",
+      value: summary.opened,
+      conversion: calculateRate(summary.opened, summary.sent),
+      detail: "Unique opens"
+    }
   ];
-  if (includeClicks) {
+  if (includeUnopened) {
     stages.push({
-      name: "Clicked",
-      value: summary.clicked,
-      conversion: summary.opened > 0 ? calculateRate(summary.clicked, summary.opened) : 0,
-      unavailable: summary.clicked === 0
+      name: "Unopened",
+      value: unopenedCount(summary),
+      conversion: unopenedRate(summary),
+      detail: "Confirmed sends not opened"
     });
   }
   stages.push({
     name: "Replied",
     value: summary.replied,
-    conversion: calculateRate(summary.replied, summary.sent)
+    conversion: calculateRate(summary.replied, summary.sent),
+    detail: "Unique replies"
   });
   return stages;
 }

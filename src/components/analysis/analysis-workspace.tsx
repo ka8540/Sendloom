@@ -17,6 +17,7 @@ import {
   Download,
   Gauge,
   Mail,
+  MailX,
   MousePointer2,
   PlayCircle,
   RefreshCw,
@@ -35,6 +36,7 @@ import {
 } from "@/lib/analysis";
 import { buildAnalysisCsv } from "@/lib/analysis-export";
 import type {
+  AnalysisJourneyStage,
   AnalysisMetric,
   AnalysisResponse,
   AnalysisOverviewResponse,
@@ -80,6 +82,7 @@ const PAGE_META: Record<AnalysisPage, { label: string; subtitle: string; href: R
 const METRIC_ICONS: Record<AnalysisMetric["icon"], ComponentType<{ "aria-hidden"?: boolean }>> = {
   send: Send,
   open: Mail,
+  unopened: MailX,
   reply: Reply,
   click: MousePointer2,
   attention: AlertTriangle,
@@ -200,6 +203,18 @@ function DateRangeControl({
   );
 }
 
+function buildJourneyInsight(stages: AnalysisJourneyStage[]) {
+  const value = (name: string) => stages.find((stage) => stage.name === name)?.value;
+  const sent = value("Sent");
+  const opened = value("Opened");
+  const unopened = value("Unopened");
+  const replied = value("Replied");
+  if (sent === undefined || !sent || opened === undefined || unopened === undefined || replied === undefined) {
+    return undefined;
+  }
+  return `${sent.toLocaleString()} confirmed sends led to ${opened.toLocaleString()} opens, ${unopened.toLocaleString()} unopened, and ${replied.toLocaleString()} replies.`;
+}
+
 function MetricStrip({ data }: { data: AnalysisResponse }) {
   return (
     <div className={styles.metricStripShell}>
@@ -266,7 +281,12 @@ function EngagementVisuals({ data }: { data: AnalysisEngagementResponse }) {
         <TrendsCard title="Rate trends" data={data.trends} rate includeClicks={data.clickAvailable} />
       </div>
       <div className={styles.engagementBottom}>
-        <JourneyCard title="Engagement journey" stages={data.journey} info="Targeted recipients through sent, unique tracked-open, unique tracked-click, and unique matched-reply stages." />
+        <JourneyCard
+          title="Engagement journey"
+          stages={data.journey}
+          info="Targeted recipients through confirmed sends, unique tracked opens, sends without a tracked open, and unique matched replies."
+          insight={buildJourneyInsight(data.journey)}
+        />
         <HeatmapCard data={data.heatmap} />
         <ScheduleTypeCard data={data.scheduleTypes} />
       </div>

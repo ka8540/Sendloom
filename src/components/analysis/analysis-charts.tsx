@@ -474,7 +474,17 @@ export function OutcomeMixCard({
   );
 }
 
-export function JourneyCard({ title, stages, info }: { title: string; stages: AnalysisJourneyStage[]; info: string }) {
+export function JourneyCard({
+  title,
+  stages,
+  info,
+  insight
+}: {
+  title: string;
+  stages: AnalysisJourneyStage[];
+  info: string;
+  insight?: string;
+}) {
   const hasData = stages.some((stage) => stage.value > 0);
   return (
     <AnalysisCard title={title} info={info} summary={`${title}: ${stages.map((stage) => `${stage.name} ${stage.value}`).join(", ")}.`}>
@@ -488,7 +498,7 @@ export function JourneyCard({ title, stages, info }: { title: string; stages: An
                 className={`${styles.journeyStage} ${stage.unavailable ? styles.unavailable : ""}`}
                 title={`${stage.name}\n${stage.unavailable ? "Unavailable" : `${stage.value.toLocaleString()} recipients`}${
                   stage.conversion !== null && !stage.unavailable ? `\n${stage.conversion.toFixed(1)}% converted from the previous stage` : ""
-                }`}
+                }${stage.detail ? `\n${stage.detail}` : ""}`}
               >
                 <span>{stage.name}</span>
                 <strong>{stage.unavailable ? "Unavailable" : stage.value.toLocaleString()}</strong>
@@ -499,6 +509,7 @@ export function JourneyCard({ title, stages, info }: { title: string; stages: An
           ))}
         </div>
       )}
+      {hasData && insight ? <p className={styles.cardInsight}>{insight}</p> : null}
     </AnalysisCard>
   );
 }
@@ -567,6 +578,13 @@ export function RankedListCard({ title, data, info }: { title: string; data: Ana
 export function HeatmapCard({ data }: { data: AnalysisHeatmapCell[] }) {
   const days = [...new Set(data.map((item) => item.day))];
   const blocks = [...new Set(data.map((item) => item.block))];
+  const busiest = [...data].sort((a, b) => b.sent - a.sent)[0];
+  const leader = [...data].filter((cell) => cell.meetsMinimum).sort((a, b) => b.replyRate - a.replyRate)[0];
+  const insight = leader
+    ? `${leader.day} ${leader.block} leads at ${leader.replyRate.toFixed(1)}% reply rate across ${leader.sent.toLocaleString()} sends.`
+    : busiest && busiest.sent > 0
+      ? `No window has reached the 20-send minimum yet — ${busiest.day} ${busiest.block} is busiest with ${busiest.sent.toLocaleString()} sends.`
+      : null;
   return (
     <AnalysisCard
       title="Best send windows"
@@ -577,6 +595,7 @@ export function HeatmapCard({ data }: { data: AnalysisHeatmapCell[] }) {
         <AnalysisEmpty />
       ) : (
         <div className={styles.heatmapWrap}>
+          <p className={styles.cardHelper}>Darker cells show stronger engagement by weekday and send window.</p>
           <div className={styles.heatmap} style={{ gridTemplateColumns: `3rem repeat(${blocks.length}, minmax(1.6rem, 1fr))` }}>
             <span />
             {blocks.map((block) => <span className={styles.heatmapAxis} key={block}>{block}</span>)}
@@ -597,6 +616,7 @@ export function HeatmapCard({ data }: { data: AnalysisHeatmapCell[] }) {
             ))}
           </div>
           <div className={styles.scale}><span>Lower engagement</span><i /><span>Higher engagement</span></div>
+          {insight ? <p className={styles.cardInsight}>{insight}</p> : null}
         </div>
       )}
     </AnalysisCard>
@@ -605,6 +625,13 @@ export function HeatmapCard({ data }: { data: AnalysisHeatmapCell[] }) {
 
 export function ScheduleTypeCard({ data }: { data: AnalysisBreakdownItem[] }) {
   const icons = [<Send key="send" />, <Clock3 key="clock" />, <RefreshCw key="refresh" />];
+  const total = data.reduce((sum, item) => sum + item.value, 0);
+  const ranked = [...data].filter((item) => item.value > 0).sort((a, b) => b.value - a.value);
+  const insight = ranked.length
+    ? `${ranked[0].name} schedules drive most sends at ${ranked[0].percent.toFixed(1)}% of ${total.toLocaleString()}${
+        ranked.length > 1 ? `, ahead of ${ranked[1].name} at ${ranked[1].percent.toFixed(1)}%.` : "."
+      }`
+    : null;
   return (
     <AnalysisCard
       title="Engagement by schedule type"
@@ -614,18 +641,25 @@ export function ScheduleTypeCard({ data }: { data: AnalysisBreakdownItem[] }) {
       {!data.some((item) => item.value > 0) ? (
         <AnalysisEmpty />
       ) : (
-        <div className={styles.scheduleGrid}>
-          {data.map((item, index) => (
-            <div key={item.name}>
-              <div className={styles.miniDonut} style={{ "--donut-value": `${item.percent * 3.6}deg`, "--donut-color": toneColors[index] } as React.CSSProperties}>
-                <span>{Math.round(item.percent)}%</span>
+        <>
+          <p className={styles.cardHelper}>Compare how confirmed sends are distributed across schedule types.</p>
+          <div className={styles.scheduleGrid}>
+            {data.map((item, index) => (
+              <div
+                key={item.name}
+                title={`${item.name}\n${item.value.toLocaleString()} sent\n${item.percent.toFixed(1)}% of confirmed sends`}
+              >
+                <div className={styles.miniDonut} style={{ "--donut-value": `${item.percent * 3.6}deg`, "--donut-color": toneColors[index] } as React.CSSProperties}>
+                  <span>{Math.round(item.percent)}%</span>
+                </div>
+                <strong>{item.name}</strong>
+                <small>{item.value.toLocaleString()} sent</small>
+                <span className={styles.srOnly}>{icons[index]}</span>
               </div>
-              <strong>{item.name}</strong>
-              <small>{item.value.toLocaleString()} sent</small>
-              <span className={styles.srOnly}>{icons[index]}</span>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+          {insight ? <p className={styles.cardInsight}>{insight}</p> : null}
+        </>
       )}
     </AnalysisCard>
   );
