@@ -5,7 +5,6 @@ import {
   GMAIL_CONNECT_USER_ERROR,
   GOOGLE_LOGIN_ACCOUNT_INELIGIBLE_ERROR,
   GOOGLE_LOGIN_CANCELED_ERROR,
-  GOOGLE_LOGIN_PASSWORD_ACCOUNT_EXISTS_ERROR,
   GOOGLE_LOGIN_UNVERIFIED_EMAIL_ERROR,
   GOOGLE_LOGIN_USER_ERROR,
   getGmailConnectUserError,
@@ -25,10 +24,6 @@ describe("user-facing auth errors", () => {
 
   it("surfaces the unverified-email reason from the Google login callback", () => {
     expect(getGoogleLoginUserError("email_unverified")).toBe(GOOGLE_LOGIN_UNVERIFIED_EMAIL_ERROR);
-  });
-
-  it("surfaces the password-account-exists reason from the Google login callback", () => {
-    expect(getGoogleLoginUserError("password_account_exists")).toBe(GOOGLE_LOGIN_PASSWORD_ACCOUNT_EXISTS_ERROR);
   });
 
   it("surfaces the account-ineligible reason from the Google login callback", () => {

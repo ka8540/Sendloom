@@ -70,6 +70,7 @@ model User {
   id                       String               @id @default(cuid())
   email                    String               @unique
   passwordHash             String?
+  googleSub                String?              @unique
   isAdmin                  Boolean              @default(false)
   hunterApiKeyEncrypted    String?
   hunterApiKeyLast4        String?

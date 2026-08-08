@@ -1079,7 +1079,7 @@ In production, Redis rate-limit failures throw instead of silently allowing. In 
 - Google login and Gmail connect both use random state cookies.
 - Gmail connect callback requires a signed-in Sendloom user.
 - Google login rejects unverified Google emails.
-- Google login does not silently merge into an existing password account.
+- Google login links a verified Google identity (by stable `sub`) to the existing account with the same verified email, so one account can sign in with password and Google; conflicting identities fail closed.
 - Gmail connect prevents a Gmail account from being connected to a different Sendloom user if already owned.
 
 ### Secrets And Token Separation
