@@ -69,7 +69,7 @@
   --error-toast-dismiss-hover-color: #c0353a;
 
   /* ==========================================================================
-     DESIGN SYSTEM — theme-independent primitives
+     DESIGN SYSTEM: theme-independent primitives
      ==========================================================================
      Everything below is intentionally outside the light/dark blocks: these are
      structural values (type scale, rhythm, radii, motion), not colours. Only
@@ -90,19 +90,21 @@
     "Segoe UI", sans-serif;
   --font-numeric:
     var(--font-mono), ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  /* Display face. Used for headlines and for the italic emphasis run inside
+     them, so it must be the same family in both cuts. */
   --font-editorial:
-    var(--font-display), "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    var(--font-display), var(--font-sans), ui-sans-serif, system-ui, sans-serif;
 
   /* ---- Type scale --------------------------------------------------------
      Modular, ratio ~1.2 at text sizes and widening into display. Display steps
      are fluid so the hero holds its proportions from 360px to ultrawide. */
-  --text-2xs: 0.6875rem; /* 11px — legal microcopy, table units */
-  --text-xs: 0.75rem; /* 12px — eyebrows, badges, meta */
-  --text-sm: 0.8125rem; /* 13px — dense UI, captions */
-  --text-base: 0.9375rem; /* 15px — default UI text */
-  --text-md: 1.0625rem; /* 17px — lede, comfortable reading */
-  --text-lg: 1.25rem; /* 20px — card titles */
-  --text-xl: 1.5rem; /* 24px — sub-section headings */
+  --text-2xs: 0.6875rem; /* 11px: legal microcopy, table units */
+  --text-xs: 0.75rem; /* 12px: eyebrows, badges, meta */
+  --text-sm: 0.8125rem; /* 13px: dense UI, captions */
+  --text-base: 0.9375rem; /* 15px: default UI text */
+  --text-md: 1.0625rem; /* 17px: lede, comfortable reading */
+  --text-lg: 1.25rem; /* 20px: card titles */
+  --text-xl: 1.5rem; /* 24px: sub-section headings */
   --display-sm: clamp(1.75rem, 1.2rem + 2vw, 2.5rem);
   --display-md: clamp(2.25rem, 1.4rem + 3.2vw, 3.5rem);
   --display-lg: clamp(2.75rem, 1.5rem + 4.6vw, 4.75rem);
@@ -137,7 +139,7 @@
   --measure: 62ch;
   --measure-wide: 74ch;
 
-  /* ---- Spacing rhythm — 4px base ----------------------------------------*/
+  /* ---- Spacing rhythm: 4px base ----------------------------------------*/
   --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 0.75rem;
@@ -148,7 +150,7 @@
   --space-8: 4rem;
   --space-9: 6rem;
   --space-10: 8rem;
-  /* Section rhythm — deliberately asymmetric. Optically, a section needs more
+  /* Section rhythm: deliberately asymmetric. Optically, a section needs more
      room below its content than above it to avoid feeling bottom-heavy. */
   --section-pad-top: clamp(4rem, 8vw, 7rem);
   --section-pad-bottom: clamp(5rem, 10vw, 9rem);
@@ -181,7 +183,7 @@
   --elevation-4:
     0 4px 10px hsl(var(--shadow-color) / 0.07),
     0 28px 64px hsl(var(--shadow-color) / 0.12);
-  /* Inner top highlight — simulates a light source above the element. Applied
+  /* Inner top highlight: simulates a light source above the element. Applied
      to raised surfaces so their top edge catches light like a real bezel. */
   --edge-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.7);
 
@@ -219,7 +221,7 @@
   text-rendering: optimizeLegibility;
 }
 
-/* Dark surfaces need a deeper, more diffuse shadow and a far subtler top edge —
+/* Dark surfaces need a deeper, more diffuse shadow and a far subtler top edge -
    a white inner highlight at 0.7 alpha would look like a scratch on dark UI. */
 :root[data-theme="dark"] {
   --shadow-color: 216 60% 3%;
@@ -417,7 +419,7 @@ html {
 }
 
 /* Respect the OS "reduce motion" setting. Animations are collapsed rather than
-   removed, so anything that animates *to* a visible state still lands visible —
+   removed, so anything that animates *to* a visible state still lands visible -
    killing animation outright can leave opacity:0 elements permanently hidden. */
 @media (prefers-reduced-motion: reduce) {
   html {
@@ -481,7 +483,7 @@ html {
 /*
  * Guided-tour targets: keep a safe gap above/below when the help overlay scrolls
  * one into view, so a page heading is never clipped against the viewport top.
- * scroll-margin only affects scrollIntoView — it has no layout impact.
+ * scroll-margin only affects scrollIntoView: it has no layout impact.
  */
 [data-overview-tour],
 [data-finder-tour],
@@ -509,7 +511,7 @@ body {
  * Load screen gate. The synchronous boot script (loadScreenInitScript) sets
  * html[data-load-screen="show"|"hide"] before the first paint. The loader overlay
  * is server-rendered into the initial HTML on load-screen paths so it covers the
- * page immediately — but we only let it show when the boot script asked for it,
+ * page immediately: but we only let it show when the boot script asked for it,
  * which keeps cooldown / no-JS visits flash-free (content shows, overlay hidden).
  */
 html:not([data-load-screen="show"]) [data-loader-overlay] {
@@ -888,7 +890,7 @@ html[data-sidebar-collapsed="true"] .shell {
 }
 
 /* Subtle separator between the theme control and the lower account/utility
-   nav — sets the Account item apart from the main product navigation. */
+   nav: sets the Account item apart from the main product navigation. */
 .nav-footer-divider {
   height: 1px;
   margin: 0.35rem 0.25rem;
@@ -1453,7 +1455,7 @@ html[data-sidebar-collapsed="true"] .sidebar .nav-footer-divider {
 /*
  * Shared circular close/dismiss control (see CircularCloseButton). One
  * consistent style for every "X" whose action is to close or dismiss an overlay
- * or notice — true circle, equal sides, theme-aware, with a visible focus ring.
+ * or notice: true circle, equal sides, theme-aware, with a visible focus ring.
  * Action buttons that happen to use an X icon keep their own styling.
  */
 .app-close-button {

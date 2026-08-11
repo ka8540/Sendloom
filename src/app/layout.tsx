@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Bebas_Neue, Geist, Geist_Mono, Instrument_Serif, Space_Grotesk } from "next/font/google";
+import { Bebas_Neue, Geist_Mono, Inter, Inter_Tight, Space_Grotesk } from "next/font/google";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { Analytics } from "@vercel/analytics/next";
 
@@ -14,36 +14,36 @@ import { themeInitScript } from "@/lib/theme";
 /*
  * Type system.
  *
- * Before this, globals.css declared `Inter` as the root font but no Inter was
- * ever loaded, so every surface silently fell back to system-ui. The three
- * fonts below are the real, loaded system:
+ * Originally globals.css declared `Inter` as the root font but no Inter was
+ * ever loaded, so every surface silently fell back to system-ui. These are the
+ * real, loaded faces:
  *
- *   --font-sans     Geist            UI, body copy, buttons, labels
- *   --font-mono     Geist Mono       eyebrows, metrics, tabular figures
- *   --font-display  Instrument Serif hero + section display type
+ *   --font-sans     Inter        body copy, UI, buttons
+ *   --font-display  Inter Tight  headlines, including the italic emphasis run
+ *   --font-mono     Geist Mono   chapter numbers, metrics, tabular figures
  *
- * `Instrument Serif` replaces the previous "Iowan Old Style" stack, which was
- * a macOS-only system serif — Windows and Linux visitors were silently served
- * Georgia, so the brand's most prominent type was inconsistent by platform.
+ * Inter Tight carries the display role because the headline treatment on this
+ * site sets one emphasised phrase in true italic inside an otherwise upright
+ * line. That needs a real italic cut of the same family; faux-oblique or a
+ * second family would both read as a mistake.
  */
-const sansFont = Geist({
+const bodyFont = Inter({
   subsets: ["latin"],
   display: "swap",
   variable: "--font-sans"
+});
+
+const displayFont = Inter_Tight({
+  style: ["normal", "italic"],
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-display"
 });
 
 const monoFont = Geist_Mono({
   subsets: ["latin"],
   display: "swap",
   variable: "--font-mono"
-});
-
-const displayFont = Instrument_Serif({
-  weight: "400",
-  style: ["normal", "italic"],
-  subsets: ["latin"],
-  display: "swap",
-  variable: "--font-display"
 });
 
 /*
@@ -63,22 +63,22 @@ const loaderBodyFont = Space_Grotesk({
 
 export const metadata: Metadata = {
   title: {
-    default: "Sendloom — outreach operations, on one surface",
+    default: "Sendloom, outreach operations on one surface",
     template: "%s · Sendloom"
   },
   description:
-    "Import a list, fill the missing emails, write once, and run a paced sequence from your own inbox — with delivery, replies and follow-ups tracked on a single screen.",
+    "Import a list, fill the missing emails, write once, and run a paced sequence from your own inbox. Delivery, replies and follow-ups tracked on a single screen.",
   applicationName: "Sendloom",
   openGraph: {
     type: "website",
     siteName: "Sendloom",
-    title: "Sendloom — outreach operations, on one surface",
+    title: "Sendloom, outreach operations on one surface",
     description:
       "Import a list, fill the missing emails, write once, and run a paced sequence from your own inbox."
   },
   twitter: {
     card: "summary_large_image",
-    title: "Sendloom — outreach operations, on one surface",
+    title: "Sendloom, outreach operations on one surface",
     description:
       "Import a list, fill the missing emails, write once, and run a paced sequence from your own inbox."
   }
@@ -89,7 +89,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${sansFont.variable} ${monoFont.variable} ${displayFont.variable} ${loaderDisplayFont.variable} ${loaderBodyFont.variable}`}
+      className={`${bodyFont.variable} ${displayFont.variable} ${monoFont.variable} ${loaderDisplayFont.variable} ${loaderBodyFont.variable}`}
     >
       <head>
         <meta
