@@ -69,6 +69,7 @@ export function LegalPage({
 }: LegalPageProps) {
   return (
     <main id="top" className={styles.page}>
+      <span id="main-content" />
       <LandingNav items={legalNavItems} />
 
       <div className={styles.frame}>

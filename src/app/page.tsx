@@ -160,8 +160,11 @@ export default async function LandingPage() {
   // page. See `redirectAuthenticatedToWorkspace` for the validity rules.
   await redirectAuthenticatedToWorkspace();
 
+  // `id="top"` is the target of the nav's "Home" link, so it stays. The skip
+  // link in the root layout targets #main-content, hence both anchors.
   return (
     <main id="top" className={styles.page}>
+      <span id="main-content" />
       <AnimatedEmailPath />
       <LandingMotion />
       <LandingPointerFX />

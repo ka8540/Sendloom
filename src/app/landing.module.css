@@ -35,7 +35,9 @@
   color: var(--landing-ink);
   background: var(--landing-base);
   background-attachment: fixed;
-  font-family: var(--font-loader-body), "Space Grotesk", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  letter-spacing: var(--track-body);
 }
 
 /* faint engineering grid */
@@ -114,11 +116,11 @@
   backdrop-filter: blur(0px) saturate(1);
   -webkit-backdrop-filter: blur(0px) saturate(1);
   transition:
-    background-color 220ms ease,
-    border-color 220ms ease,
-    box-shadow 220ms ease,
-    backdrop-filter 220ms ease,
-    -webkit-backdrop-filter 220ms ease;
+    background-color 220ms var(--ease-out),
+    border-color 220ms var(--ease-out),
+    box-shadow 220ms var(--ease-out),
+    backdrop-filter 220ms var(--ease-out),
+    -webkit-backdrop-filter 220ms var(--ease-out);
 }
 
 .navInner::before,
@@ -133,7 +135,7 @@
   border-radius: inherit;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.14), transparent 34%);
   opacity: 0;
-  transition: opacity 220ms ease;
+  transition: opacity 220ms var(--ease-out);
 }
 
 .navInner::after {
@@ -145,7 +147,7 @@
   transform: rotate(18deg);
   filter: blur(8px);
   opacity: 0;
-  transition: opacity 220ms ease;
+  transition: opacity 220ms var(--ease-out);
 }
 
 .navScrolled .navInner,
@@ -269,7 +271,7 @@
   gap: 0.55rem;
   text-decoration: none;
   transform-origin: center;
-  transition: transform 140ms ease, box-shadow 140ms ease, background-color 180ms ease, border-color 180ms ease, color 180ms ease;
+  transition: transform 140ms var(--ease-out), box-shadow 140ms var(--ease-out), background-color 180ms var(--ease-out), border-color 180ms var(--ease-out), color 180ms var(--ease-out);
 }
 
 .navLink,
@@ -278,11 +280,16 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.55rem;
-  border-radius: 999px;
+  gap: var(--space-2);
+  border-radius: var(--radius-pill);
+  font-family: inherit;
   text-decoration: none;
   transform-origin: center;
-  transition: transform 140ms ease, box-shadow 140ms ease, background-color 180ms ease, border-color 180ms ease;
+  transition:
+    transform var(--duration-fast) var(--ease-spring),
+    box-shadow var(--duration-base) var(--ease-out),
+    background-color var(--duration-base) var(--ease-out),
+    border-color var(--duration-base) var(--ease-out);
 }
 
 .navLink {
@@ -290,7 +297,7 @@
   border: 1px solid transparent;
   border-radius: 999px;
   color: var(--landing-ink);
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
 }
 
 .navLink:hover,
@@ -303,7 +310,7 @@
 .navPrimaryButton {
   padding: 0.92rem 1.22rem;
   border-radius: 999px;
-  font-weight: 700;
+  font-weight: var(--weight-semibold);
 }
 
 .navGhostButton {
@@ -379,59 +386,77 @@
 /* ===================== Shared buttons ===================== */
 
 .ghostButton {
-  padding: 0.95rem 1.35rem;
-  border: 1px solid color-mix(in srgb, var(--landing-line) 80%, white 12%);
-  background: color-mix(in srgb, var(--landing-panel-strong) 60%, transparent);
+  padding: 0.85rem 1.3rem;
+  border: 1px solid color-mix(in srgb, var(--landing-ink) 12%, transparent);
+  background: color-mix(in srgb, var(--landing-panel-strong) 62%, transparent);
   color: var(--landing-ink);
-  font-weight: 680;
-  box-shadow: inset 0 1px 0 var(--landing-edge);
+  font-size: var(--text-base);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--track-label);
+  box-shadow: var(--edge-highlight);
   backdrop-filter: blur(18px) saturate(1.05);
   -webkit-backdrop-filter: blur(18px) saturate(1.05);
 }
 
+/* Primary CTA. Was a three-stop 135° gradient at weight 760 with a 40px green
+   drop shadow and a white gloss overlay — the stock "AI gradient button".
+   Now one flat accent with a tinted two-part shadow: the colour carries it. */
 .primaryButton {
   position: relative;
-  padding: 1rem 1.5rem;
-  background: linear-gradient(135deg, var(--landing-emerald) 0%, #16a06f 52%, #1f8b71 100%);
-  color: white;
-  font-weight: 760;
-  letter-spacing: 0.01em;
+  padding: 0.85rem 1.4rem;
+  background: var(--landing-emerald);
+  color: var(--accent-contrast);
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--track-label);
   box-shadow:
-    0 18px 40px rgba(22, 107, 86, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.32);
-}
-
-.primaryButton::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.28), transparent 46%);
-  opacity: 0.8;
-  pointer-events: none;
+    0 1px 2px color-mix(in srgb, var(--landing-emerald) 34%, transparent),
+    0 8px 20px color-mix(in srgb, var(--landing-emerald) 22%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
 .navLink:hover,
 .ghostButton:hover,
-.primaryButton:hover,
+.primaryButton:hover {
+  transform: translateY(-1px);
+}
+
+.primaryButton:hover {
+  background: var(--landing-emerald-deep);
+  box-shadow:
+    0 2px 4px color-mix(in srgb, var(--landing-emerald) 36%, transparent),
+    0 14px 30px color-mix(in srgb, var(--landing-emerald) 28%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+.ghostButton:hover {
+  background: color-mix(in srgb, var(--landing-panel-strong) 88%, transparent);
+  border-color: color-mix(in srgb, var(--landing-emerald) 34%, var(--landing-line));
+  box-shadow: var(--elevation-2), var(--edge-highlight);
+}
+
+/*
+ * Keyboard focus.
+ *
+ * Previously :focus-visible was grouped with :hover and set `outline: none`
+ * with only a 2px lift — meaning a keyboard user got essentially no visible
+ * focus indicator on any CTA. That is a WCAG 2.4.7 failure. Focus now gets its
+ * own explicit ring, separate from hover, on every interactive element here.
+ */
 .navLink:focus-visible,
 .ghostButton:focus-visible,
 .primaryButton:focus-visible {
-  transform: translateY(-2px);
-  box-shadow: 0 20px 38px rgba(22, 107, 86, 0.28);
   outline: none;
-}
-
-.ghostButton:hover,
-.ghostButton:focus-visible {
-  box-shadow: 0 16px 30px rgba(28, 42, 70, 0.16);
-  border-color: color-mix(in srgb, var(--landing-emerald) 40%, var(--landing-line));
+  box-shadow:
+    0 0 0 2px var(--landing-bg),
+    0 0 0 4px var(--landing-emerald);
 }
 
 .navLink:active,
 .ghostButton:active,
 .primaryButton:active {
-  transform: translateY(1px) scale(0.985);
+  transform: translateY(0) scale(0.985);
+  transition-duration: var(--duration-instant);
 }
 
 /* ===================== Hero ===================== */
@@ -453,20 +478,23 @@
   gap: 1.5rem;
 }
 
+/* Eyebrow. Was Bebas Neue at 0.92rem — a condensed display face doing the job
+   of a micro-label, which read as shouty rather than precise. Mono at 11px with
+   open tracking reads as a system annotation, which is the intent. */
 .eyebrow {
   width: fit-content;
   display: inline-flex;
   align-items: center;
-  gap: 0.55rem;
-  padding: 0.5rem 0.9rem;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--landing-emerald) 12%, var(--landing-panel));
-  border: 1px solid color-mix(in srgb, var(--landing-emerald) 26%, var(--landing-line));
+  gap: var(--space-2);
+  padding: 0.4rem 0.75rem 0.4rem 0.65rem;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--landing-emerald) 10%, var(--landing-panel));
+  border: 1px solid color-mix(in srgb, var(--landing-emerald) 22%, var(--landing-line));
   color: var(--landing-emerald-deep);
-  font-family: var(--font-loader-display), var(--font-loader-body), sans-serif;
-  font-size: 0.92rem;
-  font-weight: 500;
-  letter-spacing: 0.16em;
+  font-family: var(--font-numeric);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--track-caps);
   text-transform: uppercase;
 }
 
@@ -479,13 +507,18 @@
   box-shadow: 0 0 0 0.22rem color-mix(in srgb, var(--landing-emerald) 26%, transparent);
 }
 
+/* Hero display. The serif is now a real loaded webfont (Instrument Serif) via
+   --font-editorial, so this renders identically on Windows and Linux — it
+   previously fell back to Georgia off macOS. */
 .headline {
   margin: 0;
-  font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
-  font-size: clamp(3rem, 7.4vw, 5.9rem);
-  line-height: 0.96;
-  letter-spacing: -0.045em;
+  font-family: var(--font-editorial);
+  font-size: var(--display-xl);
+  font-weight: var(--weight-normal);
+  line-height: var(--leading-display);
+  letter-spacing: var(--track-display-tight);
   max-width: 13ch;
+  text-wrap: balance;
 }
 
 .headlineLine {
@@ -499,26 +532,35 @@
   will-change: transform;
 }
 
+/* Accent word. The old treatment ran an animated green→blue gradient across the
+   text — two accent hues plus perpetual motion on the single most important
+   word on the page. Now it is one hue, held still, distinguished by italic and
+   an optical underline. Emphasis without noise. */
 .headlineAccent {
-  background: linear-gradient(120deg, var(--landing-emerald) 0%, #43d6a0 35%, #4a7cff 64%, var(--landing-emerald) 100%);
-  background-size: 220% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  animation: accentShimmer 7s ease-in-out infinite;
+  position: relative;
+  color: var(--landing-emerald-deep);
+  font-style: italic;
 }
 
-@keyframes accentShimmer {
-  0%, 100% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
+.headlineAccent::after {
+  content: "";
+  position: absolute;
+  left: 0.02em;
+  right: 0.02em;
+  bottom: 0.1em;
+  height: 0.055em;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--landing-emerald) 38%, transparent);
 }
 
 .lede {
-  max-width: 40rem;
+  max-width: var(--measure);
   margin: 0;
-  font-size: 1.16rem;
-  line-height: 1.7;
+  font-size: var(--text-md);
+  line-height: var(--leading-body);
+  letter-spacing: var(--track-body);
   color: var(--landing-muted);
+  text-wrap: pretty;
 }
 
 .ctaRow {
@@ -541,7 +583,7 @@
   position: relative;
   padding-left: 1.1rem;
   font-size: 0.95rem;
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--landing-muted);
 }
 
@@ -565,7 +607,7 @@
   gap: 0.7rem;
   color: var(--landing-muted);
   font-size: 0.78rem;
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   text-decoration: none;
@@ -585,7 +627,7 @@
   inset: 0;
   width: 40%;
   background: var(--landing-emerald);
-  animation: cueSlide 2.4s ease-in-out infinite;
+  animation: cueSlide 2.4s var(--ease-emphasis) infinite;
 }
 
 @keyframes cueSlide {
@@ -673,7 +715,7 @@
   background: color-mix(in srgb, var(--landing-emerald) 16%, transparent);
   color: var(--landing-emerald-deep);
   font-size: 0.78rem;
-  font-weight: 700;
+  font-weight: var(--weight-semibold);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -720,7 +762,7 @@
   border-radius: 4px;
   background: linear-gradient(180deg, transparent, var(--landing-emerald), transparent);
   filter: blur(0.5px);
-  animation: spineFlow 3.6s ease-in-out infinite;
+  animation: spineFlow 3.6s var(--ease-emphasis) infinite;
 }
 
 @keyframes spineFlow {
@@ -855,12 +897,12 @@
 
 .heroChipTop {
   transform: rotate(3deg);
-  animation: chipFloat 7s ease-in-out infinite;
+  animation: chipFloat 7s var(--ease-emphasis) infinite;
 }
 
 .heroChipBottom {
   transform: rotate(-3deg);
-  animation: chipFloat 8s ease-in-out infinite reverse;
+  animation: chipFloat 8s var(--ease-emphasis) infinite reverse;
 }
 
 @keyframes chipFloat {
@@ -888,39 +930,62 @@
 
 /* ===================== Section primitives ===================== */
 
+/* Section rhythm. Was a flat 6rem top / 0 bottom, so sections butted against
+   each other and the page read as one continuous scroll with no cadence.
+   Asymmetric padding (more below than above) is the optical correction. */
 .section {
-  padding: 6rem 0 0;
+  padding: var(--section-pad-top) 0 var(--space-2);
 }
 
 .sectionHeader {
   display: grid;
-  gap: 0.9rem;
+  gap: var(--space-4);
   max-width: 48rem;
+  margin-bottom: var(--space-7);
 }
 
+/* Section eyebrow, now paired with a rule so it reads as a chapter marker
+   rather than floating coloured text above the heading. */
 .sectionEyebrow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
   margin: 0;
-  font-family: var(--font-loader-display), var(--font-loader-body), sans-serif;
-  font-size: 0.95rem;
-  font-weight: 500;
+  font-family: var(--font-numeric);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-medium);
   text-transform: uppercase;
-  letter-spacing: 0.2em;
+  letter-spacing: var(--track-caps);
   color: var(--landing-emerald);
+}
+
+.sectionEyebrow::before {
+  content: "";
+  width: 1.75rem;
+  height: 1px;
+  flex: none;
+  background: currentColor;
+  opacity: 0.55;
 }
 
 .sectionTitle {
   margin: 0;
-  font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
-  font-size: clamp(2.1rem, 4.6vw, 3.6rem);
-  letter-spacing: -0.04em;
-  line-height: 1.04;
+  font-family: var(--font-editorial);
+  font-size: var(--display-md);
+  font-weight: var(--weight-normal);
+  letter-spacing: var(--track-display);
+  line-height: var(--leading-heading);
+  text-wrap: balance;
 }
 
 .sectionText {
   margin: 0;
+  max-width: var(--measure);
   color: var(--landing-muted);
-  line-height: 1.75;
-  font-size: 1.05rem;
+  line-height: var(--leading-body);
+  font-size: var(--text-md);
+  letter-spacing: var(--track-body);
+  text-wrap: pretty;
 }
 
 /* ===================== Chaos section ===================== */
@@ -951,7 +1016,7 @@
   border: 1px dashed color-mix(in srgb, var(--landing-ink) 18%, transparent);
   background: color-mix(in srgb, var(--landing-panel) 60%, transparent);
   box-shadow: 0 12px 30px rgba(15, 30, 55, 0.06);
-  transition: transform 260ms ease, border-color 260ms ease, box-shadow 260ms ease;
+  transition: transform 260ms var(--ease-out), border-color 260ms var(--ease-out), box-shadow 260ms var(--ease-out);
 }
 
 /* Hovering a chaos card straightens it out — a wink at what Sendloom does. */
@@ -970,7 +1035,7 @@
 }
 
 .chaosTag {
-  font-weight: 720;
+  font-weight: var(--weight-semibold);
   letter-spacing: -0.01em;
   color: var(--landing-ink);
 }
@@ -1057,7 +1122,7 @@
   border: 1px solid color-mix(in srgb, var(--landing-emerald) 26%, transparent);
   color: var(--landing-emerald-deep);
   font-size: 0.82rem;
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
 }
 
 /* ===================== Workflow ===================== */
@@ -1147,7 +1212,7 @@
   background: var(--landing-panel-strong);
   border: 2px solid var(--landing-emerald);
   box-shadow: 0 0 0 0.35rem color-mix(in srgb, var(--landing-emerald) 14%, transparent);
-  transition: border-color 380ms ease, box-shadow 380ms ease, transform 380ms ease;
+  transition: border-color 380ms var(--ease-out), box-shadow 380ms var(--ease-out), transform 380ms var(--ease-out);
 }
 
 .workflowDot::after {
@@ -1156,7 +1221,7 @@
   inset: 0.3rem;
   border-radius: 999px;
   background: var(--landing-emerald);
-  transition: background-color 380ms ease;
+  transition: background-color 380ms var(--ease-out);
 }
 
 /* Expanding halo ring on lit dots. */
@@ -1207,7 +1272,7 @@
   box-shadow: 0 18px 40px rgba(8, 18, 32, 0.16), inset 0 1px 0 var(--landing-edge);
   backdrop-filter: blur(14px) saturate(1.08);
   -webkit-backdrop-filter: blur(14px) saturate(1.08);
-  transition: border-color 380ms ease, background-color 380ms ease, opacity 380ms ease, transform 200ms ease, box-shadow 380ms ease;
+  transition: border-color 380ms var(--ease-out), background-color 380ms var(--ease-out), opacity 380ms var(--ease-out), transform 200ms var(--ease-out), box-shadow 380ms var(--ease-out);
 }
 
 .workflowCard > * {
@@ -1223,7 +1288,7 @@
   height: 1.5px;
   background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--landing-emerald) 70%, transparent), transparent);
   opacity: 0.75;
-  transition: opacity 380ms ease;
+  transition: opacity 380ms var(--ease-out);
 }
 
 .workflowStep:not([data-active]) .workflowCard::before {
@@ -1257,7 +1322,7 @@
   background: linear-gradient(140deg, color-mix(in srgb, var(--landing-emerald) 22%, transparent), color-mix(in srgb, var(--landing-blue) 14%, transparent));
   color: var(--landing-emerald-deep);
   box-shadow: 0 0 16px color-mix(in srgb, var(--landing-emerald) 18%, transparent);
-  transition: color 380ms ease, border-color 380ms ease, background 380ms ease, box-shadow 380ms ease, transform 240ms ease;
+  transition: color 380ms var(--ease-out), border-color 380ms var(--ease-out), background 380ms var(--ease-out), box-shadow 380ms var(--ease-out), transform 240ms var(--ease-out);
 }
 
 .workflowIcon svg {
@@ -1286,7 +1351,7 @@
   line-height: 1;
   letter-spacing: 0.04em;
   color: color-mix(in srgb, var(--landing-emerald) 30%, transparent);
-  transition: color 380ms ease;
+  transition: color 380ms var(--ease-out);
 }
 
 .workflowStep:not([data-active]) .workflowIndex {
@@ -1319,15 +1384,18 @@
   position: relative;
   overflow: hidden;
   display: grid;
-  gap: 0.85rem;
+  gap: var(--space-3);
   align-content: start;
   min-height: 16rem;
-  padding: 1.6rem;
-  border-radius: 24px;
-  border: 1px solid color-mix(in srgb, var(--landing-ink) 8%, var(--landing-edge));
-  background: linear-gradient(180deg, color-mix(in srgb, var(--landing-panel-strong) 90%, transparent), color-mix(in srgb, var(--landing-panel) 82%, transparent));
-  box-shadow: var(--landing-shadow);
-  transition: transform 180ms ease, box-shadow 240ms ease, border-color 240ms ease;
+  padding: var(--space-5);
+  border-radius: var(--radius-xl);
+  border: 1px solid color-mix(in srgb, var(--landing-ink) 7%, transparent);
+  background: color-mix(in srgb, var(--landing-panel-strong) 88%, transparent);
+  box-shadow: var(--elevation-2), var(--edge-highlight);
+  transition:
+    transform var(--duration-base) var(--ease-out),
+    box-shadow var(--duration-base) var(--ease-out),
+    border-color var(--duration-base) var(--ease-out);
 }
 
 .capCard > * {
@@ -1335,21 +1403,29 @@
   z-index: 1;
 }
 
+/* Top edge accent. Was a green→blue two-hue gradient; reduced to the single
+   brand hue fading out, so the card gains a light source rather than a stripe. */
 .capCard::before {
   content: "";
   position: absolute;
   inset: 0 0 auto 0;
-  height: 2px;
-  background: linear-gradient(90deg, var(--landing-emerald), color-mix(in srgb, var(--landing-blue) 80%, transparent));
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--landing-emerald) 25%,
+    var(--landing-emerald) 75%,
+    transparent
+  );
   opacity: 0;
-  transition: opacity 240ms ease;
+  transition: opacity var(--duration-base) var(--ease-out);
 }
 
 /* Lift is expressed through --lift so it composes with the pointer tilt. */
 .capCard:hover {
-  --lift: -6px;
-  border-color: color-mix(in srgb, var(--landing-emerald) 34%, transparent);
-  box-shadow: 0 32px 60px rgba(10, 22, 40, 0.18);
+  --lift: -4px;
+  border-color: color-mix(in srgb, var(--landing-emerald) 30%, transparent);
+  box-shadow: var(--elevation-3), var(--edge-highlight);
 }
 
 .capCard:hover::before {
@@ -1358,31 +1434,38 @@
 
 .capCard h3 {
   margin: 0;
-  font-size: 1.4rem;
-  letter-spacing: -0.03em;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--track-heading);
+  line-height: var(--leading-heading);
 }
 
 .capCard p {
   margin: 0;
   color: var(--landing-muted);
-  line-height: 1.62;
+  font-size: var(--text-base);
+  line-height: var(--leading-body);
 }
 
 .capTags {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.45rem;
+  gap: var(--space-2);
   margin-top: auto;
-  padding-top: 0.4rem;
+  padding-top: var(--space-2);
 }
 
+/* Tags read as data, so they take the mono face and tabular figures. Square-ish
+   radius separates them from the pill CTAs — a pill here would read as a button. */
 .capTags span {
-  padding: 0.36rem 0.62rem;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--landing-emerald) 12%, var(--landing-panel));
+  padding: 0.28rem 0.55rem;
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--landing-emerald) 10%, transparent);
   border: 1px solid color-mix(in srgb, var(--landing-emerald) 18%, var(--landing-line));
-  font-size: 0.82rem;
-  font-weight: 620;
+  font-family: var(--font-numeric);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--track-label);
   color: var(--landing-emerald-deep);
 }
 
@@ -1461,7 +1544,7 @@
   background: color-mix(in srgb, var(--landing-ink) 8%, transparent);
   border: 1px solid color-mix(in srgb, var(--landing-ink) 12%, transparent);
   font-size: 0.74rem;
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
   letter-spacing: 0.04em;
   color: var(--landing-muted);
 }
@@ -1599,7 +1682,7 @@
   background: linear-gradient(140deg, color-mix(in srgb, var(--landing-emerald) 30%, transparent), color-mix(in srgb, var(--landing-blue) 24%, transparent));
   border: 1px solid color-mix(in srgb, var(--landing-emerald) 24%, transparent);
   font-size: 0.78rem;
-  font-weight: 700;
+  font-weight: var(--weight-semibold);
   color: var(--landing-ink);
 }
 
@@ -1625,7 +1708,7 @@
   padding: 0.28rem 0.6rem;
   border-radius: 999px;
   font-size: 0.76rem;
-  font-weight: 680;
+  font-weight: var(--weight-semibold);
   border: 1px solid transparent;
 }
 
@@ -1770,7 +1853,7 @@
   border: 1px solid color-mix(in srgb, var(--landing-ink) 8%, var(--landing-edge));
   background: color-mix(in srgb, var(--landing-panel-strong) 78%, transparent);
   box-shadow: 0 18px 40px rgba(15, 30, 55, 0.08);
-  transition: transform 180ms ease, box-shadow 240ms ease, border-color 240ms ease;
+  transition: transform 180ms var(--ease-out), box-shadow 240ms var(--ease-out), border-color 240ms var(--ease-out);
 }
 
 /* Keep card content above the hover highlight layer. */
@@ -1788,7 +1871,7 @@
   border-radius: inherit;
   background: radial-gradient(130% 120% at 50% -10%, color-mix(in srgb, var(--landing-emerald) 16%, transparent), transparent 62%);
   opacity: 0;
-  transition: opacity 240ms ease;
+  transition: opacity 240ms var(--ease-out);
   pointer-events: none;
 }
 
@@ -1814,7 +1897,7 @@
   background: linear-gradient(140deg, color-mix(in srgb, var(--landing-emerald) 26%, transparent), color-mix(in srgb, var(--landing-blue) 18%, transparent));
   border: 1px solid color-mix(in srgb, var(--landing-emerald) 28%, transparent);
   color: var(--landing-emerald-deep);
-  transition: transform 240ms ease, border-color 240ms ease, box-shadow 240ms ease;
+  transition: transform 240ms var(--ease-out), border-color 240ms var(--ease-out), box-shadow 240ms var(--ease-out);
 }
 
 .trustCard:hover .trustMark,
@@ -1912,10 +1995,12 @@
   position: relative;
   margin: 0;
   max-width: 16ch;
-  font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
-  font-size: clamp(2.3rem, 5vw, 4rem);
-  letter-spacing: -0.04em;
-  line-height: 1;
+  font-family: var(--font-editorial);
+  font-size: var(--display-lg);
+  font-weight: var(--weight-normal);
+  letter-spacing: var(--track-display);
+  line-height: var(--leading-display);
+  text-wrap: balance;
 }
 
 .ctaLede {
@@ -2119,7 +2204,7 @@
     border-radius: 22px;
     color: var(--landing-ink);
     font-size: 1.45rem;
-    font-weight: 650;
+    font-weight: var(--weight-semibold);
     letter-spacing: -0.03em;
   }
 
@@ -2187,7 +2272,7 @@
   .mobilePrimaryButton {
     min-height: 3.7rem;
     border-radius: 22px;
-    font-weight: 700;
+    font-weight: var(--weight-semibold);
   }
 
   .mobileGhostButton {
@@ -2373,7 +2458,7 @@
     transparent 68%
   );
   opacity: 0;
-  transition: opacity 600ms ease;
+  transition: opacity 600ms var(--ease-out);
   pointer-events: none;
   will-change: transform;
 }
@@ -2399,7 +2484,7 @@
     transparent 70%
   );
   opacity: var(--spot-opacity, 0);
-  transition: opacity 260ms ease;
+  transition: opacity 260ms var(--ease-out);
   pointer-events: none;
 }
 
@@ -2549,7 +2634,7 @@
   border: 1px solid color-mix(in srgb, var(--landing-emerald) 26%, transparent);
   background: linear-gradient(140deg, color-mix(in srgb, var(--landing-emerald) 20%, transparent), color-mix(in srgb, var(--landing-blue) 14%, transparent));
   color: var(--landing-emerald-deep);
-  transition: transform 240ms ease, box-shadow 240ms ease;
+  transition: transform 240ms var(--ease-out), box-shadow 240ms var(--ease-out);
 }
 
 .capIcon svg {
@@ -2648,14 +2733,14 @@
   top: -55%;
   left: -12%;
   background: radial-gradient(circle, rgba(47, 196, 138, 0.5), transparent 65%);
-  animation: auroraDrift 16s ease-in-out infinite alternate;
+  animation: auroraDrift 16s var(--ease-emphasis) infinite alternate;
 }
 
 .ctaAuroraBlue {
   bottom: -60%;
   right: -10%;
   background: radial-gradient(circle, rgba(74, 124, 255, 0.45), transparent 65%);
-  animation: auroraDrift 19s ease-in-out infinite alternate-reverse;
+  animation: auroraDrift 19s var(--ease-emphasis) infinite alternate-reverse;
 }
 
 @keyframes auroraDrift {
@@ -2731,7 +2816,7 @@
   background: color-mix(in srgb, var(--landing-emerald) 14%, transparent);
   border: 1px solid color-mix(in srgb, var(--landing-emerald) 24%, transparent);
   font-size: 0.74rem;
-  font-weight: 680;
+  font-weight: var(--weight-semibold);
   color: var(--landing-emerald-deep);
   white-space: nowrap;
 }
@@ -2778,7 +2863,7 @@
   border-radius: 12px;
   border: 1px solid color-mix(in srgb, var(--landing-ink) 7%, transparent);
   background: color-mix(in srgb, var(--landing-panel) 50%, transparent);
-  transition: border-color 400ms ease, background-color 400ms ease;
+  transition: border-color 400ms var(--ease-out), background-color 400ms var(--ease-out);
 }
 
 .queueItem[data-state="sending"] {
@@ -2792,7 +2877,7 @@
   height: 0.5rem;
   border-radius: 999px;
   background: color-mix(in srgb, var(--landing-ink) 22%, transparent);
-  transition: background-color 400ms ease, box-shadow 400ms ease;
+  transition: background-color 400ms var(--ease-out), box-shadow 400ms var(--ease-out);
 }
 
 .queueItem[data-state="done"] .queueItemDot {
@@ -2825,7 +2910,7 @@
 .queueItemState {
   flex-shrink: 0;
   font-size: 0.76rem;
-  font-weight: 680;
+  font-weight: var(--weight-semibold);
   color: var(--landing-muted);
 }
 
@@ -2855,7 +2940,7 @@
   background: color-mix(in srgb, var(--landing-emerald) 14%, transparent);
   border: 1px solid color-mix(in srgb, var(--landing-emerald) 26%, transparent);
   font-size: 0.72rem;
-  font-weight: 700;
+  font-weight: var(--weight-semibold);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--landing-emerald-deep);
@@ -3020,7 +3105,7 @@
 
   /* Keep the trust cards' colour/glow feedback but drop the transform lift. */
   .trustCard {
-    transition: border-color 200ms ease, box-shadow 200ms ease;
+    transition: border-color 200ms var(--ease-out), box-shadow 200ms var(--ease-out);
   }
 
   .trustCard:hover,
@@ -3029,7 +3114,7 @@
   }
 
   .trustMark {
-    transition: border-color 200ms ease, box-shadow 200ms ease;
+    transition: border-color 200ms var(--ease-out), box-shadow 200ms var(--ease-out);
   }
 
   .trustCard:hover .trustMark,

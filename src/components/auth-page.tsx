@@ -67,6 +67,7 @@ export function AuthPage({
 }: AuthPageProps) {
   return (
     <main id="top" className={styles.page}>
+      <span id="main-content" />
       <AuthPointerFX />
       <AnimatedEmailPath />
 
