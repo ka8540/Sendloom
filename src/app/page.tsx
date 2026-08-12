@@ -293,9 +293,15 @@ export default async function LandingPage() {
           entire budget of small-caps labels. */}
       <section className={styles.hero} id="home">
         <div className={styles.heroInner}>
-          <h1 className={styles.heroHeadline} data-reveal>
-            Cold outreach that feels{" "}
-            <em className={styles.emphasis}>crafted</em>, not sprayed.
+          {/* Words rise in one by one on load (GSAP, motion permitting);
+              without JS they render as plain text. */}
+          <h1 className={styles.heroHeadline}>
+            <span data-hero-word>Cold</span> <span data-hero-word>outreach</span>{" "}
+            <span data-hero-word>that</span> <span data-hero-word>feels</span>{" "}
+            <em className={styles.emphasis}>
+              <span data-hero-word>crafted</span>,
+            </em>{" "}
+            <span data-hero-word>not</span> <span data-hero-word>sprayed.</span>
           </h1>
           <p className={styles.heroLede} data-reveal>
             Import a list, fill the missing addresses, and run a paced sequence from your own

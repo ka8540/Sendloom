@@ -214,6 +214,18 @@
   margin-left: -0.02em;
 }
 
+/* Word spans are animated by transform, so they must be inline-block. */
+.heroHeadline [data-hero-word] {
+  display: inline-block;
+}
+
+/* The hero's emphasis run carries the brighter emerald rather than the
+   deeper --accent-strong: at display sizes the deep tone reads muddy,
+   especially on the dark theme where the strong tone washes out to mint. */
+.heroHeadline .emphasis {
+  color: var(--accent);
+}
+
 .heroLede {
   margin: var(--space-5) 0 0;
   max-width: 32.5rem;
