@@ -296,11 +296,14 @@ export default async function LandingPage() {
           {/* Words rise in one by one on load (GSAP, motion permitting);
               without JS they render as plain text. */}
           <h1 className={styles.heroHeadline}>
-            <span data-hero-word>Cold</span> <span data-hero-word>outreach</span>{" "}
-            <span data-hero-word>that</span> <span data-hero-word>feels</span>{" "}
+            <span data-hero-word>Cold</span> <span data-hero-word>outreach</span>
+            <br />
+            <span data-hero-word>that</span> <span data-hero-word>feels</span>
+            <br />
             <em className={styles.emphasis}>
-              <span data-hero-word>crafted</span>,
-            </em>{" "}
+              <span data-hero-word>crafted,</span>
+            </em>
+            <br />
             <span data-hero-word>not</span> <span data-hero-word>sprayed.</span>
           </h1>
           <p className={styles.heroLede} data-reveal>

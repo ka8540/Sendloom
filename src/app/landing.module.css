@@ -219,11 +219,14 @@
   display: inline-block;
 }
 
-/* The hero's emphasis run carries the brighter emerald rather than the
-   deeper --accent-strong: at display sizes the deep tone reads muddy,
-   especially on the dark theme where the strong tone washes out to mint. */
+/* The hero's emphasis run breaks from the Sendloom green on purpose: a
+   turquoise that stays legible on both themes. */
 .heroHeadline .emphasis {
-  color: var(--accent);
+  color: #0e9f8a;
+}
+
+:global(:root[data-theme="dark"]) .heroHeadline .emphasis {
+  color: #6ee7d8;
 }
 
 .heroLede {
