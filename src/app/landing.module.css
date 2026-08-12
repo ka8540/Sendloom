@@ -1031,14 +1031,6 @@
     transform: none;
   }
 
-  /* The Imports footer is already anchored to the bottom of its window. Keep
-     its status centered in that chrome while it fades in; translating this
-     flex row during the reveal makes it ride the lower edge and clip. */
-  .dataStory[data-story="enhanced"] .importsFoot.rv {
-    transform: none;
-    transition-property: opacity;
-  }
-
   /* The enrichment row resolves shortly after its window activates: the
      searching state holds, then the found email and status fade in over it.
      Reverse scroll runs the same swap backwards. */

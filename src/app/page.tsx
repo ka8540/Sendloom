@@ -212,7 +212,7 @@ export default async function LandingPage() {
           </div>
         ))}
       </div>
-      <div className={`${styles.winFoot} ${styles.importsFoot} ${styles.rv}`} style={delay(0.55)}>
+      <div className={styles.winFoot}>
         <span className={styles.footOk}>
           <Check aria-hidden="true" />
           5 of 5 mapped
