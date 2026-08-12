@@ -490,14 +490,18 @@
 .dataCard {
   position: relative;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line));
-  border-radius: clamp(1.75rem, 2.5vw, 2.125rem);
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--line));
+  border-radius: 1.25rem;
   background: linear-gradient(
-    165deg,
-    color-mix(in srgb, var(--accent) 8%, var(--surface-strong)),
-    var(--surface-strong) 60%
+    180deg,
+    var(--surface-strong),
+    color-mix(in srgb, var(--surface-strong) 96%, var(--accent))
   );
-  box-shadow: var(--elevation-2);
+  box-shadow:
+    var(--edge-highlight),
+    0 1px 2px hsl(var(--shadow-color) / 0.1),
+    0 10px 24px hsl(var(--shadow-color) / 0.12),
+    0 28px 56px -16px hsl(var(--shadow-color) / 0.22);
 }
 
 /* Faint ledger lines — texture, not decoration. */
