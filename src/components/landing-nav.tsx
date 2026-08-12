@@ -3,6 +3,7 @@
 import type { Route } from "next";
 import Link from "next/link";
 import { Menu, X } from "lucide-react";
+import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import styles from "@/app/landing.module.css";
@@ -123,6 +124,8 @@ export function LandingNav({ items = defaultNavItems }: { items?: readonly Landi
   const panelRef = useRef<HTMLDivElement | null>(null);
   const toggleRef = useRef<HTMLButtonElement | null>(null);
   const active = useActiveSection(items.map((item) => item.href).join("\n"));
+  const pathname = usePathname();
+  const visibleItems = items.filter((item) => item.href !== pathname);
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -238,7 +241,7 @@ export function LandingNav({ items = defaultNavItems }: { items?: readonly Landi
         </Link>
 
         <nav className={styles.desktopNav} aria-label="Primary">
-          {items.map((item) => renderLink(item, styles.navLink))}
+          {visibleItems.map((item) => renderLink(item, styles.navLink))}
         </nav>
 
         <div className={styles.desktopActions}>
@@ -267,7 +270,7 @@ export function LandingNav({ items = defaultNavItems }: { items?: readonly Landi
       {open ? (
         <div id="landing-mobile-nav" ref={panelRef} className={styles.mobilePanel}>
           <nav className={styles.mobileNav} aria-label="Mobile primary">
-            {items.map((item) => renderLink(item, styles.mobileNavLink, closeMenu))}
+            {visibleItems.map((item) => renderLink(item, styles.mobileNavLink, closeMenu))}
           </nav>
 
           <div className={styles.mobileMetaRow}>
