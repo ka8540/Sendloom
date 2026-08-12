@@ -1293,6 +1293,9 @@
   width: 100%;
   max-width: 460px;
   justify-self: end;
+  /* Holds the card in from the frame's right edge so it sits on the right
+     side without hugging the viewport. */
+  margin-right: clamp(1.5rem, 4vw, 4rem);
 }
 
 .pageMinimal .panelInner {
