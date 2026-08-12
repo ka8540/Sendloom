@@ -118,7 +118,7 @@
   /* Labels are short by design so they never wrap at desktop. */
   white-space: nowrap;
   padding: 0.8rem 1.35rem;
-  border-radius: var(--radius-sm);
+  border-radius: 999px;
   font-family: inherit;
   font-size: var(--text-base);
   font-weight: var(--weight-medium);
