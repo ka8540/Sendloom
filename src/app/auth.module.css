@@ -1210,6 +1210,15 @@
   .stage {
     padding-block: clamp(0.5rem, 4vw, 1.5rem);
   }
+
+  /* The minimal variant's video re-centres under the stacked form. */
+  .pageMinimal .stage {
+    justify-items: center;
+  }
+
+  .pageMinimal .videoFrame {
+    margin-left: 0;
+  }
 }
 
 /* Where there is room, keep the floating cards anchored beside the video. */
@@ -1249,6 +1258,66 @@
     right: 0.7rem;
     bottom: 0.7rem;
   }
+}
+
+/* ---------- Minimal login variant ----------
+   Armed by AuthPage's `minimal` prop (login only). Same component with the
+   decorative layer removed: icon-only back control, no floating cards or
+   status chips, one video preview, wider calmer columns. Signup keeps the
+   full treatment. */
+
+/* Icon-only circular back control, tucked into the corner. */
+.pageMinimal .backHome {
+  top: clamp(1.75rem, 4vh, 2.25rem);
+  left: clamp(2rem, 3vw, 2.75rem);
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  gap: 0;
+  justify-content: center;
+  box-shadow: 0 8px 20px rgba(6, 14, 24, 0.12);
+}
+
+.pageMinimal .backHome span {
+  display: none;
+}
+
+/* ~52/48 columns with a deliberate gap; the form stays the destination. */
+.pageMinimal .frame {
+  width: min(1420px, calc(100% - 3rem));
+  grid-template-columns: minmax(0, 1.08fr) minmax(0, 1fr);
+  gap: clamp(4.4rem, 7vw, 7.5rem);
+}
+
+.pageMinimal .panel {
+  width: 100%;
+  max-width: 460px;
+  justify-self: end;
+}
+
+.pageMinimal .panelInner {
+  padding: clamp(1.4rem, 3vh, 2.1rem);
+}
+
+/* Video keeps its exact 9:16 frame; only size and placement change. It
+   sits under the headline block, stepped right, at preview scale. */
+.pageMinimal .stage {
+  place-items: start;
+  justify-items: start;
+  margin-top: clamp(1.6rem, 4vh, 3rem);
+}
+
+.pageMinimal .videoFrame {
+  width: min(100%, 17rem);
+  max-width: 17rem;
+  height: auto;
+  margin: 0 0 0 clamp(2rem, 6vw, 5rem);
+}
+
+/* Background art steps back so it never competes with the form. */
+.pageMinimal .orbits,
+.pageMinimal .showcaseGlow {
+  opacity: 0.5;
 }
 
 /* ---------- Reduced motion ---------- */

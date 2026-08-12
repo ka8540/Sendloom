@@ -8,6 +8,7 @@ export default async function LoginPage(props: { searchParams?: Promise<{ error?
 
   return (
     <AuthPage
+      minimal
       description="Jump back into your workspace."
       eyebrow="Welcome back"
       panelDescription="Use Google or your email and password."

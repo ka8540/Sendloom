@@ -14,6 +14,10 @@ type AuthPageProps = {
   children: ReactNode;
   description: string;
   eyebrow: string;
+  /* Strips the decorative layer (floating cards, status chips, brand tags)
+     and renders the calm two-column variant. Login only — signup keeps the
+     full treatment. */
+  minimal?: boolean;
   panelDescription: string;
   panelTitle: string;
   providerError?: string;
@@ -57,6 +61,7 @@ export function AuthPage({
   children,
   description,
   eyebrow,
+  minimal = false,
   panelDescription,
   panelTitle,
   providerError,
@@ -66,7 +71,7 @@ export function AuthPage({
   title
 }: AuthPageProps) {
   return (
-    <main id="top" className={styles.page}>
+    <main id="top" className={minimal ? `${styles.page} ${styles.pageMinimal}` : styles.page}>
       <span id="main-content" />
       <AuthPointerFX />
       <AnimatedEmailPath />
@@ -92,7 +97,7 @@ export function AuthPage({
               <span className={styles.brandName}>
                 <BrandText>Sendloom</BrandText>
               </span>
-              <span className={styles.brandTag}>Command center</span>
+              {minimal ? null : <span className={styles.brandTag}>Command center</span>}
             </div>
 
             <span className={styles.eyebrow}>{eyebrow}</span>
@@ -101,37 +106,43 @@ export function AuthPage({
           </header>
 
           <div className={styles.stage}>
-            <article className={`${styles.floatCard} ${styles.floatCardLeft}`} data-parallax="14">
-              <span className={styles.floatCardEyebrow}>Sequence ready</span>
-              <strong>Map the send before you log in.</strong>
-              <p>Timing, sender state, and templates stay in view.</p>
-            </article>
+            {minimal ? null : (
+              <article className={`${styles.floatCard} ${styles.floatCardLeft}`} data-parallax="14">
+                <span className={styles.floatCardEyebrow}>Sequence ready</span>
+                <strong>Map the send before you log in.</strong>
+                <p>Timing, sender state, and templates stay in view.</p>
+              </article>
+            )}
 
             <div className={styles.videoFrame}>
               <AuthVideoPreview />
             </div>
 
-            <article className={`${styles.floatCard} ${styles.floatCardRight}`} data-parallax="18">
-              <span className={styles.floatCardEyebrow}>Quick preview</span>
-              <strong>See the workflow in one pass.</strong>
-              <p>Import, template, launch, and track at a glance.</p>
-            </article>
+            {minimal ? null : (
+              <article className={`${styles.floatCard} ${styles.floatCardRight}`} data-parallax="18">
+                <span className={styles.floatCardEyebrow}>Quick preview</span>
+                <strong>See the workflow in one pass.</strong>
+                <p>Import, template, launch, and track at a glance.</p>
+              </article>
+            )}
           </div>
 
-          <ul className={styles.chips}>
-            {STATUS_CHIPS.map(({ Icon, label }, index) => (
-              <li
-                key={label}
-                className={styles.chip}
-                style={{ "--chip-index": String(index) } as CSSProperties}
-              >
-                <span className={styles.chipIcon}>
-                  <Icon aria-hidden="true" />
-                </span>
-                {label}
-              </li>
-            ))}
-          </ul>
+          {minimal ? null : (
+            <ul className={styles.chips}>
+              {STATUS_CHIPS.map(({ Icon, label }, index) => (
+                <li
+                  key={label}
+                  className={styles.chip}
+                  style={{ "--chip-index": String(index) } as CSSProperties}
+                >
+                  <span className={styles.chipIcon}>
+                    <Icon aria-hidden="true" />
+                  </span>
+                  {label}
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
 
         <section className={styles.panel} data-card-fx aria-label={panelTitle}>
@@ -147,7 +158,9 @@ export function AuthPage({
                 <strong>
                   <BrandText>Sendloom</BrandText>
                 </strong>
-                <span>Sequence operations with real sending discipline.</span>
+                {/* Redundant in the minimal variant: the brand block on the
+                    left already carries the product context. */}
+                {minimal ? null : <span>Sequence operations with real sending discipline.</span>}
               </div>
             </div>
 
