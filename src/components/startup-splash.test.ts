@@ -104,32 +104,28 @@ describe("command-center composition", () => {
     expect(CSS_SOURCE).toMatch(/\.overlay \{[\s\S]*position: fixed/);
   });
 
-  it("(3) the full SENDLOOM brand lockup renders with the new title treatment", () => {
+  it("(3) the full SENDLOOM brand lockup renders with the quiet title treatment", () => {
     expect(BRAND).toBe("SENDLOOM");
     expect(BRAND_TAGLINE.toUpperCase()).toBe("OUTREACH OPERATIONS");
     expect(SPLASH_SOURCE).toContain("{BRAND}");
     expect(SPLASH_SOURCE).toContain("{BRAND_TAGLINE}");
     expect(SPLASH_SOURCE).toContain("SendloomLogo");
     expect(SPLASH_SOURCE).toContain("styles.markText");
-    expect(SPLASH_SOURCE).toContain("styles.markScan");
-    // Sharp wide-tracked command title + emerald scan — not the old split/outline.
+    // Wide-tracked brand title, no scan sweep, no outline gimmick.
     expect(CSS_SOURCE).toMatch(/\.markText \{[\s\S]*letter-spacing: 0\.14em/);
-    expect(CSS_SOURCE).toMatch(/@keyframes splashScan/);
     expect(CSS_SOURCE).not.toContain("-webkit-text-stroke");
   });
 
-  it("(4) the command map + mobile module flow both render the workflow system", () => {
-    expect(SPLASH_SOURCE).toContain("function CommandMap");
-    expect(SPLASH_SOURCE).toContain("function ModuleFlow");
-    expect(SPLASH_SOURCE).toContain("styles.commandMap");
-    expect(SPLASH_SOURCE).toContain("styles.moduleFlow");
-    expect(SPLASH_SOURCE).toContain("styles.sendRail");
-    expect(SPLASH_SOURCE).toContain("styles.core");
-    // Panels dock around a central core with routing spokes — real graphics,
-    // not floating text chips.
-    expect(SPLASH_SOURCE).toContain("PANELS");
-    expect(SPLASH_SOURCE).toMatch(/spoke: "M/);
-    expect(SPLASH_SOURCE).toContain("function ModuleGlyph");
+  it("(4) the composition is a single centered brand block — no command map clutter", () => {
+    expect(SPLASH_SOURCE).toContain("styles.brandLogo");
+    expect(SPLASH_SOURCE).toContain("styles.stageCopy");
+    expect(SPLASH_SOURCE).toContain("styles.phaseRail");
+    expect(SPLASH_SOURCE).toContain("styles.phaseTick");
+    // The old busy scene is gone: no operations map, module flow, send rail,
+    // or particle field.
+    for (const identifier of ["CommandMap", "ModuleFlow", "ModuleGlyph", "styles.particles", "styles.sendRail"]) {
+      expect(SPLASH_SOURCE).not.toContain(identifier);
+    }
   });
 
   it("(5) product modules cover Import, Enrich, Template, Sequence, Send, Track", () => {
@@ -141,10 +137,7 @@ describe("command-center composition", () => {
       "send",
       "track"
     ]);
-    expect(SPLASH_SOURCE).toContain("COMMAND_MODULES.map");
-    // Each module has its own meaningful glyph, not just a label.
     for (const module of COMMAND_MODULES) {
-      expect(SPLASH_SOURCE).toContain(`case "${module.key}"`);
       expect(module.detail.length).toBeGreaterThan(0);
     }
   });
@@ -234,7 +227,7 @@ describe("readiness & timing", () => {
     expect(resolveStageLabel(0)).toBe("Assembling your outreach engine");
     // The boot progress treatment is stage-driven, not a percentage bar.
     expect(SPLASH_SOURCE).toContain("data-stage={stage}");
-    expect(CSS_SOURCE).toContain('[data-stage="2"]');
+    expect(SPLASH_SOURCE).toContain("data-active={index <= stage");
     expect(CSS_SOURCE).toContain("--splash-seg");
   });
 });
@@ -368,8 +361,8 @@ describe("30-minute cooldown", () => {
     expect(GATE_SOURCE).toContain("useIsomorphicLayoutEffect");
     expect(GATE_SOURCE).toMatch(/dataset\.loadScreen === "show"/);
     expect(GATE_SOURCE).toMatch(/if \(!showSplash\) \{\s*return null;/);
-    // Particles + every animated layer live inside that unmounted overlay.
-    expect(SPLASH_SOURCE).toMatch(/data-loader-overlay=""[\s\S]*styles\.particles/);
+    // Every animated layer lives inside that unmounted overlay.
+    expect(SPLASH_SOURCE).toMatch(/data-loader-overlay=""[\s\S]*styles\.backdrop/);
   });
 
   it("(c11) cross-tab: a stamp written by another tab dismisses a visible splash early", () => {
@@ -444,9 +437,8 @@ describe("performance", () => {
     for (const width of [320, 640, 1024, 1440, 3840]) {
       expect(resolveParticleCount({ viewportWidth: width, reducedMotion: false })).toBeLessThanOrEqual(MAX_PARTICLES);
     }
-    // CSS mirrors the caps by hiding surplus particles.
-    expect(CSS_SOURCE).toMatch(/nth-child\(n \+ 9\)/);
-    expect(CSS_SOURCE).toMatch(/nth-child\(n \+ 6\)/);
+    // The minimal composition renders no particle field at all.
+    expect(SPLASH_SOURCE).not.toContain("styles.particle");
   });
 
   it("(21) no WebGL / canvas loop / video / new animation library / remote assets", () => {
@@ -455,7 +447,7 @@ describe("performance", () => {
     }
     expect(SPLASH_SOURCE).not.toMatch(/next\/image|<img\b/);
     // Motion is CSS keyframes only; no JS animation loop.
-    expect(CSS_SOURCE).toMatch(/@keyframes splashDraw/);
+    expect(CSS_SOURCE).toMatch(/@keyframes splashBreathe/);
     expect(HOOK_SOURCE).not.toMatch(/requestAnimationFrame\(|setInterval\(/);
     expect(SPLASH_SOURCE).not.toMatch(/requestAnimationFrame\(|setInterval\(/);
   });
@@ -477,17 +469,14 @@ describe("accessibility & themes", () => {
     expect(SPLASH_SOURCE).toMatch(/aria-busy=\{phase === "loading"\}/);
     expect(SPLASH_SOURCE).toMatch(/role="status" aria-live="polite"/);
     expect(SPLASH_SOURCE).toMatch(/className=\{styles\.backdrop\} aria-hidden="true"/);
-    expect(SPLASH_SOURCE).toMatch(/className=\{styles\.mapZone\} aria-hidden="true"/);
-    expect(SPLASH_SOURCE).toMatch(/className=\{styles\.moduleFlow\} aria-hidden="true"/);
+    expect(SPLASH_SOURCE).toMatch(/className=\{styles\.phaseRail\} aria-hidden="true"/);
   });
 
-  it("(19) reduced motion keeps the full, resolved command-center composition", () => {
+  it("(19) reduced motion resolves everything to its finished state", () => {
     expect(CSS_SOURCE).toContain("@media (prefers-reduced-motion: reduce)");
     expect(CSS_SOURCE).toMatch(/animation: none !important/);
-    // Panels, core, brand, and footer resolve to their finished state.
-    expect(CSS_SOURCE).toMatch(/prefers-reduced-motion: reduce\)[\s\S]*\.panel,[\s\S]*opacity: 1;\s*transform: none/);
-    // Travelling pulses are removed rather than frozen mid-path.
-    expect(CSS_SOURCE).toMatch(/prefers-reduced-motion: reduce\)[\s\S]*\.railPulses,[\s\S]*display: none/);
+    // Rail ticks fill instantly instead of transitioning.
+    expect(CSS_SOURCE).toMatch(/prefers-reduced-motion: reduce\)[\s\S]*\.phaseTick \{\s*transition: none/);
     expect(resolveParticleCount({ viewportWidth: 1440, reducedMotion: true })).toBe(0);
   });
 
@@ -498,9 +487,9 @@ describe("accessibility & themes", () => {
     expect(CSS_SOURCE).not.toMatch(/\brgb\(/);
   });
 
-  it("responsive: asymmetric desktop, stacked tablet, separate mobile flow", () => {
+  it("responsive: one centered stack that scales down, never crops", () => {
     expect(CSS_SOURCE).toMatch(/\.overlay \{[\s\S]*overflow: hidden/);
-    expect(CSS_SOURCE).toMatch(/\.scene \{[\s\S]*grid-template-columns: minmax\(0, 45%\) minmax\(0, 55%\)/);
+    expect(CSS_SOURCE).toMatch(/\.overlay \{[\s\S]*place-items: center/);
     expect(CSS_SOURCE).toContain("@media (max-width: 1024px)");
     expect(CSS_SOURCE).toContain("@media (max-width: 900px)");
     expect(CSS_SOURCE).toContain("@media (max-width: 640px)");
