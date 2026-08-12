@@ -280,7 +280,7 @@ export default async function LandingPage() {
         </h2>
         <dl className={styles.safetyGrid}>
           {safetyPoints.map((point) => (
-            <div key={point.title} className={styles.safetyItem} data-reveal>
+            <div key={point.title} className={styles.safetyFeature} data-reveal>
               <dt className={styles.safetyTerm}>{point.title}</dt>
               <dd className={styles.safetyBody}>{point.body}</dd>
             </div>

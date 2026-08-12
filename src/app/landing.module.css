@@ -571,16 +571,27 @@
   letter-spacing: -0.03em;
 }
 
+/* One shared grid for all six items: two equal columns, three rows.
+   Every row uses the same track definition, so corresponding left/right
+   items share a baseline and row spacing resolves identically. */
 .safetyGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-6) clamp(2rem, 6vw, 5rem);
+  column-gap: clamp(3.5rem, 6vw, 6.875rem);
+  row-gap: clamp(2.25rem, 4vw, 3.5rem);
   margin: 0;
 }
 
-.safetyItem {
+/* Renamed from .safetyItem: that name collides with the command-center
+   mockup's icon list later in this module, and its display:flex overrode
+   this grid — the source of the visible misalignment. */
+.safetyFeature {
   display: grid;
-  gap: var(--space-2);
+  /* Fixed title measure: every label wraps inside the same column width,
+     so every description starts on the same x-axis in both columns. */
+  grid-template-columns: 10rem minmax(0, 1fr);
+  column-gap: clamp(1.75rem, 2.5vw, 2.25rem);
+  align-items: start;
 }
 
 .safetyTerm {
@@ -677,9 +688,24 @@
 
 /* ===================== Responsive ===================== */
 
-@media (max-width: 900px) {
-  .bento,
+/* Below desktop the two feature columns no longer leave room for the
+   fixed title measure plus a readable body, so the grid collapses to one
+   column before the inner split gets cramped. */
+@media (max-width: 1023px) {
   .safetyGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 767px) {
+  .safetyFeature {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 0.625rem;
+  }
+}
+
+@media (max-width: 900px) {
+  .bento {
     grid-template-columns: minmax(0, 1fr);
   }
 
