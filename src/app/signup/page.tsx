@@ -7,6 +7,7 @@ export default async function SignupPage() {
 
   return (
     <AuthPage
+      minimal
       description="Create your account and start fast."
       eyebrow="Get started"
       panelDescription="Choose Google or create an email and password account."
