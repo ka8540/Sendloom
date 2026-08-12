@@ -11,7 +11,6 @@ const faqNavItems = [
   { href: "/", label: "Home" },
   { href: "/privacy", label: "Privacy" },
   { href: "/terms", label: "Terms" },
-  { href: "/abuse", label: "Abuse" },
   { href: "/faq", label: "FAQ" },
   { href: "mailto:ka8540@g.rit.edu", label: "Contact" }
 ] as const;
