@@ -288,42 +288,51 @@ export default async function LandingPage() {
           </div>
           <span className={styles.winCount}>3 contacts</span>
         </div>
-        <div className={`${styles.winHead} ${styles.headEnrich} ${styles.rv}`} style={delay(0.14)}>
-          <span>Contact</span>
-          <span className={styles.colCompany}>Company</span>
-          <span>Work email</span>
-          <span>Status</span>
+        <div className={`${styles.enrichProgress} ${styles.rv}`} style={delay(0.12)}>
+          <span className={styles.enrichTrack} aria-hidden="true">
+            <span className={styles.enrichFill} />
+          </span>
+          <span>2 of 3 resolved</span>
         </div>
-        <div className={`${styles.winRow} ${styles.rowEnrich} ${styles.rv}`} style={delay(0.2)}>
-          <span className={styles.personName}>Maya Chen</span>
-          <span className={`${styles.cellMuted} ${styles.colCompany}`}>Stripe</span>
-          <span className={styles.mailCell}>maya@stripe.com</span>
+        <div className={`${styles.enrichRow} ${styles.rv}`} style={delay(0.2)}>
+          <span className={styles.avatar} aria-hidden="true">MC</span>
+          <span className={styles.enrichWho}>
+            <span className={styles.personName}>Maya Chen</span>
+            <span className={styles.cellMuted}>Stripe</span>
+          </span>
+          <span className={styles.mailField}>maya@stripe.com</span>
           <span className={`${styles.statusChip} ${styles.statusFound}`}>Found</span>
         </div>
-        <div className={`${styles.winRow} ${styles.rowEnrich} ${styles.rv}`} style={delay(0.27)}>
-          <span className={styles.personName}>Ethan Miller</span>
-          <span className={`${styles.cellMuted} ${styles.colCompany}`}>Linear</span>
+        <div className={`${styles.enrichRow} ${styles.rv}`} style={delay(0.27)}>
+          <span className={styles.avatar} aria-hidden="true">EM</span>
+          <span className={styles.enrichWho}>
+            <span className={styles.personName}>Ethan Miller</span>
+            <span className={styles.cellMuted}>Linear</span>
+          </span>
           <span className={styles.swapCell}>
-            <span className={`${styles.mailCell} ${styles.swapPending}`}>
+            <span className={`${styles.mailField} ${styles.mailFieldEmpty} ${styles.swapPending}`}>
               <i className={styles.searchDot} aria-hidden="true" />
               Searching
             </span>
-            <span className={`${styles.mailCell} ${styles.swapFound}`}>ethan@linear.com</span>
+            <span className={`${styles.mailField} ${styles.swapFound}`}>ethan@linear.com</span>
           </span>
-          <span className={styles.swapCell}>
+          <span className={`${styles.swapCell} ${styles.swapStatus}`}>
             <span className={`${styles.statusChip} ${styles.statusSearching} ${styles.swapPending}`}>Searching</span>
             <span className={`${styles.statusChip} ${styles.statusFound} ${styles.swapFound}`}>Found</span>
           </span>
         </div>
-        <div className={`${styles.winRow} ${styles.rowEnrich} ${styles.rv}`} style={delay(0.34)}>
-          <span className={styles.personName}>Priya Shah</span>
-          <span className={`${styles.cellMuted} ${styles.colCompany}`}>Figma</span>
-          <span className={styles.mailCell}>priya@figma.com</span>
+        <div className={`${styles.enrichRow} ${styles.rv}`} style={delay(0.34)}>
+          <span className={styles.avatar} aria-hidden="true">PS</span>
+          <span className={styles.enrichWho}>
+            <span className={styles.personName}>Priya Shah</span>
+            <span className={styles.cellMuted}>Figma</span>
+          </span>
+          <span className={styles.mailField}>priya@figma.com</span>
           <span className={`${styles.statusChip} ${styles.statusFound}`}>Found</span>
         </div>
       </div>
       <div className={`${styles.winFoot} ${styles.rv}`} style={delay(0.5)}>
-        <span>2 of 3 resolved</span>
+        <span>Hunter name + domain lookups</span>
         <span className={styles.chipReady}>Ready</span>
       </div>
     </article>

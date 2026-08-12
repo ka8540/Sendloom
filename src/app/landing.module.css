@@ -584,10 +584,6 @@
   grid-template-columns: 1.1rem 1.1fr 1.2fr 0.8fr 1fr;
 }
 
-.headEnrich {
-  grid-template-columns: 0.9fr 0.7fr 1.3fr 0.9fr;
-}
-
 .winRow {
   display: grid;
   grid-template-columns: 1fr 1.4fr 2rem;
@@ -602,10 +598,6 @@
 
 .rowPeople {
   grid-template-columns: 1.1rem 1.1fr 1.2fr 0.8fr 1fr;
-}
-
-.rowEnrich {
-  grid-template-columns: 0.9fr 0.7fr 1.3fr 0.9fr;
 }
 
 .winRowSelected {
@@ -718,12 +710,91 @@
   font-size: var(--text-xs);
 }
 
-.mailCell {
-  display: inline-flex;
+/* Resolution queue: avatar + identity + filling email field + status, a
+   different surface grammar from Discover's wide table. */
+.enrichProgress {
+  display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.6rem;
+  margin-bottom: 0.45rem;
+  color: var(--muted);
+  font-family: var(--font-numeric);
+  font-size: var(--text-2xs);
+}
+
+.enrichTrack {
+  display: block;
+  flex: 1;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--muted) 22%, transparent);
+}
+
+.enrichFill {
+  display: block;
+  width: 66%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.enrichRow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1.25fr) auto;
+  gap: 0.6rem;
+  align-items: center;
+  padding: 0.45rem 0.6rem;
+}
+
+.enrichRow + .enrichRow {
+  border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+}
+
+.avatar {
+  display: grid;
+  place-items: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface-hover));
+  color: var(--accent-strong);
+  font-family: var(--font-numeric);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+}
+
+.enrichWho {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.mailField {
+  display: block;
+  overflow: hidden;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--field-border);
+  border-radius: 0.55rem;
+  background: var(--field-bg);
   font-family: var(--font-numeric);
   font-size: var(--text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mailFieldEmpty {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--muted);
+}
+
+.swapStatus {
+  justify-self: end;
+}
+
+.swapStatus .statusChip {
+  justify-self: end;
 }
 
 /* Pending and resolved states share one grid cell; the enhanced stage
@@ -831,9 +902,14 @@
     grid-template-columns: 1.1rem 1.2fr 1fr;
   }
 
-  .headEnrich,
-  .rowEnrich {
-    grid-template-columns: 1fr 1.4fr auto;
+  .enrichRow {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .enrichRow > .mailField,
+  .enrichRow > .swapCell:not(.swapStatus) {
+    grid-column: 2 / 3;
+    grid-row: 2;
   }
 }
 
