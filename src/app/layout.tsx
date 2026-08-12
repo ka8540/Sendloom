@@ -7,8 +7,6 @@ import "@/app/globals.css";
 import { CsrfFetchPatch } from "@/components/csrf-fetch-patch";
 import { ErrorToastProvider } from "@/components/error-toast-provider";
 import { ManualProvider } from "@/components/manual/ManualProvider";
-import { PublicLoadScreen } from "@/components/public-load-screen";
-import { loadScreenInitScript } from "@/lib/load-screen";
 import { themeInitScript } from "@/lib/theme";
 
 /*
@@ -46,10 +44,8 @@ const monoFont = Geist_Mono({
   variable: "--font-mono"
 });
 
-/*
- * Retained for the startup splash / loader, which is a deliberate brand moment
- * with its own condensed-display treatment. Not used by the marketing surface.
- */
+/* Condensed-display + companion face used by the landing page's product
+   visuals (panel titles, chip labels). Not used by editorial copy. */
 const loaderDisplayFont = Bebas_Neue({
   weight: "400",
   subsets: ["latin"],
@@ -111,7 +107,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
-        <script dangerouslySetInnerHTML={{ __html: loadScreenInitScript }} />
         <a className="skip-link" href="#main-content">
           Skip to content
         </a>
@@ -119,7 +114,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <ErrorToastProvider>
           <ManualProvider>
             {children}
-            <PublicLoadScreen />
             <SpeedInsights />
             <Analytics />
           </ManualProvider>
