@@ -1340,7 +1340,10 @@
 }
 
 .navLink:hover {
-  background: color-mix(in srgb, var(--landing-ink) 8%, transparent);
+  text-decoration: underline;
+  text-decoration-color: var(--landing-emerald);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 6px;
 }
 
 .navLink:focus-visible,
