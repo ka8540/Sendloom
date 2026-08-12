@@ -175,14 +175,18 @@
    note. No eyebrow, which keeps the page's small-caps budget for
    the three chapter labels. */
 
+/* Split composition: editorial copy left, the animated workflow visual
+   right, vertically centred across one viewport. */
 .hero {
   display: grid;
-  justify-items: center;
-  text-align: center;
-  /* Clears the fixed nav. Capped so hero content never floats far
-     down the viewport. */
-  padding-top: clamp(7rem, 14vh, 9.5rem);
+  grid-template-columns: minmax(0, 6fr) minmax(0, 7fr);
+  align-items: center;
+  column-gap: clamp(2.5rem, 5vw, 5rem);
+  min-height: 100dvh;
+  /* Clears the fixed nav. */
+  padding-top: clamp(6.5rem, 12vh, 8.5rem);
   padding-bottom: var(--space-7);
+  text-align: left;
 }
 
 /* Spacing is set per element rather than by one grid gap. A uniform gap gives
@@ -191,29 +195,28 @@
    buttons it qualifies and lets the headline own the space beneath it. */
 .heroInner {
   display: grid;
-  justify-items: center;
-  max-width: 46rem;
+  justify-items: start;
+  max-width: 33rem;
 }
 
 .heroHeadline {
   margin: 0;
   font-family: var(--font-editorial);
-  font-size: var(--display-xl);
+  /* Smaller than --display-xl: the full 96px set was tuned for a centred
+     full-width hero; in the left column it would break mid-phrase. */
+  font-size: clamp(2.75rem, 1.2rem + 4.2vw, 4.5rem);
   font-weight: var(--weight-semibold);
-  /* Tighter than the token default: at 96px the display face needs less
-     leading than at 48px, and the balanced three-line set reads as one
-     object only when the lines nearly touch. */
-  line-height: 1.02;
+  line-height: 1.04;
   letter-spacing: var(--track-display-tight);
   text-wrap: balance;
-  /* Optical left edge. Large type sets visually inset against a centred
-     measure because the first glyph's side bearing is scaled up with it. */
-  margin-inline: -0.02em;
+  /* Optical left edge. Large type sets visually inset against the column
+     because the first glyph's side bearing is scaled up with it. */
+  margin-left: -0.02em;
 }
 
 .heroLede {
   margin: var(--space-5) 0 0;
-  max-width: 36rem;
+  max-width: 32.5rem;
   color: var(--muted);
   font-size: var(--text-md);
   line-height: 1.6;
@@ -223,7 +226,6 @@
 .heroActions {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
   gap: var(--space-3);
   margin-top: var(--space-6);
 }
@@ -241,7 +243,6 @@
   position: relative;
   z-index: 1;
   width: 100%;
-  margin-top: var(--space-8);
 }
 
 /* ===================== Integration strip =====================
@@ -524,7 +525,7 @@
 
 .vizColHead {
   display: grid;
-  grid-template-columns: 1fr 1.75rem 1fr;
+  grid-template-columns: 1fr 2.125rem 1fr;
   color: var(--muted);
   font-family: var(--font-numeric);
   font-size: var(--text-2xs);
@@ -535,7 +536,7 @@
 
 .mapRow {
   display: grid;
-  grid-template-columns: 1fr 1.75rem 1fr;
+  grid-template-columns: 1fr 2.125rem 1fr;
   align-items: center;
   padding: 0.5rem 0.8rem;
   border: 1px solid var(--line);
@@ -549,11 +550,16 @@
   font-size: var(--text-xs);
 }
 
-/* A drawn connector, not a glyph: the line plus a rotated corner cap. */
+/* Connector: a short centred line with a small cap, drawn left to right as
+   the row activates (see the enhanced rules below). Fixed 34px column keeps
+   every arrowhead and destination label on the same axis. */
 .mapArrow {
   position: relative;
-  height: 1px;
-  background: color-mix(in srgb, var(--accent) 55%, var(--line));
+  justify-self: center;
+  width: 1.5rem;
+  height: 1.5px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--accent) 70%, var(--line));
 }
 
 .mapArrow::after {
@@ -561,10 +567,11 @@
   position: absolute;
   top: 50%;
   right: 0;
-  width: 6px;
-  height: 6px;
-  border-top: 1px solid color-mix(in srgb, var(--accent) 55%, var(--line));
-  border-right: 1px solid color-mix(in srgb, var(--accent) 55%, var(--line));
+  width: 5px;
+  height: 5px;
+  border-top: 1.5px solid color-mix(in srgb, var(--accent) 70%, var(--line));
+  border-right: 1.5px solid color-mix(in srgb, var(--accent) 70%, var(--line));
+  border-radius: 1px;
   transform: translateY(-50%) rotate(45deg);
 }
 
@@ -663,7 +670,10 @@
    nav and deals the three cards through it. */
 @media (min-width: 1024px) {
   .dataStory[data-story="enhanced"] {
-    height: 320vh;
+    /* ~110vh of scroll distance for three states: one moderate wheel gesture
+       visibly advances the story, and the section releases straight into
+       chapter 02. The previous 320vh read as a dead scroll zone. */
+    height: 210vh;
     padding-block: 0;
   }
 
@@ -753,6 +763,18 @@
   .dataStory[data-story="enhanced"] .dataCard[data-active] .rv {
     opacity: 1;
     transform: none;
+  }
+
+  /* Connectors draw in just after their row lands. --d inherits from the
+     row's inline style, so no per-row classes are needed. */
+  .dataStory[data-story="enhanced"] .mapArrow {
+    transform: scaleX(0);
+    transform-origin: left center;
+    transition: transform 0.35s ease calc(var(--d, 0s) + 0.12s);
+  }
+
+  .dataStory[data-story="enhanced"] .dataCard[data-active] .mapArrow {
+    transform: scaleX(1);
   }
 }
 
@@ -1001,6 +1023,20 @@
   }
 }
 
+/* Hero goes single-column when the split would cramp either side:
+   copy first, then the workflow visual at natural width. */
+@media (max-width: 1023px) {
+  .hero {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: var(--space-8);
+    min-height: 0;
+  }
+
+  .heroInner {
+    max-width: 46rem;
+  }
+}
+
 @media (max-width: 900px) {
 
   .split {
@@ -1019,12 +1055,6 @@
 @media (max-width: 720px) {
   .hero {
     padding-top: 6.5rem;
-    text-align: left;
-    justify-items: start;
-  }
-
-  .heroInner {
-    justify-items: start;
   }
 
   .heroActions {
@@ -1296,43 +1326,12 @@
 }
 
 /*
- * Active section marker.
- *
- * Deliberately not a filled pill: the nav already carries two filled controls
- * (Login, Try it) and a third would compete with them for the eye. A 4px
- * emerald dot under the label plus a small weight/colour shift is enough to
- * answer "where am I" without adding another button-shaped object.
+ * Active section state is text-only: the label is already semibold ink.
+ * (There was previously a 4px emerald dot under the active item; it read as
+ * a speck rather than as wayfinding, so the marker is no longer rendered.)
  */
-.navLink {
-  position: relative;
-}
-
 .navLinkActive {
   color: var(--landing-ink);
-}
-
-.navLinkActive::after {
-  content: "";
-  position: absolute;
-  bottom: 0.42rem;
-  left: 50%;
-  width: 4px;
-  height: 4px;
-  border-radius: 999px;
-  background: var(--landing-emerald);
-  transform: translateX(-50%);
-  animation: navDotIn var(--duration-base) var(--ease-out) both;
-}
-
-@keyframes navDotIn {
-  from {
-    opacity: 0;
-    transform: translateX(-50%) scale(0.4);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(-50%) scale(1);
-  }
 }
 
 .navGhostButton,
@@ -3072,8 +3071,7 @@
   .heroLiveDot,
   .heroFlowPulse,
   .heroChipTop,
-  .heroChipBottom,
-  .navLinkActive::after {
+  .heroChipBottom {
     animation: none !important;
   }
 
@@ -3090,6 +3088,7 @@
   .stepTitle,
   .dataStep,
   .rv,
+  .mapArrow,
   .stripItem,
   .stripMark {
     transition: none;

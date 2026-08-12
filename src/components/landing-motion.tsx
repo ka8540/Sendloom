@@ -201,18 +201,18 @@ export function LandingMotion() {
               let opacity: number;
               if (x < 0) {
                 const t = Math.min(-x, 1);
-                y = t * 26;
-                rotation = t * 2.5;
-                scale = 1 - t * 0.035;
+                y = t * 20;
+                rotation = t * 2;
+                scale = 1 - t * 0.02;
                 /* The immediate next card peeks out for most of the active
                    step; cards further down the deck wait hidden. */
                 opacity = Math.min(Math.max(1 - (-x - 1) * 3, 0), 1);
               } else {
                 const t = Math.min(x, 1);
-                y = -t * 56;
-                rotation = -t * 4;
-                scale = 1 - t * 0.04;
-                opacity = Math.max(1 - x * 1.6, 0);
+                y = -t * 40;
+                rotation = -t * 2.5;
+                scale = 1 - t * 0.02;
+                opacity = Math.max(1 - x * 1.7, 0);
               }
               gsap.set(card, { y, rotation, scale, opacity, zIndex: Math.round(100 - x * 20) });
             });

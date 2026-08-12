@@ -23,7 +23,7 @@ import styles from "@/app/landing.module.css";
  *
  * Two deliberate constraints govern this file:
  *
- *   1. Layout families do not repeat. Hero (centred stack), integration strip
+ *   1. Layout families do not repeat. Hero (split copy/visual), integration strip
  *      (inline row), chapter 01 (sticky-scroll story), chapter 02 (offset split),
  *      chapter 03 (full-bleed visual), safety (two-column list), CTA (panel).
  *      Seven sections, seven distinct compositions.
@@ -197,7 +197,7 @@ export default async function LandingPage() {
           </div>
         ))}
         <p className={`${styles.vizFoot} ${styles.rv}`} style={delay(0.8)}>
-          5 fields mapped — ready
+          ✓ 5 fields mapped — ready
         </p>
       </div>
     </article>,
@@ -304,7 +304,7 @@ export default async function LandingPage() {
             <Link className={styles.buttonPrimary} href="/signup">
               Get started for free
             </Link>
-            <a className={styles.buttonGhost} href="#workflow">
+            <a className={styles.buttonGhost} href="#why-sendloom">
               See how it works
             </a>
           </div>
