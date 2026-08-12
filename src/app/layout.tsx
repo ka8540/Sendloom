@@ -67,7 +67,7 @@ export const metadata: Metadata = {
      link unfurlers cannot follow, and logs a build-time warning. */
   metadataBase: new URL("https://sendloom.net"),
   title: {
-    default: "Sendloom, outreach operations on one surface",
+    default: "Sendloom",
     template: "%s · Sendloom"
   },
   description:
