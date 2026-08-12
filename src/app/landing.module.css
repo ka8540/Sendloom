@@ -378,65 +378,74 @@
   text-wrap: pretty;
 }
 
-/* ---- Chapter 01: asymmetric bento ----
-   Three items, three cells. The first spans the full width so the
-   grid never carries an empty cell. */
+/* ---- Chapter 01: sticky-scroll product story ----
+   Default rendering (mobile, no-JS, reduced motion) is a plain stacked
+   section: headline, then each story's copy followed by its visual.
+   LandingMotion sets [data-story="enhanced"] on desktop with motion
+   allowed, which promotes the stage to a sticky two-column grid where the
+   three copies share one cell and the three visuals share another. */
 
-.bento {
+.dataStage {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-8);
+}
+
+.dataHead {
+  display: grid;
   gap: var(--space-4);
+  max-width: 40rem;
 }
 
-/* Inner rhythm is graded, not uniform: the title binds to its body, and the
-   mono meta line sits apart as a footnote. `margin-top: auto` on the meta
-   pins it to the cell floor so the three meta lines form one baseline across
-   the row regardless of how long each body runs. */
-.bentoCell {
-  display: flex;
-  flex-direction: column;
+.dataStep {
+  display: grid;
   gap: var(--space-2);
-  padding: clamp(1.5rem, 3vw, 2.25rem);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  background: var(--surface-strong);
-  transition:
-    border-color var(--duration-base) var(--ease-out),
-    box-shadow var(--duration-base) var(--ease-out),
-    transform var(--duration-base) var(--ease-out);
+  max-width: 34rem;
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .bentoCell:hover {
-    border-color: color-mix(in srgb, var(--accent) 32%, var(--line));
-    box-shadow: var(--elevation-2);
-    transform: translateY(-2px);
-  }
+.dataStepIndex {
+  margin: 0;
+  color: var(--accent-strong);
+  font-family: var(--font-numeric);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--track-caps);
 }
 
-.bentoCellWide {
-  grid-column: 1 / -1;
-  /* The wide cell reads as the chapter's primary claim, so it gets a
-     tint rather than a larger type size. */
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--accent) 7%, var(--surface-strong)),
-    var(--surface-strong) 70%
-  );
-}
-
-.cellTitle {
+.dataStepTitle {
   margin: 0;
   font-size: var(--text-lg);
   font-weight: var(--weight-semibold);
   letter-spacing: var(--track-heading);
 }
 
-.cellBody {
+.dataStepBody {
   margin: 0;
-  max-width: 46ch;
   color: var(--muted);
   line-height: var(--leading-body);
+}
+
+/* Enhanced-only progress rail; hidden in the stacked layout. */
+.dataProgress {
+  display: none;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.dataProgSeg {
+  width: 2.75rem;
+  height: 2px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--muted) 30%, transparent);
+}
+
+.dataProgFill {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--accent-strong);
+  transform: scaleX(0);
+  transform-origin: left;
 }
 
 .cellMeta {
@@ -451,12 +460,300 @@
   opacity: 0.75;
 }
 
-/* Only in the bento, where cells sit side by side and their meta lines should
-   agree. In the sequence list the rows are stacked, so there is nothing to
-   align to and a pushed-down meta line would just open a gap. */
-.bentoCell .cellMeta {
-  margin-top: auto;
-  padding-top: var(--space-4);
+/* ---- Product visuals ----
+   Three compact product sheets: field mapping, people search, address
+   resolution. Real UI nouns, no illustration. */
+
+.dataCard {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line));
+  border-radius: clamp(1.75rem, 2.5vw, 2.125rem);
+  background: linear-gradient(
+    165deg,
+    color-mix(in srgb, var(--accent) 8%, var(--surface-strong)),
+    var(--surface-strong) 60%
+  );
+  box-shadow: var(--elevation-2);
+}
+
+/* Faint ledger lines — texture, not decoration. */
+.dataCard::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    color-mix(in srgb, var(--accent) 7%, transparent) 1px,
+    transparent 1px
+  ) 0 0 / 100% clamp(2.5rem, 6vh, 3.25rem);
+  pointer-events: none;
+}
+
+.vizInner {
+  position: relative;
+  display: grid;
+  gap: clamp(0.55rem, 1.4vh, 0.9rem);
+  align-content: center;
+  height: 100%;
+  padding: clamp(1.5rem, 3vw, 2.5rem);
+  font-size: var(--text-sm);
+}
+
+.vizSplit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+
+.vizFile {
+  font-family: var(--font-numeric);
+  font-weight: var(--weight-medium);
+}
+
+.vizMuted {
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+.vizRule {
+  height: 1px;
+  background: var(--line);
+}
+
+.vizColHead {
+  display: grid;
+  grid-template-columns: 1fr 1.75rem 1fr;
+  color: var(--muted);
+  font-family: var(--font-numeric);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+
+.mapRow {
+  display: grid;
+  grid-template-columns: 1fr 1.75rem 1fr;
+  align-items: center;
+  padding: 0.5rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md, 10px);
+  background: color-mix(in srgb, var(--surface-strong) 72%, transparent);
+}
+
+.mapCol {
+  color: var(--muted);
+  font-family: var(--font-numeric);
+  font-size: var(--text-xs);
+}
+
+/* A drawn connector, not a glyph: the line plus a rotated corner cap. */
+.mapArrow {
+  position: relative;
+  height: 1px;
+  background: color-mix(in srgb, var(--accent) 55%, var(--line));
+}
+
+.mapArrow::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 0;
+  width: 6px;
+  height: 6px;
+  border-top: 1px solid color-mix(in srgb, var(--accent) 55%, var(--line));
+  border-right: 1px solid color-mix(in srgb, var(--accent) 55%, var(--line));
+  transform: translateY(-50%) rotate(45deg);
+}
+
+.mapField {
+  font-weight: var(--weight-medium);
+}
+
+.chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  padding: 0.5rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-strong) 78%, transparent);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+}
+
+.chipLabel {
+  color: var(--accent-strong);
+  font-family: var(--font-numeric);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+}
+
+.personRow {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.55rem 0.8rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md, 10px);
+}
+
+.personRowSelected {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.personName {
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--track-heading);
+}
+
+.vizStatus {
+  margin: 0;
+  color: var(--muted);
+  font-family: var(--font-numeric);
+  font-size: var(--text-xs);
+}
+
+.vizAddress {
+  margin: 0;
+  color: var(--accent-strong);
+  font-family: var(--font-numeric);
+  font-size: clamp(1.05rem, 1.8vw, 1.35rem);
+  font-weight: var(--weight-semibold);
+  letter-spacing: -0.01em;
+}
+
+.tagRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.tag {
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent-strong);
+  font-family: var(--font-numeric);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+}
+
+.vizFoot {
+  margin: 0.4rem 0 0;
+  color: var(--accent-strong);
+  font-family: var(--font-numeric);
+  font-size: var(--text-xs);
+  letter-spacing: 0.04em;
+}
+
+/* ---- Enhanced desktop stage ----
+   Armed only by LandingMotion (motion allowed, ≥1024px). The section
+   grows to 320vh of scroll distance; the stage sticks under the floating
+   nav and deals the three cards through it. */
+@media (min-width: 1024px) {
+  .dataStory[data-story="enhanced"] {
+    height: 320vh;
+    padding-block: 0;
+  }
+
+  .dataStory[data-story="enhanced"] .dataStage {
+    position: sticky;
+    /* Clears the floating nav pill (1rem offset + ~5.2rem body). */
+    top: clamp(6.5rem, 12vh, 8rem);
+    min-height: calc(100dvh - clamp(6.5rem, 12vh, 8rem) - 2rem);
+    isolation: isolate;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    grid-template-rows: auto minmax(10rem, auto) auto;
+    column-gap: clamp(3.75rem, 7vw, 7.5rem);
+    row-gap: var(--space-6);
+    align-content: center;
+  }
+
+  /* One soft pool of green light behind the visual column only; the copy
+     side stays clean for readability. */
+  .dataStory[data-story="enhanced"] .dataStage::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    top: 50%;
+    right: -12%;
+    width: 65%;
+    height: 85%;
+    transform: translateY(-50%);
+    background: radial-gradient(
+      closest-side,
+      color-mix(in srgb, var(--accent) 12%, transparent),
+      transparent
+    );
+    filter: blur(28px);
+    pointer-events: none;
+  }
+
+  .dataStory[data-story="enhanced"] .dataHead {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  /* All three copies occupy the same cell; only the active one shows. */
+  .dataStory[data-story="enhanced"] .dataStep {
+    grid-column: 1;
+    grid-row: 2;
+    align-self: start;
+    max-width: none;
+    opacity: 0;
+    transform: translateY(12px);
+    transition:
+      opacity 0.45s ease,
+      transform 0.45s ease;
+  }
+
+  .dataStory[data-story="enhanced"] .dataStep[data-active] {
+    opacity: 1;
+    transform: none;
+  }
+
+  /* The deck: three cards in one cell, positions driven by scroll. */
+  .dataStory[data-story="enhanced"] .dataCard {
+    grid-column: 2;
+    grid-row: 1 / -1;
+    align-self: center;
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    max-height: 70vh;
+    will-change: transform, opacity;
+  }
+
+  .dataStory[data-story="enhanced"] .dataProgress {
+    display: flex;
+    grid-column: 1;
+    grid-row: 3;
+  }
+
+  /* Inner beats reveal only while their card is active. Hidden here (not in
+     the base rules) so no-JS and reduced-motion users see full content. */
+  .dataStory[data-story="enhanced"] .rv {
+    opacity: 0;
+    transform: translateY(12px);
+    transition:
+      opacity 0.5s ease var(--d, 0s),
+      transform 0.5s ease var(--d, 0s);
+  }
+
+  .dataStory[data-story="enhanced"] .dataCard[data-active] .rv {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 /* ---- Chapter 02: offset split ----
@@ -705,9 +1002,6 @@
 }
 
 @media (max-width: 900px) {
-  .bento {
-    grid-template-columns: minmax(0, 1fr);
-  }
 
   .split {
     grid-template-columns: minmax(0, 1fr);
@@ -2794,7 +3088,8 @@
 
   .heroNode,
   .stepTitle,
-  .bentoCell,
+  .dataStep,
+  .rv,
   .stripItem,
   .stripMark {
     transition: none;

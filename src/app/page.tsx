@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Fragment, type CSSProperties } from "react";
 import Link from "next/link";
 
 import { BrandText } from "@/components/brand-text";
@@ -23,7 +24,7 @@ import styles from "@/app/landing.module.css";
  * Two deliberate constraints govern this file:
  *
  *   1. Layout families do not repeat. Hero (centred stack), integration strip
- *      (inline row), chapter 01 (asymmetric bento), chapter 02 (offset split),
+ *      (inline row), chapter 01 (sticky-scroll story), chapter 02 (offset split),
  *      chapter 03 (full-bleed visual), safety (two-column list), CTA (panel).
  *      Seven sections, seven distinct compositions.
  *   2. Exactly three chapter labels exist on the page. They are the only
@@ -78,23 +79,37 @@ const chapters: Record<"data" | "sequences" | "control", Chapter> = {
  * duplicate intent dressed up as variety. The page has one primary action,
  * worded identically in the hero and the closing panel.
  */
-const dataFeatures = [
+/*
+ * Data chapter stories. DOM order is the mobile/screen-reader order:
+ * headline, then each story's copy immediately followed by its product
+ * visual. On desktop with motion allowed, LandingMotion sets
+ * [data-story="enhanced"] and CSS overlaps the three copies into one cell
+ * and the three visuals into a second sticky column.
+ */
+const dataStories = [
   {
+    index: "01",
     title: "Imports",
-    body: "Upload a CSV or XLSX, map fields once, and keep every column intact for the sends that follow.",
+    body: "Upload a CSV or XLSX, map your fields once, and keep every column intact for the sends that follow.",
     meta: "CSV, XLSX, field mapping"
   },
   {
+    index: "02",
     title: "Discover",
-    body: "Search by company, role, and location, then review inferred work contacts before any of them enter a run.",
+    body: "Search by company, role, and location, then review inferred work contacts before they enter a run.",
     meta: "Company, role, location"
   },
   {
+    index: "03",
     title: "Email enrichment",
-    body: "Run name-plus-domain and domain-wide lookups with your own hunter.io key, without leaving the workspace.",
+    body: "Run name-plus-domain and domain-wide lookups with your own Hunter API key without leaving the workspace.",
     meta: "Bring your own API key"
   }
 ] as const;
+
+/* Stagger helper for the product visuals: each revealed element carries its
+   transition delay as a custom property so no per-item classes are needed. */
+const delay = (seconds: number) => ({ "--d": `${seconds}s` }) as CSSProperties;
 
 const sequenceFeatures = [
   {
@@ -151,6 +166,105 @@ export default async function LandingPage() {
   // showing the public landing page; logged-out visitors still get the landing
   // page. See `redirectAuthenticatedToWorkspace` for the validity rules.
   await redirectAuthenticatedToWorkspace();
+
+  /* The three product visuals for the Data chapter, in story order. Rendered
+     as static markup; LandingMotion deals them as a deck on desktop. All
+     names and companies are fictional. */
+  const dataVisuals = [
+    <article key="imports" className={styles.dataCard} data-story-card aria-label="Imports: mapping a CSV to contact fields">
+      <div className={styles.vizInner}>
+        <div className={`${styles.vizSplit} ${styles.rv}`} style={delay(0.05)}>
+          <span className={styles.vizFile}>your_list.csv</span>
+          <span className={styles.vizMuted}>228 contacts</span>
+        </div>
+        <div className={styles.vizRule} />
+        <div className={`${styles.vizColHead} ${styles.rv}`} style={delay(0.2)}>
+          <span>CSV column</span>
+          <span aria-hidden="true" />
+          <span>Sendloom field</span>
+        </div>
+        {[
+          ["first_name", "First Name"],
+          ["last_name", "Last Name"],
+          ["email", "Email"],
+          ["company", "Company"],
+          ["location", "Location"]
+        ].map(([column, field], row) => (
+          <div key={column} className={`${styles.mapRow} ${styles.rv}`} style={delay(0.3 + row * 0.09)}>
+            <span className={styles.mapCol}>{column}</span>
+            <span className={styles.mapArrow} aria-hidden="true" />
+            <span className={styles.mapField}>{field}</span>
+          </div>
+        ))}
+        <p className={`${styles.vizFoot} ${styles.rv}`} style={delay(0.8)}>
+          5 fields mapped — ready
+        </p>
+      </div>
+    </article>,
+
+    <article key="discover" className={styles.dataCard} data-story-card aria-label="Discover: searching contacts by company, role, and location">
+      <div className={styles.vizInner}>
+        <div className={styles.chipRow}>
+          {[
+            ["Company", "Stripe"],
+            ["Role", "Software Engineer"],
+            ["Location", "San Francisco"]
+          ].map(([label, value], chip) => (
+            <span key={label} className={`${styles.chip} ${styles.rv}`} style={delay(0.05 + chip * 0.08)}>
+              <span className={styles.chipLabel}>{label}</span>
+              {value}
+            </span>
+          ))}
+        </div>
+        <div className={styles.vizRule} />
+        {[
+          ["Maya Chen", "Senior Software Engineer", true],
+          ["Daniel Okafor", "Software Engineer", false],
+          ["Sofia Ramirez", "Backend Engineer", false],
+          ["Alex Novak", "Software Engineer", false]
+        ].map(([name, role, selected], row) => (
+          <div
+            key={name as string}
+            className={
+              selected
+                ? `${styles.personRow} ${styles.personRowSelected} ${styles.rv}`
+                : `${styles.personRow} ${styles.rv}`
+            }
+            style={delay(0.3 + row * 0.1)}
+          >
+            <span className={styles.personName}>{name}</span>
+            <span className={styles.vizMuted}>{role} · Stripe · San Francisco</span>
+          </div>
+        ))}
+        <p className={`${styles.vizFoot} ${styles.rv}`} style={delay(0.75)}>
+          10 people found — 1 marked for review
+        </p>
+      </div>
+    </article>,
+
+    <article key="enrichment" className={styles.dataCard} data-story-card aria-label="Email enrichment: resolving a missing address">
+      <div className={styles.vizInner}>
+        <div className={`${styles.vizSplit} ${styles.rv}`} style={delay(0.05)}>
+          <span className={styles.personName}>Priya Shah</span>
+          <span className={styles.vizMuted}>Acme · acme.com</span>
+        </div>
+        <p className={`${styles.vizStatus} ${styles.rv}`} style={delay(0.3)}>
+          Resolving domain…
+        </p>
+        <p className={`${styles.vizAddress} ${styles.rv}`} style={delay(0.5)}>
+          priya.shah@acme.com
+        </p>
+        <div className={`${styles.tagRow} ${styles.rv}`} style={delay(0.68)}>
+          <span className={styles.tag}>Inferred address</span>
+          <span className={styles.tag}>High confidence</span>
+          <span className={styles.tag}>Added to contact</span>
+        </div>
+        <p className={`${styles.vizFoot} ${styles.rv}`} style={delay(0.85)}>
+          Inferred addresses are reviewed before they enter a run.
+        </p>
+      </div>
+    </article>
+  ];
 
   // Anchor contract for the nav and footer. Every in-page link on the public
   // surface resolves to one of these, and they appear in document order so the
@@ -221,22 +335,48 @@ export default async function LandingPage() {
       </section>
 
       {/* ==================== CHAPTER 01 - DATA ====================
-          Asymmetric bento: three items, three cells, first spans wide. */}
-      <section className={styles.chapter} id="why-sendloom">
-        <ChapterHead chapter={chapters.data} />
+          Sticky-scroll product story. Left: stable editorial copy with one
+          active story swapping under it. Right: a deck of product visuals
+          dealt through by scroll position. Without JS (or with reduced
+          motion) the same DOM renders as a plain stacked section — see the
+          [data-story="enhanced"] rules in the stylesheet. */}
+      <section className={`${styles.chapter} ${styles.dataStory}`} id="why-sendloom" data-story>
+        <div className={styles.dataStage}>
+          <header className={styles.dataHead}>
+            <p className={styles.chapterLabel}>
+              <span className={styles.chapterIndex}>{chapters.data.index}</span>
+              {chapters.data.label}
+            </p>
+            <h2 className={styles.chapterTitle}>
+              {chapters.data.headline.lead}{" "}
+              <em className={styles.emphasis}>{chapters.data.headline.emphasis}</em>
+            </h2>
+            <p className={styles.chapterIntro}>{chapters.data.intro}</p>
+          </header>
 
-        <div className={styles.bento}>
-          {dataFeatures.map((feature, i) => (
-            <article
-              key={feature.title}
-              className={i === 0 ? `${styles.bentoCell} ${styles.bentoCellWide}` : styles.bentoCell}
-              data-reveal
-            >
-              <h3 className={styles.cellTitle}>{feature.title}</h3>
-              <p className={styles.cellBody}>{feature.body}</p>
-              <p className={styles.cellMeta}>{feature.meta}</p>
-            </article>
+          {/* Copy and visuals interleave so the unenhanced (mobile / no-JS /
+              reduced-motion) flow reads story → demo, story → demo. The
+              enhanced desktop grid lifts the steps into one left-hand cell
+              and the cards into the right column. */}
+          {dataStories.map((story, i) => (
+            <Fragment key={story.title}>
+              <div className={styles.dataStep} data-story-step>
+                <p className={styles.dataStepIndex}>{story.index}</p>
+                <h3 className={styles.dataStepTitle}>{story.title}</h3>
+                <p className={styles.dataStepBody}>{story.body}</p>
+                <p className={styles.cellMeta}>{story.meta}</p>
+              </div>
+              {dataVisuals[i]}
+            </Fragment>
           ))}
+
+          <div className={styles.dataProgress} aria-hidden="true">
+            {dataStories.map((story) => (
+              <span key={story.index} className={styles.dataProgSeg}>
+                <span className={styles.dataProgFill} data-story-fill />
+              </span>
+            ))}
+          </div>
         </div>
       </section>
 
