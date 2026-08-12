@@ -64,6 +64,19 @@
   z-index: 2; /* above the page's fixed grid/grain backdrops */
   isolation: isolate;
   width: 100%;
+  /*
+   * Target of the landing nav's "Contact". The footer opens with a deep well
+   * of space for the ghosted wordmark, so landing on its literal top edge
+   * would leave the contact links most of a screen below the fold.
+   *
+   * The browser parks the scroll-margin box against the scroll-padding edge:
+   *   scrollY = elementTop - scrollMarginTop - scrollPaddingTop
+   * Global scroll-padding-top is 6rem, and we want the content — which starts
+   * one padding-top down — to arrive 7rem from the viewport top, clear of the
+   * fixed nav. Solving for the margin leaves 1rem - padding-top. The value is
+   * negative by design; it scrolls further, not less.
+   */
+  scroll-margin-top: calc(1rem - clamp(9rem, 22vw, 16rem));
   overflow: clip; /* crops the oversized wordmark at the viewport edges */
   margin-top: clamp(2rem, 6vw, 4.5rem);
   padding: clamp(9rem, 22vw, 16rem) clamp(1.2rem, 4vw, 3rem) clamp(2.2rem, 4vw, 3.2rem);

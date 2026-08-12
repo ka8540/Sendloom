@@ -62,6 +62,10 @@ const loaderBodyFont = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
+  /* Resolves the relative URLs below against the production origin. Without
+     it Next emits Open Graph tags with relative paths, which crawlers and
+     link unfurlers cannot follow, and logs a build-time warning. */
+  metadataBase: new URL("https://sendloom.net"),
   title: {
     default: "Sendloom, outreach operations on one surface",
     template: "%s · Sendloom"
@@ -69,6 +73,10 @@ export const metadata: Metadata = {
   description:
     "Import a list, fill the missing emails, write once, and run a paced sequence from your own inbox. Delivery, replies and follow-ups tracked on a single screen.",
   applicationName: "Sendloom",
+  /* No canonical here on purpose: metadata set on the root layout is inherited
+     by every route that does not override it, so a canonical of "/" would make
+     /privacy, /terms and the rest all declare themselves copies of the home
+     page. Canonicals belong on the individual pages. */
   openGraph: {
     type: "website",
     siteName: "Sendloom",

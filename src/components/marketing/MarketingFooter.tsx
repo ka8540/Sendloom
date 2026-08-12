@@ -27,7 +27,7 @@ const columns: readonly FooterColumn[] = [
     heading: "Product",
     links: [
       { href: "/#workflow", label: "Workflow" },
-      { href: "/#chaos", label: "Why it works" },
+      { href: "/#why-sendloom", label: "Why it works" },
       { href: "/signup", label: "Try Sendloom" },
       { href: "/login", label: "Login" }
     ]
@@ -204,7 +204,11 @@ export function MarketingFooter() {
   }, []);
 
   return (
-    <footer ref={footerRef} className={styles.footer}>
+    /* id="contact" is the nav's "Contact" target. The contact route itself is
+       the mailto below — this anchor just puts it on screen first, so the link
+       lands somewhere visible instead of firing a mail client from a button
+       whose destination the visitor never saw. */
+    <footer ref={footerRef} className={styles.footer} id="contact">
       <div className={styles.atmosphere} aria-hidden="true">
         <span className={`${styles.blob} ${styles.blobTeal}`} />
         <span className={`${styles.blob} ${styles.blobBlue}`} />

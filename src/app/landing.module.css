@@ -39,10 +39,17 @@
   --landing-shadow: var(--elevation-3);
 
   /* Page rhythm. One measure, used by every section, so vertical
-     spacing resolves instead of drifting per-section. */
+     spacing resolves instead of drifting per-section.
+
+     --rhythm is a HALF gap, not a full one: adjacent sections each pay it as
+     padding, so the space a reader actually sees between two sections is
+     roughly double. At the previous 9rem that produced 18rem (288px) of empty
+     page between, for example, the safety list and the closing panel, which
+     reads as an accident rather than as breathing room. Sized here so the
+     resolved gap lands near 11rem on desktop and 7rem on a phone. */
   --gutter: clamp(1.25rem, 5vw, 3rem);
   --shell: 1160px;
-  --rhythm: clamp(5rem, 11vw, 9rem);
+  --rhythm: clamp(3.5rem, 6.5vw, 5.75rem);
 
   position: relative;
   isolation: isolate;
@@ -70,6 +77,20 @@
   z-index: 2;
   width: min(var(--shell), calc(100% - var(--gutter) * 2));
   margin-inline: auto;
+  /*
+   * Anchor landing.
+   *
+   * The scroll position resolves to `elementTop - scrollMargin - scrollPadding`,
+   * and the global scroll-padding-top is already 6rem — enough on its own to
+   * clear the fixed nav. Every section then adds its own --rhythm of top
+   * padding before the heading, so a positive margin here stacks with both and
+   * strands the heading a third of the way down the viewport.
+   *
+   * Cancelling the section's own padding leaves a constant, deliberate gap
+   * instead, and because it is expressed in --rhythm it stays correct at every
+   * breakpoint without a second set of media queries.
+   */
+  scroll-margin-top: calc(1.5rem - var(--rhythm));
 }
 
 /* ===================== Emphasis run =====================
@@ -127,11 +148,14 @@
   border: 1px solid var(--line);
   background: var(--surface-strong);
   color: var(--text);
+  box-shadow: var(--elevation-1);
 }
 
 .buttonGhost:hover {
   border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface-strong));
   transform: translateY(-1px);
+  box-shadow: var(--elevation-2);
 }
 
 .buttonPrimary:active,
@@ -161,10 +185,13 @@
   padding-bottom: var(--space-7);
 }
 
+/* Spacing is set per element rather than by one grid gap. A uniform gap gives
+   the headline, the lede, the buttons and the trust note equal separation,
+   which reads as four unrelated blocks; graded spacing groups the note to the
+   buttons it qualifies and lets the headline own the space beneath it. */
 .heroInner {
   display: grid;
   justify-items: center;
-  gap: var(--space-5);
   max-width: 46rem;
 }
 
@@ -173,17 +200,23 @@
   font-family: var(--font-editorial);
   font-size: var(--display-xl);
   font-weight: var(--weight-semibold);
-  line-height: 1.04;
-  letter-spacing: -0.035em;
+  /* Tighter than the token default: at 96px the display face needs less
+     leading than at 48px, and the balanced three-line set reads as one
+     object only when the lines nearly touch. */
+  line-height: 1.02;
+  letter-spacing: var(--track-display-tight);
   text-wrap: balance;
+  /* Optical left edge. Large type sets visually inset against a centred
+     measure because the first glyph's side bearing is scaled up with it. */
+  margin-inline: -0.02em;
 }
 
 .heroLede {
-  margin: 0;
-  max-width: 34rem;
+  margin: var(--space-5) 0 0;
+  max-width: 36rem;
   color: var(--muted);
   font-size: var(--text-md);
-  line-height: var(--leading-body);
+  line-height: 1.6;
   text-wrap: pretty;
 }
 
@@ -192,20 +225,23 @@
   flex-wrap: wrap;
   justify-content: center;
   gap: var(--space-3);
-  margin-top: var(--space-1);
+  margin-top: var(--space-6);
 }
 
+/* Qualifies the buttons directly above it, so it sits close to them and well
+   clear of the visual below. */
 .heroNote {
-  margin: 0;
+  margin: var(--space-4) 0 0;
   color: var(--muted);
   font-size: var(--text-sm);
+  letter-spacing: var(--track-label);
 }
 
 .heroVisual {
   position: relative;
   z-index: 1;
   width: 100%;
-  margin-top: var(--space-7);
+  margin-top: var(--space-8);
 }
 
 /* ===================== Integration strip =====================
@@ -215,8 +251,8 @@
 .strip {
   display: grid;
   justify-items: center;
-  gap: var(--space-5);
-  padding-block: var(--space-7) var(--rhythm);
+  gap: var(--space-4);
+  padding-block: var(--space-7) var(--space-8);
   border-bottom: 1px solid var(--line);
 }
 
@@ -231,34 +267,53 @@
   flex-wrap: wrap;
   justify-content: center;
   align-items: center;
-  gap: clamp(1.75rem, 5vw, 3.5rem);
+  gap: var(--space-3) clamp(1.5rem, 4vw, 2.75rem);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-/* Simple Icons serves fixed-colour SVGs, so the mark is used as a mask
-   and painted with currentColor. One asset then works in both themes. */
-.stripMark {
-  display: block;
-  width: 1.75rem;
-  height: 1.75rem;
-  background-color: var(--muted);
-  mask-repeat: no-repeat;
-  mask-position: center;
-  mask-size: contain;
-  -webkit-mask-repeat: no-repeat;
-  -webkit-mask-position: center;
-  -webkit-mask-size: contain;
-  opacity: 0.75;
-  transition:
-    opacity var(--duration-base) var(--ease-out),
-    background-color var(--duration-base) var(--ease-out);
+/* Marks are the vendors' own multi-colour artwork. Held at a slight
+   desaturation so five brand palettes do not out-shout the single emerald
+   accent, and released to full colour on hover. */
+.stripItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0.2rem;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  letter-spacing: var(--track-label);
+  white-space: nowrap;
+  transition: color var(--duration-base) var(--ease-out);
 }
 
-.stripList li:hover .stripMark {
-  background-color: var(--text);
+.stripItem:hover {
+  color: var(--text);
+}
+
+/* Each mark keeps its own aspect ratio inside a square box (Drive's artwork
+   is 87.3x78, the rest are square), so they sit on a shared optical size
+   without any being stretched. */
+.stripMark {
+  display: block;
+  flex-shrink: 0;
+  width: 1.375rem;
+  height: 1.375rem;
+  filter: saturate(0.82);
+  opacity: 0.9;
+  transition:
+    filter var(--duration-base) var(--ease-out),
+    opacity var(--duration-base) var(--ease-out);
+}
+
+.stripItem:hover .stripMark {
+  filter: saturate(1);
   opacity: 1;
+}
+
+.stripName {
+  font-weight: var(--weight-medium);
 }
 
 /* ===================== Chapters ===================== */
@@ -333,22 +388,30 @@
   gap: var(--space-4);
 }
 
+/* Inner rhythm is graded, not uniform: the title binds to its body, and the
+   mono meta line sits apart as a footnote. `margin-top: auto` on the meta
+   pins it to the cell floor so the three meta lines form one baseline across
+   the row regardless of how long each body runs. */
 .bentoCell {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-2);
   padding: clamp(1.5rem, 3vw, 2.25rem);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   background: var(--surface-strong);
   transition:
     border-color var(--duration-base) var(--ease-out),
+    box-shadow var(--duration-base) var(--ease-out),
     transform var(--duration-base) var(--ease-out);
 }
 
-.bentoCell:hover {
-  border-color: color-mix(in srgb, var(--accent) 32%, var(--line));
-  transform: translateY(-2px);
+@media (hover: hover) and (pointer: fine) {
+  .bentoCell:hover {
+    border-color: color-mix(in srgb, var(--accent) 32%, var(--line));
+    box-shadow: var(--elevation-2);
+    transform: translateY(-2px);
+  }
 }
 
 .bentoCellWide {
@@ -377,13 +440,23 @@
 }
 
 .cellMeta {
-  margin: 0;
+  margin: var(--space-4) 0 0;
   color: var(--muted);
   font-family: var(--font-numeric);
   font-size: var(--text-2xs);
-  letter-spacing: var(--track-label);
+  /* Uppercase mono at 11px needs real tracking to stay legible; --track-label
+     is tuned for sentence-case UI text and closes these up. */
+  letter-spacing: var(--track-caps);
   text-transform: uppercase;
-  opacity: 0.8;
+  opacity: 0.75;
+}
+
+/* Only in the bento, where cells sit side by side and their meta lines should
+   agree. In the sequence list the rows are stacked, so there is nothing to
+   align to and a pushed-down meta line would just open a gap. */
+.bentoCell .cellMeta {
+  margin-top: auto;
+  padding-top: var(--space-4);
 }
 
 /* ---- Chapter 02: offset split ----
@@ -416,16 +489,32 @@
   counter-reset: step;
 }
 
+/* The rule is a gradient hairline that fades out before the right edge rather
+   than a full-width border. A hard line drawn edge to edge reads as a table;
+   a fading one reads as a division inside a single argument. */
 .step {
+  position: relative;
   display: grid;
   gap: var(--space-2);
   padding-top: var(--space-6);
-  border-top: 1px solid var(--line);
+}
+
+.step::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, var(--line), color-mix(in srgb, var(--line) 25%, transparent) 72%, transparent);
 }
 
 .step:first-child {
   padding-top: 0;
-  border-top: none;
+}
+
+.step:first-child::before {
+  display: none;
 }
 
 .stepTitle {
@@ -434,6 +523,15 @@
   font-size: var(--text-xl);
   font-weight: var(--weight-semibold);
   letter-spacing: var(--track-heading);
+  transition: color var(--duration-base) var(--ease-out);
+}
+
+/* The whole row responds, but only in colour — these are statements, not
+   controls, so nothing here lifts or grows. */
+@media (hover: hover) and (pointer: fine) {
+  .step:hover .stepTitle {
+    color: var(--accent-strong);
+  }
 }
 
 .stepBody {
@@ -502,15 +600,21 @@
    One action. The "see how it works" intent already fired in the
    hero, so repeating it here would be duplicate intent. */
 
+/* Asymmetric: the footer below opens with its own deep well of space for the
+   ghosted wordmark, so paying a full rhythm on the bottom edge too would
+   strand the panel in the middle of a very tall empty run. */
 .closing {
-  padding-block: var(--rhythm);
+  padding-block: var(--rhythm) var(--space-6);
 }
 
 .closingPanel {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   display: grid;
   justify-items: center;
   gap: var(--space-4);
-  padding: clamp(3rem, 8vw, 5.5rem) var(--gutter);
+  padding: clamp(2.75rem, 6vw, 4.5rem) var(--gutter);
   border-radius: var(--radius-2xl);
   background: linear-gradient(
     170deg,
@@ -518,7 +622,26 @@
     var(--surface-strong) 72%
   );
   border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--line));
+  box-shadow: var(--elevation-1);
   text-align: center;
+}
+
+/* A single soft pool of accent light behind the headline. One radial layer,
+   not a mesh: it gives the closing panel depth without turning it into a
+   marketing gradient. */
+.closingPanel::before {
+  content: "";
+  position: absolute;
+  inset: -40% 20% auto 20%;
+  z-index: -1;
+  height: 90%;
+  background: radial-gradient(
+    circle at 50% 50%,
+    color-mix(in srgb, var(--accent) 16%, transparent),
+    transparent 70%
+  );
+  filter: blur(40px);
+  pointer-events: none;
 }
 
 .closingTitle {
@@ -842,10 +965,54 @@
   font-weight: var(--weight-semibold);
 }
 
-.navLink:hover,
-.navLink:focus-visible {
+.navLink:hover {
   background: color-mix(in srgb, var(--landing-ink) 8%, transparent);
-  outline: none;
+}
+
+.navLink:focus-visible,
+.mobileNavLink:focus-visible {
+  outline: 2px solid var(--landing-emerald);
+  outline-offset: 2px;
+}
+
+/*
+ * Active section marker.
+ *
+ * Deliberately not a filled pill: the nav already carries two filled controls
+ * (Login, Try it) and a third would compete with them for the eye. A 4px
+ * emerald dot under the label plus a small weight/colour shift is enough to
+ * answer "where am I" without adding another button-shaped object.
+ */
+.navLink {
+  position: relative;
+}
+
+.navLinkActive {
+  color: var(--landing-ink);
+}
+
+.navLinkActive::after {
+  content: "";
+  position: absolute;
+  bottom: 0.42rem;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--landing-emerald);
+  transform: translateX(-50%);
+  animation: navDotIn var(--duration-base) var(--ease-out) both;
+}
+
+@keyframes navDotIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.4);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+  }
 }
 
 .navGhostButton,
@@ -937,6 +1104,12 @@
   position: relative;
   height: 100%;
   min-height: 38rem;
+  /* The hero centres its own text, and that inherited straight into the
+     product visual: every process row set its label centred between a
+     left-hand icon and a right-hand status dot, and the panel's title and
+     footer centred too. A real product surface aligns left, so the stage
+     resets it rather than inheriting a rule meant for the headline stack. */
+  text-align: left;
 }
 
 .heroPanel {
@@ -1083,7 +1256,22 @@
   box-shadow: inset 0 1px 0 var(--landing-edge);
 }
 
-/* The pipeline "runs": a soft highlight sweeps node to node on a loop. */
+/*
+ * Stage entrance.
+ *
+ * This used to be a highlight that swept node to node on a 7.2s loop, forever,
+ * whether or not anyone was looking at it. Perpetual movement inside the
+ * hero's focal object competes with the headline and reads as a demo reel.
+ *
+ * It is now a one-shot cascade: the stages light up in order as the visual
+ * arrives, then settle. The spine pulse and the LIVE dot remain the only
+ * continuous motion, which is enough to say "this is running".
+ *
+ * Everything below is scoped to [data-revealed], set by LandingMotion once it
+ * has confirmed motion is allowed. With reduced motion or no JS the attribute
+ * never appears, no animation is declared, and the stages simply render
+ * finished — never hidden behind a script.
+ */
 .heroNode::after {
   content: "";
   position: absolute;
@@ -1092,20 +1280,74 @@
   border: 1px solid color-mix(in srgb, var(--landing-emerald) 42%, transparent);
   background: linear-gradient(90deg, color-mix(in srgb, var(--landing-emerald) 12%, transparent), transparent 70%);
   opacity: 0;
-  animation: nodeCycle 7.2s linear infinite;
   pointer-events: none;
+  transition: opacity var(--duration-base) var(--ease-out);
 }
 
-.heroNode:nth-child(1)::after { animation-delay: 0s; }
-.heroNode:nth-child(2)::after { animation-delay: 1.2s; }
-.heroNode:nth-child(3)::after { animation-delay: 2.4s; }
-.heroNode:nth-child(4)::after { animation-delay: 3.6s; }
-.heroNode:nth-child(5)::after { animation-delay: 4.8s; }
-.heroNode:nth-child(6)::after { animation-delay: 6s; }
+.heroVisual[data-revealed] .heroNode {
+  animation: nodeEnter 560ms var(--ease-out) both;
+}
 
-@keyframes nodeCycle {
-  0%, 13% { opacity: 1; }
-  21%, 100% { opacity: 0; }
+.heroVisual[data-revealed] .heroNode::after {
+  animation: nodePass 900ms var(--ease-out) both;
+}
+
+.heroVisual[data-revealed] .heroNodeState {
+  animation: nodeStateIn 420ms var(--ease-out) both;
+}
+
+/* One delay ladder, three properties. 90ms per stage keeps the whole
+   six-stage cascade under a second. */
+.heroNode:nth-child(1), .heroNode:nth-child(1)::after, .heroNode:nth-child(1) .heroNodeState { animation-delay: 60ms; }
+.heroNode:nth-child(2), .heroNode:nth-child(2)::after, .heroNode:nth-child(2) .heroNodeState { animation-delay: 150ms; }
+.heroNode:nth-child(3), .heroNode:nth-child(3)::after, .heroNode:nth-child(3) .heroNodeState { animation-delay: 240ms; }
+.heroNode:nth-child(4), .heroNode:nth-child(4)::after, .heroNode:nth-child(4) .heroNodeState { animation-delay: 330ms; }
+.heroNode:nth-child(5), .heroNode:nth-child(5)::after, .heroNode:nth-child(5) .heroNodeState { animation-delay: 420ms; }
+.heroNode:nth-child(6), .heroNode:nth-child(6)::after, .heroNode:nth-child(6) .heroNodeState { animation-delay: 510ms; }
+
+@keyframes nodeEnter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* The accent edge passes through as the stage arrives, then releases. */
+@keyframes nodePass {
+  0%, 20% { opacity: 0; }
+  45% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes nodeStateIn {
+  from {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Desktop hover. Border clarity and a touch of surface only — no lift and no
+   pointer cursor, because these rows are not actionable and should not
+   advertise that they are. */
+@media (hover: hover) and (pointer: fine) {
+  .heroNode {
+    transition:
+      border-color var(--duration-base) var(--ease-out),
+      background-color var(--duration-base) var(--ease-out);
+  }
+
+  .heroNode:hover {
+    border-color: color-mix(in srgb, var(--landing-emerald) 26%, transparent);
+    background: color-mix(in srgb, var(--landing-panel-strong) 88%, transparent);
+  }
 }
 
 .heroNodeIcon {
@@ -1160,15 +1402,19 @@
   will-change: transform;
 }
 
+/* Clears the LIVE badge in the panel header — the badge's baseline sits just
+   above 3.6rem, so anything higher than this crops it — and hangs as far into
+   the page gutter as the gutter is deep, to keep its footprint on the stage
+   rows as small as the shell allows. */
 .heroChipWrapTop {
-  top: 3.9rem;
-  right: -1.2rem;
+  top: 4rem;
+  right: -2.6rem;
 }
 
 /* Straddles the panel's bottom-left corner so it never covers node copy. */
 .heroChipWrapBottom {
   bottom: -1.2rem;
-  left: -1.4rem;
+  left: -1.8rem;
 }
 
 .heroChip {
@@ -2231,6 +2477,38 @@
     display: none;
   }
 
+  /*
+   * Below the wide breakpoint the page gutter is no longer deep enough to
+   * hold an overhanging card. Rather than trimming the notes at the viewport
+   * edge or floating them over the stage rows, they leave the absolute layer
+   * and become a two-up row of callouts under the panel — the same
+   * information, integrated into the visual instead of hanging off it.
+   */
+  .heroStage {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.9rem;
+    min-height: 0;
+  }
+
+  .heroPanel {
+    grid-column: 1 / -1;
+  }
+
+  .heroChipWrap {
+    position: static;
+    will-change: auto;
+  }
+
+  .heroChip {
+    width: auto;
+    /* The rotation and float only read as "floating" against the panel; in
+       flow they would just look misaligned. */
+    transform: none;
+    animation: none;
+    box-shadow: var(--elevation-1);
+  }
+
   .boardGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     grid-template-areas:
@@ -2427,13 +2705,15 @@
   }
 
   .heroVisual,
-  .heroStage,
   .heroPanel {
     min-height: 30rem;
   }
 
-  .heroChipWrap {
-    display: none;
+  /* One column: two callouts side by side inside a phone width would each be
+     narrow enough to wrap their value onto three lines. */
+  .heroStage {
+    min-height: 0;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .boardGrid {
@@ -2472,8 +2752,26 @@
   .heroLiveDot,
   .heroFlowPulse,
   .heroChipTop,
-  .heroChipBottom {
+  .heroChipBottom,
+  .navLinkActive::after {
     animation: none !important;
+  }
+
+  /* The stage cascade is already gated on [data-revealed], which LandingMotion
+     never sets under reduced motion — this is belt and braces for the case
+     where the preference changes after the attribute has been written. */
+  .heroVisual[data-revealed] .heroNode,
+  .heroVisual[data-revealed] .heroNode::after,
+  .heroVisual[data-revealed] .heroNodeState {
+    animation: none !important;
+  }
+
+  .heroNode,
+  .stepTitle,
+  .bentoCell,
+  .stripItem,
+  .stripMark {
+    transition: none;
   }
 
   .headlineAccent,

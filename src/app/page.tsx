@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 
 import { BrandText } from "@/components/brand-text";
@@ -6,6 +7,7 @@ import { LandingHeroFlow } from "@/components/landing-hero-flow";
 import { LandingMotion } from "@/components/landing-motion";
 import { LandingNav } from "@/components/landing-nav";
 import { LandingPointerFX } from "@/components/landing-pointer-fx";
+import { integrations } from "@/components/marketing/integration-marks";
 import { MarketingFooter } from "@/components/marketing/MarketingFooter";
 import { redirectAuthenticatedToWorkspace } from "@/lib/auth";
 
@@ -27,6 +29,15 @@ import styles from "@/app/landing.module.css";
  *   2. Exactly three chapter labels exist on the page. They are the only
  *      small-caps labels above headlines; the hero deliberately has none.
  */
+
+/* The site answers on both the apex and the www host, so the home page names
+   one of them as canonical rather than letting the two compete as duplicates.
+   Resolved against the metadataBase set in the root layout. */
+export const metadata: Metadata = {
+  alternates: {
+    canonical: "/"
+  }
+};
 
 type Chapter = {
   index: string;
@@ -60,24 +71,6 @@ const chapters: Record<"data" | "sequences" | "control", Chapter> = {
       "Delivery, opens, clicks, replies, and retries stay attached to the run that produced them, on the same screen that launched it."
   }
 };
-
-/*
- * Integration strip.
- *
- * These are real integrations Sendloom supports, not customer logos. A
- * "trusted by" wall of invented company names on a product without public
- * customers would be a fabrication, so the strip answers a question a visitor
- * actually has: does this work with what I already use?
- *
- * Marks come from Simple Icons, which serves single-colour SVGs by slug.
- */
-const integrations = [
-  { slug: "gmail", name: "Gmail" },
-  { slug: "google", name: "Google Workspace" },
-  { slug: "googlesheets", name: "Google Sheets" },
-  { slug: "microsoftexcel", name: "Microsoft Excel" },
-  { slug: "googledrive", name: "Google Drive" }
-] as const;
 
 /*
  * Feature cells carry no CTA of their own. Every one of them would have
@@ -159,8 +152,17 @@ export default async function LandingPage() {
   // page. See `redirectAuthenticatedToWorkspace` for the validity rules.
   await redirectAuthenticatedToWorkspace();
 
-  // `id="top"` is the target of the nav's "Home" link, so it stays. The skip
-  // link in the root layout targets #main-content, hence both anchors.
+  // Anchor contract for the nav and footer. Every in-page link on the public
+  // surface resolves to one of these, and they appear in document order so the
+  // nav's active-section indicator advances left to right as you scroll:
+  //
+  //   #home          hero              nav "Home"
+  //   #why-sendloom  chapter 01, Data  nav "Why Sendloom"
+  //   #workflow      chapter 02, Seq.  nav "Workflow", hero "See how it works"
+  //   #contact       footer            nav "Contact"
+  //
+  // `id="top"` stays for any saved link to the old target, and the skip link
+  // in the root layout targets #main-content, hence the extra anchors.
   return (
     <main id="top" className={styles.page}>
       <span id="main-content" />
@@ -174,7 +176,7 @@ export default async function LandingPage() {
           Four text elements only: headline, subtext, actions, micro-note.
           No eyebrow, so the three chapter labels below stay the page's
           entire budget of small-caps labels. */}
-      <section className={styles.hero}>
+      <section className={styles.hero} id="home">
         <div className={styles.heroInner}>
           <h1 className={styles.heroHeadline} data-reveal>
             Cold outreach that feels{" "}
@@ -188,7 +190,7 @@ export default async function LandingPage() {
             <Link className={styles.buttonPrimary} href="/signup">
               Get started for free
             </Link>
-            <a className={styles.buttonGhost} href="#how-it-works">
+            <a className={styles.buttonGhost} href="#workflow">
               See how it works
             </a>
           </div>
@@ -203,24 +205,16 @@ export default async function LandingPage() {
       </section>
 
       {/* ====================== INTEGRATION STRIP ======================
-          Inline row. Real integrations, not invented customer logos. */}
+          Inline row. Real integrations, not invented customer logos. Marks are
+          the vendors' own multi-colour artwork, inlined — see
+          components/marketing/integration-marks. */}
       <section className={styles.strip} aria-label="Supported integrations">
         <p className={styles.stripLabel}>Works with the tools you already send from</p>
         <ul className={styles.stripList}>
-          {integrations.map((tool) => (
-            <li key={tool.slug}>
-              {/* Simple Icons serves a single-colour SVG per slug. currentColor
-                  is not supported by the CDN, so the mark is masked instead,
-                  which lets one asset work in both themes. */}
-              <span
-                className={styles.stripMark}
-                role="img"
-                aria-label={tool.name}
-                style={{
-                  maskImage: `url(https://cdn.simpleicons.org/${tool.slug})`,
-                  WebkitMaskImage: `url(https://cdn.simpleicons.org/${tool.slug})`
-                }}
-              />
+          {integrations.map(({ Mark, name, slug }) => (
+            <li key={slug} className={styles.stripItem}>
+              <Mark className={styles.stripMark} />
+              <span className={styles.stripName}>{name}</span>
             </li>
           ))}
         </ul>
@@ -228,7 +222,7 @@ export default async function LandingPage() {
 
       {/* ==================== CHAPTER 01 - DATA ====================
           Asymmetric bento: three items, three cells, first spans wide. */}
-      <section className={styles.chapter} id="how-it-works">
+      <section className={styles.chapter} id="why-sendloom">
         <ChapterHead chapter={chapters.data} />
 
         <div className={styles.bento}>
@@ -247,8 +241,10 @@ export default async function LandingPage() {
       </section>
 
       {/* ================== CHAPTER 02 - SEQUENCES ==================
-          Offset split: sticky headline column, stacked feature rows. */}
-      <section className={styles.chapter}>
+          Offset split: sticky headline column, stacked feature rows.
+          Target of both the nav's "Workflow" link and the hero's
+          "See how it works". */}
+      <section className={styles.chapter} id="workflow">
         <div className={styles.split}>
           <div className={styles.splitAside}>
             <ChapterHead chapter={chapters.sequences} />

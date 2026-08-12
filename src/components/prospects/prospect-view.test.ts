@@ -470,25 +470,25 @@ describe("Discover navigation and landing contracts", () => {
     expect(navSource).not.toContain("icon: Network");
   });
 
-  it("adds Discover inside the existing landing capabilities grid without removing current items", () => {
-    for (const title of [
-      "Lead imports",
-      "Hunter.io enrichment",
-      "Template intelligence",
-      "Gmail-connected sending",
-      "Follow-up scheduling",
-      "Delivery visibility"
-    ]) {
+  /*
+   * This originally pinned the landing page's "capabilities grid" — six card
+   * titles, a `capCard`/`fxCard` class pair, an icon import and a `tags` array.
+   * That whole structure was replaced by the chaptered marketing narrative, so
+   * every one of those assertions described markup that no longer exists.
+   *
+   * The contract worth keeping is the one the test was named for: Discover is
+   * still presented on the public page, next to the other data capabilities,
+   * and described in terms a visitor can act on. Asserting that rather than a
+   * specific grid implementation keeps the guarantee without re-breaking on
+   * the next visual pass.
+   */
+  it("still presents Discover on the landing page alongside the other data capabilities", () => {
+    for (const title of ["Imports", "Discover", "Email enrichment"]) {
       expect(landingSource).toContain(`title: "${title}"`);
     }
 
-    expect(landingSource).toContain("UserRoundSearch");
-    expect(landingSource).toContain('title: "Discover"');
-    expect(landingSource).toContain(
-      "Find relevant professionals by company, role, and location, then prepare their inferred work contacts for review."
-    );
-    expect(landingSource).toContain('tags: ["Company", "Role", "Location"]');
-    expect(landingSource).toContain("className={`${styles.capCard} ${styles.fxCard}`}");
+    expect(landingSource).toContain("Search by company, role, and location");
+    expect(landingSource).toContain('meta: "Company, role, location"');
   });
 });
 
