@@ -212,17 +212,17 @@ export function LandingMotion() {
               if (x < -0.5) {
                 /* Waiting in the deck below: slot 1 peeks, slot 2 sits deeper. */
                 const t = Math.min(-x - 0.5, 2);
-                y = t * 18;
-                rotation = t * 1.2;
-                scale = 1 - t * 0.03;
-                opacity = 1 - t * 0.22;
+                y = Math.min(t * 26, 26);
+                rotation = Math.min(t * 1.2, 1.5);
+                scale = 1 - Math.min(t * 0.05, 0.05);
+                opacity = 1 - Math.min(t * 0.45, 0.5);
               } else if (x > 0.15) {
                 /* Dealt: lifts slightly and settles above, never blinks out. */
                 const t = Math.min((x - 0.15) / 0.5, 2);
-                y = -t * 16;
-                rotation = -t * 1.2;
-                scale = 1 - t * 0.02;
-                opacity = 1 - t * 0.25;
+                y = -Math.min(t * 14, 18);
+                rotation = -Math.min(t * 1.2, 1.5);
+                scale = 1 - Math.min(t * 0.03, 0.05);
+                opacity = 1 - Math.min(t * 0.3, 0.6);
               }
               gsap.set(card, { y, rotation, scale, opacity, zIndex: Math.round(100 - Math.abs(x) * 20) });
             });

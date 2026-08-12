@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Fragment, type CSSProperties } from "react";
+import { Check } from "lucide-react";
 import Link from "next/link";
 
 import { BrandText } from "@/components/brand-text";
@@ -10,6 +11,7 @@ import { LandingNav } from "@/components/landing-nav";
 import { LandingPointerFX } from "@/components/landing-pointer-fx";
 import { integrations } from "@/components/marketing/integration-marks";
 import { MarketingFooter } from "@/components/marketing/MarketingFooter";
+import { SendloomLogo } from "@/components/sendloom-logo";
 import { redirectAuthenticatedToWorkspace } from "@/lib/auth";
 
 import styles from "@/app/landing.module.css";
@@ -173,16 +175,23 @@ export default async function LandingPage() {
      names and companies are fictional. */
   const dataVisuals = [
     <article key="imports" className={styles.dataCard} data-story-card aria-label="Imports: mapping a CSV to contact fields">
-      <div className={styles.vizInner}>
-        <div className={`${styles.vizSplit} ${styles.rv}`} style={delay(0.05)}>
-          <span className={styles.vizFile}>your_list.csv</span>
-          <span className={styles.vizMuted}>228 contacts</span>
+      <div className={styles.winBar}>
+        <SendloomLogo className={styles.winMark} />
+        <span className={styles.winTitle}>Imports</span>
+        <span className={styles.winMeta}>your_list.csv</span>
+      </div>
+      <div className={styles.winBody}>
+        <div className={`${styles.winIntro} ${styles.rv}`} style={delay(0.05)}>
+          <div>
+            <p className={styles.winScreenTitle}>Map fields</p>
+            <p className={styles.winSub}>Match your file columns to Sendloom.</p>
+          </div>
+          <span className={styles.winCount}>228 contacts</span>
         </div>
-        <div className={styles.vizRule} />
-        <div className={`${styles.vizColHead} ${styles.rv}`} style={delay(0.2)}>
+        <div className={`${styles.winHead} ${styles.rv}`} style={delay(0.14)}>
           <span>CSV column</span>
-          <span aria-hidden="true" />
           <span>Sendloom field</span>
+          <span aria-hidden="true" />
         </div>
         {[
           ["first_name", "First Name"],
@@ -191,78 +200,131 @@ export default async function LandingPage() {
           ["company", "Company"],
           ["location", "Location"]
         ].map(([column, field], row) => (
-          <div key={column} className={`${styles.mapRow} ${styles.rv}`} style={delay(0.3 + row * 0.09)}>
-            <span className={styles.mapCol}>{column}</span>
-            <span className={styles.mapArrow} aria-hidden="true" />
-            <span className={styles.mapField}>{field}</span>
+          <div key={column} className={`${styles.winRow} ${styles.rv}`} style={delay(0.2 + row * 0.06)}>
+            <span className={styles.srcField}>{column}</span>
+            <span className={styles.fieldControl}>
+              {field}
+              <i className={styles.chev} aria-hidden="true" />
+            </span>
+            <span className={styles.rowStatus}>
+              <Check aria-hidden="true" />
+            </span>
           </div>
         ))}
-        <p className={`${styles.vizFoot} ${styles.rv}`} style={delay(0.8)}>
-          ✓ 5 fields mapped — ready
-        </p>
+      </div>
+      <div className={`${styles.winFoot} ${styles.rv}`} style={delay(0.55)}>
+        <span>5 of 5 mapped</span>
+        <span className={styles.chipReady}>Ready</span>
       </div>
     </article>,
 
     <article key="discover" className={styles.dataCard} data-story-card aria-label="Discover: searching contacts by company, role, and location">
-      <div className={styles.vizInner}>
-        <div className={styles.chipRow}>
+      <div className={styles.winBar}>
+        <SendloomLogo className={styles.winMark} />
+        <span className={styles.winTitle}>Discover</span>
+        <span className={styles.winMeta}>12 results</span>
+      </div>
+      <div className={styles.winBody}>
+        <div className={`${styles.filterRow} ${styles.rv}`} style={delay(0.05)}>
           {[
             ["Company", "Stripe"],
             ["Role", "Software Engineer"],
             ["Location", "San Francisco"]
-          ].map(([label, value], chip) => (
-            <span key={label} className={`${styles.chip} ${styles.rv}`} style={delay(0.05 + chip * 0.08)}>
-              <span className={styles.chipLabel}>{label}</span>
+          ].map(([label, value]) => (
+            <span key={label} className={styles.filterField}>
+              <span className={styles.filterLabel}>{label}</span>
               {value}
             </span>
           ))}
         </div>
-        <div className={styles.vizRule} />
+        <div className={`${styles.winHead} ${styles.headPeople} ${styles.rv}`} style={delay(0.14)}>
+          <span aria-hidden="true" />
+          <span>Person</span>
+          <span>Role</span>
+          <span className={styles.colCompany}>Company</span>
+          <span className={styles.colLocation}>Location</span>
+        </div>
         {[
-          ["Maya Chen", "Senior Software Engineer", true],
-          ["Daniel Okafor", "Software Engineer", false],
-          ["Sofia Ramirez", "Backend Engineer", false],
-          ["Alex Novak", "Software Engineer", false]
-        ].map(([name, role, selected], row) => (
+          ["Maya Chen", "Software Engineer", "Stripe", "San Francisco", true],
+          ["Ethan Miller", "Backend Engineer", "Stripe", "New York", false],
+          ["Priya Shah", "Platform Engineer", "Stripe", "Seattle", false]
+        ].map(([name, role, company, location, selected], row) => (
           <div
             key={name as string}
             className={
               selected
-                ? `${styles.personRow} ${styles.personRowSelected} ${styles.rv}`
-                : `${styles.personRow} ${styles.rv}`
+                ? `${styles.winRow} ${styles.rowPeople} ${styles.winRowSelected} ${styles.rv}`
+                : `${styles.winRow} ${styles.rowPeople} ${styles.rv}`
             }
-            style={delay(0.3 + row * 0.1)}
+            style={delay(0.2 + row * 0.07)}
           >
+            <span className={styles.selBox} aria-hidden="true">
+              {selected ? <Check /> : null}
+            </span>
             <span className={styles.personName}>{name}</span>
-            <span className={styles.vizMuted}>{role} · Stripe · San Francisco</span>
+            <span className={styles.cellMuted}>{role}</span>
+            <span className={`${styles.cellMuted} ${styles.colCompany}`}>{company}</span>
+            <span className={`${styles.cellMuted} ${styles.colLocation}`}>{location}</span>
           </div>
         ))}
-        <p className={`${styles.vizFoot} ${styles.rv}`} style={delay(0.75)}>
-          10 people found — 1 marked for review
-        </p>
+      </div>
+      <div className={`${styles.winFoot} ${styles.rv}`} style={delay(0.5)}>
+        <span>1 selected</span>
+        <span className={styles.footAction}>Add selected to import</span>
       </div>
     </article>,
 
     <article key="enrichment" className={styles.dataCard} data-story-card aria-label="Email enrichment: resolving a missing address">
-      <div className={styles.vizInner}>
-        <div className={`${styles.vizSplit} ${styles.rv}`} style={delay(0.05)}>
+      <div className={styles.winBar}>
+        <SendloomLogo className={styles.winMark} />
+        <span className={styles.winTitle}>Email enrichment</span>
+        <span className={styles.winMeta}>Hunter connected</span>
+      </div>
+      <div className={styles.winBody}>
+        <div className={`${styles.winIntro} ${styles.rv}`} style={delay(0.05)}>
+          <div>
+            <p className={styles.winScreenTitle}>Work emails</p>
+            <p className={styles.winSub}>Fill missing work emails.</p>
+          </div>
+          <span className={styles.winCount}>3 contacts</span>
+        </div>
+        <div className={`${styles.winHead} ${styles.headEnrich} ${styles.rv}`} style={delay(0.14)}>
+          <span>Contact</span>
+          <span className={styles.colCompany}>Company</span>
+          <span>Work email</span>
+          <span>Status</span>
+        </div>
+        <div className={`${styles.winRow} ${styles.rowEnrich} ${styles.rv}`} style={delay(0.2)}>
+          <span className={styles.personName}>Maya Chen</span>
+          <span className={`${styles.cellMuted} ${styles.colCompany}`}>Stripe</span>
+          <span className={styles.mailCell}>maya@stripe.com</span>
+          <span className={`${styles.statusChip} ${styles.statusFound}`}>Found</span>
+        </div>
+        <div className={`${styles.winRow} ${styles.rowEnrich} ${styles.rv}`} style={delay(0.27)}>
+          <span className={styles.personName}>Ethan Miller</span>
+          <span className={`${styles.cellMuted} ${styles.colCompany}`}>Linear</span>
+          <span className={styles.swapCell}>
+            <span className={`${styles.mailCell} ${styles.swapPending}`}>
+              <i className={styles.searchDot} aria-hidden="true" />
+              Searching
+            </span>
+            <span className={`${styles.mailCell} ${styles.swapFound}`}>ethan@linear.com</span>
+          </span>
+          <span className={styles.swapCell}>
+            <span className={`${styles.statusChip} ${styles.statusSearching} ${styles.swapPending}`}>Searching</span>
+            <span className={`${styles.statusChip} ${styles.statusFound} ${styles.swapFound}`}>Found</span>
+          </span>
+        </div>
+        <div className={`${styles.winRow} ${styles.rowEnrich} ${styles.rv}`} style={delay(0.34)}>
           <span className={styles.personName}>Priya Shah</span>
-          <span className={styles.vizMuted}>Acme · acme.com</span>
+          <span className={`${styles.cellMuted} ${styles.colCompany}`}>Figma</span>
+          <span className={styles.mailCell}>priya@figma.com</span>
+          <span className={`${styles.statusChip} ${styles.statusFound}`}>Found</span>
         </div>
-        <p className={`${styles.vizStatus} ${styles.rv}`} style={delay(0.3)}>
-          Resolving domain…
-        </p>
-        <p className={`${styles.vizAddress} ${styles.rv}`} style={delay(0.5)}>
-          priya.shah@acme.com
-        </p>
-        <div className={`${styles.tagRow} ${styles.rv}`} style={delay(0.68)}>
-          <span className={styles.tag}>Inferred address</span>
-          <span className={styles.tag}>High confidence</span>
-          <span className={styles.tag}>Added to contact</span>
-        </div>
-        <p className={`${styles.vizFoot} ${styles.rv}`} style={delay(0.85)}>
-          Inferred addresses are reviewed before they enter a run.
-        </p>
+      </div>
+      <div className={`${styles.winFoot} ${styles.rv}`} style={delay(0.5)}>
+        <span>2 of 3 resolved</span>
+        <span className={styles.chipReady}>Ready</span>
       </div>
     </article>
   ];
