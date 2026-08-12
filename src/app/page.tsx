@@ -213,7 +213,10 @@ export default async function LandingPage() {
         ))}
       </div>
       <div className={`${styles.winFoot} ${styles.rv}`} style={delay(0.55)}>
-        <span>5 of 5 mapped</span>
+        <span className={styles.footOk}>
+          <Check aria-hidden="true" />
+          5 of 5 mapped
+        </span>
         <span className={styles.chipReady}>Ready</span>
       </div>
     </article>,
