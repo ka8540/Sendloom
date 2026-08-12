@@ -438,6 +438,13 @@
   overflow: hidden;
   border-radius: 2px;
   background: color-mix(in srgb, var(--muted) 30%, transparent);
+  transition: transform 0.2s ease;
+}
+
+/* The active segment thickens slightly so the rail reads as 01 02 03, not
+   just a loading bar. */
+.dataProgSeg[data-active] {
+  transform: scaleY(1.8);
 }
 
 .dataProgFill {
@@ -670,10 +677,10 @@
    nav and deals the three cards through it. */
 @media (min-width: 1024px) {
   .dataStory[data-story="enhanced"] {
-    /* ~110vh of scroll distance for three states: one moderate wheel gesture
-       visibly advances the story, and the section releases straight into
-       chapter 02. The previous 320vh read as a dead scroll zone. */
-    height: 210vh;
+    /* ~70vh of scroll for three states: one moderate gesture advances a
+       story, and the section releases straight into chapter 02. Longer
+       distances read as dead scroll zones. */
+    height: 170vh;
     padding-block: 0;
   }
 
@@ -715,17 +722,19 @@
     grid-row: 1;
   }
 
-  /* All three copies occupy the same cell; only the active one shows. */
+  /* All three copies occupy the same cell; only the active one shows. The
+     crossfade overlaps (outgoing and incoming are both mounted), so text
+     never fully disappears between states. */
   .dataStory[data-story="enhanced"] .dataStep {
     grid-column: 1;
     grid-row: 2;
     align-self: start;
     max-width: none;
     opacity: 0;
-    transform: translateY(12px);
+    transform: translateY(8px);
     transition:
-      opacity 0.45s ease,
-      transform 0.45s ease;
+      opacity 0.24s ease,
+      transform 0.24s ease;
   }
 
   .dataStory[data-story="enhanced"] .dataStep[data-active] {

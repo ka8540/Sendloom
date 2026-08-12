@@ -108,8 +108,9 @@ const dataStories = [
 ] as const;
 
 /* Stagger helper for the product visuals: each revealed element carries its
-   transition delay as a custom property so no per-item classes are needed. */
-const delay = (seconds: number) => ({ "--d": `${seconds}s` }) as CSSProperties;
+   transition delay as a custom property so no per-item classes are needed.
+   Scaled down so a freshly activated card finishes revealing quickly. */
+const delay = (seconds: number) => ({ "--d": `${seconds * 0.7}s` }) as CSSProperties;
 
 const sequenceFeatures = [
   {

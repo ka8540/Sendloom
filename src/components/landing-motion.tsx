@@ -190,38 +190,52 @@ export function LandingMotion() {
           const count = cards.length;
           let activeIndex = -1;
 
+          /*
+           * Persistent deck. Every card always occupies a slot and stays
+           * visible — no state, at any scroll position, has opacity below
+           * 0.5, so fast scrolling can never produce an empty stage:
+           *
+           *   seated    front, fully opaque
+           *   waiting   stacked below the active card, peeking out
+           *   passed    settled just above/behind, subdued but present
+           *
+           * x measures distance from the card's seat in story steps
+           * (x = 0 … seated, x = -1 … next slot down, x = +1 … dealt).
+           */
           const apply = (progress: number) => {
             cards.forEach((card, i) => {
-              /* x < 0: card is upcoming (waits below the deck, peeking out).
-                 x > 0: card has been dealt away (lifts up, tilts, fades). */
-              const x = progress * count - (i + 0.5);
-              let y: number;
-              let rotation: number;
-              let scale: number;
-              let opacity: number;
-              if (x < 0) {
-                const t = Math.min(-x, 1);
-                y = t * 20;
-                rotation = t * 2;
+              const x = progress * count - (i + 0.28);
+              let y = 0;
+              let rotation = 0;
+              let scale = 1;
+              let opacity = 1;
+              if (x < -0.5) {
+                /* Waiting in the deck below: slot 1 peeks, slot 2 sits deeper. */
+                const t = Math.min(-x - 0.5, 2);
+                y = t * 18;
+                rotation = t * 1.2;
+                scale = 1 - t * 0.03;
+                opacity = 1 - t * 0.22;
+              } else if (x > 0.15) {
+                /* Dealt: lifts slightly and settles above, never blinks out. */
+                const t = Math.min((x - 0.15) / 0.5, 2);
+                y = -t * 16;
+                rotation = -t * 1.2;
                 scale = 1 - t * 0.02;
-                /* The immediate next card peeks out for most of the active
-                   step; cards further down the deck wait hidden. */
-                opacity = Math.min(Math.max(1 - (-x - 1) * 3, 0), 1);
-              } else {
-                const t = Math.min(x, 1);
-                y = -t * 40;
-                rotation = -t * 2.5;
-                scale = 1 - t * 0.02;
-                opacity = Math.max(1 - x * 1.7, 0);
+                opacity = 1 - t * 0.25;
               }
-              gsap.set(card, { y, rotation, scale, opacity, zIndex: Math.round(100 - x * 20) });
+              gsap.set(card, { y, rotation, scale, opacity, zIndex: Math.round(100 - Math.abs(x) * 20) });
             });
 
-            const index = Math.min(count - 1, Math.floor(progress * count));
+            /* Discrete active story: text is driven by this alone, never by
+               transition opacity, so it cannot all be zero at once. A fast
+               flick lands directly on the final state — no queue, no wait. */
+            const index = progress < 0.3 ? 0 : progress < 0.67 ? 1 : 2;
             if (index !== activeIndex) {
               activeIndex = index;
               steps.forEach((step, i) => step.toggleAttribute("data-active", i === index));
               cards.forEach((card, i) => card.toggleAttribute("data-active", i === index));
+              fills.forEach((fill, i) => fill.parentElement?.toggleAttribute("data-active", i === index));
             }
 
             fills.forEach((fill, i) => {
