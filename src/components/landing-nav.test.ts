@@ -117,3 +117,15 @@ describe("landing integration marks", () => {
     }
   });
 });
+
+describe("landing Imports window", () => {
+  const importsStart = PAGE_SOURCE.indexOf('<article key="imports"');
+  const discoverStart = PAGE_SOURCE.indexOf('<article key="discover"');
+  const importsWindow = PAGE_SOURCE.slice(importsStart, discoverStart);
+
+  it("keeps the compact four-row mapping preview clear of its footer", () => {
+    expect(importsWindow).toContain('["company", "Company"]');
+    expect(importsWindow).not.toContain('["location", "Location"]');
+    expect(importsWindow).toContain("4 of 4 mapped");
+  });
+});

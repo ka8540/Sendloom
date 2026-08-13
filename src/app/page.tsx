@@ -197,8 +197,7 @@ export default async function LandingPage() {
           ["first_name", "First Name"],
           ["last_name", "Last Name"],
           ["email", "Email"],
-          ["company", "Company"],
-          ["location", "Location"]
+          ["company", "Company"]
         ].map(([column, field], row) => (
           <div key={column} className={`${styles.winRow} ${styles.rv}`} style={delay(0.2 + row * 0.06)}>
             <span className={styles.srcField}>{column}</span>
@@ -215,7 +214,7 @@ export default async function LandingPage() {
       <div className={styles.winFoot}>
         <span className={styles.footOk}>
           <Check aria-hidden="true" />
-          5 of 5 mapped
+          4 of 4 mapped
         </span>
         <span className={styles.chipReady}>Ready</span>
       </div>
