@@ -103,6 +103,12 @@ const envSchema = z
     PROSPECT_AI_MAX_COMPANY_CALLS_PER_SEARCH: z.coerce.number().int().nonnegative().default(2),
     PROSPECT_AI_MAX_ROLE_CALLS_PER_SEARCH: z.coerce.number().int().nonnegative().default(1),
     PROSPECT_AI_MAX_PATTERN_CALLS_PER_SEARCH: z.coerce.number().int().nonnegative().default(1),
+    // Ambiguous-person identity resolution runs at most once per person whose
+    // name is too incomplete to build an address from, and never for a clean
+    // name. This hard cap keeps a bad provider page from fanning out into
+    // per-person AI usage; 0 disables the fallback entirely.
+    PROSPECT_AI_MAX_IDENTITY_CALLS_PER_SEARCH: z.coerce.number().int().nonnegative().default(5),
+    PROSPECT_IDENTITY_RESOLUTION_ENABLED: booleanFlag(true),
     PROSPECT_AI_MAX_UNIQUE_TITLES: z.coerce.number().int().positive().default(100),
     PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS: booleanFlag(false),
     // --- AI web-search email-format discovery (OpenAI Responses + web_search) ---
@@ -244,6 +250,8 @@ function readRawEnv() {
     PROSPECT_AI_MAX_COMPANY_CALLS_PER_SEARCH: process.env.PROSPECT_AI_MAX_COMPANY_CALLS_PER_SEARCH,
     PROSPECT_AI_MAX_ROLE_CALLS_PER_SEARCH: process.env.PROSPECT_AI_MAX_ROLE_CALLS_PER_SEARCH,
     PROSPECT_AI_MAX_PATTERN_CALLS_PER_SEARCH: process.env.PROSPECT_AI_MAX_PATTERN_CALLS_PER_SEARCH,
+    PROSPECT_AI_MAX_IDENTITY_CALLS_PER_SEARCH: process.env.PROSPECT_AI_MAX_IDENTITY_CALLS_PER_SEARCH,
+    PROSPECT_IDENTITY_RESOLUTION_ENABLED: process.env.PROSPECT_IDENTITY_RESOLUTION_ENABLED,
     PROSPECT_AI_MAX_UNIQUE_TITLES: process.env.PROSPECT_AI_MAX_UNIQUE_TITLES,
     PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS: process.env.PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS,
     PROSPECT_EMAIL_DISCOVERY_PROVIDER: process.env.PROSPECT_EMAIL_DISCOVERY_PROVIDER,

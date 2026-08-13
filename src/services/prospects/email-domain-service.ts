@@ -18,11 +18,8 @@ import {
   isEmailPattern
 } from "@/lib/prospect-enums";
 import { type AiCallBudget, type AiClient } from "@/services/prospects/prospect-ai";
-import {
-  isPersonalEmailDomain,
-  normalizeDomain,
-  normalizeNameForEmail
-} from "@/services/prospects/prospect-normalization";
+import { normalizeNameForEmail } from "@/services/prospects/prospect-person-name";
+import { isPersonalEmailDomain, normalizeDomain } from "@/services/prospects/prospect-normalization";
 
 export type EmailEvidenceSourceType =
   | "verified_email_sample"

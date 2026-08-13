@@ -150,6 +150,55 @@ describe("normalizeProfile", () => {
     expect(normalizeProfile({ linkedinUrl: "https://www.linkedin.com/in/x" })).toBeNull();
   });
 
+  // Ingestion is the ONLY place raw provider name fields are parsed, so a
+  // malformed display name must be canonical before it can reach the shared
+  // cache, a user's ProspectPerson row, or email generation.
+  const ingest = (fields: Record<string, unknown>) =>
+    normalizeProfile({ id: "p1", linkedinUrl: "https://www.linkedin.com/in/p1", ...fields });
+
+  it.each([
+    ["Jared Cho M.B.A.", "Jared", "Cho"],
+    ["Jared Cho MBA", "Jared", "Cho"],
+    ["Jared Cho, Ph.D.", "Jared", "Cho"],
+    ["Jared M. Cho", "Jared", "Cho"],
+    ["Jared Michael Cho", "Jared", "Cho"],
+    ["\u{1F680} Jared Cho", "Jared", "Cho"],
+    ["Jared Cho \u{1F3AF}", "Jared", "Cho"],
+    ["Li Ma", "Li", "Ma"]
+  ])("canonicalizes the display name %s at ingestion", (fullName, first, last) => {
+    const profile = ingest({ fullName });
+    expect(profile?.firstName).toBe(first);
+    expect(profile?.lastName).toBe(last);
+    expect(profile?.identityStatus).toBe("COMPLETE");
+  });
+
+  it("repairs a polluted structured last name", () => {
+    const profile = ingest({ firstName: "Jared", lastName: "Cho M.B.A.", fullName: "Jared Cho M.B.A." });
+    expect(profile?.firstName).toBe("Jared");
+    expect(profile?.lastName).toBe("Cho");
+    expect(profile?.fullName).toBe("Jared Cho");
+  });
+
+  it("records a parenthetical alias without fusing it into a name component", () => {
+    const profile = ingest({ firstName: "Jared", lastName: "(Yiming) Cho", fullName: "Jared (Yiming) Cho" });
+    expect(profile?.firstName).toBe("Jared");
+    expect(profile?.lastName).toBe("Cho");
+    expect(profile?.alternateFirstNames).toEqual(["Yiming"]);
+    expect(profile?.fullName).toBe("Jared (Yiming) Cho");
+  });
+
+  it("flags an initial-only surname as ambiguous instead of inventing one", () => {
+    const profile = ingest({ firstName: "Jared", lastName: "C.", fullName: "Jared C." });
+    expect(profile?.firstName).toBe("Jared");
+    expect(profile?.lastName).toBe("");
+    expect(profile?.identityStatus).toBe("AMBIGUOUS");
+    expect(profile?.fullName).toBe("Jared C.");
+  });
+
+  it("rejects an item whose name is only decoration", () => {
+    expect(ingest({ fullName: "\u{1F680}\u{1F3AF}" })).toBeNull();
+  });
+
   it("parses the current harvestapi dataset-item schema (#parser-8)", () => {
     const profile = normalizeProfile(harvestApiItem());
 
@@ -201,6 +250,8 @@ describe("currentCompanyMatches", () => {
     firstName: "Jane",
     lastName: "Doe",
     fullName: "Jane Doe",
+    alternateFirstNames: [],
+    identityStatus: "COMPLETE",
     currentTitle: "Engineer",
     normalizedTitle: "engineer",
     location: null,

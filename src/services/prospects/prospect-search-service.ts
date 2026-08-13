@@ -63,6 +63,11 @@ import {
   DEFAULT_PROSPECT_EMAIL_FORMAT_MODEL,
   isOpenAIEmailFormatDiscoveryConfigured
 } from "@/services/prospects/openai-email-format-discovery";
+import {
+  OpenAIPersonIdentityResolver,
+  type PersonIdentityResolverPort,
+  resolveIncompleteIdentities
+} from "@/services/prospects/openai-person-identity-resolution";
 import { AiCallBudget, createAiBudget } from "@/services/prospects/prospect-ai";
 import {
   resolveCompanyRoleSearchAction,
@@ -236,6 +241,12 @@ export type ProspectSearchServiceDeps = {
   discoverCache?: DiscoverCachePort;
   /** Audit sink; defaults to a no-op (production wires recordAuditEvent). */
   audit?: ProspectAuditFn;
+  /**
+   * Fallback resolver for people whose provider name is too incomplete to build
+   * an address from. Defaults to the OpenAI web-search resolver, which is inert
+   * unless PROSPECT_IDENTITY_RESOLUTION_ENABLED and an API key are configured.
+   */
+  identityResolver?: PersonIdentityResolverPort;
   /** Injectable clock for deterministic attempt timestamps in tests. */
   now?: () => Date;
 };
@@ -272,6 +283,7 @@ export class ProspectSearchService {
   private readonly discoverQuota: DiscoverQuotaReserver;
   private readonly discoverCache: DiscoverCachePort;
   private readonly audit: ProspectAuditFn;
+  private readonly identityResolver: PersonIdentityResolverPort;
   private readonly now: () => Date;
 
   constructor(deps: ProspectSearchServiceDeps) {
@@ -285,6 +297,7 @@ export class ProspectSearchService {
     this.discoverQuota = deps.discoverQuota ?? reserveDiscoverSearchSlot;
     this.discoverCache = deps.discoverCache ?? new DiscoverSearchCacheService({ prisma: deps.prisma });
     this.audit = deps.audit ?? noopAudit;
+    this.identityResolver = deps.identityResolver ?? new OpenAIPersonIdentityResolver();
     this.now = deps.now ?? (() => new Date());
   }
 
@@ -847,9 +860,19 @@ export class ProspectSearchService {
       eligiblePeople: searchResult.profiles.length
     });
 
+    // Complete the identities deterministic parsing could not ("Jared C.").
+    // Clean names never reach the model, and an unresolved person simply keeps
+    // no email rather than receiving a guessed one.
+    const profiles = await resolveIncompleteIdentities(searchResult.profiles, {
+      companyName: resolution.officialName,
+      companyDomain: company.emailDomain ?? resolution.officialWebsiteDomain ?? null,
+      resolver: this.identityResolver,
+      budget
+    });
+
     // Classify unique titles (the global title-classification cache is reused).
     await this.setStatus(search.id, "CLASSIFYING_POSITIONS");
-    const rawTitles = searchResult.profiles
+    const rawTitles = profiles
       .map((profile) => profile.currentTitle)
       .filter((title): title is string => Boolean(title));
     const classifications = await this.roleClassifier.classify(rawTitles, { budget, searchId: search.id });
@@ -862,7 +885,7 @@ export class ProspectSearchService {
 
     // Build the normalized people dataset. Candidate emails are regenerated
     // against the final persisted format during materialization.
-    const people = this.buildDatasetPeople(searchResult.profiles, classifications, emailFormat);
+    const people = this.buildDatasetPeople(profiles, classifications, emailFormat);
 
     return { emailFormat, people };
   }

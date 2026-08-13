@@ -25,6 +25,11 @@ import {
 import { computeDiscoverFingerprint } from "@/services/prospects/discover-cache-fingerprint";
 import { PersonIdentitySet } from "@/services/prospects/discover-person-identity";
 import { resolveCandidateEmail } from "@/services/prospects/email-generation-service";
+import {
+  OpenAIPersonIdentityResolver,
+  type PersonIdentityResolverPort,
+  resolveIncompleteIdentities
+} from "@/services/prospects/openai-person-identity-resolution";
 import { AiCallBudget, createAiBudget } from "@/services/prospects/prospect-ai";
 import { combinedEmailConfidence } from "@/services/prospects/prospect-email-confidence";
 import { normalizeTitle } from "@/services/prospects/prospect-normalization";
@@ -79,6 +84,8 @@ export type DiscoverExpansionServiceDeps = {
   audit?: ExpansionAuditFn;
   batchSize?: number;
   maxProviderPages?: number;
+  /** Fallback resolver for incomplete person names; see the search service. */
+  identityResolver?: PersonIdentityResolverPort;
 };
 
 const EXPANSION_LOCK_PREFIX = "discover:expansion";
@@ -122,6 +129,7 @@ export class DiscoverExpansionService {
   private readonly audit: ExpansionAuditFn;
   private readonly batchSize: number;
   private readonly maxProviderPages: number;
+  private readonly identityResolver: PersonIdentityResolverPort;
 
   constructor(deps: DiscoverExpansionServiceDeps) {
     this.prisma = deps.prisma;
@@ -135,6 +143,7 @@ export class DiscoverExpansionService {
     this.audit = deps.audit ?? recordAuditEvent;
     this.batchSize = deps.batchSize ?? resolveExpansionBatchSize();
     this.maxProviderPages = deps.maxProviderPages ?? resolveExpansionMaxProviderPages();
+    this.identityResolver = deps.identityResolver ?? new OpenAIPersonIdentityResolver();
   }
 
   async addMorePeople(input: AddMorePeopleInput): Promise<DiscoverExpansionResult> {
@@ -448,7 +457,11 @@ export class DiscoverExpansionService {
             pageResult.profiles,
             params.cacheEmailFormat,
             params.search.id,
-            budget
+            budget,
+            {
+              companyName: params.company.officialName ?? params.company.name,
+              companyDomain: params.company.emailDomain ?? null
+            }
           );
 
           // 13-14. Append net-new normalized results to the shared cache and
@@ -496,11 +509,22 @@ export class DiscoverExpansionService {
    * email-format AI is never re-run here.
    */
   private async buildProviderPeople(
-    profiles: NormalizedProfile[],
+    rawProfiles: NormalizedProfile[],
     emailFormat: ResolvedEmailFormat,
     searchId: string,
-    budget: AiCallBudget
+    budget: AiCallBudget,
+    company: { companyName: string; companyDomain: string | null }
   ): Promise<ResolvedCachePerson[]> {
+    // An expansion page gets exactly the same identity treatment as the initial
+    // search, so "Add 10 more" can never be the path that reintroduces a
+    // malformed name into the shared cache.
+    const profiles = await resolveIncompleteIdentities(rawProfiles, {
+      companyName: company.companyName,
+      companyDomain: company.companyDomain,
+      resolver: this.identityResolver,
+      budget
+    });
+
     // 24. New people go through the existing role-classification process.
     const rawTitles = profiles
       .map((profile) => profile.currentTitle)
