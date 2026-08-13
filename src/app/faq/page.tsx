@@ -304,6 +304,7 @@ const faqSections = [
 export default function FaqPage() {
   return (
     <main id="top" className={legalStyles.page}>
+      <span id="main-content" />
       <LandingNav items={faqNavItems} />
 
       <div className={legalStyles.frame}>

@@ -47,6 +47,7 @@ const legalNavItems = [
   { href: "/privacy", label: "Privacy" },
   { href: "/terms", label: "Terms" },
   { href: "/abuse", label: "Abuse" },
+  { href: "/faq", label: "FAQ" },
   { href: "mailto:ka8540@g.rit.edu", label: "Contact" }
 ] as const;
 
@@ -69,6 +70,7 @@ export function LegalPage({
 }: LegalPageProps) {
   return (
     <main id="top" className={styles.page}>
+      <span id="main-content" />
       <LandingNav items={legalNavItems} />
 
       <div className={styles.frame}>

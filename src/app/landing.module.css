@@ -1,78 +1,1395 @@
 /* ============================================================
    Sendloom landing page
-   Premium, cinematic outreach-operations marketing surface.
-   Tokens reuse the --landing-* names so the shared LandingNav
-   styling below continues to work in both light and dark themes.
+
+   Chaptered marketing surface. The visual language is a clean
+   grotesk on a quiet ground: headlines carry one italicised
+   emphasis phrase, chapters are numbered, and colour is spent
+   almost entirely on the single emerald accent inherited from
+   the product theme.
+
+   Layout families do not repeat between sections. See page.tsx
+   for the section-by-section breakdown.
+
+   Component CSS for the nav, hero flow, command centre and
+   pointer effects is preserved verbatim further down this file;
+   those four components are shared and were not rewritten.
    ============================================================ */
 
 .page {
-  --landing-bg: #f4f7fb;
+  /* Local aliases over the global tokens. Component CSS below reads
+     these names, so they are kept even though the page sections use
+     the global tokens directly. */
+  --landing-bg: var(--bg);
   --landing-ink: var(--text);
   --landing-muted: var(--muted);
-  --landing-line: rgba(20, 32, 51, 0.1);
-  --landing-panel: rgba(255, 255, 255, 0.74);
-  --landing-panel-strong: rgba(255, 255, 255, 0.92);
+  --landing-line: var(--line);
+  --landing-panel: var(--surface);
+  --landing-panel-strong: var(--surface-strong);
   --landing-edge: rgba(255, 255, 255, 0.6);
   --landing-emerald: var(--accent);
   --landing-emerald-deep: var(--accent-strong);
-  --landing-emerald-soft: rgba(22, 124, 90, 0.12);
+  --landing-emerald-soft: var(--accent-soft);
+  /* Semantic status hues, not second brand accents. The preserved command
+     centre uses these to distinguish queued / sent / opened / replied states,
+     where colour carries meaning that the emerald accent cannot. */
   --landing-blue: #2153c2;
-  --landing-blue-soft: rgba(33, 83, 194, 0.12);
   --landing-gold: #d6963f;
-  --landing-glow-green: rgba(22, 124, 90, 0.16);
-  --landing-glow-blue: rgba(33, 83, 194, 0.14);
-  --landing-shadow: 0 30px 60px rgba(15, 30, 55, 0.12);
-  --landing-base:
-    radial-gradient(1100px 620px at 12% -6%, var(--landing-glow-green), transparent 60%),
-    radial-gradient(1000px 560px at 92% 4%, var(--landing-glow-blue), transparent 58%),
-    radial-gradient(900px 700px at 50% 116%, var(--landing-glow-green), transparent 60%),
-    linear-gradient(180deg, #f8fbff 0%, #eef3f9 100%);
+  --landing-glow-green: var(--bg-glow-green);
+  --landing-glow-blue: var(--bg-glow-blue);
+  --landing-shadow: var(--elevation-3);
+
+  /* Page rhythm. One measure, used by every section, so vertical
+     spacing resolves instead of drifting per-section.
+
+     --rhythm is a HALF gap, not a full one: adjacent sections each pay it as
+     padding, so the space a reader actually sees between two sections is
+     roughly double. At the previous 9rem that produced 18rem (288px) of empty
+     page between, for example, the safety list and the closing panel, which
+     reads as an accident rather than as breathing room. Sized here so the
+     resolved gap lands near 11rem on desktop and 7rem on a phone. */
+  --gutter: clamp(1.25rem, 5vw, 3rem);
+  --shell: 1160px;
+  --rhythm: clamp(3.5rem, 6.5vw, 5.75rem);
 
   position: relative;
   isolation: isolate;
-  min-height: 100vh;
+  min-height: 100dvh;
   overflow-x: clip;
-  color: var(--landing-ink);
-  background: var(--landing-base);
-  background-attachment: fixed;
-  font-family: var(--font-loader-body), "Space Grotesk", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  color: var(--text);
+
+  /* Flat ground. The previous version layered three radial glows plus
+     a linear gradient, a 130px engineering grid and a soft-light grain
+     overlay. Five background layers competing behind the content read
+     as busy, not premium. */
+  background: var(--bg);
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  letter-spacing: var(--track-body);
 }
 
-/* faint engineering grid */
-.page::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background-image:
-    linear-gradient(color-mix(in srgb, var(--landing-ink) 5%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--landing-ink) 5%, transparent) 1px, transparent 1px);
-  background-size: 130px 130px;
-  mask-image: radial-gradient(circle at 50% 28%, black, transparent 80%);
-}
-
-/* fine grain texture */
-.page::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  opacity: 0.5;
-  background-image: radial-gradient(color-mix(in srgb, var(--landing-ink) 26%, transparent) 0.5px, transparent 0.5px);
-  background-size: 3px 3px;
-  mix-blend-mode: soft-light;
-}
-
-.frame {
+/* Shared section shell. Every top-level section uses this measure. */
+.hero,
+.strip,
+.chapter,
+.safety,
+.closing {
   position: relative;
   z-index: 2;
-  width: min(1200px, calc(100% - 3rem));
-  margin: 0 auto;
-  padding: 7.4rem 0 4rem;
+  width: min(var(--shell), calc(100% - var(--gutter) * 2));
+  margin-inline: auto;
+  /*
+   * Anchor landing.
+   *
+   * The scroll position resolves to `elementTop - scrollMargin - scrollPadding`,
+   * and the global scroll-padding-top is already 6rem — enough on its own to
+   * clear the fixed nav. Every section then adds its own --rhythm of top
+   * padding before the heading, so a positive margin here stacks with both and
+   * strands the heading a third of the way down the viewport.
+   *
+   * Cancelling the section's own padding leaves a constant, deliberate gap
+   * instead, and because it is expressed in --rhythm it stays correct at every
+   * breakpoint without a second set of media queries.
+   */
+  scroll-margin-top: calc(1.5rem - var(--rhythm));
 }
 
+/* ===================== Emphasis run =====================
+   The signature typographic move: one phrase per headline set in
+   true italic of the same family. Inter Tight ships a real italic,
+   so this is never synthesised. */
+
+.emphasis {
+  font-style: italic;
+  font-weight: inherit;
+  color: var(--accent-strong);
+  /* Italic descenders (y, g, j, p, q) clip against tight display
+     leading, so the emphasis run carries its own breathing room. */
+  line-height: 1.1;
+  padding-bottom: 0.04em;
+}
+
+/* ===================== Buttons ===================== */
+
+.buttonPrimary,
+.buttonGhost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Labels are short by design so they never wrap at desktop. */
+  white-space: nowrap;
+  padding: 0.8rem 1.35rem;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: var(--text-base);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--track-label);
+  text-decoration: none;
+  transition:
+    transform var(--duration-fast) var(--ease-out),
+    background-color var(--duration-base) var(--ease-out),
+    border-color var(--duration-base) var(--ease-out),
+    box-shadow var(--duration-base) var(--ease-out);
+}
+
+.buttonPrimary {
+  border: 1px solid transparent;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  box-shadow: var(--elevation-1);
+}
+
+.buttonPrimary:hover {
+  background: var(--accent-strong);
+  transform: translateY(-1px);
+  box-shadow: var(--elevation-2);
+}
+
+.buttonGhost {
+  border: 1px solid var(--line);
+  background: var(--surface-strong);
+  color: var(--text);
+  box-shadow: var(--elevation-1);
+}
+
+.buttonGhost:hover {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface-strong));
+  transform: translateY(-1px);
+  box-shadow: var(--elevation-2);
+}
+
+.buttonPrimary:active,
+.buttonGhost:active {
+  transform: translateY(0) scale(0.985);
+  transition-duration: var(--duration-instant);
+}
+
+.buttonPrimary:focus-visible,
+.buttonGhost:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+}
+
+/* ===================== Hero =====================
+   Centred stack. Four text elements only: headline, lede, actions,
+   note. No eyebrow, which keeps the page's small-caps budget for
+   the three chapter labels. */
+
+/* Split composition: editorial copy left, the animated workflow visual
+   right, vertically centred across one viewport. */
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 6fr) minmax(0, 7fr);
+  align-items: center;
+  column-gap: clamp(2.5rem, 5vw, 5rem);
+  min-height: 100dvh;
+  /* Clears the fixed nav. */
+  padding-top: clamp(6.5rem, 12vh, 8.5rem);
+  padding-bottom: var(--space-7);
+  text-align: left;
+}
+
+/* Spacing is set per element rather than by one grid gap. A uniform gap gives
+   the headline, the lede, the buttons and the trust note equal separation,
+   which reads as four unrelated blocks; graded spacing groups the note to the
+   buttons it qualifies and lets the headline own the space beneath it. */
+.heroInner {
+  display: grid;
+  justify-items: start;
+  max-width: 33rem;
+}
+
+.heroHeadline {
+  margin: 0;
+  font-family: var(--font-editorial);
+  /* Smaller than --display-xl: the full 96px set was tuned for a centred
+     full-width hero; in the left column it would break mid-phrase. */
+  font-size: clamp(2.75rem, 1.2rem + 4.2vw, 4.5rem);
+  font-weight: var(--weight-semibold);
+  line-height: 1.04;
+  letter-spacing: var(--track-display-tight);
+  text-wrap: balance;
+  /* Optical left edge. Large type sets visually inset against the column
+     because the first glyph's side bearing is scaled up with it. */
+  margin-left: -0.02em;
+}
+
+/* Word spans are animated by transform, so they must be inline-block. */
+.heroHeadline [data-hero-word] {
+  display: inline-block;
+}
+
+/* The hero's emphasis run breaks from the Sendloom green on purpose: a
+   turquoise that stays legible on both themes. */
+.heroHeadline .emphasis {
+  color: #0e9f8a;
+}
+
+:global(:root[data-theme="dark"]) .heroHeadline .emphasis {
+  color: #6ee7d8;
+}
+
+.heroLede {
+  margin: var(--space-5) 0 0;
+  max-width: 32.5rem;
+  color: var(--muted);
+  font-size: var(--text-md);
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+.heroActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
+}
+
+/* Qualifies the buttons directly above it, so it sits close to them and well
+   clear of the visual below. */
+.heroNote {
+  margin: var(--space-4) 0 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  letter-spacing: var(--track-label);
+}
+
+.heroVisual {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+}
+
+/* ===================== Integration strip =====================
+   Inline row directly under the hero. Real integrations, so the
+   answer to "does this work with what I use" arrives immediately. */
+
+.strip {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-4);
+  padding-block: var(--space-7) var(--space-8);
+  border-bottom: 1px solid var(--line);
+}
+
+.stripLabel {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.stripList {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: var(--space-3) clamp(1.5rem, 4vw, 2.75rem);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Marks are the vendors' own multi-colour artwork. Held at a slight
+   desaturation so five brand palettes do not out-shout the single emerald
+   accent, and released to full colour on hover. */
+.stripItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0.2rem;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  letter-spacing: var(--track-label);
+  white-space: nowrap;
+  transition: color var(--duration-base) var(--ease-out);
+}
+
+.stripItem:hover {
+  color: var(--text);
+}
+
+/* Each mark keeps its own aspect ratio inside a square box (Drive's artwork
+   is 87.3x78, the rest are square), so they sit on a shared optical size
+   without any being stretched. */
+.stripMark {
+  display: block;
+  flex-shrink: 0;
+  width: 1.375rem;
+  height: 1.375rem;
+  filter: saturate(0.82);
+  opacity: 0.9;
+  transition:
+    filter var(--duration-base) var(--ease-out),
+    opacity var(--duration-base) var(--ease-out);
+}
+
+.stripItem:hover .stripMark {
+  filter: saturate(1);
+  opacity: 1;
+}
+
+.stripName {
+  font-weight: var(--weight-medium);
+}
+
+/* ===================== Chapters ===================== */
+
+.chapter {
+  padding-block: var(--rhythm);
+}
+
+.chapterHead {
+  display: grid;
+  gap: var(--space-4);
+  max-width: 40rem;
+  margin-bottom: var(--space-8);
+}
+
+.chapterHeadCentered {
+  justify-items: center;
+  max-width: 44rem;
+  margin-inline: auto;
+  text-align: center;
+}
+
+/* The page's only recurring small-caps label. Appears exactly three
+   times, once per chapter. */
+.chapterLabel {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0;
+  color: var(--accent-strong);
+  font-family: var(--font-numeric);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+}
+
+.chapterIndex {
+  color: var(--muted);
+}
+
+.chapterIndex::after {
+  content: ".";
+}
+
+.chapterTitle {
+  margin: 0;
+  font-family: var(--font-editorial);
+  font-size: var(--display-md);
+  font-weight: var(--weight-semibold);
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+}
+
+.chapterIntro {
+  margin: 0;
+  max-width: var(--measure);
+  color: var(--muted);
+  font-size: var(--text-md);
+  line-height: var(--leading-body);
+  text-wrap: pretty;
+}
+
+/* ---- Chapter 01: sticky-scroll product story ----
+   Default rendering is stacked on mobile. On desktop, no-JS and reduced-
+   motion fallbacks keep each story beside its visual instead of stretching
+   every card into a loose full-width stack. LandingMotion sets
+   [data-story="enhanced"] when motion is available, promoting the stage to a
+   sticky two-column grid where all copies and visuals share deck cells. */
+
+.dataStage {
+  display: grid;
+  gap: var(--space-8);
+}
+
+.dataHead {
+  display: grid;
+  gap: var(--space-4);
+  max-width: 40rem;
+}
+
+.dataStep {
+  display: grid;
+  gap: var(--space-2);
+  max-width: 34rem;
+}
+
+.dataStepIndex {
+  margin: 0;
+  color: var(--accent-strong);
+  font-family: var(--font-numeric);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--track-caps);
+}
+
+.dataStepTitle {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--track-heading);
+}
+
+.dataStepBody {
+  margin: 0;
+  color: var(--muted);
+  line-height: var(--leading-body);
+}
+
+/* Enhanced-only progress rail; hidden in the stacked layout. */
+.dataProgress {
+  display: none;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.dataProgSeg {
+  width: 2.75rem;
+  height: 2px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--muted) 30%, transparent);
+  transition: transform 0.2s ease;
+}
+
+/* The active segment thickens slightly so the rail reads as 01 02 03, not
+   just a loading bar. */
+.dataProgSeg[data-active] {
+  transform: scaleY(1.8);
+}
+
+.dataProgFill {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--accent-strong);
+  transform: scaleX(0);
+  transform-origin: left;
+}
+
+.cellMeta {
+  margin: var(--space-4) 0 0;
+  color: var(--muted);
+  font-family: var(--font-numeric);
+  font-size: var(--text-2xs);
+  /* Uppercase mono at 11px needs real tracking to stay legible; --track-label
+     is tuned for sentence-case UI text and closes these up. */
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+/* ---- Mini product windows ----
+   Three cropped Sendloom surfaces: field mapping, people search, address
+   enrichment. Shared chrome — top bar, radius, border, shadow, row heights —
+   so the stack reads as one application changing screens. */
+
+.dataCard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
+  border-radius: clamp(1.25rem, 1.8vw, 1.5rem);
+  background: var(--surface-strong);
+  box-shadow:
+    var(--edge-highlight),
+    0 1px 2px hsl(var(--shadow-color) / 0.08),
+    0 8px 20px hsl(var(--shadow-color) / 0.1),
+    0 22px 44px -18px hsl(var(--shadow-color) / 0.18);
+}
+
+.winBar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.9rem;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-muted) 72%, transparent);
+}
+
+.winMark {
+  flex: none;
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 0.35rem;
+}
+
+.winTitle {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--track-heading);
+}
+
+.winMeta {
+  margin-left: auto;
+  color: var(--muted);
+  font-family: var(--font-numeric);
+  font-size: var(--text-2xs);
+}
+
+.winBody {
+  display: grid;
+  align-content: start;
+  gap: 0.4rem;
+  padding: 0.9rem;
+}
+
+.winIntro {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.3rem;
+}
+
+.winScreenTitle {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--track-heading);
+}
+
+.winSub {
+  margin: 0.15rem 0 0;
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+.winCount {
+  color: var(--muted);
+  font-family: var(--font-numeric);
+  font-size: var(--text-2xs);
+  white-space: nowrap;
+}
+
+.winHead {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr 2rem;
+  gap: 0.5rem;
+  padding: 0 0.6rem 0.25rem;
+  color: var(--muted);
+  font-family: var(--font-numeric);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+.headPeople {
+  grid-template-columns: 1.1rem 1.1fr 1.2fr 0.8fr 1fr;
+}
+
+.winRow {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr 2rem;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.32rem 0.6rem;
+}
+
+.winRow + .winRow {
+  border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+}
+
+.rowPeople {
+  grid-template-columns: 1.1rem 1.1fr 1.2fr 0.8fr 1fr;
+}
+
+.winRowSelected {
+  border-radius: 0.55rem;
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+.srcField {
+  color: var(--muted);
+  font-family: var(--font-numeric);
+  font-size: var(--text-xs);
+}
+
+/* Destination rendered as a compact field selector, not a paper box. */
+.fieldControl {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.34rem 0.6rem;
+  border: 1px solid var(--field-border);
+  border-radius: 0.55rem;
+  background: var(--field-bg);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+}
+
+.chev {
+  flex: none;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-right: 1.5px solid var(--muted);
+  border-bottom: 1.5px solid var(--muted);
+  transform: rotate(45deg);
+  opacity: 0.7;
+}
+
+.rowStatus {
+  display: grid;
+  place-items: center;
+  justify-self: end;
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent-strong);
+}
+
+.rowStatus svg {
+  width: 0.7rem;
+  height: 0.7rem;
+}
+
+.filterRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-bottom: 0.45rem;
+}
+
+.filterField {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 0.32rem 0.6rem;
+  border: 1px solid var(--field-border);
+  border-radius: 0.55rem;
+  background: var(--field-bg);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+}
+
+.filterLabel {
+  color: var(--muted);
+  font-family: var(--font-numeric);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+}
+
+.selBox {
+  display: grid;
+  place-items: center;
+  width: 0.95rem;
+  height: 0.95rem;
+  border: 1px solid var(--field-border);
+  border-radius: 0.3rem;
+  background: var(--surface-strong);
+  color: var(--accent-contrast);
+}
+
+.selBox svg {
+  width: 0.65rem;
+  height: 0.65rem;
+}
+
+.winRowSelected .selBox {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.personName {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--track-heading);
+}
+
+.cellMuted {
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+/* Resolution queue: avatar + identity + filling email field + status, a
+   different surface grammar from Discover's wide table. */
+.enrichProgress {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.45rem;
+  color: var(--muted);
+  font-family: var(--font-numeric);
+  font-size: var(--text-2xs);
+}
+
+.enrichTrack {
+  display: block;
+  flex: 1;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--muted) 22%, transparent);
+}
+
+.enrichFill {
+  display: block;
+  width: 66%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.enrichRow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1.25fr) auto;
+  gap: 0.6rem;
+  align-items: center;
+  padding: 0.45rem 0.6rem;
+}
+
+.enrichRow + .enrichRow {
+  border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+}
+
+.avatar {
+  display: grid;
+  place-items: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface-hover));
+  color: var(--accent-strong);
+  font-family: var(--font-numeric);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+}
+
+.enrichWho {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.mailField {
+  display: block;
+  overflow: hidden;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--field-border);
+  border-radius: 0.55rem;
+  background: var(--field-bg);
+  font-family: var(--font-numeric);
+  font-size: var(--text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mailFieldEmpty {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--muted);
+}
+
+.swapStatus {
+  justify-self: end;
+}
+
+.swapStatus .statusChip {
+  justify-self: end;
+}
+
+/* Pending and resolved states share one grid cell; the enhanced stage
+   crossfades them when the window activates. Base rendering (mobile, no-JS,
+   reduced motion) shows the resolved state only. */
+.swapCell {
+  display: grid;
+}
+
+.swapCell > * {
+  grid-area: 1 / 1;
+}
+
+.swapPending {
+  color: var(--muted);
+  opacity: 0;
+}
+
+.searchDot {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: currentColor;
+  animation: winPulse 1.1s ease-in-out infinite;
+}
+
+@keyframes winPulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.statusChip {
+  justify-self: start;
+  padding: 0.16rem 0.5rem;
+  border-radius: 999px;
+  font-family: var(--font-numeric);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+}
+
+.statusFound {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent-strong);
+}
+
+.statusSearching {
+  background: var(--surface-hover);
+  color: var(--muted);
+}
+
+.winFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: auto;
+  /* Same gutter as the top bar and screen heading, so the status line sits on
+     the window's outer chrome edges, not on the inset table rows. */
+  padding: 0.6rem 0.9rem;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-muted) 72%, transparent);
+  color: var(--muted);
+  font-family: var(--font-numeric);
+  font-size: var(--text-2xs);
+}
+
+.footOk {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--accent-strong);
+  font-weight: var(--weight-medium);
+}
+
+.footOk svg {
+  width: 0.7rem;
+  height: 0.7rem;
+}
+
+.chipReady {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent-strong);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+}
+
+.chipReady::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.footAction {
+  padding: 0.28rem 0.6rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--line));
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: var(--accent-strong);
+  font-weight: var(--weight-medium);
+}
+
+@media (max-width: 640px) {
+  .colCompany,
+  .colLocation {
+    display: none;
+  }
+
+  .headPeople,
+  .rowPeople {
+    grid-template-columns: 1.1rem 1.2fr 1fr;
+  }
+
+  .enrichRow {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .enrichRow > .mailField,
+  .enrichRow > .swapCell:not(.swapStatus) {
+    grid-column: 2 / 3;
+    grid-row: 2;
+  }
+}
+
+/* ---- Enhanced desktop stage ----
+   Armed only by LandingMotion (motion allowed, ≥1024px). The section
+   grows to 320vh of scroll distance; the stage sticks under the floating
+   nav and deals the three cards through it. */
+@media (min-width: 1024px) {
+  /* Production-safe fallback for reduced motion, delayed hydration, or a
+     blocked animation chunk. The interleaved DOM auto-places each copy and
+     demo in the same row, so the page remains composed even without GSAP. */
+  .dataStory:not([data-story="enhanced"]) .dataStage {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    column-gap: clamp(3rem, 6vw, 6rem);
+    row-gap: clamp(2.5rem, 6vw, 5rem);
+    align-items: center;
+  }
+
+  .dataStory:not([data-story="enhanced"]) .dataHead {
+    grid-column: 1 / -1;
+  }
+
+  .dataStory:not([data-story="enhanced"]) .dataStep {
+    grid-column: 1;
+  }
+
+  .dataStory:not([data-story="enhanced"]) .dataCard {
+    grid-column: 2;
+    width: 100%;
+    aspect-ratio: 16 / 10;
+    align-self: center;
+  }
+
+  .dataStory[data-story="enhanced"] {
+    /* ~70vh of scroll for three states: one moderate gesture advances a
+       story, and the section releases straight into chapter 02. Longer
+       distances read as dead scroll zones. */
+    height: 170vh;
+    padding-block: 0;
+  }
+
+  .dataStory[data-story="enhanced"] .dataStage {
+    position: sticky;
+    /* Clears the floating nav pill (1rem offset + ~5.2rem body). */
+    top: clamp(6.5rem, 12vh, 8rem);
+    min-height: calc(100dvh - clamp(6.5rem, 12vh, 8rem) - 2rem);
+    isolation: isolate;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    grid-template-rows: auto minmax(10rem, auto) auto;
+    column-gap: clamp(3.75rem, 7vw, 7.5rem);
+    row-gap: var(--space-6);
+    align-content: center;
+  }
+
+  /* One soft pool of green light behind the visual column only; the copy
+     side stays clean for readability. */
+  .dataStory[data-story="enhanced"] .dataStage::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    top: 50%;
+    right: -12%;
+    width: 65%;
+    height: 85%;
+    transform: translateY(-50%);
+    background: radial-gradient(
+      closest-side,
+      color-mix(in srgb, var(--accent) 12%, transparent),
+      transparent
+    );
+    filter: blur(28px);
+    pointer-events: none;
+  }
+
+  .dataStory[data-story="enhanced"] .dataHead {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  /* All three copies occupy the same cell; only the active one shows. The
+     crossfade overlaps (outgoing and incoming are both mounted), so text
+     never fully disappears between states. */
+  .dataStory[data-story="enhanced"] .dataStep {
+    grid-column: 1;
+    grid-row: 2;
+    align-self: start;
+    max-width: none;
+    opacity: 0;
+    transform: translateY(8px);
+    transition:
+      opacity 0.24s ease,
+      transform 0.24s ease;
+  }
+
+  .dataStory[data-story="enhanced"] .dataStep[data-active] {
+    opacity: 1;
+    transform: none;
+  }
+
+  /* The deck: three cards in one cell, positions driven by scroll. */
+  .dataStory[data-story="enhanced"] .dataCard {
+    grid-column: 2;
+    grid-row: 1 / -1;
+    align-self: center;
+    width: 100%;
+    aspect-ratio: 16 / 10;
+    max-height: 70vh;
+    will-change: transform, opacity;
+  }
+
+  .dataStory[data-story="enhanced"] .dataProgress {
+    display: flex;
+    grid-column: 1;
+    grid-row: 3;
+  }
+
+  /* Inner beats reveal only while their card is active. Hidden here (not in
+     the base rules) so no-JS and reduced-motion users see full content. */
+  .dataStory[data-story="enhanced"] .rv {
+    opacity: 0;
+    transform: translateY(12px);
+    transition:
+      opacity 0.5s ease var(--d, 0s),
+      transform 0.5s ease var(--d, 0s);
+  }
+
+  .dataStory[data-story="enhanced"] .dataCard[data-active] .rv {
+    opacity: 1;
+    transform: none;
+  }
+
+  /* The enrichment row resolves shortly after its window activates: the
+     searching state holds, then the found email and status fade in over it.
+     Reverse scroll runs the same swap backwards. */
+  .dataStory[data-story="enhanced"] .swapPending {
+    opacity: 1;
+    transition: opacity 0.18s ease 0.45s;
+  }
+
+  .dataStory[data-story="enhanced"] .swapFound {
+    opacity: 0;
+    transition: opacity 0.22s ease 0.6s;
+  }
+
+  .dataStory[data-story="enhanced"] .dataCard[data-active] .swapPending {
+    opacity: 0;
+  }
+
+  .dataStory[data-story="enhanced"] .dataCard[data-active] .swapFound {
+    opacity: 1;
+  }
+}
+
+/* ---- Chapter 02: offset split ----
+   Sticky headline column beside stacked rows. Rows are separated by
+   a single hairline rather than boxed, so the column reads as one
+   argument in three parts. */
+
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  gap: clamp(2rem, 6vw, 5rem);
+  align-items: start;
+}
+
+.splitAside {
+  position: sticky;
+  top: 7rem;
+}
+
+.splitAside .chapterHead {
+  margin-bottom: 0;
+}
+
+.steps {
+  display: grid;
+  gap: var(--space-6);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+/* The rule is a gradient hairline that fades out before the right edge rather
+   than a full-width border. A hard line drawn edge to edge reads as a table;
+   a fading one reads as a division inside a single argument. */
+.step {
+  position: relative;
+  display: grid;
+  gap: var(--space-2);
+  padding-top: var(--space-6);
+}
+
+.step::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, var(--line), color-mix(in srgb, var(--line) 25%, transparent) 72%, transparent);
+}
+
+.step:first-child {
+  padding-top: 0;
+}
+
+.step:first-child::before {
+  display: none;
+}
+
+.stepTitle {
+  margin: 0;
+  font-family: var(--font-editorial);
+  font-size: var(--text-xl);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--track-heading);
+  transition: color var(--duration-base) var(--ease-out);
+}
+
+/* The whole row responds, but only in colour — these are statements, not
+   controls, so nothing here lifts or grows. */
+@media (hover: hover) and (pointer: fine) {
+  .step:hover .stepTitle {
+    color: var(--accent-strong);
+  }
+}
+
+.stepBody {
+  margin: 0;
+  max-width: var(--measure);
+  color: var(--muted);
+  line-height: var(--leading-body);
+}
+
+/* ---- Chapter 03: full-bleed product visual ---- */
+
+.showcase {
+  position: relative;
+  padding: clamp(0.75rem, 2vw, 1.25rem);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-2xl);
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  box-shadow: var(--elevation-3);
+}
+
+/* ===================== Safety =====================
+   Two-column definition list. No cards: these are claims about
+   behaviour, and a border around each would add weight, not meaning. */
+
+.safety {
+  padding-block: var(--rhythm);
+  border-top: 1px solid var(--line);
+}
+
+.safetyTitle {
+  margin: 0 0 var(--space-8);
+  max-width: 20ch;
+  font-family: var(--font-editorial);
+  font-size: var(--display-sm);
+  font-weight: var(--weight-semibold);
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+}
+
+/* One shared grid for all six items: two equal columns, three rows.
+   Every row uses the same track definition, so corresponding left/right
+   items share a baseline and row spacing resolves identically. */
+.safetyGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: clamp(3.5rem, 6vw, 6.875rem);
+  row-gap: clamp(2.25rem, 4vw, 3.5rem);
+  margin: 0;
+}
+
+/* Renamed from .safetyItem: that name collides with the command-center
+   mockup's icon list later in this module, and its display:flex overrode
+   this grid — the source of the visible misalignment. */
+.safetyFeature {
+  display: grid;
+  /* Fixed title measure: every label wraps inside the same column width,
+     so every description starts on the same x-axis in both columns. */
+  grid-template-columns: 10rem minmax(0, 1fr);
+  column-gap: clamp(1.75rem, 2.5vw, 2.25rem);
+  align-items: start;
+}
+
+.safetyTerm {
+  margin: 0;
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--track-heading);
+}
+
+.safetyBody {
+  margin: 0;
+  max-width: 44ch;
+  color: var(--muted);
+  line-height: var(--leading-body);
+}
+
+/* ===================== Closing CTA =====================
+   One action. The "see how it works" intent already fired in the
+   hero, so repeating it here would be duplicate intent. */
+
+/* Asymmetric: the footer below opens with its own deep well of space for the
+   ghosted wordmark, so paying a full rhythm on the bottom edge too would
+   strand the panel in the middle of a very tall empty run. */
+.closing {
+  padding-block: var(--rhythm) var(--space-6);
+}
+
+.closingPanel {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: grid;
+  justify-items: center;
+  gap: var(--space-4);
+  padding: clamp(2.75rem, 6vw, 4.5rem) var(--gutter);
+  border-radius: var(--radius-2xl);
+  background: linear-gradient(
+    170deg,
+    color-mix(in srgb, var(--accent) 12%, var(--surface-strong)),
+    var(--surface-strong) 72%
+  );
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--line));
+  box-shadow: var(--elevation-1);
+  text-align: center;
+}
+
+/* A single soft pool of accent light behind the headline. One radial layer,
+   not a mesh: it gives the closing panel depth without turning it into a
+   marketing gradient. */
+.closingPanel::before {
+  content: "";
+  position: absolute;
+  inset: -40% 20% auto 20%;
+  z-index: -1;
+  height: 90%;
+  background: radial-gradient(
+    circle at 50% 50%,
+    color-mix(in srgb, var(--accent) 16%, transparent),
+    transparent 70%
+  );
+  filter: blur(40px);
+  pointer-events: none;
+}
+
+.closingTitle {
+  margin: 0;
+  max-width: 18ch;
+  font-family: var(--font-editorial);
+  font-size: var(--display-sm);
+  font-weight: var(--weight-semibold);
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+}
+
+.closingBody {
+  margin: 0 0 var(--space-2);
+  max-width: 42ch;
+  color: var(--muted);
+  line-height: var(--leading-body);
+  text-wrap: pretty;
+}
+
+/*
+ * Scroll reveal.
+ *
+ * Intentionally no CSS here. LandingMotion owns [data-reveal] entirely:
+ * it writes opacity and transform as inline styles via GSAP, and only
+ * after confirming motion is allowed. Adding a CSS transition on those
+ * same properties would fight the tween and produce a visible double
+ * animation, and hiding the element in CSS would trap content behind a
+ * script that may never run. Elements ship visible; GSAP hides them
+ * only when it is about to animate them back in.
+ */
+
+/* ===================== Responsive ===================== */
+
+/* Below desktop the two feature columns no longer leave room for the
+   fixed title measure plus a readable body, so the grid collapses to one
+   column before the inner split gets cramped. */
+@media (max-width: 1023px) {
+  .safetyGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 767px) {
+  .safetyFeature {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 0.625rem;
+  }
+}
+
+/* Hero goes single-column when the split would cramp either side:
+   copy first, then the workflow visual at natural width. */
+@media (max-width: 1023px) {
+  .hero {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: var(--space-8);
+    min-height: 0;
+  }
+
+  .heroInner {
+    max-width: 46rem;
+  }
+}
+
+@media (max-width: 900px) {
+
+  .split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .splitAside {
+    position: static;
+  }
+
+  .splitAside .chapterHead {
+    margin-bottom: var(--space-6);
+  }
+}
+
+@media (max-width: 720px) {
+  .hero {
+    padding-top: 6.5rem;
+  }
+
+  .heroActions {
+    justify-content: stretch;
+    width: 100%;
+  }
+
+  .heroActions .buttonPrimary,
+  .heroActions .buttonGhost {
+    flex: 1 1 auto;
+  }
+
+  .chapterHeadCentered {
+    justify-items: start;
+    text-align: left;
+  }
+
+  .closingPanel {
+    justify-items: start;
+    text-align: left;
+  }
+}
+
+
+/* ============================================================
+   PRESERVED COMPONENT CSS
+
+   Everything below styles the four shared components that were
+   not rewritten: LandingNav, LandingHeroFlow,
+   LandingCommandCenter and LandingPointerFX. These are real,
+   working product visuals, so they were kept rather than
+   replaced with static mockups.
+   ============================================================ */
+
+/* ===================== Nav ===================== */
 /* ===================== NAV (shared component) ===================== */
 
 /* Always visible. Over the hero the pill is minimal and hero-integrated;
@@ -114,11 +1431,11 @@
   backdrop-filter: blur(0px) saturate(1);
   -webkit-backdrop-filter: blur(0px) saturate(1);
   transition:
-    background-color 220ms ease,
-    border-color 220ms ease,
-    box-shadow 220ms ease,
-    backdrop-filter 220ms ease,
-    -webkit-backdrop-filter 220ms ease;
+    background-color 220ms var(--ease-out),
+    border-color 220ms var(--ease-out),
+    box-shadow 220ms var(--ease-out),
+    backdrop-filter 220ms var(--ease-out),
+    -webkit-backdrop-filter 220ms var(--ease-out);
 }
 
 .navInner::before,
@@ -133,7 +1450,7 @@
   border-radius: inherit;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.14), transparent 34%);
   opacity: 0;
-  transition: opacity 220ms ease;
+  transition: opacity 220ms var(--ease-out);
 }
 
 .navInner::after {
@@ -145,7 +1462,7 @@
   transform: rotate(18deg);
   filter: blur(8px);
   opacity: 0;
-  transition: opacity 220ms ease;
+  transition: opacity 220ms var(--ease-out);
 }
 
 .navScrolled .navInner,
@@ -269,7 +1586,7 @@
   gap: 0.55rem;
   text-decoration: none;
   transform-origin: center;
-  transition: transform 140ms ease, box-shadow 140ms ease, background-color 180ms ease, border-color 180ms ease, color 180ms ease;
+  transition: transform 140ms var(--ease-out), box-shadow 140ms var(--ease-out), background-color 180ms var(--ease-out), border-color 180ms var(--ease-out), color 180ms var(--ease-out);
 }
 
 .navLink,
@@ -278,11 +1595,16 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.55rem;
-  border-radius: 999px;
+  gap: var(--space-2);
+  border-radius: var(--radius-pill);
+  font-family: inherit;
   text-decoration: none;
   transform-origin: center;
-  transition: transform 140ms ease, box-shadow 140ms ease, background-color 180ms ease, border-color 180ms ease;
+  transition:
+    transform var(--duration-fast) var(--ease-spring),
+    box-shadow var(--duration-base) var(--ease-out),
+    background-color var(--duration-base) var(--ease-out),
+    border-color var(--duration-base) var(--ease-out);
 }
 
 .navLink {
@@ -290,20 +1612,53 @@
   border: 1px solid transparent;
   border-radius: 999px;
   color: var(--landing-ink);
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
 }
 
-.navLink:hover,
-.navLink:focus-visible {
-  background: color-mix(in srgb, var(--landing-ink) 8%, transparent);
-  outline: none;
+.navLinkLabel {
+  position: relative;
+  display: inline-block;
+}
+
+.navLinkLabel::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -6px;
+  width: 100%;
+  height: 1px;
+  border-radius: 999px;
+  background: var(--landing-emerald);
+  transform: scaleX(0);
+  transform-origin: right;
+  transition: transform 300ms ease-in-out;
+  pointer-events: none;
+}
+
+.navLink:hover .navLinkLabel::after,
+.navLink:focus-visible .navLinkLabel::after,
+.mobileNavLink:hover .navLinkLabel::after,
+.mobileNavLink:focus-visible .navLinkLabel::after,
+.navLinkActive .navLinkLabel::after {
+  transform: scaleX(1);
+  transform-origin: left;
+}
+
+.navLink:focus-visible,
+.mobileNavLink:focus-visible {
+  outline: 2px solid var(--landing-emerald);
+  outline-offset: 2px;
+}
+
+.navLinkActive {
+  color: var(--landing-ink);
 }
 
 .navGhostButton,
 .navPrimaryButton {
   padding: 0.92rem 1.22rem;
   border-radius: 999px;
-  font-weight: 700;
+  font-weight: var(--weight-semibold);
 }
 
 .navGhostButton {
@@ -376,225 +1731,8 @@
   display: none;
 }
 
-/* ===================== Shared buttons ===================== */
 
-.ghostButton {
-  padding: 0.95rem 1.35rem;
-  border: 1px solid color-mix(in srgb, var(--landing-line) 80%, white 12%);
-  background: color-mix(in srgb, var(--landing-panel-strong) 60%, transparent);
-  color: var(--landing-ink);
-  font-weight: 680;
-  box-shadow: inset 0 1px 0 var(--landing-edge);
-  backdrop-filter: blur(18px) saturate(1.05);
-  -webkit-backdrop-filter: blur(18px) saturate(1.05);
-}
-
-.primaryButton {
-  position: relative;
-  padding: 1rem 1.5rem;
-  background: linear-gradient(135deg, var(--landing-emerald) 0%, #16a06f 52%, #1f8b71 100%);
-  color: white;
-  font-weight: 760;
-  letter-spacing: 0.01em;
-  box-shadow:
-    0 18px 40px rgba(22, 107, 86, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.32);
-}
-
-.primaryButton::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.28), transparent 46%);
-  opacity: 0.8;
-  pointer-events: none;
-}
-
-.navLink:hover,
-.ghostButton:hover,
-.primaryButton:hover,
-.navLink:focus-visible,
-.ghostButton:focus-visible,
-.primaryButton:focus-visible {
-  transform: translateY(-2px);
-  box-shadow: 0 20px 38px rgba(22, 107, 86, 0.28);
-  outline: none;
-}
-
-.ghostButton:hover,
-.ghostButton:focus-visible {
-  box-shadow: 0 16px 30px rgba(28, 42, 70, 0.16);
-  border-color: color-mix(in srgb, var(--landing-emerald) 40%, var(--landing-line));
-}
-
-.navLink:active,
-.ghostButton:active,
-.primaryButton:active {
-  transform: translateY(1px) scale(0.985);
-}
-
-/* ===================== Hero ===================== */
-
-.hero {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(400px, 0.95fr);
-  gap: 2.6rem;
-  align-items: center;
-  min-height: calc(100vh - 9rem);
-  padding-bottom: 4rem;
-}
-
-.heroCopy {
-  position: relative;
-  z-index: 2;
-  display: grid;
-  gap: 1.5rem;
-}
-
-.eyebrow {
-  width: fit-content;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.55rem;
-  padding: 0.5rem 0.9rem;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--landing-emerald) 12%, var(--landing-panel));
-  border: 1px solid color-mix(in srgb, var(--landing-emerald) 26%, var(--landing-line));
-  color: var(--landing-emerald-deep);
-  font-family: var(--font-loader-display), var(--font-loader-body), sans-serif;
-  font-size: 0.92rem;
-  font-weight: 500;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
-
-.eyebrow::before {
-  content: "";
-  width: 0.5rem;
-  height: 0.5rem;
-  border-radius: 999px;
-  background: var(--landing-emerald);
-  box-shadow: 0 0 0 0.22rem color-mix(in srgb, var(--landing-emerald) 26%, transparent);
-}
-
-.headline {
-  margin: 0;
-  font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
-  font-size: clamp(3rem, 7.4vw, 5.9rem);
-  line-height: 0.96;
-  letter-spacing: -0.045em;
-  max-width: 13ch;
-}
-
-.headlineLine {
-  display: block;
-  overflow: hidden;
-}
-
-.headlineWord {
-  display: inline-block;
-  margin-right: 0.28em;
-  will-change: transform;
-}
-
-.headlineAccent {
-  background: linear-gradient(120deg, var(--landing-emerald) 0%, #43d6a0 35%, #4a7cff 64%, var(--landing-emerald) 100%);
-  background-size: 220% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  animation: accentShimmer 7s ease-in-out infinite;
-}
-
-@keyframes accentShimmer {
-  0%, 100% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-}
-
-.lede {
-  max-width: 40rem;
-  margin: 0;
-  font-size: 1.16rem;
-  line-height: 1.7;
-  color: var(--landing-muted);
-}
-
-.ctaRow {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.9rem;
-  padding-top: 0.3rem;
-}
-
-.heroMeta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.65rem 1.4rem;
-  margin: 0.6rem 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.heroMeta li {
-  position: relative;
-  padding-left: 1.1rem;
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--landing-muted);
-}
-
-.heroMeta li::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0.5em;
-  width: 0.42rem;
-  height: 0.42rem;
-  border-radius: 999px;
-  background: var(--landing-emerald);
-}
-
-.scrollCue {
-  position: absolute;
-  bottom: 0.4rem;
-  left: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.7rem;
-  color: var(--landing-muted);
-  font-size: 0.78rem;
-  font-weight: 600;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  text-decoration: none;
-}
-
-.scrollCueLine {
-  position: relative;
-  width: 3.4rem;
-  height: 1px;
-  background: color-mix(in srgb, var(--landing-ink) 22%, transparent);
-  overflow: hidden;
-}
-
-.scrollCueLine::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  width: 40%;
-  background: var(--landing-emerald);
-  animation: cueSlide 2.4s ease-in-out infinite;
-}
-
-@keyframes cueSlide {
-  0% { transform: translateX(-110%); }
-  60%, 100% { transform: translateX(280%); }
-}
-
-/* ---- Hero flow visual ---- */
-
+/* ===================== Hero flow visual ===================== */
 .heroVisual {
   position: relative;
   z-index: 1;
@@ -605,6 +1743,12 @@
   position: relative;
   height: 100%;
   min-height: 38rem;
+  /* The hero centres its own text, and that inherited straight into the
+     product visual: every process row set its label centred between a
+     left-hand icon and a right-hand status dot, and the panel's title and
+     footer centred too. A real product surface aligns left, so the stage
+     resets it rather than inheriting a rule meant for the headline stack. */
+  text-align: left;
 }
 
 .heroPanel {
@@ -673,7 +1817,7 @@
   background: color-mix(in srgb, var(--landing-emerald) 16%, transparent);
   color: var(--landing-emerald-deep);
   font-size: 0.78rem;
-  font-weight: 700;
+  font-weight: var(--weight-semibold);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -720,7 +1864,7 @@
   border-radius: 4px;
   background: linear-gradient(180deg, transparent, var(--landing-emerald), transparent);
   filter: blur(0.5px);
-  animation: spineFlow 3.6s ease-in-out infinite;
+  animation: spineFlow 3.6s var(--ease-emphasis) infinite;
 }
 
 @keyframes spineFlow {
@@ -751,7 +1895,22 @@
   box-shadow: inset 0 1px 0 var(--landing-edge);
 }
 
-/* The pipeline "runs": a soft highlight sweeps node to node on a loop. */
+/*
+ * Stage entrance.
+ *
+ * This used to be a highlight that swept node to node on a 7.2s loop, forever,
+ * whether or not anyone was looking at it. Perpetual movement inside the
+ * hero's focal object competes with the headline and reads as a demo reel.
+ *
+ * It is now a one-shot cascade: the stages light up in order as the visual
+ * arrives, then settle. The spine pulse and the LIVE dot remain the only
+ * continuous motion, which is enough to say "this is running".
+ *
+ * Everything below is scoped to [data-revealed], set by LandingMotion once it
+ * has confirmed motion is allowed. With reduced motion or no JS the attribute
+ * never appears, no animation is declared, and the stages simply render
+ * finished — never hidden behind a script.
+ */
 .heroNode::after {
   content: "";
   position: absolute;
@@ -760,20 +1919,74 @@
   border: 1px solid color-mix(in srgb, var(--landing-emerald) 42%, transparent);
   background: linear-gradient(90deg, color-mix(in srgb, var(--landing-emerald) 12%, transparent), transparent 70%);
   opacity: 0;
-  animation: nodeCycle 7.2s linear infinite;
   pointer-events: none;
+  transition: opacity var(--duration-base) var(--ease-out);
 }
 
-.heroNode:nth-child(1)::after { animation-delay: 0s; }
-.heroNode:nth-child(2)::after { animation-delay: 1.2s; }
-.heroNode:nth-child(3)::after { animation-delay: 2.4s; }
-.heroNode:nth-child(4)::after { animation-delay: 3.6s; }
-.heroNode:nth-child(5)::after { animation-delay: 4.8s; }
-.heroNode:nth-child(6)::after { animation-delay: 6s; }
+.heroVisual[data-revealed] .heroNode {
+  animation: nodeEnter 560ms var(--ease-out) both;
+}
 
-@keyframes nodeCycle {
-  0%, 13% { opacity: 1; }
-  21%, 100% { opacity: 0; }
+.heroVisual[data-revealed] .heroNode::after {
+  animation: nodePass 900ms var(--ease-out) both;
+}
+
+.heroVisual[data-revealed] .heroNodeState {
+  animation: nodeStateIn 420ms var(--ease-out) both;
+}
+
+/* One delay ladder, three properties. 90ms per stage keeps the whole
+   six-stage cascade under a second. */
+.heroNode:nth-child(1), .heroNode:nth-child(1)::after, .heroNode:nth-child(1) .heroNodeState { animation-delay: 60ms; }
+.heroNode:nth-child(2), .heroNode:nth-child(2)::after, .heroNode:nth-child(2) .heroNodeState { animation-delay: 150ms; }
+.heroNode:nth-child(3), .heroNode:nth-child(3)::after, .heroNode:nth-child(3) .heroNodeState { animation-delay: 240ms; }
+.heroNode:nth-child(4), .heroNode:nth-child(4)::after, .heroNode:nth-child(4) .heroNodeState { animation-delay: 330ms; }
+.heroNode:nth-child(5), .heroNode:nth-child(5)::after, .heroNode:nth-child(5) .heroNodeState { animation-delay: 420ms; }
+.heroNode:nth-child(6), .heroNode:nth-child(6)::after, .heroNode:nth-child(6) .heroNodeState { animation-delay: 510ms; }
+
+@keyframes nodeEnter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* The accent edge passes through as the stage arrives, then releases. */
+@keyframes nodePass {
+  0%, 20% { opacity: 0; }
+  45% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes nodeStateIn {
+  from {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Desktop hover. Border clarity and a touch of surface only — no lift and no
+   pointer cursor, because these rows are not actionable and should not
+   advertise that they are. */
+@media (hover: hover) and (pointer: fine) {
+  .heroNode {
+    transition:
+      border-color var(--duration-base) var(--ease-out),
+      background-color var(--duration-base) var(--ease-out);
+  }
+
+  .heroNode:hover {
+    border-color: color-mix(in srgb, var(--landing-emerald) 26%, transparent);
+    background: color-mix(in srgb, var(--landing-panel-strong) 88%, transparent);
+  }
 }
 
 .heroNodeIcon {
@@ -828,15 +2041,19 @@
   will-change: transform;
 }
 
+/* Clears the LIVE badge in the panel header — the badge's baseline sits just
+   above 3.6rem, so anything higher than this crops it — and hangs as far into
+   the page gutter as the gutter is deep, to keep its footprint on the stage
+   rows as small as the shell allows. */
 .heroChipWrapTop {
-  top: 3.9rem;
-  right: -1.2rem;
+  top: 4rem;
+  right: -2.6rem;
 }
 
 /* Straddles the panel's bottom-left corner so it never covers node copy. */
 .heroChipWrapBottom {
   bottom: -1.2rem;
-  left: -1.4rem;
+  left: -1.8rem;
 }
 
 .heroChip {
@@ -855,12 +2072,12 @@
 
 .heroChipTop {
   transform: rotate(3deg);
-  animation: chipFloat 7s ease-in-out infinite;
+  animation: chipFloat 7s var(--ease-emphasis) infinite;
 }
 
 .heroChipBottom {
   transform: rotate(-3deg);
-  animation: chipFloat 8s ease-in-out infinite reverse;
+  animation: chipFloat 8s var(--ease-emphasis) infinite reverse;
 }
 
 @keyframes chipFloat {
@@ -886,506 +2103,8 @@
   color: var(--landing-muted);
 }
 
-/* ===================== Section primitives ===================== */
 
-.section {
-  padding: 6rem 0 0;
-}
-
-.sectionHeader {
-  display: grid;
-  gap: 0.9rem;
-  max-width: 48rem;
-}
-
-.sectionEyebrow {
-  margin: 0;
-  font-family: var(--font-loader-display), var(--font-loader-body), sans-serif;
-  font-size: 0.95rem;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-  color: var(--landing-emerald);
-}
-
-.sectionTitle {
-  margin: 0;
-  font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
-  font-size: clamp(2.1rem, 4.6vw, 3.6rem);
-  letter-spacing: -0.04em;
-  line-height: 1.04;
-}
-
-.sectionText {
-  margin: 0;
-  color: var(--landing-muted);
-  line-height: 1.75;
-  font-size: 1.05rem;
-}
-
-/* ===================== Chaos section ===================== */
-
-.chaos {
-  padding: 6rem 0 0;
-}
-
-.chaosLayout {
-  display: grid;
-  grid-template-columns: minmax(0, 1.5fr) auto minmax(0, 1fr);
-  gap: 1.6rem;
-  align-items: center;
-  margin-top: 2.4rem;
-}
-
-.chaosGrid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.9rem;
-}
-
-.chaosCard {
-  display: grid;
-  gap: 0.35rem;
-  padding: 1rem 1.05rem;
-  border-radius: 18px;
-  border: 1px dashed color-mix(in srgb, var(--landing-ink) 18%, transparent);
-  background: color-mix(in srgb, var(--landing-panel) 60%, transparent);
-  box-shadow: 0 12px 30px rgba(15, 30, 55, 0.06);
-  transition: transform 260ms ease, border-color 260ms ease, box-shadow 260ms ease;
-}
-
-/* Hovering a chaos card straightens it out — a wink at what Sendloom does. */
-.chaosCard:hover {
-  transform: rotate(0deg) translateY(-4px);
-  border-color: color-mix(in srgb, var(--landing-emerald) 36%, transparent);
-  box-shadow: 0 18px 36px rgba(15, 30, 55, 0.12);
-}
-
-.chaosCard:nth-child(odd) {
-  transform: rotate(-1.4deg);
-}
-
-.chaosCard:nth-child(even) {
-  transform: rotate(1.2deg);
-}
-
-.chaosTag {
-  font-weight: 720;
-  letter-spacing: -0.01em;
-  color: var(--landing-ink);
-}
-
-.chaosNote {
-  font-size: 0.9rem;
-  line-height: 1.45;
-  color: var(--landing-muted);
-}
-
-.chaosArrow {
-  display: grid;
-  justify-items: center;
-  gap: 0.6rem;
-}
-
-.chaosArrowLine {
-  position: relative;
-  width: 3.4rem;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, var(--landing-emerald));
-}
-
-.chaosArrowLine::after {
-  content: "";
-  position: absolute;
-  right: -2px;
-  top: 50%;
-  width: 0.55rem;
-  height: 0.55rem;
-  border-top: 2px solid var(--landing-emerald);
-  border-right: 2px solid var(--landing-emerald);
-  transform: translateY(-50%) rotate(45deg);
-}
-
-.chaosArrowLabel {
-  font-family: var(--font-loader-display), var(--font-loader-body), sans-serif;
-  font-size: 0.82rem;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--landing-muted);
-}
-
-.unifiedCard {
-  position: relative;
-  overflow: hidden;
-  display: grid;
-  gap: 1rem;
-  padding: 1.6rem;
-  border-radius: 26px;
-  border: 1px solid color-mix(in srgb, var(--landing-emerald) 30%, var(--landing-edge));
-  background:
-    radial-gradient(120% 100% at 100% 0%, color-mix(in srgb, var(--landing-emerald) 20%, transparent), transparent 60%),
-    linear-gradient(180deg, color-mix(in srgb, var(--landing-panel-strong) 94%, transparent), color-mix(in srgb, var(--landing-panel) 88%, transparent));
-  box-shadow: var(--landing-shadow), inset 0 1px 0 var(--landing-edge);
-}
-
-.unifiedMark {
-  display: flex;
-  align-items: center;
-  gap: 0.7rem;
-  font-size: 1.3rem;
-  letter-spacing: -0.02em;
-}
-
-.unifiedLogo {
-  width: 2.4rem;
-  height: 2.4rem;
-  border-radius: 14px;
-  box-shadow: 0 14px 28px rgba(15, 77, 63, 0.2);
-}
-
-.unifiedCard p {
-  margin: 0;
-  color: var(--landing-muted);
-  line-height: 1.65;
-}
-
-.unifiedChip {
-  justify-self: start;
-  padding: 0.5rem 0.85rem;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--landing-emerald) 14%, transparent);
-  border: 1px solid color-mix(in srgb, var(--landing-emerald) 26%, transparent);
-  color: var(--landing-emerald-deep);
-  font-size: 0.82rem;
-  font-weight: 650;
-}
-
-/* ===================== Workflow ===================== */
-
-.workflowTrack {
-  position: relative;
-  margin-top: 3.4rem;
-}
-
-/* The woven thread rail: dashed base thread + emerald active thread drawn on
-   scroll. Sits behind the dots/cards; its point heights (26/58 in an 80-unit
-   viewBox stretched over 5rem) line up with the staggered dot rows below. */
-.workflowRail {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 5rem;
-  z-index: 0;
-  pointer-events: none;
-  overflow: visible;
-}
-
-.workflowRailBase {
-  stroke: color-mix(in srgb, var(--landing-ink) 16%, transparent);
-  stroke-width: 1.5;
-  stroke-linecap: round;
-  stroke-dasharray: 0.5 9;
-}
-
-.workflowRailActive {
-  stroke: var(--landing-emerald);
-  stroke-width: 2;
-  stroke-linecap: round;
-  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--landing-emerald) 55%, transparent));
-}
-
-/* The packet travelling the thread. Hidden until LandingMotion drives it, so
-   no-JS and reduced-motion users never see a stray dot. */
-.workflowPacket {
-  opacity: 0;
-}
-
-.workflowPacketGlow {
-  fill: color-mix(in srgb, var(--landing-emerald) 45%, transparent);
-  filter: blur(5px);
-}
-
-.workflowPacketCore {
-  fill: color-mix(in srgb, var(--landing-emerald) 45%, white);
-  stroke: var(--landing-emerald);
-  stroke-width: 1;
-}
-
-.workflowSteps {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 1.2rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.workflowStep {
-  position: relative;
-  display: grid;
-  padding: 3.2rem 0 0;
-}
-
-/* Even steps sit one notch lower so the thread weaves between the rows. */
-.workflowStep:nth-child(even) {
-  margin-top: 2rem;
-}
-
-/* Steps render lit (the no-JS / reduced-motion state); LandingMotion removes
-   data-active on init and re-lights each step as the thread passes it. */
-.workflowDot {
-  position: absolute;
-  top: 0.875rem;
-  left: 50%;
-  width: 1.5rem;
-  height: 1.5rem;
-  margin-left: -0.75rem;
-  border-radius: 999px;
-  background: var(--landing-panel-strong);
-  border: 2px solid var(--landing-emerald);
-  box-shadow: 0 0 0 0.35rem color-mix(in srgb, var(--landing-emerald) 14%, transparent);
-  transition: border-color 380ms ease, box-shadow 380ms ease, transform 380ms ease;
-}
-
-.workflowDot::after {
-  content: "";
-  position: absolute;
-  inset: 0.3rem;
-  border-radius: 999px;
-  background: var(--landing-emerald);
-  transition: background-color 380ms ease;
-}
-
-/* Expanding halo ring on lit dots. */
-.workflowDot::before {
-  content: "";
-  position: absolute;
-  inset: -0.55rem;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--landing-emerald) 40%, transparent);
-  opacity: 0;
-}
-
-.workflowStep[data-active] .workflowDot::before {
-  animation: dotHalo 2.6s ease-out infinite;
-}
-
-@keyframes dotHalo {
-  0% { transform: scale(0.66); opacity: 0.9; }
-  70%, 100% { transform: scale(1.3); opacity: 0; }
-}
-
-.workflowStep:not([data-active]) .workflowDot {
-  border-color: color-mix(in srgb, var(--landing-ink) 20%, transparent);
-  box-shadow: none;
-}
-
-.workflowStep:not([data-active]) .workflowDot::after {
-  background: color-mix(in srgb, var(--landing-ink) 22%, transparent);
-}
-
-.workflowStep[data-active] .workflowDot {
-  transform: scale(1.08);
-}
-
-.workflowCard {
-  position: relative;
-  overflow: hidden;
-  display: grid;
-  gap: 0.5rem;
-  align-content: start;
-  height: 100%;
-  padding: 1.25rem 1.1rem 1.35rem;
-  border-radius: 20px;
-  border: 1px solid color-mix(in srgb, var(--landing-emerald) 24%, transparent);
-  background:
-    radial-gradient(120% 90% at 50% -20%, color-mix(in srgb, var(--landing-emerald) 10%, transparent), transparent 60%),
-    linear-gradient(180deg, color-mix(in srgb, var(--landing-panel-strong) 82%, transparent), color-mix(in srgb, var(--landing-panel) 64%, transparent));
-  box-shadow: 0 18px 40px rgba(8, 18, 32, 0.16), inset 0 1px 0 var(--landing-edge);
-  backdrop-filter: blur(14px) saturate(1.08);
-  -webkit-backdrop-filter: blur(14px) saturate(1.08);
-  transition: border-color 380ms ease, background-color 380ms ease, opacity 380ms ease, transform 200ms ease, box-shadow 380ms ease;
-}
-
-.workflowCard > * {
-  position: relative;
-  z-index: 1;
-}
-
-/* Top-edge shimmer on lit cards. */
-.workflowCard::before {
-  content: "";
-  position: absolute;
-  inset: 0 0 auto;
-  height: 1.5px;
-  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--landing-emerald) 70%, transparent), transparent);
-  opacity: 0.75;
-  transition: opacity 380ms ease;
-}
-
-.workflowStep:not([data-active]) .workflowCard::before {
-  opacity: 0;
-}
-
-.workflowStep:not([data-active]) .workflowCard {
-  border-color: color-mix(in srgb, var(--landing-ink) 9%, transparent);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--landing-panel) 50%, transparent), color-mix(in srgb, var(--landing-panel) 38%, transparent));
-  opacity: 0.62;
-  box-shadow: inset 0 1px 0 var(--landing-edge);
-}
-
-.workflowCard:hover {
-  --lift: -5px;
-  border-color: color-mix(in srgb, var(--landing-emerald) 42%, transparent);
-  box-shadow:
-    0 26px 52px rgba(8, 18, 32, 0.24),
-    0 0 24px color-mix(in srgb, var(--landing-emerald) 14%, transparent),
-    inset 0 1px 0 var(--landing-edge);
-}
-
-.workflowIcon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2.3rem;
-  height: 2.3rem;
-  border-radius: 12px;
-  border: 1px solid color-mix(in srgb, var(--landing-emerald) 32%, transparent);
-  background: linear-gradient(140deg, color-mix(in srgb, var(--landing-emerald) 22%, transparent), color-mix(in srgb, var(--landing-blue) 14%, transparent));
-  color: var(--landing-emerald-deep);
-  box-shadow: 0 0 16px color-mix(in srgb, var(--landing-emerald) 18%, transparent);
-  transition: color 380ms ease, border-color 380ms ease, background 380ms ease, box-shadow 380ms ease, transform 240ms ease;
-}
-
-.workflowIcon svg {
-  width: 1.15rem;
-  height: 1.15rem;
-}
-
-.workflowCard:hover .workflowIcon {
-  transform: scale(1.08) rotate(-4deg);
-}
-
-.workflowStep:not([data-active]) .workflowIcon {
-  border-color: color-mix(in srgb, var(--landing-ink) 10%, transparent);
-  background: color-mix(in srgb, var(--landing-ink) 6%, transparent);
-  color: var(--landing-muted);
-  box-shadow: none;
-}
-
-/* Ghost numeral in the card corner. */
-.workflowIndex {
-  position: absolute;
-  top: 0.85rem;
-  right: 1rem;
-  font-family: var(--font-loader-display), var(--font-loader-body), sans-serif;
-  font-size: 2.1rem;
-  line-height: 1;
-  letter-spacing: 0.04em;
-  color: color-mix(in srgb, var(--landing-emerald) 30%, transparent);
-  transition: color 380ms ease;
-}
-
-.workflowStep:not([data-active]) .workflowIndex {
-  color: color-mix(in srgb, var(--landing-ink) 16%, transparent);
-}
-
-.workflowStep h3 {
-  margin: 0;
-  font-size: 1.32rem;
-  letter-spacing: -0.03em;
-}
-
-.workflowStep p {
-  margin: 0;
-  font-size: 0.94rem;
-  line-height: 1.55;
-  color: var(--landing-muted);
-}
-
-/* ===================== Capabilities ===================== */
-
-.capGrid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1.1rem;
-  margin-top: 2.4rem;
-}
-
-.capCard {
-  position: relative;
-  overflow: hidden;
-  display: grid;
-  gap: 0.85rem;
-  align-content: start;
-  min-height: 16rem;
-  padding: 1.6rem;
-  border-radius: 24px;
-  border: 1px solid color-mix(in srgb, var(--landing-ink) 8%, var(--landing-edge));
-  background: linear-gradient(180deg, color-mix(in srgb, var(--landing-panel-strong) 90%, transparent), color-mix(in srgb, var(--landing-panel) 82%, transparent));
-  box-shadow: var(--landing-shadow);
-  transition: transform 180ms ease, box-shadow 240ms ease, border-color 240ms ease;
-}
-
-.capCard > * {
-  position: relative;
-  z-index: 1;
-}
-
-.capCard::before {
-  content: "";
-  position: absolute;
-  inset: 0 0 auto 0;
-  height: 2px;
-  background: linear-gradient(90deg, var(--landing-emerald), color-mix(in srgb, var(--landing-blue) 80%, transparent));
-  opacity: 0;
-  transition: opacity 240ms ease;
-}
-
-/* Lift is expressed through --lift so it composes with the pointer tilt. */
-.capCard:hover {
-  --lift: -6px;
-  border-color: color-mix(in srgb, var(--landing-emerald) 34%, transparent);
-  box-shadow: 0 32px 60px rgba(10, 22, 40, 0.18);
-}
-
-.capCard:hover::before {
-  opacity: 1;
-}
-
-.capCard h3 {
-  margin: 0;
-  font-size: 1.4rem;
-  letter-spacing: -0.03em;
-}
-
-.capCard p {
-  margin: 0;
-  color: var(--landing-muted);
-  line-height: 1.62;
-}
-
-.capTags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.45rem;
-  margin-top: auto;
-  padding-top: 0.4rem;
-}
-
-.capTags span {
-  padding: 0.36rem 0.62rem;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--landing-emerald) 12%, var(--landing-panel));
-  border: 1px solid color-mix(in srgb, var(--landing-emerald) 18%, var(--landing-line));
-  font-size: 0.82rem;
-  font-weight: 620;
-  color: var(--landing-emerald-deep);
-}
-
+/* ===================== Command centre ===================== */
 /* ===================== Command center ===================== */
 
 .commandWrap {
@@ -1461,7 +2180,7 @@
   background: color-mix(in srgb, var(--landing-ink) 8%, transparent);
   border: 1px solid color-mix(in srgb, var(--landing-ink) 12%, transparent);
   font-size: 0.74rem;
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
   letter-spacing: 0.04em;
   color: var(--landing-muted);
 }
@@ -1599,7 +2318,7 @@
   background: linear-gradient(140deg, color-mix(in srgb, var(--landing-emerald) 30%, transparent), color-mix(in srgb, var(--landing-blue) 24%, transparent));
   border: 1px solid color-mix(in srgb, var(--landing-emerald) 24%, transparent);
   font-size: 0.78rem;
-  font-weight: 700;
+  font-weight: var(--weight-semibold);
   color: var(--landing-ink);
 }
 
@@ -1625,7 +2344,7 @@
   padding: 0.28rem 0.6rem;
   border-radius: 999px;
   font-size: 0.76rem;
-  font-weight: 680;
+  font-weight: var(--weight-semibold);
   border: 1px solid transparent;
 }
 
@@ -1751,609 +2470,10 @@
   color: var(--landing-muted);
 }
 
-/* ===================== Trust ===================== */
 
-.trustGrid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1rem;
-  margin-top: 2.4rem;
-}
-
-.trustCard {
-  position: relative;
-  overflow: hidden;
-  display: grid;
-  gap: 0.6rem;
-  padding: 1.5rem;
-  border-radius: 22px;
-  border: 1px solid color-mix(in srgb, var(--landing-ink) 8%, var(--landing-edge));
-  background: color-mix(in srgb, var(--landing-panel-strong) 78%, transparent);
-  box-shadow: 0 18px 40px rgba(15, 30, 55, 0.08);
-  transition: transform 180ms ease, box-shadow 240ms ease, border-color 240ms ease;
-}
-
-/* Keep card content above the hover highlight layer. */
-.trustCard > * {
-  position: relative;
-  z-index: 1;
-}
-
-/* Soft emerald radial highlight that fades in on hover (no layout impact). */
-.trustCard::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  border-radius: inherit;
-  background: radial-gradient(130% 120% at 50% -10%, color-mix(in srgb, var(--landing-emerald) 16%, transparent), transparent 62%);
-  opacity: 0;
-  transition: opacity 240ms ease;
-  pointer-events: none;
-}
-
-.trustCard:hover,
-.trustCard:focus-within {
-  --lift: -6px;
-  border-color: color-mix(in srgb, var(--landing-emerald) 34%, transparent);
-  box-shadow: 0 28px 56px rgba(10, 22, 40, 0.2), 0 8px 26px color-mix(in srgb, var(--landing-emerald) 20%, transparent);
-}
-
-.trustCard:hover::before,
-.trustCard:focus-within::before {
-  opacity: 1;
-}
-
-.trustMark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2.2rem;
-  height: 2.2rem;
-  border-radius: 10px;
-  background: linear-gradient(140deg, color-mix(in srgb, var(--landing-emerald) 26%, transparent), color-mix(in srgb, var(--landing-blue) 18%, transparent));
-  border: 1px solid color-mix(in srgb, var(--landing-emerald) 28%, transparent);
-  color: var(--landing-emerald-deep);
-  transition: transform 240ms ease, border-color 240ms ease, box-shadow 240ms ease;
-}
-
-.trustCard:hover .trustMark,
-.trustCard:focus-within .trustMark {
-  transform: scale(1.06);
-  border-color: color-mix(in srgb, var(--landing-emerald) 48%, transparent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--landing-emerald) 14%, transparent);
-}
-
-.trustMark svg {
-  width: 1.2rem;
-  height: 1.2rem;
-  display: block;
-}
-
-.trustCard h3 {
-  margin: 0;
-  font-size: 1.22rem;
-  letter-spacing: -0.02em;
-}
-
-.trustCard p {
-  margin: 0;
-  color: var(--landing-muted);
-  line-height: 1.6;
-}
-
-/* ===================== Final CTA ===================== */
-
-.ctaSection {
-  padding: 6rem 0 1rem;
-}
-
-/* The shell carries a slowly sweeping conic highlight that reads as a live
-   1px rim around the panel; the panel's opaque background masks the rest. */
-.ctaShell {
-  position: relative;
-  overflow: hidden;
-  padding: 1px;
-  border-radius: 35px;
-  background: color-mix(in srgb, var(--landing-emerald) 26%, rgba(255, 255, 255, 0.12));
-}
-
-.ctaSpin {
-  position: absolute;
-  inset: -120%;
-  background: conic-gradient(
-    from 0deg,
-    transparent 0deg,
-    transparent 110deg,
-    color-mix(in srgb, var(--landing-emerald) 85%, transparent) 160deg,
-    color-mix(in srgb, var(--landing-blue) 80%, transparent) 200deg,
-    transparent 250deg,
-    transparent 360deg
-  );
-  animation: ctaSpin 9s linear infinite;
-  will-change: transform;
-}
-
-@keyframes ctaSpin {
-  to { transform: rotate(360deg); }
-}
-
-.ctaPanel {
-  position: relative;
-  overflow: hidden;
-  display: grid;
-  gap: 1rem;
-  padding: 3rem;
-  border-radius: 34px;
-  background:
-    radial-gradient(80% 120% at 0% 0%, rgba(47, 196, 138, 0.32), transparent 55%),
-    radial-gradient(80% 120% at 100% 100%, rgba(74, 124, 255, 0.28), transparent 55%),
-    linear-gradient(180deg, #0f1c26 0%, #0a141c 100%);
-  color: #eef5ff;
-  box-shadow: 0 40px 90px rgba(6, 14, 24, 0.4);
-}
-
-.ctaPanel::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background-image: radial-gradient(rgba(255, 255, 255, 0.14) 0.5px, transparent 0.5px);
-  background-size: 4px 4px;
-  opacity: 0.4;
-  mix-blend-mode: overlay;
-  pointer-events: none;
-}
-
-.ctaPanel .sectionEyebrow {
-  color: #6fe3b3;
-}
-
-.ctaPanel h2 {
-  position: relative;
-  margin: 0;
-  max-width: 16ch;
-  font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
-  font-size: clamp(2.3rem, 5vw, 4rem);
-  letter-spacing: -0.04em;
-  line-height: 1;
-}
-
-.ctaLede {
-  position: relative;
-  max-width: 38rem;
-  margin: 0;
-  color: rgba(232, 240, 255, 0.78);
-  line-height: 1.7;
-  font-size: 1.05rem;
-}
-
-.ctaActions {
-  position: relative;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.9rem;
-  margin-top: 0.8rem;
-}
-
-.ctaPanel .ghostButton {
-  border-color: rgba(255, 255, 255, 0.28);
-  background: rgba(255, 255, 255, 0.08);
-  color: #eef5ff;
-}
-
-.ctaPanel .ghostButton:hover,
-.ctaPanel .ghostButton:focus-visible {
-  background: rgba(255, 255, 255, 0.14);
-  border-color: rgba(255, 255, 255, 0.4);
-}
-
-/* ===================== Dark theme tokens ===================== */
-
-:global(:root[data-theme="dark"]) .page {
-  --landing-bg: #0a0f17;
-  --landing-line: rgba(151, 169, 198, 0.16);
-  --landing-panel: rgba(18, 27, 40, 0.7);
-  --landing-panel-strong: rgba(20, 30, 45, 0.9);
-  --landing-edge: rgba(255, 255, 255, 0.07);
-  --landing-emerald: #2fc48a;
-  --landing-emerald-deep: #8be7bf;
-  --landing-emerald-soft: rgba(47, 196, 138, 0.16);
-  --landing-blue: #5b8cff;
-  --landing-blue-soft: rgba(74, 124, 255, 0.18);
-  --landing-gold: #f0ba6a;
-  --landing-glow-green: rgba(47, 196, 138, 0.2);
-  --landing-glow-blue: rgba(74, 124, 255, 0.16);
-  --landing-shadow: 0 36px 70px rgba(0, 0, 0, 0.46);
-  --landing-base:
-    radial-gradient(1100px 640px at 12% -8%, var(--landing-glow-green), transparent 58%),
-    radial-gradient(1000px 580px at 92% 2%, var(--landing-glow-blue), transparent 56%),
-    radial-gradient(950px 720px at 50% 118%, var(--landing-glow-green), transparent 60%),
-    linear-gradient(180deg, #0c131d 0%, #070b12 100%);
-}
-
-@media (prefers-color-scheme: dark) {
-  :global(:root:not([data-theme])) .page {
-    --landing-bg: #0a0f17;
-    --landing-line: rgba(151, 169, 198, 0.16);
-    --landing-panel: rgba(18, 27, 40, 0.7);
-    --landing-panel-strong: rgba(20, 30, 45, 0.9);
-    --landing-edge: rgba(255, 255, 255, 0.07);
-    --landing-emerald: #2fc48a;
-    --landing-emerald-deep: #8be7bf;
-    --landing-emerald-soft: rgba(47, 196, 138, 0.16);
-    --landing-blue: #5b8cff;
-    --landing-blue-soft: rgba(74, 124, 255, 0.18);
-    --landing-gold: #f0ba6a;
-    --landing-glow-green: rgba(47, 196, 138, 0.2);
-    --landing-glow-blue: rgba(74, 124, 255, 0.16);
-    --landing-shadow: 0 36px 70px rgba(0, 0, 0, 0.46);
-    --landing-base:
-      radial-gradient(1100px 640px at 12% -8%, var(--landing-glow-green), transparent 58%),
-      radial-gradient(1000px 580px at 92% 2%, var(--landing-glow-blue), transparent 56%),
-      radial-gradient(950px 720px at 50% 118%, var(--landing-glow-green), transparent 60%),
-      linear-gradient(180deg, #0c131d 0%, #070b12 100%);
-  }
-}
-
-/* ===================== Responsive ===================== */
-
-@media (max-width: 1100px) {
-  .hero {
-    grid-template-columns: 1fr;
-    gap: 2rem;
-    min-height: 0;
-  }
-
-  .heroVisual,
-  .heroStage,
-  .heroPanel {
-    min-height: 34rem;
-  }
-
-  .heroOrbit {
-    display: none;
-  }
-
-  .scrollCue {
-    display: none;
-  }
-
-  .capGrid,
-  .trustGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .chaosLayout {
-    grid-template-columns: 1fr;
-    gap: 1.4rem;
-  }
-
-  .chaosArrow {
-    grid-auto-flow: column;
-    justify-content: center;
-  }
-
-  .chaosArrowLine {
-    transform: rotate(90deg);
-  }
-
-  .workflowSteps {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 1.6rem 1rem;
-  }
-
-  .workflowRail {
-    display: none;
-  }
-
-  .workflowStep {
-    padding-top: 2.6rem;
-  }
-
-  .workflowStep:nth-child(even) {
-    margin-top: 0;
-  }
-
-  .boardGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-areas:
-      "health activity"
-      "queue safety"
-      "template follow";
-  }
-}
-
-@media (max-width: 980px) {
-  .frame {
-    padding-top: 8.4rem;
-  }
-
-  .nav {
-    width: calc(100vw - 2rem);
-  }
-
-  .navInner {
-    min-height: 5.6rem;
-    padding: 1rem 1rem 1rem 1.15rem;
-  }
-
-  .desktopNav,
-  .desktopActions {
-    display: none;
-  }
-
-  .mobileMenuButton {
-    display: inline-flex;
-  }
-
-  .mobilePanel {
-    position: absolute;
-    top: calc(100% + 0.9rem);
-    left: 0;
-    right: 0;
-    display: grid;
-    gap: 1.3rem;
-    padding: 1.25rem;
-    border-radius: 32px;
-    border: 1px solid color-mix(in srgb, var(--landing-line) 68%, white 8%);
-    background:
-      linear-gradient(180deg, color-mix(in srgb, var(--landing-panel-strong) 42%, transparent), color-mix(in srgb, var(--landing-panel) 28%, transparent)),
-      linear-gradient(115deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02) 42%, rgba(255, 255, 255, 0.05) 100%);
-    box-shadow:
-      0 24px 60px rgba(7, 18, 33, 0.26),
-      inset 0 1px 0 rgba(255, 255, 255, 0.12);
-    backdrop-filter: blur(28px) saturate(1.16);
-    -webkit-backdrop-filter: blur(28px) saturate(1.16);
-    overflow: visible;
-  }
-
-  .mobileNav {
-    display: grid;
-    gap: 0.35rem;
-    padding-top: 0.25rem;
-  }
-
-  .mobileNavLink {
-    justify-content: flex-start;
-    padding: 1rem 0.6rem;
-    border-radius: 22px;
-    color: var(--landing-ink);
-    font-size: 1.45rem;
-    font-weight: 650;
-    letter-spacing: -0.03em;
-  }
-
-  .mobileNavLink:hover,
-  .mobileNavLink:focus-visible {
-    background: rgba(255, 255, 255, 0.05);
-    outline: none;
-  }
-
-  .mobileMetaRow {
-    display: grid;
-    gap: 1rem;
-    padding-top: 1rem;
-    border-top: 1px solid color-mix(in srgb, var(--landing-line) 76%, transparent);
-  }
-
-  .mobileThemeBlock {
-    display: flex;
-    align-items: center;
-    justify-content: flex-start;
-  }
-
-  .mobileThemeLabel {
-    display: none;
-  }
-
-  .mobileThemeMenu :global(.theme-menu__trigger) {
-    width: 3.3rem;
-    height: 3.3rem;
-    border-radius: 999px;
-    border-color: color-mix(in srgb, var(--landing-line) 76%, white 8%);
-    background:
-      linear-gradient(180deg, color-mix(in srgb, var(--landing-panel-strong) 58%, transparent), color-mix(in srgb, var(--landing-panel) 46%, transparent)),
-      linear-gradient(135deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.03));
-    box-shadow:
-      0 12px 24px rgba(7, 18, 33, 0.18),
-      inset 0 1px 0 rgba(255, 255, 255, 0.12);
-  }
-
-  .mobileThemeMenu :global(.theme-menu__panel) {
-    top: auto;
-    bottom: calc(100% + 0.9rem);
-    left: 0;
-    right: auto;
-    min-width: 12.5rem;
-    max-width: calc(100vw - 3rem);
-    border-color: color-mix(in srgb, var(--landing-line) 76%, white 10%);
-    background:
-      linear-gradient(145deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.08)),
-      linear-gradient(180deg, color-mix(in srgb, var(--landing-bg) 88%, var(--landing-panel-strong) 12%), color-mix(in srgb, var(--landing-bg) 82%, var(--landing-panel) 18%));
-    box-shadow:
-      0 22px 48px rgba(7, 18, 33, 0.22),
-      inset 0 1px 0 rgba(255, 255, 255, 0.18);
-    backdrop-filter: blur(26px) saturate(1.12);
-    -webkit-backdrop-filter: blur(26px) saturate(1.12);
-  }
-
-  .mobileCtaRow {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.9rem;
-  }
-
-  .mobileGhostButton,
-  .mobilePrimaryButton {
-    min-height: 3.7rem;
-    border-radius: 22px;
-    font-weight: 700;
-  }
-
-  .mobileGhostButton {
-    border: 1px solid color-mix(in srgb, var(--landing-line) 76%, white 10%);
-    background: linear-gradient(180deg, color-mix(in srgb, var(--landing-panel-strong) 32%, transparent), color-mix(in srgb, var(--landing-panel) 22%, transparent));
-    color: var(--landing-ink);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
-  }
-
-  .mobilePrimaryButton {
-    border: 1px solid color-mix(in srgb, var(--landing-emerald) 52%, transparent);
-    background: linear-gradient(135deg, var(--landing-emerald) 0%, #1f8b71 100%);
-    color: white;
-    box-shadow: 0 16px 34px rgba(22, 107, 86, 0.24);
-  }
-}
-
-@media (max-width: 720px) {
-  .frame {
-    width: min(100%, calc(100% - 1rem));
-    padding-top: 7.6rem;
-  }
-
-  .nav {
-    top: 0.65rem;
-    width: calc(100vw - 1rem);
-  }
-
-  .navInner {
-    min-height: 5rem;
-    padding: 0.9rem;
-    border-radius: 28px;
-  }
-
-  .brand {
-    gap: 0.85rem;
-  }
-
-  .brandMark {
-    width: 2.8rem;
-    height: 2.8rem;
-  }
-
-  .brandText strong {
-    font-size: 0.96rem;
-  }
-
-  .brandText span {
-    font-size: 0.82rem;
-  }
-
-  .mobileMenuButton {
-    width: 3.55rem;
-    height: 3.55rem;
-    border-radius: 20px;
-  }
-
-  .mobilePanel {
-    gap: 1rem;
-    padding: 1rem;
-    border-radius: 28px;
-  }
-
-  .mobileNavLink {
-    padding: 0.88rem 0.55rem;
-    font-size: 1.2rem;
-  }
-
-  .section,
-  .chaos {
-    padding-top: 4.4rem;
-  }
-
-  .ctaSection {
-    padding-top: 4.4rem;
-  }
-
-  .ctaPanel {
-    padding: 1.8rem;
-  }
-
-  .heroVisual,
-  .heroStage,
-  .heroPanel {
-    min-height: 30rem;
-  }
-
-  .heroChipWrap {
-    display: none;
-  }
-
-  .capGrid,
-  .trustGrid,
-  .chaosGrid,
-  .workflowSteps {
-    grid-template-columns: 1fr;
-  }
-
-  /* Vertical timeline: dot rail on the left, connectors bridging the gap. */
-  .workflowSteps {
-    gap: 1.5rem;
-  }
-
-  .workflowStep {
-    padding: 0 0 0 3rem;
-  }
-
-  .workflowDot {
-    top: 0.45rem;
-    left: 0;
-    margin-left: 0;
-  }
-
-  .workflowStep:not(:last-child)::after {
-    content: "";
-    position: absolute;
-    left: calc(0.75rem - 1px);
-    top: 2.7rem;
-    bottom: -1.2rem;
-    width: 2px;
-    border-radius: 2px;
-    background: linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--landing-emerald) 45%, transparent),
-      color-mix(in srgb, var(--landing-emerald) 10%, transparent)
-    );
-  }
-
-  .workflowStep:not([data-active]):not(:last-child)::after {
-    background: linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--landing-ink) 18%, transparent),
-      color-mix(in srgb, var(--landing-ink) 6%, transparent)
-    );
-  }
-
-  .boardGrid {
-    grid-template-columns: 1fr;
-    grid-template-areas:
-      "health"
-      "activity"
-      "queue"
-      "template"
-      "follow"
-      "safety";
-  }
-
-  .ctaRow,
-  .ctaActions,
-  .mobileCtaRow {
-    width: 100%;
-  }
-
-  .ctaRow a,
-  .ctaActions a,
-  .mobileCtaRow a {
-    flex: 1;
-  }
-
-  .mobileCtaRow {
-    grid-template-columns: 1fr;
-  }
-}
-
+/* ===================== Interactive layer ===================== */
 /* ============================================================
-   Interactive layer — cursor light, tilt cards, orbits, live board
+   Interactive layer: cursor light, tilt cards, orbits, live board
    ============================================================ */
 
 /* Cursor-following light. JS drives transform/opacity; sits above the
@@ -2373,7 +2493,7 @@
     transparent 68%
   );
   opacity: 0;
-  transition: opacity 600ms ease;
+  transition: opacity 600ms var(--ease-out);
   pointer-events: none;
   will-change: transform;
 }
@@ -2399,7 +2519,7 @@
     transparent 70%
   );
   opacity: var(--spot-opacity, 0);
-  transition: opacity 260ms ease;
+  transition: opacity 260ms var(--ease-out);
   pointer-events: none;
 }
 
@@ -2549,7 +2669,7 @@
   border: 1px solid color-mix(in srgb, var(--landing-emerald) 26%, transparent);
   background: linear-gradient(140deg, color-mix(in srgb, var(--landing-emerald) 20%, transparent), color-mix(in srgb, var(--landing-blue) 14%, transparent));
   color: var(--landing-emerald-deep);
-  transition: transform 240ms ease, box-shadow 240ms ease;
+  transition: transform 240ms var(--ease-out), box-shadow 240ms var(--ease-out);
 }
 
 .capIcon svg {
@@ -2648,14 +2768,14 @@
   top: -55%;
   left: -12%;
   background: radial-gradient(circle, rgba(47, 196, 138, 0.5), transparent 65%);
-  animation: auroraDrift 16s ease-in-out infinite alternate;
+  animation: auroraDrift 16s var(--ease-emphasis) infinite alternate;
 }
 
 .ctaAuroraBlue {
   bottom: -60%;
   right: -10%;
   background: radial-gradient(circle, rgba(74, 124, 255, 0.45), transparent 65%);
-  animation: auroraDrift 19s ease-in-out infinite alternate-reverse;
+  animation: auroraDrift 19s var(--ease-emphasis) infinite alternate-reverse;
 }
 
 @keyframes auroraDrift {
@@ -2731,7 +2851,7 @@
   background: color-mix(in srgb, var(--landing-emerald) 14%, transparent);
   border: 1px solid color-mix(in srgb, var(--landing-emerald) 24%, transparent);
   font-size: 0.74rem;
-  font-weight: 680;
+  font-weight: var(--weight-semibold);
   color: var(--landing-emerald-deep);
   white-space: nowrap;
 }
@@ -2778,7 +2898,7 @@
   border-radius: 12px;
   border: 1px solid color-mix(in srgb, var(--landing-ink) 7%, transparent);
   background: color-mix(in srgb, var(--landing-panel) 50%, transparent);
-  transition: border-color 400ms ease, background-color 400ms ease;
+  transition: border-color 400ms var(--ease-out), background-color 400ms var(--ease-out);
 }
 
 .queueItem[data-state="sending"] {
@@ -2792,7 +2912,7 @@
   height: 0.5rem;
   border-radius: 999px;
   background: color-mix(in srgb, var(--landing-ink) 22%, transparent);
-  transition: background-color 400ms ease, box-shadow 400ms ease;
+  transition: background-color 400ms var(--ease-out), box-shadow 400ms var(--ease-out);
 }
 
 .queueItem[data-state="done"] .queueItemDot {
@@ -2825,7 +2945,7 @@
 .queueItemState {
   flex-shrink: 0;
   font-size: 0.76rem;
-  font-weight: 680;
+  font-weight: var(--weight-semibold);
   color: var(--landing-muted);
 }
 
@@ -2855,7 +2975,7 @@
   background: color-mix(in srgb, var(--landing-emerald) 14%, transparent);
   border: 1px solid color-mix(in srgb, var(--landing-emerald) 26%, transparent);
   font-size: 0.72rem;
-  font-weight: 700;
+  font-weight: var(--weight-semibold);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--landing-emerald-deep);
@@ -2933,15 +3053,369 @@
   color: var(--landing-ink);
 }
 
+
+/* ===================== Component dark tokens ===================== */
+/* ===================== Dark theme tokens ===================== */
+
+:global(:root[data-theme="dark"]) .page {
+  --landing-bg: #0a0f17;
+  --landing-line: rgba(151, 169, 198, 0.16);
+  --landing-panel: rgba(18, 27, 40, 0.7);
+  --landing-panel-strong: rgba(20, 30, 45, 0.9);
+  --landing-edge: rgba(255, 255, 255, 0.07);
+  --landing-emerald: #2fc48a;
+  --landing-emerald-deep: #8be7bf;
+  --landing-emerald-soft: rgba(47, 196, 138, 0.16);
+  --landing-blue: #5b8cff;
+  --landing-blue-soft: rgba(74, 124, 255, 0.18);
+  --landing-gold: #f0ba6a;
+  --landing-glow-green: rgba(47, 196, 138, 0.2);
+  --landing-glow-blue: rgba(74, 124, 255, 0.16);
+  --landing-shadow: 0 36px 70px rgba(0, 0, 0, 0.46);
+  --landing-base:
+    radial-gradient(1100px 640px at 12% -8%, var(--landing-glow-green), transparent 58%),
+    radial-gradient(1000px 580px at 92% 2%, var(--landing-glow-blue), transparent 56%),
+    radial-gradient(950px 720px at 50% 118%, var(--landing-glow-green), transparent 60%),
+    linear-gradient(180deg, #0c131d 0%, #070b12 100%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :global(:root:not([data-theme])) .page {
+    --landing-bg: #0a0f17;
+    --landing-line: rgba(151, 169, 198, 0.16);
+    --landing-panel: rgba(18, 27, 40, 0.7);
+    --landing-panel-strong: rgba(20, 30, 45, 0.9);
+    --landing-edge: rgba(255, 255, 255, 0.07);
+    --landing-emerald: #2fc48a;
+    --landing-emerald-deep: #8be7bf;
+    --landing-emerald-soft: rgba(47, 196, 138, 0.16);
+    --landing-blue: #5b8cff;
+    --landing-blue-soft: rgba(74, 124, 255, 0.18);
+    --landing-gold: #f0ba6a;
+    --landing-glow-green: rgba(47, 196, 138, 0.2);
+    --landing-glow-blue: rgba(74, 124, 255, 0.16);
+    --landing-shadow: 0 36px 70px rgba(0, 0, 0, 0.46);
+    --landing-base:
+      radial-gradient(1100px 640px at 12% -8%, var(--landing-glow-green), transparent 58%),
+      radial-gradient(1000px 580px at 92% 2%, var(--landing-glow-blue), transparent 56%),
+      radial-gradient(950px 720px at 50% 118%, var(--landing-glow-green), transparent 60%),
+      linear-gradient(180deg, #0c131d 0%, #070b12 100%);
+  }
+}
+
+
+/* ===================== Component responsive ===================== */
+@media (max-width: 1100px) {
+  .heroVisual,
+  .heroStage,
+  .heroPanel {
+    min-height: 34rem;
+  }
+
+  .heroOrbit {
+    display: none;
+  }
+
+  /*
+   * Below the wide breakpoint the page gutter is no longer deep enough to
+   * hold an overhanging card. Rather than trimming the notes at the viewport
+   * edge or floating them over the stage rows, they leave the absolute layer
+   * and become a two-up row of callouts under the panel — the same
+   * information, integrated into the visual instead of hanging off it.
+   */
+  .heroStage {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.9rem;
+    min-height: 0;
+  }
+
+  .heroPanel {
+    grid-column: 1 / -1;
+  }
+
+  .heroChipWrap {
+    position: static;
+    will-change: auto;
+  }
+
+  .heroChip {
+    width: auto;
+    /* The rotation and float only read as "floating" against the panel; in
+       flow they would just look misaligned. */
+    transform: none;
+    animation: none;
+    box-shadow: var(--elevation-1);
+  }
+
+  .boardGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      "health activity"
+      "queue safety"
+      "template follow";
+  }
+
+}
+
+@media (max-width: 980px) {
+  .nav {
+    width: calc(100vw - 2rem);
+  }
+
+  .navInner {
+    min-height: 5.6rem;
+    padding: 1rem 1rem 1rem 1.15rem;
+  }
+
+  .desktopNav,
+  .desktopActions {
+    display: none;
+  }
+
+  .mobileMenuButton {
+    display: inline-flex;
+  }
+
+  .mobilePanel {
+    position: absolute;
+    top: calc(100% + 0.9rem);
+    left: 0;
+    right: 0;
+    display: grid;
+    gap: 1.3rem;
+    padding: 1.25rem;
+    border-radius: 32px;
+    border: 1px solid color-mix(in srgb, var(--landing-line) 68%, white 8%);
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--landing-panel-strong) 42%, transparent), color-mix(in srgb, var(--landing-panel) 28%, transparent)),
+      linear-gradient(115deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02) 42%, rgba(255, 255, 255, 0.05) 100%);
+    box-shadow:
+      0 24px 60px rgba(7, 18, 33, 0.26),
+      inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    backdrop-filter: blur(28px) saturate(1.16);
+    -webkit-backdrop-filter: blur(28px) saturate(1.16);
+    overflow: visible;
+  }
+
+  .mobileNav {
+    display: grid;
+    gap: 0.35rem;
+    padding-top: 0.25rem;
+  }
+
+  .mobileNavLink {
+    justify-content: flex-start;
+    padding: 1rem 0.6rem;
+    border-radius: 22px;
+    color: var(--landing-ink);
+    font-size: 1.45rem;
+    font-weight: var(--weight-semibold);
+    letter-spacing: -0.03em;
+  }
+
+  .mobileNavLink:hover,
+  .mobileNavLink:focus-visible {
+    background: rgba(255, 255, 255, 0.05);
+    outline: none;
+  }
+
+  .mobileMetaRow {
+    display: grid;
+    gap: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid color-mix(in srgb, var(--landing-line) 76%, transparent);
+  }
+
+  .mobileThemeBlock {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+  }
+
+  .mobileThemeLabel {
+    display: none;
+  }
+
+  .mobileThemeMenu :global(.theme-menu__trigger) {
+    width: 3.3rem;
+    height: 3.3rem;
+    border-radius: 999px;
+    border-color: color-mix(in srgb, var(--landing-line) 76%, white 8%);
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--landing-panel-strong) 58%, transparent), color-mix(in srgb, var(--landing-panel) 46%, transparent)),
+      linear-gradient(135deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.03));
+    box-shadow:
+      0 12px 24px rgba(7, 18, 33, 0.18),
+      inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  }
+
+  .mobileThemeMenu :global(.theme-menu__panel) {
+    top: auto;
+    bottom: calc(100% + 0.9rem);
+    left: 0;
+    right: auto;
+    min-width: 12.5rem;
+    max-width: calc(100vw - 3rem);
+    border-color: color-mix(in srgb, var(--landing-line) 76%, white 10%);
+    background:
+      linear-gradient(145deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.08)),
+      linear-gradient(180deg, color-mix(in srgb, var(--landing-bg) 88%, var(--landing-panel-strong) 12%), color-mix(in srgb, var(--landing-bg) 82%, var(--landing-panel) 18%));
+    box-shadow:
+      0 22px 48px rgba(7, 18, 33, 0.22),
+      inset 0 1px 0 rgba(255, 255, 255, 0.18);
+    backdrop-filter: blur(26px) saturate(1.12);
+    -webkit-backdrop-filter: blur(26px) saturate(1.12);
+  }
+
+  .mobileCtaRow {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.9rem;
+  }
+
+  .mobileGhostButton,
+  .mobilePrimaryButton {
+    min-height: 3.7rem;
+    border-radius: 22px;
+    font-weight: var(--weight-semibold);
+  }
+
+  .mobileGhostButton {
+    border: 1px solid color-mix(in srgb, var(--landing-line) 76%, white 10%);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--landing-panel-strong) 32%, transparent), color-mix(in srgb, var(--landing-panel) 22%, transparent));
+    color: var(--landing-ink);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  }
+
+  .mobilePrimaryButton {
+    border: 1px solid color-mix(in srgb, var(--landing-emerald) 52%, transparent);
+    background: linear-gradient(135deg, var(--landing-emerald) 0%, #1f8b71 100%);
+    color: white;
+    box-shadow: 0 16px 34px rgba(22, 107, 86, 0.24);
+  }
+
+}
+
+@media (max-width: 720px) {
+  .nav {
+    top: 0.65rem;
+    width: calc(100vw - 1rem);
+  }
+
+  .navInner {
+    min-height: 5rem;
+    padding: 0.9rem;
+    border-radius: 28px;
+  }
+
+  .brand {
+    gap: 0.85rem;
+  }
+
+  .brandMark {
+    width: 2.8rem;
+    height: 2.8rem;
+  }
+
+  .brandText strong {
+    font-size: 0.96rem;
+  }
+
+  .brandText span {
+    font-size: 0.82rem;
+  }
+
+  .mobileMenuButton {
+    width: 3.55rem;
+    height: 3.55rem;
+    border-radius: 20px;
+  }
+
+  .mobilePanel {
+    gap: 1rem;
+    padding: 1rem;
+    border-radius: 28px;
+  }
+
+  .mobileNavLink {
+    padding: 0.88rem 0.55rem;
+    font-size: 1.2rem;
+  }
+
+  .heroVisual,
+  .heroPanel {
+    min-height: 30rem;
+  }
+
+  /* One column: two callouts side by side inside a phone width would each be
+     narrow enough to wrap their value onto three lines. */
+  .heroStage {
+    min-height: 0;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .boardGrid {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "health"
+      "activity"
+      "queue"
+      "template"
+      "follow"
+      "safety";
+  }
+
+  .ctaRow,
+  .ctaActions,
+  .mobileCtaRow {
+    width: 100%;
+  }
+
+  .ctaRow a,
+  .ctaActions a,
+  .mobileCtaRow a {
+    flex: 1;
+  }
+
+  .mobileCtaRow {
+    grid-template-columns: 1fr;
+  }
+
+}
+
 /* ===================== Reduced motion ===================== */
 
 @media (prefers-reduced-motion: reduce) {
+  .navLinkLabel::after {
+    transition: none;
+  }
+
   .scrollCueLine::after,
   .heroLiveDot,
   .heroFlowPulse,
   .heroChipTop,
   .heroChipBottom {
     animation: none !important;
+  }
+
+  /* The stage cascade is already gated on [data-revealed], which LandingMotion
+     never sets under reduced motion — this is belt and braces for the case
+     where the preference changes after the attribute has been written. */
+  .heroVisual[data-revealed] .heroNode,
+  .heroVisual[data-revealed] .heroNode::after,
+  .heroVisual[data-revealed] .heroNodeState {
+    animation: none !important;
+  }
+
+  .heroNode,
+  .stepTitle,
+  .dataStep,
+  .rv,
+  .mapArrow,
+  .stripItem,
+  .stripMark {
+    transition: none;
   }
 
   .headlineAccent,
@@ -3020,7 +3494,7 @@
 
   /* Keep the trust cards' colour/glow feedback but drop the transform lift. */
   .trustCard {
-    transition: border-color 200ms ease, box-shadow 200ms ease;
+    transition: border-color 200ms var(--ease-out), box-shadow 200ms var(--ease-out);
   }
 
   .trustCard:hover,
@@ -3029,7 +3503,7 @@
   }
 
   .trustMark {
-    transition: border-color 200ms ease, box-shadow 200ms ease;
+    transition: border-color 200ms var(--ease-out), box-shadow 200ms var(--ease-out);
   }
 
   .trustCard:hover .trustMark,

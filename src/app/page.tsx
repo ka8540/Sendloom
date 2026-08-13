@@ -1,158 +1,168 @@
-import {
-  Activity,
-  CalendarClock,
-  FileSpreadsheet,
-  FileText,
-  Mail,
-  PenLine,
-  Radar,
-  Search,
-  Upload,
-  UserRoundSearch,
-  Workflow
-} from "lucide-react";
+import type { Metadata } from "next";
+import { Fragment, type CSSProperties } from "react";
+import { Check } from "lucide-react";
 import Link from "next/link";
 
-import { AnimatedEmailPath } from "@/components/AnimatedEmailPath";
-import { BrandText, renderBrandText } from "@/components/brand-text";
+import { BrandText } from "@/components/brand-text";
 import { LandingCommandCenter } from "@/components/landing-command-center";
 import { LandingHeroFlow } from "@/components/landing-hero-flow";
 import { LandingMotion } from "@/components/landing-motion";
 import { LandingNav } from "@/components/landing-nav";
 import { LandingPointerFX } from "@/components/landing-pointer-fx";
+import { integrations } from "@/components/marketing/integration-marks";
 import { MarketingFooter } from "@/components/marketing/MarketingFooter";
 import { SendloomLogo } from "@/components/sendloom-logo";
 import { redirectAuthenticatedToWorkspace } from "@/lib/auth";
 
 import styles from "@/app/landing.module.css";
 
-const HEADLINE_WORDS = ["Cold", "outreach", "that", "feels", "crafted,", "not", "sprayed."] as const;
+/*
+ * Landing page.
+ *
+ * Structure follows a chaptered marketing narrative: a centred hero, an honest
+ * integration strip, then three numbered chapters (Data / Sequences / Control)
+ * that each open with a headline carrying one italicised emphasis phrase.
+ *
+ * Two deliberate constraints govern this file:
+ *
+ *   1. Layout families do not repeat. Hero (split copy/visual), integration strip
+ *      (inline row), chapter 01 (sticky-scroll story), chapter 02 (offset split),
+ *      chapter 03 (full-bleed visual), safety (two-column list), CTA (panel).
+ *      Seven sections, seven distinct compositions.
+ *   2. Exactly three chapter labels exist on the page. They are the only
+ *      small-caps labels above headlines; the hero deliberately has none.
+ */
 
-/* Weaves through the six step dots: x at each column centre (1200-unit
-   reference width), y alternating 26/58 to match the staggered card rows.
-   Horizontal tangents at every dot keep the wave smooth. */
-const WORKFLOW_RAIL_PATH =
-  "M 92 26 C 194 26 194 58 295 58 S 397 26 498 26 S 600 58 702 58 S 803 26 905 26 S 1006 58 1108 58";
+/* The site answers on both the apex and the www host, so the home page names
+   one of them as canonical rather than letting the two compete as duplicates.
+   Resolved against the metadataBase set in the root layout. */
+export const metadata: Metadata = {
+  alternates: {
+    canonical: "/"
+  }
+};
 
-const chaosTools = [
-  { tag: "Spreadsheets", note: "Leads scattered across CSV exports nobody trusts." },
-  { tag: "Gmail tabs", note: "Sending one-by-one and losing track of who replied." },
-  { tag: "Hunter.io", note: "Missing emails looked up in yet another window." },
-  { tag: "Template docs", note: "Copy living in a doc, pasted in by hand each time." },
-  { tag: "Reminders", note: "Follow-ups set manually, then quietly forgotten." },
-  { tag: "Tracking sheet", note: "Delivery state guessed at from memory." }
-] as const;
+type Chapter = {
+  index: string;
+  label: string;
+  /* Headline is split so the emphasis run can be italicised in the same
+     family. Faux-oblique or a second font family would read as a mistake. */
+  headline: { lead: string; emphasis: string; trail?: string };
+  intro: string;
+};
 
-const workflowSteps = [
+const chapters: Record<"data" | "sequences" | "control", Chapter> = {
+  data: {
+    index: "01",
+    label: "Data",
+    headline: { lead: "Find the people worth writing to.", emphasis: "In minutes." },
+    intro:
+      "Bring your own list or build one inside the workspace. Every row keeps its structure through import, enrichment, and the sends that follow."
+  },
+  sequences: {
+    index: "02",
+    label: "Sequences",
+    headline: { lead: "Cold email that stays", emphasis: "measured", trail: "." },
+    intro:
+      "Write once, pair it with a sender, and let the run pace itself. Follow-ups are scheduled deliberately rather than fired off in a burst."
+  },
+  control: {
+    index: "03",
+    label: "Control",
+    headline: { lead: "Know what happened.", emphasis: "And why." },
+    intro:
+      "Delivery, opens, clicks, replies, and retries stay attached to the run that produced them, on the same screen that launched it."
+  }
+};
+
+/*
+ * Feature cells carry no CTA of their own. Every one of them would have
+ * pointed at /signup, and three different labels for a single destination is
+ * duplicate intent dressed up as variety. The page has one primary action,
+ * worded identically in the hero and the closing panel.
+ */
+/*
+ * Data chapter stories. DOM order is the mobile/screen-reader order:
+ * headline, then each story's copy immediately followed by its product
+ * visual. On desktop with motion allowed, LandingMotion sets
+ * [data-story="enhanced"] and CSS overlaps the three copies into one cell
+ * and the three visuals into a second sticky column.
+ */
+const dataStories = [
   {
     index: "01",
-    icon: Upload,
-    title: "Import",
-    body: "Upload a CSV or XLSX, detect columns instantly, and keep every row structured for the sends that follow."
+    title: "Imports",
+    body: "Upload a CSV or XLSX, map your fields once, and keep every column intact for the sends that follow.",
+    meta: "CSV, XLSX, field mapping"
   },
   {
     index: "02",
-    icon: Search,
-    title: "Enrich",
-    body: "Fill the gaps with name-plus-domain or domain-wide lookups using your own hunter.io API key, without leaving the workspace."
+    title: "Discover",
+    body: "Search by company, role, and location, then review inferred work contacts before they enter a run.",
+    meta: "Company, role, location"
   },
   {
     index: "03",
-    icon: PenLine,
-    title: "Template",
-    body: "Write in plain text, HTML, or structured JSON with merge variables and inline AI help, then preview it as a real email."
-  },
-  {
-    index: "04",
-    icon: Workflow,
-    title: "Sequence",
-    body: "Pair the list with a sender and template, set the send window, and assemble the run on one surface."
-  },
-  {
-    index: "05",
-    icon: CalendarClock,
-    title: "Follow-up",
-    body: "Schedule the next touch with controlled pacing so timing stays deliberate instead of frantic."
-  },
-  {
-    index: "06",
-    icon: Activity,
-    title: "Track",
-    body: "Watch delivery, opens, clicks, replies, and retries stay attached to the campaign that produced them."
+    title: "Email enrichment",
+    body: "Run name-plus-domain and domain-wide lookups with your own Hunter API key without leaving the workspace.",
+    meta: "Bring your own API key"
   }
 ] as const;
 
-const capabilities = [
+/* Stagger helper for the product visuals: each revealed element carries its
+   transition delay as a custom property so no per-item classes are needed.
+   Scaled down so a freshly activated card finishes revealing quickly. */
+const delay = (seconds: number) => ({ "--d": `${seconds * 0.7}s` }) as CSSProperties;
+
+const sequenceFeatures = [
   {
-    icon: FileSpreadsheet,
-    title: "Lead imports",
-    body: "Bring in CSV and XLSX files, map fields once, and keep row data intact for every downstream send.",
-    tags: ["CSV", "XLSX", "Field mapping"]
+    title: "Write it once.",
+    body: "Plain text, HTML, or structured JSON, with merge variables, attachments, and inline AI help. Preview it as a real email before it goes anywhere.",
+    meta: "Plain text, HTML, JSON"
   },
   {
-    icon: UserRoundSearch,
-    title: "Discover",
-    body: "Find relevant professionals by company, role, and location, then prepare their inferred work contacts for review.",
-    tags: ["Company", "Role", "Location"]
+    title: "Send from your own inbox.",
+    body: "Connect Gmail or Google Workspace through OAuth and send from the mailbox your recipients already recognise, not an anonymous relay.",
+    meta: "Google OAuth, sender profiles"
   },
   {
-    icon: Radar,
-    title: "Hunter.io enrichment",
-    body: "Run name-plus-domain and domain-wide lookups with your own API key so the finder lives inside the flow.",
-    tags: ["Find email", "Domain search", "Bring your own key"]
-  },
-  {
-    icon: FileText,
-    title: "Template intelligence",
-    body: "Switch between plain text, HTML, and JSON while merge variables, attachments, and AI-polished copy stay aligned.",
-    tags: ["Plain text", "HTML", "JSON"]
-  },
-  {
-    icon: Mail,
-    title: "Gmail-connected sending",
-    body: "Send from the mailbox you already trust through Google OAuth, with sender profiles and live run status.",
-    tags: ["Google OAuth", "Sender profiles", "Live status"]
-  },
-  {
-    icon: CalendarClock,
-    title: "Follow-up scheduling",
-    body: "Add follow-ups with controlled pacing and send-window guardrails so the cadence stays measured.",
-    tags: ["Send windows", "Cadence", "Pacing guardrails"]
-  },
-  {
-    icon: Activity,
-    title: "Delivery visibility",
-    body: "Keep opens, clicks, replies, retries, and recipient status visible from the system that launches the run.",
-    tags: ["Opens & clicks", "Replies", "Retries"]
+    title: "Follow up on purpose.",
+    body: "Set the send window and cadence, then stop the sequence the moment a reply changes the plan.",
+    meta: "Send windows, pacing guardrails"
   }
 ] as const;
 
-const trustPoints = [
+/*
+ * Safety points. Deliberately not presented as cards: these are claims about
+ * how the product behaves, and a bordered box around each one would add
+ * visual weight without adding meaning.
+ */
+const safetyPoints = [
   {
-    title: "Gmail-connected sending",
-    body: "Launch from your own connected mailbox through Google OAuth, not an anonymous relay."
+    title: "Paced by default",
+    body: "Sends are spaced across each connected Gmail account to reduce throttling, with daily limits that stop a runaway run."
   },
   {
-    title: "Safe pacing",
-    body: "Sendloom automatically paces and spaces out sends from each connected Gmail account to reduce throttling, with daily safety controls that help prevent runaway sends."
+    title: "Checked before launch",
+    body: "The list, sender, and template are validated together before anything leaves the workspace."
   },
   {
-    title: "Validation before launch",
-    body: "Check the list, sender, and template together before anything leaves the workspace."
+    title: "Failures stay visible",
+    body: "Failed sends surface with their retry state instead of disappearing into a log nobody reads."
   },
   {
-    title: "Retries & failure visibility",
-    body: "Failed sends surface with their retry state instead of disappearing into a silent log."
+    title: "Bounces handled",
+    body: "Hard bounces are classified and suppressed automatically so the same bad address is not tried twice."
   },
   {
-    title: "Follow-up control",
-    body: "Decide the timing and stop a sequence the moment a reply changes the plan."
+    title: "Replies pause the run",
+    body: "A reply can stop the remaining follow-ups for that recipient, so nobody gets chased after answering."
   },
   {
-    title: "Ownership of workflows",
-    body: "Imports, templates, senders, and runs stay yours, in one place you can see and audit."
+    title: "Yours to audit",
+    body: "Imports, templates, senders, and runs stay in one place you can inspect at any time."
   }
-];
+] as const;
 
 export default async function LandingPage() {
   // Send already-authenticated visitors straight to their workspace instead of
@@ -160,291 +170,389 @@ export default async function LandingPage() {
   // page. See `redirectAuthenticatedToWorkspace` for the validity rules.
   await redirectAuthenticatedToWorkspace();
 
+  /* The three product visuals for the Data chapter, in story order. Rendered
+     as static markup; LandingMotion deals them as a deck on desktop. All
+     names and companies are fictional. */
+  const dataVisuals = [
+    <article key="imports" className={styles.dataCard} data-story-card aria-label="Imports: mapping a CSV to contact fields">
+      <div className={styles.winBar}>
+        <SendloomLogo className={styles.winMark} />
+        <span className={styles.winTitle}>Imports</span>
+        <span className={styles.winMeta}>your_list.csv</span>
+      </div>
+      <div className={styles.winBody}>
+        <div className={`${styles.winIntro} ${styles.rv}`} style={delay(0.05)}>
+          <div>
+            <p className={styles.winScreenTitle}>Map fields</p>
+            <p className={styles.winSub}>Match your file columns to Sendloom.</p>
+          </div>
+          <span className={styles.winCount}>228 contacts</span>
+        </div>
+        <div className={`${styles.winHead} ${styles.rv}`} style={delay(0.14)}>
+          <span>CSV column</span>
+          <span>Sendloom field</span>
+          <span aria-hidden="true" />
+        </div>
+        {[
+          ["first_name", "First Name"],
+          ["last_name", "Last Name"],
+          ["email", "Email"],
+          ["company", "Company"]
+        ].map(([column, field], row) => (
+          <div key={column} className={`${styles.winRow} ${styles.rv}`} style={delay(0.2 + row * 0.06)}>
+            <span className={styles.srcField}>{column}</span>
+            <span className={styles.fieldControl}>
+              {field}
+              <i className={styles.chev} aria-hidden="true" />
+            </span>
+            <span className={styles.rowStatus}>
+              <Check aria-hidden="true" />
+            </span>
+          </div>
+        ))}
+      </div>
+      <div className={styles.winFoot}>
+        <span className={styles.footOk}>
+          <Check aria-hidden="true" />
+          4 of 4 mapped
+        </span>
+        <span className={styles.chipReady}>Ready</span>
+      </div>
+    </article>,
+
+    <article key="discover" className={styles.dataCard} data-story-card aria-label="Discover: searching contacts by company, role, and location">
+      <div className={styles.winBar}>
+        <SendloomLogo className={styles.winMark} />
+        <span className={styles.winTitle}>Discover</span>
+        <span className={styles.winMeta}>12 results</span>
+      </div>
+      <div className={styles.winBody}>
+        <div className={`${styles.filterRow} ${styles.rv}`} style={delay(0.05)}>
+          {[
+            ["Company", "Stripe"],
+            ["Role", "Software Engineer"],
+            ["Location", "San Francisco"]
+          ].map(([label, value]) => (
+            <span key={label} className={styles.filterField}>
+              <span className={styles.filterLabel}>{label}</span>
+              {value}
+            </span>
+          ))}
+        </div>
+        <div className={`${styles.winHead} ${styles.headPeople} ${styles.rv}`} style={delay(0.14)}>
+          <span aria-hidden="true" />
+          <span>Person</span>
+          <span>Role</span>
+          <span className={styles.colCompany}>Company</span>
+          <span className={styles.colLocation}>Location</span>
+        </div>
+        {[
+          ["Maya Chen", "Software Engineer", "Stripe", "San Francisco", true],
+          ["Ethan Miller", "Backend Engineer", "Stripe", "New York", false],
+          ["Priya Shah", "Platform Engineer", "Stripe", "Seattle", false]
+        ].map(([name, role, company, location, selected], row) => (
+          <div
+            key={name as string}
+            className={
+              selected
+                ? `${styles.winRow} ${styles.rowPeople} ${styles.winRowSelected} ${styles.rv}`
+                : `${styles.winRow} ${styles.rowPeople} ${styles.rv}`
+            }
+            style={delay(0.2 + row * 0.07)}
+          >
+            <span className={styles.selBox} aria-hidden="true">
+              {selected ? <Check /> : null}
+            </span>
+            <span className={styles.personName}>{name}</span>
+            <span className={styles.cellMuted}>{role}</span>
+            <span className={`${styles.cellMuted} ${styles.colCompany}`}>{company}</span>
+            <span className={`${styles.cellMuted} ${styles.colLocation}`}>{location}</span>
+          </div>
+        ))}
+      </div>
+      <div className={`${styles.winFoot} ${styles.rv}`} style={delay(0.5)}>
+        <span>1 selected</span>
+        <span className={styles.footAction}>Add selected to import</span>
+      </div>
+    </article>,
+
+    <article key="enrichment" className={styles.dataCard} data-story-card aria-label="Email enrichment: resolving a missing address">
+      <div className={styles.winBar}>
+        <SendloomLogo className={styles.winMark} />
+        <span className={styles.winTitle}>Email enrichment</span>
+        <span className={styles.winMeta}>Hunter connected</span>
+      </div>
+      <div className={styles.winBody}>
+        <div className={`${styles.winIntro} ${styles.rv}`} style={delay(0.05)}>
+          <div>
+            <p className={styles.winScreenTitle}>Work emails</p>
+            <p className={styles.winSub}>Fill missing work emails.</p>
+          </div>
+          <span className={styles.winCount}>3 contacts</span>
+        </div>
+        <div className={`${styles.enrichProgress} ${styles.rv}`} style={delay(0.12)}>
+          <span className={styles.enrichTrack} aria-hidden="true">
+            <span className={styles.enrichFill} />
+          </span>
+          <span>2 of 3 resolved</span>
+        </div>
+        <div className={`${styles.enrichRow} ${styles.rv}`} style={delay(0.2)}>
+          <span className={styles.avatar} aria-hidden="true">MC</span>
+          <span className={styles.enrichWho}>
+            <span className={styles.personName}>Maya Chen</span>
+            <span className={styles.cellMuted}>Stripe</span>
+          </span>
+          <span className={styles.mailField}>maya@stripe.com</span>
+          <span className={`${styles.statusChip} ${styles.statusFound}`}>Found</span>
+        </div>
+        <div className={`${styles.enrichRow} ${styles.rv}`} style={delay(0.27)}>
+          <span className={styles.avatar} aria-hidden="true">EM</span>
+          <span className={styles.enrichWho}>
+            <span className={styles.personName}>Ethan Miller</span>
+            <span className={styles.cellMuted}>Linear</span>
+          </span>
+          <span className={styles.swapCell}>
+            <span className={`${styles.mailField} ${styles.mailFieldEmpty} ${styles.swapPending}`}>
+              <i className={styles.searchDot} aria-hidden="true" />
+              Searching
+            </span>
+            <span className={`${styles.mailField} ${styles.swapFound}`}>ethan@linear.com</span>
+          </span>
+          <span className={`${styles.swapCell} ${styles.swapStatus}`}>
+            <span className={`${styles.statusChip} ${styles.statusSearching} ${styles.swapPending}`}>Searching</span>
+            <span className={`${styles.statusChip} ${styles.statusFound} ${styles.swapFound}`}>Found</span>
+          </span>
+        </div>
+        <div className={`${styles.enrichRow} ${styles.rv}`} style={delay(0.34)}>
+          <span className={styles.avatar} aria-hidden="true">PS</span>
+          <span className={styles.enrichWho}>
+            <span className={styles.personName}>Priya Shah</span>
+            <span className={styles.cellMuted}>Figma</span>
+          </span>
+          <span className={styles.mailField}>priya@figma.com</span>
+          <span className={`${styles.statusChip} ${styles.statusFound}`}>Found</span>
+        </div>
+      </div>
+      <div className={`${styles.winFoot} ${styles.rv}`} style={delay(0.5)}>
+        <span>Hunter name + domain lookups</span>
+        <span className={styles.chipReady}>Ready</span>
+      </div>
+    </article>
+  ];
+
+  // Anchor contract for the nav and footer. Every in-page link on the public
+  // surface resolves to one of these, and they appear in document order so the
+  // nav's active-section indicator advances left to right as you scroll:
+  //
+  //   #home          hero              nav "Home"
+  //   #why-sendloom  chapter 01, Data  nav "Why Sendloom"
+  //   #workflow      chapter 02, Seq.  nav "Workflow", hero "See how it works"
+  //   #contact       footer            nav "Contact"
+  //
+  // `id="top"` stays for any saved link to the old target, and the skip link
+  // in the root layout targets #main-content, hence the extra anchors.
   return (
     <main id="top" className={styles.page}>
-      <AnimatedEmailPath />
+      <span id="main-content" />
       <LandingMotion />
       <LandingPointerFX />
       {/* Kept outside .frame so no animated/transformed ancestor can capture
           the fixed nav or interfere with its backdrop-filter. */}
       <LandingNav />
-      <div className={styles.frame}>
-        <section className={styles.hero}>
-          <div className={styles.heroCopy}>
-            <div className={styles.eyebrow} data-reveal>
-              Outreach operations, one workspace
-            </div>
-            <h1 className={styles.headline}>
-              <span className={styles.headlineLine}>
-                {HEADLINE_WORDS.slice(0, 4).map((word) => (
-                  <span key={word} className={styles.headlineWord} data-hero-word>
-                    {word}
-                  </span>
-                ))}
-              </span>
-              <span className={styles.headlineLine}>
-                {HEADLINE_WORDS.slice(4).map((word) => (
-                  <span
-                    key={word}
-                    className={`${styles.headlineWord}${word === "crafted," ? ` ${styles.headlineAccent}` : ""}`}
-                    data-hero-word
-                  >
-                    {word}
-                  </span>
-                ))}
-              </span>
-            </h1>
-            <p className={styles.lede} data-reveal>
-              Import leads, enrich contacts, write templates, schedule follow-ups, send through a connected Gmail
-              sender, and track every sequence from one calm command center. <BrandText>Sendloom</BrandText> keeps the
-              whole outbound run in a single place.
+
+      {/* ============================ HERO ============================
+          Four text elements only: headline, subtext, actions, micro-note.
+          No eyebrow, so the three chapter labels below stay the page's
+          entire budget of small-caps labels. */}
+      <section className={styles.hero} id="home">
+        <div className={styles.heroInner}>
+          {/* Words rise in one by one on load (GSAP, motion permitting);
+              without JS they render as plain text. */}
+          <h1 className={styles.heroHeadline}>
+            <span data-hero-word>Cold</span> <span data-hero-word>outreach</span>
+            <br />
+            <span data-hero-word>that</span> <span data-hero-word>feels</span>
+            <br />
+            <em className={styles.emphasis}>
+              <span data-hero-word>crafted,</span>
+            </em>
+            <br />
+            <span data-hero-word>not</span> <span data-hero-word>sprayed.</span>
+          </h1>
+          <p className={styles.heroLede} data-reveal>
+            Import a list, fill the missing addresses, and run a paced sequence from your own
+            Gmail. One workspace, start to finish.
+          </p>
+          <div className={styles.heroActions} data-reveal>
+            <Link className={styles.buttonPrimary} href="/signup">
+              Get started for free
+            </Link>
+            <a className={styles.buttonGhost} href="#why-sendloom">
+              See how it works
+            </a>
+          </div>
+          <p className={styles.heroNote} data-reveal>
+            No credit card required. Connect the mailbox you already send from.
+          </p>
+        </div>
+
+        <div className={styles.heroVisual} data-reveal>
+          <LandingHeroFlow />
+        </div>
+      </section>
+
+      {/* ====================== INTEGRATION STRIP ======================
+          Inline row. Real integrations, not invented customer logos. Marks are
+          the vendors' own multi-colour artwork, inlined — see
+          components/marketing/integration-marks. */}
+      <section className={styles.strip} aria-label="Supported integrations">
+        <p className={styles.stripLabel}>Works with the tools you already send from</p>
+        <ul className={styles.stripList}>
+          {integrations.map(({ Mark, name, slug }) => (
+            <li key={slug} className={styles.stripItem}>
+              <Mark className={styles.stripMark} />
+              <span className={styles.stripName}>{name}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      {/* ==================== CHAPTER 01 - DATA ====================
+          Sticky-scroll product story. Left: stable editorial copy with one
+          active story swapping under it. Right: a deck of product visuals
+          dealt through by scroll position. Without JS (or with reduced
+          motion) desktop keeps each story beside its visual, while mobile
+          stacks each pair — see the fallback rules in the stylesheet. */}
+      <section className={`${styles.chapter} ${styles.dataStory}`} id="why-sendloom" data-story>
+        <div className={styles.dataStage}>
+          <header className={styles.dataHead}>
+            <p className={styles.chapterLabel}>
+              <span className={styles.chapterIndex}>{chapters.data.index}</span>
+              {chapters.data.label}
             </p>
+            <h2 className={styles.chapterTitle}>
+              {chapters.data.headline.lead}{" "}
+              <em className={styles.emphasis}>{chapters.data.headline.emphasis}</em>
+            </h2>
+            <p className={styles.chapterIntro}>{chapters.data.intro}</p>
+          </header>
 
-            <div className={styles.ctaRow} data-reveal>
-              <Link className={styles.primaryButton} href="/signup">
-                Start building
-              </Link>
-              <a className={styles.ghostButton} href="#workflow">
-                See how it works
-              </a>
-            </div>
-
-            <ul className={styles.heroMeta} data-reveal>
-              <li>Gmail-connected sender</li>
-              <li>hunter.io finder built in</li>
-              <li>Plain text · HTML · JSON</li>
-            </ul>
-          </div>
-
-          <div className={styles.heroVisual} data-reveal>
-            <LandingHeroFlow />
-          </div>
-
-          <a className={styles.scrollCue} href="#chaos" aria-label="Scroll to learn more">
-            <span>Scroll</span>
-            <span className={styles.scrollCueLine} aria-hidden="true" />
-          </a>
-        </section>
-
-        <section className={styles.chaos} id="chaos">
-          <div className={styles.sectionHeader} data-reveal>
-            <p className={styles.sectionEyebrow}>The usual setup</p>
-            <h2 className={styles.sectionTitle}>Six tabs, one fragile process.</h2>
-            <p className={styles.sectionText}>
-              Most outbound runs are stitched together by memory: a spreadsheet here, a finder there, templates in a
-              doc, and follow-ups living on sticky notes. Every handoff is a place for the sequence to break.
-            </p>
-          </div>
-
-          <div className={styles.chaosLayout}>
-            <div className={styles.chaosGrid}>
-              {chaosTools.map((tool) => (
-                <article key={tool.tag} className={styles.chaosCard} data-chaos>
-                  <span className={styles.chaosTag}>{tool.tag}</span>
-                  <span className={styles.chaosNote}>{tool.note}</span>
-                </article>
-              ))}
-            </div>
-
-            <div className={styles.chaosArrow} aria-hidden="true">
-              <span className={styles.chaosArrowLine} />
-              <span className={styles.chaosArrowLabel}>becomes</span>
-            </div>
-
-            <article className={styles.unifiedCard} data-reveal>
-              <div className={styles.unifiedMark}>
-                <SendloomLogo className={styles.unifiedLogo} />
-                <strong>
-                  <BrandText>Sendloom</BrandText>
-                </strong>
+          {/* Copy and visuals interleave so the unenhanced flow reads as
+              story → demo on mobile and story | demo on desktop. The enhanced
+              desktop grid lifts every step into one left-hand cell and every
+              card into the right-hand deck. */}
+          {dataStories.map((story, i) => (
+            <Fragment key={story.title}>
+              <div className={styles.dataStep} data-story-step>
+                <p className={styles.dataStepIndex}>{story.index}</p>
+                <h3 className={styles.dataStepTitle}>{story.title}</h3>
+                <p className={styles.dataStepBody}>{story.body}</p>
+                <p className={styles.cellMeta}>{story.meta}</p>
               </div>
-              <p>
-                One workspace where the list, the finder, the template, the sender, the schedule, and the tracking all
-                share the same source of truth.
-              </p>
-              <span className={styles.unifiedChip}>Import → Enrich → Template → Sequence → Follow-up → Track</span>
-            </article>
-          </div>
-        </section>
+              {dataVisuals[i]}
+            </Fragment>
+          ))}
 
-        <section className={styles.section} id="workflow">
-          <div className={styles.sectionHeader} data-reveal>
-            <p className={styles.sectionEyebrow}>How it flows</p>
-            <h2 className={styles.sectionTitle}>From raw list to a live sequence, in one continuous line.</h2>
-            <p className={styles.sectionText}>
-              Each step hands off cleanly to the next, so you never re-export, re-paste, or rebuild context to keep a
-              run moving.
-            </p>
+          <div className={styles.dataProgress} aria-hidden="true">
+            {dataStories.map((story) => (
+              <span key={story.index} className={styles.dataProgSeg}>
+                <span className={styles.dataProgFill} data-story-fill />
+              </span>
+            ))}
           </div>
+        </div>
+      </section>
 
-          <div className={styles.workflowTrack} data-workflow>
-            {/* The thread: a woven rail curving through the step dots, drawn
-                on scroll, with a glowing packet travelling it on a loop. The
-                point heights match the alternating card stagger below. */}
-            <svg
-              className={styles.workflowRail}
-              viewBox="0 0 1200 80"
-              fill="none"
-              preserveAspectRatio="none"
-              aria-hidden="true"
-            >
-              <path className={styles.workflowRailBase} d={WORKFLOW_RAIL_PATH} pathLength={1000} />
-              <path
-                className={styles.workflowRailActive}
-                d={WORKFLOW_RAIL_PATH}
-                pathLength={1000}
-                data-workflow-line
-              />
-              <g className={styles.workflowPacket} data-workflow-packet>
-                <circle className={styles.workflowPacketGlow} r="9" />
-                <circle className={styles.workflowPacketCore} r="3.5" />
-              </g>
-            </svg>
-            <ol className={styles.workflowSteps}>
-              {workflowSteps.map((step) => {
-                const Icon = step.icon;
-                return (
-                  <li key={step.index} className={styles.workflowStep} data-step data-active="true" data-reveal>
-                    <span className={styles.workflowDot} aria-hidden="true" />
-                    <div className={`${styles.workflowCard} ${styles.fxCard}`} data-card-fx>
-                      <span className={styles.workflowIndex} aria-hidden="true">
-                        {step.index}
-                      </span>
-                      <span className={styles.workflowIcon} aria-hidden="true">
-                        <Icon strokeWidth={1.7} />
-                      </span>
-                      <h3>{step.title}</h3>
-                      <p>{step.body}</p>
-                    </div>
-                  </li>
-                );
-              })}
-            </ol>
-          </div>
-        </section>
-
-        <section className={styles.section}>
-          <div className={styles.sectionHeader} data-reveal>
-            <p className={styles.sectionEyebrow}>Capabilities</p>
-            <h2 className={styles.sectionTitle}>Everything the run needs, on one surface.</h2>
-            <p className={styles.sectionText}>
-              The pieces that usually live in five disconnected tools are designed to work together inside{" "}
-              <BrandText>Sendloom</BrandText>.
-            </p>
+      {/* ================== CHAPTER 02 - SEQUENCES ==================
+          Offset split: sticky headline column, stacked feature rows.
+          Target of both the nav's "Workflow" link and the hero's
+          "See how it works". */}
+      <section className={styles.chapter} id="workflow">
+        <div className={styles.split}>
+          <div className={styles.splitAside}>
+            <ChapterHead chapter={chapters.sequences} />
           </div>
 
-          <div className={styles.capGrid}>
-            {capabilities.map((capability) => {
-              const Icon = capability.icon;
-              return (
-                <article
-                  key={capability.title}
-                  className={`${styles.capCard} ${styles.fxCard}`}
-                  data-reveal
-                  data-card-fx
-                >
-                  <span className={styles.capIcon} aria-hidden="true">
-                    <Icon strokeWidth={1.7} />
-                  </span>
-                  <h3>{capability.title}</h3>
-                  <p>{renderBrandText(capability.body)}</p>
-                  <div className={styles.capTags}>
-                    {capability.tags.map((tag) => (
-                      <span key={tag}>{tag}</span>
-                    ))}
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        </section>
+          <ol className={styles.steps}>
+            {sequenceFeatures.map((feature) => (
+              <li key={feature.title} className={styles.step} data-reveal>
+                <h3 className={styles.stepTitle}>{feature.title}</h3>
+                <p className={styles.stepBody}>{feature.body}</p>
+                <p className={styles.cellMeta}>{feature.meta}</p>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </section>
 
-        <section className={styles.section}>
-          <div className={styles.sectionHeader} data-reveal>
-            <p className={styles.sectionEyebrow}>The command center</p>
-            <h2 className={styles.sectionTitle}>See the whole run from one calm screen.</h2>
-            <p className={styles.sectionText}>
-              Sequence health, delivery status, recipient activity, the template behind the send, and follow-up timing,
-              all visible together instead of guessed at across tabs.
-            </p>
-          </div>
+      {/* =================== CHAPTER 03 - CONTROL ===================
+          Full-bleed product visual under a centred head. */}
+      <section className={styles.chapter}>
+        <ChapterHead chapter={chapters.control} centered />
+        <div className={styles.showcase} data-reveal>
+          <LandingCommandCenter />
+        </div>
+      </section>
 
-          <div className={styles.commandWrap} data-reveal>
-            <LandingCommandCenter />
-          </div>
-        </section>
-
-        <section className={styles.section}>
-          <div className={styles.sectionHeader} data-reveal>
-            <p className={styles.sectionEyebrow}>Controlled, not sprayed</p>
-            <h2 className={styles.sectionTitle}>Built for deliberate outreach.</h2>
-            <p className={styles.sectionText}>
-              <BrandText>Sendloom</BrandText> is shaped around control: send from a mailbox you own, pace the run, check
-              before you launch, and keep failures visible.
-            </p>
-          </div>
-
-          <div className={styles.trustWrap}>
-            <div className={styles.trustOrbit} aria-hidden="true">
-              <span className={styles.trustOrbitRing} />
-              <span className={styles.trustOrbitRingAlt} />
+      {/* ========================== SAFETY ==========================
+          Two-column definition list. No cards: these are claims, and a
+          border around each would add weight without meaning. */}
+      <section className={styles.safety}>
+        <h2 className={styles.safetyTitle} data-reveal>
+          Built for deliberate outreach.
+        </h2>
+        <dl className={styles.safetyGrid}>
+          {safetyPoints.map((point) => (
+            <div key={point.title} className={styles.safetyFeature} data-reveal>
+              <dt className={styles.safetyTerm}>{point.title}</dt>
+              <dd className={styles.safetyBody}>{point.body}</dd>
             </div>
-            <div className={styles.trustGrid}>
-              {trustPoints.map((point) => (
-                <article
-                  key={point.title}
-                  className={`${styles.trustCard} ${styles.fxCard}`}
-                  data-reveal
-                  data-card-fx
-                >
-                  <span className={styles.trustMark} aria-hidden="true">
-                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path
-                        className={styles.trustCheckPath}
-                        d="M5 12.5l4.2 4.2L19 7"
-                        stroke="currentColor"
-                        strokeWidth="2.4"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  </span>
-                  <h3>{point.title}</h3>
-                  <p>{renderBrandText(point.body)}</p>
-                </article>
-              ))}
-            </div>
-          </div>
-        </section>
+          ))}
+        </dl>
+      </section>
 
-        <section className={styles.ctaSection}>
-          <div className={styles.ctaShell} data-reveal>
-            <span className={styles.ctaSpin} aria-hidden="true" />
-            <article className={styles.ctaPanel}>
-              <span className={`${styles.ctaAurora} ${styles.ctaAuroraGreen}`} aria-hidden="true" />
-              <span className={`${styles.ctaAurora} ${styles.ctaAuroraBlue}`} aria-hidden="true" />
-              <p className={styles.sectionEyebrow}>Ready when you are</p>
-              <h2>Build your next outreach run in one place.</h2>
-              <p className={styles.ctaLede}>
-                Connect Gmail, import a list, write the template, and launch the sequence from a single login. The
-                fastest way to understand <BrandText>Sendloom</BrandText> is to put your own list through it.
-              </p>
-
-              <div className={styles.ctaActions}>
-                <Link className={styles.primaryButton} href="/signup">
-                  Get started
-                </Link>
-                <a className={styles.ghostButton} href="#workflow">
-                  See workflow
-                </a>
-              </div>
-            </article>
-          </div>
-        </section>
-
-      </div>
+      {/* ============================ CTA ============================
+          Single action. The secondary "see how it works" intent already
+          fired in the hero, so repeating it here would be duplicate intent. */}
+      <section className={styles.closing}>
+        <div className={styles.closingPanel} data-reveal>
+          <h2 className={styles.closingTitle}>
+            Put your own list through <BrandText>Sendloom</BrandText>.
+          </h2>
+          <p className={styles.closingBody}>
+            Connect Gmail, import a list, write the template, and launch the sequence from a
+            single login.
+          </p>
+          <Link className={styles.buttonPrimary} href="/signup">
+            Get started for free
+          </Link>
+        </div>
+      </section>
 
       <MarketingFooter />
     </main>
+  );
+}
+
+/*
+ * Chapter head. The numbered label is the page's only recurring small-caps
+ * device and appears exactly three times, once per chapter.
+ */
+function ChapterHead({ chapter, centered = false }: { chapter: Chapter; centered?: boolean }) {
+  return (
+    <header
+      className={centered ? `${styles.chapterHead} ${styles.chapterHeadCentered}` : styles.chapterHead}
+      data-reveal
+    >
+      <p className={styles.chapterLabel}>
+        <span className={styles.chapterIndex}>{chapter.index}</span>
+        {chapter.label}
+      </p>
+      <h2 className={styles.chapterTitle}>
+        {chapter.headline.lead} <em className={styles.emphasis}>{chapter.headline.emphasis}</em>
+        {chapter.headline.trail}
+      </h2>
+      <p className={styles.chapterIntro}>{chapter.intro}</p>
+    </header>
   );
 }

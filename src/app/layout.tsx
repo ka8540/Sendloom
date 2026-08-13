@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Bebas_Neue, Space_Grotesk } from "next/font/google";
+import { Bebas_Neue, Geist_Mono, Inter, Inter_Tight, Space_Grotesk } from "next/font/google";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { Analytics } from "@vercel/analytics/next";
 
@@ -7,10 +7,45 @@ import "@/app/globals.css";
 import { CsrfFetchPatch } from "@/components/csrf-fetch-patch";
 import { ErrorToastProvider } from "@/components/error-toast-provider";
 import { ManualProvider } from "@/components/manual/ManualProvider";
-import { PublicLoadScreen } from "@/components/public-load-screen";
-import { loadScreenInitScript } from "@/lib/load-screen";
 import { themeInitScript } from "@/lib/theme";
 
+/*
+ * Type system.
+ *
+ * Originally globals.css declared `Inter` as the root font but no Inter was
+ * ever loaded, so every surface silently fell back to system-ui. These are the
+ * real, loaded faces:
+ *
+ *   --font-sans     Inter        body copy, UI, buttons
+ *   --font-display  Inter Tight  headlines, including the italic emphasis run
+ *   --font-mono     Geist Mono   chapter numbers, metrics, tabular figures
+ *
+ * Inter Tight carries the display role because the headline treatment on this
+ * site sets one emphasised phrase in true italic inside an otherwise upright
+ * line. That needs a real italic cut of the same family; faux-oblique or a
+ * second family would both read as a mistake.
+ */
+const bodyFont = Inter({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-sans"
+});
+
+const displayFont = Inter_Tight({
+  style: ["normal", "italic"],
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-display"
+});
+
+const monoFont = Geist_Mono({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-mono"
+});
+
+/* Condensed-display + companion face used by the landing page's product
+   visuals (panel titles, chip labels). Not used by editorial copy. */
 const loaderDisplayFont = Bebas_Neue({
   weight: "400",
   subsets: ["latin"],
@@ -23,8 +58,34 @@ const loaderBodyFont = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: "Sendloom",
-  description: "Professional sequence sending and outreach operations app"
+  /* Resolves the relative URLs below against the production origin. Without
+     it Next emits Open Graph tags with relative paths, which crawlers and
+     link unfurlers cannot follow, and logs a build-time warning. */
+  metadataBase: new URL("https://sendloom.net"),
+  title: {
+    default: "Sendloom",
+    template: "%s · Sendloom"
+  },
+  description:
+    "Import a list, fill the missing emails, write once, and run a paced sequence from your own inbox. Delivery, replies and follow-ups tracked on a single screen.",
+  applicationName: "Sendloom",
+  /* No canonical here on purpose: metadata set on the root layout is inherited
+     by every route that does not override it, so a canonical of "/" would make
+     /privacy, /terms and the rest all declare themselves copies of the home
+     page. Canonicals belong on the individual pages. */
+  openGraph: {
+    type: "website",
+    siteName: "Sendloom",
+    title: "Sendloom, outreach operations on one surface",
+    description:
+      "Import a list, fill the missing emails, write once, and run a paced sequence from your own inbox."
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Sendloom, outreach operations on one surface",
+    description:
+      "Import a list, fill the missing emails, write once, and run a paced sequence from your own inbox."
+  }
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -32,7 +93,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${loaderDisplayFont.variable} ${loaderBodyFont.variable}`}
+      className={`${bodyFont.variable} ${displayFont.variable} ${monoFont.variable} ${loaderDisplayFont.variable} ${loaderBodyFont.variable}`}
     >
       <head>
         <meta
@@ -46,12 +107,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
-        <script dangerouslySetInnerHTML={{ __html: loadScreenInitScript }} />
+        <a className="skip-link" href="#main-content">
+          Skip to content
+        </a>
         <CsrfFetchPatch />
         <ErrorToastProvider>
           <ManualProvider>
             {children}
-            <PublicLoadScreen />
             <SpeedInsights />
             <Analytics />
           </ManualProvider>

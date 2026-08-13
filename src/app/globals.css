@@ -67,7 +67,196 @@
   --error-toast-dismiss: var(--muted);
   --error-toast-dismiss-hover-bg: rgba(229, 72, 77, 0.12);
   --error-toast-dismiss-hover-color: #c0353a;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+
+  /* ==========================================================================
+     DESIGN SYSTEM: theme-independent primitives
+     ==========================================================================
+     Everything below is intentionally outside the light/dark blocks: these are
+     structural values (type scale, rhythm, radii, motion), not colours. Only
+     hue-carrying tokens belong in the theme blocks above.
+
+     Before this layer existed the marketing surface used ~30 distinct ad-hoc
+     font-sizes (0.74/0.76/0.78/0.82/0.84rem...) and 20 distinct border-radii
+     with no relationship between them. Sizes now come from a scale so vertical
+     rhythm resolves instead of drifting.
+     ========================================================================== */
+
+  /* ---- Font stacks -------------------------------------------------------
+     --font-sans / --font-mono / --font-display are injected by next/font in
+     layout.tsx. The fallbacks matter: they keep the page readable during the
+     swap window and if a font request fails. */
+  --font-ui:
+    var(--font-sans), ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  --font-numeric:
+    var(--font-mono), ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  /* Display face. Used for headlines and for the italic emphasis run inside
+     them, so it must be the same family in both cuts. */
+  --font-editorial:
+    var(--font-display), var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+
+  /* ---- Type scale --------------------------------------------------------
+     Modular, ratio ~1.2 at text sizes and widening into display. Display steps
+     are fluid so the hero holds its proportions from 360px to ultrawide. */
+  --text-2xs: 0.6875rem; /* 11px: legal microcopy, table units */
+  --text-xs: 0.75rem; /* 12px: eyebrows, badges, meta */
+  --text-sm: 0.8125rem; /* 13px: dense UI, captions */
+  --text-base: 0.9375rem; /* 15px: default UI text */
+  --text-md: 1.0625rem; /* 17px: lede, comfortable reading */
+  --text-lg: 1.25rem; /* 20px: card titles */
+  --text-xl: 1.5rem; /* 24px: sub-section headings */
+  --display-sm: clamp(1.75rem, 1.2rem + 2vw, 2.5rem);
+  --display-md: clamp(2.25rem, 1.4rem + 3.2vw, 3.5rem);
+  --display-lg: clamp(2.75rem, 1.5rem + 4.6vw, 4.75rem);
+  --display-xl: clamp(3rem, 1.4rem + 6.2vw, 6rem);
+
+  /* ---- Tracking ----------------------------------------------------------
+     Negative on display (large type looks loose at default tracking), positive
+     on small caps (tight caps are unreadable at 11-12px). */
+  --track-display: -0.035em;
+  --track-display-tight: -0.045em;
+  --track-heading: -0.02em;
+  --track-body: -0.005em;
+  --track-label: 0.02em;
+  --track-caps: 0.14em;
+
+  /* ---- Leading -----------------------------------------------------------*/
+  --leading-display: 0.98;
+  --leading-heading: 1.15;
+  --leading-body: 1.65;
+  --leading-ui: 1.45;
+
+  /* ---- Weights -----------------------------------------------------------
+     The old CSS used only 400/600/700. 450 and 500 give hierarchy a middle
+     register, which is most of what separates "designed" from "bolded". */
+  --weight-normal: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+
+  /* ---- Measure -----------------------------------------------------------
+     Reading comfort caps out around 65-75 characters. */
+  --measure-tight: 46ch;
+  --measure: 62ch;
+  --measure-wide: 74ch;
+
+  /* ---- Spacing rhythm: 4px base ----------------------------------------*/
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --space-8: 4rem;
+  --space-9: 6rem;
+  --space-10: 8rem;
+  /* Section rhythm: deliberately asymmetric. Optically, a section needs more
+     room below its content than above it to avoid feeling bottom-heavy. */
+  --section-pad-top: clamp(4rem, 8vw, 7rem);
+  --section-pad-bottom: clamp(5rem, 10vw, 9rem);
+
+  /* ---- Radius scale ------------------------------------------------------
+     Concentric: an inner element inside a padded shell should use the outer
+     radius minus the padding, or the curves fight each other. */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-xl: 24px;
+  --radius-2xl: 32px;
+  --radius-pill: 999px;
+
+  /* ---- Elevation ---------------------------------------------------------
+     Tinted, not black. Shadows carry the page's blue-grey hue so they read as
+     ambient light rather than as a grey smudge. Two-part: a tight contact
+     shadow plus a wide ambient one, which is what makes depth feel physical. */
+  --shadow-color: 218 45% 18%;
+  --elevation-1:
+    0 1px 2px hsl(var(--shadow-color) / 0.05),
+    0 1px 3px hsl(var(--shadow-color) / 0.04);
+  --elevation-2:
+    0 2px 4px hsl(var(--shadow-color) / 0.05),
+    0 6px 16px hsl(var(--shadow-color) / 0.07);
+  --elevation-3:
+    0 2px 6px hsl(var(--shadow-color) / 0.06),
+    0 14px 34px hsl(var(--shadow-color) / 0.09);
+  --elevation-4:
+    0 4px 10px hsl(var(--shadow-color) / 0.07),
+    0 28px 64px hsl(var(--shadow-color) / 0.12);
+  /* Inner top highlight: simulates a light source above the element. Applied
+     to raised surfaces so their top edge catches light like a real bezel. */
+  --edge-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+
+  /* ---- Motion ------------------------------------------------------------
+     No linear, no ease-in-out. These curves decelerate hard, which reads as
+     mass. --ease-spring overshoots slightly for press/release feedback. */
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-emphasis: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --duration-instant: 90ms;
+  --duration-fast: 160ms;
+  --duration-base: 240ms;
+  --duration-slow: 420ms;
+  --duration-reveal: 720ms;
+
+  /* ---- Z-index scale -----------------------------------------------------
+     Named layers so nobody has to invent z-index: 9999 again. */
+  --z-base: 1;
+  --z-raised: 10;
+  --z-sticky: 100;
+  --z-nav: 200;
+  --z-overlay: 300;
+  --z-modal: 400;
+  --z-toast: 500;
+
+  /* ---- Focus ring --------------------------------------------------------
+     One definition, used everywhere, so keyboard focus is never invisible. */
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+
+  font-family: var(--font-ui);
+  font-feature-settings: "cv11", "ss01";
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Dark surfaces need a deeper, more diffuse shadow and a far subtler top edge -
+   a white inner highlight at 0.7 alpha would look like a scratch on dark UI. */
+:root[data-theme="dark"] {
+  --shadow-color: 216 60% 3%;
+  --elevation-1:
+    0 1px 2px hsl(var(--shadow-color) / 0.4),
+    0 1px 3px hsl(var(--shadow-color) / 0.3);
+  --elevation-2:
+    0 2px 4px hsl(var(--shadow-color) / 0.4),
+    0 6px 16px hsl(var(--shadow-color) / 0.36);
+  --elevation-3:
+    0 2px 6px hsl(var(--shadow-color) / 0.44),
+    0 14px 34px hsl(var(--shadow-color) / 0.42);
+  --elevation-4:
+    0 4px 10px hsl(var(--shadow-color) / 0.46),
+    0 28px 64px hsl(var(--shadow-color) / 0.5);
+  --edge-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --shadow-color: 216 60% 3%;
+    --elevation-1:
+      0 1px 2px hsl(var(--shadow-color) / 0.4),
+      0 1px 3px hsl(var(--shadow-color) / 0.3);
+    --elevation-2:
+      0 2px 4px hsl(var(--shadow-color) / 0.4),
+      0 6px 16px hsl(var(--shadow-color) / 0.36);
+    --elevation-3:
+      0 2px 6px hsl(var(--shadow-color) / 0.44),
+      0 14px 34px hsl(var(--shadow-color) / 0.42);
+    --elevation-4:
+      0 4px 10px hsl(var(--shadow-color) / 0.46),
+      0 28px 64px hsl(var(--shadow-color) / 0.5);
+    --edge-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  }
 }
 
 :root[data-theme="light"] {
@@ -222,10 +411,79 @@
   box-sizing: border-box;
 }
 
+/* Anchor links inside the marketing pages jumped instantly. scroll-padding
+   keeps the target clear of the floating nav instead of hiding under it. */
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 6rem;
+}
+
+/* Respect the OS "reduce motion" setting. Animations are collapsed rather than
+   removed, so anything that animates *to* a visible state still lands visible -
+   killing animation outright can leave opacity:0 elements permanently hidden. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* A single visible focus indicator for keyboard users, applied only for
+   keyboard focus so mouse clicks stay clean. This was missing entirely. */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-sm);
+}
+
+/*
+ * Skip link. Keyboard and screen-reader users previously had to tab through the
+ * entire nav (and on the landing page, the whole hero) before reaching content.
+ * Off-screen until focused, then pinned top-left.
+ */
+.skip-link {
+  position: absolute;
+  top: var(--space-2);
+  left: var(--space-2);
+  z-index: var(--z-toast);
+  padding: 0.7rem 1.1rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-strong);
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  text-decoration: none;
+  box-shadow: var(--elevation-3);
+  transform: translateY(calc(-100% - var(--space-4)));
+  transition: transform var(--duration-base) var(--ease-emphasis);
+}
+
+.skip-link:focus-visible {
+  transform: translateY(0);
+}
+
+/* Long-form copy: never let a heading strand a single word on its own line,
+   and keep paragraphs from ending on an orphan. */
+:where(h1, h2, h3, h4) {
+  text-wrap: balance;
+}
+
+:where(p, li) {
+  text-wrap: pretty;
+}
+
 /*
  * Guided-tour targets: keep a safe gap above/below when the help overlay scrolls
  * one into view, so a page heading is never clipped against the viewport top.
- * scroll-margin only affects scrollIntoView — it has no layout impact.
+ * scroll-margin only affects scrollIntoView: it has no layout impact.
  */
 [data-overview-tour],
 [data-finder-tour],
@@ -247,17 +505,6 @@ body {
     radial-gradient(circle at right top, var(--bg-glow-blue), transparent 22rem),
     linear-gradient(180deg, var(--bg-start) 0%, var(--bg-end) 100%);
   min-height: 100vh;
-}
-
-/*
- * Load screen gate. The synchronous boot script (loadScreenInitScript) sets
- * html[data-load-screen="show"|"hide"] before the first paint. The loader overlay
- * is server-rendered into the initial HTML on load-screen paths so it covers the
- * page immediately — but we only let it show when the boot script asked for it,
- * which keeps cooldown / no-JS visits flash-free (content shows, overlay hidden).
- */
-html:not([data-load-screen="show"]) [data-loader-overlay] {
-  display: none !important;
 }
 
 a {
@@ -632,7 +879,7 @@ html[data-sidebar-collapsed="true"] .shell {
 }
 
 /* Subtle separator between the theme control and the lower account/utility
-   nav — sets the Account item apart from the main product navigation. */
+   nav: sets the Account item apart from the main product navigation. */
 .nav-footer-divider {
   height: 1px;
   margin: 0.35rem 0.25rem;
@@ -1197,7 +1444,7 @@ html[data-sidebar-collapsed="true"] .sidebar .nav-footer-divider {
 /*
  * Shared circular close/dismiss control (see CircularCloseButton). One
  * consistent style for every "X" whose action is to close or dismiss an overlay
- * or notice — true circle, equal sides, theme-aware, with a visible focus ring.
+ * or notice: true circle, equal sides, theme-aware, with a visible focus ring.
  * Action buttons that happen to use an X icon keep their own styling.
  */
 .app-close-button {

@@ -115,7 +115,7 @@
   opacity: 0;
   background: radial-gradient(circle, color-mix(in srgb, var(--accent) 26%, transparent), transparent 62%);
   filter: blur(36px);
-  transition: opacity 600ms ease;
+  transition: opacity 600ms var(--ease-out);
   will-change: transform;
 }
 
@@ -134,23 +134,23 @@
   background: color-mix(in srgb, var(--surface-strong) 80%, transparent);
   color: var(--text);
   font-size: 0.88rem;
-  font-weight: 700;
+  font-weight: var(--weight-semibold);
   letter-spacing: -0.01em;
   box-shadow: 0 16px 30px rgba(6, 14, 24, 0.18);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
   transition:
-    transform 160ms ease,
-    border-color 180ms ease,
-    background-color 180ms ease,
-    box-shadow 180ms ease;
+    transform 160ms var(--ease-out),
+    border-color 180ms var(--ease-out),
+    background-color 180ms var(--ease-out),
+    box-shadow 180ms var(--ease-out);
 }
 
 .backHome svg {
   width: 1.05rem;
   height: 1.05rem;
   flex: 0 0 auto;
-  transition: transform 180ms ease;
+  transition: transform 180ms var(--ease-out);
 }
 
 .backHome:hover,
@@ -223,7 +223,7 @@
   display: inline-flex;
   align-items: center;
   gap: 0.6rem;
-  font-weight: 800;
+  font-weight: var(--weight-semibold);
   letter-spacing: -0.02em;
 }
 
@@ -247,38 +247,48 @@
   background: color-mix(in srgb, var(--accent-soft) 70%, transparent);
   color: var(--accent-strong);
   font-size: 0.66rem;
-  font-weight: 800;
+  font-weight: var(--weight-semibold);
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 
+/* Weight 800 at 11px turns a label into a smudge — small type needs tracking,
+   not weight. Mono + open tracking matches the eyebrow treatment on landing. */
 .eyebrow {
   width: fit-content;
   display: inline-flex;
   align-items: center;
-  padding: 0.4rem 0.72rem;
-  border-radius: 999px;
+  padding: 0.35rem 0.7rem;
+  border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--accent-soft) 78%, transparent);
   color: var(--accent-strong);
-  font-size: 0.74rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
+  font-family: var(--font-numeric);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--track-caps);
   text-transform: uppercase;
 }
 
+/* Matches the landing hero: same editorial serif, so signup does not feel like
+   a different product from the page the visitor just came off. */
 .title {
   margin: 0;
+  font-family: var(--font-editorial);
   font-size: clamp(2.4rem, 1.4rem + 3.4vh, 4rem);
-  line-height: 0.98;
-  letter-spacing: -0.055em;
+  font-weight: var(--weight-normal);
+  line-height: var(--leading-display);
+  letter-spacing: var(--track-display-tight);
+  text-wrap: balance;
 }
 
 .description {
   margin: 0;
-  max-width: 30rem;
+  max-width: var(--measure-tight);
   color: var(--muted);
-  font-size: clamp(0.92rem, 0.86rem + 0.3vh, 1.02rem);
-  line-height: 1.6;
+  font-size: var(--text-md);
+  line-height: var(--leading-body);
+  letter-spacing: var(--track-body);
+  text-wrap: pretty;
 }
 
 /* ---------- Video stage ---------- */
@@ -375,7 +385,7 @@
   align-items: center;
   gap: 0.5rem;
   min-width: 0;
-  font-weight: 700;
+  font-weight: var(--weight-semibold);
   letter-spacing: -0.02em;
   color: white;
 }
@@ -431,9 +441,9 @@
   transform: scale(1.04);
   filter: saturate(0.84) brightness(0.56) blur(14px);
   transition:
-    transform 820ms ease,
-    filter 820ms ease,
-    opacity 620ms ease;
+    transform 820ms var(--ease-out),
+    filter 820ms var(--ease-out),
+    opacity 620ms var(--ease-out);
 }
 
 .videoElementPlaying {
@@ -457,8 +467,8 @@
   opacity: 1;
   clip-path: inset(0 round 0);
   transition:
-    opacity 520ms ease,
-    clip-path 980ms ease;
+    opacity 520ms var(--ease-out),
+    clip-path 980ms var(--ease-out);
 }
 
 .videoVeilPlaying {
@@ -500,11 +510,11 @@
 }
 
 .videoSweepIntro {
-  animation: auth-video-sweep-in 980ms ease both;
+  animation: auth-video-sweep-in 980ms var(--ease-out) both;
 }
 
 .videoSweepOutro {
-  animation: auth-video-sweep-out 760ms ease both;
+  animation: auth-video-sweep-out 760ms var(--ease-out) both;
 }
 
 .videoGlow {
@@ -558,11 +568,11 @@
   cursor: pointer;
   backdrop-filter: blur(14px);
   transition:
-    transform 140ms ease,
-    border-color 160ms ease,
-    background-color 160ms ease,
-    box-shadow 160ms ease,
-    opacity 160ms ease;
+    transform 140ms var(--ease-out),
+    border-color 160ms var(--ease-out),
+    background-color 160ms var(--ease-out),
+    box-shadow 160ms var(--ease-out),
+    opacity 160ms var(--ease-out);
 }
 
 .videoAudioButton:hover,
@@ -609,7 +619,7 @@
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   will-change: transform;
-  animation: float-card 7s ease-in-out infinite;
+  animation: float-card 7s var(--ease-emphasis) infinite;
 }
 
 .floatCardLeft {
@@ -626,7 +636,7 @@
 .floatCardEyebrow {
   color: var(--accent);
   font-size: 0.62rem;
-  font-weight: 800;
+  font-weight: var(--weight-semibold);
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
@@ -666,7 +676,7 @@
   background: color-mix(in srgb, var(--surface) 82%, transparent);
   color: var(--text);
   font-size: 0.78rem;
-  font-weight: 700;
+  font-weight: var(--weight-semibold);
   letter-spacing: -0.01em;
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -674,7 +684,7 @@
   transform: translateY(8px);
   animation: chip-in 560ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
   animation-delay: calc(0.12s + var(--chip-index, 0) * 0.09s);
-  transition: border-color 180ms ease, transform 180ms ease, box-shadow 180ms ease;
+  transition: border-color 180ms var(--ease-out), transform 180ms var(--ease-out), box-shadow 180ms var(--ease-out);
 }
 
 .chip:hover {
@@ -707,7 +717,7 @@
   padding: 1px;
   isolation: isolate;
   transform: perspective(1400px) rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg));
-  transition: transform 320ms ease;
+  transition: transform 320ms var(--ease-out);
   will-change: transform;
 }
 
@@ -750,7 +760,7 @@
     color-mix(in srgb, var(--accent) 20%, transparent),
     transparent 60%
   );
-  transition: opacity 240ms ease;
+  transition: opacity 240ms var(--ease-out);
 }
 
 .panelInner {
@@ -830,13 +840,13 @@
   border-radius: 16px;
   background: color-mix(in srgb, var(--surface-strong) 94%, transparent);
   color: var(--text);
-  font-weight: 700;
+  font-weight: var(--weight-semibold);
   overflow: hidden;
   transition:
-    transform 140ms ease,
-    border-color 160ms ease,
-    background-color 160ms ease,
-    box-shadow 160ms ease;
+    transform 140ms var(--ease-out),
+    border-color 160ms var(--ease-out),
+    background-color 160ms var(--ease-out),
+    box-shadow 160ms var(--ease-out);
 }
 
 /* Shimmer sweep on hover. */
@@ -846,7 +856,7 @@
   inset: 0;
   background: linear-gradient(110deg, transparent 30%, color-mix(in srgb, var(--accent) 22%, transparent) 50%, transparent 70%);
   transform: translateX(-120%);
-  transition: transform 720ms ease;
+  transition: transform 720ms var(--ease-out);
   pointer-events: none;
 }
 
@@ -915,7 +925,7 @@
 
 .formWrap :global(.field label) {
   font-size: 0.88rem;
-  font-weight: 700;
+  font-weight: var(--weight-semibold);
   letter-spacing: -0.01em;
 }
 
@@ -924,9 +934,9 @@
   padding: 0.8rem 1rem;
   background: color-mix(in srgb, var(--surface-strong) 92%, transparent);
   transition:
-    border-color 160ms ease,
-    box-shadow 220ms ease,
-    background-color 160ms ease;
+    border-color 160ms var(--ease-out),
+    box-shadow 220ms var(--ease-out),
+    background-color 160ms var(--ease-out);
 }
 
 .formWrap :global(.field input:focus) {
@@ -960,7 +970,7 @@
   inset: 0;
   background: linear-gradient(110deg, transparent 32%, rgba(255, 255, 255, 0.32) 50%, transparent 68%);
   transform: translateX(-120%);
-  transition: transform 760ms ease;
+  transition: transform 760ms var(--ease-out);
   pointer-events: none;
 }
 
@@ -985,7 +995,7 @@
 .switch a,
 .legal a {
   color: var(--accent);
-  font-weight: 700;
+  font-weight: var(--weight-semibold);
 }
 
 .switch a:hover,
@@ -1200,6 +1210,15 @@
   .stage {
     padding-block: clamp(0.5rem, 4vw, 1.5rem);
   }
+
+  /* The minimal variant's video re-centres under the stacked form. */
+  .pageMinimal .stage {
+    justify-items: center;
+  }
+
+  .pageMinimal .videoFrame {
+    margin-left: 0;
+  }
 }
 
 /* Where there is room, keep the floating cards anchored beside the video. */
@@ -1239,6 +1258,69 @@
     right: 0.7rem;
     bottom: 0.7rem;
   }
+}
+
+/* ---------- Minimal login variant ----------
+   Armed by AuthPage's `minimal` prop (login only). Same component with the
+   decorative layer removed: icon-only back control, no floating cards or
+   status chips, one video preview, wider calmer columns. Signup keeps the
+   full treatment. */
+
+/* Icon-only circular back control, tucked into the corner. */
+.pageMinimal .backHome {
+  top: clamp(1.75rem, 4vh, 2.25rem);
+  left: clamp(2rem, 3vw, 2.75rem);
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  gap: 0;
+  justify-content: center;
+  box-shadow: 0 8px 20px rgba(6, 14, 24, 0.12);
+}
+
+.pageMinimal .backHome span {
+  display: none;
+}
+
+/* ~52/48 columns with a deliberate gap; the form stays the destination. */
+.pageMinimal .frame {
+  width: min(1420px, calc(100% - 3rem));
+  grid-template-columns: minmax(0, 1.08fr) minmax(0, 1fr);
+  gap: clamp(4.4rem, 7vw, 7.5rem);
+}
+
+.pageMinimal .panel {
+  width: 100%;
+  max-width: 460px;
+  justify-self: end;
+  /* Holds the card in from the frame's right edge so it sits on the right
+     side without hugging the viewport. */
+  margin-right: clamp(1.5rem, 4vw, 4rem);
+}
+
+.pageMinimal .panelInner {
+  padding: clamp(1.4rem, 3vh, 2.1rem);
+}
+
+/* Video keeps its exact 9:16 frame; only size and placement change. It
+   sits under the headline block, stepped right, at preview scale. */
+.pageMinimal .stage {
+  place-items: start;
+  justify-items: start;
+  margin-top: clamp(1.6rem, 4vh, 3rem);
+}
+
+.pageMinimal .videoFrame {
+  width: min(100%, 17rem);
+  max-width: 17rem;
+  height: auto;
+  margin: 0 0 0 clamp(2rem, 6vw, 5rem);
+}
+
+/* Background art steps back so it never competes with the form. */
+.pageMinimal .orbits,
+.pageMinimal .showcaseGlow {
+  opacity: 0.5;
 }
 
 /* ---------- Reduced motion ---------- */
