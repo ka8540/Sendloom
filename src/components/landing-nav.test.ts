@@ -18,6 +18,8 @@ const NAV_SOURCE = readFileSync("src/components/landing-nav.tsx", "utf8");
 const PAGE_SOURCE = readFileSync("src/app/page.tsx", "utf8");
 const FOOTER_SOURCE = readFileSync("src/components/marketing/MarketingFooter.tsx", "utf8");
 const LAYOUT_SOURCE = readFileSync("src/app/layout.tsx", "utf8");
+const LANDING_CSS = readFileSync("src/app/landing.module.css", "utf8");
+const NEXT_CONFIG = readFileSync("next.config.mjs", "utf8");
 
 /* Every `id="…"` rendered by the landing page, its footer and the root layout,
    which together are all the markup a landing-page fragment link can target. */
@@ -127,5 +129,19 @@ describe("landing Imports window", () => {
     expect(importsWindow).toContain('["company", "Company"]');
     expect(importsWindow).not.toContain('["location", "Location"]');
     expect(importsWindow).toContain("4 of 4 mapped");
+  });
+});
+
+describe("landing production fallback", () => {
+  it("keeps the original production CSP without the development eval exception", () => {
+    expect(NEXT_CONFIG).toContain('"script-src \'self\' \'unsafe-inline\'"');
+    expect(NEXT_CONFIG).not.toContain("unsafe-eval");
+  });
+
+  it("pairs story copy and demos on desktop when the animated deck is unavailable", () => {
+    expect(LANDING_CSS).toContain('.dataStory:not([data-story="enhanced"]) .dataStage');
+    expect(LANDING_CSS).toMatch(/dataStory:not\(\[data-story="enhanced"\]\) \.dataStage[\s\S]{0,240}grid-template-columns/);
+    expect(LANDING_CSS).toContain('.dataStory:not([data-story="enhanced"]) .dataStep');
+    expect(LANDING_CSS).toContain('.dataStory:not([data-story="enhanced"]) .dataCard');
   });
 });

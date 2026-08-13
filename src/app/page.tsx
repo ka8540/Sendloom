@@ -421,8 +421,8 @@ export default async function LandingPage() {
           Sticky-scroll product story. Left: stable editorial copy with one
           active story swapping under it. Right: a deck of product visuals
           dealt through by scroll position. Without JS (or with reduced
-          motion) the same DOM renders as a plain stacked section — see the
-          [data-story="enhanced"] rules in the stylesheet. */}
+          motion) desktop keeps each story beside its visual, while mobile
+          stacks each pair — see the fallback rules in the stylesheet. */}
       <section className={`${styles.chapter} ${styles.dataStory}`} id="why-sendloom" data-story>
         <div className={styles.dataStage}>
           <header className={styles.dataHead}>
@@ -437,10 +437,10 @@ export default async function LandingPage() {
             <p className={styles.chapterIntro}>{chapters.data.intro}</p>
           </header>
 
-          {/* Copy and visuals interleave so the unenhanced (mobile / no-JS /
-              reduced-motion) flow reads story → demo, story → demo. The
-              enhanced desktop grid lifts the steps into one left-hand cell
-              and the cards into the right column. */}
+          {/* Copy and visuals interleave so the unenhanced flow reads as
+              story → demo on mobile and story | demo on desktop. The enhanced
+              desktop grid lifts every step into one left-hand cell and every
+              card into the right-hand deck. */}
           {dataStories.map((story, i) => (
             <Fragment key={story.title}>
               <div className={styles.dataStep} data-story-step>

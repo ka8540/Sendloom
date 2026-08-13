@@ -395,11 +395,11 @@
 }
 
 /* ---- Chapter 01: sticky-scroll product story ----
-   Default rendering (mobile, no-JS, reduced motion) is a plain stacked
-   section: headline, then each story's copy followed by its visual.
-   LandingMotion sets [data-story="enhanced"] on desktop with motion
-   allowed, which promotes the stage to a sticky two-column grid where the
-   three copies share one cell and the three visuals share another. */
+   Default rendering is stacked on mobile. On desktop, no-JS and reduced-
+   motion fallbacks keep each story beside its visual instead of stretching
+   every card into a loose full-width stack. LandingMotion sets
+   [data-story="enhanced"] when motion is available, promoting the stage to a
+   sticky two-column grid where all copies and visuals share deck cells. */
 
 .dataStage {
   display: grid;
@@ -933,6 +933,31 @@
    grows to 320vh of scroll distance; the stage sticks under the floating
    nav and deals the three cards through it. */
 @media (min-width: 1024px) {
+  /* Production-safe fallback for reduced motion, delayed hydration, or a
+     blocked animation chunk. The interleaved DOM auto-places each copy and
+     demo in the same row, so the page remains composed even without GSAP. */
+  .dataStory:not([data-story="enhanced"]) .dataStage {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    column-gap: clamp(3rem, 6vw, 6rem);
+    row-gap: clamp(2.5rem, 6vw, 5rem);
+    align-items: center;
+  }
+
+  .dataStory:not([data-story="enhanced"]) .dataHead {
+    grid-column: 1 / -1;
+  }
+
+  .dataStory:not([data-story="enhanced"]) .dataStep {
+    grid-column: 1;
+  }
+
+  .dataStory:not([data-story="enhanced"]) .dataCard {
+    grid-column: 2;
+    width: 100%;
+    aspect-ratio: 16 / 10;
+    align-self: center;
+  }
+
   .dataStory[data-story="enhanced"] {
     /* ~70vh of scroll for three states: one moderate gesture advances a
        story, and the section releases straight into chapter 02. Longer

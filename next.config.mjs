@@ -3,9 +3,6 @@
 //   script inlined in `src/app/layout.tsx` to avoid a flash of unstyled
 //   content. A nonce-based CSP would require moving every Next.js inline
 //   bootstrap script behind a server-issued nonce, which is invasive.
-// - Next.js' Webpack development runtime uses evaluated modules for React
-//   Refresh. Allow `unsafe-eval` only while `next dev` is running; production
-//   keeps the stricter script policy below.
 // - `style-src 'self' 'unsafe-inline'` is required for Next.js/CSS modules and
 //   for inline `style="..."` attributes used in tracking-pixel markup.
 // - `connect-src` permits the OpenAI Responses API and the Google OAuth/token
@@ -23,7 +20,7 @@ const csp = [
   "frame-ancestors 'none'",
   "frame-src 'self' blob:",
   "object-src 'none'",
-  `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""}`,
+  "script-src 'self' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: https:",
   "font-src 'self' data:",
