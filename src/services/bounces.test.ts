@@ -1,4 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// Keep the correlation-window fixtures deterministic. These tests model sends
+// from July 8, 2026; without a fixed clock they eventually age beyond the
+// production 30-day candidate window and fail even though correlation is
+// behaving correctly.
+const TEST_NOW = new Date("2026-07-09T00:00:00.000Z");
 
 // ---------------------------------------------------------------------------
 // In-memory state + swappable mock implementations. Everything lives inside
@@ -409,6 +415,8 @@ async function processBounce(sender: Record<string, any>, jobs: Record<string, a
 }
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(TEST_NOW);
   state.campaigns.length = 0;
   state.senders.length = 0;
   state.suppressions.length = 0;
@@ -429,6 +437,10 @@ beforeEach(() => {
   impl.fetchFull = async () => ({ id: "dsn-1", payload: {} });
   impl.listDsnCandidates = async () => [];
   impl.listThreadMessageIds = async () => [];
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 // ---------------------------------------------------------------------------
