@@ -209,7 +209,7 @@ export function LandingNav({ items = defaultNavItems }: { items?: readonly Landi
     const isActive = active === item.href;
     const props = {
       className: isActive ? `${className} ${styles.navLinkActive}` : className,
-      /* aria-current tells a screen reader what the green marker says
+      /* aria-current tells a screen reader what the persistent underline says
          visually. "location" is the correct token for a section within the
          current page; "page" would claim this is a different document. */
       "aria-current": isActive ? ("location" as const) : undefined,
@@ -218,11 +218,11 @@ export function LandingNav({ items = defaultNavItems }: { items?: readonly Landi
 
     return isInternalRoute(item.href) ? (
       <Link key={item.label} href={item.href as Route} {...props}>
-        {item.label}
+        <span className={styles.navLinkLabel}>{item.label}</span>
       </Link>
     ) : (
       <a key={item.label} href={item.href} {...props}>
-        {item.label}
+        <span className={styles.navLinkLabel}>{item.label}</span>
       </a>
     );
   };
