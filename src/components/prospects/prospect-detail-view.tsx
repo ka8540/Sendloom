@@ -38,7 +38,7 @@ import { AppConfirmDialog } from "@/components/app-confirm-dialog";
 import { CircularCloseButton } from "@/components/circular-close-button";
 import { SuggestionInput } from "@/components/prospects/suggestion-input";
 import { COMMON_LOCATION_LABELS, COMMON_ROLE_LABELS } from "@/services/prospects/discover-canonical-labels";
-import { canonicalizeLabel, titleCaseLabel } from "@/services/prospects/discover-suggestions";
+import { titleCaseLabel } from "@/services/prospects/discover-suggestions";
 
 import {
   ADD_MORE_DISCOVER_PEOPLE_MUTATION,
@@ -195,6 +195,11 @@ const ALL_LOCATIONS_VALUE = "__all_locations__";
 const PEOPLE_SEARCH_DEBOUNCE_MS = 250;
 
 type DetailStage = "ready" | "draft" | "processing" | "failed";
+type CompanySearchNotice = {
+  tone: "info" | "error";
+  message: string;
+  field?: "ROLE" | "LOCATION";
+};
 
 function resolveDetailStage(search: ProspectSearchNode | null): DetailStage | null {
   if (!search) {
@@ -270,9 +275,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
   const [companyRoleTitle, setCompanyRoleTitle] = useState("");
   const [companyRoleLocation, setCompanyRoleLocation] = useState("");
   const [companySearching, setCompanySearching] = useState(false);
-  const [companySearchNotice, setCompanySearchNotice] = useState<{ tone: "info" | "error"; message: string } | null>(
-    null
-  );
+  const [companySearchNotice, setCompanySearchNotice] = useState<CompanySearchNotice | null>(null);
   const [expanding, setExpanding] = useState(false);
   const [showAddMoreDialog, setShowAddMoreDialog] = useState(false);
   // A completed expansion that added nobody answers in a centered dialog — never
@@ -816,11 +819,9 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     if (!company || companySearching) {
       return;
     }
-    // Canonicalize BEFORE validating / duplicate-checking so a typo like
-    // "SOftware Enigneer" is corrected to the company's known "Software Engineer"
-    // — the client pre-check, the notice copy, and the value we send are all the
-    // clean label (the server re-normalizes authoritatively too). Known pool =
-    // this company's existing roles/locations plus the generic dictionary.
+    // Validate/canonicalize before duplicate-checking. Raw partial text remains
+    // editable in React state, but only a complete canonical value is sent. The
+    // server repeats the same pure boundary authoritatively.
     const knownRoles = [
       ...(company.searches ?? []).flatMap((existing) => existing.requestedTitles),
       ...COMMON_ROLE_LABELS
@@ -829,15 +830,21 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
       ...(company.searches ?? []).flatMap((existing) => existing.requestedLocations),
       ...COMMON_LOCATION_LABELS
     ];
-    const canonicalRole = canonicalizeLabel(companyRoleTitle, knownRoles);
-    const canonicalLocation = companyRoleLocation.trim()
-      ? canonicalizeLabel(companyRoleLocation, knownLocations)
-      : companyRoleLocation;
-    const validated = validateCompanyRoleSearchInput({ jobTitle: canonicalRole, location: canonicalLocation });
+    const validated = validateCompanyRoleSearchInput({
+      jobTitle: companyRoleTitle,
+      location: companyRoleLocation,
+      knownRoles,
+      knownLocations
+    });
     if (!validated.ok) {
-      setCompanySearchNotice({ tone: "error", message: validated.message });
+      setCompanySearchNotice({ tone: "error", field: validated.field, message: validated.message });
       return;
     }
+    // Reflect safe corrections in the field immediately. If the search returns
+    // no results and the panel stays open, the retry starts from the canonical
+    // value rather than the original typo.
+    setCompanyRoleTitle(validated.jobTitle);
+    setCompanyRoleLocation(validated.location ?? "");
     const precheck = resolveCompanyRoleSearchAction({
       jobTitle: validated.jobTitle,
       location: validated.location,
@@ -1496,8 +1503,18 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
               location={companyRoleLocation}
               searching={companySearching}
               notice={companySearchNotice}
-              onJobTitleChange={setCompanyRoleTitle}
-              onLocationChange={setCompanyRoleLocation}
+              onJobTitleChange={(value) => {
+                setCompanyRoleTitle(value);
+                if (companySearchNotice?.field === "ROLE") {
+                  setCompanySearchNotice(null);
+                }
+              }}
+              onLocationChange={(value) => {
+                setCompanyRoleLocation(value);
+                if (companySearchNotice?.field === "LOCATION") {
+                  setCompanySearchNotice(null);
+                }
+              }}
               onDismissNotice={() => setCompanySearchNotice(null)}
               onSubmit={handleSearchCompany}
               onClose={handleCloseCompanySearch}
@@ -2331,7 +2348,7 @@ function SearchCompanyCard({
   jobTitle: string;
   location: string;
   searching: boolean;
-  notice: { tone: "info" | "error"; message: string } | null;
+  notice: CompanySearchNotice | null;
   onJobTitleChange: (value: string) => void;
   onLocationChange: (value: string) => void;
   onDismissNotice: () => void;
@@ -2348,6 +2365,10 @@ function SearchCompanyCard({
   // The submit lives in the footer, outside the <form>, so it targets the form
   // by id — Enter in either field and the footer button share one submit path.
   const formId = `${panelId}-form`;
+  const roleErrorId = `${formId}-role-error`;
+  const locationErrorId = `${formId}-location-error`;
+  const roleError = notice?.tone === "error" && notice.field === "ROLE" ? notice.message : null;
+  const locationError = notice?.tone === "error" && notice.field === "LOCATION" ? notice.message : null;
   return (
     <div className={styles.modalOverlay} role="presentation">
       <div
@@ -2400,9 +2421,16 @@ function SearchCompanyCard({
               inputRef={roleInputRef}
               placeholder={COMPANY_SEARCH_ROLE_PLACEHOLDER}
               ariaLabel={COMPANY_SEARCH_ROLE_LABEL}
+              ariaInvalid={Boolean(roleError)}
+              ariaDescribedBy={roleError ? roleErrorId : undefined}
               disabled={searching}
               portalToBody
             />
+            {roleError && (
+              <span id={roleErrorId} className={styles.errorText} role="alert">
+                {roleError}
+              </span>
+            )}
           </div>
           <div className={styles.field}>
             <span className={styles.fieldLabel}>{COMPANY_SEARCH_LOCATION_LABEL}</span>
@@ -2413,12 +2441,19 @@ function SearchCompanyCard({
               onChange={onLocationChange}
               placeholder={COMPANY_SEARCH_LOCATION_PLACEHOLDER}
               ariaLabel={COMPANY_SEARCH_LOCATION_LABEL}
+              ariaInvalid={Boolean(locationError)}
+              ariaDescribedBy={locationError ? locationErrorId : undefined}
               disabled={searching}
               portalToBody
             />
+            {locationError && (
+              <span id={locationErrorId} className={styles.errorText} role="alert">
+                {locationError}
+              </span>
+            )}
           </div>
         </form>
-        {notice && (
+        {notice && !notice.field && (
           <div
             className={`${styles.inlineAlert} ${notice.tone === "error" ? styles.inlineAlertError : ""}`}
             role={notice.tone === "error" ? "alert" : "status"}

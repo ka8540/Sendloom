@@ -38,6 +38,22 @@ describe("Search this company — input validation", () => {
     const result = validateCompanyRoleSearchInput({ jobTitle: "  Recruiter ", location: "   " });
     expect(result).toEqual({ ok: true, jobTitle: "Recruiter", location: null });
   });
+
+  it("blocks incomplete locations and canonicalizes safe role/location typos", () => {
+    const incomplete = validateCompanyRoleSearchInput({ jobTitle: "Recruiter", location: "Un" });
+    expect(incomplete).toMatchObject({ ok: false, error: "LOCATION_INVALID", field: "LOCATION" });
+
+    const corrected = validateCompanyRoleSearchInput({
+      jobTitle: "Softwre Engineer",
+      location: "united states"
+    });
+    expect(corrected).toEqual({ ok: true, jobTitle: "Software Engineer", location: "United States" });
+  });
+
+  it("never lets an obvious malformed role through unchanged", () => {
+    const result = validateCompanyRoleSearchInput({ jobTitle: "SOFtenginner", location: "United States" });
+    expect(result.ok && result.jobTitle).not.toBe("Softenginner");
+  });
 });
 
 describe("Search this company — duplicate resolution (canonical role+location)", () => {

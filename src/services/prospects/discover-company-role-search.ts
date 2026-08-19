@@ -15,6 +15,7 @@
 // No I/O and no React imports — node-only vitest can exercise every branch.
 
 import { roleGroupKeyFor } from "@/services/prospects/discover-role-group-key";
+import { validateDiscoverSearchLabel } from "@/services/prospects/discover-search-label-validation";
 
 /** Mirrors the create-search limits so this path can never exceed them. */
 export const MAX_COMPANY_ROLE_LENGTH = 200;
@@ -35,7 +36,12 @@ export const COMPANY_ROLE_SEARCH_MESSAGES = {
 
 export type CompanyRoleSearchValidation =
   | { ok: true; jobTitle: string; location: string | null }
-  | { ok: false; error: "EMPTY_ROLE" | "ROLE_TOO_LONG" | "LOCATION_TOO_LONG"; message: string };
+  | {
+      ok: false;
+      error: "EMPTY_ROLE" | "ROLE_TOO_LONG" | "LOCATION_TOO_LONG" | "ROLE_INVALID" | "LOCATION_INVALID";
+      field: "ROLE" | "LOCATION";
+      message: string;
+    };
 
 /**
  * Trim + bound the raw form input. A blank location is normalized to null (the
@@ -45,19 +51,47 @@ export type CompanyRoleSearchValidation =
 export function validateCompanyRoleSearchInput(input: {
   jobTitle: string | null | undefined;
   location?: string | null | undefined;
+  knownRoles?: readonly string[];
+  knownLocations?: readonly string[];
 }): CompanyRoleSearchValidation {
   const jobTitle = (input.jobTitle ?? "").trim();
   if (!jobTitle) {
-    return { ok: false, error: "EMPTY_ROLE", message: COMPANY_ROLE_SEARCH_MESSAGES.emptyRole };
+    return { ok: false, error: "EMPTY_ROLE", field: "ROLE", message: COMPANY_ROLE_SEARCH_MESSAGES.emptyRole };
   }
   if (jobTitle.length > MAX_COMPANY_ROLE_LENGTH) {
-    return { ok: false, error: "ROLE_TOO_LONG", message: COMPANY_ROLE_SEARCH_MESSAGES.roleTooLong };
+    return { ok: false, error: "ROLE_TOO_LONG", field: "ROLE", message: COMPANY_ROLE_SEARCH_MESSAGES.roleTooLong };
   }
   const location = (input.location ?? "").trim();
   if (location.length > MAX_COMPANY_ROLE_LOCATION_LENGTH) {
-    return { ok: false, error: "LOCATION_TOO_LONG", message: COMPANY_ROLE_SEARCH_MESSAGES.locationTooLong };
+    return {
+      ok: false,
+      error: "LOCATION_TOO_LONG",
+      field: "LOCATION",
+      message: COMPANY_ROLE_SEARCH_MESSAGES.locationTooLong
+    };
   }
-  return { ok: true, jobTitle, location: location || null };
+
+  const roleValidation = validateDiscoverSearchLabel({
+    type: "ROLE",
+    value: jobTitle,
+    knownValues: input.knownRoles
+  });
+  if (roleValidation.status === "AMBIGUOUS" || roleValidation.status === "INVALID") {
+    return { ok: false, error: "ROLE_INVALID", field: "ROLE", message: roleValidation.message };
+  }
+
+  if (!location) {
+    return { ok: true, jobTitle: roleValidation.value, location: null };
+  }
+  const locationValidation = validateDiscoverSearchLabel({
+    type: "LOCATION",
+    value: location,
+    knownValues: input.knownLocations
+  });
+  if (locationValidation.status === "AMBIGUOUS" || locationValidation.status === "INVALID") {
+    return { ok: false, error: "LOCATION_INVALID", field: "LOCATION", message: locationValidation.message };
+  }
+  return { ok: true, jobTitle: roleValidation.value, location: locationValidation.value };
 }
 
 /** One of the user's existing searches for THIS company (any status). */

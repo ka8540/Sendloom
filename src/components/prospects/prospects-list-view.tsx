@@ -27,6 +27,7 @@ import {
 import { CircularCloseButton } from "@/components/circular-close-button";
 import { SuggestionInput } from "@/components/prospects/suggestion-input";
 import { WorkspacePageHeader } from "@/components/workspace-page-header";
+import { validateDiscoverSearchLabels } from "@/services/prospects/discover-search-label-validation";
 import { titleCaseLabel } from "@/services/prospects/discover-suggestions";
 import {
   CREATE_SEARCH_MUTATION,
@@ -90,6 +91,7 @@ function isLikelyDomain(value: string): boolean {
 const HISTORY_FETCH_SIZE = 100;
 // Hard stop so a broken cursor can never spin forever (100 x 50 = 5,000 companies).
 const HISTORY_MAX_FETCH_PAGES = 50;
+type CreateInputErrors = { jobTitles?: string; locations?: string };
 
 export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean }) {
   const router = useRouter();
@@ -111,6 +113,7 @@ export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean 
   const [quota, setQuota] = useState<DiscoverQuota | null>(null);
   const [showNewSearch, setShowNewSearch] = useState(false);
   const [form, setForm] = useState<CreateForm>(EMPTY_FORM);
+  const [createInputErrors, setCreateInputErrors] = useState<CreateInputErrors>({});
   // When the user PICKS a company suggestion we remember its resolved domain so
   // the create can carry it for canonical dedupe. It is only ever sent while the
   // typed name still matches the picked suggestion (see handleCreate), so a later
@@ -302,12 +305,31 @@ export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean 
     async (event: FormEvent) => {
       event.preventDefault();
       const companyName = form.companyName.trim();
-      const jobTitles = form.jobTitles.split(",").map((value) => value.trim()).filter(Boolean);
-      const locations = form.locations.split(",").map((value) => value.trim()).filter(Boolean);
-      if (!companyName || jobTitles.length === 0) {
+      const rawJobTitles = form.jobTitles.split(",").map((value) => value.trim()).filter(Boolean);
+      const rawLocations = form.locations.split(",").map((value) => value.trim()).filter(Boolean);
+      if (!companyName || rawJobTitles.length === 0) {
+        setCreateInputErrors(rawJobTitles.length === 0 ? { jobTitles: "Enter at least one complete job title." } : {});
         setActionError("Enter a company name and at least one job title.");
         return;
       }
+      const roles = validateDiscoverSearchLabels({ type: "ROLE", values: rawJobTitles });
+      const locations = validateDiscoverSearchLabels({ type: "LOCATION", values: rawLocations });
+      const inputErrors: CreateInputErrors = {
+        ...(!roles.ok ? { jobTitles: roles.message } : {}),
+        ...(!locations.ok ? { locations: locations.message } : {})
+      };
+      if (Object.keys(inputErrors).length > 0 || !roles.ok || !locations.ok) {
+        setCreateInputErrors(inputErrors);
+        return;
+      }
+      const jobTitles = roles.values;
+      const canonicalLocations = locations.values;
+      setCreateInputErrors({});
+      setForm((current) => ({
+        ...current,
+        jobTitles: jobTitles.join(", "),
+        locations: canonicalLocations.join(", ")
+      }));
       // Carry the picked company's domain ONLY while the typed name still matches
       // it — a manual edit after selecting drops the hint so no stale domain is
       // ever sent. The backend still re-resolves and de-dupes authoritatively.
@@ -322,7 +344,7 @@ export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean 
       setActionError(null);
       setActionNotice(null);
       const result = await prospectGraphql<{ createProspectSearch: { id: string } }>(CREATE_SEARCH_MUTATION, {
-        input: { companyName, jobTitles, locations, ...(companyDomain ? { companyDomain } : {}) }
+        input: { companyName, jobTitles, locations: canonicalLocations, ...(companyDomain ? { companyDomain } : {}) }
       });
       setCreating(false);
       if (result.disabled) {
@@ -462,9 +484,16 @@ export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean 
       <NewSearchModal
         open={showNewSearch}
         form={form}
+        inputErrors={createInputErrors}
         creating={creating}
         quota={quota}
-        onChange={setForm}
+        onChange={(next) => {
+          setCreateInputErrors((current) => ({
+            ...(next.jobTitles === form.jobTitles ? (current.jobTitles ? { jobTitles: current.jobTitles } : {}) : {}),
+            ...(next.locations === form.locations ? (current.locations ? { locations: current.locations } : {}) : {})
+          }));
+          setForm(next);
+        }}
         onCompanySelect={(suggestion) =>
           // Resolved companies — the user's own (companyId) or global identity
           // rows (canonicalKey) — carry a domain hint; raw history strings don't.
@@ -477,6 +506,7 @@ export function ProspectsListView({ featureEnabled }: { featureEnabled: boolean 
         onSubmit={handleCreate}
         onClose={() => {
           setCompanyHint(null);
+          setCreateInputErrors({});
           setShowNewSearch(false);
         }}
       />
@@ -865,6 +895,7 @@ function DeleteSearchDialog({
 function NewSearchModal({
   open,
   form,
+  inputErrors,
   creating,
   quota,
   onChange,
@@ -874,6 +905,7 @@ function NewSearchModal({
 }: {
   open: boolean;
   form: CreateForm;
+  inputErrors: CreateInputErrors;
   creating: boolean;
   quota: DiscoverQuota | null;
   onChange: (form: CreateForm) => void;
@@ -897,6 +929,9 @@ function NewSearchModal({
   if (!open) {
     return null;
   }
+
+  const jobTitleErrorId = "discover-create-job-titles-error";
+  const locationErrorId = "discover-create-locations-error";
 
   return (
     <div
@@ -941,7 +976,14 @@ function NewSearchModal({
             onChange={(value) => onChange({ ...form, jobTitles: value })}
             placeholder="Software Engineer, Recruiter"
             ariaLabel="Job titles"
+            ariaInvalid={Boolean(inputErrors.jobTitles)}
+            ariaDescribedBy={inputErrors.jobTitles ? jobTitleErrorId : undefined}
           />
+          {inputErrors.jobTitles && (
+            <span id={jobTitleErrorId} className={styles.errorText} role="alert">
+              {inputErrors.jobTitles}
+            </span>
+          )}
           <span className={styles.fieldHint}>
             Add one or more roles separated by commas, such as Software Engineer, Recruiter, or Data Analyst.
           </span>
@@ -955,7 +997,14 @@ function NewSearchModal({
             onChange={(value) => onChange({ ...form, locations: value })}
             placeholder="United States"
             ariaLabel="Locations"
+            ariaInvalid={Boolean(inputErrors.locations)}
+            ariaDescribedBy={inputErrors.locations ? locationErrorId : undefined}
           />
+          {inputErrors.locations && (
+            <span id={locationErrorId} className={styles.errorText} role="alert">
+              {inputErrors.locations}
+            </span>
+          )}
           <span className={styles.fieldHint}>Enter a country, state, city, or professional region to narrow the search.</span>
         </div>
         <DiscoverUsagePanel quota={quota} />

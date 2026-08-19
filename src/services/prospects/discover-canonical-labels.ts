@@ -6,6 +6,7 @@
 // precedence over these when both are supplied to canonicalizeLabel(s).
 
 export const COMMON_ROLE_LABELS: readonly string[] = [
+  "Engineer",
   "Software Engineer",
   "Senior Software Engineer",
   "Staff Software Engineer",
@@ -27,6 +28,12 @@ export const COMMON_ROLE_LABELS: readonly string[] = [
   "UX Designer",
   "UI Designer",
   "Engineering Manager",
+  "Human Resource",
+  "Human Resources",
+  "HR",
+  "IT",
+  "AI",
+  "QA",
   "Recruiter",
   "Technical Recruiter",
   "Talent Acquisition",
@@ -44,6 +51,8 @@ export const COMMON_ROLE_LABELS: readonly string[] = [
 export const COMMON_LOCATION_LABELS: readonly string[] = [
   "United States",
   "United Kingdom",
+  "US",
+  "UK",
   "Canada",
   "India",
   "Germany",
@@ -60,6 +69,8 @@ export const COMMON_LOCATION_LABELS: readonly string[] = [
   "New York",
   "San Francisco",
   "Los Angeles",
+  "NY",
+  "LA",
   "London",
   "Bangalore",
   "Toronto",

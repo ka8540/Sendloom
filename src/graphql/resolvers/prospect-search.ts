@@ -13,8 +13,12 @@ import {
   buildDiscoverCompanyGroups,
   type DiscoverCompanyGroupNode
 } from "@/services/prospects/discover-company-groups";
+import { validateCompanyRoleSearchInput } from "@/services/prospects/discover-company-role-search";
 import { PersonIdentitySet } from "@/services/prospects/discover-person-identity";
-import { canonicalizeLabel, canonicalizeLabels } from "@/services/prospects/discover-suggestions";
+import {
+  buildTrustedDiscoverLabelPool,
+  validateDiscoverSearchLabels
+} from "@/services/prospects/discover-search-label-validation";
 import { createProspectSearchSchema, type CreateProspectSearchInput } from "@/services/prospects/prospect-validation";
 
 const MAX_IDEMPOTENCY_KEY_LENGTH = 200;
@@ -126,8 +130,8 @@ async function loadKnownLabels(context: GraphQLContext, userId: string) {
     }
   }
   return {
-    roles: [...roles, ...COMMON_ROLE_LABELS],
-    locations: [...locations, ...COMMON_LOCATION_LABELS]
+    roles: buildTrustedDiscoverLabelPool("ROLE", [...roles, ...COMMON_ROLE_LABELS]),
+    locations: buildTrustedDiscoverLabelPool("LOCATION", [...locations, ...COMMON_LOCATION_LABELS])
   };
 }
 
@@ -143,15 +147,30 @@ export const prospectSearchMutations = {
       }
       throw error;
     }
-    // Safe input normalization before saving/searching: clean casing/whitespace
-    // and snap a clear typo onto a known value ("SOftware Enigneer" → "Software
-    // Engineer") so the stored draft, the provider query, and every later
-    // display use the canonical label. Distinct roles are never merged.
+    // Owner-scoped historical values are untrusted until sanitized by the same
+    // validation boundary. Reject the whole request if any token is incomplete
+    // or ambiguous; only final canonical values can reach createSearch.
     const known = await loadKnownLabels(context, user.id);
+    const roles = validateDiscoverSearchLabels({
+      type: "ROLE",
+      values: validated.jobTitles,
+      knownValues: known.roles
+    });
+    if (!roles.ok) {
+      throw badInputError(roles.message);
+    }
+    const locations = validateDiscoverSearchLabels({
+      type: "LOCATION",
+      values: validated.locations,
+      knownValues: known.locations
+    });
+    if (!locations.ok) {
+      throw badInputError(locations.message);
+    }
     const normalized = {
       ...validated,
-      jobTitles: canonicalizeLabels(validated.jobTitles, known.roles),
-      locations: canonicalizeLabels(validated.locations, known.locations)
+      jobTitles: roles.values,
+      locations: locations.values
     };
     return context.services.prospectSearch.createSearch(user.id, normalized);
   },
@@ -210,20 +229,26 @@ export const prospectSearchMutations = {
     if (idempotencyKey.length > MAX_IDEMPOTENCY_KEY_LENGTH) {
       throw badInputError("A valid idempotency key is required.");
     }
-    // Same safe normalization as create: the duplicate check + stored search use
-    // the canonical role/location, so "SOftware Enigneer" is de-duped and shown
-    // as "Software Engineer".
+    // Validate/canonicalize before duplicate identity, persistence, quota, or
+    // provider work. The service repeats this pure gate so direct service calls
+    // cannot bypass it.
     const known = await loadKnownLabels(context, user.id);
-    const jobTitle = canonicalizeLabel(args.jobTitle, known.roles);
-    const rawLocation = (args.location ?? "").trim();
-    const location = rawLocation ? canonicalizeLabel(rawLocation, known.locations) : null;
+    const validated = validateCompanyRoleSearchInput({
+      jobTitle: args.jobTitle,
+      location: args.location,
+      knownRoles: known.roles,
+      knownLocations: known.locations
+    });
+    if (!validated.ok) {
+      throw badInputError(validated.message);
+    }
     try {
       // The quota email is taken from the authenticated session user only — a
       // request body / GraphQL input can never grant the exemption.
       return await context.services.prospectSearch.searchCompanyRole(user.id, {
         companyId: args.companyId,
-        jobTitle,
-        location,
+        jobTitle: validated.jobTitle,
+        location: validated.location,
         actorEmail: user.email,
         idempotencyKey: idempotencyKey || null
       });

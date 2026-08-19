@@ -73,6 +73,7 @@ import {
   resolveCompanyRoleSearchAction,
   validateCompanyRoleSearchInput
 } from "@/services/prospects/discover-company-role-search";
+import { validateDiscoverSearchLabels } from "@/services/prospects/discover-search-label-validation";
 import { normalizeDomain, normalizeTitle } from "@/services/prospects/prospect-normalization";
 import { rateLimit } from "@/lib/rate-limit";
 import { RoleClassificationService } from "@/services/prospects/role-classification-service";
@@ -302,14 +303,22 @@ export class ProspectSearchService {
   }
 
   async createSearch(userId: string, input: ValidatedCreateProspectSearch): Promise<ProspectSearch> {
+    const roles = validateDiscoverSearchLabels({ type: "ROLE", values: input.jobTitles });
+    if (!roles.ok || roles.values.length === 0) {
+      throw new ProspectError("INVALID_INPUT", roles.ok ? "Enter a job title to search." : roles.message);
+    }
+    const locations = validateDiscoverSearchLabels({ type: "LOCATION", values: input.locations });
+    if (!locations.ok) {
+      throw new ProspectError("INVALID_INPUT", locations.message);
+    }
     return this.prisma.prospectSearch.create({
       data: {
         userId,
         requestedCompany: input.companyName,
         requestedDomain: input.companyDomain,
         requestedLinkedin: input.companyLinkedinUrl,
-        requestedTitles: input.jobTitles,
-        requestedLocations: input.locations,
+        requestedTitles: roles.values,
+        requestedLocations: locations.values,
         // Always the server-fixed value — the user-supplied count is discarded
         // so the persisted record can never authorize a larger run later.
         maxResults: resolveResultsPerSearch(),
@@ -388,7 +397,30 @@ export class ProspectSearchService {
     searchId: string,
     options: ProcessSearchOptions = {}
   ): Promise<ProspectSearch> {
-    const search = await this.requireOwnedSearch(userId, searchId);
+    let search = await this.requireOwnedSearch(userId, searchId);
+
+    // Legacy/manual drafts may predate the validation boundary. Re-validate
+    // before quota, cache identity, or provider work; safe corrections are
+    // stamped canonically, while incomplete/ambiguous values fail closed.
+    const requestedTitles = this.asStringArray(search.requestedTitles);
+    const roles = validateDiscoverSearchLabels({ type: "ROLE", values: requestedTitles });
+    if (!roles.ok || roles.values.length === 0) {
+      throw new ProspectError("INVALID_INPUT", roles.ok ? "Enter a job title to search." : roles.message);
+    }
+    const requestedLocations = this.asStringArray(search.requestedLocations);
+    const locations = validateDiscoverSearchLabels({ type: "LOCATION", values: requestedLocations });
+    if (!locations.ok) {
+      throw new ProspectError("INVALID_INPUT", locations.message);
+    }
+    if (
+      JSON.stringify(roles.values) !== JSON.stringify(requestedTitles) ||
+      JSON.stringify(locations.values) !== JSON.stringify(requestedLocations)
+    ) {
+      search = await this.prisma.prospectSearch.update({
+        where: { id: search.id },
+        data: { requestedTitles: roles.values, requestedLocations: locations.values }
+      });
+    }
 
     // A legacy zero-result search may predate the NO_RESULTS status and sit at
     // READY with nothing processed — "Search this company again" must be able

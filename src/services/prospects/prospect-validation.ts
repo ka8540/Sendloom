@@ -6,6 +6,7 @@ import {
   isPersonalEmailDomain,
   normalizeDomain
 } from "@/services/prospects/prospect-normalization";
+import { validateDiscoverSearchLabels } from "@/services/prospects/discover-search-label-validation";
 
 export const MAX_JOB_TITLES = 10;
 export const MAX_LOCATIONS = 10;
@@ -66,17 +67,33 @@ export const createProspectSearchSchema = z
       fail(["companyName"], "companyName must be at most 200 characters.");
     }
 
-    const jobTitles = uniqueTrimmed(value.jobTitles ?? []);
+    let jobTitles = uniqueTrimmed(value.jobTitles ?? []);
     if (jobTitles.length === 0) {
       fail(["jobTitles"], "At least one job title is required.");
     }
     if (jobTitles.length > MAX_JOB_TITLES) {
       fail(["jobTitles"], `At most ${MAX_JOB_TITLES} job titles are allowed.`);
     }
+    if (jobTitles.length > 0) {
+      const roleValidation = validateDiscoverSearchLabels({ type: "ROLE", values: jobTitles });
+      if (!roleValidation.ok) {
+        fail(["jobTitles", roleValidation.index], roleValidation.message);
+      } else {
+        jobTitles = roleValidation.values;
+      }
+    }
 
-    const locations = uniqueTrimmed(value.locations ?? []);
+    let locations = uniqueTrimmed(value.locations ?? []);
     if (locations.length > MAX_LOCATIONS) {
       fail(["locations"], `At most ${MAX_LOCATIONS} locations are allowed.`);
+    }
+    if (locations.length > 0) {
+      const locationValidation = validateDiscoverSearchLabels({ type: "LOCATION", values: locations });
+      if (!locationValidation.ok) {
+        fail(["locations", locationValidation.index], locationValidation.message);
+      } else {
+        locations = locationValidation.values;
+      }
     }
 
     let companyDomain: string | null = null;

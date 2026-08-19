@@ -204,6 +204,60 @@ beforeEach(() => {
 });
 
 describe("ProspectSearchService pipeline", () => {
+  it("rejects malformed create input before any ProspectSearch write", async () => {
+    const run = vi.fn<ApifyRunner["run"]>();
+    const { service } = buildService(prisma, { run } as ApifyRunner, AI_RESPONSES);
+
+    await expect(
+      service.createSearch(USER_ID, { ...VALIDATED, locations: ["Un"] })
+    ).rejects.toMatchObject({ code: "INVALID_INPUT" });
+
+    expect(prisma._state.searches).toHaveLength(0);
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it("stores only canonical role/location values at the create boundary", async () => {
+    const { service } = buildService(prisma, { run: vi.fn() } as ApifyRunner, AI_RESPONSES);
+
+    const created = await service.createSearch(USER_ID, {
+      ...VALIDATED,
+      jobTitles: ["Softwre Engineer", "Recrutier"],
+      locations: ["united states"]
+    });
+
+    expect(created.requestedTitles).toEqual(["Software Engineer", "Recruiter"]);
+    expect(created.requestedLocations).toEqual(["United States"]);
+  });
+
+  it("blocks a polluted legacy draft before quota, cache, or provider work", async () => {
+    const run = vi.fn<ApifyRunner["run"]>();
+    const quota = makeQuotaReserver();
+    const { service } = buildService(prisma, { run } as ApifyRunner, AI_RESPONSES, undefined, quota.reserve);
+    prisma._state.searches.push({
+      id: "legacy-un",
+      userId: USER_ID,
+      companyId: null,
+      requestedCompany: "Apple",
+      requestedDomain: "apple.com",
+      requestedLinkedin: null,
+      requestedTitles: ["Recruiter"],
+      requestedLocations: ["Un"],
+      maxResults: 10,
+      status: "DRAFT",
+      totalFound: 0,
+      totalProcessed: 0,
+      attemptCount: 0,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+
+    await expect(service.processSearch(USER_ID, "legacy-un")).rejects.toMatchObject({ code: "INVALID_INPUT" });
+    expect(quota.calls).toHaveLength(0);
+    expect(run).not.toHaveBeenCalled();
+    expect(prisma._state.searches).toHaveLength(1);
+    expect(prisma._state.searches[0].status).toBe("DRAFT");
+  });
+
   it("builds the Company -> Positions -> People graph end to end", async () => {
     const runner: ApifyRunner = {
       run: vi.fn(async () => ({ runId: "run1", datasetId: "ds1", items: PROFILES }))
@@ -2716,6 +2770,44 @@ describe("Search this company (same-company role/location search)", () => {
       service.searchCompanyRole(USER_ID, { companyId: company.id, jobTitle: "   ", actorEmail: "u@test.dev" })
     ).rejects.toMatchObject({ code: "INVALID_INPUT" });
     expect(prisma._state.searches).toHaveLength(1);
+  });
+
+  it("blocks an incomplete location before creating a row, reserving quota, or calling the provider", async () => {
+    const { service, run, quota, company } = await seedReadyCompany();
+    const runsBefore = run.mock.calls.length;
+    const quotaCallsBefore = quota.calls.length;
+
+    await expect(
+      service.searchCompanyRole(USER_ID, {
+        companyId: company.id,
+        jobTitle: "Recruiter",
+        location: "Un",
+        actorEmail: "u@test.dev"
+      })
+    ).rejects.toMatchObject({ code: "INVALID_INPUT" });
+
+    expect(prisma._state.searches).toHaveLength(1);
+    expect(run).toHaveBeenCalledTimes(runsBefore);
+    expect(quota.calls).toHaveLength(quotaCallsBefore);
+  });
+
+  it("uses corrected canonical values for duplicate identity before any write or quota", async () => {
+    const { service, run, quota, company } = await seedReadyCompany();
+    const runsBefore = run.mock.calls.length;
+    const quotaCallsBefore = quota.calls.length;
+
+    await expect(
+      service.searchCompanyRole(USER_ID, {
+        companyId: company.id,
+        jobTitle: "Softwre Engineer",
+        location: "united states",
+        actorEmail: "u@test.dev"
+      })
+    ).rejects.toMatchObject({ code: "DUPLICATE_ROLE_LOCATION" });
+
+    expect(prisma._state.searches).toHaveLength(1);
+    expect(run).toHaveBeenCalledTimes(runsBefore);
+    expect(quota.calls).toHaveLength(quotaCallsBefore);
   });
 
   it("a quota-blocked new role leaves a reusable draft — no second row on resubmit (#10-quota)", async () => {

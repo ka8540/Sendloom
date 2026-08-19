@@ -63,6 +63,8 @@ export type SuggestionInputProps = {
   autoFocus?: boolean;
   disabled?: boolean;
   ariaLabel?: string;
+  ariaInvalid?: boolean;
+  ariaDescribedBy?: string;
   /** Escape an overflow-clipped modal/card while preserving the input anchor. */
   portalToBody?: boolean;
 };
@@ -94,6 +96,8 @@ export function SuggestionInput({
   autoFocus,
   disabled,
   ariaLabel,
+  ariaInvalid,
+  ariaDescribedBy,
   portalToBody = false
 }: SuggestionInputProps) {
   const reactId = useId();
@@ -385,6 +389,8 @@ export function SuggestionInput({
         autoFocus={autoFocus}
         disabled={disabled}
         aria-label={ariaLabel}
+        aria-invalid={ariaInvalid || undefined}
+        aria-describedby={ariaDescribedBy}
         autoComplete="off"
         role="combobox"
         aria-expanded={showDropdown}
