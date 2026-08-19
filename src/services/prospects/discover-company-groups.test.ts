@@ -80,6 +80,74 @@ describe("buildDiscoverCompanyGroups", () => {
     expect(groups[0].locations).toEqual(["United States", "Canada"]);
   });
 
+  it("advertises roles and locations only from people-backed READY children in a mixed group", () => {
+    const engineer = search({
+      id: "s_engineer",
+      requestedTitles: ["Software Engineer"],
+      requestedLocations: ["United States"]
+    });
+    const recruiter = search({
+      id: "s_recruiter",
+      requestedTitles: ["Recruiter"],
+      requestedLocations: ["Canada"],
+      totalProcessed: 6,
+      createdAt: new Date("2026-07-04T11:00:00.000Z"),
+      updatedAt: new Date("2026-07-04T11:00:00.000Z")
+    });
+    const noResults = search({
+      id: "s_hr",
+      requestedTitles: ["Human Resource"],
+      requestedLocations: ["Germany"],
+      status: "NO_RESULTS",
+      totalProcessed: 0,
+      createdAt: new Date("2026-07-04T12:00:00.000Z"),
+      updatedAt: new Date("2026-07-04T12:00:00.000Z")
+    });
+    const legacyReadyZero = search({
+      id: "s_data",
+      requestedTitles: ["Data Science"],
+      requestedLocations: ["France"],
+      totalProcessed: 0,
+      createdAt: new Date("2026-07-04T13:00:00.000Z"),
+      updatedAt: new Date("2026-07-04T13:00:00.000Z")
+    });
+
+    const [group] = buildDiscoverCompanyGroups(USER_ID, [engineer, recruiter, noResults, legacyReadyZero]);
+
+    expect(group.requestedRoles).toEqual(["Recruiter", "Software Engineer"]);
+    expect(group.locations).toEqual(["Canada", "United States"]);
+    // Attempts stay intact for status, retry, and history semantics.
+    expect(group.searches.map((child) => child.id)).toEqual(["s_data", "s_hr", "s_recruiter", "s_engineer"]);
+    expect(group.latestActivityAt.toISOString()).toBe("2026-07-04T13:00:00.000Z");
+  });
+
+  it("keeps the newest non-canceled query context when a group has no successful child", () => {
+    const older = search({
+      id: "s_old",
+      requestedTitles: ["Recruiter"],
+      requestedLocations: ["Canada"],
+      status: "FAILED",
+      totalProcessed: 0,
+      createdAt: new Date("2026-07-04T10:00:00.000Z"),
+      updatedAt: new Date("2026-07-04T10:00:00.000Z")
+    });
+    const newest = search({
+      id: "s_new",
+      requestedTitles: ["Human Resource"],
+      requestedLocations: ["United States"],
+      status: "NO_RESULTS",
+      totalProcessed: 0,
+      createdAt: new Date("2026-07-04T11:00:00.000Z"),
+      updatedAt: new Date("2026-07-04T11:00:00.000Z")
+    });
+
+    const [group] = buildDiscoverCompanyGroups(USER_ID, [older, newest]);
+
+    expect(group.requestedRoles).toEqual(["Human Resource"]);
+    expect(group.locations).toEqual(["United States"]);
+    expect(group.searches).toHaveLength(2);
+  });
+
   it("uses the latest updatedAt across children as the group timestamp (#27)", () => {
     const older = search({
       id: "s_old",

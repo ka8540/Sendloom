@@ -848,22 +848,22 @@ export type LocationFilterOption = {
 };
 
 /**
- * Distinct location chips for a company's READY searches. Deduped by the same
- * canonical fold as role-group identity, so "United States" and "united
- * states" render as ONE chip (first-seen casing wins) while "Canada" stays
- * separate. Locations of unfinished searches are excluded (they have no people
- * to filter yet). The bare "Any location" chip appears only when location-less
- * searches coexist with located ones — an empty list means there is nothing to
- * filter by and the rail should not render.
+ * Distinct location chips for a company's people-backed READY searches.
+ * Deduped by the same canonical fold as role-group identity, so "United States"
+ * and "united states" render as ONE chip (first-seen casing wins) while
+ * "Canada" stays separate. Locations of unfinished searches are excluded (they
+ * have no people to filter yet). The bare "Any location" chip appears only when
+ * location-less searches coexist with located ones — an empty list means there
+ * is nothing to filter by and the rail should not render.
  */
 export function buildLocationFilterOptions(
-  searches: Array<{ status: ProspectSearchStatus; requestedLocations: string[] }>
+  searches: Array<{ status: ProspectSearchStatus; peopleCount: number; requestedLocations: string[] }>
 ): LocationFilterOption[] {
   const seen = new Set<string>();
   const options: LocationFilterOption[] = [];
   let hasBareLocationGroup = false;
   for (const search of searches) {
-    if (search.status !== "READY") {
+    if (search.status !== "READY" || search.peopleCount <= 0) {
       continue;
     }
     const tokens = normalizeRoleGroupTokens(search.requestedLocations);
@@ -1314,6 +1314,14 @@ export function companySearchSuccessMessage(jobTitle: string, location: string |
   return `New search added: ${jobTitle.trim()} · ${locationLabel}.`;
 }
 
+/** Neutral notice when a same-company attempt completed without adding people. */
+export function companySearchNoResultsMessage(jobTitle: string, location: string | null): string {
+  const role = jobTitle.trim();
+  const locationLabel = location?.trim();
+  const query = locationLabel ? `${role} · ${locationLabel}` : role;
+  return `No new people were found for ${query}. Nothing was added.`;
+}
+
 // ---------------------------------------------------------------------------
 // Role-targeted "Add 10 more" for the grouped company detail.
 // ---------------------------------------------------------------------------
@@ -1446,14 +1454,22 @@ export function addMoreSearchLabel(search: {
 }
 
 /**
- * Distinct requested role labels across a company's child searches for the
- * grouped detail header, shown in clean canonical casing — so a legacy row
- * stored as "SOftware Engineer" still renders "Software Engineer".
+ * Distinct successful role labels across a company's child searches for the
+ * grouped detail header. An attempted query contributes only when it is READY
+ * and owns people; NO_RESULTS, legacy READY+0, failed, canceled, draft, and
+ * processing searches remain retry/history records but never advertise a role
+ * as added. Labels use clean canonical casing, so a legacy row stored as
+ * "SOftware Engineer" still renders "Software Engineer".
  */
-export function groupedRoleLabels(searches: Array<{ requestedTitles: string[] }>): string[] {
+export function groupedRoleLabels(
+  searches: Array<{ status: ProspectSearchStatus; peopleCount: number; requestedTitles: string[] }>
+): string[] {
   const seen = new Set<string>();
   const labels: string[] = [];
   for (const search of searches) {
+    if (search.status !== "READY" || search.peopleCount <= 0) {
+      continue;
+    }
     for (const title of search.requestedTitles) {
       // Same canonical fold used for role-group identity, so "Software Engineer"
       // and "software  engineer" never render as two chips.

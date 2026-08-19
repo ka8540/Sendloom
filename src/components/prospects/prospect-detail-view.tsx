@@ -121,6 +121,7 @@ import {
   buildQualitySegments,
   canSearchCompanyAgain,
   companySearchDisabledReason,
+  companySearchNoResultsMessage,
   companySearchSuccessMessage,
   confidenceBadge,
   effectiveSearchStatus,
@@ -853,7 +854,15 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
         : `${company.id}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     setCompanySearching(true);
     setCompanySearchNotice(null);
-    const result = await prospectGraphql<{ searchCompanyRole: Pick<ProspectSearchNode, "id" | "status" | "errorCode" | "errorTitle" | "errorMessage" | "retryable"> }>(
+    // A previous successful add must not remain visible while this new attempt
+    // is pending or after it returns NO_RESULTS.
+    setActionNotice(null);
+    const result = await prospectGraphql<{
+      searchCompanyRole: Pick<
+        ProspectSearchNode,
+        "id" | "status" | "peopleCount" | "errorCode" | "errorTitle" | "errorMessage" | "retryable"
+      >;
+    }>(
       SEARCH_COMPANY_ROLE_MUTATION,
       {
         companyId: company.id,
@@ -879,6 +888,18 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     const created = result.data.searchCompanyRole;
     if (created.status === "FAILED") {
       setCompanySearchNotice({ tone: "error", message: formatSearchError(created).message });
+      await loadDetail({ category: activeCategory, location: activeLocation, search: peopleQuery });
+      return;
+    }
+    if (isNoResultsSearch(created)) {
+      // The attempt remains available for retry/history, but it did not add a
+      // role group. Keep the form open and preserve both inputs so the user can
+      // adjust them without retyping; the informational notice is deliberately
+      // local to the panel instead of the page-level success surface.
+      setCompanySearchNotice({
+        tone: "info",
+        message: companySearchNoResultsMessage(validated.jobTitle, validated.location)
+      });
       await loadDetail({ category: activeCategory, location: activeLocation, search: peopleQuery });
       return;
     }
@@ -1098,10 +1119,12 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
   );
 
   // Location chips: distinct requested locations across this company's READY
-  // searches (canonically deduped — never two chips for one location).
+  // searches that actually own people (canonically deduped — never two chips
+  // for one location). Use the full nodes here because the Add-more projection
+  // above intentionally omits peopleCount.
   const locationOptions = useMemo<LocationFilterOption[]>(
-    () => buildLocationFilterOptions(companySearches),
-    [companySearches]
+    () => buildLocationFilterOptions(company?.searches ?? (search ? [search] : [])),
+    [company?.searches, search]
   );
   const filtersActive = activeCategory !== null || activeLocation !== null;
 
@@ -1306,9 +1329,10 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     return <div className={styles.page} />;
   }
 
-  // Grouped header: distinct requested roles across ALL of this user's searches
+  // Grouped header: distinct roles from this user's people-backed READY searches
   // for the company (one Walmart page covers Software Engineer + Recruiter).
-  // The people count is the company query's unique union of allocated people.
+  // Unsuccessful attempts remain retryable/history-visible but do not contribute
+  // labels. The people count is the company query's unique union of allocations.
   const groupedRoles = company ? groupedRoleLabels(company.searches ?? []) : [];
   const roleLabel =
     groupedRoles.length > 0

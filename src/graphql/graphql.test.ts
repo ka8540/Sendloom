@@ -1160,6 +1160,7 @@ describe("searchCompanyRole mutation (Search this company)", () => {
     searchCompanyRole(companyId: "comp_A", jobTitle: "Recruiter", location: "Canada", idempotencyKey: "k1") {
       id
       status
+      peopleCount
       requestedTitles
       requestedLocations
     }
@@ -1212,6 +1213,7 @@ describe("searchCompanyRole mutation (Search this company)", () => {
     expect(result.data?.searchCompanyRole).toMatchObject({
       id: "s_new",
       status: "READY",
+      peopleCount: 10,
       requestedTitles: ["Recruiter"],
       requestedLocations: ["Canada"]
     });

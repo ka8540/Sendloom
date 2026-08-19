@@ -634,6 +634,7 @@ export const SEARCH_COMPANY_ROLE_MUTATION = /* GraphQL */ `
     searchCompanyRole(companyId: $companyId, jobTitle: $jobTitle, location: $location, idempotencyKey: $idempotencyKey) {
       id
       status
+      peopleCount
       requestedTitles
       requestedLocations
       errorCode

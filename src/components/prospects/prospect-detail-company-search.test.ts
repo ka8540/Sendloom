@@ -23,7 +23,8 @@ import {
   COMPANY_SEARCH_ROLE_PLACEHOLDER,
   COMPANY_SEARCH_SUBTITLE,
   COMPANY_SEARCH_TITLE,
-  FILTERED_PEOPLE_EMPTY_TITLE
+  FILTERED_PEOPLE_EMPTY_TITLE,
+  companySearchNoResultsMessage
 } from "@/components/prospects/prospect-view";
 import { PEOPLE_QUERY, SEARCH_COMPANY_ROLE_MUTATION } from "@/components/prospects/prospect-graphql";
 
@@ -54,7 +55,20 @@ describe("Search this company section (detail page) (#16-#18)", () => {
     expect(DETAIL_SOURCE).toContain("SEARCH_COMPANY_ROLE_MUTATION");
     expect(SEARCH_COMPANY_ROLE_MUTATION).toContain("searchCompanyRole(");
     expect(SEARCH_COMPANY_ROLE_MUTATION).toContain("$idempotencyKey");
+    expect(SEARCH_COMPANY_ROLE_MUTATION).toContain("peopleCount");
     expect(DETAIL_SOURCE).toMatch(/handleSearchCompany/);
+  });
+
+  it("keeps a zero-result attempt neutral, editable, and out of the success path", () => {
+    expect(DETAIL_SOURCE).toContain("isNoResultsSearch(created)");
+    expect(DETAIL_SOURCE).toContain("companySearchNoResultsMessage(validated.jobTitle, validated.location)");
+    expect(companySearchNoResultsMessage("Human Resource", "United States")).toBe(
+      "No new people were found for Human Resource · United States. Nothing was added."
+    );
+    // The no-results return occurs before the success-only panel close/field reset.
+    expect(DETAIL_SOURCE.indexOf("if (isNoResultsSearch(created))")).toBeLessThan(
+      DETAIL_SOURCE.indexOf("setCompanySearchOpen(false)", DETAIL_SOURCE.indexOf("const handleSearchCompany"))
+    );
   });
 
   it("pre-checks duplicates client-side with the SAME shared resolver the server uses (#19)", () => {
@@ -137,7 +151,7 @@ describe("Scalable People filter controls (#21-#27)", () => {
   it("builds the location dropdown from already-loaded options (#4, #5, #14)", () => {
     // All locations + one option per deduped requested location, sourced from
     // the frontend helper (no extra fetch just to list locations).
-    expect(DETAIL_SOURCE).toContain("buildLocationFilterOptions(companySearches)");
+    expect(DETAIL_SOURCE).toContain("buildLocationFilterOptions(company?.searches ?? (search ? [search] : []))");
     expect(DETAIL_SOURCE).toContain("locationOptions.map((option)");
     expect(DETAIL_SOURCE).toMatch(/<option value=\{ALL_LOCATIONS_VALUE\}>\{ALL_LOCATIONS_LABEL\}<\/option>/);
   });

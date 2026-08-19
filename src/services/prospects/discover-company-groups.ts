@@ -36,9 +36,9 @@ export type DiscoverCompanyGroupNode<T extends GroupableSearch = GroupableSearch
   userId: string;
   /** Fallback label when the company row is unavailable to the client. */
   displayName: string;
-  /** Distinct requested role labels across child searches (first-seen casing). */
+  /** Successful role labels, or newest-attempt context when none succeeded. */
   requestedRoles: string[];
-  /** Distinct requested locations across child searches. */
+  /** Successful locations, or newest-attempt context when none succeeded. */
   locations: string[];
   /** Child searches, newest first. */
   searches: T[];
@@ -94,13 +94,23 @@ export function buildDiscoverCompanyGroups<T extends GroupableSearch>(
   for (const bucket of byKey.values()) {
     const children = [...bucket].sort((a, b) => activityAt(b) - activityAt(a) || (a.id < b.id ? 1 : -1));
     const latest = children[0];
+    // Requested input is not proof that a role/location was added. Once a
+    // company has at least one people-backed READY child, only those successful
+    // children contribute the labels advertised by Search History. If every
+    // child is unsuccessful, retain the newest non-canceled attempt as context
+    // so a standalone No results/Failed row still says what the user searched.
+    const successfulChildren = children.filter(
+      (search) => search.status === "READY" && (search.totalProcessed ?? 0) > 0
+    );
+    const newestAttempt = children.find((search) => search.status !== "CANCELED") ?? latest;
+    const labelSources = successfulChildren.length > 0 ? successfulChildren : [newestAttempt];
     groups.push({
       id: latest.companyId ?? latest.id,
       companyId: latest.companyId,
       userId,
       displayName: latest.requestedCompany,
-      requestedRoles: dedupeLabels(children.flatMap((search) => asStringArray(search.requestedTitles))),
-      locations: dedupeLabels(children.flatMap((search) => asStringArray(search.requestedLocations))),
+      requestedRoles: dedupeLabels(labelSources.flatMap((search) => asStringArray(search.requestedTitles))),
+      locations: dedupeLabels(labelSources.flatMap((search) => asStringArray(search.requestedLocations))),
       searches: children,
       latestActivityAt: new Date(activityAt(latest))
     });

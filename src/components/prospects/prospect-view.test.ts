@@ -34,6 +34,7 @@ import {
   buildLocationFilterOptions,
   canSearchCompanyAgain,
   companySearchDisabledReason,
+  companySearchNoResultsMessage,
   companySearchSuccessMessage,
   confidenceBadge,
   effectiveSearchStatus,
@@ -1263,11 +1264,23 @@ describe("grouped Search History helpers", () => {
     expect(formatGroupCountLabel(3)).toBe("3 companies");
   });
 
-  it("collects distinct role labels across a company's child searches", () => {
+  it("collects distinct role labels across successful people-backed child searches", () => {
     expect(
       groupedRoleLabels([
-        { requestedTitles: ["Software Engineer"] },
-        { requestedTitles: ["software engineer", "Recruiter"] }
+        { status: "READY", peopleCount: 12, requestedTitles: ["Software Engineer"] },
+        { status: "READY", peopleCount: 4, requestedTitles: ["software engineer", "Recruiter"] }
+      ])
+    ).toEqual(["Software Engineer", "Recruiter"]);
+  });
+
+  it("excludes NO_RESULTS and legacy READY+0 attempts from grouped role labels", () => {
+    expect(
+      groupedRoleLabels([
+        { status: "READY", peopleCount: 12, requestedTitles: ["Software Engineer"] },
+        { status: "READY", peopleCount: 4, requestedTitles: ["Recruiter"] },
+        { status: "NO_RESULTS", peopleCount: 0, requestedTitles: ["Human Resource"] },
+        { status: "READY", peopleCount: 0, requestedTitles: ["Data Science"] },
+        { status: "FAILED", peopleCount: 0, requestedTitles: ["Sales"] }
       ])
     ).toEqual(["Software Engineer", "Recruiter"]);
   });
@@ -1663,9 +1676,9 @@ describe("Discover Search History filter UI", () => {
 describe("location filter chips (buildLocationFilterOptions)", () => {
   it("builds one chip per distinct location, deduped across casing/whitespace (#22)", () => {
     const options = buildLocationFilterOptions([
-      { status: "READY", requestedLocations: ["United States"] },
-      { status: "READY", requestedLocations: ["united  states"] },
-      { status: "READY", requestedLocations: ["Canada"] }
+      { status: "READY", peopleCount: 1, requestedLocations: ["United States"] },
+      { status: "READY", peopleCount: 1, requestedLocations: ["united  states"] },
+      { status: "READY", peopleCount: 1, requestedLocations: ["Canada"] }
     ]);
     expect(options).toEqual([
       { key: "united states", label: "United States" },
@@ -1675,8 +1688,8 @@ describe("location filter chips (buildLocationFilterOptions)", () => {
 
   it("adds the 'Any location' chip only when bare searches coexist with located ones", () => {
     const mixed = buildLocationFilterOptions([
-      { status: "READY", requestedLocations: ["United States"] },
-      { status: "READY", requestedLocations: [] }
+      { status: "READY", peopleCount: 1, requestedLocations: ["United States"] },
+      { status: "READY", peopleCount: 1, requestedLocations: [] }
     ]);
     expect(mixed.map((option) => option.label)).toEqual(["United States", ANY_LOCATION_LABEL]);
     expect(mixed[1].key).toBe("");
@@ -1684,14 +1697,15 @@ describe("location filter chips (buildLocationFilterOptions)", () => {
 
   it("returns no options when nothing is filterable — the rail should not render", () => {
     expect(buildLocationFilterOptions([])).toEqual([]);
-    expect(buildLocationFilterOptions([{ status: "READY", requestedLocations: [] }])).toEqual([]);
+    expect(buildLocationFilterOptions([{ status: "READY", peopleCount: 1, requestedLocations: [] }])).toEqual([]);
   });
 
   it("ignores locations from unfinished searches (they have no people yet)", () => {
     const options = buildLocationFilterOptions([
-      { status: "READY", requestedLocations: ["United States"] },
-      { status: "SEARCHING_PEOPLE", requestedLocations: ["Canada"] },
-      { status: "FAILED", requestedLocations: ["Germany"] }
+      { status: "READY", peopleCount: 1, requestedLocations: ["United States"] },
+      { status: "SEARCHING_PEOPLE", peopleCount: 0, requestedLocations: ["Canada"] },
+      { status: "FAILED", peopleCount: 0, requestedLocations: ["Germany"] },
+      { status: "READY", peopleCount: 0, requestedLocations: ["France"] }
     ]);
     expect(options.map((option) => option.label)).toEqual(["United States"]);
   });
@@ -1792,5 +1806,14 @@ describe("Search this company helpers", () => {
   it("describes the added group, falling back to 'Any location' for blank locations", () => {
     expect(companySearchSuccessMessage(" Recruiter ", "Canada")).toBe("New search added: Recruiter · Canada.");
     expect(companySearchSuccessMessage("Recruiter", null)).toBe(`New search added: Recruiter · ${ANY_LOCATION_LABEL}.`);
+  });
+
+  it("describes a zero-result attempt neutrally and never claims it was added", () => {
+    const located = companySearchNoResultsMessage(" Human Resource ", "United States");
+    expect(located).toBe("No new people were found for Human Resource · United States. Nothing was added.");
+    expect(located).not.toContain("New search added");
+    expect(companySearchNoResultsMessage("Human Resource", null)).toBe(
+      "No new people were found for Human Resource. Nothing was added."
+    );
   });
 });

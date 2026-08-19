@@ -774,6 +774,8 @@ export class ProspectSearchService {
       resolvedDataset,
       cacheResult.source === "CACHE" ? "CACHE" : "PROVIDER"
     );
+    const finalProcessed = Math.max(0, processed);
+    const finalStatus = finalProcessed > 0 ? "READY" : "NO_RESULTS";
 
     logDiscoverCacheEvent({
       event: cacheHit
@@ -786,7 +788,7 @@ export class ProspectSearchService {
       fingerprint,
       cacheHit,
       cacheAgeDays: discoverCacheAgeDays(cacheResult.fetchedAt, startedAt),
-      resultCount: processed,
+      resultCount: finalProcessed,
       providerCalled: !cacheHit,
       processingLatencyMs: Date.now() - startedAt
     });
@@ -798,12 +800,18 @@ export class ProspectSearchService {
       people: resolvedDataset.people
     });
 
-    // 7) Done — record internal result provenance (never exposed via GraphQL).
+    // 7) Done — the final state is determined by people ACTUALLY granted to
+    // this search, never by the raw provider/cache candidate count. This is the
+    // last guard against a future materialization path rejecting every
+    // candidate after the dataset-level zero-result check above.
+    if (finalStatus === "NO_RESULTS") {
+      logDiscoverZeroResultEvent(search.id, userId);
+    }
     const updated = await this.prisma.prospectSearch.update({
       where: { id: search.id },
       data: {
-        status: "READY",
-        totalProcessed: processed,
+        status: finalStatus,
+        totalProcessed: finalProcessed,
         completedAt: new Date(),
         errorCode: null,
         errorMessage: null,
@@ -813,7 +821,7 @@ export class ProspectSearchService {
         cacheFetchedAt: cacheResult.fetchedAt
       }
     });
-    return { search: updated, providerCalled: !cacheHit, resultCount: processed, cacheHit };
+    return { search: updated, providerCalled: !cacheHit, resultCount: finalProcessed, cacheHit };
   }
 
   /**
