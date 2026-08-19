@@ -182,14 +182,17 @@ describe("clean canonical labels on display + save (#3, #4, #15, #16, #17, #18)"
   });
 
   it("the inside-company card canonicalizes role + location before the duplicate pre-check (#17, #18, #19)", () => {
-    expect(DETAIL_SOURCE).toContain("canonicalizeLabel(companyRoleTitle, knownRoles)");
-    expect(DETAIL_SOURCE).toContain("validateCompanyRoleSearchInput({ jobTitle: canonicalRole, location: canonicalLocation })");
+    expect(DETAIL_SOURCE).toContain("validateCompanyRoleSearchInput({");
+    expect(DETAIL_SOURCE).toContain("jobTitle: companyRoleTitle");
+    expect(DETAIL_SOURCE).toContain("knownRoles,");
+    expect(DETAIL_SOURCE).toContain("knownLocations");
   });
 
   it("create + searchCompanyRole resolvers canonicalize the saved labels (#15)", () => {
     const resolver = readFileSync("src/graphql/resolvers/prospect-search.ts", "utf8");
-    expect(resolver).toContain("canonicalizeLabels(validated.jobTitles, known.roles)");
-    expect(resolver).toContain("canonicalizeLabel(args.jobTitle, known.roles)");
+    expect(resolver).toContain('validateDiscoverSearchLabels({\n      type: "ROLE"');
+    expect(resolver).toContain("validateCompanyRoleSearchInput({");
+    expect(resolver).toContain("jobTitle: validated.jobTitle");
   });
 });
 
@@ -202,5 +205,21 @@ describe("selecting a suggestion does not bypass duplicate validation (#29)", ()
     expect(matches[0]?.value).toBe("Software Engineer");
     const filled = replaceActiveToken("softwere eng", "softwere eng".length, "Software Engineer");
     expect(filled.value).toBe("Software Engineer");
+  });
+});
+
+describe("role/location submit validation UX", () => {
+  it("blocks the main Discover form through the shared validator and associates field errors", () => {
+    expect(LIST_SOURCE).toContain("validateDiscoverSearchLabels({ type: \"ROLE\"");
+    expect(LIST_SOURCE).toContain("validateDiscoverSearchLabels({ type: \"LOCATION\"");
+    expect(LIST_SOURCE).toContain("ariaInvalid={Boolean(inputErrors.jobTitles)}");
+    expect(LIST_SOURCE).toContain("ariaDescribedBy={inputErrors.locations ? locationErrorId : undefined}");
+  });
+
+  it("keeps same-company validation errors field-specific and accessible", () => {
+    expect(DETAIL_SOURCE).toContain('field: validated.field');
+    expect(DETAIL_SOURCE).toContain('notice.field === "ROLE"');
+    expect(DETAIL_SOURCE).toContain("ariaInvalid={Boolean(locationError)}");
+    expect(DETAIL_SOURCE).toContain("ariaDescribedBy={roleError ? roleErrorId : undefined}");
   });
 });

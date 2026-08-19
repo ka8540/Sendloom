@@ -406,7 +406,8 @@ describe("discoverSuggestions — role + location scoping (#12, #13)", () => {
     seedSearch(prisma, { requestedTitles: ["Software Engineer"] });
     seedSearch(prisma, { userId: "user_B", requestedTitles: ["Secret Role"] });
     const { suggestions } = await run(prisma, { query: "soft", types: ["ROLE"] });
-    expect(suggestions?.roles.map((role) => role.value)).toEqual(["Software Engineer"]);
+    expect(suggestions?.roles[0]?.value).toBe("Software Engineer");
+    expect(suggestions?.roles.map((role) => role.value)).not.toContain("Secret Role");
   });
 
   it("returns the user's own locations (#13)", async () => {
@@ -414,14 +415,32 @@ describe("discoverSuggestions — role + location scoping (#12, #13)", () => {
     seedSearch(prisma, { requestedLocations: ["United States"] });
     seedSearch(prisma, { userId: "user_B", requestedLocations: ["Antarctica"] });
     const { suggestions } = await run(prisma, { query: "unit", types: ["LOCATION"] });
-    expect(suggestions?.locations.map((location) => location.value)).toEqual(["United States"]);
+    expect(suggestions?.locations.map((location) => location.value)).toEqual(["United States", "United Kingdom"]);
   });
 
   it("surfaces a bad-cased stored role as a CLEAN canonical suggestion", async () => {
     const prisma = createFakePrisma();
     seedSearch(prisma, { requestedTitles: ["SOftware Engineer"] });
     const { suggestions } = await run(prisma, { query: "soft", types: ["ROLE"] });
-    expect(suggestions?.roles.map((role) => role.value)).toEqual(["Software Engineer"]);
+    expect(suggestions?.roles[0]?.value).toBe("Software Engineer");
+    expect(suggestions?.roles.map((role) => role.value)).not.toContain("SOftware Engineer");
+  });
+
+  it("quarantines polluted history while retaining real prefix matches", async () => {
+    const prisma = createFakePrisma();
+    seedSearch(prisma, { requestedLocations: ["Un"] });
+    const { suggestions } = await run(prisma, { query: "Un", types: ["LOCATION"] });
+    const values = suggestions?.locations.map((location) => location.value) ?? [];
+    expect(values).toEqual(expect.arrayContaining(["United States", "United Kingdom"]));
+    expect(values).not.toContain("Un");
+  });
+
+  it("never surfaces a deterministic historical typo in malformed form", async () => {
+    const prisma = createFakePrisma();
+    seedSearch(prisma, { requestedTitles: ["Softwre Engineer"] });
+    const { suggestions } = await run(prisma, { query: "soft", types: ["ROLE"] });
+    expect(suggestions?.roles[0]?.value).toBe("Software Engineer");
+    expect(suggestions?.roles.map((role) => role.value)).not.toContain("Softwre Engineer");
   });
 
   it("offers a typo correction for a known location", async () => {

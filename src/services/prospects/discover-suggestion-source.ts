@@ -14,10 +14,11 @@ import {
   companyMatchAliases,
   DEFAULT_SUGGESTION_LIMIT,
   rankSuggestions,
-  titleCaseLabel,
   type RankedSuggestion,
   type SuggestionEntry
 } from "@/services/prospects/discover-suggestions";
+import { COMMON_LOCATION_LABELS, COMMON_ROLE_LABELS } from "@/services/prospects/discover-canonical-labels";
+import { sanitizeDiscoverSuggestionLabel } from "@/services/prospects/discover-search-label-validation";
 import { normalizeRoleGroupToken } from "@/services/prospects/discover-role-group-key";
 
 export type DiscoverSuggestionType = "COMPANY" | "ROLE" | "LOCATION";
@@ -250,16 +251,33 @@ function buildLabelEntries(
 ): SuggestionEntry[] {
   type Acc = { value: string; count: number; fromCurrentCompany: boolean };
   const byKey = new Map<string, Acc>();
+  const type = field === "requestedTitles" ? "ROLE" : "LOCATION";
+
+  // Generic canonical labels are always available, even for a brand-new user.
+  // They are trusted constants, carry no user data, and have zero usage count
+  // until an owner-scoped history row contributes the same canonical value.
+  for (const label of type === "ROLE" ? COMMON_ROLE_LABELS : COMMON_LOCATION_LABELS) {
+    const display = sanitizeDiscoverSuggestionLabel(type, label);
+    const key = display ? normalizeRoleGroupToken(display) : "";
+    if (display && key && !byKey.has(key)) {
+      byKey.set(key, { value: display, count: 0, fromCurrentCompany: false });
+    }
+  }
 
   for (const search of searches) {
     const labels = toStringArray(search[field]);
     const isCurrent = Boolean(currentCompanyId) && search.companyId === currentCompanyId;
     for (const label of labels) {
-      // Suggestions always display a CLEAN, title-cased label — a stored
-      // "SOftware Engineer" surfaces (and is inserted) as "Software Engineer".
-      const display = titleCaseLabel(label);
+      // Stored history is untrusted. Only values that pass the shared input
+      // boundary may seed autocomplete; safe casing/typo corrections surface
+      // canonically, while incomplete/ambiguous values (for example "Un") are
+      // quarantined and never echoed as selectable rows.
+      const display = sanitizeDiscoverSuggestionLabel(type, label);
+      if (!display) {
+        continue;
+      }
       const key = normalizeRoleGroupToken(display);
-      if (!display || !key) {
+      if (!key) {
         continue;
       }
       const existing = byKey.get(key);

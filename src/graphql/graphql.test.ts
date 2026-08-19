@@ -1152,6 +1152,81 @@ describe("Grouped Search History GraphQL surface", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Discover role/location input-integrity boundaries.
+// ---------------------------------------------------------------------------
+
+describe("createProspectSearch input integrity", () => {
+  const MUTATION = `mutation Create($input: CreateProspectSearchInput!) {
+    createProspectSearch(input: $input) { id requestedTitles requestedLocations }
+  }`;
+
+  it("rejects an incomplete location before the service can write a search", async () => {
+    const createSearch = vi.fn();
+    const result = await graphql({
+      schema: prospectSchema,
+      source: MUTATION,
+      variableValues: {
+        input: { companyName: "Apple", jobTitles: ["Recruiter"], locations: ["Un"] }
+      },
+      contextValue: makeContext({
+        user: FAKE_USER,
+        services: {
+          prospectSearch: { createSearch } as unknown as GraphQLContext["services"]["prospectSearch"]
+        }
+      })
+    });
+
+    expect(result.data?.createProspectSearch ?? null).toBeNull();
+    expect(result.errors?.[0]?.extensions?.code).toBe("BAD_USER_INPUT");
+    expect(createSearch).not.toHaveBeenCalled();
+  });
+
+  it("passes only canonical corrected labels to the service", async () => {
+    const createSearch = vi.fn(async (_userId: string, input: Record<string, unknown>) => ({
+      id: "s_canonical",
+      userId: "user_A",
+      companyId: null,
+      requestedCompany: "Apple",
+      requestedTitles: input.jobTitles,
+      requestedLocations: input.locations,
+      maxResults: 10,
+      status: "DRAFT",
+      totalProcessed: 0,
+      totalFound: 0,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    }));
+    const result = await graphql({
+      schema: prospectSchema,
+      source: MUTATION,
+      variableValues: {
+        input: {
+          companyName: "Apple",
+          jobTitles: ["Softwre Engineer", "SOFtenginner"],
+          locations: ["united states"]
+        }
+      },
+      contextValue: makeContext({
+        user: FAKE_USER,
+        services: {
+          prospectSearch: { createSearch } as unknown as GraphQLContext["services"]["prospectSearch"]
+        }
+      })
+    });
+
+    expect(result.errors).toBeUndefined();
+    expect(createSearch).toHaveBeenCalledWith(
+      "user_A",
+      expect.objectContaining({ jobTitles: ["Software Engineer"], locations: ["United States"] })
+    );
+    expect(result.data?.createProspectSearch).toMatchObject({
+      requestedTitles: ["Software Engineer"],
+      requestedLocations: ["United States"]
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // "Search this company" mutation + location-filtered people query.
 // ---------------------------------------------------------------------------
 
@@ -1179,6 +1254,26 @@ describe("searchCompanyRole mutation (Search this company)", () => {
       })
     });
     expect(result.errors?.[0]?.extensions?.code).toBe("UNAUTHENTICATED");
+    expect(searchCompanyRole).not.toHaveBeenCalled();
+  });
+
+  it("rejects an incomplete location before the same-company service is called", async () => {
+    const searchCompanyRole = vi.fn();
+    const result = await graphql({
+      schema: prospectSchema,
+      source: `mutation {
+        searchCompanyRole(companyId: "comp_A", jobTitle: "Recruiter", location: "Un") { id }
+      }`,
+      contextValue: makeContext({
+        user: FAKE_USER,
+        services: {
+          prospectSearch: { searchCompanyRole } as unknown as GraphQLContext["services"]["prospectSearch"]
+        }
+      })
+    });
+
+    expect(result.data?.searchCompanyRole ?? null).toBeNull();
+    expect(result.errors?.[0]?.extensions?.code).toBe("BAD_USER_INPUT");
     expect(searchCompanyRole).not.toHaveBeenCalled();
   });
 

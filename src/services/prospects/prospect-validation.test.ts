@@ -33,6 +33,33 @@ describe("createProspectSearchSchema", () => {
     expect(parse({ companyName: "Apple", jobTitles: ["  "] }).success).toBe(false);
   });
 
+  it("blocks incomplete locations before a Discover draft can be created", () => {
+    const result = parse({ companyName: "Apple", jobTitles: ["Recruiter"], locations: ["Un"] });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.message).toMatch(/complete location/i);
+    }
+  });
+
+  it("persists only canonical role/location values for safe corrections", () => {
+    const result = parse({
+      companyName: "Apple",
+      jobTitles: ["Softwre Engineer", "Recrutier", "SOFtenginner"],
+      locations: ["united states"]
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.jobTitles).toEqual(["Software Engineer", "Recruiter"]);
+      expect(result.data.jobTitles).not.toContain("Softenginner");
+      expect(result.data.locations).toEqual(["United States"]);
+    }
+  });
+
+  it("rejects symbol-only role/location labels", () => {
+    expect(parse({ companyName: "Apple", jobTitles: ["@@@"] }).success).toBe(false);
+    expect(parse({ companyName: "Apple", jobTitles: ["Recruiter"], locations: ["----"] }).success).toBe(false);
+  });
+
   it("enforces the maximum of 10 job titles and 10 locations", () => {
     const titles = Array.from({ length: 11 }, (_, i) => `Title ${i}`);
     expect(parse({ companyName: "Apple", jobTitles: titles }).success).toBe(false);
