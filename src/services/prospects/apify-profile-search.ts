@@ -1,20 +1,35 @@
 import { env } from "@/lib/env";
 import {
-  buildFullName,
   normalizeCompanyName,
   normalizeTitle,
   parseLocation,
   stripDiacritics
 } from "@/services/prospects/prospect-normalization";
+import {
+  type PersonIdentityStatus,
+  parsePersonName
+} from "@/services/prospects/prospect-person-name";
 
 // Minimal normalized profile. We deliberately discard everything Sendloom does
 // not need (photos, phone numbers, personal emails, education, full employment
 // history, biographies, posts, connections) right at the ingestion boundary.
+//
+// Name components are ALREADY canonical here: this is the single place raw
+// provider name fields are parsed, so nothing downstream (shared cache, user
+// materialization, email generation) ever sees a display name carrying
+// credentials, emoji, honorifics, or a parenthetical alias.
 export type NormalizedProfile = {
   sourceProfileId: string;
+  /** Canonical given name. Empty when only an initial is known. */
   firstName: string;
+  /** Canonical family name. Empty when unknown or only an initial. */
   lastName: string;
+  /** Clean display name; keeps an alias and an unresolved surname initial. */
   fullName: string;
+  /** Parenthetical alternate given names, for human context only. */
+  alternateFirstNames: string[];
+  /** How complete the identity is; drives whether an email may be generated. */
+  identityStatus: PersonIdentityStatus;
   currentTitle: string | null;
   normalizedTitle: string | null;
   location: string | null;
@@ -125,17 +140,14 @@ function readCurrentPosition(raw: RawProfile): { title: string | null; companyNa
   };
 }
 
-function splitFullName(full: string): { firstName: string; lastName: string } {
-  const parts = full.trim().split(/\s+/);
-  if (parts.length === 1) {
-    return { firstName: parts[0], lastName: "" };
-  }
-  return { firstName: parts[0], lastName: parts.slice(1).join(" ") };
-}
-
 /**
  * Normalize one raw actor item into a NormalizedProfile, or null if it lacks
  * the minimum professional identity we require (a name and a profile URL).
+ *
+ * The name is resolved by the one canonical identity parser rather than a
+ * whitespace split. The old split treated every token after the first as the
+ * family name, which is what turned "Jared Cho M.B.A." into the surname
+ * "Cho M.B.A." (and the address jared.chomba@apple.com).
  */
 export function normalizeProfile(raw: RawProfile): NormalizedProfile | null {
   const linkedinUrl = asString(raw.linkedinUrl) ?? asString(raw.profileUrl) ?? asString(raw.url);
@@ -143,20 +155,16 @@ export function normalizeProfile(raw: RawProfile): NormalizedProfile | null {
     return null;
   }
 
-  let firstName = asString(raw.firstName);
-  let lastName = asString(raw.lastName);
-  const fullNameRaw = asString(raw.fullName) ?? asString(raw.name);
+  const identity = parsePersonName({
+    firstName: asString(raw.firstName),
+    lastName: asString(raw.lastName),
+    fullName: asString(raw.fullName) ?? asString(raw.name)
+  });
 
-  if ((!firstName || !lastName) && fullNameRaw) {
-    const split = splitFullName(fullNameRaw);
-    firstName = firstName ?? split.firstName;
-    lastName = lastName ?? split.lastName;
-  }
-
-  if (!firstName) {
+  // No usable given name at all — the item carries no professional identity.
+  if (identity.status === "UNUSABLE") {
     return null;
   }
-  lastName = lastName ?? "";
 
   const sourceProfileId =
     asString(raw.id) ??
@@ -168,14 +176,15 @@ export function normalizeProfile(raw: RawProfile): NormalizedProfile | null {
   const position = readCurrentPosition(raw);
   const headline = asString(raw.headline);
   const currentTitle = position.title ?? headline;
-  const fullName = fullNameRaw ?? buildFullName(firstName, lastName);
   const parsedLocation = parseLocation(readLocation(raw));
 
   return {
     sourceProfileId,
-    firstName,
-    lastName,
-    fullName,
+    firstName: identity.firstName ?? "",
+    lastName: identity.lastName ?? "",
+    fullName: identity.fullName,
+    alternateFirstNames: identity.alternateFirstNames,
+    identityStatus: identity.status,
     currentTitle,
     normalizedTitle: currentTitle ? normalizeTitle(currentTitle) : null,
     location: parsedLocation.location,

@@ -7,7 +7,14 @@ export const DEFAULT_PROSPECT_AI_REASONING_EFFORT = "low";
 
 export type ProspectReasoningEffort = "none" | "low" | "medium" | "high" | "xhigh";
 
-export type AiTaskType = "company_resolution" | "role_classification" | "email_pattern";
+export type AiTaskType =
+  | "company_resolution"
+  | "role_classification"
+  | "email_pattern"
+  // Resolving a person whose stored name is too incomplete to build an address
+  // from ("Jared C."). Strictly a fallback — see AiCallBudget below, and note
+  // that a clean name never reaches it.
+  | "person_identity";
 
 export type AiCompletionRequest = {
   taskType: AiTaskType;
@@ -174,7 +181,8 @@ export class AiCallBudget {
   private readonly counts: Record<AiTaskType, number> = {
     company_resolution: 0,
     role_classification: 0,
-    email_pattern: 0
+    email_pattern: 0,
+    person_identity: 0
   };
 
   constructor(private readonly limits: Record<AiTaskType, number>) {}
@@ -192,7 +200,12 @@ export class AiCallBudget {
   }
 
   get total(): number {
-    return this.counts.company_resolution + this.counts.role_classification + this.counts.email_pattern;
+    return (
+      this.counts.company_resolution +
+      this.counts.role_classification +
+      this.counts.email_pattern +
+      this.counts.person_identity
+    );
   }
 }
 
@@ -200,6 +213,7 @@ export function createAiBudget(): AiCallBudget {
   return new AiCallBudget({
     company_resolution: env.PROSPECT_AI_MAX_COMPANY_CALLS_PER_SEARCH,
     role_classification: env.PROSPECT_AI_MAX_ROLE_CALLS_PER_SEARCH,
-    email_pattern: env.PROSPECT_AI_MAX_PATTERN_CALLS_PER_SEARCH
+    email_pattern: env.PROSPECT_AI_MAX_PATTERN_CALLS_PER_SEARCH,
+    person_identity: env.PROSPECT_AI_MAX_IDENTITY_CALLS_PER_SEARCH
   });
 }

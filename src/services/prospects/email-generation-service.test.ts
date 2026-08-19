@@ -119,3 +119,71 @@ describe("resolveCandidateEmail", () => {
     ).toBeNull();
   });
 });
+
+// Regression suite for the malformed-identity bugs: a display name must never
+// be able to produce a syntactically valid but semantically wrong address.
+describe("generateEmail — malformed identities", () => {
+  const apple = { domain: "apple.com", pattern: "first.last" };
+
+  it.each([
+    ["Jared", "Cho M.B.A."],
+    ["Jared", "Cho MBA"],
+    ["Jared", "Cho, Ph.D."],
+    ["Jared", "M. Cho"],
+    ["Jared", "Michael Cho"],
+    ["Jared", "(Yiming) Cho"],
+    ["🚀 Jared", "Cho 🎯"]
+  ])("builds jared.cho@apple.com from %s / %s", (firstName, lastName) => {
+    expect(generateEmail({ ...apple, firstName, lastName })).toBe("jared.cho@apple.com");
+  });
+
+  it("never lets a credential become part of the local part", () => {
+    const email = generateEmail({ ...apple, firstName: "Jared", lastName: "Cho M.B.A." });
+    expect(email).toBe("jared.cho@apple.com");
+    expect(email).not.toContain("mba");
+  });
+
+  it("never fuses a parenthetical alternate into the local part", () => {
+    const email = generateEmail({ ...apple, firstName: "Jared", lastName: "(Yiming) Cho" });
+    expect(email).toBe("jared.cho@apple.com");
+    expect(email).not.toContain("yiming");
+  });
+
+  it("withholds every surname-dependent address for an initial-only surname", () => {
+    for (const pattern of ["first.last", "firstlast", "first_last", "flast", "f.last", "f_last", "lastf", "last.first", "last", "firstl", "first.l"]) {
+      expect(generateEmail({ firstName: "Jared", lastName: "C.", domain: "apple.com", pattern })).toBeNull();
+    }
+  });
+
+  it("still allows an address that does not depend on the surname", () => {
+    expect(generateEmail({ firstName: "Jared", lastName: "C.", domain: "apple.com", pattern: "first" })).toBe(
+      "jared@apple.com"
+    );
+  });
+
+  it("withholds addresses needing a full given name when only an initial is known", () => {
+    expect(generateEmail({ firstName: "J.", lastName: "Cho", domain: "apple.com", pattern: "first.last" })).toBeNull();
+    expect(generateEmail({ firstName: "J.", lastName: "Cho", domain: "apple.com", pattern: "f.last" })).toBe(
+      "j.cho@apple.com"
+    );
+  });
+
+  it("does not mistake a real surname for a degree abbreviation", () => {
+    expect(generateEmail({ firstName: "Li", lastName: "Ma", domain: "apple.com", pattern: "first.last" })).toBe(
+      "li.ma@apple.com"
+    );
+  });
+
+  it("reports UNAVAILABLE for an unresolvable identity", () => {
+    const candidate = resolveCandidateEmail({
+      firstName: "Jared",
+      lastName: "C.",
+      domain: "apple.com",
+      pattern: "first.last",
+      patternConfidence: "HIGH",
+      allowLowConfidence: false
+    });
+    expect(candidate.email).toBeNull();
+    expect(candidate.status).toBe("UNAVAILABLE");
+  });
+});

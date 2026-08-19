@@ -4,7 +4,11 @@ import {
   type EmailPattern,
   isEmailPattern
 } from "@/lib/prospect-enums";
-import { isPersonalEmailDomain, normalizeDomain, normalizeNameForEmail } from "@/services/prospects/prospect-normalization";
+import {
+  type NameTokens,
+  normalizeNameForEmail
+} from "@/services/prospects/prospect-person-name";
+import { isPersonalEmailDomain, normalizeDomain } from "@/services/prospects/prospect-normalization";
 
 export type GenerateEmailInput = {
   firstName: string;
@@ -13,10 +17,13 @@ export type GenerateEmailInput = {
   pattern: string;
 };
 
-// Deterministically build an email local part from normalized name tokens.
-// Returns null when the pattern needs a component the name does not provide.
-function buildLocalPart(pattern: EmailPattern, first: string | null, last: string | null): string | null {
-  const firstInitial = first ? first[0] : null;
+// Deterministically build an email local part from canonical identity tokens.
+// Returns null when the pattern needs a component the identity does not vouch
+// for — that null is how an unresolvable person ends up UNAVAILABLE instead of
+// wrong. `lastInitial` is derived only from a KNOWN family name: an unresolved
+// surname initial ("Jared C.") must never produce "jc@" or "jared.c@".
+function buildLocalPart(pattern: EmailPattern, tokens: NameTokens): string | null {
+  const { first, last, firstInitial } = tokens;
   const lastInitial = last ? last[0] : null;
 
   switch (pattern) {
@@ -51,12 +58,15 @@ function buildLocalPart(pattern: EmailPattern, first: string | null, last: strin
 
 /**
  * Generate a single candidate email deterministically from a company-level
- * pattern. No AI is used here. Returns null when the name or domain cannot
+ * pattern. No AI is used here. Returns null when the identity or domain cannot
  * safely produce a business address.
  *
  * Rules enforced:
- *  - names are Unicode-normalized to ascii, apostrophes/hyphens handled
- *  - professional suffixes removed (done by normalizeNameForEmail)
+ *  - the name is parsed by the one canonical identity parser, so credentials
+ *    ("M.B.A."), emoji, parenthetical aliases, honorifics, and middle initials
+ *    can never reach a local part
+ *  - a component known only as an initial does not satisfy a pattern that needs
+ *    the full name, so "Jared C." yields null rather than jared.c@company.com
  *  - missing first/last (for the chosen pattern) yields null
  *  - personal mailbox domains are rejected
  */
@@ -70,8 +80,10 @@ export function generateEmail(input: GenerateEmailInput): string | null {
     return null;
   }
 
-  const { first, last } = normalizeNameForEmail(input.firstName ?? "", input.lastName ?? "");
-  const localPart = buildLocalPart(input.pattern, first, last);
+  const localPart = buildLocalPart(
+    input.pattern,
+    normalizeNameForEmail(input.firstName ?? "", input.lastName ?? "")
+  );
   if (!localPart) {
     return null;
   }

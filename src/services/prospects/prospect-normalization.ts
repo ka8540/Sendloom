@@ -32,9 +32,6 @@ const PERSONAL_EMAIL_DOMAINS = new Set([
 const COMPANY_SUFFIX_PATTERN =
   /\b(inc|incorporated|llc|l\.l\.c|ltd|limited|corp|corporation|co|company|gmbh|plc|llp|lp|sa|ag|pty|group|holdings|technologies|technology|labs|software|solutions)\b/gi;
 
-// Professional / generational name suffixes removed before generating emails.
-const NAME_SUFFIX_PATTERN = /\b(jr|sr|ii|iii|iv|v|phd|ph\.d|md|mba|cpa|esq|do|rn|dds)\b/gi;
-
 export function stripDiacritics(value: string): string {
   // NFKD splits accented characters into base + combining marks; we then drop
   // the combining marks. Also fold common ligatures and the German ß.
@@ -120,31 +117,8 @@ export function normalizeTitle(title: string): string {
     .trim();
 }
 
-export type NameTokens = {
-  /** Lowercase ascii first name suitable for an email local part, or null. */
-  first: string | null;
-  /** Lowercase ascii last name suitable for an email local part, or null. */
-  last: string | null;
-};
-
-// Convert a raw name into ascii tokens usable in an email local part. Strips
-// suffixes, diacritics, apostrophes, and joins hyphenated parts. Returns null
-// tokens when a usable component is missing.
-export function normalizeNameForEmail(firstName: string, lastName: string): NameTokens {
-  const clean = (value: string) =>
-    stripDiacritics(value)
-      .toLowerCase()
-      .replace(NAME_SUFFIX_PATTERN, " ")
-      .replace(/['’]/g, "") // O'Brien -> obrien
-      .replace(/[-\s]+/g, "") // Smith-Jones / "de la cruz" -> collapse
-      .replace(/[^a-z]/g, "")
-      .trim();
-
-  const first = clean(firstName) || null;
-  const last = clean(lastName) || null;
-
-  return { first, last };
-}
+// Person-name parsing and email local-part tokens live in the one authoritative
+// identity module, prospect-person-name.ts. Nothing here may re-implement them.
 
 export type ParsedLocation = {
   location: string | null;

@@ -5,7 +5,7 @@ import { AiCallBudget } from "@/services/prospects/prospect-ai";
 import { createMockAi } from "@/services/prospects/__test-utils__/mock-ai";
 
 function budget() {
-  return new AiCallBudget({ company_resolution: 2, role_classification: 1, email_pattern: 1 });
+  return new AiCallBudget({ company_resolution: 2, role_classification: 1, email_pattern: 1, person_identity: 5 });
 }
 
 describe("CompanyResolutionService", () => {

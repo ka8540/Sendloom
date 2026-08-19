@@ -14,7 +14,7 @@ import { createFakePrisma } from "@/services/prospects/__test-utils__/fake-prism
 import { createMockAi } from "@/services/prospects/__test-utils__/mock-ai";
 
 function budget() {
-  return new AiCallBudget({ company_resolution: 2, role_classification: 1, email_pattern: 1 });
+  return new AiCallBudget({ company_resolution: 2, role_classification: 1, email_pattern: 1, person_identity: 5 });
 }
 
 function evidenceProvider(): EmailEvidenceProvider {

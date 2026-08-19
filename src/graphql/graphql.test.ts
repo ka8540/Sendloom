@@ -230,8 +230,10 @@ describe("Company emailStatusCounts aggregate (Discover detail dashboard)", () =
       companyId: "comp_A",
       positionId: "pos_1",
       firstName: id,
-      lastName: "X",
-      fullName: `${id} X`,
+      // A real surname: a single-letter placeholder is now read as an
+      // unresolved initial and correctly yields no inferred address.
+      lastName: "Example",
+      fullName: `${id} Example`,
       linkedinUrl: `https://www.linkedin.com/in/${id}`,
       emailStatus,
       emailConfidence: "UNAVAILABLE",

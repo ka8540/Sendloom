@@ -7,7 +7,6 @@ import {
   isValidCompanyDomain,
   normalizeCompanyName,
   normalizeDomain,
-  normalizeNameForEmail,
   normalizeTitle,
   parseLocation
 } from "@/services/prospects/prospect-normalization";
@@ -59,18 +58,8 @@ describe("linkedin url detection", () => {
   });
 });
 
-describe("normalizeNameForEmail", () => {
-  it("strips diacritics, apostrophes, hyphens, and suffixes", () => {
-    expect(normalizeNameForEmail("José", "García")).toEqual({ first: "jose", last: "garcia" });
-    expect(normalizeNameForEmail("O'Brien", "Smith-Jones")).toEqual({ first: "obrien", last: "smithjones" });
-    expect(normalizeNameForEmail("Jane", "Doe Jr.")).toEqual({ first: "jane", last: "doe" });
-  });
-
-  it("returns null tokens for missing components", () => {
-    expect(normalizeNameForEmail("", "Doe").first).toBeNull();
-    expect(normalizeNameForEmail("Jane", "").last).toBeNull();
-  });
-});
+// normalizeNameForEmail now lives in prospect-person-name.ts alongside the
+// canonical identity parser it delegates to; its tests live there too.
 
 describe("normalizeTitle", () => {
   it("lowercases and collapses punctuation/whitespace", () => {
