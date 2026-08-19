@@ -407,6 +407,12 @@ describe("premium styling contract", () => {
     expect(CSS).toMatch(/\.companySearchCard \{[^}]*radial-gradient/);
   });
 
+  it("keeps both fields aligned when one validation message is visible", () => {
+    expect(CSS).toMatch(/\.companySearchForm \{[^}]*align-items: start/);
+    expect(CSS).toMatch(/\.companySearchForm \.input\[aria-invalid="true"\] \{/);
+    expect(CSS).toMatch(/\.companySearchForm \.errorText \{[^}]*font-size: 0\.78rem/);
+  });
+
   it("the reveal card animates in and honors reduced motion", () => {
     expect(CSS).toContain("@keyframes companySearchReveal");
     expect(CSS).toMatch(/@media \(prefers-reduced-motion: reduce\) \{\s*\n\s*\.companySearchCard \{\s*\n\s*animation: none;/);

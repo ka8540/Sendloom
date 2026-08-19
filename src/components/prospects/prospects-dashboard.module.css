@@ -3045,8 +3045,8 @@
    surface, big radius, soft shadow. Never a full-width page section. */
 .companySearchCard {
   max-width: 38rem;
-  gap: 1rem;
-  padding: 1.4rem 1.5rem;
+  gap: 1.05rem;
+  padding: 1.5rem 1.6rem 1.4rem;
   border-radius: 26px;
   border-color: color-mix(in srgb, var(--accent) 24%, var(--line));
   background:
@@ -3099,6 +3099,19 @@
 
 .companySearchHeadCopy .panelSubtitle {
   margin-top: 0.25rem;
+  max-width: 46ch;
+  text-wrap: pretty;
+}
+
+/* Keep the helper separate from validation feedback so the lower half of the
+   dialog remains calm and scannable when one field has an error. */
+.companySearchCard > .fieldHint {
+  margin: 0;
+  padding-top: 0.85rem;
+  border-top: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  text-wrap: pretty;
 }
 
 /* Footer: quota context on the left, Cancel + submit pinned right. */
@@ -3107,6 +3120,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
+  padding-top: 0.1rem;
   flex-wrap: wrap;
 }
 
@@ -3136,12 +3150,53 @@
 }
 
 /* Two rounded inputs side-by-side inside the dialog (labels sit above the
-   fields); the submit lives in the dialog footer, not in this row. */
+   fields). Always align from the TOP: aligning to the bottom made the clean
+   field jump down whenever its neighbour displayed validation feedback. */
 .companySearchForm {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.75rem;
-  align-items: end;
+  gap: 1rem;
+  align-items: start;
+}
+
+.companySearchForm .field {
+  align-content: start;
+  gap: 0.42rem;
+}
+
+/* The invalid state belongs to the field, not to a large floating red line.
+   A quiet tinted surface and compact message keep the two-column form stable
+   while remaining obvious and accessible. */
+.companySearchForm .input[aria-invalid="true"] {
+  border-color: var(--error-toast-border);
+  background: color-mix(in srgb, var(--error-toast-icon-bg) 42%, var(--field-bg));
+}
+
+.companySearchForm .input[aria-invalid="true"]:focus-visible {
+  border-color: var(--error-toast-icon-color);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--error-toast-icon-color) 14%, transparent);
+}
+
+.companySearchForm .errorText {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  margin: 0 0.15rem;
+  color: var(--error-toast-icon-color);
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.4;
+  text-wrap: pretty;
+}
+
+.companySearchForm .errorText::before {
+  content: "";
+  width: 0.34rem;
+  height: 0.34rem;
+  margin-top: 0.34rem;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: currentColor;
 }
 
 .companySearchSubmit {
