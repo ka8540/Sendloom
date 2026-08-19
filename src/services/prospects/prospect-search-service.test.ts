@@ -1875,6 +1875,26 @@ describe("zero-result searches (provider succeeded, nobody found)", () => {
     expect(prisma._state.people).toHaveLength(0);
   });
 
+  it("cannot finalize READY when the post-materialization allocation count is zero", async () => {
+    const items = [profile("am1", "Jane", "Doe", "Software Engineer", "Applied Materials")];
+    const run = vi.fn<ApifyRunner["run"]>(async () => ({ runId: "run-m", datasetId: "ds-m", items }));
+    const { service } = buildService(prisma, { run } as ApifyRunner, ZERO_AI, undefined);
+    const materializer = service as unknown as { materializeDataset: () => Promise<number> };
+    vi.spyOn(materializer, "materializeDataset").mockResolvedValue(0);
+
+    const created = await service.createSearch(USER_ID, APPLIED_MATERIALS);
+    const result = await service.processSearch(USER_ID, created.id);
+
+    // The provider/cache stage had a valid candidate, but the authoritative
+    // final allocation count is zero. That must remain a neutral no-result.
+    expect(result.totalFound).toBe(1);
+    expect(result.status).toBe("NO_RESULTS");
+    expect(result.totalProcessed).toBe(0);
+    expect(prisma._state.people).toHaveLength(0);
+    expect(prisma._state.positions).toHaveLength(0);
+    expect(prisma._state.searchPeople).toHaveLength(0);
+  });
+
   it("re-processing a NO_RESULTS search re-runs the provider and can become READY (#zero-3)", async () => {
     let calls = 0;
     const run = vi.fn<ApifyRunner["run"]>(async () => {
@@ -2545,6 +2565,70 @@ describe("Search this company (same-company role/location search)", () => {
     expect(prisma._state.searches).toHaveLength(2);
     // A real new search: provider ran again and one more quota slot was used.
     expect(run.mock.calls.length).toBe(2);
+    expect(quota.consumed.size).toBe(2);
+  });
+
+  it("keeps a zero-result same-company role retryable without adding a fake group", async () => {
+    let providerCalls = 0;
+    const run = vi.fn<ApifyRunner["run"]>(async () => {
+      providerCalls += 1;
+      if (providerCalls === 1) {
+        return {
+          runId: "run-software",
+          datasetId: "ds-software",
+          items: [profile("scr-software", "Jane", "Doe", "Software Engineer", "Applied Materials")]
+        };
+      }
+      if (providerCalls === 2) {
+        return {
+          runId: "run-human-zero",
+          datasetId: "ds-human-zero",
+          // Raw result exists, but strict company matching must reject it.
+          items: [profile("wrong-company", "Alex", "Chen", "Human Resources", "Different Company")]
+        };
+      }
+      return {
+        runId: "run-human-retry",
+        datasetId: "ds-human-retry",
+        items: [profile("scr-human", "Morgan", "Lee", "Human Resources", "Applied Materials")]
+      };
+    });
+    const quota = makeQuotaReserver({ limit: 4 });
+    const { service } = buildService(prisma, { run } as ApifyRunner, SCR_ROLE_ONLY, undefined, quota.reserve);
+    const initial = await service.createSearch(USER_ID, APPLIED_MATERIALS);
+    const ready = await service.processSearch(USER_ID, initial.id, { actorEmail: "u@test.dev" });
+    const company = prisma._state.companies[0];
+    expect(ready.status).toBe("READY");
+
+    const noResults = await service.searchCompanyRole(USER_ID, {
+      companyId: company.id,
+      jobTitle: "Human Resource",
+      location: "United States",
+      actorEmail: "u@test.dev"
+    });
+
+    expect(noResults.status).toBe("NO_RESULTS");
+    expect(noResults.totalFound).toBe(1);
+    expect(noResults.totalProcessed).toBe(0);
+    expect(prisma._state.searches).toHaveLength(2);
+    expect(prisma._state.people).toHaveLength(1);
+    expect(prisma._state.positions).toHaveLength(1);
+    expect(prisma._state.searchPeople.filter((row) => row.searchId === noResults.id)).toHaveLength(0);
+
+    const retried = await service.searchCompanyRole(USER_ID, {
+      companyId: company.id,
+      jobTitle: "Human Resource",
+      location: "United States",
+      actorEmail: "u@test.dev",
+      idempotencyKey: "retry-human"
+    });
+
+    expect(retried.id).toBe(noResults.id);
+    expect(retried.status).toBe("READY");
+    expect(retried.totalProcessed).toBe(1);
+    expect(prisma._state.searches).toHaveLength(2);
+    expect(run).toHaveBeenCalledTimes(3);
+    // Initial search + one same-company search id; retrying that id is free.
     expect(quota.consumed.size).toBe(2);
   });
 
