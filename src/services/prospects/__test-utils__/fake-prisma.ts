@@ -18,6 +18,14 @@ function toComparable(value: unknown): number | unknown {
 function valueMatches(actual: unknown, expected: unknown): boolean {
   if (expected && typeof expected === "object" && !(expected instanceof Date)) {
     const operators = expected as Row;
+    if ("equals" in operators) {
+      const left = operators.mode === "insensitive" && typeof actual === "string" ? actual.toLowerCase() : actual;
+      const right =
+        operators.mode === "insensitive" && typeof operators.equals === "string"
+          ? operators.equals.toLowerCase()
+          : operators.equals;
+      return left === right;
+    }
     if ("in" in operators) {
       return (operators.in as unknown[]).includes(actual);
     }
@@ -97,6 +105,13 @@ export function createFakePrisma() {
 
   function matchGeneric(row: Row, where: Row): boolean {
     for (const [key, expected] of Object.entries(where)) {
+      if (key === "OR") {
+        const alternatives = Array.isArray(expected) ? expected : [];
+        if (!alternatives.some((alternative) => matchGeneric(row, alternative))) {
+          return false;
+        }
+        continue;
+      }
       if (!valueMatches(row[key], expected)) {
         return false;
       }

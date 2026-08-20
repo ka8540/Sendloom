@@ -28,7 +28,7 @@ export type CompanyKeySource = {
   normalizedName: string;
 };
 
-function linkedinCompanySlug(url: string | null | undefined): string | null {
+export function normalizeLinkedinCompanySlug(url: string | null | undefined): string | null {
   if (!url) {
     return null;
   }
@@ -44,7 +44,7 @@ function linkedinCompanySlug(url: string | null | undefined): string | null {
  * merging genuinely different companies.
  */
 export function canonicalCompanyKey(source: CompanyKeySource): string {
-  const slug = linkedinCompanySlug(source.linkedinCompanyUrl);
+  const slug = normalizeLinkedinCompanySlug(source.linkedinCompanyUrl);
   if (slug) {
     return `linkedin:${slug}`;
   }

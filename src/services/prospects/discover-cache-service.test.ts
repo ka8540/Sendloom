@@ -19,6 +19,7 @@ import {
   type ResolvedCachePerson,
   type ResolvedDataset
 } from "@/services/prospects/discover-cache-service";
+import { filterReusableDiscoverPeople } from "@/services/prospects/discover-cache-reuse";
 import { createFakePrisma, type FakePrisma } from "@/services/prospects/__test-utils__/fake-prisma";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -100,6 +101,42 @@ function params(fingerprint: string, provider: GetOrRefreshParams["provider"]): 
   };
 }
 
+function recruiterUsFilter(people: ResolvedCachePerson[]) {
+  return filterReusableDiscoverPeople({
+    people,
+    requestedRoles: [{ normalizedTitle: "recruiter", category: "RECRUITING" }],
+    requestedLocations: ["United States"]
+  });
+}
+
+function companyPoolParams(input: {
+  fingerprint: string;
+  companyKey?: string;
+  domain?: string | null;
+  linkedinUrl?: string | null;
+  cacheVersion?: string;
+  provider: GetOrRefreshParams["provider"];
+  filter?: GetOrRefreshParams["filterCompanyPoolPeople"];
+}): GetOrRefreshParams {
+  return {
+    fingerprint: input.fingerprint,
+    fingerprintInput: {
+      companyKey: input.companyKey ?? "domain:apple.com",
+      roles: ["recruiter"],
+      locations: ["united states"],
+      resultLimit: 10,
+      cacheVersion: input.cacheVersion ?? "v1"
+    },
+    company: {
+      name: "Apple Inc.",
+      domain: input.domain === undefined ? "apple.com" : input.domain,
+      linkedinUrl: input.linkedinUrl ?? null
+    },
+    filterCompanyPoolPeople: input.filter ?? recruiterUsFilter,
+    provider: input.provider
+  };
+}
+
 let prisma: FakePrisma;
 let nowMs: number;
 
@@ -152,9 +189,13 @@ describe("DiscoverSearchCacheService cache behavior", () => {
     await service.getOrRefresh(params(FINGERPRINT, seed));
 
     const provider = vi.fn(async () => dataset([cachePerson("nope")]));
-    const result = await service.getOrRefresh(params(FINGERPRINT, provider));
+    const filterCompanyPoolPeople = vi.fn(recruiterUsFilter);
+    const request = params(FINGERPRINT, provider);
+    request.filterCompanyPoolPeople = filterCompanyPoolPeople;
+    const result = await service.getOrRefresh(request);
 
     expect(provider).not.toHaveBeenCalled();
+    expect(filterCompanyPoolPeople).not.toHaveBeenCalled();
     expect(result.source).toBe("CACHE");
     expect(result.dataset.people).toHaveLength(1);
     expect(result.dataset.people[0].sourceProfileId).toBe("1");
@@ -273,6 +314,320 @@ describe("DiscoverSearchCacheService cache behavior", () => {
     expect(removed).toBe(1);
     expect(prisma._state.discoverCache.map((r) => r.fingerprint).sort()).toEqual(["fresh", "recent"]);
     expect(prisma._state.discoverCachePeople.some((p) => p.sourceProfileId === "3")).toBe(false);
+  });
+});
+
+describe("DiscoverSearchCacheService same-company database-first reuse", () => {
+  async function seedPool(input: {
+    fingerprint?: string;
+    companyKey?: string;
+    domain?: string | null;
+    linkedinUrl?: string | null;
+    people: ResolvedCachePerson[];
+    cacheVersion?: string;
+  }) {
+    const service = buildService();
+    const seed = companyPoolParams({
+      fingerprint: input.fingerprint ?? "fp-apple-broad",
+      companyKey: input.companyKey,
+      domain: input.domain,
+      linkedinUrl: input.linkedinUrl,
+      cacheVersion: input.cacheVersion,
+      provider: async () => dataset(input.people),
+      filter: undefined
+    });
+    // Seed under a broader, non-identical role fingerprint. Omitting the pool
+    // filter makes this setup behave like an original paid-provider write.
+    seed.fingerprintInput.roles = ["human resource", "recruiter", "software engineer"];
+    delete seed.filterCompanyPoolPeople;
+    await service.getOrRefresh(seed);
+    return service;
+  }
+
+  it("reuses Recruiters from a broader fresh Apple cache without calling the provider", async () => {
+    const service = await seedPool({
+      people: [
+        cachePerson("r1", { currentTitle: "Recruiter", normalizedTitle: "recruiter", positionCategory: "RECRUITING" }),
+        cachePerson("r2", { currentTitle: "Technical Recruiter", normalizedTitle: "technical recruiter", positionCategory: "RECRUITING" }),
+        cachePerson("s1"),
+        cachePerson("h1", { currentTitle: "HR Manager", normalizedTitle: "hr manager", positionCategory: "HUMAN_RESOURCES" })
+      ]
+    });
+    const provider = vi.fn(async () => dataset([cachePerson("paid")]))
+
+    const result = await service.getOrRefresh(companyPoolParams({ fingerprint: "fp-apple-recruiter", provider }));
+
+    expect(provider).not.toHaveBeenCalled();
+    expect(result.source).toBe("CACHE");
+    expect(result.cacheHitType).toBe("COMPANY_POOL");
+    expect(result.dataset.people.map((person) => person.sourceProfileId)).toEqual(["r1", "r2"]);
+    expect(result.lookupDiagnostics).toMatchObject({
+      candidateEntryCount: 1,
+      candidatePersonCount: 4,
+      matchingPersonCount: 2
+    });
+    const derived = prisma._state.discoverCache.find((entry) => entry.fingerprint === "fp-apple-recruiter");
+    const source = prisma._state.discoverCache.find((entry) => entry.fingerprint === "fp-apple-broad");
+    expect(derived).toMatchObject({
+      status: "READY",
+      providerNextPage: 1,
+      providerPagesFetched: 0,
+      resultCount: 2
+    });
+    expect(derived?.fetchedAt).toEqual(source?.fetchedAt);
+    expect(derived?.expiresAt).toEqual(source?.expiresAt);
+    expect((await service.getExpansionState("fp-apple-recruiter"))?.providerNextPage).toBe(1);
+
+    const repeatedProvider = vi.fn(async () => dataset([cachePerson("paid-again")]))
+    const repeated = await service.getOrRefresh(
+      companyPoolParams({ fingerprint: "fp-apple-recruiter", provider: repeatedProvider })
+    );
+    expect(repeated.cacheHitType).toBe("EXACT");
+    expect(repeatedProvider).not.toHaveBeenCalled();
+  });
+
+  it("returns a partial four-person pool and never pays to top it up", async () => {
+    const service = await seedPool({
+      people: Array.from({ length: 4 }, (_, index) =>
+        cachePerson(`r${index + 1}`, {
+          currentTitle: "Recruiter",
+          normalizedTitle: "recruiter",
+          positionCategory: "RECRUITING"
+        })
+      )
+    });
+    const provider = vi.fn(async () => dataset([cachePerson("paid")]))
+
+    const result = await service.getOrRefresh(companyPoolParams({ fingerprint: "fp-apple-partial", provider }));
+
+    expect(result.dataset.people).toHaveLength(4);
+    expect(provider).not.toHaveBeenCalled();
+  });
+
+  it("still returns proven pool matches when exact-cache derivation cannot be written", async () => {
+    const service = await seedPool({
+      people: [
+        cachePerson("r1", { currentTitle: "Recruiter", normalizedTitle: "recruiter", positionCategory: "RECRUITING" })
+      ]
+    });
+    prisma.$transaction = vi.fn(async () => {
+      throw new Error("derived write unavailable");
+    }) as FakePrisma["$transaction"];
+    const provider = vi.fn(async () => dataset([cachePerson("paid")]))
+
+    const result = await service.getOrRefresh(
+      companyPoolParams({ fingerprint: "fp-apple-derive-failure", provider })
+    );
+
+    expect(result.cacheHitType).toBe("COMPANY_POOL");
+    expect(result.dataset.people.map((person) => person.sourceProfileId)).toEqual(["r1"]);
+    expect(provider).not.toHaveBeenCalled();
+  });
+
+  it("ignores a zero-person exact row and reuses a populated sibling", async () => {
+    const service = await seedPool({
+      people: [
+        cachePerson("r1", { currentTitle: "Recruiter", normalizedTitle: "recruiter", positionCategory: "RECRUITING" })
+      ]
+    });
+    prisma._state.discoverCache.push({
+      id: "zero_exact",
+      fingerprint: "fp-apple-zero-exact",
+      cacheVersion: "v1",
+      companyKey: "domain:apple.com",
+      companyName: "Apple Inc.",
+      companyDomain: "apple.com",
+      companyLinkedinUrl: null,
+      normalizedRoles: ["recruiter"],
+      normalizedLocations: ["united states"],
+      resultLimit: 10,
+      status: "READY",
+      fetchedAt: new Date(nowMs - DAY_MS),
+      expiresAt: new Date(nowMs + DAY_MS),
+      resultCount: 0
+    });
+    const provider = vi.fn(async () => dataset([cachePerson("paid")]))
+
+    const result = await service.getOrRefresh(
+      companyPoolParams({ fingerprint: "fp-apple-zero-exact", provider })
+    );
+
+    expect(result.cacheHitType).toBe("COMPANY_POOL");
+    expect(result.dataset.people.map((person) => person.sourceProfileId)).toEqual(["r1"]);
+    expect(provider).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the provider when the Apple pool has no matching Recruiters", async () => {
+    const service = await seedPool({ people: [cachePerson("s1"), cachePerson("s2")] });
+    const provider = vi.fn(async () =>
+      dataset([
+        cachePerson("paid-r", {
+          currentTitle: "Recruiter",
+          normalizedTitle: "recruiter",
+          positionCategory: "RECRUITING"
+        })
+      ])
+    );
+
+    const result = await service.getOrRefresh(companyPoolParams({ fingerprint: "fp-apple-no-role", provider }));
+
+    expect(provider).toHaveBeenCalledTimes(1);
+    expect(result.source).toBe("PROVIDER");
+    expect(result.lookupDiagnostics).toMatchObject({ candidateEntryCount: 1, matchingPersonCount: 0 });
+  });
+
+  it("does not reuse a Recruiter from the wrong requested location", async () => {
+    const service = await seedPool({
+      people: [
+        cachePerson("r-ca", {
+          currentTitle: "Recruiter",
+          normalizedTitle: "recruiter",
+          positionCategory: "RECRUITING",
+          location: "Toronto, Canada",
+          country: "Canada",
+          city: "Toronto"
+        })
+      ]
+    });
+    const provider = vi.fn(async () => dataset([]));
+
+    const result = await service.getOrRefresh(companyPoolParams({ fingerprint: "fp-apple-wrong-location", provider }));
+
+    expect(provider).toHaveBeenCalledTimes(1);
+    expect(result.source).toBe("PROVIDER");
+  });
+
+  it("reuses a LinkedIn-keyed Canonical cache through its trusted domain", async () => {
+    const service = await seedPool({
+      companyKey: "linkedin:canonical",
+      domain: "canonical.com",
+      linkedinUrl: "https://www.linkedin.com/company/Canonical/",
+      people: [
+        cachePerson("c1", { currentTitle: "Recruiter", normalizedTitle: "recruiter", positionCategory: "RECRUITING" })
+      ]
+    });
+    const provider = vi.fn(async () => dataset([]));
+
+    const result = await service.getOrRefresh(
+      companyPoolParams({
+        fingerprint: "fp-canonical-domain",
+        companyKey: "domain:canonical.com",
+        domain: "canonical.com",
+        provider
+      })
+    );
+
+    expect(result.cacheHitType).toBe("COMPANY_POOL");
+    expect(provider).not.toHaveBeenCalled();
+  });
+
+  it("reuses a domain-keyed Canonical cache through its normalized LinkedIn slug", async () => {
+    const service = await seedPool({
+      companyKey: "domain:canonical.com",
+      domain: "canonical.com",
+      linkedinUrl: "https://linkedin.com/company/Canonical/",
+      people: [
+        cachePerson("c1", { currentTitle: "Recruiter", normalizedTitle: "recruiter", positionCategory: "RECRUITING" })
+      ]
+    });
+    const provider = vi.fn(async () => dataset([]));
+
+    const result = await service.getOrRefresh(
+      companyPoolParams({
+        fingerprint: "fp-canonical-linkedin",
+        companyKey: "linkedin:canonical",
+        domain: null,
+        linkedinUrl: "https://www.linkedin.com/company/canonical",
+        provider
+      })
+    );
+
+    expect(result.cacheHitType).toBe("COMPANY_POOL");
+    expect(provider).not.toHaveBeenCalled();
+  });
+
+  it("isolates similar company names with different trusted domains", async () => {
+    const service = await seedPool({
+      companyKey: "domain:apple-technologies.example",
+      domain: "apple-technologies.example",
+      people: [
+        cachePerson("other-r", { currentTitle: "Recruiter", normalizedTitle: "recruiter", positionCategory: "RECRUITING" })
+      ]
+    });
+    const provider = vi.fn(async () => dataset([]));
+
+    const result = await service.getOrRefresh(companyPoolParams({ fingerprint: "fp-real-apple", provider }));
+
+    expect(provider).toHaveBeenCalledTimes(1);
+    expect(result.source).toBe("PROVIDER");
+    expect(result.lookupDiagnostics?.candidateEntryCount).toBe(0);
+  });
+
+  it("rejects a candidate when one trusted identifier matches but another conflicts", async () => {
+    const service = await seedPool({
+      companyKey: "domain:apple.com",
+      domain: "apple.com",
+      linkedinUrl: "https://www.linkedin.com/company/apple-hospitality",
+      people: [
+        cachePerson("conflict-r", { currentTitle: "Recruiter", normalizedTitle: "recruiter", positionCategory: "RECRUITING" })
+      ]
+    });
+    const provider = vi.fn(async () => dataset([]));
+
+    const result = await service.getOrRefresh(
+      companyPoolParams({
+        fingerprint: "fp-apple-conflict",
+        companyKey: "linkedin:apple",
+        domain: "apple.com",
+        linkedinUrl: "https://www.linkedin.com/company/apple",
+        provider
+      })
+    );
+
+    expect(provider).toHaveBeenCalledTimes(1);
+    expect(result.source).toBe("PROVIDER");
+  });
+
+  it("does not reuse expired or incompatible-version sibling entries", async () => {
+    const expiredService = await seedPool({
+      fingerprint: "expired-sibling",
+      people: [
+        cachePerson("expired-r", { currentTitle: "Recruiter", normalizedTitle: "recruiter", positionCategory: "RECRUITING" })
+      ]
+    });
+    prisma._state.discoverCache.find((entry) => entry.fingerprint === "expired-sibling")!.expiresAt = new Date(nowMs - 1);
+    const expiredProvider = vi.fn(async () => dataset([]));
+    await expiredService.getOrRefresh(companyPoolParams({ fingerprint: "fp-after-expiry", provider: expiredProvider }));
+    expect(expiredProvider).toHaveBeenCalledTimes(1);
+
+    const versionedService = await seedPool({
+      fingerprint: "old-version-sibling",
+      cacheVersion: "v0",
+      people: [
+        cachePerson("old-r", { currentTitle: "Recruiter", normalizedTitle: "recruiter", positionCategory: "RECRUITING" })
+      ]
+    });
+    const versionProvider = vi.fn(async () => dataset([]));
+    await versionedService.getOrRefresh(companyPoolParams({ fingerprint: "fp-new-version", provider: versionProvider }));
+    expect(versionProvider).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not reuse an exact fingerprint row written by another cache version", async () => {
+    const service = await seedPool({
+      fingerprint: "same-fingerprint-different-version",
+      cacheVersion: "v0",
+      people: [
+        cachePerson("old-r", { currentTitle: "Recruiter", normalizedTitle: "recruiter", positionCategory: "RECRUITING" })
+      ]
+    });
+    const provider = vi.fn(async () => dataset([]));
+
+    const result = await service.getOrRefresh(
+      companyPoolParams({ fingerprint: "same-fingerprint-different-version", cacheVersion: "v1", provider })
+    );
+
+    expect(provider).toHaveBeenCalledTimes(1);
+    expect(result.source).toBe("PROVIDER");
   });
 });
 

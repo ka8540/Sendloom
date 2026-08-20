@@ -1643,6 +1643,152 @@ describe("Discover shared cache integration", () => {
     expect(JSON.stringify(prisma._state.discoverCache[0])).not.toMatch(/user_A|user_B|userId/);
   });
 
+  it("reuses the production-shaped 98-person Apple pool for a narrower Recruiter search without Apify", async () => {
+    const cache = new DiscoverSearchCacheService({
+      prisma: prisma as unknown as PrismaClient,
+      lock: makeFakeCacheLock(),
+      now: () => new Date("2026-08-20T17:00:00.000Z"),
+      ttlDays: 30,
+      waitTimeoutMs: 500,
+      pollIntervalMs: 5,
+      cleanupOnRefresh: false
+    });
+    const people = Array.from({ length: 98 }, (_, index) => {
+      const recruiter = index < 32;
+      const humanResources = index >= 32 && index < 49;
+      const title = recruiter ? "Recruiter" : humanResources ? "HR Manager" : "Software Engineer";
+      const category = recruiter ? "RECRUITING" : humanResources ? "HUMAN_RESOURCES" : "SOFTWARE_ENGINEERING";
+      return {
+        sourceProfileId: `apple-${index + 1}`,
+        firstName: `First${index + 1}`,
+        lastName: `Last${index + 1}`,
+        fullName: `First${index + 1} Last${index + 1}`,
+        currentTitle: title,
+        normalizedTitle: title.toLowerCase(),
+        positionCategory: category,
+        location: "United States",
+        country: "United States",
+        state: null,
+        city: null,
+        linkedinUrl: `https://www.linkedin.com/in/apple-${index + 1}`,
+        inferredEmail: null,
+        emailStatus: "UNAVAILABLE",
+        emailConfidence: "UNAVAILABLE",
+        emailPattern: null,
+        emailSource: null
+      };
+    });
+    await cache.getOrRefresh({
+      fingerprint: "apple-broad-98",
+      fingerprintInput: {
+        companyKey: "domain:apple.com",
+        roles: ["human resource", "recruiter", "software engineer"],
+        locations: ["united states"],
+        resultLimit: 10,
+        cacheVersion: "v1"
+      },
+      company: { name: "Apple Inc.", domain: "apple.com", linkedinUrl: "https://linkedin.com/company/apple" },
+      provider: async () => ({
+        emailFormat: {
+          emailDomain: "apple.com",
+          emailDomainConfidence: "HIGH",
+          emailDomainEvidence: [{ sourceName: "public" }],
+          emailPattern: "flast",
+          patternConfidence: "HIGH",
+          patternEvidence: [{ pattern: "flast" }],
+          emailFormatReason: "format",
+          emailFormatDiscoveryStatus: "FOUND",
+          emailFormatDiscoveryAt: new Date("2026-08-20T17:00:00.000Z"),
+          emailFormatDiscoveryExpiresAt: new Date("2026-09-19T17:00:00.000Z")
+        },
+        people
+      })
+    });
+
+    const run = vi.fn<ApifyRunner["run"]>();
+    const { service } = buildService(
+      prisma,
+      { run } as ApifyRunner,
+      ROLE_ONLY_AI,
+      undefined,
+      makeQuotaReserver().reserve,
+      cache
+    );
+    const search = await service.createSearch("apple_requester", {
+      companyName: "Apple",
+      companyDomain: "apple.com",
+      companyLinkedinUrl: null,
+      jobTitles: ["Recruiter"],
+      locations: ["United States"],
+      maxResults: 10
+    });
+
+    const result = await service.processSearch("apple_requester", search.id);
+
+    expect(result.status).toBe("READY");
+    expect(result.resultSource).toBe("CACHE");
+    expect(result.totalProcessed).toBe(10);
+    expect(run).not.toHaveBeenCalled();
+    expect(prisma._state.people).toHaveLength(10);
+    expect(prisma._state.people.every((person) => person.userId === "apple_requester")).toBe(true);
+    const allocatedPositionIds = new Set(prisma._state.people.map((person) => person.positionId));
+    expect(
+      prisma._state.positions
+        .filter((position) => allocatedPositionIds.has(position.id))
+        .map((position) => position.category)
+    ).toEqual(["RECRUITING"]);
+  });
+
+  it("materializes four cached Recruiters as READY without a paid top-up", async () => {
+    const cache = new DiscoverSearchCacheService({
+      prisma: prisma as unknown as PrismaClient,
+      lock: makeFakeCacheLock(),
+      now: () => new Date("2026-08-20T17:00:00.000Z"),
+      ttlDays: 30,
+      cleanupOnRefresh: false
+    });
+    const cached = cacheDataset();
+    cached.people = Array.from({ length: 4 }, (_, index) => ({
+      ...cached.people[0],
+      sourceProfileId: `partial-${index + 1}`,
+      firstName: `First${index + 1}`,
+      fullName: `First${index + 1} Doe`,
+      currentTitle: "Recruiter",
+      normalizedTitle: "recruiter",
+      positionCategory: "RECRUITING",
+      linkedinUrl: `https://www.linkedin.com/in/partial-${index + 1}`
+    }));
+    await cache.getOrRefresh({
+      fingerprint: "apple-broad-partial",
+      fingerprintInput: {
+        companyKey: "domain:apple.com",
+        roles: ["recruiter", "software engineer"],
+        locations: ["united states"],
+        resultLimit: 10,
+        cacheVersion: "v1"
+      },
+      company: { name: "Apple Inc.", domain: "apple.com", linkedinUrl: null },
+      provider: async () => cached
+    });
+    const run = vi.fn<ApifyRunner["run"]>();
+    const { service } = buildService(prisma, { run } as ApifyRunner, ROLE_ONLY_AI, undefined, allowAllQuota, cache);
+    const search = await service.createSearch(USER_ID, {
+      companyName: "Apple",
+      companyDomain: "apple.com",
+      companyLinkedinUrl: null,
+      jobTitles: ["Recruiter"],
+      locations: ["United States"],
+      maxResults: 10
+    });
+
+    const result = await service.processSearch(USER_ID, search.id);
+
+    expect(result.status).toBe("READY");
+    expect(result.totalProcessed).toBe(4);
+    expect(result.resultSource).toBe("CACHE");
+    expect(run).not.toHaveBeenCalled();
+  });
+
   it("runs Apify only once for concurrent identical misses (#concurrency 1, 2)", async () => {
     const cache = new DiscoverSearchCacheService({
       prisma: prisma as unknown as PrismaClient,

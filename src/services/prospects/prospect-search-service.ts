@@ -48,6 +48,7 @@ import {
   type ResolvedDataset
 } from "@/services/prospects/discover-cache-service";
 import { computeDiscoverFingerprint } from "@/services/prospects/discover-cache-fingerprint";
+import { filterReusableDiscoverPeople } from "@/services/prospects/discover-cache-reuse";
 import {
   EmailDomainService,
   type EmailDomainEvidence,
@@ -706,6 +707,7 @@ export class ProspectSearchService {
     // refresh the shared cache. The provider closure performs Apify + role
     // classification only; email-format discovery has a separate lifecycle.
     const startedAt = Date.now();
+    let providerStarted = false;
     let cacheResult;
     try {
       cacheResult = await this.discoverCache.getOrRefresh({
@@ -716,7 +718,28 @@ export class ProspectSearchService {
           domain: resolution.officialWebsiteDomain ?? resolution.officialDomain,
           linkedinUrl: resolution.linkedinCompanyUrl
         },
-        provider: () => this.runProviderDataset(userId, search, company, resolution, budget)
+        filterCompanyPoolPeople: async (people) => {
+          const requestedTitles = this.asStringArray(search.requestedTitles);
+          const classifications = await this.roleClassifier.classify(requestedTitles, {
+            budget,
+            searchId: search.id
+          });
+          return filterReusableDiscoverPeople({
+            people,
+            requestedRoles: requestedTitles.map((title) => {
+              const normalizedTitle = normalizeTitle(title);
+              return {
+                normalizedTitle,
+                category: coercePositionCategory(classifications.get(normalizedTitle)?.category)
+              };
+            }),
+            requestedLocations: this.asStringArray(search.requestedLocations)
+          });
+        },
+        provider: () => {
+          providerStarted = true;
+          return this.runProviderDataset(userId, search, company, resolution, budget);
+        }
       });
     } catch (error) {
       logDiscoverCacheEvent({
@@ -727,8 +750,12 @@ export class ProspectSearchService {
         cacheHit: false,
         cacheAgeDays: null,
         resultCount: 0,
-        providerCalled: true,
-        processingLatencyMs: Date.now() - startedAt
+        providerCalled: providerStarted,
+        processingLatencyMs: Date.now() - startedAt,
+        cacheHitType: null,
+        candidateEntryCount: 0,
+        candidatePersonCount: 0,
+        matchingPersonCount: 0
       });
       throw error;
     }
@@ -761,11 +788,7 @@ export class ProspectSearchService {
         }
       });
       logDiscoverCacheEvent({
-        event: cacheHit
-          ? "DISCOVER_CACHE_HIT"
-          : cacheResult.refreshedStale
-            ? "DISCOVER_CACHE_REFRESHED"
-            : "DISCOVER_CACHE_MISS",
+        event: discoverCacheEventName(cacheResult),
         searchId: search.id,
         userId,
         fingerprint,
@@ -773,7 +796,11 @@ export class ProspectSearchService {
         cacheAgeDays: discoverCacheAgeDays(cacheResult.fetchedAt, startedAt),
         resultCount: 0,
         providerCalled: !cacheHit,
-        processingLatencyMs: Date.now() - startedAt
+        processingLatencyMs: Date.now() - startedAt,
+        cacheHitType: cacheResult.cacheHitType ?? (cacheHit ? "EXACT" : null),
+        candidateEntryCount: cacheResult.lookupDiagnostics?.candidateEntryCount ?? 0,
+        candidatePersonCount: cacheResult.lookupDiagnostics?.candidatePersonCount ?? 0,
+        matchingPersonCount: cacheResult.lookupDiagnostics?.matchingPersonCount ?? 0
       });
       return { search: updated, providerCalled: !cacheHit, resultCount: 0, cacheHit };
     }
@@ -810,11 +837,7 @@ export class ProspectSearchService {
     const finalStatus = finalProcessed > 0 ? "READY" : "NO_RESULTS";
 
     logDiscoverCacheEvent({
-      event: cacheHit
-        ? "DISCOVER_CACHE_HIT"
-        : cacheResult.refreshedStale
-          ? "DISCOVER_CACHE_REFRESHED"
-          : "DISCOVER_CACHE_MISS",
+      event: discoverCacheEventName(cacheResult),
       searchId: search.id,
       userId,
       fingerprint,
@@ -822,7 +845,11 @@ export class ProspectSearchService {
       cacheAgeDays: discoverCacheAgeDays(cacheResult.fetchedAt, startedAt),
       resultCount: finalProcessed,
       providerCalled: !cacheHit,
-      processingLatencyMs: Date.now() - startedAt
+      processingLatencyMs: Date.now() - startedAt,
+      cacheHitType: cacheResult.cacheHitType ?? (cacheHit ? "EXACT" : null),
+      candidateEntryCount: cacheResult.lookupDiagnostics?.candidateEntryCount ?? 0,
+      candidatePersonCount: cacheResult.lookupDiagnostics?.candidatePersonCount ?? 0,
+      matchingPersonCount: cacheResult.lookupDiagnostics?.matchingPersonCount ?? 0
     });
 
     this.logEmailFormatStage({
@@ -1823,7 +1850,13 @@ function discoverCacheAgeDays(fetchedAt: Date | null, nowMs: number): number | n
 }
 
 type DiscoverCacheLogEvent = {
-  event: "DISCOVER_CACHE_HIT" | "DISCOVER_CACHE_MISS" | "DISCOVER_CACHE_REFRESHED" | "DISCOVER_CACHE_REFRESH_FAILED";
+  event:
+    | "DISCOVER_CACHE_HIT"
+    | "DISCOVER_COMPANY_POOL_CACHE_HIT"
+    | "DISCOVER_CACHE_POOL_ZERO_MATCH"
+    | "DISCOVER_CACHE_MISS"
+    | "DISCOVER_CACHE_REFRESHED"
+    | "DISCOVER_CACHE_REFRESH_FAILED";
   searchId: string;
   userId: string;
   fingerprint: string;
@@ -1832,7 +1865,29 @@ type DiscoverCacheLogEvent = {
   resultCount: number;
   providerCalled: boolean;
   processingLatencyMs: number;
+  cacheHitType: "EXACT" | "COMPANY_POOL" | null;
+  candidateEntryCount: number;
+  candidatePersonCount: number;
+  matchingPersonCount: number;
 };
+
+function discoverCacheEventName(result: {
+  source: "CACHE" | "PROVIDER";
+  refreshedStale: boolean;
+  cacheHitType?: "EXACT" | "COMPANY_POOL" | null;
+  lookupDiagnostics?: { candidateEntryCount: number; matchingPersonCount: number };
+}): DiscoverCacheLogEvent["event"] {
+  if (result.source === "CACHE") {
+    return result.cacheHitType === "COMPANY_POOL" ? "DISCOVER_COMPANY_POOL_CACHE_HIT" : "DISCOVER_CACHE_HIT";
+  }
+  if (result.refreshedStale) {
+    return "DISCOVER_CACHE_REFRESHED";
+  }
+  if ((result.lookupDiagnostics?.candidateEntryCount ?? 0) > 0 && result.lookupDiagnostics?.matchingPersonCount === 0) {
+    return "DISCOVER_CACHE_POOL_ZERO_MATCH";
+  }
+  return "DISCOVER_CACHE_MISS";
+}
 
 /**
  * Structured, privacy-safe observability for the shared cache. Logs only safe
