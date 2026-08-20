@@ -71,6 +71,12 @@ export type AddMorePeopleInput = {
 
 export type ExpansionAuditFn = (args: RecordAuditEventArgs) => Promise<void> | void;
 
+type ProviderPeopleBuild = {
+  people: ResolvedCachePerson[];
+  identityResolvedCount: number;
+  classifiedCount: number;
+};
+
 export type DiscoverExpansionServiceDeps = {
   prisma: PrismaClient;
   apify: ApifyProfileSearchService;
@@ -240,7 +246,7 @@ export class DiscoverExpansionService {
           addedCount: 0,
           cacheCount: 0,
           providerCount: 0,
-          totalPeopleCount: search.totalProcessed,
+          totalPeopleCount: allocatedCount > 0 ? allocatedCount : search.totalProcessed,
           exhausted: true
         });
         return this.toResult(completed, remaining, true, NO_MORE_PEOPLE_MESSAGE);
@@ -299,11 +305,19 @@ export class DiscoverExpansionService {
         throw new ProspectError("DISCOVER_EXPANSION_FAILED", "We couldn't add more people right now. Please try again.");
       }
 
-      const addedCount = await this.materializePeople(userId, search, company, toAdd, {
+      const materialized = await this.materializePeople(userId, search, company, toAdd, {
         cacheCount,
         allocationOrderBase: allocatedCount
       });
-      const totalPeopleCount = search.totalProcessed + addedCount;
+      const addedCount = materialized.allocationAddedCount;
+      const durableAllocationCount = await this.prisma.prospectSearchPerson.count({ where: { searchId: search.id } });
+      // Allocation-backed searches use the durable grant count as their source
+      // of truth. The legacy fallback is retained only for pre-allocation rows
+      // whose old people were never backfilled into ProspectSearchPerson.
+      const totalPeopleCount =
+        allocatedCount > 0 || search.totalProcessed === 0
+          ? durableAllocationCount
+          : search.totalProcessed + addedCount;
 
       // 15. Update the search People count (extends the same search row).
       await this.prisma.prospectSearch.update({
@@ -328,6 +342,9 @@ export class DiscoverExpansionService {
         addedCount,
         cacheCount,
         providerCount,
+        materializedCount: materialized.materializedCount,
+        allocationAddedCount: addedCount,
+        finalAllocationCount: durableAllocationCount,
         totalPeopleCount
       });
 
@@ -466,6 +483,7 @@ export class DiscoverExpansionService {
         // to page 2 when no saved page exists. It never restarts at page 1.
         let page = rechecked?.providerNextPage ?? 2;
         let pagesFetched = 0;
+        let cachedPeopleCount = rechecked?.people.length ?? 0;
 
         while (collected.length < this.batchSize && pagesFetched < this.maxProviderPages && !exhausted) {
           await this.safeAudit("DISCOVER_EXPANSION_PROVIDER_FETCH", params.userId, params.actorEmail, params.search.id, {
@@ -484,7 +502,7 @@ export class DiscoverExpansionService {
           const nextPage = page + 1;
           // A page with no raw provider items means there are no further pages.
           const pageExhausted = pageResult.totalFound === 0;
-          let pagePeople = await this.buildProviderPeople(
+          const built = await this.buildProviderPeople(
             pageResult.profiles,
             params.cacheEmailFormat,
             params.search.id,
@@ -494,9 +512,10 @@ export class DiscoverExpansionService {
               companyDomain: params.company.emailDomain ?? null
             }
           );
+          let pagePeople = built.people;
           if (this.roleIntelligence.enabled) {
             pagePeople = await this.roleIntelligence.filterAndRankPeople({
-              people: pagePeople,
+              people: built.people,
               requestedTitles: params.roles,
               requestedLocations: params.locations,
               context: "PROVIDER",
@@ -516,12 +535,15 @@ export class DiscoverExpansionService {
             pagesFetched: 1,
             exhausted: pageExhausted
           });
+          const cacheAppendedCount = Math.max(0, updated.people.length - cachedPeopleCount);
+          cachedPeopleCount = updated.people.length;
 
           page = nextPage;
           if (pageExhausted) {
             exhausted = true;
           }
 
+          const collectedBeforePage = collected.length;
           for (const person of updated.people) {
             if (collected.length >= this.batchSize) {
               break;
@@ -531,6 +553,21 @@ export class DiscoverExpansionService {
               providerCount += 1;
             }
           }
+          const collectedCount = collected.length - collectedBeforePage;
+          await this.safeAudit("DISCOVER_EXPANSION_PROVIDER_PAGE_PROCESSED", params.userId, params.actorEmail, params.search.id, {
+            page: nextPage - 1,
+            rawProviderCount: pageResult.diagnostics.itemsReturned,
+            normalizedProviderCount: pageResult.profiles.length,
+            identityResolvedCount: built.identityResolvedCount,
+            classifiedCount: built.classifiedCount,
+            semanticAcceptedCount: pagePeople.length,
+            semanticRejectedCount: built.people.length - pagePeople.length,
+            cacheAppendedCount,
+            duplicateCount:
+              pageResult.diagnostics.duplicateItems + Math.max(0, pagePeople.length - cacheAppendedCount),
+            collectedCount,
+            providerExhausted: pageExhausted
+          });
         }
 
         if (exhausted) {
@@ -554,7 +591,7 @@ export class DiscoverExpansionService {
     searchId: string,
     budget: AiCallBudget,
     company: { companyName: string; companyDomain: string | null }
-  ): Promise<ResolvedCachePerson[]> {
+  ): Promise<ProviderPeopleBuild> {
     // An expansion page gets exactly the same identity treatment as the initial
     // search, so "Add 10 more" can never be the path that reintroduces a
     // malformed name into the shared cache.
@@ -574,7 +611,7 @@ export class DiscoverExpansionService {
     const allowLowConfidence = env.PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS;
     const candidateConfidence = combinedEmailConfidence(emailFormat.emailDomainConfidence, emailFormat.patternConfidence);
 
-    return profiles.map((profile) => {
+    const people = profiles.map((profile) => {
       const category = categoryForProfile(profile, classifications);
       const candidate = resolveCandidateEmail({
         firstName: profile.firstName,
@@ -604,6 +641,11 @@ export class DiscoverExpansionService {
         emailSource: candidate.email ? "PATTERN" : null
       };
     });
+    return {
+      people,
+      identityResolvedCount: profiles.length,
+      classifiedCount: people.length
+    };
   }
 
   /**
@@ -622,9 +664,9 @@ export class DiscoverExpansionService {
     company: ProspectCompany,
     people: ResolvedCachePerson[],
     allocation: { cacheCount: number; allocationOrderBase: number }
-  ): Promise<number> {
+  ): Promise<{ materializedCount: number; allocationAddedCount: number }> {
     if (people.length === 0) {
-      return 0;
+      return { materializedCount: 0, allocationAddedCount: 0 };
     }
 
     const categories = new Map<PositionCategory, Set<string>>();
@@ -663,7 +705,8 @@ export class DiscoverExpansionService {
     });
     const existingByProfileId = new Map(existingPeople.map((person) => [person.sourceProfileId, person]));
 
-    let added = 0;
+    let materializedCount = 0;
+    let allocationAddedCount = 0;
     for (const [index, person] of people.entries()) {
       const category = coercePositionCategory(person.positionCategory);
       const positionId = positionMap.get(category) ?? positionMap.get("OTHER");
@@ -699,7 +742,8 @@ export class DiscoverExpansionService {
         create: { userId, sourceProfileId: person.sourceProfileId, ...fields },
         update: fields
       });
-      // Grant the person to the TARGET search. `added` counts new grants, so a
+      materializedCount += 1;
+      // Grant the person to the TARGET search. `allocationAddedCount` counts new grants, so a
       // concurrent duplicate (converged by the unique key) is never counted twice.
       const existingGrant = await this.prisma.prospectSearchPerson.findFirst({
         where: { searchId: search.id, personId: materialized.id }
@@ -716,10 +760,10 @@ export class DiscoverExpansionService {
         update: {}
       });
       if (!existingGrant) {
-        added += 1;
+        allocationAddedCount += 1;
       }
     }
-    return added;
+    return { materializedCount, allocationAddedCount };
   }
 
   private companyEmailFormat(company: ProspectCompany): ResolvedEmailFormat {

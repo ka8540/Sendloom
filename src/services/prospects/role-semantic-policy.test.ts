@@ -23,6 +23,42 @@ describe("role semantic policy", () => {
     expect(decideRoleMatch({ query, candidate: intent("Data Engineer", "DATA_ENGINEERING"), context: "CACHE", vectorSimilarity: 0.99 })).toBeNull();
   });
 
+  it("authorizes the bounded broad-SWE provider family even when vector ranking is missing or low", () => {
+    const query = intent("Software Engineer", "SOFTWARE_ENGINEERING");
+    for (const title of [
+      "Backend Software Engineer",
+      "Frontend Software Engineer",
+      "Full Stack Software Engineer",
+      "Platform Software Engineer",
+      "Infrastructure Software Engineer"
+    ]) {
+      expect(
+        decideRoleMatch({
+          query,
+          candidate: intent(title, "SOFTWARE_ENGINEERING"),
+          context: "PROVIDER",
+          vectorSimilarity: 0.1
+        })?.kind
+      ).toBe("POLICY");
+    }
+    expect(
+      decideRoleMatch({
+        query,
+        candidate: intent("Engineering Manager", "SOFTWARE_ENGINEERING"),
+        context: "PROVIDER",
+        vectorSimilarity: 0.99
+      })
+    ).toBeNull();
+    expect(
+      decideRoleMatch({
+        query,
+        candidate: intent("Data Engineer", "DATA_ENGINEERING"),
+        context: "PROVIDER",
+        vectorSimilarity: 0.99
+      })
+    ).toBeNull();
+  });
+
   it("keeps iOS and Forward Deployed intent narrow", () => {
     const ios = intent("iOS Engineer", "SOFTWARE_ENGINEERING");
     expect(decideRoleMatch({ query: ios, candidate: intent("iOS Developer", "SOFTWARE_ENGINEERING"), context: "CACHE" })?.kind).toBe("ALIAS");

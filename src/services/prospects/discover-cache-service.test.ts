@@ -185,6 +185,36 @@ describe("DiscoverSearchCacheService cache behavior", () => {
     expect(JSON.stringify(entry)).not.toMatch(/userId/i);
   });
 
+  it("appends only stable-identity-unique provider people without name-based collapsing", async () => {
+    const service = buildService();
+    const request = params(FINGERPRINT, async () => dataset([cachePerson("original")]));
+    await service.getOrRefresh(request);
+
+    const state = await service.appendProviderPeople({
+      fingerprint: request.fingerprint,
+      fingerprintInput: request.fingerprintInput,
+      company: request.company,
+      emailFormat: dataset([]).emailFormat,
+      people: [
+        cachePerson("replacement-id", {
+          linkedinUrl: "HTTPS://WWW.LINKEDIN.COM/in/original/?tracking=1"
+        }),
+        cachePerson("same-name-a", { firstName: "Sam", lastName: "Twin", fullName: "Sam Twin" }),
+        cachePerson("same-name-b", { firstName: "Sam", lastName: "Twin", fullName: "Sam Twin" })
+      ],
+      nextPage: 3,
+      pagesFetched: 1,
+      exhausted: false
+    });
+
+    expect(state.people.map((person) => person.sourceProfileId)).toEqual([
+      "original",
+      "same-name-a",
+      "same-name-b"
+    ]);
+    expect(prisma._state.discoverCache[0].resultCount).toBe(3);
+  });
+
   it("reuses a fresh cache without calling the provider (#1)", async () => {
     const seed = vi.fn(async () => dataset([cachePerson("1")]));
     const service = buildService();

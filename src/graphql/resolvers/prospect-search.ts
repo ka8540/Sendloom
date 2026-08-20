@@ -308,8 +308,12 @@ export const ProspectSearch = {
   retryable(parent: ProspectSearchRow) {
     return parent.status === "FAILED" ? mapDiscoverPublicError(parent.errorCode).retryable : false;
   },
-  peopleCount(parent: ProspectSearchRow) {
-    return parent.totalProcessed;
+  async peopleCount(parent: ProspectSearchRow, _args: unknown, context: GraphQLContext) {
+    const durableAllocationCount = await context.prisma.prospectSearchPerson.count({ where: { searchId: parent.id } });
+    // Allocation-backed searches resolve from grants, not a potentially stale
+    // row loaded before an expansion completed. Preserve the pre-allocation
+    // fallback for legacy searches with no grants at all.
+    return durableAllocationCount > 0 ? durableAllocationCount : parent.totalProcessed;
   },
   /**
    * Distinct role-group categories among the people ALLOCATED to this search

@@ -200,6 +200,39 @@ describe("DiscoverRoleIntelligenceService", () => {
     expect(ranked.map((entry) => entry.sourceProfileId)).toEqual(["exact", "alias", "backend"]);
   });
 
+  it("keeps the audited Software Engineer provider family without admitting unrelated roles", async () => {
+    const embeddings = new FakeEmbeddings({ "software engineer": vector(1, 0) });
+    const service = new DiscoverRoleIntelligenceService(classifier, embeddings, new MemoryRoleStore(), config());
+    const valid = [
+      ["software", "Software Engineer"],
+      ["senior", "Senior Software Engineer"],
+      ["staff", "Staff Software Engineer"],
+      ["principal", "Principal Software Engineer"],
+      ["architect", "Principal Software Engineer / Architect"],
+      ["backend", "Backend Software Engineer"],
+      ["frontend", "Frontend Software Engineer"],
+      ["application", "Application Developer"],
+      ["developer", "Software Developer"],
+      ["platform", "Platform Software Engineer"]
+    ] as const;
+    const ranked = await service.filterAndRankPeople({
+      people: [
+        ...valid.map(([id, title]) => person(id, title, "SOFTWARE_ENGINEERING")),
+        person("recruiter", "Technical Recruiter, Software Engineering", "RECRUITING"),
+        person("product", "Product Manager", "PRODUCT"),
+        person("data", "Data Engineer", "DATA_ENGINEERING"),
+        person("manager", "Engineering Manager", "SOFTWARE_ENGINEERING"),
+        person("cto", "CTO", "MANAGEMENT")
+      ],
+      requestedTitles: ["Software Engineer"],
+      requestedLocations: ["United States"],
+      context: "PROVIDER",
+      options: { budget: budget(), searchId: "rtx-provider-family" }
+    });
+
+    expect(ranked.map((entry) => entry.sourceProfileId).sort()).toEqual(valid.map(([id]) => id).sort());
+  });
+
   it("stores one vector per normalized title and makes no second embedding call", async () => {
     const embeddings = new FakeEmbeddings({ "software engineer": vector(1, 0) });
     const store = new MemoryRoleStore();

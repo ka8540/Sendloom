@@ -219,6 +219,23 @@ export function decideRoleMatch(input: {
   }
   if (!specialtiesCompatible(query, candidate, context)) return null;
 
+  // A broad Software Engineer request intentionally authorizes this small,
+  // deterministic family of provider specialties. These candidates already
+  // passed the employer, location, category, and management guards above, so a
+  // missing/stale vector row (or a score below the ranking threshold) must not
+  // turn an otherwise valid paid provider result into data loss. Vectors still
+  // rank less explicit relationships; they are not an authorization requirement
+  // for this audited Software Engineer family.
+  if (
+    context === "PROVIDER" &&
+    query.category === "SOFTWARE_ENGINEERING" &&
+    query.specialty === "GENERAL" &&
+    query.breadth === "BROAD" &&
+    PROVIDER_SOFTWARE_SPECIALTIES.has(candidate.specialty)
+  ) {
+    return { kind: "POLICY", score: 850 + tokenSimilarity(query.normalizedTitle, candidate.normalizedTitle) * 20 };
+  }
+
   const similarity = input.vectorSimilarity;
   if (typeof similarity === "number" && Number.isFinite(similarity)) {
     const threshold =
@@ -234,9 +251,9 @@ export function decideRoleMatch(input: {
     };
   }
 
-  // Deterministic policy remains a valid fallback signal. Provider expansion
-  // never reaches this branch: it is restricted to explicit aliases or
-  // vector-scored candidates at the strictest threshold.
+  // The broader cache path keeps its deterministic compatibility fallback.
+  // Provider-only deterministic authorization is handled by the narrower
+  // audited Software Engineer family above.
   if (context === "CACHE") {
     return { kind: "POLICY", score: 500 + tokenSimilarity(query.normalizedTitle, candidate.normalizedTitle) * 20 };
   }

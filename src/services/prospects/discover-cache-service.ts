@@ -745,16 +745,17 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
       const existing = (await tx.discoverSearchCachePerson.findMany({
         where: { cacheId: entry.id }
       })) as ResolvedCachePersonRow[];
-      // Dedupe within the cache by sourceProfileId so a provider page that
-      // repeats earlier results never appends a second copy.
-      const existingIds = new Set(existing.map((row) => row.sourceProfileId));
+      // Dedupe by every stable provider identity. A provider can occasionally
+      // issue a replacement source id for the same LinkedIn profile; sharing a
+      // normalized profile URL still makes that a true duplicate. Names, titles,
+      // and company are deliberately never identity keys.
+      const existingIdentities = new PersonIdentitySet(existing);
       let sortIndex = existing.reduce((max, row) => Math.max(max, (row.sortIndex ?? 0) + 1), 0);
       let appended = 0;
       for (const person of params.people) {
-        if (existingIds.has(person.sourceProfileId)) {
+        if (!existingIdentities.addIfNew(person)) {
           continue;
         }
-        existingIds.add(person.sourceProfileId);
         await tx.discoverSearchCachePerson.create({ data: { cacheId: entry.id, sortIndex, ...person } });
         sortIndex += 1;
         appended += 1;
