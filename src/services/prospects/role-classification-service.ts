@@ -47,7 +47,7 @@ const DETERMINISTIC_RULES: DeterministicRule[] = [
   { category: "DATA_ANALYTICS", phrases: ["data analyst", "data analytics", "business intelligence", "bi analyst", "data insights", "insights analyst", "analytics specialist"] },
   {
     category: "SOFTWARE_ENGINEERING",
-    phrases: ["software engineer", "software developer", "backend engineer", "back end engineer", "frontend engineer", "front end engineer", "full stack", "fullstack", "site reliability", "platform engineer", "mobile engineer", "ios engineer", "android engineer", "devops engineer", "systems engineer", "programmer", "web developer"],
+    phrases: ["software engineer", "software developer", "application developer", "forward deployed engineer", "forward deployed software engineer", "backend engineer", "backend developer", "back end engineer", "back end developer", "frontend engineer", "frontend developer", "front end engineer", "front end developer", "full stack", "fullstack", "site reliability", "platform engineer", "platform developer", "mobile engineer", "ios engineer", "ios developer", "android engineer", "android developer", "devops engineer", "systems engineer", "programmer", "web developer"],
     words: ["sde", "swe", "sre", "devops"]
   },
   { category: "PRODUCT", phrases: ["product manager", "product owner", "product lead", "head of product", "group product manager"] },

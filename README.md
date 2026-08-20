@@ -189,7 +189,7 @@ Library plus create/edit wizard, with format switching, sanitized preview, merge
 
 ### Discover — `/prospects`
 
-`/prospects` is the Search History list (one row per company). `/prospects/[searchId]` is the detail workspace: company summary, email-format editor, role groups, people table, inline "Search this company", **Add 10 more**, and XLSX export. Feature-flagged by `PROSPECT_GRAPH_ENABLED`.
+`/prospects` is the Search History list (one row per company). `/prospects/[searchId]` is the detail workspace: company summary, email-format editor, role groups, people table, inline "Search this company", **Add 10 more**, and XLSX export. Feature-flagged by `PROSPECT_GRAPH_ENABLED` (legacy naming retained for deployment compatibility). Optional pgvector role intelligence is separately gated by `DISCOVER_ROLE_VECTOR_ENABLED` and is off by default.
 
 ### Finder — `/finder`
 
@@ -519,7 +519,7 @@ With `OBJECT_STORAGE_MODE=r2`, the five required `CLOUDFLARE_R2_*` values must b
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `OPENAI_API_KEY` | Optional | Template enhancement and Discover email-format web search |
+| `OPENAI_API_KEY` | Optional | Template enhancement, Discover email-format web search, and feature-flagged role embeddings |
 | `HUNTER_KEY_ENCRYPTION_SECRET` | Production | Encrypts stored Hunter API keys. Must differ from `SESSION_SECRET` |
 | `APIFY_API_TOKEN` | For Discover | Apify LinkedIn profile-search actor token |
 | `APIFY_PROSPECT_ACTOR_ID` | Optional | Actor id/slug. Default `harvestapi/linkedin-profile-search` |
@@ -546,6 +546,12 @@ Both fall back to `SESSION_SECRET` in development. Never prefix either with `NEX
 | `DISCOVER_QUOTA_EXEMPT_EMAILS` | Optional | Server-only allowlist exempt from the **daily** quota only. Resolved from the session, never a request body |
 | `DISCOVER_SHARED_CACHE_TTL_DAYS` | Optional | Freshness window for the shared result cache. Default `30` |
 | `DISCOVER_SHARED_CACHE_VERSION` | Optional | Cache schema version in the fingerprint. Default `v1` |
+| `DISCOVER_ROLE_VECTOR_ENABLED` | Optional | Enables pgvector role matching and safe provider-title expansion. Default `false` |
+| `DISCOVER_ROLE_EMBEDDING_MODEL` | Optional | Title embedding model. Default `text-embedding-3-small` |
+| `DISCOVER_ROLE_EMBEDDING_DIMENSIONS` | Optional | Must match the migration's `vector(1536)` column. Default `1536` |
+| `DISCOVER_ROLE_SEMANTIC_VERSION` | Optional | Version for coexistence/rollout of semantic policy. Default `v1` |
+| `DISCOVER_ROLE_MAX_APIFY_TITLES` | Optional | Maximum exact + expanded provider titles per requested role. Default `5`, hard max `8` |
+| `DISCOVER_ROLE_MAX_APIFY_TITLES_TOTAL` | Optional | Maximum titles in one Apify actor input across all requested roles. Default `8`, hard max `20` |
 | `DISCOVER_EXPANSION_BATCH_SIZE` | Optional | New people per "Add 10 more". Default `10` |
 | `DISCOVER_EXPANSION_MAX_PROVIDER_PAGES` | Optional | Provider continuation pages per expansion. Default `5` |
 | `PROSPECT_EMAIL_DISCOVERY_PROVIDER` | Optional | `openai_web_search` (default) or `none` |

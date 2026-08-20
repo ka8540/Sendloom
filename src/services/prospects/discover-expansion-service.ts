@@ -23,6 +23,10 @@ import {
   type ResolvedEmailFormat
 } from "@/services/prospects/discover-cache-service";
 import { computeDiscoverFingerprint } from "@/services/prospects/discover-cache-fingerprint";
+import {
+  createDiscoverRoleIntelligenceService,
+  type DiscoverRoleIntelligencePort
+} from "@/services/prospects/discover-role-intelligence-service";
 import { PersonIdentitySet } from "@/services/prospects/discover-person-identity";
 import { resolveCandidateEmail } from "@/services/prospects/email-generation-service";
 import {
@@ -71,6 +75,7 @@ export type DiscoverExpansionServiceDeps = {
   prisma: PrismaClient;
   apify: ApifyProfileSearchService;
   roleClassifier: RoleClassificationService;
+  roleIntelligence?: DiscoverRoleIntelligencePort;
   /** Defaults to the shared 30-day result cache (provides continuation state). */
   cache?: DiscoverCacheExpansionPort;
   /** Defaults to the Redis-backed atomic daily quota (idempotent per expansion). */
@@ -121,6 +126,7 @@ export class DiscoverExpansionService {
   private readonly prisma: PrismaClient;
   private readonly apify: ApifyProfileSearchService;
   private readonly roleClassifier: RoleClassificationService;
+  private readonly roleIntelligence: DiscoverRoleIntelligencePort;
   private readonly cache: DiscoverCacheExpansionPort;
   private readonly discoverQuota: DiscoverQuotaReserver;
   private readonly quotaStatus: (userId: string, email: string | null) => Promise<DiscoverQuotaStatus>;
@@ -135,6 +141,8 @@ export class DiscoverExpansionService {
     this.prisma = deps.prisma;
     this.apify = deps.apify;
     this.roleClassifier = deps.roleClassifier;
+    this.roleIntelligence =
+      deps.roleIntelligence ?? createDiscoverRoleIntelligenceService(deps.prisma, deps.roleClassifier);
     this.cache = deps.cache ?? new DiscoverSearchCacheService({ prisma: deps.prisma });
     this.discoverQuota = deps.discoverQuota ?? reserveDiscoverSearchSlot;
     this.quotaStatus = deps.quotaStatus ?? getDiscoverQuotaStatus;
@@ -211,7 +219,17 @@ export class DiscoverExpansionService {
 
       // 9. Look at the fresh shared cache for unused matching people.
       const cacheState = await this.cache.getExpansionState(fingerprint);
-      const unusedCached = cacheState ? cacheState.people.filter((person) => !identities.has(person)) : [];
+      const cacheCandidates =
+        cacheState && this.roleIntelligence.enabled
+          ? await this.roleIntelligence.filterAndRankPeople({
+              people: cacheState.people,
+              requestedTitles: roles,
+              requestedLocations: locations,
+              context: "CACHE",
+              options: { budget: createAiBudget(), searchId: search.id }
+            })
+          : cacheState?.people ?? [];
+      const unusedCached = cacheCandidates.filter((person) => !identities.has(person));
       const providerExhausted = cacheState?.providerExhausted ?? false;
 
       // Early no-op: provider already exhausted and nothing unused remains. Do
@@ -414,13 +432,26 @@ export class DiscoverExpansionService {
     // 11. Continue the provider only if we still need more and it isn't exhausted.
     if (collected.length < this.batchSize && !exhausted) {
       const budget = createAiBudget();
+      const providerTitles = await this.roleIntelligence.buildProviderTitlePlan(params.roles, {
+        budget,
+        searchId: params.search.id
+      });
       await this.cache.runWithProviderLock(params.fingerprint, async () => {
         // Re-check under the lock: another holder may have appended results while
         // we waited. Reuse anything newly available before fetching.
         const rechecked = await this.cache.getExpansionState(params.fingerprint);
         if (rechecked) {
           exhausted = rechecked.providerExhausted;
-          for (const person of rechecked.people) {
+          const recheckedPeople = this.roleIntelligence.enabled
+            ? await this.roleIntelligence.filterAndRankPeople({
+                people: rechecked.people,
+                requestedTitles: params.roles,
+                requestedLocations: params.locations,
+                context: "CACHE",
+                options: { budget, searchId: params.search.id }
+              })
+            : rechecked.people;
+          for (const person of recheckedPeople) {
             if (collected.length >= this.batchSize) {
               break;
             }
@@ -444,7 +475,7 @@ export class DiscoverExpansionService {
           const pageResult = await this.apify.searchProfiles({
             companyName: params.company.officialName ?? params.company.name,
             companyLinkedinUrl: params.company.linkedinUrl,
-            jobTitles: params.roles,
+            jobTitles: providerTitles,
             locations: params.locations,
             maxResults: PROVIDER_PAGE_SIZE,
             startPage: page
@@ -453,7 +484,7 @@ export class DiscoverExpansionService {
           const nextPage = page + 1;
           // A page with no raw provider items means there are no further pages.
           const pageExhausted = pageResult.totalFound === 0;
-          const pagePeople = await this.buildProviderPeople(
+          let pagePeople = await this.buildProviderPeople(
             pageResult.profiles,
             params.cacheEmailFormat,
             params.search.id,
@@ -463,6 +494,15 @@ export class DiscoverExpansionService {
               companyDomain: params.company.emailDomain ?? null
             }
           );
+          if (this.roleIntelligence.enabled) {
+            pagePeople = await this.roleIntelligence.filterAndRankPeople({
+              people: pagePeople,
+              requestedTitles: params.roles,
+              requestedLocations: params.locations,
+              context: "PROVIDER",
+              options: { budget, searchId: params.search.id }
+            });
+          }
 
           // 13-14. Append net-new normalized results to the shared cache and
           // advance the saved continuation page (only after a valid fetch).

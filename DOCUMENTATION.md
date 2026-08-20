@@ -1721,7 +1721,59 @@ Discover searches share an internal cross-user result cache
   `cacheAgeDays`, `resultCount`, `providerCalled`, latency) — never people lists,
   generated emails, provider payloads, the requester email, or prompts.
 
-### 23.2.3.1 User-specific allocation and the grouped company dashboard
+### 23.2.3.1 Semantic role intelligence (pgvector)
+
+Migration `20260820130000_discover_role_semantics` additively enables the
+`vector` extension and creates `ProspectRoleSemantic`. It stores one
+`vector(1536)` per normalized title + embedding model + dimensions + semantic
+policy version. It never adds vectors to `ProspectPerson` or
+`DiscoverSearchCachePerson`, and it does not rewrite any existing row.
+
+The database-first order remains: exact fingerprint → fresh same-company pool
+→ exact location guard → hybrid role ranking → provider only when no reusable
+result exists. Existing category classification remains authoritative.
+Specialty/breadth policy rejects incompatible categories before vector ranking,
+keeps iOS, Forward Deployed, DevOps, management, and CTO intent narrow, and uses
+cosine similarity only as a ranking/acceptance signal inside that deterministic
+guard. Exact normalized titles and known aliases always outrank vectors.
+
+On a provider miss, exact requested titles are preserved first, expansions are
+added round-robin under both per-role and total caps, and the complete array is
+sent in **one** Apify actor request. Provider results are normalized, company
+validated, identity-deduped, classified, and role-authorized again before shared
+cache persistence. Add More uses the same plan while continuing the saved page;
+it never restarts pagination or runs one actor per alias.
+
+`DISCOVER_ROLE_VECTOR_ENABLED=false` performs no embedding or vector query and
+preserves the prior cache/provider behavior. With the flag on, OpenAI, extension,
+table, or vector-query failures emit privacy-safe fallback logs and preserve
+Discover through the deterministic database-first path. Rollback is therefore
+only the flag change; the additive extension/table may remain safely.
+
+Backfill is optional for correctness and dry-run-first:
+
+```bash
+npx tsx scripts/backfill-discover-role-semantics.ts --dry-run
+npx tsx scripts/backfill-discover-role-semantics.ts --apply --batch-size 100 --limit 1000
+```
+
+It reads distinct normalized titles only from the shared cache/title
+classification cache, batches missing embeddings, and upserts only semantic
+rows. It never prints or writes person identity, ownership, email, search,
+allocation, or provider payload data. Do not run `--apply` automatically in
+production.
+
+No-downtime deployment order: apply the additive migration; deploy with the
+feature flag off; verify current Discover; run the dry-run; optionally approve a
+bounded apply; enable and verify in staging; then enable in production. Safe
+Neon verification queries are:
+
+```sql
+SELECT extname, extversion FROM pg_extension WHERE extname = 'vector';
+SELECT COUNT(*) AS semantic_title_count FROM "ProspectRoleSemantic";
+```
+
+### 23.2.3.2 User-specific allocation and the grouped company dashboard
 
 Four concepts are deliberately separate:
 
@@ -1917,8 +1969,9 @@ New Prisma models (migration
 | `ProspectCompanyPosition` | One node per position category under a company. Unique per `(companyId, category)`. |
 | `ProspectPerson` | A discovered professional, assigned to one position node, with inferred-email metadata. Unique per `(userId, sourceProfileId)`. |
 | `ProspectSearch` | A discovery request, its status, Apify run references, and counts. |
-| `ProspectSearchPerson` | The allocation grant of one person to one user-owned search (order + source). Unique per `(searchId, personId)`; the boundary between the shared cache pool and what a user's search actually received (see 23.2.3.1). |
+| `ProspectSearchPerson` | The allocation grant of one person to one user-owned search (order + source). Unique per `(searchId, personId)`; the boundary between the shared cache pool and what a user's search actually received (see 23.2.3.2). |
 | `ProspectTitleClassification` | Global cache of title→category classifications. |
+| `ProspectRoleSemantic` | Global deduplicated normalized-title semantic cache (`vector(1536)`), versioned by embedding model/dimensions/policy. |
 
 Category, status, and confidence values are stored as strings (mirroring the
 `AuditLog` pattern) and validated against GraphQL enums at the API boundary.

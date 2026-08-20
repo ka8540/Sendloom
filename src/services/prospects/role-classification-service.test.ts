@@ -38,6 +38,9 @@ describe("deterministicCategory", () => {
     expect(deterministicCategory("data analyst")).toBe("DATA_ANALYTICS");
     expect(deterministicCategory("data engineer")).toBe("DATA_ENGINEERING");
     expect(deterministicCategory("data scientist")).toBe("DATA_SCIENCE");
+    expect(deterministicCategory("application developer")).toBe("SOFTWARE_ENGINEERING");
+    expect(deterministicCategory("ios developer")).toBe("SOFTWARE_ENGINEERING");
+    expect(deterministicCategory("forward deployed engineer")).toBe("SOFTWARE_ENGINEERING");
   });
 
   it("returns null for genuinely unknown titles", () => {

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApifyProfileSearchService, type ApifyRunner } from "@/services/prospects/apify-profile-search";
 import { CompanyResolutionService } from "@/services/prospects/company-resolution-service";
+import type { DiscoverRoleIntelligencePort } from "@/services/prospects/discover-role-intelligence-service";
 import { EmailDomainService, type EmailEvidenceProvider } from "@/services/prospects/email-domain-service";
 import { EmailFormatDiscoveryService } from "@/services/prospects/email-format-discovery-service";
 import {
@@ -18,6 +19,7 @@ import {
   type DiscoverCacheLock,
   type DiscoverCachePort,
   type GetOrRefreshParams,
+  type ResolvedCachePerson,
   type ResolvedDataset
 } from "@/services/prospects/discover-cache-service";
 import { createFakePrisma, type FakePrisma } from "@/services/prospects/__test-utils__/fake-prisma";
@@ -164,7 +166,8 @@ function buildService(
   aiResponses: Parameters<typeof createMockAi>[0],
   evidenceProvider?: EmailEvidenceProvider,
   discoverQuota: DiscoverQuotaReserver = allowAllQuota,
-  discoverCache: DiscoverCachePort = passthroughCache
+  discoverCache: DiscoverCachePort = passthroughCache,
+  roleIntelligence?: DiscoverRoleIntelligencePort
 ) {
   const ai = createMockAi(aiResponses);
   const apify = new ApifyProfileSearchService({ token: "t", actorId: "actor", runner });
@@ -173,11 +176,26 @@ function buildService(
     apify,
     companyResolution: new CompanyResolutionService(ai.client),
     roleClassifier: new RoleClassificationService(prisma as unknown as PrismaClient, ai.client),
+    roleIntelligence,
     emailDomain: new EmailDomainService(prisma as unknown as PrismaClient, ai.client, evidenceProvider),
     discoverQuota,
     discoverCache
   });
   return { service, ai };
+}
+
+function semanticRolePort(input: {
+  providerPlan?: string[];
+  filter?: DiscoverRoleIntelligencePort["filterAndRankPeople"];
+} = {}): DiscoverRoleIntelligencePort {
+  return {
+    enabled: true,
+    filterAndRankPeople:
+      input.filter ??
+      (async ({ people }) => [...people]),
+    buildProviderTitlePlan: vi.fn(async (titles) => input.providerPlan ?? [...titles]),
+    persistTitleKnowledge: vi.fn(async () => ({ existing: 0, created: 0, failed: false }))
+  };
 }
 
 const AI_RESPONSES = {
@@ -1596,6 +1614,199 @@ describe("Discover shared cache integration", () => {
     expect(result.status).toBe("READY");
     expect(result.resultSource).toBe("PROVIDER");
     expect(runner.run).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends one Apify actor run a bounded semantic title array for a new company", async () => {
+    const run = vi.fn<ApifyRunner["run"]>(async () => ({
+      runId: "semantic-run",
+      datasetId: "semantic-dataset",
+      items: [profile("semantic-1", "Jane", "Doe", "Software Engineer", "Applied Materials")]
+    }));
+    const roleIntelligence = semanticRolePort({
+      providerPlan: [
+        "Software Engineer",
+        "Software Developer",
+        "Backend Software Engineer",
+        "Frontend Software Engineer",
+        "Application Developer"
+      ]
+    });
+    const { service } = buildService(
+      prisma,
+      { run } as ApifyRunner,
+      ROLE_ONLY_AI,
+      undefined,
+      allowAllQuota,
+      passthroughCache,
+      roleIntelligence
+    );
+    const search = await service.createSearch(USER_ID, APPLIED_MATERIALS);
+
+    const result = await service.processSearch(USER_ID, search.id);
+
+    expect(result.status).toBe("READY");
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(run.mock.calls[0][1].currentJobTitles).toEqual([
+      "Software Engineer",
+      "Software Developer",
+      "Backend Software Engineer",
+      "Frontend Software Engineer",
+      "Application Developer"
+    ]);
+  });
+
+  it("reuses Apple Software Engineer knowledge for Software Developer with zero Apify calls", async () => {
+    const cache = new DiscoverSearchCacheService({
+      prisma: prisma as unknown as PrismaClient,
+      lock: makeFakeCacheLock(),
+      now: () => new Date("2026-08-20T17:00:00.000Z"),
+      ttlDays: 30,
+      cleanupOnRefresh: false
+    });
+    await cache.getOrRefresh({
+      fingerprint: "apple-software-engineer-seed",
+      fingerprintInput: {
+        companyKey: "domain:apple.com",
+        roles: ["software engineer"],
+        locations: ["united states"],
+        resultLimit: 10,
+        cacheVersion: "v1"
+      },
+      company: { name: "Apple Inc.", domain: "apple.com", linkedinUrl: null },
+      provider: async () => ({
+        emailFormat: {
+          emailDomain: "apple.com",
+          emailDomainConfidence: "HIGH",
+          emailDomainEvidence: [{ sourceName: "public" }],
+          emailPattern: "flast",
+          patternConfidence: "HIGH",
+          patternEvidence: [{ pattern: "flast" }],
+          emailFormatReason: "format",
+          emailFormatDiscoveryStatus: "FOUND",
+          emailFormatDiscoveryAt: new Date("2026-08-20T17:00:00.000Z"),
+          emailFormatDiscoveryExpiresAt: new Date("2026-09-19T17:00:00.000Z")
+        },
+        people: [
+          {
+            ...cacheDataset().people[0],
+            sourceProfileId: "apple-swe",
+            currentTitle: "Software Engineer",
+            normalizedTitle: "software engineer",
+            positionCategory: "SOFTWARE_ENGINEERING",
+            linkedinUrl: "https://www.linkedin.com/in/apple-swe",
+            inferredEmail: "jdoe@apple.com",
+            emailPattern: "flast"
+          }
+        ]
+      })
+    });
+    const run = vi.fn<ApifyRunner["run"]>();
+    const roleIntelligence = semanticRolePort({
+      filter: vi.fn(async ({ people, requestedLocations }) =>
+        people.filter(
+          (person: ResolvedCachePerson) =>
+            person.positionCategory === "SOFTWARE_ENGINEERING" &&
+            (requestedLocations.length === 0 || person.country === "United States")
+        )
+      )
+    });
+    const { service } = buildService(
+      prisma,
+      { run } as ApifyRunner,
+      ROLE_ONLY_AI,
+      undefined,
+      allowAllQuota,
+      cache,
+      roleIntelligence
+    );
+    const search = await service.createSearch("apple-semantic-user", {
+      companyName: "Apple",
+      companyDomain: "apple.com",
+      companyLinkedinUrl: null,
+      jobTitles: ["Software Developer"],
+      locations: ["United States"],
+      maxResults: 10
+    });
+
+    const result = await service.processSearch("apple-semantic-user", search.id);
+
+    expect(result.status).toBe("READY");
+    expect(result.resultSource).toBe("CACHE");
+    expect(run).not.toHaveBeenCalled();
+    expect(roleIntelligence.filterAndRankPeople).toHaveBeenCalled();
+    expect(prisma._state.people.every((person) => person.userId === "apple-semantic-user")).toBe(true);
+  });
+
+  it("reuses Charta Health's exact ambiguous Engineer pool conservatively with zero Apify calls", async () => {
+    const cache = new DiscoverSearchCacheService({
+      prisma: prisma as unknown as PrismaClient,
+      lock: makeFakeCacheLock(),
+      now: () => new Date("2026-08-20T17:00:00.000Z"),
+      ttlDays: 30,
+      cleanupOnRefresh: false
+    });
+    await cache.getOrRefresh({
+      fingerprint: "charta-recruiter-engineer-seed",
+      fingerprintInput: {
+        companyKey: "domain:chartahealth.com",
+        roles: ["recruiter", "engineer"],
+        locations: ["united states"],
+        resultLimit: 10,
+        cacheVersion: "v1"
+      },
+      company: { name: "Charta Health", domain: "chartahealth.com", linkedinUrl: null },
+      provider: async () => ({
+        emailFormat: { ...cacheDataset().emailFormat, emailDomain: "chartahealth.com" },
+        people: [
+          {
+            ...cacheDataset().people[0],
+            sourceProfileId: "charta-engineer",
+            currentTitle: "Engineer",
+            normalizedTitle: "engineer",
+            positionCategory: "OTHER",
+            linkedinUrl: "https://www.linkedin.com/in/charta-engineer"
+          },
+          {
+            ...cacheDataset().people[0],
+            sourceProfileId: "charta-recruiter",
+            currentTitle: "Recruiter",
+            normalizedTitle: "recruiter",
+            positionCategory: "RECRUITING",
+            linkedinUrl: "https://www.linkedin.com/in/charta-recruiter"
+          }
+        ]
+      })
+    });
+    const run = vi.fn<ApifyRunner["run"]>();
+    const roleIntelligence = semanticRolePort({
+      filter: vi.fn(async ({ people }) =>
+        people.filter((person: ResolvedCachePerson) => person.normalizedTitle === "engineer")
+      )
+    });
+    const { service } = buildService(
+      prisma,
+      { run } as ApifyRunner,
+      ROLE_ONLY_AI,
+      undefined,
+      allowAllQuota,
+      cache,
+      roleIntelligence
+    );
+    const search = await service.createSearch(USER_ID, {
+      companyName: "Charta Health",
+      companyDomain: "chartahealth.com",
+      companyLinkedinUrl: null,
+      jobTitles: ["Engineer"],
+      locations: ["United States"],
+      maxResults: 10
+    });
+
+    const result = await service.processSearch(USER_ID, search.id);
+
+    expect(result.status).toBe("READY");
+    expect(result.totalProcessed).toBe(1);
+    expect(run).not.toHaveBeenCalled();
+    expect(prisma._state.people[0].currentTitle).toBe("Engineer");
   });
 
   it("lets a second user reuse one shared cache entry with separate user-owned records (#14, #15, #16)", async () => {

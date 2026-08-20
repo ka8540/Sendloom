@@ -7,6 +7,7 @@ import {
   type DiscoverCacheLock
 } from "@/services/prospects/discover-cache-service";
 import { computeDiscoverFingerprint } from "@/services/prospects/discover-cache-fingerprint";
+import type { DiscoverRoleIntelligencePort } from "@/services/prospects/discover-role-intelligence-service";
 import {
   DiscoverExpansionService,
   NO_MORE_PEOPLE_MESSAGE,
@@ -328,6 +329,7 @@ function buildService(opts: {
   expansionLock?: DiscoverCacheLock;
   batchSize?: number;
   maxProviderPages?: number;
+  roleIntelligence?: DiscoverRoleIntelligencePort;
 } = {}) {
   const runner: ApifyRunner = opts.runner ?? { run: vi.fn(async () => ({ runId: null, datasetId: null, items: [] })) };
   const apify = new ApifyProfileSearchService({ token: "t", actorId: "actor", runner });
@@ -337,6 +339,7 @@ function buildService(opts: {
     prisma: prisma as unknown as PrismaClient,
     apify,
     roleClassifier: roleClassifierStub,
+    roleIntelligence: opts.roleIntelligence,
     cache,
     discoverQuota: quota.reserve,
     quotaStatus: (_userId, email) => quota.status(email),
@@ -393,14 +396,22 @@ describe("DiscoverExpansionService.addMorePeople", () => {
     seedExistingFromCache(cached.slice(0, 10));
     seedCache(cached, { providerNextPage: 2 });
     const startPages: number[] = [];
+    const jobTitleInputs: string[][] = [];
     const runner: ApifyRunner = {
       run: vi.fn(async (_actorId, input) => {
         startPages.push(input.startPage);
+        jobTitleInputs.push(input.currentJobTitles);
         // Page 2 returns 10 brand-new profiles.
         return { runId: "r", datasetId: "d", items: Array.from({ length: 10 }, (_, i) => rawProfile(`prov_${i + 1}`, "Prov", `P${i + 1}`)) };
       })
     };
-    const { service } = buildService({ runner });
+    const roleIntelligence: DiscoverRoleIntelligencePort = {
+      enabled: true,
+      filterAndRankPeople: async ({ people }) => [...people],
+      buildProviderTitlePlan: async () => ["Software Engineer", "Software Developer", "Backend Software Engineer"],
+      persistTitleKnowledge: async () => ({ existing: 0, created: 0, failed: false })
+    };
+    const { service } = buildService({ runner, roleIntelligence });
 
     const result = await service.addMorePeople({
       userId: USER_ID,
@@ -411,6 +422,7 @@ describe("DiscoverExpansionService.addMorePeople", () => {
 
     expect(result.addedCount).toBe(10); // 5 cached + 5 provider
     expect(startPages).toEqual([2]); // never restarts at page 1 (#14)
+    expect(jobTitleInputs).toEqual([["Software Engineer", "Software Developer", "Backend Software Engineer"]]);
     // The saved continuation page advanced after a valid fetch (#15).
     const cacheRow = prisma._state.discoverCache.find((r) => r.id === "cache_seed");
     expect(cacheRow?.providerNextPage).toBe(3);

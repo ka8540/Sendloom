@@ -48,7 +48,10 @@ import {
   type ResolvedDataset
 } from "@/services/prospects/discover-cache-service";
 import { computeDiscoverFingerprint } from "@/services/prospects/discover-cache-fingerprint";
-import { filterReusableDiscoverPeople } from "@/services/prospects/discover-cache-reuse";
+import {
+  createDiscoverRoleIntelligenceService,
+  type DiscoverRoleIntelligencePort
+} from "@/services/prospects/discover-role-intelligence-service";
 import {
   EmailDomainService,
   type EmailDomainEvidence,
@@ -233,6 +236,8 @@ export type ProspectSearchServiceDeps = {
   apify: ApifyProfileSearchService;
   companyResolution: CompanyResolutionService;
   roleClassifier: RoleClassificationService;
+  /** Additive pgvector role layer; defaults to the feature-flagged production implementation. */
+  roleIntelligence?: DiscoverRoleIntelligencePort;
   emailDomain: EmailDomainService;
   pipelineTimeoutMs?: number;
   /** Injectable for tests; defaults to the Redis-backed per-user limiter. */
@@ -279,6 +284,7 @@ export class ProspectSearchService {
   private readonly apify: ApifyProfileSearchService;
   private readonly companyResolution: CompanyResolutionService;
   private readonly roleClassifier: RoleClassificationService;
+  private readonly roleIntelligence: DiscoverRoleIntelligencePort;
   private readonly emailDomain: EmailDomainService;
   private readonly pipelineTimeoutMs: number;
   private readonly emailFormatRateLimiter: EmailFormatRateLimiter;
@@ -293,6 +299,8 @@ export class ProspectSearchService {
     this.apify = deps.apify;
     this.companyResolution = deps.companyResolution;
     this.roleClassifier = deps.roleClassifier;
+    this.roleIntelligence =
+      deps.roleIntelligence ?? createDiscoverRoleIntelligenceService(deps.prisma, deps.roleClassifier);
     this.emailDomain = deps.emailDomain;
     this.pipelineTimeoutMs = deps.pipelineTimeoutMs ?? DEFAULT_PIPELINE_TIMEOUT_MS;
     this.emailFormatRateLimiter = deps.emailFormatRateLimiter ?? defaultEmailFormatRateLimiter;
@@ -720,20 +728,12 @@ export class ProspectSearchService {
         },
         filterCompanyPoolPeople: async (people) => {
           const requestedTitles = this.asStringArray(search.requestedTitles);
-          const classifications = await this.roleClassifier.classify(requestedTitles, {
-            budget,
-            searchId: search.id
-          });
-          return filterReusableDiscoverPeople({
+          return this.roleIntelligence.filterAndRankPeople({
             people,
-            requestedRoles: requestedTitles.map((title) => {
-              const normalizedTitle = normalizeTitle(title);
-              return {
-                normalizedTitle,
-                category: coercePositionCategory(classifications.get(normalizedTitle)?.category)
-              };
-            }),
-            requestedLocations: this.asStringArray(search.requestedLocations)
+            requestedTitles,
+            requestedLocations: this.asStringArray(search.requestedLocations),
+            context: "CACHE",
+            options: { budget, searchId: search.id }
           });
         },
         provider: () => {
@@ -900,10 +900,16 @@ export class ProspectSearchService {
     // value (never search.maxResults).
     await this.setStatus(search.id, "SEARCHING_PEOPLE");
     const maxResults = resolveResultsPerSearch();
+    const requestedTitles = this.asStringArray(search.requestedTitles);
+    const providerTitles = await this.roleIntelligence.buildProviderTitlePlan(requestedTitles, {
+      budget,
+      searchId: search.id
+    });
     const searchResult = await this.apify.searchProfiles({
       companyName: resolution.officialName,
       companyLinkedinUrl: resolution.linkedinCompanyUrl,
-      jobTitles: this.asStringArray(search.requestedTitles),
+      // One actor run receives the entire bounded semantic title plan.
+      jobTitles: providerTitles,
       locations: this.asStringArray(search.requestedLocations),
       maxResults
     });
@@ -954,7 +960,20 @@ export class ProspectSearchService {
     // against the final persisted format during materialization.
     const people = this.buildDatasetPeople(profiles, classifications, emailFormat);
 
-    return { emailFormat, people };
+    // With the feature off this method returns the exact current provider
+    // behavior. With it on, expanded provider matches are authorized again by
+    // category/specialty policy before they enter shared knowledge.
+    const roleFilteredPeople = this.roleIntelligence.enabled
+      ? await this.roleIntelligence.filterAndRankPeople({
+          people,
+          requestedTitles,
+          requestedLocations: this.asStringArray(search.requestedLocations),
+          context: "PROVIDER",
+          options: { budget, searchId: search.id }
+        })
+      : people;
+
+    return { emailFormat, people: roleFilteredPeople };
   }
 
   private companyResolvedEmailFormat(company: ProspectCompany): ResolvedDataset["emailFormat"] {

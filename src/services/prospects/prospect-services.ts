@@ -5,6 +5,7 @@ import { ApifyProfileSearchService } from "@/services/prospects/apify-profile-se
 import { CompanyResolutionService } from "@/services/prospects/company-resolution-service";
 import { DiscoverSearchCacheService } from "@/services/prospects/discover-cache-service";
 import { DiscoverExpansionService } from "@/services/prospects/discover-expansion-service";
+import { createDiscoverRoleIntelligenceService } from "@/services/prospects/discover-role-intelligence-service";
 import { CompositeEmailEvidenceProvider, EmailDomainService } from "@/services/prospects/email-domain-service";
 import { EmailFormatDiscoveryService } from "@/services/prospects/email-format-discovery-service";
 import { OpenAIEmailFormatDiscoveryService } from "@/services/prospects/openai-email-format-discovery";
@@ -37,12 +38,14 @@ export function createProspectServices(prisma: PrismaClient, aiClient?: AiClient
   ]);
   const emailDomain = new EmailDomainService(prisma, ai, emailEvidence);
   const discoverCache = new DiscoverSearchCacheService({ prisma });
+  const roleIntelligence = createDiscoverRoleIntelligenceService(prisma, roleClassifier);
 
   const prospectSearch = new ProspectSearchService({
     prisma,
     apify,
     companyResolution,
     roleClassifier,
+    roleIntelligence,
     emailDomain,
     discoverCache,
     // Safe, best-effort retry/processing audit trail (server-side only).
@@ -55,6 +58,7 @@ export function createProspectServices(prisma: PrismaClient, aiClient?: AiClient
     prisma,
     apify,
     roleClassifier,
+    roleIntelligence,
     cache: discoverCache
   });
 
