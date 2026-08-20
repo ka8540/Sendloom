@@ -44,6 +44,7 @@ import {
   resolveEmailFormatDiscoveryExpiry,
   resolveSharedCacheVersion,
   type DiscoverCachePort,
+  type DiscoverLocalPersonLookupResult,
   type ResolvedCachePerson,
   type ResolvedDataset
 } from "@/services/prospects/discover-cache-service";
@@ -736,6 +737,13 @@ export class ProspectSearchService {
             options: { budget, searchId: search.id }
           });
         },
+        lookupLocalPeople: () =>
+          this.findReusableLocalPeople({
+            userId,
+            search,
+            company,
+            budget
+          }),
         provider: () => {
           providerStarted = true;
           return this.runProviderDataset(userId, search, company, resolution, budget);
@@ -881,6 +889,60 @@ export class ProspectSearchService {
       }
     });
     return { search: updated, providerCalled: !cacheHit, resultCount: finalProcessed, cacheHit };
+  }
+
+  /**
+   * Reuse only this requester's already-materialized people for the strongly
+   * resolved company. These private rows are converted to the common cache
+   * candidate shape solely for the existing semantic authorization/ranking
+   * path; they are never written into DiscoverSearchCache.
+   */
+  private async findReusableLocalPeople(input: {
+    userId: string;
+    search: ProspectSearch;
+    company: ProspectCompany;
+    budget: AiCallBudget;
+  }): Promise<DiscoverLocalPersonLookupResult> {
+    const rows = await this.prisma.prospectPerson.findMany({
+      where: { userId: input.userId, companyId: input.company.id },
+      include: { position: { select: { category: true } } },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }]
+    });
+    const candidates: ResolvedCachePerson[] = rows.map((person) => ({
+      sourceProfileId: person.sourceProfileId,
+      firstName: person.firstName,
+      lastName: person.lastName,
+      fullName: person.fullName,
+      currentTitle: person.currentTitle,
+      normalizedTitle: person.normalizedTitle,
+      positionCategory: person.position.category,
+      location: person.location,
+      country: person.country,
+      state: person.state,
+      city: person.city,
+      linkedinUrl: person.linkedinUrl,
+      inferredEmail: person.inferredEmail,
+      emailStatus: person.emailStatus,
+      emailConfidence: person.emailConfidence,
+      emailPattern: person.emailPattern,
+      emailSource: person.emailSource
+    }));
+    const matching = await this.roleIntelligence.filterAndRankPeople({
+      people: candidates,
+      requestedTitles: this.asStringArray(input.search.requestedTitles),
+      requestedLocations: this.asStringArray(input.search.requestedLocations),
+      context: "CACHE",
+      options: { budget: input.budget, searchId: input.search.id }
+    });
+
+    return {
+      dataset:
+        matching.length > 0
+          ? { emailFormat: this.companyResolvedEmailFormat(input.company), people: matching }
+          : null,
+      candidatePersonCount: candidates.length,
+      matchingPersonCount: matching.length
+    };
   }
 
   /**
@@ -1872,6 +1934,7 @@ type DiscoverCacheLogEvent = {
   event:
     | "DISCOVER_CACHE_HIT"
     | "DISCOVER_COMPANY_POOL_CACHE_HIT"
+    | "DISCOVER_LOCAL_PERSON_REUSE"
     | "DISCOVER_CACHE_POOL_ZERO_MATCH"
     | "DISCOVER_CACHE_MISS"
     | "DISCOVER_CACHE_REFRESHED"
@@ -1884,7 +1947,7 @@ type DiscoverCacheLogEvent = {
   resultCount: number;
   providerCalled: boolean;
   processingLatencyMs: number;
-  cacheHitType: "EXACT" | "COMPANY_POOL" | null;
+  cacheHitType: "EXACT" | "COMPANY_POOL" | "LOCAL_PERSON" | null;
   candidateEntryCount: number;
   candidatePersonCount: number;
   matchingPersonCount: number;
@@ -1893,10 +1956,13 @@ type DiscoverCacheLogEvent = {
 function discoverCacheEventName(result: {
   source: "CACHE" | "PROVIDER";
   refreshedStale: boolean;
-  cacheHitType?: "EXACT" | "COMPANY_POOL" | null;
+  cacheHitType?: "EXACT" | "COMPANY_POOL" | "LOCAL_PERSON" | null;
   lookupDiagnostics?: { candidateEntryCount: number; matchingPersonCount: number };
 }): DiscoverCacheLogEvent["event"] {
   if (result.source === "CACHE") {
+    if (result.cacheHitType === "LOCAL_PERSON") {
+      return "DISCOVER_LOCAL_PERSON_REUSE";
+    }
     return result.cacheHitType === "COMPANY_POOL" ? "DISCOVER_COMPANY_POOL_CACHE_HIT" : "DISCOVER_CACHE_HIT";
   }
   if (result.refreshedStale) {

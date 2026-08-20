@@ -10,7 +10,10 @@ import {
   OpenAIEmailFormatDiscoveryService,
   type EmailFormatWebSearchCaller
 } from "@/services/prospects/openai-email-format-discovery";
-import { ProspectSearchService } from "@/services/prospects/prospect-search-service";
+import {
+  ProspectSearchService,
+  type ProspectAuditFn
+} from "@/services/prospects/prospect-search-service";
 import { RoleClassificationService } from "@/services/prospects/role-classification-service";
 import type { ValidatedCreateProspectSearch } from "@/services/prospects/prospect-validation";
 import type { DiscoverQuotaReserver, DiscoverQuotaStatus } from "@/lib/discover-quota";
@@ -167,7 +170,8 @@ function buildService(
   evidenceProvider?: EmailEvidenceProvider,
   discoverQuota: DiscoverQuotaReserver = allowAllQuota,
   discoverCache: DiscoverCachePort = passthroughCache,
-  roleIntelligence?: DiscoverRoleIntelligencePort
+  roleIntelligence?: DiscoverRoleIntelligencePort,
+  audit?: ProspectAuditFn
 ) {
   const ai = createMockAi(aiResponses);
   const apify = new ApifyProfileSearchService({ token: "t", actorId: "actor", runner });
@@ -179,7 +183,8 @@ function buildService(
     roleIntelligence,
     emailDomain: new EmailDomainService(prisma as unknown as PrismaClient, ai.client, evidenceProvider),
     discoverQuota,
-    discoverCache
+    discoverCache,
+    audit
   });
   return { service, ai };
 }
@@ -1807,6 +1812,315 @@ describe("Discover shared cache integration", () => {
     expect(result.totalProcessed).toBe(1);
     expect(run).not.toHaveBeenCalled();
     expect(prisma._state.people[0].currentTitle).toBe("Engineer");
+  });
+
+  async function seedOwnedApplePeople(
+    userId: string,
+    people: Array<{
+      sourceProfileId: string;
+      title: string;
+      category: "SOFTWARE_ENGINEERING" | "RECRUITING";
+      country: string;
+    }>
+  ) {
+    const discoveredAt = new Date("2026-08-20T18:00:00.000Z");
+    const company = await prisma.prospectCompany.upsert({
+      where: { userId_canonicalKey: { userId, canonicalKey: "domain:apple.com" } },
+      create: {
+        userId,
+        canonicalKey: "domain:apple.com",
+        name: "Apple Inc.",
+        normalizedName: "apple",
+        officialName: "Apple Inc.",
+        officialDomain: "apple.com",
+        officialWebsiteDomain: "apple.com",
+        officialWebsite: "https://www.apple.com",
+        linkedinUrl: "https://www.linkedin.com/company/apple",
+        domainConfidence: "HIGH",
+        emailDomain: "apple.com",
+        emailDomainConfidence: "HIGH",
+        emailDomainEvidence: [{ sourceName: "public" }],
+        emailPattern: "flast",
+        patternConfidence: "HIGH",
+        patternEvidence: [{ pattern: "flast" }],
+        emailFormatReason: "stored format",
+        emailFormatAuthority: "DISCOVERED",
+        emailFormatDiscoveryStatus: "FOUND",
+        emailFormatDiscoveryAt: discoveredAt,
+        emailFormatDiscoveredAt: discoveredAt
+      },
+      update: {}
+    });
+    const personIds: string[] = [];
+    for (const [index, person] of people.entries()) {
+      const position = await prisma.prospectCompanyPosition.upsert({
+        where: { companyId_category: { companyId: company.id, category: person.category } },
+        create: {
+          companyId: company.id,
+          category: person.category,
+          displayName: person.category === "RECRUITING" ? "Recruiting" : "Software Engineering",
+          rawTitles: [person.title]
+        },
+        update: {}
+      });
+      const created = await prisma.prospectPerson.upsert({
+        where: { userId_sourceProfileId: { userId, sourceProfileId: person.sourceProfileId } },
+        create: {
+          userId,
+          companyId: company.id,
+          positionId: position.id,
+          sourceProfileId: person.sourceProfileId,
+          firstName: `Local${index + 1}`,
+          lastName: "Engineer",
+          fullName: `Local${index + 1} Engineer`,
+          currentTitle: person.title,
+          normalizedTitle: person.title.toLowerCase(),
+          location: person.country,
+          country: person.country,
+          state: null,
+          city: null,
+          linkedinUrl: `https://www.linkedin.com/in/${person.sourceProfileId}`,
+          inferredEmail: `local${index + 1}@apple.com`,
+          emailStatus: "INFERRED_HIGH",
+          emailConfidence: "HIGH",
+          emailPattern: "flast",
+          emailSource: "PATTERN"
+        },
+        update: {}
+      });
+      personIds.push(created.id);
+    }
+    return { company, personIds };
+  }
+
+  function appleSoftwareRolePort() {
+    const filter = vi.fn<DiscoverRoleIntelligencePort["filterAndRankPeople"]>(
+      async ({ people, requestedLocations }) =>
+        people.filter((person) => {
+          const roleMatches =
+            person.positionCategory === "SOFTWARE_ENGINEERING" &&
+            /\bsoftware\s+(engineer|developer)\b/.test(person.normalizedTitle ?? "");
+          const locationMatches =
+            requestedLocations.length === 0 || requestedLocations.some((location) => location === person.country);
+          return roleMatches && locationMatches;
+        })
+    );
+    return { port: semanticRolePort({ filter }), filter };
+  }
+
+  function emptyProviderRunner() {
+    const run = vi.fn<ApifyRunner["run"]>(async () => ({
+      runId: "empty-run",
+      datasetId: "empty-dataset",
+      items: []
+    }));
+    return { run, runner: { run } as ApifyRunner };
+  }
+
+  it("reuses same-user Apple ProspectPerson engineers after a shared recruiter-only miss and never calls Apify", async () => {
+    const { personIds } = await seedOwnedApplePeople(USER_ID, [
+      {
+        sourceProfileId: "apple-local-senior",
+        title: "Senior Software Engineer",
+        category: "SOFTWARE_ENGINEERING",
+        country: "United States"
+      },
+      {
+        sourceProfileId: "apple-local-staff",
+        title: "Staff Software Engineer",
+        category: "SOFTWARE_ENGINEERING",
+        country: "United States"
+      },
+      {
+        sourceProfileId: "apple-local-backend",
+        title: "Backend Software Engineer",
+        category: "SOFTWARE_ENGINEERING",
+        country: "United States"
+      }
+    ]);
+    const cache = new DiscoverSearchCacheService({
+      prisma: prisma as unknown as PrismaClient,
+      lock: makeFakeCacheLock(),
+      now: () => new Date("2026-08-20T18:05:00.000Z"),
+      ttlDays: 30,
+      cleanupOnRefresh: false
+    });
+    await cache.getOrRefresh({
+      fingerprint: "apple-recruiter-only",
+      fingerprintInput: {
+        companyKey: "domain:apple.com",
+        roles: ["recruiter"],
+        locations: ["united states"],
+        resultLimit: 10,
+        cacheVersion: "v1"
+      },
+      company: {
+        name: "Apple Inc.",
+        domain: "apple.com",
+        linkedinUrl: "https://www.linkedin.com/company/apple"
+      },
+      provider: async () => ({
+        emailFormat: { ...cacheDataset().emailFormat, emailDomain: "apple.com", emailPattern: "flast" },
+        people: [
+          {
+            ...cacheDataset().people[0],
+            sourceProfileId: "apple-shared-recruiter",
+            currentTitle: "Senior Technical Recruiter, Software Engineering",
+            normalizedTitle: "senior technical recruiter software engineering",
+            positionCategory: "RECRUITING",
+            country: "United States",
+            linkedinUrl: "https://www.linkedin.com/in/apple-shared-recruiter"
+          }
+        ]
+      })
+    });
+    const { run, runner } = emptyProviderRunner();
+    const quota = makeQuotaReserver();
+    const audit = vi.fn<ProspectAuditFn>();
+    const { port: roleIntelligence, filter } = appleSoftwareRolePort();
+    const { service } = buildService(
+      prisma,
+      runner,
+      ROLE_ONLY_AI,
+      undefined,
+      quota.reserve,
+      cache,
+      roleIntelligence,
+      audit
+    );
+    const search = await service.createSearch(USER_ID, {
+      companyName: "Apple Inc.",
+      companyDomain: "apple.com",
+      companyLinkedinUrl: "https://www.linkedin.com/company/apple",
+      jobTitles: ["Software Engineer"],
+      locations: ["United States"],
+      maxResults: 10
+    });
+
+    const result = await service.processSearch(USER_ID, search.id, { actorEmail: "owner@test.dev" });
+
+    expect(result.status).toBe("READY");
+    expect(result.totalProcessed).toBe(3);
+    expect(result.resultSource).toBe("CACHE");
+    expect(result.apifyRunId ?? null).toBeNull();
+    expect(run).not.toHaveBeenCalled();
+    expect(prisma._state.people).toHaveLength(3);
+    expect(prisma._state.people.map((person) => person.id).sort()).toEqual([...personIds].sort());
+    const allocations = prisma._state.searchPeople.filter((row) => row.searchId === search.id);
+    expect(allocations).toHaveLength(3);
+    expect(allocations.map((row) => row.personId).sort()).toEqual([...personIds].sort());
+    expect(allocations.every((row) => row.allocationSource === "CACHE")).toBe(true);
+    expect(allocations.map((row) => row.allocationOrder)).toEqual([0, 1, 2]);
+    expect(filter.mock.calls.some(([call]) => call.context === "CACHE" && call.people.length === 3)).toBe(true);
+    const completedAudit = audit.mock.calls.find(([event]) => event.action === "discover.search_completed")?.[0];
+    expect(completedAudit?.metadata).toMatchObject({ providerCalled: false, resultCount: 3 });
+    expect(quota.consumed.size).toBe(1);
+    await service.processSearch(USER_ID, search.id, { actorEmail: "owner@test.dev" });
+    expect(quota.consumed.size).toBe(1);
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it("calls Apify once when same-user Apple people are the wrong role", async () => {
+    await seedOwnedApplePeople(USER_ID, [
+      {
+        sourceProfileId: "apple-local-recruiter",
+        title: "Senior Technical Recruiter, Software Engineering",
+        category: "RECRUITING",
+        country: "United States"
+      }
+    ]);
+    const cache = new DiscoverSearchCacheService({
+      prisma: prisma as unknown as PrismaClient,
+      lock: makeFakeCacheLock(),
+      cleanupOnRefresh: false
+    });
+    const { run, runner } = emptyProviderRunner();
+    const { port: roleIntelligence } = appleSoftwareRolePort();
+    const { service } = buildService(prisma, runner, ROLE_ONLY_AI, undefined, allowAllQuota, cache, roleIntelligence);
+    const search = await service.createSearch(USER_ID, {
+      companyName: "Apple Inc.",
+      companyDomain: "apple.com",
+      companyLinkedinUrl: null,
+      jobTitles: ["Software Engineer"],
+      locations: ["United States"],
+      maxResults: 10
+    });
+
+    const result = await service.processSearch(USER_ID, search.id);
+
+    expect(result.status).toBe("NO_RESULTS");
+    expect(result.resultSource).toBe("PROVIDER");
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(prisma._state.searchPeople).toHaveLength(0);
+  });
+
+  it("calls Apify once when same-user Apple engineers are in the wrong location", async () => {
+    await seedOwnedApplePeople(USER_ID, [
+      {
+        sourceProfileId: "apple-local-canada",
+        title: "Senior Software Engineer",
+        category: "SOFTWARE_ENGINEERING",
+        country: "Canada"
+      }
+    ]);
+    const cache = new DiscoverSearchCacheService({
+      prisma: prisma as unknown as PrismaClient,
+      lock: makeFakeCacheLock(),
+      cleanupOnRefresh: false
+    });
+    const { run, runner } = emptyProviderRunner();
+    const { port: roleIntelligence } = appleSoftwareRolePort();
+    const { service } = buildService(prisma, runner, ROLE_ONLY_AI, undefined, allowAllQuota, cache, roleIntelligence);
+    const search = await service.createSearch(USER_ID, {
+      companyName: "Apple Inc.",
+      companyDomain: "apple.com",
+      companyLinkedinUrl: null,
+      jobTitles: ["Software Engineer"],
+      locations: ["United States"],
+      maxResults: 10
+    });
+
+    const result = await service.processSearch(USER_ID, search.id);
+
+    expect(result.status).toBe("NO_RESULTS");
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(prisma._state.searchPeople).toHaveLength(0);
+  });
+
+  it("never reuses another user's ProspectPerson rows directly", async () => {
+    const owner = await seedOwnedApplePeople("user_A", [
+      {
+        sourceProfileId: "apple-user-a-swe",
+        title: "Senior Software Engineer",
+        category: "SOFTWARE_ENGINEERING",
+        country: "United States"
+      }
+    ]);
+    const cache = new DiscoverSearchCacheService({
+      prisma: prisma as unknown as PrismaClient,
+      lock: makeFakeCacheLock(),
+      cleanupOnRefresh: false
+    });
+    const { run, runner } = emptyProviderRunner();
+    const { port: roleIntelligence } = appleSoftwareRolePort();
+    const { service } = buildService(prisma, runner, ROLE_ONLY_AI, undefined, allowAllQuota, cache, roleIntelligence);
+    const search = await service.createSearch("user_B", {
+      companyName: "Apple Inc.",
+      companyDomain: "apple.com",
+      companyLinkedinUrl: null,
+      jobTitles: ["Software Engineer"],
+      locations: ["United States"],
+      maxResults: 10
+    });
+
+    const result = await service.processSearch("user_B", search.id);
+
+    expect(result.status).toBe("NO_RESULTS");
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(prisma._state.searchPeople).toHaveLength(0);
+    expect(prisma._state.people).toHaveLength(1);
+    expect(prisma._state.people[0]).toMatchObject({ id: owner.personIds[0], userId: "user_A" });
+    expect(prisma._state.companies.filter((company) => company.userId === "user_B")).toHaveLength(1);
   });
 
   it("lets a second user reuse one shared cache entry with separate user-owned records (#14, #15, #16)", async () => {

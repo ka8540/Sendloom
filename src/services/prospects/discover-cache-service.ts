@@ -120,7 +120,7 @@ export type DiscoverCacheResult = {
   /** True only when a PROVIDER run replaced a previously-existing (stale) entry. */
   refreshedStale: boolean;
   /** Which reusable database path won. Null means the paid provider ran. */
-  cacheHitType?: "EXACT" | "COMPANY_POOL" | null;
+  cacheHitType?: "EXACT" | "COMPANY_POOL" | "LOCAL_PERSON" | null;
   /** Privacy-safe counts for cost-control observability. */
   lookupDiagnostics?: DiscoverCacheLookupDiagnostics;
 };
@@ -135,6 +135,19 @@ export type DiscoverCompanyPoolPersonFilter = (
   people: ResolvedCachePerson[]
 ) => Promise<ResolvedCachePerson[]> | ResolvedCachePerson[];
 
+/**
+ * A private, requester-owned database lookup performed only after both shared
+ * cache paths miss. The dataset is returned to this request but is never copied
+ * into the cross-user shared cache.
+ */
+export type DiscoverLocalPersonLookupResult = {
+  dataset: ResolvedDataset | null;
+  candidatePersonCount: number;
+  matchingPersonCount: number;
+};
+
+export type DiscoverLocalPersonLookup = () => Promise<DiscoverLocalPersonLookupResult>;
+
 export type GetOrRefreshParams = {
   fingerprint: string;
   fingerprintInput: DiscoverFingerprintInput;
@@ -144,6 +157,8 @@ export type GetOrRefreshParams = {
    * It is invoked only after the exact fingerprint fast path misses.
    */
   filterCompanyPoolPeople?: DiscoverCompanyPoolPersonFilter;
+  /** Same-user ProspectPerson fallback, invoked after shared reuse and before provider. */
+  lookupLocalPeople?: DiscoverLocalPersonLookup;
   provider: DiscoverProviderRun;
 };
 
@@ -373,6 +388,10 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
     if (companyPool.entry) {
       return this.companyPoolCacheResult(companyPool);
     }
+    let localPeople = await this.getLocalPersonResult(params, companyPool.diagnostics);
+    if (localPeople.result) {
+      return localPeople.result;
+    }
 
     const key = this.lockKey(params.fingerprint);
     const token = await this.lock.acquire(key);
@@ -400,10 +419,14 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
         if (companyPool.entry) {
           return this.companyPoolCacheResult(companyPool);
         }
+        localPeople = await this.getLocalPersonResult(params, companyPool.diagnostics);
+        if (localPeople.result) {
+          return localPeople.result;
+        }
         const existing = (await this.prisma.discoverSearchCache.findUnique({
           where: { fingerprint: params.fingerprint }
         })) as { id: string } | null;
-        return await this.runProviderAndStore(params, Boolean(existing), companyPool.diagnostics);
+        return await this.runProviderAndStore(params, Boolean(existing), localPeople.diagnostics);
       } finally {
         await this.lock.release(key, token);
       }
@@ -427,11 +450,15 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
     if (companyPool.entry) {
       return this.companyPoolCacheResult(companyPool);
     }
+    localPeople = await this.getLocalPersonResult(params, companyPool.diagnostics);
+    if (localPeople.result) {
+      return localPeople.result;
+    }
 
     // The holder did not finish in time (likely crashed; the lock TTL will free
     // it). Fall back to running the provider ourselves so the request never
     // hangs, writing the cache best-effort.
-    return await this.runProviderAndStore(params, false, companyPool.diagnostics);
+    return await this.runProviderAndStore(params, false, localPeople.diagnostics);
   }
 
   private companyPoolCacheResult(pool: CompanyPoolLookupResult): DiscoverCacheResult {
@@ -444,6 +471,40 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
       refreshedStale: false,
       cacheHitType: "COMPANY_POOL",
       lookupDiagnostics: pool.diagnostics
+    };
+  }
+
+  private async getLocalPersonResult(
+    params: GetOrRefreshParams,
+    precedingDiagnostics: DiscoverCacheLookupDiagnostics
+  ): Promise<{ result: DiscoverCacheResult | null; diagnostics: DiscoverCacheLookupDiagnostics }> {
+    if (!params.lookupLocalPeople) {
+      return { result: null, diagnostics: precedingDiagnostics };
+    }
+
+    const local = await params.lookupLocalPeople();
+    const diagnostics = {
+      candidateEntryCount: precedingDiagnostics.candidateEntryCount,
+      candidatePersonCount:
+        precedingDiagnostics.candidatePersonCount + Math.max(0, local.candidatePersonCount),
+      matchingPersonCount:
+        precedingDiagnostics.matchingPersonCount + Math.max(0, local.matchingPersonCount)
+    };
+    if (!local.dataset || local.dataset.people.length === 0) {
+      return { result: null, diagnostics };
+    }
+
+    return {
+      result: {
+        dataset: local.dataset,
+        source: "CACHE",
+        cacheId: null,
+        fetchedAt: null,
+        refreshedStale: false,
+        cacheHitType: "LOCAL_PERSON",
+        lookupDiagnostics: diagnostics
+      },
+      diagnostics
     };
   }
 

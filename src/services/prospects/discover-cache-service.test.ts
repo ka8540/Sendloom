@@ -117,6 +117,7 @@ function companyPoolParams(input: {
   cacheVersion?: string;
   provider: GetOrRefreshParams["provider"];
   filter?: GetOrRefreshParams["filterCompanyPoolPeople"];
+  lookupLocalPeople?: GetOrRefreshParams["lookupLocalPeople"];
 }): GetOrRefreshParams {
   return {
     fingerprint: input.fingerprint,
@@ -133,6 +134,7 @@ function companyPoolParams(input: {
       linkedinUrl: input.linkedinUrl ?? null
     },
     filterCompanyPoolPeople: input.filter ?? recruiterUsFilter,
+    lookupLocalPeople: input.lookupLocalPeople,
     provider: input.provider
   };
 }
@@ -190,12 +192,19 @@ describe("DiscoverSearchCacheService cache behavior", () => {
 
     const provider = vi.fn(async () => dataset([cachePerson("nope")]));
     const filterCompanyPoolPeople = vi.fn(recruiterUsFilter);
+    const lookupLocalPeople = vi.fn(async () => ({
+      dataset: dataset([cachePerson("local")]),
+      candidatePersonCount: 1,
+      matchingPersonCount: 1
+    }));
     const request = params(FINGERPRINT, provider);
     request.filterCompanyPoolPeople = filterCompanyPoolPeople;
+    request.lookupLocalPeople = lookupLocalPeople;
     const result = await service.getOrRefresh(request);
 
     expect(provider).not.toHaveBeenCalled();
     expect(filterCompanyPoolPeople).not.toHaveBeenCalled();
+    expect(lookupLocalPeople).not.toHaveBeenCalled();
     expect(result.source).toBe("CACHE");
     expect(result.dataset.people).toHaveLength(1);
     expect(result.dataset.people[0].sourceProfileId).toBe("1");
@@ -354,10 +363,18 @@ describe("DiscoverSearchCacheService same-company database-first reuse", () => {
       ]
     });
     const provider = vi.fn(async () => dataset([cachePerson("paid")]))
+    const lookupLocalPeople = vi.fn(async () => ({
+      dataset: dataset([cachePerson("local")]),
+      candidatePersonCount: 1,
+      matchingPersonCount: 1
+    }));
 
-    const result = await service.getOrRefresh(companyPoolParams({ fingerprint: "fp-apple-recruiter", provider }));
+    const result = await service.getOrRefresh(
+      companyPoolParams({ fingerprint: "fp-apple-recruiter", provider, lookupLocalPeople })
+    );
 
     expect(provider).not.toHaveBeenCalled();
+    expect(lookupLocalPeople).not.toHaveBeenCalled();
     expect(result.source).toBe("CACHE");
     expect(result.cacheHitType).toBe("COMPANY_POOL");
     expect(result.dataset.people.map((person) => person.sourceProfileId)).toEqual(["r1", "r2"]);
@@ -384,6 +401,52 @@ describe("DiscoverSearchCacheService same-company database-first reuse", () => {
     );
     expect(repeated.cacheHitType).toBe("EXACT");
     expect(repeatedProvider).not.toHaveBeenCalled();
+  });
+
+  it("returns a partial same-user local dataset without provider top-up or shared-cache writes", async () => {
+    const service = buildService();
+    const provider = vi.fn(async () => dataset([cachePerson("paid")]))
+    const localPeople = [cachePerson("local-1"), cachePerson("local-2"), cachePerson("local-3")];
+    const lookupLocalPeople = vi.fn(async () => ({
+      dataset: dataset(localPeople),
+      candidatePersonCount: 3,
+      matchingPersonCount: 3
+    }));
+    const request = params("fp-local-partial", provider);
+    request.filterCompanyPoolPeople = recruiterUsFilter;
+    request.lookupLocalPeople = lookupLocalPeople;
+
+    const result = await service.getOrRefresh(request);
+
+    expect(result.source).toBe("CACHE");
+    expect(result.cacheHitType).toBe("LOCAL_PERSON");
+    expect(result.cacheId).toBeNull();
+    expect(result.dataset.people).toHaveLength(3);
+    expect(result.lookupDiagnostics).toMatchObject({ candidatePersonCount: 3, matchingPersonCount: 3 });
+    expect(lookupLocalPeople).toHaveBeenCalledTimes(1);
+    expect(provider).not.toHaveBeenCalled();
+    expect(prisma._state.discoverCache).toHaveLength(0);
+    expect(prisma._state.discoverCachePeople).toHaveLength(0);
+  });
+
+  it("calls the provider once only after the same-user local lookup has zero usable matches", async () => {
+    const service = buildService();
+    const provider = vi.fn(async () => dataset([cachePerson("paid")]))
+    const lookupLocalPeople = vi.fn(async () => ({
+      dataset: null,
+      candidatePersonCount: 2,
+      matchingPersonCount: 0
+    }));
+    const request = params("fp-local-zero", provider);
+    request.filterCompanyPoolPeople = recruiterUsFilter;
+    request.lookupLocalPeople = lookupLocalPeople;
+
+    const result = await service.getOrRefresh(request);
+
+    expect(result.source).toBe("PROVIDER");
+    expect(result.lookupDiagnostics).toMatchObject({ candidatePersonCount: 2, matchingPersonCount: 0 });
+    expect(lookupLocalPeople).toHaveBeenCalled();
+    expect(provider).toHaveBeenCalledTimes(1);
   });
 
   it("returns a partial four-person pool and never pays to top it up", async () => {

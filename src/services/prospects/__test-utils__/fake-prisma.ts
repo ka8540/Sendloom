@@ -399,7 +399,15 @@ export function createFakePrisma() {
         const row = people.find((r) => matchPerson(r, where ?? {}));
         return row ? { ...row } : null;
       },
-      findMany: async ({ where }: { where: Row }) => people.filter((r) => matchPerson(r, where ?? {})).map((r) => ({ ...r })),
+      findMany: async ({ where, include }: { where: Row; include?: Row }) =>
+        people
+          .filter((r) => matchPerson(r, where ?? {}))
+          .map((r) => ({
+            ...r,
+            ...(include?.position
+              ? { position: { ...positions.find((position) => position.id === r.positionId) } }
+              : {})
+          })),
       count: async ({ where }: { where: Row }) => people.filter((r) => matchPerson(r, where ?? {})).length,
       deleteMany: async ({ where }: { where: Row }) => {
         // Emulates the DB's ON DELETE CASCADE for allocations.
