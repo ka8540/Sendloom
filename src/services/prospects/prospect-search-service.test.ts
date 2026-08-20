@@ -25,6 +25,10 @@ import {
   type ResolvedCachePerson,
   type ResolvedDataset
 } from "@/services/prospects/discover-cache-service";
+import {
+  PrismaDiscoverLegacyCacheBackfillStore,
+  runDiscoverLegacyCacheBackfill
+} from "@/services/prospects/discover-legacy-cache-backfill";
 import { createFakePrisma, type FakePrisma } from "@/services/prospects/__test-utils__/fake-prisma";
 import { createMockAi } from "@/services/prospects/__test-utils__/mock-ai";
 
@@ -2121,6 +2125,167 @@ describe("Discover shared cache integration", () => {
     expect(prisma._state.people).toHaveLength(1);
     expect(prisma._state.people[0]).toMatchObject({ id: owner.personIds[0], userId: "user_A" });
     expect(prisma._state.companies.filter((company) => company.userId === "user_B")).toHaveLength(1);
+  });
+
+  it("promotes User A's historical provider Apple people so User B semantically reuses them with zero Apify calls", async () => {
+    const source = await seedOwnedApplePeople("user_A", [
+      {
+        sourceProfileId: "apple-history-swe",
+        title: "Software Engineer",
+        category: "SOFTWARE_ENGINEERING",
+        country: "United States"
+      },
+      {
+        sourceProfileId: "apple-history-senior-swe",
+        title: "Senior Software Engineer",
+        category: "SOFTWARE_ENGINEERING",
+        country: "United States"
+      },
+      {
+        sourceProfileId: "apple-history-principal-swe",
+        title: "Principal Software Engineer / Architect",
+        category: "SOFTWARE_ENGINEERING",
+        country: "United States"
+      },
+      {
+        sourceProfileId: "apple-history-recruiter",
+        title: "Technical Recruiter",
+        category: "RECRUITING",
+        country: "United States"
+      },
+      {
+        sourceProfileId: "apple-history-canada-swe",
+        title: "Software Engineer",
+        category: "SOFTWARE_ENGINEERING",
+        country: "Canada"
+      }
+    ]);
+    const sourcePersonIds = new Set(source.personIds);
+    const historicalCompletedAt = new Date("2026-08-19T18:05:00.000Z");
+    const historicalSearch = await prisma.prospectSearch.create({
+      data: {
+        userId: "user_A",
+        companyId: source.company.id,
+        requestedCompany: "Apple Inc.",
+        requestedDomain: "apple.com",
+        requestedLinkedin: "https://www.linkedin.com/company/apple",
+        requestedTitles: ["Software Engineer"],
+        requestedLocations: ["United States"],
+        maxResults: 10,
+        status: "READY",
+        resultSource: "PROVIDER",
+        apifyRunId: "historical-apple-run",
+        apifyDatasetId: "historical-apple-dataset",
+        lastAttemptCompletedAt: historicalCompletedAt,
+        completedAt: historicalCompletedAt
+      }
+    });
+    for (const [allocationOrder, personId] of source.personIds.entries()) {
+      await prisma.prospectSearchPerson.create({
+        data: {
+          searchId: historicalSearch.id,
+          personId,
+          userId: "user_A",
+          allocationOrder,
+          allocationSource: "PROVIDER"
+        }
+      });
+    }
+
+    const backfillStore = new PrismaDiscoverLegacyCacheBackfillStore(prisma as unknown as PrismaClient);
+    const dryRun = await runDiscoverLegacyCacheBackfill({
+      store: backfillStore,
+      options: { apply: false, batchSize: 2, limit: null },
+      now: new Date("2026-08-20T18:05:00.000Z"),
+      cacheVersion: "v1",
+      cacheTtlDays: 30
+    });
+    expect(dryRun).toMatchObject({ cacheEntriesToCreate: 1, peopleToInsert: 5 });
+    expect(prisma._state.discoverCache).toHaveLength(0);
+
+    const applied = await runDiscoverLegacyCacheBackfill({
+      store: backfillStore,
+      options: { apply: true, batchSize: 2, limit: null },
+      now: new Date("2026-08-20T18:05:00.000Z"),
+      cacheVersion: "v1",
+      cacheTtlDays: 30
+    });
+    expect(applied).toMatchObject({ cacheEntriesToCreate: 1, peopleToInsert: 5 });
+    expect(prisma._state.discoverCachePeople).toHaveLength(5);
+    expect(
+      prisma._state.discoverCachePeople.every(
+        (person) =>
+          person.inferredEmail === null &&
+          person.emailStatus === "UNAVAILABLE" &&
+          person.emailConfidence === "UNAVAILABLE" &&
+          person.emailPattern === null &&
+          person.emailSource === null
+      )
+    ).toBe(true);
+
+    const cache = new DiscoverSearchCacheService({
+      prisma: prisma as unknown as PrismaClient,
+      lock: makeFakeCacheLock(),
+      now: () => new Date("2026-08-20T18:05:00.000Z"),
+      ttlDays: 30,
+      cleanupOnRefresh: false
+    });
+    const { run, runner } = emptyProviderRunner();
+    const audit = vi.fn<ProspectAuditFn>();
+    const { port: roleIntelligence, filter } = appleSoftwareRolePort();
+    const { service } = buildService(
+      prisma,
+      runner,
+      ROLE_ONLY_AI,
+      undefined,
+      allowAllQuota,
+      cache,
+      roleIntelligence,
+      audit
+    );
+    const userBSearch = await service.createSearch("user_B", {
+      companyName: "Apple",
+      companyDomain: "apple.com",
+      companyLinkedinUrl: null,
+      jobTitles: ["Software Developer"],
+      locations: ["United States"],
+      maxResults: 10
+    });
+
+    const result = await service.processSearch("user_B", userBSearch.id, { actorEmail: "b@test.dev" });
+
+    expect(result.status).toBe("READY");
+    expect(result.resultSource).toBe("CACHE");
+    expect(result.totalProcessed).toBe(3);
+    expect(run).not.toHaveBeenCalled();
+    expect(filter.mock.calls.some(([call]) => call.context === "CACHE" && call.people.length === 5)).toBe(true);
+    const userBPeople = prisma._state.people.filter((person) => person.userId === "user_B");
+    expect(userBPeople).toHaveLength(3);
+    expect(userBPeople.every((person) => !sourcePersonIds.has(person.id))).toBe(true);
+    expect(userBPeople.map((person) => person.sourceProfileId).sort()).toEqual([
+      "apple-history-principal-swe",
+      "apple-history-senior-swe",
+      "apple-history-swe"
+    ]);
+    const allocations = prisma._state.searchPeople.filter((row) => row.searchId === userBSearch.id);
+    expect(allocations).toHaveLength(3);
+    expect(allocations.every((row) => row.userId === "user_B" && row.allocationSource === "CACHE")).toBe(true);
+    const completedAudit = audit.mock.calls.find(([event]) => event.action === "discover.search_completed")?.[0];
+    expect(completedAudit?.metadata).toMatchObject({ providerCalled: false, resultCount: 3 });
+
+    const secondApply = await runDiscoverLegacyCacheBackfill({
+      store: backfillStore,
+      options: { apply: true, batchSize: 2, limit: null },
+      now: new Date("2026-08-20T18:05:00.000Z"),
+      cacheVersion: "v1",
+      cacheTtlDays: 30
+    });
+    expect(secondApply.peopleToInsert).toBe(0);
+    expect(prisma._state.discoverCachePeople.filter((person) => person.sourceProfileId.startsWith("apple-history"))).toHaveLength(8);
+    // Five historical rows plus the three role/location-authorized people in User B's derived exact cache.
+    expect(new Set(prisma._state.discoverCachePeople.map((person) => `${person.cacheId}:${person.sourceProfileId}`)).size).toBe(
+      prisma._state.discoverCachePeople.length
+    );
   });
 
   it("lets a second user reuse one shared cache entry with separate user-owned records (#14, #15, #16)", async () => {

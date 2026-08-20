@@ -201,6 +201,19 @@ export function createFakePrisma() {
         discoverCachePeople.push(row);
         return { ...row };
       },
+      createMany: async ({ data, skipDuplicates }: { data: Row[]; skipDuplicates?: boolean }) => {
+        let count = 0;
+        for (const input of data) {
+          const duplicate = discoverCachePeople.some(
+            (row) => row.cacheId === input.cacheId && row.sourceProfileId === input.sourceProfileId
+          );
+          if (duplicate && skipDuplicates) continue;
+          if (duplicate) throw new Error("Duplicate shared-cache person.");
+          discoverCachePeople.push({ id: nextId("dperson"), createdAt: now(), updatedAt: now(), ...input });
+          count += 1;
+        }
+        return { count };
+      },
       findMany: async ({ where }: { where?: Row } = {}) =>
         discoverCachePeople.filter((r) => matchGeneric(r, where ?? {})).map((r) => ({ ...r })),
       count: async ({ where }: { where?: Row } = {}) =>
@@ -256,7 +269,19 @@ export function createFakePrisma() {
         const row = searches.find((r) => matchGeneric(r, where));
         return row ? { ...row } : null;
       },
-      findMany: async ({ where }: { where: Row }) => searches.filter((r) => matchGeneric(r, where)).map((r) => ({ ...r })),
+      findMany: async ({
+        where,
+        take,
+        cursor,
+        skip = 0
+      }: { where?: Row; take?: number; cursor?: Row; skip?: number } = {}) => {
+        const ordered = searches
+          .filter((row) => matchGeneric(row, where ?? {}))
+          .sort((left, right) => String(left.id).localeCompare(String(right.id)));
+        const cursorIndex = cursor?.id ? ordered.findIndex((row) => row.id === cursor.id) : -1;
+        const start = Math.max(0, cursorIndex >= 0 ? cursorIndex + skip : 0);
+        return ordered.slice(start, take ? start + take : undefined).map((row) => ({ ...row }));
+      },
       count: async ({ where }: { where: Row }) => searches.filter((r) => matchGeneric(r, where)).length,
       deleteMany: async ({ where }: { where: Row }) => {
         // Emulates the DB's ON DELETE CASCADE for allocations.
@@ -399,12 +424,12 @@ export function createFakePrisma() {
         const row = people.find((r) => matchPerson(r, where ?? {}));
         return row ? { ...row } : null;
       },
-      findMany: async ({ where, include }: { where: Row; include?: Row }) =>
+      findMany: async ({ where, include, select }: { where: Row; include?: Row; select?: Row }) =>
         people
           .filter((r) => matchPerson(r, where ?? {}))
           .map((r) => ({
             ...r,
-            ...(include?.position
+            ...(include?.position || select?.position
               ? { position: { ...positions.find((position) => position.id === r.positionId) } }
               : {})
           })),
