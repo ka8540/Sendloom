@@ -38,6 +38,27 @@ describe("deterministicCategory", () => {
     expect(deterministicCategory("data analyst")).toBe("DATA_ANALYTICS");
     expect(deterministicCategory("data engineer")).toBe("DATA_ENGINEERING");
     expect(deterministicCategory("data scientist")).toBe("DATA_SCIENCE");
+    expect(deterministicCategory("application developer")).toBe("SOFTWARE_ENGINEERING");
+    expect(deterministicCategory("ios developer")).toBe("SOFTWARE_ENGINEERING");
+    expect(deterministicCategory("forward deployed engineer")).toBe("SOFTWARE_ENGINEERING");
+  });
+
+  it("recognizes the safe Recruiter title family without AI", () => {
+    const titles = [
+      "recruiter",
+      "technical recruiter",
+      "engineering recruiter",
+      "talent acquisition recruiter",
+      "talent acquisition business partner",
+      "talent acquisition specialist",
+      "recruiting leader",
+      "executive technology recruiting leader",
+      "campus recruiter"
+    ];
+
+    expect(titles.map((title) => deterministicCategory(title))).toEqual(
+      titles.map(() => "RECRUITING")
+    );
   });
 
   it("returns null for genuinely unknown titles", () => {

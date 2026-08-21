@@ -44,10 +44,15 @@ import {
   resolveEmailFormatDiscoveryExpiry,
   resolveSharedCacheVersion,
   type DiscoverCachePort,
+  type DiscoverLocalPersonLookupResult,
   type ResolvedCachePerson,
   type ResolvedDataset
 } from "@/services/prospects/discover-cache-service";
 import { computeDiscoverFingerprint } from "@/services/prospects/discover-cache-fingerprint";
+import {
+  createDiscoverRoleIntelligenceService,
+  type DiscoverRoleIntelligencePort
+} from "@/services/prospects/discover-role-intelligence-service";
 import {
   EmailDomainService,
   type EmailDomainEvidence,
@@ -105,6 +110,9 @@ export class ProspectError extends Error {
 
 const TERMINAL_STATUSES = new Set(["READY", "CANCELED"]);
 const DEFAULT_PIPELINE_TIMEOUT_MS = 120_000;
+// Fetch one bounded provider page so a 10-person search targets 10 VALID unique
+// candidates after schema/company/role validation, not merely 10 raw rows.
+const PROVIDER_CANDIDATE_LIMIT = 25;
 // Company-level structured email-format evidence stays fresh for 30 days.
 const EMAIL_FORMAT_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const EMAIL_FORMAT_REFRESH_IN_FLIGHT = new Map<string, Promise<ProspectCompany>>();
@@ -232,6 +240,8 @@ export type ProspectSearchServiceDeps = {
   apify: ApifyProfileSearchService;
   companyResolution: CompanyResolutionService;
   roleClassifier: RoleClassificationService;
+  /** Additive pgvector role layer; defaults to the feature-flagged production implementation. */
+  roleIntelligence?: DiscoverRoleIntelligencePort;
   emailDomain: EmailDomainService;
   pipelineTimeoutMs?: number;
   /** Injectable for tests; defaults to the Redis-backed per-user limiter. */
@@ -273,11 +283,23 @@ type RunPipelineResult = {
   cacheHit: boolean;
 };
 
+type ProviderFunnelDiagnostics = ApifyIngestionDiagnostics & {
+  semanticInputCount: number;
+  semanticAcceptedCount: number;
+  semanticRejectedCount: number;
+};
+
+type ProviderDatasetResult = {
+  dataset: ResolvedDataset;
+  diagnostics: ProviderFunnelDiagnostics;
+};
+
 export class ProspectSearchService {
   private readonly prisma: PrismaClient;
   private readonly apify: ApifyProfileSearchService;
   private readonly companyResolution: CompanyResolutionService;
   private readonly roleClassifier: RoleClassificationService;
+  private readonly roleIntelligence: DiscoverRoleIntelligencePort;
   private readonly emailDomain: EmailDomainService;
   private readonly pipelineTimeoutMs: number;
   private readonly emailFormatRateLimiter: EmailFormatRateLimiter;
@@ -292,6 +314,8 @@ export class ProspectSearchService {
     this.apify = deps.apify;
     this.companyResolution = deps.companyResolution;
     this.roleClassifier = deps.roleClassifier;
+    this.roleIntelligence =
+      deps.roleIntelligence ?? createDiscoverRoleIntelligenceService(deps.prisma, deps.roleClassifier);
     this.emailDomain = deps.emailDomain;
     this.pipelineTimeoutMs = deps.pipelineTimeoutMs ?? DEFAULT_PIPELINE_TIMEOUT_MS;
     this.emailFormatRateLimiter = deps.emailFormatRateLimiter ?? defaultEmailFormatRateLimiter;
@@ -706,6 +730,8 @@ export class ProspectSearchService {
     // refresh the shared cache. The provider closure performs Apify + role
     // classification only; email-format discovery has a separate lifecycle.
     const startedAt = Date.now();
+    let providerStarted = false;
+    const providerDiagnosticsRef: { current: ProviderFunnelDiagnostics | null } = { current: null };
     let cacheResult;
     try {
       cacheResult = await this.discoverCache.getOrRefresh({
@@ -716,7 +742,29 @@ export class ProspectSearchService {
           domain: resolution.officialWebsiteDomain ?? resolution.officialDomain,
           linkedinUrl: resolution.linkedinCompanyUrl
         },
-        provider: () => this.runProviderDataset(userId, search, company, resolution, budget)
+        filterCompanyPoolPeople: async (people) => {
+          const requestedTitles = this.asStringArray(search.requestedTitles);
+          return this.roleIntelligence.filterAndRankPeople({
+            people,
+            requestedTitles,
+            requestedLocations: this.asStringArray(search.requestedLocations),
+            context: "CACHE",
+            options: { budget, searchId: search.id }
+          });
+        },
+        lookupLocalPeople: () =>
+          this.findReusableLocalPeople({
+            userId,
+            search,
+            company,
+            budget
+          }),
+        provider: async () => {
+          providerStarted = true;
+          const providerResult = await this.runProviderDataset(userId, search, company, resolution, budget);
+          providerDiagnosticsRef.current = providerResult.diagnostics;
+          return providerResult.dataset;
+        }
       });
     } catch (error) {
       logDiscoverCacheEvent({
@@ -727,8 +775,12 @@ export class ProspectSearchService {
         cacheHit: false,
         cacheAgeDays: null,
         resultCount: 0,
-        providerCalled: true,
-        processingLatencyMs: Date.now() - startedAt
+        providerCalled: providerStarted,
+        processingLatencyMs: Date.now() - startedAt,
+        cacheHitType: null,
+        candidateEntryCount: 0,
+        candidatePersonCount: 0,
+        matchingPersonCount: 0
       });
       throw error;
     }
@@ -745,6 +797,16 @@ export class ProspectSearchService {
     // runProviderDataset. The search stays retryable: the shared cache never
     // reuses a zero-people entry, so re-processing re-runs the provider.
     if (cacheResult.dataset.people.length === 0) {
+      const providerDiagnostics = providerDiagnosticsRef.current;
+      if (providerDiagnostics) {
+        logDiscoverProviderFunnelEvent({
+          searchId: search.id,
+          userId,
+          ...providerDiagnostics,
+          cachePeopleCount: 0,
+          allocatedPeopleCount: 0
+        });
+      }
       logDiscoverZeroResultEvent(search.id, userId);
       const updated = await this.prisma.prospectSearch.update({
         where: { id: search.id },
@@ -761,11 +823,7 @@ export class ProspectSearchService {
         }
       });
       logDiscoverCacheEvent({
-        event: cacheHit
-          ? "DISCOVER_CACHE_HIT"
-          : cacheResult.refreshedStale
-            ? "DISCOVER_CACHE_REFRESHED"
-            : "DISCOVER_CACHE_MISS",
+        event: discoverCacheEventName(cacheResult),
         searchId: search.id,
         userId,
         fingerprint,
@@ -773,7 +831,11 @@ export class ProspectSearchService {
         cacheAgeDays: discoverCacheAgeDays(cacheResult.fetchedAt, startedAt),
         resultCount: 0,
         providerCalled: !cacheHit,
-        processingLatencyMs: Date.now() - startedAt
+        processingLatencyMs: Date.now() - startedAt,
+        cacheHitType: cacheResult.cacheHitType ?? (cacheHit ? "EXACT" : null),
+        candidateEntryCount: cacheResult.lookupDiagnostics?.candidateEntryCount ?? 0,
+        candidatePersonCount: cacheResult.lookupDiagnostics?.candidatePersonCount ?? 0,
+        matchingPersonCount: cacheResult.lookupDiagnostics?.matchingPersonCount ?? 0
       });
       return { search: updated, providerCalled: !cacheHit, resultCount: 0, cacheHit };
     }
@@ -809,12 +871,19 @@ export class ProspectSearchService {
     const finalProcessed = Math.max(0, processed);
     const finalStatus = finalProcessed > 0 ? "READY" : "NO_RESULTS";
 
+    const providerDiagnostics = providerDiagnosticsRef.current;
+    if (providerDiagnostics) {
+      logDiscoverProviderFunnelEvent({
+        searchId: search.id,
+        userId,
+        ...providerDiagnostics,
+        cachePeopleCount: resolvedDataset.people.length,
+        allocatedPeopleCount: finalProcessed
+      });
+    }
+
     logDiscoverCacheEvent({
-      event: cacheHit
-        ? "DISCOVER_CACHE_HIT"
-        : cacheResult.refreshedStale
-          ? "DISCOVER_CACHE_REFRESHED"
-          : "DISCOVER_CACHE_MISS",
+      event: discoverCacheEventName(cacheResult),
       searchId: search.id,
       userId,
       fingerprint,
@@ -822,7 +891,11 @@ export class ProspectSearchService {
       cacheAgeDays: discoverCacheAgeDays(cacheResult.fetchedAt, startedAt),
       resultCount: finalProcessed,
       providerCalled: !cacheHit,
-      processingLatencyMs: Date.now() - startedAt
+      processingLatencyMs: Date.now() - startedAt,
+      cacheHitType: cacheResult.cacheHitType ?? (cacheHit ? "EXACT" : null),
+      candidateEntryCount: cacheResult.lookupDiagnostics?.candidateEntryCount ?? 0,
+      candidatePersonCount: cacheResult.lookupDiagnostics?.candidatePersonCount ?? 0,
+      matchingPersonCount: cacheResult.lookupDiagnostics?.matchingPersonCount ?? 0
     });
 
     this.logEmailFormatStage({
@@ -857,6 +930,60 @@ export class ProspectSearchService {
   }
 
   /**
+   * Reuse only this requester's already-materialized people for the strongly
+   * resolved company. These private rows are converted to the common cache
+   * candidate shape solely for the existing semantic authorization/ranking
+   * path; they are never written into DiscoverSearchCache.
+   */
+  private async findReusableLocalPeople(input: {
+    userId: string;
+    search: ProspectSearch;
+    company: ProspectCompany;
+    budget: AiCallBudget;
+  }): Promise<DiscoverLocalPersonLookupResult> {
+    const rows = await this.prisma.prospectPerson.findMany({
+      where: { userId: input.userId, companyId: input.company.id },
+      include: { position: { select: { category: true } } },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }]
+    });
+    const candidates: ResolvedCachePerson[] = rows.map((person) => ({
+      sourceProfileId: person.sourceProfileId,
+      firstName: person.firstName,
+      lastName: person.lastName,
+      fullName: person.fullName,
+      currentTitle: person.currentTitle,
+      normalizedTitle: person.normalizedTitle,
+      positionCategory: person.position.category,
+      location: person.location,
+      country: person.country,
+      state: person.state,
+      city: person.city,
+      linkedinUrl: person.linkedinUrl,
+      inferredEmail: person.inferredEmail,
+      emailStatus: person.emailStatus,
+      emailConfidence: person.emailConfidence,
+      emailPattern: person.emailPattern,
+      emailSource: person.emailSource
+    }));
+    const matching = await this.roleIntelligence.filterAndRankPeople({
+      people: candidates,
+      requestedTitles: this.asStringArray(input.search.requestedTitles),
+      requestedLocations: this.asStringArray(input.search.requestedLocations),
+      context: "CACHE",
+      options: { budget: input.budget, searchId: input.search.id }
+    });
+
+    return {
+      dataset:
+        matching.length > 0
+          ? { emailFormat: this.companyResolvedEmailFormat(input.company), people: matching }
+          : null,
+      candidatePersonCount: candidates.length,
+      matchingPersonCount: matching.length
+    };
+  }
+
+  /**
    * Run the people provider pipeline (Apify + role classification) and
    * return a normalized, shareable dataset. This performs NO user-owned writes
    * other than progress/metadata on the user's own search row — the caller writes
@@ -868,17 +995,27 @@ export class ProspectSearchService {
     company: ProspectCompany,
     resolution: CompanyResolution,
     budget: AiCallBudget
-  ): Promise<ResolvedDataset> {
+  ): Promise<ProviderDatasetResult> {
     // Discover people via Apify. The result count is always the server-fixed
     // value (never search.maxResults).
     await this.setStatus(search.id, "SEARCHING_PEOPLE");
-    const maxResults = resolveResultsPerSearch();
+    const resultLimit = resolveResultsPerSearch();
+    const candidateLimit = Math.max(resultLimit, PROVIDER_CANDIDATE_LIMIT);
+    const requestedTitles = this.asStringArray(search.requestedTitles);
+    const providerTitles = await this.roleIntelligence.buildProviderTitlePlan(requestedTitles, {
+      budget,
+      searchId: search.id
+    });
     const searchResult = await this.apify.searchProfiles({
       companyName: resolution.officialName,
       companyLinkedinUrl: resolution.linkedinCompanyUrl,
-      jobTitles: this.asStringArray(search.requestedTitles),
+      ...(resolution.linkedinCompanyUrl
+        ? { companyTargeting: { mode: "LINKEDIN_CURRENT_COMPANY", trusted: true } as const }
+        : {}),
+      // One actor run receives the entire bounded semantic title plan.
+      jobTitles: providerTitles,
       locations: this.asStringArray(search.requestedLocations),
-      maxResults
+      maxResults: candidateLimit
     });
 
     await this.prisma.prospectSearch.update({
@@ -927,7 +1064,28 @@ export class ProspectSearchService {
     // against the final persisted format during materialization.
     const people = this.buildDatasetPeople(profiles, classifications, emailFormat);
 
-    return { emailFormat, people };
+    // With the feature off this method returns the exact current provider
+    // behavior. With it on, expanded provider matches are authorized again by
+    // category/specialty policy before they enter shared knowledge.
+    const roleFilteredPeople = this.roleIntelligence.enabled
+      ? await this.roleIntelligence.filterAndRankPeople({
+          people,
+          requestedTitles,
+          requestedLocations: this.asStringArray(search.requestedLocations),
+          context: "PROVIDER",
+          options: { budget, searchId: search.id }
+        })
+      : people;
+
+    return {
+      dataset: { emailFormat, people: roleFilteredPeople },
+      diagnostics: {
+        ...searchResult.diagnostics,
+        semanticInputCount: people.length,
+        semanticAcceptedCount: roleFilteredPeople.length,
+        semanticRejectedCount: people.length - roleFilteredPeople.length
+      }
+    };
   }
 
   private companyResolvedEmailFormat(company: ProspectCompany): ResolvedDataset["emailFormat"] {
@@ -1135,14 +1293,18 @@ export class ProspectSearchService {
       throw new ProspectError("PROVIDER_ERROR", "The stored provider dataset is no longer available.");
     }
 
-    const maxResults = search.maxResults > 0 ? search.maxResults : resolveResultsPerSearch();
+    const resultLimit = search.maxResults > 0 ? search.maxResults : resolveResultsPerSearch();
+    const candidateLimit = Math.max(resultLimit, PROVIDER_CANDIDATE_LIMIT);
     const processedItems = processDatasetItems(
       items,
       {
         companyName: company.officialName ?? company.name,
-        linkedinCompanyUrl: company.linkedinUrl ?? search.requestedLinkedin
+        linkedinCompanyUrl: company.linkedinUrl ?? search.requestedLinkedin,
+        ...((company.linkedinUrl ?? search.requestedLinkedin)
+          ? { companyTargeting: { mode: "LINKEDIN_CURRENT_COMPANY", trusted: true } as const }
+          : {})
       },
-      maxResults
+      candidateLimit
     );
 
     logDiscoverIngestionEvent({
@@ -1171,8 +1333,23 @@ export class ProspectSearchService {
       emailFormatReason: company.emailFormatReason
     };
     const people = this.buildDatasetPeople(processedItems.profiles, classifications, emailFormat);
+    const roleFilteredPeople = this.roleIntelligence.enabled
+      ? await this.roleIntelligence.filterAndRankPeople({
+          people,
+          requestedTitles: this.asStringArray(search.requestedTitles),
+          requestedLocations: this.asStringArray(search.requestedLocations),
+          context: "PROVIDER",
+          options: { budget, searchId: search.id }
+        })
+      : people;
 
-    const processed = await this.materializeDataset(userId, search, company, { emailFormat, people }, "PROVIDER");
+    const processed = await this.materializeDataset(
+      userId,
+      search,
+      company,
+      { emailFormat, people: roleFilteredPeople },
+      "PROVIDER"
+    );
 
     return this.prisma.prospectSearch.update({
       where: { id: search.id },
@@ -1823,7 +2000,14 @@ function discoverCacheAgeDays(fetchedAt: Date | null, nowMs: number): number | n
 }
 
 type DiscoverCacheLogEvent = {
-  event: "DISCOVER_CACHE_HIT" | "DISCOVER_CACHE_MISS" | "DISCOVER_CACHE_REFRESHED" | "DISCOVER_CACHE_REFRESH_FAILED";
+  event:
+    | "DISCOVER_CACHE_HIT"
+    | "DISCOVER_COMPANY_POOL_CACHE_HIT"
+    | "DISCOVER_LOCAL_PERSON_REUSE"
+    | "DISCOVER_CACHE_POOL_ZERO_MATCH"
+    | "DISCOVER_CACHE_MISS"
+    | "DISCOVER_CACHE_REFRESHED"
+    | "DISCOVER_CACHE_REFRESH_FAILED";
   searchId: string;
   userId: string;
   fingerprint: string;
@@ -1832,7 +2016,32 @@ type DiscoverCacheLogEvent = {
   resultCount: number;
   providerCalled: boolean;
   processingLatencyMs: number;
+  cacheHitType: "EXACT" | "COMPANY_POOL" | "LOCAL_PERSON" | null;
+  candidateEntryCount: number;
+  candidatePersonCount: number;
+  matchingPersonCount: number;
 };
+
+function discoverCacheEventName(result: {
+  source: "CACHE" | "PROVIDER";
+  refreshedStale: boolean;
+  cacheHitType?: "EXACT" | "COMPANY_POOL" | "LOCAL_PERSON" | null;
+  lookupDiagnostics?: { candidateEntryCount: number; matchingPersonCount: number };
+}): DiscoverCacheLogEvent["event"] {
+  if (result.source === "CACHE") {
+    if (result.cacheHitType === "LOCAL_PERSON") {
+      return "DISCOVER_LOCAL_PERSON_REUSE";
+    }
+    return result.cacheHitType === "COMPANY_POOL" ? "DISCOVER_COMPANY_POOL_CACHE_HIT" : "DISCOVER_CACHE_HIT";
+  }
+  if (result.refreshedStale) {
+    return "DISCOVER_CACHE_REFRESHED";
+  }
+  if ((result.lookupDiagnostics?.candidateEntryCount ?? 0) > 0 && result.lookupDiagnostics?.matchingPersonCount === 0) {
+    return "DISCOVER_CACHE_POOL_ZERO_MATCH";
+  }
+  return "DISCOVER_CACHE_MISS";
+}
 
 /**
  * Structured, privacy-safe observability for the shared cache. Logs only safe
@@ -1915,6 +2124,24 @@ function logDiscoverIngestionEvent(event: DiscoverIngestionLogEvent): void {
   } else {
     console.info(line);
   }
+}
+
+type DiscoverProviderFunnelLogEvent = ProviderFunnelDiagnostics & {
+  searchId: string;
+  userId: string;
+  cachePeopleCount: number;
+  allocatedPeopleCount: number;
+};
+
+/**
+ * End-to-end provider funnel diagnostics. Counts only: no names, emails,
+ * profile/company URLs, provider payloads, prompts, or credentials.
+ */
+function logDiscoverProviderFunnelEvent(event: DiscoverProviderFunnelLogEvent): void {
+  if (process.env.NODE_ENV === "test") {
+    return;
+  }
+  console.info(`[discover-provider-funnel] ${JSON.stringify(event)}`);
 }
 
 type DiscoverEmailFormatLogEvent = {

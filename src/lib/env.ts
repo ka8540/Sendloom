@@ -154,7 +154,30 @@ const envSchema = z
     DISCOVER_SHARED_CACHE_VERSION: z.preprocess(
       (value) => (value === undefined || value === "" ? "v1" : String(value).trim()),
       z.string().min(1)
-    )
+    ),
+    // --- Discover semantic role intelligence (pgvector) ---
+    // Off by default for a no-behavior-change deployment. The embedding
+    // dimensions are intentionally pinned to the migration's vector(1536)
+    // column; changing them requires a new additive schema/version rollout.
+    DISCOVER_ROLE_VECTOR_ENABLED: booleanFlag(false),
+    DISCOVER_ROLE_EMBEDDING_MODEL: z.preprocess(
+      (value) => (value === undefined || value === "" ? "text-embedding-3-small" : String(value).trim()),
+      z.string().min(1)
+    ),
+    DISCOVER_ROLE_EMBEDDING_DIMENSIONS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .refine((value) => value === 1536, "Must match the pgvector vector(1536) column.")
+      .default(1536),
+    DISCOVER_ROLE_SEMANTIC_VERSION: z.preprocess(
+      (value) => (value === undefined || value === "" ? "v1" : String(value).trim()),
+      z.string().min(1)
+    ),
+    DISCOVER_ROLE_MAX_APIFY_TITLES: z.coerce.number().int().positive().max(8).default(5),
+    // Discover currently accepts at most five exact requested roles, so the
+    // total cap cannot be configured below five without dropping user intent.
+    DISCOVER_ROLE_MAX_APIFY_TITLES_TOTAL: z.coerce.number().int().min(5).max(20).default(8)
   })
   .superRefine((value, ctx) => {
     if (value.OBJECT_STORAGE_MODE === "r2") {
@@ -175,6 +198,14 @@ const envSchema = z
           });
         }
       }
+    }
+
+    if (value.DISCOVER_ROLE_MAX_APIFY_TITLES > value.DISCOVER_ROLE_MAX_APIFY_TITLES_TOTAL) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["DISCOVER_ROLE_MAX_APIFY_TITLES"],
+        message: "Cannot exceed DISCOVER_ROLE_MAX_APIFY_TITLES_TOTAL."
+      });
     }
 
     if (process.env.NODE_ENV === "production") {
@@ -265,7 +296,13 @@ function readRawEnv() {
     DISCOVER_EXPANSION_BATCH_SIZE: process.env.DISCOVER_EXPANSION_BATCH_SIZE,
     DISCOVER_EXPANSION_MAX_PROVIDER_PAGES: process.env.DISCOVER_EXPANSION_MAX_PROVIDER_PAGES,
     DISCOVER_SHARED_CACHE_TTL_DAYS: process.env.DISCOVER_SHARED_CACHE_TTL_DAYS,
-    DISCOVER_SHARED_CACHE_VERSION: process.env.DISCOVER_SHARED_CACHE_VERSION
+    DISCOVER_SHARED_CACHE_VERSION: process.env.DISCOVER_SHARED_CACHE_VERSION,
+    DISCOVER_ROLE_VECTOR_ENABLED: process.env.DISCOVER_ROLE_VECTOR_ENABLED,
+    DISCOVER_ROLE_EMBEDDING_MODEL: process.env.DISCOVER_ROLE_EMBEDDING_MODEL,
+    DISCOVER_ROLE_EMBEDDING_DIMENSIONS: process.env.DISCOVER_ROLE_EMBEDDING_DIMENSIONS,
+    DISCOVER_ROLE_SEMANTIC_VERSION: process.env.DISCOVER_ROLE_SEMANTIC_VERSION,
+    DISCOVER_ROLE_MAX_APIFY_TITLES: process.env.DISCOVER_ROLE_MAX_APIFY_TITLES,
+    DISCOVER_ROLE_MAX_APIFY_TITLES_TOTAL: process.env.DISCOVER_ROLE_MAX_APIFY_TITLES_TOTAL
   };
 }
 

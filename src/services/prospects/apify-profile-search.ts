@@ -44,6 +44,11 @@ export type NormalizedProfile = {
 export type ApifyProfileSearchInput = {
   companyName: string;
   companyLinkedinUrl?: string | null;
+  /**
+   * Explicit provenance for a trusted, resolved LinkedIn current-company
+   * constraint. This is never inferred for title-only searches.
+   */
+  companyTargeting?: CompanyTargetingContext;
   jobTitles: string[];
   locations: string[];
   maxResults: number;
@@ -53,6 +58,11 @@ export type ApifyProfileSearchInput = {
    * resumes after the pages already fetched instead of restarting at page 1.
    */
   startPage?: number;
+};
+
+export type CompanyTargetingContext = {
+  mode: "LINKEDIN_CURRENT_COMPANY";
+  trusted: true;
 };
 
 export type ApifyProfileSearchResult = {
@@ -275,10 +285,75 @@ export function companyNamesAliasMatch(a: string, b: string): boolean {
 }
 
 /**
+ * A compact target brand can be an initialism or stylized successor brand for
+ * a longer employer label. In a trusted provider-constrained query, an ordered
+ * match of all but at most one compact-brand character is enough to say the
+ * returned name is not a STRONG contradiction. This is deliberately generic:
+ * it contains no company relationship table and is never used without the
+ * provider's resolved current-company constraint.
+ */
+function companyNameMayExpandCompactBrand(targetName: string, profileName: string): boolean {
+  const targetBrandToken = stripDiacritics(targetName).match(/[A-Za-z0-9]+/)?.[0] ?? "";
+  const targetKey = normalizeCompanyName(targetName).replace(/[^a-z0-9]/g, "");
+  const profileKey = normalizeCompanyName(profileName).replace(/[^a-z0-9]/g, "");
+  if (
+    !/^[A-Z0-9]{2,5}$/.test(targetBrandToken) ||
+    targetKey.length < 2 ||
+    targetKey.length > 5 ||
+    profileKey.length <= targetKey.length
+  ) {
+    return false;
+  }
+  // Compact brands are uppercase initialism-like identities, not ordinary
+  // short title-cased words.
+  if (profileKey[0] !== targetKey[0]) {
+    return false;
+  }
+
+  let profileIndex = 0;
+  let matched = 0;
+  const matchedPositions: number[] = [];
+  const missingIndexes: number[] = [];
+  for (const [targetIndex, character] of [...targetKey].entries()) {
+    const next = profileKey.indexOf(character, profileIndex);
+    if (next === -1) {
+      missingIndexes.push(targetIndex);
+      continue;
+    }
+    matched += 1;
+    matchedPositions.push(next);
+    profileIndex = next + 1;
+  }
+  if (matched < Math.max(2, targetKey.length - 1)) {
+    return false;
+  }
+  if (missingIndexes.length === 0) {
+    return true;
+  }
+  // A single absent trailing brand marker is plausible (the long-form label
+  // expanded the meaningful prefix); a character missing from the middle is
+  // not. Keep that prefix near the beginning of the long-form name so an
+  // unrelated same-initial company cannot pass on a distant incidental letter.
+  const lastMatchedPosition = matchedPositions.at(-1) ?? profileKey.length;
+  return (
+    missingIndexes.length === 1 &&
+    missingIndexes[0] === targetKey.length - 1 &&
+    lastMatchedPosition <= Math.ceil(profileKey.length / 2)
+  );
+}
+
+type CompanyMatchTarget = {
+  companyName: string;
+  linkedinCompanyUrl?: string | null;
+  companyTargeting?: CompanyTargetingContext;
+};
+
+/**
  * Decide whether a profile's current employer matches the resolved company.
- * If neither a company URL nor a company name can be compared, the profile is
- * excluded. Prospect searches should never fill a graph from a broad title-only
- * scrape when we cannot verify the current employer.
+ * Untargeted/title-only datasets stay strict: if neither a company URL nor a
+ * company name can be compared, the profile is excluded. A dataset explicitly
+ * constrained to a trusted resolved LinkedIn company may treat missing or weak
+ * redundant employer metadata as non-contradictory.
  *
  * A LinkedIn company-URL identity match is the strongest signal (the actor was
  * already queried by that URL). Slugs are compared on their normalized
@@ -289,7 +364,7 @@ export function companyNamesAliasMatch(a: string, b: string): boolean {
  */
 export function currentCompanyMatches(
   profile: NormalizedProfile,
-  target: { companyName: string; linkedinCompanyUrl?: string | null }
+  target: CompanyMatchTarget
 ): boolean {
   const targetSlug = normalizedCompanySlug(target.linkedinCompanyUrl);
   const profileSlug = normalizedCompanySlug(profile.currentCompanyUrl);
@@ -298,7 +373,35 @@ export function currentCompanyMatches(
   }
 
   if (profile.currentCompanyName && target.companyName) {
-    return companyNamesAliasMatch(profile.currentCompanyName, target.companyName);
+    if (companyNamesAliasMatch(profile.currentCompanyName, target.companyName)) {
+      return true;
+    }
+  }
+
+  const stronglyTargeted =
+    target.companyTargeting?.mode === "LINKEDIN_CURRENT_COMPANY" &&
+    target.companyTargeting.trusted &&
+    Boolean(targetSlug);
+  if (!stronglyTargeted) {
+    return false;
+  }
+
+  // The actor already constrained this dataset to the resolved company. A
+  // missing redundant employer URL/name is weak evidence and cannot override
+  // that trusted positive signal.
+  if (!profileSlug) {
+    return true;
+  }
+
+  // A different explicit LinkedIn employer is normally a strong contradiction.
+  // Preserve alternate/successor branding only when the names generically show
+  // a plausible compact-brand expansion; e.g. a targeted short brand and a
+  // longer division/legacy label. Unrelated explicit identities remain denied.
+  if (
+    profile.currentCompanyName &&
+    companyNameMayExpandCompactBrand(target.companyName, profile.currentCompanyName)
+  ) {
+    return true;
   }
 
   return false;
@@ -345,7 +448,7 @@ export type ProcessedDatasetItems = {
  */
 export function processDatasetItems(
   items: RawProfile[],
-  target: { companyName: string; linkedinCompanyUrl?: string | null },
+  target: CompanyMatchTarget,
   maxResults: number
 ): ProcessedDatasetItems {
   const normalized: NormalizedProfile[] = [];
@@ -538,11 +641,19 @@ export class ApifyProfileSearchService {
     const { runId, datasetId, items, status, statusMessage } = await this.runner.run(this.actorId, actorInput);
     assertApifyRunUsable({ status, statusMessage, itemCount: items.length });
 
+    const targetedCompanyUrl = input.companyLinkedinUrl ?? input.linkedinCompanyUrl ?? null;
+    const usedTrustedCurrentCompanyTarget = Boolean(
+      input.companyTargeting?.mode === "LINKEDIN_CURRENT_COMPANY" &&
+        input.companyTargeting.trusted &&
+        targetedCompanyUrl &&
+        actorInput.currentCompanies?.includes(targetedCompanyUrl)
+    );
     const processed = processDatasetItems(
       items,
       {
         companyName: input.companyName,
-        linkedinCompanyUrl: input.companyLinkedinUrl ?? input.linkedinCompanyUrl ?? null
+        linkedinCompanyUrl: targetedCompanyUrl,
+        ...(usedTrustedCurrentCompanyTarget ? { companyTargeting: input.companyTargeting } : {})
       },
       input.maxResults
     );

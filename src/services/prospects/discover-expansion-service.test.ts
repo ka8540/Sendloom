@@ -8,11 +8,18 @@ import {
 } from "@/services/prospects/discover-cache-service";
 import { computeDiscoverFingerprint } from "@/services/prospects/discover-cache-fingerprint";
 import {
+  DiscoverRoleIntelligenceService,
+  type DiscoverRoleIntelligencePort
+} from "@/services/prospects/discover-role-intelligence-service";
+import {
   DiscoverExpansionService,
   NO_MORE_PEOPLE_MESSAGE,
-  expansionMessage
+  expansionMessage,
+  type ExpansionAuditFn
 } from "@/services/prospects/discover-expansion-service";
 import { RoleClassificationService } from "@/services/prospects/role-classification-service";
+import type { RoleEmbeddingPort } from "@/services/prospects/role-embedding-service";
+import type { RoleSemanticStorePort } from "@/services/prospects/role-semantic-store";
 import { normalizeTitle } from "@/services/prospects/prospect-normalization";
 import { createFakePrisma, type FakePrisma } from "@/services/prospects/__test-utils__/fake-prisma";
 import type { DiscoverQuotaReserver, DiscoverQuotaStatus } from "@/lib/discover-quota";
@@ -104,8 +111,9 @@ type RawProfile = {
   lastName: string;
   fullName: string;
   headline: string;
-  currentPosition: Array<{ title: string; companyName: string }>;
+  currentPosition: Array<{ title: string; companyName: string; companyLinkedinUrl?: string }>;
   linkedinUrl: string;
+  location?: string;
 };
 
 function rawProfile(id: string, firstName: string, lastName: string, linkedinUrl?: string): RawProfile {
@@ -117,6 +125,25 @@ function rawProfile(id: string, firstName: string, lastName: string, linkedinUrl
     headline: "Software Engineer",
     currentPosition: [{ title: "Software Engineer", companyName: "Apple" }],
     linkedinUrl: linkedinUrl ?? `https://www.linkedin.com/in/${id}`
+  };
+}
+
+function rtxRawProfile(id: string, title: string): RawProfile {
+  return {
+    id,
+    firstName: "RTX",
+    lastName: id,
+    fullName: `RTX ${id}`,
+    headline: title,
+    currentPosition: [
+      {
+        title,
+        companyName: "RTX Corporation",
+        companyLinkedinUrl: "https://www.linkedin.com/company/rtx/"
+      }
+    ],
+    linkedinUrl: `https://www.linkedin.com/in/${id}`,
+    location: "United States"
   };
 }
 
@@ -253,7 +280,7 @@ function seedExistingFromCache(
 /** Seed a shared cache entry whose fingerprint matches the search. */
 function seedCache(
   people: Array<{ sourceProfileId: string; firstName: string; lastName: string; linkedinUrl?: string }>,
-  opts: { providerNextPage?: number; exhausted?: boolean } = {}
+  opts: { providerNextPage?: number; providerPagesFetched?: number; exhausted?: boolean } = {}
 ) {
   const { fingerprint } = fingerprintFor();
   prisma._state.discoverCache.push({
@@ -272,7 +299,7 @@ function seedCache(
     expiresAt: new Date(Date.now() + 30 * DAY_MS),
     resultCount: people.length,
     providerNextPage: opts.providerNextPage ?? 2,
-    providerPagesFetched: 1,
+    providerPagesFetched: opts.providerPagesFetched ?? 1,
     providerExhausted: opts.exhausted ?? false,
     lastProviderFetchAt: new Date(),
     emailDomain: "apple.com",
@@ -313,6 +340,203 @@ function seedCache(
   });
 }
 
+function rtxFingerprint() {
+  return computeDiscoverFingerprint({
+    company: {
+      linkedinCompanyUrl: "https://www.linkedin.com/company/rtx/",
+      officialWebsiteDomain: "rtx.com",
+      officialDomain: "rtx.com",
+      normalizedName: "rtx corporation"
+    },
+    roles: ROLES,
+    locations: LOCATIONS,
+    resultLimit: 10,
+    cacheVersion: "v1"
+  });
+}
+
+/** RTX 35-person target search plus three provider identities owned elsewhere. */
+function seedRtxRegression() {
+  const { fingerprint } = rtxFingerprint();
+  prisma._state.companies.push({
+    id: COMPANY_ID,
+    userId: USER_ID,
+    name: "RTX Corporation",
+    normalizedName: "rtx corporation",
+    officialName: "RTX Corporation",
+    officialDomain: "rtx.com",
+    officialWebsiteDomain: "rtx.com",
+    linkedinUrl: "https://www.linkedin.com/company/rtx/",
+    emailDomain: "rtx.com",
+    emailDomainConfidence: "HIGH",
+    emailPattern: "first.last",
+    patternConfidence: "HIGH",
+    emailDomainEvidence: [],
+    patternEvidence: [],
+    emailFormatReason: null,
+    createdAt: new Date(),
+    updatedAt: new Date()
+  });
+  prisma._state.searches.push({
+    id: SEARCH_ID,
+    userId: USER_ID,
+    companyId: COMPANY_ID,
+    requestedCompany: "RTX Corporation",
+    requestedTitles: ROLES,
+    requestedLocations: LOCATIONS,
+    maxResults: 10,
+    status: "READY",
+    totalProcessed: 35,
+    totalFound: 35,
+    cacheFingerprint: fingerprint,
+    createdAt: new Date(),
+    updatedAt: new Date()
+  });
+  prisma._state.searches.push({
+    id: "rtx_sibling_search",
+    userId: USER_ID,
+    companyId: COMPANY_ID,
+    requestedCompany: "RTX Corporation",
+    requestedTitles: ["Application Developer"],
+    requestedLocations: LOCATIONS,
+    maxResults: 10,
+    status: "READY",
+    totalProcessed: 3,
+    totalFound: 3,
+    createdAt: new Date(),
+    updatedAt: new Date()
+  });
+  prisma._state.positions.push({
+    id: "position_se",
+    companyId: COMPANY_ID,
+    category: "SOFTWARE_ENGINEERING",
+    displayName: "Software Engineering",
+    rawTitles: ["Software Engineer"],
+    createdAt: new Date(),
+    updatedAt: new Date()
+  });
+  for (let index = 1; index <= 35; index += 1) {
+    const personId = `rtx_person_${index}`;
+    prisma._state.people.push({
+      id: personId,
+      userId: USER_ID,
+      companyId: COMPANY_ID,
+      positionId: "position_se",
+      sourceProfileId: `rtx_initial_${index}`,
+      firstName: "Initial",
+      lastName: `RTX${index}`,
+      fullName: `Initial RTX${index}`,
+      linkedinUrl: `https://www.linkedin.com/in/rtx-initial-${index}`,
+      currentTitle: "Software Engineer",
+      normalizedTitle: "software engineer",
+      inferredEmail: `initial.${index}@rtx.com`,
+      emailStatus: "INFERRED_HIGH",
+      emailConfidence: "HIGH",
+      emailPattern: "first.last",
+      emailSource: "PATTERN",
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+    prisma._state.searchPeople.push({
+      id: `rtx_grant_${index}`,
+      searchId: SEARCH_ID,
+      personId,
+      userId: USER_ID,
+      allocationOrder: index - 1,
+      allocationSource: "CACHE",
+      allocatedAt: new Date()
+    });
+  }
+  for (let index = 1; index <= 3; index += 1) {
+    const personId = `rtx_existing_provider_${index}`;
+    prisma._state.people.push({
+      id: personId,
+      userId: USER_ID,
+      companyId: COMPANY_ID,
+      positionId: "position_se",
+      sourceProfileId: `rtx_new_${index}`,
+      firstName: "RTX",
+      lastName: `rtx_new_${index}`,
+      fullName: `RTX rtx_new_${index}`,
+      linkedinUrl: `https://www.linkedin.com/in/rtx_new_${index}`,
+      currentTitle: "Software Engineer",
+      normalizedTitle: "software engineer",
+      inferredEmail: `existing.${index}@rtx.com`,
+      emailStatus: "INFERRED_HIGH",
+      emailConfidence: "HIGH",
+      emailPattern: "first.last",
+      emailSource: "PATTERN",
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+    prisma._state.searchPeople.push({
+      id: `rtx_sibling_grant_${index}`,
+      searchId: "rtx_sibling_search",
+      personId,
+      userId: USER_ID,
+      allocationOrder: index - 1,
+      allocationSource: "CACHE",
+      allocatedAt: new Date()
+    });
+  }
+  prisma._state.discoverCache.push({
+    id: "cache_rtx",
+    fingerprint,
+    cacheVersion: "v1",
+    companyKey: "linkedin:rtx",
+    companyName: "RTX Corporation",
+    companyDomain: "rtx.com",
+    companyLinkedinUrl: "https://www.linkedin.com/company/rtx/",
+    normalizedRoles: ["software engineer"],
+    normalizedLocations: ["united states"],
+    resultLimit: 10,
+    status: "READY",
+    fetchedAt: new Date(),
+    expiresAt: new Date(Date.now() + 30 * DAY_MS),
+    resultCount: 0,
+    providerNextPage: 2,
+    providerPagesFetched: 1,
+    providerExhausted: false,
+    lastProviderFetchAt: new Date(),
+    emailDomain: "rtx.com",
+    emailDomainConfidence: "HIGH",
+    emailDomainEvidence: [],
+    emailPattern: "first.last",
+    patternConfidence: "HIGH",
+    patternEvidence: [],
+    emailFormatReason: null,
+    createdAt: new Date(),
+    updatedAt: new Date()
+  });
+}
+
+/** Real enabled semantic service exercising its missing-vector safe fallback. */
+function enabledSoftwareRoleIntelligence(): DiscoverRoleIntelligencePort {
+  const unavailable = async (): Promise<never> => {
+    throw new Error("semantic row unavailable");
+  };
+  const embeddings: RoleEmbeddingPort = {
+    enabled: true,
+    async embedTitles(titles) {
+      return new Map(titles.map((title) => [title, Array.from({ length: 1536 }, () => 0.5)]));
+    }
+  };
+  const store: RoleSemanticStorePort = {
+    findByTitles: unavailable,
+    findVectorsByTitles: unavailable,
+    upsertMany: unavailable,
+    findSimilarMany: unavailable
+  };
+  return new DiscoverRoleIntelligenceService(roleClassifierStub, embeddings, store, {
+    enabled: true,
+    embeddingModel: "text-embedding-3-small",
+    embeddingDimensions: 1536,
+    semanticVersion: "rtx-test-v1",
+    maxApifyTitlesPerRole: 5,
+    maxApifyTitlesTotal: 8
+  });
+}
+
 function cachePeople(prefix: string, count: number) {
   return Array.from({ length: count }, (_, i) => ({
     sourceProfileId: `${prefix}_${i + 1}`,
@@ -328,6 +552,8 @@ function buildService(opts: {
   expansionLock?: DiscoverCacheLock;
   batchSize?: number;
   maxProviderPages?: number;
+  roleIntelligence?: DiscoverRoleIntelligencePort;
+  audit?: ExpansionAuditFn;
 } = {}) {
   const runner: ApifyRunner = opts.runner ?? { run: vi.fn(async () => ({ runId: null, datasetId: null, items: [] })) };
   const apify = new ApifyProfileSearchService({ token: "t", actorId: "actor", runner });
@@ -337,11 +563,12 @@ function buildService(opts: {
     prisma: prisma as unknown as PrismaClient,
     apify,
     roleClassifier: roleClassifierStub,
+    roleIntelligence: opts.roleIntelligence,
     cache,
     discoverQuota: quota.reserve,
     quotaStatus: (_userId, email) => quota.status(email),
     expansionLock: opts.expansionLock ?? makeFakeLock(),
-    audit: () => undefined,
+    audit: opts.audit ?? (() => undefined),
     batchSize: opts.batchSize ?? 10,
     maxProviderPages: opts.maxProviderPages ?? 5
   });
@@ -393,14 +620,22 @@ describe("DiscoverExpansionService.addMorePeople", () => {
     seedExistingFromCache(cached.slice(0, 10));
     seedCache(cached, { providerNextPage: 2 });
     const startPages: number[] = [];
+    const jobTitleInputs: string[][] = [];
     const runner: ApifyRunner = {
       run: vi.fn(async (_actorId, input) => {
         startPages.push(input.startPage);
+        jobTitleInputs.push(input.currentJobTitles);
         // Page 2 returns 10 brand-new profiles.
         return { runId: "r", datasetId: "d", items: Array.from({ length: 10 }, (_, i) => rawProfile(`prov_${i + 1}`, "Prov", `P${i + 1}`)) };
       })
     };
-    const { service } = buildService({ runner });
+    const roleIntelligence: DiscoverRoleIntelligencePort = {
+      enabled: true,
+      filterAndRankPeople: async ({ people }) => [...people],
+      buildProviderTitlePlan: async () => ["Software Engineer", "Software Developer", "Backend Software Engineer"],
+      persistTitleKnowledge: async () => ({ existing: 0, created: 0, failed: false })
+    };
+    const { service } = buildService({ runner, roleIntelligence });
 
     const result = await service.addMorePeople({
       userId: USER_ID,
@@ -411,18 +646,101 @@ describe("DiscoverExpansionService.addMorePeople", () => {
 
     expect(result.addedCount).toBe(10); // 5 cached + 5 provider
     expect(startPages).toEqual([2]); // never restarts at page 1 (#14)
+    expect(jobTitleInputs).toEqual([["Software Engineer", "Software Developer", "Backend Software Engineer"]]);
     // The saved continuation page advanced after a valid fetch (#15).
     const cacheRow = prisma._state.discoverCache.find((r) => r.id === "cache_seed");
     expect(cacheRow?.providerNextPage).toBe(3);
   });
 
-  it("discards duplicate provider results and never repeats existing people (#12, #13)", async () => {
+  it("keeps all 10 valid RTX Software Engineer-family results with semantic intelligence enabled (35 -> 45)", async () => {
+    seedRtxRegression();
+    const titles = [
+      "Software Engineer",
+      "Senior Software Engineer",
+      "Staff Software Engineer",
+      "Principal Software Engineer",
+      "Principal Software Engineer / Architect",
+      "Backend Software Engineer",
+      "Frontend Software Engineer",
+      "Application Developer",
+      "Software Developer",
+      "Platform Software Engineer"
+    ];
+    const providerItems = titles.map((title, index) => rtxRawProfile(`rtx_new_${index + 1}`, title));
+    const runner: ApifyRunner = {
+      run: vi.fn(async () => ({
+        runId: "rtx-run",
+        datasetId: "rtx-dataset",
+        items: providerItems,
+        status: "SUCCEEDED"
+      }))
+    };
+    const auditEvents: Array<Parameters<ExpansionAuditFn>[0]> = [];
+    const { service } = buildService({
+      runner,
+      roleIntelligence: enabledSoftwareRoleIntelligence(),
+      audit: (event) => {
+        auditEvents.push(event);
+      }
+    });
+
+    const beforePeople = prisma._state.people.length;
+    const result = await service.addMorePeople({
+      userId: USER_ID,
+      actorEmail: "user@example.com",
+      searchId: SEARCH_ID,
+      idempotencyKey: "rtx-35-to-45"
+    });
+
+    expect(runner.run).toHaveBeenCalledTimes(1);
+    expect(providerItems).toHaveLength(10);
+    expect(result).toMatchObject({ addedCount: 10, totalPeopleCount: 45, exhausted: false });
+    const targetGrants = prisma._state.searchPeople.filter((row) => row.searchId === SEARCH_ID);
+    expect(targetGrants).toHaveLength(45);
+    expect(targetGrants.filter((row) => row.allocationSource === "ADD_MORE_PROVIDER")).toHaveLength(10);
+    const updatedTotal = prisma._state.searches.find((row) => row.id === SEARCH_ID)?.totalProcessed;
+    expect(updatedTotal).toBe(45);
+    expect(targetGrants).toHaveLength(updatedTotal);
+    expect(prisma._state.expansions[0]).toMatchObject({ addedCount: 10, totalPeopleCount: 45 });
+    // Three identities already existed via a sibling search, so only seven new
+    // ProspectPerson rows are created while all ten target grants are added.
+    expect(prisma._state.people).toHaveLength(beforePeople + 7);
+    for (let index = 1; index <= 10; index += 1) {
+      expect(prisma._state.people.filter((row) => row.sourceProfileId === `rtx_new_${index}`)).toHaveLength(1);
+    }
+
+    const pageEvent = auditEvents.find((event) => event.action === "DISCOVER_EXPANSION_PROVIDER_PAGE_PROCESSED");
+    expect(pageEvent?.metadata).toMatchObject({
+      rawProviderCount: 10,
+      normalizedProviderCount: 10,
+      identityResolvedCount: 10,
+      classifiedCount: 10,
+      semanticAcceptedCount: 10,
+      semanticRejectedCount: 0,
+      cacheAppendedCount: 10,
+      duplicateCount: 0,
+      collectedCount: 10,
+      page: 2,
+      providerExhausted: false
+    });
+    const completedEvent = auditEvents.find((event) => event.action === "DISCOVER_EXPANSION_COMPLETED");
+    expect(completedEvent?.metadata).toMatchObject({
+      materializedCount: 10,
+      allocationAddedCount: 10,
+      finalAllocationCount: 45,
+      totalPeopleCount: 45
+    });
+  });
+
+  it("continues past true duplicates until it fills the requested batch (#12, #13)", async () => {
     seedCompany();
     seedSearch();
     seedExistingPeople(10);
     seedCache([], { providerNextPage: 2 }); // no unused cached
+    const startPages: number[] = [];
     const runner: ApifyRunner = {
       run: vi.fn(async (_actorId, input) => {
+        startPages.push(input.startPage);
         if (input.startPage === 2) {
           // Half duplicate an existing person (by source id), half are new.
           return {
@@ -433,6 +751,13 @@ describe("DiscoverExpansionService.addMorePeople", () => {
               rawProfile("init_2", "Init", "User2"), // duplicate of existing
               ...Array.from({ length: 8 }, (_, i) => rawProfile(`new_${i + 1}`, "New", `P${i + 1}`))
             ]
+          };
+        }
+        if (input.startPage === 3) {
+          return {
+            runId: "r",
+            datasetId: "d",
+            items: [rawProfile("new_9", "New", "P9"), rawProfile("new_10", "New", "P10")]
           };
         }
         return { runId: "r", datasetId: "d", items: [] };
@@ -447,10 +772,54 @@ describe("DiscoverExpansionService.addMorePeople", () => {
       idempotencyKey: "key-3"
     });
 
-    // Only the 8 new people are added; duplicates do not count.
-    expect(result.addedCount).toBe(8);
+    expect(result.addedCount).toBe(10);
+    expect(startPages).toEqual([2, 3]);
     expect(prisma._state.people.filter((p) => p.sourceProfileId.startsWith("init_"))).toHaveLength(10);
-    expect(prisma._state.people.filter((p) => p.sourceProfileId.startsWith("new_"))).toHaveLength(8);
+    expect(prisma._state.people.filter((p) => p.sourceProfileId.startsWith("new_"))).toHaveLength(10);
+  });
+
+  it.each([
+    ["same-company derived", 0],
+    ["historical backfill", 0]
+  ])("continues a %s cache from page 1 through duplicate legacy results", async (_source, providerPagesFetched) => {
+    seedCompany();
+    seedSearch();
+    seedExistingPeople(10);
+    seedCache([], { providerNextPage: 1, providerPagesFetched });
+    const startPages: number[] = [];
+    const runner: ApifyRunner = {
+      run: vi.fn(async (_actorId, input) => {
+        startPages.push(input.startPage);
+        if (input.startPage === 1) {
+          return {
+            runId: "legacy-page-1",
+            datasetId: "legacy-dataset-1",
+            items: Array.from({ length: 10 }, (_, index) =>
+              rawProfile(`init_${index + 1}`, "Initial", `User${index + 1}`)
+            )
+          };
+        }
+        return {
+          runId: "legacy-page-2",
+          datasetId: "legacy-dataset-2",
+          items: Array.from({ length: 10 }, (_, index) =>
+            rawProfile(`legacy_new_${index + 1}`, "Legacy", `New${index + 1}`)
+          )
+        };
+      })
+    };
+    const { service } = buildService({ runner });
+
+    const result = await service.addMorePeople({
+      userId: USER_ID,
+      actorEmail: "user@example.com",
+      searchId: SEARCH_ID,
+      idempotencyKey: `legacy-${_source}`
+    });
+
+    expect(result.addedCount).toBe(10);
+    expect(startPages).toEqual([1, 2]);
+    expect(prisma._state.discoverCache.find((row) => row.id === "cache_seed")?.providerNextPage).toBe(3);
   });
 
   it("retrying the same expansion consumes no extra slot and adds no extra people (#6, #22)", async () => {

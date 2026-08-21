@@ -843,3 +843,26 @@ model ProspectTitleClassification {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }
+
+// One persistent semantic representation per normalized job title and
+// embedding model/dimension/semantic-policy version. Vectors are deliberately
+// title-level shared knowledge, never copied onto people or cache-person rows.
+model ProspectRoleSemantic {
+  id                       String                @id @default(cuid())
+  normalizedTitle          String
+  canonicalRoleKey         String
+  category                 String
+  specialty                String
+  breadth                  String
+  classificationConfidence String                @default("MEDIUM")
+  embeddingModel           String
+  embeddingDimensions      Int
+  semanticVersion          String
+  embedding                Unsupported("vector")
+  createdAt                DateTime              @default(now())
+  updatedAt                DateTime              @updatedAt
+
+  @@unique([normalizedTitle, embeddingModel, embeddingDimensions, semanticVersion])
+  @@index([category, specialty])
+  @@index([embeddingModel, embeddingDimensions, semanticVersion])
+}

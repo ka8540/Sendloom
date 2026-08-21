@@ -64,6 +64,30 @@ function harvestApiItem(overrides: Record<string, unknown> = {}): RawProfile {
   };
 }
 
+function rtxRecruiterItem(
+  index: number,
+  title: string,
+  companyName?: string | null,
+  companyLinkedinUrl?: string | null
+): RawProfile {
+  return harvestApiItem({
+    id: `rtx-${index}`,
+    publicIdentifier: `rtx-recruiter-${index}`,
+    linkedinUrl: `https://www.linkedin.com/in/rtx-recruiter-${index}`,
+    firstName: `Recruiter${index}`,
+    lastName: "Example",
+    headline: title,
+    currentPosition: [
+      {
+        position: title,
+        ...(companyName ? { companyName } : {}),
+        ...(companyLinkedinUrl ? { companyLinkedinUrl } : {})
+      }
+    ],
+    experience: []
+  });
+}
+
 describe("buildActorInput", () => {
   it("maps company/title/location and always keeps takePages >= 1", () => {
     const input = buildActorInput({
@@ -306,6 +330,58 @@ describe("currentCompanyMatches", () => {
       )
     ).toBe(false);
   });
+
+  it("uses trusted provider targeting as a positive signal without admitting an explicit unrelated employer", () => {
+    const target = {
+      companyName: "RTX Corporation",
+      linkedinCompanyUrl: "https://www.linkedin.com/company/rtx/",
+      companyTargeting: { mode: "LINKEDIN_CURRENT_COMPANY", trusted: true } as const
+    };
+
+    expect(
+      currentCompanyMatches(
+        {
+          ...base,
+          currentCompanyName: "Raytheon",
+          currentCompanyUrl: "https://www.linkedin.com/company/raytheon/"
+        },
+        target
+      )
+    ).toBe(true);
+    expect(currentCompanyMatches({ ...base, currentCompanyName: null, currentCompanyUrl: null }, target)).toBe(true);
+    expect(
+      currentCompanyMatches(
+        {
+          ...base,
+          currentCompanyName: "Microsoft",
+          currentCompanyUrl: "https://www.linkedin.com/company/microsoft/"
+        },
+        target
+      )
+    ).toBe(false);
+    expect(
+      currentCompanyMatches(
+        {
+          ...base,
+          currentCompanyName: "Reddit",
+          currentCompanyUrl: "https://www.linkedin.com/company/reddit/"
+        },
+        target
+      )
+    ).toBe(false);
+    // The same alternate representation stays strict outside explicit provider
+    // provenance; title-only searches never receive the trusted fallback.
+    expect(
+      currentCompanyMatches(
+        {
+          ...base,
+          currentCompanyName: "Raytheon",
+          currentCompanyUrl: "https://www.linkedin.com/company/raytheon/"
+        },
+        { companyName: target.companyName, linkedinCompanyUrl: target.linkedinCompanyUrl }
+      )
+    ).toBe(false);
+  });
 });
 
 describe("processDatasetItems", () => {
@@ -346,6 +422,52 @@ describe("processDatasetItems", () => {
     const { profiles, diagnostics } = processDatasetItems([{ bad: 1 }, { alsoBad: 2 }], target, 10);
     expect(profiles).toHaveLength(0);
     expect(diagnostics.rejectedBySchema).toBe(2);
+  });
+
+  it("keeps all 10 legitimate RTX/Raytheon recruiters from a trusted current-company query", () => {
+    const trustedRtxTarget = {
+      companyName: "RTX Corporation",
+      linkedinCompanyUrl: "https://www.linkedin.com/company/rtx/",
+      companyTargeting: { mode: "LINKEDIN_CURRENT_COMPANY", trusted: true } as const
+    };
+    const validItems = [
+      rtxRecruiterItem(1, "Recruiter", "RTX Corporation", "https://www.linkedin.com/company/rtx/"),
+      rtxRecruiterItem(2, "Technical Recruiter", "RTX Corporation", "https://www.linkedin.com/company/rtx/"),
+      rtxRecruiterItem(3, "Engineering Recruiter", "RTX Corporation", "https://www.linkedin.com/company/rtx/"),
+      rtxRecruiterItem(4, "Talent Acquisition Recruiter", "RTX Corporation", "https://www.linkedin.com/company/rtx/"),
+      rtxRecruiterItem(5, "Talent Acquisition Specialist", "RTX Corporation", "https://www.linkedin.com/company/rtx/"),
+      rtxRecruiterItem(6, "Campus Recruiter", "RTX Corporation", "https://www.linkedin.com/company/rtx/"),
+      rtxRecruiterItem(7, "Executive Technology Recruiting Leader", "Raytheon", "https://www.linkedin.com/company/raytheon/"),
+      rtxRecruiterItem(8, "Talent Acquisition Business Partner", "Raytheon Technologies"),
+      rtxRecruiterItem(9, "Recruiting Leader", "Raytheon"),
+      rtxRecruiterItem(10, "Senior Recruiter")
+    ];
+
+    const validOnly = processDatasetItems(validItems, trustedRtxTarget, 25);
+    expect(validOnly.profiles).toHaveLength(10);
+    expect(validOnly.diagnostics).toMatchObject({
+      itemsReturned: 10,
+      parsedCandidates: 10,
+      rejectedBySchema: 0,
+      duplicateItems: 0,
+      companyMatched: 10,
+      rejectedByCompany: 0
+    });
+
+    const withExplicitUnrelatedEmployer = processDatasetItems(
+      [
+        ...validItems,
+        rtxRecruiterItem(11, "Recruiter", "Microsoft", "https://www.linkedin.com/company/microsoft/")
+      ],
+      trustedRtxTarget,
+      25
+    );
+    expect(withExplicitUnrelatedEmployer.profiles).toHaveLength(10);
+    expect(withExplicitUnrelatedEmployer.diagnostics).toMatchObject({
+      itemsReturned: 11,
+      companyMatched: 10,
+      rejectedByCompany: 1
+    });
   });
 });
 

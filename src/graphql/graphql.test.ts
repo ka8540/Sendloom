@@ -805,7 +805,7 @@ describe("addMoreDiscoverPeople expansion mutation", () => {
       status: "READY",
       requestedCount: 10,
       addedCount: 10,
-      totalPeopleCount: 20,
+      totalPeopleCount: 45,
       quotaRemaining: 2,
       exhausted: false,
       message: "10 new people were added."
@@ -823,13 +823,52 @@ describe("addMoreDiscoverPeople expansion mutation", () => {
     });
 
     expect(result.errors).toBeUndefined();
-    expect(result.data?.addMoreDiscoverPeople).toMatchObject({ addedCount: 10, totalPeopleCount: 20, exhausted: false });
+    expect(result.data?.addMoreDiscoverPeople).toMatchObject({ addedCount: 10, totalPeopleCount: 45, exhausted: false });
     expect(addMorePeople).toHaveBeenCalledWith({
       userId: "user_A",
       actorEmail: "a@example.com",
       searchId: "s1",
       idempotencyKey: "k1"
     });
+  });
+
+  it("resolves the UI-facing search people count from 45 durable allocations", async () => {
+    const prisma = createFakePrisma();
+    prisma._state.searches.push({
+      id: "rtx_search",
+      userId: FAKE_USER.id,
+      companyId: null,
+      requestedCompany: "RTX Corporation",
+      requestedTitles: ["Software Engineer"],
+      requestedLocations: ["United States"],
+      maxResults: 10,
+      status: "READY",
+      // Deliberately stale: the resolver must prefer durable grants.
+      totalProcessed: 35,
+      totalFound: 35,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+    for (let index = 1; index <= 45; index += 1) {
+      prisma._state.searchPeople.push({
+        id: `rtx_allocation_${index}`,
+        searchId: "rtx_search",
+        personId: `rtx_person_${index}`,
+        userId: FAKE_USER.id,
+        allocationOrder: index - 1,
+        allocationSource: index <= 35 ? "CACHE" : "ADD_MORE_PROVIDER",
+        allocatedAt: new Date()
+      });
+    }
+
+    const result = await graphql({
+      schema: prospectSchema,
+      source: `{ prospectSearch(id: "rtx_search") { peopleCount } }`,
+      contextValue: makeContext({ user: FAKE_USER, prisma })
+    });
+
+    expect(result.errors).toBeUndefined();
+    expect(result.data?.prospectSearch).toEqual({ peopleCount: 45 });
   });
 
   it("requires authentication", async () => {

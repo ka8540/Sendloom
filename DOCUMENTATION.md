@@ -1619,14 +1619,17 @@ consumes Discover quota, never touches people rows, and is idempotent.
 Discover enforces a fixed, server-side product quota that is independent of (and
 runs alongside) normal API rate limiting:
 
-- **Result count is fixed.** Each processed search returns up to
+- **Result allocation is fixed.** Each processed search grants up to
   `DISCOVER_RESULTS_PER_SEARCH` people (default 10). The user can never choose
-  the count: the modal has no "Max results" field, `createProspectSearch`
+  the count: the modal has no "Max results" field and `createProspectSearch`
   discards any supplied `maxResults` (validation + `createSearch` force the
-  value, persisting `10`), and the Apify call always runs with `maxItems: 10`,
-  `takePages: 1` — even when re-processing a legacy record persisted with a
-  larger `maxResults`. A hand-crafted GraphQL request with `maxResults: 1000`
-  therefore cannot raise the ceiling.
+  value, persisting `10`). The initial Apify request is still bounded to one
+  provider page (`maxItems: 25`, `takePages: 1`) so schema, company, identity,
+  and role filtering can select a complete 10-person allocation when possible.
+  Eligible overflow stays only in the internal shared candidate cache until a
+  later explicit allocation; it never raises the current search's 10-person
+  grant. A hand-crafted GraphQL request with `maxResults: 1000` therefore cannot
+  raise the user-visible ceiling.
 - **Searches per day.** Ordinary users get `DISCOVER_DAILY_SEARCH_LIMIT`
   processed searches per daily window (default 4) — a maximum of 40 requested
   people/day.
@@ -1677,8 +1680,10 @@ Discover searches share an internal cross-user result cache
   elsewhere; locations are trimmed/casefolded; both are de-duplicated and sorted
   before hashing, so order and duplicates never split entries. `resultLimit` (10)
   and `cacheVersion` (`DISCOVER_SHARED_CACHE_VERSION`, default `v1`) are part of
-  the key. Matching is exact: a different company, role, or location — including
-  `California` vs `United States` — is a different entry. No broad fuzzy or
+  the key. The fingerprint fast path is exact: a different company, role, or
+  location — including `California` vs `United States` — is a different entry.
+  Secondary database reuse is deliberately separate and must pass the strong
+  company, location, and role guards in 23.2.3.1; no broad fuzzy company or
   geographic equivalence is applied.
 - **Lifecycle.** `DiscoverSearchCacheService.getOrRefresh` returns a fresh
   (`status = READY`, `expiresAt > now`) entry without calling Apify, or runs the
@@ -1721,7 +1726,121 @@ Discover searches share an internal cross-user result cache
   `cacheAgeDays`, `resultCount`, `providerCalled`, latency) — never people lists,
   generated emails, provider payloads, the requester email, or prompts.
 
-### 23.2.3.1 User-specific allocation and the grouped company dashboard
+### 23.2.3.1 Database-first reuse ladder
+
+An exact fingerprint miss is not permission to call the paid provider. The
+cache service applies the following ladder before acquiring the provider lock,
+and repeats the database checks after acquiring/waiting for that lock so a
+concurrent refresh is reused:
+
+1. **Exact shared entry.** Reuse the fresh, non-empty `READY` entry for the
+   canonical fingerprint.
+2. **Same-company shared pool.** Query fresh entries only under a strong,
+   internally consistent company identity (canonical LinkedIn company or
+   official domain), combine their normalized public people, then apply exact
+   location compatibility plus the deterministic/semantic role guard. This is
+   what lets an Apple "Software Developer" search reuse an earlier Apple
+   "Software Engineer" pool while refusing a recruiter-only or wrong-location
+   pool. Entry and person reads are bounded; no fuzzy company-name scan is used.
+3. **Same-user materialized people.** If shared reuse still misses, read only
+   the requester's `ProspectPerson` rows for the already-resolved user-owned
+   company, convert them to the common candidate shape in memory, and apply the
+   same role/location authorization. These tenant rows are never copied into
+   `DiscoverSearchCache` by the live lookup and another user's rows are never
+   read.
+4. **Provider.** Only when all three database paths yield no authorized person
+   does the lock owner run Apify and atomically refresh the exact fingerprint.
+
+All three reuse paths are reported as `resultSource = CACHE`, with an internal
+hit type of `EXACT`, `COMPANY_POOL`, or `LOCAL_PERSON`. Privacy-safe diagnostics
+record only candidate-entry/person/match counts. A failed, stale, refreshing, or
+empty exact entry never blocks the later rungs or a provider retry.
+
+### 23.2.3.2 Semantic role intelligence (pgvector)
+
+Migration `20260820130000_discover_role_semantics` additively enables the
+`vector` extension and creates `ProspectRoleSemantic`. It stores one
+`vector(1536)` per normalized title + embedding model + dimensions + semantic
+policy version. It never adds vectors to `ProspectPerson` or
+`DiscoverSearchCachePerson`, and it does not rewrite any existing row.
+
+The database-first order remains: exact fingerprint → fresh same-company pool
+→ exact location guard → hybrid role ranking → provider only when no reusable
+result exists. Existing category classification remains authoritative.
+Specialty/breadth policy rejects incompatible categories before vector ranking,
+keeps iOS, Forward Deployed, DevOps, management, and CTO intent narrow, and uses
+cosine similarity only as a ranking/acceptance signal inside that deterministic
+guard. Exact normalized titles and known aliases always outrank vectors.
+Broad family requests intentionally admit bounded same-family variants — for
+example, Software Engineer/Software Developer and Recruiter/Technical Recruiter/
+Recruiting Leader — while still rejecting people classified into an unrelated
+role family.
+
+On a provider miss, exact requested titles are preserved first, expansions are
+added round-robin under both per-role and total caps, and the complete array is
+sent in **one** Apify actor request. Provider results are normalized, company
+validated, identity-deduped, classified, and role-authorized again before shared
+cache persistence. Add More uses the same plan while continuing the saved page;
+it never restarts pagination or runs one actor per alias.
+
+`DISCOVER_ROLE_VECTOR_ENABLED=false` performs no embedding or vector query and
+preserves the prior cache/provider behavior. With the flag on, OpenAI, extension,
+table, or vector-query failures emit privacy-safe fallback logs and preserve
+Discover through the deterministic database-first path. Rollback is therefore
+only the flag change; the additive extension/table may remain safely.
+
+Backfill is optional for correctness and dry-run-first:
+
+```bash
+npx tsx scripts/backfill-discover-role-semantics.ts --dry-run
+npx tsx scripts/backfill-discover-role-semantics.ts --apply --batch-size 100 --limit 1000
+```
+
+It reads distinct normalized titles only from the shared cache/title
+classification cache, batches missing embeddings, and upserts only semantic
+rows. It never prints or writes person identity, ownership, email, search,
+allocation, or provider payload data. Do not run `--apply` automatically in
+production.
+
+No-downtime deployment order: apply the additive migration; deploy with the
+feature flag off; verify current Discover; run the dry-run; optionally approve a
+bounded apply; enable and verify in staging; then enable in production. Safe
+Neon verification queries are:
+
+```sql
+SELECT extname, extversion FROM pg_extension WHERE extname = 'vector';
+SELECT COUNT(*) AS semantic_title_count FROM "ProspectRoleSemantic";
+```
+
+### 23.2.3.3 Historical provider-result promotion
+
+Searches created before the shared cache existed can still prevent future paid
+provider calls. `scripts/backfill-discover-shared-cache.ts` reconstructs exact
+fingerprints from historical searches that have explicit provider provenance,
+a strong canonical company identity, a still-fresh completion timestamp, and
+eligible `ProspectSearchPerson` allocations:
+
+```bash
+npx tsx scripts/backfill-discover-shared-cache.ts --dry-run
+npx tsx scripts/backfill-discover-shared-cache.ts --dry-run --batch-size 100 --limit 1000
+npx tsx scripts/backfill-discover-shared-cache.ts --apply --batch-size 100 --limit 1000
+```
+
+Dry-run is the default; `--apply` is explicit, batching is keyset-based and
+bounded (`--batch-size` maximum 500), and reruns are idempotent. The backfill
+creates or merges only sanitized public-person cache rows, preserves stable
+allocation order, deduplicates normalized provider identities, and keeps the
+contributing provider timestamp instead of making historical data appear new.
+Existing cache status, continuation state, and email-format evidence remain
+authoritative. It never invokes Apify, OpenAI, web search, or an email provider;
+never writes user-owned people/search/allocation rows; and emits aggregate-only
+statistics with no names, profile URLs, emails, user ids, or raw payloads.
+
+Run the dry-run after deployment, review the skipped/created/merged counts, then
+approve a bounded `--apply`. This operational backfill is independent of the
+optional role-vector backfill in 23.2.3.2.
+
+### 23.2.3.4 User-specific allocation and the grouped company dashboard
 
 Four concepts are deliberately separate:
 
@@ -1770,6 +1889,21 @@ allocated people include that category (`ProspectSearch.positionCategories`);
 "All people" with several role searches requires an explicit choice in the
 dialog — the backend always receives one owned search id and never fans a batch
 out to every role search.
+
+Expansion is cache-first and grant-backed. It removes identities already
+granted to the target search (normalized provider id/LinkedIn identity), takes
+unused authorized candidates from the shared pool, and only then continues
+Apify from the cache's saved page. Provider continuation is bounded to five
+25-profile pages by default and never restarts page 1. Valid net-new people from
+each page are appended to the shared pool even when the same page also contains
+duplicates, rejected roles, or unusable records; the loop continues until the
+10-person batch is filled, the page cap is reached, or the provider is exhausted.
+An existing user-owned person can therefore receive a new grant for this target
+search without duplicating the person row. `addedCount` counts genuinely new
+`ProspectSearchPerson` grants, while `totalPeopleCount`, the search's
+`totalProcessed`, GraphQL results, export, and Imports use the durable allocation
+count. Retried/concurrent expansions converge on the `(searchId, personId)`
+unique key and cannot inflate either count.
 
 **Legacy repair**: pre-allocation searches were backfilled by the
 `discover_search_person_allocations` migration (every materialized company
@@ -1847,17 +1981,24 @@ and the user's search allocation.
   headline fallback). A malformed item increments a rejection counter and never
   fails the batch; everything Sendloom does not need is discarded at this
   boundary.
-- **Alias-tolerant company matching.** The actor is queried by the canonical
-  LinkedIn company URL, so `currentCompanyMatches` must not re-reject its
-  results on cosmetic differences. Slugs are compared on their alphanumeric
-  identity (LinkedIn serves `jpmorgan-chase` and `jpmorganchase` as the same
-  company); when slugs are absent or disagree, `companyNamesAliasMatch` compares
-  employer names tolerantly (punctuation, corporate suffixes, camelCase,
-  `&`/`and`, and word-boundary shortenings like "JPMorgan" for "JPMorgan Chase
-  & Co."), while lookalike prefixes of unrelated names ("Apple" vs
-  "Applebee's") and unrelated companies stay rejected. Location filtering is
-  delegated to the actor's `locations` input; profile locations are parsed and
-  stored, never used to re-reject a returned profile.
+- **Target-aware company matching.** A live search, Add More continuation, or
+  stored-dataset reprocess passes an explicit `LINKEDIN_CURRENT_COMPANY`
+  targeting context only when the company resolver supplied a trusted canonical
+  LinkedIn company URL. URL slugs are compared on their alphanumeric identity
+  (LinkedIn serves `jpmorgan-chase` and `jpmorganchase` as the same company), and
+  `companyNamesAliasMatch` tolerates punctuation, corporate suffixes,
+  camelCase, `&`/`and`, and word-boundary shortenings such as "JPMorgan" for
+  "JPMorgan Chase & Co.". In trusted-target mode, missing or weak redundant
+  employer metadata cannot override the provider's positive company constraint.
+  A different explicit LinkedIn employer remains a strong contradiction and is
+  rejected unless the names pass a generic compact-brand expansion guard (for
+  example, a short uppercase brand and its longer division/legacy label). The
+  guard is deterministic and contains no company-specific alias table; unrelated
+  employers and lookalike prefixes such as "Apple"/"Applebee's" remain denied.
+  Untargeted/title-only datasets never receive this relaxed context and stay
+  strict. Location filtering is delegated to the actor's `locations` input;
+  profile locations are parsed and stored, never used to re-reject a returned
+  profile.
 - **Ingestion diagnostics.** Every processed dataset logs one privacy-safe
   `[discover-ingestion]` line (counts only: `itemsReturned`, `parsedCandidates`,
   `rejectedBySchema`, `duplicateItems`, `companyMatched`, `rejectedByCompany`,
@@ -1917,8 +2058,9 @@ New Prisma models (migration
 | `ProspectCompanyPosition` | One node per position category under a company. Unique per `(companyId, category)`. |
 | `ProspectPerson` | A discovered professional, assigned to one position node, with inferred-email metadata. Unique per `(userId, sourceProfileId)`. |
 | `ProspectSearch` | A discovery request, its status, Apify run references, and counts. |
-| `ProspectSearchPerson` | The allocation grant of one person to one user-owned search (order + source). Unique per `(searchId, personId)`; the boundary between the shared cache pool and what a user's search actually received (see 23.2.3.1). |
+| `ProspectSearchPerson` | The allocation grant of one person to one user-owned search (order + source). Unique per `(searchId, personId)`; the boundary between the shared cache pool and what a user's search actually received (see 23.2.3.4). |
 | `ProspectTitleClassification` | Global cache of title→category classifications. |
+| `ProspectRoleSemantic` | Global deduplicated normalized-title semantic cache (`vector(1536)`), versioned by embedding model/dimensions/policy. |
 
 Category, status, and confidence values are stored as strings (mirroring the
 `AuditLog` pattern) and validated against GraphQL enums at the API boundary.
@@ -1936,6 +2078,11 @@ src/graphql/                     GraphQL layer
   resolvers/                     company / person / prospect-search / scalars
 src/services/prospects/          provider + business logic (no resolver calls providers directly)
   prospect-search-service.ts     pipeline orchestrator
+  discover-cache-service.ts      exact/company/local reuse ladder + provider lock
+  discover-cache-reuse.ts        strong company-identity predicates for shared reuse
+  discover-expansion-service.ts  grant-backed cache-first Add 10 more continuation
+  discover-role-intelligence-service.ts deterministic + pgvector role authorization/ranking
+  discover-legacy-cache-backfill.ts historical provider-result cache promotion
   apify-profile-search.ts        Apify actor wrapper + profile normalization
   company-resolution-service.ts  AI task 1
   role-classification-service.ts deterministic map + cache + AI task 2
@@ -1962,15 +2109,17 @@ this phase.
 
 `npm test` covers the deterministic pieces and provider integration with Apify
 and OpenAI mocked (no live calls): normalization, email generation, input
-validation, Apify input mapping/normalization/dedupe/company-match, title
-classification (batching, deterministic rules, caching, enum coercion), the
-full pipeline (positions upserted, people assigned, Applied Materials website
-domain `appliedmaterials.com` kept separate from email domain `amat.com`, no
-high-confidence emails without email-domain evidence, manual override
-regeneration, ~3 AI calls regardless of people count, structured provider
-failures), and the GraphQL layer
-(authentication, depth limit, pagination bound, cross-user isolation, DataLoader
-batching, disabled-feature rejection). Use `npm run prospect:test` for a live
+validation, Apify input mapping/normalization/dedupe/company-match, strict and
+trusted-target company-alias handling, title classification and semantic policy
+(batching, deterministic rules, pgvector fallback, caching, enum coercion), the
+exact/company/local reuse ladder, historical-cache backfill, grant-backed Add
+More pagination/counting, and the full pipeline (positions upserted, people
+assigned, Applied Materials website domain `appliedmaterials.com` kept separate
+from email domain `amat.com`, no high-confidence emails without email-domain
+evidence, manual override regeneration, bounded AI calls, structured provider
+failures). The GraphQL layer covers authentication, depth limits, pagination
+bounds, cross-user isolation, DataLoader batching, and disabled-feature
+rejection. Use `npm run prospect:test` for a live
 end-to-end smoke test against the real providers.
 
 ### 23.8 Frontend surface — "Discover"
