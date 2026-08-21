@@ -59,7 +59,7 @@ Non-admin users must complete the eligibility gate at `/verify-eligibility` (18+
 - **Gmail safety** — a rolling 24-hour per-sender send cap plus a per-minute per-sender pacing window. Both delay work; neither marks recipients as failed.
 - **Delivery health** — Gmail delivery-status notifications (DSNs) are parsed, classified, and used to reclassify invalid recipients as *Skipped*, both automatically on every backend tick and on demand from the sequence detail page.
 - **Analysis** — five reporting pages over user-scoped stored data with 7-day and 30-day presets, prior-period comparisons, per-metric information tooltips, and per-page CSV export.
-- **Discover** — company + role + location prospect search with a shared cross-user result cache, a fixed 10 people per search, a daily search quota, "Add 10 more" expansion, and evidence-backed email-format inference.
+- **Discover** — database-first company + role + location prospect search with cross-user and same-user reuse before Apify, a fixed 10-person allocation per search, a daily search quota, cache-first "Add 10 more" expansion, optional pgvector role intelligence, and evidence-backed email-format inference.
 - **Finder** — Hunter email finder and domain search with per-user encrypted API keys and saved history.
 - **Account** — password set/change (session-rotating) and connected-sender removal with server-enforced safety rules.
 - **Guided help** — every dashboard route has a Help button with a page-specific coachmark tour, plus a "Report issue" dialog that files a privacy-preserving incident report.
@@ -189,7 +189,11 @@ Library plus create/edit wizard, with format switching, sanitized preview, merge
 
 ### Discover — `/prospects`
 
-`/prospects` is the Search History list (one row per company). `/prospects/[searchId]` is the detail workspace: company summary, email-format editor, role groups, people table, inline "Search this company", **Add 10 more**, and XLSX export. Feature-flagged by `PROSPECT_GRAPH_ENABLED` (legacy naming retained for deployment compatibility). Optional pgvector role intelligence is separately gated by `DISCOVER_ROLE_VECTOR_ENABLED` and is off by default.
+`/prospects` is the Search History list (one row per company). `/prospects/[searchId]` is the detail workspace: company summary, email-format editor, role groups, people table, inline "Search this company", **Add 10 more**, and XLSX export. Feature-flagged by `PROSPECT_GRAPH_ENABLED` (legacy naming retained for deployment compatibility).
+
+The people pipeline is database-first: an exact shared-cache fingerprint, a fresh same-company shared pool, and the current user's already-materialized company people are checked in that order before Apify runs. Role and location guards are applied to every reuse path. A provider miss fetches one bounded 25-candidate page, retains eligible overflow in the internal shared cache, and grants at most 10 people to the requesting search. **Add 10 more** consumes unused matching cache candidates first, then continues from the saved provider page, with persisted `ProspectSearchPerson` grants as the source of truth for counts and deduplication.
+
+Historical provider-backed allocations can be promoted into the sanitized shared cache with the dry-run-first `scripts/backfill-discover-shared-cache.ts` utility; it never calls a provider or copies tenant ownership, inferred email, or search history. Optional pgvector role intelligence is separately gated by `DISCOVER_ROLE_VECTOR_ENABLED` and is off by default. Company-constrained provider results carry explicit trusted LinkedIn targeting context, allowing missing/alternate employer metadata while still rejecting a contradictory explicit LinkedIn employer. See [the Discover backend reference](./DOCUMENTATION.md#23-prospect-graph-backend-local-graphql-prototype) for the reuse ladder, backfills, rollout, and safety invariants.
 
 ### Finder — `/finder`
 
