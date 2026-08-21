@@ -233,6 +233,35 @@ describe("DiscoverRoleIntelligenceService", () => {
     expect(ranked.map((entry) => entry.sourceProfileId).sort()).toEqual(valid.map(([id]) => id).sort());
   });
 
+  it("keeps the Recruiter provider family including recruiting leaders", async () => {
+    const embeddings = new FakeEmbeddings({ "recruiter": vector(1, 0) });
+    const service = new DiscoverRoleIntelligenceService(classifier, embeddings, new MemoryRoleStore(), config());
+    const valid = [
+      ["recruiter", "Recruiter"],
+      ["technical", "Technical Recruiter"],
+      ["engineering", "Engineering Recruiter"],
+      ["ta-recruiter", "Talent Acquisition Recruiter"],
+      ["ta-partner", "Talent Acquisition Business Partner"],
+      ["ta-specialist", "Talent Acquisition Specialist"],
+      ["leader", "Recruiting Leader"],
+      ["executive", "Executive Technology Recruiting Leader"],
+      ["campus", "Campus Recruiter"]
+    ] as const;
+    const ranked = await service.filterAndRankPeople({
+      people: [
+        ...valid.map(([id, title]) => person(id, title, "RECRUITING")),
+        person("hr", "HR Business Partner", "HUMAN_RESOURCES"),
+        person("engineer", "Software Engineer", "SOFTWARE_ENGINEERING")
+      ],
+      requestedTitles: ["Recruiter"],
+      requestedLocations: ["United States"],
+      context: "PROVIDER",
+      options: { budget: budget(), searchId: "rtx-recruiter-family" }
+    });
+
+    expect(ranked.map((entry) => entry.sourceProfileId).sort()).toEqual(valid.map(([id]) => id).sort());
+  });
+
   it("stores one vector per normalized title and makes no second embedding call", async () => {
     const embeddings = new FakeEmbeddings({ "software engineer": vector(1, 0) });
     const store = new MemoryRoleStore();

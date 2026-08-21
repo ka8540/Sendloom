@@ -110,6 +110,9 @@ export class ProspectError extends Error {
 
 const TERMINAL_STATUSES = new Set(["READY", "CANCELED"]);
 const DEFAULT_PIPELINE_TIMEOUT_MS = 120_000;
+// Fetch one bounded provider page so a 10-person search targets 10 VALID unique
+// candidates after schema/company/role validation, not merely 10 raw rows.
+const PROVIDER_CANDIDATE_LIMIT = 25;
 // Company-level structured email-format evidence stays fresh for 30 days.
 const EMAIL_FORMAT_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const EMAIL_FORMAT_REFRESH_IN_FLIGHT = new Map<string, Promise<ProspectCompany>>();
@@ -278,6 +281,17 @@ type RunPipelineResult = {
   providerCalled: boolean;
   resultCount: number;
   cacheHit: boolean;
+};
+
+type ProviderFunnelDiagnostics = ApifyIngestionDiagnostics & {
+  semanticInputCount: number;
+  semanticAcceptedCount: number;
+  semanticRejectedCount: number;
+};
+
+type ProviderDatasetResult = {
+  dataset: ResolvedDataset;
+  diagnostics: ProviderFunnelDiagnostics;
 };
 
 export class ProspectSearchService {
@@ -717,6 +731,7 @@ export class ProspectSearchService {
     // classification only; email-format discovery has a separate lifecycle.
     const startedAt = Date.now();
     let providerStarted = false;
+    const providerDiagnosticsRef: { current: ProviderFunnelDiagnostics | null } = { current: null };
     let cacheResult;
     try {
       cacheResult = await this.discoverCache.getOrRefresh({
@@ -744,9 +759,11 @@ export class ProspectSearchService {
             company,
             budget
           }),
-        provider: () => {
+        provider: async () => {
           providerStarted = true;
-          return this.runProviderDataset(userId, search, company, resolution, budget);
+          const providerResult = await this.runProviderDataset(userId, search, company, resolution, budget);
+          providerDiagnosticsRef.current = providerResult.diagnostics;
+          return providerResult.dataset;
         }
       });
     } catch (error) {
@@ -780,6 +797,16 @@ export class ProspectSearchService {
     // runProviderDataset. The search stays retryable: the shared cache never
     // reuses a zero-people entry, so re-processing re-runs the provider.
     if (cacheResult.dataset.people.length === 0) {
+      const providerDiagnostics = providerDiagnosticsRef.current;
+      if (providerDiagnostics) {
+        logDiscoverProviderFunnelEvent({
+          searchId: search.id,
+          userId,
+          ...providerDiagnostics,
+          cachePeopleCount: 0,
+          allocatedPeopleCount: 0
+        });
+      }
       logDiscoverZeroResultEvent(search.id, userId);
       const updated = await this.prisma.prospectSearch.update({
         where: { id: search.id },
@@ -843,6 +870,17 @@ export class ProspectSearchService {
     );
     const finalProcessed = Math.max(0, processed);
     const finalStatus = finalProcessed > 0 ? "READY" : "NO_RESULTS";
+
+    const providerDiagnostics = providerDiagnosticsRef.current;
+    if (providerDiagnostics) {
+      logDiscoverProviderFunnelEvent({
+        searchId: search.id,
+        userId,
+        ...providerDiagnostics,
+        cachePeopleCount: resolvedDataset.people.length,
+        allocatedPeopleCount: finalProcessed
+      });
+    }
 
     logDiscoverCacheEvent({
       event: discoverCacheEventName(cacheResult),
@@ -957,11 +995,12 @@ export class ProspectSearchService {
     company: ProspectCompany,
     resolution: CompanyResolution,
     budget: AiCallBudget
-  ): Promise<ResolvedDataset> {
+  ): Promise<ProviderDatasetResult> {
     // Discover people via Apify. The result count is always the server-fixed
     // value (never search.maxResults).
     await this.setStatus(search.id, "SEARCHING_PEOPLE");
-    const maxResults = resolveResultsPerSearch();
+    const resultLimit = resolveResultsPerSearch();
+    const candidateLimit = Math.max(resultLimit, PROVIDER_CANDIDATE_LIMIT);
     const requestedTitles = this.asStringArray(search.requestedTitles);
     const providerTitles = await this.roleIntelligence.buildProviderTitlePlan(requestedTitles, {
       budget,
@@ -970,10 +1009,13 @@ export class ProspectSearchService {
     const searchResult = await this.apify.searchProfiles({
       companyName: resolution.officialName,
       companyLinkedinUrl: resolution.linkedinCompanyUrl,
+      ...(resolution.linkedinCompanyUrl
+        ? { companyTargeting: { mode: "LINKEDIN_CURRENT_COMPANY", trusted: true } as const }
+        : {}),
       // One actor run receives the entire bounded semantic title plan.
       jobTitles: providerTitles,
       locations: this.asStringArray(search.requestedLocations),
-      maxResults
+      maxResults: candidateLimit
     });
 
     await this.prisma.prospectSearch.update({
@@ -1035,7 +1077,15 @@ export class ProspectSearchService {
         })
       : people;
 
-    return { emailFormat, people: roleFilteredPeople };
+    return {
+      dataset: { emailFormat, people: roleFilteredPeople },
+      diagnostics: {
+        ...searchResult.diagnostics,
+        semanticInputCount: people.length,
+        semanticAcceptedCount: roleFilteredPeople.length,
+        semanticRejectedCount: people.length - roleFilteredPeople.length
+      }
+    };
   }
 
   private companyResolvedEmailFormat(company: ProspectCompany): ResolvedDataset["emailFormat"] {
@@ -1243,14 +1293,18 @@ export class ProspectSearchService {
       throw new ProspectError("PROVIDER_ERROR", "The stored provider dataset is no longer available.");
     }
 
-    const maxResults = search.maxResults > 0 ? search.maxResults : resolveResultsPerSearch();
+    const resultLimit = search.maxResults > 0 ? search.maxResults : resolveResultsPerSearch();
+    const candidateLimit = Math.max(resultLimit, PROVIDER_CANDIDATE_LIMIT);
     const processedItems = processDatasetItems(
       items,
       {
         companyName: company.officialName ?? company.name,
-        linkedinCompanyUrl: company.linkedinUrl ?? search.requestedLinkedin
+        linkedinCompanyUrl: company.linkedinUrl ?? search.requestedLinkedin,
+        ...((company.linkedinUrl ?? search.requestedLinkedin)
+          ? { companyTargeting: { mode: "LINKEDIN_CURRENT_COMPANY", trusted: true } as const }
+          : {})
       },
-      maxResults
+      candidateLimit
     );
 
     logDiscoverIngestionEvent({
@@ -1279,8 +1333,23 @@ export class ProspectSearchService {
       emailFormatReason: company.emailFormatReason
     };
     const people = this.buildDatasetPeople(processedItems.profiles, classifications, emailFormat);
+    const roleFilteredPeople = this.roleIntelligence.enabled
+      ? await this.roleIntelligence.filterAndRankPeople({
+          people,
+          requestedTitles: this.asStringArray(search.requestedTitles),
+          requestedLocations: this.asStringArray(search.requestedLocations),
+          context: "PROVIDER",
+          options: { budget, searchId: search.id }
+        })
+      : people;
 
-    const processed = await this.materializeDataset(userId, search, company, { emailFormat, people }, "PROVIDER");
+    const processed = await this.materializeDataset(
+      userId,
+      search,
+      company,
+      { emailFormat, people: roleFilteredPeople },
+      "PROVIDER"
+    );
 
     return this.prisma.prospectSearch.update({
       where: { id: search.id },
@@ -2055,6 +2124,24 @@ function logDiscoverIngestionEvent(event: DiscoverIngestionLogEvent): void {
   } else {
     console.info(line);
   }
+}
+
+type DiscoverProviderFunnelLogEvent = ProviderFunnelDiagnostics & {
+  searchId: string;
+  userId: string;
+  cachePeopleCount: number;
+  allocatedPeopleCount: number;
+};
+
+/**
+ * End-to-end provider funnel diagnostics. Counts only: no names, emails,
+ * profile/company URLs, provider payloads, prompts, or credentials.
+ */
+function logDiscoverProviderFunnelEvent(event: DiscoverProviderFunnelLogEvent): void {
+  if (process.env.NODE_ENV === "test") {
+    return;
+  }
+  console.info(`[discover-provider-funnel] ${JSON.stringify(event)}`);
 }
 
 type DiscoverEmailFormatLogEvent = {

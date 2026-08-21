@@ -36,7 +36,7 @@ type DeterministicRule = {
 // engineer" must precede the generic software-engineering rule, and HR must
 // precede the generic operations rule.
 const DETERMINISTIC_RULES: DeterministicRule[] = [
-  { category: "RECRUITING", phrases: ["technical recruiter", "recruiter", "talent acquisition", "talent partner", "sourcer"] },
+  { category: "RECRUITING", phrases: ["technical recruiter", "recruiter", "recruiting", "talent acquisition", "talent partner", "sourcer"] },
   {
     category: "HUMAN_RESOURCES",
     phrases: ["human resources", "people operations", "people ops", "people partner", "hr business partner", "hr manager", "hr generalist", "hr specialist", "compensation and benefits"],

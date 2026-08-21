@@ -493,6 +493,9 @@ export class DiscoverExpansionService {
           const pageResult = await this.apify.searchProfiles({
             companyName: params.company.officialName ?? params.company.name,
             companyLinkedinUrl: params.company.linkedinUrl,
+            ...(params.company.linkedinUrl
+              ? { companyTargeting: { mode: "LINKEDIN_CURRENT_COMPANY", trusted: true } as const }
+              : {}),
             jobTitles: providerTitles,
             locations: params.locations,
             maxResults: PROVIDER_PAGE_SIZE,
@@ -557,6 +560,11 @@ export class DiscoverExpansionService {
           await this.safeAudit("DISCOVER_EXPANSION_PROVIDER_PAGE_PROCESSED", params.userId, params.actorEmail, params.search.id, {
             page: nextPage - 1,
             rawProviderCount: pageResult.diagnostics.itemsReturned,
+            parsedCandidates: pageResult.diagnostics.parsedCandidates,
+            rejectedBySchema: pageResult.diagnostics.rejectedBySchema,
+            providerDuplicateItems: pageResult.diagnostics.duplicateItems,
+            companyMatched: pageResult.diagnostics.companyMatched,
+            rejectedByCompany: pageResult.diagnostics.rejectedByCompany,
             normalizedProviderCount: pageResult.profiles.length,
             identityResolvedCount: built.identityResolvedCount,
             classifiedCount: built.classifiedCount,

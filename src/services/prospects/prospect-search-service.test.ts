@@ -159,6 +159,30 @@ function profile(id: string, firstName: string, lastName: string, title: string,
   };
 }
 
+function targetedCompanyProfile(
+  id: string,
+  title: string,
+  companyName?: string | null,
+  companyLinkedinUrl?: string | null
+) {
+  return {
+    id,
+    firstName: `First${id}`,
+    lastName: `Last${id}`,
+    fullName: `First${id} Last${id}`,
+    headline: title,
+    currentPosition: [
+      {
+        title,
+        ...(companyName ? { companyName } : {}),
+        ...(companyLinkedinUrl ? { companyLinkedinUrl } : {})
+      }
+    ],
+    location: "United States",
+    linkedinUrl: `https://www.linkedin.com/in/${id}`
+  };
+}
+
 const PROFILES = [
   profile("1", "Jane", "Doe", "Software Engineer"),
   profile("2", "John", "Smith", "Backend Engineer"),
@@ -1025,7 +1049,7 @@ describe("Discover daily quota enforcement", () => {
     expect(created.maxResults).toBe(10);
   });
 
-  it("forces Apify to maxItems 10 / takePages 1 even for a legacy record (#2, #3)", async () => {
+  it("uses one bounded 25-candidate page even for a legacy 10-result record (#2, #3)", async () => {
     const { run, runner } = amatRunner();
     const { service } = buildService(prisma, runner, ROLE_ONLY);
     const created = await service.createSearch(USER_ID, APPLIED_MATERIALS);
@@ -1033,7 +1057,7 @@ describe("Discover daily quota enforcement", () => {
     prisma._state.searches[0].maxResults = 25;
     await service.processSearch(USER_ID, created.id, { actorEmail: "u@test.dev" });
     const actorInput = run.mock.calls[0][1];
-    expect(actorInput.maxItems).toBe(10);
+    expect(actorInput.maxItems).toBe(25);
     expect(actorInput.takePages).toBe(1);
   });
 
@@ -1662,6 +1686,90 @@ describe("Discover shared cache integration", () => {
       "Frontend Software Engineer",
       "Application Developer"
     ]);
+  });
+
+  it("fills an RTX Recruiter search from a bounded valid pool while retaining safe overflow in shared cache", async () => {
+    const rtxUrl = "https://www.linkedin.com/company/rtx/";
+    const validProfiles = [
+      targetedCompanyProfile("rtx-1", "Recruiter", "RTX Corporation", rtxUrl),
+      targetedCompanyProfile("rtx-2", "Technical Recruiter", "RTX Corporation", rtxUrl),
+      targetedCompanyProfile("rtx-3", "Engineering Recruiter", "RTX Corporation", rtxUrl),
+      targetedCompanyProfile("rtx-4", "Talent Acquisition Recruiter", "RTX Corporation", rtxUrl),
+      targetedCompanyProfile("rtx-5", "Talent Acquisition Specialist", "RTX Corporation", rtxUrl),
+      targetedCompanyProfile("rtx-6", "Campus Recruiter", "RTX Corporation", rtxUrl),
+      targetedCompanyProfile("rtx-7", "Executive Technology Recruiting Leader", "Raytheon", "https://www.linkedin.com/company/raytheon/"),
+      targetedCompanyProfile("rtx-8", "Talent Acquisition Business Partner", "Raytheon Technologies"),
+      targetedCompanyProfile("rtx-9", "Recruiting Leader", "Raytheon"),
+      targetedCompanyProfile("rtx-10", "Senior Recruiter"),
+      targetedCompanyProfile("rtx-11", "Technical Recruiter", "RTX Corporation", rtxUrl),
+      targetedCompanyProfile("rtx-12", "Recruiter", "RTX Corporation", rtxUrl),
+      targetedCompanyProfile("rtx-13", "Talent Acquisition Specialist", "Raytheon Technologies"),
+      targetedCompanyProfile("rtx-14", "Engineering Recruiter", "Raytheon")
+    ];
+    const unrelated = targetedCompanyProfile(
+      "microsoft-control",
+      "Recruiter",
+      "Microsoft",
+      "https://www.linkedin.com/company/microsoft/"
+    );
+    const run = vi.fn<ApifyRunner["run"]>(async () => ({
+      runId: "rtx-run",
+      datasetId: "rtx-dataset",
+      items: [...validProfiles, unrelated],
+      status: "SUCCEEDED"
+    }));
+    const cache = new DiscoverSearchCacheService({
+      prisma: prisma as unknown as PrismaClient,
+      lock: makeFakeCacheLock(),
+      now: () => new Date("2026-08-20T18:00:00.000Z"),
+      ttlDays: 30,
+      cleanupOnRefresh: false
+    });
+    const filter = vi.fn<DiscoverRoleIntelligencePort["filterAndRankPeople"]>(async ({ people }) =>
+      people.filter((person) => person.positionCategory === "RECRUITING")
+    );
+    const roleIntelligence = semanticRolePort({ providerPlan: ["Recruiter", "Talent Acquisition Specialist"], filter });
+    const { service } = buildService(
+      prisma,
+      { run } as ApifyRunner,
+      { responses: { role_classification: { classifications: [] } } },
+      undefined,
+      allowAllQuota,
+      cache,
+      roleIntelligence
+    );
+    const search = await service.createSearch(USER_ID, {
+      companyName: "RTX Corporation",
+      companyDomain: "rtx.com",
+      companyLinkedinUrl: rtxUrl,
+      jobTitles: ["Recruiter"],
+      locations: ["United States"],
+      maxResults: 10
+    });
+
+    const result = await service.processSearch(USER_ID, search.id);
+
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(run.mock.calls[0][1]).toMatchObject({
+      currentCompanies: [rtxUrl],
+      maxItems: 25,
+      takePages: 1,
+      startPage: 1
+    });
+    expect(filter).toHaveBeenCalledWith(expect.objectContaining({
+      people: expect.arrayContaining([
+        expect.objectContaining({ currentTitle: "Executive Technology Recruiting Leader", positionCategory: "RECRUITING" }),
+        expect.objectContaining({ currentTitle: "Recruiting Leader", positionCategory: "RECRUITING" })
+      ]),
+      requestedTitles: ["Recruiter"],
+      context: "PROVIDER"
+    }));
+    expect(result).toMatchObject({ status: "READY", totalFound: 15, totalProcessed: 10 });
+    expect(prisma._state.discoverCachePeople).toHaveLength(14);
+    expect(prisma._state.searchPeople.filter((row) => row.searchId === search.id)).toHaveLength(10);
+    expect(prisma._state.people).toHaveLength(10);
+    expect(prisma._state.people.every((person) => person.sourceProfileId !== "microsoft-control")).toBe(true);
+    expect(prisma._state.positions.map((position) => position.category)).toEqual(["RECRUITING"]);
   });
 
   it("reuses Apple Software Engineer knowledge for Software Developer with zero Apify calls", async () => {
