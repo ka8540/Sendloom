@@ -1530,6 +1530,28 @@ describe("people query location filter (role/location groups)", () => {
     expect(await queryPeople(prisma, `, search: "lOuIs"`)).toEqual({ totalCount: 1, ids: ["p_louis"] });
   });
 
+  it("accepts the full ALL_MATCHING scope and reviews exactly the filtered People set", async () => {
+    const prisma = seedLocationGraph();
+    const result = await graphql({
+      schema: prospectSchema,
+      source: `mutation {
+        reviewProspectSelection(input: {
+          companyId: "comp_A"
+          mode: ALL_MATCHING
+          positionCategory: SOFTWARE_ENGINEERING
+          location: "Canada"
+          search: "case"
+        }) {
+          selectedCount
+        }
+      }`,
+      contextValue: makeContext({ user: FAKE_USER, prisma, userId: "user_A" })
+    });
+
+    expect(result.errors).toBeUndefined();
+    expect(result.data?.reviewProspectSelection).toEqual({ selectedCount: 1 });
+  });
+
   it("an unknown location matches nothing — never leaks other groups", async () => {
     const prisma = seedLocationGraph();
     expect(await queryPeople(prisma, `, location: "Mars"`)).toEqual({ totalCount: 0, ids: [] });

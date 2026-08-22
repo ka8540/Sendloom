@@ -8,6 +8,7 @@ import { env } from "@/lib/env";
 import { getRedis } from "@/lib/redis";
 import { createImport } from "@/services/imports";
 import { displayNameForCategory, isPositionCategory, type PositionCategory } from "@/lib/prospect-enums";
+import { buildProspectPeopleWhere } from "@/services/prospects/prospect-people-filter";
 import { resolveProspectPersonEmail } from "@/services/prospects/prospect-person-email";
 
 export const PROSPECT_EXPORT_MAX_ROWS = Number.parseInt(process.env.PROSPECT_EXPORT_MAX_ROWS ?? "5000", 10);
@@ -26,6 +27,8 @@ export type ProspectSelectionInput = {
   selectedIds?: string[] | null;
   excludedIds?: string[] | null;
   positionCategory?: PositionCategory | null;
+  location?: string | null;
+  search?: string | null;
 };
 
 export type ProspectSelectionReview = {
@@ -215,12 +218,15 @@ async function resolveSelectedPeople(
 
   await validateExcludedIds(prisma, userId, input.companyId, excludedIds);
 
+  const where = await buildProspectPeopleWhere(prisma, {
+    userId,
+    companyId: input.companyId,
+    positionCategory: input.positionCategory,
+    location: input.location,
+    search: input.search
+  });
   const rows = await prisma.prospectPerson.findMany({
-    where: {
-      userId,
-      companyId: input.companyId,
-      ...(input.positionCategory ? { position: { category: input.positionCategory } } : {})
-    },
+    where,
     orderBy: [{ createdAt: "desc" }, { id: "desc" }]
   });
 

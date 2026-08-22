@@ -270,6 +270,8 @@ export type ProspectSelectionInput = {
   selectedIds?: string[] | null;
   excludedIds?: string[] | null;
   positionCategory?: PositionCategory | null;
+  location?: string | null;
+  search?: string | null;
 };
 
 export type ProspectSelectionReview = {

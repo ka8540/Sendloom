@@ -23,6 +23,7 @@ import {
   Download,
   ExternalLink,
   FileSpreadsheet,
+  Info,
   LoaderCircle,
   MapPin,
   Search,
@@ -118,6 +119,7 @@ import {
   addMoreSearchLabel,
   buildLocationFilterOptions,
   buildProspectSelectionInput,
+  buildProspectSelectionScope,
   buildQualitySegments,
   canSearchCompanyAgain,
   companySearchDisabledReason,
@@ -151,6 +153,7 @@ import {
   resolveSelectedSearchView,
   selectAllMatchingProspects,
   shouldShowAddMore,
+  scopeMatchesSelection,
   statusBadge,
   togglePageProspectSelection,
   toggleProspectSelection,
@@ -159,6 +162,7 @@ import {
   type EmailFormatActionMode,
   type LocationFilterOption,
   type PageSelectionState,
+  type ProspectSelectionScope,
   type ProspectSelectionState,
   type QualitySegmentTone
 } from "@/components/prospects/prospect-view";
@@ -181,6 +185,7 @@ import styles from "@/components/prospects/prospects-dashboard.module.css";
 
 const DELETE_COMPANY_ERROR = "This company could not be deleted. Please try again.";
 const DEFAULT_MANUAL_PATTERN = "first.last";
+const INFERRED_EMAIL_TOOLTIP_ID = "discover-inferred-email-tooltip";
 
 // Disclosure pair id: the premium header trigger points aria-controls here and
 // the collapsible "Search this company" panel carries it.
@@ -254,6 +259,9 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
   const peopleFilterTimer = useRef<number | null>(null);
 
   const [peopleFilter, setPeopleFilter] = useState("");
+  // Presentation-only: whether the compact People-header search is open.
+  // The query itself stays in peopleFilter; this never affects what is searched.
+  const [peopleSearchOpen, setPeopleSearchOpen] = useState(false);
   const [peopleQuery, setPeopleQuery] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [selection, setSelection] = useState<ProspectSelectionState>(() => createEmptyProspectSelection());
@@ -1067,6 +1075,9 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
   const peoplePageCount = resolvePageCount(peopleTotal, PEOPLE_PAGE_SIZE);
   const peopleSearchPending = peopleFilter.trim() !== peopleQuery;
   const peopleSearchActive = peopleQuery.length > 0;
+  // Stay expanded while explicitly open OR while a query is visible so the active
+  // search text never disappears mid-read.
+  const peopleSearchExpanded = peopleSearchOpen || peopleFilter.length > 0;
 
   // Add-more visibility depends ONLY on whether this company can be searched
   // again — never on the people currently rendered. Filters (role/location),
@@ -1136,34 +1147,40 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
   const filtersActive = activeCategory !== null || activeLocation !== null;
 
   const selectionScope = useMemo(
-    () => ({ companyId: company?.id ?? "", positionCategory: activeCategory }),
-    [activeCategory, company?.id]
+    () =>
+      buildProspectSelectionScope({
+        companyId: company?.id ?? "",
+        positionCategory: activeCategory,
+        location: activeLocation,
+        search: peopleQuery
+      }),
+    [activeCategory, activeLocation, company?.id, peopleQuery]
   );
-  const selectionScopeTotal = useMemo(() => {
-    if (!company || selection.mode !== "allMatching" || selection.companyId !== company.id) {
-      return 0;
-    }
-    if (!selection.positionCategory) {
-      return company.peopleCount;
-    }
-    return company.positions.find((position) => position.category === selection.positionCategory)?.peopleCount ?? 0;
-  }, [company, selection]);
+  const allMatchingSelected = selection.mode === "allMatching" && scopeMatchesSelection(selection, selectionScope);
+  const selectionScopeTotal = allMatchingSelected ? peopleTotal : 0;
   const selectedCount = getProspectSelectionCount(selection, selectionScopeTotal);
   const selectedPageIds = useMemo(() => visiblePeople.map((person) => person.id), [visiblePeople]);
   const pageSelectionState = getPageSelectionState(selection, selectedPageIds, selectionScope);
   const selectedPageCount = selectedPageIds.filter((id) => isProspectSelected(selection, id, selectionScope)).length;
-  // "Select all matching" scopes by company + role category only — the server
-  // selection input has no location dimension — so it is hidden while a
-  // location chip is active to keep bulk actions exact.
   const canSelectAllMatching = Boolean(
     company &&
       selection.mode !== "allMatching" &&
-      activeLocation === null &&
-      !peopleSearchActive &&
-      peopleTotal > selectedPageIds.length &&
+      peopleTotal > selectedPageCount &&
       selectedPageIds.length > 0 &&
       pageSelectionState === "checked"
   );
+
+  // ALL_MATCHING is immutable to the scope in which the user chose it. A role,
+  // location, or debounced text-search change clears the old selection instead
+  // of letting it appear to select a different hidden result set.
+  useEffect(() => {
+    if (selection.mode !== "allMatching" || scopeMatchesSelection(selection, selectionScope)) {
+      return;
+    }
+    setSelection(createEmptyProspectSelection());
+    setReview(null);
+    setReviewError(null);
+  }, [selection, selectionScope]);
 
   const buildCurrentSelectionInput = useCallback((): ProspectSelectionInput | null => {
     if (!company) {
@@ -1193,8 +1210,8 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     if (!company) {
       return;
     }
-    setSelection(selectAllMatchingProspects({ companyId: company.id, positionCategory: activeCategory }));
-  }, [activeCategory, company]);
+    setSelection(selectAllMatchingProspects(selectionScope));
+  }, [company, selectionScope]);
 
   const openReviewDialog = useCallback(
     async (intent: ReviewIntent) => {
@@ -1544,8 +1561,12 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
           />
 
           {company && (
-            <div className={`card ${styles.peopleSection}`}>
-              <div className={styles.panelHeader}>
+            <div
+              className={`card ${styles.peopleSection} ${
+                selectedCount > 0 ? styles.peopleSectionWithSelectionDock : ""
+              }`}
+            >
+              <div className={`${styles.panelHeader} ${styles.peoplePanelHeader}`}>
                 <div>
                   <h2 className={styles.panelTitle}>People</h2>
                   <p className={styles.panelSubtitle}>
@@ -1554,32 +1575,96 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
                       : `${PEOPLE_PAGE_SIZE} per page`}
                   </p>
                 </div>
-                {showAddMore && (
-                  <span className={styles.addMoreButtonWrap}>
-                    <button
-                      type="button"
-                      className={styles.secondaryButton}
-                      data-discover-tour="add-more-people"
-                      onClick={() => setShowAddMoreDialog(true)}
-                      disabled={addMoreDisabled !== null}
-                      title={addMoreDisabled ?? undefined}
-                      aria-label={ADD_MORE_PEOPLE_LABEL}
-                      aria-describedby={addMoreDisabled === null ? "discover-add-more-tooltip" : undefined}
-                    >
-                      {expanding ? (
-                        <LoaderCircle className={styles.spin} aria-hidden="true" />
-                      ) : (
-                        <UserPlus aria-hidden="true" />
-                      )}
-                      <span>{expanding ? ADD_MORE_LOADING_LABEL : ADD_MORE_PEOPLE_BUTTON_LABEL}</span>
-                    </button>
-                    {addMoreDisabled === null && (
-                      <span id="discover-add-more-tooltip" role="tooltip" className={styles.addMoreButtonTooltip}>
-                        {ADD_MORE_PEOPLE_TOOLTIP}
-                      </span>
+
+                <div className={styles.peopleHeaderActions}>
+                  <div
+                    className={`${styles.peopleSearchDock} ${
+                      peopleSearchExpanded ? styles.peopleSearchExpanded : ""
+                    }`}
+                    data-discover-tour="people-filter"
+                  >
+                    {!peopleSearchExpanded ? (
+                      <button
+                        type="button"
+                        className={styles.peopleSearchTrigger}
+                        aria-label="Search all people"
+                        onClick={() => setPeopleSearchOpen(true)}
+                      >
+                        <Search aria-hidden="true" />
+                      </button>
+                    ) : (
+                      <div className={styles.peopleSearchPill} role="search">
+                        <span className={styles.peopleSearchIcon} aria-hidden="true">
+                          {peopleSearchPending ? (
+                            <LoaderCircle className={styles.spin} />
+                          ) : (
+                            <Search />
+                          )}
+                        </span>
+                        <input
+                          className={styles.peopleSearchInput}
+                          type="search"
+                          value={peopleFilter}
+                          placeholder="Search name, title, email, or location"
+                          onChange={(event) => handlePeopleSearchChange(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key !== "Escape") {
+                              return;
+                            }
+                            if (peopleFilter) {
+                              handleClearPeopleSearch();
+                            }
+                            setPeopleSearchOpen(false);
+                            event.currentTarget.blur();
+                          }}
+                          aria-label="Search all people"
+                          maxLength={200}
+                          autoFocus
+                        />
+                        <button
+                          type="button"
+                          className={styles.peopleSearchClose}
+                          aria-label="Clear and close people search"
+                          onClick={() => {
+                            if (peopleFilter) {
+                              handleClearPeopleSearch();
+                            }
+                            setPeopleSearchOpen(false);
+                          }}
+                        >
+                          <X aria-hidden="true" />
+                        </button>
+                      </div>
                     )}
-                  </span>
-                )}
+                  </div>
+
+                  {showAddMore && (
+                    <span className={styles.addMoreButtonWrap}>
+                      <button
+                        type="button"
+                        className={styles.secondaryButton}
+                        data-discover-tour="add-more-people"
+                        onClick={() => setShowAddMoreDialog(true)}
+                        disabled={addMoreDisabled !== null}
+                        title={addMoreDisabled ?? undefined}
+                        aria-label={ADD_MORE_PEOPLE_LABEL}
+                        aria-describedby={addMoreDisabled === null ? "discover-add-more-tooltip" : undefined}
+                      >
+                        {expanding ? (
+                          <LoaderCircle className={styles.spin} aria-hidden="true" />
+                        ) : (
+                          <UserPlus aria-hidden="true" />
+                        )}
+                        <span>{expanding ? ADD_MORE_LOADING_LABEL : ADD_MORE_PEOPLE_BUTTON_LABEL}</span>
+                      </button>
+                      {addMoreDisabled === null && (
+                        <span id="discover-add-more-tooltip" role="tooltip" className={styles.addMoreButtonTooltip}>
+                          {ADD_MORE_PEOPLE_TOOLTIP}
+                        </span>
+                      )}
+                    </span>
+                  )}
+                </div>
               </div>
 
               {/* Quiet, compact filter bar. Each control is ONE pill — a muted
@@ -1664,49 +1749,16 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
                 )}
               </div>
 
-              <div className={styles.noticeBanner} role="note" data-discover-tour="inferred-warning">
-                <AlertCircle aria-hidden="true" />
-                <span>{INFERRED_EMAIL_NOTICE}</span>
-              </div>
-
-              <div className={styles.peopleToolbar}>
-                <div className={styles.filterField} data-discover-tour="people-filter">
-                  <Search aria-hidden="true" />
-                  <input
-                    type="search"
-                    value={peopleFilter}
-                    placeholder="Search all people by name, title, email, or location"
-                    onChange={(event) => handlePeopleSearchChange(event.target.value)}
-                    aria-label="Search all people"
-                    maxLength={200}
-                  />
-                </div>
-              </div>
-
-              {selectedCount > 0 && (
-                <BulkSelectionToolbar
-                  selectedCount={selectedCount}
-                  preparingExport={preparingExport}
-                  creatingImport={creatingImport}
-                  onDownload={() => openReviewDialog("download")}
-                  onImport={() => openReviewDialog("import")}
-                  onClear={clearSelection}
-                />
-              )}
-
-              {canSelectAllMatching && (
-                <SelectAllMatchingBanner
-                  pageCount={selectedPageCount}
-                  totalCount={peopleTotal}
-                  categoryName={
-                    activeCategory
-                      ? company.positions.find((position) => position.category === activeCategory)?.displayName ??
-                        "this role group"
-                      : null
-                  }
-                  onSelectAll={handleSelectAllMatching}
-                />
-              )}
+              <FloatingSelectionDock
+                selectedCount={selectedCount}
+                selectAllTotal={canSelectAllMatching ? peopleTotal : null}
+                preparingExport={preparingExport}
+                creatingImport={creatingImport}
+                onDownload={() => openReviewDialog("download")}
+                onImport={() => openReviewDialog("import")}
+                onClear={clearSelection}
+                onSelectAll={handleSelectAllMatching}
+              />
 
               <div className={styles.peopleTableShell} data-discover-tour="people-table">
                 <PeopleTable
@@ -2627,71 +2679,110 @@ function SelectionCheckbox({
   );
 }
 
-function BulkSelectionToolbar({
+function FloatingSelectionDock({
   selectedCount,
+  selectAllTotal,
   preparingExport,
   creatingImport,
   onDownload,
   onImport,
-  onClear
+  onClear,
+  onSelectAll
 }: {
   selectedCount: number;
+  selectAllTotal: number | null;
   preparingExport: boolean;
   creatingImport: boolean;
   onDownload: () => void;
   onImport: () => void;
   onClear: () => void;
+  onSelectAll: () => void;
 }) {
   const busy = preparingExport || creatingImport;
+  const [displayedCount, setDisplayedCount] = useState(selectedCount);
+  const [mounted, setMounted] = useState(selectedCount > 0);
+  const [exiting, setExiting] = useState(false);
+  const exitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (selectedCount > 0) {
+      if (exitTimerRef.current) {
+        clearTimeout(exitTimerRef.current);
+        exitTimerRef.current = null;
+      }
+      setDisplayedCount(selectedCount);
+      setMounted(true);
+      setExiting(false);
+      return;
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    setExiting(true);
+    exitTimerRef.current = setTimeout(() => {
+      setMounted(false);
+      setExiting(false);
+      exitTimerRef.current = null;
+    }, 200);
+
+    return () => {
+      if (exitTimerRef.current) {
+        clearTimeout(exitTimerRef.current);
+        exitTimerRef.current = null;
+      }
+    };
+  }, [mounted, selectedCount]);
+
+  if (!mounted) {
+    return null;
+  }
+
   return (
-    <div className={styles.bulkToolbar} data-discover-tour="bulk-actions">
-      <strong>{selectedCount} selected</strong>
-      <div className={styles.bulkActions}>
-        <button type="button" className={styles.secondaryButton} onClick={onDownload} disabled={busy}>
+    <div
+      className={`${styles.selectionDock} ${exiting ? styles.selectionDockExiting : ""}`}
+      data-discover-tour="bulk-actions"
+      role="region"
+      aria-label="Selection actions"
+      aria-hidden={exiting || undefined}
+    >
+      <div className={styles.selectionDockStatus} aria-live="polite">
+        <span className={styles.bulkSelectionCheck} aria-hidden="true">
+          <Check />
+        </span>
+        <strong>{displayedCount} selected</strong>
+      </div>
+      {selectAllTotal !== null && (
+        <button
+          type="button"
+          className={styles.selectAllButton}
+          onClick={onSelectAll}
+          aria-label={`Select all ${selectAllTotal} matching people`}
+          data-discover-tour="select-all"
+        >
+          Select {selectAllTotal}
+        </button>
+      )}
+      <div className={styles.selectionDockActions}>
+        <button type="button" className={styles.bulkActionButton} onClick={onDownload} disabled={busy || exiting}>
           <Download aria-hidden="true" />
           <span>Export</span>
         </button>
-        <button type="button" className={styles.secondaryButton} onClick={onImport} disabled={busy}>
+        <button type="button" className={styles.bulkActionButton} onClick={onImport} disabled={busy || exiting}>
           <FileSpreadsheet aria-hidden="true" />
           <span>Import</span>
         </button>
-        <button type="button" className={styles.ghostButton} onClick={onClear} disabled={busy}>
-          Clear selection
+        <button
+          type="button"
+          className={styles.bulkClearButton}
+          onClick={onClear}
+          disabled={busy || exiting}
+          aria-label="Clear selection"
+        >
+          Clear
         </button>
       </div>
-    </div>
-  );
-}
-
-function SelectAllMatchingBanner({
-  pageCount,
-  totalCount,
-  categoryName,
-  onSelectAll
-}: {
-  pageCount: number;
-  totalCount: number;
-  categoryName: string | null;
-  onSelectAll: () => void;
-}) {
-  const buttonLabel = categoryName
-    ? `Select all ${totalCount} ${categoryName} prospects`
-    : `Select all ${totalCount} people`;
-  return (
-    <div className={styles.selectAllBanner} role="status" data-discover-tour="select-all">
-      <span className={styles.selectAllMessage}>All {pageCount} people on this page are selected.</span>
-      <button
-        type="button"
-        className={styles.selectAllButton}
-        onClick={onSelectAll}
-        aria-label={
-          categoryName
-            ? `Select all ${totalCount} ${categoryName} prospects in this search`
-            : `Select all ${totalCount} people in this search`
-        }
-      >
-        {buttonLabel}
-      </button>
     </div>
   );
 }
@@ -2717,7 +2808,7 @@ function PeopleTable({
   error: string | null;
   copiedId: string | null;
   pageSelectionState: PageSelectionState;
-  selectionScope: { companyId: string; positionCategory: PositionCategory | null };
+  selectionScope: ProspectSelectionScope;
   selection: ProspectSelectionState;
   filtersActive: boolean;
   searchActive: boolean;
@@ -2816,7 +2907,22 @@ function PeopleTable({
         <span role="columnheader">Person</span>
         <span role="columnheader">Role</span>
         <span role="columnheader">Location</span>
-        <span role="columnheader">Inferred email</span>
+        <span role="columnheader" className={styles.inferredEmailHeader}>
+          <span>Inferred email</span>
+          <span className={styles.inferredEmailInfoWrap} data-discover-tour="inferred-warning">
+            <button
+              type="button"
+              className={styles.inferredEmailInfo}
+              aria-label="About inferred emails"
+              aria-describedby={INFERRED_EMAIL_TOOLTIP_ID}
+            >
+              <Info aria-hidden="true" />
+            </button>
+            <span id={INFERRED_EMAIL_TOOLTIP_ID} role="tooltip" className={styles.inferredEmailTooltip}>
+              {INFERRED_EMAIL_NOTICE}
+            </span>
+          </span>
+        </span>
         <span role="columnheader">Confidence</span>
         <span role="columnheader" className={styles.linkedinHead}>
           LinkedIn

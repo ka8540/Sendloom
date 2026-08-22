@@ -29,9 +29,9 @@ import { titleCaseLabel } from "@/services/prospects/discover-suggestions";
 export const EXTERNAL_LINK_TARGET = "_blank";
 export const EXTERNAL_LINK_REL = "noopener noreferrer";
 
-// The single warning shown above the people table. Inferred is NOT verified.
+// Compact tooltip copy for the People table's inferred-email heading.
 export const INFERRED_EMAIL_NOTICE =
-  "Generated emails are inferred from the selected email domain and pattern until verified.";
+  "Emails are inferred from the selected domain and pattern until verified.";
 
 // User-facing product copy. Kept here (not inline JSX) so the page never leaks
 // backend/debug language and the wording is unit-testable. Never use graph or
@@ -902,11 +902,37 @@ export type AllMatchingProspectSelection = {
   mode: "allMatching";
   companyId: string;
   positionCategory: PositionCategory | null;
+  location: string | null;
+  search: string | null;
   excludedIds: Set<string>;
 };
 
 export type ProspectSelectionState = ExplicitProspectSelection | AllMatchingProspectSelection;
 export type PageSelectionState = "checked" | "unchecked" | "indeterminate";
+export type ProspectSelectionScope = {
+  companyId: string;
+  positionCategory: PositionCategory | null;
+  location: string | null;
+  search: string | null;
+};
+
+export function buildProspectSelectionScope(scope: {
+  companyId: string;
+  positionCategory?: PositionCategory | null;
+  location?: string | null;
+  search?: string | null;
+}): ProspectSelectionScope {
+  const trimmedSearch = scope.search?.trim();
+  return {
+    companyId: scope.companyId,
+    positionCategory: scope.positionCategory ?? null,
+    location:
+      scope.location === null || scope.location === undefined
+        ? null
+        : normalizeRoleGroupToken(scope.location),
+    search: trimmedSearch ? trimmedSearch.toLocaleLowerCase() : null
+  };
+}
 
 export function createEmptyProspectSelection(): ProspectSelectionState {
   return { mode: "explicit", selectedIds: new Set() };
@@ -918,21 +944,24 @@ export function isProspectSelectionEmpty(selection: ProspectSelectionState): boo
 
 export function scopeMatchesSelection(
   selection: ProspectSelectionState,
-  scope: { companyId: string; positionCategory: PositionCategory | null }
+  scope: ProspectSelectionScope
 ): boolean {
   if (selection.mode === "explicit") {
     return true;
   }
+  const normalizedScope = buildProspectSelectionScope(scope);
   return (
-    selection.companyId === scope.companyId &&
-    (selection.positionCategory === null || selection.positionCategory === scope.positionCategory)
+    selection.companyId === normalizedScope.companyId &&
+    selection.positionCategory === normalizedScope.positionCategory &&
+    selection.location === normalizedScope.location &&
+    selection.search === normalizedScope.search
   );
 }
 
 export function isProspectSelected(
   selection: ProspectSelectionState,
   personId: string,
-  scope: { companyId: string; positionCategory: PositionCategory | null }
+  scope: ProspectSelectionScope
 ): boolean {
   if (selection.mode === "explicit") {
     return selection.selectedIds.has(personId);
@@ -950,7 +979,7 @@ export function getProspectSelectionCount(selection: ProspectSelectionState, all
 export function toggleProspectSelection(
   selection: ProspectSelectionState,
   personId: string,
-  scope: { companyId: string; positionCategory: PositionCategory | null }
+  scope: ProspectSelectionScope
 ): ProspectSelectionState {
   if (selection.mode === "allMatching" && scopeMatchesSelection(selection, scope)) {
     const excludedIds = new Set(selection.excludedIds);
@@ -974,7 +1003,7 @@ export function toggleProspectSelection(
 export function getPageSelectionState(
   selection: ProspectSelectionState,
   pageIds: string[],
-  scope: { companyId: string; positionCategory: PositionCategory | null }
+  scope: ProspectSelectionScope
 ): PageSelectionState {
   if (pageIds.length === 0) {
     return "unchecked";
@@ -989,7 +1018,7 @@ export function getPageSelectionState(
 export function togglePageProspectSelection(
   selection: ProspectSelectionState,
   pageIds: string[],
-  scope: { companyId: string; positionCategory: PositionCategory | null }
+  scope: ProspectSelectionScope
 ): ProspectSelectionState {
   if (pageIds.length === 0) {
     return selection;
@@ -1021,11 +1050,9 @@ export function togglePageProspectSelection(
   return { mode: "explicit", selectedIds };
 }
 
-export function selectAllMatchingProspects(scope: {
-  companyId: string;
-  positionCategory: PositionCategory | null;
-}): ProspectSelectionState {
-  return { mode: "allMatching", companyId: scope.companyId, positionCategory: scope.positionCategory, excludedIds: new Set() };
+export function selectAllMatchingProspects(scope: ProspectSelectionScope): ProspectSelectionState {
+  const normalizedScope = buildProspectSelectionScope(scope);
+  return { mode: "allMatching", ...normalizedScope, excludedIds: new Set() };
 }
 
 export function buildProspectSelectionInput(
@@ -1041,7 +1068,9 @@ export function buildProspectSelectionInput(
       mode: "EXPLICIT",
       selectedIds: Array.from(selection.selectedIds),
       excludedIds: [],
-      positionCategory: null
+      positionCategory: null,
+      location: null,
+      search: null
     };
   }
 
@@ -1054,7 +1083,9 @@ export function buildProspectSelectionInput(
     mode: "ALL_MATCHING",
     selectedIds: [],
     excludedIds: Array.from(selection.excludedIds),
-    positionCategory: selection.positionCategory
+    positionCategory: selection.positionCategory,
+    location: selection.location,
+    search: selection.search
   };
 }
 

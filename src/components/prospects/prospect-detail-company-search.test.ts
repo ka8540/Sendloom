@@ -200,9 +200,21 @@ describe("Scalable People filter controls (#21-#27)", () => {
     expect(DETAIL_SOURCE).toMatch(/activeLocationKey: activeLocation/);
   });
 
-  it("bulk select-all stays role-scoped only — hidden while a location filter is active", () => {
+  it("bulk select-all remains available for the current role, location, and text-search scope", () => {
     expect(DETAIL_SOURCE).toMatch(
-      /activeLocation === null &&\s*\n\s*!peopleSearchActive &&\s*\n\s*peopleTotal > selectedPageIds.length/
+      /buildProspectSelectionScope\(\{[\s\S]*?positionCategory: activeCategory,[\s\S]*?location: activeLocation,[\s\S]*?search: peopleQuery/
+    );
+    expect(DETAIL_SOURCE).toContain("peopleTotal > selectedPageCount");
+    expect(DETAIL_SOURCE).not.toMatch(/activeLocation === null &&\s*\n\s*!peopleSearchActive/);
+    expect(DETAIL_SOURCE).toContain("selectAllTotal={canSelectAllMatching ? peopleTotal : null}");
+  });
+
+  it("clears an ALL_MATCHING selection when role, location, or normalized search scope changes", () => {
+    expect(DETAIL_SOURCE).toMatch(
+      /selection\.mode !== "allMatching" \|\| scopeMatchesSelection\(selection, selectionScope\)/
+    );
+    expect(DETAIL_SOURCE).toMatch(
+      /setSelection\(createEmptyProspectSelection\(\)\);\s*\n\s*setReview\(null\);\s*\n\s*setReviewError\(null\);/
     );
   });
 });
@@ -229,10 +241,89 @@ describe("Detail page regressions (#31-#35)", () => {
   it("keeps Add 10 more and searches People before pagination (#12, #13)", () => {
     expect(DETAIL_SOURCE).toContain("ADD_MORE_PEOPLE_LABEL");
     expect(DETAIL_SOURCE).toContain('data-discover-tour="add-more-people"');
-    expect(DETAIL_SOURCE).toContain("Search all people by name, title, email, or location");
+    expect(DETAIL_SOURCE).toContain('aria-label="Search all people"');
     expect(DETAIL_SOURCE).toContain("handlePeopleSearchChange");
     expect(PEOPLE_QUERY).toContain("search: $search");
     expect(DETAIL_SOURCE).toContain("search: peopleQuery || null");
     expect(DETAIL_SOURCE).not.toContain("filterPeopleByText");
+  });
+});
+
+describe("Compact expanding people search control", () => {
+  it("places the only search control in the People header beside Add", () => {
+    expect(DETAIL_SOURCE).not.toContain("styles.filterField");
+    expect(CSS).not.toContain(".filterField");
+    expect(DETAIL_SOURCE).not.toContain("styles.peopleToolbar");
+    expect(DETAIL_SOURCE).not.toContain("styles.peopleSearchBubble");
+    expect(DETAIL_SOURCE).toContain("styles.peopleHeaderActions");
+    expect(DETAIL_SOURCE).toContain("styles.peopleSearchDock");
+    expect(DETAIL_SOURCE).toContain('data-discover-tour="people-filter"');
+
+    const headerIndex = DETAIL_SOURCE.indexOf("styles.peopleHeaderActions");
+    const searchIndex = DETAIL_SOURCE.indexOf("styles.peopleSearchDock", headerIndex);
+    const addIndex = DETAIL_SOURCE.indexOf("styles.addMoreButtonWrap", headerIndex);
+    const warningIndex = DETAIL_SOURCE.indexOf('data-discover-tour="inferred-warning"');
+    expect(searchIndex).toBeGreaterThan(headerIndex);
+    expect(addIndex).toBeGreaterThan(searchIndex);
+    expect(searchIndex).toBeLessThan(warningIndex);
+  });
+
+  it("renders a 44px circle when closed and one 320px pill when open", () => {
+    expect(DETAIL_SOURCE).toContain("className={styles.peopleSearchTrigger}");
+    expect(DETAIL_SOURCE).toContain("className={styles.peopleSearchPill}");
+    expect(DETAIL_SOURCE).toContain("className={styles.peopleSearchIcon}");
+    expect(DETAIL_SOURCE).toContain("className={styles.peopleSearchClose}");
+    expect(CSS).toMatch(/\.peopleSearchDock \{[^}]*width: 2\.75rem/);
+    expect(CSS).toMatch(/\.peopleSearchExpanded \{[^}]*width: 20rem/);
+    expect(CSS).toMatch(/\.peopleSearchTrigger \{[^}]*width: 2\.75rem[^}]*height: 2\.75rem/);
+    expect(CSS).toMatch(/\.peopleSearchPill \{[^}]*height: 2\.75rem/);
+  });
+
+  it("keeps every bit of the existing search wiring", () => {
+    expect(DETAIL_SOURCE).toContain("handlePeopleSearchChange(event.target.value)");
+    expect(DETAIL_SOURCE).toContain('type="search"');
+    expect(DETAIL_SOURCE).toContain('aria-label="Search all people"');
+    expect(DETAIL_SOURCE).toContain("maxLength={200}");
+    expect(DETAIL_SOURCE).toContain(
+      '"Search name, title, email, or location"'
+    );
+  });
+
+  it("expands from the trigger, autofocuses, and stays open for an active query", () => {
+    expect(DETAIL_SOURCE).toMatch(
+      /const peopleSearchExpanded = peopleSearchOpen \|\| peopleFilter\.length > 0;/
+    );
+    expect(DETAIL_SOURCE).toContain("onClick={() => setPeopleSearchOpen(true)}");
+    expect(DETAIL_SOURCE).toContain("autoFocus");
+  });
+
+  it("keeps the search icon, loading state, input, and X inside one pill", () => {
+    const pillIndex = DETAIL_SOURCE.indexOf("styles.peopleSearchPill");
+    const iconIndex = DETAIL_SOURCE.indexOf("styles.peopleSearchIcon", pillIndex);
+    const inputIndex = DETAIL_SOURCE.indexOf("styles.peopleSearchInput", pillIndex);
+    const closeIndex = DETAIL_SOURCE.indexOf("styles.peopleSearchClose", pillIndex);
+    expect(iconIndex).toBeGreaterThan(pillIndex);
+    expect(inputIndex).toBeGreaterThan(iconIndex);
+    expect(closeIndex).toBeGreaterThan(inputIndex);
+    expect(DETAIL_SOURCE).toMatch(
+      /\{peopleSearchPending \? \(\s*\n\s*<LoaderCircle className=\{styles\.spin\} \/>/
+    );
+  });
+
+  it("X and Escape clear through the existing handler and collapse", () => {
+    expect(DETAIL_SOURCE).toContain('aria-label="Clear and close people search"');
+    expect(DETAIL_SOURCE).toMatch(
+      /if \(peopleFilter\) \{\s*\n\s*handleClearPeopleSearch\(\);\s*\n\s*\}\s*\n\s*setPeopleSearchOpen\(false\);/
+    );
+    expect(DETAIL_SOURCE).toMatch(
+      /if \(event\.key !== "Escape"\) \{[\s\S]*?handleClearPeopleSearch\(\);[\s\S]*?setPeopleSearchOpen\(false\);/
+    );
+  });
+
+  it("animates softly and honors prefers-reduced-motion", () => {
+    expect(CSS).toMatch(/\.peopleSearchDock \{[^}]*width 260ms var\(--ease-emphasis\)/);
+    expect(CSS).toMatch(
+      /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.peopleSearchDock,[\s\S]*?\.peopleSearchTrigger,[\s\S]*?\.peopleSearchPill,[\s\S]*?transition: none;/
+    );
   });
 });

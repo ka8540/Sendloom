@@ -296,6 +296,8 @@ export const typeDefs = /* GraphQL */ `
     selectedIds: [ID!]
     excludedIds: [ID!]
     positionCategory: PositionCategory
+    location: String
+    search: String
   }
 
   type ProspectSelectionReview {

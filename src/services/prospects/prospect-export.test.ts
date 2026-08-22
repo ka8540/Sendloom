@@ -106,6 +106,88 @@ function seedPerson(prisma: FakePrisma, overrides: Record<string, unknown>) {
   });
 }
 
+function seedLocationSearch(prisma: FakePrisma, id: string, location: string, personIds: string[]) {
+  prisma._state.searches.push({
+    id,
+    userId: "user_1",
+    companyId: "company_1",
+    requestedCompany: "Esri",
+    requestedTitles: ["Software Engineer"],
+    requestedLocations: [location],
+    maxResults: 10,
+    status: "READY",
+    totalProcessed: personIds.length,
+    totalFound: personIds.length,
+    createdAt: new Date(),
+    updatedAt: new Date()
+  });
+  personIds.forEach((personId, index) => {
+    prisma._state.searchPeople.push({
+      id: `${id}_allocation_${index}`,
+      searchId: id,
+      personId
+    });
+  });
+}
+
+function seedFilteredSelectionGraph(prisma: FakePrisma) {
+  seedCompany(prisma);
+  seedPerson(prisma, {
+    id: "india_ai_engineer",
+    positionId: "pos_eng",
+    fullName: "Aisha Rao",
+    firstName: "Aisha",
+    lastName: "Rao",
+    currentTitle: "AI Platform Engineer",
+    normalizedTitle: "ai platform engineer",
+    location: "Bengaluru, India",
+    city: "Bengaluru",
+    country: "India"
+  });
+  seedPerson(prisma, {
+    id: "india_backend_engineer",
+    positionId: "pos_eng",
+    fullName: "Dev Patel",
+    firstName: "Dev",
+    lastName: "Patel",
+    currentTitle: "Backend Engineer",
+    normalizedTitle: "backend engineer",
+    location: "Pune, India",
+    city: "Pune",
+    country: "India"
+  });
+  seedPerson(prisma, {
+    id: "india_recruiter",
+    positionId: "pos_hr",
+    fullName: "Mira Shah",
+    firstName: "Mira",
+    lastName: "Shah",
+    currentTitle: "AI Recruiter",
+    normalizedTitle: "ai recruiter",
+    location: "Mumbai, India",
+    city: "Mumbai",
+    country: "India"
+  });
+  seedPerson(prisma, {
+    id: "us_ai_engineer",
+    positionId: "pos_eng",
+    fullName: "Sam Rivera",
+    firstName: "Sam",
+    lastName: "Rivera",
+    currentTitle: "AI Engineer",
+    normalizedTitle: "ai engineer",
+    location: "Austin, United States",
+    city: "Austin",
+    country: "United States"
+  });
+  seedLocationSearch(prisma, "search_india", "India", [
+    "india_ai_engineer",
+    "india_backend_engineer",
+    "india_recruiter"
+  ]);
+  seedLocationSearch(prisma, "search_us", "United States", ["us_ai_engineer"]);
+}
+
 describe("prospect export selection resolution", () => {
   it("exports only selected owned prospects in the selected company", async () => {
     const { prisma } = makePrisma();
@@ -146,6 +228,63 @@ describe("prospect export selection resolution", () => {
 
     expect(resolved.review).toMatchObject({ selectedCount: 1, exportableCount: 1 });
     expect(resolved.rows.map((row) => row.email)).toEqual(["eng_1@esri.com"]);
+  });
+
+  it.each([
+    {
+      name: "India location",
+      input: { location: " India " },
+      expected: ["india_ai_engineer@esri.com", "india_backend_engineer@esri.com", "india_recruiter@esri.com"]
+    },
+    {
+      name: "another location",
+      input: { location: "United States" },
+      expected: ["us_ai_engineer@esri.com"]
+    },
+    {
+      name: "text search",
+      input: { search: "AI" },
+      expected: ["india_ai_engineer@esri.com", "india_recruiter@esri.com", "us_ai_engineer@esri.com"]
+    },
+    {
+      name: "role and location",
+      input: { positionCategory: "SOFTWARE_ENGINEERING" as const, location: "India" },
+      expected: ["india_ai_engineer@esri.com", "india_backend_engineer@esri.com"]
+    },
+    {
+      name: "role, location, and text search",
+      input: { positionCategory: "SOFTWARE_ENGINEERING" as const, location: "India", search: "AI" },
+      expected: ["india_ai_engineer@esri.com"]
+    }
+  ])("ALL_MATCHING resolves the same People result set for $name", async ({ input, expected }) => {
+    const { prisma } = makePrisma();
+    seedFilteredSelectionGraph(prisma);
+
+    const resolved = await resolveProspectSelection(prisma as unknown as PrismaClient, "user_1", {
+      companyId: "company_1",
+      mode: "ALL_MATCHING",
+      ...input
+    });
+
+    expect(resolved.review.selectedCount).toBe(expected.length);
+    expect(resolved.rows.map((row) => row.email).sort()).toEqual([...expected].sort());
+  });
+
+  it("applies excluded IDs inside a role + location + search ALL_MATCHING scope", async () => {
+    const { prisma } = makePrisma();
+    seedFilteredSelectionGraph(prisma);
+
+    const resolved = await resolveProspectSelection(prisma as unknown as PrismaClient, "user_1", {
+      companyId: "company_1",
+      mode: "ALL_MATCHING",
+      positionCategory: "SOFTWARE_ENGINEERING",
+      location: "India",
+      search: "Engineer",
+      excludedIds: ["india_ai_engineer"]
+    });
+
+    expect(resolved.review.selectedCount).toBe(1);
+    expect(resolved.rows.map((row) => row.email)).toEqual(["india_backend_engineer@esri.com"]);
   });
 
   it("repairs stale unavailable rows while skipping suppressed, invalid, and duplicate emails", async () => {
@@ -304,5 +443,26 @@ describe("prospect import creation", () => {
     expect(result.viewUrl).toContain("/imports?pendingImportId=import_1");
     // No sequence is created as part of adding to imports.
     expect((prisma._state as Record<string, unknown>).campaigns).toBeUndefined();
+  });
+
+  it("stages only the current filtered ALL_MATCHING scope", async () => {
+    const imports = await import("@/services/imports");
+    const { prisma } = makePrisma();
+    seedFilteredSelectionGraph(prisma);
+
+    const result = await createProspectImport(prisma as unknown as PrismaClient, "user_1", {
+      companyId: "company_1",
+      mode: "ALL_MATCHING",
+      positionCategory: "SOFTWARE_ENGINEERING",
+      location: "India",
+      search: "AI"
+    });
+
+    expect(result.review.selectedCount).toBe(1);
+    const content = vi.mocked(imports.createImport).mock.calls[0]?.[2];
+    const workbook = read(content, { type: "buffer" });
+    const rows = utils.sheet_to_json<Record<string, string>>(workbook.Sheets.Prospects);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.Email).toBe("india_ai_engineer@esri.com");
   });
 });

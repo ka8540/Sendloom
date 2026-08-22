@@ -330,17 +330,22 @@ describe("redesign regression contracts", () => {
       "DELETE_COMPANY_MUTATION",
       "handlePeopleNext",
       "handlePeoplePrev",
-      "BulkSelectionToolbar",
-      "SelectAllMatchingBanner"
+      "FloatingSelectionDock"
     ]) {
       expect(DETAIL_SOURCE).toContain(kept);
     }
   });
 
-  it("keeps the inferred-email notice and role filters", () => {
+  it("moves the inferred-email notice into the table heading and keeps role filters", () => {
     expect(DETAIL_SOURCE).toContain("INFERRED_EMAIL_NOTICE");
     expect(DETAIL_SOURCE).toContain('data-discover-tour="role-filters"');
     expect(DETAIL_SOURCE).toContain('data-discover-tour="inferred-warning"');
+    expect(DETAIL_SOURCE).not.toContain("styles.noticeBanner");
+    expect(DETAIL_SOURCE).toContain("styles.inferredEmailInfo");
+    expect(DETAIL_SOURCE).toContain('role="tooltip"');
+    expect(DETAIL_SOURCE).toContain("aria-describedby={INFERRED_EMAIL_TOOLTIP_ID}");
+    expect(CSS).toContain(".inferredEmailInfoWrap:hover .inferredEmailTooltip");
+    expect(CSS).toContain(".inferredEmailInfoWrap:focus-within .inferredEmailTooltip");
   });
 
   it("reads the quality data from the company detail payload (no fabricated analytics)", () => {
@@ -461,71 +466,111 @@ describe("review import dialog UI", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Selection import actions — the toolbar opens the review step (no duplicated
-// "Add to Imports"), and Select-all is a real button, not an inline text link.
+// Selection import actions — one compact floating dock owns status, select-all,
+// and utilities. There is no inline banner competing with the table.
 // ---------------------------------------------------------------------------
 
 describe("selection import actions UX", () => {
-  // These three components are declared consecutively in the source, so slice
-  // by their function boundaries to scope assertions to the right component.
-  const toolbar = DETAIL_SOURCE.slice(
-    DETAIL_SOURCE.indexOf("function BulkSelectionToolbar("),
-    DETAIL_SOURCE.indexOf("function SelectAllMatchingBanner(")
-  );
-  const banner = DETAIL_SOURCE.slice(
-    DETAIL_SOURCE.indexOf("function SelectAllMatchingBanner("),
+  const dock = DETAIL_SOURCE.slice(
+    DETAIL_SOURCE.indexOf("function FloatingSelectionDock("),
     DETAIL_SOURCE.indexOf("function PeopleTable(")
   );
 
-  it("keeps the live selected count in the toolbar", () => {
-    expect(toolbar).toContain("{selectedCount} selected");
+  it("renders no dock at zero and preserves the last count only for the exit animation", () => {
+    expect(dock).toContain("const [mounted, setMounted] = useState(selectedCount > 0)");
+    expect(dock).toMatch(/if \(!mounted\) \{\s*return null;/);
+    expect(dock).toContain("{displayedCount} selected");
+    expect(dock).toContain("styles.bulkSelectionCheck");
+    expect(dock).not.toContain("All matching");
+    expect(DETAIL_SOURCE).not.toContain("function SelectAllMatchingBanner(");
+    expect(DETAIL_SOURCE).not.toContain("styles.selectAllBanner");
+    expect(DETAIL_SOURCE).not.toContain("styles.bulkToolbar");
   });
 
-  it("labels the toolbar actions simply: Export / Import / Clear selection", () => {
-    expect(toolbar).toContain("<span>Export</span>");
-    expect(toolbar).toContain("<span>Import</span>");
-    expect(toolbar).toContain("Clear selection");
-    // The verbose / duplicated labels are gone from the toolbar.
-    expect(toolbar).not.toContain("Download Excel");
-    expect(toolbar).not.toContain("Review import");
+  it("labels the dock actions simply: Export / Import / Clear", () => {
+    expect(dock).toContain("<span>Export</span>");
+    expect(dock).toContain("<span>Import</span>");
+    expect(dock).toContain(">\n          Clear\n");
+    expect(dock).toContain('aria-label="Clear selection"');
+    expect(dock).not.toContain("Download Excel");
+    expect(dock).not.toContain("Review import");
     expect(DETAIL_SOURCE).not.toContain("<span>Add to Imports</span>");
   });
 
-  it("wires the toolbar Export/Import buttons to the export/import review dialogs", () => {
-    expect(toolbar).toContain("onClick={onDownload}");
-    expect(toolbar).toContain("onClick={onImport}");
+  it("wires the dock Export/Import buttons to the existing review dialogs", () => {
+    expect(dock).toContain("onClick={onDownload}");
+    expect(dock).toContain("onClick={onImport}");
     expect(DETAIL_SOURCE).toContain('onDownload={() => openReviewDialog("download")}');
     expect(DETAIL_SOURCE).toContain('onImport={() => openReviewDialog("import")}');
   });
 
-  it("keeps Clear selection wired in the toolbar", () => {
-    expect(toolbar).toContain("Clear selection");
-    expect(toolbar).toContain("onClick={onClear}");
+  it("keeps Clear selection wired and animates the dock out before unmounting", () => {
+    expect(dock).toContain("onClick={onClear}");
+    expect(dock).toContain("styles.bulkClearButton");
+    expect(dock).toContain("setExiting(true)");
+    expect(dock).toContain("setMounted(false)");
+    expect(dock).toContain("}, 200)");
   });
 
-  it("renders Select-all as a styled, accessible button — not an underlined text link", () => {
-    // A real button with the shared select-all class and an explicit type.
-    expect(banner).toContain("className={styles.selectAllButton}");
-    expect(banner).toContain('type="button"');
-    expect(banner).toContain("onClick={onSelectAll}");
-    // It carries an accessible name that names the search scope.
-    expect(banner).toContain("aria-label=");
-    expect(banner).toContain("in this search");
-    // The compact button label leads with the total count.
-    expect(banner).toContain("`Select all ${totalCount} people`");
+  it("renders Select N as a text-only accessible action and removes it for ALL_MATCHING", () => {
+    const selectAction = dock.slice(
+      dock.indexOf("{selectAllTotal !== null && ("),
+      dock.indexOf("<div className={styles.selectionDockActions}>")
+    );
+    expect(dock).toContain("{selectAllTotal !== null && (");
+    expect(dock).toContain("className={styles.selectAllButton}");
+    expect(dock).toContain('type="button"');
+    expect(dock).toContain("onClick={onSelectAll}");
+    expect(dock).toContain("Select {selectAllTotal}");
+    expect(dock).toContain("Select all ${selectAllTotal} matching people");
+    expect(selectAction).not.toMatch(/<(Check|Download|FileSpreadsheet)\b/);
+    expect(dock).not.toContain("Select all {selectAllTotal}");
+    expect(DETAIL_SOURCE).toContain("selectAllTotal={canSelectAllMatching ? peopleTotal : null}");
   });
 
-  it("styles the Select-all button as a compact accent control with a visible focus ring", () => {
+  it("uses one intrinsic fixed bottom-centered glass surface instead of an inline panel", () => {
+    const dockRule = CSS.match(/\.selectionDock\s*\{[^}]*\}/s)?.[0] ?? "";
+    expect(dockRule).toContain("position: fixed");
+    expect(dockRule).toContain("left: 50%");
+    expect(dockRule).toContain("transform: translateX(-50%)");
+    expect(dockRule).toContain("width: max-content");
+    expect(dockRule).toContain("border-radius: 999px");
+    expect(dockRule).toContain("backdrop-filter: blur(16px)");
+    expect(dockRule).toContain("border: 1px solid var(--line)");
+    expect(CSS).not.toContain(".bulkToolbar");
+    expect(CSS).not.toContain(".noticeBanner");
+    expect(CSS).not.toContain(".selectAllBanner");
+  });
+
+  it("gives every dock action deliberate breathing room without breaking mobile fit", () => {
+    const dockRule = CSS.match(/\.selectionDock\s*\{[^}]*\}/s)?.[0] ?? "";
+    const actionsRule = CSS.match(/\.selectionDockActions\s*\{[^}]*\}/s)?.[0] ?? "";
+    const mobile = CSS.match(/@media \(max-width: 640px\)\s*\{[\s\S]*?\n\}/)?.[0] ?? "";
+    expect(dockRule).toContain("gap: 0.9rem");
+    expect(dockRule).toContain("padding: 0.55rem 0.8rem");
+    expect(actionsRule).toContain("gap: 0.75rem");
+    expect(mobile).toContain("column-gap: 0.55rem");
+  });
+
+  it("uses compact pill actions with clear keyboard focus", () => {
     const rule = CSS.match(/\.selectAllButton\s*\{[^}]*\}/s)?.[0] ?? "";
-    expect(rule).toContain("var(--accent)");
-    // No longer a bare underlined text link.
+    expect(rule).toContain("var(--accent-strong)");
+    expect(rule).toContain("border-radius: 999px");
     expect(rule).not.toContain("text-decoration: underline");
-    expect(CSS).toMatch(/\.selectAllButton:focus-visible\s*\{[^}]*outline/s);
+    expect(CSS).toMatch(/\.selectAllButton:focus-visible\s*\{[^}]*box-shadow/s);
+    expect(CSS).toMatch(/\.bulkActionButton,[\s\S]*?\.bulkClearButton\s*\{[^}]*border-radius:\s*999px/s);
   });
 
-  it("lays the banner out as message-left / button-right and wraps on mobile", () => {
-    const rule = CSS.match(/\.selectAllBanner\s*\{[^}]*\}/s)?.[0] ?? "";
-    expect(rule).toContain("justify-content: space-between");
-    expect(rule).toContain("flex-wrap: wrap");
+  it("adds conditional safe-area breathing room and reduced-motion support", () => {
+    expect(DETAIL_SOURCE).toContain("selectedCount > 0 ? styles.peopleSectionWithSelectionDock");
+    expect(CSS).toMatch(/\.peopleSectionWithSelectionDock\s*\{[^}]*env\(safe-area-inset-bottom\)/s);
+    expect(CSS).toMatch(/\.selectionDock\s*\{[^}]*env\(safe-area-inset-bottom\)/s);
+    expect(CSS).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.selectionDock[\s\S]*?animation:\s*none/s);
+  });
+
+  it("uses dedicated compact utility buttons rather than page-level CTA styles", () => {
+    expect(dock).toContain("styles.bulkActionButton");
+    expect(dock).not.toContain("styles.secondaryButton");
+    expect(dock).not.toContain("styles.ghostButton");
   });
 });
