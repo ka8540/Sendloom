@@ -3,7 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApifyProfileSearchService, type ApifyRunner } from "@/services/prospects/apify-profile-search";
 import { CompanyResolutionService } from "@/services/prospects/company-resolution-service";
-import type { DiscoverRoleIntelligencePort } from "@/services/prospects/discover-role-intelligence-service";
+import {
+  DiscoverRoleIntelligenceService,
+  type DiscoverRoleIntelligencePort
+} from "@/services/prospects/discover-role-intelligence-service";
 import { EmailDomainService, type EmailEvidenceProvider } from "@/services/prospects/email-domain-service";
 import { EmailFormatDiscoveryService } from "@/services/prospects/email-format-discovery-service";
 import {
@@ -15,6 +18,8 @@ import {
   type ProspectAuditFn
 } from "@/services/prospects/prospect-search-service";
 import { RoleClassificationService } from "@/services/prospects/role-classification-service";
+import type { RoleEmbeddingPort } from "@/services/prospects/role-embedding-service";
+import type { RoleSemanticStorePort } from "@/services/prospects/role-semantic-store";
 import type { ValidatedCreateProspectSearch } from "@/services/prospects/prospect-validation";
 import type { DiscoverQuotaReserver, DiscoverQuotaStatus } from "@/lib/discover-quota";
 import {
@@ -229,6 +234,36 @@ function semanticRolePort(input: {
     buildProviderTitlePlan: vi.fn(async (titles) => input.providerPlan ?? [...titles]),
     persistTitleKnowledge: vi.fn(async () => ({ existing: 0, created: 0, failed: false }))
   };
+}
+
+function deterministicRoleIntelligence(prisma: FakePrisma): DiscoverRoleIntelligenceService {
+  const unavailable = new Error("vector storage unavailable");
+  const embeddings: RoleEmbeddingPort = {
+    enabled: false,
+    embedTitles: vi.fn(() => Promise.reject(unavailable))
+  };
+  const store: RoleSemanticStorePort = {
+    findByTitles: vi.fn(() => Promise.reject(unavailable)),
+    findVectorsByTitles: vi.fn(() => Promise.reject(unavailable)),
+    upsertMany: vi.fn(() => Promise.reject(unavailable)),
+    findSimilarMany: vi.fn(() => Promise.reject(unavailable))
+  };
+  return new DiscoverRoleIntelligenceService(
+    new RoleClassificationService(
+      prisma as unknown as PrismaClient,
+      createMockAi({ enabled: false }).client
+    ),
+    embeddings,
+    store,
+    {
+      enabled: true,
+      embeddingModel: "text-embedding-3-small",
+      embeddingDimensions: 1536,
+      semanticVersion: "deterministic-test-v1",
+      maxApifyTitlesPerRole: 5,
+      maxApifyTitlesTotal: 8
+    }
+  );
 }
 
 const AI_RESPONSES = {
@@ -1854,6 +1889,80 @@ describe("Discover shared cache integration", () => {
     expect(prisma._state.people.every((person) => person.userId === "apple-semantic-user")).toBe(true);
   });
 
+  it("reuses a broad Sales match from the same-company shared pool before Apify without vectors", async () => {
+    const cache = new DiscoverSearchCacheService({
+      prisma: prisma as unknown as PrismaClient,
+      lock: makeFakeCacheLock(),
+      now: () => new Date("2026-08-20T17:00:00.000Z"),
+      ttlDays: 30,
+      cleanupOnRefresh: false
+    });
+    await cache.getOrRefresh({
+      fingerprint: "apple-functional-pool-seed",
+      fingerprintInput: {
+        companyKey: "domain:apple.com",
+        roles: ["marketing specialist"],
+        locations: ["united states"],
+        resultLimit: 10,
+        cacheVersion: "v1"
+      },
+      company: { name: "Apple Inc.", domain: "apple.com", linkedinUrl: null },
+      provider: async () => ({
+        emailFormat: { ...cacheDataset().emailFormat, emailDomain: "apple.com" },
+        people: [
+          {
+            ...cacheDataset().people[0],
+            sourceProfileId: "apple-sales-coordinator",
+            currentTitle: "Sales Coordinator",
+            normalizedTitle: "sales coordinator",
+            positionCategory: "SALES",
+            linkedinUrl: "https://www.linkedin.com/in/apple-sales-coordinator"
+          },
+          {
+            ...cacheDataset().people[0],
+            sourceProfileId: "apple-vp-sales",
+            currentTitle: "VP Sales",
+            normalizedTitle: "vp sales",
+            positionCategory: "SALES",
+            linkedinUrl: "https://www.linkedin.com/in/apple-vp-sales"
+          },
+          {
+            ...cacheDataset().people[0],
+            sourceProfileId: "apple-marketing-specialist",
+            currentTitle: "Marketing Specialist",
+            normalizedTitle: "marketing specialist",
+            positionCategory: "MARKETING",
+            linkedinUrl: "https://www.linkedin.com/in/apple-marketing-specialist"
+          }
+        ]
+      })
+    });
+    const run = vi.fn<ApifyRunner["run"]>();
+    const { service } = buildService(
+      prisma,
+      { run } as ApifyRunner,
+      ROLE_ONLY_AI,
+      undefined,
+      allowAllQuota,
+      cache,
+      deterministicRoleIntelligence(prisma)
+    );
+    const search = await service.createSearch(USER_ID, {
+      companyName: "Apple",
+      companyDomain: "apple.com",
+      companyLinkedinUrl: null,
+      jobTitles: ["Sales Specialist"],
+      locations: ["United States"],
+      maxResults: 10
+    });
+
+    const result = await service.processSearch(USER_ID, search.id);
+
+    expect(result).toMatchObject({ status: "READY", resultSource: "CACHE", totalProcessed: 1 });
+    expect(run).not.toHaveBeenCalled();
+    expect(prisma._state.people.map((person) => person.sourceProfileId)).toEqual(["apple-sales-coordinator"]);
+  });
+
   it("reuses Charta Health's exact ambiguous Engineer pool conservatively with zero Apify calls", async () => {
     const cache = new DiscoverSearchCacheService({
       prisma: prisma as unknown as PrismaClient,
@@ -1931,7 +2040,7 @@ describe("Discover shared cache integration", () => {
     people: Array<{
       sourceProfileId: string;
       title: string;
-      category: "SOFTWARE_ENGINEERING" | "RECRUITING";
+      category: "SOFTWARE_ENGINEERING" | "RECRUITING" | "SALES";
       country: string;
     }>
   ) {
@@ -1970,7 +2079,12 @@ describe("Discover shared cache integration", () => {
         create: {
           companyId: company.id,
           category: person.category,
-          displayName: person.category === "RECRUITING" ? "Recruiting" : "Software Engineering",
+          displayName:
+            person.category === "RECRUITING"
+              ? "Recruiting"
+              : person.category === "SALES"
+                ? "Sales"
+                : "Software Engineering",
           rawTitles: [person.title]
         },
         update: {}
@@ -2130,6 +2244,85 @@ describe("Discover shared cache integration", () => {
     await service.processSearch(USER_ID, search.id, { actorEmail: "owner@test.dev" });
     expect(quota.consumed.size).toBe(1);
     expect(run).not.toHaveBeenCalled();
+  });
+
+  it("reuses a broad same-user Sales person after a shared-pool miss before Apify without vectors", async () => {
+    const { personIds } = await seedOwnedApplePeople(USER_ID, [
+      {
+        sourceProfileId: "apple-local-senior-sales",
+        title: "Senior Sales Specialist",
+        category: "SALES",
+        country: "United States"
+      },
+      {
+        sourceProfileId: "apple-local-vp-sales",
+        title: "VP Sales",
+        category: "SALES",
+        country: "United States"
+      }
+    ]);
+    const cache = new DiscoverSearchCacheService({
+      prisma: prisma as unknown as PrismaClient,
+      lock: makeFakeCacheLock(),
+      now: () => new Date("2026-08-20T18:05:00.000Z"),
+      ttlDays: 30,
+      cleanupOnRefresh: false
+    });
+    await cache.getOrRefresh({
+      fingerprint: "apple-recruiter-only-for-sales",
+      fingerprintInput: {
+        companyKey: "domain:apple.com",
+        roles: ["recruiter"],
+        locations: ["united states"],
+        resultLimit: 10,
+        cacheVersion: "v1"
+      },
+      company: {
+        name: "Apple Inc.",
+        domain: "apple.com",
+        linkedinUrl: "https://www.linkedin.com/company/apple"
+      },
+      provider: async () => ({
+        emailFormat: { ...cacheDataset().emailFormat, emailDomain: "apple.com", emailPattern: "flast" },
+        people: [
+          {
+            ...cacheDataset().people[0],
+            sourceProfileId: "apple-shared-recruiter-for-sales",
+            currentTitle: "Recruiter",
+            normalizedTitle: "recruiter",
+            positionCategory: "RECRUITING",
+            country: "United States",
+            linkedinUrl: "https://www.linkedin.com/in/apple-shared-recruiter-for-sales"
+          }
+        ]
+      })
+    });
+    const { run, runner } = emptyProviderRunner();
+    const { service } = buildService(
+      prisma,
+      runner,
+      ROLE_ONLY_AI,
+      undefined,
+      allowAllQuota,
+      cache,
+      deterministicRoleIntelligence(prisma)
+    );
+    const search = await service.createSearch(USER_ID, {
+      companyName: "Apple Inc.",
+      companyDomain: "apple.com",
+      companyLinkedinUrl: "https://www.linkedin.com/company/apple",
+      jobTitles: ["Sales Specialist"],
+      locations: ["United States"],
+      maxResults: 10
+    });
+
+    const result = await service.processSearch(USER_ID, search.id);
+
+    expect(result).toMatchObject({ status: "READY", resultSource: "CACHE", totalProcessed: 1 });
+    expect(run).not.toHaveBeenCalled();
+    const allocations = prisma._state.searchPeople.filter((row) => row.searchId === search.id);
+    expect(allocations.map((row) => row.personId)).toEqual([personIds[0]]);
+    expect(allocations.map((row) => row.personId)).not.toContain(personIds[1]);
   });
 
   it("calls Apify once when same-user Apple people are the wrong role", async () => {

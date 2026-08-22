@@ -39,22 +39,22 @@ const DETERMINISTIC_RULES: DeterministicRule[] = [
   { category: "RECRUITING", phrases: ["technical recruiter", "recruiter", "recruiting", "talent acquisition", "talent partner", "sourcer"] },
   {
     category: "HUMAN_RESOURCES",
-    phrases: ["human resources", "people operations", "people ops", "people partner", "hr business partner", "hr manager", "hr generalist", "hr specialist", "compensation and benefits"],
+    phrases: ["human resource", "human resources", "people operations", "people ops", "people partner", "chief people officer", "hr business partner", "hr manager", "hr generalist", "hr specialist", "compensation and benefits"],
     words: ["hr", "hrbp"]
   },
   { category: "DATA_SCIENCE", phrases: ["data scientist", "data science", "machine learning", "applied scientist", "research scientist"], words: ["ml"] },
   { category: "DATA_ENGINEERING", phrases: ["data engineer", "analytics engineer", "etl developer", "data platform engineer"] },
-  { category: "DATA_ANALYTICS", phrases: ["data analyst", "data analytics", "business intelligence", "bi analyst", "data insights", "insights analyst", "analytics specialist"] },
+  { category: "DATA_ANALYTICS", phrases: ["data analyst", "data analytics", "data governance", "business intelligence", "bi analyst", "data insights", "insights analyst", "analytics specialist"] },
   {
     category: "SOFTWARE_ENGINEERING",
     phrases: ["software engineer", "software developer", "application developer", "forward deployed engineer", "forward deployed software engineer", "backend engineer", "backend developer", "back end engineer", "back end developer", "frontend engineer", "frontend developer", "front end engineer", "front end developer", "full stack", "fullstack", "site reliability", "platform engineer", "platform developer", "mobile engineer", "ios engineer", "ios developer", "android engineer", "android developer", "devops engineer", "systems engineer", "programmer", "web developer"],
     words: ["sde", "swe", "sre", "devops"]
   },
   { category: "PRODUCT", phrases: ["product manager", "product owner", "product lead", "head of product", "group product manager"] },
-  { category: "DESIGN", phrases: ["designer", "ux ", "user experience", "user interface", "design lead", "creative director"], words: ["ux", "ui"] },
+  { category: "DESIGN", phrases: ["designer", "ux ", "user experience", "user interface", "design lead", "creative director"], words: ["ux", "ui", "design"] },
   { category: "MARKETING", phrases: ["marketing", "growth", "demand generation", "content strategist", "brand manager", "seo specialist", "social media"] },
   { category: "SALES", phrases: ["sales", "account executive", "account manager", "business development", "sales development"], words: ["bdr", "sdr"] },
-  { category: "FINANCE", phrases: ["finance", "financial analyst", "accountant", "accounting", "controller", "fp&a", "treasury"] },
+  { category: "FINANCE", phrases: ["finance", "financial analyst", "accountant", "accounting", "controller", "fp&a", "treasury"], words: ["financial"] },
   { category: "OPERATIONS", phrases: ["operations", "operating", "logistics", "supply chain"], words: ["ops"] },
   { category: "MANAGEMENT", phrases: ["chief executive", "chief technology", "chief financial", "chief operating", "chief marketing", "founder", "co-founder", "vice president", "vp of", "general manager"], words: ["ceo", "cto", "cfo", "coo", "cmo", "cpo"] }
 ];

@@ -14,8 +14,11 @@ import { normalizeTitle } from "@/services/prospects/prospect-normalization";
 import {
   decideRoleMatch,
   deriveRoleIntent,
+  evaluateRoleMatch,
   providerAliasesForIntent,
-  type RoleIntent
+  type RoleIntent,
+  type RoleMatchKind,
+  type RoleMatchRejectionReason
 } from "@/services/prospects/role-semantic-policy";
 import {
   PrismaRoleSemanticStore,
@@ -170,46 +173,103 @@ export class DiscoverRoleIntelligenceService implements DiscoverRoleIntelligence
       similarities = await this.similarityMap(requestedIntents);
     } catch (error) {
       safeSemanticWarning("rank_people", input.options.searchId, error);
-      if (input.context === "CACHE") {
-        return this.currentBehaviorFilter(input.people, requestedIntents, input.requestedLocations);
-      }
       similarities = new Map();
     }
 
-    const ranked = input.people
-      .map((person, index) => {
-        if (!locationMatches(person, input.requestedLocations)) return null;
-        const normalizedTitle = normalizeTitle(person.normalizedTitle ?? person.currentTitle ?? "");
-        const candidate = candidateByTitle.get(normalizedTitle);
-        if (!candidate) return null;
-        const storedCategory = coercePositionCategory(person.positionCategory);
-        if (storedCategory !== "OTHER" && storedCategory !== candidate.category) return null;
-        let bestScore = -1;
-        let bestKind = "";
-        for (const query of requestedIntents) {
-          const decision = decideRoleMatch({
-            query,
-            candidate,
-            context: input.context,
-            vectorSimilarity: similarities.get(`${query.normalizedTitle}\u0000${candidate.normalizedTitle}`)
-          });
-          if (decision && decision.score > bestScore) {
-            bestScore = decision.score;
-            bestKind = decision.kind;
-          }
+    const acceptedCounts: Record<RoleMatchKind, number> = {
+      EXACT: 0,
+      ALIAS: 0,
+      FAMILY: 0,
+      BROAD_POLICY: 0,
+      VECTOR: 0
+    };
+    const rejectedCounts: Record<RoleMatchRejectionReason, number> = {
+      CATEGORY: 0,
+      FAMILY: 0,
+      LEADERSHIP: 0,
+      VECTOR: 0
+    };
+    const rejectionPriority: Record<RoleMatchRejectionReason, number> = {
+      CATEGORY: 1,
+      LEADERSHIP: 2,
+      FAMILY: 3,
+      VECTOR: 4
+    };
+    let locationRejectedCount = 0;
+    const ranked: Array<{
+      person: ResolvedCachePerson;
+      index: number;
+      score: number;
+      kind: RoleMatchKind;
+    }> = [];
+
+    for (const [index, person] of input.people.entries()) {
+      if (!locationMatches(person, input.requestedLocations)) {
+        locationRejectedCount += 1;
+        continue;
+      }
+      const normalizedTitle = normalizeTitle(person.normalizedTitle ?? person.currentTitle ?? "");
+      const candidate = candidateByTitle.get(normalizedTitle);
+      if (!candidate) {
+        rejectedCounts.FAMILY += 1;
+        continue;
+      }
+      const storedCategory = coercePositionCategory(person.positionCategory);
+      if (storedCategory !== "OTHER" && storedCategory !== candidate.category) {
+        rejectedCounts.CATEGORY += 1;
+        continue;
+      }
+      let bestScore = -1;
+      let bestKind: RoleMatchKind | null = null;
+      let bestRejection: RoleMatchRejectionReason = "CATEGORY";
+      for (const query of requestedIntents) {
+        const evaluation = evaluateRoleMatch({
+          query,
+          candidate,
+          context: input.context,
+          vectorSimilarity: similarities.get(`${query.normalizedTitle}\u0000${candidate.normalizedTitle}`)
+        });
+        if (evaluation.decision && evaluation.decision.score > bestScore) {
+          bestScore = evaluation.decision.score;
+          bestKind = evaluation.decision.kind;
+        } else if (
+          evaluation.rejectionReason &&
+          rejectionPriority[evaluation.rejectionReason] > rejectionPriority[bestRejection]
+        ) {
+          bestRejection = evaluation.rejectionReason;
         }
-        return bestScore >= 0 ? { person, index, score: bestScore, kind: bestKind } : null;
-      })
-      .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
-      .sort((left, right) => right.score - left.score || left.index - right.index);
+      }
+      if (bestKind) {
+        acceptedCounts[bestKind] += 1;
+        ranked.push({ person, index, score: bestScore, kind: bestKind });
+      } else {
+        rejectedCounts[bestRejection] += 1;
+      }
+    }
+    ranked.sort((left, right) => right.score - left.score || left.index - right.index);
 
     safeSemanticEvent(
-      ranked.some((entry) => entry.kind === "VECTOR") ? "DISCOVER_ROLE_SEMANTIC_VECTOR" : "DISCOVER_ROLE_SEMANTIC_ALIAS",
+      acceptedCounts.VECTOR > 0
+        ? "DISCOVER_ROLE_SEMANTIC_VECTOR"
+        : acceptedCounts.FAMILY + acceptedCounts.BROAD_POLICY > 0
+          ? "DISCOVER_ROLE_SEMANTIC_POLICY"
+          : "DISCOVER_ROLE_SEMANTIC_ALIAS",
       {
         searchId: input.options.searchId ?? null,
         requestedRoleCount: requestedIntents.length,
         semanticCandidateCount: input.people.length,
         semanticAcceptedCount: ranked.length,
+        semanticRejectedCount: input.people.length - ranked.length,
+        exactAcceptedCount: acceptedCounts.EXACT,
+        aliasAcceptedCount: acceptedCounts.ALIAS,
+        familyAcceptedCount: acceptedCounts.FAMILY,
+        broadPolicyAcceptedCount: acceptedCounts.BROAD_POLICY,
+        vectorAcceptedCount: acceptedCounts.VECTOR,
+        categoryRejectedCount: rejectedCounts.CATEGORY,
+        familyRejectedCount: rejectedCounts.FAMILY,
+        leadershipRejectedCount: rejectedCounts.LEADERSHIP,
+        vectorRejectedCount: rejectedCounts.VECTOR,
+        locationRejectedCount,
         semanticVersion: this.identity.semanticVersion
       }
     );
@@ -231,10 +291,9 @@ export class DiscoverRoleIntelligenceService implements DiscoverRoleIntelligence
       similar = await this.similarRows(intents);
     } catch (error) {
       safeSemanticWarning("provider_plan", options.searchId, error);
-      // Provider expansion spends money and therefore uses the strictest
-      // fallback: when embeddings/vector lookup are unavailable, preserve the
-      // exact pre-feature provider input.
-      return exact;
+      // Deterministic variants remain safe and bounded when vector storage or
+      // embeddings are unavailable. Only semantic-neighbor expansion is lost.
+      similar = [];
     }
 
     const result: string[] = [];
@@ -390,15 +449,13 @@ export class DiscoverRoleIntelligenceService implements DiscoverRoleIntelligence
   }
 
   private intentFromRecord(record: RoleSemanticRecord): RoleIntent {
-    return {
+    // Re-derive policy metadata so older vector rows cannot preserve stale
+    // canonical-family or leadership behavior across a code rollout.
+    return deriveRoleIntent({
       rawTitle: record.normalizedTitle,
-      normalizedTitle: record.normalizedTitle,
-      canonicalRoleKey: record.canonicalRoleKey,
       category: record.category,
-      specialty: record.specialty,
-      breadth: record.breadth,
-      classificationConfidence: record.classificationConfidence
-    };
+      confidence: record.classificationConfidence
+    })!;
   }
 }
 

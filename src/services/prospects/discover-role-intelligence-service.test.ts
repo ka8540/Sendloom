@@ -233,6 +233,177 @@ describe("DiscoverRoleIntelligenceService", () => {
     expect(ranked.map((entry) => entry.sourceProfileId).sort()).toEqual(valid.map(([id]) => id).sort());
   });
 
+  it("accepts the broad HR provider family with low vector similarity and rejects boundary roles", async () => {
+    const valid = [
+      ["hrbp-long", "Human Resources Business Partner"],
+      ["hrbp", "HR Business Partner"],
+      ["generalist-long", "Human Resources Generalist"],
+      ["generalist", "HR Generalist"],
+      ["specialist-long", "Human Resources Specialist"],
+      ["specialist", "HR Specialist"],
+      ["coordinator-long", "Human Resources Coordinator"],
+      ["coordinator", "HR Coordinator"],
+      ["associate-long", "Human Resources Associate"],
+      ["associate", "HR Associate"],
+      ["people-ops", "People Operations"],
+      ["people-ops-specialist", "People Operations Specialist"],
+      ["people-partner", "People Partner"],
+      ["hr-ops", "HR Operations"]
+    ] as const;
+    const embeddings = new FakeEmbeddings({
+      "human resource": vector(1, 0),
+      ...Object.fromEntries(valid.map(([, title]) => [title.toLowerCase(), vector(0, 1)]))
+    });
+    const service = new DiscoverRoleIntelligenceService(classifier, embeddings, new MemoryRoleStore(), config());
+    const ranked = await service.filterAndRankPeople({
+      people: [
+        ...valid.map(([id, title]) => person(id, title, "HUMAN_RESOURCES")),
+        person("recruiter", "Recruiter", "RECRUITING"),
+        person("software", "Software Engineer", "SOFTWARE_ENGINEERING"),
+        person("sales", "Sales Manager", "SALES"),
+        person("director", "HR Director", "HUMAN_RESOURCES"),
+        person("vp", "VP Human Resources", "HUMAN_RESOURCES"),
+        person("chief", "Chief People Officer", "HUMAN_RESOURCES"),
+        person("head", "Head of Human Resources", "HUMAN_RESOURCES")
+      ],
+      requestedTitles: ["Human Resource"],
+      requestedLocations: ["United States"],
+      context: "PROVIDER",
+      options: { budget: budget(), searchId: "capital-one-broad-hr" }
+    });
+
+    expect(ranked.length).toBeGreaterThan(0);
+    expect(ranked.map((entry) => entry.sourceProfileId).sort()).toEqual(valid.map(([id]) => id).sort());
+  });
+
+  it("reuses the same broad HR family from cache without vector authorization", async () => {
+    const embeddings = new FakeEmbeddings({
+      hr: vector(1, 0),
+      "human resources specialist": vector(0, 1),
+      "people operations": vector(0, 1),
+      recruiter: vector(1, 0)
+    });
+    const service = new DiscoverRoleIntelligenceService(classifier, embeddings, new MemoryRoleStore(), config());
+    const ranked = await service.filterAndRankPeople({
+      people: [
+        person("specialist", "Human Resources Specialist", "HUMAN_RESOURCES"),
+        person("people-ops", "People Operations", "HUMAN_RESOURCES"),
+        person("recruiter", "Recruiter", "RECRUITING")
+      ],
+      requestedTitles: ["HR"],
+      requestedLocations: ["United States"],
+      context: "CACHE",
+      options: { budget: budget(), searchId: "broad-hr-cache" }
+    });
+
+    expect(ranked.map((entry) => entry.sourceProfileId).sort()).toEqual(["people-ops", "specialist"]);
+  });
+
+  it("authorizes broad functional categories without requiring provider vector similarity", async () => {
+    const cases = [
+      ["Sales Specialist", "SALES", "Senior Sales Specialist", "Sales Coordinator", "Marketing Specialist", "MARKETING"],
+      ["Marketing Specialist", "MARKETING", "Senior Marketing Specialist", "Marketing Coordinator", "Sales Specialist", "SALES"],
+      ["Finance Analyst", "FINANCE", "Senior Finance Analyst", "Finance Associate", "Data Analyst", "DATA_ANALYTICS"],
+      ["Operations Specialist", "OPERATIONS", "Senior Operations Specialist", "Operations Coordinator", "Account Executive", "SALES"],
+      ["Product Manager", "PRODUCT", "Senior Product Manager", "Group Product Manager", "Software Engineering Manager", "SOFTWARE_ENGINEERING"],
+      ["Design Specialist", "DESIGN", "Senior Design Specialist", "Design Coordinator", "Product Manager", "PRODUCT"],
+      ["Data Analyst", "DATA_ANALYTICS", "Senior Data Analyst", "Analytics Specialist", "Data Engineer", "DATA_ENGINEERING"]
+    ] as const;
+
+    for (const [rawQuery, category, firstValid, secondValid, invalid, invalidCategory] of cases) {
+      const embeddings = new FakeEmbeddings({
+        [rawQuery.toLowerCase()]: vector(1, 0),
+        [firstValid.toLowerCase()]: vector(0, 1),
+        [secondValid.toLowerCase()]: vector(0, 1),
+        [invalid.toLowerCase()]: vector(1, 0)
+      });
+      const service = new DiscoverRoleIntelligenceService(classifier, embeddings, new MemoryRoleStore(), config());
+      const ranked = await service.filterAndRankPeople({
+        people: [
+          person("first", firstValid, category),
+          person("second", secondValid, category),
+          person("invalid", invalid, invalidCategory)
+        ],
+        requestedTitles: [rawQuery],
+        requestedLocations: ["United States"],
+        context: "PROVIDER",
+        options: { budget: budget(), searchId: `broad-${category.toLowerCase()}` }
+      });
+
+      expect(ranked.map((entry) => entry.sourceProfileId).sort()).toEqual(["first", "second"]);
+    }
+  });
+
+  it("keeps specialized functional queries narrow in the shared decision path", async () => {
+    const cases = [
+      ["Sales Operations Specialist", "SALES", "Senior Sales Operations Coordinator", "Account Executive"],
+      ["Product Marketing Specialist", "MARKETING", "Senior Product Marketing Specialist", "Marketing Coordinator"],
+      ["Financial Planning Analyst", "FINANCE", "Senior Financial Planning Analyst", "Finance Analyst"],
+      ["Revenue Operations Analyst", "OPERATIONS", "Senior Revenue Operations Specialist", "Operations Specialist"],
+      ["Data Governance Analyst", "DATA_ANALYTICS", "Senior Data Governance Specialist", "Data Analyst"]
+    ] as const;
+
+    for (const [rawQuery, category, valid, invalid] of cases) {
+      const embeddings = new FakeEmbeddings({
+        [rawQuery.toLowerCase()]: vector(1, 0),
+        [valid.toLowerCase()]: vector(0, 1),
+        [invalid.toLowerCase()]: vector(1, 0)
+      });
+      const service = new DiscoverRoleIntelligenceService(classifier, embeddings, new MemoryRoleStore(), config());
+      const ranked = await service.filterAndRankPeople({
+        people: [person("valid", valid, category), person("invalid", invalid, category)],
+        requestedTitles: [rawQuery],
+        requestedLocations: ["United States"],
+        context: "PROVIDER",
+        options: { budget: budget(), searchId: `narrow-${category.toLowerCase()}` }
+      });
+
+      expect(ranked.map((entry) => entry.sourceProfileId)).toEqual(["valid"]);
+    }
+  });
+
+  it("reports aggregate policy, category, and leadership outcomes without candidate PII", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    try {
+      const service = new DiscoverRoleIntelligenceService(
+        classifier,
+        new FakeEmbeddings({ "sales specialist": vector(1, 0) }),
+        new MemoryRoleStore(),
+        config()
+      );
+      const ranked = await service.filterAndRankPeople({
+        people: [
+          person("valid", "Senior Sales Specialist", "SALES"),
+          person("executive", "VP Sales", "SALES"),
+          person("category", "Marketing Specialist", "MARKETING")
+        ],
+        requestedTitles: ["Sales Specialist"],
+        requestedLocations: ["United States"],
+        context: "PROVIDER",
+        options: { budget: budget(), searchId: "aggregate-diagnostics" }
+      });
+
+      expect(ranked.map((entry) => entry.sourceProfileId)).toEqual(["valid"]);
+      expect(info).toHaveBeenCalledWith(
+        "[discover-role-semantic]",
+        expect.objectContaining({
+          event: "DISCOVER_ROLE_SEMANTIC_POLICY",
+          searchId: "aggregate-diagnostics",
+          semanticCandidateCount: 3,
+          semanticAcceptedCount: 1,
+          semanticRejectedCount: 2,
+          broadPolicyAcceptedCount: 1,
+          categoryRejectedCount: 1,
+          leadershipRejectedCount: 1,
+          vectorRejectedCount: 0
+        })
+      );
+      expect(JSON.stringify(info.mock.calls)).not.toMatch(/Senior Sales Specialist|VP Sales|Marketing Specialist/);
+    } finally {
+      info.mockRestore();
+    }
+  });
+
   it("keeps the Recruiter provider family including recruiting leaders", async () => {
     const embeddings = new FakeEmbeddings({ "recruiter": vector(1, 0) });
     const service = new DiscoverRoleIntelligenceService(classifier, embeddings, new MemoryRoleStore(), config());
@@ -329,11 +500,84 @@ describe("DiscoverRoleIntelligenceService", () => {
     expect(await service.buildProviderTitlePlan(["CTO"], { budget: budget() })).toEqual(["CTO", "Chief Technology Officer"]);
   });
 
+  it("expands broad HR in one provider plan while respecting per-role and total caps", async () => {
+    const embeddings = new FakeEmbeddings({
+      "human resource": vector(1, 0),
+      hr: vector(1, 0)
+    });
+    const expanded = new DiscoverRoleIntelligenceService(
+      classifier,
+      embeddings,
+      new MemoryRoleStore(),
+      config({ maxApifyTitlesPerRole: 6, maxApifyTitlesTotal: 6 })
+    );
+    expect(await expanded.buildProviderTitlePlan(["Human Resource"], { budget: budget() })).toEqual([
+      "Human Resource",
+      "Human Resources",
+      "HR Business Partner",
+      "HR Generalist",
+      "HR Specialist",
+      "People Operations"
+    ]);
+
+    const perRoleCapped = new DiscoverRoleIntelligenceService(
+      classifier,
+      embeddings,
+      new MemoryRoleStore(),
+      config({ maxApifyTitlesPerRole: 3, maxApifyTitlesTotal: 8 })
+    );
+    expect(await perRoleCapped.buildProviderTitlePlan(["Human Resource"], { budget: budget() })).toEqual([
+      "Human Resource",
+      "Human Resources",
+      "HR Business Partner"
+    ]);
+
+    const totalCapped = new DiscoverRoleIntelligenceService(
+      classifier,
+      embeddings,
+      new MemoryRoleStore(),
+      config({ maxApifyTitlesPerRole: 5, maxApifyTitlesTotal: 5 })
+    );
+    expect(await totalCapped.buildProviderTitlePlan(["Human Resource", "HR"], { budget: budget() })).toEqual([
+      "Human Resource",
+      "HR",
+      "Human Resources",
+      "HR Business Partner",
+      "HR Generalist"
+    ]);
+  });
+
+  it("builds one bounded generalized provider plan and keeps narrow inputs exact", async () => {
+    const service = new DiscoverRoleIntelligenceService(
+      classifier,
+      new FakeEmbeddings({
+        "sales specialist": vector(1, 0),
+        "sales operations specialist": vector(1, 0)
+      }),
+      new MemoryRoleStore(),
+      config({ maxApifyTitlesPerRole: 5, maxApifyTitlesTotal: 5 })
+    );
+
+    expect(await service.buildProviderTitlePlan(["Sales Specialist"], { budget: budget() })).toEqual([
+      "Sales Specialist",
+      "Sales Representative",
+      "Sales Associate",
+      "Sales Coordinator"
+    ]);
+    expect(await service.buildProviderTitlePlan(["Sales Operations Specialist"], { budget: budget() })).toEqual([
+      "Sales Operations Specialist"
+    ]);
+  });
+
   it("falls back safely when embeddings fail and keeps narrow provider filtering", async () => {
     const embeddings = new FakeEmbeddings({}, new Error("provider unavailable"));
     const service = new DiscoverRoleIntelligenceService(classifier, embeddings, new MemoryRoleStore(), config());
     expect(await service.buildProviderTitlePlan(["Software Engineer"], { budget: budget() })).toEqual([
-      "Software Engineer"
+      "Software Engineer",
+      "Software Developer",
+      "Backend Software Engineer",
+      "Frontend Software Engineer",
+      "Application Developer"
     ]);
     const cachePeople = await service.filterAndRankPeople({
       people: [
@@ -384,7 +628,7 @@ describe("DiscoverRoleIntelligenceService", () => {
     expect(store.findByTitles).not.toHaveBeenCalled();
   });
 
-  it("preserves deterministic cache behavior when pgvector storage is unavailable", async () => {
+  it("preserves deterministic cache and provider authorization when pgvector storage is unavailable", async () => {
     const embeddings = new FakeEmbeddings({ "software engineer": vector(1, 0) });
     const store: RoleSemanticStorePort = {
       findByTitles: vi.fn(() => Promise.reject(new Error("vector extension unavailable"))),
@@ -405,6 +649,19 @@ describe("DiscoverRoleIntelligenceService", () => {
     });
 
     expect(filtered.map((entry) => entry.sourceProfileId)).toEqual(["software"]);
+    expect(embeddings.calls).toHaveLength(0);
+
+    const providerFiltered = await service.filterAndRankPeople({
+      people: [
+        person("sales", "Senior Sales Specialist", "SALES"),
+        person("marketing", "Marketing Specialist", "MARKETING")
+      ],
+      requestedTitles: ["Sales Specialist"],
+      requestedLocations: [],
+      context: "PROVIDER",
+      options: { budget: budget() }
+    });
+    expect(providerFiltered.map((entry) => entry.sourceProfileId)).toEqual(["sales"]);
     expect(embeddings.calls).toHaveLength(0);
   });
 });
