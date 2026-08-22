@@ -2126,8 +2126,9 @@
   padding: 0.35rem 0.65rem;
   border: 0;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--accent-soft) 54%, transparent);
-  color: var(--accent-strong);
+  background: transparent;
+  box-shadow: none;
+  color: color-mix(in srgb, var(--text) 88%, var(--accent-strong) 12%);
   font: inherit;
   font-size: 0.8rem;
   font-weight: 700;
@@ -2137,7 +2138,7 @@
 }
 
 .selectAllButton:hover:not(:disabled) {
-  background: var(--accent-soft);
+  background: transparent;
   color: var(--accent-strong);
 }
 
@@ -2169,8 +2170,9 @@
 }
 
 .bulkActionButton {
-  border: 1px solid var(--line);
-  background: var(--surface-soft);
+  border: 0;
+  background: transparent;
+  box-shadow: none;
   color: var(--text);
 }
 
@@ -2180,19 +2182,19 @@
 }
 
 .bulkActionButton:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--field-focus) 40%, var(--line));
-  background: var(--surface-hover);
-  transform: translateY(-1px);
+  background: transparent;
+  color: var(--accent-strong);
 }
 
 .bulkClearButton {
-  border: 1px solid transparent;
+  border: 0;
   background: transparent;
+  box-shadow: none;
   color: var(--muted);
 }
 
 .bulkClearButton:hover:not(:disabled) {
-  background: var(--surface-hover);
+  background: transparent;
   color: var(--text);
 }
 
