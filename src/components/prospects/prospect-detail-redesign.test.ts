@@ -542,6 +542,16 @@ describe("selection import actions UX", () => {
     expect(CSS).not.toContain(".selectAllBanner");
   });
 
+  it("gives every dock action deliberate breathing room without breaking mobile fit", () => {
+    const dockRule = CSS.match(/\.selectionDock\s*\{[^}]*\}/s)?.[0] ?? "";
+    const actionsRule = CSS.match(/\.selectionDockActions\s*\{[^}]*\}/s)?.[0] ?? "";
+    const mobile = CSS.match(/@media \(max-width: 640px\)\s*\{[\s\S]*?\n\}/)?.[0] ?? "";
+    expect(dockRule).toContain("gap: 0.9rem");
+    expect(dockRule).toContain("padding: 0.55rem 0.8rem");
+    expect(actionsRule).toContain("gap: 0.75rem");
+    expect(mobile).toContain("column-gap: 0.55rem");
+  });
+
   it("uses compact pill actions with clear keyboard focus", () => {
     const rule = CSS.match(/\.selectAllButton\s*\{[^}]*\}/s)?.[0] ?? "";
     expect(rule).toContain("var(--accent-strong)");
