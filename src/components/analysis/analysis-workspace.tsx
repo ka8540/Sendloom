@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentType } from "react";
 import type { Route } from "next";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -28,12 +28,14 @@ import {
 
 import type { AnalysisPage, AnalysisPresetDays } from "@/lib/analysis";
 import {
+  ANALYSIS_DEFAULT_DAYS,
   ANALYSIS_PRESET_DAYS,
+  analysisPresetRange,
   analysisPresetLabel,
   formatAnalysisRangeLabel,
-  normalizeAnalysisDateRange,
-  toUtcDateKey
+  normalizeAnalysisDateRange
 } from "@/lib/analysis";
+import { detectBrowserAnalysisTimeZone } from "@/lib/analysis-timezone";
 import { buildAnalysisCsv } from "@/lib/analysis-export";
 import type {
   AnalysisBreakdownItem,
@@ -120,18 +122,15 @@ const PRESET_DESCRIPTIONS: Record<AnalysisPresetDays, string> = {
   30: "Monthly outreach performance"
 };
 
-function presetRange(days: AnalysisPresetDays) {
-  const now = new Date();
-  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  const start = new Date(today.getTime() - (days - 1) * 86_400_000);
-  return { from: toUtcDateKey(start), to: toUtcDateKey(today), start, end: today };
-}
-
 function DateRangeControl({
   days,
+  timeZone,
+  disabled,
   onChange
 }: {
   days: AnalysisPresetDays;
+  timeZone: string;
+  disabled?: boolean;
   onChange: (next: { from: string; to: string }) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -172,7 +171,7 @@ function DateRangeControl({
   }, [open]);
 
   const choosePreset = (nextDays: AnalysisPresetDays) => {
-    const next = presetRange(nextDays);
+    const next = analysisPresetRange(nextDays, timeZone);
     onChange({ from: next.from, to: next.to });
     setOpen(false);
     triggerRef.current?.focus();
@@ -185,6 +184,7 @@ function DateRangeControl({
         className={styles.rangeTrigger}
         type="button"
         onClick={() => setOpen((value) => !value)}
+        disabled={disabled}
         aria-label={`Analysis date range: ${analysisPresetLabel(days)}`}
         aria-haspopup="menu"
         aria-expanded={open}
@@ -196,7 +196,7 @@ function DateRangeControl({
       {open ? (
         <div className={styles.rangeMenu} role="menu" aria-label="Analysis date range" ref={menuRef}>
           {ANALYSIS_PRESET_DAYS.map((preset) => {
-            const span = presetRange(preset);
+            const span = analysisPresetRange(preset, timeZone);
             return (
               <button
                 key={preset}
@@ -205,7 +205,7 @@ function DateRangeControl({
                 aria-checked={preset === days}
                 className={styles.rangeOption}
                 onClick={() => choosePreset(preset)}
-                title={`${analysisPresetLabel(preset)} · ${formatAnalysisRangeLabel(span.start, span.end)}`}
+                title={`${analysisPresetLabel(preset)} · ${formatAnalysisRangeLabel(span.from, span.to, timeZone)}`}
               >
                 <span>
                   <strong>{analysisPresetLabel(preset)}</strong>
@@ -489,6 +489,7 @@ function ReliabilityVisuals({ data }: { data: AnalysisReliabilityResponse }) {
           waiting={data.pacing.waitingRecipients}
           pauses={data.pacing.sendWindowPauses}
           nextRecoveryAt={data.pacing.nextRecoveryAt}
+          timeZone={data.range.timeZone}
           helper="Recipients held by pacing rules rather than failing."
           insight={pacingInsight(data.pacing)}
         />
@@ -512,7 +513,7 @@ function SendersVisuals({ data }: { data: AnalysisSendersResponse }) {
       <div className={styles.sendersBottom}>
         <SenderVolumeCard data={data.senders} rangeLabel={data.range.label} />
         <SenderHealthCard data={data.health} />
-        <SenderChangesCard data={data.recentChanges} />
+        <SenderChangesCard data={data.recentChanges} timeZone={data.range.timeZone} />
       </div>
     </>
   );
@@ -532,11 +533,8 @@ export function AnalysisWorkspace({ page }: { page: AnalysisPage }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const initial = useMemo(
-    () => normalizeAnalysisDateRange({ from: searchParams.get("from"), to: searchParams.get("to") }),
-    [searchParams]
-  );
-  const [range, setRange] = useState({ from: initial.from, to: initial.to, days: initial.days as AnalysisPresetDays });
+  const [timeZone, setTimeZone] = useState<string | null>(null);
+  const [range, setRange] = useState<{ from: string; to: string; days: AnalysisPresetDays } | null>(null);
   const [data, setData] = useState<AnalysisResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -639,19 +637,30 @@ export function AnalysisWorkspace({ page }: { page: AnalysisPage }) {
   }, [page]);
 
   useEffect(() => {
-    const normalized = normalizeAnalysisDateRange({ from: searchParams.get("from"), to: searchParams.get("to") });
+    setTimeZone(detectBrowserAnalysisTimeZone());
+  }, []);
+
+  useEffect(() => {
+    if (!timeZone) return;
+    const normalized = normalizeAnalysisDateRange(
+      { from: searchParams.get("from"), to: searchParams.get("to") },
+      new Date(),
+      timeZone
+    );
     setRange((current) =>
-      current.from === normalized.from && current.to === normalized.to
+      current?.from === normalized.from && current.to === normalized.to
         ? current
         : { from: normalized.from, to: normalized.to, days: normalized.days as AnalysisPresetDays }
     );
-  }, [searchParams]);
+  }, [searchParams, timeZone]);
 
   useEffect(() => {
+    if (!timeZone || !range) return;
     const controller = new AbortController();
     setLoading(true);
     setError(null);
-    fetch(`/api/analysis/${page}?from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}`, {
+    fetch(`/api/analysis/${page}?from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}&timezone=${encodeURIComponent(timeZone)}`, {
+      cache: "no-store",
       credentials: "same-origin",
       signal: controller.signal,
       headers: { Accept: "application/json" }
@@ -671,18 +680,19 @@ export function AnalysisWorkspace({ page }: { page: AnalysisPage }) {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [page, range.from, range.to, retryKey]);
+  }, [page, range, retryKey, timeZone]);
 
   const updateRange = useCallback(
     (next: { from: string; to: string }) => {
-      const normalized = normalizeAnalysisDateRange(next);
+      if (!timeZone) return;
+      const normalized = normalizeAnalysisDateRange(next, new Date(), timeZone);
       setRange({ from: normalized.from, to: normalized.to, days: normalized.days as AnalysisPresetDays });
       const params = new URLSearchParams(searchParams.toString());
       params.set("from", normalized.from);
       params.set("to", normalized.to);
       router.replace(`${pathname}?${params.toString()}` as Route, { scroll: false });
     },
-    [pathname, router, searchParams]
+    [pathname, router, searchParams, timeZone]
   );
 
   const exportCsv = () => {
@@ -723,7 +733,12 @@ export function AnalysisWorkspace({ page }: { page: AnalysisPage }) {
           <p>{PAGE_META[page].subtitle}</p>
         </div>
         <div className={styles.headerControls}>
-          <DateRangeControl days={range.days} onChange={updateRange} />
+          <DateRangeControl
+            days={range?.days ?? ANALYSIS_DEFAULT_DAYS}
+            timeZone={timeZone ?? "UTC"}
+            disabled={!timeZone || !range}
+            onChange={updateRange}
+          />
           <button
             className={styles.toolbarButton}
             type="button"
@@ -741,7 +756,7 @@ export function AnalysisWorkspace({ page }: { page: AnalysisPage }) {
         {Object.entries(PAGE_META).map(([key, item]) => (
           <Link
             key={key}
-            href={{ pathname: item.href, query: { from: range.from, to: range.to } }}
+            href={range ? { pathname: item.href, query: { from: range.from, to: range.to } } : item.href}
             className={page === key ? styles.activeTab : ""}
             aria-current={page === key ? "page" : undefined}
             data-tour={TAB_TOUR_TARGETS[key as AnalysisPage]}
@@ -787,7 +802,13 @@ export function AnalysisWorkspace({ page }: { page: AnalysisPage }) {
 
       <footer className={styles.footerNote}>
         <AnalysisInfo label="About Analysis freshness">Metrics use bounded, user-scoped stored data. Sender capacity is a current rolling 24-hour value.</AnalysisInfo>
-        <span>Analytics are calculated in UTC and may not reflect real-time data.</span>
+        <span aria-live="polite">
+          {timeZone === "UTC"
+            ? "Analytics shown in UTC"
+            : timeZone
+              ? `Analytics shown in your local timezone · ${timeZone}`
+              : "Detecting your analytics timezone…"}
+        </span>
       </footer>
     </div>
   );

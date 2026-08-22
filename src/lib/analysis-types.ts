@@ -122,6 +122,7 @@ type AnalysisResponseBase = {
     to: string;
     label: string;
     days: number;
+    timeZone: string;
   };
   generatedAt: string;
   hasData: boolean;

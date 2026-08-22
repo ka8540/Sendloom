@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { isAnalysisPage, normalizeAnalysisDateRange } from "@/lib/analysis";
+import { normalizeAnalysisTimeZone } from "@/lib/analysis-timezone";
 import { requireApiUser } from "@/lib/api-auth";
 import { getAnalysisPageData } from "@/services/analysis";
 
@@ -16,10 +17,15 @@ export async function GET(request: Request, context: { params: Promise<{ page: s
   }
 
   const url = new URL(request.url);
-  const range = normalizeAnalysisDateRange({
-    from: url.searchParams.get("from"),
-    to: url.searchParams.get("to")
-  });
+  const timeZone = normalizeAnalysisTimeZone(url.searchParams.get("timezone"));
+  const range = normalizeAnalysisDateRange(
+    {
+      from: url.searchParams.get("from"),
+      to: url.searchParams.get("to")
+    },
+    new Date(),
+    timeZone
+  );
 
   try {
     const data = await getAnalysisPageData({ userId: auth.user.id, page, range });

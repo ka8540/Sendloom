@@ -7,14 +7,20 @@ import {
   buildRateComparison,
   calculateRate,
   classifyAnalysisFailure,
-  enumerateUtcDateKeys,
   normalizeAnalysisScheduleType,
   readAnalysisMetadata,
   roundRate,
-  toUtcDateKey,
   type AnalysisPage,
   type AnalysisRange
 } from "@/lib/analysis";
+import {
+  analysisHeatmapBucket,
+  analysisLocalWeekdayHour,
+  enumerateAnalysisDateKeys,
+  formatAnalysisDateKey,
+  formatAnalysisInstant,
+  instantToAnalysisDateKey
+} from "@/lib/analysis-timezone";
 import type {
   AnalysisAttentionItem,
   AnalysisBreakdownItem,
@@ -132,6 +138,7 @@ type PeriodProviderEvent = {
 type PeriodData = {
   start: Date;
   endExclusive: Date;
+  timeZone: string;
   ledger: PeriodLedgerEntry[];
   jobs: PeriodJob[];
   runs: PeriodRun[];
@@ -198,29 +205,31 @@ function metric(args: AnalysisMetric): AnalysisMetric {
 }
 
 function responseRange(range: AnalysisRange) {
-  return { from: range.from, to: range.to, label: range.label, days: range.days };
+  return { from: range.from, to: range.to, label: range.label, days: range.days, timeZone: range.timeZone };
 }
 
 function mapById<T extends { id: string }>(items: T[]) {
   return new Map(items.map((item) => [item.id, item]));
 }
 
-function dateLabel(dateKey: string, rangeDays: number) {
-  const date = new Date(`${dateKey}T00:00:00.000Z`);
-  return new Intl.DateTimeFormat("en-US", {
+function dateLabel(dateKey: string, rangeDays: number, timeZone: string) {
+  return formatAnalysisDateKey(dateKey, timeZone, {
     month: rangeDays > 90 ? "short" : undefined,
     day: rangeDays > 90 ? undefined : "numeric",
-    weekday: rangeDays > 31 ? undefined : "short",
-    timeZone: "UTC"
-  }).format(date);
+    weekday: rangeDays > 31 ? undefined : "short"
+  });
 }
 
 function buildTrendPoints(period: PeriodData, activities: ActivityRecord[]) {
   const points = new Map<string, AnalysisTrendPoint>();
-  for (const key of enumerateUtcDateKeys(period.start, period.endExclusive)) {
+  const keys = enumerateAnalysisDateKeys(
+    instantToAnalysisDateKey(period.start, period.timeZone),
+    instantToAnalysisDateKey(period.endExclusive, period.timeZone)
+  );
+  for (const key of keys) {
     points.set(key, {
       date: key,
-      label: dateLabel(key, Math.round((period.endExclusive.getTime() - period.start.getTime()) / 86_400_000)),
+      label: dateLabel(key, keys.length, period.timeZone),
       sent: 0,
       opened: 0,
       clicked: 0,
@@ -232,20 +241,20 @@ function buildTrendPoints(period: PeriodData, activities: ActivityRecord[]) {
   }
 
   for (const activity of activities) {
-    const sentKey = toUtcDateKey(activity.sentAt);
+    const sentKey = instantToAnalysisDateKey(activity.sentAt, period.timeZone);
     const sentPoint = points.get(sentKey);
     if (sentPoint) sentPoint.sent += 1;
 
     if (activity.openedAt) {
-      const openPoint = points.get(toUtcDateKey(activity.openedAt));
+      const openPoint = points.get(instantToAnalysisDateKey(activity.openedAt, period.timeZone));
       if (openPoint) openPoint.opened += 1;
     }
     if (activity.clickedAt) {
-      const clickPoint = points.get(toUtcDateKey(activity.clickedAt));
+      const clickPoint = points.get(instantToAnalysisDateKey(activity.clickedAt, period.timeZone));
       if (clickPoint) clickPoint.clicked += 1;
     }
     if (activity.repliedAt) {
-      const replyPoint = points.get(toUtcDateKey(activity.repliedAt));
+      const replyPoint = points.get(instantToAnalysisDateKey(activity.repliedAt, period.timeZone));
       if (replyPoint) replyPoint.replied += 1;
     }
   }
@@ -367,7 +376,7 @@ function summarizePeriod(period: PeriodData): PeriodSummary {
   };
 }
 
-async function loadPeriodData(userId: string, start: Date, endExclusive: Date): Promise<PeriodData> {
+async function loadPeriodData(userId: string, start: Date, endExclusive: Date, timeZone: string): Promise<PeriodData> {
   const ledger = await prisma.sendLedger.findMany({
     where: { userId, sentAt: { gte: start, lt: endExclusive } },
     orderBy: { sentAt: "asc" },
@@ -462,7 +471,7 @@ async function loadPeriodData(userId: string, start: Date, endExclusive: Date): 
       })
     : [];
 
-  return { start, endExclusive, ledger, jobs, runs, replies, providerEvents, auditEvents };
+  return { start, endExclusive, timeZone, ledger, jobs, runs, replies, providerEvents, auditEvents };
 }
 
 async function loadContext(userId: string, range: AnalysisRange) {
@@ -498,8 +507,8 @@ async function loadContext(userId: string, range: AnalysisRange) {
         updatedAt: true
       }
     }),
-    loadPeriodData(userId, range.start, range.endExclusive),
-    loadPeriodData(userId, range.previousStart, range.previousEndExclusive)
+    loadPeriodData(userId, range.start, range.endExclusive, range.timeZone),
+    loadPeriodData(userId, range.previousStart, range.previousEndExclusive, range.timeZone)
   ]);
 
   const campaigns: CampaignContext[] = campaignRows.map((campaign) => ({
@@ -545,7 +554,7 @@ function buildCoreMetrics(current: PeriodSummary, previous: PeriodSummary, inclu
       value: current.sent,
       format: "number",
       detail: "Confirmed Gmail sends",
-      info: "Unique confirmed recipient sends recorded during the selected UTC date range.",
+      info: "Unique confirmed recipient sends recorded during the selected local date range.",
       comparison: buildCountComparison(current.sent, previous.sent),
       tone: "green",
       icon: "send"
@@ -672,10 +681,10 @@ function buildRankedSequences(
   return rows.sort((a, b) => b.replyRate - a.replyRate || b.sent - a.sent);
 }
 
-function buildBestDays(summary: PeriodSummary) {
+function buildBestDays(summary: PeriodSummary, timeZone: string) {
   const rows = DAY_LABELS.map((name, index) => ({ name, dayIndex: index, sent: 0, replies: 0, replyRate: 0, meetsMinimum: false }));
   for (const activity of summary.activities) {
-    const row = rows[activity.sentAt.getUTCDay()];
+    const row = rows[analysisLocalWeekdayHour(activity.sentAt, timeZone).weekdayIndex];
     row.sent += 1;
     if (activity.repliedAt) row.replies += 1;
   }
@@ -741,12 +750,12 @@ function buildOverview(
     trends: currentSummary.trends,
     outcomeMix: buildOutcomeMix(currentSummary),
     journey: buildJourney(currentSummary, false),
-    bestDays: buildBestDays(currentSummary),
+    bestDays: buildBestDays(currentSummary, range.timeZone),
     topMovers: movers
   };
 }
 
-function buildHeatmap(summary: PeriodSummary): AnalysisHeatmapCell[] {
+function buildHeatmap(summary: PeriodSummary, timeZone: string): AnalysisHeatmapCell[] {
   const cells = new Map<string, AnalysisHeatmapCell>();
   const orderedDays = [1, 2, 3, 4, 5, 6, 0];
   orderedDays.forEach((dayIndex, displayIndex) => {
@@ -765,8 +774,8 @@ function buildHeatmap(summary: PeriodSummary): AnalysisHeatmapCell[] {
     });
   });
   for (const activity of summary.activities) {
-    const blockIndex = Math.min(5, Math.floor(activity.sentAt.getUTCHours() / 4));
-    const cell = cells.get(`${activity.sentAt.getUTCDay()}:${blockIndex}`);
+    const { weekdayIndex, blockIndex } = analysisHeatmapBucket(activity.sentAt, timeZone);
+    const cell = cells.get(`${weekdayIndex}:${blockIndex}`);
     if (!cell) continue;
     cell.sent += 1;
     if (activity.repliedAt) cell.replies += 1;
@@ -817,7 +826,7 @@ function buildEngagement(
     trends: currentSummary.trends,
     clickAvailable: currentSummary.clicked > 0,
     journey: buildJourney(currentSummary, true),
-    heatmap: buildHeatmap(currentSummary),
+    heatmap: buildHeatmap(currentSummary, range.timeZone),
     scheduleTypes: buildScheduleBreakdown(currentSummary, context.campaigns)
   };
 }
@@ -910,7 +919,9 @@ function buildStandoutRuns(summary: PeriodSummary, period: PeriodData, campaigns
         sent: row.sent,
         replies: row.replies,
         replyRate: calculateRate(row.replies, row.sent),
-        detail: run ? `Run ${new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" }).format(run.createdAt)}` : "Selected-period run"
+        detail: run
+          ? `Run ${formatAnalysisInstant(run.createdAt, period.timeZone, { month: "short", day: "numeric" })}`
+          : "Selected-period run"
       };
     })
     .sort((a, b) => b.replyRate - a.replyRate || b.sent - a.sent)
@@ -1021,23 +1032,27 @@ function buildFailureBreakdown(summary: PeriodSummary) {
 
 function buildOperationalEvents(period: PeriodData): AnalysisOperationalPoint[] {
   const points = new Map<string, AnalysisOperationalPoint>();
-  for (const key of enumerateUtcDateKeys(period.start, period.endExclusive)) {
-    points.set(key, { date: key, label: dateLabel(key, 7), retries: 0, pauses: 0, resumed: 0 });
+  const keys = enumerateAnalysisDateKeys(
+    instantToAnalysisDateKey(period.start, period.timeZone),
+    instantToAnalysisDateKey(period.endExclusive, period.timeZone)
+  );
+  for (const key of keys) {
+    points.set(key, { date: key, label: dateLabel(key, keys.length, period.timeZone), retries: 0, pauses: 0, resumed: 0 });
   }
   for (const job of period.jobs) {
     if (job.retryCount <= 0) continue;
-    const point = points.get(toUtcDateKey(job.updatedAt));
+    const point = points.get(instantToAnalysisDateKey(job.updatedAt, period.timeZone));
     if (point) point.retries += job.retryCount;
   }
   for (const run of period.runs) {
     const pausedAt = getSnapshotString(run.progressSnapshot, "pausedAt");
     if (pausedAt) {
-      const point = points.get(toUtcDateKey(new Date(pausedAt)));
+      const point = points.get(instantToAnalysisDateKey(new Date(pausedAt), period.timeZone));
       if (point) point.pauses += 1;
     }
   }
   for (const event of period.auditEvents) {
-    const point = points.get(toUtcDateKey(event.createdAt));
+    const point = points.get(instantToAnalysisDateKey(event.createdAt, period.timeZone));
     if (!point) continue;
     if (event.action.includes("limit_reached") || event.action.includes("paused")) point.pauses += 1;
     if (event.action.includes("resumed")) point.resumed += 1;

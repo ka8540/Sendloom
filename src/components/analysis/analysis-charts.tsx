@@ -37,6 +37,7 @@ import type {
   AnalysisTemplateItem,
   AnalysisTrendPoint
 } from "@/lib/analysis-types";
+import { formatAnalysisInstant } from "@/lib/analysis-timezone";
 import { AnalysisCard, AnalysisEmpty, analysisColors, formatAnalysisNumber } from "@/components/analysis/analysis-ui";
 
 import styles from "./analysis.module.css";
@@ -199,12 +200,12 @@ export function TrendsCard({
 }) {
   const keys = rate ? ["openRate", "replyRate", ...(includeClicks ? ["clickRate"] : [])] : ["sent", "opened", "replied"];
   const summary = data.length
-    ? `${title} contains ${data.length} UTC date points from ${data[0].date} through ${data[data.length - 1].date}.`
+    ? `${title} contains ${data.length} local date points from ${data[0].date} through ${data[data.length - 1].date}.`
     : `${title} has no data.`;
   return (
     <AnalysisCard
       title={title}
-      info={rate ? "Rates are daily unique engagement counts divided by that day's confirmed sends." : "Shows confirmed sends and unique tracked engagement events grouped by UTC date."}
+      info={rate ? "Rates are daily unique engagement counts divided by that day's confirmed sends." : "Shows confirmed sends and unique tracked engagement events grouped by your local date."}
       summary={summary}
       action={<span className={styles.chartFrequency}>Daily</span>}
     >
@@ -620,7 +621,7 @@ export function BestDaysCard({ data }: { data: Array<{ name: string; sent: numbe
   return (
     <AnalysisCard
       title="Best days to send"
-      info="Reply rate by UTC weekday. A day is highlighted only after at least 20 confirmed sends."
+      info="Reply rate by your local weekday. A day is highlighted only after at least 20 confirmed sends."
       summary={best ? `${best.name} has the highest qualified reply rate at ${best.replyRate.toFixed(1)}%.` : "No weekday meets the 20-send minimum."}
     >
       {!data.some((item) => item.sent > 0) ? (
@@ -702,8 +703,8 @@ export function HeatmapCard({ data }: { data: AnalysisHeatmapCell[] }) {
   return (
     <AnalysisCard
       title="Best send windows"
-      info="Unique replies per confirmed send, grouped into four-hour UTC blocks. Cells need at least 20 sends before intensity is scored."
-      summary="Heatmap of reply rate by UTC weekday and four-hour send block."
+      info="Unique replies per confirmed send, grouped into four-hour blocks in your local timezone. Cells need at least 20 sends before intensity is scored."
+      summary="Heatmap of reply rate by local weekday and four-hour send block."
     >
       {!data.some((item) => item.sent > 0) ? (
         <AnalysisEmpty />
@@ -953,7 +954,7 @@ export function OperationalEventsCard({
   return (
     <AnalysisCard
       title="Operational events over time"
-      info="Retry attempts, safety pauses, and resumed runs are grouped by the UTC date on which they happened. A run is only counted as resumed when an audit event recorded it."
+      info="Retry attempts, safety pauses, and resumed runs are grouped by the local date on which they happened. A run is only counted as resumed when an audit event recorded it."
       summary="Daily retry attempts, safety pauses, and recorded resumed-run events."
     >
       {helper ? <p className={styles.cardHelper}>{helper}</p> : null}
@@ -984,12 +985,14 @@ export function PacingCard({
   waiting,
   pauses,
   nextRecoveryAt,
+  timeZone,
   helper,
   insight
 }: {
   waiting: number;
   pauses: number;
   nextRecoveryAt: string | null;
+  timeZone: string;
   helper?: string;
   insight?: string;
 }) {
@@ -1002,8 +1005,8 @@ export function PacingCard({
       {helper ? <p className={styles.cardHelper}>{helper}</p> : null}
       <div className={styles.pacingList}>
         <div><span className={`${styles.roundIcon} ${styles.green}`}><Clock3 /></span><span><small>Current waiting recipients</small><strong>{waiting.toLocaleString()}</strong><em>Awaiting sender capacity</em></span></div>
-        <div><span className={`${styles.roundIcon} ${styles.purple}`}><RefreshCw /></span><span><small>Send-window pauses</small><strong>{pauses.toLocaleString()}</strong><em>Selected UTC range</em></span></div>
-        <p>{nextRecoveryAt ? `Next known recovery ${new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: "UTC", timeZoneName: "short" }).format(new Date(nextRecoveryAt))}` : "No future recovery timestamp is currently stored."}</p>
+        <div><span className={`${styles.roundIcon} ${styles.purple}`}><RefreshCw /></span><span><small>Send-window pauses</small><strong>{pauses.toLocaleString()}</strong><em>Selected local range</em></span></div>
+        <p>{nextRecoveryAt ? `Next known recovery ${formatAnalysisInstant(new Date(nextRecoveryAt), timeZone, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" })}` : "No future recovery timestamp is currently stored."}</p>
       </div>
       {insight ? <p className={styles.cardInsight}>{insight}</p> : null}
     </AnalysisCard>
@@ -1343,11 +1346,11 @@ function relativeTime(value: string) {
   return `${Math.round(hours / 24)}d ago`;
 }
 
-function exactTime(value: string) {
-  return new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+function exactTime(value: string, timeZone: string) {
+  return formatAnalysisInstant(new Date(value), timeZone, { dateStyle: "medium", timeStyle: "short" });
 }
 
-export function SenderChangesCard({ data }: { data: AnalysisSenderChange[] }) {
+export function SenderChangesCard({ data, timeZone }: { data: AnalysisSenderChange[]; timeZone: string }) {
   const seen = new Set<string>();
   const changes = data.filter((item) => {
     const key = `${item.title}\u0000${item.detail}\u0000${item.at}`;
@@ -1363,10 +1366,10 @@ export function SenderChangesCard({ data }: { data: AnalysisSenderChange[] }) {
         <>
           <div className={styles.changesList}>
           {changes.map((item, index) => (
-            <div key={`${item.title}-${item.at}-${index}`} title={`${item.title}\n${item.detail}\n${exactTime(item.at)}`} aria-label={`${item.title}. ${item.detail} ${relativeTime(item.at)}`}>
+            <div key={`${item.title}-${item.at}-${index}`} title={`${item.title}\n${item.detail}\n${exactTime(item.at, timeZone)}`} aria-label={`${item.title}. ${item.detail} ${relativeTime(item.at)}`}>
               <span data-tone={item.tone}>{item.tone === "orange" ? <AlertTriangle /> : item.tone === "purple" ? <Clock3 /> : item.tone === "blue" ? <RefreshCw /> : <CheckCircle2 />}</span>
               <p><strong>{item.title}</strong><small title={item.detail}>{item.detail}</small></p>
-              <time dateTime={item.at} title={exactTime(item.at)}>{relativeTime(item.at)}</time>
+              <time dateTime={item.at} title={exactTime(item.at, timeZone)}>{relativeTime(item.at)}</time>
             </div>
           ))}
           </div>
