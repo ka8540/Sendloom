@@ -1561,7 +1561,11 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
           />
 
           {company && (
-            <div className={`card ${styles.peopleSection}`}>
+            <div
+              className={`card ${styles.peopleSection} ${
+                selectedCount > 0 ? styles.peopleSectionWithSelectionDock : ""
+              }`}
+            >
               <div className={`${styles.panelHeader} ${styles.peoplePanelHeader}`}>
                 <div>
                   <h2 className={styles.panelTitle}>People</h2>
@@ -1745,19 +1749,16 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
                 )}
               </div>
 
-              {selectedCount > 0 && (
-                <BulkSelectionToolbar
-                  selectedCount={selectedCount}
-                  allMatchingSelected={allMatchingSelected}
-                  selectAllTotal={canSelectAllMatching ? peopleTotal : null}
-                  preparingExport={preparingExport}
-                  creatingImport={creatingImport}
-                  onDownload={() => openReviewDialog("download")}
-                  onImport={() => openReviewDialog("import")}
-                  onClear={clearSelection}
-                  onSelectAll={handleSelectAllMatching}
-                />
-              )}
+              <FloatingSelectionDock
+                selectedCount={selectedCount}
+                selectAllTotal={canSelectAllMatching ? peopleTotal : null}
+                preparingExport={preparingExport}
+                creatingImport={creatingImport}
+                onDownload={() => openReviewDialog("download")}
+                onImport={() => openReviewDialog("import")}
+                onClear={clearSelection}
+                onSelectAll={handleSelectAllMatching}
+              />
 
               <div className={styles.peopleTableShell} data-discover-tour="people-table">
                 <PeopleTable
@@ -2678,9 +2679,8 @@ function SelectionCheckbox({
   );
 }
 
-function BulkSelectionToolbar({
+function FloatingSelectionDock({
   selectedCount,
-  allMatchingSelected,
   selectAllTotal,
   preparingExport,
   creatingImport,
@@ -2690,7 +2690,6 @@ function BulkSelectionToolbar({
   onSelectAll
 }: {
   selectedCount: number;
-  allMatchingSelected: boolean;
   selectAllTotal: number | null;
   preparingExport: boolean;
   creatingImport: boolean;
@@ -2700,32 +2699,77 @@ function BulkSelectionToolbar({
   onSelectAll: () => void;
 }) {
   const busy = preparingExport || creatingImport;
+  const [displayedCount, setDisplayedCount] = useState(selectedCount);
+  const [mounted, setMounted] = useState(selectedCount > 0);
+  const [exiting, setExiting] = useState(false);
+  const exitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (selectedCount > 0) {
+      if (exitTimerRef.current) {
+        clearTimeout(exitTimerRef.current);
+        exitTimerRef.current = null;
+      }
+      setDisplayedCount(selectedCount);
+      setMounted(true);
+      setExiting(false);
+      return;
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    setExiting(true);
+    exitTimerRef.current = setTimeout(() => {
+      setMounted(false);
+      setExiting(false);
+      exitTimerRef.current = null;
+    }, 200);
+
+    return () => {
+      if (exitTimerRef.current) {
+        clearTimeout(exitTimerRef.current);
+        exitTimerRef.current = null;
+      }
+    };
+  }, [mounted, selectedCount]);
+
+  if (!mounted) {
+    return null;
+  }
+
   return (
-    <div className={styles.bulkToolbar} data-discover-tour="bulk-actions">
-      <div className={styles.bulkSelectionStatus} aria-live="polite">
+    <div
+      className={`${styles.selectionDock} ${exiting ? styles.selectionDockExiting : ""}`}
+      data-discover-tour="bulk-actions"
+      role="region"
+      aria-label="Selection actions"
+      aria-hidden={exiting || undefined}
+    >
+      <div className={styles.selectionDockStatus} aria-live="polite">
         <span className={styles.bulkSelectionCheck} aria-hidden="true">
           <Check />
         </span>
-        <strong>{selectedCount} selected</strong>
-        {allMatchingSelected && <span className={styles.bulkSelectionMeta}>All matching</span>}
+        <strong>{displayedCount} selected</strong>
       </div>
       {selectAllTotal !== null && (
         <button
           type="button"
           className={styles.selectAllButton}
           onClick={onSelectAll}
-          aria-label={`Select all ${selectAllTotal} people in the current filtered results`}
+          aria-label={`Select all ${selectAllTotal} matching people`}
           data-discover-tour="select-all"
         >
-          Select all {selectAllTotal}
+          Select {selectAllTotal}
         </button>
       )}
-      <div className={styles.bulkActions}>
-        <button type="button" className={styles.bulkActionButton} onClick={onDownload} disabled={busy}>
+      <div className={styles.selectionDockActions}>
+        <button type="button" className={styles.bulkActionButton} onClick={onDownload} disabled={busy || exiting}>
           <Download aria-hidden="true" />
           <span>Export</span>
         </button>
-        <button type="button" className={styles.bulkActionButton} onClick={onImport} disabled={busy}>
+        <button type="button" className={styles.bulkActionButton} onClick={onImport} disabled={busy || exiting}>
           <FileSpreadsheet aria-hidden="true" />
           <span>Import</span>
         </button>
@@ -2733,7 +2777,7 @@ function BulkSelectionToolbar({
           type="button"
           className={styles.bulkClearButton}
           onClick={onClear}
-          disabled={busy}
+          disabled={busy || exiting}
           aria-label="Clear selection"
         >
           Clear

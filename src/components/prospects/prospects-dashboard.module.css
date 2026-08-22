@@ -1828,6 +1828,10 @@
   container-type: inline-size;
 }
 
+.peopleSectionWithSelectionDock {
+  padding-bottom: calc(4.5rem + env(safe-area-inset-bottom));
+}
+
 .peoplePanelHeader {
   align-items: center;
   flex-wrap: wrap;
@@ -2018,29 +2022,68 @@
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-soft-strong) 60%, transparent);
 }
 
-.bulkToolbar {
+.selectionDock {
+  position: fixed;
+  left: 50%;
+  bottom: max(1rem, calc(env(safe-area-inset-bottom) + 0.5rem));
+  z-index: var(--z-sticky);
   display: flex;
   align-items: center;
-  gap: 0.65rem;
-  flex-wrap: wrap;
-  min-height: 3.15rem;
-  padding: 0.45rem 0.6rem;
-  border-radius: 0.8rem;
+  gap: 0.5rem;
+  width: max-content;
+  max-width: calc(100vw - 2rem);
+  min-height: 3.5rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 999px;
   border: 1px solid var(--line);
-  background: var(--surface-strong);
-  box-shadow: var(--edge-highlight);
+  background: color-mix(in srgb, var(--surface-strong) 88%, transparent);
+  box-shadow: var(--edge-highlight), var(--elevation-4);
+  backdrop-filter: blur(16px) saturate(135%);
+  -webkit-backdrop-filter: blur(16px) saturate(135%);
+  transform: translateX(-50%);
+  animation: selection-dock-in 220ms var(--ease-emphasis) both;
 }
 
-.bulkSelectionStatus {
+.selectionDockExiting {
+  pointer-events: none;
+  animation: selection-dock-out 200ms var(--ease-out) both;
+}
+
+@keyframes selection-dock-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 0.75rem);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+@keyframes selection-dock-out {
+  from {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translate(-50%, 0.5rem);
+  }
+}
+
+.selectionDockStatus {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
+  flex: none;
   min-width: 0;
-  margin-right: auto;
+  padding: 0 0.35rem 0 0.1rem;
   color: var(--text);
 }
 
-.bulkSelectionStatus strong {
+.selectionDockStatus strong {
   color: var(--accent-strong);
   font-size: 0.88rem;
   font-weight: 700;
@@ -2066,24 +2109,12 @@
   stroke-width: 2.5;
 }
 
-.bulkSelectionMeta {
-  color: var(--muted);
-  font-size: 0.8rem;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.bulkSelectionMeta::before {
-  content: "·";
-  margin-right: 0.45rem;
-}
-
-.bulkActions {
+.selectionDockActions {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: center;
   gap: 0.4rem;
-  flex-wrap: wrap;
+  flex: none;
 }
 
 .selectAllButton {
@@ -2091,11 +2122,11 @@
   align-items: center;
   justify-content: center;
   flex: none;
-  min-height: 2.15rem;
-  padding: 0.35rem 0.55rem;
+  min-height: 2.25rem;
+  padding: 0.35rem 0.65rem;
   border: 0;
-  border-radius: 0.55rem;
-  background: transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-soft) 54%, transparent);
   color: var(--accent-strong);
   font: inherit;
   font-size: 0.8rem;
@@ -2107,7 +2138,7 @@
 
 .selectAllButton:hover:not(:disabled) {
   background: var(--accent-soft);
-  color: var(--text);
+  color: var(--accent-strong);
 }
 
 .selectAllButton:focus-visible {
@@ -2121,9 +2152,9 @@
   align-items: center;
   justify-content: center;
   gap: 0.35rem;
-  min-height: 2.15rem;
-  padding: 0.35rem 0.65rem;
-  border-radius: 0.6rem;
+  min-height: 2.35rem;
+  padding: 0.4rem 0.75rem;
+  border-radius: 999px;
   font: inherit;
   font-size: 0.8rem;
   font-weight: 650;
@@ -2883,14 +2914,6 @@
 }
 
 @container (max-width: 760px) {
-  .bulkSelectionStatus {
-    flex: 1 1 100%;
-  }
-
-  .bulkActions {
-    margin-left: auto;
-  }
-
   .headRow {
     display: none;
   }
@@ -2936,14 +2959,20 @@
 }
 
 @media (max-width: 640px) {
-  .bulkToolbar {
-    align-items: center;
+  .peopleSectionWithSelectionDock {
+    padding-bottom: calc(7rem + env(safe-area-inset-bottom));
   }
 
-  .bulkActions {
-    width: 100%;
-    justify-content: flex-start;
-    margin-left: 0;
+  .selectionDock {
+    bottom: max(0.5rem, calc(env(safe-area-inset-bottom) + 0.35rem));
+    justify-content: center;
+    flex-wrap: wrap;
+    row-gap: 0.4rem;
+    width: max-content;
+    max-width: calc(100vw - 1rem);
+    min-height: 3.25rem;
+    padding: 0.45rem;
+    border-radius: 1.5rem;
   }
 
   /* The history filter stacks under the title and stretches full width. */
@@ -3130,6 +3159,11 @@
 
   .peopleSearchTrigger,
   .peopleSearchPill {
+    animation: none;
+  }
+
+  .selectionDock,
+  .selectionDockExiting {
     animation: none;
   }
 

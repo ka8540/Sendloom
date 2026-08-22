@@ -330,7 +330,7 @@ describe("redesign regression contracts", () => {
       "DELETE_COMPANY_MUTATION",
       "handlePeopleNext",
       "handlePeoplePrev",
-      "BulkSelectionToolbar"
+      "FloatingSelectionDock"
     ]) {
       expect(DETAIL_SOURCE).toContain(kept);
     }
@@ -466,76 +466,101 @@ describe("review import dialog UI", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Selection import actions — one compact toolbar owns status, select-all, and
-// utilities. There is no second banner competing with the table.
+// Selection import actions — one compact floating dock owns status, select-all,
+// and utilities. There is no inline banner competing with the table.
 // ---------------------------------------------------------------------------
 
 describe("selection import actions UX", () => {
-  const toolbar = DETAIL_SOURCE.slice(
-    DETAIL_SOURCE.indexOf("function BulkSelectionToolbar("),
+  const dock = DETAIL_SOURCE.slice(
+    DETAIL_SOURCE.indexOf("function FloatingSelectionDock("),
     DETAIL_SOURCE.indexOf("function PeopleTable(")
   );
 
-  it("keeps the live selected count and all-matching status in one toolbar", () => {
-    expect(toolbar).toContain("{selectedCount} selected");
-    expect(toolbar).toContain("styles.bulkSelectionCheck");
-    expect(toolbar).toContain("All matching");
+  it("renders no dock at zero and preserves the last count only for the exit animation", () => {
+    expect(dock).toContain("const [mounted, setMounted] = useState(selectedCount > 0)");
+    expect(dock).toMatch(/if \(!mounted\) \{\s*return null;/);
+    expect(dock).toContain("{displayedCount} selected");
+    expect(dock).toContain("styles.bulkSelectionCheck");
+    expect(dock).not.toContain("All matching");
     expect(DETAIL_SOURCE).not.toContain("function SelectAllMatchingBanner(");
     expect(DETAIL_SOURCE).not.toContain("styles.selectAllBanner");
-    expect(DETAIL_SOURCE).toContain("{selectedCount > 0 && (");
+    expect(DETAIL_SOURCE).not.toContain("styles.bulkToolbar");
   });
 
-  it("labels the toolbar actions simply: Export / Import / Clear", () => {
-    expect(toolbar).toContain("<span>Export</span>");
-    expect(toolbar).toContain("<span>Import</span>");
-    expect(toolbar).toContain(">\n          Clear\n");
-    expect(toolbar).toContain('aria-label="Clear selection"');
-    expect(toolbar).not.toContain("Download Excel");
-    expect(toolbar).not.toContain("Review import");
+  it("labels the dock actions simply: Export / Import / Clear", () => {
+    expect(dock).toContain("<span>Export</span>");
+    expect(dock).toContain("<span>Import</span>");
+    expect(dock).toContain(">\n          Clear\n");
+    expect(dock).toContain('aria-label="Clear selection"');
+    expect(dock).not.toContain("Download Excel");
+    expect(dock).not.toContain("Review import");
     expect(DETAIL_SOURCE).not.toContain("<span>Add to Imports</span>");
   });
 
-  it("wires the toolbar Export/Import buttons to the export/import review dialogs", () => {
-    expect(toolbar).toContain("onClick={onDownload}");
-    expect(toolbar).toContain("onClick={onImport}");
+  it("wires the dock Export/Import buttons to the existing review dialogs", () => {
+    expect(dock).toContain("onClick={onDownload}");
+    expect(dock).toContain("onClick={onImport}");
     expect(DETAIL_SOURCE).toContain('onDownload={() => openReviewDialog("download")}');
     expect(DETAIL_SOURCE).toContain('onImport={() => openReviewDialog("import")}');
   });
 
-  it("keeps Clear selection wired in the toolbar", () => {
-    expect(toolbar).toContain("onClick={onClear}");
-    expect(toolbar).toContain("styles.bulkClearButton");
+  it("keeps Clear selection wired and animates the dock out before unmounting", () => {
+    expect(dock).toContain("onClick={onClear}");
+    expect(dock).toContain("styles.bulkClearButton");
+    expect(dock).toContain("setExiting(true)");
+    expect(dock).toContain("setMounted(false)");
+    expect(dock).toContain("}, 200)");
   });
 
-  it("renders filtered Select-all inside the toolbar as a compact accessible action", () => {
-    expect(toolbar).toContain("className={styles.selectAllButton}");
-    expect(toolbar).toContain('type="button"');
-    expect(toolbar).toContain("onClick={onSelectAll}");
-    expect(toolbar).toContain("Select all {selectAllTotal}");
-    expect(toolbar).toContain("current filtered results");
+  it("renders Select N as a text-only accessible action and removes it for ALL_MATCHING", () => {
+    const selectAction = dock.slice(
+      dock.indexOf("{selectAllTotal !== null && ("),
+      dock.indexOf("<div className={styles.selectionDockActions}>")
+    );
+    expect(dock).toContain("{selectAllTotal !== null && (");
+    expect(dock).toContain("className={styles.selectAllButton}");
+    expect(dock).toContain('type="button"');
+    expect(dock).toContain("onClick={onSelectAll}");
+    expect(dock).toContain("Select {selectAllTotal}");
+    expect(dock).toContain("Select all ${selectAllTotal} matching people");
+    expect(selectAction).not.toMatch(/<(Check|Download|FileSpreadsheet)\b/);
+    expect(dock).not.toContain("Select all {selectAllTotal}");
+    expect(DETAIL_SOURCE).toContain("selectAllTotal={canSelectAllMatching ? peopleTotal : null}");
   });
 
-  it("uses one compact neutral action surface instead of the large green panel", () => {
-    const toolbarRule = CSS.match(/\.bulkToolbar\s*\{[^}]*\}/s)?.[0] ?? "";
-    expect(toolbarRule).toContain("min-height: 3.15rem");
-    expect(toolbarRule).toContain("background: var(--surface-strong)");
-    expect(toolbarRule).toContain("border: 1px solid var(--line)");
-    expect(toolbarRule).not.toContain("var(--accent-soft)");
+  it("uses one intrinsic fixed bottom-centered glass surface instead of an inline panel", () => {
+    const dockRule = CSS.match(/\.selectionDock\s*\{[^}]*\}/s)?.[0] ?? "";
+    expect(dockRule).toContain("position: fixed");
+    expect(dockRule).toContain("left: 50%");
+    expect(dockRule).toContain("transform: translateX(-50%)");
+    expect(dockRule).toContain("width: max-content");
+    expect(dockRule).toContain("border-radius: 999px");
+    expect(dockRule).toContain("backdrop-filter: blur(16px)");
+    expect(dockRule).toContain("border: 1px solid var(--line)");
+    expect(CSS).not.toContain(".bulkToolbar");
     expect(CSS).not.toContain(".noticeBanner");
     expect(CSS).not.toContain(".selectAllBanner");
   });
 
-  it("styles Select-all as compact accent text with keyboard focus", () => {
+  it("uses compact pill actions with clear keyboard focus", () => {
     const rule = CSS.match(/\.selectAllButton\s*\{[^}]*\}/s)?.[0] ?? "";
     expect(rule).toContain("var(--accent-strong)");
-    expect(rule).toContain("background: transparent");
+    expect(rule).toContain("border-radius: 999px");
     expect(rule).not.toContain("text-decoration: underline");
     expect(CSS).toMatch(/\.selectAllButton:focus-visible\s*\{[^}]*box-shadow/s);
+    expect(CSS).toMatch(/\.bulkActionButton,[\s\S]*?\.bulkClearButton\s*\{[^}]*border-radius:\s*999px/s);
   });
 
-  it("uses dedicated compact utility buttons rather than the page-level CTA styles", () => {
-    expect(toolbar).toContain("styles.bulkActionButton");
-    expect(toolbar).not.toContain("styles.secondaryButton");
-    expect(toolbar).not.toContain("styles.ghostButton");
+  it("adds conditional safe-area breathing room and reduced-motion support", () => {
+    expect(DETAIL_SOURCE).toContain("selectedCount > 0 ? styles.peopleSectionWithSelectionDock");
+    expect(CSS).toMatch(/\.peopleSectionWithSelectionDock\s*\{[^}]*env\(safe-area-inset-bottom\)/s);
+    expect(CSS).toMatch(/\.selectionDock\s*\{[^}]*env\(safe-area-inset-bottom\)/s);
+    expect(CSS).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.selectionDock[\s\S]*?animation:\s*none/s);
+  });
+
+  it("uses dedicated compact utility buttons rather than page-level CTA styles", () => {
+    expect(dock).toContain("styles.bulkActionButton");
+    expect(dock).not.toContain("styles.secondaryButton");
+    expect(dock).not.toContain("styles.ghostButton");
   });
 });
