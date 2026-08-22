@@ -27,7 +27,7 @@ function person(overrides: Partial<ResolvedCachePerson> = {}): ResolvedCachePers
 }
 
 describe("filterReusableDiscoverPeople", () => {
-  it("uses the existing role category and exact normalized location components", () => {
+  it("uses the existing role category and structured location components", () => {
     const people = [
       person(),
       person({ sourceProfileId: "p2", currentTitle: "Software Engineer", normalizedTitle: "software engineer", positionCategory: "SOFTWARE_ENGINEERING" }),
@@ -37,6 +37,30 @@ describe("filterReusableDiscoverPeople", () => {
     const matches = filterReusableDiscoverPeople({
       people,
       requestedRoles: [{ normalizedTitle: "technical recruiter", category: "RECRUITING" }],
+      requestedLocations: ["United States"]
+    });
+
+    expect(matches.map((entry) => entry.sourceProfileId)).toEqual(["p1"]);
+  });
+
+  it("matches a requested country contained only in the stored full location", () => {
+    const matches = filterReusableDiscoverPeople({
+      people: [
+        person({
+          location: "West Haven, Connecticut, United States",
+          country: null,
+          state: null,
+          city: null
+        }),
+        person({
+          sourceProfileId: "p2",
+          location: "Toronto, Ontario, Canada",
+          country: "Canada",
+          state: "Ontario",
+          city: "Toronto"
+        })
+      ],
+      requestedRoles: [{ normalizedTitle: "recruiter", category: "RECRUITING" }],
       requestedLocations: ["United States"]
     });
 

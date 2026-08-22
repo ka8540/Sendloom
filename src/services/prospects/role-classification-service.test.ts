@@ -34,7 +34,16 @@ describe("deterministicCategory", () => {
     expect(deterministicCategory("software engineer")).toBe("SOFTWARE_ENGINEERING");
     expect(deterministicCategory("senior backend engineer")).toBe("SOFTWARE_ENGINEERING");
     expect(deterministicCategory("technical recruiter")).toBe("RECRUITING");
+    expect(deterministicCategory("human resource")).toBe("HUMAN_RESOURCES");
+    expect(deterministicCategory("hr business partner")).toBe("HUMAN_RESOURCES");
     expect(deterministicCategory("people operations manager")).toBe("HUMAN_RESOURCES");
+    expect(deterministicCategory("chief people officer")).toBe("HUMAN_RESOURCES");
+    expect(deterministicCategory("sales operations specialist")).toBe("SALES");
+    expect(deterministicCategory("product marketing specialist")).toBe("MARKETING");
+    expect(deterministicCategory("financial planning analyst")).toBe("FINANCE");
+    expect(deterministicCategory("revenue operations analyst")).toBe("OPERATIONS");
+    expect(deterministicCategory("design specialist")).toBe("DESIGN");
+    expect(deterministicCategory("data governance analyst")).toBe("DATA_ANALYTICS");
     expect(deterministicCategory("data analyst")).toBe("DATA_ANALYTICS");
     expect(deterministicCategory("data engineer")).toBe("DATA_ENGINEERING");
     expect(deterministicCategory("data scientist")).toBe("DATA_SCIENCE");
