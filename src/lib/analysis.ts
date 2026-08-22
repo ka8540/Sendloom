@@ -1,3 +1,13 @@
+import {
+  addAnalysisCalendarDays,
+  analysisCalendarDayDifference,
+  analysisLocalDateStartUtc,
+  formatAnalysisDateKey,
+  instantToAnalysisDateKey,
+  normalizeAnalysisTimeZone,
+  parseAnalysisDateKey
+} from "@/lib/analysis-timezone";
+
 /** Analysis supports two presets only. Longer periods are not queryable. */
 export const ANALYSIS_PRESET_DAYS = [7, 30] as const;
 export type AnalysisPresetDays = (typeof ANALYSIS_PRESET_DAYS)[number];
@@ -17,6 +27,7 @@ export type AnalysisRange = {
   previousEndExclusive: Date;
   days: number;
   label: string;
+  timeZone: string;
 };
 
 export type MetricComparison = {
@@ -38,26 +49,6 @@ export type AnalysisFailureClassification = {
   disposition: "retryable" | "permanent" | "suppressed" | "pacing";
 };
 
-const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-function startOfUtcDay(date: Date) {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-}
-
-export function toUtcDateKey(date: Date) {
-  return date.toISOString().slice(0, 10);
-}
-
-function parseDateKey(value: string | null | undefined) {
-  if (!value || !DATE_KEY_PATTERN.test(value)) {
-    return null;
-  }
-
-  const date = new Date(`${value}T00:00:00.000Z`);
-  return Number.isNaN(date.getTime()) || toUtcDateKey(date) !== value ? null : date;
-}
-
 function isPresetDays(days: number): days is AnalysisPresetDays {
   return (ANALYSIS_PRESET_DAYS as readonly number[]).includes(days);
 }
@@ -66,72 +57,71 @@ export function analysisPresetLabel(days: AnalysisPresetDays) {
   return `Last ${days} days`;
 }
 
-/** Absolute span, e.g. "Jul 29 – Aug 4, 2026". Shown inside the picker, not on the closed control. */
-export function formatAnalysisRangeLabel(start: Date, inclusiveEnd: Date) {
-  const formatter = new Intl.DateTimeFormat("en-US", {
+/** Absolute local-calendar span, e.g. "Jul 29 – Aug 4, 2026". */
+export function formatAnalysisRangeLabel(from: string, to: string, timeZone: string) {
+  const sameYear = from.slice(0, 4) === to.slice(0, 4);
+  const start = formatAnalysisDateKey(from, timeZone, {
     month: "short",
     day: "numeric",
-    year: start.getUTCFullYear() === inclusiveEnd.getUTCFullYear() ? undefined : "numeric",
-    timeZone: "UTC"
+    year: sameYear ? undefined : "numeric"
   });
-  const endFormatter = new Intl.DateTimeFormat("en-US", {
+  const end = formatAnalysisDateKey(to, timeZone, {
     month: "short",
     day: "numeric",
-    year: "numeric",
-    timeZone: "UTC"
+    year: "numeric"
   });
+  return `${start} – ${end}`;
+}
 
-  return `${formatter.format(start)} – ${endFormatter.format(inclusiveEnd)}`;
+export function analysisPresetRange(days: AnalysisPresetDays, timeZone: string, now = new Date()) {
+  const zone = normalizeAnalysisTimeZone(timeZone);
+  const to = instantToAnalysisDateKey(now, zone);
+  return { from: addAnalysisCalendarDays(to, -(days - 1)), to };
 }
 
 /**
- * Normalize an inclusive, UTC calendar-day Analysis range. Only the supported
+ * Normalize an inclusive local calendar-day Analysis range. Only the supported
  * presets are queryable: anything else — a reversed range, a future end date, an
  * arbitrary custom span, or a period longer than 30 days — falls back to the
- * latest seven UTC calendar days rather than running an unbounded query.
+ * latest seven local calendar days rather than running an unbounded query.
  */
 export function normalizeAnalysisDateRange(
   input: { from?: string | null; to?: string | null },
-  now = new Date()
+  now = new Date(),
+  timeZone = "UTC"
 ): AnalysisRange {
-  const today = startOfUtcDay(now);
-  const requestedStart = parseDateKey(input.from);
-  const requestedEnd = parseDateKey(input.to);
+  const zone = normalizeAnalysisTimeZone(timeZone);
+  const today = instantToAnalysisDateKey(now, zone);
+  const requestedStart = parseAnalysisDateKey(input.from);
+  const requestedEnd = parseAnalysisDateKey(input.to);
   const requestedDays =
     requestedStart && requestedEnd
-      ? Math.floor((requestedEnd.getTime() - requestedStart.getTime()) / DAY_MS) + 1
+      ? (analysisCalendarDayDifference(input.from as string, input.to as string) ?? -1) + 1
       : 0;
   const supported =
     requestedStart !== null &&
     requestedEnd !== null &&
     isPresetDays(requestedDays) &&
-    requestedEnd.getTime() <= today.getTime();
+    (input.to as string) <= today;
 
-  const inclusiveEnd = supported ? (requestedEnd as Date) : today;
+  const inclusiveEnd = supported ? (input.to as string) : today;
   const days: AnalysisPresetDays = supported ? (requestedDays as AnalysisPresetDays) : ANALYSIS_DEFAULT_DAYS;
-  const start = new Date(inclusiveEnd.getTime() - (days - 1) * DAY_MS);
-  const endExclusive = new Date(inclusiveEnd.getTime() + DAY_MS);
-  const previousEndExclusive = new Date(start);
-  const previousStart = new Date(previousEndExclusive.getTime() - days * DAY_MS);
+  const from = supported ? (input.from as string) : addAnalysisCalendarDays(inclusiveEnd, -(days - 1));
+  const endExclusiveKey = addAnalysisCalendarDays(inclusiveEnd, 1);
+  const previousEndExclusiveKey = from;
+  const previousStartKey = addAnalysisCalendarDays(previousEndExclusiveKey, -days);
 
   return {
-    from: toUtcDateKey(start),
-    to: toUtcDateKey(inclusiveEnd),
-    start,
-    endExclusive,
-    previousStart,
-    previousEndExclusive,
+    from,
+    to: inclusiveEnd,
+    start: analysisLocalDateStartUtc(from, zone),
+    endExclusive: analysisLocalDateStartUtc(endExclusiveKey, zone),
+    previousStart: analysisLocalDateStartUtc(previousStartKey, zone),
+    previousEndExclusive: analysisLocalDateStartUtc(previousEndExclusiveKey, zone),
     days,
-    label: analysisPresetLabel(days)
+    label: analysisPresetLabel(days),
+    timeZone: zone
   };
-}
-
-export function enumerateUtcDateKeys(start: Date, endExclusive: Date) {
-  const keys: string[] = [];
-  for (let cursor = start.getTime(); cursor < endExclusive.getTime(); cursor += DAY_MS) {
-    keys.push(toUtcDateKey(new Date(cursor)));
-  }
-  return keys;
 }
 
 export function roundRate(value: number, digits = 1) {

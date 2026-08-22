@@ -6,7 +6,13 @@ import type { AnalysisOverviewResponse } from "@/lib/analysis-types";
 function overviewResponse(): AnalysisOverviewResponse {
   return {
     page: "overview",
-    range: { from: "2026-03-23", to: "2026-03-29", label: "Mar 23 – Mar 29, 2026", days: 7 },
+    range: {
+      from: "2026-03-23",
+      to: "2026-03-29",
+      label: "Mar 23 – Mar 29, 2026",
+      days: 7,
+      timeZone: "America/Phoenix"
+    },
     generatedAt: "2026-03-30T00:00:00.000Z",
     hasData: false,
     metrics: [
@@ -42,11 +48,12 @@ function overviewResponse(): AnalysisOverviewResponse {
 }
 
 describe("Analysis CSV export", () => {
-  it("exports only the supplied current-page aggregate and selected UTC range", () => {
+  it("exports only the supplied current-page aggregate with its local range and timezone", () => {
     const csv = buildAnalysisCsv(overviewResponse());
 
     expect(csv).toContain("Sendloom Analysis,overview");
-    expect(csv).toContain("UTC date range,2026-03-23 to 2026-03-29");
+    expect(csv).toContain("Local date range,2026-03-23 to 2026-03-29");
+    expect(csv).toContain("Timezone,America/Phoenix");
     expect(csv).toContain("Sent,0,Confirmed Gmail sends");
     expect(csv).toContain("2026-03-23,0,0,0,0,0%,0%,0%");
     expect(csv).not.toContain("userId");

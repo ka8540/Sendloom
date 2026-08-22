@@ -17,6 +17,29 @@ describe("Analysis API authorization and scoping", () => {
     expect(ROUTE).not.toContain('searchParams.get("userId")');
   });
 
+  it("validates the timezone parameter and uses it to normalize the Analysis range", () => {
+    expect(ROUTE).toContain('normalizeAnalysisTimeZone(url.searchParams.get("timezone"))');
+    expect(ROUTE).toContain("new Date(),\n    timeZone");
+    expect(WORKSPACE).toContain("detectBrowserAnalysisTimeZone()");
+    expect(WORKSPACE).toContain("if (!timeZone || !range) return;");
+    expect(WORKSPACE).toContain("&timezone=${encodeURIComponent(timeZone)}");
+  });
+
+  it("prevents timezone-specific Analysis aggregates from being cached across requests", () => {
+    expect(ROUTE).toContain('"Cache-Control": "private, no-store"');
+    expect(WORKSPACE).toContain('cache: "no-store"');
+  });
+
+  it("uses timezone-aware helpers for trends, best days, heatmaps, and operational events", () => {
+    expect(SERVICE).toContain("instantToAnalysisDateKey(activity.sentAt, period.timeZone)");
+    expect(SERVICE).toContain("instantToAnalysisDateKey(activity.openedAt, period.timeZone)");
+    expect(SERVICE).toContain("instantToAnalysisDateKey(activity.clickedAt, period.timeZone)");
+    expect(SERVICE).toContain("instantToAnalysisDateKey(activity.repliedAt, period.timeZone)");
+    expect(SERVICE).toContain("analysisLocalWeekdayHour(activity.sentAt, timeZone).weekdayIndex");
+    expect(SERVICE).toContain("analysisHeatmapBucket(activity.sentAt, timeZone)");
+    expect(SERVICE).toContain("instantToAnalysisDateKey(event.createdAt, period.timeZone)");
+  });
+
   it("scopes SendLedger, campaign, sender, reply, and job reads to user ownership", () => {
     expect(SERVICE).toContain("where: { userId, sentAt:");
     expect(SERVICE).toContain("campaignRun: { campaign: { userId } }");

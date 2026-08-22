@@ -3,7 +3,8 @@ import type { AnalysisResponse } from "@/lib/analysis-types";
 export function buildAnalysisCsv(data: AnalysisResponse) {
   const rows: Array<Array<string | number>> = [
     ["Sendloom Analysis", data.page],
-    ["UTC date range", `${data.range.from} to ${data.range.to}`],
+    ["Local date range", `${data.range.from} to ${data.range.to}`],
+    ["Timezone", data.range.timeZone],
     [],
     ["Metric", "Value", "Detail"]
   ];

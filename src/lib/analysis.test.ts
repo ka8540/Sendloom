@@ -9,6 +9,7 @@ import {
   countUniqueConfirmedSends,
   countUniqueMatchedReplies,
   meetsAnalysisRankingMinimum,
+  analysisPresetRange,
   normalizeAnalysisDateRange,
   normalizeAnalysisScheduleType
 } from "@/lib/analysis";
@@ -25,6 +26,43 @@ describe("Analysis date ranges", () => {
     expect(range.endExclusive.toISOString()).toBe("2026-07-17T00:00:00.000Z");
     expect(range.previousStart.toISOString()).toBe("2026-07-03T00:00:00.000Z");
     expect(range.previousEndExclusive.toISOString()).toBe("2026-07-10T00:00:00.000Z");
+  });
+
+  it("uses local midnights for the selected and equal local-calendar comparison periods", () => {
+    const range = normalizeAnalysisDateRange(
+      { from: "2026-08-16", to: "2026-08-22" },
+      new Date("2026-08-22T18:00:00.000Z"),
+      "America/Phoenix"
+    );
+
+    expect(range.timeZone).toBe("America/Phoenix");
+    expect(range.start.toISOString()).toBe("2026-08-16T07:00:00.000Z");
+    expect(range.endExclusive.toISOString()).toBe("2026-08-23T07:00:00.000Z");
+    expect(range.previousStart.toISOString()).toBe("2026-08-09T07:00:00.000Z");
+    expect(range.previousEndExclusive.toISOString()).toBe("2026-08-16T07:00:00.000Z");
+  });
+
+  it("ends presets on the viewer's local today near UTC midnight", () => {
+    const now = new Date("2026-08-22T01:30:00.000Z");
+
+    expect(analysisPresetRange(7, "America/Phoenix", now)).toEqual({
+      from: "2026-08-15",
+      to: "2026-08-21"
+    });
+    expect(normalizeAnalysisDateRange({ from: null, to: null }, now, "America/Phoenix").to).toBe("2026-08-21");
+  });
+
+  it("keeps seven local calendar days across a spring-forward boundary", () => {
+    const range = normalizeAnalysisDateRange(
+      { from: "2026-03-03", to: "2026-03-09" },
+      new Date("2026-03-10T12:00:00.000Z"),
+      "America/New_York"
+    );
+
+    expect(range.days).toBe(7);
+    expect(range.start.toISOString()).toBe("2026-03-03T05:00:00.000Z");
+    expect(range.endExclusive.toISOString()).toBe("2026-03-10T04:00:00.000Z");
+    expect(range.endExclusive.getTime() - range.start.getTime()).toBe(167 * 60 * 60 * 1000);
   });
 
   it("falls back to seven days for reversed or overlong custom ranges", () => {
