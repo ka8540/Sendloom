@@ -254,10 +254,9 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
   const peopleFilterTimer = useRef<number | null>(null);
 
   const [peopleFilter, setPeopleFilter] = useState("");
-  // Presentation-only: whether the compact people search pill is expanded.
+  // Presentation-only: whether the compact People-header search is open.
   // The query itself stays in peopleFilter; this never affects what is searched.
-  const [peopleSearchFocused, setPeopleSearchFocused] = useState(false);
-  const peopleSearchInputRef = useRef<HTMLInputElement | null>(null);
+  const [peopleSearchOpen, setPeopleSearchOpen] = useState(false);
   const [peopleQuery, setPeopleQuery] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [selection, setSelection] = useState<ProspectSelectionState>(() => createEmptyProspectSelection());
@@ -1071,9 +1070,9 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
   const peoplePageCount = resolvePageCount(peopleTotal, PEOPLE_PAGE_SIZE);
   const peopleSearchPending = peopleFilter.trim() !== peopleQuery;
   const peopleSearchActive = peopleQuery.length > 0;
-  // Stay expanded while focused OR while a query is visible so the active
+  // Stay expanded while explicitly open OR while a query is visible so the active
   // search text never disappears mid-read.
-  const peopleSearchExpanded = peopleSearchFocused || peopleFilter.length > 0;
+  const peopleSearchExpanded = peopleSearchOpen || peopleFilter.length > 0;
 
   // Add-more visibility depends ONLY on whether this company can be searched
   // again — never on the people currently rendered. Filters (role/location),
@@ -1552,7 +1551,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
 
           {company && (
             <div className={`card ${styles.peopleSection}`}>
-              <div className={styles.panelHeader}>
+              <div className={`${styles.panelHeader} ${styles.peoplePanelHeader}`}>
                 <div>
                   <h2 className={styles.panelTitle}>People</h2>
                   <p className={styles.panelSubtitle}>
@@ -1561,32 +1560,96 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
                       : `${PEOPLE_PAGE_SIZE} per page`}
                   </p>
                 </div>
-                {showAddMore && (
-                  <span className={styles.addMoreButtonWrap}>
-                    <button
-                      type="button"
-                      className={styles.secondaryButton}
-                      data-discover-tour="add-more-people"
-                      onClick={() => setShowAddMoreDialog(true)}
-                      disabled={addMoreDisabled !== null}
-                      title={addMoreDisabled ?? undefined}
-                      aria-label={ADD_MORE_PEOPLE_LABEL}
-                      aria-describedby={addMoreDisabled === null ? "discover-add-more-tooltip" : undefined}
-                    >
-                      {expanding ? (
-                        <LoaderCircle className={styles.spin} aria-hidden="true" />
-                      ) : (
-                        <UserPlus aria-hidden="true" />
-                      )}
-                      <span>{expanding ? ADD_MORE_LOADING_LABEL : ADD_MORE_PEOPLE_BUTTON_LABEL}</span>
-                    </button>
-                    {addMoreDisabled === null && (
-                      <span id="discover-add-more-tooltip" role="tooltip" className={styles.addMoreButtonTooltip}>
-                        {ADD_MORE_PEOPLE_TOOLTIP}
-                      </span>
+
+                <div className={styles.peopleHeaderActions}>
+                  <div
+                    className={`${styles.peopleSearchDock} ${
+                      peopleSearchExpanded ? styles.peopleSearchExpanded : ""
+                    }`}
+                    data-discover-tour="people-filter"
+                  >
+                    {!peopleSearchExpanded ? (
+                      <button
+                        type="button"
+                        className={styles.peopleSearchTrigger}
+                        aria-label="Search all people"
+                        onClick={() => setPeopleSearchOpen(true)}
+                      >
+                        <Search aria-hidden="true" />
+                      </button>
+                    ) : (
+                      <div className={styles.peopleSearchPill} role="search">
+                        <span className={styles.peopleSearchIcon} aria-hidden="true">
+                          {peopleSearchPending ? (
+                            <LoaderCircle className={styles.spin} />
+                          ) : (
+                            <Search />
+                          )}
+                        </span>
+                        <input
+                          className={styles.peopleSearchInput}
+                          type="search"
+                          value={peopleFilter}
+                          placeholder="Search name, title, email, or location"
+                          onChange={(event) => handlePeopleSearchChange(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key !== "Escape") {
+                              return;
+                            }
+                            if (peopleFilter) {
+                              handleClearPeopleSearch();
+                            }
+                            setPeopleSearchOpen(false);
+                            event.currentTarget.blur();
+                          }}
+                          aria-label="Search all people"
+                          maxLength={200}
+                          autoFocus
+                        />
+                        <button
+                          type="button"
+                          className={styles.peopleSearchClose}
+                          aria-label="Clear and close people search"
+                          onClick={() => {
+                            if (peopleFilter) {
+                              handleClearPeopleSearch();
+                            }
+                            setPeopleSearchOpen(false);
+                          }}
+                        >
+                          <X aria-hidden="true" />
+                        </button>
+                      </div>
                     )}
-                  </span>
-                )}
+                  </div>
+
+                  {showAddMore && (
+                    <span className={styles.addMoreButtonWrap}>
+                      <button
+                        type="button"
+                        className={styles.secondaryButton}
+                        data-discover-tour="add-more-people"
+                        onClick={() => setShowAddMoreDialog(true)}
+                        disabled={addMoreDisabled !== null}
+                        title={addMoreDisabled ?? undefined}
+                        aria-label={ADD_MORE_PEOPLE_LABEL}
+                        aria-describedby={addMoreDisabled === null ? "discover-add-more-tooltip" : undefined}
+                      >
+                        {expanding ? (
+                          <LoaderCircle className={styles.spin} aria-hidden="true" />
+                        ) : (
+                          <UserPlus aria-hidden="true" />
+                        )}
+                        <span>{expanding ? ADD_MORE_LOADING_LABEL : ADD_MORE_PEOPLE_BUTTON_LABEL}</span>
+                      </button>
+                      {addMoreDisabled === null && (
+                        <span id="discover-add-more-tooltip" role="tooltip" className={styles.addMoreButtonTooltip}>
+                          {ADD_MORE_PEOPLE_TOOLTIP}
+                        </span>
+                      )}
+                    </span>
+                  )}
+                </div>
               </div>
 
               {/* Quiet, compact filter bar. Each control is ONE pill — a muted
@@ -1674,73 +1737,6 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
               <div className={styles.noticeBanner} role="note" data-discover-tour="inferred-warning">
                 <AlertCircle aria-hidden="true" />
                 <span>{INFERRED_EMAIL_NOTICE}</span>
-              </div>
-
-              <div className={styles.peopleToolbar}>
-                {/* Presentation only: the compact pill expands around the same
-                    peopleFilter input and existing debounced search path. */}
-                <div
-                  className={`${styles.peopleSearch} ${
-                    peopleSearchExpanded ? styles.peopleSearchOpen : ""
-                  }`}
-                  data-discover-tour="people-filter"
-                >
-                  <div className={styles.peopleSearchField}>
-                    <input
-                      ref={peopleSearchInputRef}
-                      className={styles.peopleSearchInput}
-                      type="search"
-                      value={peopleFilter}
-                      placeholder={
-                        peopleSearchExpanded
-                          ? "Search name, title, email, or location"
-                          : "Search"
-                      }
-                      onChange={(event) => handlePeopleSearchChange(event.target.value)}
-                      onFocus={() => setPeopleSearchFocused(true)}
-                      onBlur={() => {
-                        if (!peopleFilter) {
-                          setPeopleSearchFocused(false);
-                        }
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key !== "Escape") {
-                          return;
-                        }
-                        if (peopleFilter) {
-                          handleClearPeopleSearch();
-                        } else {
-                          setPeopleSearchFocused(false);
-                          event.currentTarget.blur();
-                        }
-                      }}
-                      aria-label="Search all people"
-                      maxLength={200}
-                    />
-                    {peopleFilter && (
-                      <button
-                        type="button"
-                        className={styles.peopleSearchClear}
-                        aria-label="Clear people search"
-                        onMouseDown={(event) => event.preventDefault()}
-                        onClick={() => {
-                          handleClearPeopleSearch();
-                          peopleSearchInputRef.current?.focus();
-                        }}
-                      >
-                        <X aria-hidden="true" />
-                      </button>
-                    )}
-                  </div>
-
-                  <span className={styles.peopleSearchBubble} aria-hidden="true">
-                    {peopleSearchPending ? (
-                      <LoaderCircle className={styles.spin} />
-                    ) : (
-                      <Search />
-                    )}
-                  </span>
-                </div>
               </div>
 
               {selectedCount > 0 && (

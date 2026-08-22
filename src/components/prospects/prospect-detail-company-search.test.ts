@@ -238,15 +238,33 @@ describe("Detail page regressions (#31-#35)", () => {
 });
 
 describe("Compact expanding people search control", () => {
-  it("replaces the old full-width field with a compact pill", () => {
+  it("places the only search control in the People header beside Add", () => {
     expect(DETAIL_SOURCE).not.toContain("styles.filterField");
     expect(CSS).not.toContain(".filterField");
-    expect(DETAIL_SOURCE).toContain("styles.peopleSearch");
+    expect(DETAIL_SOURCE).not.toContain("styles.peopleToolbar");
+    expect(DETAIL_SOURCE).not.toContain("styles.peopleSearchBubble");
+    expect(DETAIL_SOURCE).toContain("styles.peopleHeaderActions");
+    expect(DETAIL_SOURCE).toContain("styles.peopleSearchDock");
     expect(DETAIL_SOURCE).toContain('data-discover-tour="people-filter"');
-    // Collapsed pill stays small; expanded caps at desktop width.
-    expect(CSS).toMatch(/\.peopleSearch \{[^}]*width: 9\.75rem/);
-    expect(CSS).toMatch(/\.peopleSearchOpen \{[^}]*width: min\(31rem, 100%\)/);
-    expect(DETAIL_SOURCE).toContain("className={styles.peopleSearchInput}");
+
+    const headerIndex = DETAIL_SOURCE.indexOf("styles.peopleHeaderActions");
+    const searchIndex = DETAIL_SOURCE.indexOf("styles.peopleSearchDock", headerIndex);
+    const addIndex = DETAIL_SOURCE.indexOf("styles.addMoreButtonWrap", headerIndex);
+    const warningIndex = DETAIL_SOURCE.indexOf('data-discover-tour="inferred-warning"');
+    expect(searchIndex).toBeGreaterThan(headerIndex);
+    expect(addIndex).toBeGreaterThan(searchIndex);
+    expect(searchIndex).toBeLessThan(warningIndex);
+  });
+
+  it("renders a 44px circle when closed and one 320px pill when open", () => {
+    expect(DETAIL_SOURCE).toContain("className={styles.peopleSearchTrigger}");
+    expect(DETAIL_SOURCE).toContain("className={styles.peopleSearchPill}");
+    expect(DETAIL_SOURCE).toContain("className={styles.peopleSearchIcon}");
+    expect(DETAIL_SOURCE).toContain("className={styles.peopleSearchClose}");
+    expect(CSS).toMatch(/\.peopleSearchDock \{[^}]*width: 2\.75rem/);
+    expect(CSS).toMatch(/\.peopleSearchExpanded \{[^}]*width: 20rem/);
+    expect(CSS).toMatch(/\.peopleSearchTrigger \{[^}]*width: 2\.75rem[^}]*height: 2\.75rem/);
+    expect(CSS).toMatch(/\.peopleSearchPill \{[^}]*height: 2\.75rem/);
   });
 
   it("keeps every bit of the existing search wiring", () => {
@@ -259,40 +277,41 @@ describe("Compact expanding people search control", () => {
     );
   });
 
-  it("expands on focus and stays open while a query is visible", () => {
+  it("expands from the trigger, autofocuses, and stays open for an active query", () => {
     expect(DETAIL_SOURCE).toMatch(
-      /const peopleSearchExpanded = peopleSearchFocused \|\| peopleFilter\.length > 0;/
+      /const peopleSearchExpanded = peopleSearchOpen \|\| peopleFilter\.length > 0;/
     );
-    expect(DETAIL_SOURCE).toContain("onFocus={() => setPeopleSearchFocused(true)}");
+    expect(DETAIL_SOURCE).toContain("onClick={() => setPeopleSearchOpen(true)}");
+    expect(DETAIL_SOURCE).toContain("autoFocus");
   });
 
-  it("clears through the existing handler with a labeled clear button", () => {
-    expect(DETAIL_SOURCE).toContain('aria-label="Clear people search"');
-    expect(DETAIL_SOURCE).toMatch(/onClick=\{\(\) => \{\s*\n\s*handleClearPeopleSearch\(\);/);
-    // mousedown is prevented so clicking clear keeps the input focused.
-    expect(DETAIL_SOURCE).toContain("onMouseDown={(event) => event.preventDefault()}");
-  });
-
-  it("Escape clears an active query, otherwise collapses the pill", () => {
-    expect(DETAIL_SOURCE).toMatch(
-      /if \(event\.key !== "Escape"\) \{[\s\S]*?if \(peopleFilter\) \{\s*\n\s*handleClearPeopleSearch\(\);\s*\n\s*\} else \{\s*\n\s*setPeopleSearchFocused\(false\);/
-    );
-  });
-
-  it("shows the pending spinner inside the icon bubble", () => {
+  it("keeps the search icon, loading state, input, and X inside one pill", () => {
+    const pillIndex = DETAIL_SOURCE.indexOf("styles.peopleSearchPill");
+    const iconIndex = DETAIL_SOURCE.indexOf("styles.peopleSearchIcon", pillIndex);
+    const inputIndex = DETAIL_SOURCE.indexOf("styles.peopleSearchInput", pillIndex);
+    const closeIndex = DETAIL_SOURCE.indexOf("styles.peopleSearchClose", pillIndex);
+    expect(iconIndex).toBeGreaterThan(pillIndex);
+    expect(inputIndex).toBeGreaterThan(iconIndex);
+    expect(closeIndex).toBeGreaterThan(inputIndex);
     expect(DETAIL_SOURCE).toMatch(
       /\{peopleSearchPending \? \(\s*\n\s*<LoaderCircle className=\{styles\.spin\} \/>/
     );
-    expect(CSS).toContain(".peopleSearchBubble");
-    expect(DETAIL_SOURCE.indexOf("styles.peopleSearchBubble")).toBeGreaterThan(
-      DETAIL_SOURCE.indexOf("styles.peopleSearchInput")
+  });
+
+  it("X and Escape clear through the existing handler and collapse", () => {
+    expect(DETAIL_SOURCE).toContain('aria-label="Clear and close people search"');
+    expect(DETAIL_SOURCE).toMatch(
+      /if \(peopleFilter\) \{\s*\n\s*handleClearPeopleSearch\(\);\s*\n\s*\}\s*\n\s*setPeopleSearchOpen\(false\);/
+    );
+    expect(DETAIL_SOURCE).toMatch(
+      /if \(event\.key !== "Escape"\) \{[\s\S]*?handleClearPeopleSearch\(\);[\s\S]*?setPeopleSearchOpen\(false\);/
     );
   });
 
   it("animates softly and honors prefers-reduced-motion", () => {
-    expect(CSS).toMatch(/\.peopleSearch \{[^}]*width 260ms var\(--ease-emphasis\)/);
+    expect(CSS).toMatch(/\.peopleSearchDock \{[^}]*width 260ms var\(--ease-emphasis\)/);
     expect(CSS).toMatch(
-      /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.peopleSearch,[\s\S]*?\.peopleSearchBubble,[\s\S]*?\.peopleSearchClear,[\s\S]*?transition: none;/
+      /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.peopleSearchDock,[\s\S]*?\.peopleSearchTrigger,[\s\S]*?\.peopleSearchPill,[\s\S]*?transition: none;/
     );
   });
 });

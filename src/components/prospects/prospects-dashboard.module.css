@@ -1828,6 +1828,22 @@
   container-type: inline-size;
 }
 
+.peoplePanelHeader {
+  align-items: center;
+  flex-wrap: wrap;
+  row-gap: 0.75rem;
+}
+
+.peopleHeaderActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.65rem;
+  min-width: 0;
+  max-width: 100%;
+  margin-left: auto;
+}
+
 .addMoreButtonWrap {
   position: relative;
   display: inline-flex;
@@ -2021,14 +2037,6 @@
   flex: none;
 }
 
-.peopleToolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  flex-wrap: wrap;
-}
-
 .bulkToolbar {
   display: flex;
   align-items: center;
@@ -2103,56 +2111,104 @@
   outline-offset: 2px;
 }
 
-/* Compact expanding people search. The closed state is one quiet text pill;
-   focus opens the input and reveals a separate icon bubble on the right, like
-   the supplied reference, without changing the existing search behaviour. */
-.peopleSearch {
-  display: inline-flex;
-  align-items: center;
-  width: 9.75rem;
-  max-width: 100%;
-  transition:
-    width 260ms var(--ease-emphasis),
-    gap 220ms var(--ease-out);
-}
-
-.peopleSearchOpen {
-  width: min(31rem, 100%);
-  gap: 0.75rem;
-}
-
-.peopleSearchField {
-  position: relative;
+/* People-header search dock. Closed: one 44px icon button. Open: the same
+   right-aligned footprint expands left into one unified icon/input/close pill. */
+.peopleSearchDock {
   display: flex;
   align-items: center;
-  flex: 1 1 auto;
-  min-width: 0;
-  height: 3rem;
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--line) 88%, transparent);
-  border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--surface-strong) 90%, var(--text) 10%);
+  justify-content: flex-end;
+  flex: 0 1 auto;
+  width: 2.75rem;
+  min-width: 2.75rem;
+  max-width: 20rem;
+  height: 2.75rem;
+  transition: width 260ms var(--ease-emphasis);
+}
+
+.peopleSearchExpanded {
+  width: 20rem;
+}
+
+.peopleSearchTrigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 2.75rem;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--surface-strong);
+  color: var(--muted);
   box-shadow: var(--edge-highlight), var(--elevation-1);
+  cursor: pointer;
+  animation: people-search-trigger-in 160ms var(--ease-out) both;
   transition:
-    border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
     background var(--duration-fast) var(--ease-out),
-    box-shadow var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
     transform var(--duration-fast) var(--ease-out);
 }
 
-.peopleSearch:not(.peopleSearchOpen) .peopleSearchField:hover {
-  background: color-mix(in srgb, var(--surface-strong) 84%, var(--text) 16%);
-  border-color: color-mix(in srgb, var(--field-focus) 30%, var(--line));
+.peopleSearchTrigger:hover {
+  border-color: color-mix(in srgb, var(--field-focus) 38%, var(--line));
+  background: var(--surface-hover);
+  color: var(--text);
   transform: translateY(-1px);
 }
 
-.peopleSearchField:focus-within {
-  border-color: color-mix(in srgb, var(--field-focus) 82%, var(--line));
+.peopleSearchTrigger:active {
+  transform: scale(0.97);
+}
+
+.peopleSearchTrigger:focus-visible {
+  outline: none;
+  border-color: var(--field-focus);
+  box-shadow: 0 0 0 2px var(--accent-soft-strong), var(--edge-highlight), var(--elevation-1);
+}
+
+.peopleSearchTrigger svg,
+.peopleSearchIcon svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.peopleSearchPill {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  height: 2.75rem;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
   background: var(--surface-strong);
-  box-shadow:
-    0 0 0 3px color-mix(in srgb, var(--accent-soft-strong) 58%, transparent),
-    var(--edge-highlight),
-    var(--elevation-2);
+  box-shadow: var(--edge-highlight), var(--elevation-1);
+  transform-origin: right center;
+  animation: people-search-pill-in 200ms var(--ease-emphasis) both;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+}
+
+.peopleSearchPill:focus-within {
+  border-color: var(--field-focus);
+  background: color-mix(in srgb, var(--surface-strong) 94%, var(--accent-soft) 6%);
+  box-shadow: var(--edge-highlight), var(--elevation-1);
+}
+
+.peopleSearchIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 2.7rem;
+  color: var(--muted);
+}
+
+.peopleSearchPill:focus-within .peopleSearchIcon {
+  color: var(--accent);
 }
 
 .peopleSearchInput {
@@ -2161,24 +2217,16 @@
   min-width: 0;
   height: 100%;
   margin: 0;
-  padding: 0 1.15rem;
+  padding: 0 0.3rem 0 0;
   border: 0;
-  border-radius: inherit;
+  border-radius: 0;
   background: transparent;
   color: var(--text);
-  font-size: 0.92rem;
+  font-size: 0.9rem;
   font-weight: 500;
   line-height: 1;
-  text-align: left;
   appearance: none;
   -webkit-appearance: none;
-  transition: padding var(--duration-base) var(--ease-out);
-}
-
-.peopleSearch:not(.peopleSearchOpen) .peopleSearchInput {
-  padding-inline: 1rem;
-  text-align: center;
-  cursor: pointer;
 }
 
 .peopleSearchInput::placeholder {
@@ -2196,80 +2244,58 @@
   appearance: none;
 }
 
-.peopleSearchClear {
+.peopleSearchClose {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex: none;
-  width: 1.75rem;
-  height: 1.75rem;
-  margin-right: 0.6rem;
+  flex: 0 0 2rem;
+  width: 2rem;
+  height: 2rem;
+  margin-right: 0.35rem;
   padding: 0;
-  border-radius: 50%;
   border: 0;
+  border-radius: 50%;
   background: transparent;
   color: var(--muted);
   cursor: pointer;
   transition:
-    background 140ms ease,
-    color 140ms ease;
+    color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
 }
 
-.peopleSearchClear svg {
-  width: 0.9rem;
-  height: 0.9rem;
-}
-
-.peopleSearchClear:hover {
+.peopleSearchClose:hover {
   background: var(--surface-hover);
   color: var(--text);
+  transform: scale(1.04);
 }
 
-.peopleSearchClear:focus-visible {
-  outline: 2px solid var(--field-focus);
-  outline-offset: 1px;
-  box-shadow: none;
+.peopleSearchClose:active {
+  transform: scale(0.94);
 }
 
-.peopleSearchBubble {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  width: 0;
-  height: 3rem;
-  overflow: hidden;
-  border: 0 solid transparent;
-  border-radius: 50%;
-  background: var(--surface-strong);
-  color: var(--accent);
-  opacity: 0;
-  visibility: hidden;
-  transform: translateX(-0.7rem) scale(0.78);
-  box-shadow: var(--edge-highlight), var(--elevation-1);
-  transition:
-    width 240ms var(--ease-emphasis),
-    border-width 180ms var(--ease-out),
-    border-color 180ms var(--ease-out),
-    opacity 150ms var(--ease-out),
-    transform 260ms var(--ease-spring),
-    visibility 0s linear 260ms;
+.peopleSearchClose:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent-soft-strong);
 }
 
-.peopleSearchOpen .peopleSearchBubble {
-  width: 3rem;
-  border-width: 1px;
-  border-color: color-mix(in srgb, var(--accent) 38%, var(--line));
-  opacity: 1;
-  visibility: visible;
-  transform: translateX(0) scale(1);
-  transition-delay: 0ms;
+.peopleSearchClose svg {
+  width: 0.95rem;
+  height: 0.95rem;
 }
 
-.peopleSearchBubble svg {
-  width: 1.05rem;
-  height: 1.05rem;
-  flex: none;
+@keyframes people-search-trigger-in {
+  from {
+    opacity: 0;
+    transform: scale(0.82);
+  }
+}
+
+@keyframes people-search-pill-in {
+  from {
+    opacity: 0.72;
+    transform: scaleX(0.92);
+  }
 }
 
 .peopleShowing {
@@ -2920,13 +2946,19 @@
   .addMoreButtonTooltip,
   .peopleFilterControl,
   .peopleFilterClear,
-  .peopleSearch,
-  .peopleSearchBubble,
-  .peopleSearchClear,
+  .peopleSearchDock,
+  .peopleSearchTrigger,
+  .peopleSearchPill,
+  .peopleSearchClose,
   .pagerButton,
   .linkButton,
   .confidenceTick {
     transition: none;
+  }
+
+  .peopleSearchTrigger,
+  .peopleSearchPill {
+    animation: none;
   }
 
   .refreshButton:hover,
@@ -3392,13 +3424,17 @@
     justify-content: center;
   }
 
-  .peopleToolbar,
-  .peopleSearch,
-  .peopleSearchOpen {
+  .peopleHeaderActions {
     width: 100%;
   }
 
-  .peopleSearch:not(.peopleSearchOpen) {
-    width: 9.75rem;
+  .peopleSearchExpanded {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+  }
+
+  .peopleSearchDock:not(.peopleSearchExpanded) {
+    flex: 0 0 2.75rem;
   }
 }
