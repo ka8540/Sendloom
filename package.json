@@ -40,13 +40,13 @@
     "ioredis": "^5.4.1",
     "jsonwebtoken": "^9.0.2",
     "lucide-react": "^0.511.0",
-    "next": "^15.5.19",
+    "next": "^15.5.21",
     "nodemailer": "^9.0.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "recharts": "^3.10.1",
     "resend": "^4.3.0",
-    "sanitize-html": "^2.17.4",
+    "sanitize-html": "^2.17.5",
     "three": "^0.183.2",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "zod": "^3.24.2"
@@ -63,6 +63,8 @@
     "vitest": "^3.2.6"
   },
   "overrides": {
-    "postcss": "^8.5.10"
+    "deepmerge-ts": "8.0.0",
+    "postcss": "8.5.23",
+    "sharp": "0.35.0"
   }
 }
