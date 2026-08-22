@@ -244,8 +244,9 @@ describe("Compact expanding people search control", () => {
     expect(DETAIL_SOURCE).toContain("styles.peopleSearch");
     expect(DETAIL_SOURCE).toContain('data-discover-tour="people-filter"');
     // Collapsed pill stays small; expanded caps at desktop width.
-    expect(CSS).toMatch(/\.peopleSearch \{[^}]*width: 8\.75rem/);
-    expect(CSS).toMatch(/\.peopleSearchOpen \{[^}]*width: min\(26rem, 100%\)/);
+    expect(CSS).toMatch(/\.peopleSearch \{[^}]*width: 9\.75rem/);
+    expect(CSS).toMatch(/\.peopleSearchOpen \{[^}]*width: min\(31rem, 100%\)/);
+    expect(DETAIL_SOURCE).toContain("className={styles.peopleSearchInput}");
   });
 
   it("keeps every bit of the existing search wiring", () => {
@@ -283,10 +284,13 @@ describe("Compact expanding people search control", () => {
       /\{peopleSearchPending \? \(\s*\n\s*<LoaderCircle className=\{styles\.spin\} \/>/
     );
     expect(CSS).toContain(".peopleSearchBubble");
+    expect(DETAIL_SOURCE.indexOf("styles.peopleSearchBubble")).toBeGreaterThan(
+      DETAIL_SOURCE.indexOf("styles.peopleSearchInput")
+    );
   });
 
   it("animates softly and honors prefers-reduced-motion", () => {
-    expect(CSS).toMatch(/\.peopleSearch \{[^}]*width 220ms cubic-bezier/);
+    expect(CSS).toMatch(/\.peopleSearch \{[^}]*width 260ms var\(--ease-emphasis\)/);
     expect(CSS).toMatch(
       /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.peopleSearch,[\s\S]*?\.peopleSearchBubble,[\s\S]*?\.peopleSearchClear,[\s\S]*?transition: none;/
     );

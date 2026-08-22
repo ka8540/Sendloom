@@ -2103,75 +2103,92 @@
   outline-offset: 2px;
 }
 
-/* Compact expanding people search. A small pill at rest that grows into a
-   real input on focus; a circular icon bubble stays attached to its left edge.
-   Purely presentational skin over the existing peopleFilter state. */
+/* Compact expanding people search. The closed state is one quiet text pill;
+   focus opens the input and reveals a separate icon bubble on the right, like
+   the supplied reference, without changing the existing search behaviour. */
 .peopleSearch {
-  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
-  width: 8.75rem;
+  width: 9.75rem;
   max-width: 100%;
-  padding: 0.3rem 0.4rem;
-  border-radius: 999px;
-  border: 1px solid var(--field-border);
-  background: var(--field-bg);
   transition:
-    width 220ms cubic-bezier(0.34, 1.2, 0.64, 1),
-    border-color 160ms ease,
-    box-shadow 160ms ease;
-}
-
-.peopleSearch:hover {
-  border-color: color-mix(in srgb, var(--accent) 32%, var(--line));
+    width 260ms var(--ease-emphasis),
+    gap 220ms var(--ease-out);
 }
 
 .peopleSearchOpen {
-  width: min(26rem, 100%);
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  width: min(31rem, 100%);
+  gap: 0.75rem;
 }
 
-.peopleSearchBubble {
-  display: inline-flex;
+.peopleSearchField {
+  position: relative;
+  display: flex;
   align-items: center;
-  justify-content: center;
-  flex: none;
-  width: 1.75rem;
-  height: 1.75rem;
-  border-radius: 50%;
-  border: 1px solid var(--line);
-  background: var(--surface-strong);
-  color: var(--muted);
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 3rem;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--line) 88%, transparent);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--surface-strong) 90%, var(--text) 10%);
+  box-shadow: var(--edge-highlight), var(--elevation-1);
   transition:
-    transform 220ms cubic-bezier(0.34, 1.2, 0.64, 1),
-    color 160ms ease,
-    border-color 160ms ease;
+    border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
 }
 
-.peopleSearchBubble svg {
-  width: 0.95rem;
-  height: 0.95rem;
+.peopleSearch:not(.peopleSearchOpen) .peopleSearchField:hover {
+  background: color-mix(in srgb, var(--surface-strong) 84%, var(--text) 16%);
+  border-color: color-mix(in srgb, var(--field-focus) 30%, var(--line));
+  transform: translateY(-1px);
 }
 
-.peopleSearchOpen .peopleSearchBubble {
-  transform: scale(1.06);
-  color: color-mix(in srgb, var(--accent) 80%, var(--text));
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+.peopleSearchField:focus-within {
+  border-color: color-mix(in srgb, var(--field-focus) 82%, var(--line));
+  background: var(--surface-strong);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--accent-soft-strong) 58%, transparent),
+    var(--edge-highlight),
+    var(--elevation-2);
 }
 
 .peopleSearchInput {
   flex: 1 1 auto;
+  width: 100%;
   min-width: 0;
+  height: 100%;
+  margin: 0;
+  padding: 0 1.15rem;
   border: 0;
+  border-radius: inherit;
   background: transparent;
   color: var(--text);
   font-size: 0.92rem;
+  font-weight: 500;
+  line-height: 1;
+  text-align: left;
+  appearance: none;
+  -webkit-appearance: none;
+  transition: padding var(--duration-base) var(--ease-out);
+}
+
+.peopleSearch:not(.peopleSearchOpen) .peopleSearchInput {
+  padding-inline: 1rem;
+  text-align: center;
+  cursor: pointer;
+}
+
+.peopleSearchInput::placeholder {
+  color: var(--muted);
+  opacity: 1;
 }
 
 .peopleSearchInput:focus-visible {
   outline: none;
+  box-shadow: none;
 }
 
 .peopleSearchInput::-webkit-search-cancel-button {
@@ -2184,8 +2201,9 @@
   align-items: center;
   justify-content: center;
   flex: none;
-  width: 1.4rem;
-  height: 1.4rem;
+  width: 1.75rem;
+  height: 1.75rem;
+  margin-right: 0.6rem;
   padding: 0;
   border-radius: 50%;
   border: 0;
@@ -2210,6 +2228,48 @@
 .peopleSearchClear:focus-visible {
   outline: 2px solid var(--field-focus);
   outline-offset: 1px;
+  box-shadow: none;
+}
+
+.peopleSearchBubble {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 0;
+  height: 3rem;
+  overflow: hidden;
+  border: 0 solid transparent;
+  border-radius: 50%;
+  background: var(--surface-strong);
+  color: var(--accent);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(-0.7rem) scale(0.78);
+  box-shadow: var(--edge-highlight), var(--elevation-1);
+  transition:
+    width 240ms var(--ease-emphasis),
+    border-width 180ms var(--ease-out),
+    border-color 180ms var(--ease-out),
+    opacity 150ms var(--ease-out),
+    transform 260ms var(--ease-spring),
+    visibility 0s linear 260ms;
+}
+
+.peopleSearchOpen .peopleSearchBubble {
+  width: 3rem;
+  border-width: 1px;
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--line));
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(0) scale(1);
+  transition-delay: 0ms;
+}
+
+.peopleSearchBubble svg {
+  width: 1.05rem;
+  height: 1.05rem;
+  flex: none;
 }
 
 .peopleShowing {
@@ -3330,5 +3390,15 @@
   .peopleFilterClear {
     width: 100%;
     justify-content: center;
+  }
+
+  .peopleToolbar,
+  .peopleSearch,
+  .peopleSearchOpen {
+    width: 100%;
+  }
+
+  .peopleSearch:not(.peopleSearchOpen) {
+    width: 9.75rem;
   }
 }

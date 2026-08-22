@@ -1677,16 +1677,62 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
               </div>
 
               <div className={styles.peopleToolbar}>
-                {/* Compact expanding people search: a small pill at rest that
-                    grows into a real input on focus. Purely presentational —
-                    the query, debounce, and filtering all stay in the existing
-                    peopleFilter / handlePeopleSearchChange path. */}
+                {/* Presentation only: the compact pill expands around the same
+                    peopleFilter input and existing debounced search path. */}
                 <div
                   className={`${styles.peopleSearch} ${
                     peopleSearchExpanded ? styles.peopleSearchOpen : ""
                   }`}
                   data-discover-tour="people-filter"
                 >
+                  <div className={styles.peopleSearchField}>
+                    <input
+                      ref={peopleSearchInputRef}
+                      className={styles.peopleSearchInput}
+                      type="search"
+                      value={peopleFilter}
+                      placeholder={
+                        peopleSearchExpanded
+                          ? "Search name, title, email, or location"
+                          : "Search"
+                      }
+                      onChange={(event) => handlePeopleSearchChange(event.target.value)}
+                      onFocus={() => setPeopleSearchFocused(true)}
+                      onBlur={() => {
+                        if (!peopleFilter) {
+                          setPeopleSearchFocused(false);
+                        }
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key !== "Escape") {
+                          return;
+                        }
+                        if (peopleFilter) {
+                          handleClearPeopleSearch();
+                        } else {
+                          setPeopleSearchFocused(false);
+                          event.currentTarget.blur();
+                        }
+                      }}
+                      aria-label="Search all people"
+                      maxLength={200}
+                    />
+                    {peopleFilter && (
+                      <button
+                        type="button"
+                        className={styles.peopleSearchClear}
+                        aria-label="Clear people search"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => {
+                          handleClearPeopleSearch();
+                          peopleSearchInputRef.current?.focus();
+                        }}
+                      >
+                        <X aria-hidden="true" />
+                      </button>
+                    )}
+                  </div>
+
                   <span className={styles.peopleSearchBubble} aria-hidden="true">
                     {peopleSearchPending ? (
                       <LoaderCircle className={styles.spin} />
@@ -1694,50 +1740,6 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
                       <Search />
                     )}
                   </span>
-                  <input
-                    ref={peopleSearchInputRef}
-                    type="search"
-                    value={peopleFilter}
-                    placeholder={
-                      peopleSearchExpanded
-                        ? "Search name, title, email, or location"
-                        : "Search"
-                    }
-                    onChange={(event) => handlePeopleSearchChange(event.target.value)}
-                    onFocus={() => setPeopleSearchFocused(true)}
-                    onBlur={() => {
-                      if (!peopleFilter) {
-                        setPeopleSearchFocused(false);
-                      }
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key !== "Escape") {
-                        return;
-                      }
-                      if (peopleFilter) {
-                        handleClearPeopleSearch();
-                      } else {
-                        setPeopleSearchFocused(false);
-                        event.currentTarget.blur();
-                      }
-                    }}
-                    aria-label="Search all people"
-                    maxLength={200}
-                  />
-                  {peopleFilter && (
-                    <button
-                      type="button"
-                      className={styles.peopleSearchClear}
-                      aria-label="Clear people search"
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => {
-                        handleClearPeopleSearch();
-                        peopleSearchInputRef.current?.focus();
-                      }}
-                    >
-                      <X aria-hidden="true" />
-                    </button>
-                  )}
                 </div>
               </div>
 
