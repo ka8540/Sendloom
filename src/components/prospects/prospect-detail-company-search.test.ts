@@ -200,9 +200,21 @@ describe("Scalable People filter controls (#21-#27)", () => {
     expect(DETAIL_SOURCE).toMatch(/activeLocationKey: activeLocation/);
   });
 
-  it("bulk select-all stays role-scoped only — hidden while a location filter is active", () => {
+  it("bulk select-all remains available for the current role, location, and text-search scope", () => {
     expect(DETAIL_SOURCE).toMatch(
-      /activeLocation === null &&\s*\n\s*!peopleSearchActive &&\s*\n\s*peopleTotal > selectedPageIds.length/
+      /buildProspectSelectionScope\(\{[\s\S]*?positionCategory: activeCategory,[\s\S]*?location: activeLocation,[\s\S]*?search: peopleQuery/
+    );
+    expect(DETAIL_SOURCE).toContain("peopleTotal > selectedPageCount");
+    expect(DETAIL_SOURCE).not.toMatch(/activeLocation === null &&\s*\n\s*!peopleSearchActive/);
+    expect(DETAIL_SOURCE).toContain("selectAllTotal={canSelectAllMatching ? peopleTotal : null}");
+  });
+
+  it("clears an ALL_MATCHING selection when role, location, or normalized search scope changes", () => {
+    expect(DETAIL_SOURCE).toMatch(
+      /selection\.mode !== "allMatching" \|\| scopeMatchesSelection\(selection, selectionScope\)/
+    );
+    expect(DETAIL_SOURCE).toMatch(
+      /setSelection\(createEmptyProspectSelection\(\)\);\s*\n\s*setReview\(null\);\s*\n\s*setReviewError\(null\);/
     );
   });
 });

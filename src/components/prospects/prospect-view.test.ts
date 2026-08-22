@@ -32,6 +32,7 @@ import {
   addMoreDisabledReason,
   addMoreSearchLabel,
   buildLocationFilterOptions,
+  buildProspectSelectionScope,
   canSearchCompanyAgain,
   companySearchDisabledReason,
   companySearchNoResultsMessage,
@@ -77,6 +78,7 @@ import {
   resolveProspectPageState,
   resolveSelectedSearchView,
   selectAllMatchingProspects,
+  scopeMatchesSelection,
   statusBadge,
   togglePageProspectSelection,
   toggleProspectSelection
@@ -527,7 +529,12 @@ describe("people pagination helpers", () => {
 });
 
 describe("prospect selection helpers", () => {
-  const scope = { companyId: "company_1", positionCategory: "SOFTWARE_ENGINEERING" as const };
+  const scope = buildProspectSelectionScope({
+    companyId: "company_1",
+    positionCategory: "SOFTWARE_ENGINEERING",
+    location: " India ",
+    search: " AI Engineer "
+  });
 
   it("row selection toggles individual IDs", () => {
     const empty = createEmptyProspectSelection();
@@ -551,18 +558,51 @@ describe("prospect selection helpers", () => {
     expect(isProspectSelected(oneCleared, "p2", scope)).toBe(true);
   });
 
-  it("all-matching selection uses the active category and excludes IDs without storing every person", () => {
+  it("all-matching selection carries the full normalized filter scope and excludes IDs", () => {
     const allMatching = selectAllMatchingProspects(scope);
     expect(getProspectSelectionCount(allMatching, 21)).toBe(21);
     expect(buildProspectSelectionInput(allMatching, "company_1")).toMatchObject({
       companyId: "company_1",
       mode: "ALL_MATCHING",
-      positionCategory: "SOFTWARE_ENGINEERING"
+      positionCategory: "SOFTWARE_ENGINEERING",
+      location: "india",
+      search: "ai engineer"
     });
 
     const excluded = toggleProspectSelection(allMatching, "p5", scope);
     expect(isProspectSelected(excluded, "p5", scope)).toBe(false);
     expect(getProspectSelectionCount(excluded, 21)).toBe(20);
+  });
+
+  it("does not let all-matching masquerade as a different role, location, search, or company scope", () => {
+    const allMatching = selectAllMatchingProspects(scope);
+    expect(scopeMatchesSelection(allMatching, scope)).toBe(true);
+    expect(
+      scopeMatchesSelection(
+        allMatching,
+        buildProspectSelectionScope({ ...scope, positionCategory: "RECRUITING" })
+      )
+    ).toBe(false);
+    expect(
+      scopeMatchesSelection(allMatching, buildProspectSelectionScope({ ...scope, location: "United States" }))
+    ).toBe(false);
+    expect(
+      scopeMatchesSelection(allMatching, buildProspectSelectionScope({ ...scope, search: "recruiter" }))
+    ).toBe(false);
+    expect(
+      scopeMatchesSelection(allMatching, buildProspectSelectionScope({ ...scope, companyId: "company_2" }))
+    ).toBe(false);
+  });
+
+  it("treats casing and location whitespace normalization as the same selection scope", () => {
+    const allMatching = selectAllMatchingProspects(scope);
+    const equivalent = buildProspectSelectionScope({
+      companyId: "company_1",
+      positionCategory: "SOFTWARE_ENGINEERING",
+      location: "  INDIA ",
+      search: "ai engineer"
+    });
+    expect(scopeMatchesSelection(allMatching, equivalent)).toBe(true);
   });
 
   it("company changes clear selection by returning a fresh explicit state", () => {
