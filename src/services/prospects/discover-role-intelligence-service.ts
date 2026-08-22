@@ -2,9 +2,9 @@ import type { PrismaClient } from "@prisma/client";
 
 import { env } from "@/lib/env";
 import { coercePositionCategory } from "@/lib/prospect-enums";
-import { normalizeLocationsForCache } from "@/services/prospects/discover-cache-fingerprint";
 import { filterReusableDiscoverPeople } from "@/services/prospects/discover-cache-reuse";
 import type { ResolvedCachePerson } from "@/services/prospects/discover-cache-service";
+import { evaluateDiscoverLocationMatch } from "@/services/prospects/discover-location-matching";
 import {
   OpenAIRoleEmbeddingService,
   type RoleEmbeddingPort
@@ -111,17 +111,6 @@ function uniqueTitles(titles: readonly string[]): string[] {
   return result;
 }
 
-function locationMatches(person: ResolvedCachePerson, requestedLocations: readonly string[]): boolean {
-  const requested = new Set(normalizeLocationsForCache([...requestedLocations]));
-  if (requested.size === 0) return true;
-  const personLocations = normalizeLocationsForCache(
-    [person.location, person.country, person.state, person.city].filter(
-      (value): value is string => typeof value === "string" && Boolean(value.trim())
-    )
-  );
-  return personLocations.some((location) => requested.has(location));
-}
-
 export class DiscoverRoleIntelligenceService implements DiscoverRoleIntelligencePort {
   readonly enabled: boolean;
   private readonly identity: RoleSemanticIdentity;
@@ -196,6 +185,8 @@ export class DiscoverRoleIntelligenceService implements DiscoverRoleIntelligence
       VECTOR: 4
     };
     let locationRejectedCount = 0;
+    let explicitLocationContradictionCount = 0;
+    let missingLocationMetadataCount = 0;
     const ranked: Array<{
       person: ResolvedCachePerson;
       index: number;
@@ -204,7 +195,17 @@ export class DiscoverRoleIntelligenceService implements DiscoverRoleIntelligence
     }> = [];
 
     for (const [index, person] of input.people.entries()) {
-      if (!locationMatches(person, input.requestedLocations)) {
+      const locationEvaluation = evaluateDiscoverLocationMatch({
+        candidate: person,
+        requestedLocations: input.requestedLocations,
+        context: input.context
+      });
+      if (locationEvaluation.reason === "EXPLICIT_CONTRADICTION") {
+        explicitLocationContradictionCount += 1;
+      } else if (locationEvaluation.reason === "MISSING_METADATA") {
+        missingLocationMetadataCount += 1;
+      }
+      if (!locationEvaluation.matches) {
         locationRejectedCount += 1;
         continue;
       }
@@ -268,8 +269,11 @@ export class DiscoverRoleIntelligenceService implements DiscoverRoleIntelligence
         categoryRejectedCount: rejectedCounts.CATEGORY,
         familyRejectedCount: rejectedCounts.FAMILY,
         leadershipRejectedCount: rejectedCounts.LEADERSHIP,
+        explicitLeadershipMismatchCount: rejectedCounts.LEADERSHIP,
         vectorRejectedCount: rejectedCounts.VECTOR,
         locationRejectedCount,
+        explicitLocationContradictionCount,
+        missingLocationMetadataCount,
         semanticVersion: this.identity.semanticVersion
       }
     );

@@ -1889,7 +1889,7 @@ describe("Discover shared cache integration", () => {
     expect(prisma._state.people.every((person) => person.userId === "apple-semantic-user")).toBe(true);
   });
 
-  it("reuses a broad Sales match from the same-company shared pool before Apify without vectors", async () => {
+  it("reuses broad same-company Sales matches across unspecified leadership before Apify without vectors", async () => {
     const cache = new DiscoverSearchCacheService({
       prisma: prisma as unknown as PrismaClient,
       lock: makeFakeCacheLock(),
@@ -1958,9 +1958,12 @@ describe("Discover shared cache integration", () => {
 
     const result = await service.processSearch(USER_ID, search.id);
 
-    expect(result).toMatchObject({ status: "READY", resultSource: "CACHE", totalProcessed: 1 });
+    expect(result).toMatchObject({ status: "READY", resultSource: "CACHE", totalProcessed: 2 });
     expect(run).not.toHaveBeenCalled();
-    expect(prisma._state.people.map((person) => person.sourceProfileId)).toEqual(["apple-sales-coordinator"]);
+    expect(prisma._state.people.map((person) => person.sourceProfileId).sort()).toEqual([
+      "apple-sales-coordinator",
+      "apple-vp-sales"
+    ]);
   });
 
   it("reuses Charta Health's exact ambiguous Engineer pool conservatively with zero Apify calls", async () => {
@@ -2246,7 +2249,7 @@ describe("Discover shared cache integration", () => {
     expect(run).not.toHaveBeenCalled();
   });
 
-  it("reuses a broad same-user Sales person after a shared-pool miss before Apify without vectors", async () => {
+  it("reuses broad same-user Sales people across unspecified leadership before Apify without vectors", async () => {
     const { personIds } = await seedOwnedApplePeople(USER_ID, [
       {
         sourceProfileId: "apple-local-senior-sales",
@@ -2318,11 +2321,10 @@ describe("Discover shared cache integration", () => {
 
     const result = await service.processSearch(USER_ID, search.id);
 
-    expect(result).toMatchObject({ status: "READY", resultSource: "CACHE", totalProcessed: 1 });
+    expect(result).toMatchObject({ status: "READY", resultSource: "CACHE", totalProcessed: 2 });
     expect(run).not.toHaveBeenCalled();
     const allocations = prisma._state.searchPeople.filter((row) => row.searchId === search.id);
-    expect(allocations.map((row) => row.personId)).toEqual([personIds[0]]);
-    expect(allocations.map((row) => row.personId)).not.toContain(personIds[1]);
+    expect(allocations.map((row) => row.personId).sort()).toEqual([...personIds].sort());
   });
 
   it("calls Apify once when same-user Apple people are the wrong role", async () => {

@@ -27,6 +27,7 @@ export type RoleSpecialty = (typeof ROLE_SPECIALTIES)[number];
 export type RoleBreadth = "BROAD" | "NARROW";
 export type RoleMatchContext = "CACHE" | "PROVIDER";
 export type RoleLeadership = "INDIVIDUAL_CONTRIBUTOR" | "MANAGER" | "EXECUTIVE";
+export type RoleLeadershipConstraint = "UNSPECIFIED" | RoleLeadership;
 export type RoleMatchKind = "EXACT" | "ALIAS" | "FAMILY" | "BROAD_POLICY" | "VECTOR";
 export type RoleMatchRejectionReason = "CATEGORY" | "FAMILY" | "LEADERSHIP" | "VECTOR";
 
@@ -37,7 +38,8 @@ export type RoleIntent = {
   category: PositionCategory;
   specialty: RoleSpecialty;
   familyTokens: readonly string[];
-  leadership: RoleLeadership;
+  detectedLeadership: RoleLeadership;
+  leadershipConstraint: RoleLeadershipConstraint;
   breadth: RoleBreadth;
   classificationConfidence: ConfidenceLevel;
 };
@@ -60,6 +62,7 @@ export const ROLE_VECTOR_THRESHOLDS = {
 const MANAGER_PATTERN = /\b(manager|management)\b/;
 const EXECUTIVE_PATTERN =
   /\b(director|head|vice president|vp|chief|cto|cio|ceo|cfo|coo|cmo|cpo|cro|chro)\b/;
+const INDIVIDUAL_CONTRIBUTOR_PATTERN = /\b(individual contributor|ic only|non-managerial)\b/;
 
 const NON_SPECIALIZING_ROLE_TOKENS = new Set([
   "and",
@@ -68,19 +71,23 @@ const NON_SPECIALIZING_ROLE_TOKENS = new Set([
   "business",
   "chief",
   "consultant",
+  "contributor",
   "coordinator",
   "director",
   "executive",
   "for",
   "generalist",
   "head",
+  "individual",
   "intern",
   "jr",
   "junior",
   "lead",
   "leader",
   "management",
+  "managerial",
   "manager",
+  "non",
   "of",
   "officer",
   "partner",
@@ -239,6 +246,17 @@ export function inferRoleLeadership(normalizedTitle: string): RoleLeadership {
   return "INDIVIDUAL_CONTRIBUTOR";
 }
 
+export function inferQueryLeadershipConstraint(
+  normalizedTitle: string
+): RoleLeadershipConstraint {
+  if (EXECUTIVE_PATTERN.test(normalizedTitle)) return "EXECUTIVE";
+  if (MANAGER_PATTERN.test(normalizedTitle)) return "MANAGER";
+  if (INDIVIDUAL_CONTRIBUTOR_PATTERN.test(normalizedTitle)) {
+    return "INDIVIDUAL_CONTRIBUTOR";
+  }
+  return "UNSPECIFIED";
+}
+
 function normalizedTitleTokens(normalizedTitle: string): string[] {
   return normalizedTitle.split(/[\s/+&-]+/).filter(Boolean);
 }
@@ -304,7 +322,8 @@ export function deriveRoleIntent(input: {
     category: input.category,
     specialty,
     familyTokens,
-    leadership: inferRoleLeadership(normalizedTitle),
+    detectedLeadership: inferRoleLeadership(normalizedTitle),
+    leadershipConstraint: inferQueryLeadershipConstraint(normalizedTitle),
     breadth,
     classificationConfidence: input.confidence ?? "MEDIUM"
   };
@@ -331,7 +350,8 @@ function rankingBoost(value: number | null | undefined, weight: number): number 
 }
 
 function leadershipCompatible(query: RoleIntent, candidate: RoleIntent): boolean {
-  return query.leadership === candidate.leadership;
+  return query.leadershipConstraint === "UNSPECIFIED"
+    || query.leadershipConstraint === candidate.detectedLeadership;
 }
 
 function broadFamilyCompatible(query: RoleIntent, candidate: RoleIntent, context: RoleMatchContext): boolean {
@@ -467,7 +487,10 @@ export function providerAliasesForIntent(intent: RoleIntent): readonly string[] 
     if (
       !normalized
       || seen.has(normalized)
-      || inferRoleLeadership(normalized) !== intent.leadership
+      || (
+        intent.leadershipConstraint !== "UNSPECIFIED"
+        && inferRoleLeadership(normalized) !== intent.leadershipConstraint
+      )
     ) return false;
     seen.add(normalized);
     return true;

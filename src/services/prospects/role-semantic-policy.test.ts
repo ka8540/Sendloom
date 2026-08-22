@@ -12,14 +12,14 @@ function intent(rawTitle: string, category: Parameters<typeof deriveRoleIntent>[
 }
 
 describe("role semantic policy", () => {
-  it("accepts broad software aliases/specialties but rejects incompatible categories and management", () => {
+  it("accepts broad software aliases/specialties with unspecified leadership but rejects incompatible categories", () => {
     const query = intent("Software Engineer", "SOFTWARE_ENGINEERING");
     expect(decideRoleMatch({ query, candidate: intent("Software Developer", "SOFTWARE_ENGINEERING"), context: "CACHE" })?.kind).toBe("ALIAS");
     expect(decideRoleMatch({ query, candidate: intent("Backend Software Engineer", "SOFTWARE_ENGINEERING"), context: "CACHE", vectorSimilarity: 0.2 })?.kind).toBe("BROAD_POLICY");
     expect(decideRoleMatch({ query, candidate: intent("Frontend Software Engineer", "SOFTWARE_ENGINEERING"), context: "CACHE" })?.kind).toBe("BROAD_POLICY");
     expect(decideRoleMatch({ query, candidate: intent("Product Manager", "PRODUCT"), context: "CACHE", vectorSimilarity: 0.99 })).toBeNull();
     expect(decideRoleMatch({ query, candidate: intent("CTO", "MANAGEMENT"), context: "CACHE", vectorSimilarity: 0.99 })).toBeNull();
-    expect(decideRoleMatch({ query, candidate: intent("Engineering Manager", "SOFTWARE_ENGINEERING"), context: "CACHE", vectorSimilarity: 0.99 })).toBeNull();
+    expect(decideRoleMatch({ query, candidate: intent("Engineering Manager", "SOFTWARE_ENGINEERING"), context: "CACHE", vectorSimilarity: 0.99 })?.kind).toBe("BROAD_POLICY");
     expect(decideRoleMatch({ query, candidate: intent("Data Engineer", "DATA_ENGINEERING"), context: "CACHE", vectorSimilarity: 0.99 })).toBeNull();
   });
 
@@ -47,8 +47,8 @@ describe("role semantic policy", () => {
         candidate: intent("Engineering Manager", "SOFTWARE_ENGINEERING"),
         context: "PROVIDER",
         vectorSimilarity: 0.99
-      })
-    ).toBeNull();
+      })?.kind
+    ).toBe("BROAD_POLICY");
     expect(
       decideRoleMatch({
         query,
@@ -125,7 +125,7 @@ describe("role semantic policy", () => {
     ).toBe("ALIAS");
   });
 
-  it("keeps broad HR separate from unrelated, recruiting, and management roles", () => {
+  it("keeps broad HR separate from unrelated and recruiting roles without inventing a leadership constraint", () => {
     const query = intent("Human Resource", "HUMAN_RESOURCES");
     for (const [title, category] of [
       ["Software Engineer", "SOFTWARE_ENGINEERING"],
@@ -150,10 +150,10 @@ describe("role semantic policy", () => {
     for (const title of ["HR Director", "VP Human Resources", "Chief People Officer", "Head of Human Resources"]) {
       const candidate = intent(title, "HUMAN_RESOURCES");
       expect(candidate.specialty).toBe("HUMAN_RESOURCES");
-      expect(candidate.leadership).toBe("EXECUTIVE");
+      expect(candidate.detectedLeadership).toBe("EXECUTIVE");
       expect(candidate.canonicalRoleKey).toBe("human_resources:general");
-      expect(decideRoleMatch({ query, candidate, context: "PROVIDER", vectorSimilarity: 0.99 })).toBeNull();
-      expect(decideRoleMatch({ query, candidate, context: "CACHE", vectorSimilarity: 0.99 })).toBeNull();
+      expect(decideRoleMatch({ query, candidate, context: "PROVIDER", vectorSimilarity: 0.1 })).not.toBeNull();
+      expect(decideRoleMatch({ query, candidate, context: "CACHE", vectorSimilarity: 0.1 })).not.toBeNull();
     }
   });
 
@@ -233,11 +233,12 @@ describe("role semantic policy", () => {
     ).toBeNull();
   });
 
-  it("keeps functional identity separate from leadership and applies leadership compatibility", () => {
+  it("treats omitted query leadership as unspecified while keeping explicit levels strict", () => {
     const productManager = intent("Product Manager", "PRODUCT");
     const seniorProductManager = intent("Senior Product Manager", "PRODUCT");
     expect(productManager.specialty).not.toBe("MANAGEMENT");
-    expect(productManager.leadership).toBe("MANAGER");
+    expect(productManager.detectedLeadership).toBe("MANAGER");
+    expect(productManager.leadershipConstraint).toBe("MANAGER");
     expect(productManager.category).toBe("PRODUCT");
     expect(
       decideRoleMatch({ query: productManager, candidate: seniorProductManager, context: "PROVIDER" })
@@ -251,17 +252,61 @@ describe("role semantic policy", () => {
       })
     ).toBeNull();
 
-    const salesSpecialist = intent("Sales Specialist", "SALES");
-    for (const title of ["Sales Manager", "Sales Director", "VP Sales", "Chief Sales Officer", "Head of Sales"]) {
+    const sales = intent("Sales", "SALES");
+    expect(sales.leadershipConstraint).toBe("UNSPECIFIED");
+    for (const title of ["Sales Representative", "Sales Manager", "Sales Director", "VP Sales"]) {
       expect(
         decideRoleMatch({
-          query: salesSpecialist,
+          query: sales,
           candidate: intent(title, "SALES"),
           context: "PROVIDER",
-          vectorSimilarity: 0.99
+          vectorSimilarity: 0.1
         })
-      ).toBeNull();
+      ).not.toBeNull();
     }
+
+    const individualContributorSales = intent("Individual Contributor Sales", "SALES");
+    expect(individualContributorSales.leadershipConstraint).toBe("INDIVIDUAL_CONTRIBUTOR");
+    expect(
+      decideRoleMatch({
+        query: individualContributorSales,
+        candidate: intent("Sales Representative", "SALES"),
+        context: "PROVIDER"
+      })
+    ).not.toBeNull();
+    expect(
+      decideRoleMatch({
+        query: individualContributorSales,
+        candidate: intent("Sales Manager", "SALES"),
+        context: "PROVIDER"
+      })
+    ).toBeNull();
+
+    const hr = intent("Human Resources", "HUMAN_RESOURCES");
+    expect(hr.leadershipConstraint).toBe("UNSPECIFIED");
+    for (const title of ["HR Specialist", "HR Manager", "HR Director"]) {
+      expect(
+        decideRoleMatch({ query: hr, candidate: intent(title, "HUMAN_RESOURCES"), context: "PROVIDER" })
+      ).not.toBeNull();
+    }
+
+    const hrManager = intent("HR Manager", "HUMAN_RESOURCES");
+    expect(hrManager.leadershipConstraint).toBe("MANAGER");
+    expect(
+      decideRoleMatch({ query: hrManager, candidate: intent("Senior HR Manager", "HUMAN_RESOURCES"), context: "PROVIDER" })
+    ).not.toBeNull();
+    expect(
+      decideRoleMatch({ query: hrManager, candidate: intent("HR Specialist", "HUMAN_RESOURCES"), context: "PROVIDER" })
+    ).toBeNull();
+    expect(
+      decideRoleMatch({ query: hrManager, candidate: intent("HR Director", "HUMAN_RESOURCES"), context: "PROVIDER" })
+    ).toBeNull();
+
+    const hrDirector = intent("HR Director", "HUMAN_RESOURCES");
+    expect(hrDirector.leadershipConstraint).toBe("EXECUTIVE");
+    expect(
+      decideRoleMatch({ query: hrDirector, candidate: intent("HR Manager", "HUMAN_RESOURCES"), context: "PROVIDER" })
+    ).toBeNull();
 
     const marketingManager = intent("Marketing Manager", "MARKETING");
     expect(
@@ -279,6 +324,16 @@ describe("role semantic policy", () => {
         vectorSimilarity: 0.99
       })
     ).toBeNull();
+
+    const marketingSpecialist = intent("Marketing Specialist", "MARKETING");
+    expect(marketingSpecialist.leadershipConstraint).toBe("UNSPECIFIED");
+    expect(
+      decideRoleMatch({
+        query: marketingSpecialist,
+        candidate: intent("Senior Marketing Specialist", "MARKETING"),
+        context: "PROVIDER"
+      })
+    ).not.toBeNull();
   });
 
   it("keeps OTHER fail-closed even with high vector similarity", () => {

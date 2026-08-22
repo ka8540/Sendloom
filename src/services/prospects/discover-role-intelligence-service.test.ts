@@ -132,7 +132,12 @@ function budget() {
   return new AiCallBudget({ company_resolution: 2, role_classification: 1, email_pattern: 1, person_identity: 5 });
 }
 
-function person(id: string, title: string, category: string): ResolvedCachePerson {
+function person(
+  id: string,
+  title: string,
+  category: string,
+  overrides: Partial<ResolvedCachePerson> = {}
+): ResolvedCachePerson {
   return {
     sourceProfileId: id,
     firstName: "Test",
@@ -150,7 +155,8 @@ function person(id: string, title: string, category: string): ResolvedCachePerso
     emailStatus: "UNAVAILABLE",
     emailConfidence: "UNAVAILABLE",
     emailPattern: null,
-    emailSource: null
+    emailSource: null,
+    ...overrides
   };
 }
 
@@ -172,7 +178,7 @@ describe("DiscoverRoleIntelligenceService", () => {
     expect(() => validateRoleIntelligenceConfig(config({ maxApifyTitlesPerRole: 9 }))).toThrow(/between 1 and 8/);
   });
 
-  it("ranks exact/related software titles and rejects category or specialty drift", async () => {
+  it("ranks exact/related software titles with unspecified leadership and rejects category or specialty drift", async () => {
     const embeddings = new FakeEmbeddings({
       "software engineer": vector(1, 0),
       "software developer": vector(0.99, 0.01),
@@ -248,7 +254,12 @@ describe("DiscoverRoleIntelligenceService", () => {
       ["people-ops", "People Operations"],
       ["people-ops-specialist", "People Operations Specialist"],
       ["people-partner", "People Partner"],
-      ["hr-ops", "HR Operations"]
+      ["hr-ops", "HR Operations"],
+      ["manager", "HR Manager"],
+      ["director", "HR Director"],
+      ["vp", "VP Human Resources"],
+      ["chief", "Chief People Officer"],
+      ["head", "Head of Human Resources"]
     ] as const;
     const embeddings = new FakeEmbeddings({
       "human resource": vector(1, 0),
@@ -260,11 +271,7 @@ describe("DiscoverRoleIntelligenceService", () => {
         ...valid.map(([id, title]) => person(id, title, "HUMAN_RESOURCES")),
         person("recruiter", "Recruiter", "RECRUITING"),
         person("software", "Software Engineer", "SOFTWARE_ENGINEERING"),
-        person("sales", "Sales Manager", "SALES"),
-        person("director", "HR Director", "HUMAN_RESOURCES"),
-        person("vp", "VP Human Resources", "HUMAN_RESOURCES"),
-        person("chief", "Chief People Officer", "HUMAN_RESOURCES"),
-        person("head", "Head of Human Resources", "HUMAN_RESOURCES")
+        person("sales", "Sales Manager", "SALES")
       ],
       requestedTitles: ["Human Resource"],
       requestedLocations: ["United States"],
@@ -274,6 +281,92 @@ describe("DiscoverRoleIntelligenceService", () => {
 
     expect(ranked.length).toBeGreaterThan(0);
     expect(ranked.map((entry) => entry.sourceProfileId).sort()).toEqual(valid.map(([id]) => id).sort());
+  });
+
+  it("does not reproduce the 19-result HR leadership/location rejection funnel", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    try {
+      const service = new DiscoverRoleIntelligenceService(
+        classifier,
+        new FakeEmbeddings({ "human resources": vector(1, 0) }),
+        new MemoryRoleStore(),
+        config()
+      );
+      const confirmed = [
+        ["specialist", "HR Specialist"],
+        ["generalist", "Human Resources Generalist"],
+        ["people-ops", "People Operations"]
+      ] as const;
+      const leadershipVariants = [
+        ["manager", "HR Manager"],
+        ["senior-manager", "Senior HR Manager"],
+        ["people-manager", "People Operations Manager"],
+        ["director", "HR Director"],
+        ["long-director", "Human Resources Director"],
+        ["vp", "VP Human Resources"],
+        ["chief", "Chief People Officer"],
+        ["head", "Head of Human Resources"],
+        ["people-director", "Director of People Operations"]
+      ] as const;
+      const partialLocation = [
+        ["coordinator", "HR Coordinator"],
+        ["associate", "Human Resources Associate"],
+        ["partner", "People Partner"],
+        ["operations", "HR Operations"],
+        ["hrbp", "HR Business Partner"],
+        ["consultant", "HR Consultant"],
+        ["long-consultant", "Human Resources Consultant"]
+      ] as const;
+      const people = [
+        ...confirmed.map(([id, title]) => person(id, title, "HUMAN_RESOURCES")),
+        ...leadershipVariants.map(([id, title]) => person(id, title, "HUMAN_RESOURCES")),
+        ...partialLocation.map(([id, title]) =>
+          person(id, title, "HUMAN_RESOURCES", {
+            location: "Hartford, Connecticut",
+            city: "Hartford",
+            state: null,
+            country: "Connecticut"
+          })
+        ),
+        person("canada", "HR Specialist", "HUMAN_RESOURCES", {
+          location: "Toronto, Canada",
+          city: "Toronto",
+          state: null,
+          country: "Canada"
+        })
+      ];
+
+      const ranked = await service.filterAndRankPeople({
+        people,
+        requestedTitles: ["Human Resources"],
+        requestedLocations: ["United States"],
+        context: "PROVIDER",
+        options: { budget: budget(), searchId: "capital-one-leadership-location" }
+      });
+
+      expect(ranked).toHaveLength(19);
+      expect(ranked.map((entry) => entry.sourceProfileId)).not.toContain("canada");
+      expect(info).toHaveBeenCalledWith(
+        "[discover-role-semantic]",
+        expect.objectContaining({
+          searchId: "capital-one-leadership-location",
+          semanticCandidateCount: 20,
+          semanticAcceptedCount: 19,
+          semanticRejectedCount: 1,
+          leadershipRejectedCount: 0,
+          explicitLeadershipMismatchCount: 0,
+          locationRejectedCount: 1,
+          explicitLocationContradictionCount: 1,
+          missingLocationMetadataCount: 7,
+          categoryRejectedCount: 0,
+          familyRejectedCount: 0,
+          vectorRejectedCount: 0
+        })
+      );
+      expect(JSON.stringify(info.mock.calls)).not.toMatch(/HR Specialist|Human Resources Director|Toronto/);
+    } finally {
+      info.mockRestore();
+    }
   });
 
   it("reuses the same broad HR family from cache without vector authorization", async () => {
@@ -367,17 +460,17 @@ describe("DiscoverRoleIntelligenceService", () => {
     try {
       const service = new DiscoverRoleIntelligenceService(
         classifier,
-        new FakeEmbeddings({ "sales specialist": vector(1, 0) }),
+        new FakeEmbeddings({ "sales manager": vector(1, 0) }),
         new MemoryRoleStore(),
         config()
       );
       const ranked = await service.filterAndRankPeople({
         people: [
-          person("valid", "Senior Sales Specialist", "SALES"),
-          person("executive", "VP Sales", "SALES"),
-          person("category", "Marketing Specialist", "MARKETING")
+          person("valid", "Senior Sales Manager", "SALES"),
+          person("leadership", "Sales Specialist", "SALES"),
+          person("category", "Marketing Manager", "MARKETING")
         ],
-        requestedTitles: ["Sales Specialist"],
+        requestedTitles: ["Sales Manager"],
         requestedLocations: ["United States"],
         context: "PROVIDER",
         options: { budget: budget(), searchId: "aggregate-diagnostics" }
@@ -395,10 +488,11 @@ describe("DiscoverRoleIntelligenceService", () => {
           broadPolicyAcceptedCount: 1,
           categoryRejectedCount: 1,
           leadershipRejectedCount: 1,
+          explicitLeadershipMismatchCount: 1,
           vectorRejectedCount: 0
         })
       );
-      expect(JSON.stringify(info.mock.calls)).not.toMatch(/Senior Sales Specialist|VP Sales|Marketing Specialist/);
+      expect(JSON.stringify(info.mock.calls)).not.toMatch(/Senior Sales Manager|Sales Specialist|Marketing Manager/);
     } finally {
       info.mockRestore();
     }
