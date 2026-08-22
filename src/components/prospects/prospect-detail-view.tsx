@@ -254,6 +254,10 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
   const peopleFilterTimer = useRef<number | null>(null);
 
   const [peopleFilter, setPeopleFilter] = useState("");
+  // Presentation-only: whether the compact people search pill is expanded.
+  // The query itself stays in peopleFilter; this never affects what is searched.
+  const [peopleSearchFocused, setPeopleSearchFocused] = useState(false);
+  const peopleSearchInputRef = useRef<HTMLInputElement | null>(null);
   const [peopleQuery, setPeopleQuery] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [selection, setSelection] = useState<ProspectSelectionState>(() => createEmptyProspectSelection());
@@ -1067,6 +1071,9 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
   const peoplePageCount = resolvePageCount(peopleTotal, PEOPLE_PAGE_SIZE);
   const peopleSearchPending = peopleFilter.trim() !== peopleQuery;
   const peopleSearchActive = peopleQuery.length > 0;
+  // Stay expanded while focused OR while a query is visible so the active
+  // search text never disappears mid-read.
+  const peopleSearchExpanded = peopleSearchFocused || peopleFilter.length > 0;
 
   // Add-more visibility depends ONLY on whether this company can be searched
   // again — never on the people currently rendered. Filters (role/location),
@@ -1670,16 +1677,67 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
               </div>
 
               <div className={styles.peopleToolbar}>
-                <div className={styles.filterField} data-discover-tour="people-filter">
-                  <Search aria-hidden="true" />
+                {/* Compact expanding people search: a small pill at rest that
+                    grows into a real input on focus. Purely presentational —
+                    the query, debounce, and filtering all stay in the existing
+                    peopleFilter / handlePeopleSearchChange path. */}
+                <div
+                  className={`${styles.peopleSearch} ${
+                    peopleSearchExpanded ? styles.peopleSearchOpen : ""
+                  }`}
+                  data-discover-tour="people-filter"
+                >
+                  <span className={styles.peopleSearchBubble} aria-hidden="true">
+                    {peopleSearchPending ? (
+                      <LoaderCircle className={styles.spin} />
+                    ) : (
+                      <Search />
+                    )}
+                  </span>
                   <input
+                    ref={peopleSearchInputRef}
                     type="search"
                     value={peopleFilter}
-                    placeholder="Search all people by name, title, email, or location"
+                    placeholder={
+                      peopleSearchExpanded
+                        ? "Search name, title, email, or location"
+                        : "Search"
+                    }
                     onChange={(event) => handlePeopleSearchChange(event.target.value)}
+                    onFocus={() => setPeopleSearchFocused(true)}
+                    onBlur={() => {
+                      if (!peopleFilter) {
+                        setPeopleSearchFocused(false);
+                      }
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Escape") {
+                        return;
+                      }
+                      if (peopleFilter) {
+                        handleClearPeopleSearch();
+                      } else {
+                        setPeopleSearchFocused(false);
+                        event.currentTarget.blur();
+                      }
+                    }}
                     aria-label="Search all people"
                     maxLength={200}
                   />
+                  {peopleFilter && (
+                    <button
+                      type="button"
+                      className={styles.peopleSearchClear}
+                      aria-label="Clear people search"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => {
+                        handleClearPeopleSearch();
+                        peopleSearchInputRef.current?.focus();
+                      }}
+                    >
+                      <X aria-hidden="true" />
+                    </button>
+                  )}
                 </div>
               </div>
 

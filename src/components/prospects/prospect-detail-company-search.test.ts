@@ -229,10 +229,66 @@ describe("Detail page regressions (#31-#35)", () => {
   it("keeps Add 10 more and searches People before pagination (#12, #13)", () => {
     expect(DETAIL_SOURCE).toContain("ADD_MORE_PEOPLE_LABEL");
     expect(DETAIL_SOURCE).toContain('data-discover-tour="add-more-people"');
-    expect(DETAIL_SOURCE).toContain("Search all people by name, title, email, or location");
+    expect(DETAIL_SOURCE).toContain('aria-label="Search all people"');
     expect(DETAIL_SOURCE).toContain("handlePeopleSearchChange");
     expect(PEOPLE_QUERY).toContain("search: $search");
     expect(DETAIL_SOURCE).toContain("search: peopleQuery || null");
     expect(DETAIL_SOURCE).not.toContain("filterPeopleByText");
+  });
+});
+
+describe("Compact expanding people search control", () => {
+  it("replaces the old full-width field with a compact pill", () => {
+    expect(DETAIL_SOURCE).not.toContain("styles.filterField");
+    expect(CSS).not.toContain(".filterField");
+    expect(DETAIL_SOURCE).toContain("styles.peopleSearch");
+    expect(DETAIL_SOURCE).toContain('data-discover-tour="people-filter"');
+    // Collapsed pill stays small; expanded caps at desktop width.
+    expect(CSS).toMatch(/\.peopleSearch \{[^}]*width: 8\.75rem/);
+    expect(CSS).toMatch(/\.peopleSearchOpen \{[^}]*width: min\(26rem, 100%\)/);
+  });
+
+  it("keeps every bit of the existing search wiring", () => {
+    expect(DETAIL_SOURCE).toContain("handlePeopleSearchChange(event.target.value)");
+    expect(DETAIL_SOURCE).toContain('type="search"');
+    expect(DETAIL_SOURCE).toContain('aria-label="Search all people"');
+    expect(DETAIL_SOURCE).toContain("maxLength={200}");
+    expect(DETAIL_SOURCE).toContain(
+      '"Search name, title, email, or location"'
+    );
+  });
+
+  it("expands on focus and stays open while a query is visible", () => {
+    expect(DETAIL_SOURCE).toMatch(
+      /const peopleSearchExpanded = peopleSearchFocused \|\| peopleFilter\.length > 0;/
+    );
+    expect(DETAIL_SOURCE).toContain("onFocus={() => setPeopleSearchFocused(true)}");
+  });
+
+  it("clears through the existing handler with a labeled clear button", () => {
+    expect(DETAIL_SOURCE).toContain('aria-label="Clear people search"');
+    expect(DETAIL_SOURCE).toMatch(/onClick=\{\(\) => \{\s*\n\s*handleClearPeopleSearch\(\);/);
+    // mousedown is prevented so clicking clear keeps the input focused.
+    expect(DETAIL_SOURCE).toContain("onMouseDown={(event) => event.preventDefault()}");
+  });
+
+  it("Escape clears an active query, otherwise collapses the pill", () => {
+    expect(DETAIL_SOURCE).toMatch(
+      /if \(event\.key !== "Escape"\) \{[\s\S]*?if \(peopleFilter\) \{\s*\n\s*handleClearPeopleSearch\(\);\s*\n\s*\} else \{\s*\n\s*setPeopleSearchFocused\(false\);/
+    );
+  });
+
+  it("shows the pending spinner inside the icon bubble", () => {
+    expect(DETAIL_SOURCE).toMatch(
+      /\{peopleSearchPending \? \(\s*\n\s*<LoaderCircle className=\{styles\.spin\} \/>/
+    );
+    expect(CSS).toContain(".peopleSearchBubble");
+  });
+
+  it("animates softly and honors prefers-reduced-motion", () => {
+    expect(CSS).toMatch(/\.peopleSearch \{[^}]*width 220ms cubic-bezier/);
+    expect(CSS).toMatch(
+      /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.peopleSearch,[\s\S]*?\.peopleSearchBubble,[\s\S]*?\.peopleSearchClear,[\s\S]*?transition: none;/
+    );
   });
 });
