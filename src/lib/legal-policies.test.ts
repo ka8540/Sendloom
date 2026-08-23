@@ -20,6 +20,7 @@ describe("legal policy registry", () => {
     expect(validateLegalPolicyRegistry()).toEqual([]);
     for (const policy of LEGAL_POLICY_LIST) {
       expect(policy.version).toBe("2026-08-23");
+      expect(policy.releaseGroup).toBe("2026-08-23-security-notifications");
       expect(policy.lastUpdated).toBe("August 23, 2026");
       expect(policy.changeSummary.length).toBeGreaterThan(0);
       expect(policy.sections.length).toBeGreaterThan(0);
@@ -37,14 +38,22 @@ describe("legal policy registry", () => {
       ]
     };
     const changedDate: LegalPolicy = { ...original, lastUpdated: "August 2, 2026" };
+    const changedReleaseGroup: LegalPolicy = { ...original, releaseGroup: "different-delivery-group" };
 
     expect(computeLegalPolicyContentHash(changedContent)).not.toBe(computeLegalPolicyContentHash(original));
     expect(computeLegalPolicyContentHash(changedDate)).not.toBe(computeLegalPolicyContentHash(original));
+    expect(computeLegalPolicyContentHash(changedReleaseGroup)).toBe(computeLegalPolicyContentHash(original));
   });
 
   it("rejects impossible release dates", () => {
     expect(validateLegalPolicyRegistry([{ ...LEGAL_POLICIES.privacy, version: "2026-02-30" }])).toContain(
       "Invalid version for privacy: 2026-02-30"
+    );
+  });
+
+  it("requires an explicit non-empty releaseGroup", () => {
+    expect(validateLegalPolicyRegistry([{ ...LEGAL_POLICIES.privacy, releaseGroup: "" }])).toContain(
+      "Missing releaseGroup for privacy"
     );
   });
 });

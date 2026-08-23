@@ -21,7 +21,8 @@ export type LegalNoticeMailer = {
   isConfigured(): boolean;
   send(input: {
     to: string;
-    policy: LegalNoticeEmailPolicy;
+    policies: readonly LegalNoticeEmailPolicy[];
+    releaseGroup: string;
     idempotencyKey: string;
   }): Promise<LegalNoticeDeliveryResult>;
 };
@@ -33,10 +34,12 @@ const SUBJECTS: Record<LegalPolicyId, string> = {
 };
 
 const CTA_LABELS: Record<LegalPolicyId, string> = {
-  terms: "Review the updated Terms",
-  privacy: "Review the updated Privacy Policy",
-  abuse: "Review the updated Anti-Abuse Policy"
+  terms: "Review Terms of Service",
+  privacy: "Review Privacy Policy",
+  abuse: "Review Anti-Abuse Policy"
 };
+
+const POLICY_ORDER: Record<LegalPolicyId, number> = { terms: 0, privacy: 1, abuse: 2 };
 
 const PERMANENT_PROVIDER_ERRORS = new Set([
   // These can identify a bad individual recipient. Configuration/auth/sender
@@ -63,50 +66,99 @@ export function buildCanonicalPolicyUrl(appBaseUrl: string, path: LegalPolicyPat
   return base.toString().replace(/\/$/, "");
 }
 
+export function sortLegalNoticePolicies(policies: readonly LegalNoticeEmailPolicy[]) {
+  return [...policies].sort((left, right) => POLICY_ORDER[left.id] - POLICY_ORDER[right.id]);
+}
+
 /** Safe preview renderer: returns HTML/text only and never performs delivery. */
-export function renderLegalNoticeEmail(input: { policy: LegalNoticeEmailPolicy; appBaseUrl: string }) {
-  const { policy } = input;
-  if (policy.changeSummary.length === 0 || policy.changeSummary.some((item) => !item.trim())) {
-    throw new Error("Legal notice emails require a non-empty developer-written change summary.");
+export function renderLegalNoticeEmail(input: {
+  policies: readonly LegalNoticeEmailPolicy[];
+  appBaseUrl: string;
+}) {
+  if (input.policies.length === 0) {
+    throw new Error("Legal notice emails require at least one policy.");
   }
 
-  const subject = SUBJECTS[policy.id];
-  const reviewUrl = buildCanonicalPolicyUrl(input.appBaseUrl, policy.path);
-  const ctaLabel = CTA_LABELS[policy.id];
-  const summaryText = policy.changeSummary.map((item) => `• ${item}`).join("\n");
+  const policies = sortLegalNoticePolicies(input.policies);
+  const policyIds = new Set<LegalPolicyId>();
+  for (const policy of policies) {
+    if (policyIds.has(policy.id)) throw new Error(`Duplicate legal policy in release email: ${policy.id}`);
+    policyIds.add(policy.id);
+    if (policy.changeSummary.length === 0 || policy.changeSummary.some((item) => !item.trim())) {
+      throw new Error("Legal notice emails require a non-empty developer-written change summary for every policy.");
+    }
+  }
+
+  const multiple = policies.length > 1;
+  const subject = multiple ? "We updated our policies" : SUBJECTS[policies[0].id];
+  const intro = multiple
+    ? "We've made updates to several Sendloom policies."
+    : `We've made some updates to our ${policies[0].title}.`;
+  const reviewUrls = Object.fromEntries(
+    policies.map((policy) => [policy.id, buildCanonicalPolicyUrl(input.appBaseUrl, policy.path)])
+  ) as Partial<Record<LegalPolicyId, string>>;
+
+  const textSections = policies.map((policy) => {
+    const reviewUrl = reviewUrls[policy.id]!;
+    return [
+      "------------------------------------------------",
+      "",
+      policy.title,
+      `Last updated: ${policy.lastUpdated}`,
+      "",
+      "What's changed",
+      ...policy.changeSummary.map((item) => `• ${item}`),
+      "",
+      `${CTA_LABELS[policy.id]}: ${reviewUrl}`
+    ].join("\n");
+  });
   const text = [
     "Sendloom",
     "",
     subject,
     "",
-    `We've made some updates to our ${policy.title}.`,
+    intro,
     "",
-    "What's changed",
+    ...textSections,
     "",
-    summaryText,
-    "",
-    `Last updated: ${policy.lastUpdated}`,
-    "",
-    `${ctaLabel}: ${reviewUrl}`,
-    "",
-    `You can also review it anytime at ${reviewUrl}.`,
+    "------------------------------------------------",
     "",
     "You're receiving this service notice because you have a Sendloom account.",
     "",
     "Sendloom"
   ].join("\n");
 
-  const summaryHtml = policy.changeSummary
-    .map(
-      (item) =>
-        `<li style="margin:0 0 10px;color:#445651;font-size:15px;line-height:1.6;">${escapeHtml(item)}</li>`
-    )
+  const policySectionsHtml = policies
+    .map((policy) => {
+      const reviewUrl = reviewUrls[policy.id]!;
+      const summaryHtml = policy.changeSummary
+        .map(
+          (item) =>
+            `<li style="margin:0 0 10px;color:#445651;font-size:15px;line-height:1.6;">${escapeHtml(item)}</li>`
+        )
+        .join("");
+      return `<section style="margin:0 0 24px;padding:20px 22px;border-radius:14px;background:#edf8f4;border:1px solid #cde8de;">
+                  <h2 style="margin:0 0 6px;font-size:19px;line-height:1.35;color:#15221f;">${escapeHtml(policy.title)}</h2>
+                  <p style="margin:0 0 16px;color:#536460;font-size:13px;line-height:1.6;"><strong>Last updated:</strong> ${escapeHtml(policy.lastUpdated)}</p>
+                  <h3 style="margin:0 0 10px;font-size:15px;line-height:1.4;color:#15221f;">What's changed</h3>
+                  <ul style="margin:0 0 18px;padding-left:20px;">${summaryHtml}</ul>
+                  <table role="presentation" cellspacing="0" cellpadding="0">
+                    <tr>
+                      <td style="border-radius:10px;background:#157c5a;">
+                        <a href="${escapeHtml(reviewUrl)}" style="display:inline-block;padding:12px 18px;color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;">${escapeHtml(CTA_LABELS[policy.id])}</a>
+                      </td>
+                    </tr>
+                  </table>
+                </section>`;
+    })
     .join("");
+
   const html = `<!doctype html>
 <html lang="en">
   <head>
     <meta name="color-scheme" content="light dark">
     <meta name="supported-color-schemes" content="light dark">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
   </head>
   <body style="margin:0;background:#f3f6f8;color:#15221f;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f3f6f8;padding:32px 16px;">
@@ -119,20 +171,8 @@ export function renderLegalNoticeEmail(input: { policy: LegalNoticeEmailPolicy; 
             <tr>
               <td style="padding:0 32px 34px;">
                 <h1 style="margin:8px 0 12px;font-size:28px;line-height:1.25;letter-spacing:-0.02em;color:#15221f;">${escapeHtml(subject)}</h1>
-                <p style="margin:0 0 24px;color:#536460;font-size:16px;line-height:1.65;">We've made some updates to our ${escapeHtml(policy.title)}.</p>
-                <div style="margin:0 0 24px;padding:20px 22px;border-radius:14px;background:#edf8f4;border:1px solid #cde8de;">
-                  <h2 style="margin:0 0 12px;font-size:17px;line-height:1.4;color:#15221f;">What's changed</h2>
-                  <ul style="margin:0;padding-left:20px;">${summaryHtml}</ul>
-                </div>
-                <p style="margin:0 0 24px;color:#536460;font-size:14px;line-height:1.6;"><strong>Last updated:</strong> ${escapeHtml(policy.lastUpdated)}</p>
-                <table role="presentation" cellspacing="0" cellpadding="0" style="margin:0 0 24px;">
-                  <tr>
-                    <td style="border-radius:10px;background:#157c5a;">
-                      <a href="${escapeHtml(reviewUrl)}" style="display:inline-block;padding:13px 20px;color:#ffffff;text-decoration:none;font-size:15px;font-weight:700;">${escapeHtml(ctaLabel)}</a>
-                    </td>
-                  </tr>
-                </table>
-                <p style="margin:0 0 22px;color:#687773;font-size:13px;line-height:1.6;">You can also review it anytime at <a href="${escapeHtml(reviewUrl)}" style="color:#157c5a;">${escapeHtml(reviewUrl)}</a>.</p>
+                <p style="margin:0 0 24px;color:#536460;font-size:16px;line-height:1.65;">${escapeHtml(intro)}</p>
+                ${policySectionsHtml}
                 <div style="padding-top:20px;border-top:1px solid #e5ebe9;">
                   <p style="margin:0;color:#7a8783;font-size:12px;line-height:1.6;">You're receiving this service notice because you have a Sendloom account.</p>
                   <p style="margin:10px 0 0;color:#52635e;font-size:13px;font-weight:700;">Sendloom</p>
@@ -146,7 +186,7 @@ export function renderLegalNoticeEmail(input: { policy: LegalNoticeEmailPolicy; 
   </body>
 </html>`;
 
-  return { subject, html, text, reviewUrl };
+  return { subject, html, text, reviewUrls, policies };
 }
 
 export const resendLegalNoticeMailer: LegalNoticeMailer = {
@@ -159,7 +199,7 @@ export const resendLegalNoticeMailer: LegalNoticeMailer = {
       return { status: "retryable", errorCode: "RESEND_NOT_CONFIGURED", stopRun: true };
     }
 
-    const message = renderLegalNoticeEmail({ policy: input.policy, appBaseUrl: env.APP_BASE_URL });
+    const message = renderLegalNoticeEmail({ policies: input.policies, appBaseUrl: env.APP_BASE_URL });
 
     try {
       const result = await new Resend(env.RESEND_API_KEY).emails.send(
@@ -171,7 +211,8 @@ export const resendLegalNoticeMailer: LegalNoticeMailer = {
           text: message.text,
           tags: [
             { name: "category", value: "legal-policy-notice" },
-            { name: "policy", value: input.policy.id }
+            { name: "policy_count", value: String(message.policies.length) },
+            { name: "release_group", value: input.releaseGroup }
           ]
         },
         { idempotencyKey: input.idempotencyKey }

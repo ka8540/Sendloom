@@ -126,6 +126,7 @@ model User {
   prospectSearches         ProspectSearch[]
   attachmentAssets         AttachmentAsset[]
   legalPolicyNoticeRecipients LegalPolicyNoticeRecipient[]
+  legalPolicyReleaseRecipients LegalPolicyReleaseRecipient[]
 
   @@index([isAdmin])
   @@index([sessionExpiresAt])
@@ -150,11 +151,14 @@ model LegalPolicyNotice {
   updatedAt                DateTime                     @updatedAt
   startedAt                DateTime?
   completedAt              DateTime?
+  releaseId                String?
+  release                  LegalPolicyRelease?          @relation(fields: [releaseId], references: [id], onDelete: SetNull)
   recipients               LegalPolicyNoticeRecipient[]
 
   @@unique([policy, version])
   @@index([policy, createdAt])
   @@index([status, createdAt])
+  @@index([releaseId])
 }
 
 // One individually addressed delivery per account user and notice. Email is
@@ -180,6 +184,52 @@ model LegalPolicyNoticeRecipient {
 
   @@unique([noticeId, userId])
   @@index([noticeId, status, nextAttemptAt])
+  @@index([status, leaseExpiresAt])
+}
+
+// Durable delivery boundary for one explicitly grouped legal release. Policy
+// notices remain immutable per-policy history; recipients are materialized and
+// delivered once here for all notices that share a releaseGroup.
+model LegalPolicyRelease {
+  id                       String                        @id @default(cuid())
+  releaseGroup             String                        @unique
+  status                   LegalPolicyNoticeStatus       @default(PENDING)
+  recipientCursor          String?
+  recipientsMaterializedAt DateTime?
+  lastErrorCode            String?
+  createdAt                DateTime                      @default(now())
+  updatedAt                DateTime                      @updatedAt
+  startedAt                DateTime?
+  completedAt              DateTime?
+  notices                  LegalPolicyNotice[]
+  recipients               LegalPolicyReleaseRecipient[]
+
+  @@index([status, createdAt])
+}
+
+// Exactly one durable delivery row per account user and legal release. Legacy
+// per-policy recipient rows remain untouched for historical auditability.
+model LegalPolicyReleaseRecipient {
+  id                String                           @id @default(cuid())
+  releaseId         String
+  userId            String
+  emailSnapshot     String
+  status            LegalPolicyNoticeRecipientStatus @default(PENDING)
+  attempts          Int                              @default(0)
+  providerMessageId String?
+  sentAt            DateTime?
+  lastAttemptAt     DateTime?
+  nextAttemptAt     DateTime?
+  leaseToken        String?
+  leaseExpiresAt    DateTime?
+  lastErrorCode     String?
+  createdAt         DateTime                         @default(now())
+  updatedAt         DateTime                         @updatedAt
+  release           LegalPolicyRelease               @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+  user              User                             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([releaseId, userId])
+  @@index([releaseId, status, nextAttemptAt])
   @@index([status, leaseExpiresAt])
 }
 
