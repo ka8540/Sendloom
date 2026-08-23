@@ -6,6 +6,10 @@ import { KeyRound, Loader2, Mail, Plus, Trash2 } from "lucide-react";
 import { AppConfirmDialog } from "@/components/app-confirm-dialog";
 import { useErrorToast } from "@/components/error-toast-provider";
 import { LocalDateTime } from "@/components/local-date-time";
+import {
+  OtpVerificationForm,
+  type OtpChallengeMetadata
+} from "@/components/otp-verification-form";
 import { WorkspacePageHeader } from "@/components/workspace-page-header";
 import {
   type AccountOverview,
@@ -54,6 +58,7 @@ export function AccountDashboard({
   const [confirmPassword, setConfirmPassword] = useState("");
   const [savingPassword, setSavingPassword] = useState(false);
   const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordChallenge, setPasswordChallenge] = useState<OtpChallengeMetadata | null>(null);
 
   const currentPasswordId = useId();
   const newPasswordId = useId();
@@ -151,7 +156,12 @@ export function AccountDashboard({
             confirmPassword
           })
         });
-        const data = (await res.json().catch(() => null)) as { error?: string; message?: string } | null;
+        const data = (await res.json().catch(() => null)) as
+          | (Partial<OtpChallengeMetadata> & {
+              error?: string;
+              requiresVerification?: boolean;
+            })
+          | null;
 
         if (!res.ok) {
           const message = typeof data?.error === "string" ? data.error : PASSWORD_UPDATE_ERROR_MESSAGE;
@@ -160,11 +170,30 @@ export function AccountDashboard({
           return;
         }
 
+        if (
+          !data?.requiresVerification ||
+          typeof data.challengeId !== "string" ||
+          typeof data.maskedEmail !== "string" ||
+          typeof data.expiresInSeconds !== "number" ||
+          typeof data.resendAvailableInSeconds !== "number"
+        ) {
+          setPasswordError(PASSWORD_UPDATE_ERROR_MESSAGE);
+          showError(PASSWORD_UPDATE_ERROR_MESSAGE);
+          return;
+        }
+
+        // Once the server holds only the pending hash, discard every plaintext
+        // password from client state before showing the OTP step.
         setCurrentPassword("");
         setNewPassword("");
         setConfirmPassword("");
         setPasswordError(null);
-        showSuccess(typeof data?.message === "string" ? data.message : PASSWORD_UPDATE_SUCCESS_MESSAGE);
+        setPasswordChallenge({
+          challengeId: data.challengeId,
+          maskedEmail: data.maskedEmail,
+          expiresInSeconds: data.expiresInSeconds,
+          resendAvailableInSeconds: data.resendAvailableInSeconds
+        });
       } catch {
         setPasswordError(PASSWORD_UPDATE_ERROR_MESSAGE);
         showError(PASSWORD_UPDATE_ERROR_MESSAGE);
@@ -172,7 +201,7 @@ export function AccountDashboard({
         setSavingPassword(false);
       }
     },
-    [confirmPassword, currentPassword, hasPassword, newPassword, savingPassword, showError, showSuccess]
+    [confirmPassword, currentPassword, hasPassword, newPassword, savingPassword, showError]
   );
 
   const { profile, senders, canRemoveSenders } = overview;
@@ -336,67 +365,87 @@ export function AccountDashboard({
             </div>
           </div>
 
-          <form className={`form ${styles.passwordForm}`} onSubmit={submitPassword} noValidate>
-            {hasPassword ? (
+          {passwordChallenge ? (
+            <OtpVerificationForm
+              challenge={passwordChallenge}
+              verifyEndpoint="/api/account/password/verify"
+              resendEndpoint="/api/account/password/resend"
+              submitLabel="Verify & update password"
+              cancelLabel="Cancel"
+              onCancel={() => {
+                setPasswordChallenge(null);
+                setPasswordError(null);
+              }}
+              onSuccess={async ({ message }) => {
+                setPasswordChallenge(null);
+                setPasswordError(null);
+                await refresh();
+                showSuccess(message ?? PASSWORD_UPDATE_SUCCESS_MESSAGE);
+              }}
+            />
+          ) : (
+            <form className={`form ${styles.passwordForm}`} onSubmit={submitPassword} noValidate>
+              {hasPassword ? (
+                <div className="field">
+                  <label htmlFor={currentPasswordId}>Current password</label>
+                  <input
+                    id={currentPasswordId}
+                    type="password"
+                    autoComplete="current-password"
+                    value={currentPassword}
+                    onChange={(event) => setCurrentPassword(event.target.value)}
+                    aria-invalid={passwordError ? true : undefined}
+                    aria-describedby={passwordError ? passwordErrorId : undefined}
+                    disabled={savingPassword}
+                  />
+                </div>
+              ) : null}
+
               <div className="field">
-                <label htmlFor={currentPasswordId}>Current password</label>
+                <label htmlFor={newPasswordId}>New password</label>
                 <input
-                  id={currentPasswordId}
+                  id={newPasswordId}
                   type="password"
-                  autoComplete="current-password"
-                  value={currentPassword}
-                  onChange={(event) => setCurrentPassword(event.target.value)}
+                  autoComplete="new-password"
+                  value={newPassword}
+                  onChange={(event) => setNewPassword(event.target.value)}
                   aria-invalid={passwordError ? true : undefined}
                   aria-describedby={passwordError ? passwordErrorId : undefined}
                   disabled={savingPassword}
+                  minLength={MIN_PASSWORD_LENGTH}
+                />
+                <p className={styles.fieldHint}>At least {MIN_PASSWORD_LENGTH} characters.</p>
+              </div>
+
+              <div className="field">
+                <label htmlFor={confirmPasswordId}>Confirm new password</label>
+                <input
+                  id={confirmPasswordId}
+                  type="password"
+                  autoComplete="new-password"
+                  value={confirmPassword}
+                  onChange={(event) => setConfirmPassword(event.target.value)}
+                  aria-invalid={passwordError ? true : undefined}
+                  aria-describedby={passwordError ? passwordErrorId : undefined}
+                  disabled={savingPassword}
+                  minLength={MIN_PASSWORD_LENGTH}
                 />
               </div>
-            ) : null}
 
-            <div className="field">
-              <label htmlFor={newPasswordId}>New password</label>
-              <input
-                id={newPasswordId}
-                type="password"
-                autoComplete="new-password"
-                value={newPassword}
-                onChange={(event) => setNewPassword(event.target.value)}
-                aria-invalid={passwordError ? true : undefined}
-                aria-describedby={passwordError ? passwordErrorId : undefined}
-                disabled={savingPassword}
-                minLength={MIN_PASSWORD_LENGTH}
-              />
-              <p className={styles.fieldHint}>At least {MIN_PASSWORD_LENGTH} characters.</p>
-            </div>
+              {passwordError ? (
+                <p id={passwordErrorId} className={styles.formError} role="alert">
+                  {passwordError}
+                </p>
+              ) : null}
 
-            <div className="field">
-              <label htmlFor={confirmPasswordId}>Confirm new password</label>
-              <input
-                id={confirmPasswordId}
-                type="password"
-                autoComplete="new-password"
-                value={confirmPassword}
-                onChange={(event) => setConfirmPassword(event.target.value)}
-                aria-invalid={passwordError ? true : undefined}
-                aria-describedby={passwordError ? passwordErrorId : undefined}
-                disabled={savingPassword}
-                minLength={MIN_PASSWORD_LENGTH}
-              />
-            </div>
-
-            {passwordError ? (
-              <p id={passwordErrorId} className={styles.formError} role="alert">
-                {passwordError}
-              </p>
-            ) : null}
-
-            <div className={styles.formActions}>
-              <button type="submit" className="button" disabled={savingPassword}>
-                {savingPassword ? <Loader2 aria-hidden="true" className={styles.spin} /> : null}
-                {savingPassword ? "Saving…" : hasPassword ? "Update password" : "Set password"}
-              </button>
-            </div>
-          </form>
+              <div className={styles.formActions}>
+                <button type="submit" className="button" disabled={savingPassword}>
+                  {savingPassword ? <Loader2 aria-hidden="true" className={styles.spin} /> : null}
+                  {savingPassword ? "Saving…" : hasPassword ? "Update password" : "Set password"}
+                </button>
+              </div>
+            </form>
+          )}
         </section>
       </div>
 
