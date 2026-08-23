@@ -46,7 +46,23 @@ const termsSections = [
     bullets: [
       "You are responsible for the accuracy of the account information you provide.",
       "You are responsible for activity that happens through your account.",
-      "You must keep your login credentials and connected accounts secure."
+      "You must maintain access to and protect the email account associated with Sendloom, along with your login credentials and connected accounts.",
+      "You must not share your password, verification codes, or other account credentials with anyone."
+    ]
+  },
+  {
+    id: "account-verification",
+    title: "Account verification",
+    paragraphs: [
+      "Sendloom requires verification of the account email before completing email-and-password registration and may require verification during other security-sensitive account actions. Verification may include a time-limited code sent to the account email.",
+      "Google sign-in uses Google's authentication and verified-email flow; it does not require Sendloom's email-and-password registration code."
+    ]
+  },
+  {
+    id: "password-security",
+    title: "Password security",
+    paragraphs: [
+      "Sendloom may require additional verification through the account email before a password is established or changed, including when an account originally created with Google authentication later adds a password. This verification is used for the security-sensitive password action and does not mean that every normal login requires a verification code."
     ]
   },
   {
@@ -127,6 +143,14 @@ const termsSections = [
     ]
   },
   {
+    id: "policy-changes-and-notices",
+    title: "Policy changes and notices",
+    paragraphs: [
+      "Sendloom may update these Terms, the Privacy Policy, or the Anti-Abuse Policy as the service and its practices change.",
+      "For relevant or material updates, Sendloom may send an account or service notice to your account email. A notice may identify the policy that changed, the update date, a concise summary of the changes, and a link to the updated policy."
+    ]
+  },
+  {
     id: "termination",
     title: "Termination",
     paragraphs: [
@@ -167,6 +191,7 @@ const privacySections = [
     title: "Information we collect",
     bullets: [
       "Account information such as your email address and sign-in method.",
+      "Email-verification data, including the account email address, temporary verification or challenge information, and security and rate-limit metadata needed to confirm email control and prevent abuse.",
       "Google profile information such as your name, email address, and profile image when you sign in with Google.",
       "Connected Gmail account information needed to send email on your behalf after you explicitly authorize it.",
       "Templates, imports, uploaded files, mappings, sender profiles, campaigns, and suppression records that you create inside Sendloom.",
@@ -202,10 +227,38 @@ const privacySections = [
     bullets: [
       "To create and manage your account.",
       "To authenticate you and maintain a secure login session.",
+      "To verify control of the account email during email-and-password registration and security-sensitive password actions.",
+      "To deliver verification, security, and important policy-update communications to your account email.",
       "To let you create templates, upload lists, connect senders, and launch sequences.",
       "To process email delivery activity, track statuses, and apply suppressions.",
       "To provide AI-assisted and automated features, including content generation and refinement, classification, public-source analysis, email-format inference, and deliverability or spam-risk analysis.",
       "To protect the service against abuse, unauthorized access, and operational failures."
+    ]
+  },
+  {
+    id: "account-verification-and-password-security",
+    title: "Account verification and password security",
+    paragraphs: [
+      "When you register with an email address and password, Sendloom uses the account email and a temporary verification challenge to confirm that you control that address before the account is created. Google sign-in instead relies on Google's authentication and verified-email flow.",
+      "Sendloom may also require account-email verification when you set or change a password, including when a Google-based account later adds a password.",
+      "Verification challenges are temporary. Sendloom uses reasonable expiration, attempt, resend, and rate controls designed to reduce repeated, unauthorized, or abusive verification activity."
+    ]
+  },
+  {
+    id: "account-service-email",
+    title: "Account and service email delivery",
+    paragraphs: [
+      "Sendloom uses a transactional email service provider, currently Resend, to deliver operational account and service communications. These communications may include account verification codes, password or security verification messages, and important policy-update notices.",
+      "To deliver these messages, the provider may process your account email address, the message content, and delivery metadata needed to route, deliver, secure, and troubleshoot the email.",
+      "Account and service communications are sent to the email address associated with your Sendloom account. They are not sent through a Gmail sender account that you connect for outreach."
+    ]
+  },
+  {
+    id: "policy-update-notices",
+    title: "Policy-update notices and delivery records",
+    paragraphs: [
+      "Sendloom may use your account email to notify you when its Terms of Service, Privacy Policy, or Anti-Abuse Policy is materially updated. A notice may include the policy name, the update date, a concise change summary, and a link to the current policy.",
+      "Sendloom may retain limited operational records associated with policy-notice delivery, such as delivery status, attempt or retry information, a provider message identifier, and timestamps. These records are used for delivery reliability, auditing, duplicate prevention, troubleshooting, and retry handling; the recipient delivery record does not store a separate full copy of the email."
     ]
   },
   {
@@ -266,6 +319,7 @@ const privacySections = [
     paragraphs: [
       "Sendloom stores account data, templates, campaign records, sender profile details, and imported audience data in the application database and related service infrastructure.",
       "We retain information for as long as it is needed to operate your account, comply with legal obligations, resolve disputes, and enforce our agreements.",
+      "Temporary account-verification challenges are retained only as needed to complete or protect the verification process. Limited policy-notice delivery records may be retained for reliability, auditing, duplicate prevention, retry handling, and troubleshooting.",
       "AI-feature inputs, outputs, and related operational metadata may be retained for the purposes described in this policy. Retention periods may depend on the feature, the type of data, account status, security and support needs, provider arrangements, and applicable law."
     ]
   },
@@ -282,7 +336,7 @@ const privacySections = [
     id: "sharing",
     title: "How data is shared",
     paragraphs: [
-      "Sendloom shares data only with service providers and infrastructure partners needed to operate the app, such as authentication, hosting, database, storage, and email-related services.",
+      "Sendloom shares data only with service providers and infrastructure partners needed to operate the app, such as authentication, hosting, database, storage, and transactional email delivery services. The current provider for account and service email delivery is Resend.",
       "For AI-assisted features, Sendloom may share relevant inputs, outputs, and related metadata with third-party AI, model, web-search, and infrastructure providers that process the information on our behalf as service providers or subprocessors.",
       "We do not sell your personal information."
     ]
@@ -300,7 +354,7 @@ const privacySections = [
     id: "security",
     title: "Security",
     paragraphs: [
-      "We use reasonable administrative, technical, and organizational safeguards designed to protect your information. However, no system can be guaranteed to be completely secure."
+      "We use reasonable administrative, technical, and organizational safeguards designed to protect your information. These safeguards include account-email verification for certain registration and password actions and controls designed to limit repeated verification abuse. However, no system can be guaranteed to be completely secure."
     ]
   },
   {
@@ -336,7 +390,11 @@ const abuseSections = [
       "Selling or sourcing child data: collecting, purchasing, or using data about individuals under 18.",
       "Unlawful contact scraping: using contacts obtained through scraping, hacking, or other unauthorized means.",
       "Suppression bypass: circumventing unsubscribe requests, suppression lists, or opt-out mechanisms.",
-      "Google policy violations: any use that violates Google's Gmail API Terms of Service or Acceptable Use Policy."
+      "Google policy violations: any use that violates Google's Gmail API Terms of Service or Acceptable Use Policy.",
+      "Fraudulent or automated account creation: creating accounts through deceptive or automated means, or creating an account to evade a prior suspension, restriction, or other enforcement action.",
+      "Verification abuse: attempting to bypass email verification, brute-force a verification code, use another person's verification code without authorization, or circumvent verification attempt limits, resend controls, or rate limits.",
+      "Credential attacks: using credential stuffing or other unauthorized methods to access or take over an account.",
+      "Security-control interference: probing, disabling, evading, or otherwise interfering with Sendloom authentication or account-security controls."
     ]
   },
   {
@@ -381,27 +439,39 @@ export const LEGAL_POLICIES = {
     id: "terms",
     title: "Terms of Service",
     path: "/terms",
-    version: "2026-08-01",
-    lastUpdated: "August 1, 2026",
-    changeSummary: [],
+    version: "2026-08-23",
+    lastUpdated: "August 23, 2026",
+    changeSummary: [
+      "Added details about email verification for account registration and security-sensitive account changes.",
+      "Clarified user responsibilities for protecting account credentials and verification codes.",
+      "Added information about email notices when important Sendloom policies are updated."
+    ],
     sections: termsSections
   },
   privacy: {
     id: "privacy",
     title: "Privacy Policy",
     path: "/privacy",
-    version: "2026-08-01",
-    lastUpdated: "August 1, 2026",
-    changeSummary: [],
+    version: "2026-08-23",
+    lastUpdated: "August 23, 2026",
+    changeSummary: [
+      "Added information about email verification used during account registration and password security.",
+      "Clarified how transactional email providers process account information to deliver verification and service notices.",
+      "Added details about policy-update emails and the limited delivery records used for reliability and duplicate prevention."
+    ],
     sections: privacySections
   },
   abuse: {
     id: "abuse",
     title: "Anti-Abuse Policy",
     path: "/abuse",
-    version: "2026-06-12",
-    lastUpdated: "June 12, 2026",
-    changeSummary: [],
+    version: "2026-08-23",
+    lastUpdated: "August 23, 2026",
+    changeSummary: [
+      "Expanded prohibited-use rules to cover abuse of account registration and email verification systems.",
+      "Clarified that attempts to bypass authentication controls, rate limits, or account restrictions are prohibited.",
+      "Added protections against fraudulent account creation and misuse of verification codes."
+    ],
     sections: abuseSections
   }
 } as const satisfies Record<LegalPolicyId, LegalPolicy>;

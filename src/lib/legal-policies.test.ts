@@ -16,12 +16,12 @@ describe("legal policy registry", () => {
     expect(LEGAL_POLICIES.abuse).toMatchObject({ title: "Anti-Abuse Policy", path: "/abuse" });
   });
 
-  it("has valid initial baseline metadata without announcing the existing versions", () => {
+  it("has valid release metadata for the August 23, 2026 policy updates", () => {
     expect(validateLegalPolicyRegistry()).toEqual([]);
     for (const policy of LEGAL_POLICY_LIST) {
-      expect(policy.version).toMatch(/^2026-\d{2}-\d{2}$/);
-      expect(policy.lastUpdated).toMatch(/2026$/);
-      expect(policy.changeSummary).toEqual([]);
+      expect(policy.version).toBe("2026-08-23");
+      expect(policy.lastUpdated).toBe("August 23, 2026");
+      expect(policy.changeSummary.length).toBeGreaterThan(0);
       expect(policy.sections.length).toBeGreaterThan(0);
       expect(computeLegalPolicyContentHash(policy)).toMatch(/^[a-f0-9]{64}$/);
     }
