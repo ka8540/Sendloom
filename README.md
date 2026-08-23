@@ -16,6 +16,7 @@ The UI is branded **Sendloom**. The npm package name in `package.json` is still 
 - [Key capabilities](#key-capabilities)
 - [Typical operator workflow](#typical-operator-workflow)
 - [Architecture overview](#architecture-overview)
+- [Email OTP verification](#email-otp-verification)
 - [Main authenticated pages](#main-authenticated-pages)
 - [Main public pages](#main-public-pages)
 - [Important operational behavior](#important-operational-behavior)
@@ -61,7 +62,7 @@ Non-admin users must complete the eligibility gate at `/verify-eligibility` (18+
 - **Analysis** — five reporting pages over user-scoped stored data with 7-day and 30-day presets, prior-period comparisons, per-metric information tooltips, and per-page CSV export.
 - **Discover** — database-first company + role + location prospect search with cross-user and same-user reuse before Apify, a fixed 10-person allocation per search, a daily search quota, cache-first "Add 10 more" expansion, optional pgvector role intelligence, and evidence-backed email-format inference.
 - **Finder** — Hunter email finder and domain search with per-user encrypted API keys and saved history.
-- **Account** — password set/change (session-rotating) and connected-sender removal with server-enforced safety rules.
+- **Account and signup security** — email/password signup and account password set/change require a six-digit email OTP; successful password updates rotate the session. Connected-sender removal has server-enforced safety rules.
 - **Guided help** — every dashboard route has a Help button with a page-specific coachmark tour, plus a "Report issue" dialog that files a privacy-preserving incident report.
 
 ## Typical operator workflow
@@ -98,12 +99,13 @@ flowchart TD
     Services --> Lib["Shared helpers in src/lib"]
     Services --> Prisma["Prisma ORM"]
     Prisma --> Postgres["PostgreSQL"]
-    Services --> Redis["Redis: rate limits, pacing windows, send reservations, Discover quota/locks"]
+    Services --> Redis["Redis: OTP challenges, rate limits, pacing windows, send reservations, Discover quota/locks"]
     Redis --> Workers["BullMQ workers and scheduler"]
     Services --> Storage["Object storage helper (src/lib/storage.ts)"]
     Storage --> Local["Local uploads directory (development)"]
     Storage --> R2["Cloudflare R2 S3-compatible API (production)"]
     Services --> Google["Google OAuth, Gmail send, reply sync, DSN bounce sync"]
+    API --> Resend["Resend: signup and password-change verification email"]
     Services --> Hunter["Hunter API"]
     Services --> OpenAI["OpenAI Responses API"]
     Services --> Apify["Apify LinkedIn profile-search actor (Discover)"]
@@ -118,12 +120,46 @@ Runtime shape:
 - **Domain logic:** `src/services`
 - **Shared helpers and pure logic:** `src/lib`
 - **Persistence:** Prisma + PostgreSQL
-- **Rate limiting, pacing, queueing:** Redis + BullMQ
+- **OTP state, rate limiting, pacing, queueing:** Redis + BullMQ
 - **Object storage:** local `uploads/` in development, Cloudflare R2 in production
-- **Email transport:** Gmail API via OAuth2 (Nodemailer `MailComposer` builds the MIME)
+- **Outreach email transport:** Gmail API via OAuth2 (Nodemailer `MailComposer` builds the MIME)
+- **Authentication email transport:** Resend for Sendloom-owned verification messages
 - **Charts:** Recharts (Analysis)
 
 The live send path is the cron/inline processor (`processPendingCampaignWork`). BullMQ workers exist and share the same safety gates, but the polling processor is what production runs.
+
+## Email OTP verification
+
+Email/password signup and account password set/change use the same Redis-backed OTP core. Starting either flow validates the request, hashes the proposed password, and stores an expiring challenge containing the pending hash plus an HMAC-SHA256 digest of a cryptographically generated six-digit code—never the plaintext code. Resend delivers the code. The `User` row and session state are not changed until verification succeeds; the start action itself is audit logged.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant UI as Signup or Account UI
+    participant Start as Start endpoint
+    participant OTP as OTP core and Redis
+    participant Mail as Resend
+    participant Verify as Verify endpoint
+    participant DB as PostgreSQL
+    participant Session as Session cookie
+
+    User->>UI: Submit credentials or a new password
+    UI->>Start: Start verification
+    Start->>OTP: Store purpose-bound pending hash and OTP digest
+    Start->>Mail: Send six-digit code
+    Start-->>UI: Challenge id, masked email, expiry, resend delay
+    Note over Start,DB: No account creation or password update yet
+    User->>UI: Enter code
+    UI->>Verify: Submit challenge id and code
+    Verify->>OTP: Atomically validate and consume once
+    OTP-->>Verify: Purpose-bound pending operation
+    Verify->>DB: Create user or update password hash
+    Verify->>Session: Issue or rotate the signed session
+    Verify-->>UI: Success
+```
+
+Challenges expire after 10 minutes, allow at most five incorrect attempts, are consumed atomically, and cannot cross from signup to password change. Password challenges are additionally bound to the authenticated user. A successful resend rotates the code, starts a fresh 10-minute validity window without resetting failed attempts, enforces a 60-second cooldown, and allows at most five emails for one challenge. See [Email OTP Verification](./DOCUMENTATION.md#email-otp-verification) for the endpoint-specific rate limits and failure behavior.
 
 ## Main authenticated pages
 
@@ -201,7 +237,7 @@ Hunter email finder, domain search, per-user encrypted key storage, and saved do
 
 ### Account — `/account`
 
-Profile card (email, account type, created/last-login/last-seen), password set or change, and the connected-sender list with a remove action. Removal is refused server-side when the sender is the only one or when active/scheduled sequences reference it.
+Profile card (email, account type, created/last-login/last-seen), email-verified password set or change, and the connected-sender list with a remove action. The password form verifies the current password when one exists, then requires the emailed OTP before committing the new hash and rotating the session. Sender removal is refused server-side when the sender is the only one or when active/scheduled sequences reference it.
 
 ### Admin — `/admin`, `/admin/users`, `/admin/restrictions`, `/admin/system-health`, `/admin/activity`, `/admin/incidents`
 
@@ -209,7 +245,7 @@ Aggregate metrics, per-user inspection and restrictions, live runtime health che
 
 ## Main public pages
 
-`/` (landing), `/login`, `/signup`, `/faq`, `/privacy`, `/terms`, `/abuse`, `/verify-eligibility`, plus the token routes `/track/open/[token]`, `/track/click/[token]`, and `/unsubscribe/[token]`.
+`/` (landing), `/login`, `/signup`, `/faq`, `/privacy`, `/terms`, `/abuse`, `/verify-eligibility`, plus the token routes `/track/open/[token]`, `/track/click/[token]`, and `/unsubscribe/[token]`. Email/password signup is a two-stage flow: credentials first, then the six-digit code sent to that email. Google signup/login is unchanged.
 
 Visitors with a valid session are redirected from the landing and auth pages straight to `/workspace`.
 
@@ -268,10 +304,11 @@ Reply sync runs against connected Gmail senders on cron ticks and surfaces on se
 | Web app | Next.js 15 + React 19 | App Router pages, server components, route handlers |
 | Language | TypeScript | Shared types across UI, services, and libs |
 | Database | PostgreSQL + Prisma | Sequences, imports, templates, senders, replies, ledger, prospects |
-| Redis | ioredis | Rate limits, pacing windows, send reservations, Discover quota and locks |
+| Redis | ioredis | OTP challenges, rate limits, pacing windows, send reservations, Discover quota and locks |
 | Queues | BullMQ | Background worker path (the cron processor is the live send path) |
-| Auth | JWT session cookie + bcrypt + Google OAuth | Password accounts, Google login, Gmail sender connection |
+| Auth | JWT session cookie + bcrypt + Google OAuth + HMAC email OTP | Password accounts, verified signup/password changes, Google login, Gmail sender connection |
 | Sending | Gmail API via OAuth2 + Nodemailer MIME building | Send from the user's own mailbox |
+| Transactional auth mail | Resend | Send Sendloom-owned signup and password-change verification codes |
 | Charts | Recharts | Analysis visualizations |
 | AI | OpenAI Responses API | Template enhancement and Discover email-format web search |
 | Enrichment | Hunter API, Apify actor | Finder lookups and Discover profile search |
@@ -286,7 +323,7 @@ Reply sync runs against connected Gmail senders on cron ticks and surfaces on se
 | Route | Purpose |
 | --- | --- |
 | `/` | Landing page (redirects signed-in visitors to `/workspace`) |
-| `/signup`, `/login` | Account creation and sign-in |
+| `/signup`, `/login` | Email-verified account creation and sign-in |
 | `/faq` | Frequently asked questions |
 | `/privacy`, `/terms`, `/abuse` | Legal and anti-abuse policy pages |
 | `/verify-eligibility` | 18+, Terms, Privacy, Anti-Abuse confirmation gate |
@@ -326,12 +363,17 @@ All operator endpoints require an authenticated, eligible, unrestricted session;
 
 ### Authentication and account
 
-- `POST /api/auth/signup`, `POST /api/auth/login`, `POST /api/auth/logout`
+- `POST /api/auth/signup` — validate credentials and send a signup OTP; does not create a user
+- `POST /api/auth/signup/verify` — consume the OTP, create the user, and issue the session
+- `POST /api/auth/signup/resend` — atomically rotate and resend the pending signup code
+- `POST /api/auth/login`, `POST /api/auth/logout`
 - `GET /api/auth/google/login`, `GET /api/auth/google/login/callback`
 - `GET /api/auth/google/connect`, `GET /api/auth/google/callback`
 - `GET /api/auth/eligibility-status`, `POST /api/auth/verify-eligibility`, `POST /api/auth/report-ineligible`
 - `GET /api/account` — profile + connected senders (never returns hashes or tokens)
-- `POST /api/account/password` — set or change the password; rotates the session
+- `POST /api/account/password` — validate/hash the proposed password and send an OTP; does not update the user
+- `POST /api/account/password/verify` — consume the user-bound OTP, update the password hash, and rotate the session
+- `POST /api/account/password/resend` — atomically rotate and resend the pending password code
 - `DELETE /api/account/senders/[id]` — remove or disconnect a connected sender
 - `GET /api/csrf`
 
@@ -405,6 +447,8 @@ All operator endpoints require an authenticated, eligible, unrestricted session;
 
 Full field-level notes and the migration history are in [DOCUMENTATION.md → Data Model Documentation](./DOCUMENTATION.md#9-data-model-documentation).
 
+OTP challenges are intentionally absent from the Prisma data model. Pending password hashes and OTP digests live only in expiring Redis records and are deleted when claimed, exhausted, expired, or when delivery fails.
+
 ## Repository guide
 
 ```text
@@ -459,6 +503,8 @@ Notable files:
 - `src/lib/sequence-dashboard.ts` / `src/lib/sequence-dashboard-url.ts` — pure filter/pagination logic and URL-state encoding
 - `src/lib/analysis.ts`, `src/lib/analysis-types.ts`, `src/lib/analysis-export.ts`, `src/services/analysis.ts` — Analysis range normalization, payload types, CSV builder, aggregation
 - `src/lib/account.ts` / `src/services/account.ts` — account view types and sender-removal rules
+- `src/lib/auth-otp.ts` / `src/lib/auth-email.ts` — OTP challenge lifecycle, atomic Redis scripts, HMAC verification, and Resend delivery
+- `src/components/otp-code-input.tsx` / `src/components/otp-verification-form.tsx` — shared accessible six-digit verification UI
 - `src/lib/daily-send-limit.ts` — rolling 24-hour window and confirmed-send reader
 - `src/services/attachment-assets.ts` — content-addressed attachment dedupe
 - `src/services/sequence-bounce-check.ts` / `sequence-bounce-monitor.ts` — manual and automatic delivery-health checks
@@ -475,24 +521,26 @@ Copy `.env.example` to `.env` and fill it in. Never commit real secrets.
 | --- | --- | --- |
 | `DATABASE_URL` | Yes | Prisma/PostgreSQL connection |
 | `DATABASE_URL_UNPOOLED` | Recommended | Direct connection used by Prisma `directUrl` for migrations |
-| `REDIS_URL` | Yes | Rate limits, pacing windows, reservations, BullMQ |
+| `REDIS_URL` | Yes | OTP challenges, rate limits, pacing windows, reservations, BullMQ |
 | `SESSION_SECRET` | Yes | JWT signing for session cookies **only** |
+| `AUTH_OTP_SECRET` | For email signup/password changes | HMAC key for purpose-bound OTP digests and opaque email rate-limit keys; minimum 32 bytes and distinct from other secrets |
 | `TRACKING_SECRET` | Production | JWT signing for open/click/unsubscribe tokens. Must differ from `SESSION_SECRET` — tracking tokens travel in every email |
 | `APP_BASE_URL` | Yes | Base URL for redirects and tracking links |
 | `CRON_SECRET` | Production | Protects `/api/cron/campaigns`; the route fails closed without it |
 
-### Mail and Gmail safety
+### Authentication mail and Gmail safety
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `MAIL_PROVIDER` | Yes | Backend selector; `gmail` is the active path |
+| `MAIL_PROVIDER` | Optional | Outreach backend selector; defaults to `gmail` and does not control OTP delivery |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | For Google auth | OAuth client credentials |
-| `DEFAULT_FROM_EMAIL` / `DEFAULT_FROM_NAME` | Optional | Default sender metadata |
+| `RESEND_API_KEY` | For email signup/password changes | Sends Sendloom-owned OTP emails; it is independent from the Gmail outreach transport |
+| `DEFAULT_FROM_EMAIL` | For email signup/password changes | Verified sender address used for OTP emails |
+| `DEFAULT_FROM_NAME` | Optional | OTP sender display name; defaults to `Sendloom` |
 | `GMAIL_DAILY_SEND_SAFETY_LIMIT` | Optional | Confirmed sends per sender per rolling 24h. Default `450` |
 | `GMAIL_SENDS_PER_MINUTE` | Optional | Sends per minute per connected sender. Default `3`. Raise only with verified mailbox headroom |
 | `GMAIL_SENDER_CONCURRENCY` | Optional | Simultaneous Gmail sends. Default `2` |
-| `RESEND_API_KEY` | Optional | Reserved for provider expansion |
-| `RESEND_WEBHOOK_SECRET` | Production, if Resend used | HMAC secret; the webhook fails closed without it |
+| `RESEND_WEBHOOK_SECRET` | Production, if the Resend webhook is enabled | HMAC secret for `/api/webhooks/resend`; outbound OTP delivery does not require the webhook |
 
 ### Gmail bounce monitoring (Pub/Sub push)
 
@@ -577,7 +625,7 @@ Both fall back to `SESSION_SECRET` in development. Never prefix either with `NEX
 
 `ADMIN_EMAIL` and `ADMIN_PASSWORD` bootstrap the first admin. Admin authority afterwards comes only from the `users.isAdmin` column.
 
-> **Security notes.** Generate each secret with `openssl rand -hex 32`. Keep `SESSION_SECRET`, `TRACKING_SECRET`, `HUNTER_KEY_ENCRYPTION_SECRET`, and the two `REPORT_*` secrets distinct. Set `CRON_SECRET` before deploying — the cron route refuses to run without it in production. Response security headers (HSTS, CSP, X-Frame-Options) are emitted by `next.config.mjs`; confirm the deployed host returns them.
+> **Security notes.** Generate each secret with `openssl rand -hex 32`. Keep `SESSION_SECRET`, `AUTH_OTP_SECRET`, `TRACKING_SECRET`, `HUNTER_KEY_ENCRYPTION_SECRET`, and the two `REPORT_*` secrets distinct. Never prefix an authentication secret with `NEXT_PUBLIC_`. Set `CRON_SECRET` before deploying — the cron route refuses to run without it in production. Response security headers (HSTS, CSP, X-Frame-Options) are emitted by `next.config.mjs`; confirm the deployed host returns them.
 
 ## Local development
 
@@ -587,6 +635,7 @@ Both fall back to `SESSION_SECRET` in development. Never prefix either with `NEX
 - npm 10+
 - PostgreSQL
 - Redis
+- A Resend API key and verified sender for email/password signup and password-change testing
 
 ### Setup
 

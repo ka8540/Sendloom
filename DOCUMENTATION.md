@@ -2,19 +2,19 @@
 
 ## Documentation Status
 
-Documentation verified against `bbbea8ee0980237e123adec02e2ea80ede32951d` on `feature/overview-redesign-analysis-foundation` on `2026-08-04`.
+Documentation verified against `8df4224bd68bce4ffbcf453d6d954baecd4b36f0` on `feature/email-otp-verification` on `2026-08-23`.
 
 | Field | Value |
 | --- | --- |
-| Verified on | 2026-08-04 |
-| Branch | `feature/overview-redesign-analysis-foundation` |
-| HEAD commit | `bbbea8e` — *Filter Sequences from the Overview metric cards* |
-| Documentation baseline | `de665f08` (last commit touching `README.md`, 2026-07-04) and `effaf5cf` (last commit touching `DOCUMENTATION.md`, 2026-07-05) |
-| Range audited | `de665f08..HEAD` — 228 commits, 274 changed files |
+| Verified on | 2026-08-23 |
+| Branch | `feature/email-otp-verification` |
+| Feature commit | `8df4224` — *Add secure email OTP verification* |
+| Feature base | `ca87c3c` — `origin/master` at branch creation |
+| Range audited | `ca87c3c..8df4224` — email OTP implementation across auth/account routes, shared libraries, UI, configuration, and tests |
 
 Behavior in this document was verified by reading the current source, Prisma schema, migrations, and Vitest suites on this branch. Commit messages were used only to locate changes, never as evidence. Nothing here describes planned work, design mockups, or code that exists only on another branch.
 
-Verification commands run for this revision: `npm test` (135 files, 2,105 tests, all passing), `npm run typecheck` (clean), `git diff --check` (clean), and a Mermaid parse of all 15 diagrams across both documents.
+Feature verification completed before this documentation revision: `npm test` (157 files, 2,422 tests, all passing), `npm run typecheck`, `npx prisma validate`, `npx prisma generate`, and a migration-free `npx next build` (all clean). Documentation checks: `git diff --check`, relative file/section-link validation, and Mermaid CLI 11.12 parsing of all 17 diagrams across both documents (4 in the README and 13 here), all clean.
 
 ## Table Of Contents
 
@@ -111,7 +111,8 @@ git show --stat afaf337
 | `V1.0` | 2026-04-20 10:46:56 -0400 | `6432744` | Reset template assist state when switching templates | Lightweight tag on a template-assist fix. The broader V1 product is reconstructed from earlier commits. |
 | `V1.1` | 2026-05-01 19:59:04 -0400 | `455cc35` | Fix manual help tooltip tail | Lightweight tag near the workflow manual/onboarding period. |
 | `V1.2` | 2026-05-21 11:16:24 -0700 | `e84bacb` | Fix Mermaid parse error in sequence diagram | Lightweight tag immediately after Cloudflare R2, security, admin, route, and README diagram work. |
-| Current `master` | 2026-06-15 15:42:29 -0700 | `afaf337` | Merge pull request #9 from `fix-past-scheduled-sequence-relaunch` | Current head at documentation time. Inferred V2/current state. |
+| Feature base (`origin/master`) | 2026-08-22 14:58:18 -0700 | `ca87c3c` | Merge pull request #63 from `fix/discover-people-search-ui` | Master state from which this feature branch was created. |
+| Current feature | 2026-08-23 | `8df4224` | Add secure email OTP verification | Adds the Redis/HMAC/Resend verification boundary documented here. |
 
 ### Timeline
 
@@ -140,7 +141,7 @@ git show --stat afaf337
 
 ### 2026-07 / 2026-08 Documentation Refresh
 
-The 227 commits between the previous documentation baseline and this revision group into the following areas. This lists shipped, user-visible or operator-visible behavior, not every commit.
+The 227 commits between the previous documentation baseline and the 2026-08-04 documentation revision group into the following areas. This lists shipped, user-visible or operator-visible behavior, not every commit.
 
 | Area | What changed |
 | --- | --- |
@@ -148,7 +149,7 @@ The 227 commits between the previous documentation baseline and this revision gr
 | Overview | `/workspace` was rebuilt around a compact page header, a four-cell operational summary strip, quick actions, a three-row recent-sequence preview with client-side search, a Gmail send-window card, and a derived recent-activity feed. The previous analytics-pulse and overview-summary modules were removed. Summary metrics now link into the Sequences dashboard with a preselected status filter. |
 | Analysis | New five-page reporting workspace (`/analysis`, `/analysis/engagement`, `/analysis/sequences`, `/analysis/reliability`, `/analysis/senders`) with a shared shell, 7/30-day presets, prior-period comparisons, per-metric information tooltips, Recharts visualizations, a `GET /api/analysis/[page]` aggregation endpoint, a client-side CSV export, and a six-step guided tour. |
 | Sequences | `/campaigns` was rebuilt as a dashboard-only surface: four summary cards, a health panel, a control bar with search plus Status and Email-account dropdowns, 5-row pagination, and full URL state. `/campaigns/new` became a dedicated creation route. Sequence detail gained a **Check bounces** action and reworked delivery metrics. |
-| Account | New `/account` workspace with profile details, password set/change (session-rotating), and connected-sender management, backed by `GET /api/account`, `POST /api/account/password`, and `DELETE /api/account/senders/[id]`. |
+| Account | `/account` provides profile details, email-verified password set/change (session-rotating only after OTP verification), and connected-sender management, backed by `GET /api/account`, the password start/verify/resend routes, and `DELETE /api/account/senders/[id]`. |
 | Imports | The imports route now hosts both a searchable library and an explicit, URL-identifiable Upload → Map fields → Review workflow, with a unified per-import editor and a custom import picker for template fields. |
 | Discover | Per-search person allocations became the ownership boundary against the shared cache; company-level grouping, canonical role-group keys with duplicate collapse, role-label normalization, inline same-company search with role/location filters, autocomplete with conservative typo correction, derived email-confidence display, and a typed email-format discovery status. |
 | Help system | The premium help button, guide menu, and coachmark engine were extended to Analysis; a manual **Report issue** dialog was added to the guide menu on every dashboard route. |
@@ -157,13 +158,17 @@ The 227 commits between the previous documentation baseline and this revision gr
 | Infrastructure | The boot splash was replaced with a readiness-driven overlay; `.env.example` was added to the repository; the scheduler and cron route gained isolated error handling for monitoring work. |
 | Security and legal | Signed-in visitors are redirected away from the public landing and auth pages; the incident-report path gained a user-initiated entry point; legal, privacy, and FAQ copy was updated. |
 
+### 2026-08-23 Email OTP Verification
+
+Feature commit `8df4224` adds purpose-bound, one-time email OTP challenges for email/password signup and account password set/change. Resend delivers the codes; user/password writes and session issuance/rotation happen only after successful verification (start and failed attempts are still audit logged). Google login, normal login, Gmail OAuth, and the Prisma schema are unchanged.
+
 ### Inferred Version Summary
 
 | Inferred Version | Meaning | Representative State |
 | --- | --- | --- |
 | V1 | Initial usable Sendloom product | Import files, map fields, create templates, connect Gmail, build sequences, track opens/clicks/replies, and monitor dashboards. |
 | V1.x | Workflow expansion | Finder/Hunter, saved templates, template formats, AI/spam assistance, admin controls, manual onboarding, schedule editing, R2, CSRF/rate limiting, and improved dashboards. |
-| V2/current | Production hardening | Gmail daily cap, per-sender pacing, large-sequence resilience, retry failed recipients, audit log, eligibility/anti-abuse controls, redesigned auth/landing/legal surfaces, admin health/activity, and past schedule relaunch fixes. |
+| V2/current | Production hardening | Gmail daily cap, per-sender pacing, large-sequence resilience, retry failed recipients, audit log, eligibility/anti-abuse controls, secure email OTP for signup/password writes, redesigned auth/landing/legal surfaces, and admin health/activity. |
 
 ## 4. Current Product Surface
 
@@ -267,12 +272,12 @@ Important routes:
 
 ### Account
 
-The account workspace lives at `/account`: profile summary, password set/change, and connected Gmail sender management. Full detail is in [§28](#28-account-workspace-and-sender-management).
+The account workspace lives at `/account`: profile summary, email-verified password set/change, and connected Gmail sender management. A password write is deferred until the authenticated user enters the six-digit code sent to the account email. Full detail is in [§28](#28-account-workspace-and-sender-management).
 
 Important routes:
 
 - UI: `/account`
-- API: `GET /api/account`, `POST /api/account/password`, `DELETE /api/account/senders/[id]`, `GET /api/auth/google/connect`
+- API: `GET /api/account`, `POST /api/account/password`, `POST /api/account/password/verify`, `POST /api/account/password/resend`, `DELETE /api/account/senders/[id]`, `GET /api/auth/google/connect`
 - Data: `User`, `SenderProfile`, `Campaign`, `AuditLog`
 
 ### Finder
@@ -407,7 +412,10 @@ Admin capabilities include user listing, account restrictions, per-capability di
 
 ```mermaid
 flowchart TD
-    A["Sign up or sign in"] --> B{"Admin?"}
+    A["Sign up or sign in"] --> V{"Email/password signup?"}
+    V -->|Yes| W["Verify the six-digit email code"]
+    V -->|Google or existing account| B{"Admin?"}
+    W --> B
     B -->|Yes| C["Admin dashboard"]
     B -->|No| D{"Eligibility complete?"}
     D -->|No| E["Confirm 18+, Terms, Privacy, Anti-Abuse"]
@@ -432,7 +440,7 @@ flowchart TD
 
 Normal user flow:
 
-1. The user signs up with email/password or Google, or logs in.
+1. The user signs up with email/password or Google, or logs in. Email/password signup creates a pending Redis challenge and creates the `User` only after the emailed six-digit code is verified; the Google path is unchanged.
 2. Non-admin users are redirected to `/verify-eligibility` until they confirm adult eligibility and accept policies.
 3. The user uploads a CSV/XLS/XLSX import at `/imports`.
 4. Sendloom parses columns, sample rows, normalized rows, and creates an initial mapping.
@@ -510,7 +518,7 @@ flowchart TD
     Services --> Prisma["Prisma ORM"]
     Prisma --> Postgres["PostgreSQL"]
     Services --> Redis["Redis"]
-    Redis --> Locks["Locks, rate windows, reservations"]
+    Redis --> Locks["OTP challenges, locks, rate windows, reservations"]
     Redis --> BullMQ["BullMQ queues"]
     BullMQ --> Workers["src/workers/worker.ts"]
     Cron["/api/cron/campaigns or external cron"] --> Services
@@ -518,6 +526,7 @@ flowchart TD
     Storage --> Local["Local uploads"]
     Storage --> R2["Cloudflare R2"]
     Services --> Gmail["Google OAuth and Gmail API"]
+    API --> Resend["Resend auth verification email"]
     Services --> Hunter["Hunter API"]
     Services --> OpenAI["OpenAI Responses API"]
     Gmail --> Replies["Reply sync"]
@@ -531,9 +540,10 @@ Runtime shape:
 | Web app | Next.js 15 App Router, React 19 | Server and client components under `src/app` and `src/components`. |
 | Language | TypeScript | Shared route, service, lib, and UI types. |
 | Database | PostgreSQL with Prisma | `prisma/schema.prisma` and migrations under `prisma/migrations`. |
-| Redis | ioredis | Locks, rate limits, daily reservations, and BullMQ connection. |
+| Redis | ioredis | Expiring OTP challenges, locks, rate limits, daily reservations, and BullMQ connection. |
 | Queues | BullMQ | `validation`, `launch`, `send`, and `webhook` queues exist; serverless path also processes inline/cron. |
 | Email sending | Gmail API via OAuth2 and Nodemailer `MailComposer` | Current production sending path is Gmail-centered. |
+| Authentication email | Resend | Sendloom-owned signup and password-change OTP messages; separate from connected Gmail senders. |
 | Reply sync | Gmail readonly API | Lists inbox messages and matches replies by references/thread fallback. |
 | Finder | Hunter API | User-provided API keys encrypted at rest. |
 | AI assistance | OpenAI Responses API | Optional subject/body enhancement and spam copy cleanup. |
@@ -547,7 +557,7 @@ Runtime shape:
 | Route | Purpose | Auth | Notes |
 | --- | --- | --- | --- |
 | `/` | Marketing landing page | Public; redirects signed-in visitors to `/workspace` | Product narrative, workflow, capabilities, trust points, CTA. |
-| `/signup` | Account creation | Public; redirects if already signed in | Email/password signup plus Google path via auth page. |
+| `/signup` | Account creation | Public; redirects if already signed in | Email/password signup is credentials → six-digit email OTP → account/session. Google path is unchanged. |
 | `/login` | Account sign-in | Public; redirects if already signed in | Email/password and Google sign-in. |
 | `/faq` | Frequently asked questions | Public | Uses marketing/legal nav and footer. |
 | `/privacy` | Privacy Policy | Public | Includes Google data, 18+ policy, minimization, legal review notice. |
@@ -599,7 +609,9 @@ The app shell also blocks compact touch devices for the dashboard with a desktop
 
 | Route | Purpose | Auth Requirement | Notes |
 | --- | --- | --- | --- |
-| `POST /api/auth/signup` | Email/password account creation | Public + CSRF + rate limit | 5/hour per IP. |
+| `POST /api/auth/signup` | Start email/password signup | Public + CSRF + rate limits | Validates credentials, rejects existing accounts, hashes the password, stores a 10-minute Redis challenge, and sends the OTP. Does not create a user or session. Limits: 5/hour per IP and 5/15min per HMAC-obscured email. |
+| `POST /api/auth/signup/verify` | Finish email/password signup | Public + CSRF + rate limits | Atomically claims a purpose-bound challenge, rechecks uniqueness, creates the user, and issues the session. Limits: 30/15min per IP and 10/15min per challenge, plus the hard five-failure challenge cap. |
+| `POST /api/auth/signup/resend` | Replace a signup OTP | Public + CSRF + rate limits | Rotates the code atomically and starts a fresh 10-minute validity window without resetting failed attempts. Limits: 10/15min per IP, 5/15min per challenge, 5/15min per HMAC-obscured email, a 60-second cooldown, and five total emails per challenge. |
 | `POST /api/auth/login` | Email/password login | Public + CSRF + rate limit | 10/min IP and 5/min email. |
 | `POST /api/auth/logout` | Logout and session revocation | Session best effort + CSRF | 30/min IP. |
 | `GET /api/auth/google/login` | Start Google sign-in | Public | Uses state cookie. |
@@ -610,7 +622,9 @@ The app shell also blocks compact touch devices for the dashboard with a desktop
 | `POST /api/auth/verify-eligibility` | Accept 18+/policies | Signed-in user + CSRF | Writes compliance timestamps. |
 | `POST /api/auth/report-ineligible` | Self-report under 18 | Signed-in user + CSRF | Blocks user and clears session. |
 | `GET /api/account` | Account profile + connected senders | Verified user | Returns `hasPassword` only — never a hash; never an OAuth token. |
-| `POST /api/account/password` | Set or change the password | Verified user + CSRF | 10/15min per IP, 5/15min per user. Changing an existing password requires the current one. Rotates the session on success. Errors are generic. |
+| `POST /api/account/password` | Start password set/change | Verified user + CSRF | Validates the current password when one exists, hashes the proposed password, stores a user-bound 10-minute challenge, and sends the OTP. Does not update the user. Limits: 10/15min per IP, 5/15min per user, and 5/15min per HMAC-obscured email. Errors are generic. |
+| `POST /api/account/password/verify` | Finish password set/change | Verified user + CSRF | Atomically claims a purpose- and user-bound challenge, writes the pending hash, and rotates the session. Limits: 30/15min per IP, 15/15min per user, and 10/15min per challenge, plus the hard five-failure challenge cap. |
+| `POST /api/account/password/resend` | Replace a password OTP | Verified user + CSRF | Rotates the code atomically and starts a fresh 10-minute validity window without resetting failed attempts. Limits: 10/15min per IP, 5/15min per user, 5/15min per challenge, a 60-second cooldown, and five total emails per challenge. |
 | `DELETE /api/account/senders/[id]` | Remove a connected sender | Verified owner + CSRF | 404 not found; 409 when it is the only sender or active/scheduled sequences reference it. Deletes when unreferenced, otherwise detaches and revokes send access. Audit logged. |
 | `POST /api/imports` | Upload import | Verified user + `importsWrite` | 25 MB, CSV/XLS/XLSX, 10/min user. |
 | `PATCH /api/imports/[id]` | Rename import | Verified owner + `importsWrite` | Audit logged. |
@@ -1027,6 +1041,86 @@ Data minimization and retention signals in code/content:
 - DB session timestamps (`sessionIssuedAt`, `sessionExpiresAt`) allow revocation/freshness checks.
 - Logout clears the cookie and advances `sessionIssuedAt` to invalidate older JWTs.
 
+### Email OTP Verification
+
+Email/password signup and account password set/change are deferred, two-stage operations. The start endpoint validates the request and bcrypt-hashes the proposed password, but it does not write that hash to PostgreSQL. It creates an expiring Redis challenge and sends a six-digit code through the Sendloom-owned Resend account. Only the matching verify endpoint can atomically claim the challenge and commit the pending operation.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant UI as Browser UI
+    participant Start as Start route
+    participant DB as Prisma and PostgreSQL
+    participant OTP as auth-otp and Redis
+    participant Mail as Resend
+    participant Verify as Verify route
+    participant Session as JWT session
+
+    Note over User,Session: Email and password signup
+    User->>UI: Submit email, password, confirmation
+    UI->>Start: POST /api/auth/signup
+    Start->>DB: Reject an existing password or Google account
+    Start->>Start: bcrypt-hash proposed password
+    Start->>OTP: SET SIGNUP challenge with 10-minute TTL
+    Start->>Mail: Send six-digit verification code
+    Start-->>UI: Challenge id, masked email, expiry, resend delay
+    Note over Start,DB: No User row and no session exist yet
+    User->>UI: Enter verification code
+    UI->>Verify: POST /api/auth/signup/verify
+    Verify->>OTP: Atomically validate and delete challenge
+    OTP-->>Verify: Normalized email and pending password hash
+    Verify->>DB: Recheck uniqueness and create User
+    Verify->>Session: Issue signed session cookie
+    Verify-->>UI: Signup complete
+
+    Note over User,Session: Authenticated password set or change
+    User->>UI: Submit current password if required and new password
+    UI->>Start: POST /api/account/password
+    Start->>Session: Require eligible authenticated user
+    Start->>Start: Verify current hash and bcrypt-hash proposed password
+    Start->>OTP: SET PASSWORD_CHANGE challenge bound to user id
+    Start->>Mail: Send six-digit verification code
+    Start-->>UI: Challenge id, masked email, expiry, resend delay
+    Note over Start,DB: Stored password and current session are unchanged
+    User->>UI: Enter verification code
+    UI->>Verify: POST /api/account/password/verify
+    Verify->>Session: Require the same authenticated user
+    Verify->>OTP: Atomically validate purpose and user, then delete
+    OTP-->>Verify: Pending new password hash
+    Verify->>DB: Update User.passwordHash
+    Verify->>Session: Advance sessionIssuedAt and issue fresh cookie
+    Verify-->>UI: Password update complete
+```
+
+Challenge construction and storage:
+
+- `randomInt(0, 1_000_000)` produces the zero-padded six-digit code; `randomBytes(32)` produces the base64url challenge id.
+- Redis stores the normalized email, pending bcrypt hash, purpose, timestamps, counters, and an HMAC-SHA256 digest—not the plaintext OTP. The digest binds `challengeId`, purpose, and code using the server-only `AUTH_OTP_SECRET`.
+- Signup challenges carry `purpose = SIGNUP`. Password challenges carry `purpose = PASSWORD_CHANGE` and the authenticated `userId`, preventing cross-purpose and cross-account use.
+- The client receives only the opaque challenge id, masked email, seconds until expiry, and seconds until resend.
+- The code is compared with `timingSafeEqual`; Redis Lua scripts make failure counting, successful claim/deletion, and resend rotation atomic under concurrent requests.
+
+Lifecycle and failure behavior:
+
+- A challenge has a 10-minute TTL and is one-time use. A successful claim deletes it before the database mutation; replay returns an expired/not-found response.
+- Five incorrect submissions exhaust and delete the challenge. Endpoint rate limits are additional defenses and do not replace that hard per-challenge cap.
+- Resend requires a 60-second cooldown, rotates the digest, starts a fresh 10-minute validity window, retains the existing failure count, and caps the challenge at five total emails including the first.
+- If initial or replacement email delivery fails, the route deletes the challenge. The API never returns or logs the OTP, pending hash, full destination email, provider request body, or provider response message.
+- The signup verifier rechecks email uniqueness after claiming the challenge. A race can therefore return `409` without creating a duplicate user.
+- A consumed challenge cannot be restored if the subsequent database write fails; the user must restart the relevant flow.
+- Email OTP is not required for normal password login, Google login, Gmail sender OAuth, or eligibility confirmation. Those existing paths are unchanged.
+- Audit actions distinguish code delivery, failed verification, and completed mutations: `auth.signup_verification_sent`, `auth.signup_verification_failed`, `auth.signup_verified`, `auth.password_verification_sent`, `auth.password_verification_failed`, `auth.password_changed`, and `auth.password_set`. OTP values and pending hashes are never audit metadata.
+
+Implementation map:
+
+- Challenge core: `src/lib/auth-otp.ts`
+- Transactional email: `src/lib/auth-email.ts`
+- Shared UI: `src/components/otp-code-input.tsx`, `src/components/otp-verification-form.tsx`
+- Signup routes: `src/app/api/auth/signup/{route.ts,verify/route.ts,resend/route.ts}`
+- Password routes: `src/app/api/account/password/{route.ts,verify/route.ts,resend/route.ts}`
+- Coverage: `src/lib/auth-otp.test.ts`, `src/lib/auth-email.test.ts`, both route suites, and signup/account UI source assertions. The feature added 56 focused passing tests and the full branch suite passed 2,422 tests.
+
 ### Admin Authority
 
 - Admin status comes from `User.isAdmin`.
@@ -1058,10 +1152,15 @@ Redis-backed rate limits protect:
 
 | Area | Key Scope | Limit |
 | --- | --- | --- |
-| Signup | IP | 5/hour |
+| Signup start | IP / HMAC-obscured email | 5/hour / 5 per 15 min |
+| Signup verify | IP / challenge | 30 / 10 per 15 min, plus 5 incorrect attempts per challenge |
+| Signup resend | IP / challenge / HMAC-obscured email | 10 / 5 / 5 per 15 min, plus 60-second cooldown and 5 emails per challenge |
 | Login | IP | 10/min |
 | Login | email | 5/min |
 | Logout | IP | 30/min |
+| Password start | IP / user / HMAC-obscured email | 10 / 5 / 5 per 15 min |
+| Password verify | IP / user / challenge | 30 / 15 / 10 per 15 min, plus 5 incorrect attempts per challenge |
+| Password resend | IP / user / challenge | 10 / 5 / 5 per 15 min, plus 60-second cooldown and 5 emails per challenge |
 | Imports create | user | 10/min |
 | Templates write | user | 30/min |
 | Template AI enhance | user | 20/min |
@@ -1085,12 +1184,13 @@ In production, Redis rate-limit failures throw instead of silently allowing. In 
 ### Secrets And Token Separation
 
 - Session tokens use `SESSION_SECRET`.
+- OTP digests and email rate-limit subject keys use `AUTH_OTP_SECRET`, which must be at least 32 bytes.
 - Tracking tokens use `TRACKING_SECRET` in production.
 - Hunter keys use `HUNTER_KEY_ENCRYPTION_SECRET` in production.
 - Cron uses `CRON_SECRET`.
 - Resend webhooks use `RESEND_WEBHOOK_SECRET`.
 
-The code intentionally avoids reusing session secrets for tracking/Hunter keys in production.
+The code intentionally avoids reusing session secrets for OTP, tracking, and Hunter keys in production.
 
 ### Upload And Storage Protections
 
@@ -1154,6 +1254,10 @@ Auth pages use `AuthPage` with:
 - Password visibility controls in form code.
 - Legal links.
 
+Email/password signup is now stateful within the signup form. After the start route succeeds, the credentials form is replaced by the shared `OtpVerificationForm`; no account or session exists yet. The verification state shows the masked destination, one accessible numeric input rendered as six visual slots, one-time-code autocomplete, digit-only paste/input handling, resend availability, inline errors, and a route-specific restart action. Google sign-in remains a direct, separate path and does not enter this OTP state.
+
+The Account password card uses the same verification form after current/new password validation. It clears the plaintext password inputs before showing OTP verification. The user can cancel back to the password form; a successful verification refreshes the account overview because only then has the stored password changed.
+
 ### Dashboard Sidebar
 
 Full behavior is documented in [§31](#31-navigation-and-shared-page-shell). In summary, the sidebar persists its collapsed state in both a cookie and `localStorage`, swaps the entire nav for admin accounts, and blocks compact touch layouts via `AppMobileGate`.
@@ -1209,14 +1313,15 @@ Theme support appears across landing, legal pages, dashboard, auth, footer, and 
 | `DATABASE_URL_UNPOOLED` | Recommended/Prisma direct URL | Direct database connection used by Prisma schema `directUrl`. | None | Set for managed Postgres migrations when pooling is used. |
 | `REDIS_URL` | Yes | Redis for rate limits, locks, reservations, BullMQ. | None | Production rate limits and pacing depend on Redis. |
 | `SESSION_SECRET` | Yes | JWT session signing. | None | Must be high entropy and separate from tracking/Hunter secrets. |
+| `AUTH_OTP_SECRET` | Required for email signup/password changes | HMAC-SHA256 key for OTP digests and opaque email rate-limit subjects. | None | Server-only, at least 32 bytes, and distinct from session/tracking/Hunter/report secrets. Without it the OTP start routes return a generic 503. |
 | `TRACKING_SECRET` | Required in production | JWT tracking token signing. | Falls back to `SESSION_SECRET` only in dev | Set before sending production tracking links. |
-| `MAIL_PROVIDER` | Optional | Provider selector. Current active send path is Gmail. | `gmail` | `resend` is not a complete current sending path in `sendEmail()`. |
+| `MAIL_PROVIDER` | Optional | Outreach provider selector. Current campaign/test-send path is Gmail. | `gmail` | `resend` is not a complete path in `sendEmail()`; auth OTP mail uses Resend independently of this selector. |
 | `GOOGLE_CLIENT_ID` | Required for Google login/Gmail | OAuth client id. | None | Configure both login and Gmail connect callbacks. |
 | `GOOGLE_CLIENT_SECRET` | Required for Google login/Gmail | OAuth client secret. | None | Enable Gmail API in the Google Cloud project. |
 | `OPENAI_API_KEY` | Optional | Template AI enhancement and spam fix. | None | AI endpoint fails with a user error if missing. |
 | `HUNTER_KEY_ENCRYPTION_SECRET` | Required in production | Encrypts stored Hunter API keys. | Dev fallback to `SESSION_SECRET` derived key | Set before saving production Hunter keys; rotation requires planning. |
 | `CRON_SECRET` | Required in production | Protects `/api/cron/campaigns`. | Dev can run without it | Production cron route fails closed if missing. |
-| `RESEND_API_KEY` | Optional | Reserved/provider expansion. | None | Current Gmail send path does not require it. |
+| `RESEND_API_KEY` | Required for email signup/password changes | Sends Sendloom-owned signup and password-change OTP messages. | None | Independent from connected Gmail senders. Without it the OTP start routes return a generic 503. |
 | `RESEND_WEBHOOK_SECRET` | Required for Resend webhooks in production | HMAC verification for `/api/webhooks/resend`. | None | Webhook fails closed in production when missing. |
 | `APP_BASE_URL` | Yes | Redirects, OAuth callback base, tracking links. | None | Must be exact deployed origin. |
 | `OBJECT_STORAGE_MODE` | Optional | `local` or `r2`. | `local` | Use `r2` for production/serverless. |
@@ -1227,8 +1332,8 @@ Theme support appears across landing, legal pages, dashboard, auth, footer, and 
 | `CLOUDFLARE_R2_ACCESS_KEY_ID` | Required when R2 | R2 access key id. | None | Server-side only. |
 | `CLOUDFLARE_R2_SECRET_ACCESS_KEY` | Required when R2 | R2 secret key. | None | Server-side only. |
 | `CLOUDFLARE_R2_PUBLIC_BASE_URL` | Optional | Public URL helper for object keys. | None | Not required for authenticated downloads. |
-| `DEFAULT_FROM_EMAIL` | Optional | Default sender metadata. | None | Current Gmail sender profiles usually provide sender address. |
-| `DEFAULT_FROM_NAME` | Optional | Default sender display name. | None | Used by test-send fallback. |
+| `DEFAULT_FROM_EMAIL` | Required for email signup/password changes | Verified Resend sender address for OTP messages. | None | Must be authorized in Resend. Without it the OTP start routes return a generic 503. |
+| `DEFAULT_FROM_NAME` | Optional | OTP sender display name and existing sender-metadata fallback. | `Sendloom` for OTP mail | Keep it recognizable to reduce verification-email confusion. |
 | `ADMIN_EMAIL` | Optional | Bootstrap admin email. | None | Does not grant admin at request time. |
 | `ADMIN_PASSWORD` | Optional | Bootstrap admin password. | None | Required with admin email for seed/upsert path. |
 | `GMAIL_DAILY_SEND_SAFETY_LIMIT` | Optional | Rolling 24-hour successful sends per sender. | `450` | Raising it can exceed Gmail limits. |
@@ -1254,6 +1359,7 @@ Prerequisites:
 - PostgreSQL.
 - Redis.
 - Google OAuth credentials for Google login/Gmail sending.
+- `AUTH_OTP_SECRET`, a Resend API key, and a verified `DEFAULT_FROM_EMAIL` to exercise email/password signup and account password changes.
 - Optional Hunter and OpenAI credentials.
 
 Install and run:
@@ -1300,16 +1406,17 @@ Deployment order:
 
 1. Provision PostgreSQL.
 2. Provision Redis.
-3. Configure environment variables.
-4. Configure Cloudflare R2 if using production object storage.
-5. Configure Google OAuth callbacks:
+3. Configure environment variables, including a distinct `AUTH_OTP_SECRET` of at least 32 bytes.
+4. Configure Resend and verify the domain/address used by `DEFAULT_FROM_EMAIL`; confirm both signup and password-change messages arrive.
+5. Configure Cloudflare R2 if using production object storage.
+6. Configure Google OAuth callbacks:
    - `<APP_BASE_URL>/api/auth/google/login/callback`
    - `<APP_BASE_URL>/api/auth/google/callback`
-6. Enable Gmail API for the Google Cloud project.
-7. Deploy migrations.
-8. Deploy app.
-9. Configure cron/external scheduler to call `/api/cron/campaigns` with `CRON_SECRET`.
-10. Create/bootstrap admin with `ADMIN_EMAIL` and `ADMIN_PASSWORD`, then verify `User.isAdmin`.
+7. Enable Gmail API for the Google Cloud project.
+8. Deploy migrations.
+9. Deploy app.
+10. Configure cron/external scheduler to call `/api/cron/campaigns` with `CRON_SECRET`.
+11. Create/bootstrap admin with `ADMIN_EMAIL` and `ADMIN_PASSWORD`, then verify `User.isAdmin`.
 
 Cron:
 
@@ -1327,6 +1434,7 @@ R2:
 Secrets rotation:
 
 - Rotate `SESSION_SECRET` carefully because it invalidates sessions.
+- Rotate `AUTH_OTP_SECRET` to invalidate every pending OTP challenge; no database re-encryption is required because challenges expire in Redis.
 - Rotate `TRACKING_SECRET` carefully because old email tracking/unsubscribe links become invalid.
 - Rotate `HUNTER_KEY_ENCRYPTION_SECRET` only with a plan to re-encrypt or invalidate stored Hunter keys.
 - Rotate Google OAuth client secret in both app environment and Google Cloud console.
@@ -1340,7 +1448,9 @@ Secrets rotation:
 | Per-minute pacing waits | Recipient activity says queued/waiting for send window. | `GMAIL_SENDS_PER_MINUTE` window is full for that sender. | `RecipientJob.nextRetryAt`, metadata `blockedBy`, Redis key `gmail-send-rate:sender:<id>`. | Wait. Pacing is not failure. Increase env only after testing mailbox tolerance. |
 | Gmail rate limit despite pacing | Run pauses or recipients retry with Gmail rate-limit metadata. | Gmail returned throttle/quota/temporary error anyway. | `RecipientJob.metadata.lastInternalError`, logs `[campaign-send] Gmail send failed`. | Let backoff/auto-resume run. Consider lower `GMAIL_SENDS_PER_MINUTE`. |
 | Sender disconnected | Launch fails or queued jobs fail with reconnect message. | Google refresh token revoked/expired or missing scopes. | `SenderProfile.oauthRefreshToken`, `lastError`, user-facing Gmail reconnect errors. | User reconnects Gmail through `/api/auth/google/connect`. |
-| Redis down | Rate limits fail in production; scheduler locks/reservations fail. | Redis outage or bad `REDIS_URL`. | `/admin/system-health`, app logs, Redis provider status. | Restore Redis before sending; production should fail closed for pacing/rate-limit critical paths. |
+| Redis down | OTP start/verify/resend fails; rate limits fail in production; scheduler locks/reservations fail. | Redis outage or bad `REDIS_URL`. | `/admin/system-health`, generic auth error plus server log prefix `[auth-otp]`, Redis provider status. | Restore Redis. Pending verification cannot safely fall back to process memory or PostgreSQL. |
+| Verification code never arrives | Signup/password form stays at OTP entry, while resend may also fail. | Missing/invalid `RESEND_API_KEY`, unverified `DEFAULT_FROM_EMAIL`, provider rejection, or recipient filtering. | Resend delivery dashboard and safe `[auth-email]` server logs; never log the code or full provider response. | Correct Resend credentials/sender verification, then restart the flow. A delivery failure deletes the challenge. |
+| Verification code rejected or expired | Verify returns incorrect, exhausted, or expired copy. | Wrong code, old code after resend, 10-minute TTL elapsed, five failed attempts, wrong purpose/user, or already-consumed challenge. | Route status (`400`, `410`, or `429`), Redis challenge existence/TTL, audit action without OTP contents. | Use the newest code; resend after cooldown when allowed, otherwise restart. Never recover or reveal the stored digest. |
 | R2 upload failure | Import or attachment upload fails. | Missing R2 env, bad bucket/token, storage outage. | `/admin/system-health`, storage env vars, R2 dashboard, route response. | Fix R2 credentials/buckets; retry upload. Local mode can be used only where filesystem persistence is acceptable. |
 | Cron not running | Scheduled sequences do not start; replies not syncing. | External cron/Vercel cron not configured or wrong secret. | `/admin/system-health` cron check, host cron logs, `/api/cron/campaigns` status. | Configure cron with correct `CRON_SECRET`; test GET/POST manually. |
 | OpenAI unavailable | AI enhance/fix-spam returns error. | Missing/invalid `OPENAI_API_KEY` or API outage. | `/api/templates/enhance` response, logs. | Save template manually; retry later; verify key. |
@@ -1374,7 +1484,9 @@ Secrets rotation:
 - Old historical audit logs may not include newer actor/category/severity/IP/user-agent fields.
 - Local filesystem uploads are not suitable for durable production storage on ephemeral hosts.
 - The app workspace is intentionally blocked on compact touch/mobile layouts.
-- `MAIL_PROVIDER` includes `resend`, and a Resend webhook exists, but current `sendEmail()` throws for `MAIL_PROVIDER=resend`; Gmail is the active send path.
+- `MAIL_PROVIDER` includes `resend`, and a Resend webhook exists, but current campaign/test `sendEmail()` throws for `MAIL_PROVIDER=resend`; Gmail is the active outreach path. The separate auth-email helper does use Resend for OTP delivery.
+- Email OTP protects email/password signup and account password set/change only. It is not login MFA, TOTP, recovery-code support, or a forgot-password flow.
+- Pending OTP operations depend on Redis and Resend availability. Challenges are intentionally ephemeral and a successfully claimed challenge cannot be replayed if the following database mutation fails.
 - `RateLimitWindow` remains in the schema, while active rate limiting uses Redis.
 - Admin activity logs sanitize metadata, but audit completeness begins only when events were actually recorded by the code at that time.
 - Analysis supports only 7-day and 30-day presets. There is no custom range and no 90-day option; anything else normalizes to the last 7 days.
@@ -2850,19 +2962,36 @@ There are no editable profile fields today. The password hash never leaves the s
 
 ### 28.2 Password
 
-`POST /api/account/password` handles both cases.
+The password card handles both cases and always requires email OTP confirmation before writing the new hash.
 
 - **Change** (the account already has a password): the current password is required and verified with bcrypt.
 - **Set** (a Google-only account): no current password is required.
 
 Validation is shared with the client through `validatePasswordChange` in `src/lib/account.ts`: minimum 8 characters (mirroring signup), and the new password must match its confirmation. Error copy is a fixed set of user-safe strings.
 
-Security behavior:
+Start behavior (`POST /api/account/password`):
 
-- Rate limited at 10 requests / 15 minutes per IP and 5 / 15 minutes per user.
+- Requires the normal eligible authenticated API user and CSRF protection.
+- Rate limited at 10 requests / 15 minutes per IP, 5 / 15 minutes per user, and 5 / 15 minutes per HMAC-obscured account email.
 - A wrong current password returns the same generic message as any other failure, so the response never confirms which field was wrong. That attempt is audit logged as `auth.password_change_failed` with `WARNING` severity.
-- On success the session is rotated: `sessionIssuedAt` advances (revoking older JWTs everywhere) and a fresh cookie is issued so the current browser stays signed in.
-- Success is audit logged as `auth.password_changed` or `auth.password_set`.
+- The proposed password is bcrypt-hashed before the Redis challenge is written. The UI clears the plaintext fields once the start request succeeds.
+- The current `User.passwordHash`, session timestamps, and cookie are unchanged. The route returns the opaque challenge metadata and audit logs `auth.password_verification_sent`.
+
+Verify behavior (`POST /api/account/password/verify`):
+
+- Requires the same authenticated user encoded in the `PASSWORD_CHANGE` challenge.
+- Rate limited at 30 requests / 15 minutes per IP, 15 / 15 minutes per user, and 10 / 15 minutes per challenge, with a separate hard cap of five incorrect codes.
+- A successful Lua claim deletes the challenge exactly once, then the pending bcrypt hash is written to `User.passwordHash`.
+- `setSession()` advances `sessionIssuedAt` (revoking older JWTs everywhere) and issues a fresh cookie so the current browser stays signed in.
+- Success is audit logged as `auth.password_changed` or `auth.password_set`; failed verification is `auth.password_verification_failed`.
+
+Resend behavior (`POST /api/account/password/resend`):
+
+- Requires the same authenticated user and challenge purpose.
+- The atomic rotation enforces the 60-second cooldown and five-email cap, retains failed attempts, invalidates the previous code, and starts a fresh 10-minute TTL.
+- Delivery failure deletes the challenge, forcing a clean restart instead of leaving a valid but undelivered code.
+
+All three endpoints return user-safe error copy and never expose the OTP, password hashes, full email address, or stored challenge. The complete sequence and shared challenge invariants are documented in [§15](#email-otp-verification).
 
 ### 28.3 Connected senders
 
