@@ -149,7 +149,8 @@ const termsSections = [
     title: "Policy changes and notices",
     paragraphs: [
       "Sendloom may update these Terms, the Privacy Policy, or the Anti-Abuse Policy as the service and its practices change.",
-      "For relevant or material updates, Sendloom may send an account or service notice to your account email. A notice may identify the policy that changed, the update date, a concise summary of the changes, and a link to the updated policy."
+      "For relevant or material updates, Sendloom may send an account or service notice to your account email. A notice may identify the policy that changed, the update date, a concise summary of the changes, and a link to the updated policy.",
+      "When multiple Sendloom policies are updated as part of the same release, Sendloom may combine those changes into a single account or service notice while providing separate links to each updated policy."
     ]
   },
   {
@@ -260,7 +261,8 @@ const privacySections = [
     title: "Policy-update notices and delivery records",
     paragraphs: [
       "Sendloom may use your account email to notify you when its Terms of Service, Privacy Policy, or Anti-Abuse Policy is materially updated. A notice may include the policy name, the update date, a concise change summary, and a link to the current policy.",
-      "Sendloom may retain limited operational records associated with policy-notice delivery, such as delivery status, attempt or retry information, a provider message identifier, and timestamps. These records are used for delivery reliability, auditing, duplicate prevention, troubleshooting, and retry handling; the recipient delivery record does not store a separate full copy of the email."
+      "Sendloom may retain limited operational records associated with policy-notice delivery, such as delivery status, attempt or retry information, a provider message identifier, and timestamps. These records are used for delivery reliability, auditing, duplicate prevention, troubleshooting, and retry handling; the recipient delivery record does not store a separate full copy of the email.",
+      "When several Sendloom policies are updated together, their change summaries and review links may be included in one combined account-service email rather than separate emails for each policy."
     ]
   },
   {
@@ -423,6 +425,13 @@ const abuseSections = [
     ]
   },
   {
+    id: "policy-updates",
+    title: "Policy updates",
+    paragraphs: [
+      "When the Anti-Abuse Policy is updated alongside other Sendloom policies, the changes may be communicated through one combined account-service notice with a separate link to this policy."
+    ]
+  },
+  {
     id: "review-notice",
     title: "Legal review notice",
     paragraphs: [
@@ -441,13 +450,11 @@ export const LEGAL_POLICIES = {
     id: "terms",
     title: "Terms of Service",
     path: "/terms",
-    version: "2026-08-23",
-    releaseGroup: "2026-08-23-security-notifications",
+    version: "2026-08-23-v2",
+    releaseGroup: "2026-08-23-v2-combined-policy-notice",
     lastUpdated: "August 23, 2026",
     changeSummary: [
-      "Added details about email verification for account registration and security-sensitive account changes.",
-      "Clarified user responsibilities for protecting account credentials and verification codes.",
-      "Added information about email notices when important Sendloom policies are updated."
+      "Clarified that related Sendloom policy updates may be combined into a single account or service notice."
     ],
     sections: termsSections
   },
@@ -455,13 +462,11 @@ export const LEGAL_POLICIES = {
     id: "privacy",
     title: "Privacy Policy",
     path: "/privacy",
-    version: "2026-08-23",
-    releaseGroup: "2026-08-23-security-notifications",
+    version: "2026-08-23-v2",
+    releaseGroup: "2026-08-23-v2-combined-policy-notice",
     lastUpdated: "August 23, 2026",
     changeSummary: [
-      "Added information about email verification used during account registration and password security.",
-      "Clarified how transactional email providers process account information to deliver verification and service notices.",
-      "Added details about policy-update emails and the limited delivery records used for reliability and duplicate prevention."
+      "Clarified that related policy updates may be grouped into one account-service email with separate review links."
     ],
     sections: privacySections
   },
@@ -469,13 +474,11 @@ export const LEGAL_POLICIES = {
     id: "abuse",
     title: "Anti-Abuse Policy",
     path: "/abuse",
-    version: "2026-08-23",
-    releaseGroup: "2026-08-23-security-notifications",
+    version: "2026-08-23-v2",
+    releaseGroup: "2026-08-23-v2-combined-policy-notice",
     lastUpdated: "August 23, 2026",
     changeSummary: [
-      "Expanded prohibited-use rules to cover abuse of account registration and email verification systems.",
-      "Clarified that attempts to bypass authentication controls, rate limits, or account restrictions are prohibited.",
-      "Added protections against fraudulent account creation and misuse of verification codes."
+      "Clarified how Anti-Abuse Policy updates may be included in a combined Sendloom policy notice."
     ],
     sections: abuseSections
   }

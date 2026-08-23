@@ -16,15 +16,22 @@ describe("legal policy registry", () => {
     expect(LEGAL_POLICIES.abuse).toMatchObject({ title: "Anti-Abuse Policy", path: "/abuse" });
   });
 
-  it("has valid release metadata for the August 23, 2026 policy updates", () => {
+  it("has valid release metadata and changed content for the August 23, 2026 v2 release", () => {
+    const previousReleaseHashes = {
+      terms: "0081429d9bd20e905a3c9883437a181ab060a109771a2c70525aa7d2581383ba",
+      privacy: "bc2e86c57251a53cc1211e64960f66f9c27af1a22988f84651d71234ce828da2",
+      abuse: "887bf6c3d594bad581c686268ec234e53d4290c1712b7a2b07760f1dac1b5989"
+    } as const;
+
     expect(validateLegalPolicyRegistry()).toEqual([]);
     for (const policy of LEGAL_POLICY_LIST) {
-      expect(policy.version).toBe("2026-08-23");
-      expect(policy.releaseGroup).toBe("2026-08-23-security-notifications");
+      expect(policy.version).toBe("2026-08-23-v2");
+      expect(policy.releaseGroup).toBe("2026-08-23-v2-combined-policy-notice");
       expect(policy.lastUpdated).toBe("August 23, 2026");
       expect(policy.changeSummary.length).toBeGreaterThan(0);
       expect(policy.sections.length).toBeGreaterThan(0);
       expect(computeLegalPolicyContentHash(policy)).toMatch(/^[a-f0-9]{64}$/);
+      expect(computeLegalPolicyContentHash(policy)).not.toBe(previousReleaseHashes[policy.id]);
     }
   });
 
