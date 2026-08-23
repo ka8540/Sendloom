@@ -66,6 +66,22 @@ enum ProviderEventType {
   CLICKED
 }
 
+enum LegalPolicyNoticeStatus {
+  BASELINE
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum LegalPolicyNoticeRecipientStatus {
+  PENDING
+  PROCESSING
+  SENT
+  FAILED_RETRYABLE
+  FAILED_PERMANENT
+}
+
 model User {
   id                       String               @id @default(cuid())
   email                    String               @unique
@@ -109,9 +125,62 @@ model User {
   prospectPeople           ProspectPerson[]
   prospectSearches         ProspectSearch[]
   attachmentAssets         AttachmentAsset[]
+  legalPolicyNoticeRecipients LegalPolicyNoticeRecipient[]
 
   @@index([isAdmin])
   @@index([sessionExpiresAt])
+}
+
+// Immutable policy-release ledger. The first row for each policy is a baseline
+// and is never delivered; later version rows are processed as account notices.
+model LegalPolicyNotice {
+  id                       String                       @id @default(cuid())
+  policy                   String
+  version                  String
+  policyTitle              String
+  policyPath               String
+  contentHash              String
+  lastUpdated              String
+  changeSummary            Json
+  status                   LegalPolicyNoticeStatus      @default(PENDING)
+  recipientCursor          String?
+  recipientsMaterializedAt DateTime?
+  lastErrorCode            String?
+  createdAt                DateTime                     @default(now())
+  updatedAt                DateTime                     @updatedAt
+  startedAt                DateTime?
+  completedAt              DateTime?
+  recipients               LegalPolicyNoticeRecipient[]
+
+  @@unique([policy, version])
+  @@index([policy, createdAt])
+  @@index([status, createdAt])
+}
+
+// One individually addressed delivery per account user and notice. Email is
+// snapshotted only for reliable delivery/audit and is removed with the account.
+model LegalPolicyNoticeRecipient {
+  id                String                           @id @default(cuid())
+  noticeId          String
+  userId            String
+  emailSnapshot     String
+  status            LegalPolicyNoticeRecipientStatus @default(PENDING)
+  attempts          Int                              @default(0)
+  providerMessageId String?
+  sentAt            DateTime?
+  lastAttemptAt     DateTime?
+  nextAttemptAt     DateTime?
+  leaseToken        String?
+  leaseExpiresAt    DateTime?
+  lastErrorCode     String?
+  createdAt         DateTime                         @default(now())
+  updatedAt         DateTime                         @updatedAt
+  notice            LegalPolicyNotice                @relation(fields: [noticeId], references: [id], onDelete: Cascade)
+  user              User                             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([noticeId, userId])
+  @@index([noticeId, status, nextAttemptAt])
+  @@index([status, leaseExpiresAt])
 }
 
 model SenderProfile {

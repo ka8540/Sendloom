@@ -105,7 +105,7 @@ flowchart TD
     Storage --> Local["Local uploads directory (development)"]
     Storage --> R2["Cloudflare R2 S3-compatible API (production)"]
     Services --> Google["Google OAuth, Gmail send, reply sync, DSN bounce sync"]
-    API --> Resend["Resend: signup and password-change verification email"]
+    API --> Resend["Resend: authentication and legal account notices"]
     Services --> Hunter["Hunter API"]
     Services --> OpenAI["OpenAI Responses API"]
     Services --> Apify["Apify LinkedIn profile-search actor (Discover)"]
@@ -123,7 +123,7 @@ Runtime shape:
 - **OTP state, rate limiting, pacing, queueing:** Redis + BullMQ
 - **Object storage:** local `uploads/` in development, Cloudflare R2 in production
 - **Outreach email transport:** Gmail API via OAuth2 (Nodemailer `MailComposer` builds the MIME)
-- **Authentication email transport:** Resend for Sendloom-owned verification messages
+- **Sendloom transactional email transport:** Resend for authentication and legal account notices
 - **Charts:** Recharts (Analysis)
 
 The live send path is the cron/inline processor (`processPendingCampaignWork`). BullMQ workers exist and share the same safety gates, but the polling processor is what production runs.
@@ -308,7 +308,7 @@ Reply sync runs against connected Gmail senders on cron ticks and surfaces on se
 | Queues | BullMQ | Background worker path (the cron processor is the live send path) |
 | Auth | JWT session cookie + bcrypt + Google OAuth + HMAC email OTP | Password accounts, verified signup/password changes, Google login, Gmail sender connection |
 | Sending | Gmail API via OAuth2 + Nodemailer MIME building | Send from the user's own mailbox |
-| Transactional auth mail | Resend | Send Sendloom-owned signup and password-change verification codes |
+| Transactional account mail | Resend | Send Sendloom-owned authentication and legal policy notices |
 | Charts | Recharts | Analysis visualizations |
 | AI | OpenAI Responses API | Template enhancement and Discover email-format web search |
 | Enrichment | Hunter API, Apify actor | Finder lookups and Discover profile search |
@@ -406,6 +406,7 @@ All operator endpoints require an authenticated, eligible, unrestricted session;
 
 - `POST /api/senders/[id]/sync-bounces`
 - `GET`/`POST /api/cron/campaigns` — send work, reply sync, watch renewal, bounce sync, disposition repair, automatic bounce monitoring
+- `GET`/`POST /api/cron/legal-policy-notices` — protected legal-version detection and resumable account-notice delivery
 - `POST /api/webhooks/gmail-pubsub`, `POST /api/webhooks/resend`
 
 ### Incidents, admin, health
@@ -428,6 +429,8 @@ All operator endpoints require an authenticated, eligible, unrestricted session;
 | `Campaign` | Sequence definition plus template/mapping/sender snapshots and schedule config |
 | `CampaignRun` | One execution: status, counts, `progressSnapshot` (pause reason, bounce-monitor checkpoint) |
 | `RecipientJob` | Per-recipient delivery state, retry/error metadata, provider message id |
+| `LegalPolicyNotice` | Immutable baseline/release ledger with policy version, content hash, authored summary, and materialization progress |
+| `LegalPolicyNoticeRecipient` | Individually addressed account-notice delivery state, lease, retry count, and Resend message id |
 | `AttachmentAsset` | Content-addressed attachment dedupe row, unique per `(userId, sha256, sizeBytes, contentType)` |
 | `SendLedger` | Source of truth for confirmed Gmail sends; backs the rolling 24-hour cap and Analysis |
 | `InboundReply` | Gmail reply matched back to a recipient job |
@@ -504,6 +507,7 @@ Notable files:
 - `src/lib/analysis.ts`, `src/lib/analysis-types.ts`, `src/lib/analysis-export.ts`, `src/services/analysis.ts` — Analysis range normalization, payload types, CSV builder, aggregation
 - `src/lib/account.ts` / `src/services/account.ts` — account view types and sender-removal rules
 - `src/lib/auth-otp.ts` / `src/lib/auth-email.ts` — OTP challenge lifecycle, atomic Redis scripts, HMAC verification, and Resend delivery
+- `src/lib/legal-policies.ts` / `src/lib/legal-policy-notifications.ts` / `src/lib/legal-notice-email.ts` — policy registry, durable release processor, and Resend rendering/delivery
 - `src/components/otp-code-input.tsx` / `src/components/otp-verification-form.tsx` — shared accessible six-digit verification UI
 - `src/lib/daily-send-limit.ts` — rolling 24-hour window and confirmed-send reader
 - `src/services/attachment-assets.ts` — content-addressed attachment dedupe
@@ -526,7 +530,7 @@ Copy `.env.example` to `.env` and fill it in. Never commit real secrets.
 | `AUTH_OTP_SECRET` | For email signup/password changes | HMAC key for purpose-bound OTP digests and opaque email rate-limit keys; minimum 32 bytes and distinct from other secrets |
 | `TRACKING_SECRET` | Production | JWT signing for open/click/unsubscribe tokens. Must differ from `SESSION_SECRET` — tracking tokens travel in every email |
 | `APP_BASE_URL` | Yes | Base URL for redirects and tracking links |
-| `CRON_SECRET` | Production | Protects `/api/cron/campaigns`; the route fails closed without it |
+| `CRON_SECRET` | Production | Protects both cron routes; the legal-notice route fails closed in every environment without it |
 
 ### Authentication mail and Gmail safety
 
@@ -534,13 +538,16 @@ Copy `.env.example` to `.env` and fill it in. Never commit real secrets.
 | --- | --- | --- |
 | `MAIL_PROVIDER` | Optional | Outreach backend selector; defaults to `gmail` and does not control OTP delivery |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | For Google auth | OAuth client credentials |
-| `RESEND_API_KEY` | For email signup/password changes | Sends Sendloom-owned OTP emails; it is independent from the Gmail outreach transport |
-| `DEFAULT_FROM_EMAIL` | For email signup/password changes | Verified sender address used for OTP emails |
-| `DEFAULT_FROM_NAME` | Optional | OTP sender display name; defaults to `Sendloom` |
+| `RESEND_API_KEY` | For auth mail and enabled legal notices | Sends Sendloom-owned transactional mail; it is independent from the Gmail outreach transport |
+| `DEFAULT_FROM_EMAIL` | For auth mail and enabled legal notices | Verified Sendloom sender address used for transactional mail |
+| `DEFAULT_FROM_NAME` | Optional | Transactional sender display name; defaults to `Sendloom` |
+| `LEGAL_NOTICE_PROCESSING_ENABLED` | Production legal delivery | Mass-delivery feature flag; defaults to `false` and is insufficient unless both Node and Vercel report Production |
+| `LEGAL_NOTICE_BATCH_SIZE` | Optional | Cursor/materialization and claim batch size; defaults to `25`, maximum `50` |
+| `LEGAL_NOTICE_MAX_PER_RUN` | Optional | Maximum Resend attempts in one processor invocation; defaults to `50` |
 | `GMAIL_DAILY_SEND_SAFETY_LIMIT` | Optional | Confirmed sends per sender per rolling 24h. Default `450` |
 | `GMAIL_SENDS_PER_MINUTE` | Optional | Sends per minute per connected sender. Default `3`. Raise only with verified mailbox headroom |
 | `GMAIL_SENDER_CONCURRENCY` | Optional | Simultaneous Gmail sends. Default `2` |
-| `RESEND_WEBHOOK_SECRET` | Production, if the Resend webhook is enabled | HMAC secret for `/api/webhooks/resend`; outbound OTP delivery does not require the webhook |
+| `RESEND_WEBHOOK_SECRET` | Production, if the Resend webhook is enabled | HMAC secret for `/api/webhooks/resend`; outbound auth/legal delivery does not require the webhook |
 
 ### Gmail bounce monitoring (Pub/Sub push)
 
@@ -627,6 +634,23 @@ Both fall back to `SESSION_SECRET` in development. Never prefix either with `NEX
 
 > **Security notes.** Generate each secret with `openssl rand -hex 32`. Keep `SESSION_SECRET`, `AUTH_OTP_SECRET`, `TRACKING_SECRET`, `HUNTER_KEY_ENCRYPTION_SECRET`, and the two `REPORT_*` secrets distinct. Never prefix an authentication secret with `NEXT_PUBLIC_`. Set `CRON_SECRET` before deploying — the cron route refuses to run without it in production. Response security headers (HSTS, CSP, X-Frame-Options) are emitted by `next.config.mjs`; confirm the deployed host returns them.
 
+## Updating a legal policy
+
+Legal policy text and release metadata live together in `src/lib/legal-policies.ts`. The public Terms, Privacy, and Anti-Abuse pages render those shared sections, and the production processor fingerprints the same content with SHA-256.
+
+1. Edit the relevant policy sections.
+2. Bump `version` using `YYYY-MM-DD` or `YYYY-MM-DD-v2` for another release on the same day.
+3. Update `lastUpdated`.
+4. Add one to four concise, human-written `changeSummary` bullets. Never generate this summary automatically with AI.
+5. Run the focused legal tests, full tests, typecheck, Prisma validation, and a safe `npx next build`.
+6. Merge and deploy to Vercel Production.
+7. The protected daily processor detects the new version, snapshots account recipients in cursor pages, and sends each account one individual Resend message.
+8. Verify `LegalPolicyNotice` and aggregate recipient status counts. Do not log or export recipient lists.
+
+The first processor run records the current three versions as `BASELINE` and sends nothing. A content/hash change without a version bump, a version rollback/reuse, or a new version without `changeSummary` is rejected and logged without sending. **Never reuse an old version after changing policy content.** Preview, Development, local, test, and CI delivery are blocked even if the feature flag is set; real delivery requires `NODE_ENV=production`, `VERCEL_ENV=production`, and `LEGAL_NOTICE_PROCESSING_ENABLED=true` together.
+
+These are transactional account/service notices and remain isolated from marketing preferences, campaign Gmail senders, and connected Gmail credentials. Final legal-notice content and compliance requirements should be reviewed by qualified counsel.
+
 ## Local development
 
 ### Prerequisites
@@ -635,7 +659,7 @@ Both fall back to `SESSION_SECRET` in development. Never prefix either with `NEX
 - npm 10+
 - PostgreSQL
 - Redis
-- A Resend API key and verified sender for email/password signup and password-change testing
+- A Resend API key and verified sender for authentication and legal-notice testing
 
 ### Setup
 
