@@ -15,6 +15,8 @@ export type LegalPolicy = {
   readonly path: LegalPolicyPath;
   /** Immutable release identifier: YYYY-MM-DD, then YYYY-MM-DD-v2 if needed. */
   readonly version: string;
+  /** Explicit delivery group: policies with the same value share one account email. */
+  readonly releaseGroup: string;
   readonly lastUpdated: string;
   /** Intentionally authored by the developer; never generated automatically. */
   readonly changeSummary: readonly string[];
@@ -440,6 +442,7 @@ export const LEGAL_POLICIES = {
     title: "Terms of Service",
     path: "/terms",
     version: "2026-08-23",
+    releaseGroup: "2026-08-23-security-notifications",
     lastUpdated: "August 23, 2026",
     changeSummary: [
       "Added details about email verification for account registration and security-sensitive account changes.",
@@ -453,6 +456,7 @@ export const LEGAL_POLICIES = {
     title: "Privacy Policy",
     path: "/privacy",
     version: "2026-08-23",
+    releaseGroup: "2026-08-23-security-notifications",
     lastUpdated: "August 23, 2026",
     changeSummary: [
       "Added information about email verification used during account registration and password security.",
@@ -466,6 +470,7 @@ export const LEGAL_POLICIES = {
     title: "Anti-Abuse Policy",
     path: "/abuse",
     version: "2026-08-23",
+    releaseGroup: "2026-08-23-security-notifications",
     lastUpdated: "August 23, 2026",
     changeSummary: [
       "Expanded prohibited-use rules to cover abuse of account registration and email verification systems.",
@@ -499,6 +504,7 @@ export function validateLegalPolicyRegistry(policies: readonly LegalPolicy[] = L
     seenPaths.add(policy.path);
 
     if (!isValidPolicyVersion(policy.version)) errors.push(`Invalid version for ${policy.id}: ${policy.version}`);
+    if (!policy.releaseGroup.trim()) errors.push(`Missing releaseGroup for ${policy.id}`);
     if (!policy.title.trim()) errors.push(`Missing title for ${policy.id}`);
     if (!policy.lastUpdated.trim()) errors.push(`Missing lastUpdated for ${policy.id}`);
     if (policy.sections.length === 0) errors.push(`Missing policy content for ${policy.id}`);

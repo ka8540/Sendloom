@@ -642,12 +642,15 @@ Legal policy text and release metadata live together in `src/lib/legal-policies.
 2. Bump `version` using `YYYY-MM-DD` or `YYYY-MM-DD-v2` for another release on the same day.
 3. Update `lastUpdated`.
 4. Add one to four concise, human-written `changeSummary` bullets. Never generate this summary automatically with AI.
-5. Run the focused legal tests, full tests, typecheck, Prisma validation, and a safe `npx next build`.
-6. Merge and deploy to Vercel Production.
-7. The protected daily processor detects the new version, snapshots account recipients in cursor pages, and sends each account one individual Resend message.
-8. Verify `LegalPolicyNotice` and aggregate recipient status counts. Do not log or export recipient lists.
+5. Assign an explicit, non-empty `releaseGroup`. Policies intentionally changed together must use the same value; policies that should produce separate account emails must use different values.
+6. Run the focused legal tests, full tests, typecheck, Prisma validation, and a safe `npx next build`.
+7. Merge and deploy to Vercel Production.
+8. The protected daily processor detects each changed policy, groups its immutable notice by `releaseGroup`, snapshots account recipients once for that release, and sends each account one individual Resend message containing all member-policy summaries.
+9. Verify `LegalPolicyRelease`, its member `LegalPolicyNotice` rows, and aggregate release-recipient status counts. Do not log or export recipient lists.
 
-The first processor run records the current three versions as `BASELINE` and sends nothing. A content/hash change without a version bump, a version rollback/reuse, or a new version without `changeSummary` is rejected and logged without sending. **Never reuse an old version after changing policy content.** Preview, Development, local, test, and CI delivery are blocked even if the feature flag is set; real delivery requires `NODE_ENV=production`, `VERCEL_ENV=production`, and `LEGAL_NOTICE_PROCESSING_ENABLED=true` together.
+For example, if Terms, Privacy, and Anti-Abuse change together on October 1, give each changed policy its own new `version`, `lastUpdated`, and `changeSummary`, plus the same `releaseGroup: "2026-10-01-policy-refresh"`. The result is **one user email** with three policy sections. If only Privacy changes on November 15, use a new group such as `releaseGroup: "2026-11-15-privacy"`; the result is one email containing only Privacy. **Same `releaseGroup` means the same user email. Different `releaseGroup` values mean separate user emails.** Grouping is never inferred from deployment or cron timing.
+
+The first processor run records the current three versions as `BASELINE` and sends nothing. A content/hash change without a version bump, a version rollback/reuse, a missing `releaseGroup`, or a new version without `changeSummary` is rejected and logged without sending. **Never reuse an old version after changing policy content.** Preview, Development, local, test, and CI delivery are blocked even if the feature flag is set; real delivery requires `NODE_ENV=production`, `VERCEL_ENV=production`, and `LEGAL_NOTICE_PROCESSING_ENABLED=true` together.
 
 These are transactional account/service notices and remain isolated from marketing preferences, campaign Gmail senders, and connected Gmail credentials. Final legal-notice content and compliance requirements should be reviewed by qualified counsel.
 

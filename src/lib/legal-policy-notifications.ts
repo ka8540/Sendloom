@@ -39,7 +39,7 @@ type StoredPolicyVersion = {
 export type PolicyReleaseDecision =
   | { action: "baseline" }
   | { action: "notice" }
-  | { action: "noop"; noticeId: string }
+  | { action: "noop"; noticeId: string; status: LegalPolicyNoticeStatus }
   | { action: "error"; code: "CONTENT_CHANGED_WITHOUT_VERSION_BUMP" | "CHANGE_SUMMARY_REQUIRED" | "VERSION_NOT_NEWER" };
 
 export type LegalNoticeRecord = {
@@ -52,13 +52,22 @@ export type LegalNoticeRecord = {
   lastUpdated: string;
   changeSummary: string[];
   status: LegalPolicyNoticeStatus;
-  recipientCursor: string | null;
-  recipientsMaterializedAt: Date | null;
+  releaseId: string | null;
 };
 
-export type ClaimedLegalNoticeRecipient = {
+export type LegalPolicyReleaseRecord = {
   id: string;
-  noticeId: string;
+  releaseGroup: string;
+  status: LegalPolicyNoticeStatus;
+  recipientCursor: string | null;
+  recipientsMaterializedAt: Date | null;
+  notices: LegalNoticeRecord[];
+};
+
+export type ClaimedLegalReleaseRecipient = {
+  id: string;
+  releaseId: string;
+  userId: string;
   emailSnapshot: string;
   attempts: number;
   leaseToken: string;
@@ -69,31 +78,45 @@ export type ClaimedLegalNoticeRecipient = {
 export type LegalNoticeStore = {
   listPolicyHistory(policy: LegalPolicyId): Promise<StoredPolicyVersion[]>;
   createBaseline(policy: LegalPolicy, contentHash: string): Promise<boolean>;
-  createNotice(policy: LegalPolicy, contentHash: string): Promise<boolean>;
-  listActiveNotices(): Promise<LegalNoticeRecord[]>;
-  markNoticeProcessing(noticeId: string, now: Date): Promise<boolean>;
-  materializeRecipientPage(noticeId: string, take: number, now: Date): Promise<{ created: number; complete: boolean }>;
+  createNotice(policy: LegalPolicy, contentHash: string): Promise<{ noticeCreated: boolean; releaseCreated: boolean }>;
+  ensureNoticeRelease(
+    policy: LegalPolicy,
+    noticeId: string
+  ): Promise<{ releaseCreated: boolean; conflict: boolean }>;
+  listActiveReleases(): Promise<LegalPolicyReleaseRecord[]>;
+  markReleaseProcessing(
+    releaseId: string,
+    now: Date
+  ): Promise<{ releaseStarted: boolean; noticesStarted: number }>;
+  materializeRecipientPage(releaseId: string, take: number, now: Date): Promise<{ created: number; complete: boolean }>;
   claimRecipients(
-    noticeId: string,
+    releaseId: string,
     limit: number,
     now: Date,
     leaseExpiresAt: Date
-  ): Promise<ClaimedLegalNoticeRecipient[]>;
-  releaseUnattemptedClaims(recipients: ClaimedLegalNoticeRecipient[], now: Date): Promise<void>;
-  markRecipientSent(recipient: ClaimedLegalNoticeRecipient, providerMessageId: string, now: Date): Promise<boolean>;
+  ): Promise<ClaimedLegalReleaseRecipient[]>;
+  releaseUnattemptedClaims(recipients: ClaimedLegalReleaseRecipient[], now: Date): Promise<void>;
+  markRecipientSent(
+    recipient: ClaimedLegalReleaseRecipient,
+    providerMessageId: string,
+    now: Date
+  ): Promise<boolean>;
   markRecipientFailed(
-    recipient: ClaimedLegalNoticeRecipient,
+    recipient: ClaimedLegalReleaseRecipient,
     failure: { permanent: boolean; errorCode: string },
     now: Date
   ): Promise<void>;
-  markExhaustedRetriesPermanent(noticeId: string): Promise<number>;
-  getNoticeProgress(noticeId: string): Promise<{ materialized: boolean; remaining: number; permanentFailures: number }>;
-  markNoticeCompleted(noticeId: string, now: Date): Promise<boolean>;
+  markExhaustedRetriesPermanent(releaseId: string): Promise<number>;
+  getReleaseProgress(releaseId: string): Promise<{ materialized: boolean; remaining: number; permanentFailures: number }>;
+  markReleaseCompleted(
+    releaseId: string,
+    now: Date
+  ): Promise<{ releaseCompleted: boolean; noticesCompleted: number }>;
 };
 
 type AuditEvent = (input: {
   action: "legal.notice_started" | "legal.notice_completed" | "legal.notice_failed";
-  notice: LegalNoticeRecord;
+  release: LegalPolicyReleaseRecord;
   metadata?: Record<string, unknown>;
 }) => Promise<void>;
 
@@ -101,6 +124,9 @@ export type LegalNoticeProcessorResult = {
   detectedPolicies: number;
   baselinesCreated: number;
   noticesCreated: number;
+  releasesCreated: number;
+  releasesStarted: number;
+  releasesCompleted: number;
   noticesStarted: number;
   noticesCompleted: number;
   recipientsMaterialized: number;
@@ -136,7 +162,7 @@ export function evaluatePolicyRelease(
     if (sameVersion.contentHash !== contentHash) {
       return { action: "error", code: "CONTENT_CHANGED_WITHOUT_VERSION_BUMP" };
     }
-    return { action: "noop", noticeId: sameVersion.id };
+    return { action: "noop", noticeId: sameVersion.id, status: sameVersion.status };
   }
 
   const latest = history[0];
@@ -202,8 +228,7 @@ function mapNotice(record: {
   lastUpdated: string;
   changeSummary: Prisma.JsonValue;
   status: LegalPolicyNoticeStatus;
-  recipientCursor: string | null;
-  recipientsMaterializedAt: Date | null;
+  releaseId: string | null;
 }): LegalNoticeRecord {
   return {
     ...record,
@@ -235,7 +260,6 @@ export function createPrismaLegalNoticeStore(client: PrismaClient): LegalNoticeS
             lastUpdated: policy.lastUpdated,
             changeSummary: [...policy.changeSummary],
             status: LegalPolicyNoticeStatus.BASELINE,
-            recipientsMaterializedAt: new Date(),
             completedAt: new Date()
           }
         });
@@ -248,85 +272,186 @@ export function createPrismaLegalNoticeStore(client: PrismaClient): LegalNoticeS
 
     async createNotice(policy, contentHash) {
       try {
-        await client.legalPolicyNotice.create({
-          data: {
-            policy: policy.id,
-            version: policy.version,
-            policyTitle: policy.title,
-            policyPath: policy.path,
-            contentHash,
-            lastUpdated: policy.lastUpdated,
-            changeSummary: [...policy.changeSummary],
-            status: LegalPolicyNoticeStatus.PENDING
+        const releaseCreated = await client.$transaction(async (tx) => {
+          const existingRelease = await tx.legalPolicyRelease.findUnique({
+            where: { releaseGroup: policy.releaseGroup },
+            select: { id: true, status: true }
+          });
+          if (existingRelease && existingRelease.status !== LegalPolicyNoticeStatus.PENDING) {
+            throw new Error(`Legal releaseGroup is already active or completed: ${policy.releaseGroup}`);
           }
+          const release = await tx.legalPolicyRelease.upsert({
+            where: { releaseGroup: policy.releaseGroup },
+            create: { releaseGroup: policy.releaseGroup },
+            update: {},
+            select: { id: true }
+          });
+          await tx.legalPolicyNotice.create({
+            data: {
+              policy: policy.id,
+              version: policy.version,
+              policyTitle: policy.title,
+              policyPath: policy.path,
+              contentHash,
+              lastUpdated: policy.lastUpdated,
+              changeSummary: [...policy.changeSummary],
+              status: LegalPolicyNoticeStatus.PENDING,
+              releaseId: release.id
+            }
+          });
+          return !existingRelease;
         });
-        return true;
+        return { noticeCreated: true, releaseCreated };
       } catch (error) {
-        if (isUniqueConstraintError(error)) return false;
+        if (isUniqueConstraintError(error)) return { noticeCreated: false, releaseCreated: false };
         throw error;
       }
     },
 
-    async listActiveNotices() {
-      const records = await client.legalPolicyNotice.findMany({
-        where: { status: { in: [LegalPolicyNoticeStatus.PENDING, LegalPolicyNoticeStatus.PROCESSING] } },
-        orderBy: [{ createdAt: "asc" }, { id: "asc" }]
+    async ensureNoticeRelease(policy, noticeId) {
+      return client.$transaction(async (tx) => {
+        const notice = await tx.legalPolicyNotice.findUnique({
+          where: { id: noticeId },
+          select: { releaseId: true, release: { select: { releaseGroup: true } } }
+        });
+        if (!notice) return { releaseCreated: false, conflict: true };
+        if (notice.releaseId) {
+          return {
+            releaseCreated: false,
+            conflict: notice.release?.releaseGroup !== policy.releaseGroup
+          };
+        }
+        const existingRelease = await tx.legalPolicyRelease.findUnique({
+          where: { releaseGroup: policy.releaseGroup },
+          select: { id: true }
+        });
+        const release = await tx.legalPolicyRelease.upsert({
+          where: { releaseGroup: policy.releaseGroup },
+          create: { releaseGroup: policy.releaseGroup },
+          update: {},
+          select: { id: true }
+        });
+        await tx.legalPolicyNotice.update({ where: { id: noticeId }, data: { releaseId: release.id } });
+        return { releaseCreated: !existingRelease, conflict: false };
       });
-      return records.map(mapNotice);
     },
 
-    async markNoticeProcessing(noticeId, now) {
-      const result = await client.legalPolicyNotice.updateMany({
-        where: { id: noticeId, status: LegalPolicyNoticeStatus.PENDING },
-        data: { status: LegalPolicyNoticeStatus.PROCESSING, startedAt: now, lastErrorCode: null }
-      });
-      return result.count === 1;
-    },
-
-    async materializeRecipientPage(noticeId, take, now) {
-      const notice = await client.legalPolicyNotice.findUnique({
-        where: { id: noticeId },
-        select: { recipientCursor: true, recipientsMaterializedAt: true }
-      });
-      if (!notice || notice.recipientsMaterializedAt) return { created: 0, complete: true };
-
-      const users = await getAccountRecipientPage(
-        (args) => client.user.findMany(args) as Promise<Array<{ id: string; email: string }>>,
-        { cursor: notice.recipientCursor, take }
-      );
-      const created = users.length
-        ? (
-            await client.legalPolicyNoticeRecipient.createMany({
-              data: users.map((user) => ({
-                noticeId,
-                userId: user.id,
-                emailSnapshot: user.email,
-                status: LegalPolicyNoticeRecipientStatus.PENDING
-              })),
-              skipDuplicates: true
-            })
-          ).count
-        : 0;
-      const complete = users.length < take;
-      const nextCursor = users.at(-1)?.id ?? notice.recipientCursor;
-
-      await client.legalPolicyNotice.updateMany({
-        where: { id: noticeId, recipientCursor: notice.recipientCursor },
-        data: {
-          recipientCursor: nextCursor,
-          recipientsMaterializedAt: complete ? now : null
+    async listActiveReleases() {
+      const releases = await client.legalPolicyRelease.findMany({
+        where: {
+          status: { in: [LegalPolicyNoticeStatus.PENDING, LegalPolicyNoticeStatus.PROCESSING] },
+          notices: { some: {} }
+        },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        include: {
+          notices: {
+            orderBy: [{ createdAt: "asc" }, { id: "asc" }]
+          }
         }
       });
-
-      return { created, complete };
+      return releases.map((release) => ({
+        id: release.id,
+        releaseGroup: release.releaseGroup,
+        status: release.status,
+        recipientCursor: release.recipientCursor,
+        recipientsMaterializedAt: release.recipientsMaterializedAt,
+        notices: release.notices.map(mapNotice)
+      }));
     },
 
-    async claimRecipients(noticeId, limit, now, leaseExpiresAt) {
+    async markReleaseProcessing(releaseId, now) {
+      return client.$transaction(async (tx) => {
+        const release = await tx.legalPolicyRelease.updateMany({
+          where: { id: releaseId, status: LegalPolicyNoticeStatus.PENDING },
+          data: { status: LegalPolicyNoticeStatus.PROCESSING, startedAt: now, lastErrorCode: null }
+        });
+        const notices = await tx.legalPolicyNotice.updateMany({
+          where: { releaseId, status: LegalPolicyNoticeStatus.PENDING },
+          data: { status: LegalPolicyNoticeStatus.PROCESSING, startedAt: now, lastErrorCode: null }
+        });
+        return { releaseStarted: release.count === 1, noticesStarted: notices.count };
+      });
+    },
+
+    async materializeRecipientPage(releaseId, take, now) {
+      return client.$transaction(async (tx) => {
+        const rows = await tx.$queryRaw<
+          Array<{ recipientCursor: string | null; recipientsMaterializedAt: Date | null }>
+        >(Prisma.sql`
+          SELECT "recipientCursor", "recipientsMaterializedAt"
+          FROM "LegalPolicyRelease"
+          WHERE "id" = ${releaseId}
+          FOR UPDATE
+        `);
+        const release = rows[0];
+        if (!release || release.recipientsMaterializedAt) return { created: 0, complete: true };
+
+        const users = await getAccountRecipientPage(
+          (args) => tx.user.findMany(args) as Promise<Array<{ id: string; email: string }>>,
+          { cursor: release.recipientCursor, take }
+        );
+        const noticeIds = (
+          await tx.legalPolicyNotice.findMany({ where: { releaseId }, select: { id: true } })
+        ).map((notice) => notice.id);
+        const legacyDeliveries =
+          users.length > 0 && noticeIds.length > 0
+            ? await tx.legalPolicyNoticeRecipient.findMany({
+                where: {
+                  noticeId: { in: noticeIds },
+                  userId: { in: users.map((user) => user.id) },
+                  status: LegalPolicyNoticeRecipientStatus.SENT
+                },
+                orderBy: [{ sentAt: "asc" }, { id: "asc" }],
+                select: { userId: true, providerMessageId: true, sentAt: true }
+              })
+            : [];
+        const legacyByUser = new Map<
+          string,
+          { providerMessageId: string | null; sentAt: Date | null }
+        >();
+        for (const delivery of legacyDeliveries) {
+          if (!legacyByUser.has(delivery.userId)) legacyByUser.set(delivery.userId, delivery);
+        }
+
+        const created = users.length
+          ? (
+              await tx.legalPolicyReleaseRecipient.createMany({
+                data: users.map((user) => {
+                  const legacy = legacyByUser.get(user.id);
+                  return {
+                    releaseId,
+                    userId: user.id,
+                    emailSnapshot: user.email,
+                    status: legacy
+                      ? LegalPolicyNoticeRecipientStatus.SENT
+                      : LegalPolicyNoticeRecipientStatus.PENDING,
+                    providerMessageId: legacy?.providerMessageId ?? null,
+                    sentAt: legacy?.sentAt ?? null
+                  };
+                }),
+                skipDuplicates: true
+              })
+            ).count
+          : 0;
+        const complete = users.length < take;
+        await tx.legalPolicyRelease.update({
+          where: { id: releaseId },
+          data: {
+            recipientCursor: users.at(-1)?.id ?? release.recipientCursor,
+            recipientsMaterializedAt: complete ? now : null
+          }
+        });
+        return { created, complete };
+      });
+    },
+
+    async claimRecipients(releaseId, limit, now, leaseExpiresAt) {
       const leaseToken = randomUUID();
       const rows = await client.$queryRaw<
         Array<{
           id: string;
-          noticeId: string;
+          releaseId: string;
+          userId: string;
           emailSnapshot: string;
           attempts: number;
           previousStatus: LegalPolicyNoticeRecipientStatus;
@@ -338,8 +463,8 @@ export function createPrismaLegalNoticeStore(client: PrismaClient): LegalNoticeS
             recipient."id",
             recipient."status" AS "previousStatus",
             recipient."attempts" AS "previousAttempts"
-          FROM "LegalPolicyNoticeRecipient" recipient
-          WHERE recipient."noticeId" = ${noticeId}
+          FROM "LegalPolicyReleaseRecipient" recipient
+          WHERE recipient."releaseId" = ${releaseId}
             AND recipient."attempts" < ${MAX_RECIPIENT_ATTEMPTS}
             AND (
               recipient."status" = 'PENDING'::"LegalPolicyNoticeRecipientStatus"
@@ -356,7 +481,7 @@ export function createPrismaLegalNoticeStore(client: PrismaClient): LegalNoticeS
           FOR UPDATE SKIP LOCKED
           LIMIT ${limit}
         )
-        UPDATE "LegalPolicyNoticeRecipient" recipient
+        UPDATE "LegalPolicyReleaseRecipient" recipient
         SET
           "status" = 'PROCESSING'::"LegalPolicyNoticeRecipientStatus",
           "attempts" = recipient."attempts" + 1,
@@ -369,13 +494,13 @@ export function createPrismaLegalNoticeStore(client: PrismaClient): LegalNoticeS
         WHERE recipient."id" = candidates."id"
         RETURNING
           recipient."id",
-          recipient."noticeId",
+          recipient."releaseId",
+          recipient."userId",
           recipient."emailSnapshot",
           recipient."attempts",
           candidates."previousStatus",
           candidates."previousAttempts"
       `);
-
       return rows.map((row) => ({ ...row, leaseToken }));
     },
 
@@ -383,7 +508,7 @@ export function createPrismaLegalNoticeStore(client: PrismaClient): LegalNoticeS
       if (recipients.length === 0) return;
       await client.$transaction(
         recipients.map((recipient) =>
-          client.legalPolicyNoticeRecipient.updateMany({
+          client.legalPolicyReleaseRecipient.updateMany({
             where: {
               id: recipient.id,
               status: LegalPolicyNoticeRecipientStatus.PROCESSING,
@@ -406,7 +531,7 @@ export function createPrismaLegalNoticeStore(client: PrismaClient): LegalNoticeS
     },
 
     async markRecipientSent(recipient, providerMessageId, now) {
-      const result = await client.legalPolicyNoticeRecipient.updateMany({
+      const result = await client.legalPolicyReleaseRecipient.updateMany({
         where: {
           id: recipient.id,
           status: LegalPolicyNoticeRecipientStatus.PROCESSING,
@@ -428,7 +553,7 @@ export function createPrismaLegalNoticeStore(client: PrismaClient): LegalNoticeS
     async markRecipientFailed(recipient, failure, now) {
       const permanent = failure.permanent || recipient.attempts >= MAX_RECIPIENT_ATTEMPTS;
       const retryDelay = RETRY_DELAYS_MS[Math.min(Math.max(recipient.attempts - 1, 0), RETRY_DELAYS_MS.length - 1)];
-      await client.legalPolicyNoticeRecipient.updateMany({
+      await client.legalPolicyReleaseRecipient.updateMany({
         where: {
           id: recipient.id,
           status: LegalPolicyNoticeRecipientStatus.PROCESSING,
@@ -446,10 +571,10 @@ export function createPrismaLegalNoticeStore(client: PrismaClient): LegalNoticeS
       });
     },
 
-    async markExhaustedRetriesPermanent(noticeId) {
-      const result = await client.legalPolicyNoticeRecipient.updateMany({
+    async markExhaustedRetriesPermanent(releaseId) {
+      const result = await client.legalPolicyReleaseRecipient.updateMany({
         where: {
-          noticeId,
+          releaseId,
           status: LegalPolicyNoticeRecipientStatus.FAILED_RETRYABLE,
           attempts: { gte: MAX_RECIPIENT_ATTEMPTS }
         },
@@ -464,15 +589,15 @@ export function createPrismaLegalNoticeStore(client: PrismaClient): LegalNoticeS
       return result.count;
     },
 
-    async getNoticeProgress(noticeId) {
-      const notice = await client.legalPolicyNotice.findUnique({
-        where: { id: noticeId },
+    async getReleaseProgress(releaseId) {
+      const release = await client.legalPolicyRelease.findUnique({
+        where: { id: releaseId },
         select: { recipientCursor: true, recipientsMaterializedAt: true }
       });
       const [materializedRemaining, permanentFailures, unmaterializedUsers] = await Promise.all([
-        client.legalPolicyNoticeRecipient.count({
+        client.legalPolicyReleaseRecipient.count({
           where: {
-            noticeId,
+            releaseId,
             status: {
               in: [
                 LegalPolicyNoticeRecipientStatus.PENDING,
@@ -482,38 +607,58 @@ export function createPrismaLegalNoticeStore(client: PrismaClient): LegalNoticeS
             }
           }
         }),
-        client.legalPolicyNoticeRecipient.count({
-          where: { noticeId, status: LegalPolicyNoticeRecipientStatus.FAILED_PERMANENT }
+        client.legalPolicyReleaseRecipient.count({
+          where: { releaseId, status: LegalPolicyNoticeRecipientStatus.FAILED_PERMANENT }
         }),
-        notice && !notice.recipientsMaterializedAt
-          ? client.user.count({ where: notice.recipientCursor ? { id: { gt: notice.recipientCursor } } : undefined })
+        release && !release.recipientsMaterializedAt
+          ? client.user.count({ where: release.recipientCursor ? { id: { gt: release.recipientCursor } } : undefined })
           : Promise.resolve(0)
       ]);
       return {
-        materialized: Boolean(notice?.recipientsMaterializedAt),
+        materialized: Boolean(release?.recipientsMaterializedAt),
         remaining: materializedRemaining + unmaterializedUsers,
         permanentFailures
       };
     },
 
-    async markNoticeCompleted(noticeId, now) {
-      const result = await client.legalPolicyNotice.updateMany({
-        where: { id: noticeId, status: LegalPolicyNoticeStatus.PROCESSING },
-        data: { status: LegalPolicyNoticeStatus.COMPLETED, completedAt: now, lastErrorCode: null }
+    async markReleaseCompleted(releaseId, now) {
+      return client.$transaction(async (tx) => {
+        const release = await tx.legalPolicyRelease.updateMany({
+          where: { id: releaseId, status: LegalPolicyNoticeStatus.PROCESSING },
+          data: { status: LegalPolicyNoticeStatus.COMPLETED, completedAt: now, lastErrorCode: null }
+        });
+        if (release.count !== 1) return { releaseCompleted: false, noticesCompleted: 0 };
+        const notices = await tx.legalPolicyNotice.updateMany({
+          where: {
+            releaseId,
+            status: {
+              in: [
+                LegalPolicyNoticeStatus.PENDING,
+                LegalPolicyNoticeStatus.PROCESSING,
+                LegalPolicyNoticeStatus.FAILED
+              ]
+            }
+          },
+          data: { status: LegalPolicyNoticeStatus.COMPLETED, completedAt: now, lastErrorCode: null }
+        });
+        return { releaseCompleted: true, noticesCompleted: notices.count };
       });
-      return result.count === 1;
     }
   };
 }
 
-const defaultAuditEvent: AuditEvent = async ({ action, notice, metadata }) => {
+const defaultAuditEvent: AuditEvent = async ({ action, release, metadata }) => {
   await recordAuditEvent({
     actor: { email: "system@sendloom.net", name: "Sendloom system" },
     action,
     category: "SYSTEM",
     severity: action === "legal.notice_failed" ? "ERROR" : action === "legal.notice_completed" ? "SUCCESS" : "INFO",
-    target: { type: "LegalPolicyNotice", id: notice.id, name: `${notice.policy}:${notice.version}` },
-    metadata: { policy: notice.policy, version: notice.version, ...metadata }
+    target: { type: "LegalPolicyRelease", id: release.id, name: release.releaseGroup },
+    metadata: {
+      releaseGroup: release.releaseGroup,
+      policies: release.notices.map((notice) => notice.policy),
+      ...metadata
+    }
   });
 };
 
@@ -557,6 +702,9 @@ export async function processLegalPolicyNotices(options: {
     detectedPolicies: policies.length,
     baselinesCreated: 0,
     noticesCreated: 0,
+    releasesCreated: 0,
+    releasesStarted: 0,
+    releasesCompleted: 0,
     noticesStarted: 0,
     noticesCompleted: 0,
     recipientsMaterialized: 0,
@@ -590,21 +738,36 @@ export async function processLegalPolicyNotices(options: {
     if (decision.action === "baseline") {
       if (await store.createBaseline(policy, contentHash)) {
         result.baselinesCreated += 1;
-        console.info("[legal-notice] Established policy baseline.", {
-          policy: policy.id,
-          version: policy.version
-        });
+        console.info("[legal-notice] Established policy baseline.", { policy: policy.id, version: policy.version });
       }
       continue;
     }
 
     if (decision.action === "notice") {
-      if (await store.createNotice(policy, contentHash)) {
+      const created = await store.createNotice(policy, contentHash);
+      if (created.noticeCreated) {
         result.noticesCreated += 1;
-        console.info("[legal-notice] Created policy notice.", {
+        if (created.releaseCreated) result.releasesCreated += 1;
+        console.info("[legal-notice] Created policy notice in legal release.", {
           policy: policy.id,
-          version: policy.version
+          version: policy.version,
+          releaseGroup: policy.releaseGroup
         });
+      }
+      continue;
+    }
+
+    if (decision.action === "noop" && decision.status !== LegalPolicyNoticeStatus.BASELINE) {
+      const linked = await store.ensureNoticeRelease(policy, decision.noticeId);
+      if (linked.conflict) {
+        result.failures += 1;
+        console.error("[legal-notice] Policy notice releaseGroup conflicts with its durable release.", {
+          policy: policy.id,
+          version: policy.version,
+          releaseGroup: policy.releaseGroup
+        });
+      } else if (linked.releaseCreated) {
+        result.releasesCreated += 1;
       }
       continue;
     }
@@ -619,21 +782,21 @@ export async function processLegalPolicyNotices(options: {
     }
   }
 
-  let activeNotices = await store.listActiveNotices();
+  let activeReleases = await store.listActiveReleases();
   if (!deliveryEnabled) {
-    for (const notice of activeNotices) {
-      result.recipientsRemaining += (await store.getNoticeProgress(notice.id)).remaining;
+    for (const release of activeReleases) {
+      result.recipientsRemaining += (await store.getReleaseProgress(release.id)).remaining;
     }
     console.info("[legal-notice] Delivery disabled by production safety gate.", {
-      activeNoticeCount: activeNotices.length
+      activeReleaseCount: activeReleases.length
     });
     return result;
   }
 
-  if (activeNotices.length > 0 && !mailer.isConfigured()) {
+  if (activeReleases.length > 0 && !mailer.isConfigured()) {
     result.failures += 1;
     console.error("[legal-notice] Delivery configuration is missing.", {
-      activeNoticeCount: activeNotices.length,
+      activeReleaseCount: activeReleases.length,
       errorCode: "RESEND_NOT_CONFIGURED"
     });
     return result;
@@ -642,29 +805,31 @@ export async function processLegalPolicyNotices(options: {
   let stopRun = false;
   let remainingRunCapacity = maxPerRun;
 
-  for (const notice of activeNotices) {
+  for (const release of activeReleases) {
     if (stopRun || remainingRunCapacity <= 0) break;
 
-    if (await store.markNoticeProcessing(notice.id, now())) {
-      result.noticesStarted += 1;
-      notice.status = LegalPolicyNoticeStatus.PROCESSING;
-      await auditEvent({ action: "legal.notice_started", notice });
+    const started = await store.markReleaseProcessing(release.id, now());
+    if (started.releaseStarted) {
+      result.releasesStarted += 1;
+      release.status = LegalPolicyNoticeStatus.PROCESSING;
+      await auditEvent({ action: "legal.notice_started", release });
     }
+    result.noticesStarted += started.noticesStarted;
 
     while (!stopRun && remainingRunCapacity > 0) {
       const claimed = await store.claimRecipients(
-        notice.id,
+        release.id,
         Math.min(batchSize, remainingRunCapacity),
         now(),
         new Date(now().getTime() + RECIPIENT_LEASE_MS)
       );
 
       if (claimed.length === 0) {
-        const progress = await store.getNoticeProgress(notice.id);
+        const progress = await store.getReleaseProgress(release.id);
         if (!progress.materialized) {
-          const materialized = await store.materializeRecipientPage(notice.id, batchSize, now());
+          const materialized = await store.materializeRecipientPage(release.id, batchSize, now());
           result.recipientsMaterialized += materialized.created;
-          if (materialized.created > 0) continue;
+          if (!materialized.complete || materialized.created > 0) continue;
         }
         break;
       }
@@ -673,8 +838,9 @@ export async function processLegalPolicyNotices(options: {
         const recipient = claimed[index];
         const delivery = await mailer.send({
           to: recipient.emailSnapshot,
-          policy: noticeEmailPolicy(notice),
-          idempotencyKey: `legal-notice-${notice.id}-${recipient.id}`
+          policies: release.notices.map(noticeEmailPolicy),
+          releaseGroup: release.releaseGroup,
+          idempotencyKey: `legal-release-${release.id}-${recipient.userId}`
         });
         remainingRunCapacity -= 1;
 
@@ -695,10 +861,9 @@ export async function processLegalPolicyNotices(options: {
         if (delivery.status === "retryable" && delivery.stopRun) {
           await store.releaseUnattemptedClaims(claimed.slice(index + 1), now());
           stopRun = true;
-          console.warn("[legal-notice] Pausing delivery after a transient provider failure.", {
-            policy: notice.policy,
-            version: notice.version,
-            noticeId: notice.id,
+          console.warn("[legal-notice] Pausing release delivery after a transient provider failure.", {
+            releaseGroup: release.releaseGroup,
+            releaseId: release.id,
             errorCode: delivery.errorCode
           });
           break;
@@ -706,29 +871,31 @@ export async function processLegalPolicyNotices(options: {
       }
     }
 
-    result.failures += await store.markExhaustedRetriesPermanent(notice.id);
-    const progress = await store.getNoticeProgress(notice.id);
+    result.failures += await store.markExhaustedRetriesPermanent(release.id);
+    const progress = await store.getReleaseProgress(release.id);
     if (progress.materialized && progress.remaining === 0) {
-      if (await store.markNoticeCompleted(notice.id, now())) {
-        result.noticesCompleted += 1;
+      const completed = await store.markReleaseCompleted(release.id, now());
+      if (completed.releaseCompleted) {
+        result.releasesCompleted += 1;
+        result.noticesCompleted += completed.noticesCompleted;
         await auditEvent({
           action: "legal.notice_completed",
-          notice,
+          release,
           metadata: { permanentFailureCount: progress.permanentFailures }
         });
-        console.info("[legal-notice] Completed policy notice.", {
-          policy: notice.policy,
-          version: notice.version,
-          noticeId: notice.id,
+        console.info("[legal-notice] Completed legal release notice.", {
+          releaseGroup: release.releaseGroup,
+          releaseId: release.id,
+          policyCount: release.notices.length,
           permanentFailureCount: progress.permanentFailures
         });
       }
     }
   }
 
-  activeNotices = await store.listActiveNotices();
-  for (const notice of activeNotices) {
-    result.recipientsRemaining += (await store.getNoticeProgress(notice.id)).remaining;
+  activeReleases = await store.listActiveReleases();
+  for (const release of activeReleases) {
+    result.recipientsRemaining += (await store.getReleaseProgress(release.id)).remaining;
   }
 
   return result;
