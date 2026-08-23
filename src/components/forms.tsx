@@ -19,6 +19,10 @@ import { useRouter } from "next/navigation";
 import { renderBrandText } from "@/components/brand-text";
 import { useErrorToastEffect } from "@/components/error-toast-provider";
 import importStyles from "@/components/imports-workflow.module.css";
+import {
+  OtpVerificationForm,
+  type OtpChallengeMetadata
+} from "@/components/otp-verification-form";
 import { analyzeSpam, type SpamAnalysis } from "@/lib/spam-analysis";
 import {
   buildTemplatePreviewPayload,
@@ -42,6 +46,15 @@ type ActionState = {
   pending: boolean;
   error?: string;
 };
+
+async function readError(response: Response, fallback: string) {
+  try {
+    const payload = (await response.json()) as { error?: string };
+    return payload.error ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 type EnhanceField = "subject" | "body";
 const DEFAULT_TEMPLATE_FORMAT: TemplateFormat = "PLAIN_TEXT";
@@ -103,15 +116,6 @@ export function LoginForm() {
   const [state, setState] = useState<ActionState>({ pending: false });
   useErrorToastEffect(state.error, "Sign in failed");
 
-  async function readError(response: Response, fallback: string) {
-    try {
-      const payload = (await response.json()) as { error?: string };
-      return payload.error ?? fallback;
-    } catch {
-      return fallback;
-    }
-  }
-
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
@@ -153,16 +157,8 @@ export function LoginForm() {
 export function SignupForm() {
   const router = useRouter();
   const [state, setState] = useState<ActionState>({ pending: false });
+  const [challenge, setChallenge] = useState<OtpChallengeMetadata | null>(null);
   useErrorToastEffect(state.error, "Sign up failed");
-
-  async function readError(response: Response, fallback: string) {
-    try {
-      const payload = (await response.json()) as { error?: string };
-      return payload.error ?? fallback;
-    } catch {
-      return fallback;
-    }
-  }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -179,13 +175,54 @@ export function SignupForm() {
       })
     });
 
+    const payload = (await response.json().catch(() => null)) as
+      | (Partial<OtpChallengeMetadata> & { error?: string; requiresVerification?: boolean })
+      | null;
+
     if (!response.ok) {
-      setState({ pending: false, error: await readError(response, "Could not create your account.") });
+      setState({ pending: false, error: payload?.error ?? "Could not start account verification." });
       return;
     }
 
-    router.replace("/workspace");
-    router.refresh();
+    if (
+      !payload?.requiresVerification ||
+      typeof payload.challengeId !== "string" ||
+      typeof payload.maskedEmail !== "string" ||
+      typeof payload.expiresInSeconds !== "number" ||
+      typeof payload.resendAvailableInSeconds !== "number"
+    ) {
+      setState({ pending: false, error: "Could not start account verification." });
+      return;
+    }
+
+    setChallenge({
+      challengeId: payload.challengeId,
+      maskedEmail: payload.maskedEmail,
+      expiresInSeconds: payload.expiresInSeconds,
+      resendAvailableInSeconds: payload.resendAvailableInSeconds
+    });
+    setState({ pending: false });
+  }
+
+  if (challenge) {
+    return (
+      <OtpVerificationForm
+        challenge={challenge}
+        verifyEndpoint="/api/auth/signup/verify"
+        resendEndpoint="/api/auth/signup/resend"
+        submitLabel="Verify email"
+        pendingLabel="Verifying…"
+        cancelLabel="Change email"
+        onCancel={() => {
+          setChallenge(null);
+          setState({ pending: false });
+        }}
+        onSuccess={() => {
+          router.replace("/workspace");
+          router.refresh();
+        }}
+      />
+    );
   }
 
   return (
@@ -202,8 +239,13 @@ export function SignupForm() {
         autoComplete="new-password"
         minLength={8}
       />
+      {state.error ? (
+        <p className="muted" role="alert">
+          {state.error}
+        </p>
+      ) : null}
       <button className="button" type="submit" disabled={state.pending}>
-        {state.pending ? "Creating account..." : "Create account"}
+        {state.pending ? "Sending code…" : "Create account"}
       </button>
     </form>
   );

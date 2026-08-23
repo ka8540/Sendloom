@@ -1,0 +1,144 @@
+.verification {
+  display: grid;
+  gap: 1.15rem;
+  min-width: 0;
+  animation: verification-enter 180ms ease-out both;
+}
+
+.heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+}
+
+.icon {
+  display: inline-grid;
+  place-items: center;
+  width: 2.55rem;
+  height: 2.55rem;
+  flex: 0 0 auto;
+  border-radius: 13px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.icon svg {
+  width: 1.2rem;
+  height: 1.2rem;
+}
+
+.heading h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 1.05rem;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+}
+
+.heading p {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
+.heading strong {
+  color: var(--text);
+  font-weight: 650;
+}
+
+.form {
+  gap: 0.85rem;
+}
+
+.form :global(.button) {
+  width: 100%;
+}
+
+.error,
+.status {
+  margin: 0;
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.error {
+  color: #c34d37;
+}
+
+.status {
+  color: var(--success);
+}
+
+:global(:root[data-theme="dark"]) .error {
+  color: #ff9b87;
+}
+
+.spin {
+  width: 1rem;
+  height: 1rem;
+  animation: otp-spin 0.8s linear infinite;
+}
+
+.secondaryActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem 1rem;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.resendCopy button,
+.cancel {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.resendCopy button:hover:not(:disabled),
+.resendCopy button:focus-visible,
+.cancel:hover:not(:disabled),
+.cancel:focus-visible {
+  text-decoration: underline;
+  outline: none;
+}
+
+.resendCopy button:disabled,
+.cancel:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+  opacity: 0.76;
+}
+
+@keyframes verification-enter {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+}
+
+@keyframes otp-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .verification {
+    animation: none;
+  }
+}
+
+@media (max-width: 420px) {
+  .secondaryActions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

@@ -10,6 +10,8 @@ const PAGE = readFileSync("src/app/(app)/account/page.tsx", "utf8");
 const ACCOUNT_ROUTE = readFileSync("src/app/api/account/route.ts", "utf8");
 const SENDER_ROUTE = readFileSync("src/app/api/account/senders/[id]/route.ts", "utf8");
 const PASSWORD_ROUTE = readFileSync("src/app/api/account/password/route.ts", "utf8");
+const PASSWORD_VERIFY_ROUTE = readFileSync("src/app/api/account/password/verify/route.ts", "utf8");
+const PASSWORD_RESEND_ROUTE = readFileSync("src/app/api/account/password/resend/route.ts", "utf8");
 
 describe("account page (server component)", () => {
   it("guards to operators, loads the overview server-side, and renders the dashboard", () => {
@@ -108,6 +110,17 @@ describe("account dashboard — password", () => {
     expect(DASHBOARD).toContain("/api/account/password");
   });
 
+  it("transitions to an inline OTP step and clears plaintext password state", () => {
+    expect(DASHBOARD).toContain("<OtpVerificationForm");
+    expect(DASHBOARD).toContain('verifyEndpoint="/api/account/password/verify"');
+    expect(DASHBOARD).toContain('resendEndpoint="/api/account/password/resend"');
+    expect(DASHBOARD).toContain('submitLabel="Verify & update password"');
+    expect(DASHBOARD).toContain('setCurrentPassword("")');
+    expect(DASHBOARD).toContain('setNewPassword("")');
+    expect(DASHBOARD).toContain('setConfirmPassword("")');
+    expect(DASHBOARD).toContain('cancelLabel="Cancel"');
+  });
+
   it("labels every field and sets correct password autocomplete attributes", () => {
     expect(DASHBOARD).toContain("htmlFor={currentPasswordId}");
     expect(DASHBOARD).toContain("htmlFor={newPasswordId}");
@@ -138,19 +151,32 @@ describe("account API routes", () => {
     expect(SENDER_ROUTE).toContain("recordAuditEvent");
   });
 
-  it("password route authenticates, rate-limits, verifies, hashes, and rotates the session", () => {
+  it("password start authenticates, rate-limits, verifies the current password, and creates only a challenge", () => {
     expect(PASSWORD_ROUTE).toContain("requireApiUser");
     expect(PASSWORD_ROUTE).toContain("rateLimit");
     expect(PASSWORD_ROUTE).toContain("verifyPassword");
     expect(PASSWORD_ROUTE).toContain("createPasswordHash");
-    expect(PASSWORD_ROUTE).toContain("setSession(auth.user.email)");
+    expect(PASSWORD_ROUTE).toContain("createAuthOtpChallenge");
+    expect(PASSWORD_ROUTE).not.toContain("prisma.user.update");
+    expect(PASSWORD_ROUTE).not.toContain("setSession(");
     expect(PASSWORD_ROUTE).toContain("validatePasswordChange");
+  });
+
+  it("commits the stored hash and rotates the session only in the authenticated verify route", () => {
+    expect(PASSWORD_VERIFY_ROUTE).toContain("requireApiUser");
+    expect(PASSWORD_VERIFY_ROUTE).toContain('purpose: "PASSWORD_CHANGE"');
+    expect(PASSWORD_VERIFY_ROUTE).toContain("userId: auth.user.id");
+    expect(PASSWORD_VERIFY_ROUTE).toContain("verifyAndConsumeAuthOtpChallenge");
+    expect(PASSWORD_VERIFY_ROUTE).toContain("prisma.user.update");
+    expect(PASSWORD_VERIFY_ROUTE).toContain("setSession(auth.user.email)");
+    expect(PASSWORD_RESEND_ROUTE).toContain("rotateAuthOtpChallenge");
   });
 
   it("never serializes a password hash back to the client", () => {
     // No NextResponse.json(...) payload includes the hash (the only passwordHash
     // use is the prisma write + the verify/derive helpers).
     expect(PASSWORD_ROUTE).not.toMatch(/NextResponse\.json\([^;]*passwordHash/);
+    expect(PASSWORD_VERIFY_ROUTE).not.toMatch(/NextResponse\.json\([^;]*passwordHash/);
     expect(ACCOUNT_ROUTE).not.toMatch(/NextResponse\.json\([^;]*passwordHash/);
     expect(DASHBOARD).not.toContain("passwordHash");
   });

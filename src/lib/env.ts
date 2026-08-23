@@ -29,6 +29,10 @@ const envSchema = z
     DATABASE_URL: z.string().min(1),
     REDIS_URL: z.string().min(1),
     SESSION_SECRET: z.string().min(12),
+    // Read only by the narrow auth-OTP runtime helper. It stays optional here
+    // so unrelated pages and local builds do not fail just because OTP email
+    // is not configured; OTP endpoints themselves validate it and fail closed.
+    AUTH_OTP_SECRET: z.string().optional(),
     TRACKING_SECRET: z.string().min(12).optional(),
     MAIL_PROVIDER: z.enum(["gmail", "resend"]).default("gmail"),
     GOOGLE_CLIENT_ID: z.string().min(1).optional(),
@@ -236,6 +240,7 @@ function readRawEnv() {
     DATABASE_URL: process.env.DATABASE_URL,
     REDIS_URL: process.env.REDIS_URL,
     SESSION_SECRET: process.env.SESSION_SECRET,
+    AUTH_OTP_SECRET: process.env.AUTH_OTP_SECRET,
     TRACKING_SECRET: process.env.TRACKING_SECRET,
     MAIL_PROVIDER: process.env.MAIL_PROVIDER,
     GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
