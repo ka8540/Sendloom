@@ -7,7 +7,7 @@ import {
   PASSWORD_TOO_SHORT_MESSAGE
 } from "@/lib/account";
 import { recordAuditEvent } from "@/lib/audit";
-import { createPasswordHash, normalizeUserEmail } from "@/lib/auth";
+import { createPasswordHash, normalizeUserEmail, verifyPassword } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import {
   consumePasswordResetGrant,
@@ -27,6 +27,8 @@ const grantSchema = z.string().length(43).regex(/^[A-Za-z0-9_-]+$/);
 
 const EXPIRED_MESSAGE = "This password reset has expired. Start again.";
 const COMPLETE_ERROR = "We couldn't reset your password. Start password recovery again.";
+const PASSWORD_REUSE_ERROR =
+  "Your new password must be different from your current password. Start password recovery again.";
 
 function expiredResponse() {
   return NextResponse.json({ error: EXPIRED_MESSAGE }, { status: 410 });
@@ -80,7 +82,7 @@ export async function POST(request: Request): Promise<Response> {
   try {
     const user = await prisma.user.findUnique({
       where: { id: consumed.grant.userId },
-      select: { id: true, email: true, isAdmin: true }
+      select: { id: true, email: true, isAdmin: true, passwordHash: true }
     });
     if (
       !user ||
@@ -90,10 +92,28 @@ export async function POST(request: Request): Promise<Response> {
       return expiredResponse();
     }
 
+    const reusesCurrentPassword = user.passwordHash
+      ? await verifyPassword(parsed.data.newPassword, user.passwordHash)
+      : false;
+    if (reusesCurrentPassword) {
+      // The grant was intentionally consumed before checking the existing
+      // credential. Reusing it as a password oracle or retry credential is not
+      // allowed; the user must begin a fresh recovery flow.
+      return NextResponse.json(
+        { error: PASSWORD_REUSE_ERROR, restartRequired: true },
+        { status: 409 }
+      );
+    }
+
     const passwordHash = await createPasswordHash(parsed.data.newPassword);
     const revokedAt = new Date();
     const updated = await prisma.user.updateMany({
-      where: { id: user.id, email: user.email, isAdmin: false },
+      where: {
+        id: user.id,
+        email: user.email,
+        isAdmin: false,
+        passwordHash: user.passwordHash
+      },
       data: {
         passwordHash,
         sessionIssuedAt: revokedAt,
