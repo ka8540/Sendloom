@@ -318,6 +318,29 @@ export function filterSequenceItems(
 
 export const SEQUENCE_PAGE_SIZE = 5;
 
+// A non-empty page keeps the visual capacity of a full page without adding
+// placeholder rows. Measuring the real rows keeps the footprint responsive;
+// averaging also makes a five-row page resolve to its exact rendered height.
+export function calculateSequenceListMinHeight(
+  rowHeights: readonly number[],
+  rowGap: number,
+  pageSize: number = SEQUENCE_PAGE_SIZE
+): number | null {
+  const measuredRows = rowHeights
+    .slice(0, pageSize)
+    .filter((height) => Number.isFinite(height) && height > 0);
+
+  if (!measuredRows.length) {
+    return null;
+  }
+
+  const averageRowHeight =
+    measuredRows.reduce((total, height) => total + height, 0) / measuredRows.length;
+  const safeRowGap = Number.isFinite(rowGap) ? Math.max(0, rowGap) : 0;
+
+  return averageRowHeight * pageSize + safeRowGap * Math.max(0, pageSize - 1);
+}
+
 export type SequencePageSlice = {
   page: number;
   totalPages: number;
