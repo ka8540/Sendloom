@@ -54,6 +54,21 @@ describe("auth verification email", () => {
     );
   });
 
+  it("sends password-reset-specific copy without reset credentials or password material", async () => {
+    await sendAuthVerificationCode({ to: "user@example.com", purpose: "PASSWORD_RESET", code: "654321" });
+    expect(sendMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        subject: "Reset your Sendloom password",
+        html: expect.stringContaining("654321"),
+        text: expect.stringContaining("Use this verification code to reset your Sendloom password.")
+      })
+    );
+    const message = sendMock.mock.calls[0]?.[0] as { html: string; text: string };
+    expect(message.text).toContain("This code expires in 10 minutes.");
+    expect(message.text).toContain("If you didn't request a password reset, you can ignore this email.");
+    expect(`${message.html}\n${message.text}`).not.toMatch(/passwordHash|resetGrant|session JWT|userId/);
+  });
+
   it("fails closed when Resend sender configuration is missing", async () => {
     envMock.RESEND_API_KEY = "";
     await expect(

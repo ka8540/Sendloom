@@ -115,6 +115,7 @@ describe("auth OTP primitives", () => {
     expect(first).toMatch(/^[a-f0-9]{64}$/);
     expect(first).not.toBe(createAuthOtpDigest("other", "SIGNUP", "123456"));
     expect(first).not.toBe(createAuthOtpDigest("challenge", "PASSWORD_CHANGE", "123456"));
+    expect(first).not.toBe(createAuthOtpDigest("challenge", "PASSWORD_RESET", "123456"));
     envMock.AUTH_OTP_SECRET = "a-different-test-secret-with-at-least-32-bytes";
     expect(first).not.toBe(createAuthOtpDigest("challenge", "SIGNUP", "123456"));
   });
@@ -158,6 +159,23 @@ describe("auth OTP challenge lifecycle", () => {
     expect(await verifyAndConsumeAuthOtpChallenge(input)).toEqual({ ok: false, reason: "not_found" });
   });
 
+  it("allows only one concurrent correct verification to claim a challenge", async () => {
+    const pending = await createAuthOtpChallenge({
+      purpose: "PASSWORD_RESET",
+      normalizedEmail: "user@example.com",
+      userId: "user-1"
+    });
+    const input = {
+      challengeId: pending.challengeId,
+      purpose: "PASSWORD_RESET" as const,
+      code: pending.code
+    };
+
+    const results = await Promise.all([verifyAndConsumeAuthOtpChallenge(input), verifyAndConsumeAuthOtpChallenge(input)]);
+    expect(results.filter((result) => result.ok)).toHaveLength(1);
+    expect(results.filter((result) => !result.ok)).toHaveLength(1);
+  });
+
   it("increments incorrect attempts and invalidates the fifth failure", async () => {
     const pending = await createAuthOtpChallenge({
       purpose: "SIGNUP",
@@ -183,6 +201,95 @@ describe("auth OTP challenge lifecycle", () => {
       })
     ).toEqual({ ok: false, reason: "exhausted" });
     expect(store.size).toBe(0);
+  });
+
+  it("cannot race concurrent wrong guesses around the five-attempt limit", async () => {
+    const pending = await createAuthOtpChallenge({
+      purpose: "PASSWORD_RESET",
+      normalizedEmail: "user@example.com",
+      userId: "user-1"
+    });
+    const wrong = differentCode(pending.code);
+    const results = await Promise.all(
+      Array.from({ length: 10 }, () =>
+        verifyAndConsumeAuthOtpChallenge({
+          challengeId: pending.challengeId,
+          purpose: "PASSWORD_RESET",
+          code: wrong
+        })
+      )
+    );
+
+    expect(results.filter((result) => result.ok)).toHaveLength(0);
+    expect(store.size).toBe(0);
+    expect(results.some((result) => !result.ok && result.reason === "exhausted")).toBe(true);
+  });
+
+  it("stores a reset target or a null decoy without any password material", async () => {
+    const pending = await createAuthOtpChallenge({
+      purpose: "PASSWORD_RESET",
+      normalizedEmail: "unknown@example.com",
+      userId: null
+    });
+    const serialized = [...store.values()][0] ?? "";
+    const stored = JSON.parse(serialized) as Record<string, unknown>;
+
+    expect(serialized).not.toContain(pending.code);
+    expect(stored).not.toHaveProperty("passwordHash");
+    expect(stored).not.toHaveProperty("newPassword");
+    expect(stored).not.toHaveProperty("sessionJwt");
+    expect(stored).not.toHaveProperty("isAdmin");
+    expect(stored).toMatchObject({ purpose: "PASSWORD_RESET", userId: null });
+  });
+
+  it("isolates reset, signup, and password-change purposes", async () => {
+    const signup = await createAuthOtpChallenge({
+      purpose: "SIGNUP",
+      normalizedEmail: "signup@example.com",
+      passwordHash: "hash"
+    });
+    const passwordChange = await createAuthOtpChallenge({
+      purpose: "PASSWORD_CHANGE",
+      normalizedEmail: "change@example.com",
+      userId: "user-2",
+      newPasswordHash: "new-hash",
+      hadPassword: true
+    });
+    const reset = await createAuthOtpChallenge({
+      purpose: "PASSWORD_RESET",
+      normalizedEmail: "reset@example.com",
+      userId: "user-3"
+    });
+
+    expect(
+      await verifyAndConsumeAuthOtpChallenge({
+        challengeId: signup.challengeId,
+        purpose: "PASSWORD_RESET",
+        code: signup.code
+      })
+    ).toEqual({ ok: false, reason: "context_mismatch" });
+    expect(
+      await verifyAndConsumeAuthOtpChallenge({
+        challengeId: passwordChange.challengeId,
+        purpose: "PASSWORD_RESET",
+        code: passwordChange.code
+      })
+    ).toEqual({ ok: false, reason: "context_mismatch" });
+    expect(
+      await verifyAndConsumeAuthOtpChallenge({
+        challengeId: reset.challengeId,
+        purpose: "SIGNUP",
+        code: reset.code
+      })
+    ).toEqual({ ok: false, reason: "context_mismatch" });
+    expect(
+      await verifyAndConsumeAuthOtpChallenge({
+        challengeId: reset.challengeId,
+        purpose: "PASSWORD_CHANGE",
+        code: reset.code,
+        userId: "user-3"
+      })
+    ).toEqual({ ok: false, reason: "context_mismatch" });
   });
 
   it("rejects expiration, purpose mismatch, and password-challenge ownership mismatch", async () => {
@@ -251,5 +358,24 @@ describe("auth OTP challenge lifecycle", () => {
         code: rotated.code
       })
     ).toMatchObject({ ok: true });
+  });
+
+  it("caps each challenge at five total email sends", async () => {
+    const pending = await createAuthOtpChallenge({
+      purpose: "PASSWORD_RESET",
+      normalizedEmail: "user@example.com",
+      userId: "user-1"
+    });
+
+    for (let resend = 0; resend < 4; resend += 1) {
+      vi.advanceTimersByTime(60_000);
+      expect(
+        await rotateAuthOtpChallenge({ challengeId: pending.challengeId, purpose: "PASSWORD_RESET" })
+      ).toMatchObject({ ok: true });
+    }
+    vi.advanceTimersByTime(60_000);
+    expect(
+      await rotateAuthOtpChallenge({ challengeId: pending.challengeId, purpose: "PASSWORD_RESET" })
+    ).toEqual({ ok: false, reason: "email_limit" });
   });
 });

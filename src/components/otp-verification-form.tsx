@@ -15,7 +15,12 @@ export type OtpChallengeMetadata = {
 
 async function readPayload(response: Response) {
   return (await response.json().catch(() => null)) as
-    | (Partial<OtpChallengeMetadata> & { error?: string; message?: string; success?: boolean })
+    | (Partial<OtpChallengeMetadata> & {
+        error?: string;
+        message?: string;
+        resetGrant?: string;
+        success?: boolean;
+      })
     | null;
 }
 
@@ -35,7 +40,7 @@ export function OtpVerificationForm({
   submitLabel: string;
   pendingLabel?: string;
   cancelLabel: string;
-  onSuccess: (payload: { message?: string }) => void | Promise<void>;
+  onSuccess: (payload: { message?: string; resetGrant?: string }) => void | Promise<void>;
   onCancel: () => void;
 }) {
   const [code, setCode] = useState("");
@@ -87,7 +92,7 @@ export function OtpVerificationForm({
         setError(payload?.error ?? "We couldn't verify that code. Try again.");
         return;
       }
-      await onSuccess({ message: payload?.message });
+      await onSuccess({ message: payload?.message, resetGrant: payload?.resetGrant });
     } catch {
       setError("We couldn't verify that code. Try again.");
     } finally {
