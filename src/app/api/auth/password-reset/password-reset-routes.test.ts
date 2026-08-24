@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   findUnique: vi.fn(),
   updateMany: vi.fn(),
   createPasswordHash: vi.fn(),
+  verifyPassword: vi.fn(),
   createChallenge: vi.fn(),
   peekChallenge: vi.fn(),
   verifyChallenge: vi.fn(),
@@ -20,7 +21,8 @@ vi.mock("@/lib/db", () => ({
 }));
 vi.mock("@/lib/auth", () => ({
   createPasswordHash: mocks.createPasswordHash,
-  normalizeUserEmail: (email: string) => email.trim().toLowerCase()
+  normalizeUserEmail: (email: string) => email.trim().toLowerCase(),
+  verifyPassword: mocks.verifyPassword
 }));
 vi.mock("@/lib/auth-email", () => ({ sendAuthVerificationCode: mocks.sendCode }));
 vi.mock("@/lib/auth-otp", () => ({
@@ -98,6 +100,7 @@ beforeEach(() => {
   mocks.findUnique.mockResolvedValue(user);
   mocks.updateMany.mockResolvedValue({ count: 1 });
   mocks.createPasswordHash.mockResolvedValue("$2b$12$new-bcrypt-hash");
+  mocks.verifyPassword.mockResolvedValue(false);
   mocks.createChallenge.mockImplementation(async (input: { normalizedEmail: string; userId: string | null }) => ({
     ...metadata,
     metadata,
@@ -336,8 +339,14 @@ describe("POST /api/auth/password-reset/complete", () => {
       windowSeconds: 60 * 15
     });
     expect(mocks.createPasswordHash).toHaveBeenCalledWith("new-password-value");
+    expect(mocks.verifyPassword).toHaveBeenCalledWith("new-password-value", user.passwordHash);
     expect(mocks.updateMany).toHaveBeenCalledWith({
-      where: { id: user.id, email: user.email, isAdmin: false },
+      where: {
+        id: user.id,
+        email: user.email,
+        isAdmin: false,
+        passwordHash: user.passwordHash
+      },
       data: {
         passwordHash: "$2b$12$new-bcrypt-hash",
         sessionIssuedAt: expect.any(Date),
@@ -347,6 +356,28 @@ describe("POST /api/auth/password-reset/complete", () => {
     const data = mocks.updateMany.mock.calls[0]?.[0]?.data as Record<string, unknown>;
     expect(Object.keys(data).sort()).toEqual(["passwordHash", "sessionExpiresAt", "sessionIssuedAt"]);
     expect(JSON.stringify(data)).not.toContain("new-password-value");
+  });
+
+  it("rejects the current password after consuming the one-time grant", async () => {
+    mocks.verifyPassword.mockResolvedValueOnce(true);
+    const response = await completeReset(
+      jsonRequest("/api/auth/password-reset/complete", {
+        resetGrant,
+        newPassword: "old-password-value",
+        confirmPassword: "old-password-value"
+      })
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(payload).toEqual({
+      error: "Your new password must be different from your current password. Start password recovery again.",
+      restartRequired: true
+    });
+    expect(mocks.consumeGrant).toHaveBeenCalledWith(resetGrant);
+    expect(mocks.verifyPassword).toHaveBeenCalledWith("old-password-value", user.passwordHash);
+    expect(mocks.createPasswordHash).not.toHaveBeenCalled();
+    expect(mocks.updateMany).not.toHaveBeenCalled();
   });
 
   it("preserves Google linkage, admin status, and account restrictions by never updating them", async () => {
@@ -360,6 +391,10 @@ describe("POST /api/auth/password-reset/complete", () => {
     );
 
     const data = mocks.updateMany.mock.calls[0]?.[0]?.data as Record<string, unknown>;
+    expect(mocks.verifyPassword).not.toHaveBeenCalled();
+    expect(mocks.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ passwordHash: null }) })
+    );
     expect(data).not.toHaveProperty("googleSub");
     expect(data).not.toHaveProperty("isAdmin");
     expect(data).not.toHaveProperty("restrictedAt");
@@ -449,5 +484,24 @@ describe("POST /api/auth/password-reset/complete", () => {
 
     expect(responses.filter((response) => response.status === 200)).toHaveLength(1);
     expect(mocks.updateMany).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails closed if another reset changes the password after it was checked", async () => {
+    mocks.updateMany.mockResolvedValueOnce({ count: 0 });
+    const response = await completeReset(
+      jsonRequest("/api/auth/password-reset/complete", {
+        resetGrant,
+        newPassword: "new-password-value",
+        confirmPassword: "new-password-value"
+      })
+    );
+
+    expect(response.status).toBe(410);
+    expect(mocks.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ passwordHash: user.passwordHash }) })
+    );
+    expect(mocks.audit).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: "auth.password_reset_completed" })
+    );
   });
 });

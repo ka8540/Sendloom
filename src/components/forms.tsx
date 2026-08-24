@@ -345,7 +345,7 @@ export function ForgotPasswordForm() {
       });
       if (!response.ok) {
         const error = await readError(response, "We couldn't reset your password.");
-        if (response.status === 410) {
+        if (response.status === 409 || response.status === 410) {
           setResetGrant(null);
           setChallenge(null);
           setStep("EMAIL");

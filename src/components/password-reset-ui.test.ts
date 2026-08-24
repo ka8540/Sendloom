@@ -28,6 +28,7 @@ describe("forgot-password UI source contract", () => {
     expect(FORMS).toContain('resendEndpoint="/api/auth/password-reset/resend"');
     expect(FORMS).toContain('step === "NEW_PASSWORD" && resetGrant');
     expect(FORMS).toContain('step === "SUCCESS"');
+    expect(FORMS).toContain("response.status === 409 || response.status === 410");
     expect(FORMS).toContain("Your password has been updated. You can now sign in with your new password.");
   });
 
