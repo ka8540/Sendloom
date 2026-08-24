@@ -57,6 +57,7 @@ const termsSections = [
     title: "Account verification",
     paragraphs: [
       "Sendloom requires verification of the account email before completing email-and-password registration and may require verification during other security-sensitive account actions. Verification may include a time-limited code sent to the account email.",
+      "If you forget your password, Sendloom may require verification through the email associated with your account before allowing you to choose a replacement password. Password recovery may use a time-limited verification code and other temporary security controls. Knowing or entering an email address alone does not authorize a password reset.",
       "Google sign-in uses Google's authentication and verified-email flow; it does not require Sendloom's email-and-password registration code."
     ]
   },
@@ -64,7 +65,8 @@ const termsSections = [
     id: "password-security",
     title: "Password security",
     paragraphs: [
-      "Sendloom may require additional verification through the account email before a password is established or changed, including when an account originally created with Google authentication later adds a password. This verification is used for the security-sensitive password action and does not mean that every normal login requires a verification code."
+      "Sendloom may require additional verification through the account email before a password is established or changed, including when an account originally created with Google authentication later adds a password. This verification is used for the security-sensitive password action and does not mean that every normal login requires a verification code.",
+      "After a successful password recovery, Sendloom invalidates existing login sessions and requires you to sign in again using the new credential. Where an account already has a password, the replacement password must differ from the current password."
     ]
   },
   {
@@ -195,6 +197,7 @@ const privacySections = [
     bullets: [
       "Account information such as your email address and sign-in method.",
       "Email-verification data, including the account email address, temporary verification or challenge information, and security and rate-limit metadata needed to confirm email control and prevent abuse.",
+      "Password-recovery information, including the account email address, temporary verification challenges, temporary recovery authorization information, attempt and resend information, timestamps, and related security metadata needed to complete and protect the recovery process.",
       "Google profile information such as your name, email address, and profile image when you sign in with Google.",
       "Connected Gmail account information needed to send email on your behalf after you explicitly authorize it.",
       "Templates, imports, uploaded files, mappings, sender profiles, campaigns, and suppression records that you create inside Sendloom.",
@@ -231,6 +234,7 @@ const privacySections = [
       "To create and manage your account.",
       "To authenticate you and maintain a secure login session.",
       "To verify control of the account email during email-and-password registration and security-sensitive password actions.",
+      "To verify control of the account email, authorize a replacement password, and protect the Forgot Password and password-recovery process.",
       "To deliver verification, security, and important policy-update communications to your account email.",
       "To let you create templates, upload lists, connect senders, and launch sequences.",
       "To process email delivery activity, track statuses, and apply suppressions.",
@@ -244,6 +248,7 @@ const privacySections = [
     paragraphs: [
       "When you register with an email address and password, Sendloom uses the account email and a temporary verification challenge to confirm that you control that address before the account is created. Google sign-in instead relies on Google's authentication and verified-email flow.",
       "Sendloom may also require account-email verification when you set or change a password, including when a Google-based account later adds a password.",
+      "If you use Forgot Password, Sendloom verifies control of the account email before authorizing a replacement password. Temporary recovery authorization is limited in duration and use, and a successful password recovery invalidates existing Sendloom sessions so the account must authenticate again.",
       "Verification challenges are temporary. Sendloom uses reasonable expiration, attempt, resend, and rate controls designed to reduce repeated, unauthorized, or abusive verification activity."
     ]
   },
@@ -251,7 +256,7 @@ const privacySections = [
     id: "account-service-email",
     title: "Account and service email delivery",
     paragraphs: [
-      "Sendloom uses a transactional email service provider, currently Resend, to deliver operational account and service communications. These communications may include account verification codes, password or security verification messages, and important policy-update notices.",
+      "Sendloom uses a transactional email service provider, currently Resend, to deliver operational account and service communications. These communications may include account verification codes, password-recovery verification codes, other password or security verification messages, and important policy-update notices.",
       "To deliver these messages, the provider may process your account email address, the message content, and delivery metadata needed to route, deliver, secure, and troubleshoot the email.",
       "Account and service communications are sent to the email address associated with your Sendloom account. They are not sent through a Gmail sender account that you connect for outreach."
     ]
@@ -323,7 +328,7 @@ const privacySections = [
     paragraphs: [
       "Sendloom stores account data, templates, campaign records, sender profile details, and imported audience data in the application database and related service infrastructure.",
       "We retain information for as long as it is needed to operate your account, comply with legal obligations, resolve disputes, and enforce our agreements.",
-      "Temporary account-verification challenges are retained only as needed to complete or protect the verification process. Limited policy-notice delivery records may be retained for reliability, auditing, duplicate prevention, retry handling, and troubleshooting.",
+      "Temporary account-verification and password-recovery challenges, authorization information, and related security records expire or are retained only for the limited period needed to complete or protect those processes, subject to legitimate security, auditing, or legal needs. Limited policy-notice delivery records may be retained for reliability, auditing, duplicate prevention, retry handling, and troubleshooting.",
       "AI-feature inputs, outputs, and related operational metadata may be retained for the purposes described in this policy. Retention periods may depend on the feature, the type of data, account status, security and support needs, provider arrangements, and applicable law."
     ]
   },
@@ -358,7 +363,7 @@ const privacySections = [
     id: "security",
     title: "Security",
     paragraphs: [
-      "We use reasonable administrative, technical, and organizational safeguards designed to protect your information. These safeguards include account-email verification for certain registration and password actions and controls designed to limit repeated verification abuse. However, no system can be guaranteed to be completely secure."
+      "We use reasonable administrative, technical, and organizational safeguards designed to protect your information. These safeguards include account-email verification for certain registration and password actions, temporary and limited-use password-recovery authorization, controls designed to limit repeated verification abuse, and invalidation of existing application sessions after successful password recovery. However, no system can be guaranteed to be completely secure."
     ]
   },
   {
@@ -398,7 +403,10 @@ const abuseSections = [
       "Fraudulent or automated account creation: creating accounts through deceptive or automated means, or creating an account to evade a prior suspension, restriction, or other enforcement action.",
       "Verification abuse: attempting to bypass email verification, brute-force a verification code, use another person's verification code without authorization, or circumvent verification attempt limits, resend controls, or rate limits.",
       "Credential attacks: using credential stuffing or other unauthorized methods to access or take over an account.",
-      "Security-control interference: probing, disabling, evading, or otherwise interfering with Sendloom authentication or account-security controls."
+      "Security-control interference: probing, disabling, evading, or otherwise interfering with Sendloom authentication or account-security controls.",
+      "Password-recovery abuse: requesting, initiating, or attempting to complete password recovery for another person's account without authorization.",
+      "Reset-message abuse: repeatedly triggering password-recovery messages or verification codes for harassment, disruption, provider abuse, or resource exhaustion.",
+      "Recovery-control bypass: attempting to brute-force, replay, reuse, automate, or circumvent password-recovery verification, authorization, expiration, attempt, resend, or rate controls."
     ]
   },
   {
@@ -450,11 +458,13 @@ export const LEGAL_POLICIES = {
     id: "terms",
     title: "Terms of Service",
     path: "/terms",
-    version: "2026-08-23-v2",
-    releaseGroup: "2026-08-23-v2-combined-policy-notice",
-    lastUpdated: "August 23, 2026",
+    version: "2026-08-24",
+    releaseGroup: "2026-08-24-account-recovery-security",
+    lastUpdated: "August 24, 2026",
     changeSummary: [
-      "Clarified that related Sendloom policy updates may be combined into a single account or service notice."
+      "Added information about secure password recovery using verification through the email associated with your Sendloom account.",
+      "Clarified that successful password recovery may revoke existing sessions and require you to sign in again.",
+      "Clarified password-security requirements that apply when establishing a replacement password."
     ],
     sections: termsSections
   },
@@ -462,11 +472,13 @@ export const LEGAL_POLICIES = {
     id: "privacy",
     title: "Privacy Policy",
     path: "/privacy",
-    version: "2026-08-23-v2",
-    releaseGroup: "2026-08-23-v2-combined-policy-notice",
-    lastUpdated: "August 23, 2026",
+    version: "2026-08-24",
+    releaseGroup: "2026-08-24-account-recovery-security",
+    lastUpdated: "August 24, 2026",
     changeSummary: [
-      "Clarified that related policy updates may be grouped into one account-service email with separate review links."
+      "Added details about the account information and temporary security data used during Forgot Password and password recovery.",
+      "Clarified how password-recovery verification codes are delivered and how temporary recovery data is used to protect the process.",
+      "Added information about session revocation and other security measures applied after a successful password reset."
     ],
     sections: privacySections
   },
@@ -474,11 +486,13 @@ export const LEGAL_POLICIES = {
     id: "abuse",
     title: "Anti-Abuse Policy",
     path: "/abuse",
-    version: "2026-08-23-v2",
-    releaseGroup: "2026-08-23-v2-combined-policy-notice",
-    lastUpdated: "August 23, 2026",
+    version: "2026-08-24",
+    releaseGroup: "2026-08-24-account-recovery-security",
+    lastUpdated: "August 24, 2026",
     changeSummary: [
-      "Clarified how Anti-Abuse Policy updates may be included in a combined Sendloom policy notice."
+      "Expanded the Anti-Abuse Policy to prohibit unauthorized use of Sendloom's password-recovery process.",
+      "Added protections against password-reset email abuse and repeated recovery requests intended to harass or disrupt users.",
+      "Clarified that attempts to bypass, brute-force, replay, or automate password-recovery security controls are prohibited."
     ],
     sections: abuseSections
   }

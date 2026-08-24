@@ -16,18 +16,21 @@ describe("legal policy registry", () => {
     expect(LEGAL_POLICIES.abuse).toMatchObject({ title: "Anti-Abuse Policy", path: "/abuse" });
   });
 
-  it("has valid release metadata and changed content for the August 23, 2026 v2 release", () => {
+  it("has valid release metadata and changed content for the August 24, 2026 account-recovery release", () => {
     const previousReleaseHashes = {
-      terms: "0081429d9bd20e905a3c9883437a181ab060a109771a2c70525aa7d2581383ba",
-      privacy: "bc2e86c57251a53cc1211e64960f66f9c27af1a22988f84651d71234ce828da2",
-      abuse: "887bf6c3d594bad581c686268ec234e53d4290c1712b7a2b07760f1dac1b5989"
+      terms: "53090cd2b21140fe2d1472fe424dadb900d84f37e5f5f1acd5ba5f8804f089de",
+      privacy: "b80e1f00921699932ea60a992df75a77611752a99d71db0830e60606f810ca2a",
+      abuse: "217e658352ae89ccf9e9750a08f9508d2589ac868da2e16357f379c769856162"
     } as const;
 
     expect(validateLegalPolicyRegistry()).toEqual([]);
+    expect(new Set(LEGAL_POLICY_LIST.map((policy) => policy.releaseGroup))).toEqual(
+      new Set(["2026-08-24-account-recovery-security"])
+    );
     for (const policy of LEGAL_POLICY_LIST) {
-      expect(policy.version).toBe("2026-08-23-v2");
-      expect(policy.releaseGroup).toBe("2026-08-23-v2-combined-policy-notice");
-      expect(policy.lastUpdated).toBe("August 23, 2026");
+      expect(policy.version).toBe("2026-08-24");
+      expect(policy.releaseGroup).toBe("2026-08-24-account-recovery-security");
+      expect(policy.lastUpdated).toBe("August 24, 2026");
       expect(policy.changeSummary.length).toBeGreaterThan(0);
       expect(policy.sections.length).toBeGreaterThan(0);
       expect(computeLegalPolicyContentHash(policy)).toMatch(/^[a-f0-9]{64}$/);

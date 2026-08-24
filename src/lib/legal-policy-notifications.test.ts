@@ -690,7 +690,7 @@ describe("legacy August 23 transition", () => {
 
     expect(result).toMatchObject({ noticesCreated: 0, releasesCreated: 1, recipientsSent: 1, releasesCompleted: 1 });
     expect(store.releases).toHaveLength(1);
-    expect(store.releases[0].releaseGroup).toBe("2026-08-23-v2-combined-policy-notice");
+    expect(store.releases[0].releaseGroup).toBe("2026-08-24-account-recovery-security");
     expect(store.releases[0].notices).toHaveLength(3);
     expect(mailer.send).toHaveBeenCalledTimes(1);
     expect(mailer.send).toHaveBeenCalledWith(expect.objectContaining({ to: "new@example.com" }));
