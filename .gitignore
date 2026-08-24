@@ -12,3 +12,9 @@ prisma/dev.db-journal
 .vercel
 .env*
 docs/
+
+# macOS metadata and accidental Finder copy suffixes
+.DS_Store
+* 2.ts
+* 2.tsx
+* 2.sql
