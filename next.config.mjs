@@ -23,6 +23,7 @@ const csp = [
   "script-src 'self' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: https:",
+  "media-src 'self' https://pub-9400568eaa014d6cbfd93f37668641cd.r2.dev",
   "font-src 'self' data:",
   "connect-src 'self' https://api.openai.com https://oauth2.googleapis.com https://openidconnect.googleapis.com https://accounts.google.com https://www.googleapis.com"
 ].join("; ");

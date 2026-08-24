@@ -175,7 +175,7 @@ export function AuthVideoPreview() {
           muted
           playsInline
           preload="auto"
-          src="/videos/sendloom-auth-preview.mp4"
+          src="https://pub-9400568eaa014d6cbfd93f37668641cd.r2.dev/auth/sendloom-auth-preview.mp4"
           onCanPlay={handleReady}
           onEnded={handleEnded}
         />
