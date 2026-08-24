@@ -66,7 +66,26 @@ describe("legal notice email", () => {
     }
     expect(rendered.html.indexOf("Terms of Service")).toBeLessThan(rendered.html.indexOf("Privacy Policy"));
     expect(rendered.html.indexOf("Privacy Policy")).toBeLessThan(rendered.html.indexOf("Anti-Abuse Policy"));
+    expect(rendered.html).toContain('src="https://sendloom.net/icon-192.png"');
+    expect(rendered.html.match(/<img\b/g)).toHaveLength(1);
+    expect(rendered.html).toContain('alt="Sendloom"');
+    expect(rendered.html).toContain('<meta charset="utf-8">');
+    expect(rendered.html).toContain('<span style="color:#15221f;">Send</span><span style="color:#23a774;">loom</span>');
+    expect(rendered.html.indexOf("icon-192.png")).toBeLessThan(rendered.html.indexOf("POLICY UPDATE"));
+    expect(rendered.html.indexOf("POLICY UPDATE")).toBeLessThan(rendered.html.indexOf("Terms of Service"));
+    expect(rendered.html.indexOf("Anti-Abuse Policy")).toBeLessThan(rendered.html.indexOf("Your trust matters"));
+    expect(rendered.html.indexOf("Your trust matters")).toBeLessThan(
+      rendered.html.indexOf("You're receiving this service notice")
+    );
+    expect(rendered.html).toContain("border-radius:999px");
+    expect(rendered.html).toContain("Review Terms of Service&nbsp;&nbsp;&#8594;");
+    for (const glyph of ["&#9636;", "&#9919;", "&#9960;", "&#10003;"]) {
+      expect(rendered.html.split(glyph)).toHaveLength(2);
+    }
     expect(rendered.text).toContain("You're receiving this service notice because you have a Sendloom account.");
+    expect(rendered.text).toContain("Review the key changes below.");
+    expect(rendered.text).toContain("Your trust matters");
+    expect(rendered.text).toContain("© 2026 Sendloom. All rights reserved.");
   });
 
   it("renders a two-policy release as one combined email", () => {
@@ -77,14 +96,33 @@ describe("legal notice email", () => {
   });
 
   it.each([
-    [terms, "We updated our Terms of Service"],
-    [privacy, "We updated our Privacy Policy"],
-    [abuse, "We updated our Anti-Abuse Policy"]
-  ] as const)("preserves the single-policy subject for $0.id", (item, subject) => {
+    { item: terms, subject: "We updated our Terms of Service" },
+    { item: privacy, subject: "We updated our Privacy Policy" },
+    { item: abuse, subject: "We updated our Anti-Abuse Policy" }
+  ] as const)("preserves the single-policy subject for $item.id", ({ item, subject }) => {
     const rendered = renderLegalNoticeEmail({ policies: [item], appBaseUrl: "https://sendloom.net" });
     expect(rendered.subject).toBe(subject);
     expect(rendered.policies).toEqual([item]);
     expect(rendered.reviewUrls[item.id]).toBe(`https://sendloom.net${item.path}`);
+    expect(rendered.html).toContain(
+      `We&#039;ve made some updates to our ${item.title}. Review the key changes below.`
+    );
+    expect(rendered.html.match(/<h2\b/g)).toHaveLength(1);
+  });
+
+  it("keeps dynamic policy copy escaped in the redesigned HTML and complete in plain text", () => {
+    const summary = "Clarified <account> rules & notice delivery.";
+    const rendered = renderLegalNoticeEmail({
+      policies: [{ ...terms, lastUpdated: 'September 1, 2026 <final>', changeSummary: [summary] }],
+      appBaseUrl: "https://sendloom.net/app?preview=true#email"
+    });
+
+    expect(rendered.html).toContain("September 1, 2026 &lt;final&gt;");
+    expect(rendered.html).toContain("Clarified &lt;account&gt; rules &amp; notice delivery.");
+    expect(rendered.html).not.toContain(summary);
+    expect(rendered.text).toContain(summary);
+    expect(rendered.html).toContain('href="https://sendloom.net/terms"');
+    expect(rendered.html).toContain('src="https://sendloom.net/icon-192.png"');
   });
 
   it("refuses empty, duplicate, or summary-less release content", () => {
