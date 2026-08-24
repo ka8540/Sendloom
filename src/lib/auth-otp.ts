@@ -8,7 +8,7 @@ export const AUTH_OTP_RESEND_COOLDOWN_SECONDS = 60;
 export const AUTH_OTP_MAX_ATTEMPTS = 5;
 export const AUTH_OTP_MAX_EMAILS_PER_CHALLENGE = 5;
 
-export type AuthOtpPurpose = "SIGNUP" | "PASSWORD_CHANGE";
+export type AuthOtpPurpose = "SIGNUP" | "PASSWORD_CHANGE" | "PASSWORD_RESET";
 
 type AuthOtpChallengeBase = {
   version: 1;
@@ -34,7 +34,12 @@ export type PasswordChangeOtpChallenge = AuthOtpChallengeBase & {
   hadPassword: boolean;
 };
 
-export type AuthOtpChallenge = SignupOtpChallenge | PasswordChangeOtpChallenge;
+export type PasswordResetOtpChallenge = AuthOtpChallengeBase & {
+  purpose: "PASSWORD_RESET";
+  userId: string | null;
+};
+
+export type AuthOtpChallenge = SignupOtpChallenge | PasswordChangeOtpChallenge | PasswordResetOtpChallenge;
 
 export type AuthOtpPublicMetadata = {
   challengeId: string;
@@ -125,7 +130,7 @@ function parseChallenge(raw: string | null): AuthOtpChallenge | null {
     const value = JSON.parse(raw) as Partial<AuthOtpChallenge>;
     if (
       value.version !== 1 ||
-      (value.purpose !== "SIGNUP" && value.purpose !== "PASSWORD_CHANGE") ||
+      (value.purpose !== "SIGNUP" && value.purpose !== "PASSWORD_CHANGE" && value.purpose !== "PASSWORD_RESET") ||
       typeof value.normalizedEmail !== "string" ||
       typeof value.otpDigest !== "string" ||
       typeof value.attempts !== "number" ||
@@ -148,6 +153,13 @@ function parseChallenge(raw: string | null): AuthOtpChallenge | null {
       typeof value.hadPassword === "boolean"
     ) {
       return value as PasswordChangeOtpChallenge;
+    }
+
+    if (
+      value.purpose === "PASSWORD_RESET" &&
+      (typeof value.userId === "string" || value.userId === null)
+    ) {
+      return value as PasswordResetOtpChallenge;
     }
   } catch {
     return null;
@@ -175,6 +187,11 @@ export async function createAuthOtpChallenge(
         newPasswordHash: string;
         hadPassword: boolean;
       }
+    | {
+        purpose: "PASSWORD_RESET";
+        normalizedEmail: string;
+        userId: string | null;
+      }
 ) {
   // Validate configuration before generating or writing any pending secret.
   getAuthOtpSecret();
@@ -192,16 +209,24 @@ export async function createAuthOtpChallenge(
     lastSentAt: now,
     sendCount: 1
   };
-  const challenge: AuthOtpChallenge =
-    input.purpose === "SIGNUP"
-      ? { ...base, purpose: "SIGNUP", passwordHash: input.passwordHash }
-      : {
-          ...base,
-          purpose: "PASSWORD_CHANGE",
-          userId: input.userId,
-          newPasswordHash: input.newPasswordHash,
-          hadPassword: input.hadPassword
-        };
+  let challenge: AuthOtpChallenge;
+  if (input.purpose === "SIGNUP") {
+    challenge = { ...base, purpose: "SIGNUP", passwordHash: input.passwordHash };
+  } else if (input.purpose === "PASSWORD_CHANGE") {
+    challenge = {
+      ...base,
+      purpose: "PASSWORD_CHANGE",
+      userId: input.userId,
+      newPasswordHash: input.newPasswordHash,
+      hadPassword: input.hadPassword
+    };
+  } else {
+    challenge = {
+      ...base,
+      purpose: "PASSWORD_RESET",
+      userId: input.userId
+    };
+  }
 
   await getRedis().set(challengeKey(challengeId), JSON.stringify(challenge), "EX", AUTH_OTP_EXPIRES_SECONDS);
   return { challengeId, code, challenge, metadata: publicMetadata(challengeId, challenge, now) };

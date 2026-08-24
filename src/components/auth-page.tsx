@@ -15,12 +15,13 @@ type AuthPageProps = {
   description: string;
   eyebrow: string;
   /* Strips the decorative layer (floating cards, status chips, brand tags)
-     and renders the calm two-column variant. Login only — signup keeps the
-     full treatment. */
+     and renders the calm two-column variant. Login/recovery use it; signup
+     keeps the full treatment. */
   minimal?: boolean;
   panelDescription: string;
   panelTitle: string;
   providerError?: string;
+  showProvider?: boolean;
   switchHref: "/login" | "/signup";
   switchLabel: string;
   switchText: string;
@@ -65,6 +66,7 @@ export function AuthPage({
   panelDescription,
   panelTitle,
   providerError,
+  showProvider = true,
   switchHref,
   switchLabel,
   switchText,
@@ -169,14 +171,18 @@ export function AuthPage({
               <p>{renderBrandText(panelDescription)}</p>
             </div>
 
-            <a className={styles.providerButton} href="/api/auth/google/login">
-              <GoogleIcon />
-              Continue with Google
-            </a>
+            {showProvider ? (
+              <>
+                <a className={styles.providerButton} href="/api/auth/google/login">
+                  <GoogleIcon />
+                  Continue with Google
+                </a>
 
-            <div className={styles.divider}>
-              <span>or continue with email</span>
-            </div>
+                <div className={styles.divider}>
+                  <span>or continue with email</span>
+                </div>
+              </>
+            ) : null}
 
             <div className={styles.formWrap}>{children}</div>
 

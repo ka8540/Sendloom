@@ -2,7 +2,7 @@ import { Resend } from "resend";
 
 import { env } from "@/lib/env";
 
-export type AuthEmailPurpose = "SIGNUP" | "PASSWORD_CHANGE";
+export type AuthEmailPurpose = "SIGNUP" | "PASSWORD_CHANGE" | "PASSWORD_RESET";
 
 export class AuthEmailConfigurationError extends Error {
   constructor() {
@@ -31,14 +31,27 @@ function getAuthEmailConfig() {
 
 function renderVerificationEmail(purpose: AuthEmailPurpose, code: string) {
   const signup = purpose === "SIGNUP";
-  const subject = signup ? "Verify your Sendloom email" : "Verify your Sendloom password change";
-  const heading = signup ? "Verify your email" : "Verify your password change";
+  const passwordReset = purpose === "PASSWORD_RESET";
+  const subject = signup
+    ? "Verify your Sendloom email"
+    : passwordReset
+      ? "Reset your Sendloom password"
+      : "Verify your Sendloom password change";
+  const heading = signup
+    ? "Verify your email"
+    : passwordReset
+      ? "Reset your password"
+      : "Verify your password change";
   const instruction = signup
     ? "Use this verification code to finish creating your Sendloom account."
-    : "Use this verification code to confirm your new password.";
-  const ignored = signup
-    ? "If you didn't request this, you can ignore this email."
-    : "If you didn't request this change, you can ignore this email.";
+    : passwordReset
+      ? "Use this verification code to reset your Sendloom password."
+      : "Use this verification code to confirm your new password.";
+  const ignored = passwordReset
+    ? "If you didn't request a password reset, you can ignore this email."
+    : signup
+      ? "If you didn't request this, you can ignore this email."
+      : "If you didn't request this change, you can ignore this email.";
 
   const text = [
     "Sendloom",

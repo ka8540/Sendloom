@@ -31,9 +31,11 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import {
   SESSION_DURATION_SECONDS,
+  createPasswordHash,
   createSessionToken,
   normalizeUserEmail,
   redirectAuthenticatedToWorkspace,
+  verifyPassword,
   verifySessionToken
 } from "@/lib/auth";
 
@@ -84,6 +86,19 @@ describe("auth session tokens", () => {
 
   it("normalizes mixed-case emails before storing them in session state", () => {
     expect(normalizeUserEmail("  Owner@Example.COM ")).toBe("owner@example.com");
+  });
+});
+
+describe("password hashing", () => {
+  it("stores a bcrypt hash that accepts only the replacement password", async () => {
+    const oldPassword = "old-password-value";
+    const newPassword = "new-password-value";
+    const replacementHash = await createPasswordHash(newPassword);
+
+    expect(replacementHash).toMatch(/^\$2[aby]\$12\$/);
+    expect(replacementHash).not.toContain(newPassword);
+    expect(await verifyPassword(oldPassword, replacementHash)).toBe(false);
+    expect(await verifyPassword(newPassword, replacementHash)).toBe(true);
   });
 });
 

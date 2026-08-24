@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type DragEvent, type FormEvent } from "react";
+import { useEffect, useRef, useState, type DragEvent, type FormEvent, type ReactNode } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -14,6 +14,7 @@ import {
   UploadCloud
 } from "lucide-react";
 import type { Route } from "next";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { renderBrandText } from "@/components/brand-text";
@@ -67,6 +68,7 @@ type PasswordFieldProps = {
   name: string;
   autoComplete?: string;
   minLength?: number;
+  labelAction?: ReactNode;
 };
 
 export type TemplateDraft = {
@@ -87,14 +89,21 @@ export type EditableTemplate = {
   previewPayload?: MergeVariables | null;
 };
 
-function PasswordField({ id, label, name, autoComplete, minLength }: PasswordFieldProps) {
+function PasswordField({ id, label, name, autoComplete, minLength, labelAction }: PasswordFieldProps) {
   const [isVisible, setIsVisible] = useState(false);
   const inputType = isVisible ? "text" : "password";
   const actionLabel = isVisible ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`;
 
   return (
     <div className="field">
-      <label htmlFor={id}>{label}</label>
+      {labelAction ? (
+        <div className="field-label-row">
+          <label htmlFor={id}>{label}</label>
+          <span className="field-label-row__actions">{labelAction}</span>
+        </div>
+      ) : (
+        <label htmlFor={id}>{label}</label>
+      )}
       <div className="password-input-shell">
         <input id={id} name={name} type={inputType} autoComplete={autoComplete} minLength={minLength} required />
         <button
@@ -146,7 +155,17 @@ export function LoginForm() {
         <label htmlFor="email">Email</label>
         <input id="email" name="email" type="email" required />
       </div>
-      <PasswordField id="password" name="password" label="Password" autoComplete="current-password" />
+      <PasswordField
+        id="password"
+        name="password"
+        label="Password"
+        autoComplete="current-password"
+        labelAction={
+          <Link className="auth-recovery-link" href={"/forgot-password" as Route}>
+            Forgot password?
+          </Link>
+        }
+      />
       <button className="button" type="submit" disabled={state.pending}>
         {state.pending ? "Signing in..." : "Sign in"}
       </button>
@@ -246,6 +265,190 @@ export function SignupForm() {
       ) : null}
       <button className="button" type="submit" disabled={state.pending}>
         {state.pending ? "Sending code…" : "Create account"}
+      </button>
+    </form>
+  );
+}
+
+type PasswordResetStep = "EMAIL" | "OTP" | "NEW_PASSWORD" | "SUCCESS";
+
+export function ForgotPasswordForm() {
+  const [step, setStep] = useState<PasswordResetStep>("EMAIL");
+  const [state, setState] = useState<ActionState>({ pending: false });
+  const [challenge, setChallenge] = useState<OtpChallengeMetadata | null>(null);
+  const [resetGrant, setResetGrant] = useState<string | null>(null);
+  useErrorToastEffect(state.error, "Password reset failed");
+
+  async function requestCode(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    setState({ pending: true });
+
+    try {
+      const response = await fetch("/api/auth/password-reset/request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: formData.get("email") })
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | (Partial<OtpChallengeMetadata> & { error?: string; requiresVerification?: boolean })
+        | null;
+      if (!response.ok) {
+        setState({ pending: false, error: payload?.error ?? "Could not start password recovery." });
+        return;
+      }
+      if (
+        !payload?.requiresVerification ||
+        typeof payload.challengeId !== "string" ||
+        typeof payload.maskedEmail !== "string" ||
+        typeof payload.expiresInSeconds !== "number" ||
+        typeof payload.resendAvailableInSeconds !== "number"
+      ) {
+        setState({ pending: false, error: "Could not start password recovery." });
+        return;
+      }
+
+      setChallenge({
+        challengeId: payload.challengeId,
+        maskedEmail: payload.maskedEmail,
+        expiresInSeconds: payload.expiresInSeconds,
+        resendAvailableInSeconds: payload.resendAvailableInSeconds
+      });
+      setResetGrant(null);
+      setStep("OTP");
+      setState({ pending: false });
+    } catch {
+      setState({ pending: false, error: "Could not start password recovery." });
+    }
+  }
+
+  async function completeReset(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!resetGrant) {
+      setChallenge(null);
+      setStep("EMAIL");
+      setState({ pending: false, error: "This password reset has expired. Start again." });
+      return;
+    }
+
+    const formData = new FormData(event.currentTarget);
+    setState({ pending: true });
+    try {
+      const response = await fetch("/api/auth/password-reset/complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          resetGrant,
+          newPassword: formData.get("newPassword"),
+          confirmPassword: formData.get("confirmPassword")
+        })
+      });
+      if (!response.ok) {
+        const error = await readError(response, "We couldn't reset your password.");
+        if (response.status === 410) {
+          setResetGrant(null);
+          setChallenge(null);
+          setStep("EMAIL");
+        }
+        setState({ pending: false, error });
+        return;
+      }
+
+      setResetGrant(null);
+      setChallenge(null);
+      setStep("SUCCESS");
+      setState({ pending: false });
+    } catch {
+      setState({ pending: false, error: "We couldn't reset your password." });
+    }
+  }
+
+  if (step === "OTP" && challenge) {
+    return (
+      <OtpVerificationForm
+        challenge={challenge}
+        verifyEndpoint="/api/auth/password-reset/verify"
+        resendEndpoint="/api/auth/password-reset/resend"
+        submitLabel="Verify code"
+        pendingLabel="Verifying…"
+        cancelLabel="Change email"
+        onCancel={() => {
+          setChallenge(null);
+          setResetGrant(null);
+          setStep("EMAIL");
+          setState({ pending: false });
+        }}
+        onSuccess={(payload) => {
+          if (!payload.resetGrant) {
+            setChallenge(null);
+            setStep("EMAIL");
+            setState({ pending: false, error: "Could not continue password recovery. Start again." });
+            return;
+          }
+          setResetGrant(payload.resetGrant);
+          setStep("NEW_PASSWORD");
+          setState({ pending: false });
+        }}
+      />
+    );
+  }
+
+  if (step === "NEW_PASSWORD" && resetGrant) {
+    return (
+      <form className="form" onSubmit={completeReset} noValidate>
+        <PasswordField
+          id="reset-new-password"
+          name="newPassword"
+          label="New password"
+          autoComplete="new-password"
+          minLength={8}
+        />
+        <PasswordField
+          id="reset-confirm-password"
+          name="confirmPassword"
+          label="Confirm new password"
+          autoComplete="new-password"
+          minLength={8}
+        />
+        {state.error ? (
+          <p className="muted" role="alert">
+            {state.error}
+          </p>
+        ) : null}
+        <button className="button" type="submit" disabled={state.pending}>
+          {state.pending ? "Resetting password…" : "Reset password"}
+        </button>
+      </form>
+    );
+  }
+
+  if (step === "SUCCESS") {
+    return (
+      <div className="form" role="status">
+        <h3>Password reset</h3>
+        <p className="auth-reset-success-copy">
+          Your password has been updated. You can now sign in with your new password.
+        </p>
+        <Link className="button" href="/login">
+          Back to sign in
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <form className="form" onSubmit={requestCode} noValidate>
+      <div className="field">
+        <label htmlFor="password-reset-email">Email</label>
+        <input id="password-reset-email" name="email" type="email" autoComplete="email" required />
+      </div>
+      {state.error ? (
+        <p className="muted" role="alert">
+          {state.error}
+        </p>
+      ) : null}
+      <button className="button" type="submit" disabled={state.pending}>
+        {state.pending ? "Sending code…" : "Send verification code"}
       </button>
     </form>
   );
