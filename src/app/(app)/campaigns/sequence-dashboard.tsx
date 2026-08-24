@@ -14,6 +14,7 @@ import {
   useDeferredValue,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -35,8 +36,10 @@ import { CampaignCardActions } from "@/components/campaign-card-actions";
 import { formatRelativeTime } from "@/components/dashboard/formatters";
 import {
   ALL_SENDER_ACCOUNTS,
+  SEQUENCE_PAGE_SIZE,
   SEQUENCE_FILTERS,
   SEQUENCE_TONE_LABELS,
+  calculateSequenceListMinHeight,
   collectSequenceSenderEmails,
   countSequenceFilters,
   describeEmptySequenceFilter,
@@ -336,13 +339,14 @@ export function SequenceDashboard({ items }: { items: SequenceListItem[] }) {
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const committedSearchQueryRef = useRef(query);
   const [page, setPage] = useState(urlPage);
-  const [listMinHeight, setListMinHeight] = useState<number | null>(null);
+  const [canonicalListMinHeight, setCanonicalListMinHeight] = useState<number | null>(null);
   const listRef = useRef<HTMLUListElement | null>(null);
   const filtered = useMemo(
     () => filterSequenceItems(items, filter, deferredSearchQuery, sender),
     [items, filter, deferredSearchQuery, sender]
   );
   const slice = paginateSequenceItems(filtered, page);
+  const pageItemKey = slice.pageItems.map((item) => item.id).join("\u0000");
   const normalizedSearchParams = useMemo(
     () => normalizeSequenceDashboardSearchParams(searchParams, urlState, slice.page),
     [searchParams, slice.page, urlState]
@@ -362,11 +366,6 @@ export function SequenceDashboard({ items }: { items: SequenceListItem[] }) {
 
   const replacePaginationPage = useCallback(
     (nextPage: number) => {
-      const currentHeight = listRef.current?.getBoundingClientRect().height ?? 0;
-      if (currentHeight > 0) {
-        setListMinHeight((height) => Math.max(height ?? 0, currentHeight));
-      }
-
       setPage(nextPage);
 
       const currentParams = new URLSearchParams(window.location.search);
@@ -377,6 +376,42 @@ export function SequenceDashboard({ items }: { items: SequenceListItem[] }) {
     },
     [pathname]
   );
+
+  useLayoutEffect(() => {
+    const listElement = listRef.current;
+    if (!listElement) {
+      return;
+    }
+    const observedList: HTMLUListElement = listElement;
+
+    function measureListHeight() {
+      const rowHeights = Array.from(observedList.children, (row) =>
+        row.getBoundingClientRect().height
+      );
+      const rowGap = Number.parseFloat(window.getComputedStyle(observedList).rowGap) || 0;
+      const nextHeight = calculateSequenceListMinHeight(
+        rowHeights,
+        rowGap,
+        SEQUENCE_PAGE_SIZE
+      );
+
+      setCanonicalListMinHeight((currentHeight) =>
+        currentHeight !== null &&
+        nextHeight !== null &&
+        Math.abs(currentHeight - nextHeight) < 0.5
+          ? currentHeight
+          : nextHeight
+      );
+    }
+
+    measureListHeight();
+
+    const resizeObserver = new ResizeObserver(measureListHeight);
+    resizeObserver.observe(observedList);
+    Array.from(observedList.children).forEach((row) => resizeObserver.observe(row));
+
+    return () => resizeObserver.disconnect();
+  }, [pageItemKey]);
 
   const replaceSearchQuery = useCallback(
     (nextQuery: string) => {
@@ -451,27 +486,23 @@ export function SequenceDashboard({ items }: { items: SequenceListItem[] }) {
   function selectFilter(next: string) {
     committedSearchQueryRef.current = searchQuery;
     setPage(1);
-    setListMinHeight(null);
     replaceUrlState({ filter: next as SequenceFilterId, query: searchQuery, page: 1 });
   }
 
   function selectSender(next: string) {
     committedSearchQueryRef.current = searchQuery;
     setPage(1);
-    setListMinHeight(null);
     replaceUrlState({ sender: next, query: searchQuery, page: 1 });
   }
 
   function onSearchChange(value: string) {
     setSearchQuery(value);
     setPage(1);
-    setListMinHeight(null);
   }
 
   function clearFilters() {
     setSearchQuery("");
     setPage(1);
-    setListMinHeight(null);
     replaceUrlState({
       filter: "all",
       sender: ALL_SENDER_ACCOUNTS,
@@ -570,7 +601,11 @@ export function SequenceDashboard({ items }: { items: SequenceListItem[] }) {
           <ul
             ref={listRef}
             className={styles.list}
-            style={listMinHeight ? { minHeight: listMinHeight } : undefined}
+            style={
+              canonicalListMinHeight === null
+                ? undefined
+                : { minHeight: canonicalListMinHeight }
+            }
           >
             {slice.pageItems.map((item) => (
               <SequenceRow key={item.id} item={item} returnTo={returnTo} />

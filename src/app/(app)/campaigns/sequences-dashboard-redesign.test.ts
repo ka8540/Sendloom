@@ -8,6 +8,7 @@ import {
   SEQUENCE_PAGE_SIZE,
   SEQUENCE_TONE_LABELS,
   buildSequenceAttentionItems,
+  calculateSequenceListMinHeight,
   collectSequenceSenderEmails,
   countSequenceFilters,
   describeSequencePagePreview,
@@ -286,6 +287,26 @@ describe("pagination (#10, #11)", () => {
     expect(slice.rangeLabel).toBe("Showing 1–5 of 12");
   });
 
+  it("reserves one canonical five-row footprint for pages containing 1–5 real rows", () => {
+    const rowHeight = 72;
+    const rowGap = 8;
+    const fullPageHeight = rowHeight * SEQUENCE_PAGE_SIZE + rowGap * (SEQUENCE_PAGE_SIZE - 1);
+
+    for (let rowCount = 1; rowCount <= SEQUENCE_PAGE_SIZE; rowCount += 1) {
+      expect(calculateSequenceListMinHeight(Array(rowCount).fill(rowHeight), rowGap)).toBe(
+        fullPageHeight
+      );
+    }
+  });
+
+  it("uses the exact rendered height of a five-row page and no height for zero rows", () => {
+    const rowHeights = [68, 70, 72, 74, 76];
+    expect(calculateSequenceListMinHeight(rowHeights, 9)).toBe(
+      rowHeights.reduce((total, height) => total + height, 0) + 9 * 4
+    );
+    expect(calculateSequenceListMinHeight([], 9)).toBeNull();
+  });
+
   it("slices later pages and labels the partial last page", () => {
     expect(paginateSequenceItems(items, 2).pageItems.map((item) => item.id)).toEqual([
       "seq-5",
@@ -533,17 +554,17 @@ describe("control bar (#7, #8, #10, #11)", () => {
   it("pages change on click with no pagination preview tooltip", () => {
     expect(DASH).toContain("onClick={() => replacePaginationPage(slice.page + 1)}");
     expect(DASH).toContain("onClick={() => replacePaginationPage(slice.page - 1)}");
+    const paginationHandlerStart = DASH.indexOf("const replacePaginationPage");
     const paginationHandler = DASH.slice(
-      DASH.indexOf("const replacePaginationPage"),
-      DASH.indexOf("useEffect(() =>", DASH.indexOf("const replacePaginationPage"))
+      paginationHandlerStart,
+      DASH.indexOf("useLayoutEffect(() =>", paginationHandlerStart)
     );
     expect(paginationHandler).toContain("setPage(nextPage)");
     expect(paginationHandler).toContain("window.history.replaceState");
     expect(paginationHandler).not.toContain("router.replace");
-    // The same list element stays mounted and keeps its measured height while
-    // the five-item client-side slice changes.
-    expect(DASH).toContain("ref={listRef}");
-    expect(DASH).toContain("minHeight: listMinHeight");
+    // Page changes preserve URL/history behavior; list height is no longer
+    // captured from whichever page happened to render before the click.
+    expect(paginationHandler).not.toContain("getBoundingClientRect");
     expect(DASH).not.toContain("pagePreview");
     expect(DASH).not.toContain("describeSequencePagePreview");
     expect(DASH_CSS).not.toContain(".pagePreview");
@@ -552,6 +573,27 @@ describe("control bar (#7, #8, #10, #11)", () => {
     expect(DASH).toContain('aria-label="Previous page"');
     expect(DASH).toContain("Page {slice.page} of {slice.totalPages}");
     expect(DASH).toContain("{slice.rangeLabel}");
+  });
+
+  it("keeps direct, paginated, searched, and filtered short pages at five-row height", () => {
+    expect(DASH).toContain("const pageItemKey = slice.pageItems.map");
+    expect(DASH).toContain("useLayoutEffect(() =>");
+    expect(DASH).toContain("calculateSequenceListMinHeight(");
+    expect(DASH).toContain("SEQUENCE_PAGE_SIZE");
+    expect(DASH).toContain("new ResizeObserver(measureListHeight)");
+    expect(DASH).toContain("resizeObserver.observe(observedList)");
+    expect(DASH).toContain("resizeObserver.observe(row)");
+    expect(DASH).toContain("minHeight: canonicalListMinHeight");
+    expect(DASH).not.toContain("listMinHeight");
+    expect(DASH_CSS).toMatch(/\.list \{[^}]*align-content: start;/);
+  });
+
+  it("renders only real sequence rows while reserved capacity stays non-semantic", () => {
+    const listMarkup = DASH.slice(DASH.indexOf("<ul"), DASH.indexOf("</ul>") + 5);
+    expect(listMarkup).toContain("slice.pageItems.map");
+    expect(listMarkup).toContain("<SequenceRow");
+    expect(listMarkup).not.toMatch(/placeholder|skeleton|missing/i);
+    expect(DASH_CSS).not.toMatch(/placeholderRow|emptyRow|fakeRow/);
   });
 
   it("labels every performance metric with a compact hover and focus tooltip", () => {
