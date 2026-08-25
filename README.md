@@ -669,13 +669,23 @@ System Notices are separate from legal-policy releases and incident reports. The
 1. An administrator opens **Admin → System Notices** and creates a draft.
 2. The administrator chooses the notice type, plain-text content, affected area, optional impact window, and IANA display timezone.
 3. **Preview exact email** renders the same HTML/text pair used by production delivery. Preview does not create recipient rows or call Resend.
-4. The administrator chooses **Send now** or **Schedule**. Scheduled timestamps are stored as UTC instants and are never processed early; with the five-minute cron cadence, delivery normally begins at or shortly after the selected instant.
+4. The administrator chooses **Send now** or **Schedule**. Scheduled timestamps are stored as UTC instants and are never processed early; with the five-minute external-scheduler cadence, delivery normally begins at or shortly after the selected instant.
 5. The all-users confirmation shows the current account-recipient count and delivery details. Send now additionally requires typing `SEND TO ALL USERS`.
 6. Send now records `scheduledSendAt = now` and leaves delivery to the durable processor; the browser/API never loops over users.
 7. At delivery start, the processor snapshots every `User.id` + `User.email` exactly once. Connected Gmail senders, prospects, campaign recipients, and client-supplied addresses are never audience sources.
 8. Aggregate progress is visible in Admin. A unique notice/user row, atomic leases with `SKIP LOCKED`, recipient-state checks, and the stable `system-notice-{noticeId}-{recipientId}` Resend key prevent duplicate successful sends.
 
-Production delivery requires `SYSTEM_NOTICE_PROCESSING_ENABLED=true` in addition to `NODE_ENV=production` and `VERCEL_ENV=production`. Keep the flag `false` in local, Preview, Development, test, and CI environments. The processor reuses `RESEND_API_KEY`, `DEFAULT_FROM_EMAIL`, `DEFAULT_FROM_NAME`, `APP_BASE_URL`, and `CRON_SECRET`; it never uses connected Gmail credentials. Before enabling the flag, confirm the deployment plan supports the configured `*/5 * * * *` Vercel cron cadence.
+Production delivery requires `SYSTEM_NOTICE_PROCESSING_ENABLED=true` in addition to `NODE_ENV=production` and `VERCEL_ENV=production`. Keep the flag `false` in local, Preview, Development, test, and CI environments. The processor reuses `RESEND_API_KEY`, `DEFAULT_FROM_EMAIL`, `DEFAULT_FROM_NAME`, `APP_BASE_URL`, and `CRON_SECRET`; it never uses connected Gmail credentials.
+
+Vercel Hobby does not schedule the high-frequency system-notice processor. Configure an external scheduler with these settings:
+
+- Schedule: `*/5 * * * *` (every five minutes).
+- URL: `https://<production-domain>/api/cron/system-notices`.
+- Method: `GET` or `POST`.
+- Header: `Authorization: Bearer <CRON_SECRET>` (preferred), or `x-cron-secret: <CRON_SECRET>`.
+- Treat HTTP `200` as success and allow up to 60 seconds for the request.
+
+Use the same strong `CRON_SECRET` value in the external scheduler and the Vercel Production environment. Never put the secret in the URL or query string. The route fails closed when the secret is absent or incorrect, and Preview deployments remain unable to deliver because the processor also requires `VERCEL_ENV=production`.
 
 ## Local development
 

@@ -52,4 +52,18 @@ describe("system notice security boundaries", () => {
     expect(service).toContain("This notice is immutable because delivery has started.");
     expect(service).toContain("SystemNoticeStatus.CANCELLED");
   });
+
+  it("keeps the high-frequency processor off Vercel Hobby cron", () => {
+    const vercelConfig = JSON.parse(read("vercel.json")) as {
+      crons?: Array<{ path: string; schedule: string }>;
+    };
+
+    expect(vercelConfig.crons).toContainEqual({
+      path: "/api/cron/legal-policy-notices",
+      schedule: "17 9 * * *"
+    });
+    expect(vercelConfig.crons).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ path: "/api/cron/system-notices" })])
+    );
+  });
 });

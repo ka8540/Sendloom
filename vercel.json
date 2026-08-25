@@ -3,10 +3,6 @@
     {
       "path": "/api/cron/legal-policy-notices",
       "schedule": "17 9 * * *"
-    },
-    {
-      "path": "/api/cron/system-notices",
-      "schedule": "*/5 * * * *"
     }
   ]
 }
