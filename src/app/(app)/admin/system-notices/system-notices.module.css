@@ -297,9 +297,11 @@
 
 .composer {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
   width: min(94vw, 1120px);
-  height: 100%;
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
   background: var(--surface);
   box-shadow: -20px 0 60px rgba(0, 0, 0, 0.2);
   animation: slideIn 180ms ease-out;
@@ -322,12 +324,13 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(380px, 0.8fr);
   min-height: 0;
+  overflow: hidden;
 }
 
 .formPane,
 .previewPane { overflow-y: auto; padding: 1.3rem; }
 .formPane { display: grid; align-content: start; gap: 1rem; border-right: 1px solid var(--line); }
-.previewPane { display: grid; grid-template-rows: auto auto minmax(24rem, 1fr); align-content: start; gap: 0.85rem; background: var(--surface-muted); }
+.previewPane { display: grid; grid-template-rows: auto minmax(0, 1fr); align-content: stretch; gap: 0.85rem; background: var(--surface-muted); }
 
 .formGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.9rem; }
 .formGrid label,
@@ -378,21 +381,39 @@
 .sendNowInfo strong { font-size: 0.8rem; }
 .sendNowInfo span { color: var(--muted); font-size: 0.72rem; line-height: 1.4; }
 
-.composerActions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.6rem; padding-top: 0.2rem; }
-.previewRequirement { margin: -0.45rem 0 0; color: var(--muted); font-size: 0.73rem; text-align: right; }
+.composerFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 94%, var(--surface-strong));
+  padding: 0.85rem 1.3rem;
+  box-shadow: 0 -14px 34px color-mix(in srgb, var(--background) 18%, transparent);
+}
+.composerActions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.6rem; }
+.previewReady,
+.previewRequired { display: inline-flex; align-items: center; gap: 0.45rem; min-width: 0; margin: 0; color: var(--muted); font-size: 0.75rem; font-weight: 700; line-height: 1.35; }
+.previewReady { color: var(--success); }
+.previewReady svg,
+.previewRequired svg { width: 1rem; height: 1rem; flex: 0 0 auto; }
 
 .previewHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
 .previewHeader > div { display: grid; gap: 0.2rem; }
 .previewHeader h3 { font-size: 1.05rem; }
 .previewHeader > span { display: inline-flex; align-items: center; gap: 0.35rem; color: var(--success); font-size: 0.72rem; font-weight: 800; }
+.previewHeader > .previewStale { color: var(--muted); }
 .previewHeader > span svg { width: 0.9rem; height: 0.9rem; }
+.previewContent { display: grid; grid-template-rows: auto minmax(28rem, 1fr); min-height: 0; gap: 0.85rem; }
 .previewSubject { display: grid; gap: 0.2rem; margin: 0; border: 1px solid var(--line); border-radius: 11px; background: var(--surface-strong); padding: 0.7rem 0.8rem; font-size: 0.82rem; font-weight: 700; overflow-wrap: anywhere; }
 .previewSubject span { color: var(--muted); font-size: 0.67rem; font-weight: 800; letter-spacing: 0.07em; text-transform: uppercase; }
-.previewPane iframe { width: 100%; height: 100%; min-height: 34rem; border: 1px solid var(--line); border-radius: 14px; background: white; }
-.previewEmpty { display: grid; align-content: center; justify-items: center; gap: 0.55rem; min-height: 28rem; border: 1px dashed var(--line); border-radius: 16px; color: var(--muted); padding: 2rem; text-align: center; }
+.previewPane iframe { width: 100%; height: 100%; min-height: 28rem; border: 1px solid var(--line); border-radius: 14px; background: white; }
+.previewEmpty { display: grid; align-content: center; justify-items: center; gap: 0.65rem; min-height: 18rem; height: 100%; border: 1px dashed var(--line); border-radius: 16px; color: var(--muted); padding: 2rem; text-align: center; }
 .previewEmpty svg { width: 2rem; height: 2rem; color: var(--accent-strong); }
 .previewEmpty strong { color: var(--text); }
 .previewEmpty span { max-width: 22rem; font-size: 0.82rem; line-height: 1.5; }
+.previewEmpty .previewButton { margin-top: 0.35rem; }
+.previewEmpty .previewButton svg { width: 1rem; height: 1rem; }
 
 .confirmOverlay,
 .detailOverlay { align-items: center; justify-items: center; padding: 1rem; }
@@ -455,7 +476,8 @@
   .formGrid { grid-template-columns: minmax(0, 1fr); }
   .fullField,
   .modeFieldset { grid-column: auto; }
-  .composerActions { display: grid; }
+  .composerFooter { align-items: stretch; flex-direction: column; padding: 0.75rem 1rem; }
+  .composerActions { display: grid; grid-template-columns: minmax(0, 1fr); }
   .detailBody { grid-template-columns: minmax(0, 1fr); }
   .confirmDetails div { grid-template-columns: minmax(0, 1fr); gap: 0.2rem; }
   .confirmModal > footer,

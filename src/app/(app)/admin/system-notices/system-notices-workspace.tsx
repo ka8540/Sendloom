@@ -529,20 +529,40 @@ export function SystemNoticesWorkspace() {
                 </div>
 
                 {composerError ? <div className={styles.formError}><CircleAlert aria-hidden="true" />{composerError}</div> : null}
-
-                <div className={styles.composerActions}>
-                  <button type="button" className={styles.secondaryButton} onClick={() => void saveDraft()} disabled={working}>{working ? <LoaderCircle className={styles.spin} aria-hidden="true" /> : null}{editingId ? "Save changes" : "Save draft"}</button>
-                  <button type="button" className={styles.previewButton} onClick={() => void runPreview()} disabled={working}><Eye aria-hidden="true" /> Preview exact email</button>
-                  <button type="button" className={styles.primaryButton} onClick={beginConfirmation} disabled={working || !hasCurrentPreview}>{composer.mode === "SEND_NOW" ? "Review send now" : "Review schedule"}</button>
-                </div>
-                {!hasCurrentPreview ? <p className={styles.previewRequirement}>Preview the current version before requesting delivery.</p> : null}
               </div>
 
               <aside className={styles.previewPane}>
-                <div className={styles.previewHeader}><div><p className={styles.kicker}>Production renderer</p><h3>Email preview</h3></div>{hasCurrentPreview ? <span><ShieldCheck aria-hidden="true" /> Current</span> : null}</div>
-                {preview ? <><p className={styles.previewSubject}><span>Subject</span>{preview.subject}</p><iframe title="System notice email preview" sandbox="" srcDoc={preview.html} /></> : <div className={styles.previewEmpty}><Eye aria-hidden="true" /><strong>No preview yet</strong><span>The preview uses the exact renderer used for production delivery and never sends email.</span></div>}
+                <div className={styles.previewHeader}>
+                  <div><p className={styles.kicker}>Production renderer</p><h3>Email preview</h3></div>
+                  {hasCurrentPreview ? <span><ShieldCheck aria-hidden="true" /> Current</span> : preview ? <span className={styles.previewStale}><RefreshCw aria-hidden="true" /> Refresh needed</span> : null}
+                </div>
+                {preview ? (
+                  <div className={styles.previewContent}>
+                    <p className={styles.previewSubject}><span>Subject</span>{preview.subject}</p>
+                    <iframe title="System notice email preview" sandbox="" srcDoc={preview.html} />
+                  </div>
+                ) : (
+                  <div className={styles.previewEmpty}>
+                    <Eye aria-hidden="true" />
+                    <strong>Preview your notice</strong>
+                    <span>Render the exact production email here before reviewing delivery. Preview never sends email.</span>
+                    <button type="button" className={styles.previewButton} onClick={() => void runPreview()} disabled={working}><Eye aria-hidden="true" /> Preview exact email</button>
+                  </div>
+                )}
               </aside>
             </div>
+
+            <footer className={styles.composerFooter}>
+              <p className={hasCurrentPreview ? styles.previewReady : styles.previewRequired}>
+                {hasCurrentPreview ? <ShieldCheck aria-hidden="true" /> : <Eye aria-hidden="true" />}
+                {hasCurrentPreview ? "Preview matches the current content" : "Preview the current content before delivery"}
+              </p>
+              <div className={styles.composerActions}>
+                <button type="button" className={styles.secondaryButton} onClick={() => void saveDraft()} disabled={working}>{working ? <LoaderCircle className={styles.spin} aria-hidden="true" /> : null}{editingId ? "Save changes" : "Save draft"}</button>
+                <button type="button" className={styles.previewButton} onClick={() => void runPreview()} disabled={working}><Eye aria-hidden="true" /> Preview exact email</button>
+                <button type="button" className={styles.primaryButton} onClick={beginConfirmation} disabled={working || !hasCurrentPreview}>{composer.mode === "SEND_NOW" ? "Review send now" : "Review schedule"}</button>
+              </div>
+            </footer>
           </section>
         </div>
       ) : null}
