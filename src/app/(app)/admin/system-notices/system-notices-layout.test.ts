@@ -11,6 +11,67 @@ const STYLES = readFileSync(
 );
 
 describe("system notice composer layout", () => {
+  const composerStart = WORKSPACE.indexOf("styles.composerBody");
+  const composerEnd = WORKSPACE.indexOf("confirmationOpen", composerStart);
+  const composer = WORKSPACE.slice(composerStart, composerEnd);
+  const noticeStart = composer.indexOf("styles.noticeDetailsSection");
+  const deliveryStart = composer.indexOf("styles.deliverySection");
+  const impactStart = composer.indexOf("styles.impactSection");
+  const previewStart = composer.indexOf("styles.previewPane");
+  const noticeDetails = composer.slice(noticeStart, deliveryStart);
+  const delivery = composer.slice(deliveryStart, impactStart);
+  const impact = composer.slice(impactStart, previewStart);
+
+  it("keeps all notice-detail fields full width with explicit label metadata", () => {
+    expect(noticeStart).toBeGreaterThanOrEqual(0);
+    expect(deliveryStart).toBeGreaterThan(noticeStart);
+    expect(noticeDetails).toContain("Notice type");
+    expect(noticeDetails).toContain("Email subject");
+    expect(noticeDetails).toContain("Email title");
+    expect(noticeDetails).toContain("Message");
+    expect(noticeDetails).toContain("Affected area");
+    const fieldOrder = [
+      noticeDetails.indexOf("Notice type"),
+      noticeDetails.indexOf("Email subject"),
+      noticeDetails.indexOf("Email title"),
+      noticeDetails.indexOf("Message"),
+      noticeDetails.indexOf("Affected area")
+    ];
+    expect(fieldOrder).toEqual([...fieldOrder].sort((left, right) => left - right));
+    expect(noticeDetails.match(/styles\.formField/g)).toHaveLength(5);
+    expect(noticeDetails).toContain("styles.fieldMeta");
+    expect(STYLES).toMatch(/\.noticeFields\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/);
+    expect(STYLES).toMatch(/\.fieldLabel\s*\{[^}]*display:\s*flex;[^}]*justify-content:\s*space-between/);
+    expect(STYLES).not.toContain("float: right");
+  });
+
+  it("keeps delivery-specific UI full width and separate from impact dates", () => {
+    expect(impactStart).toBeGreaterThan(deliveryStart);
+    expect(delivery).toContain("styles.modeFieldset");
+    expect(delivery).toContain("styles.segmented");
+    expect(delivery).toContain("styles.sendNowInfo");
+    expect(delivery).toContain("Send immediately");
+    expect(delivery).toContain("styles.deliveryField");
+    expect(delivery).toContain("Scheduled send");
+    expect(delivery).not.toContain("impactStartsLocal");
+    expect(delivery).not.toContain("impactEndsLocal");
+    expect(STYLES).toMatch(/\.sendNowInfo\s*\{[^}]*width:\s*100%;/);
+    expect(STYLES).toMatch(/\.segmented\s*\{[^}]*width:\s*100%;/);
+    expect(STYLES).toMatch(/\.deliveryField,[\s\S]*?\.timezoneField\s*\{\s*width:\s*100%;/);
+  });
+
+  it("pairs impact dates in their own desktop grid and stacks them on phones", () => {
+    expect(previewStart).toBeGreaterThan(impactStart);
+    expect(impact).toContain("Impact window");
+    expect(impact).toContain("styles.impactGrid");
+    expect(impact).toContain("impactStartsLocal");
+    expect(impact).toContain("impactEndsLocal");
+    expect(impact).toContain("styles.timezoneField");
+    expect(impact.indexOf("styles.timezoneField")).toBeGreaterThan(impact.indexOf("styles.impactGrid"));
+    expect(STYLES).toMatch(/\.impactGrid\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/);
+    expect(STYLES).toMatch(/@media \(max-width:\s*680px\)[\s\S]*?\.impactGrid\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\);/);
+  });
+
   it("keeps delivery actions reachable in a dedicated viewport footer", () => {
     expect(WORKSPACE).toContain("styles.composerFooter");
     expect(STYLES).toMatch(
@@ -23,5 +84,13 @@ describe("system notice composer layout", () => {
     expect(STYLES).toMatch(/\.composerBody\s*\{[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*hidden;/);
     expect(STYLES).toMatch(/\.formPane,[\s\S]*?\.previewPane\s*\{\s*overflow-y:\s*auto;/);
     expect(WORKSPACE).toMatch(/styles\.previewEmpty[\s\S]*?runPreview\(\)/);
+  });
+
+  it("preserves the exact-renderer preview and existing composer request paths", () => {
+    expect(composer).toContain("styles.previewPane");
+    expect(composer).toContain("srcDoc={preview.html}");
+    expect(WORKSPACE).toContain('"/api/admin/system-notices/preview"');
+    expect(WORKSPACE).toContain("payloadFromComposer(composer)");
+    expect(WORKSPACE).toContain("beginConfirmation");
   });
 });

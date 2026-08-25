@@ -490,43 +490,94 @@ export function SystemNoticesWorkspace() {
 
             <div className={styles.composerBody}>
               <div className={styles.formPane}>
-                <div className={styles.formGrid}>
-                  <label className={styles.fullField}>Notice type<select value={composer.type} onChange={(event) => {
-                    const next = event.target.value as NoticeType;
-                    const currentSuggestion = TYPE_OPTIONS.find((item) => item.value === composer.type)?.subject;
-                    setComposer((current) => ({
-                      ...current,
-                      type: next,
-                      subject: !current.subject || current.subject === currentSuggestion
-                        ? TYPE_OPTIONS.find((item) => item.value === next)?.subject ?? current.subject
-                        : current.subject
-                    }));
-                    setComposerError(null);
-                  }}>{TYPE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+                <section className={`${styles.formSection} ${styles.noticeDetailsSection}`} aria-labelledby="notice-details-heading">
+                  <header className={styles.formSectionHeader}>
+                    <h3 id="notice-details-heading">Notice details</h3>
+                  </header>
+                  <div className={styles.noticeFields}>
+                    <label className={styles.formField}>
+                      <span className={styles.fieldLabel}><span>Notice type</span></span>
+                      <select value={composer.type} onChange={(event) => {
+                        const next = event.target.value as NoticeType;
+                        const currentSuggestion = TYPE_OPTIONS.find((item) => item.value === composer.type)?.subject;
+                        setComposer((current) => ({
+                          ...current,
+                          type: next,
+                          subject: !current.subject || current.subject === currentSuggestion
+                            ? TYPE_OPTIONS.find((item) => item.value === next)?.subject ?? current.subject
+                            : current.subject
+                        }));
+                        setComposerError(null);
+                      }}>{TYPE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>
+                    </label>
 
-                  <label className={styles.fullField}>Email subject <span>{composer.subject.length}/160</span><input value={composer.subject} maxLength={160} onChange={(event) => updateComposer("subject", event.target.value)} /></label>
-                  <label className={styles.fullField}>Email title <span>{composer.title.length}/140</span><input value={composer.title} maxLength={140} onChange={(event) => updateComposer("title", event.target.value)} /></label>
-                  <label className={styles.fullField}>Message <span>{composer.message.length}/5000</span><textarea rows={7} value={composer.message} maxLength={5000} onChange={(event) => updateComposer("message", event.target.value)} /></label>
-                  <label className={styles.fullField}>Affected area <span>Optional</span><input value={composer.affectedArea} maxLength={160} placeholder="Sequences and campaign processing" onChange={(event) => updateComposer("affectedArea", event.target.value)} /></label>
+                    <label className={styles.formField}>
+                      <span className={styles.fieldLabel}><span>Email subject</span><span className={styles.fieldMeta}>{composer.subject.length} / 160</span></span>
+                      <input value={composer.subject} maxLength={160} onChange={(event) => updateComposer("subject", event.target.value)} />
+                    </label>
+                    <label className={styles.formField}>
+                      <span className={styles.fieldLabel}><span>Email title</span><span className={styles.fieldMeta}>{composer.title.length} / 140</span></span>
+                      <input value={composer.title} maxLength={140} onChange={(event) => updateComposer("title", event.target.value)} />
+                    </label>
+                    <label className={styles.formField}>
+                      <span className={styles.fieldLabel}><span>Message</span><span className={styles.fieldMeta}>{composer.message.length} / 5000</span></span>
+                      <textarea rows={7} value={composer.message} maxLength={5000} onChange={(event) => updateComposer("message", event.target.value)} />
+                    </label>
+                    <label className={styles.formField}>
+                      <span className={styles.fieldLabel}><span>Affected area</span><span className={styles.fieldMeta}>Optional</span></span>
+                      <input value={composer.affectedArea} maxLength={160} placeholder="Sequences and campaign processing" onChange={(event) => updateComposer("affectedArea", event.target.value)} />
+                    </label>
+                  </div>
+                </section>
 
+                <section className={`${styles.formSection} ${styles.deliverySection}`} aria-labelledby="notice-delivery-heading">
+                  <header className={styles.formSectionHeader}>
+                    <h3 id="notice-delivery-heading">Delivery</h3>
+                  </header>
                   <fieldset className={styles.modeFieldset}>
-                    <legend>Delivery</legend>
+                    <legend className={styles.srOnly}>Delivery timing</legend>
                     <div className={styles.segmented}>
-                      <button type="button" className={composer.mode === "SEND_NOW" ? styles.segmentActive : undefined} onClick={() => updateComposer("mode", "SEND_NOW")}>Send now</button>
-                      <button type="button" className={composer.mode === "SCHEDULE" ? styles.segmentActive : undefined} onClick={() => updateComposer("mode", "SCHEDULE")}>Schedule</button>
+                      <button type="button" aria-pressed={composer.mode === "SEND_NOW"} className={composer.mode === "SEND_NOW" ? styles.segmentActive : undefined} onClick={() => updateComposer("mode", "SEND_NOW")}>Send now</button>
+                      <button type="button" aria-pressed={composer.mode === "SCHEDULE"} className={composer.mode === "SCHEDULE" ? styles.segmentActive : undefined} onClick={() => updateComposer("mode", "SCHEDULE")}>Schedule</button>
                     </div>
+                    {composer.mode === "SCHEDULE" ? (
+                      <label className={`${styles.formField} ${styles.deliveryField}`}>
+                        <span className={styles.fieldLabel}><span>Scheduled send</span></span>
+                        <input type="datetime-local" value={composer.scheduledLocal} onChange={(event) => updateComposer("scheduledLocal", event.target.value)} />
+                        <small>{composer.timeZone} · {zoneDetail(composer.timeZone, selectedScheduledIso ? new Date(selectedScheduledIso) : new Date())}</small>
+                      </label>
+                    ) : (
+                      <div className={styles.sendNowInfo}><Send aria-hidden="true" /><div><strong>Send immediately</strong><span>Delivery will be queued now and begin on the next notification processor run.</span></div></div>
+                    )}
                   </fieldset>
+                </section>
 
-                  {composer.mode === "SCHEDULE" ? (
-                    <label>Scheduled send<input type="datetime-local" value={composer.scheduledLocal} onChange={(event) => updateComposer("scheduledLocal", event.target.value)} /><small>{composer.timeZone} · {zoneDetail(composer.timeZone, selectedScheduledIso ? new Date(selectedScheduledIso) : new Date())}</small></label>
-                  ) : (
-                    <div className={styles.sendNowInfo}><Send aria-hidden="true" /><div><strong>Durable send request</strong><span>Delivery is queued now and begins on the next processor run.</span></div></div>
-                  )}
-
-                  <label>Impact starts <span>Optional</span><input type="datetime-local" value={composer.impactStartsLocal} onChange={(event) => updateComposer("impactStartsLocal", event.target.value)} /><small>{composer.timeZone} · {zoneDetail(composer.timeZone, selectedImpactStart ? new Date(selectedImpactStart) : new Date())}</small></label>
-                  <label>Impact ends <span>Optional</span><input type="datetime-local" value={composer.impactEndsLocal} onChange={(event) => updateComposer("impactEndsLocal", event.target.value)} /><small>{composer.timeZone} · {zoneDetail(composer.timeZone, selectedImpactEnd ? new Date(selectedImpactEnd) : new Date())}</small></label>
-                  <label className={styles.fullField}>Display timezone<input list="system-notice-time-zones" value={composer.timeZone} onChange={(event) => updateComposer("timeZone", event.target.value)} /><datalist id="system-notice-time-zones">{timeZones.map((zone) => <option key={zone} value={zone} />)}</datalist><small>IANA timezone · {zoneDetail(composer.timeZone)}</small></label>
-                </div>
+                <section className={`${styles.formSection} ${styles.impactSection}`} aria-labelledby="notice-impact-heading">
+                  <header className={styles.formSectionHeader}>
+                    <div>
+                      <h3 id="notice-impact-heading">Impact window</h3>
+                      <p>Optional — tell users when they may experience disruption.</p>
+                    </div>
+                  </header>
+                  <div className={styles.impactGrid}>
+                    <label className={styles.formField}>
+                      <span className={styles.fieldLabel}><span>Impact starts</span><span className={styles.fieldMeta}>Optional</span></span>
+                      <input type="datetime-local" value={composer.impactStartsLocal} onChange={(event) => updateComposer("impactStartsLocal", event.target.value)} />
+                      <small>{composer.timeZone} · {zoneDetail(composer.timeZone, selectedImpactStart ? new Date(selectedImpactStart) : new Date())}</small>
+                    </label>
+                    <label className={styles.formField}>
+                      <span className={styles.fieldLabel}><span>Impact ends</span><span className={styles.fieldMeta}>Optional</span></span>
+                      <input type="datetime-local" value={composer.impactEndsLocal} onChange={(event) => updateComposer("impactEndsLocal", event.target.value)} />
+                      <small>{composer.timeZone} · {zoneDetail(composer.timeZone, selectedImpactEnd ? new Date(selectedImpactEnd) : new Date())}</small>
+                    </label>
+                  </div>
+                  <label className={`${styles.formField} ${styles.timezoneField}`}>
+                    <span className={styles.fieldLabel}><span>Display timezone</span></span>
+                    <input list="system-notice-time-zones" value={composer.timeZone} onChange={(event) => updateComposer("timeZone", event.target.value)} />
+                    <datalist id="system-notice-time-zones">{timeZones.map((zone) => <option key={zone} value={zone} />)}</datalist>
+                    <small>IANA timezone · {zoneDetail(composer.timeZone)}</small>
+                  </label>
+                </section>
 
                 {composerError ? <div className={styles.formError}><CircleAlert aria-hidden="true" />{composerError}</div> : null}
               </div>

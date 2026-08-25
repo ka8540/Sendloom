@@ -298,7 +298,7 @@
 .composer {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
-  width: min(94vw, 1120px);
+  width: min(96vw, 1240px);
   height: 100dvh;
   max-height: 100dvh;
   overflow: hidden;
@@ -322,23 +322,36 @@
 
 .composerBody {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(380px, 0.8fr);
+  grid-template-columns: minmax(0, 1.25fr) minmax(400px, 0.85fr);
   min-height: 0;
   overflow: hidden;
 }
 
 .formPane,
 .previewPane { overflow-y: auto; padding: 1.3rem; }
-.formPane { display: grid; align-content: start; gap: 1rem; border-right: 1px solid var(--line); }
+.formPane { display: grid; align-content: start; gap: 1.45rem; border-right: 1px solid var(--line); padding: 1.4rem 1.5rem 2rem; }
 .previewPane { display: grid; grid-template-rows: auto minmax(0, 1fr); align-content: stretch; gap: 0.85rem; background: var(--surface-muted); }
 
-.formGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.9rem; }
-.formGrid label,
-.modeFieldset { display: grid; align-content: start; gap: 0.4rem; min-width: 0; margin: 0; border: 0; padding: 0; color: var(--text); font-size: 0.82rem; font-weight: 750; }
-.formGrid label > span { float: right; color: var(--muted); font-size: 0.72rem; font-weight: 600; }
-.formGrid input,
-.formGrid select,
-.formGrid textarea,
+.formSection,
+.noticeDetailsSection,
+.deliverySection,
+.impactSection { display: grid; min-width: 0; gap: 1rem; }
+.formSection + .formSection { border-top: 1px solid color-mix(in srgb, var(--line) 76%, transparent); padding-top: 1.35rem; }
+.formSectionHeader,
+.formSectionHeader > div { display: grid; gap: 0.25rem; }
+.formSectionHeader h3,
+.formSectionHeader p { margin: 0; }
+.formSectionHeader h3 { color: var(--text); font-size: 0.9rem; font-weight: 820; letter-spacing: -0.01em; }
+.formSectionHeader p { color: var(--muted); font-size: 0.72rem; line-height: 1.45; }
+
+.noticeFields { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; }
+.formField { display: grid; align-content: start; gap: 0.48rem; min-width: 0; color: var(--text); font-size: 0.82rem; font-weight: 750; }
+.fieldLabel { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; min-width: 0; }
+.fieldLabel > span:first-child { min-width: 0; }
+.fieldMeta { flex: 0 0 auto; color: var(--muted); font-size: 0.72rem; font-variant-numeric: tabular-nums; font-weight: 600; }
+.formField input,
+.formField select,
+.formField textarea,
 .confirmPhrase input {
   width: 100%;
   min-width: 0;
@@ -351,24 +364,27 @@
   font-weight: 500;
   outline: none;
 }
-.formGrid textarea { resize: vertical; line-height: 1.55; }
-.formGrid input:focus,
-.formGrid select:focus,
-.formGrid textarea:focus,
+.formField textarea { resize: vertical; line-height: 1.55; }
+.formField input:focus,
+.formField select:focus,
+.formField textarea:focus,
 .confirmPhrase input:focus { border-color: var(--field-focus); box-shadow: 0 0 0 4px var(--accent-soft); }
-.formGrid small { color: var(--muted); font-size: 0.7rem; font-weight: 550; line-height: 1.45; }
-.fullField { grid-column: 1 / -1; }
+.formField small { color: var(--muted); font-size: 0.7rem; font-weight: 550; line-height: 1.45; }
+.formField input[type="datetime-local"] { max-width: 100%; }
 
-.modeFieldset { grid-column: 1 / -1; }
-.modeFieldset legend { margin-bottom: 0.4rem; padding: 0; }
-.segmented { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.35rem; border: 1px solid var(--line); border-radius: 13px; background: var(--surface-muted); padding: 0.3rem; }
+.srOnly { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+.modeFieldset { display: grid; gap: 0.9rem; min-width: 0; margin: 0; border: 0; padding: 0; }
+.segmented { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; gap: 0.35rem; border: 1px solid var(--line); border-radius: 13px; background: var(--surface-muted); padding: 0.3rem; }
 .segmented button { border: 0; border-radius: 9px; background: transparent; color: var(--muted); padding: 0.6rem; font: inherit; font-size: 0.82rem; font-weight: 800; cursor: pointer; }
 .segmented .segmentActive { background: var(--surface-strong); color: var(--accent-strong); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08); }
+.deliveryField,
+.timezoneField { width: 100%; }
 
 .sendNowInfo {
   display: flex;
   align-items: center;
   gap: 0.7rem;
+  width: 100%;
   min-height: 5.2rem;
   border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--line));
   border-radius: 13px;
@@ -380,6 +396,9 @@
 .sendNowInfo div { display: grid; gap: 0.2rem; }
 .sendNowInfo strong { font-size: 0.8rem; }
 .sendNowInfo span { color: var(--muted); font-size: 0.72rem; line-height: 1.4; }
+
+.impactGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.timezoneField { margin-top: 0.15rem; }
 
 .composerFooter {
   display: flex;
@@ -473,9 +492,8 @@
   .metrics { grid-template-columns: minmax(0, 1fr); }
   .metricCard { min-height: 5.8rem; }
   .sectionHeader { align-items: stretch; flex-direction: column; }
-  .formGrid { grid-template-columns: minmax(0, 1fr); }
-  .fullField,
-  .modeFieldset { grid-column: auto; }
+  .formPane { padding-inline: 1rem; }
+  .impactGrid { grid-template-columns: minmax(0, 1fr); }
   .composerFooter { align-items: stretch; flex-direction: column; padding: 0.75rem 1rem; }
   .composerActions { display: grid; grid-template-columns: minmax(0, 1fr); }
   .detailBody { grid-template-columns: minmax(0, 1fr); }
