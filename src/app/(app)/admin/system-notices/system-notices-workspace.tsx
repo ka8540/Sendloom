@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CalendarClock,
   CheckCircle2,
+  ChevronDown,
   CircleAlert,
   Clock3,
   Eye,
@@ -430,7 +431,7 @@ export function SystemNoticesWorkspace() {
           <h1>System Notices</h1>
           <p className="muted">Schedule and send operational updates to Sendloom users.</p>
         </div>
-        <button type="button" className={styles.primaryButton} onClick={openNew}>
+        <button type="button" className={styles.secondaryButton} onClick={openNew}>
           <Plus aria-hidden="true" /> New notice
         </button>
       </section>
@@ -497,18 +498,21 @@ export function SystemNoticesWorkspace() {
                   <div className={styles.noticeFields}>
                     <label className={styles.formField}>
                       <span className={styles.fieldLabel}><span>Notice type</span></span>
-                      <select value={composer.type} onChange={(event) => {
-                        const next = event.target.value as NoticeType;
-                        const currentSuggestion = TYPE_OPTIONS.find((item) => item.value === composer.type)?.subject;
-                        setComposer((current) => ({
-                          ...current,
-                          type: next,
-                          subject: !current.subject || current.subject === currentSuggestion
-                            ? TYPE_OPTIONS.find((item) => item.value === next)?.subject ?? current.subject
-                            : current.subject
-                        }));
-                        setComposerError(null);
-                      }}>{TYPE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>
+                      <div className={styles.selectWrap}>
+                        <select className={styles.noticeTypeSelect} value={composer.type} onChange={(event) => {
+                          const next = event.target.value as NoticeType;
+                          const currentSuggestion = TYPE_OPTIONS.find((item) => item.value === composer.type)?.subject;
+                          setComposer((current) => ({
+                            ...current,
+                            type: next,
+                            subject: !current.subject || current.subject === currentSuggestion
+                              ? TYPE_OPTIONS.find((item) => item.value === next)?.subject ?? current.subject
+                              : current.subject
+                          }));
+                          setComposerError(null);
+                        }}>{TYPE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>
+                        <ChevronDown className={styles.selectChevron} aria-hidden="true" />
+                      </div>
                     </label>
 
                     <label className={styles.formField}>

@@ -18,9 +18,18 @@ describe("system notice composer layout", () => {
   const deliveryStart = composer.indexOf("styles.deliverySection");
   const impactStart = composer.indexOf("styles.impactSection");
   const previewStart = composer.indexOf("styles.previewPane");
+  const heroStart = WORKSPACE.indexOf("styles.hero");
+  const metricsStart = WORKSPACE.indexOf("styles.metrics", heroStart);
   const noticeDetails = composer.slice(noticeStart, deliveryStart);
   const delivery = composer.slice(deliveryStart, impactStart);
   const impact = composer.slice(impactStart, previewStart);
+  const hero = WORKSPACE.slice(heroStart, metricsStart);
+
+  it("uses the established subdued action style for the new-notice button", () => {
+    expect(hero).toContain("New notice");
+    expect(hero).toContain("styles.secondaryButton");
+    expect(hero).not.toContain("styles.primaryButton");
+  });
 
   it("keeps all notice-detail fields full width with explicit label metadata", () => {
     expect(noticeStart).toBeGreaterThanOrEqual(0);
@@ -40,8 +49,13 @@ describe("system notice composer layout", () => {
     expect(fieldOrder).toEqual([...fieldOrder].sort((left, right) => left - right));
     expect(noticeDetails.match(/styles\.formField/g)).toHaveLength(5);
     expect(noticeDetails).toContain("styles.fieldMeta");
+    expect(noticeDetails).toContain("styles.selectWrap");
+    expect(noticeDetails).toContain("styles.noticeTypeSelect");
+    expect(noticeDetails).toContain("styles.selectChevron");
     expect(STYLES).toMatch(/\.noticeFields\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/);
     expect(STYLES).toMatch(/\.fieldLabel\s*\{[^}]*display:\s*flex;[^}]*justify-content:\s*space-between/);
+    expect(STYLES).toMatch(/\.selectWrap \.noticeTypeSelect\s*\{[^}]*appearance:\s*none;[^}]*padding-right:\s*2\.6rem;/);
+    expect(STYLES).toMatch(/\.selectChevron\s*\{[^}]*position:\s*absolute;[^}]*pointer-events:\s*none;/);
     expect(STYLES).not.toContain("float: right");
   });
 

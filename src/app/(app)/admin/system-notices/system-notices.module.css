@@ -369,6 +369,26 @@
 .formField select:focus,
 .formField textarea:focus,
 .confirmPhrase input:focus { border-color: var(--field-focus); box-shadow: 0 0 0 4px var(--accent-soft); }
+.selectWrap { position: relative; display: grid; min-width: 0; }
+.selectWrap .noticeTypeSelect {
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  padding-right: 2.6rem;
+}
+.selectWrap .noticeTypeSelect option { background: var(--surface-strong); color: var(--text); }
+.selectChevron {
+  position: absolute;
+  top: 50%;
+  right: 0.9rem;
+  width: 1.05rem;
+  height: 1.05rem;
+  color: var(--muted);
+  pointer-events: none;
+  transform: translateY(-50%);
+  transition: color 140ms ease;
+}
+.selectWrap:focus-within .selectChevron { color: var(--accent-strong); }
 .formField small { color: var(--muted); font-size: 0.7rem; font-weight: 550; line-height: 1.45; }
 .formField input[type="datetime-local"] { max-width: 100%; }
 
