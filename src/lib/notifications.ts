@@ -384,6 +384,11 @@ export async function listNotificationsForUser(
 ): Promise<AppNotificationPage> {
   const limit = Math.min(Math.max(Math.trunc(input.limit ?? DEFAULT_PAGE_SIZE), 1), MAX_PAGE_SIZE);
   const cursor = input.cursor ? decodeNotificationCursor(input.cursor) : null;
+  const activeInboxWhere: Prisma.AppNotificationWhereInput = {
+    userId,
+    readAt: null,
+    resolvedAt: null
+  };
   const cursorWhere: Prisma.AppNotificationWhereInput | undefined = cursor
     ? {
         OR: [
@@ -396,13 +401,13 @@ export async function listNotificationsForUser(
   const [rows, unreadCount] = await Promise.all([
     db.appNotification.findMany({
       where: {
-        userId,
+        ...activeInboxWhere,
         ...(cursorWhere ?? {})
       },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: limit + 1
     }),
-    db.appNotification.count({ where: { userId, readAt: null } })
+    db.appNotification.count({ where: activeInboxWhere })
   ]);
 
   const hasMore = rows.length > limit;

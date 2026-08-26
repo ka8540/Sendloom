@@ -286,7 +286,7 @@ describe("in-app notification creation", () => {
 });
 
 describe("notification ownership and cursor reads", () => {
-  it("pages newest-first, reports unread count, and never returns another user's rows", async () => {
+  it("returns only active unread rows, counts the same feed, and preserves hidden history", async () => {
     const fake = createNotificationDb();
     fake.seedNotification({
       userId: "user_a",
@@ -315,6 +315,26 @@ describe("notification ownership and cursor reads", () => {
       dedupeKey: "a-new",
       createdAt: new Date("2026-08-26T11:00:00.000Z")
     });
+    fake.seedNotification({
+      userId: "user_a",
+      type: "SEQUENCE_COMPLETED",
+      severity: "SUCCESS",
+      title: "Already read",
+      message: "Already read",
+      dedupeKey: "a-read",
+      readAt: new Date("2026-08-26T12:30:00.000Z"),
+      createdAt: new Date("2026-08-26T12:30:00.000Z")
+    });
+    fake.seedNotification({
+      userId: "user_a",
+      type: "GMAIL_RECONNECT_REQUIRED",
+      severity: "WARNING",
+      title: "Resolved",
+      message: "Resolved",
+      dedupeKey: "a-resolved",
+      resolvedAt: new Date("2026-08-26T13:00:00.000Z"),
+      createdAt: new Date("2026-08-26T13:00:00.000Z")
+    });
 
     const first = await listNotificationsForUser("user_a", { limit: 1 }, fake.db);
     expect(first.items.map((item) => item.title)).toEqual(["Newest"]);
@@ -324,6 +344,9 @@ describe("notification ownership and cursor reads", () => {
     const second = await listNotificationsForUser("user_a", { limit: 1, cursor: first.nextCursor }, fake.db);
     expect(second.items.map((item) => item.title)).toEqual(["Older"]);
     expect(second.items.some((item) => item.title === "Private")).toBe(false);
+    expect(fake.state.notifications.map((row) => row.title)).toEqual(
+      expect.arrayContaining(["Already read", "Resolved"])
+    );
   });
 
   it("scopes mark-one and mark-all mutations to the authenticated owner and keeps mark-one idempotent", async () => {
@@ -350,8 +373,47 @@ describe("notification ownership and cursor reads", () => {
     expect(await markNotificationRead("user_a", own.id, fake.db)).toBe(true);
     expect(await markNotificationRead("user_a", own.id, fake.db)).toBe(true);
     expect(fake.state.notifications.find((row) => row.id === own.id)?.readAt).toBeInstanceOf(Date);
+    expect(fake.state.notifications).toHaveLength(2);
+    expect((await listNotificationsForUser("user_a", {}, fake.db)).items).toEqual([]);
 
     expect(await markAllNotificationsRead("user_a", fake.db)).toBe(0);
     expect(fake.state.notifications.find((row) => row.id === other.id)?.readAt).toBeNull();
+  });
+
+  it("paginates 20+ active notifications deterministically after earlier rows are read", async () => {
+    const fake = createNotificationDb();
+    for (let index = 0; index < 25; index += 1) {
+      fake.seedNotification({
+        userId: "user_a",
+        type: "DISCOVER_SEARCH_COMPLETED",
+        severity: "SUCCESS",
+        title: `Unread ${index}`,
+        message: `Unread ${index}`,
+        dedupeKey: `unread-${index}`,
+        createdAt: new Date(Date.UTC(2026, 7, 26, 12, 0, index))
+      });
+    }
+
+    const first = await listNotificationsForUser("user_a", { limit: 10 }, fake.db);
+    expect(first.items).toHaveLength(10);
+    expect(first.items.map((item) => item.title)).toEqual(
+      Array.from({ length: 10 }, (_, offset) => `Unread ${24 - offset}`)
+    );
+    expect(first.unreadCount).toBe(25);
+
+    for (const item of first.items.slice(0, 3)) {
+      expect(await markNotificationRead("user_a", item.id, fake.db)).toBe(true);
+    }
+
+    const second = await listNotificationsForUser("user_a", { limit: 10, cursor: first.nextCursor }, fake.db);
+    const third = await listNotificationsForUser("user_a", { limit: 10, cursor: second.nextCursor }, fake.db);
+    const locallyVisible = [...first.items.slice(3), ...second.items, ...third.items];
+
+    expect(second.items).toHaveLength(10);
+    expect(second.unreadCount).toBe(22);
+    expect(third.items).toHaveLength(5);
+    expect(third.nextCursor).toBeNull();
+    expect(locallyVisible).toHaveLength(22);
+    expect(new Set(locallyVisible.map((item) => item.id)).size).toBe(22);
   });
 });

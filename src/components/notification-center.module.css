@@ -63,7 +63,8 @@
   top: calc(100% + 0.65rem);
   right: 0;
   width: min(25rem, calc(100vw - 2rem));
-  max-height: min(38rem, calc(100vh - 7rem));
+  max-height: min(36rem, calc(100vh - 7rem));
+  max-height: min(36rem, calc(100dvh - 7rem));
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -75,6 +76,7 @@
 }
 
 .header {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -140,6 +142,7 @@
 }
 
 .error {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -159,9 +162,11 @@
 }
 
 .list {
+  flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .row {
@@ -254,16 +259,6 @@
   overflow-wrap: anywhere;
 }
 
-.resolved {
-  width: fit-content;
-  padding: 0.16rem 0.42rem;
-  border-radius: 999px;
-  background: var(--surface-hover);
-  color: var(--muted);
-  font-size: 0.66rem;
-  font-weight: 700;
-}
-
 .unreadDot {
   align-self: center;
   width: 0.48rem;
@@ -326,6 +321,7 @@
 }
 
 .footer {
+  flex: 0 0 auto;
   display: flex;
   justify-content: center;
   padding: 0.7rem;
@@ -387,6 +383,7 @@
     left: 1rem;
     width: auto;
     max-height: calc(100vh - 5.5rem);
+    max-height: calc(100dvh - 5.5rem);
   }
 
   .header {

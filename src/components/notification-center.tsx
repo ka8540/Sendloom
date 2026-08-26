@@ -19,6 +19,7 @@ import { formatUnreadBadge, notificationNavigationHref } from "@/lib/notificatio
 import styles from "./notification-center.module.css";
 
 const NOTIFICATION_POLL_INTERVAL_MS = 45_000;
+const NOTIFICATION_PAGE_SIZE = 10;
 
 function notificationTime(createdAt: string): string {
   const date = new Date(createdAt);
@@ -59,7 +60,7 @@ export function NotificationCenter() {
     append ? setLoadingMore(true) : setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams({ limit: "15" });
+      const params = new URLSearchParams({ limit: String(NOTIFICATION_PAGE_SIZE) });
       if (cursor) {
         params.set("cursor", cursor);
       }
@@ -128,11 +129,8 @@ export function NotificationCenter() {
         if (!response.ok) {
           throw new Error("Notification could not be marked as read.");
         }
-        const readAt = item.readAt ?? new Date().toISOString();
-        setItems((current) => current.map((entry) => (entry.id === item.id ? { ...entry, readAt } : entry)));
-        if (!item.readAt) {
-          setUnreadCount((current) => Math.max(0, current - 1));
-        }
+        setItems((current) => current.filter((entry) => entry.id !== item.id));
+        setUnreadCount((current) => Math.max(0, current - 1));
         setOpen(false);
         const destination = notificationNavigationHref(item.href);
         if (destination) {
@@ -158,9 +156,9 @@ export function NotificationCenter() {
       if (!response.ok) {
         throw new Error("Notifications could not be marked as read.");
       }
-      const readAt = new Date().toISOString();
-      setItems((current) => current.map((item) => (item.readAt ? item : { ...item, readAt })));
+      setItems([]);
       setUnreadCount(0);
+      setNextCursor(null);
     } catch {
       setError("Notifications could not be marked as read. Try again.");
     } finally {
@@ -228,21 +226,20 @@ export function NotificationCenter() {
                 <span className={styles.emptyIcon} aria-hidden="true">
                   <Bell />
                 </span>
-                <strong>No notifications yet</strong>
-                <p>Updates about Discover searches, sequences, and account connections will appear here.</p>
+                <strong>You&apos;re all caught up</strong>
+                <p>New updates about Discover searches, sequences, and account connections will appear here.</p>
               </div>
             ) : (
               items.map((item) => {
-                const unread = !item.readAt;
                 const active = activeNotificationId === item.id;
                 return (
                   <button
                     key={item.id}
                     type="button"
-                    className={`${styles.row}${unread ? ` ${styles.unreadRow}` : ""}${
+                    className={`${styles.row} ${styles.unreadRow}${
                       item.severity === "WARNING" ? ` ${styles.warningRow}` : ""
                     }`}
-                    aria-label={`${unread ? "Unread notification: " : ""}${item.title}`}
+                    aria-label={`Unread notification: ${item.title}`}
                     disabled={active}
                     onClick={() => void markOneRead(item)}
                   >
@@ -255,12 +252,9 @@ export function NotificationCenter() {
                         <time dateTime={item.createdAt}>{notificationTime(item.createdAt)}</time>
                       </span>
                       <span className={styles.message}>{item.message}</span>
-                      {item.resolvedAt ? <span className={styles.resolved}>Resolved</span> : null}
                     </span>
-                    {unread ? (
-                      <span className={styles.unreadDot} aria-hidden="true" />
-                    ) : null}
-                    {unread ? <span className={styles.srOnly}>Unread</span> : null}
+                    <span className={styles.unreadDot} aria-hidden="true" />
+                    <span className={styles.srOnly}>Unread</span>
                   </button>
                 );
               })
@@ -271,7 +265,7 @@ export function NotificationCenter() {
             <footer className={styles.footer}>
               <button type="button" disabled={loadingMore} onClick={() => void fetchNotifications(nextCursor)}>
                 {loadingMore ? <LoaderCircle className={styles.spinner} aria-hidden="true" /> : null}
-                {loadingMore ? "Loading…" : "View more"}
+                {loadingMore ? "Loading…" : "Load more"}
               </button>
             </footer>
           ) : null}
