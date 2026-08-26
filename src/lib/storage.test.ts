@@ -11,6 +11,7 @@ vi.mock("@/lib/env", () => ({ env: mockEnv }));
 import {
   buildAttachmentAssetKey,
   buildImportKey,
+  buildProfilePhotoKey,
   checkStorageHealth,
   deleteObject,
   getObjectBuffer,
@@ -79,6 +80,21 @@ describe("storage keys", () => {
     expect(() => buildAttachmentAssetKey("user-1", "../escape")).toThrow(/Invalid attachment hash/);
     expect(() => buildAttachmentAssetKey("user-1", "abc123")).toThrow(/Invalid attachment hash/);
     expect(() => buildAttachmentAssetKey("user-1", "A".repeat(64))).toThrow(/Invalid attachment hash/);
+  });
+
+  it("scopes profile-photo keys under the owning user with a versioned filename", () => {
+    const key = buildProfilePhotoKey("clxyz123", "2c8b9a7f-1a2b", "webp");
+    expect(key).toBe("users/clxyz123/profile-photo/2c8b9a7f-1a2b.webp");
+    // The user segment comes from the authenticated user id, so photos are
+    // always namespaced per account — never a shared or fixed avatar path.
+    expect(key.startsWith("users/clxyz123/profile-photo/")).toBe(true);
+  });
+
+  it("rejects profile-photo ids and extensions that could escape the scope", () => {
+    expect(() => buildProfilePhotoKey("user-1", "../other-user", "jpg")).toThrow(/Invalid profile photo id/);
+    expect(() => buildProfilePhotoKey("user-1", "a/b", "png")).toThrow(/Invalid profile photo id/);
+    expect(() => buildProfilePhotoKey("user-1", "abc", "svg")).toThrow(/Invalid profile photo extension/);
+    expect(() => buildProfilePhotoKey("user-1", "abc", "gif")).toThrow(/Invalid profile photo extension/);
   });
 });
 

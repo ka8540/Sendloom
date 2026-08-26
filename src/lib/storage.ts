@@ -72,6 +72,20 @@ export function buildAttachmentAssetKey(userId: string, sha256: string) {
   return `users/${userId}/attachments/${sha256}`;
 }
 
+// Profile photos share the attachments bucket with resumes/files. Every upload
+// gets a fresh random key (never a fixed avatar path) so CDN/browser caches can
+// never serve a stale photo after a replacement.
+export function buildProfilePhotoKey(userId: string, photoId: string, extension: string) {
+  if (!/^[a-z0-9-]+$/.test(photoId)) {
+    throw new Error("Invalid profile photo id.");
+  }
+  if (!/^(jpg|png|webp)$/.test(extension)) {
+    throw new Error("Invalid profile photo extension.");
+  }
+
+  return `users/${userId}/profile-photo/${photoId}.${extension}`;
+}
+
 async function toBuffer(body: Buffer | Uint8Array | ReadableStream): Promise<Buffer> {
   if (Buffer.isBuffer(body)) {
     return body;

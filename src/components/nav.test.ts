@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 const NAV_SOURCE = readFileSync("src/components/nav.tsx", "utf8");
 const SESSION_SOURCE = readFileSync("src/components/session-controls.tsx", "utf8");
 const ANALYSIS_WORKSPACE_SOURCE = readFileSync("src/components/analysis/analysis-workspace.tsx", "utf8");
+const APP_LAYOUT_SOURCE = readFileSync("src/app/(app)/layout.tsx", "utf8");
 const GLOBALS = readFileSync("src/app/globals.css", "utf8");
 
 function operatorNavBlock(): string {
@@ -227,6 +228,36 @@ describe("Account moved to the lower account/utility section", () => {
     // The icon always renders; only the label span is hidden via CSS. The title
     // gives the collapsed rail an accessible tooltip.
     expect(NAV_SOURCE).toContain('title={collapsed ? "Account" : undefined}');
+  });
+
+  it("shows the user's profile photo in place of the Account icon when one exists", () => {
+    expect(NAV_SOURCE).toContain("profilePhotoUrl?: string | null");
+    expect(NAV_SOURCE).toContain('className="nav-avatar"');
+    expect(NAV_SOURCE).toContain('src={profilePhotoUrl ?? ""}');
+    // Decorative inside a labelled link — no redundant alt text.
+    expect(NAV_SOURCE).toContain('alt=""');
+    // The generic icon remains the fallback for no-photo and load-failure.
+    expect(NAV_SOURCE).toContain("avatarFailed");
+    expect(NAV_SOURCE).toContain("onError={() => setAvatarFailed(true)}");
+    expect(NAV_SOURCE).toContain("<CircleUserRound aria-hidden=\"true\" />");
+  });
+
+  it("keeps the nav avatar circular, cover-cropped, and icon-sized in both rails", () => {
+    const start = GLOBALS.indexOf(".nav-avatar {");
+    expect(start).toBeGreaterThan(-1);
+    const block = GLOBALS.slice(start, GLOBALS.indexOf("}", start));
+    expect(block).toContain("border-radius: 999px");
+    expect(block).toContain("object-fit: cover");
+    expect(block).toContain("width: 1.75rem");
+    expect(block).toContain("height: 1.75rem");
+  });
+
+  it("receives the safe app-local photo URL from the app layout (never the raw key)", () => {
+    expect(APP_LAYOUT_SOURCE).toContain("user.profilePhotoKey && user.profilePhotoUpdatedAt");
+    expect(APP_LAYOUT_SOURCE).toContain("buildProfilePhotoImageUrl(user.profilePhotoUpdatedAt)");
+    expect(APP_LAYOUT_SOURCE).toContain("profilePhotoUrl={profilePhotoUrl}");
+    // The notification center wiring from the base branch stays in place.
+    expect(APP_LAYOUT_SOURCE).toContain("<NotificationCenter />");
   });
 
   it("does not expose Account in the admin sidebar", () => {

@@ -5,6 +5,7 @@ import {
   type SenderRemovalReason,
   SENDER_ACTIVE_CAMPAIGN_STATUSES,
   SENDER_ACTIVE_RUN_STATUSES,
+  buildProfilePhotoImageUrl,
   deriveAccountType,
   getSenderConnectionStatus,
   getSenderProviderLabel
@@ -16,6 +17,8 @@ type AccountUser = {
   createdAt: Date;
   lastLoginAt: Date | null;
   lastSeenAt: Date | null;
+  profilePhotoKey: string | null;
+  profilePhotoUpdatedAt: Date | null;
 };
 
 type SenderRow = {
@@ -70,7 +73,13 @@ export async function getAccountOverview(userId: string, user: AccountUser): Pro
       hasPassword,
       createdAt: user.createdAt.toISOString(),
       lastLoginAt: user.lastLoginAt ? user.lastLoginAt.toISOString() : null,
-      lastSeenAt: user.lastSeenAt ? user.lastSeenAt.toISOString() : null
+      lastSeenAt: user.lastSeenAt ? user.lastSeenAt.toISOString() : null,
+      // The client only ever receives this app-local URL — the private object
+      // key stays server-side.
+      profilePhotoUrl:
+        user.profilePhotoKey && user.profilePhotoUpdatedAt
+          ? buildProfilePhotoImageUrl(user.profilePhotoUpdatedAt)
+          : null
     },
     senders: senders.map(serializeAccountSender),
     canRemoveSenders: senders.length > 1
