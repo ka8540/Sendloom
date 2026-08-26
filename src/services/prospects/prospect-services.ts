@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 
 import { recordAuditEvent } from "@/lib/audit";
+import { createDiscoverSearchCompletedNotification } from "@/lib/notifications";
 import { ApifyProfileSearchService } from "@/services/prospects/apify-profile-search";
 import { CompanyResolutionService } from "@/services/prospects/company-resolution-service";
 import { DiscoverSearchCacheService } from "@/services/prospects/discover-cache-service";
@@ -49,7 +50,10 @@ export function createProspectServices(prisma: PrismaClient, aiClient?: AiClient
     emailDomain,
     discoverCache,
     // Safe, best-effort retry/processing audit trail (server-side only).
-    audit: recordAuditEvent
+    audit: recordAuditEvent,
+    notifyCompleted: async (searchId) => {
+      await createDiscoverSearchCompletedNotification(searchId, prisma);
+    }
   });
 
   // "Add 10 more" reuses the same Apify + role classifier + shared cache (which

@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { AppMobileGate } from "@/components/app-mobile-gate";
 import { AppNav } from "@/components/nav";
 import { BackButton } from "@/components/back-button";
+import { NotificationCenter } from "@/components/notification-center";
 import { isAdminUser, requireUser } from "@/lib/auth";
 
 const SIDEBAR_COLLAPSED_COOKIE_NAME = "sendloom_sidebar_collapsed";
@@ -70,6 +71,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <main className="content">
             <div className="content-toolbar">
               <BackButton fallbackHref={defaultBackHref} />
+              <NotificationCenter />
             </div>
             {children}
           </main>

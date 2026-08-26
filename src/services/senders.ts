@@ -1,4 +1,9 @@
 import { prisma } from "@/lib/db";
+import {
+  resolveGmailReconnectNotification,
+  runNotificationSideEffect,
+  syncGmailReconnectNotification
+} from "@/lib/notifications";
 
 type GoogleSenderInput = {
   userId: string;
@@ -24,7 +29,7 @@ export async function upsertGoogleSender(input: GoogleSenderInput) {
     throw new Error("Google did not return a refresh token. Reconnect the Gmail account with consent and try again.");
   }
 
-  return prisma.senderProfile.upsert({
+  const sender = await prisma.senderProfile.upsert({
     where: { fromEmail: input.email },
     update: {
       userId: input.userId,
@@ -50,6 +55,14 @@ export async function upsertGoogleSender(input: GoogleSenderInput) {
       }
     }
   });
+
+  // A successful OAuth exchange is an authoritative recovery even before the
+  // best-effort mailbox-watch setup finishes in the background.
+  await runNotificationSideEffect("gmail-reconnected", async () => {
+    await resolveGmailReconnectNotification(sender.id, prisma);
+  });
+
+  return sender;
 }
 
 export async function listUserSenders(userId: string) {
@@ -67,10 +80,16 @@ export async function getDefaultUserSender(userId: string) {
 }
 
 export async function markSenderRequiresReconnect(senderProfileId: string) {
-  return prisma.senderProfile.update({
+  const sender = await prisma.senderProfile.update({
     where: { id: senderProfileId },
     data: {
       oauthRefreshToken: null
     }
   });
+
+  await runNotificationSideEffect("gmail-reconnect-required", async () => {
+    await syncGmailReconnectNotification(sender.id, prisma);
+  });
+
+  return sender;
 }

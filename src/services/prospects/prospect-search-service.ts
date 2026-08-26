@@ -81,6 +81,7 @@ import {
 import { validateDiscoverSearchLabels } from "@/services/prospects/discover-search-label-validation";
 import { normalizeDomain, normalizeTitle } from "@/services/prospects/prospect-normalization";
 import { rateLimit } from "@/lib/rate-limit";
+import { runNotificationSideEffect } from "@/lib/notifications";
 import { RoleClassificationService } from "@/services/prospects/role-classification-service";
 import type { ValidatedCreateProspectSearch } from "@/services/prospects/prospect-validation";
 
@@ -234,6 +235,8 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, onTimeout: () => 
 /** Safe audit sink (defaults to a no-op so unit tests never touch the audit DB). */
 export type ProspectAuditFn = (args: RecordAuditEventArgs) => Promise<void> | void;
 const noopAudit: ProspectAuditFn = () => undefined;
+export type DiscoverCompletionNotificationFn = (searchId: string) => Promise<void> | void;
+const noopDiscoverCompletionNotification: DiscoverCompletionNotificationFn = () => undefined;
 
 export type ProspectSearchServiceDeps = {
   prisma: PrismaClient;
@@ -252,6 +255,8 @@ export type ProspectSearchServiceDeps = {
   discoverCache?: DiscoverCachePort;
   /** Audit sink; defaults to a no-op (production wires recordAuditEvent). */
   audit?: ProspectAuditFn;
+  /** In-app completion notification sink; production wires the durable helper. */
+  notifyCompleted?: DiscoverCompletionNotificationFn;
   /**
    * Fallback resolver for people whose provider name is too incomplete to build
    * an address from. Defaults to the OpenAI web-search resolver, which is inert
@@ -306,6 +311,7 @@ export class ProspectSearchService {
   private readonly discoverQuota: DiscoverQuotaReserver;
   private readonly discoverCache: DiscoverCachePort;
   private readonly audit: ProspectAuditFn;
+  private readonly notifyCompleted: DiscoverCompletionNotificationFn;
   private readonly identityResolver: PersonIdentityResolverPort;
   private readonly now: () => Date;
 
@@ -322,6 +328,7 @@ export class ProspectSearchService {
     this.discoverQuota = deps.discoverQuota ?? reserveDiscoverSearchSlot;
     this.discoverCache = deps.discoverCache ?? new DiscoverSearchCacheService({ prisma: deps.prisma });
     this.audit = deps.audit ?? noopAudit;
+    this.notifyCompleted = deps.notifyCompleted ?? noopDiscoverCompletionNotification;
     this.identityResolver = deps.identityResolver ?? new OpenAIPersonIdentityResolver();
     this.now = deps.now ?? (() => new Date());
   }
@@ -451,6 +458,7 @@ export class ProspectSearchService {
     // to re-run it (the shared cache never reuses a zero-people entry).
     const isLegacyZeroResultReady = search.status === "READY" && (search.totalProcessed ?? 0) === 0;
     if (search.status === "READY" && !isLegacyZeroResultReady) {
+      await runNotificationSideEffect("discover-search-completed", async () => this.notifyCompleted(search.id));
       return search;
     }
     // A FAILED or NO_RESULTS search is intentionally NOT terminal — retrying it
@@ -540,6 +548,9 @@ export class ProspectSearchService {
         providerCalled: outcome.providerCalled,
         resultCount: outcome.resultCount
       });
+      if (newStatus === "READY") {
+        await runNotificationSideEffect("discover-search-completed", async () => this.notifyCompleted(search.id));
+      }
       return completed;
     } catch (error) {
       // The raw internal code/message is persisted for server-side diagnostics
