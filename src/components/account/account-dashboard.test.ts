@@ -12,6 +12,8 @@ const SENDER_ROUTE = readFileSync("src/app/api/account/senders/[id]/route.ts", "
 const PASSWORD_ROUTE = readFileSync("src/app/api/account/password/route.ts", "utf8");
 const PASSWORD_VERIFY_ROUTE = readFileSync("src/app/api/account/password/verify/route.ts", "utf8");
 const PASSWORD_RESEND_ROUTE = readFileSync("src/app/api/account/password/resend/route.ts", "utf8");
+const PHOTO_ROUTE = readFileSync("src/app/api/account/profile-photo/route.ts", "utf8");
+const PHOTO_IMAGE_ROUTE = readFileSync("src/app/api/account/profile-photo/image/route.ts", "utf8");
 
 describe("account page (server component)", () => {
   it("guards to operators, loads the overview server-side, and renders the dashboard", () => {
@@ -179,5 +181,94 @@ describe("account API routes", () => {
     expect(PASSWORD_VERIFY_ROUTE).not.toMatch(/NextResponse\.json\([^;]*passwordHash/);
     expect(ACCOUNT_ROUTE).not.toMatch(/NextResponse\.json\([^;]*passwordHash/);
     expect(DASHBOARD).not.toContain("passwordHash");
+  });
+});
+
+describe("account dashboard — profile photo", () => {
+  it("renders the uploaded photo with alt text and falls back to the account initial", () => {
+    expect(DASHBOARD).toContain("profile.profilePhotoUrl && !photoFailed");
+    expect(DASHBOARD).toContain('alt="Profile photo"');
+    expect(DASHBOARD).toContain("accountInitial(profile)");
+    // A failed image load returns to the initial — never a broken-image icon.
+    expect(DASHBOARD).toContain("onError={() => setPhotoFailed(true)}");
+  });
+
+  it("offers a hidden file input gated to jpeg/png/webp behind a keyboard-accessible button", () => {
+    expect(DASHBOARD).toContain('type="file"');
+    expect(DASHBOARD).toContain('accept="image/jpeg,image/png,image/webp"');
+    expect(DASHBOARD).toContain("photoInputRef.current?.click()");
+    expect(DASHBOARD).toContain('aria-label="Choose a profile photo"');
+  });
+
+  it("shows Upload/Change + Remove controls and an uploading state", () => {
+    expect(DASHBOARD).toContain('"Uploading…"');
+    expect(DASHBOARD).toContain('"Change photo"');
+    expect(DASHBOARD).toContain('"Upload photo"');
+    expect(DASHBOARD).toMatch(/className=\{styles\.photoRemoveButton\}[\s\S]*?>\s*Remove\s*<\/button>/);
+  });
+
+  it("uploads via multipart POST to the profile-photo route and refreshes the nav on success", () => {
+    expect(DASHBOARD).toContain('formData.append("photo", file)');
+    expect(DASHBOARD).toContain('fetch("/api/account/profile-photo", { method: "POST", body: formData })');
+    expect(DASHBOARD).toContain("router.refresh()");
+    expect(DASHBOARD).toContain("useRouter");
+  });
+
+  it("validates type and size client-side as a convenience before upload", () => {
+    expect(DASHBOARD).toContain('["image/jpeg", "image/png", "image/webp"].includes(file.type)');
+    expect(DASHBOARD).toContain("file.size > PROFILE_PHOTO_MAX_BYTES");
+  });
+
+  it("confirms removal in the shared dialog and clears the avatar on success", () => {
+    expect(DASHBOARD).toContain('title="Remove profile photo?"');
+    expect(DASHBOARD).toContain('confirmLabel="Remove photo"');
+    expect(DASHBOARD).toContain('fetch("/api/account/profile-photo", { method: "DELETE" })');
+    expect(DASHBOARD).toContain("applyProfilePhotoUrl(null)");
+  });
+});
+
+describe("profile photo API routes", () => {
+  it("upload/delete authenticate with the existing API helper and rate-limit per user", () => {
+    expect(PHOTO_ROUTE).toContain("requireApiUser");
+    expect(PHOTO_ROUTE.match(/rateLimit/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(PHOTO_ROUTE).toContain("account:profile-photo:user:");
+  });
+
+  it("stores photos in the existing attachments bucket only — no new bucket", () => {
+    expect(PHOTO_ROUTE).toContain('bucket: "attachments"');
+    expect(PHOTO_ROUTE).not.toMatch(/profile.?images? bucket|avatars? bucket/i);
+    expect(PHOTO_ROUTE).not.toContain("CLOUDFLARE_R2_PROFILE");
+    expect(PHOTO_ROUTE).not.toContain("AVATAR_BUCKET");
+  });
+
+  it("scopes the object key to the session user and sniffs the real bytes", () => {
+    expect(PHOTO_ROUTE).toContain("buildProfilePhotoKey(auth.user.id,");
+    expect(PHOTO_ROUTE).toContain("detectProfilePhotoType(buffer)");
+    expect(PHOTO_ROUTE).toContain("PROFILE_PHOTO_MAX_BYTES");
+    expect(PHOTO_ROUTE).not.toContain('formData?.get("userId")');
+    expect(PHOTO_ROUTE).not.toContain("file.name");
+  });
+
+  it("deletes the old object only after the DB points at the new photo", () => {
+    const uploadIndex = PHOTO_ROUTE.indexOf("await uploadObject(");
+    const updateIndex = PHOTO_ROUTE.indexOf("await prisma.user.update(");
+    const oldDeleteIndex = PHOTO_ROUTE.indexOf('await deleteObject("attachments", previousKey)');
+    expect(uploadIndex).toBeGreaterThan(-1);
+    expect(updateIndex).toBeGreaterThan(uploadIndex);
+    expect(oldDeleteIndex).toBeGreaterThan(updateIndex);
+  });
+
+  it("removes the orphaned new object when the DB update fails", () => {
+    expect(PHOTO_ROUTE).toContain('await deleteObject("attachments", newKey).catch(() => undefined)');
+  });
+
+  it("serves only the session user's own photo with safe headers", () => {
+    expect(PHOTO_IMAGE_ROUTE).toContain("requireApiUser");
+    expect(PHOTO_IMAGE_ROUTE).toContain("auth.user.profilePhotoKey");
+    expect(PHOTO_IMAGE_ROUTE).toContain('getObjectBuffer("attachments", key)');
+    expect(PHOTO_IMAGE_ROUTE).toContain('"X-Content-Type-Options": "nosniff"');
+    expect(PHOTO_IMAGE_ROUTE).toContain('"private, max-age=3600"');
+    // No request parameter at all — arbitrary keys/userIds can never be read.
+    expect(PHOTO_IMAGE_ROUTE).toContain("export async function GET()");
   });
 });

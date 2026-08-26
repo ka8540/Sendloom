@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useId, useState } from "react";
-import { KeyRound, Loader2, Mail, Plus, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Camera, KeyRound, Loader2, Mail, Plus, Trash2 } from "lucide-react";
 
 import { AppConfirmDialog } from "@/components/app-confirm-dialog";
 import { useErrorToast } from "@/components/error-toast-provider";
@@ -18,6 +19,11 @@ import {
   MIN_PASSWORD_LENGTH,
   PASSWORD_UPDATE_ERROR_MESSAGE,
   PASSWORD_UPDATE_SUCCESS_MESSAGE,
+  PROFILE_PHOTO_INVALID_TYPE_MESSAGE,
+  PROFILE_PHOTO_MAX_BYTES,
+  PROFILE_PHOTO_REMOVE_ERROR_MESSAGE,
+  PROFILE_PHOTO_TOO_LARGE_MESSAGE,
+  PROFILE_PHOTO_UPDATE_ERROR_MESSAGE,
   describeSenderRemoval,
   validatePasswordChange
 } from "@/lib/account";
@@ -25,6 +31,7 @@ import styles from "./account-dashboard.module.css";
 
 const SENDER_REMOVE_GENERIC_ERROR = "We couldn't remove this sender. Please try again.";
 const ACCOUNT_LOAD_ERROR = "We couldn't refresh your account details. Reload the page to try again.";
+const PROFILE_PHOTO_SUCCESS_MESSAGE = "Profile photo updated.";
 
 function reconnectHref(fromEmail: string) {
   return `/api/auth/google/connect?email=${encodeURIComponent(fromEmail)}&next=${encodeURIComponent("/account")}`;
@@ -42,6 +49,7 @@ export function AccountDashboard({
   initialData: AccountOverview;
   connectGmailHref: string;
 }) {
+  const router = useRouter();
   const { showError, showSuccess } = useErrorToast();
 
   const [overview, setOverview] = useState<AccountOverview>(initialData);
@@ -51,6 +59,13 @@ export function AccountDashboard({
   const [pendingRemoval, setPendingRemoval] = useState<AccountSenderView | null>(null);
   const [removing, setRemoving] = useState(false);
   const [removeError, setRemoveError] = useState<string | null>(null);
+
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const [photoFailed, setPhotoFailed] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const [pendingPhotoRemoval, setPendingPhotoRemoval] = useState(false);
+  const [photoRemoving, setPhotoRemoving] = useState(false);
 
   const hasPassword = overview.profile.hasPassword;
   const [currentPassword, setCurrentPassword] = useState("");
@@ -64,6 +79,8 @@ export function AccountDashboard({
   const newPasswordId = useId();
   const confirmPasswordId = useId();
   const passwordErrorId = useId();
+  const photoInputId = useId();
+  const photoErrorId = useId();
 
   // Surface the Gmail-connect outcome once we return from the OAuth kickoff,
   // then strip the query params so a reload doesn't re-toast.
@@ -204,6 +221,96 @@ export function AccountDashboard({
     [confirmPassword, currentPassword, hasPassword, newPassword, savingPassword, showError]
   );
 
+  const applyProfilePhotoUrl = useCallback((profilePhotoUrl: string | null) => {
+    setPhotoFailed(false);
+    setOverview((current) => ({
+      ...current,
+      profile: { ...current.profile, profilePhotoUrl }
+    }));
+    // Refresh the server layout so the navigation avatar updates too.
+    router.refresh();
+  }, [router]);
+
+  const uploadPhoto = useCallback(
+    async (file: File) => {
+      // Client-side checks are a convenience only — the server re-validates
+      // the actual bytes before anything is stored.
+      if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+        setPhotoError(PROFILE_PHOTO_INVALID_TYPE_MESSAGE);
+        return;
+      }
+      if (file.size > PROFILE_PHOTO_MAX_BYTES) {
+        setPhotoError(PROFILE_PHOTO_TOO_LARGE_MESSAGE);
+        return;
+      }
+
+      setPhotoUploading(true);
+      setPhotoError(null);
+      try {
+        const formData = new FormData();
+        formData.append("photo", file);
+        const res = await fetch("/api/account/profile-photo", { method: "POST", body: formData });
+        const data = (await res.json().catch(() => null)) as { profilePhotoUrl?: string; error?: string } | null;
+
+        if (!res.ok || typeof data?.profilePhotoUrl !== "string") {
+          const message = typeof data?.error === "string" ? data.error : PROFILE_PHOTO_UPDATE_ERROR_MESSAGE;
+          setPhotoError(message);
+          showError(message);
+          return;
+        }
+
+        applyProfilePhotoUrl(data.profilePhotoUrl);
+        showSuccess(PROFILE_PHOTO_SUCCESS_MESSAGE);
+      } catch {
+        setPhotoError(PROFILE_PHOTO_UPDATE_ERROR_MESSAGE);
+        showError(PROFILE_PHOTO_UPDATE_ERROR_MESSAGE);
+      } finally {
+        setPhotoUploading(false);
+      }
+    },
+    [applyProfilePhotoUrl, showError, showSuccess]
+  );
+
+  const onPhotoSelected = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      // Reset so picking the same file twice still fires onChange.
+      event.target.value = "";
+      if (file) {
+        void uploadPhoto(file);
+      }
+    },
+    [uploadPhoto]
+  );
+
+  const confirmPhotoRemoval = useCallback(async () => {
+    if (photoRemoving) {
+      return;
+    }
+
+    setPhotoRemoving(true);
+    setPhotoError(null);
+    try {
+      const res = await fetch("/api/account/profile-photo", { method: "DELETE" });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as { error?: string } | null;
+        const message = typeof data?.error === "string" ? data.error : PROFILE_PHOTO_REMOVE_ERROR_MESSAGE;
+        setPhotoError(message);
+        showError(message);
+        return;
+      }
+
+      setPendingPhotoRemoval(false);
+      applyProfilePhotoUrl(null);
+      showSuccess("Profile photo removed.");
+    } catch {
+      setPhotoError(PROFILE_PHOTO_REMOVE_ERROR_MESSAGE);
+      showError(PROFILE_PHOTO_REMOVE_ERROR_MESSAGE);
+    } finally {
+      setPhotoRemoving(false);
+    }
+  }, [applyProfilePhotoUrl, photoRemoving, showError, showSuccess]);
+
   const { profile, senders, canRemoveSenders } = overview;
 
   return (
@@ -222,9 +329,20 @@ export function AccountDashboard({
       {/* Identity card ------------------------------------------------------ */}
       <section className={`card ${styles.identityCard}`} aria-labelledby="account-profile-heading">
         <div className={styles.identityMain}>
-          <span className={styles.avatar} aria-hidden="true">
-            {accountInitial(profile)}
-          </span>
+          {profile.profilePhotoUrl && !photoFailed ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={profile.profilePhotoUrl}
+              alt="Profile photo"
+              className={styles.avatarImage}
+              referrerPolicy="no-referrer"
+              onError={() => setPhotoFailed(true)}
+            />
+          ) : (
+            <span className={styles.avatar} aria-hidden="true">
+              {accountInitial(profile)}
+            </span>
+          )}
           <div className={styles.identityText}>
             <h2 id="account-profile-heading" className={styles.identityName}>
               {profile.name ?? profile.email}
@@ -234,6 +352,50 @@ export function AccountDashboard({
               <span className={styles.typeDot} aria-hidden="true" />
               {ACCOUNT_TYPE_LABELS[profile.accountType]}
             </p>
+            <div className={styles.photoControls}>
+              <input
+                ref={photoInputRef}
+                id={photoInputId}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className={styles.photoInput}
+                onChange={onPhotoSelected}
+                disabled={photoUploading || photoRemoving}
+                aria-label="Choose a profile photo"
+              />
+              <button
+                type="button"
+                className={styles.photoButton}
+                onClick={() => photoInputRef.current?.click()}
+                disabled={photoUploading || photoRemoving}
+                aria-describedby={photoError ? photoErrorId : undefined}
+              >
+                {photoUploading ? (
+                  <Loader2 aria-hidden="true" className={styles.spin} />
+                ) : (
+                  <Camera aria-hidden="true" />
+                )}
+                {photoUploading ? "Uploading…" : profile.profilePhotoUrl ? "Change photo" : "Upload photo"}
+              </button>
+              {profile.profilePhotoUrl ? (
+                <button
+                  type="button"
+                  className={styles.photoRemoveButton}
+                  onClick={() => {
+                    setPhotoError(null);
+                    setPendingPhotoRemoval(true);
+                  }}
+                  disabled={photoUploading || photoRemoving}
+                >
+                  Remove
+                </button>
+              ) : null}
+            </div>
+            {photoError ? (
+              <p id={photoErrorId} className={styles.formError} role="alert">
+                {photoError}
+              </p>
+            ) : null}
           </div>
         </div>
 
@@ -463,6 +625,22 @@ export function AccountDashboard({
           if (!removing) {
             setPendingRemoval(null);
             setRemoveError(null);
+          }
+        }}
+      />
+
+      <AppConfirmDialog
+        open={pendingPhotoRemoval}
+        title="Remove profile photo?"
+        description="Your account goes back to showing your initial. You can upload a new photo anytime."
+        confirmLabel="Remove photo"
+        loadingLabel="Removing…"
+        destructive
+        loading={photoRemoving}
+        onConfirm={confirmPhotoRemoval}
+        onCancel={() => {
+          if (!photoRemoving) {
+            setPendingPhotoRemoval(false);
           }
         }}
       />

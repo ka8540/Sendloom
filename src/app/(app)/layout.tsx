@@ -5,6 +5,7 @@ import { AppMobileGate } from "@/components/app-mobile-gate";
 import { AppNav } from "@/components/nav";
 import { BackButton } from "@/components/back-button";
 import { NotificationCenter } from "@/components/notification-center";
+import { buildProfilePhotoImageUrl } from "@/lib/account";
 import { isAdminUser, requireUser } from "@/lib/auth";
 
 const SIDEBAR_COLLAPSED_COOKIE_NAME = "sendloom_sidebar_collapsed";
@@ -61,13 +62,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const userAgent = requestHeaders.get("user-agent") ?? "";
   const initialSidebarCollapsed = requestCookies.get(SIDEBAR_COLLAPSED_COOKIE_NAME)?.value === "true";
   const defaultBackHref = isAdminUser(user) ? "/admin" : "/workspace";
+  const profilePhotoUrl =
+    user.profilePhotoKey && user.profilePhotoUpdatedAt
+      ? buildProfilePhotoImageUrl(user.profilePhotoUpdatedAt)
+      : null;
 
   return (
     <>
       <SidebarPreferenceScript />
       <AppMobileGate userAgent={userAgent}>
         <div className="shell">
-          <AppNav initialCollapsed={initialSidebarCollapsed} isAdmin={isAdminUser(user)} />
+          <AppNav initialCollapsed={initialSidebarCollapsed} isAdmin={isAdminUser(user)} profilePhotoUrl={profilePhotoUrl} />
           <main className="content">
             <div className="content-toolbar">
               <BackButton fallbackHref={defaultBackHref} />
