@@ -14,6 +14,7 @@ import {
   History,
   House,
   LayoutDashboard,
+  Megaphone,
   PanelLeftClose,
   PanelLeftOpen,
   ScrollText,
@@ -137,6 +138,7 @@ export function AppNav({ initialCollapsed = false, isAdmin = false }: { initialC
         { href: "/admin/users" as Route, label: "Users", icon: Users },
         { href: "/admin/restrictions" as Route, label: "Restrictions", icon: ShieldAlert },
         { href: "/admin/system-health" as Route, label: "System Health", icon: Activity },
+        { href: "/admin/system-notices" as Route, label: "System Notices", icon: Megaphone },
         { href: "/admin/activity" as Route, label: "Activity Logs", icon: History },
         { href: "/admin/incidents" as Route, label: "Incident Reports", icon: Siren },
       ]

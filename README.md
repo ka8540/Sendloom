@@ -355,7 +355,7 @@ Reply sync runs against connected Gmail senders on cron ticks and surfaces on se
 
 ### Admin routes
 
-`/admin`, `/admin/users`, `/admin/restrictions`, `/admin/system-health`, `/admin/activity`, `/admin/incidents`.
+`/admin`, `/admin/users`, `/admin/restrictions`, `/admin/system-health`, `/admin/system-notices`, `/admin/activity`, `/admin/incidents`.
 
 ## API summary
 
@@ -407,6 +407,7 @@ All operator endpoints require an authenticated, eligible, unrestricted session;
 - `POST /api/senders/[id]/sync-bounces`
 - `GET`/`POST /api/cron/campaigns` — send work, reply sync, watch renewal, bounce sync, disposition repair, automatic bounce monitoring
 - `GET`/`POST /api/cron/legal-policy-notices` — protected legal-version detection and resumable account-notice delivery
+- `GET`/`POST /api/cron/system-notices` — protected, production-gated operational notice delivery
 - `POST /api/webhooks/gmail-pubsub`, `POST /api/webhooks/resend`
 
 ### Incidents, admin, health
@@ -414,6 +415,7 @@ All operator endpoints require an authenticated, eligible, unrestricted session;
 - `POST /api/incidents`, `POST /api/incidents/events`
 - `GET /api/admin/users`, `PATCH`/`DELETE /api/admin/users/[id]`, `GET /api/admin/users/search`, `/[id]/summary`, `/[id]/activity`
 - `GET /api/admin/incidents`, `PATCH /api/admin/incidents/[id]`, `GET /api/admin/system-health`
+- `GET`/`POST /api/admin/system-notices`, `GET`/`PATCH /api/admin/system-notices/[id]`, plus `/preview`, `/schedule`, `/send-now`, and `/cancel` actions
 - `GET /api/health`
 - `GET`/`POST /api/suppressions`, `DELETE /api/suppressions/[id]` (internal; no operator UI)
 
@@ -431,6 +433,8 @@ All operator endpoints require an authenticated, eligible, unrestricted session;
 | `RecipientJob` | Per-recipient delivery state, retry/error metadata, provider message id |
 | `LegalPolicyNotice` | Immutable baseline/release ledger with policy version, content hash, authored summary, and materialization progress |
 | `LegalPolicyNoticeRecipient` | Individually addressed account-notice delivery state, lease, retry count, and Resend message id |
+| `SystemNotice` | Admin-authored operational content, UTC schedule/impact instants, IANA display zone, and delivery lifecycle |
+| `SystemNoticeRecipient` | One snapshotted account recipient per notice with claim lease, retry state, and Resend message id |
 | `AttachmentAsset` | Content-addressed attachment dedupe row, unique per `(userId, sha256, sizeBytes, contentType)` |
 | `SendLedger` | Source of truth for confirmed Gmail sends; backs the rolling 24-hour cap and Analysis |
 | `InboundReply` | Gmail reply matched back to a recipient job |
@@ -508,6 +512,7 @@ Notable files:
 - `src/lib/account.ts` / `src/services/account.ts` — account view types and sender-removal rules
 - `src/lib/auth-otp.ts` / `src/lib/auth-email.ts` — OTP challenge lifecycle, atomic Redis scripts, HMAC verification, and Resend delivery
 - `src/lib/legal-policies.ts` / `src/lib/legal-policy-notifications.ts` / `src/lib/legal-notice-email.ts` — policy registry, durable release processor, and Resend rendering/delivery
+- `src/lib/system-notice-notifications.ts` / `src/lib/system-notice-email.ts` — admin-authored operational notice processor and exact preview/delivery renderer
 - `src/components/otp-code-input.tsx` / `src/components/otp-verification-form.tsx` — shared accessible six-digit verification UI
 - `src/lib/daily-send-limit.ts` — rolling 24-hour window and confirmed-send reader
 - `src/services/attachment-assets.ts` — content-addressed attachment dedupe
@@ -530,7 +535,7 @@ Copy `.env.example` to `.env` and fill it in. Never commit real secrets.
 | `AUTH_OTP_SECRET` | For email signup/password changes | HMAC key for purpose-bound OTP digests and opaque email rate-limit keys; minimum 32 bytes and distinct from other secrets |
 | `TRACKING_SECRET` | Production | JWT signing for open/click/unsubscribe tokens. Must differ from `SESSION_SECRET` — tracking tokens travel in every email |
 | `APP_BASE_URL` | Yes | Base URL for redirects and tracking links |
-| `CRON_SECRET` | Production | Protects both cron routes; the legal-notice route fails closed in every environment without it |
+| `CRON_SECRET` | Production | Protects scheduled processor routes; legal and system-notice processors fail closed without it |
 
 ### Authentication mail and Gmail safety
 
@@ -538,12 +543,15 @@ Copy `.env.example` to `.env` and fill it in. Never commit real secrets.
 | --- | --- | --- |
 | `MAIL_PROVIDER` | Optional | Outreach backend selector; defaults to `gmail` and does not control OTP delivery |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | For Google auth | OAuth client credentials |
-| `RESEND_API_KEY` | For auth mail and enabled legal notices | Sends Sendloom-owned transactional mail; it is independent from the Gmail outreach transport |
-| `DEFAULT_FROM_EMAIL` | For auth mail and enabled legal notices | Verified Sendloom sender address used for transactional mail |
+| `RESEND_API_KEY` | For auth mail and enabled account notices | Sends Sendloom-owned transactional mail; it is independent from the Gmail outreach transport |
+| `DEFAULT_FROM_EMAIL` | For auth mail and enabled account notices | Verified Sendloom sender address used for transactional mail |
 | `DEFAULT_FROM_NAME` | Optional | Transactional sender display name; defaults to `Sendloom` |
 | `LEGAL_NOTICE_PROCESSING_ENABLED` | Production legal delivery | Mass-delivery feature flag; defaults to `false` and is insufficient unless both Node and Vercel report Production |
 | `LEGAL_NOTICE_BATCH_SIZE` | Optional | Cursor/materialization and claim batch size; defaults to `25`, maximum `50` |
 | `LEGAL_NOTICE_MAX_PER_RUN` | Optional | Maximum Resend attempts in one processor invocation; defaults to `50` |
+| `SYSTEM_NOTICE_PROCESSING_ENABLED` | Production operational delivery | Admin system-notice mass-delivery flag; defaults to `false` and still requires both Node and Vercel Production |
+| `SYSTEM_NOTICE_BATCH_SIZE` | Optional | System-notice materialization and claim batch size; defaults to `25`, maximum `50` |
+| `SYSTEM_NOTICE_MAX_PER_RUN` | Optional | Maximum system-notice Resend attempts in one processor invocation; defaults to `50` |
 | `GMAIL_DAILY_SEND_SAFETY_LIMIT` | Optional | Confirmed sends per sender per rolling 24h. Default `450` |
 | `GMAIL_SENDS_PER_MINUTE` | Optional | Sends per minute per connected sender. Default `3`. Raise only with verified mailbox headroom |
 | `GMAIL_SENDER_CONCURRENCY` | Optional | Simultaneous Gmail sends. Default `2` |
@@ -653,6 +661,31 @@ For example, if Terms, Privacy, and Anti-Abuse change together on October 1, giv
 The first processor run records the current three versions as `BASELINE` and sends nothing. A content/hash change without a version bump, a version rollback/reuse, a missing `releaseGroup`, or a new version without `changeSummary` is rejected and logged without sending. **Never reuse an old version after changing policy content.** Preview, Development, local, test, and CI delivery are blocked even if the feature flag is set; real delivery requires `NODE_ENV=production`, `VERCEL_ENV=production`, and `LEGAL_NOTICE_PROCESSING_ENABLED=true` together.
 
 These are transactional account/service notices and remain isolated from marketing preferences, campaign Gmail senders, and connected Gmail credentials. Final legal-notice content and compliance requirements should be reviewed by qualified counsel.
+
+## Sending an operational system notice
+
+System Notices are separate from legal-policy releases and incident reports. They are transactional operational emails for maintenance, degraded performance, disruptions, recovery updates, and general service communications.
+
+1. An administrator opens **Admin → System Notices** and creates a draft.
+2. The administrator chooses the notice type, plain-text content, affected area, optional impact window, and IANA display timezone.
+3. **Preview exact email** renders the same HTML/text pair used by production delivery. Preview does not create recipient rows or call Resend.
+4. The administrator chooses **Send now** or **Schedule**. Scheduled timestamps are stored as UTC instants and are never processed early; with the five-minute external-scheduler cadence, delivery normally begins at or shortly after the selected instant.
+5. The all-users confirmation shows the current account-recipient count and delivery details. Send now additionally requires typing `SEND TO ALL USERS`.
+6. Send now records `scheduledSendAt = now` and leaves delivery to the durable processor; the browser/API never loops over users.
+7. At delivery start, the processor snapshots every `User.id` + `User.email` exactly once. Connected Gmail senders, prospects, campaign recipients, and client-supplied addresses are never audience sources.
+8. Aggregate progress is visible in Admin. A unique notice/user row, atomic leases with `SKIP LOCKED`, recipient-state checks, and the stable `system-notice-{noticeId}-{recipientId}` Resend key prevent duplicate successful sends.
+
+Production delivery requires `SYSTEM_NOTICE_PROCESSING_ENABLED=true` in addition to `NODE_ENV=production` and `VERCEL_ENV=production`. Keep the flag `false` in local, Preview, Development, test, and CI environments. The processor reuses `RESEND_API_KEY`, `DEFAULT_FROM_EMAIL`, `DEFAULT_FROM_NAME`, `APP_BASE_URL`, and `CRON_SECRET`; it never uses connected Gmail credentials.
+
+Vercel Hobby does not schedule the high-frequency system-notice processor. Configure an external scheduler with these settings:
+
+- Schedule: `*/5 * * * *` (every five minutes).
+- URL: `https://<production-domain>/api/cron/system-notices`.
+- Method: `GET` or `POST`.
+- Header: `Authorization: Bearer <CRON_SECRET>` (preferred), or `x-cron-secret: <CRON_SECRET>`.
+- Treat HTTP `200` as success and allow up to 60 seconds for the request.
+
+Use the same strong `CRON_SECRET` value in the external scheduler and the Vercel Production environment. Never put the secret in the URL or query string. The route fails closed when the secret is absent or incorrect, and Preview deployments remain unable to deliver because the processor also requires `VERCEL_ENV=production`.
 
 ## Local development
 

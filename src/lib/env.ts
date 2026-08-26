@@ -53,6 +53,11 @@ const envSchema = z
     LEGAL_NOTICE_PROCESSING_ENABLED: booleanFlag(false),
     LEGAL_NOTICE_BATCH_SIZE: z.coerce.number().int().positive().max(50).default(25),
     LEGAL_NOTICE_MAX_PER_RUN: z.coerce.number().int().positive().max(500).default(50),
+    // Admin-authored operational broadcasts use their own fail-closed switch
+    // and processor limits while reusing the transactional Resend account.
+    SYSTEM_NOTICE_PROCESSING_ENABLED: booleanFlag(false),
+    SYSTEM_NOTICE_BATCH_SIZE: z.coerce.number().int().positive().max(50).default(25),
+    SYSTEM_NOTICE_MAX_PER_RUN: z.coerce.number().int().positive().max(500).default(50),
     // --- Gmail bounce monitoring (mailbox watch + Pub/Sub push) ---
     // Topic the Gmail watch publishes to (projects/<id>/topics/<name>). The
     // webhook accepts a push request when EITHER the shared verification token
@@ -258,6 +263,9 @@ function readRawEnv() {
     LEGAL_NOTICE_PROCESSING_ENABLED: process.env.LEGAL_NOTICE_PROCESSING_ENABLED,
     LEGAL_NOTICE_BATCH_SIZE: process.env.LEGAL_NOTICE_BATCH_SIZE,
     LEGAL_NOTICE_MAX_PER_RUN: process.env.LEGAL_NOTICE_MAX_PER_RUN,
+    SYSTEM_NOTICE_PROCESSING_ENABLED: process.env.SYSTEM_NOTICE_PROCESSING_ENABLED,
+    SYSTEM_NOTICE_BATCH_SIZE: process.env.SYSTEM_NOTICE_BATCH_SIZE,
+    SYSTEM_NOTICE_MAX_PER_RUN: process.env.SYSTEM_NOTICE_MAX_PER_RUN,
     GMAIL_PUBSUB_TOPIC: process.env.GMAIL_PUBSUB_TOPIC,
     GMAIL_PUBSUB_VERIFICATION_TOKEN: process.env.GMAIL_PUBSUB_VERIFICATION_TOKEN,
     GMAIL_PUBSUB_AUDIENCE: process.env.GMAIL_PUBSUB_AUDIENCE,

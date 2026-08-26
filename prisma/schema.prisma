@@ -82,54 +82,139 @@ enum LegalPolicyNoticeRecipientStatus {
   FAILED_PERMANENT
 }
 
+enum SystemNoticeType {
+  PLANNED_MAINTENANCE
+  DEGRADED_PERFORMANCE
+  SERVICE_DISRUPTION
+  RESOLVED
+  GENERAL
+}
+
+enum SystemNoticeStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  COMPLETED
+  CANCELLED
+  FAILED
+}
+
+enum SystemNoticeRecipientStatus {
+  PENDING
+  SENDING
+  SENT
+  RETRY
+  PERMANENT_FAILURE
+}
+
 model User {
-  id                       String               @id @default(cuid())
-  email                    String               @unique
-  passwordHash             String?
-  googleSub                String?              @unique
-  isAdmin                  Boolean              @default(false)
-  hunterApiKeyEncrypted    String?
-  hunterApiKeyLast4        String?
-  hunterApiKeyUpdatedAt    DateTime?
-  apiAccessDisabled        Boolean              @default(false)
-  importsWriteDisabled     Boolean              @default(false)
-  templatesWriteDisabled   Boolean              @default(false)
-  launchesDisabled         Boolean              @default(false)
-  aiEnhancementsDisabled   Boolean              @default(false)
-  adultVerifiedAt          DateTime?
-  termsAcceptedAt          DateTime?
-  privacyAcceptedAt        DateTime?
-  antiAbuseAcceptedAt      DateTime?
-  policyVersion            String?
-  ageGateVersion           String?
-  eligibilityBlockedAt     DateTime?
-  eligibilityBlockedReason String?
-  restrictedAt             DateTime?
-  restrictedReason         String?
-  magicLinkToken           String?
-  magicLinkExpiry          DateTime?
-  lastLoginAt              DateTime?
-  lastSeenAt               DateTime?
-  sessionIssuedAt          DateTime?
-  sessionExpiresAt         DateTime?
-  createdAt                DateTime             @default(now())
-  updatedAt                DateTime             @updatedAt
-  senderProfiles           SenderProfile[]
-  imports                  Import[]
-  mappings                 Mapping[]
-  templates                Template[]
-  campaigns                Campaign[]
-  suppressions             Suppression[]
-  hunterDomainSearches     HunterDomainSearch[]
-  prospectCompanies        ProspectCompany[]
-  prospectPeople           ProspectPerson[]
-  prospectSearches         ProspectSearch[]
-  attachmentAssets         AttachmentAsset[]
-  legalPolicyNoticeRecipients LegalPolicyNoticeRecipient[]
+  id                           String                        @id @default(cuid())
+  email                        String                        @unique
+  passwordHash                 String?
+  googleSub                    String?                       @unique
+  isAdmin                      Boolean                       @default(false)
+  hunterApiKeyEncrypted        String?
+  hunterApiKeyLast4            String?
+  hunterApiKeyUpdatedAt        DateTime?
+  apiAccessDisabled            Boolean                       @default(false)
+  importsWriteDisabled         Boolean                       @default(false)
+  templatesWriteDisabled       Boolean                       @default(false)
+  launchesDisabled             Boolean                       @default(false)
+  aiEnhancementsDisabled       Boolean                       @default(false)
+  adultVerifiedAt              DateTime?
+  termsAcceptedAt              DateTime?
+  privacyAcceptedAt            DateTime?
+  antiAbuseAcceptedAt          DateTime?
+  policyVersion                String?
+  ageGateVersion               String?
+  eligibilityBlockedAt         DateTime?
+  eligibilityBlockedReason     String?
+  restrictedAt                 DateTime?
+  restrictedReason             String?
+  magicLinkToken               String?
+  magicLinkExpiry              DateTime?
+  lastLoginAt                  DateTime?
+  lastSeenAt                   DateTime?
+  sessionIssuedAt              DateTime?
+  sessionExpiresAt             DateTime?
+  createdAt                    DateTime                      @default(now())
+  updatedAt                    DateTime                      @updatedAt
+  senderProfiles               SenderProfile[]
+  imports                      Import[]
+  mappings                     Mapping[]
+  templates                    Template[]
+  campaigns                    Campaign[]
+  suppressions                 Suppression[]
+  hunterDomainSearches         HunterDomainSearch[]
+  prospectCompanies            ProspectCompany[]
+  prospectPeople               ProspectPerson[]
+  prospectSearches             ProspectSearch[]
+  attachmentAssets             AttachmentAsset[]
+  legalPolicyNoticeRecipients  LegalPolicyNoticeRecipient[]
   legalPolicyReleaseRecipients LegalPolicyReleaseRecipient[]
+  createdSystemNotices         SystemNotice[]                @relation("SystemNoticeCreator")
+  systemNoticeRecipients       SystemNoticeRecipient[]       @relation("SystemNoticeRecipientUser")
 
   @@index([isAdmin])
   @@index([sessionExpiresAt])
+}
+
+// Admin-authored operational account notices. Content becomes immutable as
+// soon as delivery starts; timestamps are stored as UTC instants while the IANA
+// zone is retained for human-readable rendering.
+model SystemNotice {
+  id                       String                  @id @default(cuid())
+  type                     SystemNoticeType
+  status                   SystemNoticeStatus      @default(DRAFT)
+  subject                  String
+  title                    String
+  message                  String
+  affectedArea             String?
+  scheduledSendAt          DateTime?
+  impactStartsAt           DateTime?
+  impactEndsAt             DateTime?
+  timeZone                 String
+  createdByUserId          String
+  recipientCursor          String?
+  recipientsMaterializedAt DateTime?
+  startedAt                DateTime?
+  completedAt              DateTime?
+  cancelledAt              DateTime?
+  lastErrorCode            String?
+  createdAt                DateTime                @default(now())
+  updatedAt                DateTime                @updatedAt
+  createdBy                User                    @relation("SystemNoticeCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  recipients               SystemNoticeRecipient[]
+
+  @@index([status, scheduledSendAt])
+  @@index([createdAt])
+  @@index([createdByUserId])
+}
+
+// Stable one-row-per-account delivery ledger. emailSnapshot freezes the
+// recipient address when the audience is materialized at delivery start.
+model SystemNoticeRecipient {
+  id                String                      @id @default(cuid())
+  noticeId          String
+  userId            String
+  emailSnapshot     String
+  status            SystemNoticeRecipientStatus @default(PENDING)
+  attempts          Int                         @default(0)
+  providerMessageId String?
+  sentAt            DateTime?
+  lastAttemptAt     DateTime?
+  nextAttemptAt     DateTime?
+  leaseToken        String?
+  leaseExpiresAt    DateTime?
+  lastErrorCode     String?
+  createdAt         DateTime                    @default(now())
+  updatedAt         DateTime                    @updatedAt
+  notice            SystemNotice                @relation(fields: [noticeId], references: [id], onDelete: Cascade)
+  user              User                        @relation("SystemNoticeRecipientUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([noticeId, userId])
+  @@index([noticeId, status, nextAttemptAt])
+  @@index([status, leaseExpiresAt])
 }
 
 // Immutable policy-release ledger. The first row for each policy is a baseline
@@ -650,41 +735,41 @@ model HunterDomainSearch {
 // API boundary, never trusted directly from AI output.
 
 model ProspectCompany {
-  id                      String    @id @default(cuid())
-  userId                  String
+  id                         String    @id @default(cuid())
+  userId                     String
   // Tenant-local canonical identity. Resolved domains are authoritative;
   // normalized company names are only a fallback while a domain is unknown.
-  canonicalKey            String
-  name                    String
-  normalizedName          String
-  officialName            String?
-  officialDomain          String?
-  officialWebsiteDomain   String?
-  officialWebsite         String?
-  linkedinUrl             String?
-  domainConfidence        String    @default("UNAVAILABLE")
-  emailDomain             String?
-  emailDomainConfidence   String    @default("UNAVAILABLE")
-  emailDomainEvidence     Json?
-  emailPattern            String?
-  patternConfidence       String    @default("UNAVAILABLE")
-  patternEvidence         Json?
+  canonicalKey               String
+  name                       String
+  normalizedName             String
+  officialName               String?
+  officialDomain             String?
+  officialWebsiteDomain      String?
+  officialWebsite            String?
+  linkedinUrl                String?
+  domainConfidence           String    @default("UNAVAILABLE")
+  emailDomain                String?
+  emailDomainConfidence      String    @default("UNAVAILABLE")
+  emailDomainEvidence        Json?
+  emailPattern               String?
+  patternConfidence          String    @default("UNAVAILABLE")
+  patternEvidence            Json?
   // MANUAL | SOURCE | AI | SHARED_CACHE | UNRESOLVED. The canonical merge
   // policy uses this to prevent lower-authority updates from erasing evidence.
-  emailFormatAuthority    String    @default("UNRESOLVED")
+  emailFormatAuthority       String    @default("UNRESOLVED")
   // Short, human-readable summary of why this format was selected (from the AI
   // web-search discovery). Reset on every inference.
-  emailFormatReason       String?
+  emailFormatReason          String?
   // When the email format was last discovered/inferred. Drives the cache that
   // avoids paying for AI web search again within the freshness window.
-  emailFormatDiscoveredAt DateTime?
+  emailFormatDiscoveredAt    DateTime?
   // Typed outcome of the most recent automatic/source/manual discovery. This
   // keeps provider/config/parser failures distinct from genuine no-evidence.
-  emailFormatDiscoveryStatus String   @default("NOT_ATTEMPTED")
+  emailFormatDiscoveryStatus String    @default("NOT_ATTEMPTED")
   emailFormatDiscoveryReason String?
   emailFormatDiscoveryAt     DateTime?
-  createdAt               DateTime  @default(now())
-  updatedAt               DateTime  @updatedAt
+  createdAt                  DateTime  @default(now())
+  updatedAt                  DateTime  @updatedAt
 
   user      User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
   positions ProspectCompanyPosition[]
@@ -863,49 +948,49 @@ model DiscoverSearchExpansion {
 // from this data. Match is by an exact canonical fingerprint (see
 // discover-cache-fingerprint).
 model DiscoverSearchCache {
-  id                    String    @id @default(cuid())
-  fingerprint           String    @unique
-  cacheVersion          String
-  companyKey            String
-  companyName           String
-  companyDomain         String?
-  companyLinkedinUrl    String?
-  normalizedRoles       Json
-  normalizedLocations   Json
-  resultLimit           Int
+  id                            String    @id @default(cuid())
+  fingerprint                   String    @unique
+  cacheVersion                  String
+  companyKey                    String
+  companyName                   String
+  companyDomain                 String?
+  companyLinkedinUrl            String?
+  normalizedRoles               Json
+  normalizedLocations           Json
+  resultLimit                   Int
   // READY (fresh/usable) | REFRESHING (a holder is repopulating) | FAILED.
-  status                String    @default("REFRESHING")
-  fetchedAt             DateTime?
-  expiresAt             DateTime?
-  refreshStartedAt      DateTime?
-  lastErrorCode         String?
-  resultCount           Int       @default(0)
+  status                        String    @default("REFRESHING")
+  fetchedAt                     DateTime?
+  expiresAt                     DateTime?
+  refreshStartedAt              DateTime?
+  lastErrorCode                 String?
+  resultCount                   Int       @default(0)
   // Provider continuation state for "Add 10 more". An expansion never restarts
   // the provider at page 1: providerNextPage is the next page to fetch,
   // providerPagesFetched counts pages already pulled into this entry, and
   // providerExhausted is set once the provider confirms there are no further
   // pages / no new unique people. lastProviderFetchAt records the last fetch.
-  providerNextPage      Int       @default(1)
-  providerPagesFetched  Int       @default(0)
-  providerExhausted     Boolean   @default(false)
-  lastProviderFetchAt   DateTime?
+  providerNextPage              Int       @default(1)
+  providerPagesFetched          Int       @default(0)
+  providerExhausted             Boolean   @default(false)
+  lastProviderFetchAt           DateTime?
   // Evidence-backed company email-format metadata (safe to share). A manual
   // per-user override is never written here.
-  emailDomain           String?
-  emailDomainConfidence String    @default("UNAVAILABLE")
-  emailDomainEvidence   Json?
-  emailPattern          String?
-  patternConfidence     String    @default("UNAVAILABLE")
-  patternEvidence       Json?
-  emailFormatReason     String?
+  emailDomain                   String?
+  emailDomainConfidence         String    @default("UNAVAILABLE")
+  emailDomainEvidence           Json?
+  emailPattern                  String?
+  patternConfidence             String    @default("UNAVAILABLE")
+  patternEvidence               Json?
+  emailFormatReason             String?
   // Email-format discovery has its own state/TTL; people-cache freshness must
   // never suppress a missing/stale/transiently-failed format retry.
-  emailFormatDiscoveryStatus    String   @default("NOT_ATTEMPTED")
+  emailFormatDiscoveryStatus    String    @default("NOT_ATTEMPTED")
   emailFormatDiscoveryReason    String?
   emailFormatDiscoveryAt        DateTime?
   emailFormatDiscoveryExpiresAt DateTime?
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  createdAt                     DateTime  @default(now())
+  updatedAt                     DateTime  @updatedAt
 
   people DiscoverSearchCachePerson[]
 
