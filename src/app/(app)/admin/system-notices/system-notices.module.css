@@ -65,13 +65,13 @@
   font-size: 0.88rem;
   font-weight: 800;
   cursor: pointer;
-  transition: transform 140ms ease, opacity 140ms ease, border-color 140ms ease, background-color 140ms ease;
+  transition: transform 140ms ease, opacity 140ms ease, border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
 }
 
 .primaryButton {
-  border: 1px solid var(--accent-strong);
-  background: var(--accent-strong);
-  color: white;
+  border: 1px solid transparent;
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  color: var(--accent-contrast);
 }
 
 .secondaryButton,
@@ -88,6 +88,12 @@
   border-color: color-mix(in srgb, var(--accent) 30%, var(--line));
 }
 
+.composerActions .previewButton {
+  border-color: var(--line);
+  background: var(--surface-strong);
+  color: var(--text);
+}
+
 .dangerButton {
   border: 1px solid var(--notice-red);
   background: var(--notice-red);
@@ -99,12 +105,27 @@
   border-color: color-mix(in srgb, var(--notice-red) 32%, var(--line));
 }
 
-.primaryButton:hover:not(:disabled),
 .secondaryButton:hover:not(:disabled),
+.refreshButton:hover:not(:disabled) {
+  border-color: var(--field-focus);
+  background: var(--surface-hover);
+  transform: translateY(-1px);
+}
+
+.composerActions .previewButton:hover:not(:disabled) {
+  border-color: var(--field-focus);
+  background: var(--surface-hover);
+  transform: translateY(-1px);
+}
+
+.primaryButton:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 28px var(--accent-soft-strong);
+}
+
 .previewButton:hover:not(:disabled),
 .dangerButton:hover:not(:disabled),
-.cancelButton:hover:not(:disabled),
-.refreshButton:hover:not(:disabled) {
+.cancelButton:hover:not(:disabled) {
   transform: translateY(-1px);
 }
 

@@ -94,6 +94,21 @@ describe("system notice composer layout", () => {
     expect(STYLES).toMatch(/\.composerFooter\s*\{[\s\S]*?border-top:[\s\S]*?padding:/);
   });
 
+  it("matches the Discover primary and secondary action hierarchy", () => {
+    expect(composer).toMatch(/styles\.secondaryButton[\s\S]*?Save (?:changes|draft)/);
+    expect(composer).toMatch(/styles\.previewButton[\s\S]*?Preview exact email/);
+    expect(composer).toMatch(/styles\.primaryButton[\s\S]*?Review send now[\s\S]*?Review schedule/);
+    expect(STYLES).toMatch(
+      /\.primaryButton\s*\{[^}]*border:\s*1px solid transparent;[^}]*background:\s*linear-gradient\(135deg, var\(--accent\), var\(--accent-strong\)\);[^}]*color:\s*var\(--accent-contrast\);/
+    );
+    expect(STYLES).toMatch(
+      /\.composerActions \.previewButton\s*\{[^}]*border-color:\s*var\(--line\);[^}]*background:\s*var\(--surface-strong\);[^}]*color:\s*var\(--text\);/
+    );
+    expect(STYLES).toMatch(
+      /\.composerActions \.previewButton:hover:not\(:disabled\)\s*\{[^}]*border-color:\s*var\(--field-focus\);[^}]*background:\s*var\(--surface-hover\);[^}]*transform:\s*translateY\(-1px\);/
+    );
+  });
+
   it("uses bounded scroll regions and exposes preview from the empty state", () => {
     expect(STYLES).toMatch(/\.composerBody\s*\{[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*hidden;/);
     expect(STYLES).toMatch(/\.formPane,[\s\S]*?\.previewPane\s*\{\s*overflow-y:\s*auto;/);
