@@ -30,6 +30,12 @@ describe("primary product navigation", () => {
     expect(operatorNavBlock()).not.toContain('label: "Account"');
   });
 
+  it("includes What's New in the operator navigation (not the admin nav)", () => {
+    expect(operatorNavBlock()).toContain('{ href: "/whats-new" as Route, label: "What\'s New", icon: Sparkles }');
+    const adminBranch = NAV_SOURCE.slice(NAV_SOURCE.indexOf("? ["), NAV_SOURCE.indexOf(": ["));
+    expect(adminBranch).not.toContain("/whats-new");
+  });
+
   it("keeps the shared active-state logic for primary items", () => {
     expect(NAV_SOURCE).toContain("pathname === item.href");
     expect(NAV_SOURCE).toContain('pathname.startsWith(`${item.href}/`)');
@@ -265,6 +271,60 @@ describe("Account moved to the lower account/utility section", () => {
     const adminBranch = NAV_SOURCE.slice(NAV_SOURCE.indexOf("? ["), NAV_SOURCE.indexOf(": ["));
     expect(adminBranch).not.toContain('label: "Account"');
     expect(NAV_SOURCE).toContain("isAdmin ? null :");
+  });
+});
+
+describe("What's New unseen badge", () => {
+  it("renders a subtle accent badge on the What's New item only", () => {
+    expect(NAV_SOURCE).toContain('String(item.href) === "/whats-new" ? formatUnseenBadge(unseenCount) : null');
+    expect(NAV_SOURCE).toContain('<span className="nav-badge"');
+    expect(NAV_SOURCE).toContain("aria-label={`${unseenCount} unseen product updates`}");
+  });
+
+  it("caps the badge at 9+ and hides it at zero", () => {
+    expect(NAV_SOURCE).toContain('count >= 10 ? "9+" : String(count)');
+    expect(NAV_SOURCE).toContain("if (count <= 0)");
+  });
+
+  it("receives the server-computed count from the app layout and refreshes on seen events", () => {
+    expect(APP_LAYOUT_SOURCE).toContain("countUnseenProductUpdates(user.id)");
+    expect(APP_LAYOUT_SOURCE).toContain("whatsNewUnseenCount={whatsNewUnseenCount}");
+    expect(NAV_SOURCE).toContain('PRODUCT_UPDATES_SEEN_EVENT = "sendloom:product-updates-seen"');
+    expect(NAV_SOURCE).toContain("window.addEventListener(PRODUCT_UPDATES_SEEN_EVENT, onProductUpdatesSeen)");
+  });
+
+  it("keeps admins out of the badge path (no What's New item, count forced to 0)", () => {
+    expect(APP_LAYOUT_SOURCE).toContain("isAdminUser(user) ? 0 : await countUnseenProductUpdates(user.id)");
+  });
+
+  it("styles the expanded badge as a subtle accent pill and the collapsed badge as a dot", () => {
+    const start = GLOBALS.indexOf(".nav-item .nav-badge {");
+    expect(start).toBeGreaterThan(-1);
+    const block = GLOBALS.slice(start, GLOBALS.indexOf("}", start));
+    expect(block).toContain("background: var(--accent-soft)");
+    expect(block).toContain("color: var(--accent-strong)");
+    expect(block).toContain("border-radius: 999px");
+    expect(block).not.toContain("var(--warning)");
+
+    expect(GLOBALS).toMatch(
+      /\.sidebar\.is-collapsed \.nav-item \.nav-badge,[\s\S]*?position:\s*absolute;[\s\S]*?width:\s*0\.55rem;[\s\S]*?background:\s*var\(--accent\);/
+    );
+  });
+
+  it("keeps the collapsed badge visible despite the collapsed label-hiding rule", () => {
+    expect(GLOBALS).toMatch(/\.sidebar\.is-collapsed \.nav-item \.nav-badge,[\s\S]*?display:\s*inline-flex;/);
+  });
+});
+
+describe("admin Product Updates navigation", () => {
+  it("adds Product Updates right after System Notices with a Sparkles icon", () => {
+    const noticesIndex = NAV_SOURCE.indexOf('label: "System Notices"');
+    const updatesIndex = NAV_SOURCE.indexOf('label: "Product Updates"');
+    const activityIndex = NAV_SOURCE.indexOf('label: "Activity Logs"');
+
+    expect(updatesIndex).toBeGreaterThan(noticesIndex);
+    expect(updatesIndex).toBeLessThan(activityIndex);
+    expect(NAV_SOURCE).toContain('{ href: "/admin/product-updates" as Route, label: "Product Updates", icon: Sparkles }');
   });
 });
 
