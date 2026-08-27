@@ -1,0 +1,139 @@
+.featuresSection {
+  gap: 0.85rem;
+}
+
+.featureCount {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 3rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-muted);
+  padding: 0.35rem 0.6rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.featureList {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.featureCard {
+  display: grid;
+  gap: 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface) 95%, var(--accent-soft));
+  padding: 0.95rem;
+}
+
+.featureHeader {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.featureHeader > span {
+  color: var(--accent-strong);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+}
+
+.featureHeader > strong {
+  font-size: 0.82rem;
+}
+
+.featureHeader button {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.featureHeader button:hover {
+  color: var(--danger);
+}
+
+.featureHeader button svg,
+.addFeature svg {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+.ctaGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 0.7rem;
+}
+
+.addFeature {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  width: 100%;
+  min-height: 2.6rem;
+  border: 1px dashed color-mix(in srgb, var(--accent-strong) 45%, var(--line));
+  border-radius: 12px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 0.78rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.rowAction {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  padding: 0.42rem 0.72rem;
+  color: var(--text);
+  font-size: 0.72rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.detailFeatures {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.detailFeatures > div {
+  display: grid;
+  gap: 0.3rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-muted);
+  padding: 0.8rem;
+}
+
+.detailFeatures span,
+.detailFeatures small {
+  color: var(--accent-strong);
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.detailFeatures p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 680px) {
+  .ctaGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

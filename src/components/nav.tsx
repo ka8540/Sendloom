@@ -17,6 +17,7 @@ import {
   Megaphone,
   PanelLeftClose,
   PanelLeftOpen,
+  PackageOpen,
   ScrollText,
   Search,
   SendHorizontal,
@@ -148,6 +149,7 @@ export function AppNav({
         { href: "/admin/restrictions" as Route, label: "Restrictions", icon: ShieldAlert },
         { href: "/admin/system-health" as Route, label: "System Health", icon: Activity },
         { href: "/admin/system-notices" as Route, label: "System Notices", icon: Megaphone },
+        { href: "/admin/product-updates" as Route, label: "Product Updates", icon: PackageOpen },
         { href: "/admin/activity" as Route, label: "Activity Logs", icon: History },
         { href: "/admin/incidents" as Route, label: "Incident Reports", icon: Siren },
       ]
