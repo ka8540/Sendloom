@@ -44,25 +44,9 @@ export type NormalizedProfile = {
 export type ApifyProfileSearchInput = {
   companyName: string;
   companyLinkedinUrl?: string | null;
-  /**
-   * Explicit provenance for a trusted, resolved LinkedIn current-company
-   * constraint. This is never inferred for title-only searches.
-   */
-  companyTargeting?: CompanyTargetingContext;
   jobTitles: string[];
   locations: string[];
   maxResults: number;
-  /**
-   * 1-based provider page to start from (25 results per page). Defaults to 1.
-   * "Add 10 more" passes the saved continuation page so a follow-up search
-   * resumes after the pages already fetched instead of restarting at page 1.
-   */
-  startPage?: number;
-};
-
-export type CompanyTargetingContext = {
-  mode: "LINKEDIN_CURRENT_COMPANY";
-  trusted: true;
 };
 
 export type ApifyProfileSearchResult = {
@@ -70,44 +54,34 @@ export type ApifyProfileSearchResult = {
   runId: string | null;
   datasetId: string | null;
   totalFound: number;
-  /** Per-stage ingestion counters (safe counts only, for diagnostics/logging). */
+  /** Per-stage safe ingestion counts/codes for diagnostics and logging. */
   diagnostics: ApifyIngestionDiagnostics;
 };
 
-// The shape we actually run the Apify actor with. `currentCompanies` is only
-// included when we resolved a LinkedIn company URL.
+// The exact provider boundary for dami_studio/linkedin-profile-search-scraper.
+// Keep structured role/location intent as arrays; the actor does not expose an
+// offset/page input, so continuation is implemented by requesting deeper
+// bounded prefixes in DiscoverExpansionService.
 export type ApifyActorInput = {
-  profileScraperMode: "Full";
   currentCompanies?: string[];
-  currentJobTitles: string[];
-  locations: string[];
+  currentJobTitles?: string[];
+  locations?: string[];
   maxItems: number;
-  takePages: number;
-  startPage: number;
-  autoQuerySegmentation: false;
 };
 
 /**
- * Map a resolved prospect search into the LinkedIn profile-search actor input.
- * `takePages` is always at least 1 (25 results per page).
+ * Map a resolved prospect search into the public-index profile-search actor.
+ * A LinkedIn company URL is the preferred filter, with the resolved company
+ * name as the required fallback. Candidate depth is bounded to the actor cap.
  */
 export function buildActorInput(input: ApifyProfileSearchInput): ApifyActorInput {
-  const maxItems = Math.max(1, Math.floor(input.maxResults));
-  const actorInput: ApifyActorInput = {
-    profileScraperMode: "Full",
+  const maxItems = Math.min(120, Math.max(1, Math.floor(input.maxResults)));
+  return {
+    currentCompanies: [input.companyLinkedinUrl || input.companyName],
     currentJobTitles: input.jobTitles,
     locations: input.locations,
-    maxItems,
-    takePages: Math.max(1, Math.ceil(maxItems / 25)),
-    startPage: Math.max(1, Math.floor(input.startPage ?? 1)),
-    autoQuerySegmentation: false
+    maxItems
   };
-
-  if (input.companyLinkedinUrl) {
-    actorInput.currentCompanies = [input.companyLinkedinUrl];
-  }
-
-  return actorInput;
 }
 
 export type RawProfile = Record<string, unknown>;
@@ -150,6 +124,24 @@ function readCurrentPosition(raw: RawProfile): { title: string | null; companyNa
   };
 }
 
+function isLinkedinProfileUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    const hostname = url.hostname.toLowerCase();
+    return (
+      (url.protocol === "https:" || url.protocol === "http:") &&
+      (hostname === "linkedin.com" || hostname.endsWith(".linkedin.com")) &&
+      /^\/in\/[^/?#]+\/?$/i.test(url.pathname)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function readProfileUrl(raw: RawProfile): string | null {
+  return asString(raw.linkedinUrl) ?? asString(raw.profileUrl) ?? asString(raw.url);
+}
+
 /**
  * Normalize one raw actor item into a NormalizedProfile, or null if it lacks
  * the minimum professional identity we require (a name and a profile URL).
@@ -160,8 +152,8 @@ function readCurrentPosition(raw: RawProfile): { title: string | null; companyNa
  * "Cho M.B.A." (and the address jared.chomba@apple.com).
  */
 export function normalizeProfile(raw: RawProfile): NormalizedProfile | null {
-  const linkedinUrl = asString(raw.linkedinUrl) ?? asString(raw.profileUrl) ?? asString(raw.url);
-  if (!linkedinUrl) {
+  const linkedinUrl = readProfileUrl(raw);
+  if (!linkedinUrl || !isLinkedinProfileUrl(linkedinUrl)) {
     return null;
   }
 
@@ -183,9 +175,9 @@ export function normalizeProfile(raw: RawProfile): NormalizedProfile | null {
     linkedinUrl.replace(/\/+$/, "").split("/").pop() ??
     linkedinUrl;
 
-  const position = readCurrentPosition(raw);
+  const structuredPosition = readCurrentPosition(raw);
   const headline = asString(raw.headline);
-  const currentTitle = position.title ?? headline;
+  const currentTitle = asString(raw.currentPosition) ?? structuredPosition.title ?? headline;
   const parsedLocation = parseLocation(readLocation(raw));
 
   return {
@@ -202,8 +194,9 @@ export function normalizeProfile(raw: RawProfile): NormalizedProfile | null {
     state: parsedLocation.state,
     country: parsedLocation.country,
     linkedinUrl,
-    currentCompanyName: position.companyName ?? asString(raw.companyName) ?? asString(raw.currentCompany),
-    currentCompanyUrl: position.companyUrl ?? asString(raw.companyLinkedinUrl)
+    currentCompanyName:
+      asString(raw.currentCompany) ?? structuredPosition.companyName ?? asString(raw.companyName),
+    currentCompanyUrl: structuredPosition.companyUrl ?? asString(raw.companyLinkedinUrl)
   };
 }
 
@@ -284,76 +277,16 @@ export function companyNamesAliasMatch(a: string, b: string): boolean {
   );
 }
 
-/**
- * A compact target brand can be an initialism or stylized successor brand for
- * a longer employer label. In a trusted provider-constrained query, an ordered
- * match of all but at most one compact-brand character is enough to say the
- * returned name is not a STRONG contradiction. This is deliberately generic:
- * it contains no company relationship table and is never used without the
- * provider's resolved current-company constraint.
- */
-function companyNameMayExpandCompactBrand(targetName: string, profileName: string): boolean {
-  const targetBrandToken = stripDiacritics(targetName).match(/[A-Za-z0-9]+/)?.[0] ?? "";
-  const targetKey = normalizeCompanyName(targetName).replace(/[^a-z0-9]/g, "");
-  const profileKey = normalizeCompanyName(profileName).replace(/[^a-z0-9]/g, "");
-  if (
-    !/^[A-Z0-9]{2,5}$/.test(targetBrandToken) ||
-    targetKey.length < 2 ||
-    targetKey.length > 5 ||
-    profileKey.length <= targetKey.length
-  ) {
-    return false;
-  }
-  // Compact brands are uppercase initialism-like identities, not ordinary
-  // short title-cased words.
-  if (profileKey[0] !== targetKey[0]) {
-    return false;
-  }
-
-  let profileIndex = 0;
-  let matched = 0;
-  const matchedPositions: number[] = [];
-  const missingIndexes: number[] = [];
-  for (const [targetIndex, character] of [...targetKey].entries()) {
-    const next = profileKey.indexOf(character, profileIndex);
-    if (next === -1) {
-      missingIndexes.push(targetIndex);
-      continue;
-    }
-    matched += 1;
-    matchedPositions.push(next);
-    profileIndex = next + 1;
-  }
-  if (matched < Math.max(2, targetKey.length - 1)) {
-    return false;
-  }
-  if (missingIndexes.length === 0) {
-    return true;
-  }
-  // A single absent trailing brand marker is plausible (the long-form label
-  // expanded the meaningful prefix); a character missing from the middle is
-  // not. Keep that prefix near the beginning of the long-form name so an
-  // unrelated same-initial company cannot pass on a distant incidental letter.
-  const lastMatchedPosition = matchedPositions.at(-1) ?? profileKey.length;
-  return (
-    missingIndexes.length === 1 &&
-    missingIndexes[0] === targetKey.length - 1 &&
-    lastMatchedPosition <= Math.ceil(profileKey.length / 2)
-  );
-}
-
 type CompanyMatchTarget = {
   companyName: string;
   linkedinCompanyUrl?: string | null;
-  companyTargeting?: CompanyTargetingContext;
 };
 
 /**
  * Decide whether a profile's current employer matches the resolved company.
- * Untargeted/title-only datasets stay strict: if neither a company URL nor a
- * company name can be compared, the profile is excluded. A dataset explicitly
- * constrained to a trusted resolved LinkedIn company may treat missing or weak
- * redundant employer metadata as non-contradictory.
+ * The public-index actor only supplies candidates: if neither a company URL nor
+ * a company name can be compared, the profile is excluded. Sending a company
+ * filter to the actor is never treated as authoritative provider provenance.
  *
  * A LinkedIn company-URL identity match is the strongest signal (the actor was
  * already queried by that URL). Slugs are compared on their normalized
@@ -378,32 +311,6 @@ export function currentCompanyMatches(
     }
   }
 
-  const stronglyTargeted =
-    target.companyTargeting?.mode === "LINKEDIN_CURRENT_COMPANY" &&
-    target.companyTargeting.trusted &&
-    Boolean(targetSlug);
-  if (!stronglyTargeted) {
-    return false;
-  }
-
-  // The actor already constrained this dataset to the resolved company. A
-  // missing redundant employer URL/name is weak evidence and cannot override
-  // that trusted positive signal.
-  if (!profileSlug) {
-    return true;
-  }
-
-  // A different explicit LinkedIn employer is normally a strong contradiction.
-  // Preserve alternate/successor branding only when the names generically show
-  // a plausible compact-brand expansion; e.g. a targeted short brand and a
-  // longer division/legacy label. Unrelated explicit identities remain denied.
-  if (
-    profile.currentCompanyName &&
-    companyNameMayExpandCompactBrand(target.companyName, profile.currentCompanyName)
-  ) {
-    return true;
-  }
-
   return false;
 }
 
@@ -423,11 +330,16 @@ export function dedupeProfiles(profiles: NormalizedProfile[]): NormalizedProfile
 }
 
 /**
- * Privacy-safe, per-stage ingestion counters for one dataset. Counts only —
- * never names, emails, URLs, or raw items — so they are safe to log and audit.
+ * Privacy-safe, per-stage ingestion diagnostics for one dataset. Diagnostic
+ * codes are normalized to a short allowlisted character set; names, messages,
+ * URLs, and raw items never leave the provider boundary.
  */
 export type ApifyIngestionDiagnostics = {
   itemsReturned: number;
+  profileRows: number;
+  diagnosticItems: number;
+  diagnosticCodes: string[];
+  temporaryDiagnosticItems: number;
   parsedCandidates: number;
   rejectedBySchema: number;
   duplicateItems: number;
@@ -440,6 +352,28 @@ export type ProcessedDatasetItems = {
   diagnostics: ApifyIngestionDiagnostics;
 };
 
+const NO_RESULTS_DIAGNOSTIC_CODE = "NO_RESULTS";
+
+function safeDiagnosticCode(value: unknown): string {
+  const code = asString(value)?.toUpperCase();
+  return code && /^[A-Z0-9_-]{1,64}$/.test(code) ? code : "UNKNOWN";
+}
+
+function isExplicitDiagnostic(item: RawProfile): boolean {
+  return asString(item.recordType)?.toLowerCase() === "diagnostic" || item.ok === false;
+}
+
+function isProfileRow(item: RawProfile): boolean {
+  if (isExplicitDiagnostic(item)) {
+    return false;
+  }
+  if (asString(item.recordType)?.toLowerCase() === "profile") {
+    return true;
+  }
+  const profileUrl = readProfileUrl(item);
+  return profileUrl ? isLinkedinProfileUrl(profileUrl) : false;
+}
+
 /**
  * Normalize, dedupe, and company-filter raw dataset items. One malformed item
  * only increments a rejection counter — it never fails the batch. Shared by the
@@ -451,9 +385,31 @@ export function processDatasetItems(
   target: CompanyMatchTarget,
   maxResults: number
 ): ProcessedDatasetItems {
-  const normalized: NormalizedProfile[] = [];
+  const profileItems: RawProfile[] = [];
+  const diagnosticCodes: string[] = [];
+  let diagnosticItems = 0;
+  let temporaryDiagnosticItems = 0;
   let rejectedBySchema = 0;
+
   for (const item of items) {
+    if (isExplicitDiagnostic(item)) {
+      diagnosticItems += 1;
+      const code = safeDiagnosticCode(item.code);
+      if (!diagnosticCodes.includes(code)) {
+        diagnosticCodes.push(code);
+      }
+      if (code !== NO_RESULTS_DIAGNOSTIC_CODE) {
+        temporaryDiagnosticItems += 1;
+      }
+    } else if (isProfileRow(item)) {
+      profileItems.push(item);
+    } else {
+      rejectedBySchema += 1;
+    }
+  }
+
+  const normalized: NormalizedProfile[] = [];
+  for (const item of profileItems) {
     let profile: NormalizedProfile | null = null;
     try {
       profile = normalizeProfile(item);
@@ -474,6 +430,10 @@ export function processDatasetItems(
     profiles: matched.slice(0, Math.max(1, Math.floor(maxResults))),
     diagnostics: {
       itemsReturned: items.length,
+      profileRows: profileItems.length,
+      diagnosticItems,
+      diagnosticCodes,
+      temporaryDiagnosticItems,
       parsedCandidates: normalized.length,
       rejectedBySchema,
       duplicateItems: normalized.length - deduped.length,
@@ -534,7 +494,7 @@ export interface ApifyRunner {
 const APIFY_SUCCESS_STATUS = "SUCCEEDED";
 // Quota / plan / abort phrasing that means the run never produced usable data,
 // even when the actor exits "successfully" with zero items (the free-tier
-// "free user run limit reached" case from harvestapi/linkedin-profile-search).
+// legacy actor-level "free user run limit reached" behavior).
 const APIFY_LIMIT_PATTERN = /\b(limit|upgrade|paid plan|free user|quota|exceeded|insufficient|not enough credit)\b/i;
 
 function describeApifyFailure(status: string | null, message: string): string {
@@ -561,6 +521,21 @@ export function assertApifyRunUsable(run: { status?: string | null; statusMessag
 
   if ((status && status !== APIFY_SUCCESS_STATUS) || (run.itemCount === 0 && limitHit)) {
     throw new Error(describeApifyFailure(status, message));
+  }
+}
+
+function assertDatasetDiagnosticsUsable(diagnostics: ApifyIngestionDiagnostics): void {
+  if (diagnostics.diagnosticItems > 0 && process.env.NODE_ENV !== "test") {
+    console.warn(
+      `[apify-profile-search] Provider diagnostic rows. ${JSON.stringify({
+        diagnosticItems: diagnostics.diagnosticItems,
+        diagnosticCodes: diagnostics.diagnosticCodes,
+        profileRows: diagnostics.profileRows
+      })}`
+    );
+  }
+  if (diagnostics.temporaryDiagnosticItems > 0) {
+    throw new Error("LinkedIn profile search is temporarily unavailable. Please try again.");
   }
 }
 
@@ -634,35 +609,28 @@ export class ApifyProfileSearchService {
       companyLinkedinUrl: input.companyLinkedinUrl ?? input.linkedinCompanyUrl ?? null,
       jobTitles: input.jobTitles,
       locations: input.locations,
-      maxResults: input.maxResults,
-      startPage: input.startPage
+      maxResults: input.maxResults
     });
 
     const { runId, datasetId, items, status, statusMessage } = await this.runner.run(this.actorId, actorInput);
     assertApifyRunUsable({ status, statusMessage, itemCount: items.length });
 
     const targetedCompanyUrl = input.companyLinkedinUrl ?? input.linkedinCompanyUrl ?? null;
-    const usedTrustedCurrentCompanyTarget = Boolean(
-      input.companyTargeting?.mode === "LINKEDIN_CURRENT_COMPANY" &&
-        input.companyTargeting.trusted &&
-        targetedCompanyUrl &&
-        actorInput.currentCompanies?.includes(targetedCompanyUrl)
-    );
     const processed = processDatasetItems(
       items,
       {
         companyName: input.companyName,
-        linkedinCompanyUrl: targetedCompanyUrl,
-        ...(usedTrustedCurrentCompanyTarget ? { companyTargeting: input.companyTargeting } : {})
+        linkedinCompanyUrl: targetedCompanyUrl
       },
       input.maxResults
     );
+    assertDatasetDiagnosticsUsable(processed.diagnostics);
 
     return {
       profiles: processed.profiles,
       runId,
       datasetId,
-      totalFound: items.length,
+      totalFound: processed.diagnostics.profileRows,
       diagnostics: processed.diagnostics
     };
   }

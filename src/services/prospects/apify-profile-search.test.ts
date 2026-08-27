@@ -15,8 +15,8 @@ import {
 } from "@/services/prospects/apify-profile-search";
 
 /**
- * Fixture matching the CURRENT harvestapi/linkedin-profile-search dataset-item
- * schema (verified against a real run): the title lives in
+ * Fixture matching the legacy harvestapi dataset-item schema. It remains a
+ * backwards-compatibility guard: the title lives in
  * `currentPosition[0].position`, the employer URL in `companyLinkedinUrl`, and
  * the location is an object with `linkedinText`/`parsed`. The employer slug is
  * LinkedIn's canonical alias ("examplecorp") which can differ from the vanity
@@ -89,48 +89,52 @@ function rtxRecruiterItem(
 }
 
 describe("buildActorInput", () => {
-  it("maps company/title/location and always keeps takePages >= 1", () => {
+  it("maps a company URL, structured role variants, location, and depth", () => {
     const input = buildActorInput({
-      companyName: "Apple",
-      companyLinkedinUrl: "https://www.linkedin.com/company/apple/",
-      jobTitles: ["Software Engineer", "Recruiter"],
-      locations: ["United States"],
+      companyName: "Stripe",
+      companyLinkedinUrl: "https://www.linkedin.com/company/stripe",
+      jobTitles: ["Software Engineer"],
+      locations: ["San Francisco"],
       maxResults: 25
     });
 
-    expect(input).toMatchObject({
-      profileScraperMode: "Full",
-      currentCompanies: ["https://www.linkedin.com/company/apple/"],
-      currentJobTitles: ["Software Engineer", "Recruiter"],
-      locations: ["United States"],
-      maxItems: 25,
-      takePages: 1,
-      startPage: 1,
-      autoQuerySegmentation: false
+    expect(input).toEqual({
+      currentCompanies: ["https://www.linkedin.com/company/stripe"],
+      currentJobTitles: ["Software Engineer"],
+      locations: ["San Francisco"],
+      maxItems: 25
     });
   });
 
-  it("computes takePages from maxResults (25 per page)", () => {
-    expect(buildActorInput({ companyName: "X", jobTitles: ["a"], locations: [], maxResults: 60 }).takePages).toBe(3);
-    expect(buildActorInput({ companyName: "X", jobTitles: ["a"], locations: [], maxResults: 1 }).takePages).toBe(1);
+  it("falls back to the company name and preserves an empty location array", () => {
+    expect(
+      buildActorInput({ companyName: "Stripe", jobTitles: ["Software Engineer"], locations: [], maxResults: 25 })
+    ).toEqual({
+      currentCompanies: ["Stripe"],
+      currentJobTitles: ["Software Engineer"],
+      locations: [],
+      maxItems: 25
+    });
   });
 
-  it("requests exactly 10 items on a single page for a fixed Discover search (#2, #3)", () => {
-    const input = buildActorInput({ companyName: "X", jobTitles: ["a"], locations: [], maxResults: 10 });
-    expect(input.maxItems).toBe(10);
-    expect(input.takePages).toBe(1);
+  it("keeps multiple role variants as distinct structured values", () => {
+    const input = buildActorInput({
+      companyName: "Stripe",
+      jobTitles: ["Software Engineer", "Software Developer", "Backend Engineer"],
+      locations: [],
+      maxResults: 25
+    });
+    expect(input.currentJobTitles).toEqual([
+      "Software Engineer",
+      "Software Developer",
+      "Backend Engineer"
+    ]);
   });
 
-  it("omits currentCompanies when no LinkedIn company URL is known", () => {
-    const input = buildActorInput({ companyName: "X", jobTitles: ["a"], locations: [], maxResults: 10 });
-    expect(input.currentCompanies).toBeUndefined();
-  });
-
-  it("defaults startPage to 1 but honors a continuation page for Add 10 more (#14)", () => {
-    expect(buildActorInput({ companyName: "X", jobTitles: ["a"], locations: [], maxResults: 25 }).startPage).toBe(1);
-    expect(buildActorInput({ companyName: "X", jobTitles: ["a"], locations: [], maxResults: 25, startPage: 3 }).startPage).toBe(3);
-    // Never below 1, always an integer.
-    expect(buildActorInput({ companyName: "X", jobTitles: ["a"], locations: [], maxResults: 25, startPage: 0 }).startPage).toBe(1);
+  it("floors and clamps maxItems to the supported 1..120 range", () => {
+    expect(buildActorInput({ companyName: "X", jobTitles: ["a"], locations: [], maxResults: 120.9 }).maxItems).toBe(120);
+    expect(buildActorInput({ companyName: "X", jobTitles: ["a"], locations: [], maxResults: 999 }).maxItems).toBe(120);
+    expect(buildActorInput({ companyName: "X", jobTitles: ["a"], locations: [], maxResults: 0 }).maxItems).toBe(1);
   });
 });
 
@@ -241,6 +245,34 @@ describe("normalizeProfile", () => {
     });
   });
 
+  it("normalizes the new actor's string currentPosition/currentCompany fields", () => {
+    const profile = normalizeProfile({
+      ok: true,
+      recordType: "profile",
+      profileUrl: "https://www.linkedin.com/in/example",
+      publicIdentifier: "example",
+      fullName: "Jane Doe",
+      firstName: "Jane",
+      lastName: "Doe",
+      headline: "Senior Software Engineer @ Stripe",
+      location: "San Francisco Bay Area",
+      currentPosition: "Senior Software Engineer",
+      currentCompany: "Stripe",
+      charged: true
+    });
+
+    expect(profile).toMatchObject({
+      sourceProfileId: "example",
+      linkedinUrl: "https://www.linkedin.com/in/example",
+      firstName: "Jane",
+      lastName: "Doe",
+      fullName: "Jane Doe",
+      currentTitle: "Senior Software Engineer",
+      currentCompanyName: "Stripe",
+      location: "San Francisco Bay Area"
+    });
+  });
+
   it("keeps a usable profile when optional fields are missing (#parser-11)", () => {
     const profile = normalizeProfile(
       harvestApiItem({ headline: null, location: null, currentPosition: [], experience: [] })
@@ -331,24 +363,23 @@ describe("currentCompanyMatches", () => {
     ).toBe(false);
   });
 
-  it("uses trusted provider targeting as a positive signal without admitting an explicit unrelated employer", () => {
+  it("keeps public-index candidates strict when employer metadata is missing or unrelated", () => {
     const target = {
       companyName: "RTX Corporation",
-      linkedinCompanyUrl: "https://www.linkedin.com/company/rtx/",
-      companyTargeting: { mode: "LINKEDIN_CURRENT_COMPANY", trusted: true } as const
+      linkedinCompanyUrl: "https://www.linkedin.com/company/rtx/"
     };
 
     expect(
       currentCompanyMatches(
         {
           ...base,
-          currentCompanyName: "Raytheon",
-          currentCompanyUrl: "https://www.linkedin.com/company/raytheon/"
+          currentCompanyName: "RTX Corporation",
+          currentCompanyUrl: "https://www.linkedin.com/company/rtx/"
         },
         target
       )
     ).toBe(true);
-    expect(currentCompanyMatches({ ...base, currentCompanyName: null, currentCompanyUrl: null }, target)).toBe(true);
+    expect(currentCompanyMatches({ ...base, currentCompanyName: null, currentCompanyUrl: null }, target)).toBe(false);
     expect(
       currentCompanyMatches(
         {
@@ -357,28 +388,6 @@ describe("currentCompanyMatches", () => {
           currentCompanyUrl: "https://www.linkedin.com/company/microsoft/"
         },
         target
-      )
-    ).toBe(false);
-    expect(
-      currentCompanyMatches(
-        {
-          ...base,
-          currentCompanyName: "Reddit",
-          currentCompanyUrl: "https://www.linkedin.com/company/reddit/"
-        },
-        target
-      )
-    ).toBe(false);
-    // The same alternate representation stays strict outside explicit provider
-    // provenance; title-only searches never receive the trusted fallback.
-    expect(
-      currentCompanyMatches(
-        {
-          ...base,
-          currentCompanyName: "Raytheon",
-          currentCompanyUrl: "https://www.linkedin.com/company/raytheon/"
-        },
-        { companyName: target.companyName, linkedinCompanyUrl: target.linkedinCompanyUrl }
       )
     ).toBe(false);
   });
@@ -410,6 +419,10 @@ describe("processDatasetItems", () => {
     expect(profiles.map((profile) => profile.firstName).sort()).toEqual(["Bob", "Jane"]);
     expect(diagnostics).toEqual({
       itemsReturned: 5,
+      profileRows: 4,
+      diagnosticItems: 0,
+      diagnosticCodes: [],
+      temporaryDiagnosticItems: 0,
       parsedCandidates: 4,
       rejectedBySchema: 1,
       duplicateItems: 1,
@@ -424,11 +437,10 @@ describe("processDatasetItems", () => {
     expect(diagnostics.rejectedBySchema).toBe(2);
   });
 
-  it("keeps all 10 legitimate RTX/Raytheon recruiters from a trusted current-company query", () => {
-    const trustedRtxTarget = {
+  it("accepts matching employers and rejects public-index rows with unrelated or missing employers", () => {
+    const strictRtxTarget = {
       companyName: "RTX Corporation",
-      linkedinCompanyUrl: "https://www.linkedin.com/company/rtx/",
-      companyTargeting: { mode: "LINKEDIN_CURRENT_COMPANY", trusted: true } as const
+      linkedinCompanyUrl: "https://www.linkedin.com/company/rtx/"
     };
     const validItems = [
       rtxRecruiterItem(1, "Recruiter", "RTX Corporation", "https://www.linkedin.com/company/rtx/"),
@@ -443,15 +455,15 @@ describe("processDatasetItems", () => {
       rtxRecruiterItem(10, "Senior Recruiter")
     ];
 
-    const validOnly = processDatasetItems(validItems, trustedRtxTarget, 25);
-    expect(validOnly.profiles).toHaveLength(10);
+    const validOnly = processDatasetItems(validItems, strictRtxTarget, 25);
+    expect(validOnly.profiles).toHaveLength(6);
     expect(validOnly.diagnostics).toMatchObject({
       itemsReturned: 10,
       parsedCandidates: 10,
       rejectedBySchema: 0,
       duplicateItems: 0,
-      companyMatched: 10,
-      rejectedByCompany: 0
+      companyMatched: 6,
+      rejectedByCompany: 4
     });
 
     const withExplicitUnrelatedEmployer = processDatasetItems(
@@ -459,14 +471,41 @@ describe("processDatasetItems", () => {
         ...validItems,
         rtxRecruiterItem(11, "Recruiter", "Microsoft", "https://www.linkedin.com/company/microsoft/")
       ],
-      trustedRtxTarget,
+      strictRtxTarget,
       25
     );
-    expect(withExplicitUnrelatedEmployer.profiles).toHaveLength(10);
+    expect(withExplicitUnrelatedEmployer.profiles).toHaveLength(6);
     expect(withExplicitUnrelatedEmployer.diagnostics).toMatchObject({
       itemsReturned: 11,
-      companyMatched: 10,
-      rejectedByCompany: 1
+      companyMatched: 6,
+      rejectedByCompany: 5
+    });
+  });
+
+  it("filters a NO_RESULTS diagnostic before ingestion", () => {
+    const { profiles, diagnostics } = processDatasetItems(
+      [
+        {
+          ok: false,
+          charged: false,
+          recordType: "diagnostic",
+          code: "NO_RESULTS",
+          requestsMade: 3
+        }
+      ],
+      target,
+      25
+    );
+
+    expect(profiles).toEqual([]);
+    expect(diagnostics).toMatchObject({
+      itemsReturned: 1,
+      profileRows: 0,
+      diagnosticItems: 1,
+      diagnosticCodes: ["NO_RESULTS"],
+      temporaryDiagnosticItems: 0,
+      parsedCandidates: 0,
+      rejectedBySchema: 0
     });
   });
 });
@@ -584,6 +623,51 @@ describe("ApifyProfileSearchService.searchProfiles", () => {
     const result = await service.searchProfiles({ companyName: "X", jobTitles: ["a"], locations: [], maxResults: 10 });
     expect(result.profiles).toHaveLength(0);
     expect(result.totalFound).toBe(0);
+  });
+
+  it("treats a NO_RESULTS diagnostic row as a successful zero-profile run", async () => {
+    const runner: ApifyRunner = {
+      run: vi.fn(async () => ({
+        runId: "run-no-results",
+        datasetId: "ds-no-results",
+        items: [{ ok: false, charged: false, recordType: "diagnostic", code: "NO_RESULTS", requestsMade: 3 }],
+        status: "SUCCEEDED"
+      }))
+    };
+    const service = new ApifyProfileSearchService({ token: "test-token", actorId: "actor", runner });
+
+    const result = await service.searchProfiles({
+      companyName: "Stripe",
+      jobTitles: ["Software Engineer"],
+      locations: [],
+      maxResults: 25
+    });
+
+    expect(result.profiles).toEqual([]);
+    expect(result.totalFound).toBe(0);
+    expect(result.diagnostics).toMatchObject({
+      itemsReturned: 1,
+      profileRows: 0,
+      diagnosticItems: 1,
+      diagnosticCodes: ["NO_RESULTS"],
+      temporaryDiagnosticItems: 0
+    });
+  });
+
+  it("fails safely on a temporary public-index diagnostic", async () => {
+    const runner: ApifyRunner = {
+      run: vi.fn(async () => ({
+        runId: "run-refused",
+        datasetId: "ds-refused",
+        items: [{ ok: false, charged: false, recordType: "diagnostic", code: "RATE_LIMITED" }],
+        status: "SUCCEEDED"
+      }))
+    };
+    const service = new ApifyProfileSearchService({ token: "test-token", actorId: "actor", runner });
+
+    await expect(
+      service.searchProfiles({ companyName: "Stripe", jobTitles: ["Engineer"], locations: [], maxResults: 25 })
+    ).rejects.toThrow("temporarily unavailable");
   });
 
   it("keeps all people from a real-schema run queried by a punctuation-variant slug (#run-3)", async () => {

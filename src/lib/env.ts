@@ -102,7 +102,7 @@ const envSchema = z
     GMAIL_SENDER_CONCURRENCY: z.coerce.number().int().positive().max(50).default(2),
     // --- Prospect graph backend (local-first prototype) ---
     APIFY_API_TOKEN: z.string().min(1).optional(),
-    APIFY_PROSPECT_ACTOR_ID: z.string().min(1).default("harvestapi/linkedin-profile-search"),
+    APIFY_PROSPECT_ACTOR_ID: z.string().min(1).default("dami_studio/linkedin-profile-search-scraper"),
     WEB_SEARCH_PROVIDER: z.preprocess(
       (value) => (value === "" || value === undefined ? "none" : String(value).trim().toLowerCase()),
       z.enum(["none", "serper", "brave"]).default("none")
@@ -158,8 +158,8 @@ const envSchema = z
     // New people materialized per expansion. The enforced product value is 10;
     // the override exists for operations only.
     DISCOVER_EXPANSION_BATCH_SIZE: z.coerce.number().int().positive().max(50).default(10),
-    // Safety cap on provider continuation pages fetched in a single expansion so
-    // a sparse query can never trigger an unbounded/expensive provider loop.
+    // Safety cap on deeper-prefix provider fetches in one expansion so a sparse
+    // query can never trigger an unbounded provider loop.
     DISCOVER_EXPANSION_MAX_PROVIDER_PAGES: z.coerce.number().int().positive().max(20).default(5),
     // --- Shared Discover result cache ---
     // How long a shared provider-result dataset stays fresh before Apify is

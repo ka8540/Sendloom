@@ -190,13 +190,13 @@ export type AppendProviderPeopleParams = {
   fingerprintInput: DiscoverFingerprintInput;
   company: DiscoverCacheCompany;
   emailFormat: ResolvedEmailFormat;
-  /** Newly fetched normalized people for one or more continuation pages. */
+  /** Newly fetched normalized people from one or more deeper-prefix requests. */
   people: ResolvedCachePerson[];
-  /** The next provider page to fetch after this append. */
+  /** The next logical provider-depth page to fetch after this append. */
   nextPage: number;
-  /** Pages fetched in this expansion (added to the running total). */
+  /** Provider prefix requests made in this expansion (added to the running total). */
   pagesFetched: number;
-  /** Whether the provider confirmed it has no further pages / unique results. */
+  /** Whether the provider confirmed it has no further unique results. */
   exhausted: boolean;
 };
 
@@ -605,8 +605,8 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
   /**
    * Materialize a company-pool hit under the current exact fingerprint. This
    * makes later identical requests use the fast path and gives Add 10 More a
-   * correct continuation origin: page 1 has not been paid for on this exact
-   * intent. Source freshness is copied conservatively and never extended.
+   * correct continuation origin: logical depth page 1 has not been fetched for
+   * this exact intent. Source freshness is copied conservatively and never extended.
    */
   private async writeDerivedCompanyPoolDataset(
     params: GetOrRefreshParams,
@@ -637,8 +637,8 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
       refreshStartedAt: null,
       lastErrorCode: null,
       resultCount: dataset.people.length,
-      // This exact role/location intent has not consumed a provider page. A
-      // later explicit Add 10 More therefore starts at page 1.
+      // This exact role/location intent has not consumed a provider depth. A
+      // later explicit Add 10 More therefore starts at logical depth page 1.
       providerNextPage: 1,
       providerPagesFetched: 0,
       providerExhausted: false,
@@ -867,9 +867,9 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
       refreshStartedAt: null,
       lastErrorCode: null,
       resultCount: dataset.people.length,
-      // The initial pipeline (and a stale refresh) always fetches provider page
-      // 1, so continuation for a later "Add 10 more" starts at page 2. A refresh
-      // resets continuation (clears any prior exhaustion).
+      // The initial pipeline (and a stale refresh) fetches logical depth page 1
+      // (25 candidates), so later continuation starts at page 2 (50). A refresh
+      // resets continuation and clears any prior exhaustion.
       providerNextPage: 2,
       providerPagesFetched: 1,
       providerExhausted: false,
@@ -960,8 +960,9 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
   }
 }
 
-// A continuation read includes the provider-pagination columns the expansion
-// surface needs (the base CacheRow only carries the email-format fields).
+// A continuation read includes the provider-depth cursor columns the expansion
+// surface needs (the base CacheRow only carries the email-format fields). The
+// persisted names remain unchanged to avoid a provider-experiment migration.
 type ContinuationRow = CacheRow & {
   providerNextPage?: number | null;
   providerPagesFetched?: number | null;

@@ -111,7 +111,7 @@ export class ProspectError extends Error {
 
 const TERMINAL_STATUSES = new Set(["READY", "CANCELED"]);
 const DEFAULT_PIPELINE_TIMEOUT_MS = 120_000;
-// Fetch one bounded provider page so a 10-person search targets 10 VALID unique
+// Fetch one bounded provider prefix so a 10-person search targets 10 VALID unique
 // candidates after schema/company/role validation, not merely 10 raw rows.
 const PROVIDER_CANDIDATE_LIMIT = 25;
 // Company-level structured email-format evidence stays fresh for 30 days.
@@ -1020,9 +1020,6 @@ export class ProspectSearchService {
     const searchResult = await this.apify.searchProfiles({
       companyName: resolution.officialName,
       companyLinkedinUrl: resolution.linkedinCompanyUrl,
-      ...(resolution.linkedinCompanyUrl
-        ? { companyTargeting: { mode: "LINKEDIN_CURRENT_COMPANY", trusted: true } as const }
-        : {}),
       // One actor run receives the entire bounded semantic title plan.
       jobTitles: providerTitles,
       locations: this.asStringArray(search.requestedLocations),
@@ -1310,10 +1307,7 @@ export class ProspectSearchService {
       items,
       {
         companyName: company.officialName ?? company.name,
-        linkedinCompanyUrl: company.linkedinUrl ?? search.requestedLinkedin,
-        ...((company.linkedinUrl ?? search.requestedLinkedin)
-          ? { companyTargeting: { mode: "LINKEDIN_CURRENT_COMPANY", trusted: true } as const }
-          : {})
+        linkedinCompanyUrl: company.linkedinUrl ?? search.requestedLinkedin
       },
       candidateLimit
     );
@@ -1369,7 +1363,7 @@ export class ProspectSearchService {
         // never a "Ready" search with zero people.
         status: processed > 0 ? "READY" : "NO_RESULTS",
         totalProcessed: processed,
-        totalFound: items.length,
+        totalFound: processedItems.diagnostics.profileRows,
         completedAt: this.now(),
         errorCode: null,
         errorMessage: null

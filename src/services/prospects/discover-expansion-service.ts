@@ -41,10 +41,16 @@ import { resolveProspectPersonEmail } from "@/services/prospects/prospect-person
 import { ProspectError } from "@/services/prospects/prospect-search-service";
 import { RoleClassificationService } from "@/services/prospects/role-classification-service";
 
-// One Apify page is 25 profiles. A continuation fetch pulls a full page so the
-// shared cache accumulates every normalized public result the provider returns
-// (never restricted to the 10 a single expansion materializes).
+// The public-index actor has no offset pagination. Existing providerNextPage is
+// therefore a logical 25-result depth cursor: 1 => 25, 2 => 50, …, capped at
+// the actor's 120-result limit. Each continuation fetches a deeper prefix and
+// the shared cache identity set removes profiles already seen.
 const PROVIDER_PAGE_SIZE = 25;
+const PROVIDER_MAX_DEPTH = 120;
+
+function providerDepthForLogicalPage(page: number): number {
+  return Math.min(PROVIDER_MAX_DEPTH, Math.max(1, Math.floor(page)) * PROVIDER_PAGE_SIZE);
+}
 
 export type ExpansionStatus = "PENDING" | "PROCESSING" | "READY" | "FAILED";
 
@@ -121,7 +127,7 @@ export function resolveExpansionMaxProviderPages(): number {
  * "Add 10 more people" for an existing READY Discover search. Extends the same
  * search (no new Search History row) with up to a batch of NEW unique people,
  * reusing unused people from the shared cache first and only then continuing the
- * Apify search from its saved provider page. Each successful expansion consumes
+ * Apify search from its saved logical depth. Each successful expansion consumes
  * exactly one daily Discover slot (idempotent per expansion id, so retries never
  * double-charge); concurrent requests for one search are serialized by a lock and
  * can never add duplicate batches.
@@ -479,32 +485,32 @@ export class DiscoverExpansionService {
           }
         }
 
-        // The initial search consumed provider page 1, so continuation defaults
-        // to page 2 when no saved page exists. It never restarts at page 1.
-        let page = rechecked?.providerNextPage ?? 2;
+        // The initial search consumed logical depth page 1 (25 candidates), so
+        // continuation defaults to page 2 (a 50-candidate prefix).
+        let logicalPage = rechecked?.providerNextPage ?? 2;
         let pagesFetched = 0;
         let cachedPeopleCount = rechecked?.people.length ?? 0;
 
         while (collected.length < this.batchSize && pagesFetched < this.maxProviderPages && !exhausted) {
+          const requestedDepth = providerDepthForLogicalPage(logicalPage);
           await this.safeAudit("DISCOVER_EXPANSION_PROVIDER_FETCH", params.userId, params.actorEmail, params.search.id, {
-            page
+            logicalPage,
+            requestedDepth
           });
-          // 14. Continue from the saved provider page — never restart at page 1.
+          // 14. Fetch a deeper bounded prefix; the actor has no offset pagination.
           const pageResult = await this.apify.searchProfiles({
             companyName: params.company.officialName ?? params.company.name,
             companyLinkedinUrl: params.company.linkedinUrl,
-            ...(params.company.linkedinUrl
-              ? { companyTargeting: { mode: "LINKEDIN_CURRENT_COMPANY", trusted: true } as const }
-              : {}),
             jobTitles: providerTitles,
             locations: params.locations,
-            maxResults: PROVIDER_PAGE_SIZE,
-            startPage: page
+            maxResults: requestedDepth
           });
           pagesFetched += 1;
-          const nextPage = page + 1;
-          // A page with no raw provider items means there are no further pages.
-          const pageExhausted = pageResult.totalFound === 0;
+          const nextPage = logicalPage + 1;
+          // A genuine zero-profile result is terminal at any depth. At the
+          // maximum depth, exhaustion additionally requires that the deeper
+          // prefix contributed no new usable identity to the shared cache.
+          const noProfileRows = pageResult.totalFound === 0;
           const built = await this.buildProviderPeople(
             pageResult.profiles,
             params.cacheEmailFormat,
@@ -527,7 +533,7 @@ export class DiscoverExpansionService {
           }
 
           // 13-14. Append net-new normalized results to the shared cache and
-          // advance the saved continuation page (only after a valid fetch).
+          // advance the saved logical-depth cursor (only after a valid fetch).
           const updated = await this.cache.appendProviderPeople({
             fingerprint: params.fingerprint,
             fingerprintInput: params.fingerprintInput,
@@ -536,12 +542,14 @@ export class DiscoverExpansionService {
             people: pagePeople,
             nextPage,
             pagesFetched: 1,
-            exhausted: pageExhausted
+            exhausted: noProfileRows
           });
           const cacheAppendedCount = Math.max(0, updated.people.length - cachedPeopleCount);
           cachedPeopleCount = updated.people.length;
+          const pageExhausted =
+            noProfileRows || (requestedDepth >= PROVIDER_MAX_DEPTH && cacheAppendedCount === 0);
 
-          page = nextPage;
+          logicalPage = nextPage;
           if (pageExhausted) {
             exhausted = true;
           }
@@ -559,7 +567,12 @@ export class DiscoverExpansionService {
           const collectedCount = collected.length - collectedBeforePage;
           await this.safeAudit("DISCOVER_EXPANSION_PROVIDER_PAGE_PROCESSED", params.userId, params.actorEmail, params.search.id, {
             page: nextPage - 1,
+            logicalPage: nextPage - 1,
+            requestedDepth,
             rawProviderCount: pageResult.diagnostics.itemsReturned,
+            profileRows: pageResult.diagnostics.profileRows,
+            diagnosticItems: pageResult.diagnostics.diagnosticItems,
+            diagnosticCodes: pageResult.diagnostics.diagnosticCodes,
             parsedCandidates: pageResult.diagnostics.parsedCandidates,
             rejectedBySchema: pageResult.diagnostics.rejectedBySchema,
             providerDuplicateItems: pageResult.diagnostics.duplicateItems,
@@ -589,7 +602,7 @@ export class DiscoverExpansionService {
 
   /**
    * Classify titles (role groups) and build normalized cache people for a freshly
-   * fetched provider page. Emails use the shared evidence-backed format (never a
+   * fetched provider prefix. Emails use the shared evidence-backed format (never a
    * per-user manual override, which must never enter the shared cache). The
    * email-format AI is never re-run here.
    */

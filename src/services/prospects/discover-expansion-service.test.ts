@@ -612,20 +612,20 @@ describe("DiscoverExpansionService.addMorePeople", () => {
     expect(prisma._state.positions.some((p) => p.category === "SOFTWARE_ENGINEERING")).toBe(true);
   });
 
-  it("continues the provider from the saved page (not page 1) when the cache is short (#11, #14, #15)", async () => {
+  it("requests a deeper provider prefix from the saved logical depth when the cache is short (#11, #14, #15)", async () => {
     seedCompany();
     seedSearch();
     const cached = cachePeople("cache", 15);
     // The user already owns the first 10 cached people, leaving only 5 unused.
     seedExistingFromCache(cached.slice(0, 10));
     seedCache(cached, { providerNextPage: 2 });
-    const startPages: number[] = [];
+    const requestedDepths: number[] = [];
     const jobTitleInputs: string[][] = [];
     const runner: ApifyRunner = {
       run: vi.fn(async (_actorId, input) => {
-        startPages.push(input.startPage);
+        requestedDepths.push(input.maxItems);
         jobTitleInputs.push(input.currentJobTitles);
-        // Page 2 returns 10 brand-new profiles.
+        // Logical page 2 requests a 50-profile prefix containing new profiles.
         return { runId: "r", datasetId: "d", items: Array.from({ length: 10 }, (_, i) => rawProfile(`prov_${i + 1}`, "Prov", `P${i + 1}`)) };
       })
     };
@@ -645,9 +645,9 @@ describe("DiscoverExpansionService.addMorePeople", () => {
     });
 
     expect(result.addedCount).toBe(10); // 5 cached + 5 provider
-    expect(startPages).toEqual([2]); // never restarts at page 1 (#14)
+    expect(requestedDepths).toEqual([50]);
     expect(jobTitleInputs).toEqual([["Software Engineer", "Software Developer", "Backend Software Engineer"]]);
-    // The saved continuation page advanced after a valid fetch (#15).
+    // The saved logical-depth cursor advanced after a valid fetch (#15).
     const cacheRow = prisma._state.discoverCache.find((r) => r.id === "cache_seed");
     expect(cacheRow?.providerNextPage).toBe(3);
   });
@@ -737,11 +737,11 @@ describe("DiscoverExpansionService.addMorePeople", () => {
     seedSearch();
     seedExistingPeople(10);
     seedCache([], { providerNextPage: 2 }); // no unused cached
-    const startPages: number[] = [];
+    const requestedDepths: number[] = [];
     const runner: ApifyRunner = {
       run: vi.fn(async (_actorId, input) => {
-        startPages.push(input.startPage);
-        if (input.startPage === 2) {
+        requestedDepths.push(input.maxItems);
+        if (input.maxItems === 50) {
           // Half duplicate an existing person (by source id), half are new.
           return {
             runId: "r",
@@ -753,11 +753,15 @@ describe("DiscoverExpansionService.addMorePeople", () => {
             ]
           };
         }
-        if (input.startPage === 3) {
+        if (input.maxItems === 75) {
           return {
             runId: "r",
             datasetId: "d",
-            items: [rawProfile("new_9", "New", "P9"), rawProfile("new_10", "New", "P10")]
+            items: [
+              rawProfile("init_1", "Init", "User1"),
+              rawProfile("init_2", "Init", "User2"),
+              ...Array.from({ length: 10 }, (_, i) => rawProfile(`new_${i + 1}`, "New", `P${i + 1}`))
+            ]
           };
         }
         return { runId: "r", datasetId: "d", items: [] };
@@ -773,7 +777,7 @@ describe("DiscoverExpansionService.addMorePeople", () => {
     });
 
     expect(result.addedCount).toBe(10);
-    expect(startPages).toEqual([2, 3]);
+    expect(requestedDepths).toEqual([50, 75]);
     expect(prisma._state.people.filter((p) => p.sourceProfileId.startsWith("init_"))).toHaveLength(10);
     expect(prisma._state.people.filter((p) => p.sourceProfileId.startsWith("new_"))).toHaveLength(10);
   });
@@ -781,16 +785,16 @@ describe("DiscoverExpansionService.addMorePeople", () => {
   it.each([
     ["same-company derived", 0],
     ["historical backfill", 0]
-  ])("continues a %s cache from page 1 through duplicate legacy results", async (_source, providerPagesFetched) => {
+  ])("continues a %s cache from logical depth 25 through duplicate legacy results", async (_source, providerPagesFetched) => {
     seedCompany();
     seedSearch();
     seedExistingPeople(10);
     seedCache([], { providerNextPage: 1, providerPagesFetched });
-    const startPages: number[] = [];
+    const requestedDepths: number[] = [];
     const runner: ApifyRunner = {
       run: vi.fn(async (_actorId, input) => {
-        startPages.push(input.startPage);
-        if (input.startPage === 1) {
+        requestedDepths.push(input.maxItems);
+        if (input.maxItems === 25) {
           return {
             runId: "legacy-page-1",
             datasetId: "legacy-dataset-1",
@@ -802,9 +806,14 @@ describe("DiscoverExpansionService.addMorePeople", () => {
         return {
           runId: "legacy-page-2",
           datasetId: "legacy-dataset-2",
-          items: Array.from({ length: 10 }, (_, index) =>
-            rawProfile(`legacy_new_${index + 1}`, "Legacy", `New${index + 1}`)
-          )
+          items: [
+            ...Array.from({ length: 10 }, (_, index) =>
+              rawProfile(`init_${index + 1}`, "Initial", `User${index + 1}`)
+            ),
+            ...Array.from({ length: 10 }, (_, index) =>
+              rawProfile(`legacy_new_${index + 1}`, "Legacy", `New${index + 1}`)
+            )
+          ]
         };
       })
     };
@@ -818,7 +827,7 @@ describe("DiscoverExpansionService.addMorePeople", () => {
     });
 
     expect(result.addedCount).toBe(10);
-    expect(startPages).toEqual([1, 2]);
+    expect(requestedDepths).toEqual([25, 50]);
     expect(prisma._state.discoverCache.find((row) => row.id === "cache_seed")?.providerNextPage).toBe(3);
   });
 
@@ -986,6 +995,94 @@ describe("DiscoverExpansionService.addMorePeople", () => {
     expect(second.addedCount).toBe(0);
     expect(second.exhausted).toBe(true);
     expect(quota.consumed.size).toBe(1); // unchanged
+  });
+
+  it("increases logical provider depth 25 -> 50 -> 75 -> 100 -> 120 and never exceeds the cap", async () => {
+    seedCompany();
+    seedSearch();
+    seedExistingPeople(10);
+    seedCache([], { providerNextPage: 1, providerPagesFetched: 0 });
+    const requestedDepths: number[] = [];
+    const runner: ApifyRunner = {
+      run: vi.fn(async (_actorId, input) => {
+        requestedDepths.push(input.maxItems);
+        // A valid but already allocated identity keeps the provider non-empty;
+        // each deeper prefix is deduped until the 120 cap proves exhaustion.
+        return {
+          runId: `run-${input.maxItems}`,
+          datasetId: `dataset-${input.maxItems}`,
+          items: [rawProfile("init_1", "Init", "User1")],
+          status: "SUCCEEDED"
+        };
+      })
+    };
+    const { service } = buildService({ runner, maxProviderPages: 10 });
+
+    const result = await service.addMorePeople({
+      userId: USER_ID,
+      actorEmail: "u@e.com",
+      searchId: SEARCH_ID,
+      idempotencyKey: "depth-cap"
+    });
+
+    expect(requestedDepths).toEqual([25, 50, 75, 100, 120]);
+    expect(Math.max(...requestedDepths)).toBe(120);
+    expect(result).toMatchObject({ addedCount: 0, exhausted: true });
+    expect(prisma._state.discoverCache.find((row) => row.id === "cache_seed")?.providerExhausted).toBe(true);
+  });
+
+  it("treats a NO_RESULTS diagnostic as zero profiles and creates no cached person", async () => {
+    seedCompany();
+    seedSearch();
+    seedExistingPeople(10);
+    seedCache([], { providerNextPage: 2 });
+    const runner: ApifyRunner = {
+      run: vi.fn(async () => ({
+        runId: "no-results-run",
+        datasetId: "no-results-dataset",
+        items: [{ ok: false, charged: false, recordType: "diagnostic", code: "NO_RESULTS" }],
+        status: "SUCCEEDED"
+      }))
+    };
+    const { service } = buildService({ runner });
+
+    const result = await service.addMorePeople({
+      userId: USER_ID,
+      actorEmail: "u@e.com",
+      searchId: SEARCH_ID,
+      idempotencyKey: "diagnostic-no-results"
+    });
+
+    expect(result).toMatchObject({ addedCount: 0, exhausted: true });
+    expect(prisma._state.discoverCachePeople).toHaveLength(0);
+  });
+
+  it("does not permanently exhaust the cache on a temporary provider diagnostic", async () => {
+    seedCompany();
+    seedSearch();
+    seedExistingPeople(10);
+    seedCache([], { providerNextPage: 2 });
+    const runner: ApifyRunner = {
+      run: vi.fn(async () => ({
+        runId: "refused-run",
+        datasetId: "refused-dataset",
+        items: [{ ok: false, charged: false, recordType: "diagnostic", code: "RATE_LIMITED" }],
+        status: "SUCCEEDED"
+      }))
+    };
+    const { service } = buildService({ runner });
+
+    await expect(
+      service.addMorePeople({
+        userId: USER_ID,
+        actorEmail: "u@e.com",
+        searchId: SEARCH_ID,
+        idempotencyKey: "diagnostic-refusal"
+      })
+    ).rejects.toMatchObject({ code: "DISCOVER_EXPANSION_FAILED" });
+
+    expect(prisma._state.discoverCache.find((row) => row.id === "cache_seed")?.providerExhausted).toBe(false);
+    expect(prisma._state.discoverCachePeople).toHaveLength(0);
   });
 
   it("does not dedupe two different people who share a name (#16)", async () => {

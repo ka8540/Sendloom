@@ -227,9 +227,9 @@ Library plus create/edit wizard, with format switching, sanitized preview, merge
 
 `/prospects` is the Search History list (one row per company). `/prospects/[searchId]` is the detail workspace: company summary, email-format editor, role groups, people table, inline "Search this company", **Add 10 more**, and XLSX export. Feature-flagged by `PROSPECT_GRAPH_ENABLED` (legacy naming retained for deployment compatibility).
 
-The people pipeline is database-first: an exact shared-cache fingerprint, a fresh same-company shared pool, and the current user's already-materialized company people are checked in that order before Apify runs. Role and location guards are applied to every reuse path. A provider miss fetches one bounded 25-candidate page, retains eligible overflow in the internal shared cache, and grants at most 10 people to the requesting search. **Add 10 more** consumes unused matching cache candidates first, then continues from the saved provider page, with persisted `ProspectSearchPerson` grants as the source of truth for counts and deduplication.
+The people pipeline is database-first: an exact shared-cache fingerprint, a fresh same-company shared pool, and the current user's already-materialized company people are checked in that order before Apify runs. Role and location guards are applied to every reuse path. A provider miss fetches one bounded 25-candidate prefix, retains eligible overflow in the internal shared cache, and grants at most 10 people to the requesting search. **Add 10 more** consumes unused matching cache candidates first, then requests progressively deeper 50/75/100/120-profile prefixes; shared-cache and allocation identities remove repeats. Persisted `ProspectSearchPerson` grants remain the source of truth for counts and deduplication.
 
-Historical provider-backed allocations can be promoted into the sanitized shared cache with the dry-run-first `scripts/backfill-discover-shared-cache.ts` utility; it never calls a provider or copies tenant ownership, inferred email, or search history. Optional pgvector role intelligence is separately gated by `DISCOVER_ROLE_VECTOR_ENABLED` and is off by default. Company-constrained provider results carry explicit trusted LinkedIn targeting context, allowing missing/alternate employer metadata while still rejecting a contradictory explicit LinkedIn employer. See [the Discover backend reference](./DOCUMENTATION.md#23-prospect-graph-backend-local-graphql-prototype) for the reuse ladder, backfills, rollout, and safety invariants.
+Historical provider-backed allocations can be promoted into the sanitized shared cache with the dry-run-first `scripts/backfill-discover-shared-cache.ts` utility; it never calls a provider or copies tenant ownership, inferred email, or search history. Optional pgvector role intelligence is separately gated by `DISCOVER_ROLE_VECTOR_ENABLED` and is off by default. Public-index provider results remain candidates: normalized current-company metadata must pass Sendloom's alias-aware company validation, and missing or contradictory employer metadata is rejected. See [the Discover backend reference](./DOCUMENTATION.md#23-prospect-graph-backend-local-graphql-prototype) for the reuse ladder, backfills, rollout, and safety invariants.
 
 ### Finder — `/finder`
 
@@ -592,7 +592,7 @@ With `OBJECT_STORAGE_MODE=r2`, the five required `CLOUDFLARE_R2_*` values must b
 | `OPENAI_API_KEY` | Optional | Template enhancement, Discover email-format web search, and feature-flagged role embeddings |
 | `HUNTER_KEY_ENCRYPTION_SECRET` | Production | Encrypts stored Hunter API keys. Must differ from `SESSION_SECRET` |
 | `APIFY_API_TOKEN` | For Discover | Apify LinkedIn profile-search actor token |
-| `APIFY_PROSPECT_ACTOR_ID` | Optional | Actor id/slug. Default `harvestapi/linkedin-profile-search` |
+| `APIFY_PROSPECT_ACTOR_ID` | Optional | Public-index profile-search actor id/slug. Default `dami_studio/linkedin-profile-search-scraper` |
 
 ### Incident reporting
 
@@ -623,7 +623,7 @@ Both fall back to `SESSION_SECRET` in development. Never prefix either with `NEX
 | `DISCOVER_ROLE_MAX_APIFY_TITLES` | Optional | Maximum exact + expanded provider titles per requested role. Default `5`, hard max `8` |
 | `DISCOVER_ROLE_MAX_APIFY_TITLES_TOTAL` | Optional | Maximum titles in one Apify actor input across all requested roles. Default `8`, hard max `20` |
 | `DISCOVER_EXPANSION_BATCH_SIZE` | Optional | New people per "Add 10 more". Default `10` |
-| `DISCOVER_EXPANSION_MAX_PROVIDER_PAGES` | Optional | Provider continuation pages per expansion. Default `5` |
+| `DISCOVER_EXPANSION_MAX_PROVIDER_PAGES` | Optional | Deeper-prefix provider fetches per expansion. Default `5` |
 | `PROSPECT_EMAIL_DISCOVERY_PROVIDER` | Optional | `openai_web_search` (default) or `none` |
 | `PROSPECT_EMAIL_FORMAT_WEB_SEARCH_ENABLED` | Optional | Master switch for AI web search. Default `true` |
 | `PROSPECT_EMAIL_FORMAT_MAX_WEB_RESULTS` | Optional | Public results weighed per company. Default `5` |

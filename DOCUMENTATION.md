@@ -1735,9 +1735,9 @@ runs alongside) normal API rate limiting:
   `DISCOVER_RESULTS_PER_SEARCH` people (default 10). The user can never choose
   the count: the modal has no "Max results" field and `createProspectSearch`
   discards any supplied `maxResults` (validation + `createSearch` force the
-  value, persisting `10`). The initial Apify request is still bounded to one
-  provider page (`maxItems: 25`, `takePages: 1`) so schema, company, identity,
-  and role filtering can select a complete 10-person allocation when possible.
+  value, persisting `10`). The initial Apify request is still bounded to a
+  25-profile prefix (`maxItems: 25`) so schema, company, identity, and role
+  filtering can select a complete 10-person allocation when possible.
   Eligible overflow stays only in the internal shared candidate cache until a
   later explicit allocation; it never raises the current search's 10-person
   grant. A hand-crafted GraphQL request with `maxResults: 1000` therefore cannot

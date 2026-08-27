@@ -1084,7 +1084,7 @@ describe("Discover daily quota enforcement", () => {
     expect(created.maxResults).toBe(10);
   });
 
-  it("uses one bounded 25-candidate page even for a legacy 10-result record (#2, #3)", async () => {
+  it("uses one bounded 25-candidate prefix even for a legacy 10-result record (#2, #3)", async () => {
     const { run, runner } = amatRunner();
     const { service } = buildService(prisma, runner, ROLE_ONLY);
     const created = await service.createSearch(USER_ID, APPLIED_MATERIALS);
@@ -1093,7 +1093,6 @@ describe("Discover daily quota enforcement", () => {
     await service.processSearch(USER_ID, created.id, { actorEmail: "u@test.dev" });
     const actorInput = run.mock.calls[0][1];
     expect(actorInput.maxItems).toBe(25);
-    expect(actorInput.takePages).toBe(1);
   });
 
   it("consumes exactly one slot on the first processed search (#6)", async () => {
@@ -1723,7 +1722,7 @@ describe("Discover shared cache integration", () => {
     ]);
   });
 
-  it("fills an RTX Recruiter search from a bounded valid pool while retaining safe overflow in shared cache", async () => {
+  it("keeps RTX public-index candidates behind strict post-provider company validation", async () => {
     const rtxUrl = "https://www.linkedin.com/company/rtx/";
     const validProfiles = [
       targetedCompanyProfile("rtx-1", "Recruiter", "RTX Corporation", rtxUrl),
@@ -1787,23 +1786,27 @@ describe("Discover shared cache integration", () => {
     expect(run).toHaveBeenCalledTimes(1);
     expect(run.mock.calls[0][1]).toMatchObject({
       currentCompanies: [rtxUrl],
-      maxItems: 25,
-      takePages: 1,
-      startPage: 1
+      maxItems: 25
     });
     expect(filter).toHaveBeenCalledWith(expect.objectContaining({
       people: expect.arrayContaining([
-        expect.objectContaining({ currentTitle: "Executive Technology Recruiting Leader", positionCategory: "RECRUITING" }),
-        expect.objectContaining({ currentTitle: "Recruiting Leader", positionCategory: "RECRUITING" })
+        expect.objectContaining({ currentTitle: "Recruiter", positionCategory: "RECRUITING" }),
+        expect.objectContaining({ currentTitle: "Campus Recruiter", positionCategory: "RECRUITING" })
       ]),
       requestedTitles: ["Recruiter"],
       context: "PROVIDER"
     }));
-    expect(result).toMatchObject({ status: "READY", totalFound: 15, totalProcessed: 10 });
-    expect(prisma._state.discoverCachePeople).toHaveLength(14);
-    expect(prisma._state.searchPeople.filter((row) => row.searchId === search.id)).toHaveLength(10);
-    expect(prisma._state.people).toHaveLength(10);
-    expect(prisma._state.people.every((person) => person.sourceProfileId !== "microsoft-control")).toBe(true);
+    expect(result).toMatchObject({ status: "READY", totalFound: 15, totalProcessed: 8 });
+    expect(prisma._state.discoverCachePeople).toHaveLength(8);
+    expect(prisma._state.searchPeople.filter((row) => row.searchId === search.id)).toHaveLength(8);
+    expect(prisma._state.people).toHaveLength(8);
+    expect(
+      prisma._state.people.every((person) =>
+        ["rtx-1", "rtx-2", "rtx-3", "rtx-4", "rtx-5", "rtx-6", "rtx-11", "rtx-12"].includes(
+          person.sourceProfileId
+        )
+      )
+    ).toBe(true);
     expect(prisma._state.positions.map((position) => position.category)).toEqual(["RECRUITING"]);
   });
 
@@ -3042,6 +3045,38 @@ describe("zero-result searches (provider succeeded, nobody found)", () => {
     // The paid email-format stage never ran: no AI calls, no public-evidence
     // lookup, and no inferred email-quality records were created.
     expect(ai.callsOfType("email_pattern")).toHaveLength(0);
+    expect(ai.calls).toHaveLength(0);
+    expect(findEvidence).not.toHaveBeenCalled();
+    expect(prisma._state.people).toHaveLength(0);
+    expect(prisma._state.positions).toHaveLength(0);
+    expect(prisma._state.searchPeople).toHaveLength(0);
+  });
+
+  it("keeps an actor NO_RESULTS diagnostic neutral and never materializes a fake person", async () => {
+    const run = vi.fn<ApifyRunner["run"]>(async () => ({
+      runId: "run-diagnostic-zero",
+      datasetId: "ds-diagnostic-zero",
+      items: [{ ok: false, charged: false, recordType: "diagnostic", code: "NO_RESULTS" }],
+      status: "SUCCEEDED"
+    }));
+    const findEvidence = vi.fn(async () => ({ domainEvidence: [], patternEvidence: [] }));
+    const { service, ai } = buildService(
+      prisma,
+      { run } as ApifyRunner,
+      ZERO_AI,
+      zeroEvidence(findEvidence)
+    );
+
+    const created = await service.createSearch(USER_ID, APPLIED_MATERIALS);
+    const result = await service.processSearch(USER_ID, created.id);
+
+    expect(result).toMatchObject({
+      status: "NO_RESULTS",
+      totalFound: 0,
+      totalProcessed: 0,
+      errorCode: null,
+      errorMessage: null
+    });
     expect(ai.calls).toHaveLength(0);
     expect(findEvidence).not.toHaveBeenCalled();
     expect(prisma._state.people).toHaveLength(0);
