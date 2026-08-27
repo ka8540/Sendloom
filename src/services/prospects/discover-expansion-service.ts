@@ -25,6 +25,7 @@ import {
 import { computeDiscoverFingerprint } from "@/services/prospects/discover-cache-fingerprint";
 import {
   createDiscoverRoleIntelligenceService,
+  type DiscoverRoleFilterDiagnostics,
   type DiscoverRoleIntelligencePort
 } from "@/services/prospects/discover-role-intelligence-service";
 import { PersonIdentitySet } from "@/services/prospects/discover-person-identity";
@@ -521,16 +522,18 @@ export class DiscoverExpansionService {
               companyDomain: params.company.emailDomain ?? null
             }
           );
-          let pagePeople = built.people;
-          if (this.roleIntelligence.enabled) {
-            pagePeople = await this.roleIntelligence.filterAndRankPeople({
-              people: built.people,
-              requestedTitles: params.roles,
-              requestedLocations: params.locations,
-              context: "PROVIDER",
-              options: { budget, searchId: params.search.id }
-            });
-          }
+          const eligibilityDiagnosticsRef: { current: DiscoverRoleFilterDiagnostics | null } = { current: null };
+          const pagePeople = await this.roleIntelligence.filterAndRankPeople({
+            people: built.people,
+            requestedTitles: params.roles,
+            requestedLocations: params.locations,
+            context: "PUBLIC_INDEX_PROVIDER",
+            options: { budget, searchId: params.search.id },
+            onDiagnostics: (diagnostics) => {
+              eligibilityDiagnosticsRef.current = diagnostics;
+            }
+          });
+          const eligibilityDiagnostics = eligibilityDiagnosticsRef.current;
 
           // 13-14. Append net-new normalized results to the shared cache and
           // advance the saved logical-depth cursor (only after a valid fetch).
@@ -578,6 +581,13 @@ export class DiscoverExpansionService {
             providerDuplicateItems: pageResult.diagnostics.duplicateItems,
             companyMatched: pageResult.diagnostics.companyMatched,
             rejectedByCompany: pageResult.diagnostics.rejectedByCompany,
+            roleMatched: eligibilityDiagnostics?.roleMatchedCount ?? pagePeople.length,
+            roleRejected: eligibilityDiagnostics?.roleRejectedCount ?? built.people.length - pagePeople.length,
+            locationConfirmed: eligibilityDiagnostics?.locationConfirmedCount ?? 0,
+            locationMissingRejected: eligibilityDiagnostics?.locationMissingRejectedCount ?? 0,
+            locationContradictionRejected: eligibilityDiagnostics?.locationContradictionRejectedCount ?? 0,
+            locationNoMatchRejected: eligibilityDiagnostics?.locationNoMatchRejectedCount ?? 0,
+            finalEligible: eligibilityDiagnostics?.finalEligibleCount ?? pagePeople.length,
             normalizedProviderCount: pageResult.profiles.length,
             identityResolvedCount: built.identityResolvedCount,
             classifiedCount: built.classifiedCount,

@@ -4,7 +4,10 @@ import { env } from "@/lib/env";
 import { coercePositionCategory } from "@/lib/prospect-enums";
 import { filterReusableDiscoverPeople } from "@/services/prospects/discover-cache-reuse";
 import type { ResolvedCachePerson } from "@/services/prospects/discover-cache-service";
-import { evaluateDiscoverLocationMatch } from "@/services/prospects/discover-location-matching";
+import {
+  evaluateDiscoverLocationMatch,
+  type DiscoverLocationContext
+} from "@/services/prospects/discover-location-matching";
 import {
   OpenAIRoleEmbeddingService,
   type RoleEmbeddingPort
@@ -12,10 +15,9 @@ import {
 import type { AiCallBudget } from "@/services/prospects/prospect-ai";
 import { normalizeTitle } from "@/services/prospects/prospect-normalization";
 import {
-  decideRoleMatch,
+  buildDeterministicProviderTitlePlan,
   deriveRoleIntent,
   evaluateRoleMatch,
-  providerAliasesForIntent,
   type RoleIntent,
   type RoleMatchKind,
   type RoleMatchRejectionReason
@@ -23,7 +25,6 @@ import {
 import {
   PrismaRoleSemanticStore,
   type RoleSemanticIdentity,
-  type RoleSemanticRecord,
   type RoleSemanticSimilarity,
   type RoleSemanticStorePort,
   type RoleSemanticWrite
@@ -32,6 +33,8 @@ import { RoleClassificationService } from "@/services/prospects/role-classificat
 
 const ROLE_VECTOR_COLUMN_DIMENSIONS = 1536;
 const DEFAULT_TOP_K = 20;
+const PUBLIC_INDEX_MAX_TITLES_PER_ROLE = 3;
+const PUBLIC_INDEX_MAX_TITLES_TOTAL = 6;
 
 export type DiscoverRoleIntelligenceConfig = RoleSemanticIdentity & {
   enabled: boolean;
@@ -45,14 +48,26 @@ export type RoleIntelligenceOptions = {
   searchId?: string | null;
 };
 
+export type DiscoverRoleFilterDiagnostics = {
+  roleInputCount: number;
+  roleMatchedCount: number;
+  roleRejectedCount: number;
+  locationConfirmedCount: number;
+  locationMissingRejectedCount: number;
+  locationContradictionRejectedCount: number;
+  locationNoMatchRejectedCount: number;
+  finalEligibleCount: number;
+};
+
 export interface DiscoverRoleIntelligencePort {
   readonly enabled: boolean;
   filterAndRankPeople(input: {
     people: readonly ResolvedCachePerson[];
     requestedTitles: readonly string[];
     requestedLocations: readonly string[];
-    context: "CACHE" | "PROVIDER";
+    context: DiscoverLocationContext;
     options: RoleIntelligenceOptions;
+    onDiagnostics?: (diagnostics: DiscoverRoleFilterDiagnostics) => void;
   }): Promise<ResolvedCachePerson[]>;
   buildProviderTitlePlan(
     requestedTitles: readonly string[],
@@ -140,14 +155,33 @@ export class DiscoverRoleIntelligenceService implements DiscoverRoleIntelligence
     people: readonly ResolvedCachePerson[];
     requestedTitles: readonly string[];
     requestedLocations: readonly string[];
-    context: "CACHE" | "PROVIDER";
+    context: DiscoverLocationContext;
     options: RoleIntelligenceOptions;
+    onDiagnostics?: (diagnostics: DiscoverRoleFilterDiagnostics) => void;
   }): Promise<ResolvedCachePerson[]> {
     const requestedIntents = await this.classifyIntents(input.requestedTitles, input.options);
-    if (requestedIntents.length === 0) return [];
+    if (requestedIntents.length === 0) {
+      input.onDiagnostics?.({
+        roleInputCount: input.people.length,
+        roleMatchedCount: 0,
+        roleRejectedCount: input.people.length,
+        locationConfirmedCount: 0,
+        locationMissingRejectedCount: 0,
+        locationContradictionRejectedCount: 0,
+        locationNoMatchRejectedCount: 0,
+        finalEligibleCount: 0
+      });
+      return [];
+    }
 
     if (!this.enabled) {
-      return this.currentBehaviorFilter(input.people, requestedIntents, input.requestedLocations);
+      return this.currentBehaviorFilter(
+        input.people,
+        requestedIntents,
+        input.requestedLocations,
+        input.context,
+        input.onDiagnostics
+      );
     }
 
     const candidateTitles = input.people
@@ -185,8 +219,13 @@ export class DiscoverRoleIntelligenceService implements DiscoverRoleIntelligence
       VECTOR: 4
     };
     let locationRejectedCount = 0;
+    let locationConfirmedCount = 0;
     let explicitLocationContradictionCount = 0;
     let missingLocationMetadataCount = 0;
+    let locationMissingRejectedCount = 0;
+    let locationNoMatchRejectedCount = 0;
+    let roleMatchedCount = 0;
+    const roleContext = input.context === "CACHE" ? "CACHE" : "PROVIDER";
     const ranked: Array<{
       person: ResolvedCachePerson;
       index: number;
@@ -195,20 +234,6 @@ export class DiscoverRoleIntelligenceService implements DiscoverRoleIntelligence
     }> = [];
 
     for (const [index, person] of input.people.entries()) {
-      const locationEvaluation = evaluateDiscoverLocationMatch({
-        candidate: person,
-        requestedLocations: input.requestedLocations,
-        context: input.context
-      });
-      if (locationEvaluation.reason === "EXPLICIT_CONTRADICTION") {
-        explicitLocationContradictionCount += 1;
-      } else if (locationEvaluation.reason === "MISSING_METADATA") {
-        missingLocationMetadataCount += 1;
-      }
-      if (!locationEvaluation.matches) {
-        locationRejectedCount += 1;
-        continue;
-      }
       const normalizedTitle = normalizeTitle(person.normalizedTitle ?? person.currentTitle ?? "");
       const candidate = candidateByTitle.get(normalizedTitle);
       if (!candidate) {
@@ -227,7 +252,7 @@ export class DiscoverRoleIntelligenceService implements DiscoverRoleIntelligence
         const evaluation = evaluateRoleMatch({
           query,
           candidate,
-          context: input.context,
+          context: roleContext,
           vectorSimilarity: similarities.get(`${query.normalizedTitle}\u0000${candidate.normalizedTitle}`)
         });
         if (evaluation.decision && evaluation.decision.score > bestScore) {
@@ -241,6 +266,28 @@ export class DiscoverRoleIntelligenceService implements DiscoverRoleIntelligence
         }
       }
       if (bestKind) {
+        roleMatchedCount += 1;
+        const locationEvaluation = evaluateDiscoverLocationMatch({
+          candidate: person,
+          requestedLocations: input.requestedLocations,
+          context: input.context
+        });
+        if (locationEvaluation.reason === "CONFIRMED") {
+          locationConfirmedCount += 1;
+        } else if (locationEvaluation.reason === "EXPLICIT_CONTRADICTION") {
+          explicitLocationContradictionCount += 1;
+        } else if (locationEvaluation.reason === "MISSING_METADATA") {
+          missingLocationMetadataCount += 1;
+        }
+        if (!locationEvaluation.matches) {
+          locationRejectedCount += 1;
+          if (locationEvaluation.reason === "MISSING_METADATA") {
+            locationMissingRejectedCount += 1;
+          } else if (locationEvaluation.reason === "NO_MATCH") {
+            locationNoMatchRejectedCount += 1;
+          }
+          continue;
+        }
         acceptedCounts[bestKind] += 1;
         ranked.push({ person, index, score: bestScore, kind: bestKind });
       } else {
@@ -248,6 +295,18 @@ export class DiscoverRoleIntelligenceService implements DiscoverRoleIntelligence
       }
     }
     ranked.sort((left, right) => right.score - left.score || left.index - right.index);
+
+    const diagnostics: DiscoverRoleFilterDiagnostics = {
+      roleInputCount: input.people.length,
+      roleMatchedCount,
+      roleRejectedCount: input.people.length - roleMatchedCount,
+      locationConfirmedCount,
+      locationMissingRejectedCount,
+      locationContradictionRejectedCount: explicitLocationContradictionCount,
+      locationNoMatchRejectedCount,
+      finalEligibleCount: ranked.length
+    };
+    input.onDiagnostics?.(diagnostics);
 
     safeSemanticEvent(
       acceptedCounts.VECTOR > 0
@@ -271,9 +330,16 @@ export class DiscoverRoleIntelligenceService implements DiscoverRoleIntelligence
         leadershipRejectedCount: rejectedCounts.LEADERSHIP,
         explicitLeadershipMismatchCount: rejectedCounts.LEADERSHIP,
         vectorRejectedCount: rejectedCounts.VECTOR,
+        roleMatchedCount: diagnostics.roleMatchedCount,
+        roleRejectedCount: diagnostics.roleRejectedCount,
         locationRejectedCount,
+        locationConfirmedCount,
+        locationMissingRejectedCount,
+        locationContradictionRejectedCount: explicitLocationContradictionCount,
+        locationNoMatchRejectedCount,
         explicitLocationContradictionCount,
         missingLocationMetadataCount,
+        finalEligibleCount: ranked.length,
         semanticVersion: this.identity.semanticVersion
       }
     );
@@ -288,72 +354,20 @@ export class DiscoverRoleIntelligenceService implements DiscoverRoleIntelligence
     if (!this.enabled) return exact;
     const intents = await this.classifyIntents(exact, options);
     if (intents.length === 0) return exact;
-
-    let similar: RoleSemanticSimilarity[] = [];
-    try {
-      await this.ensureSemantics(intents);
-      similar = await this.similarRows(intents);
-    } catch (error) {
-      safeSemanticWarning("provider_plan", options.searchId, error);
-      // Deterministic variants remain safe and bounded when vector storage or
-      // embeddings are unavailable. Only semantic-neighbor expansion is lost.
-      similar = [];
-    }
-
-    const result: string[] = [];
-    const seen = new Set<string>();
-    const perRoleCounts = new Map(intents.map((intent) => [intent.normalizedTitle, 0]));
-    const add = (title: string, owner: RoleIntent) => {
-      const normalized = normalizeTitle(title);
-      const count = perRoleCounts.get(owner.normalizedTitle) ?? 0;
-      if (!normalized || seen.has(normalized) || result.length >= this.maxApifyTitlesTotal) return;
-      if (count >= this.maxApifyTitlesPerRole) return;
-      seen.add(normalized);
-      result.push(title.trim());
-      perRoleCounts.set(owner.normalizedTitle, count + 1);
-    };
-
-    // Preserve every exact requested role first.
-    for (const intent of intents) add(intent.rawTitle, intent);
-    const semanticByQuery = new Map<string, RoleSemanticSimilarity[]>();
-    for (const row of similar) {
-      const list = semanticByQuery.get(row.queryKey) ?? [];
-      list.push(row);
-      semanticByQuery.set(row.queryKey, list);
-    }
-    const queues = intents.map((intent) => {
-      const aliases = providerAliasesForIntent(intent).map((title) => ({ title, intent }));
-      const vectors = (semanticByQuery.get(intent.normalizedTitle) ?? [])
-        .filter((row) =>
-          Boolean(
-            decideRoleMatch({
-              query: intent,
-              candidate: this.intentFromRecord(row),
-              context: "PROVIDER",
-              vectorSimilarity: row.similarity
-            })
-          )
-        )
-        .map((row) => ({ title: row.normalizedTitle, intent }));
-      return [...aliases, ...vectors];
-    });
-
-    for (let index = 0; result.length < this.maxApifyTitlesTotal; index += 1) {
-      let hadCandidate = false;
-      for (const queue of queues) {
-        const candidate = queue[index];
-        if (!candidate) continue;
-        hadCandidate = true;
-        add(candidate.title, candidate.intent);
-        if (result.length >= this.maxApifyTitlesTotal) break;
-      }
-      if (!hadCandidate) break;
-    }
+    const maxPerRole = Math.min(this.maxApifyTitlesPerRole, PUBLIC_INDEX_MAX_TITLES_PER_ROLE);
+    const maxTotal = Math.max(
+      intents.length,
+      Math.min(this.maxApifyTitlesTotal, PUBLIC_INDEX_MAX_TITLES_TOTAL)
+    );
+    const result = buildDeterministicProviderTitlePlan({ intents, maxPerRole, maxTotal });
 
     safeSemanticEvent("DISCOVER_ROLE_PROVIDER_EXPANSION", {
       searchId: options.searchId ?? null,
       requestedRoleCount: intents.length,
       expandedRoleCount: result.length,
+      maxTitlesPerRole: maxPerRole,
+      maxTitlesTotal: maxTotal,
+      vectorNeighborsIncluded: false,
       providerCalled: true,
       semanticVersion: this.identity.semanticVersion
     });
@@ -393,16 +407,47 @@ export class DiscoverRoleIntelligenceService implements DiscoverRoleIntelligence
   private currentBehaviorFilter(
     people: readonly ResolvedCachePerson[],
     requestedIntents: readonly RoleIntent[],
-    requestedLocations: readonly string[]
+    requestedLocations: readonly string[],
+    context: DiscoverLocationContext,
+    onDiagnostics?: (diagnostics: DiscoverRoleFilterDiagnostics) => void
   ): ResolvedCachePerson[] {
-    return filterReusableDiscoverPeople({
+    const roleMatched = filterReusableDiscoverPeople({
       people,
       requestedRoles: requestedIntents.map((intent) => ({
         normalizedTitle: intent.normalizedTitle,
         category: intent.category
       })),
-      requestedLocations
+      requestedLocations: []
     });
+    let locationConfirmedCount = 0;
+    let locationMissingRejectedCount = 0;
+    let locationContradictionRejectedCount = 0;
+    let locationNoMatchRejectedCount = 0;
+    const eligible = roleMatched.filter((person) => {
+      const location = evaluateDiscoverLocationMatch({
+        candidate: person,
+        requestedLocations,
+        context
+      });
+      if (location.reason === "CONFIRMED") locationConfirmedCount += 1;
+      if (!location.matches && location.reason === "MISSING_METADATA") locationMissingRejectedCount += 1;
+      if (!location.matches && location.reason === "EXPLICIT_CONTRADICTION") {
+        locationContradictionRejectedCount += 1;
+      }
+      if (!location.matches && location.reason === "NO_MATCH") locationNoMatchRejectedCount += 1;
+      return location.matches;
+    });
+    onDiagnostics?.({
+      roleInputCount: people.length,
+      roleMatchedCount: roleMatched.length,
+      roleRejectedCount: people.length - roleMatched.length,
+      locationConfirmedCount,
+      locationMissingRejectedCount,
+      locationContradictionRejectedCount,
+      locationNoMatchRejectedCount,
+      finalEligibleCount: eligible.length
+    });
+    return eligible;
   }
 
   private async ensureSemantics(
@@ -452,15 +497,6 @@ export class DiscoverRoleIntelligenceService implements DiscoverRoleIntelligence
     return new Map(rows.map((row) => [`${row.queryKey}\u0000${row.normalizedTitle}`, row.similarity]));
   }
 
-  private intentFromRecord(record: RoleSemanticRecord): RoleIntent {
-    // Re-derive policy metadata so older vector rows cannot preserve stale
-    // canonical-family or leadership behavior across a code rollout.
-    return deriveRoleIntent({
-      rawTitle: record.normalizedTitle,
-      category: record.category,
-      confidence: record.classificationConfidence
-    })!;
-  }
 }
 
 export function createDiscoverRoleIntelligenceService(

@@ -51,6 +51,7 @@ import {
 import { computeDiscoverFingerprint } from "@/services/prospects/discover-cache-fingerprint";
 import {
   createDiscoverRoleIntelligenceService,
+  type DiscoverRoleFilterDiagnostics,
   type DiscoverRoleIntelligencePort
 } from "@/services/prospects/discover-role-intelligence-service";
 import {
@@ -289,6 +290,16 @@ type RunPipelineResult = {
 };
 
 type ProviderFunnelDiagnostics = ApifyIngestionDiagnostics & {
+  rawProfileRows: number;
+  schemaAccepted: number;
+  companyRejected: number;
+  roleMatched: number;
+  roleRejected: number;
+  locationConfirmed: number;
+  locationMissingRejected: number;
+  locationContradictionRejected: number;
+  locationNoMatchRejected: number;
+  finalEligible: number;
   semanticInputCount: number;
   semanticAcceptedCount: number;
   semanticRejectedCount: number;
@@ -1072,23 +1083,36 @@ export class ProspectSearchService {
     // against the final persisted format during materialization.
     const people = this.buildDatasetPeople(profiles, classifications, emailFormat);
 
-    // With the feature off this method returns the exact current provider
-    // behavior. With it on, expanded provider matches are authorized again by
-    // category/specialty policy before they enter shared knowledge.
-    const roleFilteredPeople = this.roleIntelligence.enabled
-      ? await this.roleIntelligence.filterAndRankPeople({
-          people,
-          requestedTitles,
-          requestedLocations: this.asStringArray(search.requestedLocations),
-          context: "PROVIDER",
-          options: { budget, searchId: search.id }
-        })
-      : people;
+    // Public-index filtering is mandatory even when vector intelligence is
+    // disabled. The disabled path applies deterministic role policy plus the
+    // same positive-evidence location rule without making embedding calls.
+    const eligibilityDiagnosticsRef: { current: DiscoverRoleFilterDiagnostics | null } = { current: null };
+    const roleFilteredPeople = await this.roleIntelligence.filterAndRankPeople({
+      people,
+      requestedTitles,
+      requestedLocations: this.asStringArray(search.requestedLocations),
+      context: "PUBLIC_INDEX_PROVIDER",
+      options: { budget, searchId: search.id },
+      onDiagnostics: (diagnostics) => {
+        eligibilityDiagnosticsRef.current = diagnostics;
+      }
+    });
+    const eligibilityDiagnostics = eligibilityDiagnosticsRef.current;
 
     return {
       dataset: { emailFormat, people: roleFilteredPeople },
       diagnostics: {
         ...searchResult.diagnostics,
+        rawProfileRows: searchResult.diagnostics.profileRows,
+        schemaAccepted: searchResult.diagnostics.parsedCandidates,
+        companyRejected: searchResult.diagnostics.rejectedByCompany,
+        roleMatched: eligibilityDiagnostics?.roleMatchedCount ?? roleFilteredPeople.length,
+        roleRejected: eligibilityDiagnostics?.roleRejectedCount ?? people.length - roleFilteredPeople.length,
+        locationConfirmed: eligibilityDiagnostics?.locationConfirmedCount ?? 0,
+        locationMissingRejected: eligibilityDiagnostics?.locationMissingRejectedCount ?? 0,
+        locationContradictionRejected: eligibilityDiagnostics?.locationContradictionRejectedCount ?? 0,
+        locationNoMatchRejected: eligibilityDiagnostics?.locationNoMatchRejectedCount ?? 0,
+        finalEligible: eligibilityDiagnostics?.finalEligibleCount ?? roleFilteredPeople.length,
         semanticInputCount: people.length,
         semanticAcceptedCount: roleFilteredPeople.length,
         semanticRejectedCount: people.length - roleFilteredPeople.length
@@ -1338,15 +1362,13 @@ export class ProspectSearchService {
       emailFormatReason: company.emailFormatReason
     };
     const people = this.buildDatasetPeople(processedItems.profiles, classifications, emailFormat);
-    const roleFilteredPeople = this.roleIntelligence.enabled
-      ? await this.roleIntelligence.filterAndRankPeople({
-          people,
-          requestedTitles: this.asStringArray(search.requestedTitles),
-          requestedLocations: this.asStringArray(search.requestedLocations),
-          context: "PROVIDER",
-          options: { budget, searchId: search.id }
-        })
-      : people;
+    const roleFilteredPeople = await this.roleIntelligence.filterAndRankPeople({
+      people,
+      requestedTitles: this.asStringArray(search.requestedTitles),
+      requestedLocations: this.asStringArray(search.requestedLocations),
+      context: "PUBLIC_INDEX_PROVIDER",
+      options: { budget, searchId: search.id }
+    });
 
     const processed = await this.materializeDataset(
       userId,

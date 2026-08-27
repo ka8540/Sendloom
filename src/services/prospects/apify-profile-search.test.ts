@@ -6,6 +6,7 @@ import {
   companyNamesAliasMatch,
   currentCompanyMatches,
   dedupeProfiles,
+  extractLabelledSnippetLocation,
   normalizeProfile,
   processDatasetItems,
   readDatasetItemsWithRetry,
@@ -273,6 +274,46 @@ describe("normalizeProfile", () => {
     });
   });
 
+  it("uses only a strongly labelled snippet location as fallback evidence", () => {
+    const profile = normalizeProfile({
+      ok: true,
+      recordType: "profile",
+      profileUrl: "https://www.linkedin.com/in/lseg-valid",
+      fullName: "Valid Candidate",
+      currentPosition: "Global Head of Talent Acquisition",
+      currentCompany: "London Stock Exchange Group (LSEG)",
+      location: null,
+      snippet: "Experience: LSEG · Location: New York, United States · 500+ connections"
+    });
+
+    expect(profile).toMatchObject({
+      location: "New York, United States",
+      city: "New York",
+      country: "United States"
+    });
+    expect(Object.keys(profile!)).not.toContain("snippet");
+  });
+
+  it("does not turn arbitrary snippet geography into candidate location", () => {
+    const weakSnippet = "LSEG · 5K followers · New York ... United States · View Profile";
+    const profile = normalizeProfile({
+      recordType: "profile",
+      profileUrl: "https://in.linkedin.com/in/lseg-missing-location",
+      fullName: "Missing Location",
+      currentPosition: "Talent Acquisition Partner",
+      currentCompany: "LSEG",
+      location: null,
+      snippet: weakSnippet
+    });
+
+    expect(extractLabelledSnippetLocation(weakSnippet)).toBeNull();
+    expect(profile).toMatchObject({ location: null, city: null, state: null, country: null });
+  });
+
+  it("stops labelled snippet extraction at a connection count", () => {
+    expect(extractLabelledSnippetLocation("Location: United States 500+ connections")).toBe("United States");
+  });
+
   it("keeps a usable profile when optional fields are missing (#parser-11)", () => {
     const profile = normalizeProfile(
       harvestApiItem({ headline: null, location: null, currentPosition: [], experience: [] })
@@ -290,6 +331,9 @@ describe("companyNamesAliasMatch", () => {
     expect(companyNamesAliasMatch("JPMorgan Chase & Co.", "J.P. Morgan")).toBe(true);
     expect(companyNamesAliasMatch("JPMorgan Chase & Co.", "JPMorganChase")).toBe(true);
     expect(companyNamesAliasMatch("Ernst & Young", "Ernst and Young")).toBe(true);
+    expect(companyNamesAliasMatch("LSEG", "LSEG (London Stock Exchange Group)")).toBe(true);
+    expect(companyNamesAliasMatch("LSEG", "London Stock Exchange Group (LSEG)")).toBe(true);
+    expect(companyNamesAliasMatch("LSEG", "London Stock Exchange Group")).toBe(true);
   });
 
   it("rejects unrelated companies and lookalike prefixes (#company-17)", () => {
@@ -479,6 +523,38 @@ describe("processDatasetItems", () => {
       itemsReturned: 11,
       companyMatched: 6,
       rejectedByCompany: 5
+    });
+  });
+
+  it("keeps LSEG current-company validation authoritative over arbitrary page mentions", () => {
+    const item = (id: string, currentCompany: string, snippet: string): RawProfile => ({
+      ok: true,
+      recordType: "profile",
+      profileUrl: `https://www.linkedin.com/in/${id}`,
+      publicIdentifier: id,
+      fullName: `Candidate ${id}`,
+      currentPosition: "Recruiter",
+      currentCompany,
+      location: "New York, United States",
+      snippet
+    });
+    const { profiles, diagnostics } = processDatasetItems(
+      [
+        item("lseg", "London Stock Exchange Group (LSEG)", "Experience: LSEG · Location: New York, United States"),
+        item("capital-one", "Capital One", "LSEG · United States · View Profile"),
+        item("lutron", "Lutron Electronics", "LSEG · New York · View Profile"),
+        item("irenic", "Irenic Capital Management LP", "LSEG · United States · View Profile")
+      ],
+      { companyName: "LSEG" },
+      25
+    );
+
+    expect(profiles.map((profile) => profile.sourceProfileId)).toEqual(["lseg"]);
+    expect(diagnostics).toMatchObject({
+      profileRows: 4,
+      parsedCandidates: 4,
+      companyMatched: 1,
+      rejectedByCompany: 3
     });
   });
 

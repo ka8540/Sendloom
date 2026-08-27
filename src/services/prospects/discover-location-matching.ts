@@ -1,6 +1,9 @@
 import { stripDiacritics } from "@/services/prospects/prospect-normalization";
 
-export type DiscoverLocationContext = "CACHE" | "PROVIDER";
+export type DiscoverLocationContext =
+  | "CACHE"
+  | "TRUSTED_PROVIDER"
+  | "PUBLIC_INDEX_PROVIDER";
 export type DiscoverLocationMatchReason =
   | "NO_CONSTRAINT"
   | "CONFIRMED"
@@ -60,6 +63,67 @@ function buildCountryLookup(): {
 }
 
 const COUNTRY_LOOKUP = buildCountryLookup();
+const UNITED_STATES_COUNTRY_KEY = COUNTRY_LOOKUP.aliases.get("united states") ?? "united states";
+const UNITED_STATES_ALIASES = new Set(["us", "usa", "u s", "u s a", "united states"]);
+const UNITED_STATES_STATE_NAMES = new Set([
+  "alabama",
+  "alaska",
+  "arizona",
+  "arkansas",
+  "california",
+  "colorado",
+  "connecticut",
+  "delaware",
+  "district of columbia",
+  "florida",
+  "georgia",
+  "hawaii",
+  "idaho",
+  "illinois",
+  "indiana",
+  "iowa",
+  "kansas",
+  "kentucky",
+  "louisiana",
+  "maine",
+  "maryland",
+  "massachusetts",
+  "michigan",
+  "minnesota",
+  "mississippi",
+  "missouri",
+  "montana",
+  "nebraska",
+  "nevada",
+  "new hampshire",
+  "new jersey",
+  "new mexico",
+  "new york",
+  "north carolina",
+  "north dakota",
+  "ohio",
+  "oklahoma",
+  "oregon",
+  "pennsylvania",
+  "rhode island",
+  "south carolina",
+  "south dakota",
+  "tennessee",
+  "texas",
+  "utah",
+  "vermont",
+  "virginia",
+  "washington",
+  "west virginia",
+  "wisconsin",
+  "wyoming"
+]);
+const UNITED_STATES_STATE_CODES = new Set([
+  "al", "ak", "az", "ar", "ca", "co", "ct", "de", "dc", "fl", "ga", "hi", "id",
+  "il", "in", "ia", "ks", "ky", "la", "me", "md", "ma", "mi", "mn", "ms", "mo",
+  "mt", "ne", "nv", "nh", "nj", "nm", "ny", "nc", "nd", "oh", "ok", "or", "pa",
+  "ri", "sc", "sd", "tn", "tx", "ut", "vt", "va", "wa", "wv", "wi", "wy"
+]);
 
 function locationComponents(value: string): string[] {
   return value.split(",").map((component) => component.trim()).filter(Boolean);
@@ -92,6 +156,7 @@ function reliableCandidateCountry(candidate: DiscoverLocationCandidate): string 
   // city/state/country shape so values such as "CA" are not mistaken for
   // Canada when the provider only returned a US state abbreviation.
   if (countryKey && country !== lastComponent) return countryKey;
+  if (countryKey && UNITED_STATES_ALIASES.has(country)) return countryKey;
   if (countryKey && components.length >= 3) return countryKey;
   if (countryKey && COUNTRY_LOOKUP.fullNames.has(country)) return countryKey;
 
@@ -101,6 +166,20 @@ function reliableCandidateCountry(candidate: DiscoverLocationCandidate): string 
     return locationCountryKey;
   }
   return null;
+}
+
+function hasRecognizedUnitedStatesGeography(candidateValues: readonly string[]): boolean {
+  return candidateValues.some((candidateValue) => {
+    const components = locationComponents(candidateValue);
+    if (components.some((component) => UNITED_STATES_STATE_NAMES.has(component))) {
+      return true;
+    }
+
+    // Two-letter state codes are only useful in a city/state-shaped value.
+    // A bare "IN" or "CA" is too ambiguous to establish US residence.
+    return components.length >= 2
+      && components.slice(1).some((component) => UNITED_STATES_STATE_CODES.has(component));
+  });
 }
 
 /**
@@ -137,7 +216,10 @@ export function evaluateDiscoverLocationMatch(input: {
   const countryConfirmed = Boolean(
     explicitCountry && requestedCountryKeys.has(explicitCountry)
   );
-  if (stringConfirmed || countryConfirmed) {
+  const unitedStatesGeographyConfirmed =
+    requestedCountryKeys.has(UNITED_STATES_COUNTRY_KEY)
+    && hasRecognizedUnitedStatesGeography(candidateValues);
+  if (stringConfirmed || countryConfirmed || unitedStatesGeographyConfirmed) {
     return { matches: true, reason: "CONFIRMED" };
   }
 
@@ -149,13 +231,15 @@ export function evaluateDiscoverLocationMatch(input: {
     return { matches: false, reason: "EXPLICIT_CONTRADICTION" };
   }
 
-  if (input.context === "PROVIDER") {
-    // The paid provider run already carried the requested location constraint.
-    // Incomplete returned metadata is absence of confirmation, not evidence of
-    // a contradictory geography.
+  if (input.context === "TRUSTED_PROVIDER") {
+    // A genuinely structured provider may make its applied location filter
+    // authoritative even when the returned projection omits geography.
     return { matches: true, reason: "MISSING_METADATA" };
   }
 
+  // Cache rows and public-index results both require positive evidence. Dami's
+  // filters match arbitrary published-page text, so merely sending a location
+  // in its actor input can never authorize a candidate with missing metadata.
   return {
     matches: false,
     reason: candidateValues.length === 0 ? "MISSING_METADATA" : "NO_MATCH"

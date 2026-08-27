@@ -94,6 +94,32 @@ function asString(value: unknown): string | null {
   return null;
 }
 
+/**
+ * Extract only a clearly labelled Location field from Dami's public-index
+ * snippet. Arbitrary geography elsewhere in the page text is deliberately
+ * ignored because it may describe another result, employer, or reference.
+ */
+export function extractLabelledSnippetLocation(value: unknown): string | null {
+  const snippet = asString(value);
+  if (!snippet) return null;
+
+  const labelled = /(?:^|[\n\r\u00b7\u2022|])\s*location\s*:\s*([^\n\r\u00b7\u2022|]{1,160})/i.exec(snippet);
+  if (!labelled) return null;
+
+  const location = labelled[1]
+    .replace(/\s+\d[\d,.]*\+?\s+connections?\b.*$/i, "")
+    .replace(/\s+(?:experience|education|about|headline|current company)\s*:.*$/i, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[.;,-]+$/, "")
+    .trim();
+
+  if (!location || location.length > 120 || /https?:\/\//i.test(location)) {
+    return null;
+  }
+  return location;
+}
+
 function readLocation(raw: RawProfile): string | null {
   const direct = asString(raw.location);
   if (direct) {
@@ -102,9 +128,12 @@ function readLocation(raw: RawProfile): string | null {
   const loc = raw.location;
   if (loc && typeof loc === "object") {
     const obj = loc as Record<string, unknown>;
-    return asString(obj.linkedinText) ?? asString(obj.text) ?? asString(obj.parsed) ?? null;
+    const structured = asString(obj.linkedinText) ?? asString(obj.text) ?? asString(obj.parsed);
+    if (structured) return structured;
   }
-  return asString(raw.locationName) ?? asString(raw.geoRegion) ?? null;
+  return asString(raw.locationName)
+    ?? asString(raw.geoRegion)
+    ?? extractLabelledSnippetLocation(raw.snippet);
 }
 
 function readCurrentPosition(raw: RawProfile): { title: string | null; companyName: string | null; companyUrl: string | null } {
@@ -253,6 +282,35 @@ function companyAliasKey(name: string): CompanyAliasKey {
   return { squashed, boundaries };
 }
 
+function companyNameVariants(name: string): string[] {
+  const parentheticalAliases = [...name.matchAll(/\(([^()]+)\)/g)]
+    .map((match) => match[1]?.trim())
+    .filter((value): value is string => Boolean(value));
+  const withoutParentheticals = name.replace(/\([^()]+\)/g, " ").replace(/\s+/g, " ").trim();
+  return [name, withoutParentheticals, ...parentheticalAliases].filter(Boolean);
+}
+
+function compactCompanyInitialismCandidate(name: string): string | null {
+  const compact = stripDiacritics(name).replace(/[^A-Za-z0-9]/g, "");
+  return /^[A-Z0-9]{2,6}$/.test(compact) ? compact.toLowerCase() : null;
+}
+
+function companyInitialisms(name: string): ReadonlySet<string> {
+  const withoutParentheticals = expandCamelCase(name).replace(/\([^()]+\)/g, " ");
+  const tokens = withoutParentheticals
+    .match(/[A-Za-z0-9]+/g)
+    ?.filter((token) => !COMPANY_ALIAS_STOPWORDS.has(token.toLowerCase())) ?? [];
+  if (tokens.length < 2) return new Set();
+
+  const allTokens = tokens.map((token) => token[0]?.toLowerCase()).join("");
+  return allTokens.length >= 2 && allTokens.length <= 6 ? new Set([allTokens]) : new Set();
+}
+
+function companyInitialismMatches(shortName: string, longName: string): boolean {
+  const candidate = compactCompanyInitialismCandidate(shortName);
+  return Boolean(candidate && companyInitialisms(longName).has(candidate));
+}
+
 /**
  * Alias-tolerant employer-name comparison. Accepts the same employer written
  * with different punctuation, corporate suffixes, spacing, or a shortened form
@@ -261,20 +319,33 @@ function companyAliasKey(name: string): CompanyAliasKey {
  * ("Apple" never matches "Applebee's").
  */
 export function companyNamesAliasMatch(a: string, b: string): boolean {
-  const keyA = companyAliasKey(a);
-  const keyB = companyAliasKey(b);
-  if (!keyA.squashed || !keyB.squashed) {
-    return false;
+  const variantsA = companyNameVariants(a);
+  const variantsB = companyNameVariants(b);
+
+  for (const variantA of variantsA) {
+    for (const variantB of variantsB) {
+      const keyA = companyAliasKey(variantA);
+      const keyB = companyAliasKey(variantB);
+      if (!keyA.squashed || !keyB.squashed) continue;
+      if (keyA.squashed === keyB.squashed) return true;
+
+      const [short, long] = keyA.squashed.length <= keyB.squashed.length ? [keyA, keyB] : [keyB, keyA];
+      if (
+        short.squashed.length >= MIN_ALIAS_PREFIX_LENGTH
+        && long.squashed.startsWith(short.squashed)
+        && long.boundaries.has(short.squashed.length)
+      ) {
+        return true;
+      }
+      if (
+        companyInitialismMatches(variantA, variantB)
+        || companyInitialismMatches(variantB, variantA)
+      ) {
+        return true;
+      }
+    }
   }
-  if (keyA.squashed === keyB.squashed) {
-    return true;
-  }
-  const [short, long] = keyA.squashed.length <= keyB.squashed.length ? [keyA, keyB] : [keyB, keyA];
-  return (
-    short.squashed.length >= MIN_ALIAS_PREFIX_LENGTH &&
-    long.squashed.startsWith(short.squashed) &&
-    long.boundaries.has(short.squashed.length)
-  );
+  return false;
 }
 
 type CompanyMatchTarget = {

@@ -124,6 +124,7 @@ function rawProfile(id: string, firstName: string, lastName: string, linkedinUrl
     fullName: `${firstName} ${lastName}`,
     headline: "Software Engineer",
     currentPosition: [{ title: "Software Engineer", companyName: "Apple" }],
+    location: "United States",
     linkedinUrl: linkedinUrl ?? `https://www.linkedin.com/in/${id}`
   };
 }

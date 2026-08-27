@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ResolvedCachePerson } from "@/services/prospects/discover-cache-service";
 import {
   DiscoverRoleIntelligenceService,
+  type DiscoverRoleFilterDiagnostics,
   type DiscoverRoleIntelligenceConfig,
   validateRoleIntelligenceConfig
 } from "@/services/prospects/discover-role-intelligence-service";
@@ -206,6 +207,26 @@ describe("DiscoverRoleIntelligenceService", () => {
     expect(ranked.map((entry) => entry.sourceProfileId)).toEqual(["exact", "alias", "backend"]);
   });
 
+  it("keeps vector similarity available for post-ingestion ranking", async () => {
+    const embeddings = new FakeEmbeddings({
+      "strategic financial planning analyst": vector(1, 0),
+      "financial planning and analysis consultant": vector(0.99, 0.01)
+    });
+    const service = new DiscoverRoleIntelligenceService(classifier, embeddings, new MemoryRoleStore(), config());
+    const ranked = await service.filterAndRankPeople({
+      people: [
+        person("vector", "Financial Planning and Analysis Consultant", "FINANCE"),
+        person("exact", "Strategic Financial Planning Analyst", "FINANCE")
+      ],
+      requestedTitles: ["Strategic Financial Planning Analyst"],
+      requestedLocations: ["United States"],
+      context: "PUBLIC_INDEX_PROVIDER",
+      options: { budget: budget(), searchId: "post-ingestion-vector" }
+    });
+
+    expect(ranked.map((entry) => entry.sourceProfileId)).toEqual(["exact", "vector"]);
+  });
+
   it("keeps the audited Software Engineer provider family without admitting unrelated roles", async () => {
     const embeddings = new FakeEmbeddings({ "software engineer": vector(1, 0) });
     const service = new DiscoverRoleIntelligenceService(classifier, embeddings, new MemoryRoleStore(), config());
@@ -232,7 +253,7 @@ describe("DiscoverRoleIntelligenceService", () => {
       ],
       requestedTitles: ["Software Engineer"],
       requestedLocations: ["United States"],
-      context: "PROVIDER",
+      context: "PUBLIC_INDEX_PROVIDER",
       options: { budget: budget(), searchId: "rtx-provider-family" }
     });
 
@@ -275,7 +296,7 @@ describe("DiscoverRoleIntelligenceService", () => {
       ],
       requestedTitles: ["Human Resource"],
       requestedLocations: ["United States"],
-      context: "PROVIDER",
+      context: "PUBLIC_INDEX_PROVIDER",
       options: { budget: budget(), searchId: "capital-one-broad-hr" }
     });
 
@@ -340,7 +361,7 @@ describe("DiscoverRoleIntelligenceService", () => {
         people,
         requestedTitles: ["Human Resources"],
         requestedLocations: ["United States"],
-        context: "PROVIDER",
+        context: "PUBLIC_INDEX_PROVIDER",
         options: { budget: budget(), searchId: "capital-one-leadership-location" }
       });
 
@@ -356,8 +377,12 @@ describe("DiscoverRoleIntelligenceService", () => {
           leadershipRejectedCount: 0,
           explicitLeadershipMismatchCount: 0,
           locationRejectedCount: 1,
+          locationConfirmedCount: 19,
+          locationMissingRejectedCount: 0,
+          locationContradictionRejectedCount: 1,
+          finalEligibleCount: 19,
           explicitLocationContradictionCount: 1,
-          missingLocationMetadataCount: 7,
+          missingLocationMetadataCount: 0,
           categoryRejectedCount: 0,
           familyRejectedCount: 0,
           vectorRejectedCount: 0
@@ -367,6 +392,70 @@ describe("DiscoverRoleIntelligenceService", () => {
     } finally {
       info.mockRestore();
     }
+  });
+
+  it("strictly filters synthetic Dami role and location failure modes", async () => {
+    const service = new DiscoverRoleIntelligenceService(
+      classifier,
+      new FakeEmbeddings({ recruiter: vector(1, 0) }),
+      new MemoryRoleStore(),
+      config()
+    );
+    let diagnostics: DiscoverRoleFilterDiagnostics | null = null;
+    const filtered = await service.filterAndRankPeople({
+      people: [
+        person("valid", "Global Head of Talent Acquisition", "RECRUITING", {
+          location: "New York, United States",
+          city: "New York",
+          country: "United States"
+        }),
+        person("india-host", "Talent Acquisition Partner", "RECRUITING", {
+          location: null,
+          city: null,
+          state: null,
+          country: null,
+          linkedinUrl: "https://in.linkedin.com/in/india-host"
+        }),
+        person("uk-host", "Talent Acquisition Manager", "RECRUITING", {
+          location: null,
+          city: null,
+          state: null,
+          country: null,
+          linkedinUrl: "https://uk.linkedin.com/in/uk-host"
+        }),
+        person("foreign", "Recruiter", "RECRUITING", {
+          location: "Bengaluru, Karnataka, India",
+          city: "Bengaluru",
+          state: "Karnataka",
+          country: "India"
+        }),
+        person("weak-snippet", "Recruiter", "RECRUITING", {
+          location: null,
+          city: null,
+          state: null,
+          country: null
+        }),
+        person("wrong-role", "Product Manager", "PRODUCT")
+      ],
+      requestedTitles: ["Recruiter"],
+      requestedLocations: ["United States"],
+      context: "PUBLIC_INDEX_PROVIDER",
+      options: { budget: budget(), searchId: "dami-strict-fixture" },
+      onDiagnostics: (value) => {
+        diagnostics = value;
+      }
+    });
+
+    expect(filtered.map((person) => person.sourceProfileId)).toEqual(["valid"]);
+    expect(diagnostics).toMatchObject({
+      roleInputCount: 6,
+      roleMatchedCount: 5,
+      roleRejectedCount: 1,
+      locationConfirmedCount: 1,
+      locationMissingRejectedCount: 3,
+      locationContradictionRejectedCount: 1,
+      finalEligibleCount: 1
+    });
   });
 
   it("reuses the same broad HR family from cache without vector authorization", async () => {
@@ -419,7 +508,7 @@ describe("DiscoverRoleIntelligenceService", () => {
         ],
         requestedTitles: [rawQuery],
         requestedLocations: ["United States"],
-        context: "PROVIDER",
+        context: "PUBLIC_INDEX_PROVIDER",
         options: { budget: budget(), searchId: `broad-${category.toLowerCase()}` }
       });
 
@@ -447,7 +536,7 @@ describe("DiscoverRoleIntelligenceService", () => {
         people: [person("valid", valid, category), person("invalid", invalid, category)],
         requestedTitles: [rawQuery],
         requestedLocations: ["United States"],
-        context: "PROVIDER",
+        context: "PUBLIC_INDEX_PROVIDER",
         options: { budget: budget(), searchId: `narrow-${category.toLowerCase()}` }
       });
 
@@ -472,7 +561,7 @@ describe("DiscoverRoleIntelligenceService", () => {
         ],
         requestedTitles: ["Sales Manager"],
         requestedLocations: ["United States"],
-        context: "PROVIDER",
+        context: "PUBLIC_INDEX_PROVIDER",
         options: { budget: budget(), searchId: "aggregate-diagnostics" }
       });
 
@@ -520,7 +609,7 @@ describe("DiscoverRoleIntelligenceService", () => {
       ],
       requestedTitles: ["Recruiter"],
       requestedLocations: ["United States"],
-      context: "PROVIDER",
+      context: "PUBLIC_INDEX_PROVIDER",
       options: { budget: budget(), searchId: "rtx-recruiter-family" }
     });
 
@@ -575,16 +664,12 @@ describe("DiscoverRoleIntelligenceService", () => {
     expect(await service.buildProviderTitlePlan(["Software Engineer"], { budget: budget() })).toEqual([
       "Software Engineer",
       "Software Developer",
-      "Backend Software Engineer",
-      "Frontend Software Engineer",
-      "Application Developer"
+      "Backend Software Engineer"
     ]);
     expect(await service.buildProviderTitlePlan(["Software Developer"], { budget: budget() })).toEqual([
       "Software Developer",
       "Backend Software Engineer",
-      "Frontend Software Engineer",
-      "Application Developer",
-      "software engineer"
+      "Frontend Software Engineer"
     ]);
     expect(await service.buildProviderTitlePlan(["iOS Engineer"], { budget: budget() })).toEqual([
       "iOS Engineer",
@@ -592,6 +677,39 @@ describe("DiscoverRoleIntelligenceService", () => {
       "Mobile iOS Engineer"
     ]);
     expect(await service.buildProviderTitlePlan(["CTO"], { budget: budget() })).toEqual(["CTO", "Chief Technology Officer"]);
+    expect(embeddings.calls).toHaveLength(0);
+  });
+
+  it("never injects learned vector-neighbor titles into the public-index provider request", async () => {
+    const embeddings = new FakeEmbeddings({
+      recruiter: vector(1, 0),
+      "recruiter i": vector(1, 0)
+    });
+    const store = new MemoryRoleStore();
+    const service = new DiscoverRoleIntelligenceService(classifier, embeddings, store, config());
+    await service.persistTitleKnowledge(["Recruiter I"], { budget: budget() });
+    const embeddingCallsBeforePlan = embeddings.calls.length;
+
+    const plan = await service.buildProviderTitlePlan(["Recruiter"], { budget: budget() });
+
+    expect(plan).toEqual(["Recruiter", "Talent Acquisition Specialist"]);
+    expect(plan).not.toContain("recruiter i");
+    expect(embeddings.calls).toHaveLength(embeddingCallsBeforePlan);
+  });
+
+  it("keeps every exact role while bounding the public-index plan to six titles", async () => {
+    const service = new DiscoverRoleIntelligenceService(
+      classifier,
+      new FakeEmbeddings({}),
+      new MemoryRoleStore(),
+      config({ maxApifyTitlesPerRole: 8, maxApifyTitlesTotal: 20 })
+    );
+    const exact = ["Software Engineer", "Recruiter", "Product Manager"];
+
+    const plan = await service.buildProviderTitlePlan(exact, { budget: budget() });
+
+    expect(plan).toEqual(expect.arrayContaining(exact));
+    expect(plan).toHaveLength(6);
   });
 
   it("expands broad HR in one provider plan while respecting per-role and total caps", async () => {
@@ -608,10 +726,7 @@ describe("DiscoverRoleIntelligenceService", () => {
     expect(await expanded.buildProviderTitlePlan(["Human Resource"], { budget: budget() })).toEqual([
       "Human Resource",
       "Human Resources",
-      "HR Business Partner",
-      "HR Generalist",
-      "HR Specialist",
-      "People Operations"
+      "HR Business Partner"
     ]);
 
     const perRoleCapped = new DiscoverRoleIntelligenceService(
@@ -636,8 +751,7 @@ describe("DiscoverRoleIntelligenceService", () => {
       "Human Resource",
       "HR",
       "Human Resources",
-      "HR Business Partner",
-      "HR Generalist"
+      "HR Business Partner"
     ]);
   });
 
@@ -655,8 +769,7 @@ describe("DiscoverRoleIntelligenceService", () => {
     expect(await service.buildProviderTitlePlan(["Sales Specialist"], { budget: budget() })).toEqual([
       "Sales Specialist",
       "Sales Representative",
-      "Sales Associate",
-      "Sales Coordinator"
+      "Sales Associate"
     ]);
     expect(await service.buildProviderTitlePlan(["Sales Operations Specialist"], { budget: budget() })).toEqual([
       "Sales Operations Specialist"
@@ -669,9 +782,7 @@ describe("DiscoverRoleIntelligenceService", () => {
     expect(await service.buildProviderTitlePlan(["Software Engineer"], { budget: budget() })).toEqual([
       "Software Engineer",
       "Software Developer",
-      "Backend Software Engineer",
-      "Frontend Software Engineer",
-      "Application Developer"
+      "Backend Software Engineer"
     ]);
     const cachePeople = await service.filterAndRankPeople({
       people: [
@@ -693,7 +804,7 @@ describe("DiscoverRoleIntelligenceService", () => {
       ],
       requestedTitles: ["iOS Engineer"],
       requestedLocations: [],
-      context: "PROVIDER",
+      context: "PUBLIC_INDEX_PROVIDER",
       options: { budget: budget() }
     });
     expect(providerPeople.map((entry) => entry.sourceProfileId)).toEqual(["ios"]);
@@ -752,7 +863,7 @@ describe("DiscoverRoleIntelligenceService", () => {
       ],
       requestedTitles: ["Sales Specialist"],
       requestedLocations: [],
-      context: "PROVIDER",
+      context: "PUBLIC_INDEX_PROVIDER",
       options: { budget: budget() }
     });
     expect(providerFiltered.map((entry) => entry.sourceProfileId)).toEqual(["sales"]);

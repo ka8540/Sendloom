@@ -160,6 +160,7 @@ function profile(id: string, firstName: string, lastName: string, title: string,
     fullName: `${firstName} ${lastName}`,
     headline: title,
     currentPosition: [{ title, companyName }],
+    location: "United States",
     linkedinUrl: `https://www.linkedin.com/in/${id}`
   };
 }
@@ -1794,7 +1795,7 @@ describe("Discover shared cache integration", () => {
         expect.objectContaining({ currentTitle: "Campus Recruiter", positionCategory: "RECRUITING" })
       ]),
       requestedTitles: ["Recruiter"],
-      context: "PROVIDER"
+      context: "PUBLIC_INDEX_PROVIDER"
     }));
     expect(result).toMatchObject({ status: "READY", totalFound: 15, totalProcessed: 8 });
     expect(prisma._state.discoverCachePeople).toHaveLength(8);
@@ -3736,10 +3737,19 @@ describe("Search this company (same-company role/location search)", () => {
   function companyRunner() {
     // The same provider person on every call — exercises the person-dedupe
     // guarantee for sibling role/location searches of one company.
-    const run = vi.fn<ApifyRunner["run"]>(async () => ({
+    const run = vi.fn<ApifyRunner["run"]>(async (_actorId, input) => ({
       runId: "run-scr",
       datasetId: "ds-scr",
-      items: [profile("scr1", "Jane", "Doe", "Software Engineer", "Applied Materials")]
+      items: [{
+        ...profile(
+          "scr1",
+          "Jane",
+          "Doe",
+          input.currentJobTitles?.[0] ?? "Software Engineer",
+          "Applied Materials"
+        ),
+        location: input.locations?.[0] ?? "United States"
+      }]
     }));
     return { run, runner: { run } as ApifyRunner };
   }
