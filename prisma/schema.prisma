@@ -107,6 +107,23 @@ enum SystemNoticeRecipientStatus {
   PERMANENT_FAILURE
 }
 
+enum ProductUpdateBroadcastStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  COMPLETED
+  CANCELLED
+  FAILED
+}
+
+enum ProductUpdateBroadcastRecipientStatus {
+  PENDING
+  SENDING
+  SENT
+  RETRY
+  PERMANENT_FAILURE
+}
+
 enum AppNotificationType {
   DISCOVER_SEARCH_COMPLETED
   SEQUENCE_COMPLETED
@@ -120,56 +137,58 @@ enum AppNotificationSeverity {
 }
 
 model User {
-  id                           String                        @id @default(cuid())
-  email                        String                        @unique
-  passwordHash                 String?
-  googleSub                    String?                       @unique
-  isAdmin                      Boolean                       @default(false)
-  hunterApiKeyEncrypted        String?
-  hunterApiKeyLast4            String?
-  hunterApiKeyUpdatedAt        DateTime?
-  apiAccessDisabled            Boolean                       @default(false)
-  importsWriteDisabled         Boolean                       @default(false)
-  templatesWriteDisabled       Boolean                       @default(false)
-  launchesDisabled             Boolean                       @default(false)
-  aiEnhancementsDisabled       Boolean                       @default(false)
-  adultVerifiedAt              DateTime?
-  termsAcceptedAt              DateTime?
-  privacyAcceptedAt            DateTime?
-  antiAbuseAcceptedAt          DateTime?
-  policyVersion                String?
-  ageGateVersion               String?
-  eligibilityBlockedAt         DateTime?
-  eligibilityBlockedReason     String?
-  restrictedAt                 DateTime?
-  restrictedReason             String?
-  magicLinkToken               String?
-  magicLinkExpiry              DateTime?
-  lastLoginAt                  DateTime?
-  lastSeenAt                   DateTime?
-  sessionIssuedAt              DateTime?
-  sessionExpiresAt             DateTime?
-  profilePhotoKey              String?
-  profilePhotoContentType      String?
-  profilePhotoUpdatedAt        DateTime?
-  createdAt                    DateTime                      @default(now())
-  updatedAt                    DateTime                      @updatedAt
-  senderProfiles               SenderProfile[]
-  imports                      Import[]
-  mappings                     Mapping[]
-  templates                    Template[]
-  campaigns                    Campaign[]
-  suppressions                 Suppression[]
-  hunterDomainSearches         HunterDomainSearch[]
-  prospectCompanies            ProspectCompany[]
-  prospectPeople               ProspectPerson[]
-  prospectSearches             ProspectSearch[]
-  attachmentAssets             AttachmentAsset[]
-  legalPolicyNoticeRecipients  LegalPolicyNoticeRecipient[]
-  legalPolicyReleaseRecipients LegalPolicyReleaseRecipient[]
-  createdSystemNotices         SystemNotice[]                @relation("SystemNoticeCreator")
-  systemNoticeRecipients       SystemNoticeRecipient[]       @relation("SystemNoticeRecipientUser")
-  notifications                AppNotification[]
+  id                               String                            @id @default(cuid())
+  email                            String                            @unique
+  passwordHash                     String?
+  googleSub                        String?                           @unique
+  isAdmin                          Boolean                           @default(false)
+  hunterApiKeyEncrypted            String?
+  hunterApiKeyLast4                String?
+  hunterApiKeyUpdatedAt            DateTime?
+  apiAccessDisabled                Boolean                           @default(false)
+  importsWriteDisabled             Boolean                           @default(false)
+  templatesWriteDisabled           Boolean                           @default(false)
+  launchesDisabled                 Boolean                           @default(false)
+  aiEnhancementsDisabled           Boolean                           @default(false)
+  adultVerifiedAt                  DateTime?
+  termsAcceptedAt                  DateTime?
+  privacyAcceptedAt                DateTime?
+  antiAbuseAcceptedAt              DateTime?
+  policyVersion                    String?
+  ageGateVersion                   String?
+  eligibilityBlockedAt             DateTime?
+  eligibilityBlockedReason         String?
+  restrictedAt                     DateTime?
+  restrictedReason                 String?
+  magicLinkToken                   String?
+  magicLinkExpiry                  DateTime?
+  lastLoginAt                      DateTime?
+  lastSeenAt                       DateTime?
+  sessionIssuedAt                  DateTime?
+  sessionExpiresAt                 DateTime?
+  profilePhotoKey                  String?
+  profilePhotoContentType          String?
+  profilePhotoUpdatedAt            DateTime?
+  createdAt                        DateTime                          @default(now())
+  updatedAt                        DateTime                          @updatedAt
+  senderProfiles                   SenderProfile[]
+  imports                          Import[]
+  mappings                         Mapping[]
+  templates                        Template[]
+  campaigns                        Campaign[]
+  suppressions                     Suppression[]
+  hunterDomainSearches             HunterDomainSearch[]
+  prospectCompanies                ProspectCompany[]
+  prospectPeople                   ProspectPerson[]
+  prospectSearches                 ProspectSearch[]
+  attachmentAssets                 AttachmentAsset[]
+  legalPolicyNoticeRecipients      LegalPolicyNoticeRecipient[]
+  legalPolicyReleaseRecipients     LegalPolicyReleaseRecipient[]
+  createdSystemNotices             SystemNotice[]                    @relation("SystemNoticeCreator")
+  systemNoticeRecipients           SystemNoticeRecipient[]           @relation("SystemNoticeRecipientUser")
+  createdProductUpdateBroadcasts   ProductUpdateBroadcast[]          @relation("ProductUpdateBroadcastCreator")
+  productUpdateBroadcastRecipients ProductUpdateBroadcastRecipient[] @relation("ProductUpdateBroadcastRecipientUser")
+  notifications                    AppNotification[]
 
   @@index([isAdmin])
   @@index([sessionExpiresAt])
@@ -256,6 +275,61 @@ model SystemNoticeRecipient {
 
   @@unique([noticeId, userId])
   @@index([noticeId, status, nextAttemptAt])
+  @@index([status, leaseExpiresAt])
+}
+
+// Admin-authored feature announcements delivered only by email. This model is
+// deliberately separate from the reverted user-facing ProductUpdate feature,
+// so no historical/published row can ever become a broadcast automatically.
+model ProductUpdateBroadcast {
+  id                       String                            @id @default(cuid())
+  status                   ProductUpdateBroadcastStatus      @default(DRAFT)
+  subject                  String
+  headline                 String
+  intro                    String
+  features                 Json
+  scheduledSendAt          DateTime?
+  timeZone                 String
+  createdByUserId          String
+  recipientCursor          String?
+  recipientsMaterializedAt DateTime?
+  startedAt                DateTime?
+  completedAt              DateTime?
+  cancelledAt              DateTime?
+  lastErrorCode            String?
+  createdAt                DateTime                          @default(now())
+  updatedAt                DateTime                          @updatedAt
+  createdBy                User                              @relation("ProductUpdateBroadcastCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  recipients               ProductUpdateBroadcastRecipient[]
+
+  @@index([status, scheduledSendAt])
+  @@index([createdAt])
+  @@index([createdByUserId])
+}
+
+// Stable one-row-per-account delivery ledger. The account address is frozen at
+// materialization so retries always target the same recipient snapshot.
+model ProductUpdateBroadcastRecipient {
+  id                String                                @id @default(cuid())
+  broadcastId       String
+  userId            String
+  emailSnapshot     String
+  status            ProductUpdateBroadcastRecipientStatus @default(PENDING)
+  attempts          Int                                   @default(0)
+  providerMessageId String?
+  sentAt            DateTime?
+  lastAttemptAt     DateTime?
+  nextAttemptAt     DateTime?
+  leaseToken        String?
+  leaseExpiresAt    DateTime?
+  lastErrorCode     String?
+  createdAt         DateTime                              @default(now())
+  updatedAt         DateTime                              @updatedAt
+  broadcast         ProductUpdateBroadcast                @relation(fields: [broadcastId], references: [id], onDelete: Cascade)
+  user              User                                  @relation("ProductUpdateBroadcastRecipientUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([broadcastId, userId])
+  @@index([broadcastId, status, nextAttemptAt])
   @@index([status, leaseExpiresAt])
 }
 

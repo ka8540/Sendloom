@@ -535,7 +535,7 @@ Copy `.env.example` to `.env` and fill it in. Never commit real secrets.
 | `AUTH_OTP_SECRET` | For email signup/password changes | HMAC key for purpose-bound OTP digests and opaque email rate-limit keys; minimum 32 bytes and distinct from other secrets |
 | `TRACKING_SECRET` | Production | JWT signing for open/click/unsubscribe tokens. Must differ from `SESSION_SECRET` — tracking tokens travel in every email |
 | `APP_BASE_URL` | Yes | Base URL for redirects and tracking links |
-| `CRON_SECRET` | Production | Protects scheduled processor routes; legal and system-notice processors fail closed without it |
+| `CRON_SECRET` | Production | Protects scheduled processor routes; legal, system-notice, and product-update processors fail closed without it |
 
 ### Authentication mail and Gmail safety
 
@@ -552,6 +552,9 @@ Copy `.env.example` to `.env` and fill it in. Never commit real secrets.
 | `SYSTEM_NOTICE_PROCESSING_ENABLED` | Production operational delivery | Admin system-notice mass-delivery flag; defaults to `false` and still requires both Node and Vercel Production |
 | `SYSTEM_NOTICE_BATCH_SIZE` | Optional | System-notice materialization and claim batch size; defaults to `25`, maximum `50` |
 | `SYSTEM_NOTICE_MAX_PER_RUN` | Optional | Maximum system-notice Resend attempts in one processor invocation; defaults to `50` |
+| `PRODUCT_UPDATE_PROCESSING_ENABLED` | Production product-update delivery | Admin Product Update email-broadcast flag; defaults to `false` and still requires both Node and Vercel Production |
+| `PRODUCT_UPDATE_BATCH_SIZE` | Optional | Product-update materialization and claim batch size; defaults to `25`, maximum `50` |
+| `PRODUCT_UPDATE_MAX_PER_RUN` | Optional | Maximum Product Update Resend attempts in one processor invocation; defaults to `50`, maximum `500` |
 | `GMAIL_DAILY_SEND_SAFETY_LIMIT` | Optional | Confirmed sends per sender per rolling 24h. Default `450` |
 | `GMAIL_SENDS_PER_MINUTE` | Optional | Sends per minute per connected sender. Default `3`. Raise only with verified mailbox headroom |
 | `GMAIL_SENDER_CONCURRENCY` | Optional | Simultaneous Gmail sends. Default `2` |
@@ -686,6 +689,29 @@ Vercel Hobby does not schedule the high-frequency system-notice processor. Confi
 - Treat HTTP `200` as success and allow up to 60 seconds for the request.
 
 Use the same strong `CRON_SECRET` value in the external scheduler and the Vercel Production environment. Never put the secret in the URL or query string. The route fails closed when the secret is absent or incorrect, and Preview deployments remain unable to deliver because the processor also requires `VERCEL_ENV=production`.
+
+## Sending a Product Update
+
+Product Updates are admin-authored feature-announcement emails. They are not an in-app feed, notification-bell event, dashboard banner, or user-facing “What's New” page.
+
+1. An administrator opens **Admin → Product Updates** and creates a draft with a subject, headline, intro, and one to five feature blocks.
+2. Each feature has a title and description plus an optional paired CTA label and safe authenticated Sendloom path.
+3. **Preview exact email** uses the same pure HTML/text renderer as delivery and cannot create recipients or call Resend.
+4. **Send now** requires typing `SEND TO ALL USERS`; **Schedule** stores the selected local time as a UTC instant with its IANA timezone.
+5. Delivery starts only when the separate protected processor runs. It snapshots every persisted `User.id` + `User.email`, writes one unique recipient ledger row per account, and sends individually through Resend.
+6. Bounded claims, `FOR UPDATE SKIP LOCKED`, expiring leases, five-attempt retries, and stable `product-update-{broadcastId}-{recipientId}` provider keys make overlapping processor requests safe.
+
+Production delivery requires all three gates: `NODE_ENV=production`, `VERCEL_ENV=production`, and `PRODUCT_UPDATE_PROCESSING_ENABLED=true`. Keep the feature flag `false` for the initial deployment and enable it only after the additive migration, admin composer, preview, and scheduler are verified. The processor reuses `RESEND_API_KEY`, `DEFAULT_FROM_EMAIL`, `DEFAULT_FROM_NAME`, `APP_BASE_URL`, and `CRON_SECRET`; it never uses connected Gmail credentials or campaign audiences.
+
+Configure an external scheduler only after rollout verification:
+
+- Schedule: every five minutes.
+- URL: `https://sendloom.net/api/cron/product-updates`.
+- Method: `POST`.
+- Header: `Authorization: Bearer <CRON_SECRET>`.
+- Body: none.
+
+No current account preference in this repository applies to Product Update email. The broadcast audience is therefore all persisted account users; campaign suppression rows are intentionally not used as an account-communication preference.
 
 ## Local development
 

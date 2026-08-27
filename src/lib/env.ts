@@ -58,6 +58,11 @@ const envSchema = z
     SYSTEM_NOTICE_PROCESSING_ENABLED: booleanFlag(false),
     SYSTEM_NOTICE_BATCH_SIZE: z.coerce.number().int().positive().max(50).default(25),
     SYSTEM_NOTICE_MAX_PER_RUN: z.coerce.number().int().positive().max(500).default(50),
+    // Feature-announcement email broadcasts are independently fail-closed.
+    // Delivery additionally requires production NODE_ENV and VERCEL_ENV.
+    PRODUCT_UPDATE_PROCESSING_ENABLED: booleanFlag(false),
+    PRODUCT_UPDATE_BATCH_SIZE: z.coerce.number().int().positive().max(50).default(25),
+    PRODUCT_UPDATE_MAX_PER_RUN: z.coerce.number().int().positive().max(500).default(50),
     // --- Gmail bounce monitoring (mailbox watch + Pub/Sub push) ---
     // Topic the Gmail watch publishes to (projects/<id>/topics/<name>). The
     // webhook accepts a push request when EITHER the shared verification token
@@ -266,6 +271,9 @@ function readRawEnv() {
     SYSTEM_NOTICE_PROCESSING_ENABLED: process.env.SYSTEM_NOTICE_PROCESSING_ENABLED,
     SYSTEM_NOTICE_BATCH_SIZE: process.env.SYSTEM_NOTICE_BATCH_SIZE,
     SYSTEM_NOTICE_MAX_PER_RUN: process.env.SYSTEM_NOTICE_MAX_PER_RUN,
+    PRODUCT_UPDATE_PROCESSING_ENABLED: process.env.PRODUCT_UPDATE_PROCESSING_ENABLED,
+    PRODUCT_UPDATE_BATCH_SIZE: process.env.PRODUCT_UPDATE_BATCH_SIZE,
+    PRODUCT_UPDATE_MAX_PER_RUN: process.env.PRODUCT_UPDATE_MAX_PER_RUN,
     GMAIL_PUBSUB_TOPIC: process.env.GMAIL_PUBSUB_TOPIC,
     GMAIL_PUBSUB_VERIFICATION_TOKEN: process.env.GMAIL_PUBSUB_VERIFICATION_TOKEN,
     GMAIL_PUBSUB_AUDIENCE: process.env.GMAIL_PUBSUB_AUDIENCE,
