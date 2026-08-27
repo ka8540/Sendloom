@@ -26,6 +26,7 @@ import {
 import { GOOGLE_GMAIL_REPLY_SCOPE, refreshGoogleAccessToken } from "@/lib/google";
 import { isGmailReconnectError } from "@/lib/provider";
 import { getRedis } from "@/lib/redis";
+import { runNotificationSideEffect, syncGmailReconnectNotification } from "@/lib/notifications";
 import { markRecipientAttempt, syncRunCounts } from "@/services/campaigns";
 
 // Delivery-status events are recorded under this provider key in ProviderEvent;
@@ -742,6 +743,11 @@ async function markSenderWatchState(
   }>
 ) {
   await prisma.senderProfile.update({ where: { id: senderId }, data });
+  if (data.gmailWatchStatus) {
+    await runNotificationSideEffect("gmail-health-changed", async () => {
+      await syncGmailReconnectNotification(senderId, prisma);
+    });
+  }
 }
 
 export type BounceSyncResult = {

@@ -80,6 +80,9 @@ export type AccountProfileView = {
   createdAt: string;
   lastLoginAt: string | null;
   lastSeenAt: string | null;
+  /** App-local authenticated image URL, or null when no photo is stored. The
+   *  raw storage key never leaves the server. */
+  profilePhotoUrl: string | null;
 };
 
 export type AccountOverview = {
@@ -110,6 +113,67 @@ export const SENDER_REMOVAL_HTTP_STATUS: Record<SenderRemovalReason, number> = {
 /** Confirmation-dialog body copy for removing a specific sender. */
 export function describeSenderRemoval(fromEmail: string): string {
   return `This removes Gmail sending access for ${fromEmail}. Existing sequence history stays available.`;
+}
+
+// --- Profile photo (pure validation + safe URL helpers) ----------------------
+
+export const PROFILE_PHOTO_MAX_BYTES = 5 * 1024 * 1024;
+
+export const PROFILE_PHOTO_INVALID_TYPE_MESSAGE = "Upload a JPG, PNG, or WebP image.";
+export const PROFILE_PHOTO_TOO_LARGE_MESSAGE = "Profile photos must be 5 MB or smaller.";
+export const PROFILE_PHOTO_UPDATE_ERROR_MESSAGE = "We couldn't update your profile photo. Please try again.";
+export const PROFILE_PHOTO_REMOVE_ERROR_MESSAGE = "We couldn't remove your profile photo. Please try again.";
+
+export type ProfilePhotoType = {
+  contentType: "image/jpeg" | "image/png" | "image/webp";
+  extension: "jpg" | "png" | "webp";
+};
+
+// Sniff the binary signature instead of trusting the filename or the browser's
+// MIME type. Anything without a JPEG/PNG/WebP signature (SVG, GIF, HTML, …)
+// returns null and must be rejected.
+export function detectProfilePhotoType(bytes: Uint8Array): ProfilePhotoType | null {
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return { contentType: "image/jpeg", extension: "jpg" };
+  }
+
+  if (
+    bytes.length >= 8 &&
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 && // P
+    bytes[2] === 0x4e && // N
+    bytes[3] === 0x47 && // G
+    bytes[4] === 0x0d &&
+    bytes[5] === 0x0a &&
+    bytes[6] === 0x1a &&
+    bytes[7] === 0x0a
+  ) {
+    return { contentType: "image/png", extension: "png" };
+  }
+
+  // WebP: "RIFF" <4-byte size> "WEBP"
+  if (
+    bytes.length >= 12 &&
+    bytes[0] === 0x52 && // R
+    bytes[1] === 0x49 && // I
+    bytes[2] === 0x46 && // F
+    bytes[3] === 0x46 && // F
+    bytes[8] === 0x57 && // W
+    bytes[9] === 0x45 && // E
+    bytes[10] === 0x42 && // B
+    bytes[11] === 0x50 // P
+  ) {
+    return { contentType: "image/webp", extension: "webp" };
+  }
+
+  return null;
+}
+
+// App-local URL for the authenticated image route. The updatedAt timestamp is
+// the cache-buster: a replacement always produces a new URL, so browsers never
+// show a stale avatar. Returns null when no photo is stored.
+export function buildProfilePhotoImageUrl(updatedAt: Date): string {
+  return `/api/account/profile-photo/image?v=${updatedAt.getTime()}`;
 }
 
 // --- Password rules (mirror signup's z.string().min(8)) ---------------------

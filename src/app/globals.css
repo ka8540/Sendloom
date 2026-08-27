@@ -719,6 +719,17 @@ html[data-sidebar-collapsed="true"] .shell {
   flex-shrink: 0;
 }
 
+/* Account profile photo in the utility nav — circular, aligned with the icon
+   column in both expanded and collapsed rails. */
+.nav-avatar {
+  width: 1.75rem;
+  height: 1.75rem;
+  flex-shrink: 0;
+  border-radius: 999px;
+  object-fit: cover;
+  object-position: center;
+}
+
 .nav-item span {
   white-space: nowrap;
 }

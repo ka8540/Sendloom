@@ -23,6 +23,7 @@ import {
 } from "@/lib/gmail-errors";
 import { safeDeliveryFailureReason } from "@/lib/gmail-dsn";
 import { buildMergePayload } from "@/lib/mapping";
+import { createSequenceCompletedNotification, runNotificationSideEffect } from "@/lib/notifications";
 import {
   GMAIL_RECONNECT_ERROR,
   getUserSafeGmailSendError,
@@ -314,6 +315,10 @@ async function finalizeRunIfComplete(runId: string) {
       }
     });
     await tx.campaign.update({ where: { id: run.campaignId }, data: { status: "COMPLETED" } });
+  });
+
+  await runNotificationSideEffect("sequence-completed", async () => {
+    await createSequenceCompletedNotification(runId, prisma);
   });
 
   // Aggregate send outcome for the admin audit timeline, attributed to the

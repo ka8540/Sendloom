@@ -6,12 +6,17 @@ import {
   PASSWORD_CURRENT_REQUIRED_MESSAGE,
   PASSWORD_MISMATCH_MESSAGE,
   PASSWORD_TOO_SHORT_MESSAGE,
+  PROFILE_PHOTO_INVALID_TYPE_MESSAGE,
+  PROFILE_PHOTO_MAX_BYTES,
+  PROFILE_PHOTO_TOO_LARGE_MESSAGE,
   SENDER_ACTIVE_CAMPAIGN_STATUSES,
   SENDER_ACTIVE_RUN_STATUSES,
   SENDER_REMOVAL_HTTP_STATUS,
   SENDER_REMOVAL_MESSAGES,
+  buildProfilePhotoImageUrl,
   deriveAccountType,
   describeSenderRemoval,
+  detectProfilePhotoType,
   getSenderConnectionStatus,
   getSenderProviderLabel,
   validatePasswordChange
@@ -100,5 +105,42 @@ describe("validatePasswordChange", () => {
         confirmPassword: "abcdefgh"
       })
     ).toEqual({ ok: true });
+  });
+});
+
+describe("profile photo detection + URL", () => {
+  const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0]);
+  const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+  const WEBP = new Uint8Array([0x52, 0x49, 0x46, 0x46, 0x24, 0, 0, 0, 0x57, 0x45, 0x42, 0x50, 0x56, 0x50]);
+
+  it("accepts JPEG, PNG, and WebP by their binary signatures", () => {
+    expect(detectProfilePhotoType(JPEG)).toEqual({ contentType: "image/jpeg", extension: "jpg" });
+    expect(detectProfilePhotoType(PNG)).toEqual({ contentType: "image/png", extension: "png" });
+    expect(detectProfilePhotoType(WEBP)).toEqual({ contentType: "image/webp", extension: "webp" });
+  });
+
+  it("rejects SVG, GIF, HTML, and random bytes regardless of any claimed MIME type", () => {
+    expect(detectProfilePhotoType(new TextEncoder().encode("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>"))).toBeNull();
+    expect(detectProfilePhotoType(new TextEncoder().encode("GIF89a"))).toBeNull();
+    expect(detectProfilePhotoType(new TextEncoder().encode("<!DOCTYPE html><html></html>"))).toBeNull();
+    expect(detectProfilePhotoType(new Uint8Array([1, 2, 3, 4]))).toBeNull();
+    expect(detectProfilePhotoType(new Uint8Array([]))).toBeNull();
+  });
+
+  it("rejects a spoofed signature prefix that is not a real WebP header", () => {
+    // "RIFF" without the "WEBP" form type must not pass.
+    expect(detectProfilePhotoType(new Uint8Array([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x41, 0x56, 0x49, 0x20]))).toBeNull();
+  });
+
+  it("caps photos at 5 MB with the agreed user-facing copy", () => {
+    expect(PROFILE_PHOTO_MAX_BYTES).toBe(5 * 1024 * 1024);
+    expect(PROFILE_PHOTO_INVALID_TYPE_MESSAGE).toBe("Upload a JPG, PNG, or WebP image.");
+    expect(PROFILE_PHOTO_TOO_LARGE_MESSAGE).toBe("Profile photos must be 5 MB or smaller.");
+  });
+
+  it("builds an app-local cache-busted image URL with no storage key in it", () => {
+    const url = buildProfilePhotoImageUrl(new Date("2026-08-26T10:00:00.000Z"));
+    expect(url).toBe(`/api/account/profile-photo/image?v=${new Date("2026-08-26T10:00:00.000Z").getTime()}`);
+    expect(url).not.toContain("users/");
   });
 });

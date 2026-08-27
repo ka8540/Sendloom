@@ -107,6 +107,18 @@ enum SystemNoticeRecipientStatus {
   PERMANENT_FAILURE
 }
 
+enum AppNotificationType {
+  DISCOVER_SEARCH_COMPLETED
+  SEQUENCE_COMPLETED
+  GMAIL_RECONNECT_REQUIRED
+}
+
+enum AppNotificationSeverity {
+  SUCCESS
+  INFO
+  WARNING
+}
+
 model User {
   id                           String                        @id @default(cuid())
   email                        String                        @unique
@@ -137,6 +149,9 @@ model User {
   lastSeenAt                   DateTime?
   sessionIssuedAt              DateTime?
   sessionExpiresAt             DateTime?
+  profilePhotoKey              String?
+  profilePhotoContentType      String?
+  profilePhotoUpdatedAt        DateTime?
   createdAt                    DateTime                      @default(now())
   updatedAt                    DateTime                      @updatedAt
   senderProfiles               SenderProfile[]
@@ -154,9 +169,36 @@ model User {
   legalPolicyReleaseRecipients LegalPolicyReleaseRecipient[]
   createdSystemNotices         SystemNotice[]                @relation("SystemNoticeCreator")
   systemNoticeRecipients       SystemNoticeRecipient[]       @relation("SystemNoticeRecipientUser")
+  notifications                AppNotification[]
 
   @@index([isAdmin])
   @@index([sessionExpiresAt])
+}
+
+// Account-scoped product events shown only in the authenticated in-app bell.
+// This is intentionally independent from admin-authored SystemNotice delivery.
+model AppNotification {
+  id         String                  @id @default(cuid())
+  userId     String
+  type       AppNotificationType
+  severity   AppNotificationSeverity
+  title      String
+  message    String
+  href       String?
+  entityType String?
+  entityId   String?
+  dedupeKey  String
+  metadata   Json?
+  readAt     DateTime?
+  resolvedAt DateTime?
+  createdAt  DateTime                @default(now())
+  updatedAt  DateTime                @updatedAt
+  user       User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, createdAt])
+  @@index([userId, readAt, createdAt])
+  @@index([userId, type, entityId])
 }
 
 // Admin-authored operational account notices. Content becomes immutable as

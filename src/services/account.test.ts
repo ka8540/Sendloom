@@ -34,7 +34,9 @@ const baseUser = {
   passwordHash: "hashed-value",
   createdAt: new Date("2026-01-02T03:04:05.000Z"),
   lastLoginAt: new Date("2026-07-01T09:00:00.000Z"),
-  lastSeenAt: new Date("2026-07-06T12:00:00.000Z")
+  lastSeenAt: new Date("2026-07-06T12:00:00.000Z"),
+  profilePhotoKey: null as string | null,
+  profilePhotoUpdatedAt: null as Date | null
 };
 
 function senderRow(overrides: Partial<Parameters<typeof serializeAccountSender>[0]> = {}) {
@@ -102,6 +104,30 @@ describe("getAccountOverview", () => {
     expect(overview.profile.hasPassword).toBe(false);
     expect(overview.profile.lastLoginAt).toBeNull();
     expect(overview.canRemoveSenders).toBe(true);
+  });
+
+  it("returns a null profilePhotoUrl when no photo is stored", async () => {
+    prismaMock.senderProfile.findMany.mockResolvedValue([senderRow()]);
+
+    const overview = await getAccountOverview("user-1", baseUser);
+
+    expect(overview.profile.profilePhotoUrl).toBeNull();
+  });
+
+  it("exposes only the app-local photo URL, never the raw storage key", async () => {
+    prismaMock.senderProfile.findMany.mockResolvedValue([senderRow()]);
+
+    const overview = await getAccountOverview("user-1", {
+      ...baseUser,
+      profilePhotoKey: "users/user-1/profile-photo/abc123.webp",
+      profilePhotoUpdatedAt: new Date("2026-08-26T10:00:00.000Z")
+    });
+
+    expect(overview.profile.profilePhotoUrl).toBe(
+      `/api/account/profile-photo/image?v=${new Date("2026-08-26T10:00:00.000Z").getTime()}`
+    );
+    expect(JSON.stringify(overview)).not.toContain("users/user-1/profile-photo");
+    expect("profilePhotoKey" in overview.profile).toBe(false);
   });
 });
 

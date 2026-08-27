@@ -103,9 +103,18 @@ type NavItem = {
   exact?: boolean;
 };
 
-export function AppNav({ initialCollapsed = false, isAdmin = false }: { initialCollapsed?: boolean; isAdmin?: boolean }) {
+export function AppNav({
+  initialCollapsed = false,
+  isAdmin = false,
+  profilePhotoUrl = null
+}: {
+  initialCollapsed?: boolean;
+  isAdmin?: boolean;
+  profilePhotoUrl?: string | null;
+}) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(initialCollapsed);
+  const [avatarFailed, setAvatarFailed] = useState(false);
   const analysisRouteActive = pathname === "/analysis" || pathname.startsWith("/analysis/");
   const [analysisOpen, setAnalysisOpen] = useState(analysisRouteActive);
   const previousPathnameRef = useRef(pathname);
@@ -165,6 +174,9 @@ export function AppNav({ initialCollapsed = false, isAdmin = false }: { initialC
   // the theme control, above logout); admins manage accounts elsewhere.
   const accountHref = "/account" as Route;
   const accountActive = pathname === accountHref || pathname.startsWith(`${accountHref}/`);
+  // The avatar replaces only the Account icon; on any load failure it falls
+  // back to the generic icon so a broken image is never shown.
+  const showAvatar = Boolean(profilePhotoUrl) && !avatarFailed;
   const utilityNav = isAdmin ? null : (
     <Link
       href={accountHref}
@@ -172,7 +184,19 @@ export function AppNav({ initialCollapsed = false, isAdmin = false }: { initialC
       aria-current={accountActive ? "page" : undefined}
       title={collapsed ? "Account" : undefined}
     >
-      <CircleUserRound aria-hidden="true" />
+      {showAvatar ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={profilePhotoUrl ?? ""}
+          alt=""
+          aria-hidden="true"
+          className="nav-avatar"
+          referrerPolicy="no-referrer"
+          onError={() => setAvatarFailed(true)}
+        />
+      ) : (
+        <CircleUserRound aria-hidden="true" />
+      )}
       <span>Account</span>
     </Link>
   );
