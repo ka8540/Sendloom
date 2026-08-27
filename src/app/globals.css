@@ -734,6 +734,24 @@ html[data-sidebar-collapsed="true"] .shell {
   white-space: nowrap;
 }
 
+/* What's New unseen count — subtle accent pill anchored to the row's end in
+   the expanded rail. The count is real text (not color alone). */
+.nav-item .nav-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  min-width: 1.35rem;
+  height: 1.35rem;
+  padding-inline: 0.4rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
 @media (min-width: 961px) {
   html:not([data-sidebar-collapsed="true"]) .sidebar:not(.is-collapsed) .nav > .nav-item {
     min-height: 3.25rem;
@@ -995,6 +1013,28 @@ html[data-sidebar-collapsed="true"] .sidebar .nav-item-button {
 .sidebar.is-collapsed .nav-footer,
 html[data-sidebar-collapsed="true"] .sidebar .nav-footer {
   justify-items: center;
+}
+
+/* Collapsed rail: the What's New count becomes a compact accent dot pinned to
+   the icon corner. The count text stays in the accessibility tree. */
+.sidebar.is-collapsed .nav-item,
+html[data-sidebar-collapsed="true"] .sidebar .nav-item {
+  position: relative;
+}
+
+.sidebar.is-collapsed .nav-item .nav-badge,
+html[data-sidebar-collapsed="true"] .sidebar .nav-item .nav-badge {
+  display: inline-flex;
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  min-width: 0;
+  width: 0.55rem;
+  height: 0.55rem;
+  padding: 0;
+  background: var(--accent);
+  color: transparent;
+  font-size: 0;
 }
 
 .sidebar.is-collapsed .nav-footer-theme,

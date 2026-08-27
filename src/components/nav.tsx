@@ -23,6 +23,7 @@ import {
   ShieldAlert,
   ShieldUser,
   Siren,
+  Sparkles,
   UserRoundSearch,
   Users,
 } from "lucide-react";
@@ -34,6 +35,9 @@ const SIDEBAR_COLLAPSED_STORAGE_KEY = "sendloom.sidebarCollapsed";
 const SIDEBAR_COLLAPSED_COOKIE_NAME = "sendloom_sidebar_collapsed";
 const SIDEBAR_COLLAPSED_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
 const ANALYSIS_NAVIGATION_ID = "analysis-sidebar-navigation";
+// Dispatched by the What's New view after seen rows are written (mirrors the
+// constant in whats-new-view.tsx; kept as a string so nav stays import-light).
+const PRODUCT_UPDATES_SEEN_EVENT = "sendloom:product-updates-seen";
 const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 function readStoredCookieSidebarCollapsed() {
@@ -103,18 +107,29 @@ type NavItem = {
   exact?: boolean;
 };
 
+/** What's New badge: 1–9 shown as-is, 10+ collapsed to "9+", hidden at 0. */
+function formatUnseenBadge(count: number) {
+  if (count <= 0) {
+    return null;
+  }
+  return count >= 10 ? "9+" : String(count);
+}
+
 export function AppNav({
   initialCollapsed = false,
   isAdmin = false,
-  profilePhotoUrl = null
+  profilePhotoUrl = null,
+  whatsNewUnseenCount = 0
 }: {
   initialCollapsed?: boolean;
   isAdmin?: boolean;
   profilePhotoUrl?: string | null;
+  whatsNewUnseenCount?: number;
 }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(initialCollapsed);
   const [avatarFailed, setAvatarFailed] = useState(false);
+  const [unseenCount, setUnseenCount] = useState(whatsNewUnseenCount);
   const analysisRouteActive = pathname === "/analysis" || pathname.startsWith("/analysis/");
   const [analysisOpen, setAnalysisOpen] = useState(analysisRouteActive);
   const previousPathnameRef = useRef(pathname);
@@ -141,6 +156,22 @@ export function AppNav({
     setAnalysisOpen(analysisRouteActive);
   }, [analysisRouteActive, pathname]);
 
+  // Keep the server-computed unseen count in sync, then listen for the What's
+  // New view reporting freshly-written seen rows (no full reload needed).
+  useEffect(() => {
+    setUnseenCount(whatsNewUnseenCount);
+  }, [whatsNewUnseenCount]);
+
+  useEffect(() => {
+    function onProductUpdatesSeen(event: Event) {
+      const detail = (event as CustomEvent<{ unseenCount?: number }>).detail;
+      setUnseenCount(Math.max(0, detail?.unseenCount ?? 0));
+    }
+
+    window.addEventListener(PRODUCT_UPDATES_SEEN_EVENT, onProductUpdatesSeen);
+    return () => window.removeEventListener(PRODUCT_UPDATES_SEEN_EVENT, onProductUpdatesSeen);
+  }, []);
+
   const items: NavItem[] = isAdmin
     ? [
         { href: "/admin" as Route, label: "Overview", icon: LayoutDashboard, exact: true },
@@ -148,6 +179,7 @@ export function AppNav({
         { href: "/admin/restrictions" as Route, label: "Restrictions", icon: ShieldAlert },
         { href: "/admin/system-health" as Route, label: "System Health", icon: Activity },
         { href: "/admin/system-notices" as Route, label: "System Notices", icon: Megaphone },
+        { href: "/admin/product-updates" as Route, label: "Product Updates", icon: Sparkles },
         { href: "/admin/activity" as Route, label: "Activity Logs", icon: History },
         { href: "/admin/incidents" as Route, label: "Incident Reports", icon: Siren },
       ]
@@ -159,6 +191,7 @@ export function AppNav({
         { href: "/templates" as Route, label: "Templates", icon: ScrollText },
         { href: "/campaigns" as Route, label: "Sequences", icon: SendHorizontal },
         { href: "/analysis" as Route, label: "Analysis", icon: ChartNoAxesCombined },
+        { href: "/whats-new" as Route, label: "What's New", icon: Sparkles },
       ];
 
   const analysisItems: Array<{ href: Route; label: string }> = [
@@ -285,6 +318,9 @@ export function AppNav({
             );
           }
 
+          const unseenBadge =
+            String(item.href) === "/whats-new" ? formatUnseenBadge(unseenCount) : null;
+
           return (
             <Link
               key={item.href}
@@ -295,6 +331,11 @@ export function AppNav({
             >
               <Icon aria-hidden="true" />
               <span>{item.label}</span>
+              {unseenBadge ? (
+                <span className="nav-badge" aria-label={`${unseenCount} unseen product updates`}>
+                  {unseenBadge}
+                </span>
+              ) : null}
             </Link>
           );
         })}
