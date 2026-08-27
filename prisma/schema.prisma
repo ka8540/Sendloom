@@ -119,23 +119,6 @@ enum AppNotificationSeverity {
   WARNING
 }
 
-enum ProductUpdateStatus {
-  DRAFT
-  PUBLISHED
-  ARCHIVED
-}
-
-enum ProductUpdateIcon {
-  SPARKLES
-  BELL
-  USER
-  SEARCH
-  SEND
-  MAIL
-  SHIELD
-  SETTINGS
-}
-
 model User {
   id                           String                        @id @default(cuid())
   email                        String                        @unique
@@ -187,8 +170,6 @@ model User {
   createdSystemNotices         SystemNotice[]                @relation("SystemNoticeCreator")
   systemNoticeRecipients       SystemNoticeRecipient[]       @relation("SystemNoticeRecipientUser")
   notifications                AppNotification[]
-  createdProductUpdates        ProductUpdate[]               @relation("ProductUpdateCreator")
-  productUpdateViews           ProductUpdateView[]
 
   @@index([isAdmin])
   @@index([sessionExpiresAt])
@@ -276,45 +257,6 @@ model SystemNoticeRecipient {
   @@unique([noticeId, userId])
   @@index([noticeId, status, nextAttemptAt])
   @@index([status, leaseExpiresAt])
-}
-
-// Admin-authored feature announcements shown in the user-facing What's New
-// section. Plain-text content only; no email delivery and no recipient ledger —
-// per-user seen state lives in ProductUpdateView. Intentionally independent
-// from SystemNotice (operational email) and AppNotification (bell events).
-model ProductUpdate {
-  id          String              @id @default(cuid())
-  title       String
-  slug        String              @unique
-  summary     String
-  description String
-  icon        ProductUpdateIcon
-  status      ProductUpdateStatus @default(DRAFT)
-  ctaLabel    String?
-  ctaHref     String?
-  publishedAt DateTime?
-  createdAt   DateTime            @default(now())
-  updatedAt   DateTime            @updatedAt
-  createdById String
-  createdBy   User                @relation("ProductUpdateCreator", fields: [createdById], references: [id], onDelete: Restrict)
-  views       ProductUpdateView[]
-
-  @@index([status, publishedAt])
-  @@index([createdAt])
-}
-
-// One row per user per published update, written when the user views the
-// What's New page. Drives the sidebar unseen badge.
-model ProductUpdateView {
-  id              String        @id @default(cuid())
-  productUpdateId String
-  userId          String
-  seenAt          DateTime      @default(now())
-  productUpdate   ProductUpdate @relation(fields: [productUpdateId], references: [id], onDelete: Cascade)
-  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([productUpdateId, userId])
-  @@index([userId, seenAt])
 }
 
 // Immutable policy-release ledger. The first row for each policy is a baseline

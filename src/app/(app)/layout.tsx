@@ -7,7 +7,6 @@ import { BackButton } from "@/components/back-button";
 import { NotificationCenter } from "@/components/notification-center";
 import { buildProfilePhotoImageUrl } from "@/lib/account";
 import { isAdminUser, requireUser } from "@/lib/auth";
-import { countUnseenProductUpdates } from "@/services/product-updates";
 
 const SIDEBAR_COLLAPSED_COOKIE_NAME = "sendloom_sidebar_collapsed";
 const SIDEBAR_COLLAPSED_STORAGE_KEY = "sendloom.sidebarCollapsed";
@@ -67,20 +66,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     user.profilePhotoKey && user.profilePhotoUpdatedAt
       ? buildProfilePhotoImageUrl(user.profilePhotoUpdatedAt)
       : null;
-  // What's New lives in the operator sidebar only; admins never see the item.
-  const whatsNewUnseenCount = isAdminUser(user) ? 0 : await countUnseenProductUpdates(user.id);
 
   return (
     <>
       <SidebarPreferenceScript />
       <AppMobileGate userAgent={userAgent}>
         <div className="shell">
-          <AppNav
-            initialCollapsed={initialSidebarCollapsed}
-            isAdmin={isAdminUser(user)}
-            profilePhotoUrl={profilePhotoUrl}
-            whatsNewUnseenCount={whatsNewUnseenCount}
-          />
+          <AppNav initialCollapsed={initialSidebarCollapsed} isAdmin={isAdminUser(user)} profilePhotoUrl={profilePhotoUrl} />
           <main className="content">
             <div className="content-toolbar">
               <BackButton fallbackHref={defaultBackHref} />
