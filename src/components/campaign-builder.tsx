@@ -27,6 +27,8 @@ import {
   type BounceMonitoringStatusKind
 } from "@/components/senders/bounce-monitoring-status";
 import { SequenceLimitDialog } from "@/components/sequence-limit-dialog";
+import { SequenceDateTimePicker } from "@/components/sequence-date-time-picker";
+import { formatSequenceDateTime } from "@/components/sequence-date-time-picker-utils";
 import {
   DEFAULT_AUDIENCE_LIMIT,
   DEFAULT_TEMPLATE_LIMIT,
@@ -258,6 +260,7 @@ export function CampaignBuilder(props: {
   const timingStepComplete = isTimingStepComplete({
     scheduleType,
     scheduledFor,
+    scheduleTimeZone: selectedTimeZone,
     sendTime,
     frequency,
     selectedWeekdays
@@ -270,7 +273,9 @@ export function CampaignBuilder(props: {
     scheduleType === "immediate"
       ? "Starts sending right after you create it."
       : scheduleType === "once"
-        ? `Sends once at the chosen time in ${selectedTimeZone}.`
+        ? scheduledFor
+          ? `Sends once on ${formatSequenceDateTime(scheduledFor)} in ${selectedTimeZone}.`
+          : `Choose a future date and time in ${selectedTimeZone}.`
         : `Repeats ${frequency === "daily" ? "every day" : "weekly"} in ${selectedTimeZone}.`;
 
   function toggleAudienceMenu() {
@@ -913,16 +918,15 @@ export function CampaignBuilder(props: {
                 {scheduleType !== "immediate" ? (
                   <div className={styles.timingFields}>
                     {scheduleType === "once" ? (
-                      <div className="field">
-                        <label htmlFor="scheduledFor-control">Send on</label>
-                        <input
-                          id="scheduledFor-control"
-                          type="datetime-local"
-                          value={scheduledFor}
-                          onChange={(event) => setScheduledFor(event.target.value)}
-                          required
-                        />
-                      </div>
+                      <SequenceDateTimePicker
+                        id="scheduledFor-control"
+                        value={scheduledFor}
+                        timeZone={selectedTimeZone}
+                        onChange={(value) => {
+                          setScheduledFor(value);
+                          setState({ pending: false });
+                        }}
+                      />
                     ) : null}
                     <div className="field">
                       <label htmlFor="scheduleTimeZone-control">Send in timezone</label>
