@@ -7,6 +7,7 @@ export type DiscoverLocationContext =
 export type DiscoverLocationMatchReason =
   | "NO_CONSTRAINT"
   | "CONFIRMED"
+  | "PROVIDER_CONSTRAINED_UNKNOWN"
   | "EXPLICIT_CONTRADICTION"
   | "MISSING_METADATA"
   | "NO_MATCH";
@@ -16,6 +17,7 @@ export type DiscoverLocationCandidate = {
   country?: string | null;
   state?: string | null;
   city?: string | null;
+  linkedinUrl?: string | null;
 };
 
 export type DiscoverLocationMatch = {
@@ -58,6 +60,9 @@ function buildCountryLookup(): {
   aliases.set("usa", unitedStates);
   aliases.set("u s", unitedStates);
   aliases.set("u s a", unitedStates);
+  const unitedKingdom = aliases.get("united kingdom") ?? "united kingdom";
+  aliases.set("uk", unitedKingdom);
+  aliases.set("u k", unitedKingdom);
 
   return { aliases, fullNames };
 }
@@ -125,6 +130,26 @@ const UNITED_STATES_STATE_CODES = new Set([
   "ri", "sc", "sd", "tn", "tx", "ut", "vt", "va", "wa", "wv", "wi", "wy"
 ]);
 
+// High-confidence non-US place names that can stand alone in LinkedIn's
+// city/metro projection. This is intentionally conservative: an unknown city
+// remains unknown rather than being guessed foreign.
+const NON_US_PLACE_COUNTRIES = new Map<string, string>([
+  ["uk", "united kingdom"],
+  ["u k", "united kingdom"],
+  ["bengaluru", "india"],
+  ["bangalore", "india"],
+  ["bangalore urban", "india"],
+  ["mumbai", "india"],
+  ["new delhi", "india"],
+  ["hyderabad", "india"],
+  ["pune", "india"],
+  ["gurugram", "india"],
+  ["toronto", "canada"],
+  ["hong kong", "hong kong"],
+  ["singapore", "singapore"],
+  ["greater cheshire west and chester", "united kingdom"]
+]);
+
 function locationComponents(value: string): string[] {
   return value.split(",").map((component) => component.trim()).filter(Boolean);
 }
@@ -182,6 +207,36 @@ function hasRecognizedUnitedStatesGeography(candidateValues: readonly string[]):
   });
 }
 
+function knownNonUsCountry(candidateValues: readonly string[]): string | null {
+  for (const value of candidateValues) {
+    for (const component of locationComponents(value)) {
+      const direct = NON_US_PLACE_COUNTRIES.get(component);
+      if (direct) return COUNTRY_LOOKUP.aliases.get(direct) ?? direct;
+      for (const [place, country] of NON_US_PLACE_COUNTRIES) {
+        if (component.startsWith(`${place} metropolitan area`)) {
+          return COUNTRY_LOOKUP.aliases.get(country) ?? country;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function linkedinHostnameCountry(linkedinUrl: string | null | undefined): string | null {
+  if (!linkedinUrl) return null;
+  try {
+    const hostname = new URL(linkedinUrl).hostname.toLowerCase();
+    if (hostname === "linkedin.com" || hostname === "www.linkedin.com") return null;
+    if (!hostname.endsWith(".linkedin.com")) return null;
+    const subdomain = hostname.slice(0, -".linkedin.com".length).split(".").at(-1) ?? "";
+    if (!/^[a-z]{2}$/.test(subdomain) || subdomain === "www") return null;
+    const regionCode = subdomain === "uk" ? "gb" : subdomain;
+    return COUNTRY_LOOKUP.aliases.get(regionCode) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Runtime candidate-geography policy. This deliberately does not participate
  * in Discover cache fingerprinting: fingerprints remain exact, while stored or
@@ -204,6 +259,7 @@ export function evaluateDiscoverLocationMatch(input: {
     input.candidate.city
   ].map(normalizeGeography).filter(Boolean);
   const explicitCountry = reliableCandidateCountry(input.candidate);
+  const hostnameCountry = linkedinHostnameCountry(input.candidate.linkedinUrl);
 
   const stringConfirmed = requested.some((requestedValue) =>
     candidateValues.some((candidateValue) =>
@@ -231,15 +287,40 @@ export function evaluateDiscoverLocationMatch(input: {
     return { matches: false, reason: "EXPLICIT_CONTRADICTION" };
   }
 
+  if (
+    input.context === "PUBLIC_INDEX_PROVIDER"
+    && hostnameCountry
+    && requestedCountryKeys.size > 0
+    && !requestedCountryKeys.has(hostnameCountry)
+  ) {
+    return { matches: false, reason: "EXPLICIT_CONTRADICTION" };
+  }
+
+  const inferredForeignCountry = knownNonUsCountry(candidateValues);
+  if (
+    inferredForeignCountry
+    && requestedCountryKeys.size > 0
+    && !requestedCountryKeys.has(inferredForeignCountry)
+  ) {
+    return { matches: false, reason: "EXPLICIT_CONTRADICTION" };
+  }
+
   if (input.context === "TRUSTED_PROVIDER") {
     // A genuinely structured provider may make its applied location filter
     // authoritative even when the returned projection omits geography.
     return { matches: true, reason: "MISSING_METADATA" };
   }
 
-  // Cache rows and public-index results both require positive evidence. Dami's
-  // filters match arbitrary published-page text, so merely sending a location
-  // in its actor input can never authorize a candidate with missing metadata.
+  if (input.context === "PUBLIC_INDEX_PROVIDER") {
+    // The Dami request itself was narrowly constrained by canonical company,
+    // one title stage, and requested location. With no explicit contradictory
+    // geography (including a foreign LinkedIn country subdomain), missing or
+    // city-only metadata may survive as UNKNOWN for strict role validation.
+    return { matches: true, reason: "PROVIDER_CONSTRAINED_UNKNOWN" };
+  }
+
+  // Cache reuse remains conservative because it does not retain provider-query
+  // provenance strongly enough to authorize unknown geography.
   return {
     matches: false,
     reason: candidateValues.length === 0 ? "MISSING_METADATA" : "NO_MATCH"

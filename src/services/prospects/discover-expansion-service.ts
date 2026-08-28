@@ -43,10 +43,10 @@ import { ProspectError } from "@/services/prospects/prospect-search-service";
 import { RoleClassificationService } from "@/services/prospects/role-classification-service";
 
 // The public-index actor has no offset pagination. Existing providerNextPage is
-// therefore a logical 25-result depth cursor: 1 => 25, 2 => 50, …, capped at
+// therefore a logical 10-result depth cursor: 1 => 10, 2 => 20, …, capped at
 // the actor's 120-result limit. Each continuation fetches a deeper prefix and
 // the shared cache identity set removes profiles already seen.
-const PROVIDER_PAGE_SIZE = 25;
+const PROVIDER_PAGE_SIZE = 10;
 const PROVIDER_MAX_DEPTH = 120;
 
 function providerDepthForLogicalPage(page: number): number {
@@ -456,10 +456,7 @@ export class DiscoverExpansionService {
     // 11. Continue the provider only if we still need more and it isn't exhausted.
     if (collected.length < this.batchSize && !exhausted) {
       const budget = createAiBudget();
-      const providerTitles = await this.roleIntelligence.buildProviderTitlePlan(params.roles, {
-        budget,
-        searchId: params.search.id
-      });
+      const providerTitles = params.roles.map((title) => title.trim()).filter(Boolean);
       await this.cache.runWithProviderLock(params.fingerprint, async () => {
         // Re-check under the lock: another holder may have appended results while
         // we waited. Reuse anything newly available before fetching.
@@ -486,14 +483,18 @@ export class DiscoverExpansionService {
           }
         }
 
-        // The initial search consumed logical depth page 1 (25 candidates), so
-        // continuation defaults to page 2 (a 50-candidate prefix).
+        // The initial exact search consumed logical depth page 1 (10
+        // candidates), so continuation defaults to page 2 (a 20-candidate
+        // prefix). Each expansion run carries one exact requested title.
         let logicalPage = rechecked?.providerNextPage ?? 2;
         let pagesFetched = 0;
         let cachedPeopleCount = rechecked?.people.length ?? 0;
 
         while (collected.length < this.batchSize && pagesFetched < this.maxProviderPages && !exhausted) {
           const requestedDepth = providerDepthForLogicalPage(logicalPage);
+          const providerTitle = providerTitles.length > 0
+            ? providerTitles[(Math.max(1, logicalPage) - 1) % providerTitles.length]
+            : undefined;
           await this.safeAudit("DISCOVER_EXPANSION_PROVIDER_FETCH", params.userId, params.actorEmail, params.search.id, {
             logicalPage,
             requestedDepth
@@ -502,9 +503,10 @@ export class DiscoverExpansionService {
           const pageResult = await this.apify.searchProfiles({
             companyName: params.company.officialName ?? params.company.name,
             companyLinkedinUrl: params.company.linkedinUrl,
-            jobTitles: providerTitles,
+            jobTitles: providerTitle ? [providerTitle] : [],
             locations: params.locations,
-            maxResults: requestedDepth
+            maxResults: requestedDepth,
+            stage: "EXACT"
           });
           pagesFetched += 1;
           const nextPage = logicalPage + 1;
@@ -573,17 +575,30 @@ export class DiscoverExpansionService {
             logicalPage: nextPage - 1,
             requestedDepth,
             rawProviderCount: pageResult.diagnostics.itemsReturned,
+            providerRows: pageResult.diagnostics.profileRows,
             profileRows: pageResult.diagnostics.profileRows,
             diagnosticItems: pageResult.diagnostics.diagnosticItems,
             diagnosticCodes: pageResult.diagnostics.diagnosticCodes,
             parsedCandidates: pageResult.diagnostics.parsedCandidates,
+            schemaAccepted: pageResult.diagnostics.parsedCandidates,
             rejectedBySchema: pageResult.diagnostics.rejectedBySchema,
             providerDuplicateItems: pageResult.diagnostics.duplicateItems,
             companyMatched: pageResult.diagnostics.companyMatched,
+            companyConfirmed: pageResult.diagnostics.companyConfirmed,
+            companyProviderConstrainedUnknown:
+              pageResult.diagnostics.companyProviderConstrainedUnknown,
+            companyRejected: pageResult.diagnostics.companyRejected,
             rejectedByCompany: pageResult.diagnostics.rejectedByCompany,
+            roleAccepted: eligibilityDiagnostics?.roleMatchedCount ?? pagePeople.length,
             roleMatched: eligibilityDiagnostics?.roleMatchedCount ?? pagePeople.length,
             roleRejected: eligibilityDiagnostics?.roleRejectedCount ?? built.people.length - pagePeople.length,
             locationConfirmed: eligibilityDiagnostics?.locationConfirmedCount ?? 0,
+            locationProviderConstrainedUnknown:
+              eligibilityDiagnostics?.locationProviderConstrainedUnknownCount ?? 0,
+            locationRejected:
+              (eligibilityDiagnostics?.locationMissingRejectedCount ?? 0)
+              + (eligibilityDiagnostics?.locationContradictionRejectedCount ?? 0)
+              + (eligibilityDiagnostics?.locationNoMatchRejectedCount ?? 0),
             locationMissingRejected: eligibilityDiagnostics?.locationMissingRejectedCount ?? 0,
             locationContradictionRejected: eligibilityDiagnostics?.locationContradictionRejectedCount ?? 0,
             locationNoMatchRejected: eligibilityDiagnostics?.locationNoMatchRejectedCount ?? 0,

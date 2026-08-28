@@ -20,21 +20,47 @@ describe("evaluateDiscoverLocationMatch", () => {
     ).toEqual({ matches: true, reason: "CONFIRMED" });
   });
 
-  it("rejects public-index candidates with missing or unrecognized geography", () => {
+  it("keeps generic-host missing or city-only public-index geography as provider-constrained unknown", () => {
     expect(
       evaluateDiscoverLocationMatch({
-        candidate: { location: null, country: null, state: null, city: null },
+        candidate: {
+          location: null,
+          country: null,
+          state: null,
+          city: null,
+          linkedinUrl: "https://www.linkedin.com/in/julie-miller"
+        },
         requestedLocations: ["United States"],
         context: "PUBLIC_INDEX_PROVIDER"
       })
-    ).toEqual({ matches: false, reason: "MISSING_METADATA" });
+    ).toEqual({ matches: true, reason: "PROVIDER_CONSTRAINED_UNKNOWN" });
     expect(
       evaluateDiscoverLocationMatch({
-        candidate: { location: "Bengaluru", country: "Bengaluru" },
+        candidate: {
+          location: "Denver Metropolitan Area",
+          city: "Denver Metropolitan Area",
+          linkedinUrl: "https://linkedin.com/in/juan-garcia"
+        },
         requestedLocations: ["United States"],
         context: "PUBLIC_INDEX_PROVIDER"
       })
-    ).toEqual({ matches: false, reason: "NO_MATCH" });
+    ).toEqual({ matches: true, reason: "PROVIDER_CONSTRAINED_UNKNOWN" });
+  });
+
+  it("rejects a known foreign city even when no country field is returned", () => {
+    for (const location of ["Bangalore Urban", "Bengaluru", "Toronto", "UK"]) {
+      expect(
+        evaluateDiscoverLocationMatch({
+          candidate: {
+            location,
+            country: location,
+            linkedinUrl: "https://www.linkedin.com/in/foreign-candidate"
+          },
+          requestedLocations: ["United States"],
+          context: "PUBLIC_INDEX_PROVIDER"
+        })
+      ).toEqual({ matches: false, reason: "EXPLICIT_CONTRADICTION" });
+    }
   });
 
   it("accepts recognized US state and city-state representations", () => {
@@ -88,6 +114,31 @@ describe("evaluateDiscoverLocationMatch", () => {
         context: "PUBLIC_INDEX_PROVIDER"
       })
     ).toEqual({ matches: false, reason: "EXPLICIT_CONTRADICTION" });
+  });
+
+  it("rejects foreign LinkedIn country subdomains when US metadata is missing", () => {
+    for (const host of ["in.linkedin.com", "uk.linkedin.com", "ca.linkedin.com", "hk.linkedin.com"]) {
+      expect(
+        evaluateDiscoverLocationMatch({
+          candidate: { linkedinUrl: `https://${host}/in/candidate` },
+          requestedLocations: ["United States"],
+          context: "PUBLIC_INDEX_PROVIDER"
+        })
+      ).toEqual({ matches: false, reason: "EXPLICIT_CONTRADICTION" });
+    }
+  });
+
+  it("does not treat an arbitrary snippet-like value as geography evidence", () => {
+    expect(
+      evaluateDiscoverLocationMatch({
+        candidate: {
+          location: null,
+          linkedinUrl: "https://www.linkedin.com/in/candidate"
+        },
+        requestedLocations: ["United States"],
+        context: "PUBLIC_INDEX_PROVIDER"
+      })
+    ).toEqual({ matches: true, reason: "PROVIDER_CONSTRAINED_UNKNOWN" });
   });
 
   it("keeps trusted structured-provider provenance explicit", () => {

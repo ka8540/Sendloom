@@ -446,15 +446,16 @@ describe("DiscoverRoleIntelligenceService", () => {
       }
     });
 
-    expect(filtered.map((person) => person.sourceProfileId)).toEqual(["valid"]);
+    expect(filtered.map((person) => person.sourceProfileId)).toEqual(["weak-snippet", "valid"]);
     expect(diagnostics).toMatchObject({
       roleInputCount: 6,
       roleMatchedCount: 5,
       roleRejectedCount: 1,
       locationConfirmedCount: 1,
-      locationMissingRejectedCount: 3,
-      locationContradictionRejectedCount: 1,
-      finalEligibleCount: 1
+      locationProviderConstrainedUnknownCount: 1,
+      locationMissingRejectedCount: 0,
+      locationContradictionRejectedCount: 3,
+      finalEligibleCount: 2
     });
   });
 

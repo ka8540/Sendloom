@@ -53,6 +53,7 @@ export type DiscoverRoleFilterDiagnostics = {
   roleMatchedCount: number;
   roleRejectedCount: number;
   locationConfirmedCount: number;
+  locationProviderConstrainedUnknownCount: number;
   locationMissingRejectedCount: number;
   locationContradictionRejectedCount: number;
   locationNoMatchRejectedCount: number;
@@ -166,6 +167,7 @@ export class DiscoverRoleIntelligenceService implements DiscoverRoleIntelligence
         roleMatchedCount: 0,
         roleRejectedCount: input.people.length,
         locationConfirmedCount: 0,
+        locationProviderConstrainedUnknownCount: 0,
         locationMissingRejectedCount: 0,
         locationContradictionRejectedCount: 0,
         locationNoMatchRejectedCount: 0,
@@ -220,6 +222,7 @@ export class DiscoverRoleIntelligenceService implements DiscoverRoleIntelligence
     };
     let locationRejectedCount = 0;
     let locationConfirmedCount = 0;
+    let locationProviderConstrainedUnknownCount = 0;
     let explicitLocationContradictionCount = 0;
     let missingLocationMetadataCount = 0;
     let locationMissingRejectedCount = 0;
@@ -274,6 +277,8 @@ export class DiscoverRoleIntelligenceService implements DiscoverRoleIntelligence
         });
         if (locationEvaluation.reason === "CONFIRMED") {
           locationConfirmedCount += 1;
+        } else if (locationEvaluation.reason === "PROVIDER_CONSTRAINED_UNKNOWN") {
+          locationProviderConstrainedUnknownCount += 1;
         } else if (locationEvaluation.reason === "EXPLICIT_CONTRADICTION") {
           explicitLocationContradictionCount += 1;
         } else if (locationEvaluation.reason === "MISSING_METADATA") {
@@ -301,6 +306,7 @@ export class DiscoverRoleIntelligenceService implements DiscoverRoleIntelligence
       roleMatchedCount,
       roleRejectedCount: input.people.length - roleMatchedCount,
       locationConfirmedCount,
+      locationProviderConstrainedUnknownCount,
       locationMissingRejectedCount,
       locationContradictionRejectedCount: explicitLocationContradictionCount,
       locationNoMatchRejectedCount,
@@ -334,6 +340,7 @@ export class DiscoverRoleIntelligenceService implements DiscoverRoleIntelligence
         roleRejectedCount: diagnostics.roleRejectedCount,
         locationRejectedCount,
         locationConfirmedCount,
+        locationProviderConstrainedUnknownCount,
         locationMissingRejectedCount,
         locationContradictionRejectedCount: explicitLocationContradictionCount,
         locationNoMatchRejectedCount,
@@ -420,6 +427,7 @@ export class DiscoverRoleIntelligenceService implements DiscoverRoleIntelligence
       requestedLocations: []
     });
     let locationConfirmedCount = 0;
+    let locationProviderConstrainedUnknownCount = 0;
     let locationMissingRejectedCount = 0;
     let locationContradictionRejectedCount = 0;
     let locationNoMatchRejectedCount = 0;
@@ -430,6 +438,9 @@ export class DiscoverRoleIntelligenceService implements DiscoverRoleIntelligence
         context
       });
       if (location.reason === "CONFIRMED") locationConfirmedCount += 1;
+      if (location.reason === "PROVIDER_CONSTRAINED_UNKNOWN") {
+        locationProviderConstrainedUnknownCount += 1;
+      }
       if (!location.matches && location.reason === "MISSING_METADATA") locationMissingRejectedCount += 1;
       if (!location.matches && location.reason === "EXPLICIT_CONTRADICTION") {
         locationContradictionRejectedCount += 1;
@@ -442,6 +453,7 @@ export class DiscoverRoleIntelligenceService implements DiscoverRoleIntelligence
       roleMatchedCount: roleMatched.length,
       roleRejectedCount: people.length - roleMatched.length,
       locationConfirmedCount,
+      locationProviderConstrainedUnknownCount,
       locationMissingRejectedCount,
       locationContradictionRejectedCount,
       locationNoMatchRejectedCount,

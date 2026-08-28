@@ -26,6 +26,7 @@ import {
 } from "@/lib/prospect-enums";
 import {
   ApifyProfileSearchService,
+  dedupeProfiles,
   processDatasetItems,
   type ApifyIngestionDiagnostics,
   type NormalizedProfile
@@ -112,9 +113,9 @@ export class ProspectError extends Error {
 
 const TERMINAL_STATUSES = new Set(["READY", "CANCELED"]);
 const DEFAULT_PIPELINE_TIMEOUT_MS = 120_000;
-// Fetch one bounded provider prefix so a 10-person search targets 10 VALID unique
-// candidates after schema/company/role validation, not merely 10 raw rows.
-const PROVIDER_CANDIDATE_LIMIT = 25;
+// Dami quality is highest when the initial provider depth matches the visible
+// 10-person target. Any deterministic alias is a separate second 10-row run.
+const PROVIDER_INITIAL_MAX_ITEMS = 10;
 // Company-level structured email-format evidence stays fresh for 30 days.
 const EMAIL_FORMAT_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const EMAIL_FORMAT_REFRESH_IN_FLIGHT = new Map<string, Promise<ProspectCompany>>();
@@ -290,12 +291,16 @@ type RunPipelineResult = {
 };
 
 type ProviderFunnelDiagnostics = ApifyIngestionDiagnostics & {
+  providerRows: number;
   rawProfileRows: number;
   schemaAccepted: number;
   companyRejected: number;
+  roleAccepted: number;
   roleMatched: number;
   roleRejected: number;
   locationConfirmed: number;
+  locationProviderConstrainedUnknown: number;
+  locationRejected: number;
   locationMissingRejected: number;
   locationContradictionRejected: number;
   locationNoMatchRejected: number;
@@ -309,6 +314,44 @@ type ProviderDatasetResult = {
   dataset: ResolvedDataset;
   diagnostics: ProviderFunnelDiagnostics;
 };
+
+function mergeApifyIngestionDiagnostics(
+  diagnostics: readonly ApifyIngestionDiagnostics[]
+): ApifyIngestionDiagnostics {
+  return diagnostics.reduce<ApifyIngestionDiagnostics>(
+    (total, current) => ({
+      itemsReturned: total.itemsReturned + current.itemsReturned,
+      profileRows: total.profileRows + current.profileRows,
+      diagnosticItems: total.diagnosticItems + current.diagnosticItems,
+      diagnosticCodes: [...new Set([...total.diagnosticCodes, ...current.diagnosticCodes])],
+      temporaryDiagnosticItems: total.temporaryDiagnosticItems + current.temporaryDiagnosticItems,
+      parsedCandidates: total.parsedCandidates + current.parsedCandidates,
+      rejectedBySchema: total.rejectedBySchema + current.rejectedBySchema,
+      duplicateItems: total.duplicateItems + current.duplicateItems,
+      companyMatched: total.companyMatched + current.companyMatched,
+      rejectedByCompany: total.rejectedByCompany + current.rejectedByCompany,
+      companyConfirmed: total.companyConfirmed + current.companyConfirmed,
+      companyProviderConstrainedUnknown:
+        total.companyProviderConstrainedUnknown + current.companyProviderConstrainedUnknown,
+      companyRejected: total.companyRejected + current.companyRejected
+    }),
+    {
+      itemsReturned: 0,
+      profileRows: 0,
+      diagnosticItems: 0,
+      diagnosticCodes: [],
+      temporaryDiagnosticItems: 0,
+      parsedCandidates: 0,
+      rejectedBySchema: 0,
+      duplicateItems: 0,
+      companyMatched: 0,
+      rejectedByCompany: 0,
+      companyConfirmed: 0,
+      companyProviderConstrainedUnknown: 0,
+      companyRejected: 0
+    }
+  );
+}
 
 export class ProspectSearchService {
   private readonly prisma: PrismaClient;
@@ -1022,56 +1065,19 @@ export class ProspectSearchService {
     // value (never search.maxResults).
     await this.setStatus(search.id, "SEARCHING_PEOPLE");
     const resultLimit = resolveResultsPerSearch();
-    const candidateLimit = Math.max(resultLimit, PROVIDER_CANDIDATE_LIMIT);
     const requestedTitles = this.asStringArray(search.requestedTitles);
-    const providerTitles = await this.roleIntelligence.buildProviderTitlePlan(requestedTitles, {
-      budget,
-      searchId: search.id
-    });
-    const searchResult = await this.apify.searchProfiles({
-      companyName: resolution.officialName,
+    const requestedLocations = this.asStringArray(search.requestedLocations);
+    const companyName = resolution.officialName || company.officialName || company.name;
+    const maxItems = Math.min(resultLimit, PROVIDER_INITIAL_MAX_ITEMS);
+    const exactResult = await this.apify.searchProfiles({
+      companyName,
       companyLinkedinUrl: resolution.linkedinCompanyUrl,
-      // One actor run receives the entire bounded semantic title plan.
-      jobTitles: providerTitles,
-      locations: this.asStringArray(search.requestedLocations),
-      maxResults: candidateLimit
+      // The first request contains only titles the user actually selected.
+      jobTitles: requestedTitles,
+      locations: requestedLocations,
+      maxResults: maxItems,
+      stage: "EXACT"
     });
-
-    await this.prisma.prospectSearch.update({
-      where: { id: search.id },
-      data: {
-        apifyRunId: searchResult.runId,
-        apifyDatasetId: searchResult.datasetId,
-        totalFound: searchResult.totalFound
-      }
-    });
-
-    // Per-stage counters proving exactly where provider items were accepted or
-    // rejected — a successful run can never silently lose its dataset again.
-    logDiscoverIngestionEvent({
-      searchId: search.id,
-      userId,
-      source: "PROVIDER",
-      ...searchResult.diagnostics,
-      eligiblePeople: searchResult.profiles.length
-    });
-
-    // Complete the identities deterministic parsing could not ("Jared C.").
-    // Clean names never reach the model, and an unresolved person simply keeps
-    // no email rather than receiving a guessed one.
-    const profiles = await resolveIncompleteIdentities(searchResult.profiles, {
-      companyName: resolution.officialName,
-      companyDomain: company.emailDomain ?? resolution.officialWebsiteDomain ?? null,
-      resolver: this.identityResolver,
-      budget
-    });
-
-    // Classify unique titles (the global title-classification cache is reused).
-    await this.setStatus(search.id, "CLASSIFYING_POSITIONS");
-    const rawTitles = profiles
-      .map((profile) => profile.currentTitle)
-      .filter((title): title is string => Boolean(title));
-    const classifications = await this.roleClassifier.classify(rawTitles, { budget, searchId: search.id });
 
     // People retrieval/classification and email-format discovery have separate
     // cache lifecycles. Seed the provider dataset with only an already-valid
@@ -1079,36 +1085,110 @@ export class ProspectSearchService {
     // people cache returns on BOTH provider and cache paths.
     const emailFormat = this.companyResolvedEmailFormat(company);
 
-    // Build the normalized people dataset. Candidate emails are regenerated
-    // against the final persisted format during materialization.
-    const people = this.buildDatasetPeople(profiles, classifications, emailFormat);
+    const buildEligible = async (inputProfiles: NormalizedProfile[]) => {
+      // Complete only identities deterministic parsing could not, classify the
+      // returned roles, then apply authoritative post-ingestion role/location
+      // validation. Semantic/vector intelligence never changes actor input.
+      const profiles = await resolveIncompleteIdentities(inputProfiles, {
+        companyName,
+        companyDomain: company.emailDomain ?? resolution.officialWebsiteDomain ?? null,
+        resolver: this.identityResolver,
+        budget
+      });
+      await this.setStatus(search.id, "CLASSIFYING_POSITIONS");
+      const rawTitles = profiles
+        .map((profile) => profile.currentTitle)
+        .filter((title): title is string => Boolean(title));
+      const classifications = await this.roleClassifier.classify(rawTitles, { budget, searchId: search.id });
+      const people = this.buildDatasetPeople(profiles, classifications, emailFormat);
+      const diagnosticsRef: { current: DiscoverRoleFilterDiagnostics | null } = { current: null };
+      const eligible = await this.roleIntelligence.filterAndRankPeople({
+        people,
+        requestedTitles,
+        requestedLocations,
+        context: "PUBLIC_INDEX_PROVIDER",
+        options: { budget, searchId: search.id },
+        onDiagnostics: (diagnostics) => {
+          diagnosticsRef.current = diagnostics;
+        }
+      });
+      return { people, eligible, diagnostics: diagnosticsRef.current };
+    };
 
-    // Public-index filtering is mandatory even when vector intelligence is
-    // disabled. The disabled path applies deterministic role policy plus the
-    // same positive-evidence location rule without making embedding calls.
-    const eligibilityDiagnosticsRef: { current: DiscoverRoleFilterDiagnostics | null } = { current: null };
-    const roleFilteredPeople = await this.roleIntelligence.filterAndRankPeople({
-      people,
-      requestedTitles,
-      requestedLocations: this.asStringArray(search.requestedLocations),
-      context: "PUBLIC_INDEX_PROVIDER",
-      options: { budget, searchId: search.id },
-      onDiagnostics: (diagnostics) => {
-        eligibilityDiagnosticsRef.current = diagnostics;
+    const exactEligibility = await buildEligible(exactResult.profiles);
+    let finalProfiles = exactResult.profiles;
+    let finalEligibility = exactEligibility;
+    const providerResults = [exactResult];
+
+    if (exactEligibility.eligible.length < resultLimit) {
+      const titlePlan = await this.roleIntelligence.buildProviderTitlePlan(requestedTitles, {
+        budget,
+        searchId: search.id
+      });
+      const exactKeys = new Set(requestedTitles.map((title) => normalizeTitle(title)));
+      const fallbackAlias = titlePlan.find((title) => !exactKeys.has(normalizeTitle(title)));
+      if (fallbackAlias) {
+        await this.setStatus(search.id, "SEARCHING_PEOPLE");
+        const fallbackResult = await this.apify.searchProfiles({
+          companyName,
+          companyLinkedinUrl: resolution.linkedinCompanyUrl,
+          jobTitles: [fallbackAlias],
+          locations: requestedLocations,
+          maxResults: maxItems,
+          stage: "FALLBACK_ALIAS"
+        });
+        providerResults.push(fallbackResult);
+        finalProfiles = dedupeProfiles([...exactResult.profiles, ...fallbackResult.profiles]);
+        finalEligibility = await buildEligible(finalProfiles);
+      }
+    }
+
+    const combinedDiagnostics = mergeApifyIngestionDiagnostics(
+      providerResults.map((result) => result.diagnostics)
+    );
+    const totalFound = providerResults.reduce((sum, result) => sum + result.totalFound, 0);
+
+    await this.prisma.prospectSearch.update({
+      where: { id: search.id },
+      data: {
+        // Persist the exact-stage dataset as the primary replay source. The
+        // optional alias stage is observable in logs and merged cache output.
+        apifyRunId: exactResult.runId,
+        apifyDatasetId: exactResult.datasetId,
+        totalFound
       }
     });
-    const eligibilityDiagnostics = eligibilityDiagnosticsRef.current;
+
+    logDiscoverIngestionEvent({
+      searchId: search.id,
+      userId,
+      source: "PROVIDER",
+      ...combinedDiagnostics,
+      eligiblePeople: finalEligibility.eligible.length
+    });
+
+    const eligibilityDiagnostics = finalEligibility.diagnostics;
+    const roleFilteredPeople = finalEligibility.eligible;
+    const people = finalEligibility.people;
 
     return {
       dataset: { emailFormat, people: roleFilteredPeople },
       diagnostics: {
-        ...searchResult.diagnostics,
-        rawProfileRows: searchResult.diagnostics.profileRows,
-        schemaAccepted: searchResult.diagnostics.parsedCandidates,
-        companyRejected: searchResult.diagnostics.rejectedByCompany,
+        ...combinedDiagnostics,
+        providerRows: combinedDiagnostics.profileRows,
+        rawProfileRows: combinedDiagnostics.profileRows,
+        schemaAccepted: combinedDiagnostics.parsedCandidates,
+        companyRejected: combinedDiagnostics.companyRejected,
+        roleAccepted: eligibilityDiagnostics?.roleMatchedCount ?? roleFilteredPeople.length,
         roleMatched: eligibilityDiagnostics?.roleMatchedCount ?? roleFilteredPeople.length,
         roleRejected: eligibilityDiagnostics?.roleRejectedCount ?? people.length - roleFilteredPeople.length,
         locationConfirmed: eligibilityDiagnostics?.locationConfirmedCount ?? 0,
+        locationProviderConstrainedUnknown:
+          eligibilityDiagnostics?.locationProviderConstrainedUnknownCount ?? 0,
+        locationRejected:
+          (eligibilityDiagnostics?.locationMissingRejectedCount ?? 0)
+          + (eligibilityDiagnostics?.locationContradictionRejectedCount ?? 0)
+          + (eligibilityDiagnostics?.locationNoMatchRejectedCount ?? 0),
         locationMissingRejected: eligibilityDiagnostics?.locationMissingRejectedCount ?? 0,
         locationContradictionRejected: eligibilityDiagnostics?.locationContradictionRejectedCount ?? 0,
         locationNoMatchRejected: eligibilityDiagnostics?.locationNoMatchRejectedCount ?? 0,
@@ -1326,12 +1406,13 @@ export class ProspectSearchService {
     }
 
     const resultLimit = search.maxResults > 0 ? search.maxResults : resolveResultsPerSearch();
-    const candidateLimit = Math.max(resultLimit, PROVIDER_CANDIDATE_LIMIT);
+    const candidateLimit = Math.max(resultLimit, PROVIDER_INITIAL_MAX_ITEMS);
     const processedItems = processDatasetItems(
       items,
       {
         companyName: company.officialName ?? company.name,
-        linkedinCompanyUrl: company.linkedinUrl ?? search.requestedLinkedin
+        linkedinCompanyUrl: company.linkedinUrl ?? search.requestedLinkedin,
+        providerConstrained: true
       },
       candidateLimit
     );

@@ -1085,7 +1085,7 @@ describe("Discover daily quota enforcement", () => {
     expect(created.maxResults).toBe(10);
   });
 
-  it("uses one bounded 25-candidate prefix even for a legacy 10-result record (#2, #3)", async () => {
+  it("keeps the initial provider request at the visible 10-result target (#2, #3)", async () => {
     const { run, runner } = amatRunner();
     const { service } = buildService(prisma, runner, ROLE_ONLY);
     const created = await service.createSearch(USER_ID, APPLIED_MATERIALS);
@@ -1093,7 +1093,7 @@ describe("Discover daily quota enforcement", () => {
     prisma._state.searches[0].maxResults = 25;
     await service.processSearch(USER_ID, created.id, { actorEmail: "u@test.dev" });
     const actorInput = run.mock.calls[0][1];
-    expect(actorInput.maxItems).toBe(25);
+    expect(actorInput.maxItems).toBe(10);
   });
 
   it("consumes exactly one slot on the first processed search (#6)", async () => {
@@ -1684,12 +1684,19 @@ describe("Discover shared cache integration", () => {
     expect(runner.run).toHaveBeenCalledTimes(1);
   });
 
-  it("sends one Apify actor run a bounded semantic title array for a new company", async () => {
-    const run = vi.fn<ApifyRunner["run"]>(async () => ({
-      runId: "semantic-run",
-      datasetId: "semantic-dataset",
-      items: [profile("semantic-1", "Jane", "Doe", "Software Engineer", "Applied Materials")]
-    }));
+  it("sends the exact title first, then one deterministic alias in a separate bounded call", async () => {
+    let providerCall = 0;
+    const run = vi.fn<ApifyRunner["run"]>(async () => {
+      providerCall += 1;
+      const candidate = profile("semantic-1", "Jane", "Doe", "Software Engineer", "Applied Materials");
+      return {
+        runId: `semantic-run-${providerCall}`,
+        datasetId: `semantic-dataset-${providerCall}`,
+        // The fallback uses a different provider id for the same profile URL;
+        // cross-stage merging must still dedupe it.
+        items: [providerCall === 1 ? candidate : { ...candidate, id: "alias-row-id" }]
+      };
+    });
     const roleIntelligence = semanticRolePort({
       providerPlan: [
         "Software Engineer",
@@ -1713,14 +1720,49 @@ describe("Discover shared cache integration", () => {
     const result = await service.processSearch(USER_ID, search.id);
 
     expect(result.status).toBe("READY");
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(run.mock.calls[0][1]).toMatchObject({
+      currentCompanies: ["Applied Materials"],
+      currentJobTitles: ["Software Engineer"],
+      locations: ["United States"],
+      maxItems: 10
+    });
+    expect(run.mock.calls[1][1]).toMatchObject({
+      currentCompanies: ["Applied Materials"],
+      currentJobTitles: ["Software Developer"],
+      locations: ["United States"],
+      maxItems: 10
+    });
+    expect(prisma._state.people).toHaveLength(1);
+  });
+
+  it("does not build or call an alias fallback when the exact stage fills the target", async () => {
+    const run = vi.fn<ApifyRunner["run"]>(async () => ({
+      runId: "exact-full-run",
+      datasetId: "exact-full-dataset",
+      items: Array.from({ length: 10 }, (_, index) =>
+        profile(`exact-${index}`, `First${index}`, `Last${index}`, "Software Engineer", "Applied Materials")
+      )
+    }));
+    const roleIntelligence = semanticRolePort({
+      providerPlan: ["Software Engineer", "Software Developer"]
+    });
+    const { service } = buildService(
+      prisma,
+      { run } as ApifyRunner,
+      ROLE_ONLY_AI,
+      undefined,
+      allowAllQuota,
+      passthroughCache,
+      roleIntelligence
+    );
+    const search = await service.createSearch(USER_ID, APPLIED_MATERIALS);
+
+    const result = await service.processSearch(USER_ID, search.id);
+
+    expect(result).toMatchObject({ status: "READY", totalProcessed: 10 });
     expect(run).toHaveBeenCalledTimes(1);
-    expect(run.mock.calls[0][1].currentJobTitles).toEqual([
-      "Software Engineer",
-      "Software Developer",
-      "Backend Software Engineer",
-      "Frontend Software Engineer",
-      "Application Developer"
-    ]);
+    expect(roleIntelligence.buildProviderTitlePlan).not.toHaveBeenCalled();
   });
 
   it("keeps RTX public-index candidates behind strict post-provider company validation", async () => {
@@ -1763,7 +1805,7 @@ describe("Discover shared cache integration", () => {
     const filter = vi.fn<DiscoverRoleIntelligencePort["filterAndRankPeople"]>(async ({ people }) =>
       people.filter((person) => person.positionCategory === "RECRUITING")
     );
-    const roleIntelligence = semanticRolePort({ providerPlan: ["Recruiter", "Talent Acquisition Specialist"], filter });
+    const roleIntelligence = semanticRolePort({ providerPlan: ["Recruiter"], filter });
     const { service } = buildService(
       prisma,
       { run } as ApifyRunner,
@@ -1786,8 +1828,9 @@ describe("Discover shared cache integration", () => {
 
     expect(run).toHaveBeenCalledTimes(1);
     expect(run.mock.calls[0][1]).toMatchObject({
-      currentCompanies: [rtxUrl],
-      maxItems: 25
+      currentCompanies: ["RTX Corporation"],
+      currentJobTitles: ["Recruiter"],
+      maxItems: 10
     });
     expect(filter).toHaveBeenCalledWith(expect.objectContaining({
       people: expect.arrayContaining([
@@ -1797,13 +1840,13 @@ describe("Discover shared cache integration", () => {
       requestedTitles: ["Recruiter"],
       context: "PUBLIC_INDEX_PROVIDER"
     }));
-    expect(result).toMatchObject({ status: "READY", totalFound: 15, totalProcessed: 8 });
-    expect(prisma._state.discoverCachePeople).toHaveLength(8);
-    expect(prisma._state.searchPeople.filter((row) => row.searchId === search.id)).toHaveLength(8);
-    expect(prisma._state.people).toHaveLength(8);
+    expect(result).toMatchObject({ status: "READY", totalFound: 15, totalProcessed: 9 });
+    expect(prisma._state.discoverCachePeople).toHaveLength(9);
+    expect(prisma._state.searchPeople.filter((row) => row.searchId === search.id)).toHaveLength(9);
+    expect(prisma._state.people).toHaveLength(9);
     expect(
       prisma._state.people.every((person) =>
-        ["rtx-1", "rtx-2", "rtx-3", "rtx-4", "rtx-5", "rtx-6", "rtx-11", "rtx-12"].includes(
+        ["rtx-1", "rtx-2", "rtx-3", "rtx-4", "rtx-5", "rtx-6", "rtx-10", "rtx-11", "rtx-12"].includes(
           person.sourceProfileId
         )
       )

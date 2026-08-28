@@ -626,7 +626,7 @@ describe("DiscoverExpansionService.addMorePeople", () => {
       run: vi.fn(async (_actorId, input) => {
         requestedDepths.push(input.maxItems);
         jobTitleInputs.push(input.currentJobTitles);
-        // Logical page 2 requests a 50-profile prefix containing new profiles.
+        // Logical page 2 requests a 20-profile prefix containing new profiles.
         return { runId: "r", datasetId: "d", items: Array.from({ length: 10 }, (_, i) => rawProfile(`prov_${i + 1}`, "Prov", `P${i + 1}`)) };
       })
     };
@@ -646,8 +646,8 @@ describe("DiscoverExpansionService.addMorePeople", () => {
     });
 
     expect(result.addedCount).toBe(10); // 5 cached + 5 provider
-    expect(requestedDepths).toEqual([50]);
-    expect(jobTitleInputs).toEqual([["Software Engineer", "Software Developer", "Backend Software Engineer"]]);
+    expect(requestedDepths).toEqual([20]);
+    expect(jobTitleInputs).toEqual([["Software Engineer"]]);
     // The saved logical-depth cursor advanced after a valid fetch (#15).
     const cacheRow = prisma._state.discoverCache.find((r) => r.id === "cache_seed");
     expect(cacheRow?.providerNextPage).toBe(3);
@@ -742,7 +742,7 @@ describe("DiscoverExpansionService.addMorePeople", () => {
     const runner: ApifyRunner = {
       run: vi.fn(async (_actorId, input) => {
         requestedDepths.push(input.maxItems);
-        if (input.maxItems === 50) {
+        if (input.maxItems === 20) {
           // Half duplicate an existing person (by source id), half are new.
           return {
             runId: "r",
@@ -754,7 +754,7 @@ describe("DiscoverExpansionService.addMorePeople", () => {
             ]
           };
         }
-        if (input.maxItems === 75) {
+        if (input.maxItems === 30) {
           return {
             runId: "r",
             datasetId: "d",
@@ -778,7 +778,7 @@ describe("DiscoverExpansionService.addMorePeople", () => {
     });
 
     expect(result.addedCount).toBe(10);
-    expect(requestedDepths).toEqual([50, 75]);
+    expect(requestedDepths).toEqual([20, 30]);
     expect(prisma._state.people.filter((p) => p.sourceProfileId.startsWith("init_"))).toHaveLength(10);
     expect(prisma._state.people.filter((p) => p.sourceProfileId.startsWith("new_"))).toHaveLength(10);
   });
@@ -786,7 +786,7 @@ describe("DiscoverExpansionService.addMorePeople", () => {
   it.each([
     ["same-company derived", 0],
     ["historical backfill", 0]
-  ])("continues a %s cache from logical depth 25 through duplicate legacy results", async (_source, providerPagesFetched) => {
+  ])("continues a %s cache from logical depth 10 through duplicate legacy results", async (_source, providerPagesFetched) => {
     seedCompany();
     seedSearch();
     seedExistingPeople(10);
@@ -795,7 +795,7 @@ describe("DiscoverExpansionService.addMorePeople", () => {
     const runner: ApifyRunner = {
       run: vi.fn(async (_actorId, input) => {
         requestedDepths.push(input.maxItems);
-        if (input.maxItems === 25) {
+        if (input.maxItems === 10) {
           return {
             runId: "legacy-page-1",
             datasetId: "legacy-dataset-1",
@@ -828,7 +828,7 @@ describe("DiscoverExpansionService.addMorePeople", () => {
     });
 
     expect(result.addedCount).toBe(10);
-    expect(requestedDepths).toEqual([25, 50]);
+    expect(requestedDepths).toEqual([10, 20]);
     expect(prisma._state.discoverCache.find((row) => row.id === "cache_seed")?.providerNextPage).toBe(3);
   });
 
@@ -998,7 +998,7 @@ describe("DiscoverExpansionService.addMorePeople", () => {
     expect(quota.consumed.size).toBe(1); // unchanged
   });
 
-  it("increases logical provider depth 25 -> 50 -> 75 -> 100 -> 120 and never exceeds the cap", async () => {
+  it("increases logical provider depth in bounded 10-row steps and never exceeds 120", async () => {
     seedCompany();
     seedSearch();
     seedExistingPeople(10);
@@ -1017,7 +1017,7 @@ describe("DiscoverExpansionService.addMorePeople", () => {
         };
       })
     };
-    const { service } = buildService({ runner, maxProviderPages: 10 });
+    const { service } = buildService({ runner, maxProviderPages: 12 });
 
     const result = await service.addMorePeople({
       userId: USER_ID,
@@ -1026,7 +1026,7 @@ describe("DiscoverExpansionService.addMorePeople", () => {
       idempotencyKey: "depth-cap"
     });
 
-    expect(requestedDepths).toEqual([25, 50, 75, 100, 120]);
+    expect(requestedDepths).toEqual([10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120]);
     expect(Math.max(...requestedDepths)).toBe(120);
     expect(result).toMatchObject({ addedCount: 0, exhausted: true });
     expect(prisma._state.discoverCache.find((row) => row.id === "cache_seed")?.providerExhausted).toBe(true);

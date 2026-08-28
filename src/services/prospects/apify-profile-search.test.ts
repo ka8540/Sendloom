@@ -6,6 +6,7 @@ import {
   companyNamesAliasMatch,
   currentCompanyMatches,
   dedupeProfiles,
+  evaluateCurrentCompanyMatch,
   extractLabelledSnippetLocation,
   normalizeProfile,
   processDatasetItems,
@@ -90,24 +91,24 @@ function rtxRecruiterItem(
 }
 
 describe("buildActorInput", () => {
-  it("maps a company URL, structured role variants, location, and depth", () => {
+  it("prefers the canonical company name over its LinkedIn URL", () => {
     const input = buildActorInput({
       companyName: "Stripe",
       companyLinkedinUrl: "https://www.linkedin.com/company/stripe",
       jobTitles: ["Software Engineer"],
       locations: ["San Francisco"],
-      maxResults: 25
+      maxResults: 10
     });
 
     expect(input).toEqual({
-      currentCompanies: ["https://www.linkedin.com/company/stripe"],
+      currentCompanies: ["Stripe"],
       currentJobTitles: ["Software Engineer"],
       locations: ["San Francisco"],
-      maxItems: 25
+      maxItems: 10
     });
   });
 
-  it("falls back to the company name and preserves an empty location array", () => {
+  it("preserves the company name and an empty location array", () => {
     expect(
       buildActorInput({ companyName: "Stripe", jobTitles: ["Software Engineer"], locations: [], maxResults: 25 })
     ).toEqual({
@@ -116,6 +117,18 @@ describe("buildActorInput", () => {
       locations: [],
       maxItems: 25
     });
+  });
+
+  it("uses the company URL only when no resolved name exists", () => {
+    expect(
+      buildActorInput({
+        companyName: "  ",
+        companyLinkedinUrl: "https://www.linkedin.com/company/stripe",
+        jobTitles: ["Recruiter"],
+        locations: ["United States"],
+        maxResults: 10
+      }).currentCompanies
+    ).toEqual(["https://www.linkedin.com/company/stripe"]);
   });
 
   it("keeps multiple role variants as distinct structured values", () => {
@@ -368,8 +381,46 @@ describe("currentCompanyMatches", () => {
     expect(currentCompanyMatches(base, { companyName: "Apple" })).toBe(true);
   });
 
-  it("excludes a profile when no current-company signal is comparable", () => {
+  it("keeps an explicit company-name conflict authoritative over URL or headline hints", () => {
+    expect(
+      evaluateCurrentCompanyMatch(
+        {
+          ...base,
+          currentCompanyName: "Google",
+          currentCompanyUrl: "https://www.linkedin.com/company/apple/",
+          headline: "Engineer at Apple"
+        },
+        {
+          companyName: "Apple",
+          linkedinCompanyUrl: "https://www.linkedin.com/company/apple/",
+          providerConstrained: true
+        }
+      )
+    ).toEqual({ matches: false, reason: "EXPLICIT_CONTRADICTION" });
+  });
+
+  it("excludes a profile without employer evidence when provider provenance is absent", () => {
     expect(currentCompanyMatches({ ...base, currentCompanyName: null }, { companyName: "Apple" })).toBe(false);
+  });
+
+  it("classifies missing employer metadata as provider-constrained unknown", () => {
+    expect(
+      evaluateCurrentCompanyMatch(
+        { ...base, currentCompanyName: null, currentCompanyUrl: null },
+        { companyName: "Apple", providerConstrained: true }
+      )
+    ).toEqual({ matches: true, reason: "PROVIDER_CONSTRAINED_UNKNOWN" });
+  });
+
+  it("accepts narrowly-labelled headline employer evidence", () => {
+    for (const headline of ["Senior Recruiter @ NetApp", "Senior Recruiter @NetApp", "Recruiter at NetApp"]) {
+      expect(
+        evaluateCurrentCompanyMatch(
+          { ...base, currentCompanyName: null, currentCompanyUrl: null, headline },
+          { companyName: "NetApp", providerConstrained: true }
+        )
+      ).toEqual({ matches: true, reason: "CONFIRMED" });
+    }
   });
 
   it("accepts LinkedIn slug aliases that differ only by punctuation (#company-15)", () => {
@@ -471,7 +522,10 @@ describe("processDatasetItems", () => {
       rejectedBySchema: 1,
       duplicateItems: 1,
       companyMatched: 2,
-      rejectedByCompany: 1
+      rejectedByCompany: 1,
+      companyConfirmed: 2,
+      companyProviderConstrainedUnknown: 0,
+      companyRejected: 1
     });
   });
 
@@ -481,10 +535,11 @@ describe("processDatasetItems", () => {
     expect(diagnostics.rejectedBySchema).toBe(2);
   });
 
-  it("accepts matching employers and rejects public-index rows with unrelated or missing employers", () => {
+  it("accepts matching or missing employers but rejects explicit public-index conflicts", () => {
     const strictRtxTarget = {
       companyName: "RTX Corporation",
-      linkedinCompanyUrl: "https://www.linkedin.com/company/rtx/"
+      linkedinCompanyUrl: "https://www.linkedin.com/company/rtx/",
+      providerConstrained: true
     };
     const validItems = [
       rtxRecruiterItem(1, "Recruiter", "RTX Corporation", "https://www.linkedin.com/company/rtx/"),
@@ -500,14 +555,16 @@ describe("processDatasetItems", () => {
     ];
 
     const validOnly = processDatasetItems(validItems, strictRtxTarget, 25);
-    expect(validOnly.profiles).toHaveLength(6);
+    expect(validOnly.profiles).toHaveLength(7);
     expect(validOnly.diagnostics).toMatchObject({
       itemsReturned: 10,
       parsedCandidates: 10,
       rejectedBySchema: 0,
       duplicateItems: 0,
-      companyMatched: 6,
-      rejectedByCompany: 4
+      companyMatched: 7,
+      companyConfirmed: 6,
+      companyProviderConstrainedUnknown: 1,
+      rejectedByCompany: 3
     });
 
     const withExplicitUnrelatedEmployer = processDatasetItems(
@@ -518,11 +575,11 @@ describe("processDatasetItems", () => {
       strictRtxTarget,
       25
     );
-    expect(withExplicitUnrelatedEmployer.profiles).toHaveLength(6);
+    expect(withExplicitUnrelatedEmployer.profiles).toHaveLength(7);
     expect(withExplicitUnrelatedEmployer.diagnostics).toMatchObject({
       itemsReturned: 11,
-      companyMatched: 6,
-      rejectedByCompany: 5
+      companyMatched: 7,
+      rejectedByCompany: 4
     });
   });
 
@@ -630,6 +687,13 @@ describe("dedupeProfiles", () => {
     const profile = { ...(({ sourceProfileId: "1" } as unknown) as NormalizedProfile) };
     const result = dedupeProfiles([profile, profile, { ...profile, sourceProfileId: "2" } as NormalizedProfile]);
     expect(result).toHaveLength(2);
+  });
+
+  it("dedupes a repeated profile URL even when provider ids differ across stages", () => {
+    const profile = normalizeProfile(harvestApiItem());
+    expect(profile).not.toBeNull();
+    const duplicate = { ...profile!, sourceProfileId: "different-provider-row-id" };
+    expect(dedupeProfiles([profile!, duplicate])).toHaveLength(1);
   });
 });
 

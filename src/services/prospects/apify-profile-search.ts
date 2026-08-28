@@ -39,7 +39,11 @@ export type NormalizedProfile = {
   linkedinUrl: string;
   currentCompanyName: string | null;
   currentCompanyUrl: string | null;
+  /** Provider headline, retained only for narrowly-labelled employer evidence. */
+  headline?: string | null;
 };
+
+export type ApifyProfileSearchStage = "EXACT" | "FALLBACK_ALIAS";
 
 export type ApifyProfileSearchInput = {
   companyName: string;
@@ -47,6 +51,7 @@ export type ApifyProfileSearchInput = {
   jobTitles: string[];
   locations: string[];
   maxResults: number;
+  stage?: ApifyProfileSearchStage;
 };
 
 export type ApifyProfileSearchResult = {
@@ -71,13 +76,16 @@ export type ApifyActorInput = {
 
 /**
  * Map a resolved prospect search into the public-index profile-search actor.
- * A LinkedIn company URL is the preferred filter, with the resolved company
- * name as the required fallback. Candidate depth is bounded to the actor cap.
+ * Dami's profile-search actor produces materially better results from the
+ * canonical company NAME. A LinkedIn URL is retained only as a defensive
+ * fallback for callers that have no resolved name at all.
  */
 export function buildActorInput(input: ApifyProfileSearchInput): ApifyActorInput {
   const maxItems = Math.min(120, Math.max(1, Math.floor(input.maxResults)));
+  const companyName = input.companyName.trim();
+  const companyFilter = companyName || input.companyLinkedinUrl?.trim() || "";
   return {
-    currentCompanies: [input.companyLinkedinUrl || input.companyName],
+    currentCompanies: companyFilter ? [companyFilter] : undefined,
     currentJobTitles: input.jobTitles,
     locations: input.locations,
     maxItems
@@ -225,7 +233,8 @@ export function normalizeProfile(raw: RawProfile): NormalizedProfile | null {
     linkedinUrl,
     currentCompanyName:
       asString(raw.currentCompany) ?? structuredPosition.companyName ?? asString(raw.companyName),
-    currentCompanyUrl: structuredPosition.companyUrl ?? asString(raw.companyLinkedinUrl)
+    currentCompanyUrl: structuredPosition.companyUrl ?? asString(raw.companyLinkedinUrl),
+    headline
   };
 }
 
@@ -351,50 +360,92 @@ export function companyNamesAliasMatch(a: string, b: string): boolean {
 type CompanyMatchTarget = {
   companyName: string;
   linkedinCompanyUrl?: string | null;
+  /** True only when this dataset came from an exact canonical-company query. */
+  providerConstrained?: boolean;
 };
+
+export type CurrentCompanyMatchReason =
+  | "CONFIRMED"
+  | "PROVIDER_CONSTRAINED_UNKNOWN"
+  | "EXPLICIT_CONTRADICTION";
+
+export type CurrentCompanyMatch = {
+  matches: boolean;
+  reason: CurrentCompanyMatchReason;
+};
+
+function headlineCompanyEvidence(headline: string | null | undefined): string | null {
+  if (!headline) return null;
+  const match = /(?:^|\s)(?:@\s*|at\s+)([^|\u00b7\u2022;,]{2,100}?)(?=\s*(?:[|\u00b7\u2022;,]|$))/i.exec(
+    headline.trim()
+  );
+  return match?.[1]?.trim() || null;
+}
 
 /**
  * Decide whether a profile's current employer matches the resolved company.
- * The public-index actor only supplies candidates: if neither a company URL nor
- * a company name can be compared, the profile is excluded. Sending a company
- * filter to the actor is never treated as authoritative provider provenance.
+ * Explicit matching evidence is confirmed and explicit conflicting evidence
+ * is rejected. Missing evidence may survive only when the caller certifies
+ * that this dataset came from an exact canonical-company provider request.
  *
- * A LinkedIn company-URL identity match is the strongest signal (the actor was
- * already queried by that URL). Slugs are compared on their normalized
- * alphanumeric form because LinkedIn aliases punctuation-variant slugs to the
- * same company. When slugs are unavailable or disagree, the employer NAME is
- * still compared alias-tolerantly — a slug alias the normalizer cannot relate
- * must not reject an employee whose employer name plainly matches.
+ * An explicit employer NAME is authoritative and compared alias-tolerantly.
+ * When the name is absent, a LinkedIn company-URL identity match is also
+ * positive evidence. Slugs are compared on normalized alphanumeric identity
+ * because LinkedIn aliases punctuation-variant vanity slugs.
  */
+export function evaluateCurrentCompanyMatch(
+  profile: NormalizedProfile,
+  target: CompanyMatchTarget
+): CurrentCompanyMatch {
+  const targetSlug = normalizedCompanySlug(target.linkedinCompanyUrl);
+  const profileSlug = normalizedCompanySlug(profile.currentCompanyUrl);
+  if (profile.currentCompanyName && target.companyName) {
+    if (companyNamesAliasMatch(profile.currentCompanyName, target.companyName)) {
+      return { matches: true, reason: "CONFIRMED" };
+    }
+    return { matches: false, reason: "EXPLICIT_CONTRADICTION" };
+  }
+
+  if (targetSlug && profileSlug && targetSlug === profileSlug) {
+    return { matches: true, reason: "CONFIRMED" };
+  }
+
+  if (targetSlug && profileSlug && targetSlug !== profileSlug) {
+    return { matches: false, reason: "EXPLICIT_CONTRADICTION" };
+  }
+
+  const headlineCompany = headlineCompanyEvidence(profile.headline);
+  if (headlineCompany) {
+    return companyNamesAliasMatch(headlineCompany, target.companyName)
+      ? { matches: true, reason: "CONFIRMED" }
+      : { matches: false, reason: "EXPLICIT_CONTRADICTION" };
+  }
+
+  return target.providerConstrained
+    ? { matches: true, reason: "PROVIDER_CONSTRAINED_UNKNOWN" }
+    : { matches: false, reason: "EXPLICIT_CONTRADICTION" };
+}
+
 export function currentCompanyMatches(
   profile: NormalizedProfile,
   target: CompanyMatchTarget
 ): boolean {
-  const targetSlug = normalizedCompanySlug(target.linkedinCompanyUrl);
-  const profileSlug = normalizedCompanySlug(profile.currentCompanyUrl);
-  if (targetSlug && profileSlug && targetSlug === profileSlug) {
-    return true;
-  }
-
-  if (profile.currentCompanyName && target.companyName) {
-    if (companyNamesAliasMatch(profile.currentCompanyName, target.companyName)) {
-      return true;
-    }
-  }
-
-  return false;
+  return evaluateCurrentCompanyMatch(profile, target).matches;
 }
 
 /** Remove duplicate profiles, preferring the first occurrence. */
 export function dedupeProfiles(profiles: NormalizedProfile[]): NormalizedProfile[] {
-  const seen = new Set<string>();
+  const seenIds = new Set<string>();
+  const seenUrls = new Set<string>();
   const result: NormalizedProfile[] = [];
   for (const profile of profiles) {
-    const key = profile.sourceProfileId || profile.linkedinUrl;
-    if (seen.has(key)) {
+    const id = profile.sourceProfileId?.trim().toLowerCase() ?? "";
+    const url = profile.linkedinUrl?.trim().replace(/\/+$/, "").toLowerCase() ?? "";
+    if ((id && seenIds.has(id)) || (url && seenUrls.has(url))) {
       continue;
     }
-    seen.add(key);
+    if (id) seenIds.add(id);
+    if (url) seenUrls.add(url);
     result.push(profile);
   }
   return result;
@@ -416,6 +467,9 @@ export type ApifyIngestionDiagnostics = {
   duplicateItems: number;
   companyMatched: number;
   rejectedByCompany: number;
+  companyConfirmed: number;
+  companyProviderConstrainedUnknown: number;
+  companyRejected: number;
 };
 
 export type ProcessedDatasetItems = {
@@ -495,7 +549,20 @@ export function processDatasetItems(
   }
 
   const deduped = dedupeProfiles(normalized);
-  const matched = deduped.filter((profile) => currentCompanyMatches(profile, target));
+  const companyEvaluations = deduped.map((profile) => ({
+    profile,
+    evaluation: evaluateCurrentCompanyMatch(profile, target)
+  }));
+  const matched = companyEvaluations
+    .filter(({ evaluation }) => evaluation.matches)
+    .map(({ profile }) => profile);
+  const companyConfirmed = companyEvaluations.filter(
+    ({ evaluation }) => evaluation.reason === "CONFIRMED"
+  ).length;
+  const companyProviderConstrainedUnknown = companyEvaluations.filter(
+    ({ evaluation }) => evaluation.reason === "PROVIDER_CONSTRAINED_UNKNOWN"
+  ).length;
+  const companyRejected = companyEvaluations.length - matched.length;
 
   return {
     profiles: matched.slice(0, Math.max(1, Math.floor(maxResults))),
@@ -509,7 +576,10 @@ export function processDatasetItems(
       rejectedBySchema,
       duplicateItems: normalized.length - deduped.length,
       companyMatched: matched.length,
-      rejectedByCompany: deduped.length - matched.length
+      rejectedByCompany: companyRejected,
+      companyConfirmed,
+      companyProviderConstrainedUnknown,
+      companyRejected
     }
   };
 }
@@ -664,9 +734,10 @@ export class ApifyProfileSearchService {
   }
 
   /**
-   * Run the actor, normalize + dedupe results, and exclude profiles whose
-   * current company does not match the resolved company. Raw actor output is
-   * never persisted — only NormalizedProfile leaves this method.
+   * Run the actor, normalize + dedupe results, and reject profiles with an
+   * explicit current-company contradiction. Missing employer metadata remains
+   * distinguishable as provider-constrained unknown. Raw actor output is never
+   * persisted — only NormalizedProfile leaves this method.
    */
   async searchProfiles(
     input: ApifyProfileSearchInput & { linkedinCompanyUrl?: string | null }
@@ -683,6 +754,20 @@ export class ApifyProfileSearchService {
       maxResults: input.maxResults
     });
 
+    if (process.env.NODE_ENV !== "test") {
+      console.info(
+        `[discover-provider-input] ${JSON.stringify({
+          actorId: this.actorId,
+          companyFilter: actorInput.currentCompanies ?? [],
+          titleCount: actorInput.currentJobTitles?.length ?? 0,
+          titles: actorInput.currentJobTitles ?? [],
+          locations: actorInput.locations ?? [],
+          maxItems: actorInput.maxItems,
+          stage: input.stage ?? "EXACT"
+        })}`
+      );
+    }
+
     const { runId, datasetId, items, status, statusMessage } = await this.runner.run(this.actorId, actorInput);
     assertApifyRunUsable({ status, statusMessage, itemCount: items.length });
 
@@ -691,7 +776,8 @@ export class ApifyProfileSearchService {
       items,
       {
         companyName: input.companyName,
-        linkedinCompanyUrl: targetedCompanyUrl
+        linkedinCompanyUrl: targetedCompanyUrl,
+        providerConstrained: Boolean(input.companyName.trim())
       },
       input.maxResults
     );
