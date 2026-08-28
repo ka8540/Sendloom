@@ -1,7 +1,15 @@
 "use client";
 
 import { CalendarClock, ChevronLeft, ChevronRight, Clock3 } from "lucide-react";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState
+} from "react";
 
 import {
   clampTimeField,
@@ -34,6 +42,8 @@ const MONTHS = [
 ] as const;
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+const POPOVER_VIEWPORT_MARGIN = 16;
+const POPOVER_TRIGGER_GAP = 11;
 
 type SequenceDateTimePickerProps = {
   id?: string;
@@ -73,6 +83,8 @@ export function SequenceDateTimePicker({
   const initialDate = parsedValue ?? today;
   const initialTime = toTwelveHourTime(parsedValue?.hour ?? 9, parsedValue?.minute ?? 0);
   const [open, setOpen] = useState(false);
+  const [placement, setPlacement] = useState<"above" | "below">("below");
+  const [popoverMaxHeight, setPopoverMaxHeight] = useState<number | null>(null);
   const [displayMonth, setDisplayMonth] = useState({ year: initialDate.year, month: initialDate.month });
   const [selectedDate, setSelectedDate] = useState<CalendarDateParts | null>(
     parsedValue
@@ -143,6 +155,39 @@ export function SequenceDateTimePicker({
     };
   }, [open]);
 
+  useLayoutEffect(() => {
+    if (!open) return;
+
+    function updatePlacement() {
+      const trigger = triggerRef.current;
+      const dialog = dialogRef.current;
+      if (!trigger || !dialog) return;
+
+      const triggerRect = trigger.getBoundingClientRect();
+      const dialogHeight = dialog.getBoundingClientRect().height;
+      const availableBelow =
+        window.innerHeight - triggerRect.bottom - POPOVER_VIEWPORT_MARGIN - POPOVER_TRIGGER_GAP;
+      const availableAbove =
+        triggerRect.top - POPOVER_VIEWPORT_MARGIN - POPOVER_TRIGGER_GAP;
+      const shouldOpenAbove =
+        availableBelow < dialogHeight && availableAbove > availableBelow;
+      const nextPlacement = shouldOpenAbove ? "above" : "below";
+      const availableHeight = nextPlacement === "above" ? availableAbove : availableBelow;
+
+      setPlacement(nextPlacement);
+      setPopoverMaxHeight(Math.max(0, Math.floor(availableHeight)));
+    }
+
+    updatePlacement();
+    window.addEventListener("resize", updatePlacement);
+    window.addEventListener("scroll", updatePlacement, true);
+
+    return () => {
+      window.removeEventListener("resize", updatePlacement);
+      window.removeEventListener("scroll", updatePlacement, true);
+    };
+  }, [calendarDays.length, open]);
+
   function closePopover() {
     setOpen(false);
     requestAnimationFrame(() => triggerRef.current?.focus());
@@ -152,6 +197,8 @@ export function SequenceDateTimePicker({
     const currentValue = parseLocalDateTimeValue(value);
     const focusDate = currentValue ?? getZonedDateTimeParts(new Date(), timeZone);
     setDisplayMonth({ year: focusDate.year, month: focusDate.month });
+    setPlacement("below");
+    setPopoverMaxHeight(null);
     setOpen(true);
   }
 
@@ -257,6 +304,10 @@ export function SequenceDateTimePicker({
           ref={dialogRef}
           id={dialogId}
           className={styles.popover}
+          data-placement={placement}
+          style={popoverMaxHeight === null ? undefined : {
+            "--popover-max-height": `${popoverMaxHeight}px`
+          } as CSSProperties}
           role="dialog"
           aria-modal="false"
           aria-labelledby={headingId}

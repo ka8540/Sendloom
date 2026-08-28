@@ -99,6 +99,19 @@ describe("SequenceDateTimePicker interaction and styling contract", () => {
     expect(PICKER).toContain("onClick={closePopover}");
   });
 
+  it("keeps the compact popover away from viewport edges", () => {
+    expect(PICKER).toContain('data-placement={placement}');
+    expect(PICKER).toContain("availableBelow < dialogHeight");
+    expect(PICKER).toContain("availableAbove > availableBelow");
+    expect(PICKER).toContain('"--popover-max-height"');
+    expect(PICKER).toContain('window.addEventListener("resize", updatePlacement)');
+    expect(PICKER).toContain('window.addEventListener("scroll", updatePlacement, true)');
+    expect(PICKER_CSS).toContain('width: min(19.75rem, calc(100vw - 2rem));');
+    expect(PICKER_CSS).toContain('.popover[data-placement="above"]');
+    expect(PICKER_CSS).toContain('bottom: calc(100% + 0.65rem);');
+    expect(PICKER_CSS).toContain('max-height: min(calc(100dvh - 2rem), var(--popover-max-height, 100dvh));');
+  });
+
   it("exposes accessible calendar, time, and selection controls", () => {
     for (const text of [
       'aria-label="Previous month"',
@@ -120,7 +133,7 @@ describe("SequenceDateTimePicker interaction and styling contract", () => {
   it("uses Sendloom tokens, responsive sizing, and no reference-component side effects", () => {
     expect(PICKER_CSS).toContain("background: var(--accent);");
     expect(PICKER_CSS).toContain("color: var(--accent-contrast);");
-    expect(PICKER_CSS).toContain("width: min(22rem, calc(100vw - 3rem));");
+    expect(PICKER_CSS).toContain("width: min(19.75rem, calc(100vw - 2rem));");
     expect(PICKER_CSS).toContain("grid-template-columns: repeat(7, minmax(0, 1fr));");
     expect(PICKER_CSS).toContain("@media (max-width: 420px)");
     expect(PICKER_CSS).toContain("@media (prefers-reduced-motion: reduce)");

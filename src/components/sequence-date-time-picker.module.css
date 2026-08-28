@@ -92,19 +92,27 @@
 
 .popover {
   position: absolute;
-  top: calc(100% + 0.5rem);
+  top: calc(100% + 0.65rem);
   left: 0;
   z-index: 20;
   display: grid;
-  gap: 0.8rem;
-  width: min(22rem, calc(100vw - 3rem));
-  max-width: calc(100vw - 3rem);
-  padding: 0.9rem;
+  gap: 0.62rem;
+  width: min(19.75rem, calc(100vw - 2rem));
+  max-width: calc(100vw - 2rem);
+  max-height: min(calc(100dvh - 2rem), var(--popover-max-height, 100dvh));
+  padding: 0.78rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border: 1px solid color-mix(in srgb, var(--accent) 16%, var(--line));
-  border-radius: 16px;
+  border-radius: 14px;
   background: var(--surface-strong);
   box-shadow: 0 22px 50px color-mix(in srgb, var(--text) 14%, transparent);
   color: var(--text);
+}
+
+.popover[data-placement="above"] {
+  top: auto;
+  bottom: calc(100% + 0.65rem);
 }
 
 .popover:focus {
@@ -257,15 +265,15 @@
   display: grid;
   place-items: center;
   min-width: 0;
-  min-height: 2.15rem;
+  min-height: 1.85rem;
 }
 
 .dayCell button {
   position: relative;
   display: inline-grid;
   place-items: center;
-  width: 2rem;
-  height: 2rem;
+  width: 1.78rem;
+  height: 1.78rem;
   padding: 0;
   border: 0;
   border-radius: 999px;
@@ -303,7 +311,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 0.65rem;
-  padding-top: 0.72rem;
+  padding-top: 0.58rem;
   border-top: 1px solid var(--line);
 }
 
@@ -329,8 +337,8 @@
 }
 
 .timeControls input {
-  width: 2.55rem;
-  min-height: 2.1rem;
+  width: 2.4rem;
+  min-height: 1.95rem;
   padding: 0.35rem 0.3rem;
   border: 1px solid var(--field-border);
   border-radius: 8px;
@@ -390,7 +398,7 @@
 }
 
 .doneButton {
-  min-height: 2rem;
+  min-height: 1.9rem;
   padding: 0.38rem 0.75rem;
   border: 0;
   border-radius: 9px;
@@ -416,8 +424,8 @@
 
 @media (max-width: 420px) {
   .popover {
-    width: calc(100vw - 2.5rem);
-    padding: 0.78rem;
+    width: calc(100vw - 2rem);
+    padding: 0.72rem;
   }
 
   .calendarHeader,
