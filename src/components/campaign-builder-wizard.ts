@@ -1,3 +1,5 @@
+import { isFutureLocalDateTimeValue } from "@/components/sequence-date-time-picker-utils";
+
 export type AudienceOption = {
   id: string;
   label: string;
@@ -57,12 +59,18 @@ export function isAudienceStepComplete(name: string, importId: string, mappingId
 export function isTimingStepComplete(args: {
   scheduleType: string;
   scheduledFor: string;
+  scheduleTimeZone?: string;
   sendTime: string;
   frequency: string;
   selectedWeekdays: number[];
+  now?: Date;
 }) {
   if (args.scheduleType === "once") {
-    return Boolean(args.scheduledFor);
+    return isFutureLocalDateTimeValue(
+      args.scheduledFor,
+      args.scheduleTimeZone ?? "UTC",
+      args.now ?? new Date()
+    );
   }
 
   if (args.scheduleType === "recurring") {

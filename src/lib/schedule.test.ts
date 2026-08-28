@@ -9,6 +9,14 @@ describe("getNextRunDate", () => {
     expect(scheduledFor.toISOString()).toBe("2026-03-26T15:00:00.000Z");
   });
 
+  it("converts Phoenix and New York wall-clock selections without changing the local input contract", () => {
+    const localValue = "2026-08-28T09:30";
+
+    expect(convertScheduledLocalInputToUtc(localValue, "America/Phoenix").toISOString()).toBe("2026-08-28T16:30:00.000Z");
+    expect(convertScheduledLocalInputToUtc(localValue, "America/New_York").toISOString()).toBe("2026-08-28T13:30:00.000Z");
+    expect(localValue).toBe("2026-08-28T09:30");
+  });
+
   it("keeps one-time schedules as the browser-selected UTC instant", () => {
     const nextRun = getNextRunDate({
       type: "once",

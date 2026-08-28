@@ -18,6 +18,8 @@ const CREATE_PAGE = readFileSync("src/app/(app)/campaigns/new/page.tsx", "utf8")
 const CREATE_PAGE_CSS = readFileSync("src/app/(app)/campaigns/new/page.module.css", "utf8");
 const BUILDER = readFileSync("src/components/campaign-builder.tsx", "utf8");
 const BUILDER_CSS = readFileSync("src/components/campaign-builder.module.css", "utf8");
+const DATE_TIME_PICKER = readFileSync("src/components/sequence-date-time-picker.tsx", "utf8");
+const DATE_TIME_PICKER_CSS = readFileSync("src/components/sequence-date-time-picker.module.css", "utf8");
 const BACK_BUTTON = readFileSync("src/components/back-button.tsx", "utf8");
 const BOUNCE_STATUS = readFileSync("src/components/senders/bounce-monitoring-status.tsx", "utf8");
 const DASHBOARD = readFileSync("src/app/(app)/campaigns/sequence-dashboard.tsx", "utf8");
@@ -289,12 +291,34 @@ describe("Step 3: Timing", () => {
     expect(BUILDER).toContain("mergeAttachmentFiles");
   });
 
-  it("requires the timing-specific values before Review", () => {
+  it("opens the custom date and time picker only for Schedule once", () => {
+    expect(BUILDER).toContain("<SequenceDateTimePicker");
+    expect(BUILDER).toContain('id="scheduledFor-control"');
+    expect(BUILDER).toContain("timeZone={selectedTimeZone}");
+    expect(BUILDER).not.toContain('type="datetime-local"');
+    expect(DATE_TIME_PICKER).toContain("aria-expanded={open}");
+    expect(DATE_TIME_PICKER).toContain('role="dialog"');
+    expect(DATE_TIME_PICKER_CSS).toMatch(/\.popover\s*\{[^}]*position:\s*absolute;/s);
+  });
+
+  it("requires a valid future one-time value before Review", () => {
+    const now = new Date("2026-08-01T12:00:00.000Z");
+
     expect(isTimingStepComplete({ scheduleType: "immediate", scheduledFor: "", sendTime: "", frequency: "weekly", selectedWeekdays: [] })).toBe(true);
-    expect(isTimingStepComplete({ scheduleType: "once", scheduledFor: "", sendTime: "09:00", frequency: "weekly", selectedWeekdays: [1] })).toBe(false);
-    expect(isTimingStepComplete({ scheduleType: "once", scheduledFor: "2026-08-01T09:00", sendTime: "", frequency: "weekly", selectedWeekdays: [] })).toBe(true);
+    expect(isTimingStepComplete({ scheduleType: "once", scheduledFor: "", scheduleTimeZone: "UTC", sendTime: "09:00", frequency: "weekly", selectedWeekdays: [1], now })).toBe(false);
+    expect(isTimingStepComplete({ scheduleType: "once", scheduledFor: "2026-08-02T09:00", scheduleTimeZone: "UTC", sendTime: "", frequency: "weekly", selectedWeekdays: [], now })).toBe(true);
+    expect(isTimingStepComplete({ scheduleType: "once", scheduledFor: "2026-08-01T09:00", scheduleTimeZone: "UTC", sendTime: "", frequency: "weekly", selectedWeekdays: [], now })).toBe(false);
+    expect(isTimingStepComplete({ scheduleType: "once", scheduledFor: "not-a-date", scheduleTimeZone: "UTC", sendTime: "", frequency: "weekly", selectedWeekdays: [], now })).toBe(false);
     expect(isTimingStepComplete({ scheduleType: "recurring", scheduledFor: "", sendTime: "09:00", frequency: "weekly", selectedWeekdays: [] })).toBe(false);
     expect(BUILDER).toContain("disabled={!timingStepComplete}");
+  });
+
+  it("keeps the chosen wall-clock value stable when timezone changes", () => {
+    expect(BUILDER).toContain("scheduleTimeZone: selectedTimeZone");
+    expect(BUILDER).toContain('value={selectedTimeZone}');
+    expect(BUILDER).toContain('onChange={(event) => setSelectedTimeZone(event.target.value)}');
+    expect(BUILDER).toContain('name="scheduledFor" value={scheduledFor}');
+    expect(BUILDER).toContain("convertScheduledLocalInputToUtc(scheduledForInput, scheduleTimeZone)");
   });
 });
 
@@ -307,6 +331,8 @@ describe("Step 4: Review and create", () => {
     expect(BUILDER).toContain('type="submit"');
     expect(BUILDER).toContain("Create sequence");
     expect(BUILDER).toContain("Preparing sequence...");
+    expect(BUILDER).toContain("formatSequenceDateTime(scheduledFor)");
+    expect(BUILDER).toContain("in ${selectedTimeZone}");
   });
 
   it("preserves controlled values when moving Back and Next", () => {
