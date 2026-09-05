@@ -17,6 +17,7 @@ export default defineConfig({
   },
   test: {
     environment: "node",
+    setupFiles: ["./src/test/no-network.ts"],
     include: ["src/**/*.test.ts"],
     // graphql ships both CJS and ESM entry points. Inlining it (and its
     // consumers) forces a single transformed instance so a schema built by

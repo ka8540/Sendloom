@@ -1,3 +1,4 @@
+import { withRaeNameAI } from "./__test-utils__/mock-name-ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { PrismaClient } from "@prisma/client";
@@ -853,4 +854,27 @@ describe("DiscoverSearchCacheService never reuses a non-successful entry", () =>
 
 afterEach(() => {
   vi.useRealTimers();
+});
+
+
+describe("legacy name cache boundaries", () => {
+  it.each(["EXACT", "COMPANY_POOL", "LOCAL_PERSON"])("normalizes %s results before reuse and derived writes", async mode => {
+    await withRaeNameAI(async () => {
+      const service = buildService();
+      const clean = cachePerson("rae", { firstName: "Rae", lastName: "Gruppman", fullName: "Rae Gruppman", positionCategory: "RECRUITING", currentTitle: "Recruiter" });
+      await service.getOrRefresh(params(FINGERPRINT, async () => dataset([clean])));
+      const bad = { ...clean, firstName: "Rae", lastName: "SHRM-CP", fullName: "Rae Gruppman SHRM-CP", sourceName: null, nameNormalization: null, inferredEmail: "rshrmcp@apple.com" };
+      Object.assign(prisma._state.discoverCachePeople[0], bad);
+      const provider = vi.fn(async () => { throw new Error("Apify must not run"); });
+      const request = mode === "EXACT" ? params(FINGERPRINT, provider) : companyPoolParams({ fingerprint: "new", provider,
+        ...(mode === "LOCAL_PERSON" ? { filter: () => [], lookupLocalPeople: async () => ({ dataset: dataset([bad]), candidatePersonCount: 1, matchingPersonCount: 1 }) } : {}) });
+      const result = await service.getOrRefresh(request);
+      expect(provider).not.toHaveBeenCalled();
+      expect(result.dataset.people[0]).toMatchObject({ fullName: "Rae Gruppman", lastName: "Gruppman", inferredEmail: "rgruppman@apple.com" });
+      if (mode === "COMPANY_POOL") {
+        const derived = prisma._state.discoverCachePeople.filter(p => p.cacheId !== prisma._state.discoverCache[0].id);
+        expect(derived[0].fullName).toBe("Rae Gruppman");
+      }
+    });
+  });
 });

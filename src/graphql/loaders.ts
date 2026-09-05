@@ -1,3 +1,4 @@
+import { normalizeDiscoverPersonNames } from "@/services/prospects/discover-person-name-normalization";
 import type { PrismaClient, ProspectCompany, ProspectCompanyPosition, ProspectPerson } from "@prisma/client";
 import DataLoader from "dataloader";
 
@@ -19,6 +20,8 @@ export type ProspectLoaders = {
 
 export type EmailStatusRow = Pick<
   ProspectPerson,
+  | "sourceName"
+  | "nameNormalization"
   | "firstName"
   | "lastName"
   | "inferredEmail"
@@ -73,7 +76,8 @@ export function createLoaders(prisma: PrismaClient, userId: string): ProspectLoa
       where: { positionId: { in: [...positionIds] }, userId },
       orderBy: [{ lastName: "asc" }, { firstName: "asc" }]
     });
-    const grouped = groupBy(rows, (row) => row.positionId);
+    const canonicalRows = await normalizeDiscoverPersonNames(rows);
+    const grouped = groupBy(canonicalRows, (row) => row.positionId);
     return positionIds.map((id) => grouped.get(id) ?? []);
   });
 
@@ -106,6 +110,8 @@ export function createLoaders(prisma: PrismaClient, userId: string): ProspectLoa
       where: { companyId: { in: [...companyIds] }, userId },
       select: {
         companyId: true,
+        sourceName: true,
+        nameNormalization: true,
         firstName: true,
         lastName: true,
         inferredEmail: true,
@@ -119,6 +125,8 @@ export function createLoaders(prisma: PrismaClient, userId: string): ProspectLoa
     return companyIds.map(
       (id) =>
         grouped.get(id)?.map((row) => ({
+          sourceName: row.sourceName,
+          nameNormalization: row.nameNormalization,
           firstName: row.firstName,
           lastName: row.lastName,
           inferredEmail: row.inferredEmail,

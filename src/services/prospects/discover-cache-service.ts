@@ -1,3 +1,5 @@
+import { normalizeDiscoverPeopleWithEmails } from "@/services/prospects/discover-person-name-repair";
+import { nameStateFields } from "@/services/prospects/discover-name-contract";
 import { randomUUID } from "node:crypto";
 
 import type { PrismaClient } from "@prisma/client";
@@ -74,6 +76,8 @@ export type ResolvedEmailFormat = {
 
 // One normalized public professional record. No requester identity is included.
 export type ResolvedCachePerson = {
+  sourceName?: string | null;
+  nameNormalization?: string | null;
   sourceProfileId: string;
   firstName: string;
   lastName: string;
@@ -362,11 +366,17 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
     return {
       id: entry.id,
       fetchedAt: entry.fetchedAt ? new Date(entry.fetchedAt) : null,
-      dataset: rowToDataset(entry, peopleRows as ResolvedCachePersonRow[])
+      dataset: { emailFormat: rowToEmailFormat(entry), people: await normalizeDiscoverPeopleWithEmails((peopleRows as ResolvedCachePersonRow[]).map(cachePersonRowToResolved), rowToEmailFormat(entry)) }
     };
   }
 
   async getOrRefresh(params: GetOrRefreshParams): Promise<DiscoverCacheResult> {
+    const result = await this.getOrRefreshRaw(params);
+    result.dataset.people = await normalizeDiscoverPeopleWithEmails(result.dataset.people, result.dataset.emailFormat);
+    return result;
+  }
+
+  private async getOrRefreshRaw(params: GetOrRefreshParams): Promise<DiscoverCacheResult> {
     // Fast path: a fresh shared dataset is reused without any provider call.
     const fresh = await this.getFreshDataset(params.fingerprint, this.now(), params.fingerprintInput.cacheVersion);
     if (fresh) {
@@ -613,6 +623,7 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
     dataset: ResolvedDataset,
     sources: CompanyPoolCacheRow[]
   ): Promise<{ id: string; fetchedAt: Date | null }> {
+    dataset.people = await normalizeDiscoverPeopleWithEmails(dataset.people, dataset.emailFormat);
     const fetchedAtValues = sources
       .map((source) => (source.fetchedAt ? new Date(source.fetchedAt).getTime() : null))
       .filter((value): value is number => value !== null);
@@ -705,11 +716,12 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
       providerPagesFetched: entry.providerPagesFetched ?? 0,
       providerExhausted: Boolean(entry.providerExhausted),
       emailFormat: rowToEmailFormat(entry),
-      people: sortCachePeople(peopleRows).map(cachePersonRowToResolved)
+      people: await normalizeDiscoverPeopleWithEmails(sortCachePeople(peopleRows).map(cachePersonRowToResolved), rowToEmailFormat(entry))
     };
   }
 
   async appendProviderPeople(params: AppendProviderPeopleParams): Promise<DiscoverCacheExpansionState> {
+    params = { ...params, people: await normalizeDiscoverPeopleWithEmails(params.people, params.emailFormat) };
     const now = this.now();
     const fp = params.fingerprintInput;
     return this.prisma.$transaction(async (tx) => {
@@ -849,6 +861,7 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
     params: GetOrRefreshParams,
     dataset: ResolvedDataset
   ): Promise<{ id: string; fetchedAt: Date }> {
+    dataset.people = await normalizeDiscoverPeopleWithEmails(dataset.people, dataset.emailFormat);
     const fetchedAt = this.now();
     const expiresAt = new Date(fetchedAt.getTime() + this.ttlDays * DAY_MS);
     const fp = params.fingerprintInput;
@@ -1066,6 +1079,7 @@ function cachePersonRowToResolved(row: ResolvedCachePersonRow): ResolvedCachePer
     firstName: row.firstName,
     lastName: row.lastName,
     fullName: row.fullName,
+    ...nameStateFields(row),
     currentTitle: row.currentTitle,
     normalizedTitle: row.normalizedTitle,
     positionCategory: row.positionCategory ?? "OTHER",

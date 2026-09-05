@@ -1,3 +1,4 @@
+import { normalizeDiscoverPersonNames } from "@/services/prospects/discover-person-name-normalization";
 import type { ProspectPerson as ProspectPersonRow } from "@prisma/client";
 
 import type { GraphQLContext } from "@/graphql/context";
@@ -46,7 +47,8 @@ export const personQueries = {
     // state of whatever address a row used to hold never pins it to that
     // address. ProspectPerson.emailStatus then overlays the suppression list
     // onto the address actually being shown.
-    const derivedRows = rows.map((person) => ({
+    const canonicalRows = await normalizeDiscoverPersonNames(rows);
+    const derivedRows = canonicalRows.map((person) => ({
       ...person,
       ...resolveProspectPersonEmail(person, company, {
         allowLowConfidence: env.PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS

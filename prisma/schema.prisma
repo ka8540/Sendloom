@@ -923,6 +923,9 @@ model ProspectPerson {
   firstName       String
   lastName        String
   fullName        String
+  // Original name and versioned validated canonical snapshot; never exposed via GraphQL.
+  sourceName String?
+  nameNormalization String?
   currentTitle    String?
   normalizedTitle String?
   location        String?
@@ -1128,6 +1131,9 @@ model DiscoverSearchCachePerson {
   firstName        String
   lastName         String
   fullName         String
+  // Original name and versioned validated canonical snapshot; never exposed via GraphQL.
+  sourceName String?
+  nameNormalization String?
   currentTitle     String?
   normalizedTitle  String?
   positionCategory String?

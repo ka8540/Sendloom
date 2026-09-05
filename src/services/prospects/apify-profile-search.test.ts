@@ -180,43 +180,24 @@ describe("normalizeProfile", () => {
   const ingest = (fields: Record<string, unknown>) =>
     normalizeProfile({ id: "p1", linkedinUrl: "https://www.linkedin.com/in/p1", ...fields });
 
-  it.each([
-    ["Jared Cho M.B.A.", "Jared", "Cho"],
-    ["Jared Cho MBA", "Jared", "Cho"],
-    ["Jared Cho, Ph.D.", "Jared", "Cho"],
-    ["Jared M. Cho", "Jared", "Cho"],
-    ["Jared Michael Cho", "Jared", "Cho"],
-    ["\u{1F680} Jared Cho", "Jared", "Cho"],
-    ["Jared Cho \u{1F3AF}", "Jared", "Cho"],
-    ["Li Ma", "Li", "Ma"]
-  ])("canonicalizes the display name %s at ingestion", (fullName, first, last) => {
+  it.each(["Jared Cho M.B.A.", "Jared Cho MBA", "Jared Cho, Ph.D.",
+    "Jared M. Cho", "Jared Michael Cho", "🚀 Jared Cho", "Jared Cho 🎯",
+    "Jared (Yiming) Cho", "Jared C."])("preserves %s for batch normalization without guessing", fullName => {
     const profile = ingest({ fullName });
-    expect(profile?.firstName).toBe(first);
-    expect(profile?.lastName).toBe(last);
-    expect(profile?.identityStatus).toBe("COMPLETE");
-  });
-
-  it("repairs a polluted structured last name", () => {
-    const profile = ingest({ firstName: "Jared", lastName: "Cho M.B.A.", fullName: "Jared Cho M.B.A." });
-    expect(profile?.firstName).toBe("Jared");
-    expect(profile?.lastName).toBe("Cho");
-    expect(profile?.fullName).toBe("Jared Cho");
-  });
-
-  it("records a parenthetical alias without fusing it into a name component", () => {
-    const profile = ingest({ firstName: "Jared", lastName: "(Yiming) Cho", fullName: "Jared (Yiming) Cho" });
-    expect(profile?.firstName).toBe("Jared");
-    expect(profile?.lastName).toBe("Cho");
-    expect(profile?.alternateFirstNames).toEqual(["Yiming"]);
-    expect(profile?.fullName).toBe("Jared (Yiming) Cho");
-  });
-
-  it("flags an initial-only surname as ambiguous instead of inventing one", () => {
-    const profile = ingest({ firstName: "Jared", lastName: "C.", fullName: "Jared C." });
-    expect(profile?.firstName).toBe("Jared");
+    expect(profile?.sourceName).toBe(fullName);
+    expect(profile?.firstName).toBe("");
     expect(profile?.lastName).toBe("");
-    expect(profile?.identityStatus).toBe("AMBIGUOUS");
-    expect(profile?.fullName).toBe("Jared C.");
+    expect(profile?.identityStatus).toBe("INCOMPLETE");
+  });
+
+  it("preserves a polluted structured surname as source data for the batch", () => {
+    const profile = ingest({ firstName: "Jared", lastName: "Cho M.B.A." });
+    expect(profile?.sourceName).toBe("Jared Cho M.B.A.");
+    expect(profile?.lastName).toBe("");
+  });
+
+  it("preserves a legitimate short surname on the plain fast path", () => {
+    expect(ingest({ fullName: "Li Ma" })).toMatchObject({ firstName: "Li", lastName: "Ma", fullName: "Li Ma" });
   });
 
   it("rejects an item whose name is only decoration", () => {

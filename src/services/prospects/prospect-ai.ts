@@ -28,6 +28,7 @@ export type AiCompletionRequest = {
   inputItemCount: number;
   searchId?: string | null;
   maxOutputTokens?: number;
+  timeoutMs?: number;
 };
 
 export interface AiClient {
@@ -39,6 +40,7 @@ export interface AiClient {
 }
 
 type OpenAIResponse = {
+  status?: string;
   output_text?: string;
   output?: Array<{
     type?: string;
@@ -114,12 +116,14 @@ export class OpenAiProspectClient implements AiClient {
     try {
       const response = await fetch("https://api.openai.com/v1/responses", {
         method: "POST",
+        signal: AbortSignal.timeout(request.timeoutMs ?? 60_000),
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${this.apiKey}`
         },
         body: JSON.stringify({
           model: this.model,
+          store: false,
           reasoning: { effort: this.reasoningEffort },
           instructions: request.instructions,
           input: request.input,
@@ -137,8 +141,9 @@ export class OpenAiProspectClient implements AiClient {
 
       const payload = (await response.json()) as OpenAIResponse;
       if (!response.ok) {
-        throw new Error(payload.error?.message ?? "Prospect AI request failed.");
+        throw new Error("Prospect AI request failed.");
       }
+      if (payload.status && payload.status !== "completed") throw new Error("Prospect AI response incomplete.");
       if (
         typeof payload.usage?.input_tokens === "number" &&
         typeof payload.usage?.output_tokens === "number"

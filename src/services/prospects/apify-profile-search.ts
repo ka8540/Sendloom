@@ -1,3 +1,4 @@
+import { isPlainDiscoverName } from "@/services/prospects/discover-name-contract";
 import { env } from "@/lib/env";
 import {
   normalizeCompanyName,
@@ -14,11 +15,13 @@ import {
 // not need (photos, phone numbers, personal emails, education, full employment
 // history, biographies, posts, connections) right at the ingestion boundary.
 //
-// Name components are ALREADY canonical here: this is the single place raw
-// provider name fields are parsed, so nothing downstream (shared cache, user
-// materialization, email generation) ever sees a display name carrying
-// credentials, emoji, honorifics, or a parenthetical alias.
+// Raw source names survive ingestion. Only conservative plain names have
+// provisional components; the shared page-level batch normalizer validates
+// every candidate before persistence and email inference.
 export type NormalizedProfile = {
+  sourceName?: string | null;
+  nameNormalization?: string | null;
+  headline?: string | null;
   sourceProfileId: string;
   /** Canonical given name. Empty when only an initial is known. */
   firstName: string;
@@ -154,10 +157,8 @@ function readCurrentPosition(raw: RawProfile): { title: string | null; companyNa
  * Normalize one raw actor item into a NormalizedProfile, or null if it lacks
  * the minimum professional identity we require (a name and a profile URL).
  *
- * The name is resolved by the one canonical identity parser rather than a
- * whitespace split. The old split treated every token after the first as the
- * family name, which is what turned "Jared Cho M.B.A." into the surname
- * "Cho M.B.A." (and the address jared.chomba@apple.com).
+ * Preserve the complete source name and inspect it conservatively. Suspicious
+ * names have no components until normalizeDiscoverPersonNames processes the page.
  */
 export function normalizeProfile(raw: RawProfile): NormalizedProfile | null {
   const linkedinUrl = asString(raw.linkedinUrl) ?? asString(raw.profileUrl) ?? asString(raw.url);
@@ -165,16 +166,14 @@ export function normalizeProfile(raw: RawProfile): NormalizedProfile | null {
     return null;
   }
 
-  const identity = parsePersonName({
-    firstName: asString(raw.firstName),
-    lastName: asString(raw.lastName),
-    fullName: asString(raw.fullName) ?? asString(raw.name)
-  });
-
-  // No usable given name at all — the item carries no professional identity.
-  if (identity.status === "UNUSABLE") {
-    return null;
-  }
+  const sourceName = asString(raw.fullName) ?? asString(raw.name) ??
+    [asString(raw.firstName), asString(raw.lastName)].filter(Boolean).join(" ");
+  if (!sourceName || !/\p{L}/u.test(sourceName)) return null;
+  // Raw inspection must precede any destructive legacy parsing. Ambiguous names
+  // are retained for the page-level batch normalizer, with no email components.
+  const identity = isPlainDiscoverName(sourceName)
+    ? parsePersonName({ fullName: sourceName })
+    : { firstName: null, lastName: null, fullName: "", alternateFirstNames: [], status: "INCOMPLETE" as const };
 
   const sourceProfileId =
     asString(raw.id) ??
@@ -190,6 +189,8 @@ export function normalizeProfile(raw: RawProfile): NormalizedProfile | null {
 
   return {
     sourceProfileId,
+    sourceName,
+    headline,
     firstName: identity.firstName ?? "",
     lastName: identity.lastName ?? "",
     fullName: identity.fullName,

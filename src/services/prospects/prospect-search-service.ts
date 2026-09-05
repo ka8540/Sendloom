@@ -1,3 +1,7 @@
+import type { ProspectPerson } from "@prisma/client";
+import { protectNameRepairSuppressions } from "@/services/prospects/discover-person-name-repair";
+import { normalizeDiscoverPersonNames } from "@/services/prospects/discover-person-name-normalization";
+import { nameStateFields } from "@/services/prospects/discover-name-contract";
 import { randomUUID } from "node:crypto";
 
 import { Prisma, type PrismaClient, type ProspectCompany, type ProspectSearch } from "@prisma/client";
@@ -68,11 +72,6 @@ import {
   DEFAULT_PROSPECT_EMAIL_FORMAT_MODEL,
   isOpenAIEmailFormatDiscoveryConfigured
 } from "@/services/prospects/openai-email-format-discovery";
-import {
-  OpenAIPersonIdentityResolver,
-  type PersonIdentityResolverPort,
-  resolveIncompleteIdentities
-} from "@/services/prospects/openai-person-identity-resolution";
 import { AiCallBudget, createAiBudget } from "@/services/prospects/prospect-ai";
 import {
   resolveCompanyRoleSearchAction,
@@ -262,7 +261,6 @@ export type ProspectSearchServiceDeps = {
    * an address from. Defaults to the OpenAI web-search resolver, which is inert
    * unless PROSPECT_IDENTITY_RESOLUTION_ENABLED and an API key are configured.
    */
-  identityResolver?: PersonIdentityResolverPort;
   /** Injectable clock for deterministic attempt timestamps in tests. */
   now?: () => Date;
 };
@@ -312,7 +310,6 @@ export class ProspectSearchService {
   private readonly discoverCache: DiscoverCachePort;
   private readonly audit: ProspectAuditFn;
   private readonly notifyCompleted: DiscoverCompletionNotificationFn;
-  private readonly identityResolver: PersonIdentityResolverPort;
   private readonly now: () => Date;
 
   constructor(deps: ProspectSearchServiceDeps) {
@@ -329,7 +326,6 @@ export class ProspectSearchService {
     this.discoverCache = deps.discoverCache ?? new DiscoverSearchCacheService({ prisma: deps.prisma });
     this.audit = deps.audit ?? noopAudit;
     this.notifyCompleted = deps.notifyCompleted ?? noopDiscoverCompletionNotification;
-    this.identityResolver = deps.identityResolver ?? new OpenAIPersonIdentityResolver();
     this.now = deps.now ?? (() => new Date());
   }
 
@@ -962,6 +958,7 @@ export class ProspectSearchService {
       firstName: person.firstName,
       lastName: person.lastName,
       fullName: person.fullName,
+      ...nameStateFields(person),
       currentTitle: person.currentTitle,
       normalizedTitle: person.normalizedTitle,
       positionCategory: person.position.category,
@@ -1051,10 +1048,8 @@ export class ProspectSearchService {
     // Complete the identities deterministic parsing could not ("Jared C.").
     // Clean names never reach the model, and an unresolved person simply keeps
     // no email rather than receiving a guessed one.
-    const profiles = await resolveIncompleteIdentities(searchResult.profiles, {
+    const profiles = await normalizeDiscoverPersonNames(searchResult.profiles, {
       companyName: resolution.officialName,
-      companyDomain: company.emailDomain ?? resolution.officialWebsiteDomain ?? null,
-      resolver: this.identityResolver,
       budget
     });
 
@@ -1248,6 +1243,7 @@ export class ProspectSearchService {
       const candidate = resolveCandidateEmail({
         firstName: profile.firstName,
         lastName: profile.lastName,
+        ...nameStateFields(profile),
         domain: emailFormat.emailDomain,
         pattern: emailFormat.emailPattern,
         patternConfidence: candidateConfidence,
@@ -1258,6 +1254,7 @@ export class ProspectSearchService {
         firstName: profile.firstName,
         lastName: profile.lastName,
         fullName: profile.fullName,
+        ...nameStateFields(profile),
         currentTitle: profile.currentTitle,
         normalizedTitle: profile.normalizedTitle,
         positionCategory: category,
@@ -1327,6 +1324,7 @@ export class ProspectSearchService {
     });
 
     const budget = createAiBudget();
+    processedItems.profiles = await normalizeDiscoverPersonNames(processedItems.profiles, { budget, companyName: company.name });
     const rawTitles = processedItems.profiles
       .map((profile) => profile.currentTitle)
       .filter((title): title is string => Boolean(title));
@@ -1430,9 +1428,9 @@ export class ProspectSearchService {
 
     const limit = search.maxResults > 0 ? search.maxResults : resolveResultsPerSearch();
     const capacity = Math.max(0, limit - existingAllocations.length);
-    const selected = dataset.people
+    const selected = await normalizeDiscoverPersonNames(dataset.people
       .filter((person) => !allocatedProfileIds.has(person.sourceProfileId))
-      .slice(0, capacity);
+      .slice(0, capacity), { companyName: company.officialName ?? company.name });
 
     const existingPeople = selected.length
       ? await this.prisma.prospectPerson.findMany({
@@ -1440,6 +1438,14 @@ export class ProspectSearchService {
         })
       : [];
     const existingByProfileId = new Map(existingPeople.map((person) => [person.sourceProfileId, person]));
+    const originals = selected.map(p => existingByProfileId.get(p.sourceProfileId) ?? p);
+    const correctedEmails = selected.map((p, i) => {
+      const named = { ...originals[i], firstName: p.firstName, lastName: p.lastName, fullName: p.fullName, ...nameStateFields(p) };
+      return { ...p, ...resolveProspectPersonEmail(named, updatedCompany, { allowLowConfidence: false, regenerateExistingInferred: true }) };
+    });
+    const protectedPeople = await protectNameRepairSuppressions(this.prisma, userId, originals, correctedEmails);
+    const emailByProfile = new Map(protectedPeople.map(p => [p.sourceProfileId, p]));
+
 
     // One position node per category that has allocated people.
     const rawTitlesByCategory = new Map<PositionCategory, Set<string>>();
@@ -1477,18 +1483,19 @@ export class ProspectSearchService {
       if (!positionId) {
         continue;
       }
-      const existingPerson = existingByProfileId.get(person.sourceProfileId);
-      const currentEmail = existingPerson ?? person;
-      const emailFields = resolveProspectPersonEmail(currentEmail, updatedCompany, {
-        allowLowConfidence,
-        regenerateExistingInferred: true
-      });
+      const protectedPerson = emailByProfile.get(person.sourceProfileId)!;
+      const emailFields = {
+        inferredEmail: protectedPerson.inferredEmail, emailStatus: protectedPerson.emailStatus,
+        emailConfidence: protectedPerson.emailConfidence, emailPattern: protectedPerson.emailPattern,
+        emailSource: protectedPerson.emailSource
+      };
       const fields = {
         companyId: updatedCompany.id,
         positionId,
         firstName: person.firstName,
         lastName: person.lastName,
         fullName: person.fullName,
+      ...nameStateFields(person),
         currentTitle: person.currentTitle,
         normalizedTitle: person.normalizedTitle,
         location: person.location,
@@ -1868,6 +1875,15 @@ export class ProspectSearchService {
     candidate: CompanyEmailFormatRecord,
     authority: CompanyEmailFormatAuthority
   ): Promise<ProspectCompany> {
+    // Resolve names before entering the serializable transaction: no model
+    // request should hold database locks. The transaction checks the snapshot.
+    const targetBefore = await this.prisma.prospectCompany.findFirst({ where: { id: companyId, userId } });
+    if (!targetBefore) throw new ProspectError("NOT_FOUND", "Company not found.");
+    const familyBefore = (await this.prisma.prospectCompany.findMany({ where: { userId } }))
+      .filter(row => getCanonicalCompanyKey(row) === getCanonicalCompanyKey(targetBefore));
+    const originals = await this.prisma.prospectPerson.findMany({ where: { userId, companyId: { in: familyBefore.map(c => c.id) } } });
+    const normalized = await normalizeDiscoverPersonNames(originals, { companyName: targetBefore.officialName ?? targetBefore.name });
+    const nameSnapshots = new Map(originals.map((original, i) => [original.id, { original, normalized: normalized[i] }]));
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
         return await this.prisma.$transaction(
@@ -1907,7 +1923,7 @@ export class ProspectSearchService {
             let updatedTarget: ProspectCompany | null = null;
             for (const row of family) {
               const updated = await tx.prospectCompany.update({ where: { id: row.id }, data });
-              await this.regenerateCompanyEmails(userId, updated, tx);
+              await this.regenerateCompanyEmails(userId, updated, tx, nameSnapshots);
               if (updated.id === companyId) {
                 updatedTarget = updated;
               }
@@ -1937,23 +1953,36 @@ export class ProspectSearchService {
   private async regenerateCompanyEmails(
     userId: string,
     updatedCompany: ProspectCompany,
-    db: Pick<Prisma.TransactionClient, "prospectPerson"> = this.prisma
+    db: Pick<Prisma.TransactionClient, "prospectPerson" | "suppression"> = this.prisma,
+    snapshots?: Map<string, { original: ProspectPerson; normalized: ProspectPerson }>
   ): Promise<void> {
-    const allowLowConfidence = env.PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS;
     const people = await db.prospectPerson.findMany({ where: { companyId: updatedCompany.id, userId } });
-
-    // Every generated address moves to the new format, including one whose
-    // previous address had bounced: that failure belongs to the old address and
-    // stays recorded against it, not against the person.
-    for (const person of people) {
-      const emailFields = resolveProspectPersonEmail(person, updatedCompany, {
-        allowLowConfidence,
-        regenerateExistingInferred: true
-      });
-      await db.prospectPerson.update({
-        where: { id: person.id },
-        data: emailFields
-      });
+    if (!snapshots) {
+      const normalized = await normalizeDiscoverPersonNames(people, { companyName: updatedCompany.officialName ?? updatedCompany.name });
+      snapshots = new Map(people.map((original, i) => [original.id, { original, normalized: normalized[i] }]));
+    }
+    const names = people.map(person => {
+      const snapshot = snapshots!.get(person.id);
+      if (!snapshot || ["firstName", "lastName", "fullName", "sourceName", "nameNormalization"].some(key =>
+        person[key as keyof ProspectPerson] !== snapshot.original[key as keyof ProspectPerson])) return person;
+      return { ...person, firstName: snapshot.normalized.firstName, lastName: snapshot.normalized.lastName,
+        fullName: snapshot.normalized.fullName, ...nameStateFields(snapshot.normalized) };
+    });
+    // A name arriving concurrently is deferred safely until the next batch,
+    // while already-validated snapshots are reused without re-interpretation.
+    const canonical = await normalizeDiscoverPersonNames(names, { client: {
+      enabled: false, model: "transaction-fallback", complete: async () => { throw new Error("No network in transaction"); }
+    } });
+    const corrected = canonical.map(person => ({ ...person, ...resolveProspectPersonEmail(person, updatedCompany, {
+      allowLowConfidence: env.PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS, regenerateExistingInferred: true
+    }) }));
+    const protectedPeople = await protectNameRepairSuppressions(db, userId, people, corrected);
+    for (const person of protectedPeople) {
+      await db.prospectPerson.update({ where: { id: person.id }, data: {
+        firstName: person.firstName, lastName: person.lastName, fullName: person.fullName, ...nameStateFields(person),
+        inferredEmail: person.inferredEmail, emailStatus: person.emailStatus, emailConfidence: person.emailConfidence,
+        emailPattern: person.emailPattern, emailSource: person.emailSource
+      } });
     }
   }
 

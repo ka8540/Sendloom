@@ -793,3 +793,15 @@ npm run typecheck
 - [Analysis Workspace](./DOCUMENTATION.md#27-analysis-workspace)
 - [Account Workspace And Sender Management](./DOCUMENTATION.md#28-account-workspace-and-sender-management)
 - [Attachment Lifecycle](./DOCUMENTATION.md#29-attachment-lifecycle)
+
+Discover names use one canonical, batched normalization boundary across provider,
+shared-cache, Add More, export/import and historical repair paths. Ambiguous names
+use the configured prospect OpenAI Responses model without web search; uncertain
+names cannot generate inferred email. Deploy the additive name-state migration
+before this code. See **Discover canonical person names and historical repair**
+in [DOCUMENTATION.md](DOCUMENTATION.md) for deployment order and repair flags.
+Start historical repair with:
+
+```sh
+npx tsx scripts/repair-discover-person-names.ts --dry-run --batch-size 50 --limit 1000
+```
