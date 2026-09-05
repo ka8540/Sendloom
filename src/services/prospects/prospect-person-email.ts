@@ -1,3 +1,4 @@
+import { type DiscoverNameInput, nameStateFields, readNameStamp, isPlainDiscoverName } from "@/services/prospects/discover-name-contract";
 import type { ProspectCompany, ProspectPerson } from "@prisma/client";
 
 import { type ConfidenceLevel } from "@/lib/prospect-enums";
@@ -10,7 +11,7 @@ export type ProspectPersonEmailFields = Pick<
   "inferredEmail" | "emailStatus" | "emailConfidence" | "emailPattern" | "emailSource"
 >;
 
-export type ProspectPersonEmailInput = Pick<
+export type ProspectPersonEmailInput = Partial<Pick<DiscoverNameInput, "sourceName" | "nameNormalization" | "fullName">> & Pick<
   ProspectPerson,
   | "firstName"
   | "lastName"
@@ -75,42 +76,19 @@ export function resolveProspectPersonEmail(
     };
   }
 
-  if (
-    person.emailStatus.startsWith("INFERRED_") &&
-    person.inferredEmail &&
-    !options.regenerateExistingInferred
-  ) {
-    return {
-      inferredEmail: person.inferredEmail,
-      emailStatus: person.emailStatus,
-      emailConfidence: person.emailConfidence,
-      emailPattern: person.emailPattern,
-      emailSource: person.emailSource
-    };
+  const stamp = readNameStamp(person);
+  const safeUnchangedName = stamp ? stamp.canGenerateEmail && !stamp.nameChanged :
+    isPlainDiscoverName(`${person.firstName} ${person.lastName}`);
+  if (!options.regenerateExistingInferred && safeUnchangedName && person.inferredEmail && person.emailStatus.startsWith("INFERRED_")) {
+    return { inferredEmail: person.inferredEmail, emailStatus: person.emailStatus,
+      emailConfidence: person.emailConfidence, emailPattern: person.emailPattern, emailSource: person.emailSource };
   }
 
   const patternConfidence: ConfidenceLevel = combinedEmailConfidence(
-    company.emailDomainConfidence,
-    company.patternConfidence
+    company.emailDomainConfidence, company.patternConfidence
   );
-  const currentAddressDomain = person.inferredEmail?.split("@")[1] ?? null;
-  if (
-    person.emailStatus.startsWith("INFERRED_") &&
-    person.inferredEmail &&
-    (!person.emailPattern || person.emailPattern === company.emailPattern) &&
-    normalizeDomain(currentAddressDomain) === normalizeDomain(company.emailDomain) &&
-    person.emailConfidence === patternConfidence
-  ) {
-    return {
-      inferredEmail: person.inferredEmail,
-      emailStatus: person.emailStatus,
-      emailConfidence: person.emailConfidence,
-      emailPattern: person.emailPattern,
-      emailSource: person.emailSource
-    };
-  }
-
   const candidate = resolveCandidateEmail({
+    ...nameStateFields(person),
     firstName: person.firstName,
     lastName: person.lastName,
     domain: company.emailDomain,

@@ -1,3 +1,4 @@
+import { normalizeDiscoverPersonNames } from "@/services/prospects/discover-person-name-normalization";
 import { randomBytes } from "node:crypto";
 
 import type { PrismaClient, ProspectCompany, ProspectCompanyPosition, ProspectPerson } from "@prisma/client";
@@ -263,7 +264,7 @@ export async function resolveProspectSelection(
   }
 
   const company = await loadOwnedCompany(prisma, userId, input.companyId);
-  const selectedPeople = await resolveSelectedPeople(prisma, userId, input);
+  const selectedPeople = await normalizeDiscoverPersonNames(await resolveSelectedPeople(prisma, userId, input));
   // Derive from the current company format, then check suppression against the
   // DERIVED addresses below — a spent address never pins a person to itself.
   const derivedPeople = selectedPeople.map((person) => ({

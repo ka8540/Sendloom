@@ -1,3 +1,5 @@
+import { normalizeDiscoverPersonNames } from "@/services/prospects/discover-person-name-normalization";
+import { nameStateFields } from "@/services/prospects/discover-name-contract";
 import type { PrismaClient } from "@prisma/client";
 
 import { resolveResultsPerSearch } from "@/lib/discover-quota";
@@ -58,6 +60,8 @@ export type LegacyDiscoverCompany = {
 };
 
 export type LegacyDiscoverPerson = {
+  sourceName?: string | null;
+  nameNormalization?: string | null;
   sourceProfileId: string;
   firstName: string;
   lastName: string;
@@ -172,6 +176,7 @@ export function sanitizeLegacyDiscoverPerson(person: LegacyDiscoverPerson): Reso
     firstName,
     lastName,
     fullName,
+    ...(person.sourceName ? nameStateFields(person) : {}),
     currentTitle,
     normalizedTitle,
     positionCategory: coercePositionCategory(person.positionCategory),
@@ -488,6 +493,8 @@ export class PrismaDiscoverLegacyCacheBackfillStore implements DiscoverLegacyCac
             select: {
               id: true,
               sourceProfileId: true,
+              sourceName: true,
+              nameNormalization: true,
               firstName: true,
               lastName: true,
               fullName: true,
@@ -546,6 +553,7 @@ export class PrismaDiscoverLegacyCacheBackfillStore implements DiscoverLegacyCac
                   firstName: person.firstName,
                   lastName: person.lastName,
                   fullName: person.fullName,
+                  ...nameStateFields(person),
                   currentTitle: person.currentTitle,
                   normalizedTitle: person.normalizedTitle,
                   positionCategory: person.position.category,
@@ -579,6 +587,7 @@ export class PrismaDiscoverLegacyCacheBackfillStore implements DiscoverLegacyCac
     plan: LegacySharedCachePlan,
     options: { tightenFreshness: boolean }
   ): Promise<LegacySharedCacheMergeResult> {
+    plan = { ...plan, people: await normalizeDiscoverPersonNames(plan.people, { companyName: plan.companyName }) };
     return this.prisma.$transaction(async (tx) => {
       const before = await tx.discoverSearchCache.findUnique({
         where: { fingerprint: plan.fingerprint },

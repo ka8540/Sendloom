@@ -1,3 +1,5 @@
+import { isPlainDiscoverName, readNameStamp, type DiscoverNameInput } from "@/services/prospects/discover-name-contract";
+import { identityToEmailTokens } from "@/services/prospects/prospect-person-name";
 import {
   type ConfidenceLevel,
   type EmailCandidateStatus,
@@ -10,7 +12,7 @@ import {
 } from "@/services/prospects/prospect-person-name";
 import { isPersonalEmailDomain, normalizeDomain } from "@/services/prospects/prospect-normalization";
 
-export type GenerateEmailInput = {
+export type GenerateEmailInput = Partial<Pick<DiscoverNameInput, "sourceName" | "nameNormalization" | "fullName">> & {
   firstName: string;
   lastName: string;
   domain: string;
@@ -80,9 +82,16 @@ export function generateEmail(input: GenerateEmailInput): string | null {
     return null;
   }
 
+  const stamp = readNameStamp(input);
+  if (stamp ? !stamp.canGenerateEmail : !isPlainDiscoverName(`${input.firstName} ${input.lastName}`)) return null;
+  // Never silently drop non-Latin characters to manufacture a partial ASCII name.
+  if (/[^\p{Script=Latin}\p{M}'’\-\s]/u.test(`${input.firstName} ${input.lastName}`)) return null;
+  const tokens = stamp ? identityToEmailTokens({ firstName: input.firstName, lastName: input.lastName,
+    firstInitial: null, fullName: input.fullName ?? "", alternateFirstNames: [], status: "COMPLETE", reason: "Validated" })
+    : normalizeNameForEmail(input.firstName, input.lastName);
   const localPart = buildLocalPart(
     input.pattern,
-    normalizeNameForEmail(input.firstName ?? "", input.lastName ?? "")
+    tokens
   );
   if (!localPart) {
     return null;
@@ -113,7 +122,7 @@ export type CandidateEmail = {
  * Inferred emails are NEVER marked VERIFIED — that status is reserved for a
  * future verification step.
  */
-export function resolveCandidateEmail(options: {
+export function resolveCandidateEmail(options: Partial<Pick<DiscoverNameInput, "sourceName" | "nameNormalization" | "fullName">> & {
   firstName: string;
   lastName: string;
   domain: string | null | undefined;
@@ -131,7 +140,7 @@ export function resolveCandidateEmail(options: {
     return { email: null, status: "UNAVAILABLE", confidence: "LOW" };
   }
 
-  const email = generateEmail({ firstName, lastName, domain, pattern });
+  const email = generateEmail({ ...options, firstName, lastName, domain, pattern });
   if (!email) {
     return { email: null, status: "UNAVAILABLE", confidence: patternConfidence };
   }

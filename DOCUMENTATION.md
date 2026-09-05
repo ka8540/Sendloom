@@ -3217,3 +3217,66 @@ Main list and dashboard pages use `WorkspacePageHeader` for a consistent title, 
 ### 31.3 Back navigation
 
 Back controls use the shared back-navigation helper rather than raw `history.back()`, so a deep link opened directly still returns somewhere sensible inside the app. The Sequences dashboard encodes its full filtered state into a `returnTo` parameter on every detail link, so returning from a sequence lands on the same filter, sender, search, and page. The Imports workflow exits with `router.replace` specifically so that a Back press does not re-enter the workflow the user just left.
+
+### Discover canonical person names and historical repair
+
+Provider `normalizeProfile` preserves the complete `sourceName` before parsing.
+`normalizeDiscoverPersonNames` is the single production boundary: clean two-part
+Latin names take a conservative deterministic path; ambiguous names (including
+non-Western ordering, mononyms, credentials and taglines) are grouped into batches
+of up to 50. It uses `OpenAiProspectClient`, the existing `PROSPECT_AI_MODEL`
+configuration and `person_identity` AI budget. Responses uses strict JSON schema,
+Zod/domain validation, a 30-second timeout, `store: false`, and no web tools.
+Only the source name and already available public title/headline/company context
+are sent, with temporary batch IDs. No email, user identity or outreach data is
+included. Logs contain aggregate counts and statuses only.
+
+The old deterministic parser treated an unknown credential as a complete family
+name; incomplete-identity enrichment therefore never ran. Shared-cache reuse also
+bypassed parsing, and the email helper retained a stale guess if its company
+pattern/domain/confidence matched. These were independent reinfection paths.
+The new boundary runs before provider email inference, shared-cache writes/reuse,
+user materialization (including same-user reuse), Add More, historical GraphQL
+reads, and export/Add to Imports selection. The UI already renders `fullName`;
+Position and profile identities are unchanged. Email generation uses validated
+components and eligibility, including on future company-format changes.
+
+The additive migration adds two nullable TEXT fields to **each** person store:
+`sourceName` preserves the original text for validation/retry; `nameNormalization`
+stores a versioned canonical snapshot and email eligibility. The snapshot binds
+to source/display/components so stale state cannot authorize a changed name.
+It also prevents repeat normalization from reinterpreting compound names and
+records safe failures. No identity keys, allocations, ordering or relations change.
+Existing rows are unversioned until normalized. Source data already discarded by
+older ingestion cannot be recovered by this repair; it uses the best stored name.
+
+On unavailable AI, invalid schema, invented tokens or uncertain structure, unsafe
+components are empty and inferred email is Unavailable. A safe mononym/Unicode
+display can survive; otherwise the display is empty until normalization succeeds.
+Fallback source text is retained and can be retried explicitly. No transliteration
+or initial expansion is performed. Verified/non-pattern/terminal addresses remain
+protected. Suppression overlays remain authoritative for displayed/exported emails.
+
+Deployment order:
+1. Deploy the additive migration and code together; run Prisma generation.
+2. Verify a credential-containing provider result, a clean result, exact and
+   company-cache reuse, same-user reuse, and Add More in the deployed environment.
+3. Run a bounded dry run (default mode; it can consume batched OpenAI calls):
+   `npx tsx scripts/repair-discover-person-names.ts --dry-run --batch-size 50 --limit 1000`
+4. Review aggregate changed/unsafe/email/error counts. Only then run the same
+   bounds with `--apply` replacing `--dry-run`.
+5. Repeat the dry run; unchanged input and saved normalization produce zero
+   additional changes. `--retry-fallback` deliberately reattempts failed AI rows.
+
+`--limit` bounds rows **per store**. Keyset pagination uses `id`; resume large
+scans with operator-supplied `--after-person ID` and `--after-cache ID`. Cursors
+are not printed to keep output aggregate-only. The script does not call Apify,
+consume daily Discover quota, create people, or touch search allocations. It
+repairs both ProspectPerson and DiscoverSearchCachePerson using exactly the
+production normalizer and current company/cache email-format derivation helper.
+Apply uses `id` plus `updatedAt` optimistic comparisons; concurrent changes are
+counted as conflicts and must be rescanned. User-owned suppression records protect
+both the old and proposed address during historical repair. Dry-run performs no
+writes; `--apply` is mandatory to mutate. The old
+`repair-discover-person-identities.ts` entry point delegates to this command;
+per-person web identity enrichment is no longer part of Discover normalization.

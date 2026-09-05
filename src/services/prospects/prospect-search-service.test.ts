@@ -1,3 +1,4 @@
+import { withRaeNameAI } from "./__test-utils__/mock-name-ai";
 import type { PrismaClient } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -1317,9 +1318,9 @@ describe("Discover shared cache integration", () => {
     }));
     const cachedPeople = Array.from({ length: 9 }, (_, index) => ({
       sourceProfileId: `salesforce-${index + 1}`,
-      firstName: `First${index + 1}`,
-      lastName: `Last${index + 1}`,
-      fullName: `First${index + 1} Last${index + 1}`,
+      firstName: `Avery${String.fromCharCode(97 + index)}`,
+      lastName: "Example",
+      fullName: `Avery${String.fromCharCode(97 + index)} Example`,
       currentTitle: "Software Engineer",
       normalizedTitle: "software engineer",
       positionCategory: "SOFTWARE_ENGINEERING",
@@ -3974,5 +3975,19 @@ describe("Search this company (same-company role/location search)", () => {
       })
     ).rejects.toMatchObject({ code: "DISCOVER_DAILY_LIMIT_REACHED" });
     expect(prisma._state.searches).toHaveLength(2);
+  });
+});
+
+
+it("normalizes a provider name before persistence and reuses corrected names for an existing person", async () => {
+  await withRaeNameAI(async () => {
+    const run = vi.fn(async () => ({ runId: "run", datasetId: "dataset", items: [profile("rae", "Rae", "Gruppman SHRM-CP", "Software Engineer")] }));
+    const { service } = buildService(prisma, { run }, AI_RESPONSES);
+    const search = await service.createSearch(USER_ID, VALIDATED);
+    await service.processSearch(USER_ID, search.id);
+    const stored = prisma._state.people.find(p => p.sourceProfileId === "rae");
+    expect(stored).toMatchObject({ fullName: "Rae Gruppman", lastName: "Gruppman" });
+    expect(stored?.inferredEmail?.includes("shrm")).not.toBe(true);
+    expect(prisma._state.searchPeople.filter(a => a.personId === stored!.id)).toHaveLength(1);
   });
 });

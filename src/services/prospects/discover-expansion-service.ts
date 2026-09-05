@@ -1,3 +1,6 @@
+import { protectNameRepairSuppressions } from "@/services/prospects/discover-person-name-repair";
+import { normalizeDiscoverPersonNames } from "@/services/prospects/discover-person-name-normalization";
+import { nameStateFields } from "@/services/prospects/discover-name-contract";
 import type { PrismaClient, ProspectCompany, ProspectSearch } from "@prisma/client";
 
 import { recordAuditEvent, type RecordAuditEventArgs } from "@/lib/audit";
@@ -29,11 +32,6 @@ import {
 } from "@/services/prospects/discover-role-intelligence-service";
 import { PersonIdentitySet } from "@/services/prospects/discover-person-identity";
 import { resolveCandidateEmail } from "@/services/prospects/email-generation-service";
-import {
-  OpenAIPersonIdentityResolver,
-  type PersonIdentityResolverPort,
-  resolveIncompleteIdentities
-} from "@/services/prospects/openai-person-identity-resolution";
 import { AiCallBudget, createAiBudget } from "@/services/prospects/prospect-ai";
 import { combinedEmailConfidence } from "@/services/prospects/prospect-email-confidence";
 import { normalizeTitle } from "@/services/prospects/prospect-normalization";
@@ -96,7 +94,6 @@ export type DiscoverExpansionServiceDeps = {
   batchSize?: number;
   maxProviderPages?: number;
   /** Fallback resolver for incomplete person names; see the search service. */
-  identityResolver?: PersonIdentityResolverPort;
 };
 
 const EXPANSION_LOCK_PREFIX = "discover:expansion";
@@ -141,7 +138,6 @@ export class DiscoverExpansionService {
   private readonly audit: ExpansionAuditFn;
   private readonly batchSize: number;
   private readonly maxProviderPages: number;
-  private readonly identityResolver: PersonIdentityResolverPort;
 
   constructor(deps: DiscoverExpansionServiceDeps) {
     this.prisma = deps.prisma;
@@ -157,7 +153,6 @@ export class DiscoverExpansionService {
     this.audit = deps.audit ?? recordAuditEvent;
     this.batchSize = deps.batchSize ?? resolveExpansionBatchSize();
     this.maxProviderPages = deps.maxProviderPages ?? resolveExpansionMaxProviderPages();
-    this.identityResolver = deps.identityResolver ?? new OpenAIPersonIdentityResolver();
   }
 
   async addMorePeople(input: AddMorePeopleInput): Promise<DiscoverExpansionResult> {
@@ -603,10 +598,8 @@ export class DiscoverExpansionService {
     // An expansion page gets exactly the same identity treatment as the initial
     // search, so "Add 10 more" can never be the path that reintroduces a
     // malformed name into the shared cache.
-    const profiles = await resolveIncompleteIdentities(rawProfiles, {
+    const profiles = await normalizeDiscoverPersonNames(rawProfiles, {
       companyName: company.companyName,
-      companyDomain: company.companyDomain,
-      resolver: this.identityResolver,
       budget
     });
 
@@ -624,6 +617,7 @@ export class DiscoverExpansionService {
       const candidate = resolveCandidateEmail({
         firstName: profile.firstName,
         lastName: profile.lastName,
+        ...nameStateFields(profile),
         domain: emailFormat.emailDomain,
         pattern: emailFormat.emailPattern,
         patternConfidence: candidateConfidence,
@@ -634,6 +628,7 @@ export class DiscoverExpansionService {
         firstName: profile.firstName,
         lastName: profile.lastName,
         fullName: profile.fullName,
+        ...nameStateFields(profile),
         currentTitle: profile.currentTitle,
         normalizedTitle: profile.normalizedTitle,
         positionCategory: category,
@@ -677,6 +672,7 @@ export class DiscoverExpansionService {
       return { materializedCount: 0, allocationAddedCount: 0 };
     }
 
+    people = await normalizeDiscoverPersonNames(people, { companyName: company.officialName ?? company.name });
     const categories = new Map<PositionCategory, Set<string>>();
     for (const person of people) {
       const category = coercePositionCategory(person.positionCategory);
@@ -712,6 +708,14 @@ export class DiscoverExpansionService {
       where: { userId, sourceProfileId: { in: people.map((person) => person.sourceProfileId) } }
     });
     const existingByProfileId = new Map(existingPeople.map((person) => [person.sourceProfileId, person]));
+    const originals = people.map(p => existingByProfileId.get(p.sourceProfileId) ?? p);
+    const correctedEmails = people.map((p, i) => {
+      const named = { ...originals[i], firstName: p.firstName, lastName: p.lastName, fullName: p.fullName, ...nameStateFields(p) };
+      return { ...p, ...resolveProspectPersonEmail(named, company, { allowLowConfidence: false, regenerateExistingInferred: true }) };
+    });
+    const protectedPeople = await protectNameRepairSuppressions(this.prisma, userId, originals, correctedEmails);
+    const emailByProfile = new Map(protectedPeople.map(p => [p.sourceProfileId, p]));
+
 
     let materializedCount = 0;
     let allocationAddedCount = 0;
@@ -725,17 +729,19 @@ export class DiscoverExpansionService {
       // verified/trusted addresses are preserved; a generated address that has
       // since failed is not — the failure stays on that address in the
       // suppression list and is overlaid at read time.
-      const existingPerson = existingByProfileId.get(person.sourceProfileId);
-      const emailFields = resolveProspectPersonEmail(existingPerson ?? person, company, {
-        allowLowConfidence,
-        regenerateExistingInferred: true
-      });
+      const protectedPerson = emailByProfile.get(person.sourceProfileId)!;
+      const emailFields = {
+        inferredEmail: protectedPerson.inferredEmail, emailStatus: protectedPerson.emailStatus,
+        emailConfidence: protectedPerson.emailConfidence, emailPattern: protectedPerson.emailPattern,
+        emailSource: protectedPerson.emailSource
+      };
       const fields = {
         companyId: company.id,
         positionId,
         firstName: person.firstName,
         lastName: person.lastName,
         fullName: person.fullName,
+      ...nameStateFields(person),
         currentTitle: person.currentTitle,
         normalizedTitle: person.normalizedTitle,
         location: person.location,

@@ -1,3 +1,4 @@
+import { withRaeNameAI } from "./__test-utils__/mock-name-ai";
 import type { PrismaClient } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -541,7 +542,7 @@ function cachePeople(prefix: string, count: number) {
   return Array.from({ length: count }, (_, i) => ({
     sourceProfileId: `${prefix}_${i + 1}`,
     firstName: prefix,
-    lastName: `P${i + 1}`
+    lastName: `Person${String.fromCharCode(97 + i % 26)}`
   }));
 }
 
@@ -1229,5 +1230,20 @@ describe("DiscoverExpansionService allocation grants (role-targeted Add 10 more)
     expect(
       prisma._state.people.filter((person) => person.sourceProfileId === cached[0].sourceProfileId)
     ).toHaveLength(1);
+  });
+});
+
+
+it.each(["CACHE", "PROVIDER"])("Add More normalizes credential names through %s", async path => {
+  await withRaeNameAI(async () => {
+    seedCompany(); seedSearch();
+    if (path === "CACHE") seedCache([{ sourceProfileId: "rae", firstName: "Rae", lastName: "Gruppman SHRM-CP" }, ...cachePeople("Taylor", 9)]);
+    const run = vi.fn(async () => ({ runId: "run", datasetId: "dataset", items: [rawProfile("rae", "Rae", "Gruppman SHRM-CP")] }));
+    const { service } = buildService({ runner: { run }, maxProviderPages: 1 });
+    await service.addMorePeople({ userId: USER_ID, actorEmail: "user@example.com", searchId: SEARCH_ID, idempotencyKey: "name-regression" });
+    const person = prisma._state.people.find(p => p.sourceProfileId === "rae");
+    expect(person).toMatchObject({ firstName: "Rae", lastName: "Gruppman", fullName: "Rae Gruppman", currentTitle: "Software Engineer" });
+    expect(person?.inferredEmail).toBe("rgruppman@apple.com");
+    if (path === "CACHE") expect(run).not.toHaveBeenCalled();
   });
 });
