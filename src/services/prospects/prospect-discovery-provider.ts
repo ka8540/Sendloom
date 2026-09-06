@@ -32,7 +32,7 @@ export function publicProfileValidator(input: {
       positionCategory: classifications.get(normalizeTitle(p.currentTitle ?? ''))?.category ?? 'OTHER',
       inferredEmail: null, emailStatus: 'UNAVAILABLE', emailConfidence: 'UNAVAILABLE', emailPattern: null, emailSource: null }));
     const valid = await input.roleIntelligence.filterAndRankPeople({ people, requestedTitles: input.requestedTitles,
-      requestedLocations: input.locations, context: 'CACHE', options: input.options });
+      requestedLocations: input.locations, context: 'CACHE', locationContext: 'PUBLIC', options: input.options });
     const identities = new PersonIdentitySet(valid);
     return named.filter(p => identities.has(p));
   };
@@ -95,6 +95,8 @@ export async function discoverProfiles(input: ApifyProfileSearchInput, options: 
         apifyDeduplicated: diagnostics.apifyDeduplicated, apifyAcceptedIntoHybrid: diagnostics.apifyAcceptedIntoHybrid };
     }
     diagnostics.acceptedUnique = result.profiles.length;
+    diagnostics.finalAcceptedUnique = result.profiles.length;
+    result.diagnostics = { ...result.diagnostics, finalAcceptedUnique: result.profiles.length };
     // New-mode inserts share the same database unique key even when providers
     // assign different opaque ids to the same public LinkedIn identity.
     result.profiles = dedupeProfiles(result.profiles.map(profile => {

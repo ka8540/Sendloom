@@ -431,6 +431,7 @@ export type ApifyIngestionDiagnostics = {
   // counts only, never names/URLs/raw items.
   apifyFallbackCalled?: boolean;
   apifyCalls?: number;
+  finalAcceptedUnique?: number;
   apifyRawReturned?: number;
   apifyParsed?: number;
   apifyCompanyMatched?: number;

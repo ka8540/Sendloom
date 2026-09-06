@@ -3331,27 +3331,39 @@ Processing order:
    profile-card boilerplate, comma-separated locations and country-only
    fragments are never manufactured into a title or employer, and locations are
    read from any segment.
-6. Deterministically validate employment. Explicit headline position/company
-   structures qualify, using the existing employer alias comparison. Historical
-   clauses (former, previously, ex, worked, past, formerly with, ended date ranges)
-   override a positive headline. An explicit different leading snippet employer
-   contradicts the headline. Ambiguous results fail closed. No employment AI is used.
+6. Deterministically validate employment into four evidence states: `CURRENT`
+   (explicit headline/snippet position for the requested company, alias-tolerant),
+   `FORMER` (historical/dated clauses about the requested company), `CONTRADICTORY`
+   (explicit different leading employer), and `INSUFFICIENT` (company may be
+   mentioned but current employment cannot be proven — never conflated with a
+   contradiction). Historical clauses override a positive headline. Only
+   `CURRENT` proceeds; no employment AI is used and query words are never
+   inspected.
 7. Run the existing batched person-name boundary, title classification and
    `filterAndRankPeople`, including when vector features are disabled. Public
-   geography uses the existing strict cache-context matcher because keyword
-   search cannot supply trusted provider location constraints.
+   geography uses the `PUBLIC` location policy: an explicit candidate country
+   contradicting a requested location rejects; missing or unconfirmable
+   location metadata is counted (`publicLocationMissing`) and never treated as
+   a contradiction, because keyword-extracted SERP snippets cannot supply
+   trusted geography. Cached-person reuse keeps its strict cache policy
+   unchanged.
 8. In hybrid mode, fetch bounded Apify pages only when validated unique public
    people leave a deficit (at most three actor pages per adapter invocation).
    Validate fallback people, exclude granted/rejected identities, and dedupe
    before materialization. Stronger Apify data wins same-person metadata ties.
    Evidence-aware reconciliation: only explicit public historical evidence ABOUT
    the target company (decision FORMER) suppresses the same canonical identity
-   in the trusted fallback; mismatched or insufficient public metadata fails
+   in the trusted fallback; contradictory or insufficient public metadata fails
    closed on the public path but never poisons Apify's trusted current-company
-   constraint. Fallback activity is reported with count-only diagnostics
-   (`apifyCalls`, `apifyRawReturned`, `apifyParsed`, `apifyCompanyMatched`,
-   `apifyRejectedCompany`, `apifySuppressedByPublicStrongNegative`,
-   `apifyDeduplicated`, `apifyAcceptedIntoHybrid`) alongside the public funnel.
+   constraint. Diagnostics stay count-only and privacy-safe: the public funnel
+   reports `publicCurrentAccepted`, `publicFormerRejected`,
+   `publicCompanyContradictionRejected`, `publicCompanyInsufficient`,
+   `publicLocationContradictionRejected`, `publicLocationMissing`,
+   `publicRoleRejected`, `publicDuplicateRejected`, `publicAcceptedUnique`, and
+   fallback activity reports `apifyCalls`, `apifyRawReturned`, `apifyParsed`,
+   `apifyCompanyMatched`, `apifyRejectedCompany`,
+   `apifySuppressedByPublicStrongNegative`, `apifyDeduplicated`,
+   `apifyAcceptedIntoHybrid`, with `finalAcceptedUnique` on the merged result.
    Hybrid does not retain a raw actor dataset replay id, because replay could bypass public negative-evidence exclusions. Public errors/unconfigured APIs fall back to Apify; public-only failures use
    safe `ProspectError` messages. Empty public results follow existing `NO_RESULTS`.
 9. Store the minimal normalized dataset in the existing shared cache and grant

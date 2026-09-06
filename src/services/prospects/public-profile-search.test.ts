@@ -66,9 +66,10 @@ describe('evidence, never query keywords', () => {
     const row = result('jane', 'Software Engineer at Abacus Insights', snippet);
     expect(validateCurrentEmployment(row, parseLinkedInSearchResult(row)!, companyName).decision).toBe('FORMER');
   });
-  it('fails closed on vague company mentions', () => {
+  it('fails closed on vague company mentions as insufficient evidence', () => {
     const row = result('jane', 'Software Engineer', 'Interested in Abacus Insights');
-    expect(validateCurrentEmployment(row, parseLinkedInSearchResult(row)!, companyName).decision).toBe('AMBIGUOUS');
+    expect(validateCurrentEmployment(row, parseLinkedInSearchResult(row)!, companyName)).toMatchObject(
+      { decision: 'INSUFFICIENT', reason: 'INSUFFICIENT_EVIDENCE' });
   });
   it('compares company aliases', () => {
     const row = result('jane', 'Software Engineer at JPMorgan');
@@ -163,6 +164,10 @@ describe('large provider windows (You.com count 25)', () => {
 describe('Optiver You.com result structures', () => {
   const optiverResult = (id: string, title: string, snippet: string): WebSearchResult =>
     ({ title, url: `https://www.linkedin.com/in/${id}`, snippet });
+  const optResult = (id: string, position = 'Software Engineer at Optiver', snippet?: string): WebSearchResult => ({
+    title: `Jane Doe - ${position} | LinkedIn`, url: `https://www.linkedin.com/in/${id}`,
+    snippet: snippet ?? `${position} · Boston, Massachusetts, United States`
+  });
   const decided = (row: WebSearchResult) => {
     const p = parseLinkedInSearchResult(row);
     return { profile: p, evidence: p ? validateCurrentEmployment(row, p, 'Optiver') : null };
@@ -205,10 +210,46 @@ describe('Optiver You.com result structures', () => {
     expect(former.evidence).toMatchObject({ decision: 'FORMER' });
     const elsewhere = decided(optiverResult('irene', 'Irene Example - Software Engineer at IMC Trading | LinkedIn',
       'Software Engineer at IMC Trading · Chicago, Illinois, United States'));
-    expect(elsewhere.evidence).toMatchObject({ decision: 'AMBIGUOUS', reason: 'COMPANY_MISMATCH' });
+    expect(elsewhere.evidence).toMatchObject({ decision: 'CONTRADICTORY', reason: 'COMPANY_MISMATCH' });
     expect(elsewhere.profile?.currentCompanyName).toBe('IMC Trading');
   });
-  it('an ambiguous or mismatched public identity is not a strong negative, so trusted Apify fallback can accept it', async () => {
+  it('classifies company-only You.com snippets as INSUFFICIENT, never contradiction', () => {
+    for (const snippet of [
+      'Experience: Optiver · Education: Delft University of Technology',
+      'Optiver · Chicago, Illinois, United States',
+      'Optiver · Full-time · Software Engineer',
+      'United States · Optiver']) {
+      const d = decided(optiverResult('hist', 'Hist Example - Optiver | LinkedIn', snippet));
+      expect(d.evidence).toMatchObject({ decision: 'INSUFFICIENT', reason: 'INSUFFICIENT_EVIDENCE' });
+    }
+  });
+  it('missing location metadata is counted and accepted, while an explicit wrong location rejects', async () => {
+    const search = vi.fn(async (_q: string, o: { page?: number }) => (o.page === 1
+      ? [optResult('alice'), { ...optResult('bob'), snippet: '' }, { ...optResult('charlie'), snippet: 'Software Engineer at Optiver · London, United Kingdom' }]
+      : []));
+    const o = { ...searchOptions(), target: 3 };
+    const r = await new PublicSearchDiscoveryProvider({ configured: true, search }).searchProfiles(optiverInput, o);
+    expect(r.profiles.map(p => p.sourceProfileId)).toEqual(['alice', 'bob']);
+    expect(o.diagnostics).toMatchObject({
+      publicLocationMissing: 1, publicLocationContradictionRejected: 1, publicAcceptedUnique: 2, acceptedUnique: 2
+    });
+  });
+  it('reports the granular public funnel counters without names or URLs', async () => {
+    const search = vi.fn(async (_q: string, o: { page?: number }) => (o.page === 1
+      ? [
+          optResult('alice'), { ...optResult('alice'), url: 'https://www.linkedin.com/in/alice/?trk=dup' },
+          optResult('former', 'Former Software Engineer at Optiver'),
+          { ...optResult('elsewhere'), snippet: 'Software Engineer at IMC Trading' },
+          optResult('vague', 'Optiver', 'Experience: Optiver')]
+      : []));
+    const o = searchOptions();
+    await new PublicSearchDiscoveryProvider({ configured: true, search }).searchProfiles(optiverInput, o);
+    expect(o.diagnostics).toMatchObject({
+      publicCurrentAccepted: 2, publicFormerRejected: 1, publicCompanyContradictionRejected: 1,
+      publicCompanyInsufficient: 1, publicDuplicateRejected: 1, publicAcceptedUnique: 1, acceptedUnique: 1
+    });
+  });
+  it('a contradictory or insufficient public identity is not a strong negative, so trusted Apify fallback can accept it', async () => {
     const web = new PublicSearchDiscoveryProvider({ configured: true, search: vi.fn(async () => [
       { title: 'Alice Example - Software Engineer at Optiver | LinkedIn', url: 'https://linkedin.com/in/alice-example',
         snippet: 'Software Engineer at IMC Trading · Experience: IMC Trading · Optiver' }]) });
@@ -235,6 +276,15 @@ describe('provider modes never cross boundaries', () => {
       publicProvider: new PublicSearchDiscoveryProvider({ configured: true, search: async () => [result('jane')] }) });
     expect(r.profiles.map(p => p.sourceProfileId)).toEqual(['jane']);
     expect(apify.searchProfiles).not.toHaveBeenCalled();
+    expect(r.diagnostics.finalAcceptedUnique).toBe(1);
+  });
+  it('public_search with zero provider results never invokes Apify', async () => {
+    const apify = apifyStub();
+    const r = await discoverProfiles(input, { mode: 'public_search', apify, validate: accept, target: 10,
+      publicProvider: new PublicSearchDiscoveryProvider({ configured: true, search: async () => [] }) });
+    expect(r.profiles).toEqual([]);
+    expect(apify.searchProfiles).not.toHaveBeenCalled();
+    expect(r.diagnostics.finalAcceptedUnique).toBe(0);
   });
   it('public_search with zero accepted never invokes Apify', async () => {
     const apify = apifyStub();
@@ -385,7 +435,8 @@ describe('deadline and contradictory evidence safeguards', () => {
   });
   it('explicit different current snippet employer overrides a positive headline', () => {
     const row = result('jane', 'Software Engineer at Abacus Insights', 'Software Engineer at NewCo');
-    expect(validateCurrentEmployment(row, parseLinkedInSearchResult(row)!, companyName).decision).toBe('AMBIGUOUS');
+    expect(validateCurrentEmployment(row, parseLinkedInSearchResult(row)!, companyName)).toMatchObject(
+      { decision: 'CONTRADICTORY', reason: 'COMPANY_MISMATCH' });
   });
   it('does not resurrect a former employee in fallback or expose a raw replay dataset', async () => {
     const web = new PublicSearchDiscoveryProvider({ configured: true, search: async () => [result('former', 'Former Software Engineer at Abacus Insights')] });

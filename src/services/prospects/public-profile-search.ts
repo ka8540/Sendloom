@@ -4,6 +4,7 @@ import { buildPublicPeopleSearchQuery } from './public-people-query-builder';
 import { canonicalizeLinkedInProfileUrl } from './linkedin-profile-url';
 import { parseLinkedInSearchResult } from './linkedin-search-result-parser';
 import { validateCurrentEmployment } from './current-employment-evidence';
+import { evaluateDiscoverLocationMatch } from './discover-location-matching';
 import { createConfiguredWebSearchProvider, type WebSearchProvider } from './web-search-provider';
 import type { ProspectDiscoveryProvider } from './prospect-discovery-provider';
 import { ProspectError } from './prospect-search-service';
@@ -16,7 +17,10 @@ export function publicCounters() {
     ambiguousEmploymentRejected: 0, companyMismatchRejected: 0, roleOrLocationRejected: 0,
     duplicateRejected: 0, acceptedUnique: 0, apifyFallbackCalled: false, providerFailed: false,
     apifyCalls: 0, apifyRawReturned: 0, apifyParsed: 0, apifyCompanyMatched: 0, apifyRejectedCompany: 0,
-    apifySuppressedByPublicStrongNegative: 0, apifyDeduplicated: 0, apifyAcceptedIntoHybrid: 0 };
+    apifySuppressedByPublicStrongNegative: 0, apifyDeduplicated: 0, apifyAcceptedIntoHybrid: 0,
+    publicCurrentAccepted: 0, publicFormerRejected: 0, publicCompanyContradictionRejected: 0,
+    publicCompanyInsufficient: 0, publicLocationContradictionRejected: 0, publicLocationMissing: 0,
+    publicRoleRejected: 0, publicDuplicateRejected: 0, publicAcceptedUnique: 0, finalAcceptedUnique: 0 };
 }
 export type DiscoveryValidation = (profiles: NormalizedProfile[]) => Promise<NormalizedProfile[]>;
 export type PublicSearchOptions = {
@@ -68,20 +72,37 @@ export class PublicSearchDiscoveryProvider implements ProspectDiscoveryProvider 
             if (evidence.decision !== 'CURRENT') {
               // Only explicit historical evidence ABOUT the target company is a
               // strong negative that suppresses trusted fallback for this
-              // identity. Mismatched or insufficient indexed metadata fails
+              // identity. Contradictory or insufficient indexed metadata fails
               // closed on the public path but must not poison Apify's trusted
               // current-company constraint for the same person.
-              if (evidence.decision === 'FORMER') { d.formerEmployeeRejected++; options.denied.add(profile); }
-              else if (evidence.reason === 'COMPANY_MISMATCH') d.companyMismatchRejected++;
-              else d.ambiguousEmploymentRejected++;
+              if (evidence.decision === 'FORMER') {
+                d.formerEmployeeRejected++; d.publicFormerRejected++; options.denied.add(profile);
+              } else if (evidence.decision === 'CONTRADICTORY') {
+                d.companyMismatchRejected++; d.publicCompanyContradictionRejected++;
+              } else {
+                d.ambiguousEmploymentRejected++; d.publicCompanyInsufficient++;
+              }
               continue;
             }
-            if (options.denied.has(profile) || options.excluded?.has(profile) || !seen.addIfNew(profile)) { d.duplicateRejected++; continue; }
+            d.publicCurrentAccepted++;
+            // SERP geography: only an explicit contradiction rejects. Missing or
+            // unconfirmable location metadata is counted, never a contradiction.
+            const locationEvaluation = evaluateDiscoverLocationMatch({
+              candidate: profile, requestedLocations: input.locations, context: 'PUBLIC'
+            });
+            if (locationEvaluation.reason === 'EXPLICIT_CONTRADICTION') {
+              d.publicLocationContradictionRejected++; d.roleOrLocationRejected++; continue;
+            }
+            if (locationEvaluation.reason === 'MISSING_METADATA' || locationEvaluation.reason === 'NO_MATCH') {
+              d.publicLocationMissing++;
+            }
+            if (options.denied.has(profile) || options.excluded?.has(profile) || !seen.addIfNew(profile)) { d.duplicateRejected++; d.publicDuplicateRejected++; continue; }
             candidates.push(profile);
           }
           const valid = await options.validate(candidates);
           signal.throwIfAborted();
-          d.roleOrLocationRejected += candidates.length - valid.length;
+          const roleRejected = candidates.length - valid.length;
+          d.roleOrLocationRejected += roleRejected; d.publicRoleRejected += roleRejected;
           accepted.push(...valid);
           // A later result may contradict an earlier headline for this identity.
           for (let i = accepted.length - 1; i >= 0; i--) if (options.denied.has(accepted[i])) accepted.splice(i, 1);
@@ -94,6 +115,7 @@ export class PublicSearchDiscoveryProvider implements ProspectDiscoveryProvider 
       throw new ProspectError('PROVIDER_ERROR', 'Public people search is temporarily unavailable.');
     }
     d.acceptedUnique = accepted.length;
+    d.publicAcceptedUnique = accepted.length;
     return { profiles: accepted, runId: null, datasetId: null, totalFound: d.rawSearchResults,
       diagnostics: { itemsReturned: d.rawSearchResults, parsedCandidates: d.linkedinProfileUrls,
         rejectedBySchema: d.invalidProfileUrlRejected + d.candidateParseRejected, duplicateItems: d.duplicateRejected,

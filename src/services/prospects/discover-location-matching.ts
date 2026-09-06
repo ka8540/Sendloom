@@ -1,6 +1,6 @@
 import { stripDiacritics } from "@/services/prospects/prospect-normalization";
 
-export type DiscoverLocationContext = "CACHE" | "PROVIDER";
+export type DiscoverLocationContext = "CACHE" | "PROVIDER" | "PUBLIC";
 export type DiscoverLocationMatchReason =
   | "NO_CONSTRAINT"
   | "CONFIRMED"
@@ -147,6 +147,17 @@ export function evaluateDiscoverLocationMatch(input: {
     && !requestedCountryKeys.has(explicitCountry)
   ) {
     return { matches: false, reason: "EXPLICIT_CONTRADICTION" };
+  }
+
+  if (input.context === "PUBLIC") {
+    // Keyword-extracted SERP metadata cannot supply trusted provider location
+    // constraints, and absence of geography is not evidence of a contradictory
+    // geography. Only an explicit contradiction rejects here; missing or
+    // unconfirmable metadata passes and is counted separately by the caller.
+    return {
+      matches: true,
+      reason: candidateValues.length === 0 ? "MISSING_METADATA" : "NO_MATCH"
+    };
   }
 
   if (input.context === "PROVIDER") {

@@ -84,4 +84,35 @@ describe("evaluateDiscoverLocationMatch", () => {
       })
     ).toEqual({ matches: false, reason: "MISSING_METADATA" });
   });
+
+  it("public SERP geography: explicit contradiction rejects, missing/unknown passes without inventing location", () => {
+    expect(
+      evaluateDiscoverLocationMatch({
+        candidate: { location: "London, United Kingdom", country: "United Kingdom" },
+        requestedLocations: ["United States"],
+        context: "PUBLIC"
+      })
+    ).toEqual({ matches: false, reason: "EXPLICIT_CONTRADICTION" });
+    expect(
+      evaluateDiscoverLocationMatch({
+        candidate: {},
+        requestedLocations: ["United States"],
+        context: "PUBLIC"
+      })
+    ).toEqual({ matches: true, reason: "MISSING_METADATA" });
+    expect(
+      evaluateDiscoverLocationMatch({
+        candidate: { location: "Boston" },
+        requestedLocations: ["United States"],
+        context: "PUBLIC"
+      })
+    ).toEqual({ matches: true, reason: "NO_MATCH" });
+    expect(
+      evaluateDiscoverLocationMatch({
+        candidate: { location: "Chicago, Illinois, United States" },
+        requestedLocations: ["United States"],
+        context: "PUBLIC"
+      })
+    ).toEqual({ matches: true, reason: "CONFIRMED" });
+  });
 });

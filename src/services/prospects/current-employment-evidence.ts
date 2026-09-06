@@ -2,7 +2,7 @@ import { companyNamesAliasMatch, type NormalizedProfile } from './apify-profile-
 import { resultText, positionEvidence } from './linkedin-search-result-parser';
 import type { WebSearchResult } from './web-search-provider';
 export type CurrentEmploymentEvidence = {
-  decision: 'CURRENT' | 'FORMER' | 'AMBIGUOUS'; confidence: number;
+  decision: 'CURRENT' | 'FORMER' | 'CONTRADICTORY' | 'INSUFFICIENT'; confidence: number;
   reason: 'CURRENT_HEADLINE' | 'HISTORICAL_EMPLOYMENT' | 'COMPANY_MISMATCH' | 'INSUFFICIENT_EVIDENCE';
 };
 /** Negative evidence wins even over a stale positive headline. Query words are never inspected. */
@@ -21,10 +21,10 @@ export function validateCurrentEmployment(result: WebSearchResult, profile: Norm
   }
   const snippetPosition = positionEvidence(resultText(result.snippet ?? '').split(/\s*[·|]\s*/)[0]);
   if (snippetPosition && !companyNamesAliasMatch(snippetPosition.company, companyName))
-    return { decision: 'AMBIGUOUS', confidence: 0, reason: 'COMPANY_MISMATCH' };
+    return { decision: 'CONTRADICTORY', confidence: 0, reason: 'COMPANY_MISMATCH' };
   if (!profile.currentTitle || !profile.currentCompanyName || /\b(former|previous|ex-|worked|past|seeking|aspiring|interested|opportunities|internship applicant)\b/i.test(profile.currentTitle))
-    return { decision: 'AMBIGUOUS', confidence: 0, reason: 'INSUFFICIENT_EVIDENCE' };
+    return { decision: 'INSUFFICIENT', confidence: 0, reason: 'INSUFFICIENT_EVIDENCE' };
   if (!companyNamesAliasMatch(profile.currentCompanyName, companyName))
-    return { decision: 'AMBIGUOUS', confidence: 0, reason: 'COMPANY_MISMATCH' };
+    return { decision: 'CONTRADICTORY', confidence: 0, reason: 'COMPANY_MISMATCH' };
   return { decision: 'CURRENT', confidence: 0.95, reason: 'CURRENT_HEADLINE' };
 }

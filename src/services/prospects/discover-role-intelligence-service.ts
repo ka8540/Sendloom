@@ -4,7 +4,7 @@ import { env } from "@/lib/env";
 import { coercePositionCategory } from "@/lib/prospect-enums";
 import { filterReusableDiscoverPeople } from "@/services/prospects/discover-cache-reuse";
 import type { ResolvedCachePerson } from "@/services/prospects/discover-cache-service";
-import { evaluateDiscoverLocationMatch } from "@/services/prospects/discover-location-matching";
+import { evaluateDiscoverLocationMatch, type DiscoverLocationContext } from "@/services/prospects/discover-location-matching";
 import {
   OpenAIRoleEmbeddingService,
   type RoleEmbeddingPort
@@ -52,6 +52,8 @@ export interface DiscoverRoleIntelligencePort {
     requestedTitles: readonly string[];
     requestedLocations: readonly string[];
     context: "CACHE" | "PROVIDER";
+    /** Location policy override; defaults to `context` when omitted. */
+    locationContext?: DiscoverLocationContext;
     options: RoleIntelligenceOptions;
   }): Promise<ResolvedCachePerson[]>;
   buildProviderTitlePlan(
@@ -141,13 +143,15 @@ export class DiscoverRoleIntelligenceService implements DiscoverRoleIntelligence
     requestedTitles: readonly string[];
     requestedLocations: readonly string[];
     context: "CACHE" | "PROVIDER";
+    locationContext?: DiscoverLocationContext;
     options: RoleIntelligenceOptions;
   }): Promise<ResolvedCachePerson[]> {
     const requestedIntents = await this.classifyIntents(input.requestedTitles, input.options);
     if (requestedIntents.length === 0) return [];
 
     if (!this.enabled) {
-      return this.currentBehaviorFilter(input.people, requestedIntents, input.requestedLocations);
+      return this.currentBehaviorFilter(input.people, requestedIntents, input.requestedLocations,
+        input.locationContext ?? input.context);
     }
 
     const candidateTitles = input.people
@@ -198,7 +202,7 @@ export class DiscoverRoleIntelligenceService implements DiscoverRoleIntelligence
       const locationEvaluation = evaluateDiscoverLocationMatch({
         candidate: person,
         requestedLocations: input.requestedLocations,
-        context: input.context
+        context: input.locationContext ?? input.context
       });
       if (locationEvaluation.reason === "EXPLICIT_CONTRADICTION") {
         explicitLocationContradictionCount += 1;
@@ -393,7 +397,8 @@ export class DiscoverRoleIntelligenceService implements DiscoverRoleIntelligence
   private currentBehaviorFilter(
     people: readonly ResolvedCachePerson[],
     requestedIntents: readonly RoleIntent[],
-    requestedLocations: readonly string[]
+    requestedLocations: readonly string[],
+    locationContext: DiscoverLocationContext
   ): ResolvedCachePerson[] {
     return filterReusableDiscoverPeople({
       people,
@@ -401,7 +406,8 @@ export class DiscoverRoleIntelligenceService implements DiscoverRoleIntelligence
         normalizedTitle: intent.normalizedTitle,
         category: intent.category
       })),
-      requestedLocations
+      requestedLocations,
+      locationContext
     });
   }
 

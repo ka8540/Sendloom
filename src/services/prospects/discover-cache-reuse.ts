@@ -1,7 +1,7 @@
 import type { PositionCategory } from "@/lib/prospect-enums";
 import { coercePositionCategory } from "@/lib/prospect-enums";
 import type { ResolvedCachePerson } from "@/services/prospects/discover-cache-service";
-import { evaluateDiscoverLocationMatch } from "@/services/prospects/discover-location-matching";
+import { evaluateDiscoverLocationMatch, type DiscoverLocationContext } from "@/services/prospects/discover-location-matching";
 import { normalizeTitle } from "@/services/prospects/prospect-normalization";
 
 export type RequestedRoleMatch = {
@@ -23,6 +23,8 @@ export function filterReusableDiscoverPeople(input: {
   people: readonly ResolvedCachePerson[];
   requestedRoles: readonly RequestedRoleMatch[];
   requestedLocations: readonly string[];
+  /** Location policy override; defaults to the strict cache-reuse policy. */
+  locationContext?: DiscoverLocationContext;
 }): ResolvedCachePerson[] {
   if (input.requestedRoles.length === 0) {
     return [];
@@ -43,7 +45,7 @@ export function filterReusableDiscoverPeople(input: {
     return evaluateDiscoverLocationMatch({
       candidate: person,
       requestedLocations: input.requestedLocations,
-      context: "CACHE"
+      context: input.locationContext ?? "CACHE"
     }).matches;
   });
 }
