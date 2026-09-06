@@ -427,6 +427,17 @@ export type ApifyIngestionDiagnostics = {
   duplicateItems: number;
   companyMatched: number;
   rejectedByCompany: number;
+  // Hybrid-fallback counters (set only when public discovery ran first):
+  // counts only, never names/URLs/raw items.
+  apifyFallbackCalled?: boolean;
+  apifyCalls?: number;
+  apifyRawReturned?: number;
+  apifyParsed?: number;
+  apifyCompanyMatched?: number;
+  apifyRejectedCompany?: number;
+  apifySuppressedByPublicStrongNegative?: number;
+  apifyDeduplicated?: number;
+  apifyAcceptedIntoHybrid?: number;
 };
 
 export type ProcessedDatasetItems = {

@@ -17,6 +17,7 @@ import { RoleClassificationService } from './role-classification-service';
 
 const companyName = 'Abacus Insights';
 const input = { companyName, jobTitles: ['Software Engineer'], locations: ['United States'], maxResults: 25 };
+const optiverInput = { companyName: 'Optiver', jobTitles: ['Software Engineer'], locations: ['United States'], maxResults: 25 };
 const result = (id = 'jane-doe', position = 'Software Engineer at Abacus Insights', snippet?: string): WebSearchResult => ({
   title: `Jane Doe - ${position} | LinkedIn`, url: `https://www.linkedin.com/in/${id}`,
   snippet: snippet ?? `${position} · Boston, Massachusetts, United States`
@@ -159,6 +160,138 @@ describe('large provider windows (You.com count 25)', () => {
     expect(response.profiles.map(p => p.sourceProfileId)).toEqual(['jane', 'jane-two']);
   });
 });
+describe('Optiver You.com result structures', () => {
+  const optiverResult = (id: string, title: string, snippet: string): WebSearchResult =>
+    ({ title, url: `https://www.linkedin.com/in/${id}`, snippet });
+  const decided = (row: WebSearchResult) => {
+    const p = parseLinkedInSearchResult(row);
+    return { profile: p, evidence: p ? validateCurrentEmployment(row, p, 'Optiver') : null };
+  };
+  it('accepts headline evidence in every common layout', () => {
+    expect(decided(optiverResult('alice', 'Alice Example - Software Engineer at Optiver | LinkedIn',
+      'Software Engineer at Optiver · Chicago, Illinois, United States')).evidence?.decision).toBe('CURRENT');
+    expect(decided(optiverResult('bob', 'Bob Example - Software Engineer at Optiver | LinkedIn',
+      'Chicago, Illinois, United States · Software Engineer at Optiver · 500+ connections')).evidence?.decision).toBe('CURRENT');
+    expect(decided(optiverResult('charlie', 'Charlie Example - Software Engineer - Optiver | LinkedIn',
+      'Software Engineer · Optiver · Chicago, Illinois, United States')).evidence?.decision).toBe('CURRENT');
+    expect(decided(optiverResult('dana', 'Dana Example - Software Engineer at Optiver | LinkedIn',
+      "View Dana Example's profile on LinkedIn, the world's largest professional community. Dana has 4 jobs listed on their profile.")).evidence?.decision).toBe('CURRENT');
+    expect(decided(optiverResult('erin', 'Erin Example | Software Engineer at Optiver | LinkedIn',
+      'Software Engineer at Optiver · Chicago, Illinois, United States')).evidence?.decision).toBe('CURRENT');
+    expect(decided(optiverResult('frank', 'Frank Example - Optiver | LinkedIn',
+      'Software Engineer at Optiver · Chicago, Illinois, United States')).evidence?.decision).toBe('CURRENT');
+    expect(decided(optiverResult('grace', 'Grace Example - Optiver | LinkedIn',
+      'Chicago, Illinois, United States · Software Engineer · Optiver')).evidence?.decision).toBe('CURRENT');
+  });
+  it('keeps location-first snippets readable and never manufactures location into a title or company', () => {
+    const bob = decided(optiverResult('bob', 'Bob Example - Software Engineer at Optiver | LinkedIn',
+      'Chicago, Illinois, United States · Software Engineer at Optiver · 500+ connections')).profile;
+    expect(bob).toMatchObject({ currentTitle: 'Software Engineer', currentCompanyName: 'Optiver', location: 'Chicago, Illinois, United States' });
+    for (const [id, snippet] of [
+      ['hist', 'Experience: Optiver · Education: Delft University of Technology'],
+      ['pair', 'Optiver · Chicago, Illinois, United States'],
+      ['jobs', 'Optiver · Full-time · Software Engineer'],
+      ['country', 'United States · Optiver']] as const) {
+      const d = decided(optiverResult(id, `${id} Example - Optiver | LinkedIn`, snippet));
+      expect(d.profile?.currentCompanyName ?? null).not.toBe('Chicago, Illinois, United States');
+      expect(d.profile?.currentCompanyName ?? null).not.toBe('Full-time');
+      expect(d.profile?.currentCompanyName ?? null).not.toBe('Education: Delft University of Technology');
+      expect(d.evidence?.reason ?? null).not.toBe('COMPANY_MISMATCH');
+    }
+  });
+  it('rejects explicit former employees and different current employers, failing closed without mislabeling', () => {
+    const former = decided(optiverResult('erin', 'Erin Example - Former Software Engineer at Optiver | LinkedIn',
+      'Former Software Engineer at Optiver · Chicago, Illinois, United States'));
+    expect(former.evidence).toMatchObject({ decision: 'FORMER' });
+    const elsewhere = decided(optiverResult('irene', 'Irene Example - Software Engineer at IMC Trading | LinkedIn',
+      'Software Engineer at IMC Trading · Chicago, Illinois, United States'));
+    expect(elsewhere.evidence).toMatchObject({ decision: 'AMBIGUOUS', reason: 'COMPANY_MISMATCH' });
+    expect(elsewhere.profile?.currentCompanyName).toBe('IMC Trading');
+  });
+  it('an ambiguous or mismatched public identity is not a strong negative, so trusted Apify fallback can accept it', async () => {
+    const web = new PublicSearchDiscoveryProvider({ configured: true, search: vi.fn(async () => [
+      { title: 'Alice Example - Software Engineer at Optiver | LinkedIn', url: 'https://linkedin.com/in/alice-example',
+        snippet: 'Software Engineer at IMC Trading · Experience: IMC Trading · Optiver' }]) });
+    const apify = { searchProfiles: vi.fn(async () => apifyResult(['alice-example'])) };
+    const r = await discoverProfiles(optiverInput, { mode: 'hybrid', apify, validate: accept, target: 1, publicProvider: web });
+    expect(r.profiles.map(p => p.sourceProfileId)).toEqual(['alice-example']);
+    expect(apify.searchProfiles).toHaveBeenCalledTimes(1);
+    expect(r.diagnostics).toMatchObject({ apifyCalls: 1, apifySuppressedByPublicStrongNegative: 0, apifyAcceptedIntoHybrid: 1 });
+  });
+  it('explicit former evidence about the target company still suppresses the same fallback identity', async () => {
+    const web = new PublicSearchDiscoveryProvider({ configured: true, search: async () => [result('former', 'Former Software Engineer at Abacus Insights')] });
+    const r = await discoverProfiles(input, { mode: 'hybrid', publicProvider: web, validate: accept, target: 1,
+      apify: { searchProfiles: async () => apifyResult(['former', 'current']) } });
+    expect(r.profiles.map(p => p.sourceProfileId)).toEqual(['current']);
+    expect(r.diagnostics).toMatchObject({ apifySuppressedByPublicStrongNegative: 1, apifyAcceptedIntoHybrid: 1, apifyCalls: 1 });
+  });
+});
+
+describe('provider modes never cross boundaries', () => {
+  const apifyStub = () => ({ searchProfiles: vi.fn(async () => apifyResult(['apify-person'])) });
+  it('public_search success never invokes Apify', async () => {
+    const apify = apifyStub();
+    const r = await discoverProfiles(input, { mode: 'public_search', apify, validate: accept, target: 1,
+      publicProvider: new PublicSearchDiscoveryProvider({ configured: true, search: async () => [result('jane')] }) });
+    expect(r.profiles.map(p => p.sourceProfileId)).toEqual(['jane']);
+    expect(apify.searchProfiles).not.toHaveBeenCalled();
+  });
+  it('public_search with zero accepted never invokes Apify', async () => {
+    const apify = apifyStub();
+    const r = await discoverProfiles(input, { mode: 'public_search', apify, validate: accept, target: 10,
+      publicProvider: new PublicSearchDiscoveryProvider({ configured: true, search: async () => [result('former', 'Former Software Engineer at Abacus Insights')] }) });
+    expect(r.profiles).toEqual([]);
+    expect(apify.searchProfiles).not.toHaveBeenCalled();
+  });
+  it('public_search provider failure never invokes Apify', async () => {
+    const apify = apifyStub();
+    await expect(discoverProfiles(input, { mode: 'public_search', apify, validate: accept, target: 10,
+      publicProvider: new PublicSearchDiscoveryProvider({ configured: true, search: async () => { throw new Error('provider down'); } }) }))
+      .rejects.toMatchObject({ code: 'PROVIDER_ERROR' });
+    expect(apify.searchProfiles).not.toHaveBeenCalled();
+  });
+  it('public_search deadline timeout never invokes Apify', async () => {
+    const apify = apifyStub();
+    const controller = new AbortController();
+    const web = new PublicSearchDiscoveryProvider({ configured: true, search: async () => {
+      controller.abort(); throw new Error('timeout');
+    } });
+    await expect(discoverProfiles(input, { mode: 'public_search', apify, publicProvider: web, validate: accept, target: 10,
+      signal: controller.signal })).rejects.toMatchObject({ code: 'PROVIDER_TIMEOUT' });
+    expect(apify.searchProfiles).not.toHaveBeenCalled();
+  });
+  it('apify mode never invokes the public provider', async () => {
+    const publicSearch = vi.fn();
+    const apify = apifyStub();
+    const r = await discoverProfiles(input, { mode: 'apify', apify, validate: accept, target: 1,
+      publicProvider: new PublicSearchDiscoveryProvider({ configured: true, search: publicSearch }) });
+    expect(r.profiles.map(p => p.sourceProfileId)).toEqual(['apify-person']);
+    expect(publicSearch).not.toHaveBeenCalled();
+  });
+});
+
+describe('hybrid fallback diagnostics', () => {
+  it('counts Apify fallback stages without names or payloads', async () => {
+    const web = new PublicSearchDiscoveryProvider({ configured: true, search: vi.fn(async () => []) });
+    let calls = 0;
+    const apify = { searchProfiles: vi.fn(async () => (calls++ === 0 ? apifyResult(['p0', 'p8', 'p9']) : { ...apifyResult([]), totalFound: 0 })) };
+    const r = await discoverProfiles(input, { mode: 'hybrid', apify, validate: accept, target: 10, publicProvider: web });
+    expect(r.profiles).toHaveLength(3);
+    expect(r.diagnostics).toMatchObject({
+      apifyFallbackCalled: true, apifyCalls: 2, apifyRawReturned: 3, apifyParsed: 3, apifyCompanyMatched: 3,
+      apifyRejectedCompany: 0, apifySuppressedByPublicStrongNegative: 0, apifyDeduplicated: 0, apifyAcceptedIntoHybrid: 3
+    });
+  });
+  it('counts cross-provider duplicates dropped in the merge', async () => {
+    const web = new PublicSearchDiscoveryProvider({ configured: true, search: vi.fn(async () => [result('p0')]) });
+    let calls = 0;
+    const apify = { searchProfiles: vi.fn(async () => (calls++ === 0 ? apifyResult(['p0', 'p8']) : { ...apifyResult([]), totalFound: 0 })) };
+    const r = await discoverProfiles(input, { mode: 'hybrid', apify, validate: accept, target: 10, publicProvider: web });
+    expect(r.profiles.map(p => p.sourceProfileId)).toEqual(['p0', 'p8']);
+    expect(r.diagnostics).toMatchObject({ apifyAcceptedIntoHybrid: 2, apifyDeduplicated: 1 });
+  });
+});
+
 describe('hybrid fallback', () => {
   it('fills an eight-person deficit, merging the cross-provider duplicate', async () => {
     const web = new PublicSearchDiscoveryProvider({ configured: true, search: vi.fn(async () => Array.from({ length: 8 }, (_, i) => result(`p${i}`))) });

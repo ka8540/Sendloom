@@ -14,7 +14,9 @@ export function publicCounters() {
   return { publicSearchQueries: 0, publicSearchPages: 0, rawSearchResults: 0, linkedinProfileUrls: 0,
     invalidProfileUrlRejected: 0, candidateParseRejected: 0, formerEmployeeRejected: 0,
     ambiguousEmploymentRejected: 0, companyMismatchRejected: 0, roleOrLocationRejected: 0,
-    duplicateRejected: 0, acceptedUnique: 0, apifyFallbackCalled: false, providerFailed: false };
+    duplicateRejected: 0, acceptedUnique: 0, apifyFallbackCalled: false, providerFailed: false,
+    apifyCalls: 0, apifyRawReturned: 0, apifyParsed: 0, apifyCompanyMatched: 0, apifyRejectedCompany: 0,
+    apifySuppressedByPublicStrongNegative: 0, apifyDeduplicated: 0, apifyAcceptedIntoHybrid: 0 };
 }
 export type DiscoveryValidation = (profiles: NormalizedProfile[]) => Promise<NormalizedProfile[]>;
 export type PublicSearchOptions = {
@@ -64,8 +66,13 @@ export class PublicSearchDiscoveryProvider implements ProspectDiscoveryProvider 
             if (!profile) { d.candidateParseRejected++; continue; }
             const evidence = validateCurrentEmployment(result, profile, input.companyName);
             if (evidence.decision !== 'CURRENT') {
+              // Only explicit historical evidence ABOUT the target company is a
+              // strong negative that suppresses trusted fallback for this
+              // identity. Mismatched or insufficient indexed metadata fails
+              // closed on the public path but must not poison Apify's trusted
+              // current-company constraint for the same person.
               if (evidence.decision === 'FORMER') { d.formerEmployeeRejected++; options.denied.add(profile); }
-              else if (evidence.reason === 'COMPANY_MISMATCH') { d.companyMismatchRejected++; options.denied.add(profile); }
+              else if (evidence.reason === 'COMPANY_MISMATCH') d.companyMismatchRejected++;
               else d.ambiguousEmploymentRejected++;
               continue;
             }
@@ -82,6 +89,8 @@ export class PublicSearchDiscoveryProvider implements ProspectDiscoveryProvider 
       }
     } catch {
       d.providerFailed = true;
+      // Deadline/internal timeouts keep timeout semantics; provider failures stay generic.
+      if (signal.aborted) throw new ProspectError('PROVIDER_TIMEOUT', 'The profile search timed out. Try again in a moment.');
       throw new ProspectError('PROVIDER_ERROR', 'Public people search is temporarily unavailable.');
     }
     d.acceptedUnique = accepted.length;

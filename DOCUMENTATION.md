@@ -3324,6 +3324,13 @@ Processing order:
    normalize to the same identity. Reject other sites/paths, credentials and ports.
 5. Extract raw source name, headline position/company and professional location
    from returned title/snippet evidence. Do not populate fields from query words.
+   You.com snippets are query-relevant page extracts, not SERP cards, so the
+   parser scans every `·`/`|` segment for position evidence and joins ADJACENT
+   pairs to cover "Title · Company" splits; label sections ("Experience:",
+   "Education:"), connection counts, employment-type words ("Full-time"),
+   profile-card boilerplate, comma-separated locations and country-only
+   fragments are never manufactured into a title or employer, and locations are
+   read from any segment.
 6. Deterministically validate employment. Explicit headline position/company
    structures qualify, using the existing employer alias comparison. Historical
    clauses (former, previously, ex, worked, past, formerly with, ended date ranges)
@@ -3337,6 +3344,14 @@ Processing order:
    people leave a deficit (at most three actor pages per adapter invocation).
    Validate fallback people, exclude granted/rejected identities, and dedupe
    before materialization. Stronger Apify data wins same-person metadata ties.
+   Evidence-aware reconciliation: only explicit public historical evidence ABOUT
+   the target company (decision FORMER) suppresses the same canonical identity
+   in the trusted fallback; mismatched or insufficient public metadata fails
+   closed on the public path but never poisons Apify's trusted current-company
+   constraint. Fallback activity is reported with count-only diagnostics
+   (`apifyCalls`, `apifyRawReturned`, `apifyParsed`, `apifyCompanyMatched`,
+   `apifyRejectedCompany`, `apifySuppressedByPublicStrongNegative`,
+   `apifyDeduplicated`, `apifyAcceptedIntoHybrid`) alongside the public funnel.
    Hybrid does not retain a raw actor dataset replay id, because replay could bypass public negative-evidence exclusions. Public errors/unconfigured APIs fall back to Apify; public-only failures use
    safe `ProspectError` messages. Empty public results follow existing `NO_RESULTS`.
 9. Store the minimal normalized dataset in the existing shared cache and grant

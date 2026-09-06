@@ -68,12 +68,31 @@ export async function discoverProfiles(input: ApifyProfileSearchInput, options: 
         checkDeadline();
         const fallback = await options.apify.searchProfiles({ ...input, maxResults: HYBRID_DISCOVERY_LIMITS.pageSize, startPage: page });
         checkDeadline();
+        diagnostics.apifyCalls++;
+        diagnostics.apifyRawReturned += fallback.diagnostics.itemsReturned;
+        diagnostics.apifyParsed += fallback.diagnostics.parsedCandidates;
+        diagnostics.apifyCompanyMatched += fallback.diagnostics.companyMatched;
+        diagnostics.apifyRejectedCompany += fallback.diagnostics.rejectedByCompany;
+        diagnostics.apifyDeduplicated += fallback.diagnostics.duplicateItems;
+        // Explicit public historical evidence about the target company is the
+        // only public signal allowed to suppress a trusted fallback identity.
+        diagnostics.apifySuppressedByPublicStrongNegative += fallback.profiles.filter(p => denied.has(p)).length;
         const valid = await options.validate(fallback.profiles.filter(p => !denied.has(p) && !options.excluded?.has(p)));
         checkDeadline();
+        diagnostics.apifyAcceptedIntoHybrid += valid.length;
+        const merged = dedupeProfiles([...valid, ...result.profiles]);
+        diagnostics.apifyDeduplicated += valid.length + result.profiles.length - merged.length;
         result = { ...fallback, totalFound: result.totalFound + fallback.totalFound,
-          profiles: dedupeProfiles([...valid, ...result.profiles]), diagnostics: result.diagnostics };
+          profiles: merged, diagnostics: result.diagnostics };
         if (!fallback.totalFound) break;
       }
+      result.diagnostics = { ...result.diagnostics,
+        apifyFallbackCalled: diagnostics.apifyFallbackCalled,
+        apifyCalls: diagnostics.apifyCalls, apifyRawReturned: diagnostics.apifyRawReturned,
+        apifyParsed: diagnostics.apifyParsed, apifyCompanyMatched: diagnostics.apifyCompanyMatched,
+        apifyRejectedCompany: diagnostics.apifyRejectedCompany,
+        apifySuppressedByPublicStrongNegative: diagnostics.apifySuppressedByPublicStrongNegative,
+        apifyDeduplicated: diagnostics.apifyDeduplicated, apifyAcceptedIntoHybrid: diagnostics.apifyAcceptedIntoHybrid };
     }
     diagnostics.acceptedUnique = result.profiles.length;
     // New-mode inserts share the same database unique key even when providers
