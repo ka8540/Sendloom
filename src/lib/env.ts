@@ -106,10 +106,11 @@ const envSchema = z
     DISCOVER_PEOPLE_PROVIDER: z.enum(["apify", "public_search", "hybrid"]).default("apify"),
     WEB_SEARCH_PROVIDER: z.preprocess(
       (value) => (value === "" || value === undefined ? "none" : String(value).trim().toLowerCase()),
-      z.enum(["none", "serper", "brave", "you"]).default("none")
+      z.enum(["none", "serper", "brave", "you", "playwright_google"]).default("none")
     ),
     SERPER_API_KEY: z.string().min(1).optional(),
     BRAVE_SEARCH_API_KEY: z.string().min(1).optional(),
+    DISCOVER_GOOGLE_EXECUTABLE_PATH: z.preprocess(value => value === "" ? undefined : value, z.string().min(1).optional()),
     YDC_API_KEY: z.preprocess(value => value === "" ? undefined : value, z.string().trim().min(1).optional()),
     PROSPECT_GRAPH_ENABLED: booleanFlag(false),
     GRAPHQL_GRAPHIQL_ENABLED: booleanFlag(false),
@@ -305,6 +306,7 @@ function readRawEnv() {
     SERPER_API_KEY: process.env.SERPER_API_KEY,
     BRAVE_SEARCH_API_KEY: process.env.BRAVE_SEARCH_API_KEY,
     YDC_API_KEY: process.env.YDC_API_KEY,
+    DISCOVER_GOOGLE_EXECUTABLE_PATH: process.env.DISCOVER_GOOGLE_EXECUTABLE_PATH,
     PROSPECT_GRAPH_ENABLED: process.env.PROSPECT_GRAPH_ENABLED,
     GRAPHQL_GRAPHIQL_ENABLED: process.env.GRAPHQL_GRAPHIQL_ENABLED,
     LOCAL_PROSPECT_MAX_RESULTS: process.env.LOCAL_PROSPECT_MAX_RESULTS,

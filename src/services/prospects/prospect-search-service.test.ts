@@ -4090,3 +4090,42 @@ describe('public people discovery integration', () => {
     });
   });
 });
+
+describe('Playwright Google Discover integration', () => {
+  it('uses the existing role plan once, caps allocations, then serves shared cache without Google, You or Apify', async () => {
+    const { getEnv } = await import('@/lib/env');
+    const { PlaywrightGoogleSearchProvider } = await import('./playwright-google-search-provider');
+    const { YouSearchProvider } = await import('./web-search-provider');
+    const { buildPublicPeopleRoleUnionQuery } = await import('./public-people-query-builder');
+    const config = getEnv();
+    const previous = { DISCOVER_PEOPLE_PROVIDER: config.DISCOVER_PEOPLE_PROVIDER, WEB_SEARCH_PROVIDER: config.WEB_SEARCH_PROVIDER };
+    Object.assign(config, { DISCOVER_PEOPLE_PROVIDER: 'public_search', WEB_SEARCH_PROVIDER: 'playwright_google' });
+    const google = vi.spyOn(PlaywrightGoogleSearchProvider.prototype, 'search').mockResolvedValue(Array.from({ length: 12 }, (_, i) => ({
+      title: 'Jane Doe - Software Engineer at Apple | LinkedIn', url: `https://linkedin.com/in/google-person-${i}`,
+      snippet: 'Dallas, Texas · Software Engineer at Apple'
+    })));
+    const you = vi.spyOn(YouSearchProvider.prototype, 'search');
+    try {
+      const runner = { run: vi.fn() } as ApifyRunner;
+      const cache = new DiscoverSearchCacheService({ prisma: prisma as unknown as PrismaClient, lock: makeFakeCacheLock() });
+      const roles = deterministicRoleIntelligence(prisma);
+      const planBuilder = vi.spyOn(roles, 'buildProviderTitlePlan');
+      const { service } = buildService(prisma, runner, AI_RESPONSES, undefined, allowAllQuota, cache, roles);
+      const created = await service.createSearch(USER_ID, { ...VALIDATED, jobTitles: ['Software Engineer'] });
+      expect((await service.processSearch(USER_ID, created.id)).totalProcessed).toBe(10);
+      expect(planBuilder).toHaveBeenCalledTimes(1);
+      expect(planBuilder.mock.calls[0][0]).toEqual(['Software Engineer']);
+      const plan = await planBuilder.mock.results[0].value;
+      expect(google).toHaveBeenCalledTimes(1);
+      expect(google.mock.calls[0][0]).toBe(buildPublicPeopleRoleUnionQuery({ companyName: 'Apple', providerTitles: plan }));
+      expect(google.mock.calls[0][0]).not.toContain('United States');
+      expect(prisma._state.people).toHaveLength(10);
+      expect(prisma._state.people.every(p => p.location === 'Dallas, Texas' && p.country === 'United States')).toBe(true);
+      const second = await service.createSearch('google-cache-user', { ...VALIDATED, jobTitles: ['Software Engineer'] });
+      expect((await service.processSearch('google-cache-user', second.id)).totalProcessed).toBe(10);
+      expect(google).toHaveBeenCalledTimes(1);
+      expect(planBuilder).toHaveBeenCalledTimes(1);
+      expect(runner.run).not.toHaveBeenCalled(); expect(you).not.toHaveBeenCalled();
+    } finally { Object.assign(config, previous); google.mockRestore(); you.mockRestore(); }
+  });
+});

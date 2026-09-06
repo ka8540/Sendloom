@@ -1304,3 +1304,29 @@ describe('public Add More integration', () => {
     } finally { Object.assign(config, previous); }
   });
 });
+
+describe('single-SERP Google Add More', () => {
+  it('uses one union query, skips granted identities and returns fewer when the SERP is exhausted', async () => {
+    const { getEnv } = await import('@/lib/env');
+    const { PlaywrightGoogleSearchProvider } = await import('./playwright-google-search-provider');
+    const config = getEnv();
+    const previous = { DISCOVER_PEOPLE_PROVIDER: config.DISCOVER_PEOPLE_PROVIDER, WEB_SEARCH_PROVIDER: config.WEB_SEARCH_PROVIDER };
+    Object.assign(config, { DISCOVER_PEOPLE_PROVIDER: 'public_search', WEB_SEARCH_PROVIDER: 'playwright_google' });
+    seedCompany(); seedSearch(); seedExistingPeople(10); seedCache([]);
+    const old = prisma._state.people[0];
+    const google = vi.spyOn(PlaywrightGoogleSearchProvider.prototype, 'search').mockResolvedValue(
+      [`${old.linkedinUrl}/?trk=repeat`, 'https://linkedin.com/in/google-new-person'].map(url => ({
+        title: 'Jane Doe - Software Engineer at Apple | LinkedIn', url,
+        snippet: 'Software Engineer at Apple · Seattle, Washington'
+      }))
+    );
+    try {
+      const { service, runner } = buildService();
+      const result = await service.addMorePeople({ userId: USER_ID, actorEmail: 'user@example.com', searchId: SEARCH_ID, idempotencyKey: 'google-expansion' });
+      expect(result.addedCount).toBe(1); expect(prisma._state.people).toHaveLength(11);
+      expect(google).toHaveBeenCalledTimes(1);
+      expect(google.mock.calls[0][0]).toBe('site:linkedin.com/in "Apple" ("Software Engineer")');
+      expect(runner.run).not.toHaveBeenCalled();
+    } finally { Object.assign(config, previous); google.mockRestore(); }
+  });
+});

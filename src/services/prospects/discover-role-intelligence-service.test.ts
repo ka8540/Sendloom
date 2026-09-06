@@ -1,3 +1,4 @@
+import { buildPublicPeopleRoleUnionQuery } from "./public-people-query-builder";
 import type { PrismaClient } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -357,7 +358,8 @@ describe("DiscoverRoleIntelligenceService", () => {
           explicitLeadershipMismatchCount: 0,
           locationRejectedCount: 1,
           explicitLocationContradictionCount: 1,
-          missingLocationMetadataCount: 7,
+          // The shared parser now confirms Hartford, Connecticut as US geography.
+          missingLocationMetadataCount: 0,
           categoryRejectedCount: 0,
           familyRejectedCount: 0,
           vectorRejectedCount: 0
@@ -757,5 +759,18 @@ describe("DiscoverRoleIntelligenceService", () => {
     });
     expect(providerFiltered.map((entry) => entry.sourceProfileId)).toEqual(["sales"]);
     expect(embeddings.calls).toHaveLength(0);
+  });
+});
+
+
+describe("Google consumes the existing provider plan", () => {
+  it.each(["Software Engineer", "Human Resources", "Data Engineer"])("uses the same ranked family-safe plan for %s", async requested => {
+    const service = new DiscoverRoleIntelligenceService(classifier, new FakeEmbeddings({}), new MemoryRoleStore(), config());
+    const plan = await service.buildProviderTitlePlan([requested], { budget: budget() });
+    const query = buildPublicPeopleRoleUnionQuery({ companyName: "Abacus Insights", providerTitles: plan })!;
+    expect(plan[0]).toBe(requested);
+    expect(query).toBe(`site:linkedin.com/in "Abacus Insights" (${plan.slice(0, 5).map(title => `"${title}"`).join(" OR ")})`);
+    const unrelated = requested === "Software Engineer" ? ["Human Resources", "Data Engineer", "Recruiter"] : ["Software Developer", "Frontend Software Engineer"];
+    for (const title of unrelated) expect(query).not.toContain(`"${title}"`);
   });
 });

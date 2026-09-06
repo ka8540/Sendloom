@@ -20,7 +20,7 @@ describe("evaluateDiscoverLocationMatch", () => {
     ).toEqual({ matches: true, reason: "CONFIRMED" });
   });
 
-  it("trusts provider provenance when returned geography is missing or only city/state", () => {
+  it("trusts provider provenance for missing geography and confirms known city/state hierarchy", () => {
     expect(
       evaluateDiscoverLocationMatch({
         candidate: { location: null, country: null, state: null, city: null },
@@ -35,13 +35,13 @@ describe("evaluateDiscoverLocationMatch", () => {
           city: "Hartford",
           state: null,
           // The provider parser may place the final partial component here;
-          // it is not reliable evidence of a different country.
+          // the shared city/state parser can still recover the country.
           country: "Connecticut"
         },
         requestedLocations: ["United States"],
         context: "PROVIDER"
       })
-    ).toEqual({ matches: true, reason: "MISSING_METADATA" });
+    ).toEqual({ matches: true, reason: "CONFIRMED" });
   });
 
   it("rejects an explicit provider country contradiction", () => {
@@ -114,5 +114,20 @@ describe("evaluateDiscoverLocationMatch", () => {
         context: "PUBLIC"
       })
     ).toEqual({ matches: true, reason: "CONFIRMED" });
+  });
+});
+
+
+describe("city/state country hierarchy", () => {
+  it.each(["Dallas, Texas", "Seattle, Washington", "Lynn, Massachusetts", "Tyngsborough, Massachusetts"])("confirms %s for United States without changing the source location", location => {
+    for (const context of ["PUBLIC", "CACHE"] as const) {
+      expect(evaluateDiscoverLocationMatch({ candidate: { location }, requestedLocations: ["United States"], context }))
+        .toEqual({ matches: true, reason: "CONFIRMED" });
+    }
+  });
+  it("does not infer a US state from an ambiguous country or abbreviation", () => {
+    expect(evaluateDiscoverLocationMatch({ candidate: { location: "Tbilisi, Georgia" }, requestedLocations: ["United States"], context: "PUBLIC" }))
+      .toEqual({ matches: false, reason: "EXPLICIT_CONTRADICTION" });
+    expect(evaluateDiscoverLocationMatch({ candidate: { location: "City, CA" }, requestedLocations: ["United States"], context: "PUBLIC" }).reason).toBe("NO_MATCH");
   });
 });

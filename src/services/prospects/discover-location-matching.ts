@@ -1,4 +1,4 @@
-import { stripDiacritics } from "@/services/prospects/prospect-normalization";
+import { stripDiacritics, parseLocation } from "@/services/prospects/prospect-normalization";
 
 export type DiscoverLocationContext = "CACHE" | "PROVIDER" | "PUBLIC";
 export type DiscoverLocationMatchReason =
@@ -100,6 +100,10 @@ function reliableCandidateCountry(candidate: DiscoverLocationCandidate): string 
   if (locationCountryKey && COUNTRY_LOOKUP.fullNames.has(lastComponent)) {
     return locationCountryKey;
   }
+  // Reuse the same parser as ingress: "Dallas, Texas" supplies a known state,
+  // not a fabricated requested country. Explicit countries above always win.
+  const inferred = parseLocation(candidate.location);
+  if (inferred.country === "United States" && inferred.state) return "united states";
   return null;
 }
 

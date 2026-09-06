@@ -517,7 +517,12 @@ function snippetEvidence(result: SearchResult): EmailEvidenceBundle {
   return parsePublicEmailFormatEvidence(result.snippet, { sourceUrl: result.url });
 }
 
-export const createConfiguredEmailFormatSearchProvider = createConfiguredWebSearchProvider;
+export function createConfiguredEmailFormatSearchProvider(): EmailFormatSearchProvider | null {
+  const provider = createConfiguredWebSearchProvider();
+  // One Google navigation is reserved for people discovery. Email format work
+  // continues through cached/AI/source evidence, never another Google SERP.
+  return provider?.peopleQueryStrategy === "single_role_union" ? null : provider;
+}
 
 export class EmailFormatDiscoveryService implements EmailEvidenceProvider {
   constructor(

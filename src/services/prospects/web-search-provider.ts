@@ -1,3 +1,4 @@
+import { PlaywrightGoogleSearchProvider } from "./playwright-google-search-provider";
 import { env } from "@/lib/env";
 import { z } from "zod";
 
@@ -14,6 +15,8 @@ export interface WebSearchProvider {
   configured: boolean;
   /** Lets callers choose an economical batch without knowing the provider. */
   readonly maxResultsPerRequest?: number;
+  /** A people-only SERP provider can require one union query, without pagination. */
+  readonly peopleQueryStrategy?: "single_role_union";
   search(query: string, options?: WebSearchOptions): Promise<WebSearchResult[]>;
 }
 export const WEB_SEARCH_TIMEOUT_MS = 8_000;
@@ -95,6 +98,7 @@ export class YouSearchProvider implements WebSearchProvider {
 /** Shared API client: email discovery retains its five-result default. No page fetching. */
 export function createConfiguredWebSearchProvider(): WebSearchProvider | null {
   const provider = env.WEB_SEARCH_PROVIDER;
+  if (provider === "playwright_google") return new PlaywrightGoogleSearchProvider();
   if (provider === "you") return new YouSearchProvider();
   if (provider !== "serper" && provider !== "brave") return null;
   const key = provider === "serper" ? env.SERPER_API_KEY : env.BRAVE_SEARCH_API_KEY;

@@ -628,7 +628,7 @@ Both fall back to `SESSION_SECRET` in development. Never prefix either with `NEX
 | `PROSPECT_EMAIL_FORMAT_WEB_SEARCH_ENABLED` | Optional | Master switch for AI web search. Default `true` |
 | `PROSPECT_EMAIL_FORMAT_MAX_WEB_RESULTS` | Optional | Public results weighed per company. Default `5` |
 | `PROSPECT_EMAIL_FORMAT_AI_HOURLY_LIMIT` / `..._DAILY_LIMIT` | Optional | Per-user AI email-format search caps. Defaults `5` / `20` |
-| `WEB_SEARCH_PROVIDER` | Optional | Public web search: `none` (default), `you` (preferred), `serper`, `brave` |
+| `WEB_SEARCH_PROVIDER` | Optional | Public web search: `none` (default), `you`, `serper`, `brave`, `playwright_google` (single-SERP people-only mode) |
 | `YDC_API_KEY` | With `you` | You.com Platform Web Search API key (server-only) |
 | `SERPER_API_KEY` / `BRAVE_SEARCH_API_KEY` | With that provider | Keys for the legacy scraper path |
 | `PROSPECT_AI_ENABLED` | Optional | Enables AI company/role/pattern steps. Default `true` |
@@ -837,3 +837,43 @@ unused cached people first, then replays the bounded public window with existing
 allocations excluded. It can stop with fewer than ten people. See
 [DOCUMENTATION.md](DOCUMENTATION.md#public-people-discovery-provider) for rollout,
 rollback, continuation, privacy and limitations.
+
+
+### Single-navigation Google people discovery
+
+To use one Google SERP through Playwright, set server-side:
+
+```dotenv
+DISCOVER_PEOPLE_PROVIDER=public_search
+WEB_SEARCH_PROVIDER=playwright_google
+```
+
+Discover still checks local/shared people first. On a cache miss it uses the
+existing role-intelligence provider plan, preserving exact roles first, and
+quotes at most five ranked titles in one Boolean OR clause. For example:
+
+```text
+site:linkedin.com/in "Abacus Insights" ("Software Engineer" OR "Software Developer" OR "Backend Software Engineer" OR "Frontend Software Engineer" OR "Application Developer")
+```
+
+No location phrase is added to this query. Visible location metadata goes through
+the shared parser: `Dallas, Texas` and `Seattle, Washington` resolve to United
+States; explicit foreign-country evidence is rejected for US searches. Missing
+location stays null. Google mode performs one navigation even when fewer than
+ten valid people are available. There are no per-alias or per-person searches,
+no LinkedIn page visits, and no You.com or Apify calls in `public_search` mode.
+The extracted Google person projection is only `name`, `linkedinUrl`, and
+`location`; SERP role/company evidence remains transient input to the existing
+validation pipeline. Existing normalized role/cache/materialization fields remain
+compatible with Discover.
+
+The Node runtime uses packaged Chromium on Linux/Vercel and an installed Chrome
+on macOS/Windows. `DISCOVER_GOOGLE_EXECUTABLE_PATH` can override the executable
+server-side. Google mode does not supply the separate email-format web-search
+path, avoiding extra SERP navigations; existing cached, AI and source-URL evidence
+paths remain available. You.com/Serper/Brave remain supported API alternatives.
+
+Google may serve consent, challenges or different markup. This provider fails
+safely without retries or bypasses, and indexed employment evidence is not a
+guarantee of current employment. See the Google mode section in DOCUMENTATION.md
+for deployment checks and offline browser validation.

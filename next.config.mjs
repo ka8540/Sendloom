@@ -40,6 +40,10 @@ const securityHeaders = [
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   typedRoutes: true,
+  serverExternalPackages: ["playwright-core", "@sparticuz/chromium"],
+  outputFileTracingIncludes: {
+    "/api/graphql": ["./node_modules/@sparticuz/chromium/bin/**/*"]
+  },
   async headers() {
     return [
       {

@@ -3423,3 +3423,102 @@ Rollback: set `DISCOVER_PEOPLE_PROVIDER=apify` and restart/redeploy all server
 processes. Leave shared cache/person/allocation records intact. No rollback SQL,
 deletion, credential removal or data migration is required. Existing fresh cache
 records remain reusable under the normal cache freshness policy.
+
+
+## Single-navigation Playwright Google mode
+
+Use `DISCOVER_PEOPLE_PROVIDER=public_search` with
+`WEB_SEARCH_PROVIDER=playwright_google` for browser-based public indexed people
+discovery. The default people provider remains `apify`; You.com, Serper and Brave
+remain available. No database migration is required.
+
+The existing `buildProviderTitlePlan` remains the sole source of role expansion
+for initial search and Add More. Its exact-first, family-filtered ordering is
+preserved by `buildPublicPeopleRoleUnionQuery`, which removes duplicate terms and
+quotes at most five titles using the same phrase escaping as API searches. The
+query builder adds no aliases or role-family rules. Company identity is still
+resolved before query generation. The Google query omits location phrases:
+
+```text
+site:linkedin.com/in "Abacus Insights" ("Software Engineer" OR "Software Developer" OR "Backend Software Engineer" OR "Frontend Software Engineer" OR "Application Developer")
+```
+
+`PlaywrightGoogleSearchProvider` advertises a single-role-union strategy through
+the existing web-search interface. `PublicSearchDiscoveryProvider` sends exactly
+one query and one result window. The Google adapter makes one `page.goto` to
+`https://www.google.com/search`, in a new ephemeral browser context. It reads the
+rendered organic cards under `#search`/`#rso`, including offscreen rendered cards,
+and excludes hidden cards. At most 100 cards are inspected for safety. Google
+controls how many results appear; the adapter does not request another page,
+scroll for more, or navigate by role/person. A shortage returns fewer people.
+
+The extracted person object has only `name`, canonical `linkedinUrl` and nullable
+`location`. Title/snippet text is kept separately as transient evidence for the
+existing name/role/current-employment validators, not as a second person schema.
+The adapter still emits the established internal `WebSearchResult` shape for
+compatibility. Existing normalized cache/person role fields continue serving the
+Discover UI; no new raw SERP fields, biographies or employment histories are stored.
+
+The original source name goes through Sendloom's existing name normalizer.
+The four-state employment policy, semantic role policy, URL dedupe, shared cache,
+existing-person reuse, email protection and allocations remain unchanged. Missing
+location passes the established PUBLIC policy without manufacturing geography.
+The shared location parser now recognizes unambiguous full US state names in
+city/state strings (including Texas, Washington and Massachusetts) and the shared
+matcher uses that hierarchy. Explicit country metadata takes precedence. Ambiguous
+abbreviations and Georgia are not treated as sufficient evidence of a US state.
+Thus local/shared reuse can confirm stored city/state metadata without a new
+Google call. Fingerprint identity and requested location labels are unchanged.
+
+Network and cost boundaries:
+
+- Google mode does not use You.com or Apify when people mode is `public_search`.
+- Only the initial Google document navigation is allowed. Result URLs are decoded
+  and canonicalized locally; LinkedIn requests and other navigation are blocked.
+- No persistent cookies, login, consent automation, CAPTCHA handling, proxy
+  rotation, browser stealth, challenge retries or LinkedIn page fetches are used.
+- A 20-second browser-operation deadline inherits the outer Discover deadline;
+  launch is bounded to 10 seconds, and the browser closes on completion/failure.
+- Extra email-format Google searches are disabled for this people-only adapter.
+  Existing cached/AI/source-URL email evidence remains available. API providers
+  keep their existing generic email-format behavior.
+- Add More consumes unused cache first, then may replay one Google SERP with
+  granted identities excluded. It never pages or searches separately per alias.
+- Hybrid remains explicitly opt-in and may call its existing bounded Apify
+  fallback after the single Google result; Google failure is a safe provider error
+  in `public_search` and can fall back in `hybrid`.
+- Browser error text, HTML, queries, names and URLs are never logged. Existing
+  public funnel diagnostics retain counts only.
+
+Runtime: `playwright-core` 1.61.0 is pinned with `@sparticuz/chromium` 149.0.0.
+The Playwright [browser manifest](https://github.com/microsoft/playwright/blob/v1.61.0/packages/playwright-core/browsers.json)
+uses Chromium 149, and the server binary follows the documented
+[Sparticuz Playwright integration](https://github.com/Sparticuz/chromium#usage-with-playwright).
+Next externalizes both packages and traces the compressed Chromium files into
+`/api/graphql`. Use the Node runtime and sufficient function duration/memory for
+the existing Discover pipeline plus a Chromium process. The Linux binary cannot
+be exercised on macOS; Linux/Vercel cold-start verification remains a staging
+check. Local macOS/Windows use installed Chrome, or set the server-only
+`DISCOVER_GOOGLE_EXECUTABLE_PATH` to a locally managed executable. No client or
+request input can choose a browser executable or navigation target.
+
+Rollout: deploy code/dependencies with existing provider settings first. In a
+staging Vercel environment set `DISCOVER_PEOPLE_PROVIDER=public_search` and
+`WEB_SEARCH_PROVIDER=playwright_google`, leaving `DISCOVER_GOOGLE_EXECUTABLE_PATH`
+unset for packaged Linux Chromium. Redeploy, verify one fresh search, a cache hit,
+Add More, and a blocked/empty Google response before enabling the same settings
+in production. Google markup and challenge behavior may vary, so fewer or no
+results are an expected safe outcome; employment snippets can be stale.
+
+Rollback: restore the prior `WEB_SEARCH_PROVIDER` (`you`, `serper`, or `brave`)
+and its existing credentials, or set `DISCOVER_PEOPLE_PROVIDER=apify`; redeploy.
+No migration, stored-person deletion or cache reset is required. No production
+configuration is changed by this implementation task.
+
+Offline browser QA: set `DISCOVER_GOOGLE_BROWSER_TEST=1` when running
+`vitest run src/services/prospects/playwright-google-browser.test.ts` on a machine
+with Chrome. The fixture fulfills the Google document locally and blocks every
+other request. It verifies rendered-card extraction, UTF-8 text, hidden-card
+exclusion, canonical redirect URLs, multiple people, one navigation and browser
+cleanup without contacting Google or LinkedIn. Standard unit tests run without
+requiring a browser process.

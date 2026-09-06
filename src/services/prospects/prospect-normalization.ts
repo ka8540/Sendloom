@@ -129,6 +129,18 @@ export type ParsedLocation = {
 
 // Best-effort split of a free-form "City, State, Country" location string. We
 // only keep professional geography; nothing here is sensitive.
+// Full US state names, used only in a city/state pair. Ambiguous "Georgia"
+// and two-letter codes are not enough evidence to infer a country.
+const UNAMBIGUOUS_US_STATES = new Set([
+  "alabama", "alaska", "arizona", "arkansas", "california", "colorado", "connecticut", "delaware",
+  "florida", "hawaii", "idaho", "illinois", "indiana", "iowa", "kansas", "kentucky", "louisiana",
+  "maine", "maryland", "massachusetts", "michigan", "minnesota", "mississippi", "missouri", "montana",
+  "nebraska", "nevada", "new hampshire", "new jersey", "new mexico", "new york", "north carolina",
+  "north dakota", "ohio", "oklahoma", "oregon", "pennsylvania", "rhode island", "south carolina",
+  "south dakota", "tennessee", "texas", "utah", "vermont", "virginia", "washington", "west virginia",
+  "wisconsin", "wyoming", "district of columbia"
+]);
+
 export function parseLocation(raw: string | null | undefined): ParsedLocation {
   if (!raw || typeof raw !== "string") {
     return { location: null, city: null, state: null, country: null };
@@ -150,6 +162,10 @@ export function parseLocation(raw: string | null | undefined): ParsedLocation {
 
   if (parts.length === 1) {
     return { location, city: null, state: null, country: parts[0] };
+  }
+
+  if (parts.length === 2 && UNAMBIGUOUS_US_STATES.has(parts[1].toLowerCase())) {
+    return { location, city: parts[0], state: parts[1], country: "United States" };
   }
 
   if (parts.length === 2) {

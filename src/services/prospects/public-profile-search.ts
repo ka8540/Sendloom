@@ -1,6 +1,6 @@
 import type { ApifyProfileSearchInput, ApifyProfileSearchResult, NormalizedProfile } from './apify-profile-search';
 import { PersonIdentitySet } from './discover-person-identity';
-import { buildPublicPeopleSearchQuery } from './public-people-query-builder';
+import { buildPublicPeopleSearchQuery, buildPublicPeopleRoleUnionQuery } from './public-people-query-builder';
 import { canonicalizeLinkedInProfileUrl } from './linkedin-profile-url';
 import { parseLinkedInSearchResult } from './linkedin-search-result-parser';
 import { validateCurrentEmployment } from './current-employment-evidence';
@@ -9,7 +9,7 @@ import { createConfiguredWebSearchProvider, type WebSearchProvider } from './web
 import type { ProspectDiscoveryProvider } from './prospect-discovery-provider';
 import { ProspectError } from './prospect-search-service';
 
-export const PUBLIC_SEARCH_LIMITS = { queries: 6, pages: 3, concurrency: 2, pageSize: 10, candidatePageSize: 25, timeoutMs: 35_000 } as const;
+export const PUBLIC_SEARCH_LIMITS = { queries: 6, pages: 3, concurrency: 2, pageSize: 10, candidatePageSize: 25, singlePageSize: 100, timeoutMs: 35_000 } as const;
 export type PublicSearchDiagnostics = ReturnType<typeof publicCounters>;
 export function publicCounters() {
   return { publicSearchQueries: 0, publicSearchPages: 0, rawSearchResults: 0, linkedinProfileUrls: 0,
@@ -35,19 +35,22 @@ export class PublicSearchDiscoveryProvider implements ProspectDiscoveryProvider 
     if (!this.web?.configured) throw new ProspectError('NOT_CONFIGURED', 'Public people search is not configured.');
     // Larger result windows are validated one at a time, avoiding speculative
     // paid queries when the first window already contains a complete batch.
-    const pageSize = Math.min(PUBLIC_SEARCH_LIMITS.candidatePageSize,
+    const singleQuery = this.web.peopleQueryStrategy === "single_role_union";
+    const pageLimit = singleQuery ? 1 : PUBLIC_SEARCH_LIMITS.pages;
+    const pageSize = Math.min(singleQuery ? PUBLIC_SEARCH_LIMITS.singlePageSize : PUBLIC_SEARCH_LIMITS.candidatePageSize,
       this.web.maxResultsPerRequest ?? PUBLIC_SEARCH_LIMITS.pageSize);
     const concurrency = pageSize >= PUBLIC_SEARCH_LIMITS.candidatePageSize ? 1 : PUBLIC_SEARCH_LIMITS.concurrency;
     const d = options.diagnostics;
     const seen = new PersonIdentitySet();
     const accepted: NormalizedProfile[] = [];
-    const queries = [...new Set(input.jobTitles.flatMap(jobTitle => (input.locations.length ? input.locations : [null])
+    const unionQuery = singleQuery ? buildPublicPeopleRoleUnionQuery({ companyName: input.companyName, providerTitles: input.jobTitles }) : null;
+    const queries = singleQuery ? (unionQuery ? [unionQuery] : []) : [...new Set(input.jobTitles.flatMap(jobTitle => (input.locations.length ? input.locations : [null])
       .map(location => buildPublicPeopleSearchQuery({ companyName: input.companyName, jobTitle, location }))))].slice(0, PUBLIC_SEARCH_LIMITS.queries);
     const timeout = AbortSignal.timeout(PUBLIC_SEARCH_LIMITS.timeoutMs);
     const signal = options.signal ? AbortSignal.any([timeout, options.signal]) : timeout;
     const exhausted = new Set<string>();
     try {
-      for (let page = 1; page <= PUBLIC_SEARCH_LIMITS.pages && accepted.length < options.target; page++) {
+      for (let page = 1; page <= pageLimit && accepted.length < options.target; page++) {
         for (let offset = 0; offset < queries.length && accepted.length < options.target; offset += concurrency) {
           signal.throwIfAborted();
           const batch = queries.slice(offset, offset + concurrency).filter(q => !exhausted.has(q));
