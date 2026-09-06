@@ -8,7 +8,7 @@ import { createConfiguredWebSearchProvider, type WebSearchProvider } from './web
 import type { ProspectDiscoveryProvider } from './prospect-discovery-provider';
 import { ProspectError } from './prospect-search-service';
 
-export const PUBLIC_SEARCH_LIMITS = { queries: 6, pages: 3, concurrency: 2, pageSize: 10, timeoutMs: 35_000 } as const;
+export const PUBLIC_SEARCH_LIMITS = { queries: 6, pages: 3, concurrency: 2, pageSize: 10, candidatePageSize: 25, timeoutMs: 35_000 } as const;
 export type PublicSearchDiagnostics = ReturnType<typeof publicCounters>;
 export function publicCounters() {
   return { publicSearchQueries: 0, publicSearchPages: 0, rawSearchResults: 0, linkedinProfileUrls: 0,
@@ -27,6 +27,11 @@ export class PublicSearchDiscoveryProvider implements ProspectDiscoveryProvider 
   async searchProfiles(input: ApifyProfileSearchInput, options = this.defaults): Promise<ApifyProfileSearchResult> {
     if (!options) throw new ProspectError('INVALID_STATE', 'Public discovery requires validation context.');
     if (!this.web?.configured) throw new ProspectError('NOT_CONFIGURED', 'Public people search is not configured.');
+    // Larger result windows are validated one at a time, avoiding speculative
+    // paid queries when the first window already contains a complete batch.
+    const pageSize = Math.min(PUBLIC_SEARCH_LIMITS.candidatePageSize,
+      this.web.maxResultsPerRequest ?? PUBLIC_SEARCH_LIMITS.pageSize);
+    const concurrency = pageSize >= PUBLIC_SEARCH_LIMITS.candidatePageSize ? 1 : PUBLIC_SEARCH_LIMITS.concurrency;
     const d = options.diagnostics;
     const seen = new PersonIdentitySet();
     const accepted: NormalizedProfile[] = [];
@@ -37,15 +42,15 @@ export class PublicSearchDiscoveryProvider implements ProspectDiscoveryProvider 
     const exhausted = new Set<string>();
     try {
       for (let page = 1; page <= PUBLIC_SEARCH_LIMITS.pages && accepted.length < options.target; page++) {
-        for (let offset = 0; offset < queries.length && accepted.length < options.target; offset += PUBLIC_SEARCH_LIMITS.concurrency) {
+        for (let offset = 0; offset < queries.length && accepted.length < options.target; offset += concurrency) {
           signal.throwIfAborted();
-          const batch = queries.slice(offset, offset + PUBLIC_SEARCH_LIMITS.concurrency).filter(q => !exhausted.has(q));
+          const batch = queries.slice(offset, offset + concurrency).filter(q => !exhausted.has(q));
           const responses = await Promise.all(batch.map(async query => {
             d.publicSearchPages++; if (page === 1) d.publicSearchQueries++;
-            const results = await this.web!.search(query, { page, count: PUBLIC_SEARCH_LIMITS.pageSize, signal });
+            const results = await this.web!.search(query, { page, count: pageSize, includeDomains: ["linkedin.com"], signal });
             if (!Array.isArray(results)) throw new Error('Invalid search response');
             if (!results.length) exhausted.add(query);
-            return results.slice(0, PUBLIC_SEARCH_LIMITS.pageSize);
+            return results.slice(0, pageSize);
           }));
           const candidates: NormalizedProfile[] = [];
           for (const result of responses.flat()) {

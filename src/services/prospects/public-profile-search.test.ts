@@ -121,6 +121,44 @@ describe('bounded search, dedupe and Add More', () => {
     expect(dedupeProfiles([profile('jane'), profile('jane-two')])).toHaveLength(2);
   });
 });
+describe('large provider windows (You.com count 25)', () => {
+  const youLike = (search: ReturnType<typeof vi.fn>) =>
+    new PublicSearchDiscoveryProvider({ configured: true, maxResultsPerRequest: 100, search });
+  it('requests one 25-result LinkedIn-filtered window and stops when it fills the target', async () => {
+    const search = vi.fn(async () => Array.from({ length: 25 }, (_, i) => result(`p${i}`)));
+    const o = searchOptions();
+    const response = await youLike(search).searchProfiles(input, o);
+    expect(search).toHaveBeenCalledTimes(1);
+    expect(search).toHaveBeenCalledWith('site:linkedin.com/in "Abacus Insights" "Software Engineer" "United States"',
+      expect.objectContaining({ page: 1, count: 25, includeDomains: ['linkedin.com'] }));
+    expect(response.profiles.length).toBeGreaterThanOrEqual(10);
+    expect(o.diagnostics).toMatchObject({ publicSearchQueries: 1, publicSearchPages: 1, rawSearchResults: 25 });
+  });
+  it('requests the next offset only when the first window is insufficient, deduping across offsets', async () => {
+    const search = vi.fn(async (_q: string, o: { page?: number }) =>
+      o.page === 1 ? [result('jane')] : [result('jane'), result('john')]);
+    const o = { ...searchOptions(), target: 2 };
+    const response = await youLike(search).searchProfiles(input, o);
+    expect(search).toHaveBeenCalledTimes(2);
+    expect(search.mock.calls.map(call => (call[1] as { page: number }).page)).toEqual([1, 2]);
+    expect(response.profiles.map(p => p.sourceProfileId)).toEqual(['jane', 'john']);
+    expect(o.diagnostics.duplicateRejected).toBe(1);
+  });
+  it('requests the next role query only when earlier queries are insufficient', async () => {
+    const queries: string[] = [];
+    const search = vi.fn(async (query: string) => { queries.push(query); return Array.from({ length: 10 }, (_, i) => result(`p${i}`)); });
+    const response = await youLike(search).searchProfiles({ ...input, jobTitles: ['Software Engineer', 'Backend Engineer'] }, searchOptions());
+    expect(response.profiles.length).toBeGreaterThanOrEqual(10);
+    expect(queries).toEqual(['site:linkedin.com/in "Abacus Insights" "Software Engineer" "United States"']);
+  });
+  it('dedupes the same person across role queries and keeps distinct same-name people', async () => {
+    const search = vi.fn(async (query: string) => query.includes('Software Engineer')
+      ? [result('jane'), { ...result('jane'), url: 'https://www.linkedin.com/in/jane/?trk=search' }]
+      : [result('jane'), result('jane-two')]);
+    const response = await youLike(search).searchProfiles({ ...input, jobTitles: ['Software Engineer', 'Backend Engineer'] }, { ...searchOptions(), target: 2 });
+    expect(response.profiles.map(p => p.sourceProfileId)).toEqual(['jane', 'jane-two']);
+  });
+});
 describe('hybrid fallback', () => {
   it('fills an eight-person deficit, merging the cross-provider duplicate', async () => {
     const web = new PublicSearchDiscoveryProvider({ configured: true, search: vi.fn(async () => Array.from({ length: 8 }, (_, i) => result(`p${i}`))) });

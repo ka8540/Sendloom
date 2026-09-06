@@ -121,6 +121,9 @@ const EMAIL_FORMAT_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const EMAIL_FORMAT_REFRESH_IN_FLIGHT = new Map<string, Promise<ProspectCompany>>();
 
 function hasConfiguredEmailFormatSearchProvider(): boolean {
+  if (env.WEB_SEARCH_PROVIDER === "you") {
+    return Boolean(env.YDC_API_KEY);
+  }
   if (env.WEB_SEARCH_PROVIDER === "serper") {
     return Boolean(env.SERPER_API_KEY);
   }

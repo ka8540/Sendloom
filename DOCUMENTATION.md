@@ -1347,7 +1347,7 @@ Theme support appears across landing, legal pages, dashboard, auth, footer, and 
 | `REPORT_IDENTITY_ENCRYPTION_KEY` | Required in production | AES-256-GCM key for the reversible internal reporter reference. | Falls back to `SESSION_SECRET` in development | Server-only. Use a 32-byte random value. Rotating it makes existing encrypted references unreadable. |
 | `PROSPECT_EXPORT_MAX_ROWS` | Optional | Maximum rows in one prospect export. | `5000` | Exceeding it returns a forbidden error rather than a partial file. |
 
-Discover and prospect-graph variables (`PROSPECT_GRAPH_ENABLED`, `GRAPHQL_GRAPHIQL_ENABLED`, `LOCAL_PROSPECT_MAX_RESULTS`, the `DISCOVER_*` family, the `PROSPECT_AI_*` family, `PROSPECT_EMAIL_*`, `WEB_SEARCH_PROVIDER`, `SERPER_API_KEY`, `BRAVE_SEARCH_API_KEY`, `APIFY_API_TOKEN`, `APIFY_PROSPECT_ACTOR_ID`) are documented with their defaults in [§23](#23-prospect-graph-backend-local-graphql-prototype) and in the README environment tables. `.env.example` at the repository root is the authoritative starting point; it contains placeholders only.
+Discover and prospect-graph variables (`PROSPECT_GRAPH_ENABLED`, `GRAPHQL_GRAPHIQL_ENABLED`, `LOCAL_PROSPECT_MAX_RESULTS`, the `DISCOVER_*` family, the `PROSPECT_AI_*` family, `PROSPECT_EMAIL_*`, `WEB_SEARCH_PROVIDER`, `YDC_API_KEY`, `SERPER_API_KEY`, `BRAVE_SEARCH_API_KEY`, `APIFY_API_TOKEN`, `APIFY_PROSPECT_ACTOR_ID`) are documented with their defaults in [§23](#23-prospect-graph-backend-local-graphql-prototype) and in the README environment tables. `.env.example` at the repository root is the authoritative starting point; it contains placeholders only.
 
 `GMAIL_USER` and `GMAIL_APP_PASSWORD` still appear in `.env.example` but are not read anywhere in the current source. Gmail sending uses OAuth exclusively.
 
@@ -1651,7 +1651,7 @@ consumes another Discover quota slot.
 
 **Fallbacks.** Pasting a specific public **source URL** routes to the deterministic
 `EmailFormatDiscoveryService` parser (no web search runs); a **manual override**
-sets the format by hand; and the legacy `WEB_SEARCH_PROVIDER=serper|brave`
+sets the format by hand; and the legacy `WEB_SEARCH_PROVIDER=serper|brave|you`
 scraper can still supply evidence if configured. The legacy/source-URL fetcher is
 conservative: only `http`/`https`, no localhost, loopback, private/metadata IPs,
 credentials, cookies, JavaScript, browser automation, or Google HTML scraping;
@@ -3292,10 +3292,19 @@ The integration points are `ProspectSearchService.runProviderDataset` and
 `ApifyDiscoveryProvider` delegates the existing actor contract unchanged in
 Apify mode. `PublicSearchDiscoveryProvider` consumes the shared `WebSearchProvider`
 API, extracted from email-format discovery. Email discovery retains its default
-five-result requests; people discovery requests ten. Clients are server-side,
-use fixed Serper/Brave API hosts, validate response structure, and apply an
+five-result requests and is never domain-restricted; people discovery requests a
+25-result window from providers that support it. Clients are server-side, use
+fixed Serper/Brave/You.com API hosts, validate response structure, and apply an
 eight-second request timeout. Brave uses zero-based page offsets as documented
 in [its API reference](https://api-dashboard.search.brave.com/api-reference/web/search/get).
+The preferred `you` provider POSTs `{ query, count, offset, include_domains }`
+to the official You.com Platform Web Search API (`https://ydc-index.io/v1/search`)
+with `X-API-Key` authentication; people discovery passes
+`include_domains: ["linkedin.com"]` while keeping the quoted
+`site:linkedin.com/in` query, and the strict `/in/<slug>` URL validator remains
+the authoritative filter. Only indexed `results.web` rows (title, URL,
+snippets/description) are consumed — no news sections, page extraction,
+livecrawl, or LinkedIn profile-page fetching.
 
 Processing order:
 
@@ -3304,9 +3313,12 @@ Processing order:
 2. Build quoted `site:linkedin.com/in` queries from the resolved official company,
    existing semantic title plan, and optional location. Quotes, backslashes,
    controls and redundant whitespace are sanitized inside quoted terms.
-3. Search up to six queries and three pages per query, with two concurrent
-   requests and ten results per page. Stop after sufficient validated unique
-   candidates. The public pass has a 35-second abort deadline for API work and inherits the overall Discover deadline. Hybrid continuation checks that deadline before and after each actor call; an in-flight actor itself cannot be canceled by this adapter. Add More uses a 90-second adapter deadline.
+3. Search up to six queries and three result windows per query. Providers
+   advertising a large per-request capacity (You.com) fetch 25 results per
+   window one window at a time — validation runs between windows so a complete
+   first window ends the pass after a single paid request; ten-result providers
+   (Serper/Brave) keep two concurrent requests. Stop after sufficient validated
+   unique candidates. The public pass has a 35-second abort deadline for API work and inherits the overall Discover deadline. Hybrid continuation checks that deadline before and after each actor call; an in-flight actor itself cannot be canceled by this adapter. Add More uses a 90-second adapter deadline.
 4. Canonicalize strict LinkedIn `/in/<slug>` URLs to HTTPS without www, tracking,
    fragment or trailing slash. Locale subdomains and percent-encoded Unicode
    normalize to the same identity. Reject other sites/paths, credentials and ports.
@@ -3367,9 +3379,12 @@ Rollout:
 
 1. Deploy the branch through the normal reviewed release process with
    `DISCOVER_PEOPLE_PROVIDER=apify`. No feature migration is needed.
-2. In staging set `WEB_SEARCH_PROVIDER=serper` and `SERPER_API_KEY`, or select
-   `brave` and configure `BRAVE_SEARCH_API_KEY`. Keep secrets server-side. Because
-   this setting is shared, it also selects email-format search infrastructure.
+2. In staging set `WEB_SEARCH_PROVIDER=you` and `YDC_API_KEY` (preferred: the
+   official You.com Platform Web Search API, 25-result windows with a LinkedIn
+   domain filter and aggressive early stop), or select `serper`/`brave` and
+   configure `SERPER_API_KEY`/`BRAVE_SEARCH_API_KEY`. Keep secrets server-side.
+   Because this setting is shared, it also selects email-format search
+   infrastructure; You.com email-format searches stay domain-unrestricted.
 3. Keep `APIFY_API_TOKEN` and `APIFY_PROSPECT_ACTOR_ID` configured for hybrid.
 4. Set `DISCOVER_PEOPLE_PROVIDER=hybrid` and restart/redeploy the server processes.
    Exercise a fresh company/role search, a cache hit, Add More, duplicate profile

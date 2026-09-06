@@ -4021,6 +4021,45 @@ describe('public people discovery integration', () => {
     expect(search).toHaveBeenCalledTimes(before);
     expect(runner.run).not.toHaveBeenCalled();
   }));
+  it('discovers people through the You.com API in one filtered request, then serves repeats from cache', async () => {
+    const { getEnv } = await import('@/lib/env');
+    const config = getEnv();
+    const previous = { DISCOVER_PEOPLE_PROVIDER: config.DISCOVER_PEOPLE_PROVIDER,
+      WEB_SEARCH_PROVIDER: config.WEB_SEARCH_PROVIDER, YDC_API_KEY: config.YDC_API_KEY };
+    Object.assign(config, { DISCOVER_PEOPLE_PROVIDER: 'hybrid', WEB_SEARCH_PROVIDER: 'you', YDC_API_KEY: 'you-key' });
+    try {
+      const search = vi.fn(async () => Response.json({ results: {
+        web: Array.from({ length: 10 }, (_, i) => ({
+          title: `Jane Doe - Software Engineer at Apple | LinkedIn`, url: `https://linkedin.com/in/public-${i}?trk=test`,
+          snippets: ['Software Engineer at Apple · Boston, Massachusetts, United States'] })),
+        news: [{ title: 'Ignored', url: 'https://news.test' }] } }));
+      vi.stubGlobal('fetch', search);
+      const runner = { run: vi.fn() } as ApifyRunner;
+      const cache = new DiscoverSearchCacheService({ prisma: prisma as unknown as PrismaClient, lock: makeFakeCacheLock() });
+      const { service } = buildService(prisma, runner, AI_RESPONSES, undefined, allowAllQuota, cache, deterministicRoleIntelligence(prisma));
+      const created = await service.createSearch(USER_ID, { ...VALIDATED, jobTitles: ['Software Engineer'] });
+      const completed = await service.processSearch(USER_ID, created.id);
+      expect(completed).toMatchObject({ status: 'READY', totalProcessed: 10 });
+      expect(prisma._state.people).toHaveLength(10);
+      expect(runner.run).not.toHaveBeenCalled();
+      // People discovery calls carry the LinkedIn filter; email-format calls never do.
+      const peopleCalls = () => (search.mock.calls as unknown as [unknown, RequestInit][]).filter(([, init]) => {
+        try { return ((JSON.parse(init.body as string).include_domains ?? []) as string[]).includes('linkedin.com'); }
+        catch { return false; }
+      });
+      expect(peopleCalls()).toHaveLength(1);
+      const [url, init] = peopleCalls()[0];
+      expect(url).toBe('https://ydc-index.io/v1/search');
+      expect(init.method).toBe('POST');
+      expect((init.headers as Record<string, string>)['X-API-Key']).toBe('you-key');
+      expect(JSON.parse(init.body as string)).toMatchObject({
+        query: 'site:linkedin.com/in "Apple" "Software Engineer" "United States"', count: 25, offset: 0 });
+      const second = await service.createSearch('second-user', { ...VALIDATED, jobTitles: ['Software Engineer'] });
+      expect((await service.processSearch('second-user', second.id)).totalProcessed).toBe(10);
+      expect(peopleCalls()).toHaveLength(1);
+      expect(runner.run).not.toHaveBeenCalled();
+    } finally { Object.assign(config, previous); }
+  });
   it('public-only no eligible result produces safe NO_RESULTS', async () => withPublic(async () => {
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ organic: [
       { title: 'Jane Doe - Former Software Engineer at Apple | LinkedIn', link: 'https://linkedin.com/in/former', snippet: 'Formerly with Apple' },

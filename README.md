@@ -628,7 +628,8 @@ Both fall back to `SESSION_SECRET` in development. Never prefix either with `NEX
 | `PROSPECT_EMAIL_FORMAT_WEB_SEARCH_ENABLED` | Optional | Master switch for AI web search. Default `true` |
 | `PROSPECT_EMAIL_FORMAT_MAX_WEB_RESULTS` | Optional | Public results weighed per company. Default `5` |
 | `PROSPECT_EMAIL_FORMAT_AI_HOURLY_LIMIT` / `..._DAILY_LIMIT` | Optional | Per-user AI email-format search caps. Defaults `5` / `20` |
-| `WEB_SEARCH_PROVIDER` | Optional | Legacy scraper: `none` (default), `serper`, `brave` |
+| `WEB_SEARCH_PROVIDER` | Optional | Public web search: `none` (default), `you` (preferred), `serper`, `brave` |
+| `YDC_API_KEY` | With `you` | You.com Platform Web Search API key (server-only) |
 | `SERPER_API_KEY` / `BRAVE_SEARCH_API_KEY` | With that provider | Keys for the legacy scraper path |
 | `PROSPECT_AI_ENABLED` | Optional | Enables AI company/role/pattern steps. Default `true` |
 | `PROSPECT_AI_MODEL` | Optional | Overrides both per-task defaults; blank keeps them |
@@ -812,17 +813,22 @@ Discover can use publicly indexed LinkedIn person results through the same web
 search API used for email-format evidence. `DISCOVER_PEOPLE_PROVIDER=apify` remains
 the default. Set it to `public_search` for indexed results only, or `hybrid` for
 public-first discovery with bounded Apify fallback after name/role/location
-validation and deduplication. Configure `WEB_SEARCH_PROVIDER=serper` and
-`SERPER_API_KEY` (preferred for the Google SERP proof of concept), or
-`WEB_SEARCH_PROVIDER=brave` and `BRAVE_SEARCH_API_KEY`. Hybrid also needs the
-existing Apify configuration.
+validation and deduplication. Configure `WEB_SEARCH_PROVIDER=you` and
+`YDC_API_KEY` (preferred: the official You.com Platform Web Search API returns
+25-result windows with a LinkedIn domain filter, so a typical search needs one
+paid request), or keep `WEB_SEARCH_PROVIDER=serper` with `SERPER_API_KEY` /
+`WEB_SEARCH_PROVIDER=brave` with `BRAVE_SEARCH_API_KEY` for compatibility.
+Hybrid also needs the existing Apify configuration.
 
 Queries use the resolved official company and the existing bounded role plan,
 for example `site:linkedin.com/in "Abacus Insights" "Software Engineer" "United States"`.
 Only `/in/` person URLs qualify. Returned headlines/snippets must evidence current
 employment; historical, contradictory and ambiguous evidence fails closed.
 Search keywords are never employment evidence. No LinkedIn login, profile-page
-fetching, or email guessing occurs in the public provider.
+fetching, or email guessing occurs in the public provider. Already-cached
+eligible people are always served before any paid search request, and search
+stops as soon as enough valid unique people are found. Indexed employment
+information is evidence, not a guarantee of currency.
 
 The existing shared cache, name normalization, allocation and email/suppression
 pipeline remain in place. The public pass is capped at six queries, three pages

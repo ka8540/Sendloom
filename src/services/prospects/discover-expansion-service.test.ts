@@ -1273,4 +1273,34 @@ describe('public Add More integration', () => {
       expect(fetcher.mock.calls.some(([, init]) => JSON.parse(init.body as string).page === 2)).toBe(true);
     } finally { Object.assign(config, previous); }
   });
+  it('pages You.com by offset for Add More and never re-grants an allocated identity', async () => {
+    const { getEnv } = await import('@/lib/env');
+    const config = getEnv();
+    const previous = { DISCOVER_PEOPLE_PROVIDER: config.DISCOVER_PEOPLE_PROVIDER,
+      WEB_SEARCH_PROVIDER: config.WEB_SEARCH_PROVIDER, YDC_API_KEY: config.YDC_API_KEY };
+    Object.assign(config, { DISCOVER_PEOPLE_PROVIDER: 'public_search', WEB_SEARCH_PROVIDER: 'you', YDC_API_KEY: 'you-key' });
+    try {
+      seedCompany(); seedSearch(); seedExistingPeople(10); seedCache([]);
+      const old = prisma._state.people[0];
+      const fetcher = vi.fn(async (_url: unknown, init: RequestInit) => {
+        const { offset } = JSON.parse(init.body as string);
+        return Response.json({ results: { web: [{ title: 'Jane Doe - Software Engineer at Apple | LinkedIn',
+          url: offset === 0 ? `${old.linkedinUrl}/?trk=repeat` : 'https://linkedin.com/in/new-public-person',
+          snippets: ['Software Engineer at Apple · Boston, Massachusetts, United States'] }] } });
+      });
+      vi.stubGlobal('fetch', fetcher);
+      const { service, runner } = buildService();
+      const completed = await service.addMorePeople({ userId: USER_ID, actorEmail: 'user@example.com', searchId: SEARCH_ID, idempotencyKey: 'you-public-expansion' });
+      expect(completed.addedCount).toBe(1);
+      expect(prisma._state.people).toHaveLength(11);
+      expect(runner.run).not.toHaveBeenCalled();
+      const offsets = fetcher.mock.calls
+        .map(([, init]) => JSON.parse((init as RequestInit).body as string) as { include_domains?: string[]; offset?: number })
+        .filter(body => Array.isArray(body.include_domains))
+        .map(body => body.offset);
+      // Target stays 10, so bounded paging continues to the last offset window;
+      // the granted person is discovered at offset 1 and never re-granted.
+      expect(offsets).toEqual([0, 1, 2]);
+    } finally { Object.assign(config, previous); }
+  });
 });
