@@ -805,3 +805,29 @@ Start historical repair with:
 ```sh
 npx tsx scripts/repair-discover-person-names.ts --dry-run --batch-size 50 --limit 1000
 ```
+
+### Public people discovery
+
+Discover can use publicly indexed LinkedIn person results through the same web
+search API used for email-format evidence. `DISCOVER_PEOPLE_PROVIDER=apify` remains
+the default. Set it to `public_search` for indexed results only, or `hybrid` for
+public-first discovery with bounded Apify fallback after name/role/location
+validation and deduplication. Configure `WEB_SEARCH_PROVIDER=serper` and
+`SERPER_API_KEY` (preferred for the Google SERP proof of concept), or
+`WEB_SEARCH_PROVIDER=brave` and `BRAVE_SEARCH_API_KEY`. Hybrid also needs the
+existing Apify configuration.
+
+Queries use the resolved official company and the existing bounded role plan,
+for example `site:linkedin.com/in "Abacus Insights" "Software Engineer" "United States"`.
+Only `/in/` person URLs qualify. Returned headlines/snippets must evidence current
+employment; historical, contradictory and ambiguous evidence fails closed.
+Search keywords are never employment evidence. No LinkedIn login, profile-page
+fetching, or email guessing occurs in the public provider.
+
+The existing shared cache, name normalization, allocation and email/suppression
+pipeline remain in place. The public pass is capped at six queries, three pages
+per query, ten results per page and two concurrent requests. Add More consumes
+unused cached people first, then replays the bounded public window with existing
+allocations excluded. It can stop with fewer than ten people. See
+[DOCUMENTATION.md](DOCUMENTATION.md#public-people-discovery-provider) for rollout,
+rollback, continuation, privacy and limitations.

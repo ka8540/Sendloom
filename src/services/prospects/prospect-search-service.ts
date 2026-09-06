@@ -1,3 +1,6 @@
+import { reuseExistingPeople } from "./discover-existing-person";
+import { PersonIdentitySet } from "./discover-person-identity";
+import { discoverProfiles, publicProfileValidator } from "./prospect-discovery-provider";
 import type { ProspectPerson } from "@prisma/client";
 import { protectNameRepairSuppressions } from "@/services/prospects/discover-person-name-repair";
 import { normalizeDiscoverPersonNames } from "@/services/prospects/discover-person-name-normalization";
@@ -510,7 +513,7 @@ export class ProspectSearchService {
 
     try {
       const outcome = await withTimeout(
-        this.runPipeline(userId, search, budget),
+        this.runPipeline(userId, search, budget, AbortSignal.timeout(this.pipelineTimeoutMs)),
         this.pipelineTimeoutMs,
         () => new ProspectError("PROVIDER_TIMEOUT", "The profile search timed out. Try again in a moment.")
       );
@@ -696,7 +699,7 @@ export class ProspectSearchService {
     await this.prisma.prospectSearch.update({ where: { id: searchId }, data: { status, ...data } });
   }
 
-  private async runPipeline(userId: string, search: ProspectSearch, budget: AiCallBudget): Promise<RunPipelineResult> {
+  private async runPipeline(userId: string, search: ProspectSearch, budget: AiCallBudget, signal?: AbortSignal): Promise<RunPipelineResult> {
     // 1) Resolve the company. This runs before the cache check because the
     // canonical fingerprint is keyed on the RESOLVED company identity (so
     // "Apple"/"Apple Inc." share a cache entry) — not the raw typed name.
@@ -768,7 +771,7 @@ export class ProspectSearchService {
           }),
         provider: async () => {
           providerStarted = true;
-          const providerResult = await this.runProviderDataset(userId, search, company, resolution, budget);
+          const providerResult = await this.runProviderDataset(userId, search, company, resolution, budget, signal);
           providerDiagnosticsRef.current = providerResult.diagnostics;
           return providerResult.dataset;
         }
@@ -1002,7 +1005,8 @@ export class ProspectSearchService {
     search: ProspectSearch,
     company: ProspectCompany,
     resolution: CompanyResolution,
-    budget: AiCallBudget
+    budget: AiCallBudget,
+    signal?: AbortSignal
   ): Promise<ProviderDatasetResult> {
     // Discover people via Apify. The result count is always the server-fixed
     // value (never search.maxResults).
@@ -1014,7 +1018,7 @@ export class ProspectSearchService {
       budget,
       searchId: search.id
     });
-    const searchResult = await this.apify.searchProfiles({
+    const searchResult = await discoverProfiles({
       companyName: resolution.officialName,
       companyLinkedinUrl: resolution.linkedinCompanyUrl,
       ...(resolution.linkedinCompanyUrl
@@ -1024,6 +1028,10 @@ export class ProspectSearchService {
       jobTitles: providerTitles,
       locations: this.asStringArray(search.requestedLocations),
       maxResults: candidateLimit
+    }, { apify: this.apify, target: resultLimit, signal,
+      validate: publicProfileValidator({ roleIntelligence: this.roleIntelligence, roleClassifier: this.roleClassifier,
+        requestedTitles, locations: this.asStringArray(search.requestedLocations), companyName: resolution.officialName,
+        options: { budget, searchId: search.id } })
     });
 
     await this.prisma.prospectSearch.update({
@@ -1424,12 +1432,16 @@ export class ProspectSearchService {
       allocatedPersonIds.length > 0
         ? await this.prisma.prospectPerson.findMany({ where: { id: { in: allocatedPersonIds } } })
         : [];
-    const allocatedProfileIds = new Set(allocatedPeople.map((person) => person.sourceProfileId));
+    const allocatedIdentities = new PersonIdentitySet(allocatedPeople);
+    if (env.DISCOVER_PEOPLE_PROVIDER !== "apify") {
+      const existing = await this.prisma.prospectPerson.findMany({ where: { userId } });
+      dataset = { ...dataset, people: reuseExistingPeople(dataset.people, existing, company.id) };
+    }
 
     const limit = search.maxResults > 0 ? search.maxResults : resolveResultsPerSearch();
     const capacity = Math.max(0, limit - existingAllocations.length);
     const selected = await normalizeDiscoverPersonNames(dataset.people
-      .filter((person) => !allocatedProfileIds.has(person.sourceProfileId))
+      .filter((person) => allocatedIdentities.addIfNew(person))
       .slice(0, capacity), { companyName: company.officialName ?? company.name });
 
     const existingPeople = selected.length

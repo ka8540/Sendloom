@@ -1247,3 +1247,30 @@ it.each(["CACHE", "PROVIDER"])("Add More normalizes credential names through %s"
     if (path === "CACHE") expect(run).not.toHaveBeenCalled();
   });
 });
+
+describe('public Add More integration', () => {
+  it('skips allocated URL variants and discovers a new public person on a later page', async () => {
+    const { getEnv } = await import('@/lib/env');
+    const config = getEnv();
+    const previous = { DISCOVER_PEOPLE_PROVIDER: config.DISCOVER_PEOPLE_PROVIDER,
+      WEB_SEARCH_PROVIDER: config.WEB_SEARCH_PROVIDER, SERPER_API_KEY: config.SERPER_API_KEY };
+    Object.assign(config, { DISCOVER_PEOPLE_PROVIDER: 'public_search', WEB_SEARCH_PROVIDER: 'serper', SERPER_API_KEY: 'test-key' });
+    try {
+      seedCompany(); seedSearch(); seedExistingPeople(10); seedCache([]);
+      const old = prisma._state.people[0];
+      const fetcher = vi.fn(async (_url: unknown, init: RequestInit) => {
+        const { page } = JSON.parse(init.body as string);
+        return Response.json({ organic: [{ title: 'Jane Doe - Software Engineer at Apple | LinkedIn',
+          link: page === 1 ? `${old.linkedinUrl}/?trk=repeat` : 'https://linkedin.com/in/new-public-person',
+          snippet: 'Software Engineer at Apple · Boston, Massachusetts, United States' }] });
+      });
+      vi.stubGlobal('fetch', fetcher);
+      const { service, runner } = buildService();
+      const completed = await service.addMorePeople({ userId: USER_ID, actorEmail: 'user@example.com', searchId: SEARCH_ID, idempotencyKey: 'public-expansion' });
+      expect(completed.addedCount).toBe(1);
+      expect(prisma._state.people).toHaveLength(11);
+      expect(runner.run).not.toHaveBeenCalled();
+      expect(fetcher.mock.calls.some(([, init]) => JSON.parse(init.body as string).page === 2)).toBe(true);
+    } finally { Object.assign(config, previous); }
+  });
+});

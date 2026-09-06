@@ -1,3 +1,5 @@
+import { reuseExistingPeople } from "./discover-existing-person";
+import { discoverProfiles, publicProfileValidator } from "./prospect-discovery-provider";
 import { protectNameRepairSuppressions } from "@/services/prospects/discover-person-name-repair";
 import { normalizeDiscoverPersonNames } from "@/services/prospects/discover-person-name-normalization";
 import { nameStateFields } from "@/services/prospects/discover-name-contract";
@@ -480,12 +482,12 @@ export class DiscoverExpansionService {
         let pagesFetched = 0;
         let cachedPeopleCount = rechecked?.people.length ?? 0;
 
-        while (collected.length < this.batchSize && pagesFetched < this.maxProviderPages && !exhausted) {
+        while (collected.length < this.batchSize && pagesFetched < (env.DISCOVER_PEOPLE_PROVIDER === "apify" ? this.maxProviderPages : 1) && !exhausted) {
           await this.safeAudit("DISCOVER_EXPANSION_PROVIDER_FETCH", params.userId, params.actorEmail, params.search.id, {
             page
           });
           // 14. Continue from the saved provider page — never restart at page 1.
-          const pageResult = await this.apify.searchProfiles({
+          const pageResult = await discoverProfiles({
             companyName: params.company.officialName ?? params.company.name,
             companyLinkedinUrl: params.company.linkedinUrl,
             ...(params.company.linkedinUrl
@@ -495,11 +497,15 @@ export class DiscoverExpansionService {
             locations: params.locations,
             maxResults: PROVIDER_PAGE_SIZE,
             startPage: page
+          }, { apify: this.apify, target: this.batchSize - collected.length, excluded: identities,
+            validate: publicProfileValidator({ roleIntelligence: this.roleIntelligence, roleClassifier: this.roleClassifier,
+              requestedTitles: params.roles, locations: params.locations, companyName: params.company.officialName ?? params.company.name,
+              options: { budget, searchId: params.search.id } })
           });
           pagesFetched += 1;
           const nextPage = page + 1;
           // A page with no raw provider items means there are no further pages.
-          const pageExhausted = pageResult.totalFound === 0;
+          const pageExhausted = env.DISCOVER_PEOPLE_PROVIDER === "apify" ? pageResult.totalFound === 0 : pageResult.profiles.length < this.batchSize - collected.length;
           const built = await this.buildProviderPeople(
             pageResult.profiles,
             params.cacheEmailFormat,
@@ -672,6 +678,10 @@ export class DiscoverExpansionService {
       return { materializedCount: 0, allocationAddedCount: 0 };
     }
 
+    if (env.DISCOVER_PEOPLE_PROVIDER !== "apify") {
+      const existing = await this.prisma.prospectPerson.findMany({ where: { userId } });
+      people = reuseExistingPeople(people, existing, company.id);
+    }
     people = await normalizeDiscoverPersonNames(people, { companyName: company.officialName ?? company.name });
     const categories = new Map<PositionCategory, Set<string>>();
     for (const person of people) {

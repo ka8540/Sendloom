@@ -1,3 +1,4 @@
+import { canonicalizeLinkedInProfileUrl } from "./linkedin-profile-url";
 // Stable person identity for Discover "Add 10 more". The expansion must never
 // add the same person twice to a search, and must never collapse two different
 // people who merely share a name. We therefore key identity on durable provider
@@ -21,6 +22,8 @@ export function normalizeProfileUrl(url: string | null | undefined): string | nu
   if (!url) {
     return null;
   }
+  const canonical = canonicalizeLinkedInProfileUrl(url);
+  if (canonical) return canonical.linkedinUrl.replace("https://", "");
   let value = url.trim().toLowerCase();
   if (!value) {
     return null;

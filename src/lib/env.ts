@@ -103,6 +103,7 @@ const envSchema = z
     // --- Prospect graph backend (local-first prototype) ---
     APIFY_API_TOKEN: z.string().min(1).optional(),
     APIFY_PROSPECT_ACTOR_ID: z.string().min(1).default("harvestapi/linkedin-profile-search"),
+    DISCOVER_PEOPLE_PROVIDER: z.enum(["apify", "public_search", "hybrid"]).default("apify"),
     WEB_SEARCH_PROVIDER: z.preprocess(
       (value) => (value === "" || value === undefined ? "none" : String(value).trim().toLowerCase()),
       z.enum(["none", "serper", "brave"]).default("none")
@@ -298,6 +299,7 @@ function readRawEnv() {
     GMAIL_SENDER_CONCURRENCY: process.env.GMAIL_SENDER_CONCURRENCY,
     APIFY_API_TOKEN: process.env.APIFY_API_TOKEN,
     APIFY_PROSPECT_ACTOR_ID: process.env.APIFY_PROSPECT_ACTOR_ID,
+    DISCOVER_PEOPLE_PROVIDER: process.env.DISCOVER_PEOPLE_PROVIDER,
     WEB_SEARCH_PROVIDER: process.env.WEB_SEARCH_PROVIDER,
     SERPER_API_KEY: process.env.SERPER_API_KEY,
     BRAVE_SEARCH_API_KEY: process.env.BRAVE_SEARCH_API_KEY,

@@ -1,7 +1,6 @@
 import { lookup } from "node:dns/promises";
 import net from "node:net";
 
-import { env } from "@/lib/env";
 import { type ConfidenceLevel, type EmailPattern, isEmailPattern } from "@/lib/prospect-enums";
 import {
   type EmailDomainEvidence,
@@ -19,16 +18,8 @@ const PUBLIC_PAGE_TIMEOUT_MS = 9_000;
 const MAX_REDIRECTS = 3;
 const USER_AGENT = "Sendloom Prospect Email Format Discovery/1.0 (+https://sendloom.local)";
 
-type SearchResult = {
-  title: string;
-  url: string;
-  snippet: string | null;
-};
-
-export interface EmailFormatSearchProvider {
-  configured: boolean;
-  search(query: string): Promise<SearchResult[]>;
-}
+import { createConfiguredWebSearchProvider, type WebSearchProvider, type WebSearchResult as SearchResult } from "./web-search-provider";
+export type EmailFormatSearchProvider = WebSearchProvider;
 
 export type PublicPageFetcher = (url: string) => Promise<string>;
 
@@ -526,70 +517,7 @@ function snippetEvidence(result: SearchResult): EmailEvidenceBundle {
   return parsePublicEmailFormatEvidence(result.snippet, { sourceUrl: result.url });
 }
 
-class SerperSearchProvider implements EmailFormatSearchProvider {
-  configured = Boolean(env.SERPER_API_KEY);
-
-  async search(query: string): Promise<SearchResult[]> {
-    if (!env.SERPER_API_KEY) {
-      return [];
-    }
-    const response = await fetch("https://google.serper.dev/search", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": env.SERPER_API_KEY
-      },
-      body: JSON.stringify({ q: query, num: 5 })
-    });
-    if (!response.ok) {
-      throw new Error(`Serper search failed with HTTP ${response.status}.`);
-    }
-    const payload = (await response.json()) as {
-      organic?: Array<{ title?: string; link?: string; snippet?: string }>;
-    };
-    return (payload.organic ?? [])
-      .filter((row) => row.link)
-      .map((row) => ({ title: row.title ?? "Search result", url: row.link!, snippet: row.snippet ?? null }));
-  }
-}
-
-class BraveSearchProvider implements EmailFormatSearchProvider {
-  configured = Boolean(env.BRAVE_SEARCH_API_KEY);
-
-  async search(query: string): Promise<SearchResult[]> {
-    if (!env.BRAVE_SEARCH_API_KEY) {
-      return [];
-    }
-    const url = new URL("https://api.search.brave.com/res/v1/web/search");
-    url.searchParams.set("q", query);
-    url.searchParams.set("count", "5");
-    const response = await fetch(url.toString(), {
-      headers: {
-        accept: "application/json",
-        "x-subscription-token": env.BRAVE_SEARCH_API_KEY
-      }
-    });
-    if (!response.ok) {
-      throw new Error(`Brave search failed with HTTP ${response.status}.`);
-    }
-    const payload = (await response.json()) as {
-      web?: { results?: Array<{ title?: string; url?: string; description?: string }> };
-    };
-    return (payload.web?.results ?? [])
-      .filter((row) => row.url)
-      .map((row) => ({ title: row.title ?? "Search result", url: row.url!, snippet: row.description ?? null }));
-  }
-}
-
-export function createConfiguredEmailFormatSearchProvider(): EmailFormatSearchProvider | null {
-  if (env.WEB_SEARCH_PROVIDER === "serper") {
-    return new SerperSearchProvider();
-  }
-  if (env.WEB_SEARCH_PROVIDER === "brave") {
-    return new BraveSearchProvider();
-  }
-  return null;
-}
+export const createConfiguredEmailFormatSearchProvider = createConfiguredWebSearchProvider;
 
 export class EmailFormatDiscoveryService implements EmailEvidenceProvider {
   constructor(

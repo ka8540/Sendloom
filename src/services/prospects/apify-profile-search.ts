@@ -1,3 +1,4 @@
+import { PersonIdentitySet } from "./discover-person-identity";
 import { isPlainDiscoverName } from "@/services/prospects/discover-name-contract";
 import { env } from "@/lib/env";
 import {
@@ -410,16 +411,8 @@ export function currentCompanyMatches(
 
 /** Remove duplicate profiles, preferring the first occurrence. */
 export function dedupeProfiles(profiles: NormalizedProfile[]): NormalizedProfile[] {
-  const seen = new Set<string>();
-  const result: NormalizedProfile[] = [];
-  for (const profile of profiles) {
-    const key = profile.sourceProfileId || profile.linkedinUrl;
-    if (seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
-    result.push(profile);
-  }
+  const seen = new PersonIdentitySet();
+  const result = profiles.filter(profile => seen.addIfNew(profile));
   return result;
 }
 

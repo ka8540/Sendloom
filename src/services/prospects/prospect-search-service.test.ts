@@ -3991,3 +3991,63 @@ it("normalizes a provider name before persistence and reuses corrected names for
     expect(prisma._state.searchPeople.filter(a => a.personId === stored!.id)).toHaveLength(1);
   });
 });
+
+describe('public people discovery integration', () => {
+  async function withPublic(run: () => Promise<void>) {
+    const { getEnv } = await import('@/lib/env');
+    const config = getEnv();
+    const previous = { DISCOVER_PEOPLE_PROVIDER: config.DISCOVER_PEOPLE_PROVIDER,
+      WEB_SEARCH_PROVIDER: config.WEB_SEARCH_PROVIDER, SERPER_API_KEY: config.SERPER_API_KEY };
+    Object.assign(config, { DISCOVER_PEOPLE_PROVIDER: 'public_search', WEB_SEARCH_PROVIDER: 'serper', SERPER_API_KEY: 'test-key' });
+    try { await run(); } finally { Object.assign(config, previous); }
+  }
+  it('materializes only current matching people, caps grants, and reuses shared cache', async () => withPublic(async () => {
+    const search = vi.fn(async () => Response.json({ organic: Array.from({ length: 10 }, (_, i) => ({
+      title: `Jane Doe - Software Engineer at Apple | LinkedIn`, link: `https://linkedin.com/in/public-${i}?trk=test`,
+      snippet: 'Software Engineer at Apple · Boston, Massachusetts, United States'
+    })) }));
+    vi.stubGlobal('fetch', search);
+    const runner = { run: vi.fn() } as ApifyRunner;
+    const cache = new DiscoverSearchCacheService({ prisma: prisma as unknown as PrismaClient, lock: makeFakeCacheLock() });
+    const { service } = buildService(prisma, runner, AI_RESPONSES, undefined, allowAllQuota, cache, deterministicRoleIntelligence(prisma));
+    const created = await service.createSearch(USER_ID, { ...VALIDATED, jobTitles: ['Software Engineer'] });
+    const completed = await service.processSearch(USER_ID, created.id);
+    expect(completed).toMatchObject({ status: 'READY', totalProcessed: 10 });
+    expect(prisma._state.people).toHaveLength(10);
+    expect(prisma._state.people.every(p => p.firstName === 'Jane' && p.lastName === 'Doe')).toBe(true);
+    const before = search.mock.calls.length;
+    const second = await service.createSearch('second-user', { ...VALIDATED, jobTitles: ['Software Engineer'] });
+    expect((await service.processSearch('second-user', second.id)).totalProcessed).toBe(10);
+    expect(search).toHaveBeenCalledTimes(before);
+    expect(runner.run).not.toHaveBeenCalled();
+  }));
+  it('public-only no eligible result produces safe NO_RESULTS', async () => withPublic(async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ organic: [
+      { title: 'Jane Doe - Former Software Engineer at Apple | LinkedIn', link: 'https://linkedin.com/in/former', snippet: 'Formerly with Apple' },
+      { title: 'John Smith - Recruiter at Apple | LinkedIn', link: 'https://linkedin.com/in/recruiter', snippet: 'Recruiter at Apple · Boston, Massachusetts, United States' }
+    ] })));
+    const runner = { run: vi.fn() } as ApifyRunner;
+    const { service } = buildService(prisma, runner, AI_RESPONSES, undefined, allowAllQuota, passthroughCache, deterministicRoleIntelligence(prisma));
+    const created = await service.createSearch(USER_ID, { ...VALIDATED, jobTitles: ['Software Engineer'] });
+    const completed = await service.processSearch(USER_ID, created.id);
+    expect(completed.status).toBe('NO_RESULTS'); expect(prisma._state.people).toHaveLength(0);
+    expect(runner.run).not.toHaveBeenCalled();
+  }));
+  it('reuses an existing Apify identity by URL without replacing manual name or verified email', async () => {
+    const runner = { run: vi.fn(async () => ({ runId: 'run', datasetId: 'dataset', items: [profile('actor-id', 'Jane', 'Doe', 'Software Engineer')] })) };
+    const { service } = buildService(prisma, runner, AI_RESPONSES);
+    const first = await service.createSearch(USER_ID, { ...VALIDATED, jobTitles: ['Software Engineer'] });
+    await service.processSearch(USER_ID, first.id);
+    const stored = prisma._state.people[0];
+    Object.assign(stored, { linkedinUrl: 'https://www.linkedin.com/in/public-jane/?trk=old', inferredEmail: 'verified@apple.com',
+      emailStatus: 'VERIFIED', emailSource: 'MANUAL' });
+    await withPublic(async () => {
+      vi.stubGlobal('fetch', vi.fn(async () => Response.json({ organic: [{ title: 'Jane Doe - Software Engineer at Apple | LinkedIn',
+        link: 'https://linkedin.com/in/public-jane', snippet: 'Software Engineer at Apple · Boston, Massachusetts, United States' }] })));
+      const second = await service.createSearch(USER_ID, { ...VALIDATED, jobTitles: ['Software Engineer'] });
+      await service.processSearch(USER_ID, second.id);
+      expect(prisma._state.people).toHaveLength(1);
+      expect(prisma._state.people[0]).toMatchObject({ id: stored.id, sourceProfileId: 'actor-id', inferredEmail: 'verified@apple.com', emailStatus: 'VERIFIED' });
+    });
+  });
+});

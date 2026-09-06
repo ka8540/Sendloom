@@ -3280,3 +3280,104 @@ both the old and proposed address during historical repair. Dry-run performs no
 writes; `--apply` is mandatory to mutate. The old
 `repair-discover-person-identities.ts` entry point delegates to this command;
 per-person web identity enrichment is no longer part of Discover normalization.
+
+## Public people discovery provider
+
+`DISCOVER_PEOPLE_PROVIDER` is a server-side enum: `apify` (default),
+`public_search`, or `hybrid`. Existing deployments retain the Apify retrieval
+path. No schema migration or public-person table is added.
+
+The integration points are `ProspectSearchService.runProviderDataset` and
+`DiscoverExpansionService.collectNewPeople`. Both call `discoverProfiles`.
+`ApifyDiscoveryProvider` delegates the existing actor contract unchanged in
+Apify mode. `PublicSearchDiscoveryProvider` consumes the shared `WebSearchProvider`
+API, extracted from email-format discovery. Email discovery retains its default
+five-result requests; people discovery requests ten. Clients are server-side,
+use fixed Serper/Brave API hosts, validate response structure, and apply an
+eight-second request timeout. Brave uses zero-based page offsets as documented
+in [its API reference](https://api-dashboard.search.brave.com/api-reference/web/search/get).
+
+Processing order:
+
+1. Resolve company identity and reuse fresh eligible local/shared people using
+   the existing cache and locks. No search API call is made when cache reuse wins.
+2. Build quoted `site:linkedin.com/in` queries from the resolved official company,
+   existing semantic title plan, and optional location. Quotes, backslashes,
+   controls and redundant whitespace are sanitized inside quoted terms.
+3. Search up to six queries and three pages per query, with two concurrent
+   requests and ten results per page. Stop after sufficient validated unique
+   candidates. The public pass has a 35-second abort deadline for API work and inherits the overall Discover deadline. Hybrid continuation checks that deadline before and after each actor call; an in-flight actor itself cannot be canceled by this adapter. Add More uses a 90-second adapter deadline.
+4. Canonicalize strict LinkedIn `/in/<slug>` URLs to HTTPS without www, tracking,
+   fragment or trailing slash. Locale subdomains and percent-encoded Unicode
+   normalize to the same identity. Reject other sites/paths, credentials and ports.
+5. Extract raw source name, headline position/company and professional location
+   from returned title/snippet evidence. Do not populate fields from query words.
+6. Deterministically validate employment. Explicit headline position/company
+   structures qualify, using the existing employer alias comparison. Historical
+   clauses (former, previously, ex, worked, past, formerly with, ended date ranges)
+   override a positive headline. An explicit different leading snippet employer
+   contradicts the headline. Ambiguous results fail closed. No employment AI is used.
+7. Run the existing batched person-name boundary, title classification and
+   `filterAndRankPeople`, including when vector features are disabled. Public
+   geography uses the existing strict cache-context matcher because keyword
+   search cannot supply trusted provider location constraints.
+8. In hybrid mode, fetch bounded Apify pages only when validated unique public
+   people leave a deficit (at most three actor pages per adapter invocation).
+   Validate fallback people, exclude granted/rejected identities, and dedupe
+   before materialization. Stronger Apify data wins same-person metadata ties.
+   Hybrid does not retain a raw actor dataset replay id, because replay could bypass public negative-evidence exclusions. Public errors/unconfigured APIs fall back to Apify; public-only failures use
+   safe `ProspectError` messages. Empty public results follow existing `NO_RESULTS`.
+9. Store the minimal normalized dataset in the existing shared cache and grant
+   only the existing server-fixed result count. Existing per-user people are
+   reconciled by provider id or canonical URL before upsert in the new modes;
+   same-company stronger metadata and verified/manual/terminal email state survive.
+   New-mode inserts use the canonical slug as their source id to converge on the
+   existing unique database key. Different URLs are never merged by name.
+
+Add More uses the existing cache locks and allocations. It consumes unused
+cached people first. Public search replays the bounded three-page window with
+already granted identities excluded; this avoids needing a per-query database
+cursor and avoids skipping partially consumed pages or role variants. One public
+pass is permitted per expansion. If that window cannot fill the remaining batch,
+its pool is marked exhausted using the existing state. Hybrid reuses the saved
+Apify page as a starting point; overlap is deduplicated. This intentionally trades
+some repeated API work for a migration-free continuation mechanism. There is no
+unbounded crawl or guarantee of discovering beyond the bounded window.
+
+Privacy-safe `[discover-public-search]` logs contain only query/page/result counts,
+rejection counters, accepted count and fallback/failure booleans. Raw snippets,
+URLs, names, email addresses, API keys and provider payloads are not logged or
+persisted by this provider. Headline context is transient input to the existing
+name normalizer; only existing minimal cache/person fields survive. No profile
+photos, posts, contact details or employment history are collected. Email-format
+inference remains a separate downstream stage with existing name and suppression
+safeguards.
+
+Limitations: a search engine's headline is evidence, not an authoritative live
+employment record. Stale headlines without contradictory evidence cannot be
+identified reliably. Fresh cache hits retain the existing cache TTL and are not
+revalidated against the web on every request. Detected former/current-employer
+contradictions exclude that identity from the current provider result and hybrid
+fallback; historical database records are not deleted. Conservative parsing and
+missing location/name evidence can reduce recall. Non-English employment wording
+is not comprehensively classified. No live paid-provider or production-database
+smoke test is performed by the unit suite.
+
+Rollout:
+
+1. Deploy the branch through the normal reviewed release process with
+   `DISCOVER_PEOPLE_PROVIDER=apify`. No feature migration is needed.
+2. In staging set `WEB_SEARCH_PROVIDER=serper` and `SERPER_API_KEY`, or select
+   `brave` and configure `BRAVE_SEARCH_API_KEY`. Keep secrets server-side. Because
+   this setting is shared, it also selects email-format search infrastructure.
+3. Keep `APIFY_API_TOKEN` and `APIFY_PROSPECT_ACTOR_ID` configured for hybrid.
+4. Set `DISCOVER_PEOPLE_PROVIDER=hybrid` and restart/redeploy the server processes.
+   Exercise a fresh company/role search, a cache hit, Add More, duplicate profile
+   results and provider failure. Review counter-only diagnostics and allocations.
+5. Enable hybrid in production after staging validation. Use `public_search`
+   only when accepting no Apify fallback and potentially smaller result sets.
+
+Rollback: set `DISCOVER_PEOPLE_PROVIDER=apify` and restart/redeploy all server
+processes. Leave shared cache/person/allocation records intact. No rollback SQL,
+deletion, credential removal or data migration is required. Existing fresh cache
+records remain reusable under the normal cache freshness policy.
