@@ -928,6 +928,7 @@ model ProspectPerson {
   nameNormalization String?
   currentTitle    String?
   normalizedTitle String?
+  locationSource   String?
   location        String?
   country         String?
   state           String?
@@ -1089,6 +1090,7 @@ model DiscoverSearchCache {
   // providerPagesFetched counts pages already pulled into this entry, and
   // providerExhausted is set once the provider confirms there are no further
   // pages / no new unique people. lastProviderFetchAt records the last fetch.
+  publicExpansion               Json?
   providerNextPage              Int       @default(1)
   providerPagesFetched          Int       @default(0)
   providerExhausted             Boolean   @default(false)
@@ -1137,6 +1139,7 @@ model DiscoverSearchCachePerson {
   currentTitle     String?
   normalizedTitle  String?
   positionCategory String?
+  locationSource   String?
   location         String?
   country          String?
   state            String?

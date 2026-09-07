@@ -4100,7 +4100,7 @@ describe('Playwright Google Discover integration', () => {
     const config = getEnv();
     const previous = { DISCOVER_PEOPLE_PROVIDER: config.DISCOVER_PEOPLE_PROVIDER, WEB_SEARCH_PROVIDER: config.WEB_SEARCH_PROVIDER };
     Object.assign(config, { DISCOVER_PEOPLE_PROVIDER: 'public_search', WEB_SEARCH_PROVIDER: 'playwright_google' });
-    const google = vi.spyOn(PlaywrightGoogleSearchProvider.prototype, 'search').mockResolvedValue(Array.from({ length: 12 }, (_, i) => ({
+    const google = vi.spyOn(PlaywrightGoogleSearchProvider.prototype, 'search').mockResolvedValue(Array.from({ length: 34 }, (_, i) => ({
       title: 'Jane Doe - Software Engineer at Apple | LinkedIn', url: `https://linkedin.com/in/google-person-${i}`,
       snippet: 'Dallas, Texas · Software Engineer at Apple'
     })));
@@ -4121,11 +4121,79 @@ describe('Playwright Google Discover integration', () => {
       expect(google.mock.calls[0][0]).not.toContain('United States');
       expect(prisma._state.people).toHaveLength(10);
       expect(prisma._state.people.every(p => p.location === 'Dallas, Texas' && p.country === 'United States')).toBe(true);
+      const { DiscoverExpansionService } = await import('./discover-expansion-service');
+      const expansion = new DiscoverExpansionService({
+        prisma: prisma as unknown as PrismaClient,
+        apify: new ApifyProfileSearchService({ token: 't', actorId: 'actor', runner }),
+        roleClassifier: new RoleClassificationService(prisma as unknown as PrismaClient, { enabled: false } as never),
+        roleIntelligence: roles, cache, expansionLock: makeFakeCacheLock(),
+        discoverQuota: allowAllQuota, quotaStatus: async () => quotaStatus(0, 100), audit: () => undefined
+      });
+      // All 34 valid candidates were persisted before the initial ten were allocated.
+      const cacheEntry = (await prisma.discoverSearchCache.findMany({}))[0];
+      expect(cacheEntry.resultCount).toBe(34);
+      expect(cacheEntry.providerExhausted).toBe(true);
+      const counts: number[] = [];
+      for (let i = 0; i < 4; i++) {
+        const batch = await expansion.addMorePeople({ userId: USER_ID, actorEmail: null,
+          searchId: created.id, idempotencyKey: `google-pool-${i}` });
+        counts.push(batch.addedCount);
+      }
+      expect(counts).toEqual([10, 10, 4, 0]);
+      expect(prisma._state.people.filter(p => p.userId === USER_ID)).toHaveLength(34);
+      expect(new Set(prisma._state.people.filter(p => p.userId === USER_ID).map(p => p.linkedinUrl)).size).toBe(34);
+      expect(google).toHaveBeenCalledTimes(1);
       const second = await service.createSearch('google-cache-user', { ...VALIDATED, jobTitles: ['Software Engineer'] });
       expect((await service.processSearch('google-cache-user', second.id)).totalProcessed).toBe(10);
       expect(google).toHaveBeenCalledTimes(1);
       expect(planBuilder).toHaveBeenCalledTimes(1);
       expect(runner.run).not.toHaveBeenCalled(); expect(you).not.toHaveBeenCalled();
     } finally { Object.assign(config, previous); google.mockRestore(); you.mockRestore(); }
+  });
+});
+
+describe('Bright Data progressive Discover integration', () => {
+  it('returns ten, fills the shared pool durably, and serves Add More and a second user without provider/AI', async () => {
+    const { getEnv } = await import('@/lib/env');
+    const { BrightDataGoogleSearchProvider } = await import('./brightdata-google-search-provider');
+    const job = await import('./discover-public-pool-job');
+    const config = getEnv();
+    const previous = { DISCOVER_PEOPLE_PROVIDER: config.DISCOVER_PEOPLE_PROVIDER, WEB_SEARCH_PROVIDER: config.WEB_SEARCH_PROVIDER,
+      BRIGHTDATA_API_KEY: config.BRIGHTDATA_API_KEY, BRIGHTDATA_SERP_ZONE: config.BRIGHTDATA_SERP_ZONE };
+    Object.assign(config, { DISCOVER_PEOPLE_PROVIDER: 'public_search', WEB_SEARCH_PROVIDER: 'brightdata_google', BRIGHTDATA_API_KEY: 'fixture', BRIGHTDATA_SERP_ZONE: 'fixture' });
+    const google = vi.spyOn(BrightDataGoogleSearchProvider.prototype, 'search').mockImplementation(async (_q, options) =>
+      Array.from({ length: 10 }, (_, i) => ({ title: 'Jane Doe - Software Engineer at Apple | LinkedIn',
+        url: `https://np.linkedin.com/in/bright-person-${((options?.page ?? 1) - 1) * 10 + i}`, snippet: '' })));
+    const enqueue = vi.spyOn(job, 'enqueuePublicPool').mockImplementation(async () => {
+      expect(prisma._state.searches[0]).toMatchObject({ status: 'READY', totalProcessed: 10 });
+      expect(prisma._state.discoverCachePeople).toHaveLength(10);
+    });
+    try {
+      const runner = { run: vi.fn() } as ApifyRunner;
+      const cache = new DiscoverSearchCacheService({ prisma: prisma as unknown as PrismaClient, lock: makeFakeCacheLock() });
+      const { service } = buildService(prisma, runner, AI_RESPONSES, undefined, allowAllQuota, cache, deterministicRoleIntelligence(prisma));
+      const created = await service.createSearch(USER_ID, { ...VALIDATED, jobTitles: ['Software Engineer'] });
+      expect((await service.processSearch(USER_ID, created.id)).totalProcessed).toBe(10);
+      expect(google).toHaveBeenCalledTimes(1); expect(enqueue).toHaveBeenCalledTimes(1);
+      const fingerprint = prisma._state.discoverCache[0].fingerprint;
+      expect(prisma._state.discoverCachePeople).toHaveLength(10);
+      await job.runPublicPoolJob(prisma as unknown as PrismaClient, fingerprint, cache);
+      expect(prisma._state.discoverCachePeople).toHaveLength(100);
+      expect(google.mock.calls.map(([, o]) => o?.page)).toEqual([1,2,3,4,5,6,7,8,9,10]);
+      expect(prisma._state.people).toHaveLength(10);
+      const { DiscoverExpansionService } = await import('./discover-expansion-service');
+      const expansion = new DiscoverExpansionService({ prisma: prisma as unknown as PrismaClient,
+        apify: new ApifyProfileSearchService({ token: 't', actorId: 'actor', runner }),
+        roleClassifier: new RoleClassificationService(prisma as unknown as PrismaClient, { enabled: false } as never),
+        cache, expansionLock: makeFakeCacheLock(), discoverQuota: allowAllQuota,
+        quotaStatus: async () => quotaStatus(0, 100), audit: () => undefined });
+      vi.mocked(fetch).mockClear();
+      const more = await expansion.addMorePeople({ userId: USER_ID, actorEmail: null, searchId: created.id, idempotencyKey: 'bright-more' });
+      expect(more.addedCount).toBe(10); expect(google).toHaveBeenCalledTimes(10); expect(fetch).not.toHaveBeenCalled();
+      const second = await service.createSearch('bright-cache-user', { ...VALIDATED, jobTitles: ['Software Engineer'] });
+      expect((await service.processSearch('bright-cache-user', second.id)).totalProcessed).toBe(10);
+      expect(fetch).not.toHaveBeenCalled(); expect(google).toHaveBeenCalledTimes(10);
+      expect(runner.run).not.toHaveBeenCalled(); expect(enqueue).toHaveBeenCalledTimes(1);
+    } finally { Object.assign(config, previous); google.mockRestore(); enqueue.mockRestore(); }
   });
 });

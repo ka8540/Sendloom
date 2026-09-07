@@ -764,7 +764,7 @@ describe("DiscoverRoleIntelligenceService", () => {
 
 
 describe("Google consumes the existing provider plan", () => {
-  it.each(["Software Engineer", "Human Resources", "Data Engineer"])("uses the same ranked family-safe plan for %s", async requested => {
+  it.each(["Software Engineer", "Human Resources", "Data Engineer", "Recruiter"])("uses the same ranked family-safe plan for %s", async requested => {
     const service = new DiscoverRoleIntelligenceService(classifier, new FakeEmbeddings({}), new MemoryRoleStore(), config());
     const plan = await service.buildProviderTitlePlan([requested], { budget: budget() });
     const query = buildPublicPeopleRoleUnionQuery({ companyName: "Abacus Insights", providerTitles: plan })!;

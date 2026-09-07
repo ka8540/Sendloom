@@ -166,6 +166,15 @@ export const typeDefs = /* GraphQL */ `
     createdAt: DateTime!
   }
 
+  type DiscoverSharedPoolStatus {
+    readyPeopleCount: Int!
+    providerNextPage: Int!
+    providerStart: Int!
+    providerPagesFetched: Int!
+    providerExhausted: Boolean!
+    lastProviderFetchAt: DateTime
+  }
+
   type ProspectSearch {
     id: ID!
     company: Company
@@ -182,6 +191,8 @@ export const typeDefs = /* GraphQL */ `
     errorTitle: String
     errorMessage: String
     retryable: Boolean!
+    # Shared processed records, independent of this user's allocation count.
+    sharedPool: DiscoverSharedPoolStatus
     peopleCount: Int!
     # True when no more unique people can be added to this search (the shared
     # results are exhausted). Drives whether "Add 10 more" is offered.

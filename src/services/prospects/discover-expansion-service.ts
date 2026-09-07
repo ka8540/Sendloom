@@ -1,3 +1,6 @@
+import { allocateEligiblePublicPeople } from "./public-pool-eligibility";
+import { enqueuePublicPool } from "./discover-public-pool-job";
+import { buildDiscoverDatasetPeople } from "./build-discover-dataset-people";
 import { reuseExistingPeople } from "./discover-existing-person";
 import { discoverProfiles, publicProfileValidator } from "./prospect-discovery-provider";
 import { protectNameRepairSuppressions } from "@/services/prospects/discover-person-name-repair";
@@ -33,10 +36,7 @@ import {
   type DiscoverRoleIntelligencePort
 } from "@/services/prospects/discover-role-intelligence-service";
 import { PersonIdentitySet } from "@/services/prospects/discover-person-identity";
-import { resolveCandidateEmail } from "@/services/prospects/email-generation-service";
 import { AiCallBudget, createAiBudget } from "@/services/prospects/prospect-ai";
-import { combinedEmailConfidence } from "@/services/prospects/prospect-email-confidence";
-import { normalizeTitle } from "@/services/prospects/prospect-normalization";
 import { resolveProspectPersonEmail } from "@/services/prospects/prospect-person-email";
 import { ProspectError } from "@/services/prospects/prospect-search-service";
 import { RoleClassificationService } from "@/services/prospects/role-classification-service";
@@ -222,7 +222,9 @@ export class DiscoverExpansionService {
 
       // 9. Look at the fresh shared cache for unused matching people.
       const cacheState = await this.cache.getExpansionState(fingerprint);
-      const cacheCandidates =
+      const cacheCandidates = env.WEB_SEARCH_PROVIDER === "brightdata_google"
+        ? await allocateEligiblePublicPeople({ prisma: this.prisma, userId, companyId: company.id, people: cacheState?.people ?? [], roles, locations })
+        :
         cacheState && this.roleIntelligence.enabled
           ? await this.roleIntelligence.filterAndRankPeople({
               people: cacheState.people,
@@ -234,6 +236,28 @@ export class DiscoverExpansionService {
           : cacheState?.people ?? [];
       const unusedCached = cacheCandidates.filter((person) => !identities.has(person));
       const providerExhausted = cacheState?.providerExhausted ?? false;
+
+      // Add More allocates only. A deficit waits for the durable shared worker,
+      // without consuming quota or making a paid provider/normalization call.
+      if (env.WEB_SEARCH_PROVIDER === 'brightdata_google' && env.DISCOVER_PEOPLE_PROVIDER === 'public_search'
+        && unusedCached.length < this.batchSize && !providerExhausted) {
+        if (!cacheState && !await this.prisma.discoverSearchCache.findUnique({ where: { fingerprint } })) {
+          // Company-pool/private reuse can have satisfied the initial search
+          // without creating this exact shared entry. Seed only its durable job
+          // context, never private people, so the consumer can begin at page 1.
+          await this.cache.appendProviderPeople({ fingerprint, fingerprintInput, company: cacheCompany,
+            emailFormat: { emailDomain: null, emailDomainConfidence: 'UNAVAILABLE', emailDomainEvidence: null,
+              emailPattern: null, patternConfidence: 'UNAVAILABLE', patternEvidence: null, emailFormatReason: null }, people: [], nextPage: 1, pagesFetched: 0, exhausted: false,
+            publicExpansion: { provider: 'brightdata_google', titles: [], seenProfileIds: [], rawCount: 0 } });
+        }
+        await enqueuePublicPool(fingerprint);
+        const pending = await this.prisma.discoverSearchExpansion.update({ where: { id: expansion.id }, data: {
+          status: 'PENDING', addedCount: 0, totalPeopleCount: allocatedCount > 0 ? allocatedCount : search.totalProcessed,
+          exhausted: false, errorCode: null
+        } });
+        return this.toResult(pending, await this.quotaRemaining(userId, actorEmail), false,
+          'More people are being prepared. Try Add More again shortly.');
+      }
 
       // Early no-op: provider already exhausted and nothing unused remains. Do
       // not consume a daily slot for a request that cannot add anyone.
@@ -505,7 +529,7 @@ export class DiscoverExpansionService {
           pagesFetched += 1;
           const nextPage = page + 1;
           // A page with no raw provider items means there are no further pages.
-          const pageExhausted = env.DISCOVER_PEOPLE_PROVIDER === "apify" ? pageResult.totalFound === 0 : pageResult.profiles.length < this.batchSize - collected.length;
+          const pageExhausted = pageResult.providerPool?.exhausted ?? (env.DISCOVER_PEOPLE_PROVIDER === "apify" ? pageResult.totalFound === 0 : pageResult.profiles.length < this.batchSize - collected.length);
           const built = await this.buildProviderPeople(
             pageResult.profiles,
             params.cacheEmailFormat,
@@ -536,7 +560,7 @@ export class DiscoverExpansionService {
             emailFormat: params.cacheEmailFormat,
             people: pagePeople,
             nextPage,
-            pagesFetched: 1,
+            pagesFetched: pageResult.providerPool?.pagesFetched ?? 1,
             exhausted: pageExhausted
           });
           const cacheAppendedCount = Math.max(0, updated.people.length - cachedPeopleCount);
@@ -615,41 +639,7 @@ export class DiscoverExpansionService {
       .filter((title): title is string => Boolean(title));
     const classifications = await this.roleClassifier.classify(rawTitles, { budget, searchId });
 
-    const allowLowConfidence = env.PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS;
-    const candidateConfidence = combinedEmailConfidence(emailFormat.emailDomainConfidence, emailFormat.patternConfidence);
-
-    const people = profiles.map((profile) => {
-      const category = categoryForProfile(profile, classifications);
-      const candidate = resolveCandidateEmail({
-        firstName: profile.firstName,
-        lastName: profile.lastName,
-        ...nameStateFields(profile),
-        domain: emailFormat.emailDomain,
-        pattern: emailFormat.emailPattern,
-        patternConfidence: candidateConfidence,
-        allowLowConfidence
-      });
-      return {
-        sourceProfileId: profile.sourceProfileId,
-        firstName: profile.firstName,
-        lastName: profile.lastName,
-        fullName: profile.fullName,
-        ...nameStateFields(profile),
-        currentTitle: profile.currentTitle,
-        normalizedTitle: profile.normalizedTitle,
-        positionCategory: category,
-        location: profile.location,
-        country: profile.country,
-        state: profile.state,
-        city: profile.city,
-        linkedinUrl: profile.linkedinUrl,
-        inferredEmail: candidate.email,
-        emailStatus: candidate.status,
-        emailConfidence: candidate.confidence,
-        emailPattern: candidate.email ? emailFormat.emailPattern : null,
-        emailSource: candidate.email ? "PATTERN" : null
-      };
-    });
+    const people = buildDiscoverDatasetPeople(profiles, classifications, emailFormat);
     return {
       people,
       identityResolvedCount: profiles.length,
@@ -755,6 +745,7 @@ export class DiscoverExpansionService {
         currentTitle: person.currentTitle,
         normalizedTitle: person.normalizedTitle,
         location: person.location,
+        locationSource: person.locationSource ?? null,
         country: person.country,
         state: person.state,
         city: person.city,
@@ -896,15 +887,6 @@ export function expansionMessage(addedCount: number, batchSize: number, exhauste
     return `${addedCount} new people were added. No more unique people are available for this search.`;
   }
   return `${addedCount} new people were added. No other unique matches were available in this batch.`;
-}
-
-function categoryForProfile(
-  profile: NormalizedProfile,
-  classifications: Map<string, { category: PositionCategory }>
-): PositionCategory {
-  const normalized = profile.normalizedTitle ?? (profile.currentTitle ? normalizeTitle(profile.currentTitle) : "");
-  const classification = normalized ? classifications.get(normalized) : undefined;
-  return classification ? coercePositionCategory(classification.category) : "OTHER";
 }
 
 function asStringArray(value: unknown): string[] {

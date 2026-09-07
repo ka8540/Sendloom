@@ -1305,7 +1305,7 @@ describe('public Add More integration', () => {
   });
 });
 
-describe('single-SERP Google Add More', () => {
+describe('bounded Google Add More', () => {
   it('uses one union query, skips granted identities and returns fewer when the SERP is exhausted', async () => {
     const { getEnv } = await import('@/lib/env');
     const { PlaywrightGoogleSearchProvider } = await import('./playwright-google-search-provider');
@@ -1328,5 +1328,34 @@ describe('single-SERP Google Add More', () => {
       expect(google.mock.calls[0][0]).toBe('site:linkedin.com/in "Apple" ("Software Engineer")');
       expect(runner.run).not.toHaveBeenCalled();
     } finally { Object.assign(config, previous); google.mockRestore(); }
+  });
+});
+
+describe('Bright Data Add More allocation boundary', () => {
+  it('queues a short pool without fetching, normalizing, allocating or charging; the same key can retry', async () => {
+    const { getEnv } = await import('@/lib/env'); const job = await import('./discover-public-pool-job');
+    const config = getEnv(); const previous = { WEB_SEARCH_PROVIDER: config.WEB_SEARCH_PROVIDER, DISCOVER_PEOPLE_PROVIDER: config.DISCOVER_PEOPLE_PROVIDER };
+    Object.assign(config, { WEB_SEARCH_PROVIDER: 'brightdata_google', DISCOVER_PEOPLE_PROVIDER: 'public_search' });
+    const enqueue = vi.spyOn(job, 'enqueuePublicPool').mockResolvedValue();
+    try {
+      seedCompany(); seedSearch(); seedExistingPeople(10); seedCache([]);
+      const { service, runner, quota } = buildService();
+      const request = { userId: USER_ID, actorEmail: null, searchId: SEARCH_ID, idempotencyKey: 'waiting-batch' };
+      const pending = await service.addMorePeople(request);
+      expect(pending).toMatchObject({ status: 'PENDING', addedCount: 0, exhausted: false, totalPeopleCount: 10 });
+      expect(pending.message).toContain('being prepared'); expect(quota.calls).toHaveLength(0);
+      expect(runner.run).not.toHaveBeenCalled(); expect(fetch).not.toHaveBeenCalled(); expect(enqueue).toHaveBeenCalledOnce();
+      // The worker commits ten profiles while the request is idle.
+      prisma._state.discoverCachePeople.push(...Array.from({ length: 10 }, (_, i) => ({
+        id: `ready-${i}`, cacheId: 'cache_seed', sourceProfileId: `ready-${i}`, sortIndex: i,
+        firstName: 'Jane', lastName: 'Doe', fullName: 'Jane Doe', currentTitle: 'Software Engineer', normalizedTitle: 'software engineer',
+        positionCategory: 'SOFTWARE_ENGINEERING', location: 'United States', country: 'United States', city: null, state: null,
+        linkedinUrl: `https://linkedin.com/in/ready-${i}`, inferredEmail: null, emailStatus: 'UNAVAILABLE', emailConfidence: 'UNAVAILABLE', emailPattern: null, emailSource: null
+      })));
+      const ready = await service.addMorePeople(request);
+      expect(ready).toMatchObject({ status: 'READY', addedCount: 10, totalPeopleCount: 20 });
+      expect(quota.calls).toHaveLength(1); expect(enqueue).toHaveBeenCalledOnce();
+      expect(runner.run).not.toHaveBeenCalled(); expect(fetch).not.toHaveBeenCalled();
+    } finally { Object.assign(config, previous); enqueue.mockRestore(); }
   });
 });

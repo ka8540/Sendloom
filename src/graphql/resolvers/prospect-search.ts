@@ -308,6 +308,22 @@ export const ProspectSearch = {
   retryable(parent: ProspectSearchRow) {
     return parent.status === "FAILED" ? mapDiscoverPublicError(parent.errorCode).retryable : false;
   },
+  async sharedPool(parent: ProspectSearchRow, _args: unknown, context: GraphQLContext) {
+    const user = requireUser(context);
+    if (parent.userId !== user.id || !parent.cacheFingerprint) return null;
+    const cache = await context.prisma.discoverSearchCache.findUnique({ where: { fingerprint: parent.cacheFingerprint } });
+    if (!cache || !cache.expiresAt || cache.expiresAt <= new Date()) return null;
+    const metadata = cache.publicExpansion && typeof cache.publicExpansion === 'object' && !Array.isArray(cache.publicExpansion)
+      ? cache.publicExpansion : {};
+    const denied = new Set(Array.isArray(metadata.deniedProfileIds) ? metadata.deniedProfileIds : []);
+    const people = await context.prisma.discoverSearchCachePerson.findMany({ where: { cacheId: cache.id },
+      select: { sourceProfileId: true } });
+    const nextPage = cache.providerNextPage ?? 1;
+    return { readyPeopleCount: people.filter(p => !denied.has(p.sourceProfileId)).length,
+      providerNextPage: nextPage, providerStart: (nextPage - 1) * 10,
+      providerPagesFetched: cache.providerPagesFetched ?? 0, providerExhausted: cache.providerExhausted,
+      lastProviderFetchAt: cache.lastProviderFetchAt };
+  },
   async peopleCount(parent: ProspectSearchRow, _args: unknown, context: GraphQLContext) {
     const durableAllocationCount = await context.prisma.prospectSearchPerson.count({ where: { searchId: parent.id } });
     // Allocation-backed searches resolve from grants, not a potentially stale

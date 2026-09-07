@@ -414,7 +414,7 @@ describe('privacy-safe diagnostics', () => {
           search: async () => { throw new Error('Jane Doe https://linkedin.com/in/jane secret@example.test'); } }) });
       const entry = log.mock.calls.find(call => call[0] === '[discover-public-search]')!;
       const counters = JSON.parse(entry[1]);
-      expect(Object.values(counters).every(value => typeof value === 'number' || typeof value === 'boolean')).toBe(true);
+      expect(Object.entries(counters).filter(([key]) => key !== 'stopReason').map(([, value]) => value).every(value => typeof value === 'number' || typeof value === 'boolean')).toBe(true);
       expect(counters).toMatchObject({ apifyFallbackCalled: true, providerFailed: true });
       expect(JSON.stringify(entry)).not.toMatch(/Jane Doe|https:|secret@example/);
     } finally { vi.stubEnv('NODE_ENV', previous); log.mockRestore(); }

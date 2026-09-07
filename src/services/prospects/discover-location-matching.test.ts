@@ -131,3 +131,21 @@ describe("city/state country hierarchy", () => {
     expect(evaluateDiscoverLocationMatch({ candidate: { location: "City, CA" }, requestedLocations: ["United States"], context: "PUBLIC" }).reason).toBe("NO_MATCH");
   });
 });
+
+
+describe("shared public geography recognition", () => {
+  it.each(["Dallas, Texas", "Boston, Massachusetts", "Seattle, Washington", "New York City Metropolitan Area", "California"])("confirms US hierarchy for %s", location => {
+    expect(evaluateDiscoverLocationMatch({ candidate: { location }, requestedLocations: ["United States"], context: "PUBLIC" }))
+      .toEqual({ matches: true, reason: "CONFIRMED" });
+  });
+  it.each(["London, UK", "Mumbai, India", "Toronto, Canada"])("rejects foreign metadata %s", location => {
+    expect(evaluateDiscoverLocationMatch({ candidate: { location }, requestedLocations: ["United States"], context: "PUBLIC" }).matches).toBe(false);
+  });
+  it("matches explicit state and metro hierarchy while rejecting a different state", () => {
+    for (const location of ["Phoenix, Arizona", "Chandler, Arizona", "Greater Phoenix Area"]) {
+      expect(evaluateDiscoverLocationMatch({ candidate: { location }, requestedLocations: ["Arizona"], context: "PUBLIC" }).reason).toBe("CONFIRMED");
+    }
+    expect(evaluateDiscoverLocationMatch({ candidate: { location: "Phoenix Metropolitan Area" }, requestedLocations: ["Phoenix"], context: "PUBLIC" }).reason).toBe("CONFIRMED");
+    expect(evaluateDiscoverLocationMatch({ candidate: { location: "Seattle, Washington" }, requestedLocations: ["Arizona"], context: "PUBLIC" }).matches).toBe(false);
+  });
+});

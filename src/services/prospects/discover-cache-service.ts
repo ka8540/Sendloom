@@ -76,6 +76,7 @@ export type ResolvedEmailFormat = {
 
 // One normalized public professional record. No requester identity is included.
 export type ResolvedCachePerson = {
+  locationSource?: string | null;
   sourceName?: string | null;
   nameNormalization?: string | null;
   sourceProfileId: string;
@@ -97,7 +98,17 @@ export type ResolvedCachePerson = {
   emailSource: string | null;
 };
 
+export type PublicExpansionState = { provider: "brightdata_google"; titles: string[]; seenProfileIds: string[]; deniedProfileIds?: string[]; rawCount: number };
+
+export type PublicPoolPageProgress = {
+  page: number; providerStart: number; providerResults: number; linkedinCandidates: number;
+  uniqueCandidates: number; processed: number; stored: number; poolSize: number; exhausted: boolean;
+};
 export type ResolvedDataset = {
+  publicPageCounts?: Pick<PublicPoolPageProgress, 'providerResults' | 'linkedinCandidates' | 'uniqueCandidates'>;
+  publicExpansion?: PublicExpansionState;
+  /** Successful bounded crawl: no automatic continuation until cache refresh. */
+  providerPool?: { exhausted: boolean; pagesFetched: number; nextPage?: number; seenProfileIds?: string[]; deniedProfileIds?: string[]; rawCount?: number };
   emailFormat: ResolvedEmailFormat;
   people: ResolvedCachePerson[];
 };
@@ -153,6 +164,10 @@ export type DiscoverLocalPersonLookupResult = {
 export type DiscoverLocalPersonLookup = () => Promise<DiscoverLocalPersonLookupResult>;
 
 export type GetOrRefreshParams = {
+  onPublicPageCommitted?: (progress: PublicPoolPageProgress) => void;
+  progressiveProvider?: (state: DiscoverCacheExpansionState | null) => Promise<ResolvedDataset>;
+  minimumPeople?: number;
+  filterReadyPeople?: DiscoverCompanyPoolPersonFilter;
   fingerprint: string;
   fingerprintInput: DiscoverFingerprintInput;
   company: DiscoverCacheCompany;
@@ -180,6 +195,7 @@ export type UpdateCachedEmailFormatParams = {
 // Continuation state for an "Add 10 more" expansion: the entry's people (in
 // stable provider order) plus where the provider left off.
 export type DiscoverCacheExpansionState = {
+  publicExpansion?: PublicExpansionState;
   cacheId: string;
   providerNextPage: number;
   providerPagesFetched: number;
@@ -190,6 +206,7 @@ export type DiscoverCacheExpansionState = {
 };
 
 export type AppendProviderPeopleParams = {
+  publicExpansion?: PublicExpansionState;
   fingerprint: string;
   fingerprintInput: DiscoverFingerprintInput;
   company: DiscoverCacheCompany;
@@ -209,6 +226,7 @@ export type AppendProviderPeopleParams = {
  * initial-search port so each can be injected/stubbed independently in tests.
  */
 export interface DiscoverCacheExpansionPort {
+  fillPublicPool?(params: GetOrRefreshParams): Promise<DiscoverCacheResult>;
   /** Current continuation state + cached people (sorted), or null if no entry. */
   getExpansionState(fingerprint: string): Promise<DiscoverCacheExpansionState | null>;
   /** Atomically append net-new cached people and advance continuation state. */
@@ -219,10 +237,9 @@ export interface DiscoverCacheExpansionPort {
    * Run `fn` while holding the per-fingerprint stampede lock so at most one
    * provider continuation runs for an identical canonical query at a time. The
    * caller must re-check `getExpansionState` inside `fn` (another holder may have
-   * just appended results). Best-effort: if the lock cannot be acquired within
-   * the wait window (a crashed holder), `fn` still runs and the lock TTL frees it.
+   * just appended results). Contention fails closed; leases expire and renew safely.
    */
-  runWithProviderLock<T>(fingerprint: string, fn: () => Promise<T>): Promise<T>;
+  runWithProviderLock<T>(fingerprint: string, fn: (assertOwnership: () => Promise<void>) => Promise<T>): Promise<T>;
 }
 
 // A short-lived, owner-token lock. Only the owner may release it, and it always
@@ -230,6 +247,7 @@ export interface DiscoverCacheExpansionPort {
 export interface DiscoverCacheLock {
   acquire(key: string): Promise<string | null>;
   release(key: string, token: string): Promise<void>;
+  renew?(key: string, token: string): Promise<boolean>;
 }
 
 export function createRedisCacheLock(ttlSeconds = DEFAULT_LOCK_TTL_SECONDS): DiscoverCacheLock {
@@ -238,6 +256,9 @@ export function createRedisCacheLock(ttlSeconds = DEFAULT_LOCK_TTL_SECONDS): Dis
       const token = `${Date.now()}:${randomUUID()}`;
       const result = await getRedis().set(key, token, "EX", ttlSeconds, "NX");
       return result === "OK" ? token : null;
+    },
+    async renew(key: string, token: string): Promise<boolean> {
+      return Number(await getRedis().eval("if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('expire', KEYS[1], ARGV[2]) else return 0 end", 1, key, token, ttlSeconds)) === 1;
     },
     async release(key: string, token: string): Promise<void> {
       try {
@@ -259,6 +280,7 @@ function delay(ms: number): Promise<void> {
 }
 
 type CacheRow = {
+  publicExpansion?: PublicExpansionState | null;
   id: string;
   status: string;
   fetchedAt: Date | string | null;
@@ -371,9 +393,66 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
   }
 
   async getOrRefresh(params: GetOrRefreshParams): Promise<DiscoverCacheResult> {
+    if (params.progressiveProvider) return this.fillPublicPool(params);
     const result = await this.getOrRefreshRaw(params);
     result.dataset.people = await normalizeDiscoverPeopleWithEmails(result.dataset.people, result.dataset.emailFormat);
     return result;
+  }
+
+  /** One lock-held page at a time; each commit is visible before the next page. */
+  async fillPublicPool(params: GetOrRefreshParams): Promise<DiscoverCacheResult> {
+    if (!params.progressiveProvider) throw new Error("Public pool provider is required.");
+    const target = params.minimumPeople ?? params.fingerprintInput.resultLimit;
+    const eligible = async (people: ResolvedCachePerson[]) => params.filterReadyPeople ? params.filterReadyPeople(people) : people;
+    let providerCalled = false;
+    const result = (state: DiscoverCacheExpansionState): DiscoverCacheResult => ({
+      dataset: { people: state.people, emailFormat: state.emailFormat }, source: providerCalled ? "PROVIDER" : "CACHE",
+      cacheId: state.cacheId, fetchedAt: this.now(), refreshedStale: false, cacheHitType: providerCalled ? null : "EXACT"
+    });
+    const initial = await this.getExpansionState(params.fingerprint);
+    if (initial && ((await eligible(initial.people)).length >= target || initial.providerExhausted)) return result(initial);
+    // Reuse the existing trusted company pool and requester-owned fallback before paid work.
+    if (!initial) {
+      const pool = await this.getFreshCompanyPoolDataset(params, this.now());
+      if (pool.entry && (await eligible(pool.entry.dataset.people)).length >= target) return this.companyPoolCacheResult(pool);
+      const local = await this.getLocalPersonResult(params, pool.diagnostics);
+      if (local.result && (await eligible(local.result.dataset.people)).length >= target) return local.result;
+    }
+    for (let attempt = 0; attempt < (env.DISCOVER_PUBLIC_MAX_PAGES ?? 10); attempt++) {
+      const state = await this.runWithProviderLock(params.fingerprint, async assertOwnership => {
+        let current = await this.getExpansionState(params.fingerprint);
+        if (current && ((await eligible(current.people)).length >= target || current.providerExhausted)) return current;
+        if (!current) {
+          const pool = await this.getFreshCompanyPoolDataset(params, this.now());
+          if (pool.entry?.dataset.people.length) {
+            await assertOwnership();
+            current = await this.appendProviderPeople({ fingerprint: params.fingerprint, fingerprintInput: params.fingerprintInput,
+              company: params.company, emailFormat: pool.entry.dataset.emailFormat, people: pool.entry.dataset.people,
+              nextPage: 1, pagesFetched: 0, exhausted: false });
+            if ((await eligible(current.people)).length >= target) return current;
+          }
+        }
+        const page = await params.progressiveProvider!(current);
+        providerCalled = true;
+        await assertOwnership();
+        const committed = await this.appendProviderPeople({ fingerprint: params.fingerprint, fingerprintInput: params.fingerprintInput,
+          company: params.company, emailFormat: page.emailFormat, people: page.people, publicExpansion: page.publicExpansion,
+          nextPage: page.providerPool?.nextPage ?? (current?.providerNextPage ?? 1) + 1,
+          pagesFetched: page.providerPool?.pagesFetched ?? 1, exhausted: page.providerPool?.exhausted ?? true });
+        params.onPublicPageCommitted?.({ page: current?.providerNextPage ?? 1,
+          providerStart: ((current?.providerNextPage ?? 1) - 1) * 10,
+          providerResults: page.publicPageCounts?.providerResults ?? 0,
+          linkedinCandidates: page.publicPageCounts?.linkedinCandidates ?? 0,
+          uniqueCandidates: page.publicPageCounts?.uniqueCandidates ?? 0,
+          processed: page.people.length, stored: Math.max(0, committed.people.length - (current?.people.length ?? 0)),
+          poolSize: committed.people.length, exhausted: committed.providerExhausted });
+        return committed;
+      });
+      if ((await eligible(state.people)).length >= target || state.providerExhausted) return result(state);
+    }
+    const state = await this.getExpansionState(params.fingerprint);
+    if (!state) throw new Error("Public pool is unavailable.");
+    return result(state);
   }
 
   private async getOrRefreshRaw(params: GetOrRefreshParams): Promise<DiscoverCacheResult> {
@@ -567,7 +646,8 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
         (a.sortIndex ?? 0) - (b.sortIndex ?? 0)
     );
 
-    const matching = await params.filterCompanyPoolPeople(peopleRows.map(cachePersonRowToResolved));
+    const deniedIds = new Set(candidates.flatMap(c => c.publicExpansion?.deniedProfileIds ?? []));
+    const matching = await params.filterCompanyPoolPeople(peopleRows.filter(p => !deniedIds.has(p.sourceProfileId)).map(cachePersonRowToResolved));
     const identities = new PersonIdentitySet();
     const deduped = matching.filter((person) => identities.addIfNew(person));
     const diagnostics = {
@@ -593,7 +673,7 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
       fetchedAt: source.fetchedAt ? new Date(source.fetchedAt) : null
     };
     try {
-      derived = await this.writeDerivedCompanyPoolDataset(
+      if (!params.progressiveProvider) derived = await this.writeDerivedCompanyPoolDataset(
         params,
         dataset,
         contributingSources.length > 0 ? contributingSources : [source]
@@ -704,7 +784,7 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
     const entry = (await this.prisma.discoverSearchCache.findUnique({
       where: { fingerprint }
     })) as ContinuationRow | null;
-    if (!entry) {
+    if (!entry || (entry.expiresAt && new Date(entry.expiresAt).getTime() <= this.now().getTime())) {
       return null;
     }
     const peopleRows = (await this.prisma.discoverSearchCachePerson.findMany({
@@ -712,11 +792,12 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
     })) as ResolvedCachePersonRow[];
     return {
       cacheId: entry.id,
-      providerNextPage: entry.providerNextPage ?? 1,
+      publicExpansion: entry.publicExpansion ?? undefined,
+      providerNextPage: env.WEB_SEARCH_PROVIDER === "brightdata_google" && !entry.publicExpansion ? 1 : entry.providerNextPage ?? 1,
       providerPagesFetched: entry.providerPagesFetched ?? 0,
-      providerExhausted: Boolean(entry.providerExhausted),
+      providerExhausted: env.WEB_SEARCH_PROVIDER === "brightdata_google" && !entry.publicExpansion ? false : Boolean(entry.providerExhausted),
       emailFormat: rowToEmailFormat(entry),
-      people: await normalizeDiscoverPeopleWithEmails(sortCachePeople(peopleRows).map(cachePersonRowToResolved), rowToEmailFormat(entry))
+      people: entry.publicExpansion ? sortCachePeople(peopleRows).filter(p => !entry.publicExpansion?.deniedProfileIds?.includes(p.sourceProfileId)).map(cachePersonRowToResolved) : await normalizeDiscoverPeopleWithEmails(sortCachePeople(peopleRows).map(cachePersonRowToResolved), rowToEmailFormat(entry))
     };
   }
 
@@ -754,6 +835,14 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
         })) as ContinuationRow;
       }
 
+      if (params.publicExpansion && entry.expiresAt && new Date(entry.expiresAt).getTime() <= now.getTime()) {
+        // Reset stale pagination only after a successfully processed replacement page.
+        await tx.discoverSearchCachePerson.deleteMany({ where: { cacheId: entry.id } });
+        await tx.discoverSearchCache.update({ where: { id: entry.id }, data: {
+          fetchedAt: now, expiresAt: new Date(now.getTime() + this.ttlDays * DAY_MS), providerPagesFetched: 0
+        } });
+        entry = { ...entry, providerPagesFetched: 0 };
+      }
       const existing = (await tx.discoverSearchCachePerson.findMany({
         where: { cacheId: entry.id }
       })) as ResolvedCachePersonRow[];
@@ -778,6 +867,7 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
         where: { id: entry.id },
         data: {
           resultCount: existing.length + appended,
+          ...(params.publicExpansion ? { publicExpansion: params.publicExpansion } : {}),
           providerNextPage: params.nextPage,
           providerPagesFetched: pagesFetched,
           providerExhausted: params.exhausted,
@@ -791,11 +881,12 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
       })) as ResolvedCachePersonRow[];
       return {
         cacheId: entry.id,
+        publicExpansion: params.publicExpansion ?? entry.publicExpansion ?? undefined,
         providerNextPage: params.nextPage,
         providerPagesFetched: pagesFetched,
         providerExhausted: params.exhausted,
         emailFormat: rowToEmailFormat(entry),
-        people: sortCachePeople(allRows).map(cachePersonRowToResolved)
+        people: sortCachePeople(allRows).filter(p => !params.publicExpansion?.deniedProfileIds?.includes(p.sourceProfileId)).map(cachePersonRowToResolved)
       };
     });
   }
@@ -811,7 +902,7 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
     }
   }
 
-  async runWithProviderLock<T>(fingerprint: string, fn: () => Promise<T>): Promise<T> {
+  async runWithProviderLock<T>(fingerprint: string, fn: (assertOwnership: () => Promise<void>) => Promise<T>): Promise<T> {
     const key = this.lockKey(fingerprint);
     const deadline = this.now().getTime() + this.waitTimeoutMs;
     let token = await this.lock.acquire(key);
@@ -819,9 +910,22 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
       await delay(this.pollIntervalMs);
       token = await this.lock.acquire(key);
     }
+    if (!token) throw new Error("Discover provider is busy. Try again shortly.");
+    let leaseLost = false;
+    const timer = this.lock.renew ? setInterval(() => {
+      void this.lock.renew!(key, token!).then(ok => { if (!ok) leaseLost = true; }, () => { leaseLost = true; });
+    }, 30_000) : null;
+    timer?.unref();
     try {
-      return await fn();
+      if (leaseLost) throw new Error("Discover provider lease expired.");
+      const assertOwnership = async () => {
+        if (leaseLost || (this.lock.renew && !await this.lock.renew(key, token!))) throw new Error("Discover provider lease expired.");
+      };
+      const value = await fn(assertOwnership);
+      if (leaseLost) throw new Error("Discover provider lease expired.");
+      return value;
     } finally {
+      if (timer) clearInterval(timer);
       if (token) {
         await this.lock.release(key, token);
       }
@@ -883,9 +987,9 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
       // The initial pipeline (and a stale refresh) always fetches provider page
       // 1, so continuation for a later "Add 10 more" starts at page 2. A refresh
       // resets continuation (clears any prior exhaustion).
-      providerNextPage: 2,
-      providerPagesFetched: 1,
-      providerExhausted: false,
+      providerNextPage: dataset.providerPool ? dataset.providerPool.pagesFetched + 1 : 2,
+      providerPagesFetched: dataset.providerPool?.pagesFetched ?? 1,
+      providerExhausted: dataset.providerPool?.exhausted ?? false,
       lastProviderFetchAt: fetchedAt,
       ...emailFormatColumns(dataset.emailFormat)
     };
@@ -976,6 +1080,7 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
 // A continuation read includes the provider-pagination columns the expansion
 // surface needs (the base CacheRow only carries the email-format fields).
 type ContinuationRow = CacheRow & {
+  publicExpansion?: PublicExpansionState | null;
   providerNextPage?: number | null;
   providerPagesFetched?: number | null;
   providerExhausted?: boolean | null;
@@ -1084,6 +1189,7 @@ function cachePersonRowToResolved(row: ResolvedCachePersonRow): ResolvedCachePer
     normalizedTitle: row.normalizedTitle,
     positionCategory: row.positionCategory ?? "OTHER",
     location: row.location,
+    locationSource: row.locationSource ?? null,
     country: row.country,
     state: row.state,
     city: row.city,

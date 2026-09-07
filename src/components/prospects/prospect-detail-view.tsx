@@ -785,7 +785,9 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     // Added nobody → centered dialog, and the button stays exactly where it is.
     // Exhaustion is never mirrored into visibility: re-running a dry search is a
     // free server no-op that simply re-opens this dialog.
-    if (expansion.addedCount <= 0) {
+    if (expansion.status === 'PENDING' || expansion.status === 'PROCESSING') {
+      setActionNotice({ message: expansion.message ?? 'More people are being prepared. Try Add More again shortly.' });
+    } else if (expansion.addedCount <= 0) {
       setNoMorePeopleOpen(true);
     } else {
       setActionNotice({ message: expansion.message ?? `${expansion.addedCount} new people were added.` });

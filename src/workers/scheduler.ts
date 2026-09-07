@@ -1,3 +1,5 @@
+import { prisma } from "@/lib/db";
+import { enqueuePendingPublicPools } from "@/services/prospects/discover-public-pool-job";
 import { processPendingCampaignWork } from "@/services/campaigns";
 import { syncConnectedSenderReplies } from "@/services/replies";
 import { runAutomaticSequenceBounceChecks } from "@/services/sequence-bounce-monitor";
@@ -20,6 +22,9 @@ async function tick() {
     } catch (error) {
       console.error("[scheduler] Campaign tick failed.", error);
     }
+
+    try { await enqueuePendingPublicPools(prisma); }
+    catch { console.warn('[discover-public-pool]', { event: 'SCHEDULE_RETRY_REQUIRED' }); }
 
     // Automatic bounce monitoring for running/just-completed sequences — after
     // send work, in its own guard so monitoring and sending never mask each

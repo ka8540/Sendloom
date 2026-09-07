@@ -24,7 +24,7 @@ function fakeBrowser(rows = [row("jane-doe")]) {
     mainFrame: () => frame,
     goto: vi.fn(async (url: string) => { navigatedUrl = url; return { ok: () => true }; }),
     url: () => navigatedUrl,
-    locator: vi.fn(() => ({ count: async () => 0, first: () => ({ waitFor: async () => undefined }) })),
+    locator: vi.fn(() => ({ count: async () => 0, innerText: async () => "Search results", evaluateAll: async () => [], first: () => ({ waitFor: async () => undefined }) })),
     evaluate: vi.fn(async () => rows)
   };
   const context = { newPage: vi.fn(async () => page), route: vi.fn(async (_pattern: string, _handler: (route: Route) => Promise<void>) => undefined) };

@@ -4,6 +4,7 @@ import { getRedis } from "@/lib/redis";
 
 const globalForQueues = globalThis as unknown as {
   queues?: {
+    discover: Queue;
     validation: Queue;
     launch: Queue;
     send: Queue;
@@ -16,6 +17,7 @@ function getQueues() {
     const connection = getRedis() as unknown as ConnectionOptions;
 
     globalForQueues.queues = {
+      discover: new Queue("discover-public-pool", { connection }),
       validation: new Queue("validation", { connection }),
       launch: new Queue("launch", { connection }),
       send: new Queue("send", { connection }),
@@ -27,6 +29,7 @@ function getQueues() {
 }
 
 export const queues = {
+  get discover() { return getQueues().discover; },
   get validation() {
     return getQueues().validation;
   },

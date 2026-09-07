@@ -4,7 +4,7 @@ export function canonicalizeLinkedInProfileUrl(raw: string): { linkedinUrl: stri
     const url = new URL(raw);
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.port ||
       !/^(?:www\.|[a-z]{2}\.)?linkedin\.com$/i.test(url.hostname)) return null;
-    const match = /^\/in\/([^/]+)\/?$/.exec(url.pathname);
+    const match = /^\/in\/([^/]+)\/?$/i.exec(url.pathname);
     if (!match) return null;
     const slug = decodeURIComponent(match[1]).normalize('NFC').toLowerCase();
     if (!/^[\p{L}\p{N}_-]+$/u.test(slug)) return null;

@@ -18,8 +18,9 @@ export function reuseExistingPeople(people: ResolvedCachePerson[], existing: Pro
       firstName: stored.firstName, lastName: stored.lastName, fullName: stored.fullName,
       sourceName: stored.sourceName, nameNormalization: stored.nameNormalization,
       currentTitle: stored.currentTitle ?? person.currentTitle, normalizedTitle: stored.normalizedTitle ?? person.normalizedTitle,
-      location: stored.location ?? person.location, city: stored.city ?? person.city,
-      state: stored.state ?? person.state, country: stored.country ?? person.country,
+      locationSource: stored.location ? stored.locationSource : person.locationSource,
+      location: stored.location ?? person.location, city: stored.location ? stored.city : (stored.city ?? person.city),
+      state: stored.location ? stored.state : (stored.state ?? person.state), country: stored.location ? stored.country : (stored.country ?? person.country),
       linkedinUrl: stored.linkedinUrl,
       inferredEmail: stored.inferredEmail, emailStatus: stored.emailStatus, emailConfidence: stored.emailConfidence,
       emailPattern: stored.emailPattern, emailSource: stored.emailSource };

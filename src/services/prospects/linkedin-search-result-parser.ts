@@ -1,3 +1,4 @@
+import { recognizePublicLocation } from "./discover-location-matching";
 import type { WebSearchResult } from './web-search-provider';
 import { canonicalizeLinkedInProfileUrl } from './linkedin-profile-url';
 import { normalizeTitle } from './prospect-normalization';
@@ -67,8 +68,7 @@ export function parseLinkedInSearchResult(result: WebSearchResult) {
   const snippet = resultText(result.snippet ?? '');
   const segments = snippet.split(/\s*[·|]\s*/);
   const position = positionEvidence(headline) ?? snippetPositionEvidence(snippet);
-  const location = segments.find(s => s.includes(',') && !/\b(?:at|previous|former|experience|education)\b/i.test(s) && !NON_POSITION_SEGMENT.test(s))
-    ?? (/\bLocation:\s*([^·|]+)/i.exec(snippet)?.[1]) ?? null;
+  const location = segments.map(s => recognizePublicLocation(s)).find(Boolean) ?? null;
   const profile = normalizeProfile({ ...identity, id: identity.sourceProfileId, fullName: match[1],
     headline, currentTitle: position?.title, currentCompany: position?.company, location });
   if (!profile) return null;

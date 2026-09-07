@@ -141,6 +141,14 @@ const UNAMBIGUOUS_US_STATES = new Set([
   "wisconsin", "wyoming", "district of columbia"
 ]);
 
+// Shared, conservative metro aliases. All providers and cache matching use these;
+// unsupported bare cities remain unknown rather than guessing their state.
+const KNOWN_METROS: Record<string, { city: string; state: string }> = {
+  "new york city metropolitan area": { city: "New York City", state: "New York" },
+  "greater phoenix area": { city: "Phoenix", state: "Arizona" },
+  "phoenix metropolitan area": { city: "Phoenix", state: "Arizona" }
+};
+
 export function parseLocation(raw: string | null | undefined): ParsedLocation {
   if (!raw || typeof raw !== "string") {
     return { location: null, city: null, state: null, country: null };
@@ -160,6 +168,11 @@ export function parseLocation(raw: string | null | undefined): ParsedLocation {
     return { location, city: null, state: null, country: null };
   }
 
+  const metro = KNOWN_METROS[location.toLowerCase()];
+  if (metro) return { location, ...metro, country: "United States" };
+  if (parts.length === 1 && UNAMBIGUOUS_US_STATES.has(parts[0].toLowerCase())) {
+    return { location, city: null, state: parts[0], country: "United States" };
+  }
   if (parts.length === 1) {
     return { location, city: null, state: null, country: parts[0] };
   }

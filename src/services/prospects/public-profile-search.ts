@@ -1,3 +1,5 @@
+import { publicLocationEvidence, requestedCountryFallback } from "./public-profile-location";
+import { parseLocation } from "./prospect-normalization";
 import type { ApifyProfileSearchInput, ApifyProfileSearchResult, NormalizedProfile } from './apify-profile-search';
 import { PersonIdentitySet } from './discover-person-identity';
 import { buildPublicPeopleSearchQuery, buildPublicPeopleRoleUnionQuery } from './public-people-query-builder';
@@ -9,7 +11,7 @@ import { createConfiguredWebSearchProvider, type WebSearchProvider } from './web
 import type { ProspectDiscoveryProvider } from './prospect-discovery-provider';
 import { ProspectError } from './prospect-search-service';
 
-export const PUBLIC_SEARCH_LIMITS = { queries: 6, pages: 3, concurrency: 2, pageSize: 10, candidatePageSize: 25, singlePageSize: 100, timeoutMs: 35_000 } as const;
+export const PUBLIC_SEARCH_LIMITS = { queries: 6, pages: 3, concurrency: 2, pageSize: 10, candidatePageSize: 25, singlePageSize: 500, timeoutMs: 35_000 } as const;
 export type PublicSearchDiagnostics = ReturnType<typeof publicCounters>;
 export function publicCounters() {
   return { publicSearchQueries: 0, publicSearchPages: 0, rawSearchResults: 0, linkedinProfileUrls: 0,
@@ -20,6 +22,9 @@ export function publicCounters() {
     apifySuppressedByPublicStrongNegative: 0, apifyDeduplicated: 0, apifyAcceptedIntoHybrid: 0,
     publicCurrentAccepted: 0, publicFormerRejected: 0, publicCompanyContradictionRejected: 0,
     publicCompanyInsufficient: 0, publicLocationContradictionRejected: 0, publicLocationMissing: 0,
+    playwrightSearchRuns: 0, playwrightPagesVisited: 0, googleResultCards: 0, linkedinPersonUrls: 0,
+    invalidLinkedinUrls: 0, duplicateProfiles: 0, profilesWithLocation: 0, profilesMissingLocation: 0,
+    captchaDetected: false, blocked: false, durationMs: 0, stopReason: "",
     publicRoleRejected: 0, publicDuplicateRejected: 0, publicAcceptedUnique: 0, finalAcceptedUnique: 0 };
 }
 export type DiscoveryValidation = (profiles: NormalizedProfile[]) => Promise<NormalizedProfile[]>;
@@ -36,42 +41,67 @@ export class PublicSearchDiscoveryProvider implements ProspectDiscoveryProvider 
     // Larger result windows are validated one at a time, avoiding speculative
     // paid queries when the first window already contains a complete batch.
     const singleQuery = this.web.peopleQueryStrategy === "single_role_union";
-    const pageLimit = singleQuery ? 1 : PUBLIC_SEARCH_LIMITS.pages;
+    const progressive = this.web.pagination;
+    const firstPage = progressive ? input.startPage ?? 1 : 1;
+    const pageLimit = progressive ? Math.min(progressive.maxPages, firstPage + (input.maxPages ?? progressive.maxPages) - 1) : singleQuery ? 1 : PUBLIC_SEARCH_LIMITS.pages;
     const pageSize = Math.min(singleQuery ? PUBLIC_SEARCH_LIMITS.singlePageSize : PUBLIC_SEARCH_LIMITS.candidatePageSize,
       this.web.maxResultsPerRequest ?? PUBLIC_SEARCH_LIMITS.pageSize);
     const concurrency = pageSize >= PUBLIC_SEARCH_LIMITS.candidatePageSize ? 1 : PUBLIC_SEARCH_LIMITS.concurrency;
     const d = options.diagnostics;
     const seen = new PersonIdentitySet();
+    const rawSeen = new Set(input.publicSeenProfileIds ?? []);
+    let rawCount = input.publicRawCount ?? 0;
+    let nextPage = firstPage;
+    let providerExhausted = Boolean(progressive && (firstPage > progressive.maxPages || rawCount >= progressive.maxResults));
+    const strongNegatives = new Set(input.publicDeniedProfileIds ?? []);
     const accepted: NormalizedProfile[] = [];
     const unionQuery = singleQuery ? buildPublicPeopleRoleUnionQuery({ companyName: input.companyName, providerTitles: input.jobTitles }) : null;
     const queries = singleQuery ? (unionQuery ? [unionQuery] : []) : [...new Set(input.jobTitles.flatMap(jobTitle => (input.locations.length ? input.locations : [null])
       .map(location => buildPublicPeopleSearchQuery({ companyName: input.companyName, jobTitle, location }))))].slice(0, PUBLIC_SEARCH_LIMITS.queries);
-    const timeout = AbortSignal.timeout(PUBLIC_SEARCH_LIMITS.timeoutMs);
+    const timeout = AbortSignal.timeout(progressive ? 90_000 : this.web.materializesPool ? 75_000 : PUBLIC_SEARCH_LIMITS.timeoutMs);
     const signal = options.signal ? AbortSignal.any([timeout, options.signal]) : timeout;
     const exhausted = new Set<string>();
     try {
-      for (let page = 1; page <= pageLimit && accepted.length < options.target; page++) {
+      for (let page = firstPage; page <= pageLimit && accepted.length < options.target && !providerExhausted; page++) {
         for (let offset = 0; offset < queries.length && accepted.length < options.target; offset += concurrency) {
           signal.throwIfAborted();
           const batch = queries.slice(offset, offset + concurrency).filter(q => !exhausted.has(q));
           const responses = await Promise.all(batch.map(async query => {
             d.publicSearchPages++; if (page === 1) d.publicSearchQueries++;
-            const results = await this.web!.search(query, { page, count: pageSize, includeDomains: ["linkedin.com"], signal });
+            const results = await this.web!.search(query, { page, count: pageSize, includeDomains: ["linkedin.com"], signal, onCrawlDiagnostics: stats => Object.assign(d, stats) });
             if (!Array.isArray(results)) throw new Error('Invalid search response');
             if (!results.length) exhausted.add(query);
             return results.slice(0, pageSize);
           }));
           const candidates: NormalizedProfile[] = [];
-          for (const result of responses.flat()) {
+          let newUrls = 0;
+          const rows = responses.flat().slice(0, progressive ? Math.max(0, progressive.maxResults - rawCount) : undefined);
+          rawCount += rows.length;
+          nextPage = page + 1;
+          for (const result of rows) {
             d.rawSearchResults++;
             if (!result || typeof result.url !== 'string' || typeof result.title !== 'string' ||
               (result.snippet !== null && typeof result.snippet !== 'string')) { d.candidateParseRejected++; continue; }
             const identity = canonicalizeLinkedInProfileUrl(result.url);
             if (!identity) { d.invalidProfileUrlRejected++; continue; }
             d.linkedinProfileUrls++;
-            const profile = parseLinkedInSearchResult(result);
+            const duplicateRaw = progressive && rawSeen.has(identity.sourceProfileId);
+            let profile = parseLinkedInSearchResult(result);
+            if (progressive) {
+              if (!duplicateRaw) newUrls++;
+              rawSeen.add(identity.sourceProfileId);
+              if (profile) {
+                const evidence = publicLocationEvidence(result.snippet ?? '', input.companyName);
+                const fallback = evidence ? null : requestedCountryFallback(input.locations);
+                profile = { ...profile, ...parseLocation(evidence ?? fallback), rawLocationEvidence: evidence,
+                  locationSource: evidence ? 'google_snippet' : fallback ? 'requested_fallback' : null };
+              }
+            }
             if (!profile) { d.candidateParseRejected++; continue; }
             const evidence = validateCurrentEmployment(result, profile, input.companyName);
+            if (progressive && ['FORMER', 'CONTRADICTORY'].includes(evidence.decision)) {
+              strongNegatives.add(identity.sourceProfileId); options.denied.add(profile);
+            }
             if (evidence.decision !== 'CURRENT') {
               // Only explicit historical evidence ABOUT the target company is a
               // strong negative that suppresses trusted fallback for this
@@ -87,6 +117,7 @@ export class PublicSearchDiscoveryProvider implements ProspectDiscoveryProvider 
               }
               continue;
             }
+            if (duplicateRaw || strongNegatives.has(identity.sourceProfileId)) { d.duplicateRejected++; continue; }
             d.publicCurrentAccepted++;
             // SERP geography: only an explicit contradiction rejects. Missing or
             // unconfirmable location metadata is counted, never a contradiction.
@@ -102,7 +133,10 @@ export class PublicSearchDiscoveryProvider implements ProspectDiscoveryProvider 
             if (options.denied.has(profile) || options.excluded?.has(profile) || !seen.addIfNew(profile)) { d.duplicateRejected++; d.publicDuplicateRejected++; continue; }
             candidates.push(profile);
           }
-          const valid = await options.validate(candidates);
+          if (progressive) providerExhausted = !rows.length || !newUrls || page >= progressive.maxPages || rawCount >= progressive.maxResults;
+          const valid: NormalizedProfile[] = [];
+          for (let i = 0; i < candidates.length; i += progressive ? 10 : Math.max(1, candidates.length))
+            valid.push(...await options.validate(candidates.slice(i, i + (progressive ? 10 : candidates.length))));
           signal.throwIfAborted();
           const roleRejected = candidates.length - valid.length;
           d.roleOrLocationRejected += roleRejected; d.publicRoleRejected += roleRejected;
@@ -119,7 +153,7 @@ export class PublicSearchDiscoveryProvider implements ProspectDiscoveryProvider 
     }
     d.acceptedUnique = accepted.length;
     d.publicAcceptedUnique = accepted.length;
-    return { profiles: accepted, runId: null, datasetId: null, totalFound: d.rawSearchResults,
+    return { ...(progressive ? { providerPool: { exhausted: providerExhausted, pagesFetched: d.publicSearchPages, nextPage, seenProfileIds: [...rawSeen], deniedProfileIds: [...strongNegatives], rawCount } } : {}), ...(this.web.materializesPool ? { providerPool: { exhausted: true, pagesFetched: d.playwrightPagesVisited } } : {}), profiles: accepted, runId: null, datasetId: null, totalFound: d.rawSearchResults,
       diagnostics: { itemsReturned: d.rawSearchResults, parsedCandidates: d.linkedinProfileUrls,
         rejectedBySchema: d.invalidProfileUrlRejected + d.candidateParseRejected, duplicateItems: d.duplicateRejected,
         companyMatched: accepted.length, rejectedByCompany: d.formerEmployeeRejected + d.ambiguousEmploymentRejected + d.companyMismatchRejected } };

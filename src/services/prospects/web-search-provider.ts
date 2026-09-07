@@ -1,3 +1,4 @@
+import { BrightDataGoogleSearchProvider } from "./brightdata-google-search-provider";
 import { PlaywrightGoogleSearchProvider } from "./playwright-google-search-provider";
 import { env } from "@/lib/env";
 import { z } from "zod";
@@ -10,12 +11,22 @@ export type WebSearchOptions = {
   /** Optional allowlist for APIs supporting domain filters; always validate returned URLs. */
   includeDomains?: readonly string[];
   signal?: AbortSignal;
+  onCrawlDiagnostics?: (diagnostics: PublicCrawlDiagnostics) => void;
+};
+export type PublicCrawlDiagnostics = {
+  playwrightSearchRuns: number; playwrightPagesVisited: number; googleResultCards: number;
+  linkedinPersonUrls: number; invalidLinkedinUrls: number; duplicateProfiles: number;
+  profilesWithLocation: number; profilesMissingLocation: number; captchaDetected: boolean;
+  blocked: boolean; durationMs: number; stopReason: string;
 };
 export interface WebSearchProvider {
   configured: boolean;
   /** Lets callers choose an economical batch without knowing the provider. */
   readonly maxResultsPerRequest?: number;
-  /** A people-only SERP provider can require one union query, without pagination. */
+  readonly pagination?: { maxPages: number; maxResults: number };
+  /** A bounded crawl materializes a reusable pool, independently of the UI allocation size. */
+  readonly materializesPool?: boolean;
+  /** One role-union query; pagination, if any, is owned by the provider. */
   readonly peopleQueryStrategy?: "single_role_union";
   search(query: string, options?: WebSearchOptions): Promise<WebSearchResult[]>;
 }
@@ -98,6 +109,7 @@ export class YouSearchProvider implements WebSearchProvider {
 /** Shared API client: email discovery retains its five-result default. No page fetching. */
 export function createConfiguredWebSearchProvider(): WebSearchProvider | null {
   const provider = env.WEB_SEARCH_PROVIDER;
+  if (provider === "brightdata_google") return new BrightDataGoogleSearchProvider();
   if (provider === "playwright_google") return new PlaywrightGoogleSearchProvider();
   if (provider === "you") return new YouSearchProvider();
   if (provider !== "serper" && provider !== "brave") return null;

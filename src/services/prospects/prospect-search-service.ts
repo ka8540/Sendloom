@@ -1,3 +1,7 @@
+import { allocateEligiblePublicPeople, filterPublicPoolPeople } from "./public-pool-eligibility";
+import { publicPoolPageProvider } from "./public-pool-page";
+import { enqueuePublicPool } from "./discover-public-pool-job";
+import { buildDiscoverDatasetPeople } from "./build-discover-dataset-people";
 import { reuseExistingPeople } from "./discover-existing-person";
 import { PersonIdentitySet } from "./discover-person-identity";
 import { discoverProfiles, publicProfileValidator } from "./prospect-discovery-provider";
@@ -748,6 +752,16 @@ export class ProspectSearchService {
     let cacheResult;
     try {
       cacheResult = await this.discoverCache.getOrRefresh({
+        ...(env.WEB_SEARCH_PROVIDER === 'brightdata_google' && env.DISCOVER_PEOPLE_PROVIDER === 'public_search' ? {
+          progressiveProvider: publicPoolPageProvider({ prisma: this.prisma, signal, roleClassifier: this.roleClassifier, roleIntelligence: this.roleIntelligence,
+            company: { name: resolution.officialName, domain: resolution.officialWebsiteDomain ?? resolution.officialDomain, linkedinUrl: resolution.linkedinCompanyUrl },
+            roles: this.asStringArray(search.requestedTitles), locations: this.asStringArray(search.requestedLocations),
+            emailFormat: this.companyResolvedEmailFormat(company) }),
+          minimumPeople: resolveResultsPerSearch(),
+          filterReadyPeople: (people: ResolvedCachePerson[]) => allocateEligiblePublicPeople({ prisma: this.prisma,
+            userId, companyId: company.id, people, roles: this.asStringArray(search.requestedTitles),
+            locations: this.asStringArray(search.requestedLocations) })
+        } : {}),
         fingerprint,
         fingerprintInput,
         company: {
@@ -757,6 +771,7 @@ export class ProspectSearchService {
         },
         filterCompanyPoolPeople: async (people) => {
           const requestedTitles = this.asStringArray(search.requestedTitles);
+          if (env.WEB_SEARCH_PROVIDER === 'brightdata_google') return filterPublicPoolPeople(people, requestedTitles, this.asStringArray(search.requestedLocations));
           return this.roleIntelligence.filterAndRankPeople({
             people,
             requestedTitles,
@@ -857,7 +872,9 @@ export class ProspectSearchService {
     // may reuse public people while its format is missing, stale, or a prior
     // transient failure; in that case only format discovery is rerun (no Apify,
     // no extra Discover quota).
-    const emailFormat = await this.resolveAutomaticEmailFormat({
+    const emailFormat = cacheHit && env.WEB_SEARCH_PROVIDER === "brightdata_google"
+      ? cacheResult.dataset.emailFormat
+      : await this.resolveAutomaticEmailFormat({
       userId,
       search,
       company,
@@ -866,7 +883,11 @@ export class ProspectSearchService {
       cacheId: cacheResult.cacheId,
       budget
     });
-    const resolvedDataset: ResolvedDataset = { ...cacheResult.dataset, emailFormat };
+    const resolvedDataset: ResolvedDataset = { ...cacheResult.dataset, emailFormat,
+      ...(env.WEB_SEARCH_PROVIDER === 'brightdata_google' ? { people: await allocateEligiblePublicPeople({ prisma: this.prisma,
+        userId, companyId: company.id, people: cacheResult.dataset.people, roles: this.asStringArray(search.requestedTitles),
+        locations: this.asStringArray(search.requestedLocations) }) } : {}) };
+
 
     // 6) Materialize the shared dataset into THIS user's own records. The shared
     // cache only holds normalized public data — the user-owned company/people/
@@ -939,6 +960,9 @@ export class ProspectSearchService {
         cacheFetchedAt: cacheResult.fetchedAt
       }
     });
+    if (!cacheHit && env.WEB_SEARCH_PROVIDER === 'brightdata_google') {
+      await enqueuePublicPool(fingerprint).catch(() => { console.warn("[discover-public-pool]", { event: "ENQUEUE_RETRY_REQUIRED" }); });
+    }
     return { search: updated, providerCalled: !cacheHit, resultCount: finalProcessed, cacheHit };
   }
 
@@ -979,7 +1003,9 @@ export class ProspectSearchService {
       emailPattern: person.emailPattern,
       emailSource: person.emailSource
     }));
-    const matching = await this.roleIntelligence.filterAndRankPeople({
+    const matching = env.WEB_SEARCH_PROVIDER === 'brightdata_google'
+      ? filterPublicPoolPeople(candidates, this.asStringArray(input.search.requestedTitles), this.asStringArray(input.search.requestedLocations))
+      : await this.roleIntelligence.filterAndRankPeople({
       people: candidates,
       requestedTitles: this.asStringArray(input.search.requestedTitles),
       requestedLocations: this.asStringArray(input.search.requestedLocations),
@@ -1095,7 +1121,7 @@ export class ProspectSearchService {
       : people;
 
     return {
-      dataset: { emailFormat, people: roleFilteredPeople },
+      dataset: { emailFormat, people: roleFilteredPeople, ...(searchResult.providerPool ? { providerPool: searchResult.providerPool } : {}) },
       diagnostics: {
         ...searchResult.diagnostics,
         semanticInputCount: people.length,
@@ -1247,40 +1273,7 @@ export class ProspectSearchService {
     classifications: Map<string, { category: PositionCategory }>,
     emailFormat: ResolvedDataset["emailFormat"]
   ): ResolvedCachePerson[] {
-    const allowLowConfidence = env.PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS;
-    const candidateConfidence = combinedEmailConfidence(emailFormat.emailDomainConfidence, emailFormat.patternConfidence);
-    return profiles.map((profile) => {
-      const category = this.categoryForProfile(profile, classifications);
-      const candidate = resolveCandidateEmail({
-        firstName: profile.firstName,
-        lastName: profile.lastName,
-        ...nameStateFields(profile),
-        domain: emailFormat.emailDomain,
-        pattern: emailFormat.emailPattern,
-        patternConfidence: candidateConfidence,
-        allowLowConfidence
-      });
-      return {
-        sourceProfileId: profile.sourceProfileId,
-        firstName: profile.firstName,
-        lastName: profile.lastName,
-        fullName: profile.fullName,
-        ...nameStateFields(profile),
-        currentTitle: profile.currentTitle,
-        normalizedTitle: profile.normalizedTitle,
-        positionCategory: category,
-        location: profile.location,
-        country: profile.country,
-        state: profile.state,
-        city: profile.city,
-        linkedinUrl: profile.linkedinUrl,
-        inferredEmail: candidate.email,
-        emailStatus: candidate.status,
-        emailConfidence: candidate.confidence,
-        emailPattern: candidate.email ? emailFormat.emailPattern : null,
-        emailSource: candidate.email ? "PATTERN" : null
-      };
-    });
+    return buildDiscoverDatasetPeople(profiles, classifications, emailFormat);
   }
 
   /**
@@ -1514,6 +1507,7 @@ export class ProspectSearchService {
         currentTitle: person.currentTitle,
         normalizedTitle: person.normalizedTitle,
         location: person.location,
+        locationSource: person.locationSource ?? null,
         country: person.country,
         state: person.state,
         city: person.city,

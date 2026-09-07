@@ -5,6 +5,7 @@ export type DiscoverNameInput = {
   firstName: string;
   lastName: string;
   fullName: string;
+  rawLocationEvidence?: string | null;
   sourceName?: string | null;
   nameNormalization?: string | null;
   currentTitle?: string | null;

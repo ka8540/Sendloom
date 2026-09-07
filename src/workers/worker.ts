@@ -1,3 +1,4 @@
+import { startDiscoverWorker } from "./discover-worker";
 import { Worker, type ConnectionOptions } from "bullmq";
 
 import { prisma } from "@/lib/db";
@@ -352,3 +353,7 @@ sendWorker.on("failed", (job, error) => {
 webhookWorker.on("failed", (job, error) => {
   console.error("Webhook worker failed", job?.id, error);
 });
+
+if (env.WEB_SEARCH_PROVIDER === 'brightdata_google' && env.DISCOVER_PEOPLE_PROVIDER === 'public_search') {
+  startDiscoverWorker(prisma, connection);
+}

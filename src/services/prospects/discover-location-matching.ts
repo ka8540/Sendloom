@@ -97,7 +97,7 @@ function reliableCandidateCountry(candidate: DiscoverLocationCandidate): string 
 
   // A full country name at the end of the returned location is also explicit
   // evidence even when the provider omitted a separate country field.
-  if (locationCountryKey && COUNTRY_LOOKUP.fullNames.has(lastComponent)) {
+  if (locationCountryKey && (COUNTRY_LOOKUP.fullNames.has(lastComponent) || ["uk", "usa", "us"].includes(lastComponent))) {
     return locationCountryKey;
   }
   // Reuse the same parser as ingress: "Dallas, Texas" supplies a known state,
@@ -122,11 +122,12 @@ export function evaluateDiscoverLocationMatch(input: {
     return { matches: true, reason: "NO_CONSTRAINT" };
   }
 
+  const normalizedCandidate = { ...parseLocation(input.candidate.location), ...Object.fromEntries(Object.entries(input.candidate).filter(([, value]) => Boolean(value))) };
   const candidateValues = [
-    input.candidate.location,
-    input.candidate.country,
-    input.candidate.state,
-    input.candidate.city
+    normalizedCandidate.location,
+    normalizedCandidate.country,
+    normalizedCandidate.state,
+    normalizedCandidate.city
   ].map(normalizeGeography).filter(Boolean);
   const explicitCountry = reliableCandidateCountry(input.candidate);
 
@@ -153,6 +154,14 @@ export function evaluateDiscoverLocationMatch(input: {
     return { matches: false, reason: "EXPLICIT_CONTRADICTION" };
   }
 
+  for (const requestedValue of requested) {
+    const requestedParsed = parseLocation(requestedValue);
+    if (requestedParsed.state && !requestedParsed.city && normalizedCandidate.state
+      && normalizeGeography(normalizedCandidate.state) !== normalizeGeography(requestedParsed.state)) {
+      if (requested.length === 1) return { matches: false, reason: "EXPLICIT_CONTRADICTION" };
+    }
+  }
+
   if (input.context === "PUBLIC") {
     // Keyword-extracted SERP metadata cannot supply trusted provider location
     // constraints, and absence of geography is not evidence of a contradictory
@@ -175,4 +184,15 @@ export function evaluateDiscoverLocationMatch(input: {
     matches: false,
     reason: candidateValues.length === 0 ? "MISSING_METADATA" : "NO_MATCH"
   };
+}
+
+/** Recognize compact visible geography, never arbitrary comma-containing prose. */
+export function recognizePublicLocation(value: string): string | null {
+  const text = value.replace(/^Location:\s*/i, "").trim();
+  if (!text || text.length > 120 || /[!?;]|\b(?:manage|build|engage|professional|network|engineer|developer|recruiter|experience|education|previous|former|working|worked|company|career|identity|connections|years|responsible)\b/i.test(text)) return null;
+  const components = locationComponents(text);
+  if (components.length > 3 || components.some(part => part.split(/\s+/).length > 6
+    || !/^[\p{L}\p{M} .’'()-]+$/u.test(part))) return null;
+  const parsed = parseLocation(text);
+  return reliableCandidateCountry(parsed) ? text : null;
 }

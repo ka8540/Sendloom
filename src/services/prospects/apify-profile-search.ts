@@ -20,6 +20,8 @@ import {
 // provisional components; the shared page-level batch normalizer validates
 // every candidate before persistence and email inference.
 export type NormalizedProfile = {
+  rawLocationEvidence?: string | null;
+  locationSource?: string | null;
   sourceName?: string | null;
   nameNormalization?: string | null;
   headline?: string | null;
@@ -62,6 +64,10 @@ export type ApifyProfileSearchInput = {
    * resumes after the pages already fetched instead of restarting at page 1.
    */
   startPage?: number;
+  maxPages?: number;
+  publicSeenProfileIds?: string[];
+  publicDeniedProfileIds?: string[];
+  publicRawCount?: number;
 };
 
 export type CompanyTargetingContext = {
@@ -70,6 +76,7 @@ export type CompanyTargetingContext = {
 };
 
 export type ApifyProfileSearchResult = {
+  providerPool?: { exhausted: boolean; pagesFetched: number; nextPage?: number; seenProfileIds?: string[]; deniedProfileIds?: string[]; rawCount?: number };
   profiles: NormalizedProfile[];
   runId: string | null;
   datasetId: string | null;

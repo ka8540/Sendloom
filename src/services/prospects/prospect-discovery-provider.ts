@@ -1,3 +1,4 @@
+import { publicPoolRoleMatches } from "./public-pool-eligibility";
 import { canonicalizeLinkedInProfileUrl } from "./linkedin-profile-url";
 import { ProspectError } from './prospect-search-service';
 import { env } from '@/lib/env';
@@ -24,8 +25,9 @@ export function publicProfileValidator(input: {
   requestedTitles: string[]; locations: string[]; companyName: string; options: RoleIntelligenceOptions;
 }): DiscoveryValidation {
   return async profiles => {
+    if (env.WEB_SEARCH_PROVIDER === "brightdata_google") profiles = profiles.filter(p => publicPoolRoleMatches(p.currentTitle, input.requestedTitles));
     if (!profiles.length) return [];
-    const named = (await normalizeDiscoverPersonNames(profiles, { companyName: input.companyName, budget: input.options.budget }))
+    const named = (await normalizeDiscoverPersonNames(profiles, { companyName: input.companyName, budget: input.options.budget, publicLocations: env.WEB_SEARCH_PROVIDER === "brightdata_google" }))
       .filter(p => Boolean(p.fullName));
     const classifications = await input.roleClassifier.classify(named.map(p => p.currentTitle ?? ''), input.options);
     const people = named.map(p => ({ ...p, normalizedTitle: normalizeTitle(p.currentTitle ?? ''),
@@ -42,6 +44,9 @@ export async function discoverProfiles(input: ApifyProfileSearchInput, options: 
   signal?: AbortSignal; publicProvider?: PublicSearchDiscoveryProvider; mode?: 'apify' | 'public_search' | 'hybrid';
 }): Promise<ApifyProfileSearchResult> {
   const mode = options.mode ?? env.DISCOVER_PEOPLE_PROVIDER;
+  if (mode === 'hybrid' && env.WEB_SEARCH_PROVIDER === 'playwright_google') {
+    throw new ProspectError('NOT_CONFIGURED', 'Experimental Google discovery requires public_search mode.');
+  }
   if (mode === 'apify') return new ApifyDiscoveryProvider(options.apify).searchProfiles(input);
   const signal = options.signal ?? AbortSignal.timeout(HYBRID_DISCOVERY_LIMITS.timeoutMs);
   const checkDeadline = () => {
