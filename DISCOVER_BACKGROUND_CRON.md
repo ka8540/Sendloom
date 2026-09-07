@@ -37,8 +37,12 @@ against an external provider after a crash. Cache identity dedupe and transactio
 pagination make durable retries idempotent.
 
 DiscoverSearchExpansion remains user-specific Add More allocation/quota state; it
-is not a shared-pool job lock. Add More behavior is unchanged, including its existing
-background enqueue on a short pool. Cron does not allocate user records or quota.
+is not a shared-pool job lock. Add More reads unused cache rows first and, when short,
+uses the same single-page consumer for up to two provider pages before allocating.
+It waits up to one second for a busy provider-page lease, re-reads the pool after
+every attempt, and reserves quota once after acquiring the lease but before a paid
+provider call. DB-only allocations use the same existing reservation.
+Cron does not allocate user records or quota.
 
 Response counters describe committed pages. remainingWork includes eligible pools
 currently locked by another consumer. Logs use [discover-expansion-cron] and contain
@@ -46,13 +50,14 @@ page counters and cache/company identifiers, never credentials or provider paylo
 
 ## Verification
 
-- Focused cron/shared-step/job/worker tests: 22 passed.
-- Public Bright Data Add More allocation boundary: passed, zero provider/network calls.
-- Real Redis worker integration: passed with a disposable UNIX socket, in-memory DB
-  and mocked Bright Data responses; advances through page 10 to providerNextPage=11.
+- Public Bright Data Add More tests: 12 passed, covering DB-only allocation,
+  on-demand fallback, partial pools, the two-page bound, quota ordering,
+  exhaustion, idempotency, terminal limits, dedupe, and cron/worker contention.
+- Shared cache, cron route/job, and worker regressions: 54 passed.
+- GraphQL route and resolver regressions: 60 passed.
+- Real Redis worker integration: passed with a disposable UNIX socket, in-memory
+  DB and mocked Bright Data responses.
 - Typecheck: passed.
-- Broad Discover/provider regression run: 615 passed, 4 failed, 1 Redis test skipped
-  (the Redis test passed separately). All four failures reproduce on unchanged HEAD
-  in discover-expansion-service.test.ts: saved-page continuation, RTX semantic-page
-  metadata, continuation through duplicates, and exhaustion quota reuse. No Add More
-  implementation or legacy test expectations were changed in this patch.
+- Broad Discover/provider run: 626 passed, four pre-existing Apify expansion tests
+  failed, and the opt-in Redis test skipped there before passing separately. The
+  same four failures reproduce on the unchanged pre-Add-More implementation.

@@ -833,8 +833,9 @@ information is evidence, not a guarantee of currency.
 The existing shared cache, name normalization, allocation and email/suppression
 pipeline remain in place. The public pass is capped at six queries, three pages
 per query, ten results per page and two concurrent requests. Add More consumes
-unused cached people first, then replays the bounded public window with existing
-allocations excluded. It can stop with fewer than ten people. See
+unused cached people first, then uses the shared cron/worker expansion step for at
+most two provider pages with existing allocations excluded. It re-reads the cache
+after each page and can stop with fewer than ten people. See
 [DOCUMENTATION.md](DOCUMENTATION.md#public-people-discovery-provider) for rollout,
 rollback, continuation, privacy and limitations.
 

@@ -1,7 +1,11 @@
 import type { PrismaClient, Prisma, DiscoverSearchCache } from '@prisma/client';
 import { env } from '@/lib/env';
 import { queues } from '@/lib/queue';
-import { DiscoverSearchCacheService, DiscoverProviderBusyError } from './discover-cache-service';
+import {
+  DiscoverSearchCacheService,
+  DiscoverProviderBusyError,
+  type DiscoverCacheExpansionPort
+} from './discover-cache-service';
 import { publicPoolPageProvider } from './public-pool-page';
 
 export async function enqueuePublicPool(fingerprint: string): Promise<void> {
@@ -13,27 +17,37 @@ export async function enqueuePublicPool(fingerprint: string): Promise<void> {
 }
 /** Both the persistent worker and external cron consume this single-page implementation. */
 export async function runPublicPoolStep(prisma: PrismaClient, fingerprint: string,
-  cache = new DiscoverSearchCacheService({ prisma, waitTimeoutMs: 0 }),
-  options: { signal?: AbortSignal; logPrefix?: string } = {}) {
+  cache?: DiscoverCacheExpansionPort,
+  options: { signal?: AbortSignal; logPrefix?: string; waitTimeoutMs?: number;
+    beforeProviderPage?: () => Promise<unknown> } = {}) {
   const prefix = options.logPrefix ?? '[discover-background]';
   const started = Date.now();
   const outcome = { pagesProcessed: 0, peopleInserted: 0 };
+  const expansionCache = cache ?? new DiscoverSearchCacheService({
+    prisma,
+    waitTimeoutMs: options.waitTimeoutMs ?? 0
+  });
+  if (!expansionCache.fillPublicPool) {
+    throw new Error('Discover cache does not support public pool expansion.');
+  }
   if (!publicExpansionEnabled()) return outcome;
   const entry = await prisma.discoverSearchCache.findUnique({ where: { fingerprint } });
   if (!entry || !isPendingPublicPool(entry)) {
     console.info(prefix, { event: 'CACHE_COMPLETE', cacheId: entry?.id });
     return outcome;
   }
-  const state = await cache.getExpansionState(fingerprint);
+  const state = await expansionCache.getExpansionState(fingerprint);
   if (!state) return outcome;
   const strings = (v: unknown) => Array.isArray(v) ? v.filter((s): s is string => typeof s === 'string') : [];
   const roles = strings(entry.normalizedRoles), locations = strings(entry.normalizedLocations);
   const company = { name: entry.companyName, domain: entry.companyDomain, linkedinUrl: entry.companyLinkedinUrl };
   const provider = publicPoolPageProvider({ prisma, company, roles, locations, emailFormat: state.emailFormat, signal: options.signal });
   try {
-    await cache.fillPublicPool({ fingerprint, company, fingerprintInput: { companyKey: entry.companyKey,
+    await expansionCache.fillPublicPool({ fingerprint, company, fingerprintInput: { companyKey: entry.companyKey,
       roles, locations, resultLimit: entry.resultLimit, cacheVersion: entry.cacheVersion },
       publicPageLimit: 1,
+      publicLockWaitTimeoutMs: options.waitTimeoutMs,
+      beforePublicProvider: options.beforeProviderPage,
       beforePublicPage: async () => {
         options.signal?.throwIfAborted();
         const fresh = await prisma.discoverSearchCache.findUnique({ where: { fingerprint } });

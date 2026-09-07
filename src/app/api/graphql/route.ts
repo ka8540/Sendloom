@@ -6,6 +6,7 @@ import { createProspectYoga, resolveGraphiqlEnabled } from "@/graphql/server";
 // statically cached.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 function readCookie(request: Request, name: string): string | null {
   const header = request.headers.get("cookie");

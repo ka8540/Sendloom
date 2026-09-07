@@ -1,5 +1,5 @@
 import { allocateEligiblePublicPeople } from "./public-pool-eligibility";
-import { enqueuePublicPool } from "./discover-public-pool-job";
+import { enqueuePublicPool, isPendingPublicPool, runPublicPoolStep } from "./discover-public-pool-job";
 import { buildDiscoverDatasetPeople } from "./build-discover-dataset-people";
 import { reuseExistingPeople } from "./discover-existing-person";
 import { discoverProfiles, publicProfileValidator } from "./prospect-discovery-provider";
@@ -14,6 +14,7 @@ import {
   getDiscoverQuotaStatus,
   resolveResultsPerSearch,
   reserveDiscoverSearchSlot,
+  type DiscoverQuotaReservation,
   type DiscoverQuotaReserver,
   type DiscoverQuotaStatus
 } from "@/lib/discover-quota";
@@ -99,6 +100,9 @@ export type DiscoverExpansionServiceDeps = {
 };
 
 const EXPANSION_LOCK_PREFIX = "discover:expansion";
+const PUBLIC_ADD_MORE_MAX_PROVIDER_PAGES = 2;
+const PUBLIC_ADD_MORE_PROVIDER_BUDGET_MS = 45_000;
+const PUBLIC_ADD_MORE_LOCK_WAIT_MS = 1_000;
 
 /** Effective people-per-expansion batch (env override, defaulting to 10). */
 export function resolveExpansionBatchSize(): number {
@@ -235,12 +239,38 @@ export class DiscoverExpansionService {
             })
           : cacheState?.people ?? [];
       const unusedCached = cacheCandidates.filter((person) => !identities.has(person));
-      const providerExhausted = cacheState?.providerExhausted ?? false;
+      let providerExhausted = cacheState?.providerExhausted ?? false;
+      const usesSharedPublicPool = env.WEB_SEARCH_PROVIDER === 'brightdata_google'
+        && env.DISCOVER_PEOPLE_PROVIDER === 'public_search';
 
-      // Add More allocates only. A deficit waits for the durable shared worker,
-      // without consuming quota or making a paid provider/normalization call.
-      if (env.WEB_SEARCH_PROVIDER === 'brightdata_google' && env.DISCOVER_PEOPLE_PROVIDER === 'public_search'
-        && unusedCached.length < this.batchSize && !providerExhausted) {
+      let toAdd: ResolvedCachePerson[];
+      let cacheCount: number;
+      let providerCount: number;
+      let exhausted: boolean;
+      let pagesFetched = 0;
+      let newlyDiscoveredCount = 0;
+      let providerFallbackTriggered = false;
+      let reservation: DiscoverQuotaReservation | null = null;
+      const ensureQuotaReserved = async () => {
+        if (reservation) return reservation;
+        reservation = await this.discoverQuota({ userId, email: actorEmail, searchId: expansion.id });
+        if (!reservation.allowed) {
+          await this.prisma.discoverSearchExpansion.update({
+            where: { id: expansion.id },
+            data: { status: "FAILED", errorCode: "DISCOVER_DAILY_LIMIT_REACHED" }
+          });
+          throw new ProspectError("DISCOVER_DAILY_LIMIT_REACHED", formatDiscoverExpansionLimitMessage(reservation.status));
+        }
+        if (!expansion.quotaReserved) {
+          await this.prisma.discoverSearchExpansion.update({ where: { id: expansion.id }, data: { quotaReserved: true } });
+        }
+        return reservation;
+      };
+
+      // Public Add More is DB-first. A short pool uses the exact same bounded,
+      // lock-protected page consumer as cron and worker:discover, then re-reads
+      // the durable cache before allocating.
+      if (usesSharedPublicPool && unusedCached.length < this.batchSize && !providerExhausted) {
         if (!cacheState && !await this.prisma.discoverSearchCache.findUnique({ where: { fingerprint } })) {
           // Company-pool/private reuse can have satisfied the initial search
           // without creating this exact shared entry. Seed only its durable job
@@ -250,18 +280,95 @@ export class DiscoverExpansionService {
               emailPattern: null, patternConfidence: 'UNAVAILABLE', patternEvidence: null, emailFormatReason: null }, people: [], nextPage: 1, pagesFetched: 0, exhausted: false,
             publicExpansion: { provider: 'brightdata_google', titles: [], seenProfileIds: [], rawCount: 0 } });
         }
-        await enqueuePublicPool(fingerprint);
-        const pending = await this.prisma.discoverSearchExpansion.update({ where: { id: expansion.id }, data: {
-          status: 'PENDING', addedCount: 0, totalPeopleCount: allocatedCount > 0 ? allocatedCount : search.totalProcessed,
-          exhausted: false, errorCode: null
-        } });
-        return this.toResult(pending, await this.quotaRemaining(userId, actorEmail), false,
-          'More people are being prepared. Try Add More again shortly.');
+        try {
+          const outcome = await this.collectPublicSearchPeople({
+            fingerprint,
+            search,
+            company,
+            roles,
+            locations,
+            identities,
+            initialPeople: unusedCached,
+            beforeProviderPage: ensureQuotaReserved
+          });
+          toAdd = outcome.people;
+          cacheCount = outcome.cacheCount;
+          providerCount = outcome.providerCount;
+          exhausted = outcome.exhausted;
+          providerExhausted = exhausted;
+          pagesFetched = outcome.pagesFetched;
+          newlyDiscoveredCount = outcome.newlyDiscoveredCount;
+          providerFallbackTriggered = outcome.providerFallbackTriggered;
+        } catch (error) {
+          if (error instanceof ProspectError && error.code === "DISCOVER_DAILY_LIMIT_REACHED") throw error;
+          await this.prisma.discoverSearchExpansion.update({
+            where: { id: expansion.id }, data: { status: "FAILED", errorCode: "DISCOVER_EXPANSION_FAILED" }
+          });
+          await this.safeAudit("DISCOVER_EXPANSION_FAILED", userId, actorEmail, searchId, {
+            expansionId: expansion.id, errorCode: safeCode(error)
+          });
+          throw new ProspectError("DISCOVER_EXPANSION_FAILED", "We couldn't add more people right now. Please try again.");
+        }
+
+        if (toAdd.length === 0) {
+          if (exhausted) {
+            const finalState = await this.cache.getExpansionState(fingerprint);
+            const completed = await this.completeExpansion(expansion.id, {
+              addedCount: 0, cacheCount: 0, providerCount: 0,
+              totalPeopleCount: allocatedCount > 0 ? allocatedCount : search.totalProcessed,
+              exhausted: true
+            });
+            this.logAddMore({ searchId, cacheId: finalState?.cacheId ?? null,
+              requestedCount: this.batchSize, existingAllocatedCount: allocatedCount,
+              availablePoolCount: unusedCached.length, providerFallbackTriggered, pagesFetched,
+              newlyDiscoveredCount, newlyAllocatedCount: 0,
+              providerNextPage: finalState?.providerNextPage ?? null, exhausted: true });
+            return this.toResult(completed, await this.quotaRemaining(userId, actorEmail),
+              true, NO_MORE_PEOPLE_MESSAGE);
+          }
+          await enqueuePublicPool(fingerprint);
+          const pending = await this.prisma.discoverSearchExpansion.update({ where: { id: expansion.id }, data: {
+            status: 'PENDING', addedCount: 0, totalPeopleCount: allocatedCount > 0 ? allocatedCount : search.totalProcessed,
+            exhausted: false, errorCode: null
+          } });
+          const finalState = await this.cache.getExpansionState(fingerprint);
+          this.logAddMore({ searchId, cacheId: finalState?.cacheId ?? null, requestedCount: this.batchSize,
+            existingAllocatedCount: allocatedCount, availablePoolCount: unusedCached.length,
+            providerFallbackTriggered, pagesFetched, newlyDiscoveredCount, newlyAllocatedCount: 0,
+            providerNextPage: finalState?.providerNextPage ?? null, exhausted: false });
+          return this.toResult(pending, await this.quotaRemaining(userId, actorEmail), false,
+            'More people are being prepared. Try Add More again shortly.');
+        }
+      } else if (usesSharedPublicPool) {
+        toAdd = [];
+        for (const person of unusedCached) {
+          if (toAdd.length >= this.batchSize) break;
+          if (identities.addIfNew(person)) toAdd.push(person);
+        }
+        cacheCount = toAdd.length;
+        providerCount = 0;
+        exhausted = providerExhausted;
+      } else {
+        // Non-public providers retain the existing continuation pipeline.
+        if (providerExhausted && unusedCached.length === 0) {
+          const remaining = await this.quotaRemaining(userId, actorEmail);
+          const completed = await this.completeExpansion(expansion.id, {
+            addedCount: 0, cacheCount: 0, providerCount: 0,
+            totalPeopleCount: allocatedCount > 0 ? allocatedCount : search.totalProcessed,
+            exhausted: true
+          });
+          return this.toResult(completed, remaining, true, NO_MORE_PEOPLE_MESSAGE);
+        }
+        // Assigned after quota reservation below.
+        toAdd = [];
+        cacheCount = 0;
+        providerCount = 0;
+        exhausted = providerExhausted;
       }
 
-      // Early no-op: provider already exhausted and nothing unused remains. Do
-      // not consume a daily slot for a request that cannot add anyone.
-      if (providerExhausted && unusedCached.length === 0) {
+      // Public searches discover before reserving, so a genuinely exhausted
+      // zero-result fallback remains a no-charge operation.
+      if (usesSharedPublicPool && toAdd.length === 0 && providerExhausted) {
         const remaining = await this.quotaRemaining(userId, actorEmail);
         const completed = await this.completeExpansion(expansion.id, {
           addedCount: 0,
@@ -273,26 +380,13 @@ export class DiscoverExpansionService {
         return this.toResult(completed, remaining, true, NO_MORE_PEOPLE_MESSAGE);
       }
 
-      // 7. Reserve one daily Discover slot — idempotent on the EXPANSION id, so a
-      // retry of this expansion (after a failure) never consumes a second slot.
-      const reservation = await this.discoverQuota({ userId, email: actorEmail, searchId: expansion.id });
-      if (!reservation.allowed) {
-        await this.prisma.discoverSearchExpansion.update({
-          where: { id: expansion.id },
-          data: { status: "FAILED", errorCode: "DISCOVER_DAILY_LIMIT_REACHED" }
-        });
-        throw new ProspectError("DISCOVER_DAILY_LIMIT_REACHED", formatDiscoverExpansionLimitMessage(reservation.status));
-      }
-      if (!expansion.quotaReserved) {
-        await this.prisma.discoverSearchExpansion.update({ where: { id: expansion.id }, data: { quotaReserved: true } });
-      }
+      // Cached allocations reserve here. Public provider fallbacks reserved in
+      // the shared step only after acquiring the page lock; Apify also reserves
+      // here before its established continuation path.
+      await ensureQuotaReserved();
 
-      // 10-14. Materialize cached people first, then continue the provider.
-      let toAdd: ResolvedCachePerson[];
-      let cacheCount: number;
-      let providerCount: number;
-      let exhausted: boolean;
-      try {
+      // Apify retains its established provider continuation and quota ordering.
+      if (!usesSharedPublicPool) try {
         const outcome = await this.collectNewPeople({
           search,
           company,
@@ -369,14 +463,89 @@ export class DiscoverExpansionService {
         totalPeopleCount
       });
 
+      const finalCacheState = await this.cache.getExpansionState(fingerprint);
+      this.logAddMore({ searchId, cacheId: finalCacheState?.cacheId ?? null,
+        requestedCount: this.batchSize, existingAllocatedCount: allocatedCount,
+        availablePoolCount: unusedCached.length, providerFallbackTriggered, pagesFetched,
+        newlyDiscoveredCount, newlyAllocatedCount: addedCount,
+        providerNextPage: finalCacheState?.providerNextPage ?? null, exhausted: resultExhausted });
+
       // Use the remaining count from THIS reservation (no extra quota read).
-      return this.toResult(completed, reservation.status.searchesRemaining, resultExhausted, null);
+      return this.toResult(completed, reservation!.status.searchesRemaining, resultExhausted, null);
     } finally {
       await this.expansionLock.release(lockKey, lockToken);
     }
   }
 
   // -- internals --------------------------------------------------------------
+
+  private async collectPublicSearchPeople(params: {
+    fingerprint: string;
+    search: ProspectSearch;
+    company: ProspectCompany;
+    roles: string[];
+    locations: string[];
+    identities: PersonIdentitySet;
+    initialPeople: ResolvedCachePerson[];
+    beforeProviderPage: () => Promise<DiscoverQuotaReservation>;
+  }): Promise<{ people: ResolvedCachePerson[]; cacheCount: number; providerCount: number;
+    exhausted: boolean; pagesFetched: number; newlyDiscoveredCount: number; providerFallbackTriggered: boolean }> {
+    const collected: ResolvedCachePerson[] = [];
+    for (const person of params.initialPeople) {
+      if (collected.length >= this.batchSize) break;
+      if (params.identities.addIfNew(person)) collected.push(person);
+    }
+    const cacheCount = collected.length;
+    let pagesFetched = 0;
+    let newlyDiscoveredCount = 0;
+    let providerFallbackTriggered = false;
+    let state = await this.cache.getExpansionState(params.fingerprint);
+    const deadline = Date.now() + PUBLIC_ADD_MORE_PROVIDER_BUDGET_MS;
+
+    while (collected.length < this.batchSize && pagesFetched < PUBLIC_ADD_MORE_MAX_PROVIDER_PAGES
+      && state && !state.providerExhausted && Date.now() < deadline) {
+      const entry = await this.prisma.discoverSearchCache.findUnique({ where: { fingerprint: params.fingerprint } });
+      if (!entry || !isPendingPublicPool(entry)) break;
+      providerFallbackTriggered = true;
+      const remainingMs = Math.max(1, deadline - Date.now());
+      let step: Awaited<ReturnType<typeof runPublicPoolStep>>;
+      try {
+        step = await runPublicPoolStep(this.prisma, params.fingerprint, this.cache, {
+          signal: AbortSignal.timeout(remainingMs), logPrefix: '[discover-add-more]',
+          waitTimeoutMs: PUBLIC_ADD_MORE_LOCK_WAIT_MS,
+          beforeProviderPage: params.beforeProviderPage
+        });
+      } catch (error) {
+        // Existing DB candidates are still useful when an on-demand provider
+        // attempt fails. With no candidates, surface the normal provider error.
+        if (collected.length === 0) throw error;
+        break;
+      }
+      pagesFetched += step.pagesProcessed;
+      newlyDiscoveredCount += step.peopleInserted;
+      state = await this.cache.getExpansionState(params.fingerprint);
+      if (!state) break;
+      const eligible = await allocateEligiblePublicPeople({
+        prisma: this.prisma, userId: params.search.userId, companyId: params.company.id,
+        people: state.people, roles: params.roles, locations: params.locations
+      });
+      for (const person of eligible) {
+        if (collected.length >= this.batchSize) break;
+        if (params.identities.addIfNew(person)) collected.push(person);
+      }
+      // No page was committed after the bounded lock wait. Use anything the
+      // competing owner inserted during the wait and leave further work to cron.
+      if (step.pagesProcessed === 0) break;
+    }
+    const finalEntry = await this.prisma.discoverSearchCache.findUnique({ where: { fingerprint: params.fingerprint } });
+    return { people: collected, cacheCount, providerCount: collected.length - cacheCount,
+      exhausted: !finalEntry || !isPendingPublicPool(finalEntry), pagesFetched, newlyDiscoveredCount,
+      providerFallbackTriggered };
+  }
+
+  private logAddMore(fields: Record<string, unknown>): void {
+    console.info('[discover-add-more]', fields);
+  }
 
   private async requireOwnedSearch(userId: string, searchId: string): Promise<ProspectSearch> {
     const search = await this.prisma.prospectSearch.findFirst({ where: { id: searchId, userId } });
@@ -873,7 +1042,7 @@ export class DiscoverExpansionService {
   }
 }
 
-export const NO_MORE_PEOPLE_MESSAGE = "No additional unique people were found for this search.";
+export const NO_MORE_PEOPLE_MESSAGE = "No more matching people were found.";
 
 /** The success/result message for an expansion outcome. */
 export function expansionMessage(addedCount: number, batchSize: number, exhausted: boolean): string {

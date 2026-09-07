@@ -166,6 +166,8 @@ export type DiscoverLocalPersonLookup = () => Promise<DiscoverLocalPersonLookupR
 export type GetOrRefreshParams = {
   /** Bounded background consumers use one page and recheck eligibility under the shared lock. */
   publicPageLimit?: number;
+  publicLockWaitTimeoutMs?: number;
+  beforePublicProvider?: () => Promise<unknown>;
   beforePublicPage?: () => Promise<boolean>;
   onPublicPageCommitted?: (progress: PublicPoolPageProgress) => void;
   progressiveProvider?: (state: DiscoverCacheExpansionState | null) => Promise<ResolvedDataset>;
@@ -242,7 +244,8 @@ export interface DiscoverCacheExpansionPort {
    * caller must re-check `getExpansionState` inside `fn` (another holder may have
    * just appended results). Contention fails closed; leases expire and renew safely.
    */
-  runWithProviderLock<T>(fingerprint: string, fn: (assertOwnership: () => Promise<void>) => Promise<T>): Promise<T>;
+  runWithProviderLock<T>(fingerprint: string, fn: (assertOwnership: () => Promise<void>) => Promise<T>,
+    options?: { waitTimeoutMs?: number }): Promise<T>;
 }
 
 // A short-lived, owner-token lock. Only the owner may release it, and it always
@@ -439,6 +442,7 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
             if ((await eligible(current.people)).length >= target) return current;
           }
         }
+        await params.beforePublicProvider?.();
         const page = await params.progressiveProvider!(current);
         providerCalled = true;
         await assertOwnership();
@@ -454,7 +458,7 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
           processed: page.people.length, stored: Math.max(0, committed.people.length - (current?.people.length ?? 0)),
           poolSize: committed.people.length, exhausted: committed.providerExhausted });
         return committed;
-      });
+      }, { waitTimeoutMs: params.publicLockWaitTimeoutMs });
       if ((await eligible(state.people)).length >= target || state.providerExhausted) return result(state);
     }
     const state = await this.getExpansionState(params.fingerprint);
@@ -909,9 +913,10 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
     }
   }
 
-  async runWithProviderLock<T>(fingerprint: string, fn: (assertOwnership: () => Promise<void>) => Promise<T>): Promise<T> {
+  async runWithProviderLock<T>(fingerprint: string, fn: (assertOwnership: () => Promise<void>) => Promise<T>,
+    options: { waitTimeoutMs?: number } = {}): Promise<T> {
     const key = this.lockKey(fingerprint);
-    const deadline = this.now().getTime() + this.waitTimeoutMs;
+    const deadline = this.now().getTime() + (options.waitTimeoutMs ?? this.waitTimeoutMs);
     let token = await this.lock.acquire(key);
     while (!token && this.now().getTime() < deadline) {
       await delay(this.pollIntervalMs);

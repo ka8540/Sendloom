@@ -19,11 +19,14 @@ import {
   type ExpansionAuditFn
 } from "@/services/prospects/discover-expansion-service";
 import { RoleClassificationService } from "@/services/prospects/role-classification-service";
+import { runPublicPoolJob, runPublicPoolStep } from "@/services/prospects/discover-public-pool-job";
 import type { RoleEmbeddingPort } from "@/services/prospects/role-embedding-service";
 import type { RoleSemanticStorePort } from "@/services/prospects/role-semantic-store";
 import { normalizeTitle } from "@/services/prospects/prospect-normalization";
 import { createFakePrisma, type FakePrisma } from "@/services/prospects/__test-utils__/fake-prisma";
 import type { DiscoverQuotaReserver, DiscoverQuotaStatus } from "@/lib/discover-quota";
+
+vi.mock("@/lib/queue", () => ({ queues: { discover: { add: vi.fn(async () => undefined) } } }));
 
 const USER_ID = "user_1";
 const OTHER_USER = "user_2";
@@ -281,7 +284,7 @@ function seedExistingFromCache(
 /** Seed a shared cache entry whose fingerprint matches the search. */
 function seedCache(
   people: Array<{ sourceProfileId: string; firstName: string; lastName: string; linkedinUrl?: string }>,
-  opts: { providerNextPage?: number; providerPagesFetched?: number; exhausted?: boolean } = {}
+  opts: { providerNextPage?: number; providerPagesFetched?: number; exhausted?: boolean; publicExpansion?: boolean } = {}
 ) {
   const { fingerprint } = fingerprintFor();
   prisma._state.discoverCache.push({
@@ -302,6 +305,12 @@ function seedCache(
     providerNextPage: opts.providerNextPage ?? 2,
     providerPagesFetched: opts.providerPagesFetched ?? 1,
     providerExhausted: opts.exhausted ?? false,
+    ...(opts.publicExpansion ? { publicExpansion: {
+      provider: "brightdata_google",
+      titles: ["Software Engineer"],
+      seenProfileIds: people.map((person) => person.sourceProfileId),
+      rawCount: people.length
+    } } : {}),
     lastProviderFetchAt: new Date(),
     emailDomain: "apple.com",
     emailDomainConfidence: "HIGH",
@@ -1332,30 +1341,182 @@ describe('bounded Google Add More', () => {
 });
 
 describe('Bright Data Add More allocation boundary', () => {
-  it('queues a short pool without fetching, normalizing, allocating or charging; the same key can retry', async () => {
-    const { getEnv } = await import('@/lib/env'); const job = await import('./discover-public-pool-job');
-    const config = getEnv(); const previous = { WEB_SEARCH_PROVIDER: config.WEB_SEARCH_PROVIDER, DISCOVER_PEOPLE_PROVIDER: config.DISCOVER_PEOPLE_PROVIDER };
+  const publicNames = ['Adams', 'Baker', 'Clark', 'Davis', 'Evans', 'Foster', 'Green', 'Hayes', 'Irwin', 'Jones',
+    'King', 'Lewis', 'Moore', 'Nash', 'Owens', 'Price', 'Quinn', 'Reed', 'Stone', 'Turner', 'Underwood', 'Vance'];
+  const publicRows = (start: number, count: number) => Array.from({ length: count }, (_, index) => ({
+    title: `Taylor ${publicNames[start + index - 1]} - Software Engineer at Apple | LinkedIn`,
+    link: `https://www.linkedin.com/in/public-${start + index}`,
+    description: ''
+  }));
+
+  async function withPublicEnv(run: () => Promise<void>) {
+    const { getEnv } = await import('@/lib/env');
+    const config = getEnv();
+    const previous = { WEB_SEARCH_PROVIDER: config.WEB_SEARCH_PROVIDER,
+      DISCOVER_PEOPLE_PROVIDER: config.DISCOVER_PEOPLE_PROVIDER,
+      DISCOVER_PUBLIC_MAX_RESULTS: config.DISCOVER_PUBLIC_MAX_RESULTS,
+      DISCOVER_PUBLIC_MAX_PAGES: config.DISCOVER_PUBLIC_MAX_PAGES };
     Object.assign(config, { WEB_SEARCH_PROVIDER: 'brightdata_google', DISCOVER_PEOPLE_PROVIDER: 'public_search' });
-    const enqueue = vi.spyOn(job, 'enqueuePublicPool').mockResolvedValue();
-    try {
-      seedCompany(); seedSearch(); seedExistingPeople(10); seedCache([]);
-      const { service, runner, quota } = buildService();
-      const request = { userId: USER_ID, actorEmail: null, searchId: SEARCH_ID, idempotencyKey: 'waiting-batch' };
-      const pending = await service.addMorePeople(request);
-      expect(pending).toMatchObject({ status: 'PENDING', addedCount: 0, exhausted: false, totalPeopleCount: 10 });
-      expect(pending.message).toContain('being prepared'); expect(quota.calls).toHaveLength(0);
-      expect(runner.run).not.toHaveBeenCalled(); expect(fetch).not.toHaveBeenCalled(); expect(enqueue).toHaveBeenCalledOnce();
-      // The worker commits ten profiles while the request is idle.
-      prisma._state.discoverCachePeople.push(...Array.from({ length: 10 }, (_, i) => ({
-        id: `ready-${i}`, cacheId: 'cache_seed', sourceProfileId: `ready-${i}`, sortIndex: i,
-        firstName: 'Jane', lastName: 'Doe', fullName: 'Jane Doe', currentTitle: 'Software Engineer', normalizedTitle: 'software engineer',
-        positionCategory: 'SOFTWARE_ENGINEERING', location: 'United States', country: 'United States', city: null, state: null,
-        linkedinUrl: `https://linkedin.com/in/ready-${i}`, inferredEmail: null, emailStatus: 'UNAVAILABLE', emailConfidence: 'UNAVAILABLE', emailPattern: null, emailSource: null
-      })));
-      const ready = await service.addMorePeople(request);
-      expect(ready).toMatchObject({ status: 'READY', addedCount: 10, totalPeopleCount: 20 });
-      expect(quota.calls).toHaveLength(1); expect(enqueue).toHaveBeenCalledOnce();
-      expect(runner.run).not.toHaveBeenCalled(); expect(fetch).not.toHaveBeenCalled();
-    } finally { Object.assign(config, previous); enqueue.mockRestore(); }
-  });
+    try { await run(); } finally { Object.assign(config, previous); }
+  }
+
+  function seedPublicCache(people: Parameters<typeof seedCache>[0],
+    opts: Omit<NonNullable<Parameters<typeof seedCache>[1]>, 'publicExpansion'> = {}) {
+    seedCache(people, { ...opts, publicExpansion: true });
+  }
+
+  it('returns ten unused DB candidates without a provider call', async () => withPublicEnv(async () => {
+    seedCompany(); seedSearch(); seedExistingPeople(10); seedPublicCache(cachePeople('cached', 10));
+    const { service, runner, quota } = buildService();
+    const result = await service.addMorePeople({ userId: USER_ID, actorEmail: null,
+      searchId: SEARCH_ID, idempotencyKey: 'db-first' });
+    expect(result).toMatchObject({ status: 'READY', addedCount: 10, totalPeopleCount: 20 });
+    expect(fetch).not.toHaveBeenCalled(); expect(runner.run).not.toHaveBeenCalled();
+    expect(quota.consumed.size).toBe(1);
+  }));
+
+  it('expands an empty pool on demand and allocates the inserted candidates', async () => withPublicEnv(async () => {
+    seedCompany(); seedSearch(); seedExistingPeople(10); seedPublicCache([]);
+    vi.mocked(fetch).mockResolvedValue(Response.json({ organic: publicRows(1, 10) }));
+    const { service, runner, quota } = buildService();
+    const result = await service.addMorePeople({ userId: USER_ID, actorEmail: null,
+      searchId: SEARCH_ID, idempotencyKey: 'provider-fallback' });
+    expect(result).toMatchObject({ status: 'READY', addedCount: 10, totalPeopleCount: 20 });
+    expect(fetch).toHaveBeenCalledOnce(); expect(runner.run).not.toHaveBeenCalled();
+    expect(prisma._state.discoverCachePeople).toHaveLength(10);
+    expect(prisma._state.searchPeople).toHaveLength(10);
+    expect(prisma._state.discoverCache[0]).toMatchObject({ providerNextPage: 3, resultCount: 10 });
+    expect(quota.consumed.size).toBe(1);
+  }));
+
+  it('allocates a partial DB pool, fetches only the remainder, and does not allocate duplicates', async () => withPublicEnv(async () => {
+    seedCompany(); seedSearch();
+    const cached = cachePeople('cached', 13);
+    seedExistingFromCache(cached.slice(0, 10)); seedPublicCache(cached);
+    vi.mocked(fetch).mockResolvedValue(Response.json({ organic: [
+      ...publicRows(1, 7),
+      { ...publicRows(1, 1)[0], link: 'https://np.linkedin.com/in/public-1/' }
+    ] }));
+    const { service } = buildService();
+    const result = await service.addMorePeople({ userId: USER_ID, actorEmail: null,
+      searchId: SEARCH_ID, idempotencyKey: 'partial-provider' });
+    expect(result.addedCount).toBe(10);
+    expect(prisma._state.searchPeople).toHaveLength(10);
+    expect(new Set(prisma._state.searchPeople.map((row) => row.personId)).size).toBe(10);
+    expect(prisma._state.discoverCachePeople).toHaveLength(20);
+    expect(prisma._state.discoverCache[0].providerNextPage).toBe(3);
+  }));
+
+  it('uses at most two provider pages and stops as soon as the requested count is satisfied', async () => withPublicEnv(async () => {
+    seedCompany(); seedSearch(); seedExistingPeople(10); seedPublicCache([]);
+    const starts: number[] = [];
+    vi.mocked(fetch).mockImplementation(async (_url, options) => {
+      const start = Number(new URL(JSON.parse(options!.body as string).url).searchParams.get('start'));
+      starts.push(start);
+      return Response.json({ organic: start === 10 ? publicRows(1, 6) : publicRows(7, 10) });
+    });
+    const { service } = buildService();
+    const result = await service.addMorePeople({ userId: USER_ID, actorEmail: null,
+      searchId: SEARCH_ID, idempotencyKey: 'two-pages' });
+    expect(result.addedCount).toBe(10);
+    expect(starts).toEqual([10, 20]);
+    expect(prisma._state.discoverCache[0].providerNextPage).toBe(4);
+  }));
+
+  it('returns an explicit exhausted result and charges once for the provider attempt', async () => withPublicEnv(async () => {
+    seedCompany(); seedSearch(); seedExistingPeople(10); seedPublicCache([]);
+    vi.mocked(fetch).mockResolvedValue(Response.json({ organic: [] }));
+    const { service, quota } = buildService();
+    const result = await service.addMorePeople({ userId: USER_ID, actorEmail: null,
+      searchId: SEARCH_ID, idempotencyKey: 'exhausted-public' });
+    expect(result).toMatchObject({ status: 'READY', addedCount: 0, exhausted: true,
+      message: NO_MORE_PEOPLE_MESSAGE });
+    expect(quota.consumed.size).toBe(1);
+    expect(prisma._state.discoverCache[0].providerExhausted).toBe(true);
+  }));
+
+  it('checks quota after taking the shared lock and before calling Bright Data', async () => withPublicEnv(async () => {
+    seedCompany(); seedSearch(); seedExistingPeople(10); seedPublicCache([]);
+    const quota = makeQuotaReserver({ limit: 0 });
+    const { service } = buildService({ quota });
+    await expect(service.addMorePeople({ userId: USER_ID, actorEmail: null,
+      searchId: SEARCH_ID, idempotencyKey: 'quota-denied-public' }))
+      .rejects.toMatchObject({ code: 'DISCOVER_DAILY_LIMIT_REACHED' });
+    expect(fetch).not.toHaveBeenCalled();
+    expect(prisma._state.discoverCache[0]).toMatchObject({ providerNextPage: 2, resultCount: 0 });
+  }));
+
+  it.each(['cron', 'worker'])('%s cache lock prevents a duplicate Add More provider fetch', async owner => withPublicEnv(async () => {
+    seedCompany(); seedSearch(); seedExistingPeople(10); seedPublicCache([], { providerNextPage: 10 });
+    let lockHeld = false;
+    let notifyContention!: () => void;
+    const contention = new Promise<void>(resolve => { notifyContention = resolve; });
+    const sharedLock: DiscoverCacheLock = {
+      acquire: async () => {
+        if (lockHeld) { notifyContention(); return null; }
+        lockHeld = true;
+        return 'shared-token';
+      },
+      release: async () => { lockHeld = false; }
+    };
+    const sharedCache = new DiscoverSearchCacheService({ prisma: prisma as unknown as PrismaClient,
+      lock: sharedLock, waitTimeoutMs: 1000, pollIntervalMs: 1 });
+    let release!: () => void;
+    let started!: () => void;
+    const providerStarted = new Promise<void>(resolve => { started = resolve; });
+    vi.mocked(fetch).mockImplementation(async () => {
+      started();
+      await new Promise<void>(resolve => { release = resolve; });
+      return Response.json({ organic: publicRows(1, 10) });
+    });
+    const fingerprint = fingerprintFor().fingerprint;
+    const external = owner === 'cron'
+      ? runPublicPoolStep(prisma as unknown as PrismaClient, fingerprint, sharedCache)
+      : runPublicPoolJob(prisma as unknown as PrismaClient, fingerprint, sharedCache);
+    await providerStarted;
+    const { service } = buildService({ cache: sharedCache });
+    const addMore = service.addMorePeople({ userId: USER_ID, actorEmail: null,
+      searchId: SEARCH_ID, idempotencyKey: `${owner}-lock` });
+    await contention;
+    release();
+    const [, result] = await Promise.all([external, addMore]);
+    expect(result.addedCount).toBe(10);
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(prisma._state.discoverCache[0]).toMatchObject({ providerNextPage: 11, resultCount: 10 });
+  }));
+
+  it.each([{ resultCount: 100 }, { providerNextPage: 11 }])('does not fetch beyond a terminal cache boundary: %j', async boundary => withPublicEnv(async () => {
+    seedCompany(); seedSearch(); seedExistingPeople(10); seedPublicCache([]);
+    Object.assign(prisma._state.discoverCache[0], boundary);
+    const { service, quota } = buildService();
+    const result = await service.addMorePeople({ userId: USER_ID, actorEmail: null,
+      searchId: SEARCH_ID, idempotencyKey: `terminal-${Object.keys(boundary)[0]}` });
+    expect(result).toMatchObject({ addedCount: 0, exhausted: true, message: NO_MORE_PEOPLE_MESSAGE });
+    expect(fetch).not.toHaveBeenCalled(); expect(quota.consumed.size).toBe(0);
+  }));
+
+  it('keeps Add More idempotent and charges one slot after provider expansion', async () => withPublicEnv(async () => {
+    seedCompany(); seedSearch(); seedExistingPeople(10); seedPublicCache([]);
+    vi.mocked(fetch).mockResolvedValue(Response.json({ organic: publicRows(1, 10) }));
+    const { service, quota } = buildService();
+    const request = { userId: USER_ID, actorEmail: null, searchId: SEARCH_ID, idempotencyKey: 'same-key' };
+    const first = await service.addMorePeople(request);
+    const second = await service.addMorePeople(request);
+    expect(second).toEqual(first);
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(quota.consumed.size).toBe(1);
+    expect(prisma._state.searchPeople).toHaveLength(10);
+  }));
+
+  it('returns preparing only when the shared lock stays busy and no candidates appear', async () => withPublicEnv(async () => {
+    seedCompany(); seedSearch(); seedExistingPeople(10); seedPublicCache([]);
+    const busyCache = new DiscoverSearchCacheService({ prisma: prisma as unknown as PrismaClient,
+      lock: { acquire: async () => null, release: async () => undefined }, waitTimeoutMs: 1, pollIntervalMs: 1 });
+    const { service, quota } = buildService({ cache: busyCache });
+    const result = await service.addMorePeople({ userId: USER_ID, actorEmail: null,
+      searchId: SEARCH_ID, idempotencyKey: 'busy' });
+    expect(result).toMatchObject({ status: 'PENDING', addedCount: 0, exhausted: false });
+    expect(result.message).toContain('being prepared');
+    expect(fetch).not.toHaveBeenCalled(); expect(quota.consumed.size).toBe(0);
+  }));
 });
