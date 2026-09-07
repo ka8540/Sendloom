@@ -84,6 +84,47 @@ describe('evidence, never query keywords', () => {
     expect(safe.identityStatus).toBe('INCOMPLETE');
   });
 });
+describe('current-looking SERP associations without Present/Currently', () => {
+  const dd = (title: string, snippet: string | null) => {
+    const row: WebSearchResult = { title, url: 'https://www.linkedin.com/in/example-person', snippet };
+    const p = parseLinkedInSearchResult(row)!;
+    return validateCurrentEmployment(row, p, 'Datadog');
+  };
+  it.each([
+    ['Person Name - Software Engineer at Datadog', 'Software Engineer · Experience: Datadog'],
+    ['Person Name - Software Engineer', 'Software Engineer · Experience: Datadog'],
+    ['Person Name - Senior Software Engineer', 'Senior Software Engineer. Datadog.'],
+    ['Person Name - Software Engineer at Datadog', null],
+    ['Person Name - Software Engineer at Datadog', 'Software Engineer at Datadog · New York, NY']])('accepts %s / %s', (title, snippet) => {
+    expect(dd(title, snippet).decision).toBe('CURRENT');
+  });
+  it.each([
+    ['Person Name - Software Engineer', 'Previously at Datadog'],
+    ['Person Name - Software Engineer', 'Software Engineer at Datadog · Datadog 2020-2023'],
+    ['Person Name - Software Engineer at Google', 'Software Engineer at Google, ex-Datadog'],
+    ['Person Name - Software Engineer at Datadog', 'Former Software Engineer at Datadog']])('rejects explicit historical evidence %s / %s', (title, snippet) => {
+    expect(dd(title, snippet).decision).toBe('FORMER');
+  });
+  it('rejects an unrelated snippet that never pairs a role with the company', () => {
+    expect(dd('Person Name - Software Engineer', 'Random text about something else entirely')).toMatchObject(
+      { decision: 'INSUFFICIENT', reason: 'INSUFFICIENT_EVIDENCE' });
+    expect(dd('Person Name - Datadog', 'Experience: Datadog')).toMatchObject(
+      { decision: 'INSUFFICIENT', reason: 'INSUFFICIENT_EVIDENCE' });
+  });
+  it('rejects a clearly different current employer', () => {
+    expect(dd('Person Name - Software Engineer at Google', 'Software Engineer at Google · Mountain View')).toMatchObject(
+      { decision: 'CONTRADICTORY', reason: 'COMPANY_MISMATCH' });
+  });
+  it('counts insufficient-accepted separately through the provider', async () => {
+    const search = vi.fn(async (_q: string, o: { page?: number }) => (o.page === 1
+      ? [{ ...result('assoc'), title: 'Jane Doe - Software Engineer', snippet: 'Software Engineer · Experience: Abacus Insights' }]
+      : []));
+    const o = searchOptions();
+    const r = await new PublicSearchDiscoveryProvider({ configured: true, search }).searchProfiles(input, o);
+    expect(r.profiles.map(p => p.sourceProfileId)).toEqual(['assoc']);
+    expect(o.diagnostics).toMatchObject({ currentEmploymentInsufficientAccepted: 1, currentEmploymentInsufficientRejected: 0 });
+  });
+});
 describe('bounded search, dedupe and Add More', () => {
   it('dedupes across queries, pages and tracking, keeps different same-name profiles', async () => {
     const search = vi.fn(async (_q, o) => o.page === 1 ? [result('jane'), { ...result('jane'), url: 'https://linkedin.com/in/jane/?trk=x' }]
@@ -213,11 +254,16 @@ describe('Optiver You.com result structures', () => {
     expect(elsewhere.evidence).toMatchObject({ decision: 'CONTRADICTORY', reason: 'COMPANY_MISMATCH' });
     expect(elsewhere.profile?.currentCompanyName).toBe('IMC Trading');
   });
-  it('classifies company-only You.com snippets as INSUFFICIENT, never contradiction', () => {
+  it('accepts company-only snippets that pair a usable role with the company, keeps roleless ones INSUFFICIENT', () => {
+    // Role + company association ("Optiver · Full-time · Software Engineer") is a
+    // strong current-looking signal even without "Present".
+    expect(decided(optiverResult('assoc', 'Assoc Example - Optiver | LinkedIn',
+      'Optiver · Full-time · Software Engineer')).evidence).toMatchObject({ decision: 'CURRENT', reason: 'ASSOCIATION_SNIPPET' });
+    // No usable role: company name with a location, education, or bare country is
+    // not current-employment evidence and must fail closed.
     for (const snippet of [
       'Experience: Optiver · Education: Delft University of Technology',
       'Optiver · Chicago, Illinois, United States',
-      'Optiver · Full-time · Software Engineer',
       'United States · Optiver']) {
       const d = decided(optiverResult('hist', 'Hist Example - Optiver | LinkedIn', snippet));
       expect(d.evidence).toMatchObject({ decision: 'INSUFFICIENT', reason: 'INSUFFICIENT_EVIDENCE' });
@@ -246,7 +292,9 @@ describe('Optiver You.com result structures', () => {
     await new PublicSearchDiscoveryProvider({ configured: true, search }).searchProfiles(optiverInput, o);
     expect(o.diagnostics).toMatchObject({
       publicCurrentAccepted: 2, publicFormerRejected: 1, publicCompanyContradictionRejected: 1,
-      publicCompanyInsufficient: 1, publicDuplicateRejected: 1, publicAcceptedUnique: 1, acceptedUnique: 1
+      publicCompanyInsufficient: 1, publicDuplicateRejected: 1, publicAcceptedUnique: 1, acceptedUnique: 1,
+      currentEmploymentFormerRejected: 1, currentEmploymentContradictoryRejected: 1,
+      currentEmploymentInsufficientRejected: 1, currentEmploymentInsufficientAccepted: 0
     });
   });
   it('a contradictory or insufficient public identity is not a strong negative, so trusted Apify fallback can accept it', async () => {

@@ -21,7 +21,9 @@ export function publicCounters() {
     apifyCalls: 0, apifyRawReturned: 0, apifyParsed: 0, apifyCompanyMatched: 0, apifyRejectedCompany: 0,
     apifySuppressedByPublicStrongNegative: 0, apifyDeduplicated: 0, apifyAcceptedIntoHybrid: 0,
     publicCurrentAccepted: 0, publicFormerRejected: 0, publicCompanyContradictionRejected: 0,
-    publicCompanyInsufficient: 0, publicLocationContradictionRejected: 0, publicLocationMissing: 0,
+    publicCompanyInsufficient: 0, currentEmploymentFormerRejected: 0, currentEmploymentContradictoryRejected: 0,
+    currentEmploymentInsufficientRejected: 0, currentEmploymentInsufficientAccepted: 0,
+    publicLocationContradictionRejected: 0, publicLocationMissing: 0,
     playwrightSearchRuns: 0, playwrightPagesVisited: 0, googleResultCards: 0, linkedinPersonUrls: 0,
     invalidLinkedinUrls: 0, duplicateProfiles: 0, profilesWithLocation: 0, profilesMissingLocation: 0,
     captchaDetected: false, blocked: false, durationMs: 0, stopReason: "",
@@ -109,14 +111,15 @@ export class PublicSearchDiscoveryProvider implements ProspectDiscoveryProvider 
               // closed on the public path but must not poison Apify's trusted
               // current-company constraint for the same person.
               if (evidence.decision === 'FORMER') {
-                d.formerEmployeeRejected++; d.publicFormerRejected++; options.denied.add(profile);
+                d.formerEmployeeRejected++; d.publicFormerRejected++; d.currentEmploymentFormerRejected++; options.denied.add(profile);
               } else if (evidence.decision === 'CONTRADICTORY') {
-                d.companyMismatchRejected++; d.publicCompanyContradictionRejected++;
+                d.companyMismatchRejected++; d.publicCompanyContradictionRejected++; d.currentEmploymentContradictoryRejected++;
               } else {
-                d.ambiguousEmploymentRejected++; d.publicCompanyInsufficient++;
+                d.ambiguousEmploymentRejected++; d.publicCompanyInsufficient++; d.currentEmploymentInsufficientRejected++;
               }
               continue;
             }
+            if (evidence.reason === 'ASSOCIATION_SNIPPET') d.currentEmploymentInsufficientAccepted++;
             if (duplicateRaw || strongNegatives.has(identity.sourceProfileId)) { d.duplicateRejected++; continue; }
             d.publicCurrentAccepted++;
             // SERP geography: only an explicit contradiction rejects. Missing or

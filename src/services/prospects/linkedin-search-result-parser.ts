@@ -18,12 +18,12 @@ export function positionEvidence(text: string): { title: string; company: string
 // history sections, connection counts, boilerplate and locations in any order.
 // Such segments can never supply the CURRENT position on their own.
 const NON_POSITION_SEGMENT = /^(?:experience|education|location|skills|languages?|certifications?|courses|projects|activity|about|summary|view)\b/i;
-const CONNECTIONS_SEGMENT = /\b\d[\d,]*\+?\s+connections?\b/i;
-const EMPLOYMENT_TYPE_SEGMENT = /^(?:(?:full|part)[- ]?time|contract(?:or)?|freelance|internship|apprenticeship|self[- ]?employed|remote|hybrid|on[- ]?site)$/i;
+export const CONNECTIONS_SEGMENT = /\b\d[\d,]*\+?\s+connections?\b/i;
+export const EMPLOYMENT_TYPE_SEGMENT = /^(?:(?:full|part)[- ]?time|contract(?:or)?|freelance|internship|apprenticeship|self[- ]?employed|remote|hybrid|on[- ]?site)$/i;
 /** Comma-separated segments are locations ("Chicago, Illinois, United States"), never a bare title or employer. */
-const locationLike = (segment: string) => segment.includes(',');
+export const locationLike = (segment: string) => segment.includes(',');
 /** Country-only fragments are location text; no employer or role is named by them. */
-const COUNTRY_ONLY = /^(?:united states|usa|u\.?s\.?a\.?|canada|united kingdom|u\.?k\.?|netherlands|australia|germany|france)$/i;
+export const COUNTRY_ONLY = /^(?:united states|usa|u\.?s\.?a\.?|canada|united kingdom|u\.?k\.?|netherlands|australia|germany|france)$/i;
 
 function usableSegment(segment: string): boolean {
   const value = segment.trim();

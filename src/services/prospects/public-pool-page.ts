@@ -34,6 +34,10 @@ export function publicPoolPageProvider(input: {
       brightDataRequests: diagnostics.publicSearchPages, organicResults: diagnostics.rawSearchResults,
       linkedinCandidates: diagnostics.linkedinProfileUrls, canonicalDuplicates: diagnostics.duplicateRejected,
       roleRejected: diagnostics.publicRoleRejected, currentEmploymentRejected: diagnostics.formerEmployeeRejected + diagnostics.ambiguousEmploymentRejected + diagnostics.companyMismatchRejected,
+      currentEmploymentFormerRejected: diagnostics.currentEmploymentFormerRejected,
+      currentEmploymentContradictoryRejected: diagnostics.currentEmploymentContradictoryRejected,
+      currentEmploymentInsufficientRejected: diagnostics.currentEmploymentInsufficientRejected,
+      currentEmploymentInsufficientAccepted: diagnostics.currentEmploymentInsufficientAccepted,
       locationRejected: diagnostics.publicLocationContradictionRejected, processedProfiles: people.length,
       fallbackLocations: people.filter(p => p.locationSource === 'requested_fallback').length,
       googleSnippetLocations: people.filter(p => p.locationSource === 'google_snippet').length
