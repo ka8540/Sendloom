@@ -164,6 +164,9 @@ export type DiscoverLocalPersonLookupResult = {
 export type DiscoverLocalPersonLookup = () => Promise<DiscoverLocalPersonLookupResult>;
 
 export type GetOrRefreshParams = {
+  /** Bounded background consumers use one page and recheck eligibility under the shared lock. */
+  publicPageLimit?: number;
+  beforePublicPage?: () => Promise<boolean>;
   onPublicPageCommitted?: (progress: PublicPoolPageProgress) => void;
   progressiveProvider?: (state: DiscoverCacheExpansionState | null) => Promise<ResolvedDataset>;
   minimumPeople?: number;
@@ -418,9 +421,13 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
       const local = await this.getLocalPersonResult(params, pool.diagnostics);
       if (local.result && (await eligible(local.result.dataset.people)).length >= target) return local.result;
     }
-    for (let attempt = 0; attempt < (env.DISCOVER_PUBLIC_MAX_PAGES ?? 10); attempt++) {
+    for (let attempt = 0; attempt < (params.publicPageLimit ?? env.DISCOVER_PUBLIC_MAX_PAGES ?? 10); attempt++) {
       const state = await this.runWithProviderLock(params.fingerprint, async assertOwnership => {
         let current = await this.getExpansionState(params.fingerprint);
+        if (params.beforePublicPage && !await params.beforePublicPage()) {
+          if (!current) throw new Error("Public pool is unavailable.");
+          return current;
+        }
         if (current && ((await eligible(current.people)).length >= target || current.providerExhausted)) return current;
         if (!current) {
           const pool = await this.getFreshCompanyPoolDataset(params, this.now());
@@ -910,7 +917,7 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
       await delay(this.pollIntervalMs);
       token = await this.lock.acquire(key);
     }
-    if (!token) throw new Error("Discover provider is busy. Try again shortly.");
+    if (!token) throw new DiscoverProviderBusyError();
     let leaseLost = false;
     const timer = this.lock.renew ? setInterval(() => {
       void this.lock.renew!(key, token!).then(ok => { if (!ok) leaseLost = true; }, () => { leaseLost = true; });
@@ -1254,4 +1261,8 @@ function safeErrorCode(error: unknown): string {
     }
   }
   return "PROVIDER_ERROR";
+}
+
+export class DiscoverProviderBusyError extends Error {
+  constructor() { super("Discover provider is busy. Try again shortly."); }
 }
