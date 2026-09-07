@@ -17,7 +17,7 @@ export type CurrentEmploymentEvidence = {
  * counts, locations, and employment-type words are not roles; the title/sniplet
  * text is never trusted when FORMER or CONTRADICTORY evidence fired first.
  */
-function strongCurrentAssociation(result: WebSearchResult, companyName: string): boolean {
+export function strongCurrentAssociation(result: WebSearchResult, companyName: string): boolean {
   const title = resultText(result.title).replace(/\s*(?:\||-)\s*LinkedIn\s*$/i, '');
   const headline = /^.+?\s+(?:[-–—]|\|)\s+(.+)$/.exec(title)?.[1]?.trim() ?? '';
   const snippet = resultText(result.snippet ?? '');

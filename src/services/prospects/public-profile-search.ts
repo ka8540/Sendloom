@@ -4,12 +4,13 @@ import type { ApifyProfileSearchInput, ApifyProfileSearchResult, NormalizedProfi
 import { PersonIdentitySet } from './discover-person-identity';
 import { buildPublicPeopleSearchQuery, buildPublicPeopleRoleUnionQuery } from './public-people-query-builder';
 import { canonicalizeLinkedInProfileUrl } from './linkedin-profile-url';
-import { parseLinkedInSearchResult } from './linkedin-search-result-parser';
-import { validateCurrentEmployment } from './current-employment-evidence';
+import { parseLinkedInSearchResult, positionEvidence, resultText } from './linkedin-search-result-parser';
+import { validateCurrentEmployment, strongCurrentAssociation } from './current-employment-evidence';
 import { evaluateDiscoverLocationMatch } from './discover-location-matching';
 import { createConfiguredWebSearchProvider, type WebSearchProvider } from './web-search-provider';
 import type { ProspectDiscoveryProvider } from './prospect-discovery-provider';
 import { ProspectError } from './prospect-search-service';
+import { createHash } from 'node:crypto';
 
 export const PUBLIC_SEARCH_LIMITS = { queries: 6, pages: 3, concurrency: 2, pageSize: 10, candidatePageSize: 25, singlePageSize: 500, timeoutMs: 35_000 } as const;
 export type PublicSearchDiagnostics = ReturnType<typeof publicCounters>;
@@ -73,14 +74,16 @@ export class PublicSearchDiscoveryProvider implements ProspectDiscoveryProvider 
             const results = await this.web!.search(query, { page, count: pageSize, includeDomains: ["linkedin.com"], signal, onCrawlDiagnostics: stats => Object.assign(d, stats) });
             if (!Array.isArray(results)) throw new Error('Invalid search response');
             if (!results.length) exhausted.add(query);
-            return results.slice(0, pageSize);
+            // Carry the provider query for employment diagnostics; filtering is untouched.
+            return { q: query, rows: results.slice(0, pageSize) };
           }));
           const candidates: NormalizedProfile[] = [];
           let newUrls = 0;
-          const rows = responses.flat().slice(0, progressive ? Math.max(0, progressive.maxResults - rawCount) : undefined);
+          const rows = responses.flatMap(b => b.rows.map(row => [b.q, row] as const))
+            .slice(0, progressive ? Math.max(0, progressive.maxResults - rawCount) : undefined);
           rawCount += rows.length;
           nextPage = page + 1;
-          for (const result of rows) {
+          for (const [providerQueryUrl, result] of rows) {
             d.rawSearchResults++;
             if (!result || typeof result.url !== 'string' || typeof result.title !== 'string' ||
               (result.snippet !== null && typeof result.snippet !== 'string')) { d.candidateParseRejected++; continue; }
@@ -100,7 +103,37 @@ export class PublicSearchDiscoveryProvider implements ProspectDiscoveryProvider 
               }
             }
             if (!profile) { d.candidateParseRejected++; continue; }
+            // ponytail: TEMP diagnostic for local-vs-Vercel parity; remove after diagnosis.
+            if (process.env.NODE_ENV !== 'test') {
+              const fingerprintInput = JSON.stringify([input.companyName, input.jobTitles, result.title, result.snippet ?? '']);
+              console.info('[discover-employment-input]', JSON.stringify({
+                linkedinUrl: identity.linkedinUrl,
+                requestedCompany: input.companyName,
+                requestedRoles: input.jobTitles,
+                rawResultTitle: result.title,
+                rawResultDescription: result.snippet ?? null,
+                providerQueryUrl,
+                nodeVersion: process.version,
+                nodeEnv: process.env.NODE_ENV ?? null,
+                vercelRegion: process.env.VERCEL_REGION ?? null,
+                gitCommitSha: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
+                inputFingerprint: createHash('sha256').update(fingerprintInput).digest('hex')
+              }));
+            }
             const evidence = validateCurrentEmployment(result, profile, input.companyName);
+            if (process.env.NODE_ENV !== 'test') {
+              const snippetPosition = positionEvidence(resultText(result.snippet ?? '').split(/\s*[·|]\s*/)[0]);
+              console.info('[discover-employment-output]', JSON.stringify({
+                linkedinUrl: identity.linkedinUrl,
+                status: evidence.decision,
+                reason: evidence.reason,
+                detectedCurrentEmployer: profile.currentCompanyName ?? null,
+                contradictoryEmployer: evidence.decision === 'CONTRADICTORY'
+                  ? (snippetPosition?.company ?? profile.currentCompanyName ?? null)
+                  : null,
+                strongCurrentAssociation: strongCurrentAssociation(result, input.companyName)
+              }));
+            }
             if (progressive && ['FORMER', 'CONTRADICTORY'].includes(evidence.decision)) {
               strongNegatives.add(identity.sourceProfileId); options.denied.add(profile);
             }
