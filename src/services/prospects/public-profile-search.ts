@@ -4,8 +4,8 @@ import type { ApifyProfileSearchInput, ApifyProfileSearchResult, NormalizedProfi
 import { PersonIdentitySet } from './discover-person-identity';
 import { buildPublicPeopleSearchQuery, buildPublicPeopleRoleUnionQuery } from './public-people-query-builder';
 import { canonicalizeLinkedInProfileUrl } from './linkedin-profile-url';
-import { parseLinkedInSearchResult, positionEvidence, resultText } from './linkedin-search-result-parser';
-import { validateCurrentEmployment, strongCurrentAssociation } from './current-employment-evidence';
+import { parseLinkedInSearchResult } from './linkedin-search-result-parser';
+import { validateCurrentEmployment } from './current-employment-evidence';
 import { evaluateDiscoverLocationMatch } from './discover-location-matching';
 import { createConfiguredWebSearchProvider, type WebSearchProvider } from './web-search-provider';
 import type { ProspectDiscoveryProvider } from './prospect-discovery-provider';
@@ -25,6 +25,9 @@ export function publicCounters() {
     publicCompanyInsufficient: 0, currentEmploymentFormerRejected: 0, currentEmploymentContradictoryRejected: 0,
     currentEmploymentInsufficientRejected: 0, currentEmploymentInsufficientAccepted: 0,
     publicLocationContradictionRejected: 0, publicLocationMissing: 0,
+    dedupedProfiles: 0, currentEmploymentAccepted: 0, currentEmploymentRejected: 0,
+    currentEmploymentInsufficient: 0, roleAccepted: 0, locationAccepted: 0,
+    locationRejected: 0, finalCandidates: 0,
     playwrightSearchRuns: 0, playwrightPagesVisited: 0, googleResultCards: 0, linkedinPersonUrls: 0,
     invalidLinkedinUrls: 0, duplicateProfiles: 0, profilesWithLocation: 0, profilesMissingLocation: 0,
     captchaDetected: false, blocked: false, durationMs: 0, stopReason: "",
@@ -53,6 +56,9 @@ export class PublicSearchDiscoveryProvider implements ProspectDiscoveryProvider 
     const d = options.diagnostics;
     const seen = new PersonIdentitySet();
     const rawSeen = new Set(input.publicSeenProfileIds ?? []);
+    const diagnosticSeen = new Set<string>();
+    const employmentOutcomes = new Map<string, 'CURRENT' | 'FORMER' | 'CONTRADICTORY' | 'INSUFFICIENT'>();
+    const locationOutcomes = new Map<string, 'ACCEPTED' | 'REJECTED'>();
     let rawCount = input.publicRawCount ?? 0;
     let nextPage = firstPage;
     let providerExhausted = Boolean(progressive && (firstPage > progressive.maxPages || rawCount >= progressive.maxResults));
@@ -90,6 +96,8 @@ export class PublicSearchDiscoveryProvider implements ProspectDiscoveryProvider 
             const identity = canonicalizeLinkedInProfileUrl(result.url);
             if (!identity) { d.invalidProfileUrlRejected++; continue; }
             d.linkedinProfileUrls++;
+            diagnosticSeen.add(identity.sourceProfileId);
+            d.dedupedProfiles = diagnosticSeen.size;
             const duplicateRaw = progressive && rawSeen.has(identity.sourceProfileId);
             let profile = parseLinkedInSearchResult(result);
             if (progressive) {
@@ -120,24 +128,29 @@ export class PublicSearchDiscoveryProvider implements ProspectDiscoveryProvider 
                 inputFingerprint: createHash('sha256').update(fingerprintInput).digest('hex')
               }));
             }
-            const evidence = validateCurrentEmployment(result, profile, input.companyName);
+            const evidence = validateCurrentEmployment(result, profile, input.companyName, input.jobTitles);
+            employmentOutcomes.set(identity.sourceProfileId, evidence.decision);
             if (process.env.NODE_ENV !== 'test') {
-              const snippetPosition = positionEvidence(resultText(result.snippet ?? '').split(/\s*[·|]\s*/)[0]);
               console.info('[discover-employment-output]', JSON.stringify({
                 linkedinUrl: identity.linkedinUrl,
-                status: evidence.decision,
-                reason: evidence.reason,
-                detectedCurrentEmployer: profile.currentCompanyName ?? null,
-                contradictoryEmployer: evidence.decision === 'CONTRADICTORY'
-                  ? (snippetPosition?.company ?? profile.currentCompanyName ?? null)
-                  : null,
-                strongCurrentAssociation: strongCurrentAssociation(result, input.companyName)
+                requestedCompany: input.companyName,
+                requestedRoles: input.jobTitles,
+                rawTitle: result.title,
+                rawDescription: result.snippet ?? null,
+                requestedCompanySignals: evidence.requestedCompanySignals,
+                contradictorySignals: evidence.contradictorySignals,
+                historicalSignals: evidence.historicalSignals,
+                extractedEmployers: evidence.extractedEmployers,
+                rejectedEmployerFragments: evidence.rejectedEmployerFragments,
+                finalStatus: evidence.decision,
+                finalReason: evidence.reason
               }));
             }
             if (progressive && ['FORMER', 'CONTRADICTORY'].includes(evidence.decision)) {
               strongNegatives.add(identity.sourceProfileId); options.denied.add(profile);
             }
             if (evidence.decision !== 'CURRENT') {
+              locationOutcomes.delete(identity.sourceProfileId);
               // Only explicit historical evidence ABOUT the target company is a
               // strong negative that suppresses trusted fallback for this
               // identity. Contradictory or insufficient indexed metadata fails
@@ -152,7 +165,7 @@ export class PublicSearchDiscoveryProvider implements ProspectDiscoveryProvider 
               }
               continue;
             }
-            if (evidence.reason === 'ASSOCIATION_SNIPPET') d.currentEmploymentInsufficientAccepted++;
+            if (evidence.reason === 'CURRENT_SNIPPET_ASSOCIATION') d.currentEmploymentInsufficientAccepted++;
             if (duplicateRaw || strongNegatives.has(identity.sourceProfileId)) { d.duplicateRejected++; continue; }
             d.publicCurrentAccepted++;
             // SERP geography: only an explicit contradiction rejects. Missing or
@@ -161,8 +174,10 @@ export class PublicSearchDiscoveryProvider implements ProspectDiscoveryProvider 
               candidate: profile, requestedLocations: input.locations, context: 'PUBLIC'
             });
             if (locationEvaluation.reason === 'EXPLICIT_CONTRADICTION') {
+              locationOutcomes.set(identity.sourceProfileId, 'REJECTED');
               d.publicLocationContradictionRejected++; d.roleOrLocationRejected++; continue;
             }
+            locationOutcomes.set(identity.sourceProfileId, 'ACCEPTED');
             if (locationEvaluation.reason === 'MISSING_METADATA' || locationEvaluation.reason === 'NO_MATCH') {
               d.publicLocationMissing++;
             }
@@ -176,6 +191,7 @@ export class PublicSearchDiscoveryProvider implements ProspectDiscoveryProvider 
           signal.throwIfAborted();
           const roleRejected = candidates.length - valid.length;
           d.roleOrLocationRejected += roleRejected; d.publicRoleRejected += roleRejected;
+          d.roleAccepted += valid.length;
           accepted.push(...valid);
           // A later result may contradict an earlier headline for this identity.
           for (let i = accepted.length - 1; i >= 0; i--) if (options.denied.has(accepted[i])) accepted.splice(i, 1);
@@ -189,6 +205,27 @@ export class PublicSearchDiscoveryProvider implements ProspectDiscoveryProvider 
     }
     d.acceptedUnique = accepted.length;
     d.publicAcceptedUnique = accepted.length;
+    d.currentEmploymentAccepted = [...employmentOutcomes.values()].filter(outcome => outcome === 'CURRENT').length;
+    d.currentEmploymentRejected = [...employmentOutcomes.values()].filter(outcome => outcome === 'FORMER' || outcome === 'CONTRADICTORY').length;
+    d.currentEmploymentInsufficient = [...employmentOutcomes.values()].filter(outcome => outcome === 'INSUFFICIENT').length;
+    d.locationAccepted = [...locationOutcomes.values()].filter(outcome => outcome === 'ACCEPTED').length;
+    d.locationRejected = [...locationOutcomes.values()].filter(outcome => outcome === 'REJECTED').length;
+    d.finalCandidates = accepted.length;
+    if (process.env.NODE_ENV !== 'test') {
+      console.info('[discover-filter-summary]', JSON.stringify({
+        providerResults: d.rawSearchResults,
+        linkedinProfiles: d.linkedinProfileUrls,
+        dedupedProfiles: d.dedupedProfiles,
+        currentEmploymentAccepted: d.currentEmploymentAccepted,
+        currentEmploymentRejected: d.currentEmploymentRejected,
+        currentEmploymentInsufficient: d.currentEmploymentInsufficient,
+        roleAccepted: d.roleAccepted,
+        roleRejected: d.publicRoleRejected,
+        locationAccepted: d.locationAccepted,
+        locationRejected: d.locationRejected,
+        finalCandidates: d.finalCandidates
+      }));
+    }
     return { ...(progressive ? { providerPool: { exhausted: providerExhausted, pagesFetched: d.publicSearchPages, nextPage, seenProfileIds: [...rawSeen], deniedProfileIds: [...strongNegatives], rawCount } } : {}), ...(this.web.materializesPool ? { providerPool: { exhausted: true, pagesFetched: d.playwrightPagesVisited } } : {}), profiles: accepted, runId: null, datasetId: null, totalFound: d.rawSearchResults,
       diagnostics: { itemsReturned: d.rawSearchResults, parsedCandidates: d.linkedinProfileUrls,
         rejectedBySchema: d.invalidProfileUrlRejected + d.candidateParseRejected, duplicateItems: d.duplicateRejected,

@@ -204,7 +204,9 @@ describe('conservative metadata and durable continuation', () => {
     const input = { companyName: 'Example', jobTitles: ['Software Engineer'], locations: ['United States'], maxResults: 10, startPage: 2,
       publicSeenProfileIds: ['person-0'], publicRawCount: 10 };
     const web = { configured: true, pagination: { maxPages: 10, maxResults: 100 }, maxResultsPerRequest: 10,
-      peopleQueryStrategy: 'single_role_union' as const, search: async () => [row(0, 'Formerly at Example')] };
+      peopleQueryStrategy: 'single_role_union' as const, search: async () => [{
+        ...row(0, 'Formerly at Example'), title: 'Jane Doe - Software Engineer | LinkedIn'
+      }] };
     const result = await new PublicSearchDiscoveryProvider(web).searchProfiles(input, { target: 10, validate: async p => p,
       denied: new PersonIdentitySet(), diagnostics: publicCounters() });
     expect(result.providerPool?.deniedProfileIds).toEqual(['person-0']); expect(result.profiles).toEqual([]);

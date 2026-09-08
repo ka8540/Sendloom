@@ -247,6 +247,13 @@ describe("companyNamesAliasMatch", () => {
     expect(companyNamesAliasMatch("Meta", "Metallica")).toBe(false);
     expect(companyNamesAliasMatch("GE", "Genentech")).toBe(false);
   });
+
+  it("normalizes corporate suffixes, fused descriptors, and compact first-token brands", () => {
+    expect(companyNamesAliasMatch("Citigroup Inc.", "Citi")).toBe(true);
+    expect(companyNamesAliasMatch("Datadog, Inc.", "Datadog")).toBe(true);
+    expect(companyNamesAliasMatch("Ramp, Inc.", "Ramp")).toBe(true);
+    expect(companyNamesAliasMatch("IMC Trading LLC", "IMC")).toBe(true);
+  });
 });
 
 describe("currentCompanyMatches", () => {

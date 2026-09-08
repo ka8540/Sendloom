@@ -6,12 +6,45 @@ import { normalizeProfile } from './apify-profile-search';
 
 export function resultText(text: string): string {
   return text.replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
-    .replace(/\s+/g, ' ').trim();
+    .replace(/&nbsp;|\u00a0/g, ' ').replace(/[‐‑‒−]/g, '-').replace(/\s+/g, ' ').trim();
 }
+
+const ROLE_LIKE = /\b(?:engineer(?:ing)?|developer|programmer|architect|recruiter|scientist|analyst|designer|manager|director|lead|specialist|consultant|administrator|executive|officer|president|founder|intern|researcher|sales|marketing|product|operations|security|data|software|frontend|backend|full[ -]?stack|devops|sre|accountant|attorney)\b/i;
+
+function orientPosition(first: string, second: string): { title: string; company: string } {
+  const firstLooksLikeRole = ROLE_LIKE.test(first);
+  const secondLooksLikeRole = ROLE_LIKE.test(second);
+  return secondLooksLikeRole && !firstLooksLikeRole
+    ? { title: second, company: first }
+    : { title: first, company: second };
+}
+
+export type PositionEvidence = { title: string; company: string; connector: 'AT' | 'AT_SIGN' | 'SEPARATOR' | 'PARENTHESES' };
+
+export function positionEvidenceDetails(text: string): PositionEvidence | null {
+  const value = resultText(text);
+  const atSign = /^(.+?)\s*@\s*(.+)$/.exec(value);
+  if (atSign?.[1]?.trim() && atSign[2]?.trim()) {
+    return { title: atSign[1].trim(), company: atSign[2].trim(), connector: 'AT_SIGN' };
+  }
+  const at = /^(.+?)\s+at\s+(.+)$/i.exec(value);
+  if (at?.[1]?.trim() && at[2]?.trim()) {
+    return { title: at[1].trim(), company: at[2].trim(), connector: 'AT' };
+  }
+  const parenthesized = /^(.+?)\s*\(([^()]+)\)\s*$/.exec(value);
+  if (parenthesized?.[1]?.trim() && parenthesized[2]?.trim()) {
+    return { ...orientPosition(parenthesized[1].trim(), parenthesized[2].trim()), connector: 'PARENTHESES' };
+  }
+  const separated = /^(.+?)\s+[-–—]\s+(.+)$/.exec(value)
+    ?? /^(.+?)\s*[|·:]\s*(.+)$/.exec(value)
+    ?? /^(.+?),\s+(.+)$/.exec(value);
+  if (!separated?.[1]?.trim() || !separated[2]?.trim()) return null;
+  return { ...orientPosition(separated[1].trim(), separated[2].trim()), connector: 'SEPARATOR' };
+}
+
 export function positionEvidence(text: string): { title: string; company: string } | null {
-  const parts = text.split(/\s+at\s+|\s+[-–—|·]\s+/i);
-  if (parts.length !== 2 || !parts.every(p => p.trim())) return null;
-  return { title: parts[0].trim(), company: parts[1].trim() };
+  const position = positionEvidenceDetails(text);
+  return position ? { title: position.title, company: position.company } : null;
 }
 
 // You.com snippets are query-relevant page extracts, not a SERP card: they mix
@@ -63,14 +96,15 @@ export function parseLinkedInSearchResult(result: WebSearchResult) {
   if (!identity) return null;
   const title = resultText(result.title).replace(/\s*(?:\||-)\s*LinkedIn\s*$/i, '');
   const match = /^(.+?)\s+(?:[-–—]|\|)\s+(.+)$/.exec(title);
-  if (!match || !/\p{L}/u.test(match[1])) return null;
-  const headline = match[2];
+  const fullName = match?.[1]?.trim() ?? title.trim();
+  if (!/\p{L}/u.test(fullName)) return null;
+  const headline = match?.[2]?.trim() ?? '';
   const snippet = resultText(result.snippet ?? '');
   const segments = snippet.split(/\s*[·|]\s*/);
   const position = positionEvidence(headline) ?? snippetPositionEvidence(snippet);
   const location = segments.map(s => recognizePublicLocation(s)).find(Boolean) ?? null;
-  const profile = normalizeProfile({ ...identity, id: identity.sourceProfileId, fullName: match[1],
-    headline, currentTitle: position?.title, currentCompany: position?.company, location });
+  const profile = normalizeProfile({ ...identity, id: identity.sourceProfileId, fullName,
+    headline: headline || null, currentTitle: position?.title, currentCompany: position?.company, location });
   if (!profile) return null;
   // normalizeProfile accepts several actor fields; explicitly use evidenced position only.
   return { ...profile, currentTitle: position?.title ?? null, normalizedTitle: position ? normalizeTitle(position.title) : null, currentCompanyName: position?.company ?? null };

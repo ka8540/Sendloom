@@ -239,6 +239,7 @@ function normalizedCompanySlug(url: string | null | undefined): string | null {
 // Tokens that carry no employer identity when comparing name aliases
 // ("JPMorgan Chase & Co." normalizes with a lone "and" from the ampersand).
 const COMPANY_ALIAS_STOPWORDS = new Set(["and", "the"]);
+const FUSED_CORPORATE_SUFFIXES = ["technologies", "technology", "holdings", "solutions", "group", "labs"] as const;
 // A squashed-name prefix shorter than this can never claim an alias match
 // ("GE" must not swallow every company starting with those letters).
 const MIN_ALIAS_PREFIX_LENGTH = 4;
@@ -251,6 +252,8 @@ function expandCamelCase(name: string): string {
 
 type CompanyAliasKey = {
   squashed: string;
+  aliases: Set<string>;
+  compactBrand: boolean;
   /** Cumulative token-end offsets within `squashed` (word boundaries). */
   boundaries: Set<number>;
 };
@@ -266,7 +269,14 @@ function companyAliasKey(name: string): CompanyAliasKey {
     length += token.length;
     boundaries.add(length);
   }
-  return { squashed, boundaries };
+  const aliases = new Set([squashed]);
+  for (const suffix of FUSED_CORPORATE_SUFFIXES) {
+    if (squashed.endsWith(suffix) && squashed.length - suffix.length >= MIN_ALIAS_PREFIX_LENGTH) {
+      aliases.add(squashed.slice(0, -suffix.length));
+    }
+  }
+  const rawBrand = stripDiacritics(name).trim().replace(/[.,]/g, "");
+  return { squashed, aliases, boundaries, compactBrand: /^[A-Z0-9]{2,5}$/.test(rawBrand) };
 }
 
 /**
@@ -282,12 +292,12 @@ export function companyNamesAliasMatch(a: string, b: string): boolean {
   if (!keyA.squashed || !keyB.squashed) {
     return false;
   }
-  if (keyA.squashed === keyB.squashed) {
+  if ([...keyA.aliases].some(alias => keyB.aliases.has(alias))) {
     return true;
   }
   const [short, long] = keyA.squashed.length <= keyB.squashed.length ? [keyA, keyB] : [keyB, keyA];
   return (
-    short.squashed.length >= MIN_ALIAS_PREFIX_LENGTH &&
+    (short.squashed.length >= MIN_ALIAS_PREFIX_LENGTH || short.compactBrand) &&
     long.squashed.startsWith(short.squashed) &&
     long.boundaries.has(short.squashed.length)
   );
