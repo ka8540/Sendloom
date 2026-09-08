@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { buildPublicPeopleSearchQuery } from './public-people-query-builder';
+import { buildPublicPeopleRoleUnionQuery, buildPublicPeopleSearchQuery, publicCompanySearchAliases } from './public-people-query-builder';
 import { canonicalizeLinkedInProfileUrl } from './linkedin-profile-url';
 import { parseLinkedInSearchResult } from './linkedin-search-result-parser';
 import { validateCurrentEmployment } from './current-employment-evidence';
@@ -7,7 +7,7 @@ import { PublicSearchDiscoveryProvider, publicCounters, PUBLIC_SEARCH_LIMITS } f
 import { discoverProfiles, publicProfileValidator } from './prospect-discovery-provider';
 import { PersonIdentitySet } from './discover-person-identity';
 import { dedupeProfiles, type ApifyProfileSearchResult } from './apify-profile-search';
-import type { WebSearchResult } from './web-search-provider';
+import type { WebSearchProvider, WebSearchResult } from './web-search-provider';
 import { reuseExistingPeople } from './discover-existing-person';
 import type { ProspectPerson } from '@prisma/client';
 import type { ResolvedCachePerson } from './discover-cache-service';
@@ -39,15 +39,41 @@ describe('public query and strict URL identity', () => {
     expect(buildPublicPeopleSearchQuery({ companyName: '  A " B\\ C\n', jobTitle: ' Software   Engineer ' }))
       .toBe('site:linkedin.com/in "A B C" "Software Engineer"');
   });
+  it('builds generic legal-name, domain-name and brand aliases without company exceptions', () => {
+    expect(publicCompanySearchAliases('Amazon.com, Inc.')).toEqual(['Amazon.com, Inc.', 'Amazon.com', 'Amazon']);
+    expect(buildPublicPeopleRoleUnionQuery({ companyName: 'Amazon.com, Inc.', providerTitles: ['Software Engineer'] }))
+      .toBe('site:linkedin.com/in ("Amazon.com, Inc." OR "Amazon.com" OR "Amazon") ("Software Engineer")');
+  });
   it.each(['https://linkedin.com/in/jane-doe/', 'https://www.linkedin.com/in/jane-doe?trk=abc',
     'http://www.linkedin.com/in/JANE-DOE/#about', 'https://uk.linkedin.com/in/jane-doe'])('canonicalizes %s', url => {
-    expect(canonicalizeLinkedInProfileUrl(url)).toEqual({ linkedinUrl: 'https://linkedin.com/in/jane-doe', sourceProfileId: 'jane-doe' });
+    expect(canonicalizeLinkedInProfileUrl(url)).toEqual({ linkedinUrl: 'https://www.linkedin.com/in/jane-doe', sourceProfileId: 'jane-doe' });
   });
   it.each(['company/acme', 'jobs/123', 'posts/123', 'feed/123', 'school/acme', 'in/jane/posts', 'in/a%2Fb', 'in/'])('rejects non-person path %s', path => {
     expect(canonicalizeLinkedInProfileUrl(`https://linkedin.com/${path}`)).toBeNull();
   });
   it.each(['https://evil.com/in/jane', 'https://linkedin.com.evil.com/in/jane', 'https://user@linkedin.com/in/jane', 'ftp://linkedin.com/in/jane'])('rejects unsafe URL %s', url => {
     expect(canonicalizeLinkedInProfileUrl(url)).toBeNull();
+  });
+});
+
+describe('LinkedIn URL funnel diagnostics', () => {
+  it('counts direct, embedded redirect, non-profile and missing URLs separately', async () => {
+    const diagnostics = publicCounters();
+    const rows: WebSearchResult[] = [
+      result('direct-person'),
+      { ...result('redirect-person'), url: `/url?q=${encodeURIComponent('https://uk.linkedin.com/in/redirect-person?trk=google')}` },
+      { ...result('company-page'), url: 'https://www.linkedin.com/company/abacus-insights' },
+      { ...result('missing-person'), url: '' },
+      { ...result('opaque-person'), url: '/goto?url=CAESopaque' }
+    ];
+    const web: WebSearchProvider = { configured: true, search: async (_query, options) => options?.page === 1 ? rows : [] };
+    const found = await new PublicSearchDiscoveryProvider(web).searchProfiles(input, {
+      target: 10, validate: accept, denied: new PersonIdentitySet(), diagnostics
+    });
+    expect(found.profiles).toHaveLength(2);
+    expect(diagnostics).toMatchObject({ rawSearchResults: 5, resultsWithUrl: 4, directLinkedinUrls: 1,
+      redirectLinkedinUrls: 1, missingUrls: 1, nonProfileLinkedinUrls: 1, redirectDecodeFailed: 1,
+      linkedinProfileUrls: 2 });
   });
 });
 describe('evidence, never query keywords', () => {

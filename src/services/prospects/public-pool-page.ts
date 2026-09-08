@@ -33,6 +33,13 @@ export function publicPoolPageProvider(input: {
     if (process.env.NODE_ENV !== 'test') console.info('[discover-public-pool]', JSON.stringify({
       brightDataRequests: diagnostics.publicSearchPages, organicResults: diagnostics.rawSearchResults,
       linkedinCandidates: diagnostics.linkedinProfileUrls, canonicalDuplicates: diagnostics.duplicateRejected,
+      resultsWithUrl: diagnostics.resultsWithUrl, directLinkedinUrls: diagnostics.directLinkedinUrls,
+      redirectLinkedinUrls: diagnostics.redirectLinkedinUrls, displayedLinkedinUrls: diagnostics.displayedLinkedinUrls,
+      invalidUrls: diagnostics.invalidUrls,
+      nonLinkedinUrls: diagnostics.nonLinkedinUrls, nonProfileLinkedinUrls: diagnostics.nonProfileLinkedinUrls,
+      linkedinUrlRejections: { missingUrl: diagnostics.missingUrls, invalidUrl: diagnostics.invalidUrls,
+        nonLinkedinHost: diagnostics.nonLinkedinUrls, nonProfilePath: diagnostics.nonProfileLinkedinUrls,
+        redirectDecodeFailed: diagnostics.redirectDecodeFailed },
       roleRejected: diagnostics.publicRoleRejected, currentEmploymentRejected: diagnostics.formerEmployeeRejected + diagnostics.ambiguousEmploymentRejected + diagnostics.companyMismatchRejected,
       currentEmploymentFormerRejected: diagnostics.currentEmploymentFormerRejected,
       currentEmploymentContradictoryRejected: diagnostics.currentEmploymentContradictoryRejected,

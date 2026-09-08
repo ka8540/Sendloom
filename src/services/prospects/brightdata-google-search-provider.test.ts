@@ -1,12 +1,41 @@
 import { describe, it, expect, vi } from 'vitest';
-import { BrightDataGoogleSearchProvider, BrightDataSearchError } from './brightdata-google-search-provider';
+import { BrightDataGoogleSearchProvider, BrightDataSearchError, getOrganicResultUrl } from './brightdata-google-search-provider';
 import { canonicalizeLinkedInProfileUrl } from './linkedin-profile-url';
 
 const provider = () => new BrightDataGoogleSearchProvider('sanitized-key', 'sanitized-zone');
 describe('Bright Data Google adapter', () => {
   it('maps organic rows into the existing abstraction', async () => {
     vi.mocked(fetch).mockResolvedValue(Response.json({ organic: [{ link: 'https://np.linkedin.com/in/foo', title: 'Jane Doe', description: 'Public snippet', global_rank: 1 }] }));
-    expect(await provider().search('raw query')).toEqual([{ url: 'https://np.linkedin.com/in/foo', title: 'Jane Doe', snippet: 'Public snippet' }]);
+    expect(await provider().search('raw query')).toEqual([{ url: 'https://np.linkedin.com/in/foo', rawUrl: 'https://np.linkedin.com/in/foo',
+      urlSource: 'DIRECT', displayedUrl: null, title: 'Jane Doe', snippet: 'Public snippet' }]);
+  });
+  it.each([
+    [{ link: 'https://www.linkedin.com/in/link-person' }, 'https://www.linkedin.com/in/link-person'],
+    [{ url: 'https://www.linkedin.com/in/url-person' }, 'https://www.linkedin.com/in/url-person'],
+    [{ href: 'https://www.linkedin.com/in/href-person' }, 'https://www.linkedin.com/in/href-person'],
+    [{ target_url: 'https://www.linkedin.com/in/target-person' }, 'https://www.linkedin.com/in/target-person']
+  ])('normalizes a known provider URL field from %j', (row, expected) => {
+    expect(getOrganicResultUrl(row)).toMatchObject({ rawUrl: expected });
+  });
+  it('resolves the actual Bright Data /goto CAES shape through one manual Google hop', async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(Response.json({ organic: [{ link: '/goto?url=CAESopaque', title: 'Jane Doe', description: 'Software Engineer at Acme' }] }))
+      .mockResolvedValueOnce(new Response(null, { status: 302, headers: { location: 'https://us.linkedin.com/in/jane-doe?trk=result' } }));
+    expect(await provider().search('query')).toEqual([{ url: 'https://us.linkedin.com/in/jane-doe?trk=result', rawUrl: '/goto?url=CAESopaque',
+      urlSource: 'GOOGLE_REDIRECT', displayedUrl: null, title: 'Jane Doe', snippet: 'Software Engineer at Acme' }]);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(String(vi.mocked(fetch).mock.calls[1][0])).toBe('https://www.google.com/goto?url=CAESopaque');
+    expect(vi.mocked(fetch).mock.calls[1][1]).toMatchObject({ method: 'GET', redirect: 'manual' });
+  });
+  it('does not request redirect-shaped URLs on any non-Google host', async () => {
+    vi.mocked(fetch).mockResolvedValue(Response.json({ organic: [{ link: 'https://evil.example/goto?url=CAESopaque', title: 'Unsafe wrapper' }] }));
+    expect(await provider().search('query')).toMatchObject([{ url: 'https://evil.example/goto?url=CAESopaque', urlSource: 'DIRECT' }]);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it('keeps a missing organic URL as a countable rejected row', async () => {
+    vi.mocked(fetch).mockResolvedValue(Response.json({ organic: [{ title: 'Jane Doe', description: 'Software Engineer' }] }));
+    expect(await provider().search('query')).toEqual([{ url: '', rawUrl: null, urlSource: 'DIRECT', displayedUrl: null,
+      title: 'Jane Doe', snippet: 'Software Engineer' }]);
   });
   it.each([1, 2, 3, 10])('encodes query once and uses start offset for page %i', async page => {
     vi.mocked(fetch).mockResolvedValue(Response.json({ organic: [] }));
@@ -41,7 +70,7 @@ describe('Bright Data Google adapter', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
   it.each(['www', 'np', 'in', 'uk'])('canonicalizes locale host %s', locale => {
-    expect(canonicalizeLinkedInProfileUrl(`https://${locale}.linkedin.com/IN/FOO/?tracking=x#about`)).toEqual({ linkedinUrl: 'https://linkedin.com/in/foo', sourceProfileId: 'foo' });
+    expect(canonicalizeLinkedInProfileUrl(`https://${locale}.linkedin.com/IN/FOO/?tracking=x#about`)).toEqual({ linkedinUrl: 'https://www.linkedin.com/in/foo', sourceProfileId: 'foo' });
   });
   it('does not fetch outside bounded pages', async () => {
     expect(await provider().search('query', { page: 11 })).toEqual([]); expect(fetch).not.toHaveBeenCalled();

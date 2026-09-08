@@ -3,7 +3,7 @@ import { parseLocation } from "./prospect-normalization";
 import type { ApifyProfileSearchInput, ApifyProfileSearchResult, NormalizedProfile } from './apify-profile-search';
 import { PersonIdentitySet } from './discover-person-identity';
 import { buildPublicPeopleSearchQuery, buildPublicPeopleRoleUnionQuery } from './public-people-query-builder';
-import { canonicalizeLinkedInProfileUrl } from './linkedin-profile-url';
+import { resolveLinkedInProfileUrl } from './linkedin-profile-url';
 import { parseLinkedInSearchResult } from './linkedin-search-result-parser';
 import { validateCurrentEmployment } from './current-employment-evidence';
 import { evaluateDiscoverLocationMatch } from './discover-location-matching';
@@ -16,6 +16,9 @@ export const PUBLIC_SEARCH_LIMITS = { queries: 6, pages: 3, concurrency: 2, page
 export type PublicSearchDiagnostics = ReturnType<typeof publicCounters>;
 export function publicCounters() {
   return { publicSearchQueries: 0, publicSearchPages: 0, rawSearchResults: 0, linkedinProfileUrls: 0,
+    resultsWithUrl: 0, directLinkedinUrls: 0, redirectLinkedinUrls: 0, displayedLinkedinUrls: 0,
+    missingUrls: 0, invalidUrls: 0,
+    nonLinkedinUrls: 0, nonProfileLinkedinUrls: 0, redirectDecodeFailed: 0,
     invalidProfileUrlRejected: 0, candidateParseRejected: 0, formerEmployeeRejected: 0,
     ambiguousEmploymentRejected: 0, companyMismatchRejected: 0, roleOrLocationRejected: 0,
     duplicateRejected: 0, acceptedUnique: 0, apifyFallbackCalled: false, providerFailed: false,
@@ -64,6 +67,7 @@ export class PublicSearchDiscoveryProvider implements ProspectDiscoveryProvider 
     let providerExhausted = Boolean(progressive && (firstPage > progressive.maxPages || rawCount >= progressive.maxResults));
     const strongNegatives = new Set(input.publicDeniedProfileIds ?? []);
     const accepted: NormalizedProfile[] = [];
+    let organicDebugLogged = false;
     const unionQuery = singleQuery ? buildPublicPeopleRoleUnionQuery({ companyName: input.companyName, providerTitles: input.jobTitles }) : null;
     const queries = singleQuery ? (unionQuery ? [unionQuery] : []) : [...new Set(input.jobTitles.flatMap(jobTitle => (input.locations.length ? input.locations : [null])
       .map(location => buildPublicPeopleSearchQuery({ companyName: input.companyName, jobTitle, location }))))].slice(0, PUBLIC_SEARCH_LIMITS.queries);
@@ -87,14 +91,41 @@ export class PublicSearchDiscoveryProvider implements ProspectDiscoveryProvider 
           let newUrls = 0;
           const rows = responses.flatMap(b => b.rows.map(row => [b.q, row] as const))
             .slice(0, progressive ? Math.max(0, progressive.maxResults - rawCount) : undefined);
+          if (!organicDebugLogged && process.env.NODE_ENV !== 'test' && rows.length) {
+            organicDebugLogged = true;
+            console.info('[discover-organic-debug]', JSON.stringify({
+              providerResultCount: rows.length,
+              providerQuery: rows[0]?.[0] ?? null,
+              organic: rows.slice(0, 10).map(([_, result], index) => {
+                const resolution = resolveLinkedInProfileUrl(result?.url, result?.displayedUrl);
+                return { index, rawUrl: result?.rawUrl ?? result?.url ?? null, title: result?.title ?? null,
+                  displayedUrl: result?.displayedUrl ?? null, detectedLinkedinProfile: resolution.ok,
+                  rejectionReason: resolution.ok ? null : resolution.reason };
+              })
+            }));
+          }
           rawCount += rows.length;
           nextPage = page + 1;
           for (const [providerQueryUrl, result] of rows) {
             d.rawSearchResults++;
-            if (!result || typeof result.url !== 'string' || typeof result.title !== 'string' ||
+            if (!result || (result.url !== null && typeof result.url !== 'string') || typeof result.title !== 'string' ||
               (result.snippet !== null && typeof result.snippet !== 'string')) { d.candidateParseRejected++; continue; }
-            const identity = canonicalizeLinkedInProfileUrl(result.url);
-            if (!identity) { d.invalidProfileUrlRejected++; continue; }
+            if (typeof result.url === 'string' && result.url.trim()) d.resultsWithUrl++;
+            const resolution = resolveLinkedInProfileUrl(result.url, result.displayedUrl);
+            if (!resolution.ok) {
+              d.invalidProfileUrlRejected++;
+              if (resolution.reason === 'missingUrl') d.missingUrls++;
+              else if (resolution.reason === 'invalidUrl') d.invalidUrls++;
+              else if (resolution.reason === 'nonLinkedinHost') d.nonLinkedinUrls++;
+              else if (resolution.reason === 'nonProfilePath') d.nonProfileLinkedinUrls++;
+              else if (resolution.reason === 'redirectDecodeFailed') d.redirectDecodeFailed++;
+              continue;
+            }
+            const identity = resolution.identity;
+            const source = result.urlSource === 'GOOGLE_REDIRECT' ? 'REDIRECT' : result.urlSource === 'DISPLAYED' ? 'DISPLAYED' : resolution.source;
+            if (source === 'REDIRECT') d.redirectLinkedinUrls++;
+            else if (source === 'DISPLAYED') d.displayedLinkedinUrls++;
+            else d.directLinkedinUrls++;
             d.linkedinProfileUrls++;
             diagnosticSeen.add(identity.sourceProfileId);
             d.dedupedProfiles = diagnosticSeen.size;
@@ -214,6 +245,13 @@ export class PublicSearchDiscoveryProvider implements ProspectDiscoveryProvider 
     if (process.env.NODE_ENV !== 'test') {
       console.info('[discover-filter-summary]', JSON.stringify({
         providerResults: d.rawSearchResults,
+        resultsWithUrl: d.resultsWithUrl,
+        directLinkedinUrls: d.directLinkedinUrls,
+        redirectLinkedinUrls: d.redirectLinkedinUrls,
+        displayedLinkedinUrls: d.displayedLinkedinUrls,
+        invalidUrls: d.invalidUrls,
+        nonLinkedinUrls: d.nonLinkedinUrls,
+        nonProfileLinkedinUrls: d.nonProfileLinkedinUrls,
         linkedinProfiles: d.linkedinProfileUrls,
         dedupedProfiles: d.dedupedProfiles,
         currentEmploymentAccepted: d.currentEmploymentAccepted,
@@ -223,7 +261,10 @@ export class PublicSearchDiscoveryProvider implements ProspectDiscoveryProvider 
         roleRejected: d.publicRoleRejected,
         locationAccepted: d.locationAccepted,
         locationRejected: d.locationRejected,
-        finalCandidates: d.finalCandidates
+        finalCandidates: d.finalCandidates,
+        linkedinUrlRejections: { missingUrl: d.missingUrls, invalidUrl: d.invalidUrls,
+          nonLinkedinHost: d.nonLinkedinUrls, nonProfilePath: d.nonProfileLinkedinUrls,
+          redirectDecodeFailed: d.redirectDecodeFailed }
       }));
     }
     return { ...(progressive ? { providerPool: { exhausted: providerExhausted, pagesFetched: d.publicSearchPages, nextPage, seenProfileIds: [...rawSeen], deniedProfileIds: [...strongNegatives], rawCount } } : {}), ...(this.web.materializesPool ? { providerPool: { exhausted: true, pagesFetched: d.playwrightPagesVisited } } : {}), profiles: accepted, runId: null, datasetId: null, totalFound: d.rawSearchResults,

@@ -1,5 +1,6 @@
 // Pure normalization helpers for the prospect graph. No network, no AI — these
 // are deterministic and exhaustively unit-tested.
+import { canonicalizeLinkedInProfileUrl } from './linkedin-profile-url';
 
 // Common consumer / free mailbox domains that must never be treated as a
 // company's official domain (used both for input validation and as a guard
@@ -94,11 +95,10 @@ export function isValidCompanyDomain(domain: string | null | undefined): boolean
   return Boolean(normalized) && !isPersonalEmailDomain(normalized);
 }
 
-const LINKEDIN_PROFILE_PATTERN = /^https?:\/\/([a-z]{2,3}\.)?linkedin\.com\/(in|pub)\//i;
 const LINKEDIN_COMPANY_PATTERN = /^https?:\/\/([a-z]{2,3}\.)?linkedin\.com\/(company|school|showcase)\//i;
 
 export function isLinkedInProfileUrl(url: string | null | undefined): boolean {
-  return typeof url === "string" && LINKEDIN_PROFILE_PATTERN.test(url.trim());
+  return Boolean(canonicalizeLinkedInProfileUrl(url));
 }
 
 export function isLinkedInCompanyUrl(url: string | null | undefined): boolean {

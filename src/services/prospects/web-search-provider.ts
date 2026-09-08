@@ -3,7 +3,15 @@ import { PlaywrightGoogleSearchProvider } from "./playwright-google-search-provi
 import { env } from "@/lib/env";
 import { z } from "zod";
 
-export type WebSearchResult = { title: string; url: string; snippet: string | null };
+export type WebSearchResult = {
+  title: string;
+  url: string;
+  snippet: string | null;
+  displayedUrl?: string | null;
+  /** Provider metadata used only for URL-funnel diagnostics. */
+  rawUrl?: string | null;
+  urlSource?: 'DIRECT' | 'GOOGLE_REDIRECT' | 'DISPLAYED';
+};
 export type WebSearchOptions = {
   /** Provider-neutral, one-based result window. */
   page?: number;

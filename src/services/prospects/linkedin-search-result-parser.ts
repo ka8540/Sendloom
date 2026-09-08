@@ -1,6 +1,6 @@
 import { recognizePublicLocation } from "./discover-location-matching";
 import type { WebSearchResult } from './web-search-provider';
-import { canonicalizeLinkedInProfileUrl } from './linkedin-profile-url';
+import { resolveLinkedInProfileUrl } from './linkedin-profile-url';
 import { normalizeTitle } from './prospect-normalization';
 import { normalizeProfile } from './apify-profile-search';
 
@@ -92,8 +92,9 @@ export function snippetPositionEvidence(snippet: string): { title: string; compa
 }
 /** Only the headline or leading snippet position can supply a current job. */
 export function parseLinkedInSearchResult(result: WebSearchResult) {
-  const identity = canonicalizeLinkedInProfileUrl(result.url);
-  if (!identity) return null;
+  const resolution = resolveLinkedInProfileUrl(result.url, result.displayedUrl);
+  if (!resolution.ok) return null;
+  const identity = resolution.identity;
   const title = resultText(result.title).replace(/\s*(?:\||-)\s*LinkedIn\s*$/i, '');
   const match = /^(.+?)\s+(?:[-–—]|\|)\s+(.+)$/.exec(title);
   const fullName = match?.[1]?.trim() ?? title.trim();
