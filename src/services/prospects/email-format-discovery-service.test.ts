@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   EmailFormatDiscoveryService,
+  PublicSourceError,
   extractCandidateEmails,
   inferPatternFromExampleEmails,
   normalizePublicEmailPattern,
@@ -67,6 +68,18 @@ describe("parsePublicEmailFormatEvidence", () => {
     const bundle = parsePublicEmailFormatEvidence("[first]_[last] | jane_doe@gmail.com | 99%");
     expect(bundle.rows).toHaveLength(0);
     expect(bundle.domainEvidence).toHaveLength(0);
+  });
+
+  it("accepts a platform domain only for the company that canonically owns it", () => {
+    const evidence = "[first_initial][last] | jdoe@linkedin.com | 90%";
+    expect(parsePublicEmailFormatEvidence(evidence, {
+      sourceUrl: "https://example.com/linkedin-format",
+      officialWebsiteDomain: "linkedin.com"
+    }).rows[0]).toMatchObject({ emailDomain: "linkedin.com", pattern: "flast" });
+    expect(parsePublicEmailFormatEvidence(evidence, {
+      sourceUrl: "https://example.com/apple-format",
+      officialWebsiteDomain: "apple.com"
+    }).rows).toHaveLength(0);
   });
 
   it("infers first.last from consistent mailto: work-email examples on a plain page", () => {
@@ -146,6 +159,38 @@ describe("EmailFormatDiscoveryService", () => {
     expect(fetchPage).toHaveBeenCalledWith("https://rocketreach.co/esri-email-format_b5c60d6df42e0c51");
     expect(bundle.domainEvidence?.[0]).toMatchObject({ emailDomain: "esri.com", observedPattern: "flast" });
     expect(bundle.patternEvidence?.[0]).toMatchObject({ pattern: "flast", emailDomain: "esri.com" });
+    expect(bundle.discoveryStatus).toBe("FOUND");
+  });
+
+  it.each([
+    ["not-a-url", "INVALID_SOURCE_URL"],
+    ["http://localhost/format", "BLOCKED_SOURCE_URL"],
+    ["http://169.254.169.254/latest/meta-data", "BLOCKED_SOURCE_URL"],
+    ["http://[::1]/format", "BLOCKED_SOURCE_URL"]
+  ] as const)("distinguishes unsafe source %s as %s", async (sourceUrl, status) => {
+    const service = new EmailFormatDiscoveryService();
+    await expect(service.findEvidence({
+      companyName: "Example",
+      officialWebsiteDomain: "example.com",
+      sourceUrl
+    })).resolves.toMatchObject({ discoveryStatus: status });
+  });
+
+  it("distinguishes fetch, parser, and no-evidence outcomes", async () => {
+    const input = {
+      companyName: "Example",
+      officialWebsiteDomain: "example.com",
+      sourceUrl: "https://example.com/format"
+    };
+    await expect(new EmailFormatDiscoveryService({
+      fetchPage: vi.fn(async () => { throw new PublicSourceError("SOURCE_FETCH_ERROR", "fetch failed"); })
+    }).findEvidence(input)).resolves.toMatchObject({ discoveryStatus: "SOURCE_FETCH_ERROR" });
+    await expect(new EmailFormatDiscoveryService({
+      fetchPage: vi.fn(async () => null as unknown as string)
+    }).findEvidence(input)).resolves.toMatchObject({ discoveryStatus: "SOURCE_PARSER_ERROR" });
+    await expect(new EmailFormatDiscoveryService({
+      fetchPage: vi.fn(async () => "No work email evidence here.")
+    }).findEvidence(input)).resolves.toMatchObject({ discoveryStatus: "NO_EVIDENCE" });
   });
 
   it("warns instead of crashing when search is unavailable", async () => {

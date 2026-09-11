@@ -8,6 +8,7 @@ import {
   type EmailEvidenceBundle,
   type EmailEvidenceProvider,
   type EmailEvidenceProviderInput,
+  type EmailFormatDiscoveryStatus,
   type EmailPatternEvidence,
   buildEmailFormatSearchQueries,
   isAllowedBusinessEmailDomain
@@ -151,7 +152,11 @@ function confidenceForParsedRow(percentage: number | null, surroundingText: stri
   return "LOW";
 }
 
-function makeRowsFromMatches(text: string, sourceUrl: string | null): ParsedFormatRow[] {
+function makeRowsFromMatches(
+  text: string,
+  sourceUrl: string | null,
+  officialWebsiteDomain?: string | null
+): ParsedFormatRow[] {
   const sourceName = sourceNameForUrl(sourceUrl);
   const rows: ParsedFormatRow[] = [];
   const seen = new Set<string>();
@@ -175,7 +180,11 @@ function makeRowsFromMatches(text: string, sourceUrl: string | null): ParsedForm
       }
       const pattern = normalizePublicEmailPattern(patternRaw);
       const emailDomain = normalizeDomain(example);
-      if (!pattern || !emailDomain || !isAllowedBusinessEmailDomain(emailDomain)) {
+      if (
+        !pattern ||
+        !emailDomain ||
+        !isAllowedBusinessEmailDomain(emailDomain, { officialWebsiteDomain })
+      ) {
         continue;
       }
       const percentage = percentageFrom(match[3]);
@@ -292,7 +301,7 @@ function structuralPatternForLocalPart(localPart: string): EmailPattern | null {
  */
 export function inferPatternFromExampleEmails(
   emails: string[],
-  options: { sourceUrl?: string | null } = {}
+  options: { sourceUrl?: string | null; officialWebsiteDomain?: string | null } = {}
 ): ParsedFormatRow | null {
   const byDomain = new Map<string, Map<EmailPattern, Set<string>>>();
   for (const email of emails) {
@@ -305,7 +314,7 @@ export function inferPatternFromExampleEmails(
       continue;
     }
     const domain = normalizeDomain(email.slice(at + 1));
-    if (!domain || !isAllowedBusinessEmailDomain(domain)) {
+    if (!domain || !isAllowedBusinessEmailDomain(domain, options)) {
       continue;
     }
     const pattern = structuralPatternForLocalPart(localPart);
@@ -349,15 +358,16 @@ export function inferPatternFromExampleEmails(
 
 export function parsePublicEmailFormatEvidence(
   input: string,
-  options: { sourceUrl?: string | null } = {}
+  options: { sourceUrl?: string | null; officialWebsiteDomain?: string | null } = {}
 ): EmailEvidenceBundle & { rows: ParsedFormatRow[] } {
   const text = htmlToVisibleText(input);
-  let rows = makeRowsFromMatches(text, options.sourceUrl ?? null);
+  let rows = makeRowsFromMatches(text, options.sourceUrl ?? null, options.officialWebsiteDomain);
   // Fallback: when a page has no explicit bracket-style format table, infer the
   // format from consistent public work-email examples (visible text + mailto:).
   if (rows.length === 0) {
     const inferred = inferPatternFromExampleEmails(extractCandidateEmails(input), {
-      sourceUrl: options.sourceUrl ?? null
+      sourceUrl: options.sourceUrl ?? null,
+      officialWebsiteDomain: options.officialWebsiteDomain
     });
     if (inferred) {
       rows = [inferred];
@@ -423,31 +433,53 @@ function isBlockedAddress(address: string): boolean {
   return true;
 }
 
+type PublicSourceFailureStatus = Extract<
+  EmailFormatDiscoveryStatus,
+  "INVALID_SOURCE_URL" | "BLOCKED_SOURCE_URL" | "SOURCE_FETCH_ERROR" | "SOURCE_PARSER_ERROR"
+>;
+
+export class PublicSourceError extends Error {
+  constructor(readonly status: PublicSourceFailureStatus, message: string) {
+    super(message);
+    this.name = "PublicSourceError";
+  }
+}
+
 async function assertPublicUrl(url: URL): Promise<void> {
   if (url.protocol !== "https:" && url.protocol !== "http:") {
-    throw new Error("Only http and https evidence URLs are allowed.");
+    throw new PublicSourceError("INVALID_SOURCE_URL", "Enter a valid public http or https source URL.");
   }
   if (url.username || url.password) {
-    throw new Error("Evidence URLs must not include credentials.");
+    throw new PublicSourceError("INVALID_SOURCE_URL", "Evidence URLs must not include credentials.");
   }
-  const hostname = url.hostname.toLowerCase();
+  const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
   if (hostname === "localhost" || hostname.endsWith(".localhost")) {
-    throw new Error("Localhost evidence URLs are blocked.");
+    throw new PublicSourceError("BLOCKED_SOURCE_URL", "Localhost and private source URLs are blocked.");
   }
   if (net.isIP(hostname)) {
     if (isBlockedAddress(hostname)) {
-      throw new Error("Private evidence URLs are blocked.");
+      throw new PublicSourceError("BLOCKED_SOURCE_URL", "Localhost and private source URLs are blocked.");
     }
     return;
   }
-  const addresses = await lookup(hostname, { all: true, verbatim: true });
+  let addresses: Array<{ address: string; family: number }>;
+  try {
+    addresses = await lookup(hostname, { all: true, verbatim: true });
+  } catch {
+    throw new PublicSourceError("SOURCE_FETCH_ERROR", "The public source host could not be resolved.");
+  }
   if (addresses.length === 0 || addresses.some((address) => isBlockedAddress(address.address))) {
-    throw new Error("Private evidence URLs are blocked.");
+    throw new PublicSourceError("BLOCKED_SOURCE_URL", "Localhost and private source URLs are blocked.");
   }
 }
 
 export async function safeFetchPublicText(url: string, redirects = 0): Promise<string> {
-  const parsed = new URL(url);
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new PublicSourceError("INVALID_SOURCE_URL", "Enter a valid public http or https source URL.");
+  }
   await assertPublicUrl(parsed);
 
   const controller = new AbortController();
@@ -466,33 +498,38 @@ export async function safeFetchPublicText(url: string, redirects = 0): Promise<s
 
     if (response.status >= 300 && response.status < 400) {
       if (redirects >= MAX_REDIRECTS) {
-        throw new Error("Evidence URL redirected too many times.");
+        throw new PublicSourceError("SOURCE_FETCH_ERROR", "The evidence URL redirected too many times.");
       }
       const location = response.headers.get("location");
       if (!location) {
-        throw new Error("Evidence URL redirect did not include a location.");
+        throw new PublicSourceError("SOURCE_FETCH_ERROR", "The evidence URL redirect was invalid.");
       }
       return safeFetchPublicText(new URL(location, parsed).toString(), redirects + 1);
     }
 
     if (!response.ok) {
-      throw new Error(`Evidence URL returned HTTP ${response.status}.`);
+      throw new PublicSourceError("SOURCE_FETCH_ERROR", `Evidence URL returned HTTP ${response.status}.`);
     }
 
     const contentType = response.headers.get("content-type") ?? "";
     if (contentType && !/text\/html|text\/plain|application\/xhtml\+xml/i.test(contentType)) {
-      throw new Error("Evidence URL did not return text or HTML.");
+      throw new PublicSourceError("SOURCE_FETCH_ERROR", "Evidence URL did not return text or HTML.");
     }
     const contentLength = Number.parseInt(response.headers.get("content-length") ?? "0", 10);
     if (Number.isFinite(contentLength) && contentLength > MAX_PUBLIC_PAGE_BYTES) {
-      throw new Error("Evidence URL response was too large.");
+      throw new PublicSourceError("SOURCE_FETCH_ERROR", "Evidence URL response was too large.");
     }
 
     const bytes = await response.arrayBuffer();
     if (bytes.byteLength > MAX_PUBLIC_PAGE_BYTES) {
-      throw new Error("Evidence URL response was too large.");
+      throw new PublicSourceError("SOURCE_FETCH_ERROR", "Evidence URL response was too large.");
     }
     return new TextDecoder().decode(bytes);
+  } catch (error) {
+    if (error instanceof PublicSourceError) {
+      throw error;
+    }
+    throw new PublicSourceError("SOURCE_FETCH_ERROR", "The public email-format source could not be retrieved.");
   } finally {
     clearTimeout(timeout);
   }
@@ -519,11 +556,11 @@ function candidateUrls(results: SearchResult[]): string[] {
   return unique(scored.map((item) => item.url)).slice(0, 5);
 }
 
-function snippetEvidence(result: SearchResult): EmailEvidenceBundle {
+function snippetEvidence(result: SearchResult, officialWebsiteDomain?: string | null): EmailEvidenceBundle {
   if (!result.snippet) {
     return {};
   }
-  return parsePublicEmailFormatEvidence(result.snippet, { sourceUrl: result.url });
+  return parsePublicEmailFormatEvidence(result.snippet, { sourceUrl: result.url, officialWebsiteDomain });
 }
 
 class SerperSearchProvider implements EmailFormatSearchProvider {
@@ -612,15 +649,36 @@ export class EmailFormatDiscoveryService implements EmailEvidenceProvider {
     let providerFailed = false;
 
     if (input.sourceUrl) {
+      let text: string;
       try {
-        const text = await fetchPage(input.sourceUrl);
-        bundles.push(parsePublicEmailFormatEvidence(text, { sourceUrl: input.sourceUrl }));
+        text = await fetchPage(input.sourceUrl);
       } catch (error) {
         return {
-          discoveryStatus: error instanceof TypeError ? "NETWORK_ERROR" : "BAD_PROVIDER_RESPONSE",
-          discoveryReason: "The public email-format source could not be retrieved safely."
+          discoveryStatus: error instanceof PublicSourceError ? error.status : "SOURCE_FETCH_ERROR",
+          discoveryReason:
+            error instanceof PublicSourceError
+              ? error.message
+              : "The public email-format source could not be retrieved."
         };
       }
+      let parsed: EmailEvidenceBundle;
+      try {
+        parsed = parsePublicEmailFormatEvidence(text, {
+          sourceUrl: input.sourceUrl,
+          officialWebsiteDomain: input.officialWebsiteDomain
+        });
+      } catch {
+        return {
+          discoveryStatus: "SOURCE_PARSER_ERROR",
+          discoveryReason: "The public source was retrieved but could not be parsed safely."
+        };
+      }
+      const found = Boolean((parsed.domainEvidence?.length ?? 0) && (parsed.patternEvidence?.length ?? 0));
+      return {
+        ...parsed,
+        discoveryStatus: found ? "FOUND" : "NO_EVIDENCE",
+        discoveryReason: found ? null : "No public email-format evidence was found at the supplied source."
+      };
     }
 
     const provider = this.options.searchProvider ?? createConfiguredEmailFormatSearchProvider();
@@ -651,11 +709,14 @@ export class EmailFormatDiscoveryService implements EmailEvidenceProvider {
         providerFailed = true;
         continue;
       }
-      bundles.push(...results.map(snippetEvidence));
+      bundles.push(...results.map((result) => snippetEvidence(result, input.officialWebsiteDomain)));
       for (const url of candidateUrls(results)) {
         try {
           const text = await fetchPage(url);
-          bundles.push(parsePublicEmailFormatEvidence(text, { sourceUrl: url }));
+          bundles.push(parsePublicEmailFormatEvidence(text, {
+            sourceUrl: url,
+            officialWebsiteDomain: input.officialWebsiteDomain
+          }));
         } catch (error) {
           console.warn("[prospect-email-discovery] source fetch failed", sanitizeUrlForLog(url), error instanceof Error ? error.message : error);
           providerFailed = true;

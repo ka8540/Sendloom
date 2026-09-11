@@ -6,6 +6,8 @@ import {
   CompositeEmailEvidenceProvider,
   EmailDomainService,
   buildCompactEmailFormatAiPayload,
+  isAllowedBusinessEmailDomain,
+  makeManualEmailDomainEvidence,
   type EmailEvidenceProvider,
   inferPatternFromEmailSample
 } from "@/services/prospects/email-domain-service";
@@ -49,6 +51,27 @@ function evidenceProvider(): EmailEvidenceProvider {
     }
   };
 }
+
+describe("business email-domain policy", () => {
+  it("allows a platform domain only when it is the canonical company website", () => {
+    expect(isAllowedBusinessEmailDomain("linkedin.com", { officialWebsiteDomain: "linkedin.com" })).toBe(true);
+    expect(isAllowedBusinessEmailDomain("zoominfo.com", { officialWebsiteDomain: "zoominfo.com" })).toBe(true);
+    expect(isAllowedBusinessEmailDomain("linkedin.com", { officialWebsiteDomain: "apple.com" })).toBe(false);
+  });
+
+  it("continues to reject personal mailboxes even when supplied as the website", () => {
+    expect(isAllowedBusinessEmailDomain("gmail.com", { officialWebsiteDomain: "gmail.com" })).toBe(false);
+  });
+
+  it("builds manual evidence for a canonical platform company without a hardcoded exception", () => {
+    expect(makeManualEmailDomainEvidence({
+      emailDomain: "linkedin.com",
+      officialWebsiteDomain: "linkedin.com",
+      emailPattern: "flast",
+      confidence: "HIGH"
+    }).domainEvidence).toMatchObject({ emailDomain: "linkedin.com", sourceType: "manual_override" });
+  });
+});
 
 function conflictingEvidenceProvider(): EmailEvidenceProvider {
   return {

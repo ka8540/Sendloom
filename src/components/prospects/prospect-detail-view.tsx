@@ -40,6 +40,7 @@ import { CircularCloseButton } from "@/components/circular-close-button";
 import { SuggestionInput } from "@/components/prospects/suggestion-input";
 import { COMMON_LOCATION_LABELS, COMMON_ROLE_LABELS } from "@/services/prospects/discover-canonical-labels";
 import { titleCaseLabel } from "@/services/prospects/discover-suggestions";
+import { normalizeBusinessDomainInput } from "@/services/prospects/prospect-normalization";
 
 import {
   ADD_MORE_DISCOVER_PEOPLE_MUTATION,
@@ -1043,7 +1044,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
         SET_COMPANY_EMAIL_INFERENCE_OVERRIDE_MUTATION,
         {
           companyId: target.id,
-          emailDomain: manualEmailDomain.trim(),
+          emailDomain: normalizeBusinessDomainInput(manualEmailDomain) ?? manualEmailDomain.trim(),
           emailPattern: manualEmailPattern,
           confidence: manualConfidence,
           reason: "Manual correction from prospect dashboard"
@@ -2037,7 +2038,7 @@ function ConfidenceIndicator({ level }: { level: ConfidenceLevel }) {
 }
 
 function emailFormatDiscoveryMessage(company: CompanyDetail, hasEmailFormat: boolean): string {
-  if (hasEmailFormat || company.emailFormatDiscoveryStatus === "FOUND") {
+  if (company.emailFormatDiscoveryStatus === "FOUND") {
     return "Email format discovered successfully from public evidence. Generated addresses remain inferred.";
   }
   switch (company.emailFormatDiscoveryStatus) {
@@ -2051,12 +2052,22 @@ function emailFormatDiscoveryMessage(company: CompanyDetail, hasEmailFormat: boo
       return "The AI provider is temporarily rate-limited. Email-format discovery will be retried.";
     case "NETWORK_ERROR":
       return "The AI provider could not be reached. Email-format discovery will be retried.";
+    case "INVALID_SOURCE_URL":
+      return "Enter a valid public http or https source URL.";
+    case "BLOCKED_SOURCE_URL":
+      return "That source URL is blocked because it resolves to a local or private address.";
+    case "SOURCE_FETCH_ERROR":
+      return "The public source could not be retrieved. Check the URL and try again.";
+    case "SOURCE_PARSER_ERROR":
+      return "The public source was retrieved but could not be parsed safely.";
     case "BAD_PROVIDER_RESPONSE":
       return "The AI provider returned an unusable response. Email-format discovery will be retried.";
     case "PARSER_REJECTED_RESPONSE":
       return "The provider response could not be parsed safely. Email-format discovery will be retried.";
     default:
-      return "Email-format discovery has not completed yet.";
+      return hasEmailFormat
+        ? "Email format discovered successfully from public evidence. Generated addresses remain inferred."
+        : "Email-format discovery has not completed yet.";
   }
 }
 

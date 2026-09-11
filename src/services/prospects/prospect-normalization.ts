@@ -81,6 +81,61 @@ export function normalizeDomain(input: string | null | undefined): string | null
   return stripped;
 }
 
+/**
+ * Normalize a user-supplied business-domain field without treating a complete
+ * email address as a domain. `normalizeDomain` intentionally accepts email
+ * samples because provider ingestion uses it to extract their host; form and
+ * API inputs need the stricter boundary below.
+ */
+export function normalizeBusinessDomainInput(input: string | null | undefined): string | null {
+  if (!input) {
+    return null;
+  }
+
+  let value = stripDiacritics(input).trim().toLowerCase();
+  if (!value || /\s/.test(value)) {
+    return null;
+  }
+
+  // A leading @ is a harmless domain-field convention. Any other @ denotes a
+  // full address (or URL credentials), neither of which belongs in this field.
+  if (value.startsWith("@")) {
+    value = value.slice(1);
+  }
+  if (!value || value.includes("@")) {
+    return null;
+  }
+
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) {
+    let parsed: URL;
+    try {
+      parsed = new URL(value);
+    } catch {
+      return null;
+    }
+    if ((parsed.protocol !== "http:" && parsed.protocol !== "https:") || parsed.username || parsed.password || parsed.port) {
+      return null;
+    }
+    value = parsed.hostname;
+  } else {
+    // Preserve the existing convenience for `www.example.com`, while keeping
+    // paths/query fragments exclusive to real http(s) URLs.
+    if (/[/?#]/.test(value)) {
+      return null;
+    }
+  }
+
+  const normalized = normalizeDomain(value);
+  if (!normalized || normalized.length > 253) {
+    return null;
+  }
+  const labels = normalized.split(".");
+  if (labels.some((label) => !label || label.length > 63 || label.startsWith("-") || label.endsWith("-"))) {
+    return null;
+  }
+  return normalized;
+}
+
 export function isPersonalEmailDomain(domain: string | null | undefined): boolean {
   const normalized = normalizeDomain(domain);
   if (!normalized) {

@@ -256,6 +256,21 @@ describe("validateDiscoveryResult", () => {
     ).toThrow();
   });
 
+  it("accepts a platform domain only when it matches the canonical company website", () => {
+    const linkedIn = {
+      ...ESRI_RAW,
+      selectedEmailDomain: "linkedin.com",
+      supportingSources: [{
+        ...ESRI_RAW.supportingSources[0],
+        claimedDomain: "linkedin.com",
+        exampleEmail: "jdoe@linkedin.com"
+      }]
+    };
+    expect(validateDiscoveryResult(linkedIn, { officialWebsiteDomain: "linkedin.com" }).selectedEmailDomain)
+      .toBe("linkedin.com");
+    expect(() => validateDiscoveryResult(linkedIn, { officialWebsiteDomain: "apple.com" })).toThrow(/business domain/i);
+  });
+
   it("deduplicates canonical source claims and lowers confidence when sources conflict", () => {
     const result = validateDiscoveryResult({
       ...ESRI_RAW,

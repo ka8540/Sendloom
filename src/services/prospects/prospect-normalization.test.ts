@@ -5,6 +5,7 @@ import {
   isLinkedInProfileUrl,
   isPersonalEmailDomain,
   isValidCompanyDomain,
+  normalizeBusinessDomainInput,
   normalizeCompanyName,
   normalizeDomain,
   normalizeTitle,
@@ -32,6 +33,35 @@ describe("normalizeDomain", () => {
   it("returns null for non-domains", () => {
     expect(normalizeDomain("not a domain")).toBeNull();
     expect(normalizeDomain("")).toBeNull();
+  });
+});
+
+describe("normalizeBusinessDomainInput", () => {
+  it.each([
+    [" linkedin.com ", "linkedin.com"],
+    ["LINKEDIN.COM", "linkedin.com"],
+    ["@linkedin.com", "linkedin.com"],
+    ["https://linkedin.com", "linkedin.com"],
+    ["https://www.linkedin.com/", "linkedin.com"],
+    ["www.linkedin.com", "linkedin.com"]
+  ])("normalizes %s", (input, expected) => {
+    expect(normalizeBusinessDomainInput(input)).toBe(expected);
+  });
+
+  it.each([
+    "user@linkedin.com",
+    "linkedin",
+    "http://localhost",
+    "http://127.0.0.1",
+    "javascript:alert(1)",
+    "https://user:secret@linkedin.com",
+    "https://linkedin.com:invalid",
+    "linkedin.com/path",
+    "bad..com",
+    "-bad.com",
+    "bad-.com"
+  ])("rejects non-domain input %s", (input) => {
+    expect(normalizeBusinessDomainInput(input)).toBeNull();
   });
 });
 
