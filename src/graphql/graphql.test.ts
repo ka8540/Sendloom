@@ -519,6 +519,62 @@ describe("Company email inference API", () => {
     );
   });
 
+  it("passes the manual email-format input through the owner-scoped mutation", async () => {
+    const setCompanyEmailInferenceOverride = vi.fn(async () => ({
+      id: "comp_A",
+      userId: "user_A",
+      name: "LinkedIn",
+      normalizedName: "linkedin",
+      officialName: "LinkedIn",
+      officialDomain: "linkedin.com",
+      officialWebsiteDomain: "linkedin.com",
+      officialWebsite: "https://www.linkedin.com",
+      linkedinUrl: null,
+      domainConfidence: "HIGH",
+      emailDomain: "linkedin.com",
+      emailDomainConfidence: "HIGH",
+      emailDomainEvidence: [],
+      emailPattern: "flast",
+      patternConfidence: "HIGH",
+      patternEvidence: [],
+      createdAt: new Date(),
+      updatedAt: new Date()
+    }));
+
+    const result = await graphql({
+      schema: prospectSchema,
+      source: `mutation SetManual($domain: String!) {
+        setCompanyEmailInferenceOverride(
+          companyId: "comp_A"
+          emailDomain: $domain
+          emailPattern: "flast"
+          confidence: HIGH
+        ) { id emailDomain emailPattern }
+      }`,
+      variableValues: { domain: "linkedin.com" },
+      contextValue: makeContext({
+        user: FAKE_USER,
+        services: {
+          prospectSearch: {
+            setCompanyEmailInferenceOverride
+          } as unknown as GraphQLContext["services"]["prospectSearch"]
+        }
+      })
+    });
+
+    expect(result.errors).toBeUndefined();
+    expect(result.data?.setCompanyEmailInferenceOverride).toMatchObject({
+      emailDomain: "linkedin.com",
+      emailPattern: "flast"
+    });
+    expect(setCompanyEmailInferenceOverride).toHaveBeenCalledWith("user_A", expect.objectContaining({
+      companyId: "comp_A",
+      emailDomain: "linkedin.com",
+      emailPattern: "flast",
+      confidence: "HIGH"
+    }));
+  });
+
   it("returns a clear error when email-format search is not configured", async () => {
     const refreshCompanyEmailFormat = vi.fn(async () => {
       throw new ProspectError(

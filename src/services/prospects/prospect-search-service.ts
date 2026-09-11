@@ -59,9 +59,7 @@ import {
 } from "@/services/prospects/discover-role-intelligence-service";
 import {
   EmailDomainService,
-  type EmailDomainEvidence,
   type EmailFormatDiscoveryResult,
-  type EmailPatternEvidence,
   isAllowedBusinessEmailDomain,
   makeManualEmailDomainEvidence
 } from "@/services/prospects/email-domain-service";
@@ -78,7 +76,11 @@ import {
   validateCompanyRoleSearchInput
 } from "@/services/prospects/discover-company-role-search";
 import { validateDiscoverSearchLabels } from "@/services/prospects/discover-search-label-validation";
-import { normalizeDomain, normalizeTitle } from "@/services/prospects/prospect-normalization";
+import {
+  normalizeBusinessDomainInput,
+  normalizeDomain,
+  normalizeTitle
+} from "@/services/prospects/prospect-normalization";
 import { rateLimit } from "@/lib/rate-limit";
 import { runNotificationSideEffect } from "@/lib/notifications";
 import { RoleClassificationService } from "@/services/prospects/role-classification-service";
@@ -179,19 +181,6 @@ function cachedEmailFormatStateIsFresh(format: ResolvedDataset["emailFormat"], n
     return hasUsableCompanyEmailFormat(format);
   }
   return new Date(format.emailFormatDiscoveryExpiresAt).getTime() > now.getTime();
-}
-
-function hasFreshStoredEmailEvidence(company: ProspectCompany) {
-  if (!company.emailFormatDiscoveredAt) {
-    return false;
-  }
-  if (Date.now() - new Date(company.emailFormatDiscoveredAt).getTime() >= EMAIL_FORMAT_CACHE_TTL_MS) {
-    return false;
-  }
-  return (
-    (Array.isArray(company.emailDomainEvidence) && company.emailDomainEvidence.length > 0) ||
-    (Array.isArray(company.patternEvidence) && company.patternEvidence.length > 0)
-  );
 }
 
 export type EmailFormatRateLimit = { allowed: boolean; retryAfterSeconds: number };
@@ -1715,10 +1704,8 @@ export class ProspectSearchService {
         );
       }
 
-      const reuseStoredEvidence = Boolean(options.force && hasFreshStoredEmailEvidence(company));
       return this.inferAndApplyEmailFormat(userId, company, {
-        sourceUrl: null,
-        reuseStoredEvidence
+        sourceUrl: null
       });
     })();
     EMAIL_FORMAT_REFRESH_IN_FLIGHT.set(refreshKey, refresh);
@@ -1739,7 +1726,7 @@ export class ProspectSearchService {
   private async inferAndApplyEmailFormat(
     userId: string,
     company: ProspectCompany,
-    opts: { sourceUrl?: string | null; reuseStoredEvidence?: boolean }
+    opts: { sourceUrl?: string | null }
   ): Promise<ProspectCompany> {
     const budget = createAiBudget();
 
@@ -1750,23 +1737,12 @@ export class ProspectSearchService {
       officialWebsiteDomain: company.officialWebsiteDomain ?? company.officialDomain,
       knownLinkedinUrl: company.linkedinUrl,
       sourceUrl: opts.sourceUrl ?? null,
-      skipProvider: opts.reuseStoredEvidence,
-      forceAiResolution: opts.reuseStoredEvidence,
-      extraEvidence: opts.reuseStoredEvidence
-        ? {
-            domainEvidence: Array.isArray(company.emailDomainEvidence)
-              ? (company.emailDomainEvidence as unknown as EmailDomainEvidence[])
-              : [],
-            patternEvidence: Array.isArray(company.patternEvidence)
-              ? (company.patternEvidence as unknown as EmailPatternEvidence[])
-              : []
-          }
-        : undefined,
       budget,
       searchId: null
     });
 
     const candidate: CompanyEmailFormatRecord = {
+      officialWebsiteDomain: company.officialWebsiteDomain ?? company.officialDomain,
       emailDomain: inference.selectedEmailDomain,
       emailDomainConfidence: inference.emailDomainConfidence,
       emailDomainEvidence: inference.emailDomainEvidence,
@@ -1812,10 +1788,11 @@ export class ProspectSearchService {
       reason?: string | null;
     }
   ): Promise<ProspectCompany> {
-    await this.requireOwnedCompany(userId, input.companyId);
+    const company = await this.requireOwnedCompany(userId, input.companyId);
 
-    const emailDomain = normalizeDomain(input.emailDomain);
-    if (!emailDomain || !isAllowedBusinessEmailDomain(emailDomain)) {
+    const officialWebsiteDomain = company.officialWebsiteDomain ?? company.officialDomain;
+    const emailDomain = normalizeBusinessDomainInput(input.emailDomain);
+    if (!emailDomain || !isAllowedBusinessEmailDomain(emailDomain, { officialWebsiteDomain })) {
       throw new ProspectError("INVALID_STATE", "Enter a valid business email domain.");
     }
     if (!isEmailPattern(input.emailPattern)) {
@@ -1827,6 +1804,7 @@ export class ProspectSearchService {
 
     const manualEvidence = makeManualEmailDomainEvidence({
       emailDomain,
+      officialWebsiteDomain,
       emailPattern: input.emailPattern,
       confidence: input.confidence,
       reason: input.reason
@@ -1836,6 +1814,7 @@ export class ProspectSearchService {
       userId,
       input.companyId,
       {
+        officialWebsiteDomain,
         emailDomain,
         emailDomainConfidence: input.confidence,
         emailDomainEvidence: [manualEvidence.domainEvidence],
@@ -1903,7 +1882,11 @@ export class ProspectSearchService {
             }
             const resolved = resolveCompanyEmailFormatUpdate(
               strongest,
-              { ...candidate, emailFormatAuthority: authority },
+              {
+                ...candidate,
+                officialWebsiteDomain: target.officialWebsiteDomain ?? target.officialDomain,
+                emailFormatAuthority: authority
+              },
               authority
             );
             // Freshness invariant: a failed/empty discovery must NEVER look like a

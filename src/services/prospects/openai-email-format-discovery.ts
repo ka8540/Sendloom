@@ -359,7 +359,10 @@ function rowConfidence(
  * absent from evidence are rejected so the caller can retry once, then fall
  * back safely.
  */
-export function validateDiscoveryResult(raw: unknown): ValidatedEmailFormatDiscoveryPayload {
+export function validateDiscoveryResult(
+  raw: unknown,
+  options: { officialWebsiteDomain?: string | null } = {}
+): ValidatedEmailFormatDiscoveryPayload {
   const parsed = discoveryResultSchema.parse(normalizeDiscoveryPayload(raw));
   const seen = new Set<string>();
   const supportingSources = parsed.supportingSources.flatMap((source) => {
@@ -367,7 +370,7 @@ export function validateDiscoveryResult(raw: unknown): ValidatedEmailFormatDisco
     const exampleDomain = emailDomainOf(exampleEmail);
     const claimedDomain = normalizeDomain(source.claimedDomain);
     const domain = exampleDomain ?? claimedDomain;
-    if (domain && !isAllowedBusinessEmailDomain(domain)) {
+    if (domain && !isAllowedBusinessEmailDomain(domain, options)) {
       return [];
     }
 
@@ -391,7 +394,7 @@ export function validateDiscoveryResult(raw: unknown): ValidatedEmailFormatDisco
   });
 
   const selectedEmailDomain = normalizeDomain(parsed.selectedEmailDomain);
-  if (selectedEmailDomain && !isAllowedBusinessEmailDomain(selectedEmailDomain)) {
+  if (selectedEmailDomain && !isAllowedBusinessEmailDomain(selectedEmailDomain, options)) {
     throw new Error("The selected email domain is not a business domain.");
   }
   if (
@@ -797,7 +800,9 @@ export class OpenAIEmailFormatDiscoveryService implements EmailEvidenceProvider 
           outputTokens += usage.outputTokens;
         }
         try {
-          result = validateDiscoveryResult(raw);
+          result = validateDiscoveryResult(raw, {
+            officialWebsiteDomain: input.officialWebsiteDomain
+          });
           break;
         } catch (error) {
           lastError = error;

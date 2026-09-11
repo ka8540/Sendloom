@@ -67,6 +67,10 @@ export type EmailFormatDiscoveryStatus =
   | "AUTH_ERROR"
   | "RATE_LIMITED"
   | "NETWORK_ERROR"
+  | "INVALID_SOURCE_URL"
+  | "BLOCKED_SOURCE_URL"
+  | "SOURCE_FETCH_ERROR"
+  | "SOURCE_PARSER_ERROR"
   | "BAD_PROVIDER_RESPONSE"
   | "PARSER_REJECTED_RESPONSE";
 export type ProspectSelectionMode = "EXPLICIT" | "ALL_MATCHING";

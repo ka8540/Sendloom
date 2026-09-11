@@ -71,6 +71,10 @@ export const EMAIL_FORMAT_DISCOVERY_STATUSES = [
   "AUTH_ERROR",
   "RATE_LIMITED",
   "NETWORK_ERROR",
+  "INVALID_SOURCE_URL",
+  "BLOCKED_SOURCE_URL",
+  "SOURCE_FETCH_ERROR",
+  "SOURCE_PARSER_ERROR",
   "BAD_PROVIDER_RESPONSE",
   "PARSER_REJECTED_RESPONSE"
 ] as const;
@@ -261,9 +265,16 @@ function mergeEvidenceBundles(bundles: EmailEvidenceBundle[]): EmailEvidenceBund
   };
 }
 
-function evidenceBundleHasDeterministicSelection(bundle: EmailEvidenceBundle): boolean {
-  const domainEvidence = dedupeDomainEvidence(normalizeDomainEvidence(bundle.domainEvidence ?? []));
-  const patternEvidence = dedupePatternEvidence(normalizePatternEvidence(bundle.patternEvidence ?? []));
+function evidenceBundleHasDeterministicSelection(
+  bundle: EmailEvidenceBundle,
+  officialWebsiteDomain: string | null | undefined
+): boolean {
+  const domainEvidence = dedupeDomainEvidence(
+    normalizeDomainEvidence(bundle.domainEvidence ?? [], officialWebsiteDomain)
+  );
+  const patternEvidence = dedupePatternEvidence(
+    normalizePatternEvidence(bundle.patternEvidence ?? [], officialWebsiteDomain)
+  );
   const result = deterministicSelection(domainEvidence, patternEvidence, {
     companyName: "evidence-check",
     websiteDomain: null
@@ -307,7 +318,7 @@ export class CompositeEmailEvidenceProvider implements EmailEvidenceProvider {
       });
       bundles.push(bundle);
       const combined = mergeEvidenceBundles(bundles);
-      if (evidenceBundleHasDeterministicSelection(combined)) {
+      if (evidenceBundleHasDeterministicSelection(combined, input.officialWebsiteDomain)) {
         return { ...combined, discoveryStatus: "FOUND", discoveryReason: null };
       }
     }
@@ -315,7 +326,10 @@ export class CompositeEmailEvidenceProvider implements EmailEvidenceProvider {
   }
 }
 
-function isBlockedEmailDomain(domain: string | null | undefined): boolean {
+function isBlockedEmailDomain(
+  domain: string | null | undefined,
+  officialWebsiteDomain?: string | null
+): boolean {
   const normalized = normalizeDomain(domain);
   if (!normalized) {
     return true;
@@ -323,7 +337,14 @@ function isBlockedEmailDomain(domain: string | null | undefined): boolean {
   if (isPersonalEmailDomain(normalized)) {
     return true;
   }
-  return BLOCKED_EMAIL_DOMAINS.has(normalized);
+  if (!BLOCKED_EMAIL_DOMAINS.has(normalized)) {
+    return false;
+  }
+
+  // Platform/aggregator domains remain untrusted for unrelated companies, but
+  // the platform's own canonical website is valid company identity. This is a
+  // semantic relationship check, not a company-name/domain exception.
+  return normalizeDomain(officialWebsiteDomain) !== normalized;
 }
 
 function normalizeConfidence(value: unknown): ConfidenceLevel {
@@ -432,11 +453,14 @@ function splitName(name: unknown): { firstName: string; lastName: string } {
   };
 }
 
-function normalizeDomainEvidence(evidence: EmailDomainEvidence[]): EmailDomainEvidence[] {
+function normalizeDomainEvidence(
+  evidence: EmailDomainEvidence[],
+  officialWebsiteDomain?: string | null
+): EmailDomainEvidence[] {
   return evidence
     .map((row): EmailDomainEvidence | null => {
       const emailDomain = normalizeDomain(row.emailDomain);
-      if (!emailDomain || isBlockedEmailDomain(emailDomain)) {
+      if (!emailDomain || isBlockedEmailDomain(emailDomain, officialWebsiteDomain)) {
         return null;
       }
       const observedPattern = isEmailPattern(row.observedPattern) ? row.observedPattern : null;
@@ -454,14 +478,17 @@ function normalizeDomainEvidence(evidence: EmailDomainEvidence[]): EmailDomainEv
     .filter((row): row is EmailDomainEvidence => Boolean(row));
 }
 
-function normalizePatternEvidence(evidence: EmailPatternEvidence[]): EmailPatternEvidence[] {
+function normalizePatternEvidence(
+  evidence: EmailPatternEvidence[],
+  officialWebsiteDomain?: string | null
+): EmailPatternEvidence[] {
   return evidence
     .map((row): EmailPatternEvidence | null => {
       if (!isEmailPattern(row.pattern)) {
         return null;
       }
       const emailDomain = normalizeDomain(row.emailDomain);
-      if (emailDomain && isBlockedEmailDomain(emailDomain)) {
+      if (emailDomain && isBlockedEmailDomain(emailDomain, officialWebsiteDomain)) {
         return null;
       }
       return {
@@ -914,21 +941,26 @@ export class EmailDomainService {
           targetRoles: input.targetRoles ?? [],
           budget: input.budget
         });
-    const hunterEvidence = await this.collectHunterEvidence(input.userId, officialWebsiteDomain);
+    // A pasted source URL is an explicit deterministic request. Do not let
+    // unrelated stored Hunter rows turn a failed/empty source parse into an
+    // apparent success or change what the user asked us to evaluate.
+    const hunterEvidence: EmailEvidenceBundle = input.sourceUrl
+      ? {}
+      : await this.collectHunterEvidence(input.userId, officialWebsiteDomain);
 
     const domainEvidence = dedupeDomainEvidence(
       normalizeDomainEvidence([
         ...(providerEvidence.domainEvidence ?? []),
         ...(hunterEvidence.domainEvidence ?? []),
         ...(input.extraEvidence?.domainEvidence ?? [])
-      ])
+      ], officialWebsiteDomain)
     );
     const patternEvidence = dedupePatternEvidence(
       normalizePatternEvidence([
         ...(providerEvidence.patternEvidence ?? []),
         ...(hunterEvidence.patternEvidence ?? []),
         ...(input.extraEvidence?.patternEvidence ?? [])
-      ])
+      ], officialWebsiteDomain)
     );
 
     const deterministic = deterministicSelection(domainEvidence, patternEvidence, {
@@ -996,7 +1028,11 @@ export class EmailDomainService {
           const candidate = aiEmailInferenceSchema.parse(raw);
           const candidateDomain = normalizeDomain(candidate.selectedEmailDomain);
           const candidatePattern = isEmailPattern(candidate.selectedPattern) ? candidate.selectedPattern : null;
-          if (!candidateDomain || isBlockedEmailDomain(candidateDomain) || !domainAppearsInEvidence(candidateDomain, ranked)) {
+          if (
+            !candidateDomain ||
+            isBlockedEmailDomain(candidateDomain, officialWebsiteDomain) ||
+            !domainAppearsInEvidence(candidateDomain, ranked)
+          ) {
             throw new Error("The selected email domain is absent from the supplied evidence.");
           }
           if (!candidatePattern || !patternAppearsInEvidence(candidatePattern, ranked)) {
@@ -1133,7 +1169,7 @@ export class EmailDomainService {
       for (const result of results) {
         const email = typeof result.email === "string" ? result.email.trim().toLowerCase() : "";
         const emailDomain = normalizeDomain(email);
-        if (!email || !emailDomain || isBlockedEmailDomain(emailDomain)) {
+        if (!email || !emailDomain || isBlockedEmailDomain(emailDomain, officialWebsiteDomain)) {
           continue;
         }
         const name = splitName(result.name);
@@ -1199,19 +1235,23 @@ export class EmailDomainService {
   }
 }
 
-export function isAllowedBusinessEmailDomain(domain: string | null | undefined): boolean {
+export function isAllowedBusinessEmailDomain(
+  domain: string | null | undefined,
+  options: { officialWebsiteDomain?: string | null } = {}
+): boolean {
   const normalized = normalizeDomain(domain);
-  return Boolean(normalized && !isBlockedEmailDomain(normalized));
+  return Boolean(normalized && !isBlockedEmailDomain(normalized, options.officialWebsiteDomain));
 }
 
 export function makeManualEmailDomainEvidence(input: {
   emailDomain: string;
+  officialWebsiteDomain?: string | null;
   emailPattern: EmailPattern;
   confidence: ConfidenceLevel;
   reason?: string | null;
 }): { domainEvidence: EmailDomainEvidence; patternEvidence: EmailPatternEvidence } {
   const emailDomain = normalizeDomain(input.emailDomain);
-  if (!emailDomain || isBlockedEmailDomain(emailDomain)) {
+  if (!emailDomain || isBlockedEmailDomain(emailDomain, input.officialWebsiteDomain)) {
     throw new Error("Enter a valid business email domain.");
   }
   if (!isEmailPattern(input.emailPattern)) {

@@ -815,6 +815,7 @@ function buildDiscoverService(
   options: {
     caller?: EmailFormatWebSearchCaller | null;
     rateLimiter?: (userId: string) => Promise<{ allowed: boolean; retryAfterSeconds: number }>;
+    discoverQuota?: DiscoverQuotaReserver;
     aiResponse?: unknown;
   } = {}
 ) {
@@ -832,7 +833,8 @@ function buildDiscoverService(
     companyResolution: new CompanyResolutionService(ai.client),
     roleClassifier: new RoleClassificationService(prismaState as unknown as PrismaClient, ai.client),
     emailDomain: new EmailDomainService(prismaState as unknown as PrismaClient, ai.client, evidence),
-    emailFormatRateLimiter: options.rateLimiter ?? (async () => ({ allowed: true, retryAfterSeconds: 0 }))
+    emailFormatRateLimiter: options.rateLimiter ?? (async () => ({ allowed: true, retryAfterSeconds: 0 })),
+    discoverQuota: options.discoverQuota
   });
   return { service, ai };
 }
@@ -887,6 +889,67 @@ function seedPerson(prismaState: FakePrisma, companyId: string, id: string, firs
 describe("ProspectSearchService AI email-format discovery", () => {
   beforeEach(() => {
     prisma = createFakePrisma();
+  });
+
+  it("accepts LinkedIn's canonical domain as a manual override and regenerates inferred emails", async () => {
+    const company = seedDiscoverCompany(prisma, {
+      id: "company_linkedin",
+      name: "LinkedIn",
+      normalizedName: "linkedin",
+      officialName: "LinkedIn",
+      officialDomain: "linkedin.com",
+      officialWebsiteDomain: "linkedin.com"
+    });
+    seedPerson(prisma, company.id, "p1", "Jane", "Doe");
+    const { service } = buildDiscoverService(prisma);
+
+    await service.setCompanyEmailInferenceOverride(USER_ID, {
+      companyId: company.id,
+      emailDomain: " HTTPS://WWW.LINKEDIN.COM/ ",
+      emailPattern: "flast",
+      confidence: "HIGH"
+    });
+
+    expect(prisma._state.companies[0]).toMatchObject({
+      emailDomain: "linkedin.com",
+      emailPattern: "flast",
+      emailFormatAuthority: "MANUAL",
+      emailFormatDiscoveryStatus: "FOUND"
+    });
+    expect(prisma._state.companies[0].emailDomainEvidence[0]).toMatchObject({
+      emailDomain: "linkedin.com",
+      sourceType: "manual_override"
+    });
+    expect(prisma._state.people[0]).toMatchObject({
+      inferredEmail: "jdoe@linkedin.com",
+      emailStatus: "INFERRED_HIGH"
+    });
+    expect(prisma._state.people[0].emailStatus).not.toBe("VERIFIED");
+  });
+
+  it("rejects a platform domain for an unrelated company and still rejects free mailboxes", async () => {
+    const company = seedDiscoverCompany(prisma, {
+      id: "company_apple",
+      name: "Apple",
+      normalizedName: "apple",
+      officialName: "Apple",
+      officialDomain: "apple.com",
+      officialWebsiteDomain: "apple.com"
+    });
+    const { service } = buildDiscoverService(prisma);
+
+    await expect(service.setCompanyEmailInferenceOverride(USER_ID, {
+      companyId: company.id,
+      emailDomain: "linkedin.com",
+      emailPattern: "flast",
+      confidence: "HIGH"
+    })).rejects.toThrow(/valid business email domain/i);
+    await expect(service.setCompanyEmailInferenceOverride(USER_ID, {
+      companyId: company.id,
+      emailDomain: "gmail.com",
+      emailPattern: "flast",
+      confidence: "HIGH"
+    })).rejects.toThrow(/valid business email domain/i);
   });
 
   it("discovers Applied Materials' amat.com / first_last with AI web search and regenerates inferred emails (#7, #14, #15)", async () => {
@@ -975,7 +1038,7 @@ describe("ProspectSearchService AI email-format discovery", () => {
     expect(caller.search).toHaveBeenCalledTimes(1);
   });
 
-  it("explicit refresh reuses fresh structured evidence and calls the resolver once", async () => {
+  it("explicit refresh performs a new web search instead of reusing stored evidence", async () => {
     const observedAt = new Date().toISOString();
     const company = seedDiscoverCompany(prisma, {
       emailDomain: "amat.com",
@@ -1021,9 +1084,8 @@ describe("ProspectSearchService AI email-format discovery", () => {
     });
 
     await service.discoverCompanyEmailFormat(USER_ID, company.id, { force: true });
-    expect(caller.search).not.toHaveBeenCalled();
-    expect(ai.callsOfType("email_pattern")).toHaveLength(1);
-    expect(ai.callsOfType("email_pattern")[0]?.maxOutputTokens).toBeLessThanOrEqual(400);
+    expect(caller.search).toHaveBeenCalledTimes(1);
+    expect(ai.callsOfType("email_pattern")).toHaveLength(0);
   });
 
   it("coalesces simultaneous discovery requests into one AI web search", async () => {
@@ -1036,6 +1098,18 @@ describe("ProspectSearchService AI email-format discovery", () => {
       service.discoverCompanyEmailFormat(USER_ID, company.id)
     ]);
     expect(caller.search).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not consume a Discover people-search quota slot during an explicit refresh", async () => {
+    const company = seedDiscoverCompany(prisma);
+    const discoverQuota = vi.fn<DiscoverQuotaReserver>(allowAllQuota);
+    const { service } = buildDiscoverService(prisma, {
+      caller: discoveryCaller(APPLIED_MATERIALS_RAW),
+      discoverQuota
+    });
+
+    await service.discoverCompanyEmailFormat(USER_ID, company.id, { force: true });
+    expect(discoverQuota).not.toHaveBeenCalled();
   });
 
   it("rate limits repeated AI discovery and never calls the model when blocked (#11)", async () => {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { getCanonicalCompanyKey } from "@/services/prospects/canonical-company";
 import {
+  hasUsableCompanyEmailFormat,
   resolveCompanyEmailFormatUpdate,
   type CompanyEmailFormatRecord
 } from "@/services/prospects/company-email-format";
@@ -39,6 +40,17 @@ describe("canonical company identity", () => {
 });
 
 describe("canonical company email-format precedence", () => {
+  it("treats a platform company's own website domain as usable without weakening unrelated checks", () => {
+    expect(hasUsableCompanyEmailFormat(format({
+      officialWebsiteDomain: "linkedin.com",
+      emailDomain: "linkedin.com"
+    }))).toBe(true);
+    expect(hasUsableCompanyEmailFormat(format({
+      officialWebsiteDomain: "apple.com",
+      emailDomain: "linkedin.com"
+    }))).toBe(false);
+  });
+
   it("does not let an unavailable role-search snapshot erase a valid format", () => {
     const current = format();
     const unavailable = format({

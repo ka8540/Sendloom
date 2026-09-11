@@ -217,10 +217,20 @@ describe("detail view uses one controlled mode (no independent booleans)", () =>
     expect(DETAIL_SOURCE).toContain("Could not apply the manual email format.");
   });
 
+  it("keeps source URL failures distinct even when an older format exists", () => {
+    expect(DETAIL_SOURCE).toContain('case "INVALID_SOURCE_URL"');
+    expect(DETAIL_SOURCE).toContain('case "BLOCKED_SOURCE_URL"');
+    expect(DETAIL_SOURCE).toContain('case "SOURCE_FETCH_ERROR"');
+    expect(DETAIL_SOURCE).toContain('case "SOURCE_PARSER_ERROR"');
+    expect(DETAIL_SOURCE.indexOf('company.emailFormatDiscoveryStatus === "FOUND"'))
+      .toBeLessThan(DETAIL_SOURCE.indexOf('case "NO_EVIDENCE"'));
+  });
+
   it("still calls the existing backend mutations for each action", () => {
     expect(DETAIL_SOURCE).toContain("REFRESH_COMPANY_EMAIL_FORMAT_MUTATION");
     expect(DETAIL_SOURCE).toContain("DISCOVER_COMPANY_EMAIL_FORMAT_MUTATION");
     expect(DETAIL_SOURCE).toContain("SET_COMPANY_EMAIL_INFERENCE_OVERRIDE_MUTATION");
+    expect(DETAIL_SOURCE).toContain("normalizeBusinessDomainInput(manualEmailDomain)");
   });
 });
 

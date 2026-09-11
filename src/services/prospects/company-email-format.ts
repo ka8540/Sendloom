@@ -11,6 +11,8 @@ import { normalizeDomain } from "@/services/prospects/prospect-normalization";
 export type CompanyEmailFormatAuthority = "MANUAL" | "SOURCE" | "AI" | "SHARED_CACHE";
 
 export type CompanyEmailFormatRecord = {
+  officialWebsiteDomain?: string | null;
+  officialDomain?: string | null;
   emailDomain: string | null;
   emailDomainConfidence: string;
   emailDomainEvidence: unknown;
@@ -76,9 +78,10 @@ export function inferCompanyEmailFormatAuthority(format: CompanyEmailFormatRecor
 
 export function hasUsableCompanyEmailFormat(format: CompanyEmailFormatRecord): boolean {
   const domain = normalizeDomain(format.emailDomain);
+  const officialWebsiteDomain = format.officialWebsiteDomain ?? format.officialDomain;
   return Boolean(
     domain &&
-      isAllowedBusinessEmailDomain(domain) &&
+      isAllowedBusinessEmailDomain(domain, { officialWebsiteDomain }) &&
       isEmailPattern(format.emailPattern) &&
       combinedEmailConfidence(format.emailDomainConfidence, format.patternConfidence) !== "UNAVAILABLE"
   );
