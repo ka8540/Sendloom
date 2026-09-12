@@ -239,7 +239,7 @@ export type ProspectSearchServiceDeps = {
   emailFormatRateLimiter?: EmailFormatRateLimiter;
   /** Injectable for tests; defaults to the Redis-backed atomic daily quota. */
   discoverQuota?: DiscoverQuotaReserver;
-  /** Injectable for tests; defaults to the shared 30-day result cache. */
+  /** Injectable for tests; defaults to the durable shared people store. */
   discoverCache?: DiscoverCachePort;
   /** Audit sink; defaults to a no-op (production wires recordAuditEvent). */
   audit?: ProspectAuditFn;
@@ -404,7 +404,7 @@ export class ProspectSearchService {
    * the caller can surface a structured failure (status + errorCode).
    *
    * The daily Discover quota is reserved atomically AFTER ownership/state
-   * validation and BEFORE the paid pipeline starts. Reservation is idempotent
+   * validation and BEFORE the database lookup starts. Reservation is idempotent
    * per search id, so retrying the same search (double-click, network retry,
    * refresh, or re-processing a FAILED search) never consumes a second slot.
    */
@@ -453,7 +453,7 @@ export class ProspectSearchService {
       throw new ProspectError("INVALID_STATE", `A ${search.status} search cannot be processed.`);
     }
 
-    // Quota is reserved before the paid pipeline and is idempotent per search id:
+    // Quota is reserved before database lookup and is idempotent per search id:
     // retrying a FAILED search (or a network replay) never consumes a second slot.
     const reservation = await this.discoverQuota({
       userId,
@@ -708,7 +708,7 @@ export class ProspectSearchService {
     const company = await this.upsertCompany(userId, resolution);
     await this.prisma.prospectSearch.update({ where: { id: search.id }, data: { companyId: company.id } });
 
-    // 2) Build the canonical fingerprint for the shared 30-day result cache.
+    // 2) Build the canonical fingerprint for durable shared people knowledge.
     const { input: fingerprintInput, fingerprint } = computeDiscoverFingerprint({
       company: {
         linkedinCompanyUrl: resolution.linkedinCompanyUrl,
@@ -722,15 +722,14 @@ export class ProspectSearchService {
       cacheVersion: resolveSharedCacheVersion()
     });
 
-    // 3) Reuse a fresh shared dataset, or run Apify behind the stampede lock and
-    // refresh the shared cache. The provider closure performs Apify + role
-    // classification only; email-format discovery has a separate lifecycle.
+    // 3) Read durable database knowledge only. This boundary has no provider
+    // callback, so an ordinary search, retry, page load, or role selection can
+    // never turn a stale/missing people row into an Apify call. The only normal
+    // provider owner is the explicit Add More expansion service.
     const startedAt = Date.now();
-    let providerStarted = false;
-    const providerDiagnosticsRef: { current: ProviderFunnelDiagnostics | null } = { current: null };
     let cacheResult;
     try {
-      cacheResult = await this.discoverCache.getOrRefresh({
+      cacheResult = await this.discoverCache.lookupReusableDataset({
         fingerprint,
         fingerprintInput,
         company: {
@@ -754,24 +753,18 @@ export class ProspectSearchService {
             search,
             company,
             budget
-          }),
-        provider: async () => {
-          providerStarted = true;
-          const providerResult = await this.runProviderDataset(userId, search, company, resolution, budget);
-          providerDiagnosticsRef.current = providerResult.diagnostics;
-          return providerResult.dataset;
-        }
+          })
       });
     } catch (error) {
       logDiscoverCacheEvent({
-        event: "DISCOVER_CACHE_REFRESH_FAILED",
+        event: "DISCOVER_DATABASE_LOOKUP_FAILED",
         searchId: search.id,
         userId,
         fingerprint,
         cacheHit: false,
         cacheAgeDays: null,
         resultCount: 0,
-        providerCalled: providerStarted,
+        providerCalled: false,
         processingLatencyMs: Date.now() - startedAt,
         cacheHitType: null,
         candidateEntryCount: 0,
@@ -781,28 +774,12 @@ export class ProspectSearchService {
       throw error;
     }
 
-    const cacheHit = cacheResult.source === "CACHE";
+    const cacheHit = cacheResult.dataset.people.length > 0;
 
-    // 4) Zero-result guard. The provider run SUCCEEDED but found nobody (or
-    // every returned item was filtered out during normalization — the
-    // ingestion diagnostics above record exactly why). This is a neutral
-    // outcome, never a failure, and there is nothing to generate emails for,
-    // so the paid email-format stage (AI web search / public-evidence lookup)
-    // and materialization are skipped entirely. Provider run metadata
-    // (apifyRunId/apifyDatasetId/totalFound) was already persisted by
-    // runProviderDataset. The search stays retryable: the shared cache never
-    // reuses a zero-people entry, so re-processing re-runs the provider.
+    // 4) A database miss is a valid zero-result state. Do not top up to ten and
+    // do not run people or email-format providers. The user may explicitly use
+    // Add More to request new candidates.
     if (cacheResult.dataset.people.length === 0) {
-      const providerDiagnostics = providerDiagnosticsRef.current;
-      if (providerDiagnostics) {
-        logDiscoverProviderFunnelEvent({
-          searchId: search.id,
-          userId,
-          ...providerDiagnostics,
-          cachePeopleCount: 0,
-          allocatedPeopleCount: 0
-        });
-      }
       logDiscoverZeroResultEvent(search.id, userId);
       const updated = await this.prisma.prospectSearch.update({
         where: { id: search.id },
@@ -826,14 +803,14 @@ export class ProspectSearchService {
         cacheHit,
         cacheAgeDays: discoverCacheAgeDays(cacheResult.fetchedAt, startedAt),
         resultCount: 0,
-        providerCalled: !cacheHit,
+        providerCalled: false,
         processingLatencyMs: Date.now() - startedAt,
         cacheHitType: cacheResult.cacheHitType ?? (cacheHit ? "EXACT" : null),
         candidateEntryCount: cacheResult.lookupDiagnostics?.candidateEntryCount ?? 0,
         candidatePersonCount: cacheResult.lookupDiagnostics?.candidatePersonCount ?? 0,
         matchingPersonCount: cacheResult.lookupDiagnostics?.matchingPersonCount ?? 0
       });
-      return { search: updated, providerCalled: !cacheHit, resultCount: 0, cacheHit };
+      return { search: updated, providerCalled: false, resultCount: 0, cacheHit };
     }
 
     // 5) Resolve email format independently from the people cache. A cache hit
@@ -867,17 +844,6 @@ export class ProspectSearchService {
     const finalProcessed = Math.max(0, processed);
     const finalStatus = finalProcessed > 0 ? "READY" : "NO_RESULTS";
 
-    const providerDiagnostics = providerDiagnosticsRef.current;
-    if (providerDiagnostics) {
-      logDiscoverProviderFunnelEvent({
-        searchId: search.id,
-        userId,
-        ...providerDiagnostics,
-        cachePeopleCount: resolvedDataset.people.length,
-        allocatedPeopleCount: finalProcessed
-      });
-    }
-
     logDiscoverCacheEvent({
       event: discoverCacheEventName(cacheResult),
       searchId: search.id,
@@ -886,7 +852,7 @@ export class ProspectSearchService {
       cacheHit,
       cacheAgeDays: discoverCacheAgeDays(cacheResult.fetchedAt, startedAt),
       resultCount: finalProcessed,
-      providerCalled: !cacheHit,
+      providerCalled: false,
       processingLatencyMs: Date.now() - startedAt,
       cacheHitType: cacheResult.cacheHitType ?? (cacheHit ? "EXACT" : null),
       candidateEntryCount: cacheResult.lookupDiagnostics?.candidateEntryCount ?? 0,
@@ -922,7 +888,7 @@ export class ProspectSearchService {
         cacheFetchedAt: cacheResult.fetchedAt
       }
     });
-    return { search: updated, providerCalled: !cacheHit, resultCount: finalProcessed, cacheHit };
+    return { search: updated, providerCalled: false, resultCount: finalProcessed, cacheHit };
   }
 
   /**
@@ -2028,6 +1994,8 @@ type DiscoverCacheLogEvent = {
     | "DISCOVER_COMPANY_POOL_CACHE_HIT"
     | "DISCOVER_LOCAL_PERSON_REUSE"
     | "DISCOVER_CACHE_POOL_ZERO_MATCH"
+    | "DISCOVER_DATABASE_MISS"
+    | "DISCOVER_DATABASE_LOOKUP_FAILED"
     | "DISCOVER_CACHE_MISS"
     | "DISCOVER_CACHE_REFRESHED"
     | "DISCOVER_CACHE_REFRESH_FAILED";
@@ -2055,7 +2023,15 @@ function discoverCacheEventName(result: {
     if (result.cacheHitType === "LOCAL_PERSON") {
       return "DISCOVER_LOCAL_PERSON_REUSE";
     }
-    return result.cacheHitType === "COMPANY_POOL" ? "DISCOVER_COMPANY_POOL_CACHE_HIT" : "DISCOVER_CACHE_HIT";
+    if (result.cacheHitType === "COMPANY_POOL") {
+      return "DISCOVER_COMPANY_POOL_CACHE_HIT";
+    }
+    if (result.cacheHitType === "EXACT") {
+      return "DISCOVER_CACHE_HIT";
+    }
+    return (result.lookupDiagnostics?.candidateEntryCount ?? 0) > 0
+      ? "DISCOVER_CACHE_POOL_ZERO_MATCH"
+      : "DISCOVER_DATABASE_MISS";
   }
   if (result.refreshedStale) {
     return "DISCOVER_CACHE_REFRESHED";
@@ -2075,7 +2051,13 @@ function logDiscoverCacheEvent(event: DiscoverCacheLogEvent): void {
   if (process.env.NODE_ENV === "test") {
     return;
   }
-  console.info(`[discover-cache] ${JSON.stringify({ ...event, fingerprint: event.fingerprint.slice(0, 16) })}`);
+  console.info(
+    `[discover-cache] ${JSON.stringify({
+      ...event,
+      fingerprint: event.fingerprint.slice(0, 16),
+      explicitExpansion: false
+    })}`
+  );
 }
 
 type DiscoverProcessingLogEvent = {
@@ -2110,16 +2092,19 @@ function logDiscoverProcessingEvent(event: DiscoverProcessingLogEvent): void {
 
 /**
  * Explicit cost-control marker: the pipeline stopped before the email-format
- * stage because there is nobody to generate emails for. No AI/web-search
- * tokens are ever spent on a zero-result search. Silent in tests.
+ * stage because there is nobody in durable database knowledge to return. No
+ * people provider or email-format AI tokens are spent. Silent in tests.
  */
 function logDiscoverZeroResultEvent(searchId: string, userId: string): void {
   if (process.env.NODE_ENV === "test") {
     return;
   }
-  console.info(
-    `[discover] provider returned 0 people; skipping email format inference ${JSON.stringify({ searchId, userId })}`
-  );
+  console.info(`[discover] database lookup returned 0 people ${JSON.stringify({
+    searchId,
+    userId,
+    providerCalled: false,
+    explicitExpansion: false
+  })}`);
 }
 
 type DiscoverIngestionLogEvent = ApifyIngestionDiagnostics & {

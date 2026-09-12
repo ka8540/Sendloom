@@ -753,7 +753,13 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
   // tab (or explicitly chosen in the dialog). Never adds a batch to every role
   // search of the grouped company at once.
   const handleAddMore = useCallback(async (targetSearchId: string) => {
-    if (!search || search.status !== "READY" || !search.company || expanding || !targetSearchId) {
+    if (
+      !search ||
+      (search.status !== "READY" && search.status !== "NO_RESULTS") ||
+      !search.company ||
+      expanding ||
+      !targetSearchId
+    ) {
       return;
     }
     const idempotencyKey =
@@ -1500,8 +1506,8 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
         <StatusCard
           search={search}
           quota={quota}
-          processing={processing}
-          onProcess={handleProcess}
+          processing={selectedView === "no-results" ? expanding : processing}
+          onProcess={selectedView === "no-results" ? () => void handleAddMore(search.id) : handleProcess}
           onCancel={handleCancel}
         />
       )}
@@ -2570,7 +2576,9 @@ function StatusCard({
   const canceled = search.status === "CANCELED";
   const error = failed ? formatSearchError(search) : null;
   const perSearch = quota?.resultsPerSearch ?? 10;
-  const quotaBlocked = isProcessQuotaBlocked(quota, search.status);
+  const quotaBlocked = noResults
+    ? Boolean(quota && !quota.unlimited && quota.searchesRemaining <= 0)
+    : isProcessQuotaBlocked(quota, search.status);
   const resetLabel = formatQuotaReset(quota);
   const noResultsContext = [
     search.requestedTitles.length > 0

@@ -230,6 +230,10 @@ function seedExistingPeople(count: number) {
       linkedinUrl: `https://www.linkedin.com/in/init_${i}`,
       currentTitle: "Software Engineer",
       normalizedTitle: "software engineer",
+      location: "United States",
+      country: "United States",
+      state: null,
+      city: null,
       inferredEmail: `iuser${i}@apple.com`,
       emailStatus: "INFERRED_HIGH",
       emailConfidence: "HIGH",
@@ -581,6 +585,78 @@ beforeEach(() => {
 });
 
 describe("DiscoverExpansionService.addMorePeople", () => {
+  it("lets an explicit zero-result search start the provider at page 1", async () => {
+    seedCompany();
+    seedSearch({ status: "NO_RESULTS", totalProcessed: 0, totalFound: 0 });
+    const startPages: number[] = [];
+    const runner: ApifyRunner = {
+      run: vi.fn(async (_actorId, input) => {
+        startPages.push(input.startPage);
+        return {
+          runId: "explicit-run",
+          datasetId: "explicit-dataset",
+          items: Array.from({ length: 10 }, (_, index) =>
+            rawProfile(`explicit_${index + 1}`, "Explicit", `Person${index + 1}`)
+          )
+        };
+      })
+    };
+    const { service } = buildService({ runner });
+
+    const result = await service.addMorePeople({
+      userId: USER_ID,
+      actorEmail: "user@example.com",
+      searchId: SEARCH_ID,
+      idempotencyKey: "explicit-zero-result"
+    });
+
+    expect(result.addedCount).toBe(10);
+    expect(startPages).toEqual([1]);
+    expect(prisma._state.searches[0]).toMatchObject({ status: "READY", totalProcessed: 10 });
+  });
+
+  it("uses partial unused same-user people before explicitly fetching the remainder", async () => {
+    seedCompany();
+    seedSearch();
+    seedExistingPeople(14);
+    for (let index = 1; index <= 10; index += 1) {
+      prisma._state.searchPeople.push({
+        id: `grant_initial_${index}`,
+        searchId: SEARCH_ID,
+        personId: `person_${index}`,
+        userId: USER_ID,
+        allocationOrder: index - 1,
+        allocationSource: "CACHE",
+        allocatedAt: new Date()
+      });
+    }
+    const startPages: number[] = [];
+    const runner: ApifyRunner = {
+      run: vi.fn(async (_actorId, input) => {
+        startPages.push(input.startPage);
+        return {
+          runId: "partial-run",
+          datasetId: "partial-dataset",
+          items: Array.from({ length: 6 }, (_, index) =>
+            rawProfile(`provider_partial_${index + 1}`, "Provider", `Person${index + 1}`)
+          )
+        };
+      })
+    };
+    const { service } = buildService({ runner });
+
+    const result = await service.addMorePeople({
+      userId: USER_ID,
+      actorEmail: "user@example.com",
+      searchId: SEARCH_ID,
+      idempotencyKey: "partial-local-first"
+    });
+
+    expect(result).toMatchObject({ addedCount: 10 });
+    expect(startPages).toEqual([1]);
+    expect(prisma._state.expansions[0]).toMatchObject({ cacheCount: 4, providerCount: 6 });
+  });
+
   it("materializes 10 unused cached people without calling Apify and consumes one slot (#1, #4, #5, #9, #10)", async () => {
     seedCompany();
     seedSearch();

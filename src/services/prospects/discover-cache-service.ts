@@ -46,12 +46,6 @@ export function resolveEmailFormatDiscoveryExpiry(
   return null;
 }
 
-/** Effective shared-cache TTL in days (env override, defaulting to 30). */
-export function resolveSharedCacheTtlDays(): number {
-  const configured = env.DISCOVER_SHARED_CACHE_TTL_DAYS;
-  return typeof configured === "number" && Number.isFinite(configured) && configured > 0 ? configured : 30;
-}
-
 /** Effective cache schema version (part of the fingerprint). */
 export function resolveSharedCacheVersion(): string {
   return env.DISCOVER_SHARED_CACHE_VERSION || "v1";
@@ -114,8 +108,6 @@ export type DiscoverCacheCompany = {
   linkedinUrl: string | null;
 };
 
-export type DiscoverProviderRun = () => Promise<ResolvedDataset>;
-
 export type DiscoverCacheResult = {
   dataset: ResolvedDataset;
   source: "CACHE" | "PROVIDER";
@@ -152,7 +144,7 @@ export type DiscoverLocalPersonLookupResult = {
 
 export type DiscoverLocalPersonLookup = () => Promise<DiscoverLocalPersonLookupResult>;
 
-export type GetOrRefreshParams = {
+export type LookupReusableDatasetParams = {
   fingerprint: string;
   fingerprintInput: DiscoverFingerprintInput;
   company: DiscoverCacheCompany;
@@ -161,14 +153,13 @@ export type GetOrRefreshParams = {
    * It is invoked only after the exact fingerprint fast path misses.
    */
   filterCompanyPoolPeople?: DiscoverCompanyPoolPersonFilter;
-  /** Same-user ProspectPerson fallback, invoked after shared reuse and before provider. */
+  /** Same-user ProspectPerson fallback, invoked after shared reuse. */
   lookupLocalPeople?: DiscoverLocalPersonLookup;
-  provider: DiscoverProviderRun;
 };
 
 /** The narrow port the prospect-search service depends on (injectable for tests). */
 export interface DiscoverCachePort {
-  getOrRefresh(params: GetOrRefreshParams): Promise<DiscoverCacheResult>;
+  lookupReusableDataset(params: LookupReusableDatasetParams): Promise<DiscoverCacheResult>;
   updateEmailFormat?(params: UpdateCachedEmailFormatParams): Promise<void>;
 }
 
@@ -296,16 +287,17 @@ export type DiscoverSearchCacheServiceDeps = {
   ttlDays?: number;
   waitTimeoutMs?: number;
   pollIntervalMs?: number;
+  /** Deprecated test-construction compatibility; ordinary lookup never refreshes. */
   cleanupOnRefresh?: boolean;
 };
 
 /**
- * Shared, cross-user 30-day cache for Discover provider results.
+ * Shared, cross-user durable store for Discover provider results.
  *
- * - `getOrRefresh` returns a fresh cached dataset without calling the provider,
- *   or runs the provider behind an atomic lock and stores the result.
+ * - `lookupReusableDataset` only reads reusable people and can never call a
+ *   provider. People do not expire merely because provider metadata is old.
  * - A cache stampede is prevented: only the lock owner runs the provider;
- *   concurrent callers poll (bounded) for the entry to become READY and reuse it.
+ *   that lock is reserved for explicit Add More continuation.
  * - Refreshes are atomic — old rows are replaced inside a transaction, so other
  *   users never observe an empty cache, and a failed refresh preserves the
  *   previous rows and never marks stale data fresh.
@@ -317,16 +309,16 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
   private readonly ttlDays: number;
   private readonly waitTimeoutMs: number;
   private readonly pollIntervalMs: number;
-  private readonly cleanupOnRefresh: boolean;
 
   constructor(deps: DiscoverSearchCacheServiceDeps) {
     this.prisma = deps.prisma;
     this.lock = deps.lock ?? createRedisCacheLock();
     this.now = deps.now ?? (() => new Date());
-    this.ttlDays = deps.ttlDays ?? resolveSharedCacheTtlDays();
+    // Retained only for pruning abandoned empty refresh markers and for the
+    // legacy test seeding helper. It never limits reuse of stored people.
+    this.ttlDays = deps.ttlDays ?? 30;
     this.waitTimeoutMs = deps.waitTimeoutMs ?? DEFAULT_WAIT_TIMEOUT_MS;
     this.pollIntervalMs = deps.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
-    this.cleanupOnRefresh = deps.cleanupOnRefresh ?? true;
   }
 
   private lockKey(fingerprint: string): string {
@@ -334,141 +326,74 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
   }
 
   /**
-   * A fresh, READY, unexpired dataset for this fingerprint that has at least one
-   * reusable person, or null.
+   * Database-only people lookup used by every normal Discover search.
    *
-   * Only a genuinely successful, reusable result short-circuits the provider. A
-   * FAILED / REFRESHING entry (status check), an expired entry (TTL check), or a
-   * zero-result entry (a query that returned nobody is NOT a reusable success)
-   * all return null so an explicit retry — or any later processing run — re-runs
-   * company resolution and the provider instead of being permanently blocked by a
-   * negative/empty cache record.
+   * The exact fingerprint, same-company pool, and requester-owned people are
+   * checked in that order. Missing or empty database knowledge is represented
+   * by `null`; it is never converted into permission to call Apify.
    */
-  async getFreshDataset(
-    fingerprint: string,
-    now: Date = this.now(),
-    cacheVersion?: string
-  ): Promise<CachedEntry | null> {
+  async lookupReusableDataset(params: LookupReusableDatasetParams): Promise<DiscoverCacheResult> {
+    const exact = await this.getReusableDataset(
+      params.fingerprint,
+      params.fingerprintInput.cacheVersion
+    );
+    if (exact) {
+      return {
+        dataset: exact.dataset,
+        source: "CACHE",
+        cacheId: exact.id,
+        fetchedAt: exact.fetchedAt,
+        refreshedStale: false,
+        cacheHitType: "EXACT",
+        lookupDiagnostics: EMPTY_LOOKUP_DIAGNOSTICS
+      };
+    }
+
+    const companyPool = await this.getReusableCompanyPoolDataset(params);
+    if (companyPool.entry) {
+      return this.companyPoolCacheResult(companyPool);
+    }
+
+    const localPeople = await this.getLocalPersonResult(params, companyPool.diagnostics);
+    if (localPeople.result) {
+      return localPeople.result;
+    }
+    return {
+      dataset: { emailFormat: emptyResolvedEmailFormat(), people: [] },
+      source: "CACHE",
+      cacheId: null,
+      fetchedAt: null,
+      refreshedStale: false,
+      cacheHitType: null,
+      lookupDiagnostics: localPeople.diagnostics
+    };
+  }
+
+  /** A reusable exact dataset. People age/status never disqualifies its rows. */
+  async getReusableDataset(fingerprint: string, cacheVersion?: string): Promise<CachedEntry | null> {
     const entry = (await this.prisma.discoverSearchCache.findUnique({ where: { fingerprint } })) as CacheRow | null;
-    if (!entry || entry.status !== DISCOVER_CACHE_STATUS.READY || !entry.expiresAt) {
+    if (!entry) {
       return null;
     }
     if (cacheVersion && entry.cacheVersion !== cacheVersion) {
-      return null;
-    }
-    if (new Date(entry.expiresAt).getTime() <= now.getTime()) {
       return null;
     }
     const peopleRows = await this.prisma.discoverSearchCachePerson.findMany({ where: { cacheId: entry.id } });
     if (peopleRows.length === 0) {
       return null;
     }
+    const emailFormat = rowToEmailFormat(entry);
     return {
       id: entry.id,
       fetchedAt: entry.fetchedAt ? new Date(entry.fetchedAt) : null,
-      dataset: { emailFormat: rowToEmailFormat(entry), people: await normalizeDiscoverPeopleWithEmails((peopleRows as ResolvedCachePersonRow[]).map(cachePersonRowToResolved), rowToEmailFormat(entry)) }
-    };
-  }
-
-  async getOrRefresh(params: GetOrRefreshParams): Promise<DiscoverCacheResult> {
-    const result = await this.getOrRefreshRaw(params);
-    result.dataset.people = await normalizeDiscoverPeopleWithEmails(result.dataset.people, result.dataset.emailFormat);
-    return result;
-  }
-
-  private async getOrRefreshRaw(params: GetOrRefreshParams): Promise<DiscoverCacheResult> {
-    // Fast path: a fresh shared dataset is reused without any provider call.
-    const fresh = await this.getFreshDataset(params.fingerprint, this.now(), params.fingerprintInput.cacheVersion);
-    if (fresh) {
-      return {
-        dataset: fresh.dataset,
-        source: "CACHE",
-        cacheId: fresh.id,
-        fetchedAt: fresh.fetchedAt,
-        refreshedStale: false,
-        cacheHitType: "EXACT",
-        lookupDiagnostics: EMPTY_LOOKUP_DIAGNOSTICS
-      };
-    }
-
-    // An exact fingerprint miss does not mean the database has no reusable
-    // people. Search the bounded same-company shared pool before taking a lock
-    // that may lead to a paid provider run.
-    let companyPool = await this.getFreshCompanyPoolDataset(params, this.now());
-    if (companyPool.entry) {
-      return this.companyPoolCacheResult(companyPool);
-    }
-    let localPeople = await this.getLocalPersonResult(params, companyPool.diagnostics);
-    if (localPeople.result) {
-      return localPeople.result;
-    }
-
-    const key = this.lockKey(params.fingerprint);
-    const token = await this.lock.acquire(key);
-
-    if (token) {
-      try {
-        // Re-check under the lock: a concurrent holder may have just refreshed.
-        const refreshed = await this.getFreshDataset(
-          params.fingerprint,
-          this.now(),
-          params.fingerprintInput.cacheVersion
-        );
-        if (refreshed) {
-          return {
-            dataset: refreshed.dataset,
-            source: "CACHE",
-            cacheId: refreshed.id,
-            fetchedAt: refreshed.fetchedAt,
-            refreshedStale: false,
-            cacheHitType: "EXACT",
-            lookupDiagnostics: EMPTY_LOOKUP_DIAGNOSTICS
-          };
-        }
-        companyPool = await this.getFreshCompanyPoolDataset(params, this.now());
-        if (companyPool.entry) {
-          return this.companyPoolCacheResult(companyPool);
-        }
-        localPeople = await this.getLocalPersonResult(params, companyPool.diagnostics);
-        if (localPeople.result) {
-          return localPeople.result;
-        }
-        const existing = (await this.prisma.discoverSearchCache.findUnique({
-          where: { fingerprint: params.fingerprint }
-        })) as { id: string } | null;
-        return await this.runProviderAndStore(params, Boolean(existing), localPeople.diagnostics);
-      } finally {
-        await this.lock.release(key, token);
+      dataset: {
+        emailFormat,
+        people: await normalizeDiscoverPeopleWithEmails(
+          sortCachePeople(peopleRows as ResolvedCachePersonRow[]).map(cachePersonRowToResolved),
+          emailFormat
+        )
       }
-    }
-
-    // Another request holds the lock — wait (bounded) for it to populate.
-    const waited = await this.pollForFresh(params.fingerprint, params.fingerprintInput.cacheVersion);
-    if (waited) {
-      return {
-        dataset: waited.dataset,
-        source: "CACHE",
-        cacheId: waited.id,
-        fetchedAt: waited.fetchedAt,
-        refreshedStale: false,
-        cacheHitType: "EXACT",
-        lookupDiagnostics: EMPTY_LOOKUP_DIAGNOSTICS
-      };
-    }
-
-    companyPool = await this.getFreshCompanyPoolDataset(params, this.now());
-    if (companyPool.entry) {
-      return this.companyPoolCacheResult(companyPool);
-    }
-    localPeople = await this.getLocalPersonResult(params, companyPool.diagnostics);
-    if (localPeople.result) {
-      return localPeople.result;
-    }
-
-    // The holder did not finish in time (likely crashed; the lock TTL will free
-    // it). Fall back to running the provider ourselves so the request never
-    // hangs, writing the cache best-effort.
-    return await this.runProviderAndStore(params, false, localPeople.diagnostics);
+    };
   }
 
   private companyPoolCacheResult(pool: CompanyPoolLookupResult): DiscoverCacheResult {
@@ -485,7 +410,7 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
   }
 
   private async getLocalPersonResult(
-    params: GetOrRefreshParams,
+    params: LookupReusableDatasetParams,
     precedingDiagnostics: DiscoverCacheLookupDiagnostics
   ): Promise<{ result: DiscoverCacheResult | null; diagnostics: DiscoverCacheLookupDiagnostics }> {
     if (!params.lookupLocalPeople) {
@@ -503,6 +428,10 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
     if (!local.dataset || local.dataset.people.length === 0) {
       return { result: null, diagnostics };
     }
+    local.dataset.people = await normalizeDiscoverPeopleWithEmails(
+      local.dataset.people,
+      local.dataset.emailFormat
+    );
 
     return {
       result: {
@@ -519,13 +448,12 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
   }
 
   /**
-   * Find fresh reusable people under other fingerprints for the same strongly
-   * identified company. The cache-entry query is narrowed by trusted domain or
-   * LinkedIn identity before any cache-person rows are read.
+   * Durable counterpart of the legacy freshness-gated pool lookup. This is the
+   * path normal searches use, so neither `expiresAt` nor cache status can hide
+   * people already stored under a strong canonical company identity.
    */
-  private async getFreshCompanyPoolDataset(
-    params: GetOrRefreshParams,
-    now: Date
+  private async getReusableCompanyPoolDataset(
+    params: LookupReusableDatasetParams
   ): Promise<CompanyPoolLookupResult> {
     if (!params.filterCompanyPoolPeople) {
       return { entry: null, diagnostics: EMPTY_LOOKUP_DIAGNOSTICS };
@@ -544,8 +472,6 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
     const rows = (await this.prisma.discoverSearchCache.findMany({
       where: {
         cacheVersion: params.fingerprintInput.cacheVersion,
-        status: DISCOVER_CACHE_STATUS.READY,
-        expiresAt: { gt: now },
         OR: identityPredicates
       }
     })) as CompanyPoolCacheRow[];
@@ -583,33 +509,16 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
     const sourceCacheId = peopleRows.find((person) => firstMatch.has(person))?.cacheId;
     const source = candidates.find((entry) => entry.id === sourceCacheId) ?? candidates[0];
     const dataset = { emailFormat: rowToEmailFormat(source), people: deduped };
-    const matchingIdentities = new PersonIdentitySet(deduped);
-    const contributingCacheIds = new Set(
-      peopleRows.filter((person) => matchingIdentities.has(person)).map((person) => person.cacheId)
-    );
-    const contributingSources = candidates.filter((entry) => contributingCacheIds.has(entry.id));
     let derived: { id: string; fetchedAt: Date | null } = {
       id: source.id,
       fetchedAt: source.fetchedAt ? new Date(source.fetchedAt) : null
     };
     try {
-      derived = await this.writeDerivedCompanyPoolDataset(
-        params,
-        dataset,
-        contributingSources.length > 0 ? contributingSources : [source]
-      );
+      derived = await this.writeDerivedCompanyPoolDataset(params, dataset, [source]);
     } catch {
-      // Derivation is an optimization and continuation aid. A write failure
-      // must never discard already-proven reusable people or trigger Apify.
+      // Reuse remains valid even when the optional exact-intent derivation fails.
     }
-    return {
-      entry: {
-        id: derived.id,
-        fetchedAt: derived.fetchedAt,
-        dataset
-      },
-      diagnostics
-    };
+    return { entry: { id: derived.id, fetchedAt: derived.fetchedAt, dataset }, diagnostics };
   }
 
   /**
@@ -619,7 +528,7 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
    * intent. Source freshness is copied conservatively and never extended.
    */
   private async writeDerivedCompanyPoolDataset(
-    params: GetOrRefreshParams,
+    params: LookupReusableDatasetParams,
     dataset: ResolvedDataset,
     sources: CompanyPoolCacheRow[]
   ): Promise<{ id: string; fetchedAt: Date | null }> {
@@ -631,7 +540,7 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
       .map((source) => (source.expiresAt ? new Date(source.expiresAt).getTime() : null))
       .filter((value): value is number => value !== null);
     const fetchedAt = fetchedAtValues.length > 0 ? new Date(Math.min(...fetchedAtValues)) : null;
-    const expiresAt = new Date(Math.min(...expiresAtValues));
+    const expiresAt = expiresAtValues.length > 0 ? new Date(Math.min(...expiresAtValues)) : null;
     const fp = params.fingerprintInput;
     const baseFields = {
       cacheVersion: fp.cacheVersion,
@@ -731,7 +640,6 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
       if (!entry) {
         // Defensive: a continuation without a prior entry seeds one as READY so
         // the newly fetched people are still shared with other users.
-        const expiresAt = new Date(now.getTime() + this.ttlDays * DAY_MS);
         entry = (await tx.discoverSearchCache.upsert({
           where: { fingerprint: params.fingerprint },
           create: {
@@ -746,7 +654,8 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
             resultLimit: fp.resultLimit,
             status: DISCOVER_CACHE_STATUS.READY,
             fetchedAt: now,
-            expiresAt,
+            // Legacy column retained for migration compatibility. People do not expire.
+            expiresAt: null,
             resultCount: 0,
             ...emailFormatColumns(params.emailFormat)
           },
@@ -828,144 +737,36 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
     }
   }
 
-  private async runProviderAndStore(
-    params: GetOrRefreshParams,
-    refreshedStale: boolean,
-    lookupDiagnostics: DiscoverCacheLookupDiagnostics = EMPTY_LOOKUP_DIAGNOSTICS
-  ): Promise<DiscoverCacheResult> {
-    let dataset: ResolvedDataset;
-    try {
-      dataset = await params.provider();
-    } catch (error) {
-      // Preserve any previous rows; never mark stale data fresh.
-      await this.markRefreshFailed(params, safeErrorCode(error));
-      throw error;
-    }
-
-    const written = await this.writeFreshDataset(params, dataset);
-    if (this.cleanupOnRefresh) {
-      await this.cleanupExpired().catch(() => undefined);
-    }
-    return {
-      dataset,
-      source: "PROVIDER",
-      cacheId: written.id,
-      fetchedAt: written.fetchedAt,
-      refreshedStale,
-      cacheHitType: null,
-      lookupDiagnostics
-    };
-  }
-
-  private async writeFreshDataset(
-    params: GetOrRefreshParams,
-    dataset: ResolvedDataset
-  ): Promise<{ id: string; fetchedAt: Date }> {
-    dataset.people = await normalizeDiscoverPeopleWithEmails(dataset.people, dataset.emailFormat);
-    const fetchedAt = this.now();
-    const expiresAt = new Date(fetchedAt.getTime() + this.ttlDays * DAY_MS);
-    const fp = params.fingerprintInput;
-    const baseFields = {
-      cacheVersion: fp.cacheVersion,
-      companyKey: fp.companyKey,
-      companyName: params.company.name,
-      companyDomain: params.company.domain,
-      companyLinkedinUrl: params.company.linkedinUrl,
-      normalizedRoles: fp.roles,
-      normalizedLocations: fp.locations,
-      resultLimit: fp.resultLimit,
-      status: DISCOVER_CACHE_STATUS.READY,
-      fetchedAt,
-      expiresAt,
-      refreshStartedAt: null,
-      lastErrorCode: null,
-      resultCount: dataset.people.length,
-      // The initial pipeline (and a stale refresh) always fetches provider page
-      // 1, so continuation for a later "Add 10 more" starts at page 2. A refresh
-      // resets continuation (clears any prior exhaustion).
-      providerNextPage: 2,
-      providerPagesFetched: 1,
-      providerExhausted: false,
-      lastProviderFetchAt: fetchedAt,
-      ...emailFormatColumns(dataset.emailFormat)
-    };
-
-    const id = await this.prisma.$transaction(async (tx) => {
-      const entry = await tx.discoverSearchCache.upsert({
-        where: { fingerprint: params.fingerprint },
-        create: { fingerprint: params.fingerprint, ...baseFields },
-        update: baseFields
-      });
-      // Replace people atomically: old rows are removed and new rows inserted in
-      // the same transaction so a concurrent reader never sees an empty cache.
-      // sortIndex preserves provider order so batching stays deterministic.
-      await tx.discoverSearchCachePerson.deleteMany({ where: { cacheId: entry.id } });
-      let sortIndex = 0;
-      for (const person of dataset.people) {
-        await tx.discoverSearchCachePerson.create({ data: { cacheId: entry.id, sortIndex, ...person } });
-        sortIndex += 1;
-      }
-      return entry.id;
-    });
-
-    return { id, fetchedAt };
-  }
-
-  private async markRefreshFailed(params: GetOrRefreshParams, errorCode: string): Promise<void> {
-    const fp = params.fingerprintInput;
-    try {
-      await this.prisma.discoverSearchCache.upsert({
-        where: { fingerprint: params.fingerprint },
-        create: {
-          fingerprint: params.fingerprint,
-          cacheVersion: fp.cacheVersion,
-          companyKey: fp.companyKey,
-          companyName: params.company.name,
-          companyDomain: params.company.domain,
-          companyLinkedinUrl: params.company.linkedinUrl,
-          normalizedRoles: fp.roles,
-          normalizedLocations: fp.locations,
-          resultLimit: fp.resultLimit,
-          status: DISCOVER_CACHE_STATUS.FAILED,
-          lastErrorCode: errorCode,
-          refreshStartedAt: null,
-          resultCount: 0
-        },
-        // Existing entry: only flag the failure. People, fetchedAt, and
-        // expiresAt are intentionally untouched so previous rows are preserved.
-        update: { status: DISCOVER_CACHE_STATUS.FAILED, lastErrorCode: errorCode, refreshStartedAt: null }
-      });
-    } catch {
-      // Recording the failure is best-effort; the user's search still fails.
-    }
-  }
-
-  /** Wait (bounded) for another holder to publish a READY dataset. */
-  private async pollForFresh(fingerprint: string, cacheVersion: string): Promise<CachedEntry | null> {
-    const deadline = this.now().getTime() + this.waitTimeoutMs;
-    while (this.now().getTime() < deadline) {
-      await delay(this.pollIntervalMs);
-      const fresh = await this.getFreshDataset(fingerprint, this.now(), cacheVersion);
-      if (fresh) {
-        return fresh;
-      }
-    }
-    return null;
-  }
-
   /**
-   * Delete cache entries that expired more than one TTL ago (abandoned/failed
-   * leftovers). Cascade removes their people rows. Safe to call opportunistically
-   * or from a scheduled job; never touches user-owned records.
+   * Remove only old, empty transient rows. Reusable people are durable database
+   * knowledge and are never deleted because `expiresAt` passed. This keeps
+   * cleanup useful for abandoned REFRESHING/FAILED placeholders without
+   * discarding provider data we paid to acquire.
    */
   async cleanupExpired(now: Date = this.now()): Promise<number> {
     const cutoff = new Date(now.getTime() - this.ttlDays * DAY_MS);
-    const abandoned = (await this.prisma.discoverSearchCache.findMany({
-      where: { expiresAt: { lt: cutoff } }
-    })) as Array<{ id: string }>;
+    const candidates = (await this.prisma.discoverSearchCache.findMany({
+      where: { resultCount: 0 }
+    })) as Array<{
+      id: string;
+      status?: string | null;
+      refreshStartedAt?: Date | string | null;
+      updatedAt?: Date | string | null;
+      expiresAt?: Date | string | null;
+    }>;
     let removed = 0;
-    for (const entry of abandoned) {
-      await this.prisma.discoverSearchCachePerson.deleteMany({ where: { cacheId: entry.id } });
+    for (const entry of candidates) {
+      if (entry.status !== DISCOVER_CACHE_STATUS.FAILED && entry.status !== DISCOVER_CACHE_STATUS.REFRESHING) {
+        continue;
+      }
+      const transientAt = entry.refreshStartedAt ?? entry.updatedAt ?? entry.expiresAt;
+      if (!transientAt || new Date(transientAt).getTime() >= cutoff.getTime()) {
+        continue;
+      }
+      const people = await this.prisma.discoverSearchCachePerson.findMany({ where: { cacheId: entry.id } });
+      if (people.length > 0) {
+        continue;
+      }
       await this.prisma.discoverSearchCache.delete({ where: { id: entry.id } });
       removed += 1;
     }
@@ -1115,6 +916,22 @@ function rowToEmailFormat(entry: CacheRow): ResolvedEmailFormat {
   };
 }
 
+function emptyResolvedEmailFormat(): ResolvedEmailFormat {
+  return {
+    emailDomain: null,
+    emailDomainConfidence: "UNAVAILABLE",
+    emailDomainEvidence: null,
+    emailPattern: null,
+    patternConfidence: "UNAVAILABLE",
+    patternEvidence: null,
+    emailFormatReason: null,
+    emailFormatDiscoveryStatus: "NOT_ATTEMPTED",
+    emailFormatDiscoveryReason: null,
+    emailFormatDiscoveryAt: null,
+    emailFormatDiscoveryExpiresAt: null
+  };
+}
+
 function rowToDataset(entry: CacheRow, peopleRows: ResolvedCachePersonRow[]): ResolvedDataset {
   return {
     emailFormat: rowToEmailFormat(entry),
@@ -1138,14 +955,4 @@ function emailFormatColumns(format: ResolvedEmailFormat) {
       ? new Date(format.emailFormatDiscoveryExpiresAt)
       : null
   };
-}
-
-function safeErrorCode(error: unknown): string {
-  if (error && typeof error === "object" && "code" in error) {
-    const code = (error as { code?: unknown }).code;
-    if (typeof code === "string" && /^[A-Z_]{1,64}$/.test(code)) {
-      return code;
-    }
-  }
-  return "PROVIDER_ERROR";
 }

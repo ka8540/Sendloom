@@ -1542,12 +1542,14 @@ company graph cleanup (see 23.8).
 
 ### 23.2 Pipeline
 
-`createProspectSearch` → resolve company website identity → run Apify actor →
-normalize + de-duplicate profiles → exclude current-company mismatches
-(alias-tolerant; see 23.2.5) → classify unique titles into position categories
-→ upsert position nodes and assign people → infer the employee email domain and
-email pattern from evidence → generate each person's email deterministically →
-mark search `READY`.
+`createProspectSearch` → resolve company website identity → read durable people
+from the exact shared fingerprint → read the strongly matched same-company pool
+→ read the requester's existing company people → apply role/location guards and
+stable-identity de-duplication → materialize up to 10 matches → resolve the
+email format independently when people exist → mark the search `READY` or
+`NO_RESULTS`. Ordinary processing, retry, refresh, navigation, and role
+selection never call Apify. A partial database result is returned as-is and is
+not automatically topped up.
 Ownership/not-found errors throw;
 provider/AI failures are persisted as a structured `FAILED` search (with
 `errorCode`) rather than crashing the request. A timeout bounds the synchronous
@@ -1556,12 +1558,13 @@ run.
 ### 23.2.2 Add 10 more (search expansion)
 
 `addMoreDiscoverPeople(searchId, idempotencyKey)` extends an existing **READY**
+or **NO_RESULTS**
 search with up to `DISCOVER_EXPANSION_BATCH_SIZE` (10) **new unique** people.
 `DiscoverExpansionService` runs the workflow (the resolver stays thin): load +
 own the search → confirm READY with canonical company/roles/locations → create an
 idempotent `DiscoverSearchExpansion` record → reserve **one** daily Discover slot
 (the existing quota service, idempotent on the expansion id) → materialize unused
-people from the shared cache **before** any provider call → if still short and not
+people from the shared cache and the user's existing company people **before** any provider call → if still short and not
 exhausted, continue Apify from the saved `providerNextPage` → dedupe → add only
 new people to the same search → extend the shared cache → update the search People
 count. Order, idempotency, and concurrency guarantees:
@@ -1572,9 +1575,11 @@ count. Order, idempotency, and concurrency guarantees:
 - **Quota.** One slot per request (cached or not). Retries reuse the expansion id
   so they never double-charge; a failed expansion can be retried without another
   charge. The internal/unlimited exemption is unchanged.
-- **Provider continuation.** Continuation state (`providerNextPage`,
+- **Provider continuation.** This explicit action is the only people-provider
+  entry point. Continuation state (`providerNextPage`,
   `providerPagesFetched`, `providerExhausted`, `lastProviderFetchAt`) lives on the
-  shared `DiscoverSearchCache` entry. Add More never restarts at page 1; a
+  shared `DiscoverSearchCache` entry. It resumes the saved page when state exists
+  and starts at page 1 when the ordinary database search had no exact entry; a
   `DISCOVER_EXPANSION_MAX_PROVIDER_PAGES` (5) cap bounds one expansion. Provider
   people are appended to the cache (not capped at 10) for reuse by other users.
 - **Identity / dedupe.** Stable identity is the normalized provider profile id,
@@ -1641,8 +1646,8 @@ content, private people data, generated email lists, or credentials. Per-user
 hour/day limits remain (`PROSPECT_EMAIL_FORMAT_AI_HOURLY_LIMIT` /
 `PROSPECT_EMAIL_FORMAT_AI_DAILY_LIMIT`, default 5/20).
 
-People-search caching and email-format caching are independent. A fresh shared
-people cache entry may be reused without Apify, but a missing, stale, or
+People-search storage and email-format caching are independent. Durable shared
+people may be reused without Apify, but a missing, stale, or
 transiently-failed format still runs format discovery before user records are
 materialized. `FOUND` is cached for 30 days, genuine `NO_EVIDENCE` for one day,
 and configuration/auth/rate-limit/network/provider/parser failures are not
@@ -1735,19 +1740,16 @@ runs alongside) normal API rate limiting:
   `DISCOVER_RESULTS_PER_SEARCH` people (default 10). The user can never choose
   the count: the modal has no "Max results" field and `createProspectSearch`
   discards any supplied `maxResults` (validation + `createSearch` force the
-  value, persisting `10`). The initial Apify request is still bounded to one
-  provider page (`maxItems: 25`, `takePages: 1`) so schema, company, identity,
-  and role filtering can select a complete 10-person allocation when possible.
-  Eligible overflow stays only in the internal shared candidate cache until a
-  later explicit allocation; it never raises the current search's 10-person
-  grant. A hand-crafted GraphQL request with `maxResults: 1000` therefore cannot
-  raise the user-visible ceiling.
+  value, persisting `10`). Ordinary processing grants at most 10 matching stored
+  people and may return fewer; it never calls Apify to fill the gap. A
+  hand-crafted GraphQL request with `maxResults: 1000` therefore cannot raise the
+  user-visible ceiling.
 - **Searches per day.** Ordinary users get `DISCOVER_DAILY_SEARCH_LIMIT`
   processed searches per daily window (default 4) — a maximum of 40 requested
   people/day.
 - **Drafts are free; processing consumes the quota.** `createProspectSearch`
   never touches the quota. `processProspectSearch` reserves one slot atomically
-  **after** ownership/state validation and **before** the paid pipeline starts
+  **after** ownership/state validation and **before** database lookup starts
   (`reserveDiscoverSearchSlot` in `src/lib/discover-quota.ts`, a single Lua eval
   so concurrent requests cannot exceed the limit).
 - **Idempotent per search.** A `discover:quota:search:{searchId}` marker means
@@ -1776,10 +1778,10 @@ runs alongside) normal API rate limiting:
   subject to authentication, ownership, CSRF, suppression, and normal rate
   limiting. `kush.ahir2024@gmail.com` is the configured owner account.
 
-### 23.2.3 Shared 30-day result cache
+### 23.2.3 Durable shared people knowledge
 
-To avoid paying Apify for the same search many times, identical canonical
-Discover searches share an internal cross-user result cache
+To avoid paying Apify for people already discovered, canonical Discover searches
+share an internal cross-user durable people store
 (`DiscoverSearchCache` + `DiscoverSearchCachePerson`,
 `src/services/prospects/discover-cache-service.ts`).
 
@@ -1797,30 +1799,22 @@ Discover searches share an internal cross-user result cache
   Secondary database reuse is deliberately separate and must pass the strong
   company, location, and role guards in 23.2.3.1; no broad fuzzy company or
   geographic equivalence is applied.
-- **Lifecycle.** `DiscoverSearchCacheService.getOrRefresh` returns a fresh
-  (`status = READY`, `expiresAt > now`) entry without calling Apify, or runs the
-  provider behind an atomic lock. Freshness is computed from the entry's own
-  `fetchedAt`/`expiresAt` (= `fetchedAt + DISCOVER_SHARED_CACHE_TTL_DAYS`,
-  default 30), never the requester's search date. `cleanupExpired` drops entries
-  abandoned more than one TTL past expiry (cascade-removing their people); it is
-  called opportunistically after a provider refresh and is safe to wire to a
-  cron.
-- **Stampede prevention.** A Redis lock (`discover:shared-cache-lock:{fingerprint}`,
-  `SET … NX EX`, owner-token release in `finally`, TTL-bounded so a crashed
-  worker can't block forever) ensures only the lock owner calls Apify. Other
-  concurrent requests poll (bounded) for the entry to become `READY` and reuse
-  it; if the holder never finishes, the waiter falls back to running the provider
-  so the request never hangs.
-- **Atomic refresh.** New rows are written inside a transaction that upserts the
-  entry (`status = READY`, new `fetchedAt`/`expiresAt`/`resultCount`) and
-  replaces the people rows, so readers never see an empty cache mid-refresh. A
-  provider failure marks the entry `FAILED` with a safe `lastErrorCode`, **keeps
-  the previous rows**, and never marks stale data fresh; the user's search then
-  fails through the normal provider-failure path.
+- **Lifecycle.** `lookupReusableDataset` is read-only and deliberately accepts
+  no provider callback. A non-empty entry remains reusable regardless of
+  `fetchedAt`, legacy `expiresAt`, or legacy refresh status. Cleanup may remove
+  only old abandoned empty `FAILED`/`REFRESHING` markers; it never deletes a
+  stored person because of age.
+- **Provider ownership and locking.** Ordinary searches do not acquire a
+  provider lock or wait for a refresh. Only explicit **Add 10 more** may run
+  Apify, using the per-fingerprint Redis lock to serialize continuation and
+  rechecking stored candidates inside the lock.
+- **Atomic append.** Expansion appends stable-identity-deduplicated people and
+  advances continuation state transactionally. A provider failure preserves all
+  existing people and continuation data.
 - **Privacy / tenancy.** The shared rows hold only normalized public people data
   and evidence-backed company email-format metadata — no requester user id, no
   search history, selections, exports, imports, manual overrides, or suppression.
-  On every search the resolved dataset (cache or provider) is **materialized**
+  On every ordinary search the resolved database dataset is **materialized**
   into the requesting user's own `ProspectCompany`/`ProspectCompanyPosition`/
   `ProspectPerson` records (deduped by the existing `userId + sourceProfileId`
   rule), and the user's `ProspectSearch` records the provenance
@@ -1829,25 +1823,25 @@ Discover searches share an internal cross-user result cache
   continues to be applied at export time, so one user's suppression never affects
   another's cached result.
 - **Quota.** The daily quota slot is reserved in `processSearch` **before** the
-  cache check, so a cache hit, a provider call, and a wait-then-reuse all consume
-  exactly one slot; retrying the same search id stays idempotent (it never
+  database lookup, so a database hit or miss consumes exactly one slot; retrying
+  the same search id stays idempotent (it never
   consumes another). The cache cannot be used to get a free search.
 - **Observability.** `processProspectSearch` emits structured, privacy-safe logs
-  (`DISCOVER_CACHE_HIT` / `_MISS` / `_REFRESHED` / `_REFRESH_FAILED`) with only
+  (`DISCOVER_CACHE_HIT`, `DISCOVER_COMPANY_POOL_HIT`,
+  `DISCOVER_LOCAL_PERSON_HIT`, `DISCOVER_DATABASE_MISS`, and
+  `DISCOVER_DATABASE_LOOKUP_FAILED`) with only
   safe metadata (search id, user id, fingerprint-hash prefix, `cacheHit`,
   `cacheAgeDays`, `resultCount`, `providerCalled`, latency) — never people lists,
   generated emails, provider payloads, the requester email, or prompts.
 
 ### 23.2.3.1 Database-first reuse ladder
 
-An exact fingerprint miss is not permission to call the paid provider. The
-cache service applies the following ladder before acquiring the provider lock,
-and repeats the database checks after acquiring/waiting for that lock so a
-concurrent refresh is reused:
+An exact fingerprint miss is not permission to call the paid provider. Every
+ordinary search applies this database-only ladder:
 
-1. **Exact shared entry.** Reuse the fresh, non-empty `READY` entry for the
-   canonical fingerprint.
-2. **Same-company shared pool.** Query fresh entries only under a strong,
+1. **Exact shared entry.** Reuse any non-empty entry for the canonical
+   fingerprint, regardless of age or legacy status metadata.
+2. **Same-company shared pool.** Query durable entries only under a strong,
    internally consistent company identity (canonical LinkedIn company or
    official domain), combine their normalized public people, then apply exact
    location compatibility plus the deterministic/semantic role guard. This is
@@ -1860,13 +1854,15 @@ concurrent refresh is reused:
    same role/location authorization. These tenant rows are never copied into
    `DiscoverSearchCache` by the live lookup and another user's rows are never
    read.
-4. **Provider.** Only when all three database paths yield no authorized person
-   does the lock owner run Apify and atomically refresh the exact fingerprint.
+4. **Database miss.** Return `NO_RESULTS` with zero provider calls. A partial
+   result is materialized as-is. The user may explicitly choose **Add 10 more**
+   to search externally after unused database candidates are exhausted.
 
 All three reuse paths are reported as `resultSource = CACHE`, with an internal
 hit type of `EXACT`, `COMPANY_POOL`, or `LOCAL_PERSON`. Privacy-safe diagnostics
-record only candidate-entry/person/match counts. A failed, stale, refreshing, or
-empty exact entry never blocks the later rungs or a provider retry.
+record only candidate-entry/person/match counts. A legacy failed/refreshing
+status or old timestamp never hides stored people; an empty exact entry does not
+block the later database rungs.
 
 ### 23.2.3.2 Semantic role intelligence (pgvector)
 
@@ -1876,9 +1872,9 @@ Migration `20260820130000_discover_role_semantics` additively enables the
 policy version. It never adds vectors to `ProspectPerson` or
 `DiscoverSearchCachePerson`, and it does not rewrite any existing row.
 
-The database-first order remains: exact fingerprint → fresh same-company pool
-→ exact location guard → hybrid role ranking → provider only when no reusable
-result exists. Existing category classification remains authoritative.
+The database-first order remains: exact fingerprint → durable same-company pool
+→ exact location guard → hybrid role ranking → same-user people → database miss.
+Existing category classification remains authoritative.
 Specialty/breadth policy rejects incompatible categories before vector ranking,
 keeps iOS, Forward Deployed, DevOps, management, and CTO intent narrow, and uses
 cosine similarity only as a ranking/acceptance signal inside that deterministic
@@ -1888,9 +1884,9 @@ example, Software Engineer/Software Developer and Recruiter/Technical Recruiter/
 Recruiting Leader — while still rejecting people classified into an unrelated
 role family.
 
-On a provider miss, exact requested titles are preserved first, expansions are
-added round-robin under both per-role and total caps, and the complete array is
-sent in **one** Apify actor request. Provider results are normalized, company
+When **Add 10 more** explicitly reaches the provider, exact requested titles are
+preserved first, expansions are added round-robin under both per-role and total
+caps, and the complete array is sent in **one** Apify actor request. Provider results are normalized, company
 validated, identity-deduped, classified, and role-authorized again before shared
 cache persistence. Add More uses the same plan while continuing the saved page;
 it never restarts pagination or runs one actor per alias.
@@ -1929,7 +1925,7 @@ SELECT COUNT(*) AS semantic_title_count FROM "ProspectRoleSemantic";
 Searches created before the shared cache existed can still prevent future paid
 provider calls. `scripts/backfill-discover-shared-cache.ts` reconstructs exact
 fingerprints from historical searches that have explicit provider provenance,
-a strong canonical company identity, a still-fresh completion timestamp, and
+a strong canonical company identity, any provider-backed completion timestamp, and
 eligible `ProspectSearchPerson` allocations:
 
 ```bash
@@ -1970,14 +1966,14 @@ Four concepts are deliberately separate:
 - **User allocation** (`ProspectSearchPerson`). The grant of one person to one
   user-owned search. An initial search allocates **at most `maxResults`
   (10)** people from the resolved dataset in stable provider order — a new user
-  hitting a 30-person cached pool receives exactly 10, and the backend never
+  hitting a 30-person stored pool receives exactly 10, and the backend never
   materializes (so can never return) the unallocated remainder. Each Add 10
   More allocates at most one more batch to the TARGET search only. Grants
   record `allocationOrder` and `allocationSource`
   (`CACHE | PROVIDER | ADD_MORE_CACHE | ADD_MORE_PROVIDER | BACKFILL`), are
   unique per `(searchId, personId)` (concurrent duplicates converge), and
   cascade away with their search or person. Retrying a search keeps its
-  existing grants and only tops up to the cap. Usage reservation stays
+  existing grants; ordinary retry does not top up from a provider. Usage reservation stays
   idempotent per search id, so a failed allocation can be retried without a
   second charge.
 - **Grouped company dashboard** (read model only). `discoverCompanyGroups`
@@ -2029,27 +2025,19 @@ never touches the shared cache or another user.
 
 ### 23.2.4 Retrying a failed search and safe error handling
 
-A `FAILED` Discover search can be **retried**, and a retry runs the **real
-backend pipeline again** against the **same** user-owned `ProspectSearch` record
+A `FAILED` Discover search can be **retried**, and a retry runs the database-only
+backend pipeline again against the **same** user-owned `ProspectSearch` record
 — it never re-renders the old failure, never creates a duplicate Search History
 row, and never creates a duplicate company/person.
 
-- **A retry is a real run.** `FAILED` is deliberately *not* a terminal status, so
-  `processSearch` re-runs company resolution and (when there is no valid reusable
-  result) calls the provider again. Company resolution is re-evaluated every time
-  — there is no negative-resolution cache, and `COMPANY_UNRESOLVED` is never
-  written to the 30-day shared cache (only successful normalized results are).
-- **Failed / negative / empty cache never blocks a retry.** Only a genuinely
-  successful, reusable entry short-circuits the provider:
-  `getFreshDataset` returns a hit only when the entry is `READY`, unexpired, **and
-  has at least one person**. A `FAILED`/`REFRESHING` entry, an expired entry, or a
-  **zero-result** entry all return `null`, so the retry re-runs the provider. A
-  valid non-empty cache is still reused (a retry does not waste a provider call).
-- **Stale processing state self-heals.** The shared-cache Redis lock is
-  TTL-bounded with owner-token release in `finally`; a crashed holder's lock
-  expires and a later retry re-acquires it (waiters fall back to running the
-  provider so a request never hangs). Discover processing is **synchronous** —
-  there is no queue/job id that could permanently deduplicate a retry.
+- **A retry is a real database run.** `FAILED` is deliberately *not* terminal,
+  so `processSearch` re-runs company resolution and the complete reuse ladder.
+  It never calls Apify because a row is missing, empty, old, or marked failed.
+- **Old status does not hide people.** Any stored people remain candidates; an
+  empty database result becomes `NO_RESULTS`. The explicit **Add 10 more** action
+  owns provider continuation for both `READY` and `NO_RESULTS` searches.
+- **Processing is synchronous.** There is no people-cache refresh wait or queue
+  job in ordinary processing, so retry cannot hang behind a provider lock.
 - **Processing attempts + idempotency.** Each run is a tracked attempt on the
   search (`attemptCount`, `lastAttemptId`, `lastAttemptStartedAt`,
   `lastAttemptCompletedAt` — internal only, never in the GraphQL schema). A
@@ -2190,7 +2178,7 @@ src/graphql/                     GraphQL layer
   resolvers/                     company / person / prospect-search / scalars
 src/services/prospects/          provider + business logic (no resolver calls providers directly)
   prospect-search-service.ts     pipeline orchestrator
-  discover-cache-service.ts      exact/company/local reuse ladder + provider lock
+  discover-cache-service.ts      durable exact/company/local reuse + expansion continuation lock
   discover-cache-reuse.ts        strong company-identity predicates for shared reuse
   discover-expansion-service.ts  grant-backed cache-first Add 10 more continuation
   discover-role-intelligence-service.ts deterministic + pgvector role authorization/ranking

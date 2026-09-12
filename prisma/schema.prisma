@@ -1057,8 +1057,8 @@ model DiscoverSearchExpansion {
   @@index([searchId, createdAt])
 }
 
-// Shared, cross-user 30-day cache of normalized Discover provider results. This
-// is an INTERNAL provider-result cache — never a public search-history surface.
+// Shared, cross-user durable knowledge store of normalized Discover provider
+// results. This is INTERNAL — never a public search-history surface.
 // It stores only the normalized public professional dataset and evidence-backed
 // company email-format metadata required to reuse a search without calling Apify
 // again. It deliberately holds NO requester identity (no userId), no user
@@ -1077,7 +1077,8 @@ model DiscoverSearchCache {
   normalizedRoles               Json
   normalizedLocations           Json
   resultLimit                   Int
-  // READY (fresh/usable) | REFRESHING (a holder is repopulating) | FAILED.
+  // Legacy provider-write state. Non-empty people remain reusable in every
+  // state; age/status never authorizes an ordinary-search provider call.
   status                        String    @default("REFRESHING")
   fetchedAt                     DateTime?
   expiresAt                     DateTime?

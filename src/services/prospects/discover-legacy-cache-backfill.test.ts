@@ -135,8 +135,7 @@ describe("Discover historical shared-cache backfill", () => {
       store: store(prisma),
       options: { apply: false, batchSize: 1, limit: null },
       now: NOW,
-      cacheVersion: "v1",
-      cacheTtlDays: 30
+      cacheVersion: "v1"
     });
     expect(dryRun).toMatchObject({
       mode: "DRY_RUN",
@@ -152,8 +151,7 @@ describe("Discover historical shared-cache backfill", () => {
       store: store(prisma),
       options: { apply: true, batchSize: 10, limit: null },
       now: NOW,
-      cacheVersion: "v1",
-      cacheTtlDays: 30
+      cacheVersion: "v1"
     });
     expect(first.peopleToInsert).toBe(1);
     expect(prisma._state.discoverCache).toHaveLength(1);
@@ -188,15 +186,14 @@ describe("Discover historical shared-cache backfill", () => {
       store: store(prisma),
       options: { apply: true, batchSize: 10, limit: null },
       now: NOW,
-      cacheVersion: "v1",
-      cacheTtlDays: 30
+      cacheVersion: "v1"
     });
     expect(second).toMatchObject({ cacheEntriesToMerge: 1, peopleToInsert: 0 });
     expect(prisma._state.discoverCache).toHaveLength(1);
     expect(prisma._state.discoverCachePeople).toHaveLength(1);
   });
 
-  it("skips manual/import-like, weak-identity, and expired history", async () => {
+  it("skips manual/import-like and weak-identity history but keeps old provider people", async () => {
     const prisma = createFakePrisma();
     await seedHistoricalSearch(prisma, {
       userId: "manual_user",
@@ -222,18 +219,17 @@ describe("Discover historical shared-cache backfill", () => {
       store: store(prisma),
       options: { apply: true, batchSize: 2, limit: null },
       now: NOW,
-      cacheVersion: "v1",
-      cacheTtlDays: 30
+      cacheVersion: "v1"
     });
 
     expect(stats).toMatchObject({
       historicalSearchesScanned: 3,
       skippedNoProviderProvenance: 1,
       skippedNoStrongCompanyIdentity: 1,
-      skippedExpired: 1,
-      peopleToInsert: 0
+      peopleToInsert: 1
     });
-    expect(prisma._state.discoverCache).toHaveLength(0);
+    expect(prisma._state.discoverCache).toHaveLength(1);
+    expect(prisma._state.discoverCachePeople[0].sourceProfileId).toBe("expired-person");
   });
 
   it("keeps similar company names separated by their strong domains", async () => {
@@ -255,8 +251,7 @@ describe("Discover historical shared-cache backfill", () => {
       store: store(prisma),
       options: { apply: true, batchSize: 10, limit: null },
       now: NOW,
-      cacheVersion: "v1",
-      cacheTtlDays: 30
+      cacheVersion: "v1"
     });
 
     expect(prisma._state.discoverCache.map((entry) => entry.companyKey).sort()).toEqual([
@@ -338,8 +333,7 @@ describe("Discover historical shared-cache backfill", () => {
       store: store(prisma),
       options: { apply: true, batchSize: 10, limit: null },
       now: NOW,
-      cacheVersion: "v1",
-      cacheTtlDays: 30
+      cacheVersion: "v1"
     });
 
     expect(stats).toMatchObject({ cacheEntriesToMerge: 1, peopleToInsert: 1 });

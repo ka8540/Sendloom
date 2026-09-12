@@ -397,7 +397,7 @@ describe("zero-result search state", () => {
   it("keeps the no-results copy neutral and free of backend terminology", () => {
     expect(NO_RESULTS_TITLE).toBe("Couldn't find any people for this search.");
     expect(NO_RESULTS_BODY).toBe("Try a different job title, location, or company spelling.");
-    expect(NO_RESULTS_RETRY_LABEL).toBe("Search this company again");
+    expect(NO_RESULTS_RETRY_LABEL).toBe("Find more people");
     expect(NO_RESULTS_BACK_LABEL).toBe("Back to Discover");
     for (const copy of [NO_RESULTS_TITLE, NO_RESULTS_BODY, NO_RESULTS_COMPLETED_NOTE]) {
       expect(copy).not.toMatch(/provider|apify|pipeline|graph|resolver/i);

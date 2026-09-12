@@ -80,7 +80,7 @@ export type DiscoverExpansionServiceDeps = {
   apify: ApifyProfileSearchService;
   roleClassifier: RoleClassificationService;
   roleIntelligence?: DiscoverRoleIntelligencePort;
-  /** Defaults to the shared 30-day result cache (provides continuation state). */
+  /** Defaults to the durable shared people store (provides continuation state). */
   cache?: DiscoverCacheExpansionPort;
   /** Defaults to the Redis-backed atomic daily quota (idempotent per expansion). */
   discoverQuota?: DiscoverQuotaReserver;
@@ -161,8 +161,8 @@ export class DiscoverExpansionService {
     // 1-5. Authenticate (done in the resolver), load + own the search, confirm it
     // is READY and has the canonical company / roles / locations to continue.
     const search = await this.requireOwnedSearch(userId, searchId);
-    if (search.status !== "READY") {
-      throw new ProspectError("INVALID_STATE", "Only a ready search can add more people.");
+    if (search.status !== "READY" && search.status !== "NO_RESULTS") {
+      throw new ProspectError("INVALID_STATE", "Only a completed search can add more people.");
     }
     const roles = asStringArray(search.requestedTitles);
     if (!search.companyId || roles.length === 0) {
@@ -218,19 +218,30 @@ export class DiscoverExpansionService {
       // search for the same company keeps its own separate allocation.
       const { identities, allocatedCount } = await this.loadExistingIdentities(userId, search.id, company.id);
 
-      // 9. Look at the fresh shared cache for unused matching people.
+      // 9. Consume every matching unused database candidate before provider
+      // continuation. Cache age is irrelevant, and requester-owned people are
+      // eligible even when this exact fingerprint has no continuation row yet.
       const cacheState = await this.cache.getExpansionState(fingerprint);
-      const cacheCandidates =
-        cacheState && this.roleIntelligence.enabled
-          ? await this.roleIntelligence.filterAndRankPeople({
+      const cacheCandidates = cacheState
+        ? await this.roleIntelligence.filterAndRankPeople({
               people: cacheState.people,
               requestedTitles: roles,
               requestedLocations: locations,
               context: "CACHE",
               options: { budget: createAiBudget(), searchId: search.id }
             })
-          : cacheState?.people ?? [];
-      const unusedCached = cacheCandidates.filter((person) => !identities.has(person));
+        : [];
+      const localCandidates = await this.loadReusableLocalCandidates({
+        userId,
+        search,
+        company,
+        roles,
+        locations
+      });
+      const databaseIdentities = new PersonIdentitySet();
+      const unusedCached = [...cacheCandidates, ...localCandidates].filter(
+        (person) => !identities.has(person) && databaseIdentities.addIfNew(person)
+      );
       const providerExhausted = cacheState?.providerExhausted ?? false;
 
       // Early no-op: provider already exhausted and nothing unused remains. Do
@@ -317,7 +328,10 @@ export class DiscoverExpansionService {
       // 15. Update the search People count (extends the same search row).
       await this.prisma.prospectSearch.update({
         where: { id: search.id },
-        data: { totalProcessed: totalPeopleCount }
+        data: {
+          totalProcessed: totalPeopleCount,
+          status: totalPeopleCount > 0 ? "READY" : search.status
+        }
       });
 
       // "No more unique people available" = the provider is exhausted and this
@@ -405,6 +419,47 @@ export class DiscoverExpansionService {
     };
   }
 
+  private async loadReusableLocalCandidates(input: {
+    userId: string;
+    search: ProspectSearch;
+    company: ProspectCompany;
+    roles: string[];
+    locations: string[];
+  }): Promise<ResolvedCachePerson[]> {
+    const rows = await this.prisma.prospectPerson.findMany({
+      where: { userId: input.userId, companyId: input.company.id },
+      include: { position: { select: { category: true } } },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }]
+    });
+    const people: ResolvedCachePerson[] = rows.map((person) => ({
+      sourceProfileId: person.sourceProfileId,
+      firstName: person.firstName,
+      lastName: person.lastName,
+      fullName: person.fullName,
+      ...nameStateFields(person),
+      currentTitle: person.currentTitle,
+      normalizedTitle: person.normalizedTitle,
+      positionCategory: person.position.category,
+      location: person.location,
+      country: person.country,
+      state: person.state,
+      city: person.city,
+      linkedinUrl: person.linkedinUrl,
+      inferredEmail: person.inferredEmail,
+      emailStatus: person.emailStatus,
+      emailConfidence: person.emailConfidence,
+      emailPattern: person.emailPattern,
+      emailSource: person.emailSource
+    }));
+    return this.roleIntelligence.filterAndRankPeople({
+      people,
+      requestedTitles: input.roles,
+      requestedLocations: input.locations,
+      context: "CACHE",
+      options: { budget: createAiBudget(), searchId: input.search.id }
+    });
+  }
+
   /**
    * Materialize cached unused people first; if still short and the provider is
    * not exhausted, continue the Apify search from its saved page under the shared
@@ -474,17 +529,22 @@ export class DiscoverExpansionService {
           }
         }
 
-        // The initial search consumed provider page 1, so continuation defaults
-        // to page 2 when no saved page exists. It never restarts at page 1.
-        let page = rechecked?.providerNextPage ?? 2;
+        // A database-only initial search may have no exact continuation row. In
+        // that case this explicit user action starts at page 1. When metadata
+        // exists, always honor its saved next page (including old cache rows).
+        let page = rechecked?.providerNextPage ?? 1;
         let pagesFetched = 0;
         let cachedPeopleCount = rechecked?.people.length ?? 0;
 
         while (collected.length < this.batchSize && pagesFetched < this.maxProviderPages && !exhausted) {
           await this.safeAudit("DISCOVER_EXPANSION_PROVIDER_FETCH", params.userId, params.actorEmail, params.search.id, {
-            page
+            page,
+            providerCalled: true,
+            explicitExpansion: true,
+            reason: "USER_REQUESTED_EXPANSION"
           });
-          // 14. Continue from the saved provider page — never restart at page 1.
+          // Continue from saved metadata, or page 1 when this explicit action
+          // follows a database-only search with no exact continuation row.
           const pageResult = await this.apify.searchProfiles({
             companyName: params.company.officialName ?? params.company.name,
             companyLinkedinUrl: params.company.linkedinUrl,
