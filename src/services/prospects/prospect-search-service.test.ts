@@ -1950,34 +1950,9 @@ describe("Discover shared cache integration", () => {
 
   it("does not fill an RTX Recruiter database miss by calling Apify", async () => {
     const rtxUrl = "https://www.linkedin.com/company/rtx/";
-    const validProfiles = [
-      targetedCompanyProfile("rtx-1", "Recruiter", "RTX Corporation", rtxUrl),
-      targetedCompanyProfile("rtx-2", "Technical Recruiter", "RTX Corporation", rtxUrl),
-      targetedCompanyProfile("rtx-3", "Engineering Recruiter", "RTX Corporation", rtxUrl),
-      targetedCompanyProfile("rtx-4", "Talent Acquisition Recruiter", "RTX Corporation", rtxUrl),
-      targetedCompanyProfile("rtx-5", "Talent Acquisition Specialist", "RTX Corporation", rtxUrl),
-      targetedCompanyProfile("rtx-6", "Campus Recruiter", "RTX Corporation", rtxUrl),
-      targetedCompanyProfile("rtx-7", "Executive Technology Recruiting Leader", "Raytheon", "https://www.linkedin.com/company/raytheon/"),
-      targetedCompanyProfile("rtx-8", "Talent Acquisition Business Partner", "Raytheon Technologies"),
-      targetedCompanyProfile("rtx-9", "Recruiting Leader", "Raytheon"),
-      targetedCompanyProfile("rtx-10", "Senior Recruiter"),
-      targetedCompanyProfile("rtx-11", "Technical Recruiter", "RTX Corporation", rtxUrl),
-      targetedCompanyProfile("rtx-12", "Recruiter", "RTX Corporation", rtxUrl),
-      targetedCompanyProfile("rtx-13", "Talent Acquisition Specialist", "Raytheon Technologies"),
-      targetedCompanyProfile("rtx-14", "Engineering Recruiter", "Raytheon")
-    ];
-    const unrelated = targetedCompanyProfile(
-      "microsoft-control",
-      "Recruiter",
-      "Microsoft",
-      "https://www.linkedin.com/company/microsoft/"
-    );
-    const run = vi.fn<ApifyRunner["run"]>(async () => ({
-      runId: "rtx-run",
-      datasetId: "rtx-dataset",
-      items: [...validProfiles, unrelated],
-      status: "SUCCEEDED"
-    }));
+    const run = vi.fn<ApifyRunner["run"]>(async () => {
+      throw new Error("normal processSearch must never invoke the provider on a database miss");
+    });
     const cache = new DiscoverSearchCacheService({
       prisma: prisma as unknown as PrismaClient,
       lock: makeFakeCacheLock(),
@@ -2956,8 +2931,8 @@ describe("Discover shared cache integration", () => {
       firstName: `Person${index + 1}`,
       lastName: "Engineer",
       fullName: `Person${index + 1} Engineer`,
-      currentTitle: "Software Engineer",
-      normalizedTitle: "software engineer",
+      currentTitle: index % 2 === 0 ? "Software Engineer" : "Senior Distributed Systems Engineer",
+      normalizedTitle: index % 2 === 0 ? "software engineer" : "senior distributed systems engineer",
       positionCategory: "SOFTWARE_ENGINEERING",
       location: null,
       country: null,
@@ -3000,7 +2975,12 @@ describe("Discover shared cache integration", () => {
       people
     });
 
-    const run = vi.fn<ApifyRunner["run"]>();
+    const run = vi.fn<ApifyRunner["run"]>(async () => {
+      throw new Error("normal processSearch must never invoke the provider on an exact cache hit");
+    });
+    const exactIntentFilter = vi.fn<DiscoverRoleIntelligencePort["filterAndRankPeople"]>(async () => {
+      throw new Error("exact-intent cache reuse must not invoke role intelligence");
+    });
     const { service, ai } = buildService(
       prisma,
       { run } as ApifyRunner,
@@ -3021,7 +3001,8 @@ describe("Discover shared cache integration", () => {
       },
       undefined,
       allowAllQuota,
-      cache
+      cache,
+      semanticRolePort({ filter: exactIntentFilter })
     );
     const search = await service.createSearch("wealthfront_requester", {
       companyName: "Wealthfront Corporation",
@@ -3038,6 +3019,7 @@ describe("Discover shared cache integration", () => {
     expect(result.resultSource).toBe("CACHE");
     expect(result.totalProcessed).toBe(10);
     expect(run).not.toHaveBeenCalled();
+    expect(exactIntentFilter).not.toHaveBeenCalled();
     expect(ai.callsOfType("company_resolution")).toHaveLength(1);
     expect(prisma._state.companies.find((company) => company.userId === "wealthfront_requester"))
       .toMatchObject({ canonicalKey: "domain:wealthfront.com" });

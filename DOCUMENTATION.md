@@ -1544,8 +1544,9 @@ company graph cleanup (see 23.8).
 
 `createProspectSearch` → resolve company website identity → read durable people
 from the exact shared fingerprint → read the strongly matched same-company pool
-→ read the requester's existing company people → apply role/location guards and
-stable-identity de-duplication → materialize up to 10 matches → resolve the
+→ reuse exact source intents directly or apply role/location guards to differing
+intents → read the requester's existing company people → apply stable-identity
+de-duplication → materialize up to 10 matches → resolve the
 email format independently when people exist → mark the search `READY` or
 `NO_RESULTS`. Ordinary processing, retry, refresh, navigation, and role
 selection never call Apify. A partial database result is returned as-is and is
@@ -1557,11 +1558,11 @@ run.
 
 ### 23.2.2 Add 10 more (search expansion)
 
-`addMoreDiscoverPeople(searchId, idempotencyKey)` extends an existing **READY**
-or **NO_RESULTS**
-search with up to `DISCOVER_EXPANSION_BATCH_SIZE` (10) **new unique** people.
+`addMoreDiscoverPeople(searchId, idempotencyKey)` explicitly extends an existing
+**READY** or **NO_RESULTS** search with up to `DISCOVER_EXPANSION_BATCH_SIZE` (10)
+**new unique** people.
 `DiscoverExpansionService` runs the workflow (the resolver stays thin): load +
-own the search → confirm READY with canonical company/roles/locations → create an
+own the search → confirm READY/NO_RESULTS with canonical company/roles/locations → create an
 idempotent `DiscoverSearchExpansion` record → reserve **one** daily Discover slot
 (the existing quota service, idempotent on the expansion id) → materialize unused
 people from the shared cache and the user's existing company people **before** any provider call → if still short and not
@@ -1805,12 +1806,13 @@ share an internal cross-user durable people store
   its normalized trusted `companyDomain` matches the request's newly resolved
   official domain. LinkedIn-only equivalence is allowed only without a
   contradictory trusted domain; display name alone never merges companies.
-- **Exact source-location provenance.** A shared entry's normalized requested
-  locations record the geography sent to the paid provider. When that set exactly
-  equals the new request, it may satisfy missing or incomplete per-person
-  geography during reuse. Explicit contradictions (for example United States
-  requested but United Kingdom stored on the person) are still rejected, and a
-  different request such as San Francisco cannot inherit United States source
+- **Exact source-intent provenance.** A shared entry's normalized roles and
+  locations record the exact intent sent to the paid provider. When both sets
+  equal the new request, the same-company pool reuses that entry's stored people
+  directly and does not re-run role classification, embeddings, semantic title
+  matching, or per-person cache-location filtering. If either set differs, the
+  normal strict person-level policy still runs; Recruiter cannot inherit a
+  Software Engineer entry and San Francisco cannot inherit United States source
   provenance. This affects runtime reuse only; cache fingerprints remain exact.
 - **Lifecycle.** `lookupReusableDataset` is read-only and deliberately accepts
   no provider callback. A non-empty entry remains reusable regardless of
@@ -1843,9 +1845,11 @@ share an internal cross-user durable people store
   (`DISCOVER_CACHE_HIT`, `DISCOVER_COMPANY_POOL_HIT`,
   `DISCOVER_LOCAL_PERSON_HIT`, `DISCOVER_DATABASE_MISS`, and
   `DISCOVER_DATABASE_LOOKUP_FAILED`) with only
-  safe metadata (search id, user id, fingerprint-hash prefix, `cacheHit`,
-  `cacheAgeDays`, `resultCount`, `providerCalled`, latency) — never people lists,
-  generated emails, provider payloads, the requester email, or prompts.
+  safe metadata (search id, user id, fingerprint-hash prefix, requested/matched
+  company identity, normalized source/request intent, `exactIntentReuse`,
+  candidate/match counts, `cacheHit`, `cacheAgeDays`, `resultCount`,
+  `providerCalled`, latency) — never people lists, generated emails, provider
+  payloads, the requester email, or prompts.
 
 ### 23.2.3.1 Database-first reuse ladder
 
@@ -1853,12 +1857,15 @@ An exact fingerprint miss is not permission to call the paid provider. Every
 ordinary search applies this database-only ladder:
 
 1. **Exact shared entry.** Reuse any non-empty entry for the canonical
-   fingerprint, regardless of age or legacy status metadata.
+   fingerprint, regardless of age or legacy status metadata. Exact normalized
+   source intent is provider-backed provenance and bypasses per-person
+   reclassification.
 2. **Same-company shared pool.** Query durable entries only under a strong,
-   internally consistent company identity (canonical LinkedIn company or
-   official domain), combine their normalized public people, then apply exact
+   internally consistent company identity (official domain or trusted LinkedIn
+   fallback). A source entry whose normalized role and location sets
+   exactly equal the request is reused directly. Differing intents apply exact
    location compatibility plus the deterministic/semantic role guard. This is
-   what lets an Apple "Software Developer" search reuse an earlier Apple
+   what lets an Apple "Software Developer" search consider an earlier Apple
    "Software Engineer" pool while refusing a recruiter-only or wrong-location
    pool. Entry and person reads are bounded; no fuzzy company-name scan is used.
 3. **Same-user materialized people.** If shared reuse still misses, read only

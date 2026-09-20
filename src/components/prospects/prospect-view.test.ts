@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
+import * as React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type {
   DiscoverCompanyGroupNode,
@@ -8,6 +10,7 @@ import type {
   PersonNode,
   ProspectSearchNode
 } from "@/components/prospects/prospect-graphql";
+import { StatusCard } from "@/components/prospects/prospect-detail-view";
 import {
   ADD_MORE_DIALOG_NOTE,
   ADD_MORE_DIALOG_SUBTITLE,
@@ -365,6 +368,25 @@ describe("status badges", () => {
 });
 
 describe("zero-result search state", () => {
+  it("renders and re-renders NO_RESULTS without invoking its provider-action callback", () => {
+    // Vitest compiles this client component with the classic JSX runtime in the
+    // Node test environment; Next supplies the automatic runtime in production.
+    (globalThis as typeof globalThis & { React: typeof React }).React = React;
+    const onProcess = vi.fn();
+    const node = search({ status: "NO_RESULTS", peopleCount: 0 });
+    const render = () => renderToStaticMarkup(React.createElement(StatusCard, {
+      search: node,
+      quota: null,
+      processing: false,
+      onProcess,
+      onCancel: vi.fn()
+    }));
+
+    expect(render()).toContain(NO_RESULTS_RETRY_LABEL);
+    expect(render()).toContain(NO_RESULTS_BODY);
+    expect(onProcess).not.toHaveBeenCalled();
+  });
+
   it("detects the explicit NO_RESULTS status", () => {
     expect(isNoResultsSearch({ status: "NO_RESULTS", peopleCount: 0 })).toBe(true);
   });
@@ -1015,6 +1037,22 @@ describe("Add 10 more detail-page wiring", () => {
   it("opens a confirmation dialog before expanding", () => {
     expect(detailSource).toContain("AddMorePeopleDialog");
     expect(detailSource).toContain("setShowAddMoreDialog(true)");
+  });
+
+  it("keeps NO_RESULTS provider work behind an explicit confirmation click", () => {
+    const requestHandler =
+      detailSource.match(/const handleRequestAddMore = useCallback\([\s\S]*?\n  \}, \[\]\);/)?.[0] ?? "";
+    expect(requestHandler).toContain("setShowAddMoreDialog(true)");
+    expect(requestHandler).not.toContain("ADD_MORE_DISCOVER_PEOPLE_MUTATION");
+    expect(requestHandler).not.toContain("handleAddMore(");
+    expect(detailSource).toContain(
+      'onProcess={selectedView === "no-results" ? handleRequestAddMore : handleProcess}'
+    );
+    expect(detailSource).not.toContain(
+      'onProcess={selectedView === "no-results" ? () => void handleAddMore(search.id) : handleProcess}'
+    );
+    expect(detailSource).toContain("onConfirm={handleAddMore}");
+    expect(detailSource).toContain("setShowAddMoreDialog(false);");
   });
 
   it("uses a compact visible label and explains the action in a tooltip", () => {

@@ -8,6 +8,7 @@ import { env } from "@/lib/env";
 import { getRedis } from "@/lib/redis";
 import {
   normalizeLinkedinCompanySlug,
+  sameNormalizedIntent,
   type DiscoverFingerprintInput
 } from "@/services/prospects/discover-cache-fingerprint";
 import { PersonIdentitySet } from "@/services/prospects/discover-person-identity";
@@ -129,6 +130,8 @@ export type DiscoverCacheResult = {
   sourceNormalizedRoles?: string[];
   sourceNormalizedLocations?: string[];
   legacyIdentityMatch?: boolean;
+  /** True when the source entry itself proves the exact normalized intent. */
+  exactIntentReuse?: boolean;
 };
 
 export type DiscoverCacheLookupDiagnostics = {
@@ -363,15 +366,23 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
       params.fingerprintInput.cacheVersion
     );
     if (exact) {
-      const exactPeople = params.filterCompanyPoolPeople
-        ? await params.filterCompanyPoolPeople(exact.dataset.people, {
-            cacheId: exact.id,
-            companyKey: exact.companyKey ?? params.fingerprintInput.companyKey,
-            companyDomain: exact.companyDomain,
-            normalizedRoles: exact.normalizedRoles,
-            normalizedLocations: exact.normalizedLocations
-          })
-        : exact.dataset.people;
+      const exactIntentReuse = sameNormalizedIntent(
+        exact.normalizedRoles,
+        exact.normalizedLocations,
+        params.fingerprintInput.roles,
+        params.fingerprintInput.locations
+      );
+      const exactPeople = exactIntentReuse
+        ? exact.dataset.people
+        : params.filterCompanyPoolPeople
+          ? await params.filterCompanyPoolPeople(exact.dataset.people, {
+              cacheId: exact.id,
+              companyKey: exact.companyKey ?? params.fingerprintInput.companyKey,
+              companyDomain: exact.companyDomain,
+              normalizedRoles: exact.normalizedRoles,
+              normalizedLocations: exact.normalizedLocations
+            })
+          : exact.dataset.people;
       if (exactPeople.length > 0) {
         return {
           dataset: { ...exact.dataset, people: exactPeople },
@@ -385,7 +396,8 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
           matchedCompanyDomain: exact.companyDomain,
           sourceNormalizedRoles: exact.normalizedRoles,
           sourceNormalizedLocations: exact.normalizedLocations,
-          legacyIdentityMatch: false
+          legacyIdentityMatch: false,
+          exactIntentReuse
         };
       }
       // A malformed/legacy exact entry must not bypass current role/location
@@ -458,7 +470,8 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
       matchedCompanyDomain: pool.matchedSource?.companyDomain ?? entry.companyDomain,
       sourceNormalizedRoles: pool.matchedSource?.normalizedRoles ?? entry.normalizedRoles,
       sourceNormalizedLocations: pool.matchedSource?.normalizedLocations ?? entry.normalizedLocations,
-      legacyIdentityMatch: pool.legacyIdentityMatch
+      legacyIdentityMatch: pool.legacyIdentityMatch,
+      exactIntentReuse: pool.exactIntentReuse
     };
   }
 
@@ -556,12 +569,24 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
     const matchingWithSources: Array<{
       person: ResolvedCachePerson;
       source: CompanyPoolCacheRow;
+      exactIntentReuse: boolean;
     }> = [];
     for (const candidate of candidates) {
       const sourcePeople = (peopleByCacheId.get(candidate.id) ?? []).map(cachePersonRowToResolved);
       if (sourcePeople.length === 0) continue;
-      const matching = await params.filterCompanyPoolPeople(sourcePeople, companyPoolSource(candidate));
-      matchingWithSources.push(...matching.map((person) => ({ person, source: candidate })));
+      const source = companyPoolSource(candidate);
+      const exactIntentReuse = sameNormalizedIntent(
+        source.normalizedRoles,
+        source.normalizedLocations,
+        params.fingerprintInput.roles,
+        params.fingerprintInput.locations
+      );
+      const matching = exactIntentReuse
+        ? sourcePeople
+        : await params.filterCompanyPoolPeople(sourcePeople, source);
+      matchingWithSources.push(
+        ...matching.map((person) => ({ person, source: candidate, exactIntentReuse }))
+      );
     }
 
     const identities = new PersonIdentitySet();
@@ -599,7 +624,8 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
       entry: { ...derived, dataset },
       diagnostics,
       matchedSource: companyPoolSource(source),
-      legacyIdentityMatch: isLegacyIdentityMatch(params.fingerprintInput.companyKey, source)
+      legacyIdentityMatch: isLegacyIdentityMatch(params.fingerprintInput.companyKey, source),
+      exactIntentReuse: deduped[0].exactIntentReuse
     };
   }
 
@@ -878,6 +904,7 @@ type CompanyPoolLookupResult = {
   diagnostics: DiscoverCacheLookupDiagnostics;
   matchedSource?: DiscoverCompanyPoolSource;
   legacyIdentityMatch?: boolean;
+  exactIntentReuse?: boolean;
 };
 
 type TrustedCompanyIdentity = {

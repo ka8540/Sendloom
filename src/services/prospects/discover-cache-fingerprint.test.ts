@@ -4,7 +4,8 @@ import {
   buildDiscoverFingerprintInput,
   canonicalCompanyKey,
   computeDiscoverFingerprint,
-  fingerprintHash
+  fingerprintHash,
+  sameNormalizedIntent
 } from "@/services/prospects/discover-cache-fingerprint";
 
 const APPLE = {
@@ -60,6 +61,29 @@ describe("canonicalCompanyKey", () => {
     const a = canonicalCompanyKey({ ...APPLE, normalizedName: "apple" });
     const b = canonicalCompanyKey({ ...APPLE, normalizedName: "apple inc" });
     expect(a).toBe(b);
+  });
+});
+
+describe("sameNormalizedIntent", () => {
+  it("compares normalized role and location sets deterministically", () => {
+    expect(sameNormalizedIntent(
+      [" Software Engineer ", "software engineer"],
+      ["UNITED   STATES"],
+      ["software engineer"],
+      ["United States"]
+    )).toBe(true);
+    expect(sameNormalizedIntent(
+      ["software engineer"],
+      ["united states"],
+      ["recruiter"],
+      ["united states"]
+    )).toBe(false);
+    expect(sameNormalizedIntent(
+      ["software engineer"],
+      ["united states"],
+      ["software engineer"],
+      ["san francisco"]
+    )).toBe(false);
   });
 });
 

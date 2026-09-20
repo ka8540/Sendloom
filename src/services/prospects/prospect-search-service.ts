@@ -778,7 +778,8 @@ export class ProspectSearchService {
         requestedNormalizedLocations: fingerprintInput.locations,
         sourceNormalizedRoles: [],
         sourceNormalizedLocations: [],
-        legacyIdentityMatch: false
+        legacyIdentityMatch: false,
+        exactIntentReuse: false
       });
       throw error;
     }
@@ -825,7 +826,8 @@ export class ProspectSearchService {
         requestedNormalizedLocations: fingerprintInput.locations,
         sourceNormalizedRoles: cacheResult.sourceNormalizedRoles ?? [],
         sourceNormalizedLocations: cacheResult.sourceNormalizedLocations ?? [],
-        legacyIdentityMatch: cacheResult.legacyIdentityMatch ?? false
+        legacyIdentityMatch: cacheResult.legacyIdentityMatch ?? false,
+        exactIntentReuse: cacheResult.exactIntentReuse ?? false
       });
       return { search: updated, providerCalled: false, resultCount: 0, cacheHit };
     }
@@ -882,7 +884,8 @@ export class ProspectSearchService {
       requestedNormalizedLocations: fingerprintInput.locations,
       sourceNormalizedRoles: cacheResult.sourceNormalizedRoles ?? [],
       sourceNormalizedLocations: cacheResult.sourceNormalizedLocations ?? [],
-      legacyIdentityMatch: cacheResult.legacyIdentityMatch ?? false
+      legacyIdentityMatch: cacheResult.legacyIdentityMatch ?? false,
+      exactIntentReuse: cacheResult.exactIntentReuse ?? false
     });
 
     this.logEmailFormatStage({
@@ -2046,6 +2049,7 @@ type DiscoverCacheLogEvent = {
   sourceNormalizedRoles: string[];
   sourceNormalizedLocations: string[];
   legacyIdentityMatch: boolean;
+  exactIntentReuse: boolean;
 };
 
 function discoverCacheEventName(result: {

@@ -243,7 +243,7 @@ describe("DiscoverSearchCacheService storage and durable metadata", () => {
     expect(prisma._state.discoverCache[0].resultCount).toBe(3);
   });
 
-  it("reuses an exact durable entry before later database rungs", async () => {
+  it("reuses an exact durable entry without reclassifying its people", async () => {
     const seed = vi.fn(async () => dataset([cachePerson("1")]));
     const service = buildService();
     await seedCache(service, params(FINGERPRINT, seed));
@@ -261,9 +261,10 @@ describe("DiscoverSearchCacheService storage and durable metadata", () => {
     const result = await service.lookupReusableDataset(lookupParams(request));
 
     expect(provider).not.toHaveBeenCalled();
-    expect(filterCompanyPoolPeople).toHaveBeenCalledTimes(1);
+    expect(filterCompanyPoolPeople).not.toHaveBeenCalled();
     expect(lookupLocalPeople).not.toHaveBeenCalled();
     expect(result.source).toBe("CACHE");
+    expect(result.exactIntentReuse).toBe(true);
     expect(result.dataset.people).toHaveLength(1);
     expect(result.dataset.people[0].sourceProfileId).toBe("1");
   });
@@ -431,6 +432,8 @@ describe("DiscoverSearchCacheService same-company database-first reuse", () => {
     linkedinUrl?: string | null;
     people: ResolvedCachePerson[];
     cacheVersion?: string;
+    roles?: string[];
+    locations?: string[];
   }) {
     const service = buildService();
     const seed = companyPoolParams({
@@ -444,7 +447,8 @@ describe("DiscoverSearchCacheService same-company database-first reuse", () => {
     });
     // Seed under a broader, non-identical role fingerprint. Omitting the pool
     // filter makes this setup behave like an original paid-provider write.
-    seed.fingerprintInput.roles = ["human resource", "recruiter", "software engineer"];
+    seed.fingerprintInput.roles = input.roles ?? ["human resource", "recruiter", "software engineer"];
+    seed.fingerprintInput.locations = input.locations ?? ["united states"];
     delete seed.filterCompanyPoolPeople;
     await seedCache(service, seed);
     return service;
@@ -621,7 +625,11 @@ describe("DiscoverSearchCacheService same-company database-first reuse", () => {
   });
 
   it("returns zero without a provider when the Apple pool has no matching Recruiters", async () => {
-    const service = await seedPool({ people: [cachePerson("s1"), cachePerson("s2")] });
+    const service = await seedPool({
+      roles: ["software engineer"],
+      locations: ["united states"],
+      people: [cachePerson("s1"), cachePerson("s2")]
+    });
     const provider = vi.fn(async () =>
       dataset([
         cachePerson("paid-r", {
@@ -691,10 +699,15 @@ describe("DiscoverSearchCacheService same-company database-first reuse", () => {
   });
 
   it("reuses a legacy LinkedIn-keyed Wealthfront row by domain and exact source geography", async () => {
+    const exactIntentFilter = vi.fn(() => {
+      throw new Error("exact-intent reuse must not invoke person-level filtering");
+    });
     const service = await seedPool({
       companyKey: "linkedin:wealthfront",
       domain: "wealthfront.com",
       linkedinUrl: "https://www.linkedin.com/company/wealthfront",
+      roles: ["software engineer"],
+      locations: ["united states"],
       people: [
         cachePerson("wealthfront-missing-location", {
           location: null,
@@ -702,11 +715,13 @@ describe("DiscoverSearchCacheService same-company database-first reuse", () => {
           state: null,
           city: null
         }),
-        cachePerson("wealthfront-explicit-uk", {
-          location: "London, United Kingdom",
-          country: "United Kingdom",
+        cachePerson("wealthfront-detailed-title", {
+          currentTitle: "Senior Distributed Systems Engineer",
+          normalizedTitle: "senior distributed systems engineer",
+          location: null,
+          country: null,
           state: null,
-          city: "London"
+          city: null
         })
       ]
     });
@@ -716,12 +731,7 @@ describe("DiscoverSearchCacheService same-company database-first reuse", () => {
       companyKey: "domain:wealthfront.com",
       domain: "wealthfront.com",
       provider,
-      filter: (people, source) => filterReusableDiscoverPeople({
-        people,
-        requestedRoles: [{ normalizedTitle: "software engineer", category: "SOFTWARE_ENGINEERING" }],
-        requestedLocations: ["United States"],
-        sourceRequestedLocations: source.normalizedLocations
-      })
+      filter: exactIntentFilter
     });
     request.fingerprintInput.roles = ["software engineer"];
 
@@ -732,9 +742,12 @@ describe("DiscoverSearchCacheService same-company database-first reuse", () => {
     expect(result.matchedCacheCompanyKey).toBe("linkedin:wealthfront");
     expect(result.matchedCompanyDomain).toBe("wealthfront.com");
     expect(result.sourceNormalizedLocations).toEqual(["united states"]);
+    expect(result.exactIntentReuse).toBe(true);
     expect(result.dataset.people.map((person) => person.sourceProfileId)).toEqual([
-      "wealthfront-missing-location"
+      "wealthfront-missing-location",
+      "wealthfront-detailed-title"
     ]);
+    expect(exactIntentFilter).not.toHaveBeenCalled();
     expect(provider).not.toHaveBeenCalled();
   });
 
@@ -743,6 +756,8 @@ describe("DiscoverSearchCacheService same-company database-first reuse", () => {
       companyKey: "linkedin:wealthfront",
       domain: "wealthfront.com",
       linkedinUrl: "https://www.linkedin.com/company/wealthfront",
+      roles: ["software engineer"],
+      locations: ["united states"],
       people: [cachePerson("wealthfront-missing-location", {
         location: null,
         country: null,

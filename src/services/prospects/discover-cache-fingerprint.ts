@@ -66,6 +66,30 @@ export function normalizeLocationsForCache(locations: string[]): string[] {
   );
 }
 
+/**
+ * Exact normalized role/location intent equality for shared-cache provenance.
+ * Both sides are normalized here so legacy JSON values cannot depend on array
+ * order, casing, whitespace, diacritics, or duplicate tokens.
+ */
+export function sameNormalizedIntent(
+  sourceRoles: readonly string[],
+  sourceLocations: readonly string[],
+  requestedRoles: readonly string[],
+  requestedLocations: readonly string[]
+): boolean {
+  const normalizedSourceRoles = normalizeRolesForCache([...sourceRoles]);
+  const normalizedRequestedRoles = normalizeRolesForCache([...requestedRoles]);
+  const normalizedSourceLocations = normalizeLocationsForCache([...sourceLocations]);
+  const normalizedRequestedLocations = normalizeLocationsForCache([...requestedLocations]);
+  return normalizedSourceRoles.length > 0
+    && normalizedSourceRoles.length === normalizedRequestedRoles.length
+    && normalizedSourceRoles.every((role, index) => role === normalizedRequestedRoles[index])
+    && normalizedSourceLocations.length === normalizedRequestedLocations.length
+    && normalizedSourceLocations.every(
+      (location, index) => location === normalizedRequestedLocations[index]
+    );
+}
+
 export function buildDiscoverFingerprintInput(params: {
   company: CompanyKeySource;
   roles: string[];
