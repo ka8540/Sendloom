@@ -84,4 +84,45 @@ describe("evaluateDiscoverLocationMatch", () => {
       })
     ).toEqual({ matches: false, reason: "MISSING_METADATA" });
   });
+
+  it("uses exact source-cache geography for missing or incomplete person metadata", () => {
+    expect(
+      evaluateDiscoverLocationMatch({
+        candidate: {},
+        requestedLocations: ["United States"],
+        sourceRequestedLocations: ["united states"],
+        context: "CACHE"
+      })
+    ).toEqual({ matches: true, reason: "SOURCE_PROVENANCE" });
+    expect(
+      evaluateDiscoverLocationMatch({
+        candidate: { location: "Hartford, Connecticut" },
+        requestedLocations: ["United States"],
+        sourceRequestedLocations: ["United States"],
+        context: "CACHE"
+      })
+    ).toEqual({ matches: true, reason: "SOURCE_PROVENANCE" });
+  });
+
+  it("does not apply source provenance to a different requested geography", () => {
+    expect(
+      evaluateDiscoverLocationMatch({
+        candidate: {},
+        requestedLocations: ["San Francisco"],
+        sourceRequestedLocations: ["United States"],
+        context: "CACHE"
+      })
+    ).toEqual({ matches: false, reason: "MISSING_METADATA" });
+  });
+
+  it("keeps explicit country contradictions rejected despite exact source provenance", () => {
+    expect(
+      evaluateDiscoverLocationMatch({
+        candidate: { location: "London, United Kingdom", country: "United Kingdom" },
+        requestedLocations: ["United States"],
+        sourceRequestedLocations: ["United States"],
+        context: "CACHE"
+      })
+    ).toEqual({ matches: false, reason: "EXPLICIT_CONTRADICTION" });
+  });
 });

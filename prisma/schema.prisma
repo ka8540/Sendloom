@@ -853,8 +853,9 @@ model HunterDomainSearch {
 model ProspectCompany {
   id                         String    @id @default(cuid())
   userId                     String
-  // Tenant-local canonical identity. Resolved domains are authoritative;
-  // normalized company names are only a fallback while a domain is unknown.
+  // Tenant-local canonical identity. Resolved official domains are
+  // authoritative; a trusted LinkedIn company slug is the fallback when no
+  // domain exists, followed by the normalized company name.
   canonicalKey               String
   name                       String
   normalizedName             String

@@ -2944,6 +2944,107 @@ describe("Discover shared cache integration", () => {
     ).toEqual(["RECRUITING"]);
   });
 
+  it("reuses a 73-person legacy Wealthfront pool for a name-only cross-user search with zero Apify calls", async () => {
+    const cache = new DiscoverSearchCacheService({
+      prisma: prisma as unknown as PrismaClient,
+      lock: makeFakeCacheLock(),
+      now: () => new Date("2026-09-20T21:00:00.000Z"),
+      cleanupOnRefresh: false
+    });
+    const people = Array.from({ length: 73 }, (_, index) => ({
+      sourceProfileId: `wealthfront-${index + 1}`,
+      firstName: `Person${index + 1}`,
+      lastName: "Engineer",
+      fullName: `Person${index + 1} Engineer`,
+      currentTitle: "Software Engineer",
+      normalizedTitle: "software engineer",
+      positionCategory: "SOFTWARE_ENGINEERING",
+      location: null,
+      country: null,
+      state: null,
+      city: null,
+      linkedinUrl: `https://www.linkedin.com/in/wealthfront-${index + 1}`,
+      inferredEmail: null,
+      emailStatus: "UNAVAILABLE",
+      emailConfidence: "UNAVAILABLE",
+      emailPattern: null,
+      emailSource: null
+    }));
+    await seedSharedCache(cache, {
+      fingerprint: "legacy-wealthfront-linkedin-swe-us",
+      fingerprintInput: {
+        companyKey: "linkedin:wealthfront",
+        roles: ["software engineer"],
+        locations: ["united states"],
+        resultLimit: 10,
+        cacheVersion: "v1"
+      },
+      company: {
+        name: "Wealthfront Corporation",
+        domain: "wealthfront.com",
+        linkedinUrl: "https://www.linkedin.com/company/wealthfront"
+      }
+    }, {
+      emailFormat: {
+        emailDomain: null,
+        emailDomainConfidence: "UNAVAILABLE",
+        emailDomainEvidence: null,
+        emailPattern: null,
+        patternConfidence: "UNAVAILABLE",
+        patternEvidence: null,
+        emailFormatReason: null,
+        emailFormatDiscoveryStatus: "NO_EVIDENCE",
+        emailFormatDiscoveryAt: new Date("2026-09-20T20:00:00.000Z"),
+        emailFormatDiscoveryExpiresAt: new Date("2026-09-21T20:00:00.000Z")
+      },
+      people
+    });
+
+    const run = vi.fn<ApifyRunner["run"]>();
+    const { service, ai } = buildService(
+      prisma,
+      { run } as ApifyRunner,
+      {
+        responses: {
+          company_resolution: {
+            officialName: "Wealthfront Corporation",
+            normalizedName: "wealthfront",
+            officialWebsiteDomain: "wealthfront.com",
+            officialWebsite: "https://www.wealthfront.com",
+            linkedinCompanyUrl: "https://www.linkedin.com/company/wealthfront",
+            confidence: "HIGH",
+            requiresConfirmation: false,
+            evidence: []
+          },
+          role_classification: { classifications: [] }
+        }
+      },
+      undefined,
+      allowAllQuota,
+      cache
+    );
+    const search = await service.createSearch("wealthfront_requester", {
+      companyName: "Wealthfront Corporation",
+      companyDomain: null,
+      companyLinkedinUrl: null,
+      jobTitles: ["Software Engineer"],
+      locations: ["United States"],
+      maxResults: 10
+    });
+
+    const result = await service.processSearch("wealthfront_requester", search.id);
+
+    expect(result.status).toBe("READY");
+    expect(result.resultSource).toBe("CACHE");
+    expect(result.totalProcessed).toBe(10);
+    expect(run).not.toHaveBeenCalled();
+    expect(ai.callsOfType("company_resolution")).toHaveLength(1);
+    expect(prisma._state.companies.find((company) => company.userId === "wealthfront_requester"))
+      .toMatchObject({ canonicalKey: "domain:wealthfront.com" });
+    expect(prisma._state.people.filter((person) => person.userId === "wealthfront_requester"))
+      .toHaveLength(10);
+  });
+
   it("materializes four cached Recruiters as READY without a paid top-up", async () => {
     const cache = new DiscoverSearchCacheService({
       prisma: prisma as unknown as PrismaClient,

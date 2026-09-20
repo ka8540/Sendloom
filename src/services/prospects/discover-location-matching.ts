@@ -4,6 +4,7 @@ export type DiscoverLocationContext = "CACHE" | "PROVIDER";
 export type DiscoverLocationMatchReason =
   | "NO_CONSTRAINT"
   | "CONFIRMED"
+  | "SOURCE_PROVENANCE"
   | "EXPLICIT_CONTRADICTION"
   | "MISSING_METADATA"
   | "NO_MATCH";
@@ -103,6 +104,22 @@ function reliableCandidateCountry(candidate: DiscoverLocationCandidate): string 
   return null;
 }
 
+function normalizedLocationSet(values: readonly string[]): string[] {
+  return Array.from(new Set(values.map(normalizeGeography).filter(Boolean))).sort();
+}
+
+function sameExactLocationConstraint(
+  requestedLocations: readonly string[],
+  sourceRequestedLocations: readonly string[] | undefined
+): boolean {
+  if (!sourceRequestedLocations) return false;
+  const requested = normalizedLocationSet(requestedLocations);
+  const source = normalizedLocationSet(sourceRequestedLocations);
+  return requested.length > 0
+    && requested.length === source.length
+    && requested.every((value, index) => value === source[index]);
+}
+
 /**
  * Runtime candidate-geography policy. This deliberately does not participate
  * in Discover cache fingerprinting: fingerprints remain exact, while stored or
@@ -112,6 +129,8 @@ export function evaluateDiscoverLocationMatch(input: {
   candidate: DiscoverLocationCandidate;
   requestedLocations: readonly string[];
   context: DiscoverLocationContext;
+  /** Geography sent to the provider that produced this shared-cache entry. */
+  sourceRequestedLocations?: readonly string[];
 }): DiscoverLocationMatch {
   const requested = input.requestedLocations.map(normalizeGeography).filter(Boolean);
   if (requested.length === 0) {
@@ -147,6 +166,16 @@ export function evaluateDiscoverLocationMatch(input: {
     && !requestedCountryKeys.has(explicitCountry)
   ) {
     return { matches: false, reason: "EXPLICIT_CONTRADICTION" };
+  }
+
+  if (
+    input.context === "CACHE"
+    && sameExactLocationConstraint(input.requestedLocations, input.sourceRequestedLocations)
+  ) {
+    // The source cache entry proves that the paid provider request carried this
+    // exact geography. It can fill missing/incomplete person metadata, but only
+    // after the explicit-country contradiction guard above has run.
+    return { matches: true, reason: "SOURCE_PROVENANCE" };
   }
 
   if (input.context === "PROVIDER") {

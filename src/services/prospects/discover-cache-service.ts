@@ -100,6 +100,10 @@ export type CachedEntry = {
   id: string;
   fetchedAt: Date | null;
   dataset: ResolvedDataset;
+  companyKey: string | null;
+  companyDomain: string | null;
+  normalizedRoles: string[];
+  normalizedLocations: string[];
 };
 
 export type DiscoverCacheCompany = {
@@ -119,6 +123,12 @@ export type DiscoverCacheResult = {
   cacheHitType?: "EXACT" | "COMPANY_POOL" | "LOCAL_PERSON" | null;
   /** Privacy-safe counts for cost-control observability. */
   lookupDiagnostics?: DiscoverCacheLookupDiagnostics;
+  /** Safe source-entry metadata for identity/provenance diagnostics. */
+  matchedCacheCompanyKey?: string | null;
+  matchedCompanyDomain?: string | null;
+  sourceNormalizedRoles?: string[];
+  sourceNormalizedLocations?: string[];
+  legacyIdentityMatch?: boolean;
 };
 
 export type DiscoverCacheLookupDiagnostics = {
@@ -127,8 +137,17 @@ export type DiscoverCacheLookupDiagnostics = {
   matchingPersonCount: number;
 };
 
+export type DiscoverCompanyPoolSource = {
+  cacheId: string;
+  companyKey: string;
+  companyDomain: string | null;
+  normalizedRoles: string[];
+  normalizedLocations: string[];
+};
+
 export type DiscoverCompanyPoolPersonFilter = (
-  people: ResolvedCachePerson[]
+  people: ResolvedCachePerson[],
+  source: DiscoverCompanyPoolSource
 ) => Promise<ResolvedCachePerson[]> | ResolvedCachePerson[];
 
 /**
@@ -266,12 +285,18 @@ type CacheRow = {
   emailFormatDiscoveryAt?: Date | string | null;
   emailFormatDiscoveryExpiresAt?: Date | string | null;
   cacheVersion?: string | null;
+  companyKey?: string | null;
+  companyDomain?: string | null;
+  normalizedRoles?: unknown;
+  normalizedLocations?: unknown;
 };
 
 type CompanyPoolCacheRow = CacheRow & {
   companyKey: string;
   companyDomain: string | null;
   companyLinkedinUrl: string | null;
+  normalizedRoles: unknown;
+  normalizedLocations: unknown;
 };
 
 const EMPTY_LOOKUP_DIAGNOSTICS: DiscoverCacheLookupDiagnostics = {
@@ -338,15 +363,34 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
       params.fingerprintInput.cacheVersion
     );
     if (exact) {
-      return {
-        dataset: exact.dataset,
-        source: "CACHE",
-        cacheId: exact.id,
-        fetchedAt: exact.fetchedAt,
-        refreshedStale: false,
-        cacheHitType: "EXACT",
-        lookupDiagnostics: EMPTY_LOOKUP_DIAGNOSTICS
-      };
+      const exactPeople = params.filterCompanyPoolPeople
+        ? await params.filterCompanyPoolPeople(exact.dataset.people, {
+            cacheId: exact.id,
+            companyKey: exact.companyKey ?? params.fingerprintInput.companyKey,
+            companyDomain: exact.companyDomain,
+            normalizedRoles: exact.normalizedRoles,
+            normalizedLocations: exact.normalizedLocations
+          })
+        : exact.dataset.people;
+      if (exactPeople.length > 0) {
+        return {
+          dataset: { ...exact.dataset, people: exactPeople },
+          source: "CACHE",
+          cacheId: exact.id,
+          fetchedAt: exact.fetchedAt,
+          refreshedStale: false,
+          cacheHitType: "EXACT",
+          lookupDiagnostics: EMPTY_LOOKUP_DIAGNOSTICS,
+          matchedCacheCompanyKey: exact.companyKey,
+          matchedCompanyDomain: exact.companyDomain,
+          sourceNormalizedRoles: exact.normalizedRoles,
+          sourceNormalizedLocations: exact.normalizedLocations,
+          legacyIdentityMatch: false
+        };
+      }
+      // A malformed/legacy exact entry must not bypass current role/location
+      // authorization. Continue to compatible sibling entries and then the
+      // requester-owned fallback instead of treating the fingerprint as proof.
     }
 
     const companyPool = await this.getReusableCompanyPoolDataset(params);
@@ -386,6 +430,10 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
     return {
       id: entry.id,
       fetchedAt: entry.fetchedAt ? new Date(entry.fetchedAt) : null,
+      companyKey: entry.companyKey ?? null,
+      companyDomain: entry.companyDomain ?? null,
+      normalizedRoles: jsonStringArray(entry.normalizedRoles),
+      normalizedLocations: jsonStringArray(entry.normalizedLocations),
       dataset: {
         emailFormat,
         people: await normalizeDiscoverPeopleWithEmails(
@@ -405,7 +453,12 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
       fetchedAt: entry.fetchedAt,
       refreshedStale: false,
       cacheHitType: "COMPANY_POOL",
-      lookupDiagnostics: pool.diagnostics
+      lookupDiagnostics: pool.diagnostics,
+      matchedCacheCompanyKey: pool.matchedSource?.companyKey ?? entry.companyKey,
+      matchedCompanyDomain: pool.matchedSource?.companyDomain ?? entry.companyDomain,
+      sourceNormalizedRoles: pool.matchedSource?.normalizedRoles ?? entry.normalizedRoles,
+      sourceNormalizedLocations: pool.matchedSource?.normalizedLocations ?? entry.normalizedLocations,
+      legacyIdentityMatch: pool.legacyIdentityMatch
     };
   }
 
@@ -493,9 +546,26 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
         (a.sortIndex ?? 0) - (b.sortIndex ?? 0)
     );
 
-    const matching = await params.filterCompanyPoolPeople(peopleRows.map(cachePersonRowToResolved));
+    const peopleByCacheId = new Map<string, CompanyPoolPersonRow[]>();
+    for (const person of peopleRows) {
+      const grouped = peopleByCacheId.get(person.cacheId) ?? [];
+      grouped.push(person);
+      peopleByCacheId.set(person.cacheId, grouped);
+    }
+
+    const matchingWithSources: Array<{
+      person: ResolvedCachePerson;
+      source: CompanyPoolCacheRow;
+    }> = [];
+    for (const candidate of candidates) {
+      const sourcePeople = (peopleByCacheId.get(candidate.id) ?? []).map(cachePersonRowToResolved);
+      if (sourcePeople.length === 0) continue;
+      const matching = await params.filterCompanyPoolPeople(sourcePeople, companyPoolSource(candidate));
+      matchingWithSources.push(...matching.map((person) => ({ person, source: candidate })));
+    }
+
     const identities = new PersonIdentitySet();
-    const deduped = matching.filter((person) => identities.addIfNew(person));
+    const deduped = matchingWithSources.filter(({ person }) => identities.addIfNew(person));
     const diagnostics = {
       candidateEntryCount: candidates.length,
       candidatePersonCount: peopleRows.length,
@@ -505,20 +575,32 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
       return { entry: null, diagnostics };
     }
 
-    const firstMatch = new PersonIdentitySet([deduped[0]]);
-    const sourceCacheId = peopleRows.find((person) => firstMatch.has(person))?.cacheId;
-    const source = candidates.find((entry) => entry.id === sourceCacheId) ?? candidates[0];
-    const dataset = { emailFormat: rowToEmailFormat(source), people: deduped };
-    let derived: { id: string; fetchedAt: Date | null } = {
+    const source = deduped[0].source;
+    const dataset = { emailFormat: rowToEmailFormat(source), people: deduped.map(({ person }) => person) };
+    let derived: Omit<CachedEntry, "dataset"> = {
       id: source.id,
-      fetchedAt: source.fetchedAt ? new Date(source.fetchedAt) : null
+      fetchedAt: source.fetchedAt ? new Date(source.fetchedAt) : null,
+      companyKey: source.companyKey,
+      companyDomain: source.companyDomain,
+      normalizedRoles: jsonStringArray(source.normalizedRoles),
+      normalizedLocations: jsonStringArray(source.normalizedLocations)
     };
     try {
-      derived = await this.writeDerivedCompanyPoolDataset(params, dataset, [source]);
+      const contributingSourceIds = new Set(deduped.map(({ source: matchedSource }) => matchedSource.id));
+      derived = await this.writeDerivedCompanyPoolDataset(
+        params,
+        dataset,
+        candidates.filter((candidate) => contributingSourceIds.has(candidate.id))
+      );
     } catch {
       // Reuse remains valid even when the optional exact-intent derivation fails.
     }
-    return { entry: { id: derived.id, fetchedAt: derived.fetchedAt, dataset }, diagnostics };
+    return {
+      entry: { ...derived, dataset },
+      diagnostics,
+      matchedSource: companyPoolSource(source),
+      legacyIdentityMatch: isLegacyIdentityMatch(params.fingerprintInput.companyKey, source)
+    };
   }
 
   /**
@@ -531,7 +613,7 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
     params: LookupReusableDatasetParams,
     dataset: ResolvedDataset,
     sources: CompanyPoolCacheRow[]
-  ): Promise<{ id: string; fetchedAt: Date | null }> {
+  ): Promise<Omit<CachedEntry, "dataset">> {
     dataset.people = await normalizeDiscoverPeopleWithEmails(dataset.people, dataset.emailFormat);
     const fetchedAtValues = sources
       .map((source) => (source.fetchedAt ? new Date(source.fetchedAt).getTime() : null))
@@ -580,7 +662,14 @@ export class DiscoverSearchCacheService implements DiscoverCachePort, DiscoverCa
       }
       return entry.id;
     });
-    return { id, fetchedAt };
+    return {
+      id,
+      fetchedAt,
+      companyKey: fp.companyKey,
+      companyDomain: params.company.domain,
+      normalizedRoles: fp.roles,
+      normalizedLocations: fp.locations
+    };
   }
 
   /** Update only email-format state; never refetch or replace cached people. */
@@ -787,6 +876,8 @@ type CompanyPoolPersonRow = ResolvedCachePersonRow & { cacheId: string };
 type CompanyPoolLookupResult = {
   entry: CachedEntry | null;
   diagnostics: DiscoverCacheLookupDiagnostics;
+  matchedSource?: DiscoverCompanyPoolSource;
+  legacyIdentityMatch?: boolean;
 };
 
 type TrustedCompanyIdentity = {
@@ -836,17 +927,13 @@ function sameTrustedCompany(left: TrustedCompanyIdentity, right: TrustedCompanyI
   if (!identityIsInternallyConsistent(right)) {
     return false;
   }
-  if (left.domains.size > 0 && right.domains.size > 0 && !setsIntersect(left.domains, right.domains)) {
-    return false;
+  if (left.domains.size > 0 && right.domains.size > 0) {
+    // Official domain is authoritative. A matching domain proves equivalence;
+    // a contradictory domain must never be rescued by a matching display name
+    // or LinkedIn slug.
+    return setsIntersect(left.domains, right.domains);
   }
-  if (
-    left.linkedinSlugs.size > 0 &&
-    right.linkedinSlugs.size > 0 &&
-    !setsIntersect(left.linkedinSlugs, right.linkedinSlugs)
-  ) {
-    return false;
-  }
-  return setsIntersect(left.domains, right.domains) || setsIntersect(left.linkedinSlugs, right.linkedinSlugs);
+  return setsIntersect(left.linkedinSlugs, right.linkedinSlugs);
 }
 
 function companyIdentityPredicates(identity: TrustedCompanyIdentity): Array<Record<string, unknown>> {
@@ -866,6 +953,31 @@ function companyIdentityPredicates(identity: TrustedCompanyIdentity): Array<Reco
 
 function cacheRowTime(value: Date | string | null): number {
   return value ? new Date(value).getTime() : 0;
+}
+
+function jsonStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
+function companyPoolSource(row: CompanyPoolCacheRow): DiscoverCompanyPoolSource {
+  return {
+    cacheId: row.id,
+    companyKey: row.companyKey,
+    companyDomain: normalizeDomain(row.companyDomain),
+    normalizedRoles: jsonStringArray(row.normalizedRoles),
+    normalizedLocations: jsonStringArray(row.normalizedLocations)
+  };
+}
+
+function isLegacyIdentityMatch(requestedCompanyKey: string, source: CompanyPoolCacheRow): boolean {
+  if (requestedCompanyKey === source.companyKey) return false;
+  if (!requestedCompanyKey.startsWith("domain:") || !source.companyKey.startsWith("linkedin:")) {
+    return false;
+  }
+  const requestedDomain = normalizeDomain(requestedCompanyKey.slice("domain:".length));
+  return Boolean(requestedDomain && requestedDomain === normalizeDomain(source.companyDomain));
 }
 
 /** Order cached people by their stable provider sort index (then insertion). */

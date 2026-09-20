@@ -249,7 +249,7 @@ describe("DiscoverSearchCacheService storage and durable metadata", () => {
     await seedCache(service, params(FINGERPRINT, seed));
 
     const provider = vi.fn(async () => dataset([cachePerson("nope")]));
-    const filterCompanyPoolPeople = vi.fn(recruiterUsFilter);
+    const filterCompanyPoolPeople = vi.fn((people: ResolvedCachePerson[]) => people);
     const lookupLocalPeople = vi.fn(async () => ({
       dataset: dataset([cachePerson("local")]),
       candidatePersonCount: 1,
@@ -261,7 +261,7 @@ describe("DiscoverSearchCacheService storage and durable metadata", () => {
     const result = await service.lookupReusableDataset(lookupParams(request));
 
     expect(provider).not.toHaveBeenCalled();
-    expect(filterCompanyPoolPeople).not.toHaveBeenCalled();
+    expect(filterCompanyPoolPeople).toHaveBeenCalledTimes(1);
     expect(lookupLocalPeople).not.toHaveBeenCalled();
     expect(result.source).toBe("CACHE");
     expect(result.dataset.people).toHaveLength(1);
@@ -687,6 +687,88 @@ describe("DiscoverSearchCacheService same-company database-first reuse", () => {
     );
 
     expect(result.cacheHitType).toBe("COMPANY_POOL");
+    expect(provider).not.toHaveBeenCalled();
+  });
+
+  it("reuses a legacy LinkedIn-keyed Wealthfront row by domain and exact source geography", async () => {
+    const service = await seedPool({
+      companyKey: "linkedin:wealthfront",
+      domain: "wealthfront.com",
+      linkedinUrl: "https://www.linkedin.com/company/wealthfront",
+      people: [
+        cachePerson("wealthfront-missing-location", {
+          location: null,
+          country: null,
+          state: null,
+          city: null
+        }),
+        cachePerson("wealthfront-explicit-uk", {
+          location: "London, United Kingdom",
+          country: "United Kingdom",
+          state: null,
+          city: "London"
+        })
+      ]
+    });
+    const provider = vi.fn(async () => dataset([]));
+    const request = companyPoolParams({
+      fingerprint: "fp-wealthfront-domain-swe-us",
+      companyKey: "domain:wealthfront.com",
+      domain: "wealthfront.com",
+      provider,
+      filter: (people, source) => filterReusableDiscoverPeople({
+        people,
+        requestedRoles: [{ normalizedTitle: "software engineer", category: "SOFTWARE_ENGINEERING" }],
+        requestedLocations: ["United States"],
+        sourceRequestedLocations: source.normalizedLocations
+      })
+    });
+    request.fingerprintInput.roles = ["software engineer"];
+
+    const result = await service.lookupReusableDataset(lookupParams(request));
+
+    expect(result.cacheHitType).toBe("COMPANY_POOL");
+    expect(result.legacyIdentityMatch).toBe(true);
+    expect(result.matchedCacheCompanyKey).toBe("linkedin:wealthfront");
+    expect(result.matchedCompanyDomain).toBe("wealthfront.com");
+    expect(result.sourceNormalizedLocations).toEqual(["united states"]);
+    expect(result.dataset.people.map((person) => person.sourceProfileId)).toEqual([
+      "wealthfront-missing-location"
+    ]);
+    expect(provider).not.toHaveBeenCalled();
+  });
+
+  it("does not reuse United States provenance for a San Francisco request", async () => {
+    const service = await seedPool({
+      companyKey: "linkedin:wealthfront",
+      domain: "wealthfront.com",
+      linkedinUrl: "https://www.linkedin.com/company/wealthfront",
+      people: [cachePerson("wealthfront-missing-location", {
+        location: null,
+        country: null,
+        state: null,
+        city: null
+      })]
+    });
+    const provider = vi.fn(async () => dataset([]));
+    const request = companyPoolParams({
+      fingerprint: "fp-wealthfront-domain-swe-sf",
+      companyKey: "domain:wealthfront.com",
+      domain: "wealthfront.com",
+      provider,
+      filter: (people, source) => filterReusableDiscoverPeople({
+        people,
+        requestedRoles: [{ normalizedTitle: "software engineer", category: "SOFTWARE_ENGINEERING" }],
+        requestedLocations: ["San Francisco"],
+        sourceRequestedLocations: source.normalizedLocations
+      })
+    });
+    request.fingerprintInput.roles = ["software engineer"];
+    request.fingerprintInput.locations = ["san francisco"];
+
+    const result = await service.lookupReusableDataset(lookupParams(request));
+
+    expect(result.dataset.people).toEqual([]);
     expect(provider).not.toHaveBeenCalled();
   });
 

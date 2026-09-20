@@ -737,12 +737,13 @@ export class ProspectSearchService {
           domain: resolution.officialWebsiteDomain ?? resolution.officialDomain,
           linkedinUrl: resolution.linkedinCompanyUrl
         },
-        filterCompanyPoolPeople: async (people) => {
+        filterCompanyPoolPeople: async (people, source) => {
           const requestedTitles = this.asStringArray(search.requestedTitles);
           return this.roleIntelligence.filterAndRankPeople({
             people,
             requestedTitles,
             requestedLocations: this.asStringArray(search.requestedLocations),
+            sourceRequestedLocations: source.normalizedLocations,
             context: "CACHE",
             options: { budget, searchId: search.id }
           });
@@ -769,7 +770,15 @@ export class ProspectSearchService {
         cacheHitType: null,
         candidateEntryCount: 0,
         candidatePersonCount: 0,
-        matchingPersonCount: 0
+        matchingPersonCount: 0,
+        requestedCanonicalCompanyKey: fingerprintInput.companyKey,
+        matchedCacheCompanyKey: null,
+        matchedCompanyDomain: null,
+        requestedNormalizedRoles: fingerprintInput.roles,
+        requestedNormalizedLocations: fingerprintInput.locations,
+        sourceNormalizedRoles: [],
+        sourceNormalizedLocations: [],
+        legacyIdentityMatch: false
       });
       throw error;
     }
@@ -808,7 +817,15 @@ export class ProspectSearchService {
         cacheHitType: cacheResult.cacheHitType ?? (cacheHit ? "EXACT" : null),
         candidateEntryCount: cacheResult.lookupDiagnostics?.candidateEntryCount ?? 0,
         candidatePersonCount: cacheResult.lookupDiagnostics?.candidatePersonCount ?? 0,
-        matchingPersonCount: cacheResult.lookupDiagnostics?.matchingPersonCount ?? 0
+        matchingPersonCount: cacheResult.lookupDiagnostics?.matchingPersonCount ?? 0,
+        requestedCanonicalCompanyKey: fingerprintInput.companyKey,
+        matchedCacheCompanyKey: cacheResult.matchedCacheCompanyKey ?? null,
+        matchedCompanyDomain: cacheResult.matchedCompanyDomain ?? null,
+        requestedNormalizedRoles: fingerprintInput.roles,
+        requestedNormalizedLocations: fingerprintInput.locations,
+        sourceNormalizedRoles: cacheResult.sourceNormalizedRoles ?? [],
+        sourceNormalizedLocations: cacheResult.sourceNormalizedLocations ?? [],
+        legacyIdentityMatch: cacheResult.legacyIdentityMatch ?? false
       });
       return { search: updated, providerCalled: false, resultCount: 0, cacheHit };
     }
@@ -857,7 +874,15 @@ export class ProspectSearchService {
       cacheHitType: cacheResult.cacheHitType ?? (cacheHit ? "EXACT" : null),
       candidateEntryCount: cacheResult.lookupDiagnostics?.candidateEntryCount ?? 0,
       candidatePersonCount: cacheResult.lookupDiagnostics?.candidatePersonCount ?? 0,
-      matchingPersonCount: cacheResult.lookupDiagnostics?.matchingPersonCount ?? 0
+      matchingPersonCount: cacheResult.lookupDiagnostics?.matchingPersonCount ?? 0,
+      requestedCanonicalCompanyKey: fingerprintInput.companyKey,
+      matchedCacheCompanyKey: cacheResult.matchedCacheCompanyKey ?? null,
+      matchedCompanyDomain: cacheResult.matchedCompanyDomain ?? null,
+      requestedNormalizedRoles: fingerprintInput.roles,
+      requestedNormalizedLocations: fingerprintInput.locations,
+      sourceNormalizedRoles: cacheResult.sourceNormalizedRoles ?? [],
+      sourceNormalizedLocations: cacheResult.sourceNormalizedLocations ?? [],
+      legacyIdentityMatch: cacheResult.legacyIdentityMatch ?? false
     });
 
     this.logEmailFormatStage({
@@ -1491,6 +1516,7 @@ export class ProspectSearchService {
 
   private async upsertCompany(userId: string, resolution: CompanyResolution): Promise<ProspectCompany> {
     const canonicalKey = getCanonicalCompanyKey({
+      linkedinCompanyUrl: resolution.linkedinCompanyUrl,
       officialWebsiteDomain: resolution.officialWebsiteDomain,
       officialDomain: resolution.officialDomain,
       normalizedName: resolution.normalizedName
@@ -1992,6 +2018,7 @@ type DiscoverCacheLogEvent = {
   event:
     | "DISCOVER_CACHE_HIT"
     | "DISCOVER_COMPANY_POOL_CACHE_HIT"
+    | "DISCOVER_LEGACY_IDENTITY_COMPANY_POOL_HIT"
     | "DISCOVER_LOCAL_PERSON_REUSE"
     | "DISCOVER_CACHE_POOL_ZERO_MATCH"
     | "DISCOVER_DATABASE_MISS"
@@ -2011,6 +2038,14 @@ type DiscoverCacheLogEvent = {
   candidateEntryCount: number;
   candidatePersonCount: number;
   matchingPersonCount: number;
+  requestedCanonicalCompanyKey: string;
+  matchedCacheCompanyKey: string | null;
+  matchedCompanyDomain: string | null;
+  requestedNormalizedRoles: string[];
+  requestedNormalizedLocations: string[];
+  sourceNormalizedRoles: string[];
+  sourceNormalizedLocations: string[];
+  legacyIdentityMatch: boolean;
 };
 
 function discoverCacheEventName(result: {
@@ -2018,13 +2053,16 @@ function discoverCacheEventName(result: {
   refreshedStale: boolean;
   cacheHitType?: "EXACT" | "COMPANY_POOL" | "LOCAL_PERSON" | null;
   lookupDiagnostics?: { candidateEntryCount: number; matchingPersonCount: number };
+  legacyIdentityMatch?: boolean;
 }): DiscoverCacheLogEvent["event"] {
   if (result.source === "CACHE") {
     if (result.cacheHitType === "LOCAL_PERSON") {
       return "DISCOVER_LOCAL_PERSON_REUSE";
     }
     if (result.cacheHitType === "COMPANY_POOL") {
-      return "DISCOVER_COMPANY_POOL_CACHE_HIT";
+      return result.legacyIdentityMatch
+        ? "DISCOVER_LEGACY_IDENTITY_COMPANY_POOL_HIT"
+        : "DISCOVER_COMPANY_POOL_CACHE_HIT";
     }
     if (result.cacheHitType === "EXACT") {
       return "DISCOVER_CACHE_HIT";

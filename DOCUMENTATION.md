@@ -720,7 +720,7 @@ Notable field-level changes in this revision:
 | Model | Field | Meaning |
 | --- | --- | --- |
 | `User` | `attachmentAssets` | Relation to the new dedupe rows. |
-| `ProspectCompany` | `canonicalKey` | Tenant-local canonical identity. Resolved domains are authoritative; normalized names are a fallback while a domain is unknown. Replaces `(userId, normalizedName)` as the unique key; `normalizedName` remains indexed. |
+| `ProspectCompany` | `canonicalKey` | Tenant-local canonical identity. Resolved official domains are authoritative; trusted LinkedIn company slugs are the fallback when no domain exists, followed by normalized name. Replaces `(userId, normalizedName)` as the unique key; `normalizedName` remains indexed. |
 | `ProspectCompany` | `emailFormatAuthority` | `MANUAL`, `SOURCE`, `AI`, `SHARED_CACHE`, or `UNRESOLVED`. Prevents a lower-authority update from erasing stronger evidence. |
 | `ProspectCompany` | `emailFormatDiscoveryStatus` / `...Reason` / `...At` | Typed outcome of the most recent discovery attempt, so provider, config, and parser failures stay distinct from genuine no-evidence. |
 | `DiscoverSearchCache` | `emailFormatDiscoveryStatus` / `...Reason` / `...At` / `...ExpiresAt` | Independent email-format discovery state and TTL, indexed on status. |
@@ -1787,8 +1787,9 @@ share an internal cross-user durable people store
 
 - **Canonical fingerprint** (`discover-cache-fingerprint.ts`). The cache key is a
   SHA-256 of `{ companyKey, roles, locations, resultLimit, cacheVersion }`.
-  `companyKey` prefers the resolved LinkedIn company slug, then the official
-  domain, then the normalized name — so "Apple"/"Apple Inc."/"APPLE" share an
+  `companyKey` prefers the normalized official domain, then a trusted LinkedIn
+  company slug only when no official domain exists, then the normalized name —
+  so "Apple"/"Apple Inc."/"APPLE" share an
   entry once resolution confirms the same identity, but similarly-named different
   companies never merge. Roles use the same `normalizeTitle` normalization used
   elsewhere; locations are trimmed/casefolded; both are de-duplicated and sorted
@@ -1799,6 +1800,18 @@ share an internal cross-user durable people store
   Secondary database reuse is deliberately separate and must pass the strong
   company, location, and role guards in 23.2.3.1; no broad fuzzy company or
   geographic equivalence is applied.
+- **Legacy identity compatibility.** Domain-first fingerprints do not strand
+  historical `linkedin:*` rows. The same-company pool recognizes an old row when
+  its normalized trusted `companyDomain` matches the request's newly resolved
+  official domain. LinkedIn-only equivalence is allowed only without a
+  contradictory trusted domain; display name alone never merges companies.
+- **Exact source-location provenance.** A shared entry's normalized requested
+  locations record the geography sent to the paid provider. When that set exactly
+  equals the new request, it may satisfy missing or incomplete per-person
+  geography during reuse. Explicit contradictions (for example United States
+  requested but United Kingdom stored on the person) are still rejected, and a
+  different request such as San Francisco cannot inherit United States source
+  provenance. This affects runtime reuse only; cache fingerprints remain exact.
 - **Lifecycle.** `lookupReusableDataset` is read-only and deliberately accepts
   no provider callback. A non-empty entry remains reusable regardless of
   `fetchedAt`, legacy `expiresAt`, or legacy refresh status. Cleanup may remove
@@ -2154,7 +2167,7 @@ New Prisma models (migration
 
 | Model | Purpose |
 | --- | --- |
-| `ProspectCompany` | Canonical user-owned company node. `canonicalKey` is domain-first (name fallback); `officialWebsiteDomain`/`officialDomain` track the public website, while `emailDomain`, `emailDomainEvidence`, `emailPattern`, and `patternEvidence` are evidence-backed employee email inference fields. Unique per `(userId, canonicalKey)`. |
+| `ProspectCompany` | Canonical user-owned company node. `canonicalKey` is official-domain-first, then trusted LinkedIn company slug, then normalized-name fallback; `officialWebsiteDomain`/`officialDomain` track the public website, while `emailDomain`, `emailDomainEvidence`, `emailPattern`, and `patternEvidence` are evidence-backed employee email inference fields. Unique per `(userId, canonicalKey)`. |
 | `ProspectCompanyPosition` | One node per position category under a company. Unique per `(companyId, category)`. |
 | `ProspectPerson` | A discovered professional, assigned to one position node, with inferred-email metadata. Unique per `(userId, sourceProfileId)`. |
 | `ProspectSearch` | A discovery request, its status, Apify run references, and counts. |

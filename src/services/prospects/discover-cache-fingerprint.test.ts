@@ -31,16 +31,24 @@ function fp(overrides: {
 }
 
 describe("canonicalCompanyKey", () => {
-  it("prefers the resolved LinkedIn company slug", () => {
-    expect(canonicalCompanyKey(APPLE)).toBe("linkedin:apple");
-    // Trailing slash / casing in the URL do not matter.
-    expect(canonicalCompanyKey({ ...APPLE, linkedinCompanyUrl: "https://LINKEDIN.com/company/Apple" })).toBe(
-      "linkedin:apple"
-    );
+  it("prefers the official domain when both domain and LinkedIn are available", () => {
+    expect(canonicalCompanyKey(APPLE)).toBe("domain:apple.com");
+    expect(canonicalCompanyKey({
+      ...APPLE,
+      officialWebsiteDomain: "WWW.Wealthfront.com",
+      officialDomain: "wealthfront.com",
+      linkedinCompanyUrl: "https://LINKEDIN.com/company/wealthfront"
+    })).toBe("domain:wealthfront.com");
   });
 
-  it("falls back to the official domain, then the normalized name", () => {
+  it("falls back to LinkedIn only without an official domain, then to the normalized name", () => {
     expect(canonicalCompanyKey({ ...APPLE, linkedinCompanyUrl: null })).toBe("domain:apple.com");
+    expect(canonicalCompanyKey({
+      linkedinCompanyUrl: "https://LINKEDIN.com/company/Apple/",
+      officialWebsiteDomain: null,
+      officialDomain: null,
+      normalizedName: "apple inc"
+    })).toBe("linkedin:apple");
     expect(
       canonicalCompanyKey({ linkedinCompanyUrl: null, officialWebsiteDomain: null, officialDomain: null, normalizedName: "apple" })
     ).toBe("name:apple");
@@ -111,7 +119,7 @@ describe("discover fingerprint (#1-#9)", () => {
     });
     expect(input.roles).toEqual(["recruiter", "software engineer"]);
     expect(input.locations).toEqual(["canada", "united states"]);
-    expect(input.companyKey).toBe("linkedin:apple");
+    expect(input.companyKey).toBe("domain:apple.com");
     // Hash is deterministic regardless of construction order.
     expect(fingerprintHash(input)).toBe(fingerprintHash({ ...input, roles: ["software engineer", "recruiter"] }));
   });
