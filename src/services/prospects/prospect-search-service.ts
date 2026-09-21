@@ -44,14 +44,18 @@ import {
   type CompanyEmailFormatRecord
 } from "@/services/prospects/company-email-format";
 import {
-  DiscoverSearchCacheService,
   resolveEmailFormatDiscoveryExpiry,
   resolveSharedCacheVersion,
   type DiscoverCachePort,
+  type DiscoverCacheResult,
   type DiscoverLocalPersonLookupResult,
   type ResolvedCachePerson,
   type ResolvedDataset
 } from "@/services/prospects/discover-cache-service";
+import {
+  DiscoverPublicKnowledgeService,
+  isDiscoverPublicKnowledgePort
+} from "@/services/prospects/discover-public-knowledge-service";
 import { computeDiscoverFingerprint } from "@/services/prospects/discover-cache-fingerprint";
 import {
   createDiscoverRoleIntelligenceService,
@@ -239,7 +243,7 @@ export type ProspectSearchServiceDeps = {
   emailFormatRateLimiter?: EmailFormatRateLimiter;
   /** Injectable for tests; defaults to the Redis-backed atomic daily quota. */
   discoverQuota?: DiscoverQuotaReserver;
-  /** Injectable for tests; defaults to the shared 30-day result cache. */
+  /** Injectable for tests; defaults to the durable shared people store. */
   discoverCache?: DiscoverCachePort;
   /** Audit sink; defaults to a no-op (production wires recordAuditEvent). */
   audit?: ProspectAuditFn;
@@ -284,6 +288,10 @@ type ProviderFunnelDiagnostics = ApifyIngestionDiagnostics & {
 type ProviderDatasetResult = {
   dataset: ResolvedDataset;
   diagnostics: ProviderFunnelDiagnostics;
+  providerRunId: string | null;
+  providerDatasetId: string | null;
+  providerTotalFound: number;
+  providerResultCount: number;
 };
 
 export class ProspectSearchService {
@@ -312,7 +320,8 @@ export class ProspectSearchService {
     this.pipelineTimeoutMs = deps.pipelineTimeoutMs ?? DEFAULT_PIPELINE_TIMEOUT_MS;
     this.emailFormatRateLimiter = deps.emailFormatRateLimiter ?? defaultEmailFormatRateLimiter;
     this.discoverQuota = deps.discoverQuota ?? reserveDiscoverSearchSlot;
-    this.discoverCache = deps.discoverCache ?? new DiscoverSearchCacheService({ prisma: deps.prisma });
+    this.discoverCache =
+      deps.discoverCache ?? new DiscoverPublicKnowledgeService({ prisma: deps.prisma });
     this.audit = deps.audit ?? noopAudit;
     this.notifyCompleted = deps.notifyCompleted ?? noopDiscoverCompletionNotification;
     this.now = deps.now ?? (() => new Date());
@@ -404,7 +413,7 @@ export class ProspectSearchService {
    * the caller can surface a structured failure (status + errorCode).
    *
    * The daily Discover quota is reserved atomically AFTER ownership/state
-   * validation and BEFORE the paid pipeline starts. Reservation is idempotent
+   * validation and BEFORE the database lookup starts. Reservation is idempotent
    * per search id, so retrying the same search (double-click, network retry,
    * refresh, or re-processing a FAILED search) never consumes a second slot.
    */
@@ -453,7 +462,7 @@ export class ProspectSearchService {
       throw new ProspectError("INVALID_STATE", `A ${search.status} search cannot be processed.`);
     }
 
-    // Quota is reserved before the paid pipeline and is idempotent per search id:
+    // Quota is reserved before database lookup and is idempotent per search id:
     // retrying a FAILED search (or a network replay) never consumes a second slot.
     const reservation = await this.discoverQuota({
       userId,
@@ -708,7 +717,7 @@ export class ProspectSearchService {
     const company = await this.upsertCompany(userId, resolution);
     await this.prisma.prospectSearch.update({ where: { id: search.id }, data: { companyId: company.id } });
 
-    // 2) Build the canonical fingerprint for the shared 30-day result cache.
+    // 2) Build the canonical fingerprint for durable shared people knowledge.
     const { input: fingerprintInput, fingerprint } = computeDiscoverFingerprint({
       company: {
         linkedinCompanyUrl: resolution.linkedinCompanyUrl,
@@ -722,88 +731,147 @@ export class ProspectSearchService {
       cacheVersion: resolveSharedCacheVersion()
     });
 
-    // 3) Reuse a fresh shared dataset, or run Apify behind the stampede lock and
-    // refresh the shared cache. The provider closure performs Apify + role
-    // classification only; email-format discovery has a separate lifecycle.
+    // 3) Redis is acceleration only. The knowledge service falls through to
+    // permanent Postgres, and only a true durable-data zero is permission for
+    // this normal search to call Apify once.
     const startedAt = Date.now();
-    let providerStarted = false;
-    const providerDiagnosticsRef: { current: ProviderFunnelDiagnostics | null } = { current: null };
-    let cacheResult;
+    const resolvedCompany = {
+      name: resolution.officialName,
+      domain: resolution.officialWebsiteDomain ?? resolution.officialDomain,
+      linkedinUrl: resolution.linkedinCompanyUrl
+    };
+    const lookupParams = {
+      fingerprint,
+      fingerprintInput,
+      company: resolvedCompany,
+      filterCompanyPoolPeople: async (people: ResolvedCachePerson[], source: { normalizedLocations: string[] }) => {
+        const requestedTitles = this.asStringArray(search.requestedTitles);
+        return this.roleIntelligence.filterAndRankPeople({
+          people,
+          requestedTitles,
+          requestedLocations: this.asStringArray(search.requestedLocations),
+          sourceRequestedLocations: source.normalizedLocations,
+          context: "CACHE" as const,
+          options: { budget, searchId: search.id }
+        });
+      },
+      // The durable architecture never depends on another user's private rows.
+      // Keep the same-user fallback only for injected legacy adapters during
+      // rollout/tests; production uses DiscoverPublicKnowledgeService.
+      ...(isDiscoverPublicKnowledgePort(this.discoverCache)
+        ? {}
+        : {
+            lookupLocalPeople: () =>
+              this.findReusableLocalPeople({ userId, search, company, budget })
+          })
+    };
+    let cacheResult: DiscoverCacheResult;
     try {
-      cacheResult = await this.discoverCache.getOrRefresh({
-        fingerprint,
-        fingerprintInput,
-        company: {
-          name: resolution.officialName,
-          domain: resolution.officialWebsiteDomain ?? resolution.officialDomain,
-          linkedinUrl: resolution.linkedinCompanyUrl
-        },
-        filterCompanyPoolPeople: async (people) => {
-          const requestedTitles = this.asStringArray(search.requestedTitles);
-          return this.roleIntelligence.filterAndRankPeople({
-            people,
-            requestedTitles,
-            requestedLocations: this.asStringArray(search.requestedLocations),
-            context: "CACHE",
-            options: { budget, searchId: search.id }
-          });
-        },
-        lookupLocalPeople: () =>
-          this.findReusableLocalPeople({
-            userId,
-            search,
-            company,
-            budget
-          }),
-        provider: async () => {
-          providerStarted = true;
-          const providerResult = await this.runProviderDataset(userId, search, company, resolution, budget);
-          providerDiagnosticsRef.current = providerResult.diagnostics;
-          return providerResult.dataset;
-        }
-      });
+      cacheResult = await this.discoverCache.lookupReusableDataset(lookupParams);
     } catch (error) {
       logDiscoverCacheEvent({
-        event: "DISCOVER_CACHE_REFRESH_FAILED",
+        event: "DISCOVER_DATABASE_LOOKUP_FAILED",
         searchId: search.id,
         userId,
         fingerprint,
         cacheHit: false,
         cacheAgeDays: null,
         resultCount: 0,
-        providerCalled: providerStarted,
+        providerCalled: false,
         processingLatencyMs: Date.now() - startedAt,
         cacheHitType: null,
         candidateEntryCount: 0,
         candidatePersonCount: 0,
-        matchingPersonCount: 0
+        matchingPersonCount: 0,
+        requestedCanonicalCompanyKey: fingerprintInput.companyKey,
+        matchedCacheCompanyKey: null,
+        matchedCompanyDomain: null,
+        requestedNormalizedRoles: fingerprintInput.roles,
+        requestedNormalizedLocations: fingerprintInput.locations,
+        sourceNormalizedRoles: [],
+        sourceNormalizedLocations: [],
+        legacyIdentityMatch: false,
+        exactIntentReuse: false
       });
       throw error;
     }
 
-    const cacheHit = cacheResult.source === "CACHE";
+    const cacheHit = cacheResult.dataset.people.length > 0;
+    let providerCalled = false;
 
-    // 4) Zero-result guard. The provider run SUCCEEDED but found nobody (or
-    // every returned item was filtered out during normalization — the
-    // ingestion diagnostics above record exactly why). This is a neutral
-    // outcome, never a failure, and there is nothing to generate emails for,
-    // so the paid email-format stage (AI web search / public-evidence lookup)
-    // and materialization are skipped entirely. Provider run metadata
-    // (apifyRunId/apifyDatasetId/totalFound) was already persisted by
-    // runProviderDataset. The search stays retryable: the shared cache never
-    // reuses a zero-people entry, so re-processing re-runs the provider.
-    if (cacheResult.dataset.people.length === 0) {
-      const providerDiagnostics = providerDiagnosticsRef.current;
-      if (providerDiagnostics) {
-        logDiscoverProviderFunnelEvent({
-          searchId: search.id,
-          userId,
-          ...providerDiagnostics,
-          cachePeopleCount: 0,
-          allocatedPeopleCount: 0
+    if (
+      cacheResult.dataset.people.length === 0 &&
+      !cacheResult.definitiveEmpty &&
+      isDiscoverPublicKnowledgePort(this.discoverCache)
+    ) {
+      const durableKnowledge = this.discoverCache;
+      cacheResult = await durableKnowledge.runWithProviderLock(fingerprint, async () => {
+        // Another request may have completed discovery while this one waited.
+        const afterLock = await durableKnowledge.lookupReusableDataset(lookupParams);
+        if (afterLock.dataset.people.length > 0 || afterLock.definitiveEmpty) {
+          return afterLock;
+        }
+        providerCalled = true;
+        logDiscoverKnowledgeEvent("DISCOVER_PROVIDER_DISCOVERY", {
+          canonicalCompanyKey: fingerprintInput.companyKey,
+          normalizedRoles: fingerprintInput.roles,
+          normalizedLocations: fingerprintInput.locations,
+          databaseCandidateCount: 0,
+          providerCalled: true
         });
-      }
-      logDiscoverZeroResultEvent(search.id, userId);
+        const provider = await this.runProviderDataset(userId, search, company, resolution, budget);
+        const state = await durableKnowledge.appendProviderPeople({
+          fingerprint,
+          fingerprintInput,
+          company: resolvedCompany,
+          emailFormat: provider.dataset.emailFormat,
+          people: provider.dataset.people,
+          nextPage: 2,
+          pagesFetched: 1,
+          exhausted:
+            provider.dataset.people.length === 0 ||
+            provider.providerResultCount === 0 ||
+            provider.providerTotalFound <= provider.providerResultCount,
+          provider: "APIFY",
+          providerRunId: provider.providerRunId,
+          providerDatasetId: provider.providerDatasetId
+        });
+        if (state.people.length === 0) {
+          logDiscoverKnowledgeEvent("DISCOVER_PROVIDER_NO_RESULTS", {
+            canonicalCompanyKey: fingerprintInput.companyKey,
+            normalizedRoles: fingerprintInput.roles,
+            normalizedLocations: fingerprintInput.locations,
+            providerCalled: true,
+            providerNewUniqueCount: 0
+          });
+        }
+        return {
+          dataset: { ...provider.dataset, people: state.people },
+          source: "PROVIDER",
+          cacheId: state.cacheId,
+          fetchedAt: this.now(),
+          refreshedStale: false,
+          cacheHitType: null,
+          storageHitType: null,
+          matchedCacheCompanyKey: fingerprintInput.companyKey,
+          matchedCompanyDomain: normalizeDomain(resolvedCompany.domain),
+          sourceNormalizedRoles: fingerprintInput.roles,
+          sourceNormalizedLocations: fingerprintInput.locations,
+          exactIntentReuse: true,
+          definitiveEmpty: state.people.length === 0 && state.providerExhausted,
+          lookupDiagnostics: {
+            candidateEntryCount: 0,
+            candidatePersonCount: provider.providerResultCount,
+            matchingPersonCount: state.people.length
+          }
+        } satisfies DiscoverCacheResult;
+      });
+    }
+
+    // 4) A provider-backed zero is terminal for this request. Never loop the
+    // provider trying to force a full batch.
+    if (cacheResult.dataset.people.length === 0) {
+      logDiscoverZeroResultEvent(search.id, userId, providerCalled);
       const updated = await this.prisma.prospectSearch.update({
         where: { id: search.id },
         data: {
@@ -812,10 +880,9 @@ export class ProspectSearchService {
           completedAt: new Date(),
           errorCode: null,
           errorMessage: null,
-          resultSource: cacheResult.source,
-          sharedCacheId: cacheResult.cacheId,
-          cacheFingerprint: fingerprint,
-          cacheFetchedAt: cacheResult.fetchedAt
+          resultSource: providerCalled ? "PROVIDER" : "CACHE",
+          publicProviderBatchId: cacheResult.cacheId,
+          publicIntentHash: fingerprint
         }
       });
       logDiscoverCacheEvent({
@@ -826,14 +893,23 @@ export class ProspectSearchService {
         cacheHit,
         cacheAgeDays: discoverCacheAgeDays(cacheResult.fetchedAt, startedAt),
         resultCount: 0,
-        providerCalled: !cacheHit,
+        providerCalled,
         processingLatencyMs: Date.now() - startedAt,
         cacheHitType: cacheResult.cacheHitType ?? (cacheHit ? "EXACT" : null),
         candidateEntryCount: cacheResult.lookupDiagnostics?.candidateEntryCount ?? 0,
         candidatePersonCount: cacheResult.lookupDiagnostics?.candidatePersonCount ?? 0,
-        matchingPersonCount: cacheResult.lookupDiagnostics?.matchingPersonCount ?? 0
+        matchingPersonCount: cacheResult.lookupDiagnostics?.matchingPersonCount ?? 0,
+        requestedCanonicalCompanyKey: fingerprintInput.companyKey,
+        matchedCacheCompanyKey: cacheResult.matchedCacheCompanyKey ?? null,
+        matchedCompanyDomain: cacheResult.matchedCompanyDomain ?? null,
+        requestedNormalizedRoles: fingerprintInput.roles,
+        requestedNormalizedLocations: fingerprintInput.locations,
+        sourceNormalizedRoles: cacheResult.sourceNormalizedRoles ?? [],
+        sourceNormalizedLocations: cacheResult.sourceNormalizedLocations ?? [],
+        legacyIdentityMatch: cacheResult.legacyIdentityMatch ?? false,
+        exactIntentReuse: cacheResult.exactIntentReuse ?? false
       });
-      return { search: updated, providerCalled: !cacheHit, resultCount: 0, cacheHit };
+      return { search: updated, providerCalled, resultCount: 0, cacheHit };
     }
 
     // 5) Resolve email format independently from the people cache. A cache hit
@@ -862,21 +938,10 @@ export class ProspectSearchService {
       search,
       company,
       resolvedDataset,
-      cacheResult.source === "CACHE" ? "CACHE" : "PROVIDER"
+      providerCalled || cacheResult.source === "PROVIDER" ? "PROVIDER" : "CACHE"
     );
     const finalProcessed = Math.max(0, processed);
     const finalStatus = finalProcessed > 0 ? "READY" : "NO_RESULTS";
-
-    const providerDiagnostics = providerDiagnosticsRef.current;
-    if (providerDiagnostics) {
-      logDiscoverProviderFunnelEvent({
-        searchId: search.id,
-        userId,
-        ...providerDiagnostics,
-        cachePeopleCount: resolvedDataset.people.length,
-        allocatedPeopleCount: finalProcessed
-      });
-    }
 
     logDiscoverCacheEvent({
       event: discoverCacheEventName(cacheResult),
@@ -886,12 +951,21 @@ export class ProspectSearchService {
       cacheHit,
       cacheAgeDays: discoverCacheAgeDays(cacheResult.fetchedAt, startedAt),
       resultCount: finalProcessed,
-      providerCalled: !cacheHit,
+      providerCalled,
       processingLatencyMs: Date.now() - startedAt,
       cacheHitType: cacheResult.cacheHitType ?? (cacheHit ? "EXACT" : null),
       candidateEntryCount: cacheResult.lookupDiagnostics?.candidateEntryCount ?? 0,
       candidatePersonCount: cacheResult.lookupDiagnostics?.candidatePersonCount ?? 0,
-      matchingPersonCount: cacheResult.lookupDiagnostics?.matchingPersonCount ?? 0
+      matchingPersonCount: cacheResult.lookupDiagnostics?.matchingPersonCount ?? 0,
+      requestedCanonicalCompanyKey: fingerprintInput.companyKey,
+      matchedCacheCompanyKey: cacheResult.matchedCacheCompanyKey ?? null,
+      matchedCompanyDomain: cacheResult.matchedCompanyDomain ?? null,
+      requestedNormalizedRoles: fingerprintInput.roles,
+      requestedNormalizedLocations: fingerprintInput.locations,
+      sourceNormalizedRoles: cacheResult.sourceNormalizedRoles ?? [],
+      sourceNormalizedLocations: cacheResult.sourceNormalizedLocations ?? [],
+      legacyIdentityMatch: cacheResult.legacyIdentityMatch ?? false,
+      exactIntentReuse: cacheResult.exactIntentReuse ?? false
     });
 
     this.logEmailFormatStage({
@@ -906,7 +980,7 @@ export class ProspectSearchService {
     // last guard against a future materialization path rejecting every
     // candidate after the dataset-level zero-result check above.
     if (finalStatus === "NO_RESULTS") {
-      logDiscoverZeroResultEvent(search.id, userId);
+      logDiscoverZeroResultEvent(search.id, userId, providerCalled);
     }
     const updated = await this.prisma.prospectSearch.update({
       where: { id: search.id },
@@ -916,13 +990,12 @@ export class ProspectSearchService {
         completedAt: new Date(),
         errorCode: null,
         errorMessage: null,
-        resultSource: cacheResult.source,
-        sharedCacheId: cacheResult.cacheId,
-        cacheFingerprint: fingerprint,
-        cacheFetchedAt: cacheResult.fetchedAt
+        resultSource: providerCalled || cacheResult.source === "PROVIDER" ? "PROVIDER" : "CACHE",
+        publicProviderBatchId: cacheResult.cacheId,
+        publicIntentHash: fingerprint
       }
     });
-    return { search: updated, providerCalled: !cacheHit, resultCount: finalProcessed, cacheHit };
+    return { search: updated, providerCalled, resultCount: finalProcessed, cacheHit };
   }
 
   /**
@@ -1074,6 +1147,10 @@ export class ProspectSearchService {
 
     return {
       dataset: { emailFormat, people: roleFilteredPeople },
+      providerRunId: searchResult.runId,
+      providerDatasetId: searchResult.datasetId,
+      providerTotalFound: searchResult.totalFound,
+      providerResultCount: searchResult.profiles.length,
       diagnostics: {
         ...searchResult.diagnostics,
         semanticInputCount: people.length,
@@ -1525,6 +1602,7 @@ export class ProspectSearchService {
 
   private async upsertCompany(userId: string, resolution: CompanyResolution): Promise<ProspectCompany> {
     const canonicalKey = getCanonicalCompanyKey({
+      linkedinCompanyUrl: resolution.linkedinCompanyUrl,
       officialWebsiteDomain: resolution.officialWebsiteDomain,
       officialDomain: resolution.officialDomain,
       normalizedName: resolution.normalizedName
@@ -2026,8 +2104,11 @@ type DiscoverCacheLogEvent = {
   event:
     | "DISCOVER_CACHE_HIT"
     | "DISCOVER_COMPANY_POOL_CACHE_HIT"
+    | "DISCOVER_LEGACY_IDENTITY_COMPANY_POOL_HIT"
     | "DISCOVER_LOCAL_PERSON_REUSE"
     | "DISCOVER_CACHE_POOL_ZERO_MATCH"
+    | "DISCOVER_DATABASE_MISS"
+    | "DISCOVER_DATABASE_LOOKUP_FAILED"
     | "DISCOVER_CACHE_MISS"
     | "DISCOVER_CACHE_REFRESHED"
     | "DISCOVER_CACHE_REFRESH_FAILED";
@@ -2043,6 +2124,15 @@ type DiscoverCacheLogEvent = {
   candidateEntryCount: number;
   candidatePersonCount: number;
   matchingPersonCount: number;
+  requestedCanonicalCompanyKey: string;
+  matchedCacheCompanyKey: string | null;
+  matchedCompanyDomain: string | null;
+  requestedNormalizedRoles: string[];
+  requestedNormalizedLocations: string[];
+  sourceNormalizedRoles: string[];
+  sourceNormalizedLocations: string[];
+  legacyIdentityMatch: boolean;
+  exactIntentReuse: boolean;
 };
 
 function discoverCacheEventName(result: {
@@ -2050,12 +2140,23 @@ function discoverCacheEventName(result: {
   refreshedStale: boolean;
   cacheHitType?: "EXACT" | "COMPANY_POOL" | "LOCAL_PERSON" | null;
   lookupDiagnostics?: { candidateEntryCount: number; matchingPersonCount: number };
+  legacyIdentityMatch?: boolean;
 }): DiscoverCacheLogEvent["event"] {
   if (result.source === "CACHE") {
     if (result.cacheHitType === "LOCAL_PERSON") {
       return "DISCOVER_LOCAL_PERSON_REUSE";
     }
-    return result.cacheHitType === "COMPANY_POOL" ? "DISCOVER_COMPANY_POOL_CACHE_HIT" : "DISCOVER_CACHE_HIT";
+    if (result.cacheHitType === "COMPANY_POOL") {
+      return result.legacyIdentityMatch
+        ? "DISCOVER_LEGACY_IDENTITY_COMPANY_POOL_HIT"
+        : "DISCOVER_COMPANY_POOL_CACHE_HIT";
+    }
+    if (result.cacheHitType === "EXACT") {
+      return "DISCOVER_CACHE_HIT";
+    }
+    return (result.lookupDiagnostics?.candidateEntryCount ?? 0) > 0
+      ? "DISCOVER_CACHE_POOL_ZERO_MATCH"
+      : "DISCOVER_DATABASE_MISS";
   }
   if (result.refreshedStale) {
     return "DISCOVER_CACHE_REFRESHED";
@@ -2075,7 +2176,13 @@ function logDiscoverCacheEvent(event: DiscoverCacheLogEvent): void {
   if (process.env.NODE_ENV === "test") {
     return;
   }
-  console.info(`[discover-cache] ${JSON.stringify({ ...event, fingerprint: event.fingerprint.slice(0, 16) })}`);
+  console.info(
+    `[discover-cache] ${JSON.stringify({
+      ...event,
+      fingerprint: event.fingerprint.slice(0, 16),
+      explicitExpansion: false
+    })}`
+  );
 }
 
 type DiscoverProcessingLogEvent = {
@@ -2110,16 +2217,24 @@ function logDiscoverProcessingEvent(event: DiscoverProcessingLogEvent): void {
 
 /**
  * Explicit cost-control marker: the pipeline stopped before the email-format
- * stage because there is nobody to generate emails for. No AI/web-search
- * tokens are ever spent on a zero-result search. Silent in tests.
+ * stage because there is nobody in durable database knowledge to return. No
+ * people provider or email-format AI tokens are spent. Silent in tests.
  */
-function logDiscoverZeroResultEvent(searchId: string, userId: string): void {
+function logDiscoverZeroResultEvent(searchId: string, userId: string, providerCalled: boolean): void {
   if (process.env.NODE_ENV === "test") {
     return;
   }
-  console.info(
-    `[discover] provider returned 0 people; skipping email format inference ${JSON.stringify({ searchId, userId })}`
-  );
+  console.info(`[discover] database lookup returned 0 people ${JSON.stringify({
+    searchId,
+    userId,
+    providerCalled,
+    explicitExpansion: false
+  })}`);
+}
+
+function logDiscoverKnowledgeEvent(event: string, fields: Record<string, unknown>): void {
+  if (process.env.NODE_ENV === "test") return;
+  console.info(`[discover-knowledge] ${JSON.stringify({ event, ...fields })}`);
 }
 
 type DiscoverIngestionLogEvent = ApifyIngestionDiagnostics & {

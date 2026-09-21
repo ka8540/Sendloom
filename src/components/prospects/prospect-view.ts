@@ -721,8 +721,8 @@ export function formatSearchError(
 export const NO_RESULTS_TITLE = "Couldn't find any people for this search.";
 export const NO_RESULTS_BODY = "Try a different job title, location, or company spelling.";
 export const NO_RESULTS_COMPLETED_NOTE = "The search completed successfully — no matching people were found.";
-export const NO_RESULTS_RETRY_LABEL = "Search this company again";
-export const NO_RESULTS_RETRYING_LABEL = "Searching again…";
+export const NO_RESULTS_RETRY_LABEL = "Find more people";
+export const NO_RESULTS_RETRYING_LABEL = "Finding people…";
 export const NO_RESULTS_BACK_LABEL = "Back to Discover";
 
 // ---------------------------------------------------------------------------

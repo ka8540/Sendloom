@@ -51,6 +51,7 @@ export interface DiscoverRoleIntelligencePort {
     people: readonly ResolvedCachePerson[];
     requestedTitles: readonly string[];
     requestedLocations: readonly string[];
+    sourceRequestedLocations?: readonly string[];
     context: "CACHE" | "PROVIDER";
     options: RoleIntelligenceOptions;
   }): Promise<ResolvedCachePerson[]>;
@@ -140,6 +141,7 @@ export class DiscoverRoleIntelligenceService implements DiscoverRoleIntelligence
     people: readonly ResolvedCachePerson[];
     requestedTitles: readonly string[];
     requestedLocations: readonly string[];
+    sourceRequestedLocations?: readonly string[];
     context: "CACHE" | "PROVIDER";
     options: RoleIntelligenceOptions;
   }): Promise<ResolvedCachePerson[]> {
@@ -147,7 +149,12 @@ export class DiscoverRoleIntelligenceService implements DiscoverRoleIntelligence
     if (requestedIntents.length === 0) return [];
 
     if (!this.enabled) {
-      return this.currentBehaviorFilter(input.people, requestedIntents, input.requestedLocations);
+      return this.currentBehaviorFilter(
+        input.people,
+        requestedIntents,
+        input.requestedLocations,
+        input.sourceRequestedLocations
+      );
     }
 
     const candidateTitles = input.people
@@ -198,7 +205,8 @@ export class DiscoverRoleIntelligenceService implements DiscoverRoleIntelligence
       const locationEvaluation = evaluateDiscoverLocationMatch({
         candidate: person,
         requestedLocations: input.requestedLocations,
-        context: input.context
+        context: input.context,
+        sourceRequestedLocations: input.sourceRequestedLocations
       });
       if (locationEvaluation.reason === "EXPLICIT_CONTRADICTION") {
         explicitLocationContradictionCount += 1;
@@ -393,7 +401,8 @@ export class DiscoverRoleIntelligenceService implements DiscoverRoleIntelligence
   private currentBehaviorFilter(
     people: readonly ResolvedCachePerson[],
     requestedIntents: readonly RoleIntent[],
-    requestedLocations: readonly string[]
+    requestedLocations: readonly string[],
+    sourceRequestedLocations?: readonly string[]
   ): ResolvedCachePerson[] {
     return filterReusableDiscoverPeople({
       people,
@@ -401,7 +410,8 @@ export class DiscoverRoleIntelligenceService implements DiscoverRoleIntelligence
         normalizedTitle: intent.normalizedTitle,
         category: intent.category
       })),
-      requestedLocations
+      requestedLocations,
+      sourceRequestedLocations
     });
   }
 

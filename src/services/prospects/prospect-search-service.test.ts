@@ -27,7 +27,7 @@ import {
   DiscoverSearchCacheService,
   type DiscoverCacheLock,
   type DiscoverCachePort,
-  type GetOrRefreshParams,
+  type LookupReusableDatasetParams,
   type ResolvedCachePerson,
   type ResolvedDataset
 } from "@/services/prospects/discover-cache-service";
@@ -35,15 +35,17 @@ import {
   PrismaDiscoverLegacyCacheBackfillStore,
   runDiscoverLegacyCacheBackfill
 } from "@/services/prospects/discover-legacy-cache-backfill";
+import { DiscoverPublicKnowledgeService } from "@/services/prospects/discover-public-knowledge-service";
 import { createFakePrisma, type FakePrisma } from "@/services/prospects/__test-utils__/fake-prisma";
 import { createMockAi } from "@/services/prospects/__test-utils__/mock-ai";
+import { createAiBudget } from "@/services/prospects/prospect-ai";
 
-// A passthrough cache that always runs the provider — keeps non-cache tests
-// behaving exactly like the un-cached pipeline.
+// Marker used by legacy provider-normalization tests. buildService replaces it
+// with a test-only seeded-dataset adapter; the production lookup contract has
+// no provider callback and normal Discover never invokes Apify.
 const passthroughCache: DiscoverCachePort = {
-  async getOrRefresh({ provider }: GetOrRefreshParams) {
-    const dataset = await provider();
-    return { dataset, source: "PROVIDER", cacheId: null, fetchedAt: null, refreshedStale: false };
+  async lookupReusableDataset() {
+    throw new Error("provider fixture cache must be initialized by buildService");
   }
 };
 
@@ -66,6 +68,18 @@ function makeFakeCacheLock(): DiscoverCacheLock {
       }
     }
   };
+}
+
+class TestDiscoverRedis {
+  readonly values = new Map<string, string>();
+  async get(key: string) { return this.values.get(key) ?? null; }
+  async set(key: string, value: string) { this.values.set(key, value); return "OK"; }
+  async incr(key: string) {
+    const next = Number(this.values.get(key) ?? "0") + 1;
+    this.values.set(key, String(next));
+    return next;
+  }
+  clear() { this.values.clear(); }
 }
 
 const QUOTA_RESET = new Date("2026-06-20T00:00:00.000Z");
@@ -165,6 +179,73 @@ function profile(id: string, firstName: string, lastName: string, title: string,
   };
 }
 
+async function seedAppliedMaterialsCache(cache: DiscoverSearchCacheService): Promise<void> {
+  await seedSharedCache(cache, {
+    fingerprint: "applied-materials-durable-seed",
+    fingerprintInput: {
+      companyKey: "domain:appliedmaterials.com",
+      roles: ["software engineer"],
+      locations: ["united states"],
+      resultLimit: 10,
+      cacheVersion: "v1"
+    },
+    company: { name: "Applied Materials", domain: "appliedmaterials.com", linkedinUrl: null }
+  }, {
+      emailFormat: {
+        emailDomain: "amat.com",
+        emailDomainConfidence: "HIGH",
+        emailDomainEvidence: [{ sourceName: "public" }],
+        emailPattern: "first_last",
+        patternConfidence: "HIGH",
+        patternEvidence: [{ pattern: "first_last" }],
+        emailFormatReason: "format",
+        emailFormatDiscoveryStatus: "FOUND",
+        emailFormatDiscoveryAt: new Date("2026-06-18T00:00:00.000Z"),
+        emailFormatDiscoveryExpiresAt: new Date("2099-06-18T00:00:00.000Z")
+      },
+      people: [
+        {
+          sourceProfileId: "amat-seed-1",
+          firstName: "Jane",
+          lastName: "Doe",
+          fullName: "Jane Doe",
+          currentTitle: "Software Engineer",
+          normalizedTitle: "software engineer",
+          positionCategory: "SOFTWARE_ENGINEERING",
+          location: "United States",
+          country: "United States",
+          state: null,
+          city: null,
+          linkedinUrl: "https://www.linkedin.com/in/amat-seed-1",
+          inferredEmail: "jane_doe@amat.com",
+          emailStatus: "INFERRED_HIGH",
+          emailConfidence: "HIGH",
+          emailPattern: "first_last",
+          emailSource: "PATTERN"
+        }
+      ]
+    }
+  );
+}
+
+async function seedSharedCache(
+  cache: DiscoverSearchCacheService,
+  request: LookupReusableDatasetParams,
+  resolved: ResolvedDataset,
+  continuation: { nextPage?: number; pagesFetched?: number; exhausted?: boolean } = {}
+): Promise<void> {
+  await cache.appendProviderPeople({
+    fingerprint: request.fingerprint,
+    fingerprintInput: request.fingerprintInput,
+    company: request.company,
+    emailFormat: resolved.emailFormat,
+    people: resolved.people,
+    nextPage: continuation.nextPage ?? 2,
+    pagesFetched: continuation.pagesFetched ?? 1,
+    exhausted: continuation.exhausted ?? false
+  });
+}
+
 function targetedCompanyProfile(
   id: string,
   title: string,
@@ -209,15 +290,55 @@ function buildService(
 ) {
   const ai = createMockAi(aiResponses);
   const apify = new ApifyProfileSearchService({ token: "t", actorId: "actor", runner });
-  const service = new ProspectSearchService({
+  let service!: ProspectSearchService;
+  const resolvedCache: DiscoverCachePort =
+    discoverCache === passthroughCache
+      ? {
+          async lookupReusableDataset() {
+            const activeSearches = await prisma.prospectSearch.findMany({ where: { status: "RESOLVING_COMPANY" } });
+            const search = activeSearches.at(-1);
+            if (!search?.companyId) {
+              throw new Error("provider fixture could not identify the active search");
+            }
+            const company = await prisma.prospectCompany.findUnique({ where: { id: search.companyId } });
+            if (!company) {
+              throw new Error("provider fixture could not identify the resolved company");
+            }
+            const result = await (service as any).runProviderDataset(
+              search.userId,
+              search,
+              company,
+              {
+                officialName: company.officialName,
+                normalizedName: company.normalizedName,
+                officialDomain: company.officialDomain,
+                officialWebsiteDomain: company.officialWebsiteDomain,
+                officialWebsite: company.officialWebsite,
+                linkedinCompanyUrl: company.linkedinUrl,
+                domainConfidence: company.domainConfidence
+              },
+              createAiBudget()
+            );
+            return {
+              dataset: result.dataset,
+              source: "PROVIDER" as const,
+              cacheId: null,
+              fetchedAt: null,
+              refreshedStale: false
+            };
+          }
+        }
+      : discoverCache;
+  service = new ProspectSearchService({
     prisma: prisma as unknown as PrismaClient,
     apify,
     companyResolution: new CompanyResolutionService(ai.client),
     roleClassifier: new RoleClassificationService(prisma as unknown as PrismaClient, ai.client),
     roleIntelligence,
     emailDomain: new EmailDomainService(prisma as unknown as PrismaClient, ai.client, evidenceProvider),
+    emailFormatRateLimiter: async () => ({ allowed: true, retryAfterSeconds: 0 }),
     discoverQuota,
-    discoverCache,
+    discoverCache: resolvedCache,
     audit
   });
   return { service, ai };
@@ -592,6 +713,49 @@ describe("ProspectSearchService pipeline", () => {
         }
       }
     });
+    const esriCache: DiscoverCachePort = {
+      async lookupReusableDataset() {
+        return {
+          dataset: {
+            emailFormat: {
+              emailDomain: null,
+              emailDomainConfidence: "UNAVAILABLE",
+              emailDomainEvidence: [],
+              emailPattern: null,
+              patternConfidence: "UNAVAILABLE",
+              patternEvidence: [],
+              emailFormatReason: null,
+              emailFormatDiscoveryStatus: "NOT_ATTEMPTED"
+            },
+            people: [
+              {
+                sourceProfileId: "jane",
+                firstName: "Jane",
+                lastName: "Doe",
+                fullName: "Jane Doe",
+                currentTitle: "Software Engineer",
+                normalizedTitle: "software engineer",
+                positionCategory: "SOFTWARE_ENGINEERING",
+                location: "United States",
+                country: "United States",
+                state: null,
+                city: null,
+                linkedinUrl: "https://www.linkedin.com/in/jane",
+                inferredEmail: null,
+                emailStatus: "UNAVAILABLE",
+                emailConfidence: "UNAVAILABLE",
+                emailPattern: null,
+                emailSource: null
+              }
+            ]
+          },
+          source: "CACHE",
+          cacheId: "esri-cache",
+          fetchedAt: new Date("2026-06-18T00:00:00.000Z"),
+          refreshedStale: false
+        };
+      }
+    };
     const service = new ProspectSearchService({
       prisma: prisma as unknown as PrismaClient,
       apify: new ApifyProfileSearchService({ token: "t", actorId: "actor", runner }),
@@ -603,7 +767,7 @@ describe("ProspectSearchService pipeline", () => {
         new EmailFormatDiscoveryService({ searchProvider: null, fetchPage })
       ),
       discoverQuota: allowAllQuota,
-      discoverCache: passthroughCache
+      discoverCache: esriCache
     });
 
     const created = await service.createSearch(USER_ID, ESRI);
@@ -1346,9 +1510,9 @@ describe("Discover shared cache integration", () => {
   }
 
   function cacheHitPort(dataset: ResolvedDataset) {
-    const calls: GetOrRefreshParams[] = [];
+    const calls: LookupReusableDatasetParams[] = [];
     const port: DiscoverCachePort = {
-      async getOrRefresh(params: GetOrRefreshParams) {
+      async lookupReusableDataset(params: LookupReusableDatasetParams) {
         calls.push(params);
         return {
           dataset,
@@ -1578,7 +1742,7 @@ describe("Discover shared cache integration", () => {
     expect(prisma._state.people.every((person) => person.emailStatus !== "VERIFIED")).toBe(true);
   });
 
-  it("reuses a fresh cache hit without calling Apify and still consumes a quota slot (#1, #3, #4)", async () => {
+  it("reuses a durable database hit without calling Apify and still consumes a quota slot (#1, #3, #4)", async () => {
     const runner = amatRunner();
     const { port } = cacheHitPort(cacheDataset());
     const quota = makeQuotaReserver();
@@ -1589,7 +1753,7 @@ describe("Discover shared cache integration", () => {
 
     expect(result.status).toBe("READY");
     expect(result.resultSource).toBe("CACHE");
-    expect(result.sharedCacheId).toBe("cache_1");
+    expect(result.publicProviderBatchId).toBe("cache_1");
     expect(runner.run).not.toHaveBeenCalled();
     expect(quota.consumed.size).toBe(1);
   });
@@ -1679,7 +1843,7 @@ describe("Discover shared cache integration", () => {
     };
     let cacheCall = 0;
     const cache: DiscoverCachePort = {
-      async getOrRefresh() {
+      async lookupReusableDataset() {
         const dataset = cacheCall++ === 0 ? softwareDataset : recruiterDataset;
         return { dataset, source: "CACHE", cacheId: `walmart-cache-${cacheCall}`, fetchedAt: new Date(), refreshedStale: false };
       }
@@ -1798,36 +1962,11 @@ describe("Discover shared cache integration", () => {
     ]);
   });
 
-  it("fills an RTX Recruiter search from a bounded valid pool while retaining safe overflow in shared cache", async () => {
+  it("does not fill an RTX Recruiter database miss by calling Apify", async () => {
     const rtxUrl = "https://www.linkedin.com/company/rtx/";
-    const validProfiles = [
-      targetedCompanyProfile("rtx-1", "Recruiter", "RTX Corporation", rtxUrl),
-      targetedCompanyProfile("rtx-2", "Technical Recruiter", "RTX Corporation", rtxUrl),
-      targetedCompanyProfile("rtx-3", "Engineering Recruiter", "RTX Corporation", rtxUrl),
-      targetedCompanyProfile("rtx-4", "Talent Acquisition Recruiter", "RTX Corporation", rtxUrl),
-      targetedCompanyProfile("rtx-5", "Talent Acquisition Specialist", "RTX Corporation", rtxUrl),
-      targetedCompanyProfile("rtx-6", "Campus Recruiter", "RTX Corporation", rtxUrl),
-      targetedCompanyProfile("rtx-7", "Executive Technology Recruiting Leader", "Raytheon", "https://www.linkedin.com/company/raytheon/"),
-      targetedCompanyProfile("rtx-8", "Talent Acquisition Business Partner", "Raytheon Technologies"),
-      targetedCompanyProfile("rtx-9", "Recruiting Leader", "Raytheon"),
-      targetedCompanyProfile("rtx-10", "Senior Recruiter"),
-      targetedCompanyProfile("rtx-11", "Technical Recruiter", "RTX Corporation", rtxUrl),
-      targetedCompanyProfile("rtx-12", "Recruiter", "RTX Corporation", rtxUrl),
-      targetedCompanyProfile("rtx-13", "Talent Acquisition Specialist", "Raytheon Technologies"),
-      targetedCompanyProfile("rtx-14", "Engineering Recruiter", "Raytheon")
-    ];
-    const unrelated = targetedCompanyProfile(
-      "microsoft-control",
-      "Recruiter",
-      "Microsoft",
-      "https://www.linkedin.com/company/microsoft/"
-    );
-    const run = vi.fn<ApifyRunner["run"]>(async () => ({
-      runId: "rtx-run",
-      datasetId: "rtx-dataset",
-      items: [...validProfiles, unrelated],
-      status: "SUCCEEDED"
-    }));
+    const run = vi.fn<ApifyRunner["run"]>(async () => {
+      throw new Error("normal processSearch must never invoke the provider on a database miss");
+    });
     const cache = new DiscoverSearchCacheService({
       prisma: prisma as unknown as PrismaClient,
       lock: makeFakeCacheLock(),
@@ -1859,27 +1998,13 @@ describe("Discover shared cache integration", () => {
 
     const result = await service.processSearch(USER_ID, search.id);
 
-    expect(run).toHaveBeenCalledTimes(1);
-    expect(run.mock.calls[0][1]).toMatchObject({
-      currentCompanies: [rtxUrl],
-      maxItems: 25,
-      takePages: 1,
-      startPage: 1
-    });
-    expect(filter).toHaveBeenCalledWith(expect.objectContaining({
-      people: expect.arrayContaining([
-        expect.objectContaining({ currentTitle: "Executive Technology Recruiting Leader", positionCategory: "RECRUITING" }),
-        expect.objectContaining({ currentTitle: "Recruiting Leader", positionCategory: "RECRUITING" })
-      ]),
-      requestedTitles: ["Recruiter"],
-      context: "PROVIDER"
-    }));
-    expect(result).toMatchObject({ status: "READY", totalFound: 15, totalProcessed: 10 });
-    expect(prisma._state.discoverCachePeople).toHaveLength(14);
-    expect(prisma._state.searchPeople.filter((row) => row.searchId === search.id)).toHaveLength(10);
-    expect(prisma._state.people).toHaveLength(10);
-    expect(prisma._state.people.every((person) => person.sourceProfileId !== "microsoft-control")).toBe(true);
-    expect(prisma._state.positions.map((position) => position.category)).toEqual(["RECRUITING"]);
+    expect(result).toMatchObject({ status: "NO_RESULTS", totalFound: 0, totalProcessed: 0, resultSource: "CACHE" });
+    expect(run).not.toHaveBeenCalled();
+    expect(filter).toHaveBeenCalledWith(
+      expect.objectContaining({ context: "CACHE", people: [], requestedTitles: ["Recruiter"] })
+    );
+    expect(prisma._state.discoverCachePeople).toHaveLength(0);
+    expect(prisma._state.searchPeople.filter((row) => row.searchId === search.id)).toHaveLength(0);
   });
 
   it("reuses Apple Software Engineer knowledge for Software Developer with zero Apify calls", async () => {
@@ -1890,7 +2015,7 @@ describe("Discover shared cache integration", () => {
       ttlDays: 30,
       cleanupOnRefresh: false
     });
-    await cache.getOrRefresh({
+    await seedSharedCache(cache, {
       fingerprint: "apple-software-engineer-seed",
       fingerprintInput: {
         companyKey: "domain:apple.com",
@@ -1899,8 +2024,8 @@ describe("Discover shared cache integration", () => {
         resultLimit: 10,
         cacheVersion: "v1"
       },
-      company: { name: "Apple Inc.", domain: "apple.com", linkedinUrl: null },
-      provider: async () => ({
+      company: { name: "Apple Inc.", domain: "apple.com", linkedinUrl: null }
+    }, {
         emailFormat: {
           emailDomain: "apple.com",
           emailDomainConfidence: "HIGH",
@@ -1925,8 +2050,8 @@ describe("Discover shared cache integration", () => {
             emailPattern: "flast"
           }
         ]
-      })
-    });
+      }
+    );
     const run = vi.fn<ApifyRunner["run"]>();
     const roleIntelligence = semanticRolePort({
       filter: vi.fn(async ({ people, requestedLocations }) =>
@@ -1972,7 +2097,7 @@ describe("Discover shared cache integration", () => {
       ttlDays: 30,
       cleanupOnRefresh: false
     });
-    await cache.getOrRefresh({
+    await seedSharedCache(cache, {
       fingerprint: "apple-functional-pool-seed",
       fingerprintInput: {
         companyKey: "domain:apple.com",
@@ -1981,8 +2106,8 @@ describe("Discover shared cache integration", () => {
         resultLimit: 10,
         cacheVersion: "v1"
       },
-      company: { name: "Apple Inc.", domain: "apple.com", linkedinUrl: null },
-      provider: async () => ({
+      company: { name: "Apple Inc.", domain: "apple.com", linkedinUrl: null }
+    }, {
         emailFormat: { ...cacheDataset().emailFormat, emailDomain: "apple.com" },
         people: [
           {
@@ -2010,8 +2135,8 @@ describe("Discover shared cache integration", () => {
             linkedinUrl: "https://www.linkedin.com/in/apple-marketing-specialist"
           }
         ]
-      })
-    });
+      }
+    );
     const run = vi.fn<ApifyRunner["run"]>();
     const { service } = buildService(
       prisma,
@@ -2049,7 +2174,7 @@ describe("Discover shared cache integration", () => {
       ttlDays: 30,
       cleanupOnRefresh: false
     });
-    await cache.getOrRefresh({
+    await seedSharedCache(cache, {
       fingerprint: "charta-recruiter-engineer-seed",
       fingerprintInput: {
         companyKey: "domain:chartahealth.com",
@@ -2058,8 +2183,8 @@ describe("Discover shared cache integration", () => {
         resultLimit: 10,
         cacheVersion: "v1"
       },
-      company: { name: "Charta Health", domain: "chartahealth.com", linkedinUrl: null },
-      provider: async () => ({
+      company: { name: "Charta Health", domain: "chartahealth.com", linkedinUrl: null }
+    }, {
         emailFormat: { ...cacheDataset().emailFormat, emailDomain: "chartahealth.com" },
         people: [
           {
@@ -2079,8 +2204,8 @@ describe("Discover shared cache integration", () => {
             linkedinUrl: "https://www.linkedin.com/in/charta-recruiter"
           }
         ]
-      })
-    });
+      }
+    );
     const run = vi.fn<ApifyRunner["run"]>();
     const roleIntelligence = semanticRolePort({
       filter: vi.fn(async ({ people }) =>
@@ -2249,7 +2374,7 @@ describe("Discover shared cache integration", () => {
       ttlDays: 30,
       cleanupOnRefresh: false
     });
-    await cache.getOrRefresh({
+    await seedSharedCache(cache, {
       fingerprint: "apple-recruiter-only",
       fingerprintInput: {
         companyKey: "domain:apple.com",
@@ -2262,8 +2387,8 @@ describe("Discover shared cache integration", () => {
         name: "Apple Inc.",
         domain: "apple.com",
         linkedinUrl: "https://www.linkedin.com/company/apple"
-      },
-      provider: async () => ({
+      }
+    }, {
         emailFormat: { ...cacheDataset().emailFormat, emailDomain: "apple.com", emailPattern: "flast" },
         people: [
           {
@@ -2276,8 +2401,8 @@ describe("Discover shared cache integration", () => {
             linkedinUrl: "https://www.linkedin.com/in/apple-shared-recruiter"
           }
         ]
-      })
-    });
+      }
+    );
     const { run, runner } = emptyProviderRunner();
     const quota = makeQuotaReserver();
     const audit = vi.fn<ProspectAuditFn>();
@@ -2346,7 +2471,7 @@ describe("Discover shared cache integration", () => {
       ttlDays: 30,
       cleanupOnRefresh: false
     });
-    await cache.getOrRefresh({
+    await seedSharedCache(cache, {
       fingerprint: "apple-recruiter-only-for-sales",
       fingerprintInput: {
         companyKey: "domain:apple.com",
@@ -2359,8 +2484,8 @@ describe("Discover shared cache integration", () => {
         name: "Apple Inc.",
         domain: "apple.com",
         linkedinUrl: "https://www.linkedin.com/company/apple"
-      },
-      provider: async () => ({
+      }
+    }, {
         emailFormat: { ...cacheDataset().emailFormat, emailDomain: "apple.com", emailPattern: "flast" },
         people: [
           {
@@ -2373,8 +2498,8 @@ describe("Discover shared cache integration", () => {
             linkedinUrl: "https://www.linkedin.com/in/apple-shared-recruiter-for-sales"
           }
         ]
-      })
-    });
+      }
+    );
     const { run, runner } = emptyProviderRunner();
     const { service } = buildService(
       prisma,
@@ -2402,7 +2527,7 @@ describe("Discover shared cache integration", () => {
     expect(allocations.map((row) => row.personId).sort()).toEqual([...personIds].sort());
   });
 
-  it("calls Apify once when same-user Apple people are the wrong role", async () => {
+  it("returns zero without Apify when same-user Apple people are the wrong role", async () => {
     await seedOwnedApplePeople(USER_ID, [
       {
         sourceProfileId: "apple-local-recruiter",
@@ -2431,12 +2556,12 @@ describe("Discover shared cache integration", () => {
     const result = await service.processSearch(USER_ID, search.id);
 
     expect(result.status).toBe("NO_RESULTS");
-    expect(result.resultSource).toBe("PROVIDER");
-    expect(run).toHaveBeenCalledTimes(1);
+    expect(result.resultSource).toBe("CACHE");
+    expect(run).not.toHaveBeenCalled();
     expect(prisma._state.searchPeople).toHaveLength(0);
   });
 
-  it("calls Apify once when same-user Apple engineers are in the wrong location", async () => {
+  it("returns zero without Apify when same-user Apple engineers are in the wrong location", async () => {
     await seedOwnedApplePeople(USER_ID, [
       {
         sourceProfileId: "apple-local-canada",
@@ -2465,7 +2590,8 @@ describe("Discover shared cache integration", () => {
     const result = await service.processSearch(USER_ID, search.id);
 
     expect(result.status).toBe("NO_RESULTS");
-    expect(run).toHaveBeenCalledTimes(1);
+    expect(result.resultSource).toBe("CACHE");
+    expect(run).not.toHaveBeenCalled();
     expect(prisma._state.searchPeople).toHaveLength(0);
   });
 
@@ -2498,7 +2624,8 @@ describe("Discover shared cache integration", () => {
     const result = await service.processSearch("user_B", search.id);
 
     expect(result.status).toBe("NO_RESULTS");
-    expect(run).toHaveBeenCalledTimes(1);
+    expect(result.resultSource).toBe("CACHE");
+    expect(run).not.toHaveBeenCalled();
     expect(prisma._state.searchPeople).toHaveLength(0);
     expect(prisma._state.people).toHaveLength(1);
     expect(prisma._state.people[0]).toMatchObject({ id: owner.personIds[0], userId: "user_A" });
@@ -2575,8 +2702,7 @@ describe("Discover shared cache integration", () => {
       store: backfillStore,
       options: { apply: false, batchSize: 2, limit: null },
       now: new Date("2026-08-20T18:05:00.000Z"),
-      cacheVersion: "v1",
-      cacheTtlDays: 30
+      cacheVersion: "v1"
     });
     expect(dryRun).toMatchObject({ cacheEntriesToCreate: 1, peopleToInsert: 5 });
     expect(prisma._state.discoverCache).toHaveLength(0);
@@ -2585,8 +2711,7 @@ describe("Discover shared cache integration", () => {
       store: backfillStore,
       options: { apply: true, batchSize: 2, limit: null },
       now: new Date("2026-08-20T18:05:00.000Z"),
-      cacheVersion: "v1",
-      cacheTtlDays: 30
+      cacheVersion: "v1"
     });
     expect(applied).toMatchObject({ cacheEntriesToCreate: 1, peopleToInsert: 5 });
     expect(prisma._state.discoverCachePeople).toHaveLength(5);
@@ -2655,8 +2780,7 @@ describe("Discover shared cache integration", () => {
       store: backfillStore,
       options: { apply: true, batchSize: 2, limit: null },
       now: new Date("2026-08-20T18:05:00.000Z"),
-      cacheVersion: "v1",
-      cacheTtlDays: 30
+      cacheVersion: "v1"
     });
     expect(secondApply.peopleToInsert).toBe(0);
     expect(prisma._state.discoverCachePeople.filter((person) => person.sourceProfileId.startsWith("apple-history"))).toHaveLength(8);
@@ -2676,6 +2800,7 @@ describe("Discover shared cache integration", () => {
       pollIntervalMs: 5,
       cleanupOnRefresh: false
     });
+    await seedAppliedMaterialsCache(cache);
     const runnerA = amatRunner();
     const runnerB = amatRunner();
     const quotaA = makeQuotaReserver();
@@ -2688,9 +2813,9 @@ describe("Discover shared cache integration", () => {
     const b = await serviceB.createSearch("user_B", APPLIED_MATERIALS);
     const resB = await serviceB.processSearch("user_B", b.id, { actorEmail: "b@test.dev" });
 
-    expect(resA.resultSource).toBe("PROVIDER");
+    expect(resA.resultSource).toBe("CACHE");
     expect(resB.resultSource).toBe("CACHE");
-    expect(runnerA.run).toHaveBeenCalledTimes(1);
+    expect(runnerA.run).not.toHaveBeenCalled();
     expect(runnerB.run).not.toHaveBeenCalled();
 
     // Separate user-owned records.
@@ -2706,9 +2831,10 @@ describe("Discover shared cache integration", () => {
     expect(quotaA.consumed.size).toBe(1);
     expect(quotaB.consumed.size).toBe(1);
 
-    // Exactly one shared entry, holding no requester identity.
-    expect(prisma._state.discoverCache).toHaveLength(1);
-    expect(JSON.stringify(prisma._state.discoverCache[0])).not.toMatch(/user_A|user_B|userId/);
+    // Shared entries hold no requester identity (the pool seed may also create
+    // one derived exact-intent entry for faster subsequent reuse).
+    expect(prisma._state.discoverCache.length).toBeGreaterThanOrEqual(1);
+    expect(JSON.stringify(prisma._state.discoverCache)).not.toMatch(/user_A|user_B|userId/);
   });
 
   it("reuses the production-shaped 98-person Apple pool for a narrower Recruiter search without Apify", async () => {
@@ -2746,7 +2872,7 @@ describe("Discover shared cache integration", () => {
         emailSource: null
       };
     });
-    await cache.getOrRefresh({
+    await seedSharedCache(cache, {
       fingerprint: "apple-broad-98",
       fingerprintInput: {
         companyKey: "domain:apple.com",
@@ -2755,8 +2881,8 @@ describe("Discover shared cache integration", () => {
         resultLimit: 10,
         cacheVersion: "v1"
       },
-      company: { name: "Apple Inc.", domain: "apple.com", linkedinUrl: "https://linkedin.com/company/apple" },
-      provider: async () => ({
+      company: { name: "Apple Inc.", domain: "apple.com", linkedinUrl: "https://linkedin.com/company/apple" }
+    }, {
         emailFormat: {
           emailDomain: "apple.com",
           emailDomainConfidence: "HIGH",
@@ -2770,8 +2896,8 @@ describe("Discover shared cache integration", () => {
           emailFormatDiscoveryExpiresAt: new Date("2026-09-19T17:00:00.000Z")
         },
         people
-      })
-    });
+      }
+    );
 
     const run = vi.fn<ApifyRunner["run"]>();
     const { service } = buildService(
@@ -2807,6 +2933,114 @@ describe("Discover shared cache integration", () => {
     ).toEqual(["RECRUITING"]);
   });
 
+  it("reuses a 73-person legacy Wealthfront pool for a name-only cross-user search with zero Apify calls", async () => {
+    const cache = new DiscoverSearchCacheService({
+      prisma: prisma as unknown as PrismaClient,
+      lock: makeFakeCacheLock(),
+      now: () => new Date("2026-09-20T21:00:00.000Z"),
+      cleanupOnRefresh: false
+    });
+    const people = Array.from({ length: 73 }, (_, index) => ({
+      sourceProfileId: `wealthfront-${index + 1}`,
+      firstName: `Person${index + 1}`,
+      lastName: "Engineer",
+      fullName: `Person${index + 1} Engineer`,
+      currentTitle: index % 2 === 0 ? "Software Engineer" : "Senior Distributed Systems Engineer",
+      normalizedTitle: index % 2 === 0 ? "software engineer" : "senior distributed systems engineer",
+      positionCategory: "SOFTWARE_ENGINEERING",
+      location: null,
+      country: null,
+      state: null,
+      city: null,
+      linkedinUrl: `https://www.linkedin.com/in/wealthfront-${index + 1}`,
+      inferredEmail: null,
+      emailStatus: "UNAVAILABLE",
+      emailConfidence: "UNAVAILABLE",
+      emailPattern: null,
+      emailSource: null
+    }));
+    await seedSharedCache(cache, {
+      fingerprint: "legacy-wealthfront-linkedin-swe-us",
+      fingerprintInput: {
+        companyKey: "linkedin:wealthfront",
+        roles: ["software engineer"],
+        locations: ["united states"],
+        resultLimit: 10,
+        cacheVersion: "v1"
+      },
+      company: {
+        name: "Wealthfront Corporation",
+        domain: "wealthfront.com",
+        linkedinUrl: "https://www.linkedin.com/company/wealthfront"
+      }
+    }, {
+      emailFormat: {
+        emailDomain: null,
+        emailDomainConfidence: "UNAVAILABLE",
+        emailDomainEvidence: null,
+        emailPattern: null,
+        patternConfidence: "UNAVAILABLE",
+        patternEvidence: null,
+        emailFormatReason: null,
+        emailFormatDiscoveryStatus: "NO_EVIDENCE",
+        emailFormatDiscoveryAt: new Date("2026-09-20T20:00:00.000Z"),
+        emailFormatDiscoveryExpiresAt: new Date("2026-09-21T20:00:00.000Z")
+      },
+      people
+    });
+
+    const run = vi.fn<ApifyRunner["run"]>(async () => {
+      throw new Error("normal processSearch must never invoke the provider on an exact cache hit");
+    });
+    const exactIntentFilter = vi.fn<DiscoverRoleIntelligencePort["filterAndRankPeople"]>(async () => {
+      throw new Error("exact-intent cache reuse must not invoke role intelligence");
+    });
+    const { service, ai } = buildService(
+      prisma,
+      { run } as ApifyRunner,
+      {
+        responses: {
+          company_resolution: {
+            officialName: "Wealthfront Corporation",
+            normalizedName: "wealthfront",
+            officialWebsiteDomain: "wealthfront.com",
+            officialWebsite: "https://www.wealthfront.com",
+            linkedinCompanyUrl: "https://www.linkedin.com/company/wealthfront",
+            confidence: "HIGH",
+            requiresConfirmation: false,
+            evidence: []
+          },
+          role_classification: { classifications: [] }
+        }
+      },
+      undefined,
+      allowAllQuota,
+      cache,
+      semanticRolePort({ filter: exactIntentFilter })
+    );
+    const search = await service.createSearch("wealthfront_requester", {
+      companyName: "Wealthfront Corporation",
+      companyDomain: null,
+      companyLinkedinUrl: null,
+      jobTitles: ["Software Engineer"],
+      locations: ["United States"],
+      maxResults: 10
+    });
+
+    const result = await service.processSearch("wealthfront_requester", search.id);
+
+    expect(result.status).toBe("READY");
+    expect(result.resultSource).toBe("CACHE");
+    expect(result.totalProcessed).toBe(10);
+    expect(run).not.toHaveBeenCalled();
+    expect(exactIntentFilter).not.toHaveBeenCalled();
+    expect(ai.callsOfType("company_resolution")).toHaveLength(1);
+    expect(prisma._state.companies.find((company) => company.userId === "wealthfront_requester"))
+      .toMatchObject({ canonicalKey: "domain:wealthfront.com" });
+    expect(prisma._state.people.filter((person) => person.userId === "wealthfront_requester"))
+      .toHaveLength(10);
+  });
+
   it("materializes four cached Recruiters as READY without a paid top-up", async () => {
     const cache = new DiscoverSearchCacheService({
       prisma: prisma as unknown as PrismaClient,
@@ -2826,7 +3060,7 @@ describe("Discover shared cache integration", () => {
       positionCategory: "RECRUITING",
       linkedinUrl: `https://www.linkedin.com/in/partial-${index + 1}`
     }));
-    await cache.getOrRefresh({
+    await seedSharedCache(cache, {
       fingerprint: "apple-broad-partial",
       fingerprintInput: {
         companyKey: "domain:apple.com",
@@ -2835,9 +3069,8 @@ describe("Discover shared cache integration", () => {
         resultLimit: 10,
         cacheVersion: "v1"
       },
-      company: { name: "Apple Inc.", domain: "apple.com", linkedinUrl: null },
-      provider: async () => cached
-    });
+      company: { name: "Apple Inc.", domain: "apple.com", linkedinUrl: null }
+    }, cached);
     const run = vi.fn<ApifyRunner["run"]>();
     const { service } = buildService(prisma, { run } as ApifyRunner, ROLE_ONLY_AI, undefined, allowAllQuota, cache);
     const search = await service.createSearch(USER_ID, {
@@ -2857,7 +3090,7 @@ describe("Discover shared cache integration", () => {
     expect(run).not.toHaveBeenCalled();
   });
 
-  it("runs Apify only once for concurrent identical misses (#concurrency 1, 2)", async () => {
+  it("runs Apify zero times for concurrent identical database misses", async () => {
     const cache = new DiscoverSearchCacheService({
       prisma: prisma as unknown as PrismaClient,
       lock: makeFakeCacheLock(),
@@ -2879,12 +3112,13 @@ describe("Discover shared cache integration", () => {
       serviceB.processSearch("user_B", b.id, { actorEmail: "b@test.dev" })
     ]);
 
-    // Exactly one of the two Apify runners is called; both users get results.
+    // A cache stampede cannot turn into a provider stampede: normal search is
+    // read-only even when both requests miss at the same time.
     const apifyCalls = runnerA.run.mock.calls.length + runnerB.run.mock.calls.length;
-    expect(apifyCalls).toBe(1);
-    expect(resA.status).toBe("READY");
-    expect(resB.status).toBe("READY");
-    expect([resA.resultSource, resB.resultSource].sort()).toEqual(["CACHE", "PROVIDER"]);
+    expect(apifyCalls).toBe(0);
+    expect(resA.status).toBe("NO_RESULTS");
+    expect(resB.status).toBe("NO_RESULTS");
+    expect([resA.resultSource, resB.resultSource]).toEqual(["CACHE", "CACHE"]);
   });
 });
 
@@ -3028,7 +3262,7 @@ describe("Discover retry", () => {
     expect(a3.attemptCount).toBe(2);
   });
 
-  it("does not reuse a zero-result cache entry — a later search re-runs the provider (#retry-7,9)", async () => {
+  it("keeps a later ordinary search database-only after a zero-result miss (#retry-7,9)", async () => {
     const cache = realCache();
     let calls = 0;
     const run = vi.fn<ApifyRunner["run"]>(async () => {
@@ -3044,14 +3278,14 @@ describe("Discover retry", () => {
 
     const s2 = await service.createSearch(USER_ID, APPLIED_MATERIALS);
     const r2 = await service.processSearch(USER_ID, s2.id, { actorEmail: "u@test.dev" });
-    // The empty cache entry must NOT short-circuit the provider.
-    expect(run).toHaveBeenCalledTimes(2);
-    expect(r2.status).toBe("READY");
-    expect(r2.totalProcessed).toBe(1);
+    expect(run).not.toHaveBeenCalled();
+    expect(r2.status).toBe("NO_RESULTS");
+    expect(r2.totalProcessed).toBe(0);
   });
 
-  it("still reuses a fresh non-empty cache without calling the provider again (#retry-6)", async () => {
+  it("reuses durable non-empty database knowledge without calling the provider (#retry-6)", async () => {
     const cache = realCache();
+    await seedAppliedMaterialsCache(cache);
     const run = vi.fn<ApifyRunner["run"]>(async () => ({ runId: "r1", datasetId: "d1", items: item() }));
     const { service } = buildService(prisma, { run } as ApifyRunner, RETRY_AI, retryEvidence(), makeQuotaReserver().reserve, cache);
 
@@ -3060,7 +3294,7 @@ describe("Discover retry", () => {
     const s2 = await service.createSearch(USER_ID, APPLIED_MATERIALS);
     const r2 = await service.processSearch(USER_ID, s2.id, { actorEmail: "u@test.dev" });
 
-    expect(run).toHaveBeenCalledTimes(1); // the second search reused the cache
+    expect(run).not.toHaveBeenCalled();
     expect(r2.resultSource).toBe("CACHE");
     expect(r2.totalProcessed).toBe(1);
   });
@@ -3382,7 +3616,7 @@ describe("Discover user-specific allocation cap (shared cache exposure)", () => 
 
   function pooledCachePort(dataset: ResolvedDataset): DiscoverCachePort {
     return {
-      async getOrRefresh() {
+      async lookupReusableDataset() {
         return {
           dataset,
           source: "CACHE",
@@ -3405,7 +3639,7 @@ describe("Discover user-specific allocation cap (shared cache exposure)", () => 
     expect(result.status).toBe("READY");
     // The search's own count is the ALLOCATED batch, not the pool size.
     expect(result.totalProcessed).toBe(10);
-    // No provider call — the fresh cache covered the batch (#4).
+    // No provider call — durable database candidates covered the batch (#4).
     expect((runner as { run: ReturnType<typeof vi.fn> }).run).not.toHaveBeenCalled();
     // Only the allocated 10 were ever materialized for this user: the remaining
     // 20 cached candidates are not reachable through any user-scoped read.
@@ -4049,6 +4283,189 @@ describe("Search this company (same-company role/location search)", () => {
       })
     ).rejects.toMatchObject({ code: "DISCOVER_DAILY_LIMIT_REACHED" });
     expect(prisma._state.searches).toHaveLength(2);
+  });
+});
+
+describe("durable public Discover production flow", () => {
+  function publicPerson(id: string, company = "Apple"): ResolvedCachePerson {
+    return {
+      sourceProfileId: id,
+      firstName: "Person",
+      lastName: id,
+      fullName: `Person ${id}`,
+      currentTitle: "Software Engineer",
+      normalizedTitle: "software engineer",
+      positionCategory: "SOFTWARE_ENGINEERING",
+      location: "United States",
+      country: "United States",
+      state: null,
+      city: null,
+      linkedinUrl: `https://www.linkedin.com/in/${company.toLowerCase()}-${id}`,
+      inferredEmail: null,
+      emailStatus: "UNAVAILABLE",
+      emailConfidence: "UNAVAILABLE",
+      emailPattern: null,
+      emailSource: null
+    };
+  }
+
+  function knowledge(redis = new TestDiscoverRedis()) {
+    return {
+      redis,
+      service: new DiscoverPublicKnowledgeService({
+        prisma: prisma as unknown as PrismaClient,
+        redis,
+        lock: makeFakeCacheLock(),
+        waitTimeoutMs: 500,
+        pollIntervalMs: 1
+      })
+    };
+  }
+
+  const oneRoleApple: ValidatedCreateProspectSearch = {
+    companyName: "Apple",
+    companyDomain: "apple.com",
+    companyLinkedinUrl: null,
+    jobTitles: ["Software Engineer"],
+    locations: ["United States"],
+    maxResults: 10
+  };
+
+  it("automatically calls Apify exactly once on a true Redis/Postgres zero and durably ingests results", async () => {
+    const run = vi.fn<ApifyRunner["run"]>(async () => ({
+      runId: "new-run",
+      datasetId: "new-dataset",
+      items: [targetedCompanyProfile("new-1", "Software Engineer", "Apple")]
+    }));
+    const durable = knowledge();
+    const { service } = buildService(
+      prisma,
+      { run } as ApifyRunner,
+      AI_RESPONSES,
+      undefined,
+      allowAllQuota,
+      durable.service
+    );
+
+    const search = await service.createSearch("first-user", oneRoleApple);
+    const result = await service.processSearch("first-user", search.id);
+
+    expect(result).toMatchObject({ status: "READY", totalProcessed: 1, resultSource: "PROVIDER" });
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(prisma._state.discoverPublicPeople).toHaveLength(1);
+    expect(prisma._state.discoverProviderBatches).toHaveLength(1);
+    expect(prisma._state.discoverProviderBatchPeople).toHaveLength(1);
+    expect(prisma._state.discoverPublicPeople[0]).not.toHaveProperty("userId");
+    expect(prisma._state.discoverPublicPeople[0]).not.toHaveProperty("inferredEmail");
+  });
+
+  it("returns NO_RESULTS after one provider call and reuses the provider-backed empty result", async () => {
+    const run = vi.fn<ApifyRunner["run"]>(async () => ({
+      runId: "empty-run",
+      datasetId: "empty-dataset",
+      items: []
+    }));
+    const durable = knowledge();
+    const { service } = buildService(
+      prisma,
+      { run } as ApifyRunner,
+      AI_RESPONSES,
+      undefined,
+      allowAllQuota,
+      durable.service
+    );
+
+    const first = await service.createSearch("empty-user-a", oneRoleApple);
+    expect((await service.processSearch("empty-user-a", first.id)).status).toBe("NO_RESULTS");
+    const second = await service.createSearch("empty-user-b", oneRoleApple);
+    expect((await service.processSearch("empty-user-b", second.id)).status).toBe("NO_RESULTS");
+
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it("reuses a Citadel-shaped 50-person permanent dataset after a Redis flush with zero Apify calls", async () => {
+    const durable = knowledge();
+    await durable.service.appendProviderPeople({
+      fingerprint: "historical-citadel-provider-intent",
+      fingerprintInput: {
+        companyKey: "domain:citadel.com",
+        roles: ["software engineer"],
+        locations: ["united states"],
+        resultLimit: 10,
+        cacheVersion: "v1"
+      },
+      company: { name: "Citadel LLC", domain: "citadel.com", linkedinUrl: null },
+      emailFormat: {
+        emailDomain: null,
+        emailDomainConfidence: "UNAVAILABLE",
+        emailDomainEvidence: null,
+        emailPattern: null,
+        patternConfidence: "UNAVAILABLE",
+        patternEvidence: null,
+        emailFormatReason: null
+      },
+      people: Array.from({ length: 50 }, (_, index) => publicPerson(`citadel-${index}`, "Citadel")),
+      nextPage: 3,
+      pagesFetched: 2,
+      exhausted: false,
+      providerRunId: "ca8dFSzs5DmqXzxYJ",
+      providerDatasetId: "d3xNjstlWecvJaVXn"
+    });
+    durable.redis.clear();
+    const run = vi.fn<ApifyRunner["run"]>();
+    const { service } = buildService(
+      prisma,
+      { run } as ApifyRunner,
+      AI_RESPONSES,
+      undefined,
+      allowAllQuota,
+      durable.service
+    );
+    const input: ValidatedCreateProspectSearch = {
+      ...oneRoleApple,
+      companyName: "Citadel LLC",
+      companyDomain: "citadel.com"
+    };
+
+    const search = await service.createSearch("citadel-user-b", input);
+    const result = await service.processSearch("citadel-user-b", search.id);
+
+    expect(result).toMatchObject({ status: "READY", totalProcessed: 10, resultSource: "CACHE" });
+    expect(run).not.toHaveBeenCalled();
+    expect(prisma._state.searchPeople).toHaveLength(10);
+  });
+
+  it("coalesces concurrent first searches for the same unseen intent", async () => {
+    const run = vi.fn<ApifyRunner["run"]>(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      return {
+        runId: "coalesced-run",
+        datasetId: "coalesced-dataset",
+        items: [targetedCompanyProfile("coalesced-1", "Software Engineer", "Apple")]
+      };
+    });
+    const durable = knowledge();
+    const { service } = buildService(
+      prisma,
+      { run } as ApifyRunner,
+      AI_RESPONSES,
+      undefined,
+      allowAllQuota,
+      durable.service
+    );
+    const [searchA, searchB] = await Promise.all([
+      service.createSearch("concurrent-a", oneRoleApple),
+      service.createSearch("concurrent-b", oneRoleApple)
+    ]);
+
+    const [resultA, resultB] = await Promise.all([
+      service.processSearch("concurrent-a", searchA.id),
+      service.processSearch("concurrent-b", searchB.id)
+    ]);
+
+    expect(resultA.status).toBe("READY");
+    expect(resultB.status).toBe("READY");
+    expect(run).toHaveBeenCalledTimes(1);
   });
 });
 

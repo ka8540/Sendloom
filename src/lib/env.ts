@@ -161,19 +161,14 @@ const envSchema = z
     // Safety cap on provider continuation pages fetched in a single expansion so
     // a sparse query can never trigger an unbounded/expensive provider loop.
     DISCOVER_EXPANSION_MAX_PROVIDER_PAGES: z.coerce.number().int().positive().max(20).default(5),
-    // --- Shared Discover result cache ---
-    // How long a shared provider-result dataset stays fresh before Apify is
-    // called again. Absent/blank/invalid/<=0 falls back to 30.
-    DISCOVER_SHARED_CACHE_TTL_DAYS: z.preprocess((value) => {
-      const parsed = typeof value === "string" ? Number(value) : value;
-      return typeof parsed === "number" && Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : undefined;
-    }, z.number().int().positive().default(30)),
-    // Bumping the cache schema version invalidates every existing entry (it is
-    // part of the fingerprint). Absent/blank falls back to "v1".
+    // --- Discover public knowledge / Redis acceleration ---
+    // This semantic version remains part of exact-intent keys. Public people
+    // live permanently in Postgres; only Redis result payloads expire.
     DISCOVER_SHARED_CACHE_VERSION: z.preprocess(
       (value) => (value === undefined || value === "" ? "v1" : String(value).trim()),
       z.string().min(1)
     ),
+    DISCOVER_REDIS_RESULT_TTL_SECONDS: z.coerce.number().int().positive().max(86_400).default(900),
     // --- Discover semantic role intelligence (pgvector) ---
     // Off by default for a no-behavior-change deployment. The embedding
     // dimensions are intentionally pinned to the migration's vector(1536)
@@ -324,7 +319,6 @@ function readRawEnv() {
     DISCOVER_QUOTA_EXEMPT_EMAILS: process.env.DISCOVER_QUOTA_EXEMPT_EMAILS,
     DISCOVER_EXPANSION_BATCH_SIZE: process.env.DISCOVER_EXPANSION_BATCH_SIZE,
     DISCOVER_EXPANSION_MAX_PROVIDER_PAGES: process.env.DISCOVER_EXPANSION_MAX_PROVIDER_PAGES,
-    DISCOVER_SHARED_CACHE_TTL_DAYS: process.env.DISCOVER_SHARED_CACHE_TTL_DAYS,
     DISCOVER_SHARED_CACHE_VERSION: process.env.DISCOVER_SHARED_CACHE_VERSION,
     DISCOVER_ROLE_VECTOR_ENABLED: process.env.DISCOVER_ROLE_VECTOR_ENABLED,
     DISCOVER_ROLE_EMBEDDING_MODEL: process.env.DISCOVER_ROLE_EMBEDDING_MODEL,

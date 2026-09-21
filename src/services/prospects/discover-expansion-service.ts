@@ -16,15 +16,19 @@ import { env } from "@/lib/env";
 import { coercePositionCategory, displayNameForCategory, type PositionCategory } from "@/lib/prospect-enums";
 import { ApifyProfileSearchService, type NormalizedProfile } from "@/services/prospects/apify-profile-search";
 import {
-  DiscoverSearchCacheService,
   createRedisCacheLock,
   resolveSharedCacheVersion,
   type DiscoverCacheCompany,
   type DiscoverCacheExpansionPort,
+  type DiscoverCachePort,
   type DiscoverCacheLock,
   type ResolvedCachePerson,
   type ResolvedEmailFormat
 } from "@/services/prospects/discover-cache-service";
+import {
+  DiscoverPublicKnowledgeService,
+  isDiscoverPublicKnowledgePort
+} from "@/services/prospects/discover-public-knowledge-service";
 import { computeDiscoverFingerprint } from "@/services/prospects/discover-cache-fingerprint";
 import {
   createDiscoverRoleIntelligenceService,
@@ -80,8 +84,8 @@ export type DiscoverExpansionServiceDeps = {
   apify: ApifyProfileSearchService;
   roleClassifier: RoleClassificationService;
   roleIntelligence?: DiscoverRoleIntelligencePort;
-  /** Defaults to the shared 30-day result cache (provides continuation state). */
-  cache?: DiscoverCacheExpansionPort;
+  /** Defaults to the durable shared people store (provides continuation state). */
+  cache?: DiscoverCacheExpansionPort & Partial<DiscoverCachePort>;
   /** Defaults to the Redis-backed atomic daily quota (idempotent per expansion). */
   discoverQuota?: DiscoverQuotaReserver;
   /** Read-only quota status (for paths that don't reserve). Defaults to Redis. */
@@ -130,7 +134,7 @@ export class DiscoverExpansionService {
   private readonly apify: ApifyProfileSearchService;
   private readonly roleClassifier: RoleClassificationService;
   private readonly roleIntelligence: DiscoverRoleIntelligencePort;
-  private readonly cache: DiscoverCacheExpansionPort;
+  private readonly cache: DiscoverCacheExpansionPort & Partial<DiscoverCachePort>;
   private readonly discoverQuota: DiscoverQuotaReserver;
   private readonly quotaStatus: (userId: string, email: string | null) => Promise<DiscoverQuotaStatus>;
   private readonly expansionLock: DiscoverCacheLock;
@@ -145,7 +149,7 @@ export class DiscoverExpansionService {
     this.roleClassifier = deps.roleClassifier;
     this.roleIntelligence =
       deps.roleIntelligence ?? createDiscoverRoleIntelligenceService(deps.prisma, deps.roleClassifier);
-    this.cache = deps.cache ?? new DiscoverSearchCacheService({ prisma: deps.prisma });
+    this.cache = deps.cache ?? new DiscoverPublicKnowledgeService({ prisma: deps.prisma });
     this.discoverQuota = deps.discoverQuota ?? reserveDiscoverSearchSlot;
     this.quotaStatus = deps.quotaStatus ?? getDiscoverQuotaStatus;
     this.expansionLock = deps.expansionLock ?? createRedisCacheLock();
@@ -161,8 +165,8 @@ export class DiscoverExpansionService {
     // 1-5. Authenticate (done in the resolver), load + own the search, confirm it
     // is READY and has the canonical company / roles / locations to continue.
     const search = await this.requireOwnedSearch(userId, searchId);
-    if (search.status !== "READY") {
-      throw new ProspectError("INVALID_STATE", "Only a ready search can add more people.");
+    if (search.status !== "READY" && search.status !== "NO_RESULTS") {
+      throw new ProspectError("INVALID_STATE", "Only a completed search can add more people.");
     }
     const roles = asStringArray(search.requestedTitles);
     if (!search.companyId || roles.length === 0) {
@@ -176,7 +180,16 @@ export class DiscoverExpansionService {
 
     // Serialize all expansions for this search: only one active at a time.
     const lockKey = `${EXPANSION_LOCK_PREFIX}:${searchId}`;
-    const lockToken = await this.expansionLock.acquire(lockKey);
+    let lockToken: string | null;
+    let lockUnavailable = false;
+    try {
+      lockToken = await this.expansionLock.acquire(lockKey);
+    } catch {
+      // Redis locking is request coalescing, not a correctness dependency. DB
+      // uniqueness/idempotency still converges duplicate allocations.
+      lockToken = "redis-unavailable";
+      lockUnavailable = true;
+    }
     if (!lockToken) {
       const existing = await this.findExpansion(searchId, idempotencyKey);
       if (existing && existing.status === "READY") {
@@ -218,10 +231,30 @@ export class DiscoverExpansionService {
       // search for the same company keeps its own separate allocation.
       const { identities, allocatedCount } = await this.loadExistingIdentities(userId, search.id, company.id);
 
-      // 9. Look at the fresh shared cache for unused matching people.
+      // 9. Consume every matching unused database candidate before provider
+      // continuation. Cache age is irrelevant, and requester-owned people are
+      // eligible even when this exact fingerprint has no continuation row yet.
       const cacheState = await this.cache.getExpansionState(fingerprint);
-      const cacheCandidates =
-        cacheState && this.roleIntelligence.enabled
+      const durableResult =
+        isDiscoverPublicKnowledgePort(this.cache) && this.cache.lookupReusableDataset
+          ? await this.cache.lookupReusableDataset({
+              fingerprint,
+              fingerprintInput,
+              company: cacheCompany,
+              filterCompanyPoolPeople: (people, source) =>
+                this.roleIntelligence.filterAndRankPeople({
+                  people,
+                  requestedTitles: roles,
+                  requestedLocations: locations,
+                  sourceRequestedLocations: source.normalizedLocations,
+                  context: "CACHE",
+                  options: { budget: createAiBudget(), searchId: search.id }
+                })
+            })
+          : null;
+      const cacheCandidates = durableResult
+        ? durableResult.dataset.people
+        : cacheState
           ? await this.roleIntelligence.filterAndRankPeople({
               people: cacheState.people,
               requestedTitles: roles,
@@ -229,9 +262,30 @@ export class DiscoverExpansionService {
               context: "CACHE",
               options: { budget: createAiBudget(), searchId: search.id }
             })
-          : cacheState?.people ?? [];
-      const unusedCached = cacheCandidates.filter((person) => !identities.has(person));
+          : [];
+      const localCandidates = isDiscoverPublicKnowledgePort(this.cache)
+        ? []
+        : await this.loadReusableLocalCandidates({ userId, search, company, roles, locations });
+      const databaseIdentities = new PersonIdentitySet();
+      const unusedCached = [...cacheCandidates, ...localCandidates].filter(
+        (person) => !identities.has(person) && databaseIdentities.addIfNew(person)
+      );
       const providerExhausted = cacheState?.providerExhausted ?? false;
+      await this.safeAudit(
+        unusedCached.length > 0
+          ? "DISCOVER_ADD_MORE_DATABASE_HIT"
+          : "DISCOVER_ADD_MORE_DATABASE_EXHAUSTED",
+        userId,
+        actorEmail,
+        searchId,
+        {
+          canonicalCompanyKey: fingerprintInput.companyKey,
+          normalizedRoles: fingerprintInput.roles,
+          normalizedLocations: fingerprintInput.locations,
+          unusedCandidateCount: unusedCached.length,
+          providerCalled: false
+        }
+      );
 
       // Early no-op: provider already exhausted and nothing unused remains. Do
       // not consume a daily slot for a request that cannot add anyone.
@@ -317,7 +371,10 @@ export class DiscoverExpansionService {
       // 15. Update the search People count (extends the same search row).
       await this.prisma.prospectSearch.update({
         where: { id: search.id },
-        data: { totalProcessed: totalPeopleCount }
+        data: {
+          totalProcessed: totalPeopleCount,
+          status: totalPeopleCount > 0 ? "READY" : search.status
+        }
       });
 
       // "No more unique people available" = the provider is exhausted and this
@@ -346,7 +403,13 @@ export class DiscoverExpansionService {
       // Use the remaining count from THIS reservation (no extra quota read).
       return this.toResult(completed, reservation.status.searchesRemaining, resultExhausted, null);
     } finally {
-      await this.expansionLock.release(lockKey, lockToken);
+      if (!lockUnavailable) {
+        try {
+          await this.expansionLock.release(lockKey, lockToken);
+        } catch {
+          // Lock TTL/DB uniqueness protect correctness if Redis disappears.
+        }
+      }
     }
   }
 
@@ -405,6 +468,47 @@ export class DiscoverExpansionService {
     };
   }
 
+  private async loadReusableLocalCandidates(input: {
+    userId: string;
+    search: ProspectSearch;
+    company: ProspectCompany;
+    roles: string[];
+    locations: string[];
+  }): Promise<ResolvedCachePerson[]> {
+    const rows = await this.prisma.prospectPerson.findMany({
+      where: { userId: input.userId, companyId: input.company.id },
+      include: { position: { select: { category: true } } },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }]
+    });
+    const people: ResolvedCachePerson[] = rows.map((person) => ({
+      sourceProfileId: person.sourceProfileId,
+      firstName: person.firstName,
+      lastName: person.lastName,
+      fullName: person.fullName,
+      ...nameStateFields(person),
+      currentTitle: person.currentTitle,
+      normalizedTitle: person.normalizedTitle,
+      positionCategory: person.position.category,
+      location: person.location,
+      country: person.country,
+      state: person.state,
+      city: person.city,
+      linkedinUrl: person.linkedinUrl,
+      inferredEmail: person.inferredEmail,
+      emailStatus: person.emailStatus,
+      emailConfidence: person.emailConfidence,
+      emailPattern: person.emailPattern,
+      emailSource: person.emailSource
+    }));
+    return this.roleIntelligence.filterAndRankPeople({
+      people,
+      requestedTitles: input.roles,
+      requestedLocations: input.locations,
+      context: "CACHE",
+      options: { budget: createAiBudget(), searchId: input.search.id }
+    });
+  }
+
   /**
    * Materialize cached unused people first; if still short and the provider is
    * not exhausted, continue the Apify search from its saved page under the shared
@@ -437,12 +541,20 @@ export class DiscoverExpansionService {
         collected.push(person);
       }
     }
-    const cacheCount = collected.length;
+    let cacheCount = collected.length;
     let providerCount = 0;
     let exhausted = params.providerExhausted;
 
-    // 11. Continue the provider only if we still need more and it isn't exhausted.
-    if (collected.length < this.batchSize && !exhausted) {
+    // A partial durable-DB batch intentionally ends this action. The next Add
+    // More request may use the provider only after the user has exhausted every
+    // matching permanent person.
+    if (cacheCount > 0) {
+      return { people: collected, cacheCount, providerCount: 0, exhausted };
+    }
+
+    // 11. No unused database people remain. Fetch at most one provider page for
+    // this explicit action; never loop merely to force a full batch.
+    if (!exhausted && this.maxProviderPages > 0) {
       const budget = createAiBudget();
       const providerTitles = await this.roleIntelligence.buildProviderTitlePlan(params.roles, {
         budget,
@@ -469,109 +581,106 @@ export class DiscoverExpansionService {
             }
             if (identities.addIfNew(person)) {
               collected.push(person);
-              providerCount += 1;
+              cacheCount += 1;
             }
           }
         }
 
-        // The initial search consumed provider page 1, so continuation defaults
-        // to page 2 when no saved page exists. It never restarts at page 1.
-        let page = rechecked?.providerNextPage ?? 2;
-        let pagesFetched = 0;
-        let cachedPeopleCount = rechecked?.people.length ?? 0;
+        if (cacheCount > 0 || exhausted) {
+          return;
+        }
 
-        while (collected.length < this.batchSize && pagesFetched < this.maxProviderPages && !exhausted) {
-          await this.safeAudit("DISCOVER_EXPANSION_PROVIDER_FETCH", params.userId, params.actorEmail, params.search.id, {
-            page
-          });
-          // 14. Continue from the saved provider page — never restart at page 1.
-          const pageResult = await this.apify.searchProfiles({
+        // A database-only initial search may have no exact continuation row. In
+        // that case this explicit user action starts at page 1. When metadata
+        // exists, always honor its saved next page (including old cache rows).
+        const page = rechecked?.providerNextPage ?? 1;
+        const cachedPeopleCount = rechecked?.people.length ?? 0;
+        await this.safeAudit("DISCOVER_EXPANSION_PROVIDER_FETCH", params.userId, params.actorEmail, params.search.id, {
+          page,
+          providerCalled: true,
+          explicitExpansion: true,
+          reason: "DATABASE_EXHAUSTED"
+        });
+        const pageResult = await this.apify.searchProfiles({
+          companyName: params.company.officialName ?? params.company.name,
+          companyLinkedinUrl: params.company.linkedinUrl,
+          ...(params.company.linkedinUrl
+            ? { companyTargeting: { mode: "LINKEDIN_CURRENT_COMPANY", trusted: true } as const }
+            : {}),
+          jobTitles: providerTitles,
+          locations: params.locations,
+          maxResults: PROVIDER_PAGE_SIZE,
+          startPage: page
+        });
+        const nextPage = page + 1;
+        const built = await this.buildProviderPeople(
+          pageResult.profiles,
+          params.cacheEmailFormat,
+          params.search.id,
+          budget,
+          {
             companyName: params.company.officialName ?? params.company.name,
-            companyLinkedinUrl: params.company.linkedinUrl,
-            ...(params.company.linkedinUrl
-              ? { companyTargeting: { mode: "LINKEDIN_CURRENT_COMPANY", trusted: true } as const }
-              : {}),
-            jobTitles: providerTitles,
-            locations: params.locations,
-            maxResults: PROVIDER_PAGE_SIZE,
-            startPage: page
-          });
-          pagesFetched += 1;
-          const nextPage = page + 1;
-          // A page with no raw provider items means there are no further pages.
-          const pageExhausted = pageResult.totalFound === 0;
-          const built = await this.buildProviderPeople(
-            pageResult.profiles,
-            params.cacheEmailFormat,
-            params.search.id,
-            budget,
-            {
-              companyName: params.company.officialName ?? params.company.name,
-              companyDomain: params.company.emailDomain ?? null
-            }
-          );
-          let pagePeople = built.people;
-          if (this.roleIntelligence.enabled) {
-            pagePeople = await this.roleIntelligence.filterAndRankPeople({
-              people: built.people,
-              requestedTitles: params.roles,
-              requestedLocations: params.locations,
-              context: "PROVIDER",
-              options: { budget, searchId: params.search.id }
-            });
+            companyDomain: params.company.emailDomain ?? null
           }
-
-          // 13-14. Append net-new normalized results to the shared cache and
-          // advance the saved continuation page (only after a valid fetch).
-          const updated = await this.cache.appendProviderPeople({
-            fingerprint: params.fingerprint,
-            fingerprintInput: params.fingerprintInput,
-            company: params.cacheCompany,
-            emailFormat: params.cacheEmailFormat,
-            people: pagePeople,
-            nextPage,
-            pagesFetched: 1,
-            exhausted: pageExhausted
-          });
-          const cacheAppendedCount = Math.max(0, updated.people.length - cachedPeopleCount);
-          cachedPeopleCount = updated.people.length;
-
-          page = nextPage;
-          if (pageExhausted) {
-            exhausted = true;
-          }
-
-          const collectedBeforePage = collected.length;
-          for (const person of updated.people) {
-            if (collected.length >= this.batchSize) {
-              break;
-            }
-            if (identities.addIfNew(person)) {
-              collected.push(person);
-              providerCount += 1;
-            }
-          }
-          const collectedCount = collected.length - collectedBeforePage;
-          await this.safeAudit("DISCOVER_EXPANSION_PROVIDER_PAGE_PROCESSED", params.userId, params.actorEmail, params.search.id, {
-            page: nextPage - 1,
-            rawProviderCount: pageResult.diagnostics.itemsReturned,
-            parsedCandidates: pageResult.diagnostics.parsedCandidates,
-            rejectedBySchema: pageResult.diagnostics.rejectedBySchema,
-            providerDuplicateItems: pageResult.diagnostics.duplicateItems,
-            companyMatched: pageResult.diagnostics.companyMatched,
-            rejectedByCompany: pageResult.diagnostics.rejectedByCompany,
-            normalizedProviderCount: pageResult.profiles.length,
-            identityResolvedCount: built.identityResolvedCount,
-            classifiedCount: built.classifiedCount,
-            semanticAcceptedCount: pagePeople.length,
-            semanticRejectedCount: built.people.length - pagePeople.length,
-            cacheAppendedCount,
-            duplicateCount:
-              pageResult.diagnostics.duplicateItems + Math.max(0, pagePeople.length - cacheAppendedCount),
-            collectedCount,
-            providerExhausted: pageExhausted
+        );
+        let pagePeople = built.people;
+        if (this.roleIntelligence.enabled) {
+          pagePeople = await this.roleIntelligence.filterAndRankPeople({
+            people: built.people,
+            requestedTitles: params.roles,
+            requestedLocations: params.locations,
+            context: "PROVIDER",
+            options: { budget, searchId: params.search.id }
           });
         }
+        let pageExhausted =
+          pageResult.totalFound === 0 || pageResult.profiles.length < PROVIDER_PAGE_SIZE;
+        const updated = await this.cache.appendProviderPeople({
+          fingerprint: params.fingerprint,
+          fingerprintInput: params.fingerprintInput,
+          company: params.cacheCompany,
+          emailFormat: params.cacheEmailFormat,
+          people: pagePeople,
+          nextPage,
+          pagesFetched: 1,
+          exhausted: pageExhausted,
+          provider: "APIFY",
+          providerRunId: pageResult.runId,
+          providerDatasetId: pageResult.datasetId
+        });
+        const cacheAppendedCount = Math.max(0, updated.people.length - cachedPeopleCount);
+        const collectedBeforePage = collected.length;
+        for (const person of updated.people) {
+          if (collected.length >= this.batchSize) break;
+          if (identities.addIfNew(person)) {
+            collected.push(person);
+            providerCount += 1;
+          }
+        }
+        const collectedCount = collected.length - collectedBeforePage;
+        // A duplicate-only/filtered-only page is exhausted for this action and
+        // must not trigger another paid loop.
+        if (collectedCount === 0) pageExhausted = true;
+        exhausted = pageExhausted;
+        await this.safeAudit("DISCOVER_EXPANSION_PROVIDER_PAGE_PROCESSED", params.userId, params.actorEmail, params.search.id, {
+          page,
+          rawProviderCount: pageResult.diagnostics.itemsReturned,
+          parsedCandidates: pageResult.diagnostics.parsedCandidates,
+          rejectedBySchema: pageResult.diagnostics.rejectedBySchema,
+          providerDuplicateItems: pageResult.diagnostics.duplicateItems,
+          companyMatched: pageResult.diagnostics.companyMatched,
+          rejectedByCompany: pageResult.diagnostics.rejectedByCompany,
+          normalizedProviderCount: pageResult.profiles.length,
+          identityResolvedCount: built.identityResolvedCount,
+          classifiedCount: built.classifiedCount,
+          semanticAcceptedCount: pagePeople.length,
+          semanticRejectedCount: built.people.length - pagePeople.length,
+          cacheAppendedCount,
+          duplicateCount:
+            pageResult.diagnostics.duplicateItems + Math.max(0, pagePeople.length - cacheAppendedCount),
+          collectedCount,
+          providerExhausted: pageExhausted
+        });
 
         if (exhausted) {
           await this.cache.markProviderExhausted(params.fingerprint);
@@ -872,7 +981,7 @@ export class DiscoverExpansionService {
   }
 }
 
-export const NO_MORE_PEOPLE_MESSAGE = "No additional unique people were found for this search.";
+export const NO_MORE_PEOPLE_MESSAGE = "No more people were found.";
 
 /** The success/result message for an expansion outcome. */
 export function expansionMessage(addedCount: number, batchSize: number, exhausted: boolean): string {

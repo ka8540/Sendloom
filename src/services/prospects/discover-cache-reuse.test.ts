@@ -89,4 +89,23 @@ describe("filterReusableDiscoverPeople", () => {
 
     expect(matches).toEqual([]);
   });
+
+  it("accepts missing person geography only when source and request locations are exact", () => {
+    const missing = person({ location: null, country: null, state: null, city: null });
+    const exact = filterReusableDiscoverPeople({
+      people: [missing],
+      requestedRoles: [{ normalizedTitle: "recruiter", category: "RECRUITING" }],
+      requestedLocations: ["United States"],
+      sourceRequestedLocations: ["united states"]
+    });
+    const narrower = filterReusableDiscoverPeople({
+      people: [missing],
+      requestedRoles: [{ normalizedTitle: "recruiter", category: "RECRUITING" }],
+      requestedLocations: ["San Francisco"],
+      sourceRequestedLocations: ["United States"]
+    });
+
+    expect(exact.map((entry) => entry.sourceProfileId)).toEqual(["p1"]);
+    expect(narrower).toEqual([]);
+  });
 });

@@ -16,7 +16,7 @@ import {
   DiscoverSearchCacheService,
   createRedisCacheLock,
   type DiscoverCacheLock,
-  type GetOrRefreshParams,
+  type LookupReusableDatasetParams,
   type ResolvedCachePerson,
   type ResolvedDataset
 } from "@/services/prospects/discover-cache-service";
@@ -87,7 +87,9 @@ function makeFakeLock() {
   return { lock, held };
 }
 
-function params(fingerprint: string, provider: GetOrRefreshParams["provider"]): GetOrRefreshParams {
+type CacheTestRequest = LookupReusableDatasetParams & { provider: () => Promise<ResolvedDataset> };
+
+function params(fingerprint: string, provider: CacheTestRequest["provider"]): CacheTestRequest {
   return {
     fingerprint,
     fingerprintInput: {
@@ -100,6 +102,11 @@ function params(fingerprint: string, provider: GetOrRefreshParams["provider"]): 
     company: { name: "Apple Inc.", domain: "apple.com", linkedinUrl: "https://www.linkedin.com/company/apple" },
     provider
   };
+}
+
+function lookupParams(request: CacheTestRequest): LookupReusableDatasetParams {
+  const { provider: _provider, ...lookup } = request;
+  return lookup;
 }
 
 function recruiterUsFilter(people: ResolvedCachePerson[]) {
@@ -116,10 +123,10 @@ function companyPoolParams(input: {
   domain?: string | null;
   linkedinUrl?: string | null;
   cacheVersion?: string;
-  provider: GetOrRefreshParams["provider"];
-  filter?: GetOrRefreshParams["filterCompanyPoolPeople"];
-  lookupLocalPeople?: GetOrRefreshParams["lookupLocalPeople"];
-}): GetOrRefreshParams {
+  provider: CacheTestRequest["provider"];
+  filter?: LookupReusableDatasetParams["filterCompanyPoolPeople"];
+  lookupLocalPeople?: LookupReusableDatasetParams["lookupLocalPeople"];
+}): CacheTestRequest {
   return {
     fingerprint: input.fingerprint,
     fingerprintInput: {
@@ -152,9 +159,29 @@ function buildService(overrides: Partial<ConstructorParameters<typeof DiscoverSe
     ttlDays: 30,
     waitTimeoutMs: 500,
     pollIntervalMs: 5,
-    cleanupOnRefresh: false,
     ...overrides
   });
+}
+
+async function seedCache(service: DiscoverSearchCacheService, request: CacheTestRequest) {
+  const resolved = await request.provider();
+  const state = await service.appendProviderPeople({
+    fingerprint: request.fingerprint,
+    fingerprintInput: request.fingerprintInput,
+    company: request.company,
+    emailFormat: resolved.emailFormat,
+    people: resolved.people,
+    nextPage: 2,
+    pagesFetched: 1,
+    exhausted: false
+  });
+  return {
+    dataset: { emailFormat: state.emailFormat, people: state.people },
+    source: "PROVIDER" as const,
+    cacheId: state.cacheId,
+    fetchedAt: new Date(nowMs),
+    refreshedStale: false
+  };
 }
 
 beforeEach(() => {
@@ -164,12 +191,12 @@ beforeEach(() => {
   redisEvalMock.mockReset();
 });
 
-describe("DiscoverSearchCacheService cache behavior", () => {
-  it("calls the provider exactly once on a miss and stores normalized results (#6, #7, #8)", async () => {
+describe("DiscoverSearchCacheService storage and durable metadata", () => {
+  it("lets the legacy test seeder store normalized provider results", async () => {
     const provider = vi.fn(async () => dataset([cachePerson("1"), cachePerson("2")]));
     const service = buildService();
 
-    const result = await service.getOrRefresh(params(FINGERPRINT, provider));
+    const result = await seedCache(service, params(FINGERPRINT, provider));
 
     expect(provider).toHaveBeenCalledTimes(1);
     expect(result.source).toBe("PROVIDER");
@@ -179,8 +206,8 @@ describe("DiscoverSearchCacheService cache behavior", () => {
     expect(entry.status).toBe("READY");
     expect(entry.resultCount).toBe(2);
     expect(entry.companyKey).toBe("linkedin:apple");
-    // 30-day expiration measured from fetchedAt (not the requester).
-    expect(entry.expiresAt.getTime() - entry.fetchedAt.getTime()).toBe(30 * DAY_MS);
+    // New provider writes do not manufacture a people-expiry timestamp.
+    expect(entry.expiresAt).toBeNull();
     expect(prisma._state.discoverCachePeople).toHaveLength(2);
     // No requester identity is stored.
     expect(JSON.stringify(entry)).not.toMatch(/userId/i);
@@ -189,7 +216,7 @@ describe("DiscoverSearchCacheService cache behavior", () => {
   it("appends only stable-identity-unique provider people without name-based collapsing", async () => {
     const service = buildService();
     const request = params(FINGERPRINT, async () => dataset([cachePerson("original")]));
-    await service.getOrRefresh(request);
+    await seedCache(service, request);
 
     const state = await service.appendProviderPeople({
       fingerprint: request.fingerprint,
@@ -216,13 +243,13 @@ describe("DiscoverSearchCacheService cache behavior", () => {
     expect(prisma._state.discoverCache[0].resultCount).toBe(3);
   });
 
-  it("reuses a fresh cache without calling the provider (#1)", async () => {
+  it("reuses an exact durable entry without reclassifying its people", async () => {
     const seed = vi.fn(async () => dataset([cachePerson("1")]));
     const service = buildService();
-    await service.getOrRefresh(params(FINGERPRINT, seed));
+    await seedCache(service, params(FINGERPRINT, seed));
 
     const provider = vi.fn(async () => dataset([cachePerson("nope")]));
-    const filterCompanyPoolPeople = vi.fn(recruiterUsFilter);
+    const filterCompanyPoolPeople = vi.fn((people: ResolvedCachePerson[]) => people);
     const lookupLocalPeople = vi.fn(async () => ({
       dataset: dataset([cachePerson("local")]),
       candidatePersonCount: 1,
@@ -231,12 +258,13 @@ describe("DiscoverSearchCacheService cache behavior", () => {
     const request = params(FINGERPRINT, provider);
     request.filterCompanyPoolPeople = filterCompanyPoolPeople;
     request.lookupLocalPeople = lookupLocalPeople;
-    const result = await service.getOrRefresh(request);
+    const result = await service.lookupReusableDataset(lookupParams(request));
 
     expect(provider).not.toHaveBeenCalled();
     expect(filterCompanyPoolPeople).not.toHaveBeenCalled();
     expect(lookupLocalPeople).not.toHaveBeenCalled();
     expect(result.source).toBe("CACHE");
+    expect(result.exactIntentReuse).toBe(true);
     expect(result.dataset.people).toHaveLength(1);
     expect(result.dataset.people[0].sourceProfileId).toBe("1");
   });
@@ -244,7 +272,7 @@ describe("DiscoverSearchCacheService cache behavior", () => {
   it("updates email-format state without rerunning or replacing cached people", async () => {
     const provider = vi.fn(async () => dataset([cachePerson("1"), cachePerson("2")]));
     const service = buildService();
-    const seeded = await service.getOrRefresh(params(FINGERPRINT, provider));
+    const seeded = await seedCache(service, params(FINGERPRINT, provider));
 
     await service.updateEmailFormat({
       cacheId: seeded.cacheId!,
@@ -254,7 +282,8 @@ describe("DiscoverSearchCacheService cache behavior", () => {
         emailPattern: null,
         emailFormatDiscoveryStatus: "NO_EVIDENCE",
         emailFormatDiscoveryReason: "No public email-format evidence was found.",
-        emailFormatDiscoveryAt: new Date(nowMs)
+        emailFormatDiscoveryAt: new Date(nowMs),
+        emailFormatDiscoveryExpiresAt: undefined
       }
     });
 
@@ -266,7 +295,7 @@ describe("DiscoverSearchCacheService cache behavior", () => {
 
   it("does not cache a transient provider failure as no evidence", async () => {
     const service = buildService();
-    const seeded = await service.getOrRefresh(params(FINGERPRINT, async () => dataset([cachePerson("1")])));
+    const seeded = await seedCache(service, params(FINGERPRINT, async () => dataset([cachePerson("1")])));
 
     await service.updateEmailFormat({
       cacheId: seeded.cacheId!,
@@ -284,76 +313,114 @@ describe("DiscoverSearchCacheService cache behavior", () => {
     expect(prisma._state.discoverCache[0].emailFormatDiscoveryExpiresAt).toBeNull();
   });
 
-  it("refreshes through the provider when the cache is stale (#9) and replaces rows atomically (#10)", async () => {
+  it("reuses old people without invoking a provider or replacing rows", async () => {
     const service = buildService();
-    await service.getOrRefresh(params(FINGERPRINT, async () => dataset([cachePerson("1"), cachePerson("2")])));
+    await seedCache(service, params(FINGERPRINT, async () => dataset([cachePerson("1"), cachePerson("2")])));
 
     // Advance past the 30-day window.
     nowMs += 31 * DAY_MS;
     const provider = vi.fn(async () => dataset([cachePerson("3")]));
-    const result = await service.getOrRefresh(params(FINGERPRINT, provider));
+    const result = await service.lookupReusableDataset(lookupParams(params(FINGERPRINT, provider)));
 
-    expect(provider).toHaveBeenCalledTimes(1);
-    expect(result.source).toBe("PROVIDER");
-    expect(result.refreshedStale).toBe(true);
-    // Old rows replaced by the new dataset — never a mix or an empty window.
-    expect(prisma._state.discoverCachePeople.map((p) => p.sourceProfileId)).toEqual(["3"]);
-    expect(prisma._state.discoverCache[0].resultCount).toBe(1);
+    expect(provider).not.toHaveBeenCalled();
+    expect(result.source).toBe("CACHE");
+    expect(result.refreshedStale).toBe(false);
+    expect(prisma._state.discoverCachePeople.map((p) => p.sourceProfileId)).toEqual(["1", "2"]);
+    expect(prisma._state.discoverCache[0].resultCount).toBe(2);
   });
 
-  it("does not mark stale data fresh and preserves previous rows on provider failure (#11, #12)", async () => {
+  it("reuses preserved people even when legacy status says a refresh failed", async () => {
     const service = buildService();
-    await service.getOrRefresh(params(FINGERPRINT, async () => dataset([cachePerson("1"), cachePerson("2")])));
+    await seedCache(service, params(FINGERPRINT, async () => dataset([cachePerson("1"), cachePerson("2")])));
 
     nowMs += 31 * DAY_MS;
-    const failing = vi.fn(async () => {
-      throw Object.assign(new Error("boom"), { code: "PROVIDER_TIMEOUT" });
-    });
-
-    await expect(service.getOrRefresh(params(FINGERPRINT, failing))).rejects.toThrow("boom");
-
     const entry = prisma._state.discoverCache[0];
-    expect(entry.status).toBe("FAILED");
-    expect(entry.lastErrorCode).toBe("PROVIDER_TIMEOUT");
-    // Previous rows preserved; the entry is not served as fresh.
+    entry.status = "FAILED";
+    entry.lastErrorCode = "PROVIDER_TIMEOUT";
+    const result = await service.lookupReusableDataset(lookupParams(params(FINGERPRINT, vi.fn())));
+
     expect(prisma._state.discoverCachePeople).toHaveLength(2);
-    expect(await service.getFreshDataset(FINGERPRINT)).toBeNull();
+    expect(result.dataset.people).toHaveLength(2);
+    expect(result.cacheHitType).toBe("EXACT");
   });
 
-  it("releases the lock after a failed refresh so a later refresh can run (#5 concurrency)", async () => {
-    const { lock, held } = makeFakeLock();
-    const service = buildService({ lock });
-
-    await expect(
-      service.getOrRefresh(params(FINGERPRINT, async () => {
-        throw new Error("first fails");
-      }))
-    ).rejects.toThrow("first fails");
-
-    expect(held.size).toBe(0); // released in finally
-
-    const recovery = vi.fn(async () => dataset([cachePerson("1")]));
-    const result = await service.getOrRefresh(params(FINGERPRINT, recovery));
-    expect(recovery).toHaveBeenCalledTimes(1);
-    expect(result.source).toBe("PROVIDER");
-  });
-
-  it("cleans up only entries abandoned beyond the grace window", async () => {
+  it("cleans up only old empty transient entries and preserves useful people regardless of age", async () => {
     const service = buildService();
     // Fresh entry — must be kept.
-    await service.getOrRefresh(params("fresh", async () => dataset([cachePerson("1")])));
-    // Recently-expired entry (within one TTL of grace) — kept.
-    await service.getOrRefresh(params("recent", async () => dataset([cachePerson("2")])));
+    await seedCache(service, params("fresh", async () => dataset([cachePerson("1")])));
+    // Recently dated entry — kept.
+    await seedCache(service, params("recent", async () => dataset([cachePerson("2")])));
     prisma._state.discoverCache.find((r) => r.fingerprint === "recent")!.expiresAt = new Date(nowMs - 5 * DAY_MS);
-    // Long-abandoned entry (expired > 30 days ago) — removed with its people.
-    await service.getOrRefresh(params("old", async () => dataset([cachePerson("3")])));
+    // Old people are durable and must be kept.
+    await seedCache(service, params("old", async () => dataset([cachePerson("3")])));
     prisma._state.discoverCache.find((r) => r.fingerprint === "old")!.expiresAt = new Date(nowMs - 40 * DAY_MS);
+    // Only an old, empty transient placeholder is eligible for cleanup.
+    prisma._state.discoverCache.push({
+      id: "dcache_empty_failed",
+      fingerprint: "empty-failed",
+      cacheVersion: "v1",
+      companyKey: "domain:apple.com",
+      companyName: "Apple",
+      normalizedRoles: [],
+      normalizedLocations: [],
+      resultLimit: 10,
+      status: "FAILED",
+      resultCount: 0,
+      refreshStartedAt: new Date(nowMs - 40 * DAY_MS),
+      createdAt: new Date(nowMs - 40 * DAY_MS),
+      updatedAt: new Date(nowMs - 40 * DAY_MS)
+    });
 
     const removed = await service.cleanupExpired();
 
     expect(removed).toBe(1);
-    expect(prisma._state.discoverCache.map((r) => r.fingerprint).sort()).toEqual(["fresh", "recent"]);
-    expect(prisma._state.discoverCachePeople.some((p) => p.sourceProfileId === "3")).toBe(false);
+    expect(prisma._state.discoverCache.map((r) => r.fingerprint).sort()).toEqual(["fresh", "old", "recent"]);
+    expect(prisma._state.discoverCachePeople.some((p) => p.sourceProfileId === "3")).toBe(true);
+  });
+});
+
+describe("DiscoverSearchCacheService durable database-only lookup", () => {
+  it.each([31, 90, 365])("reuses exact people cached %d days ago", async (ageDays) => {
+    const service = buildService();
+    const request = params(FINGERPRINT, async () => dataset([cachePerson(`age-${ageDays}`)]));
+    await seedCache(service, request);
+    const entry = prisma._state.discoverCache[0];
+    entry.fetchedAt = new Date(nowMs - ageDays * DAY_MS);
+    entry.expiresAt = new Date(nowMs - Math.max(1, ageDays - 30) * DAY_MS);
+
+    const result = await service.lookupReusableDataset(lookupParams(request));
+
+    expect(result.cacheHitType).toBe("EXACT");
+    expect(result.dataset.people.map((person) => person.sourceProfileId)).toEqual([`age-${ageDays}`]);
+  });
+
+  it("reuses preserved people even when a later provider attempt marked the row failed", async () => {
+    const service = buildService();
+    const request = params(FINGERPRINT, async () => dataset([cachePerson("preserved")]));
+    await seedCache(service, request);
+    Object.assign(prisma._state.discoverCache[0], {
+      status: "FAILED",
+      expiresAt: new Date(nowMs - 365 * DAY_MS)
+    });
+
+    const result = await service.lookupReusableDataset(lookupParams(request));
+
+    expect(result.cacheHitType).toBe("EXACT");
+    expect(result.dataset.people).toHaveLength(1);
+  });
+
+  it("returns a database miss without any provider capability when no people match", async () => {
+    const service = buildService();
+    const request = companyPoolParams({
+      fingerprint: "fp-apple-recruiter-us",
+      provider: async () => dataset([])
+    });
+
+    const result = await service.lookupReusableDataset(lookupParams(request));
+
+    expect(result.cacheHitType).toBeNull();
+    expect(result.dataset.people).toEqual([]);
+    expect(result.source).toBe("CACHE");
   });
 });
 
@@ -365,6 +432,8 @@ describe("DiscoverSearchCacheService same-company database-first reuse", () => {
     linkedinUrl?: string | null;
     people: ResolvedCachePerson[];
     cacheVersion?: string;
+    roles?: string[];
+    locations?: string[];
   }) {
     const service = buildService();
     const seed = companyPoolParams({
@@ -378,13 +447,14 @@ describe("DiscoverSearchCacheService same-company database-first reuse", () => {
     });
     // Seed under a broader, non-identical role fingerprint. Omitting the pool
     // filter makes this setup behave like an original paid-provider write.
-    seed.fingerprintInput.roles = ["human resource", "recruiter", "software engineer"];
+    seed.fingerprintInput.roles = input.roles ?? ["human resource", "recruiter", "software engineer"];
+    seed.fingerprintInput.locations = input.locations ?? ["united states"];
     delete seed.filterCompanyPoolPeople;
-    await service.getOrRefresh(seed);
+    await seedCache(service, seed);
     return service;
   }
 
-  it("reuses Recruiters from a broader fresh Apple cache without calling the provider", async () => {
+  it("reuses Recruiters from a broader durable Apple store without calling the provider", async () => {
     const service = await seedPool({
       people: [
         cachePerson("r1", { currentTitle: "Recruiter", normalizedTitle: "recruiter", positionCategory: "RECRUITING" }),
@@ -400,8 +470,8 @@ describe("DiscoverSearchCacheService same-company database-first reuse", () => {
       matchingPersonCount: 1
     }));
 
-    const result = await service.getOrRefresh(
-      companyPoolParams({ fingerprint: "fp-apple-recruiter", provider, lookupLocalPeople })
+    const result = await service.lookupReusableDataset(
+      lookupParams(companyPoolParams({ fingerprint: "fp-apple-recruiter", provider, lookupLocalPeople }))
     );
 
     expect(provider).not.toHaveBeenCalled();
@@ -427,8 +497,8 @@ describe("DiscoverSearchCacheService same-company database-first reuse", () => {
     expect((await service.getExpansionState("fp-apple-recruiter"))?.providerNextPage).toBe(1);
 
     const repeatedProvider = vi.fn(async () => dataset([cachePerson("paid-again")]))
-    const repeated = await service.getOrRefresh(
-      companyPoolParams({ fingerprint: "fp-apple-recruiter", provider: repeatedProvider })
+    const repeated = await service.lookupReusableDataset(
+      lookupParams(companyPoolParams({ fingerprint: "fp-apple-recruiter", provider: repeatedProvider }))
     );
     expect(repeated.cacheHitType).toBe("EXACT");
     expect(repeatedProvider).not.toHaveBeenCalled();
@@ -447,7 +517,7 @@ describe("DiscoverSearchCacheService same-company database-first reuse", () => {
     request.filterCompanyPoolPeople = recruiterUsFilter;
     request.lookupLocalPeople = lookupLocalPeople;
 
-    const result = await service.getOrRefresh(request);
+    const result = await service.lookupReusableDataset(lookupParams(request));
 
     expect(result.source).toBe("CACHE");
     expect(result.cacheHitType).toBe("LOCAL_PERSON");
@@ -460,7 +530,7 @@ describe("DiscoverSearchCacheService same-company database-first reuse", () => {
     expect(prisma._state.discoverCachePeople).toHaveLength(0);
   });
 
-  it("calls the provider once only after the same-user local lookup has zero usable matches", async () => {
+  it("returns a database miss after the same-user local lookup has zero usable matches", async () => {
     const service = buildService();
     const provider = vi.fn(async () => dataset([cachePerson("paid")]))
     const lookupLocalPeople = vi.fn(async () => ({
@@ -472,12 +542,13 @@ describe("DiscoverSearchCacheService same-company database-first reuse", () => {
     request.filterCompanyPoolPeople = recruiterUsFilter;
     request.lookupLocalPeople = lookupLocalPeople;
 
-    const result = await service.getOrRefresh(request);
+    const result = await service.lookupReusableDataset(lookupParams(request));
 
-    expect(result.source).toBe("PROVIDER");
+    expect(result.source).toBe("CACHE");
+    expect(result.dataset.people).toEqual([]);
     expect(result.lookupDiagnostics).toMatchObject({ candidatePersonCount: 2, matchingPersonCount: 0 });
     expect(lookupLocalPeople).toHaveBeenCalled();
-    expect(provider).toHaveBeenCalledTimes(1);
+    expect(provider).not.toHaveBeenCalled();
   });
 
   it("returns a partial four-person pool and never pays to top it up", async () => {
@@ -492,7 +563,9 @@ describe("DiscoverSearchCacheService same-company database-first reuse", () => {
     });
     const provider = vi.fn(async () => dataset([cachePerson("paid")]))
 
-    const result = await service.getOrRefresh(companyPoolParams({ fingerprint: "fp-apple-partial", provider }));
+    const result = await service.lookupReusableDataset(
+      lookupParams(companyPoolParams({ fingerprint: "fp-apple-partial", provider }))
+    );
 
     expect(result.dataset.people).toHaveLength(4);
     expect(provider).not.toHaveBeenCalled();
@@ -509,8 +582,8 @@ describe("DiscoverSearchCacheService same-company database-first reuse", () => {
     }) as FakePrisma["$transaction"];
     const provider = vi.fn(async () => dataset([cachePerson("paid")]))
 
-    const result = await service.getOrRefresh(
-      companyPoolParams({ fingerprint: "fp-apple-derive-failure", provider })
+    const result = await service.lookupReusableDataset(
+      lookupParams(companyPoolParams({ fingerprint: "fp-apple-derive-failure", provider }))
     );
 
     expect(result.cacheHitType).toBe("COMPANY_POOL");
@@ -542,8 +615,8 @@ describe("DiscoverSearchCacheService same-company database-first reuse", () => {
     });
     const provider = vi.fn(async () => dataset([cachePerson("paid")]))
 
-    const result = await service.getOrRefresh(
-      companyPoolParams({ fingerprint: "fp-apple-zero-exact", provider })
+    const result = await service.lookupReusableDataset(
+      lookupParams(companyPoolParams({ fingerprint: "fp-apple-zero-exact", provider }))
     );
 
     expect(result.cacheHitType).toBe("COMPANY_POOL");
@@ -551,8 +624,12 @@ describe("DiscoverSearchCacheService same-company database-first reuse", () => {
     expect(provider).not.toHaveBeenCalled();
   });
 
-  it("falls back to the provider when the Apple pool has no matching Recruiters", async () => {
-    const service = await seedPool({ people: [cachePerson("s1"), cachePerson("s2")] });
+  it("returns zero without a provider when the Apple pool has no matching Recruiters", async () => {
+    const service = await seedPool({
+      roles: ["software engineer"],
+      locations: ["united states"],
+      people: [cachePerson("s1"), cachePerson("s2")]
+    });
     const provider = vi.fn(async () =>
       dataset([
         cachePerson("paid-r", {
@@ -563,10 +640,13 @@ describe("DiscoverSearchCacheService same-company database-first reuse", () => {
       ])
     );
 
-    const result = await service.getOrRefresh(companyPoolParams({ fingerprint: "fp-apple-no-role", provider }));
+    const result = await service.lookupReusableDataset(
+      lookupParams(companyPoolParams({ fingerprint: "fp-apple-no-role", provider }))
+    );
 
-    expect(provider).toHaveBeenCalledTimes(1);
-    expect(result.source).toBe("PROVIDER");
+    expect(provider).not.toHaveBeenCalled();
+    expect(result.source).toBe("CACHE");
+    expect(result.dataset.people).toEqual([]);
     expect(result.lookupDiagnostics).toMatchObject({ candidateEntryCount: 1, matchingPersonCount: 0 });
   });
 
@@ -585,10 +665,13 @@ describe("DiscoverSearchCacheService same-company database-first reuse", () => {
     });
     const provider = vi.fn(async () => dataset([]));
 
-    const result = await service.getOrRefresh(companyPoolParams({ fingerprint: "fp-apple-wrong-location", provider }));
+    const result = await service.lookupReusableDataset(
+      lookupParams(companyPoolParams({ fingerprint: "fp-apple-wrong-location", provider }))
+    );
 
-    expect(provider).toHaveBeenCalledTimes(1);
-    expect(result.source).toBe("PROVIDER");
+    expect(provider).not.toHaveBeenCalled();
+    expect(result.source).toBe("CACHE");
+    expect(result.dataset.people).toEqual([]);
   });
 
   it("reuses a LinkedIn-keyed Canonical cache through its trusted domain", async () => {
@@ -602,16 +685,105 @@ describe("DiscoverSearchCacheService same-company database-first reuse", () => {
     });
     const provider = vi.fn(async () => dataset([]));
 
-    const result = await service.getOrRefresh(
-      companyPoolParams({
+    const result = await service.lookupReusableDataset(
+      lookupParams(companyPoolParams({
         fingerprint: "fp-canonical-domain",
         companyKey: "domain:canonical.com",
         domain: "canonical.com",
         provider
-      })
+      }))
     );
 
     expect(result.cacheHitType).toBe("COMPANY_POOL");
+    expect(provider).not.toHaveBeenCalled();
+  });
+
+  it("reuses a legacy LinkedIn-keyed Wealthfront row by domain and exact source geography", async () => {
+    const exactIntentFilter = vi.fn(() => {
+      throw new Error("exact-intent reuse must not invoke person-level filtering");
+    });
+    const service = await seedPool({
+      companyKey: "linkedin:wealthfront",
+      domain: "wealthfront.com",
+      linkedinUrl: "https://www.linkedin.com/company/wealthfront",
+      roles: ["software engineer"],
+      locations: ["united states"],
+      people: [
+        cachePerson("wealthfront-missing-location", {
+          location: null,
+          country: null,
+          state: null,
+          city: null
+        }),
+        cachePerson("wealthfront-detailed-title", {
+          currentTitle: "Senior Distributed Systems Engineer",
+          normalizedTitle: "senior distributed systems engineer",
+          location: null,
+          country: null,
+          state: null,
+          city: null
+        })
+      ]
+    });
+    const provider = vi.fn(async () => dataset([]));
+    const request = companyPoolParams({
+      fingerprint: "fp-wealthfront-domain-swe-us",
+      companyKey: "domain:wealthfront.com",
+      domain: "wealthfront.com",
+      provider,
+      filter: exactIntentFilter
+    });
+    request.fingerprintInput.roles = ["software engineer"];
+
+    const result = await service.lookupReusableDataset(lookupParams(request));
+
+    expect(result.cacheHitType).toBe("COMPANY_POOL");
+    expect(result.legacyIdentityMatch).toBe(true);
+    expect(result.matchedCacheCompanyKey).toBe("linkedin:wealthfront");
+    expect(result.matchedCompanyDomain).toBe("wealthfront.com");
+    expect(result.sourceNormalizedLocations).toEqual(["united states"]);
+    expect(result.exactIntentReuse).toBe(true);
+    expect(result.dataset.people.map((person) => person.sourceProfileId)).toEqual([
+      "wealthfront-missing-location",
+      "wealthfront-detailed-title"
+    ]);
+    expect(exactIntentFilter).not.toHaveBeenCalled();
+    expect(provider).not.toHaveBeenCalled();
+  });
+
+  it("does not reuse United States provenance for a San Francisco request", async () => {
+    const service = await seedPool({
+      companyKey: "linkedin:wealthfront",
+      domain: "wealthfront.com",
+      linkedinUrl: "https://www.linkedin.com/company/wealthfront",
+      roles: ["software engineer"],
+      locations: ["united states"],
+      people: [cachePerson("wealthfront-missing-location", {
+        location: null,
+        country: null,
+        state: null,
+        city: null
+      })]
+    });
+    const provider = vi.fn(async () => dataset([]));
+    const request = companyPoolParams({
+      fingerprint: "fp-wealthfront-domain-swe-sf",
+      companyKey: "domain:wealthfront.com",
+      domain: "wealthfront.com",
+      provider,
+      filter: (people, source) => filterReusableDiscoverPeople({
+        people,
+        requestedRoles: [{ normalizedTitle: "software engineer", category: "SOFTWARE_ENGINEERING" }],
+        requestedLocations: ["San Francisco"],
+        sourceRequestedLocations: source.normalizedLocations
+      })
+    });
+    request.fingerprintInput.roles = ["software engineer"];
+    request.fingerprintInput.locations = ["san francisco"];
+
+    const result = await service.lookupReusableDataset(lookupParams(request));
+
+    expect(result.dataset.people).toEqual([]);
     expect(provider).not.toHaveBeenCalled();
   });
 
@@ -626,14 +798,14 @@ describe("DiscoverSearchCacheService same-company database-first reuse", () => {
     });
     const provider = vi.fn(async () => dataset([]));
 
-    const result = await service.getOrRefresh(
-      companyPoolParams({
+    const result = await service.lookupReusableDataset(
+      lookupParams(companyPoolParams({
         fingerprint: "fp-canonical-linkedin",
         companyKey: "linkedin:canonical",
         domain: null,
         linkedinUrl: "https://www.linkedin.com/company/canonical",
         provider
-      })
+      }))
     );
 
     expect(result.cacheHitType).toBe("COMPANY_POOL");
@@ -650,10 +822,12 @@ describe("DiscoverSearchCacheService same-company database-first reuse", () => {
     });
     const provider = vi.fn(async () => dataset([]));
 
-    const result = await service.getOrRefresh(companyPoolParams({ fingerprint: "fp-real-apple", provider }));
+    const result = await service.lookupReusableDataset(
+      lookupParams(companyPoolParams({ fingerprint: "fp-real-apple", provider }))
+    );
 
-    expect(provider).toHaveBeenCalledTimes(1);
-    expect(result.source).toBe("PROVIDER");
+    expect(provider).not.toHaveBeenCalled();
+    expect(result.source).toBe("CACHE");
     expect(result.lookupDiagnostics?.candidateEntryCount).toBe(0);
   });
 
@@ -668,21 +842,21 @@ describe("DiscoverSearchCacheService same-company database-first reuse", () => {
     });
     const provider = vi.fn(async () => dataset([]));
 
-    const result = await service.getOrRefresh(
-      companyPoolParams({
+    const result = await service.lookupReusableDataset(
+      lookupParams(companyPoolParams({
         fingerprint: "fp-apple-conflict",
         companyKey: "linkedin:apple",
         domain: "apple.com",
         linkedinUrl: "https://www.linkedin.com/company/apple",
         provider
-      })
+      }))
     );
 
-    expect(provider).toHaveBeenCalledTimes(1);
-    expect(result.source).toBe("PROVIDER");
+    expect(provider).not.toHaveBeenCalled();
+    expect(result.source).toBe("CACHE");
   });
 
-  it("does not reuse expired or incompatible-version sibling entries", async () => {
+  it("reuses old sibling people but still rejects an incompatible schema version", async () => {
     const expiredService = await seedPool({
       fingerprint: "expired-sibling",
       people: [
@@ -691,8 +865,12 @@ describe("DiscoverSearchCacheService same-company database-first reuse", () => {
     });
     prisma._state.discoverCache.find((entry) => entry.fingerprint === "expired-sibling")!.expiresAt = new Date(nowMs - 1);
     const expiredProvider = vi.fn(async () => dataset([]));
-    await expiredService.getOrRefresh(companyPoolParams({ fingerprint: "fp-after-expiry", provider: expiredProvider }));
-    expect(expiredProvider).toHaveBeenCalledTimes(1);
+    const oldResult = await expiredService.lookupReusableDataset(
+      lookupParams(companyPoolParams({ fingerprint: "fp-after-expiry", provider: expiredProvider }))
+    );
+    expect(expiredProvider).not.toHaveBeenCalled();
+    expect(oldResult.dataset.people.map((person) => person.sourceProfileId)).toEqual(["expired-r"]);
+    for (const entry of prisma._state.discoverCache) entry.cacheVersion = "v0";
 
     const versionedService = await seedPool({
       fingerprint: "old-version-sibling",
@@ -702,8 +880,11 @@ describe("DiscoverSearchCacheService same-company database-first reuse", () => {
       ]
     });
     const versionProvider = vi.fn(async () => dataset([]));
-    await versionedService.getOrRefresh(companyPoolParams({ fingerprint: "fp-new-version", provider: versionProvider }));
-    expect(versionProvider).toHaveBeenCalledTimes(1);
+    const versionResult = await versionedService.lookupReusableDataset(
+      lookupParams(companyPoolParams({ fingerprint: "fp-new-version", provider: versionProvider }))
+    );
+    expect(versionProvider).not.toHaveBeenCalled();
+    expect(versionResult.dataset.people).toEqual([]);
   });
 
   it("does not reuse an exact fingerprint row written by another cache version", async () => {
@@ -716,46 +897,15 @@ describe("DiscoverSearchCacheService same-company database-first reuse", () => {
     });
     const provider = vi.fn(async () => dataset([]));
 
-    const result = await service.getOrRefresh(
-      companyPoolParams({ fingerprint: "same-fingerprint-different-version", cacheVersion: "v1", provider })
+    const result = await service.lookupReusableDataset(
+      lookupParams(
+        companyPoolParams({ fingerprint: "same-fingerprint-different-version", cacheVersion: "v1", provider })
+      )
     );
 
-    expect(provider).toHaveBeenCalledTimes(1);
-    expect(result.source).toBe("PROVIDER");
-  });
-});
-
-describe("DiscoverSearchCacheService stampede prevention", () => {
-  it("triggers only one provider call for concurrent identical misses, and the waiter reuses the cache (#1, #2)", async () => {
-    // Both requests share one lock + one store, like two processes racing.
-    const { lock } = makeFakeLock();
-    const service = new DiscoverSearchCacheService({
-      prisma: prisma as unknown as PrismaClient,
-      lock,
-      now: () => new Date(nowMs),
-      ttlDays: 30,
-      waitTimeoutMs: 1000,
-      pollIntervalMs: 5,
-      cleanupOnRefresh: false
-    });
-
-    let providerCalls = 0;
-    const provider = async () => {
-      providerCalls += 1;
-      await new Promise((resolve) => setTimeout(resolve, 10));
-      return dataset([cachePerson("1"), cachePerson("2")]);
-    };
-
-    const [a, b] = await Promise.all([
-      service.getOrRefresh(params(FINGERPRINT, provider)),
-      service.getOrRefresh(params(FINGERPRINT, provider))
-    ]);
-
-    expect(providerCalls).toBe(1);
-    const sources = [a.source, b.source].sort();
-    expect(sources).toEqual(["CACHE", "PROVIDER"]);
-    expect(a.dataset.people).toHaveLength(2);
-    expect(b.dataset.people).toHaveLength(2);
+    expect(provider).not.toHaveBeenCalled();
+    expect(result.source).toBe("CACHE");
+    expect(result.dataset.people).toEqual([]);
   });
 });
 
@@ -794,11 +944,14 @@ describe("createRedisCacheLock", () => {
   });
 });
 
-describe("DiscoverSearchCacheService never reuses a non-successful entry", () => {
+describe("DiscoverSearchCacheService durable lookup across legacy states", () => {
   function seedEntry(overrides: Record<string, unknown>) {
     prisma._state.discoverCache.push({
       id: "dc_seed",
       fingerprint: FINGERPRINT,
+      cacheVersion: "v1",
+      companyKey: "linkedin:apple",
+      companyName: "Apple Inc.",
       status: "READY",
       fetchedAt: new Date(nowMs - DAY_MS),
       expiresAt: new Date(nowMs + 29 * DAY_MS),
@@ -816,39 +969,42 @@ describe("DiscoverSearchCacheService never reuses a non-successful entry", () =>
     });
   }
 
-  it("runs the provider when the only entry is READY but has zero people (#cache-empty)", async () => {
+  it("returns a database miss when the only entry has zero people", async () => {
     seedEntry({ status: "READY", resultCount: 0 }); // no person rows seeded
     const provider = vi.fn(async () => dataset([cachePerson("9")]));
-    const result = await buildService().getOrRefresh(params(FINGERPRINT, provider));
-    expect(provider).toHaveBeenCalledTimes(1);
-    expect(result.source).toBe("PROVIDER");
-    expect(result.dataset.people).toHaveLength(1);
+    const result = await buildService().lookupReusableDataset(lookupParams(params(FINGERPRINT, provider)));
+    expect(provider).not.toHaveBeenCalled();
+    expect(result.source).toBe("CACHE");
+    expect(result.dataset.people).toHaveLength(0);
   });
 
-  it("runs the provider when the entry is FAILED, even with stale people preserved (#retry-7)", async () => {
+  it("reuses people preserved under a FAILED legacy status", async () => {
     seedEntry({ status: "FAILED" });
     prisma._state.discoverCachePeople.push({ id: "p_old", cacheId: "dc_seed", sortIndex: 0, ...cachePerson("old") });
     const provider = vi.fn(async () => dataset([cachePerson("9")]));
-    const result = await buildService().getOrRefresh(params(FINGERPRINT, provider));
-    expect(provider).toHaveBeenCalledTimes(1);
-    expect(result.source).toBe("PROVIDER");
+    const result = await buildService().lookupReusableDataset(lookupParams(params(FINGERPRINT, provider)));
+    expect(provider).not.toHaveBeenCalled();
+    expect(result.source).toBe("CACHE");
+    expect(result.dataset.people.map((person) => person.sourceProfileId)).toEqual(["old"]);
   });
 
-  it("runs the provider when the entry has expired (#retry-9)", async () => {
+  it("reuses people after legacy expiresAt has passed", async () => {
     seedEntry({ status: "READY", expiresAt: new Date(nowMs - DAY_MS) });
     prisma._state.discoverCachePeople.push({ id: "p_exp", cacheId: "dc_seed", sortIndex: 0, ...cachePerson("exp") });
     const provider = vi.fn(async () => dataset([cachePerson("9")]));
-    const result = await buildService().getOrRefresh(params(FINGERPRINT, provider));
-    expect(provider).toHaveBeenCalledTimes(1);
-    expect(result.source).toBe("PROVIDER");
+    const result = await buildService().lookupReusableDataset(lookupParams(params(FINGERPRINT, provider)));
+    expect(provider).not.toHaveBeenCalled();
+    expect(result.source).toBe("CACHE");
+    expect(result.dataset.people.map((person) => person.sourceProfileId)).toEqual(["exp"]);
   });
 
-  it("runs the provider when an abandoned entry is stuck REFRESHING (#retry-10)", async () => {
+  it("returns a database miss for an empty abandoned REFRESHING entry", async () => {
     seedEntry({ status: "REFRESHING" });
     const provider = vi.fn(async () => dataset([cachePerson("9")]));
-    const result = await buildService().getOrRefresh(params(FINGERPRINT, provider));
-    expect(provider).toHaveBeenCalledTimes(1);
-    expect(result.source).toBe("PROVIDER");
+    const result = await buildService().lookupReusableDataset(lookupParams(params(FINGERPRINT, provider)));
+    expect(provider).not.toHaveBeenCalled();
+    expect(result.source).toBe("CACHE");
+    expect(result.dataset.people).toEqual([]);
   });
 });
 
@@ -862,13 +1018,13 @@ describe("legacy name cache boundaries", () => {
     await withRaeNameAI(async () => {
       const service = buildService();
       const clean = cachePerson("rae", { firstName: "Rae", lastName: "Gruppman", fullName: "Rae Gruppman", positionCategory: "RECRUITING", currentTitle: "Recruiter" });
-      await service.getOrRefresh(params(FINGERPRINT, async () => dataset([clean])));
+      await seedCache(service, params(FINGERPRINT, async () => dataset([clean])));
       const bad = { ...clean, firstName: "Rae", lastName: "SHRM-CP", fullName: "Rae Gruppman SHRM-CP", sourceName: null, nameNormalization: null, inferredEmail: "rshrmcp@apple.com" };
       Object.assign(prisma._state.discoverCachePeople[0], bad);
       const provider = vi.fn(async () => { throw new Error("Apify must not run"); });
       const request = mode === "EXACT" ? params(FINGERPRINT, provider) : companyPoolParams({ fingerprint: "new", provider,
         ...(mode === "LOCAL_PERSON" ? { filter: () => [], lookupLocalPeople: async () => ({ dataset: dataset([bad]), candidatePersonCount: 1, matchingPersonCount: 1 }) } : {}) });
-      const result = await service.getOrRefresh(request);
+      const result = await service.lookupReusableDataset(lookupParams(request));
       expect(provider).not.toHaveBeenCalled();
       expect(result.dataset.people[0]).toMatchObject({ fullName: "Rae Gruppman", lastName: "Gruppman", inferredEmail: "rgruppman@apple.com" });
       if (mode === "COMPANY_POOL") {

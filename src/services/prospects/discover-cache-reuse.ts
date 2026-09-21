@@ -23,6 +23,7 @@ export function filterReusableDiscoverPeople(input: {
   people: readonly ResolvedCachePerson[];
   requestedRoles: readonly RequestedRoleMatch[];
   requestedLocations: readonly string[];
+  sourceRequestedLocations?: readonly string[];
 }): ResolvedCachePerson[] {
   if (input.requestedRoles.length === 0) {
     return [];
@@ -43,7 +44,8 @@ export function filterReusableDiscoverPeople(input: {
     return evaluateDiscoverLocationMatch({
       candidate: person,
       requestedLocations: input.requestedLocations,
-      context: "CACHE"
+      context: "CACHE",
+      sourceRequestedLocations: input.sourceRequestedLocations
     }).matches;
   });
 }

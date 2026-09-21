@@ -4,8 +4,8 @@ import { recordAuditEvent } from "@/lib/audit";
 import { createDiscoverSearchCompletedNotification } from "@/lib/notifications";
 import { ApifyProfileSearchService } from "@/services/prospects/apify-profile-search";
 import { CompanyResolutionService } from "@/services/prospects/company-resolution-service";
-import { DiscoverSearchCacheService } from "@/services/prospects/discover-cache-service";
 import { DiscoverExpansionService } from "@/services/prospects/discover-expansion-service";
+import { DiscoverPublicKnowledgeService } from "@/services/prospects/discover-public-knowledge-service";
 import { createDiscoverRoleIntelligenceService } from "@/services/prospects/discover-role-intelligence-service";
 import { CompositeEmailEvidenceProvider, EmailDomainService } from "@/services/prospects/email-domain-service";
 import { EmailFormatDiscoveryService } from "@/services/prospects/email-format-discovery-service";
@@ -38,7 +38,7 @@ export function createProspectServices(prisma: PrismaClient, aiClient?: AiClient
     new OpenAIEmailFormatDiscoveryService()
   ]);
   const emailDomain = new EmailDomainService(prisma, ai, emailEvidence);
-  const discoverCache = new DiscoverSearchCacheService({ prisma });
+  const discoverKnowledge = new DiscoverPublicKnowledgeService({ prisma });
   const roleIntelligence = createDiscoverRoleIntelligenceService(prisma, roleClassifier);
 
   const prospectSearch = new ProspectSearchService({
@@ -48,7 +48,7 @@ export function createProspectServices(prisma: PrismaClient, aiClient?: AiClient
     roleClassifier,
     roleIntelligence,
     emailDomain,
-    discoverCache,
+    discoverCache: discoverKnowledge,
     // Safe, best-effort retry/processing audit trail (server-side only).
     audit: recordAuditEvent,
     notifyCompleted: async (searchId) => {
@@ -56,14 +56,14 @@ export function createProspectServices(prisma: PrismaClient, aiClient?: AiClient
     }
   });
 
-  // "Add 10 more" reuses the same Apify + role classifier + shared cache (which
-  // also supplies provider continuation state) and the same daily quota service.
+  // Initial and expansion flows share one durable provider-ingestion choke
+  // point. Redis accelerates it; Postgres remains authoritative.
   const discoverExpansion = new DiscoverExpansionService({
     prisma,
     apify,
     roleClassifier,
     roleIntelligence,
-    cache: discoverCache
+    cache: discoverKnowledge
   });
 
   return { prospectSearch, discoverExpansion, companyResolution, roleClassifier, emailDomain };

@@ -37,6 +37,18 @@ describe("canonical company identity", () => {
       getCanonicalCompanyKey({ name: "Acme", officialDomain: "acme.co.uk" })
     );
   });
+
+  it("uses LinkedIn only when no official domain exists", () => {
+    expect(getCanonicalCompanyKey({
+      name: "Wealthfront Corporation",
+      officialDomain: "wealthfront.com",
+      linkedinUrl: "https://www.linkedin.com/company/wealthfront"
+    })).toBe("domain:wealthfront.com");
+    expect(getCanonicalCompanyKey({
+      name: "Wealthfront Corporation",
+      linkedinUrl: "https://www.linkedin.com/company/wealthfront"
+    })).toBe("linkedin:wealthfront");
+  });
 });
 
 describe("canonical company email-format precedence", () => {

@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 
-import { normalizeDomain, normalizeTitle, stripDiacritics } from "@/services/prospects/prospect-normalization";
+import {
+  getCanonicalCompanyKey,
+  normalizeLinkedinCompanySlug
+} from "@/services/prospects/canonical-company";
+import { normalizeTitle, stripDiacritics } from "@/services/prospects/prospect-normalization";
 
 /**
  * Canonical fingerprint for the shared Discover result cache.
@@ -28,31 +32,20 @@ export type CompanyKeySource = {
   normalizedName: string;
 };
 
-export function normalizeLinkedinCompanySlug(url: string | null | undefined): string | null {
-  if (!url) {
-    return null;
-  }
-  const match = url.match(/linkedin\.com\/(?:company|school|showcase)\/([^/?#]+)/i);
-  return match ? match[1].toLowerCase() : null;
-}
+export { normalizeLinkedinCompanySlug };
 
 /**
- * Stable canonical company key, preferring the most identity-confirming signal:
- * resolved LinkedIn company slug, then official domain, then the normalized
- * company name only as a last resort. This keeps "Apple", "Apple Inc." and
- * "APPLE" on one key once resolution confirms the same company, while never
- * merging genuinely different companies.
+ * Shared canonical company key. This delegates to the same domain-first helper
+ * used by ProspectCompany persistence so fingerprints and tenant-owned company
+ * rows cannot assign contradictory identities to one resolved company.
  */
 export function canonicalCompanyKey(source: CompanyKeySource): string {
-  const slug = normalizeLinkedinCompanySlug(source.linkedinCompanyUrl);
-  if (slug) {
-    return `linkedin:${slug}`;
-  }
-  const domain = normalizeDomain(source.officialWebsiteDomain ?? source.officialDomain);
-  if (domain) {
-    return `domain:${domain}`;
-  }
-  return `name:${source.normalizedName.trim().toLowerCase()}`;
+  return getCanonicalCompanyKey({
+    linkedinCompanyUrl: source.linkedinCompanyUrl,
+    officialWebsiteDomain: source.officialWebsiteDomain,
+    officialDomain: source.officialDomain,
+    normalizedName: source.normalizedName
+  });
 }
 
 function uniqueSorted(values: string[]): string[] {
@@ -71,6 +64,30 @@ export function normalizeLocationsForCache(locations: string[]): string[] {
       stripDiacritics(location).toLowerCase().replace(/\s+/g, " ").trim()
     )
   );
+}
+
+/**
+ * Exact normalized role/location intent equality for shared-cache provenance.
+ * Both sides are normalized here so legacy JSON values cannot depend on array
+ * order, casing, whitespace, diacritics, or duplicate tokens.
+ */
+export function sameNormalizedIntent(
+  sourceRoles: readonly string[],
+  sourceLocations: readonly string[],
+  requestedRoles: readonly string[],
+  requestedLocations: readonly string[]
+): boolean {
+  const normalizedSourceRoles = normalizeRolesForCache([...sourceRoles]);
+  const normalizedRequestedRoles = normalizeRolesForCache([...requestedRoles]);
+  const normalizedSourceLocations = normalizeLocationsForCache([...sourceLocations]);
+  const normalizedRequestedLocations = normalizeLocationsForCache([...requestedLocations]);
+  return normalizedSourceRoles.length > 0
+    && normalizedSourceRoles.length === normalizedRequestedRoles.length
+    && normalizedSourceRoles.every((role, index) => role === normalizedRequestedRoles[index])
+    && normalizedSourceLocations.length === normalizedRequestedLocations.length
+    && normalizedSourceLocations.every(
+      (location, index) => location === normalizedRequestedLocations[index]
+    );
 }
 
 export function buildDiscoverFingerprintInput(params: {

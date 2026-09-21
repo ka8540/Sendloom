@@ -464,6 +464,8 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     setCompanyRoleTitle("");
     setCompanyRoleLocation("");
     setCompanySearchNotice(null);
+    setShowAddMoreDialog(false);
+    setNoMorePeopleOpen(false);
     void loadDetail();
     void loadQuota();
     // Reload whenever the route's searchId changes (e.g. client-side nav).
@@ -749,11 +751,23 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
     [activeCategory, activeLocation, loadPeople, peopleQuery]
   );
 
+  // The first user action only opens confirmation. No load, poll, navigation,
+  // or status transition can invoke the provider-capable mutation directly.
+  const handleRequestAddMore = useCallback(() => {
+    setShowAddMoreDialog(true);
+  }, []);
+
   // Extends ONE user-owned child search — the one resolved from the active role
   // tab (or explicitly chosen in the dialog). Never adds a batch to every role
   // search of the grouped company at once.
   const handleAddMore = useCallback(async (targetSearchId: string) => {
-    if (!search || search.status !== "READY" || !search.company || expanding || !targetSearchId) {
+    if (
+      !search ||
+      (search.status !== "READY" && search.status !== "NO_RESULTS") ||
+      !search.company ||
+      expanding ||
+      !targetSearchId
+    ) {
       return;
     }
     const idempotencyKey =
@@ -1127,14 +1141,19 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
   // An active location chip narrows the target to that location's group, so
   // viewing "Software Engineer · Canada" never extends the United States group.
   const addMoreTarget = useMemo<AddMoreTarget>(
-    () =>
-      resolveAddMoreTarget({
+    () => {
+      if (search && isNoResultsSearch(search)) {
+        const current = companySearches.find((candidate) => candidate.id === search.id);
+        return current ? { kind: "search", search: current } : { kind: "none" };
+      }
+      return resolveAddMoreTarget({
         activeCategory,
         activeLocationKey: activeLocation,
         searches: companySearches,
         currentSearchId: search?.id ?? ""
-      }),
-    [activeCategory, activeLocation, companySearches, search?.id]
+      });
+    },
+    [activeCategory, activeLocation, companySearches, search]
   );
 
   // Location chips: distinct requested locations across this company's READY
@@ -1500,8 +1519,8 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
         <StatusCard
           search={search}
           quota={quota}
-          processing={processing}
-          onProcess={handleProcess}
+          processing={selectedView === "no-results" ? expanding : processing}
+          onProcess={selectedView === "no-results" ? handleRequestAddMore : handleProcess}
           onCancel={handleCancel}
         />
       )}
@@ -1645,7 +1664,7 @@ export function ProspectDetailView({ searchId, featureEnabled }: { searchId: str
                         type="button"
                         className={styles.secondaryButton}
                         data-discover-tour="add-more-people"
-                        onClick={() => setShowAddMoreDialog(true)}
+                        onClick={handleRequestAddMore}
                         disabled={addMoreDisabled !== null}
                         title={addMoreDisabled ?? undefined}
                         aria-label={ADD_MORE_PEOPLE_LABEL}
@@ -2550,7 +2569,7 @@ function SearchCompanyCard({
   );
 }
 
-function StatusCard({
+export function StatusCard({
   search,
   quota,
   processing,
@@ -2570,7 +2589,9 @@ function StatusCard({
   const canceled = search.status === "CANCELED";
   const error = failed ? formatSearchError(search) : null;
   const perSearch = quota?.resultsPerSearch ?? 10;
-  const quotaBlocked = isProcessQuotaBlocked(quota, search.status);
+  const quotaBlocked = noResults
+    ? Boolean(quota && !quota.unlimited && quota.searchesRemaining <= 0)
+    : isProcessQuotaBlocked(quota, search.status);
   const resetLabel = formatQuotaReset(quota);
   const noResultsContext = [
     search.requestedTitles.length > 0

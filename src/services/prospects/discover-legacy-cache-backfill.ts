@@ -10,7 +10,6 @@ import {
 } from "@/services/prospects/discover-cache-fingerprint";
 import {
   DISCOVER_CACHE_STATUS,
-  resolveSharedCacheTtlDays,
   resolveSharedCacheVersion,
   type ResolvedCachePerson
 } from "@/services/prospects/discover-cache-service";
@@ -23,7 +22,6 @@ import {
   normalizeTitle
 } from "@/services/prospects/prospect-normalization";
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 const PROVIDER_ALLOCATION_SOURCES = new Set(["PROVIDER", "ADD_MORE_PROVIDER"]);
 
 export type DiscoverLegacyCacheBackfillOptions = {
@@ -44,10 +42,8 @@ export type DiscoverLegacyCacheBackfillStats = {
   duplicatePeopleSkipped: number;
   skippedNoProviderProvenance: number;
   skippedNoStrongCompanyIdentity: number;
-  skippedExpired: number;
   skippedNoPeople: number;
   cacheVersion: string;
-  cacheTtlDays: number;
 };
 
 export type LegacyDiscoverCompany = {
@@ -113,7 +109,7 @@ export type LegacySharedCachePlan = {
   normalizedLocations: string[];
   resultLimit: number;
   fetchedAt: Date;
-  expiresAt: Date;
+  expiresAt: Date | null;
   people: ResolvedCachePerson[];
 };
 
@@ -272,11 +268,7 @@ function uniqueEligiblePeople(search: LegacyDiscoverSearch): {
   return { eligibleCount: eligible.length, people, duplicateCount };
 }
 
-function emptyStats(input: {
-  apply: boolean;
-  cacheVersion: string;
-  cacheTtlDays: number;
-}): DiscoverLegacyCacheBackfillStats {
+function emptyStats(input: { apply: boolean; cacheVersion: string }): DiscoverLegacyCacheBackfillStats {
   return {
     mode: input.apply ? "APPLY" : "DRY_RUN",
     historicalSearchesScanned: 0,
@@ -289,10 +281,8 @@ function emptyStats(input: {
     duplicatePeopleSkipped: 0,
     skippedNoProviderProvenance: 0,
     skippedNoStrongCompanyIdentity: 0,
-    skippedExpired: 0,
     skippedNoPeople: 0,
-    cacheVersion: input.cacheVersion,
-    cacheTtlDays: input.cacheTtlDays
+    cacheVersion: input.cacheVersion
   };
 }
 
@@ -301,12 +291,10 @@ export async function runDiscoverLegacyCacheBackfill(input: {
   options: DiscoverLegacyCacheBackfillOptions;
   now?: Date;
   cacheVersion?: string;
-  cacheTtlDays?: number;
 }): Promise<DiscoverLegacyCacheBackfillStats> {
   const now = input.now ? new Date(input.now) : new Date();
   const cacheVersion = input.cacheVersion ?? resolveSharedCacheVersion();
-  const cacheTtlDays = input.cacheTtlDays ?? resolveSharedCacheTtlDays();
-  const stats = emptyStats({ apply: input.options.apply, cacheVersion, cacheTtlDays });
+  const stats = emptyStats({ apply: input.options.apply, cacheVersion });
   const dispositionByFingerprint = new Map<string, "CREATE" | "MERGE">();
   const plannedPeopleByFingerprint = new Map<string, Set<string>>();
   const createdByThisRun = new Set<string>();
@@ -337,11 +325,9 @@ export async function runDiscoverLegacyCacheBackfill(input: {
       }
 
       const fetchedAt = sourceFetchedAt(search, now);
-      const expiresAt = new Date(fetchedAt.getTime() + cacheTtlDays * DAY_MS);
-      if (expiresAt.getTime() <= now.getTime()) {
-        stats.skippedExpired += 1;
-        continue;
-      }
+      // Historical provider-backed people remain reusable regardless of age.
+      // `expiresAt` is legacy metadata and is intentionally left unset.
+      const expiresAt = null;
 
       const eligible = uniqueEligiblePeople(search);
       stats.eligiblePeopleCount += eligible.eligibleCount;
@@ -591,7 +577,7 @@ export class PrismaDiscoverLegacyCacheBackfillStore implements DiscoverLegacyCac
     return this.prisma.$transaction(async (tx) => {
       const before = await tx.discoverSearchCache.findUnique({
         where: { fingerprint: plan.fingerprint },
-        select: { id: true, fetchedAt: true, expiresAt: true }
+        select: { id: true, fetchedAt: true }
       });
       const entry = await tx.discoverSearchCache.upsert({
         where: { fingerprint: plan.fingerprint },
@@ -654,7 +640,7 @@ export class PrismaDiscoverLegacyCacheBackfillStore implements DiscoverLegacyCac
         await tx.discoverSearchCache.update({ where: { id: entry.id }, data: { resultCount } });
       }
       if (before) {
-        const freshnessUpdate: { fetchedAt?: Date; expiresAt?: Date } = {};
+        const freshnessUpdate: { fetchedAt?: Date } = {};
         if (options.tightenFreshness) {
           // Several historical searches may reconstruct one new fingerprint.
           // Keep that newly-created entry conservatively as old as its oldest
@@ -662,19 +648,12 @@ export class PrismaDiscoverLegacyCacheBackfillStore implements DiscoverLegacyCac
           if (!before.fetchedAt || new Date(before.fetchedAt).getTime() > plan.fetchedAt.getTime()) {
             freshnessUpdate.fetchedAt = plan.fetchedAt;
           }
-          if (!before.expiresAt || new Date(before.expiresAt).getTime() > plan.expiresAt.getTime()) {
-            freshnessUpdate.expiresAt = plan.expiresAt;
-          }
         } else {
-          // For a pre-existing entry, accept only genuinely newer historical
-          // provider freshness. This can revive a stale READY fingerprint while
-          // never replacing a newer timestamp or touching status, continuation,
+          // For a pre-existing entry, accept only a genuinely newer historical
+          // provider timestamp. Never touch status, continuation,
           // email-format evidence, or failure state.
           if (!before.fetchedAt || new Date(before.fetchedAt).getTime() < plan.fetchedAt.getTime()) {
             freshnessUpdate.fetchedAt = plan.fetchedAt;
-          }
-          if (!before.expiresAt || new Date(before.expiresAt).getTime() < plan.expiresAt.getTime()) {
-            freshnessUpdate.expiresAt = plan.expiresAt;
           }
         }
         if (Object.keys(freshnessUpdate).length > 0) {

@@ -72,10 +72,8 @@ export function printDiscoverSharedCacheBackfillStats(stats: DiscoverLegacyCache
   console.info(`${prefix} duplicatePeopleSkipped=${stats.duplicatePeopleSkipped}`);
   console.info(`${prefix} skippedNoProviderProvenance=${stats.skippedNoProviderProvenance}`);
   console.info(`${prefix} skippedNoStrongCompanyIdentity=${stats.skippedNoStrongCompanyIdentity}`);
-  console.info(`${prefix} skippedExpired=${stats.skippedExpired}`);
   console.info(`${prefix} skippedNoPeople=${stats.skippedNoPeople}`);
   console.info(`${prefix} cacheVersion=${stats.cacheVersion}`);
-  console.info(`${prefix} cacheTtlDays=${stats.cacheTtlDays}`);
 }
 
 async function main(): Promise<void> {

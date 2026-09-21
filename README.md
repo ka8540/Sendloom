@@ -60,7 +60,7 @@ Non-admin users must complete the eligibility gate at `/verify-eligibility` (18+
 - **Gmail safety** — a rolling 24-hour per-sender send cap plus a per-minute per-sender pacing window. Both delay work; neither marks recipients as failed.
 - **Delivery health** — Gmail delivery-status notifications (DSNs) are parsed, classified, and used to reclassify invalid recipients as *Skipped*, both automatically on every backend tick and on demand from the sequence detail page.
 - **Analysis** — five reporting pages over user-scoped stored data with 7-day and 30-day presets, prior-period comparisons, per-metric information tooltips, and per-page CSV export.
-- **Discover** — database-first company + role + location prospect search with cross-user and same-user reuse before Apify, a fixed 10-person allocation per search, a daily search quota, cache-first "Add 10 more" expansion, optional pgvector role intelligence, and evidence-backed email-format inference.
+- **Discover** — Redis-accelerated, permanent-Postgres-first company + role + location discovery; Apify runs once only after durable knowledge is empty, while private allocations, optional pgvector role intelligence, and email-format inference remain tenant-scoped.
 - **Finder** — Hunter email finder and domain search with per-user encrypted API keys and saved history.
 - **Account and signup security** — email/password signup and account password set/change require a six-digit email OTP; successful password updates rotate the session. Connected-sender removal has server-enforced safety rules.
 - **Guided help** — every dashboard route has a Help button with a page-specific coachmark tour, plus a "Report issue" dialog that files a privacy-preserving incident report.
@@ -99,7 +99,7 @@ flowchart TD
     Services --> Lib["Shared helpers in src/lib"]
     Services --> Prisma["Prisma ORM"]
     Prisma --> Postgres["PostgreSQL"]
-    Services --> Redis["Redis: OTP challenges, rate limits, pacing windows, send reservations, Discover quota/locks"]
+    Services --> Redis["Redis: OTP challenges, rate limits, pacing windows, send reservations, Discover result acceleration/quota/locks"]
     Redis --> Workers["BullMQ workers and scheduler"]
     Services --> Storage["Object storage helper (src/lib/storage.ts)"]
     Storage --> Local["Local uploads directory (development)"]
@@ -227,9 +227,80 @@ Library plus create/edit wizard, with format switching, sanitized preview, merge
 
 `/prospects` is the Search History list (one row per company). `/prospects/[searchId]` is the detail workspace: company summary, email-format editor, role groups, people table, inline "Search this company", **Add 10 more**, and XLSX export. Feature-flagged by `PROSPECT_GRAPH_ENABLED` (legacy naming retained for deployment compatibility).
 
-The people pipeline is database-first: an exact shared-cache fingerprint, a fresh same-company shared pool, and the current user's already-materialized company people are checked in that order before Apify runs. Role and location guards are applied to every reuse path. A provider miss fetches one bounded 25-candidate page, retains eligible overflow in the internal shared cache, and grants at most 10 people to the requesting search. **Add 10 more** consumes unused matching cache candidates first, then continues from the saved provider page, with persisted `ProspectSearchPerson` grants as the source of truth for counts and deduplication.
+The people pipeline is **Redis → permanent Postgres knowledge → Apify**. Redis caches sanitized exact-intent result payloads and is never required for correctness. `DiscoverPublicPerson`, `DiscoverProviderBatch`, and `DiscoverProviderBatchPerson` keep public provider-backed people and their exact role/location provenance permanently; age never makes a person unusable. A normal search returns any matching Postgres people as-is (even 1–9) with zero Apify calls. Only a true Redis miss plus Postgres zero automatically calls Apify once, persists the result through the central durable-ingestion path, and caches the reusable payload in Redis.
 
-Historical provider-backed allocations can be promoted into the sanitized shared cache with the dry-run-first `scripts/backfill-discover-shared-cache.ts` utility; it never calls a provider or copies tenant ownership, inferred email, or search history. Optional pgvector role intelligence is separately gated by `DISCOVER_ROLE_VECTOR_ENABLED` and is off by default. Company-constrained provider results carry explicit trusted LinkedIn targeting context, allowing missing/alternate employer metadata while still rejecting a contradictory explicit LinkedIn employer. See [the Discover backend reference](./DOCUMENTATION.md#23-prospect-graph-backend-local-graphql-prototype) for the reuse ladder, backfills, rollout, and safety invariants.
+**Add 10 more** follows the same order and excludes people already granted to that search. Any unused permanent DB people—even a partial remainder—end that action without an Apify top-up. A later Add More may call one provider page only after unused matching Postgres people reach zero. `ProspectSearchPerson` grants remain the private source of truth for user-visible counts and deduplication.
+
+Discover company identity is domain-first everywhere: normalized official domain → trusted LinkedIn company slug when no official domain exists → normalized company name when neither exists. The migration promotes historical `linkedin:*` rows under the domain identity when their stored trusted domain is available, while retaining the LinkedIn slug as evidence. For same-company reuse, an exact normalized role-and-location intent reuses the provider-backed entry directly without reclassifying individual people. Any different role or geography still runs the strict person-level policy, so provenance is never carried across requests such as Software Engineer → Recruiter or United States → San Francisco.
+
+The durable-public-knowledge migration promotes useful legacy `DiscoverSearchCache*` rows and provider-backed historical allocations without copying tenant ownership, inferred email, saved state, or private notes. The old cache tables are deprecated rollout artifacts and production runtime no longer reads or writes them. Email-format TTL/freshness remains separate on company/email-format state. See [the Discover backend reference](./DOCUMENTATION.md#23-prospect-graph-backend-local-graphql-prototype) for the lookup, backfill, concurrency, and tenancy invariants.
+
+#### Discover storage responsibilities
+
+| Layer | Responsibility | Durability and failure behavior |
+| --- | --- | --- |
+| Redis | Sanitized exact-intent result payloads, company-version counters, daily quota state, and short provider/expansion locks | Acceleration and coordination only. Exact-result entries expire after `DISCOVER_REDIS_RESULT_TTL_SECONDS` (default 900 seconds). A miss, flush, malformed payload, timeout, or outage falls through to Postgres for people-search correctness. |
+| Postgres / Neon | `DiscoverPublicPerson`, `DiscoverProviderBatch`, `DiscoverProviderBatchPerson`, private `ProspectSearch`/`ProspectPerson`/`ProspectSearchPerson`, and provider continuation metadata | Permanent source of truth. Public people do not expire because of `createdAt`, `firstSeenAt`, `lastSeenAt`, cache age, or the old shared-cache TTL. |
+| Apify | External discovery for a previously unseen compatible intent, or a later Add More request after every unused durable candidate has been allocated | Called at most once per normal search or Add More action. It is never used merely to fill a partial batch. |
+
+The public/private boundary is intentional. Shared durable rows contain public profile identity, public title/location, normalized company evidence, and provider provenance. They never contain a requester `userId`, inferred/generated email, saved/selected/export state, suppression state, manual corrections, notes, or another user's history. Reused people are copied into the requesting user's own tenant-scoped company/person/allocation records before they are returned.
+
+#### Normal Discover request
+
+```mermaid
+flowchart TD
+    A[Resolve canonical company and normalize role/location] --> B{Valid Redis exact-intent payload?}
+    B -- Yes --> C[Materialize this user's private allocation]
+    B -- No / unavailable --> D{Permanent Postgres knowledge has compatible people?}
+    D -- Yes: any count --> E[Return up to normal limit and repopulate Redis]
+    D -- No --> F[Acquire short intent lock]
+    F --> G[Recheck Redis and Postgres]
+    G -- Another request persisted people --> C
+    G -- Still zero --> H[Call Apify once]
+    H --> I[Normalize, sanitize, dedupe, durably persist batch and people]
+    I --> J[Increment company version and cache sanitized result]
+    J --> C
+```
+
+Important consequences:
+
+- A Redis hit performs no public-person Postgres lookup and makes no Apify call.
+- A Postgres result of 1, 3, 7, or 10 people returns that count; the service does not buy more data to reach 10.
+- A true Redis miss plus permanent-DB zero automatically invokes Apify once, so a first-time search does not require the user to click Add More.
+- Apify returning 4 produces 4 durable people and 4 results. Returning zero produces `NO_RESULTS`. The same request never loops the provider to force a full batch.
+- An exact stored provider intent is authoritative provenance. For example, an exact `Software Engineer + United States` batch can safely reuse a provider-returned person with incomplete per-person geography. A narrower or different request still needs strict candidate evidence.
+
+#### Add More / Find More
+
+Add More computes identities already granted to the selected user-owned search, then looks for compatible public people the search has not received:
+
+1. Reuse unused Redis/Postgres candidates first.
+2. If any unused durable people remain, return up to the batch limit and stop—even if only one or four remain.
+3. Only a later Add More action with zero unused durable people may request one provider continuation page.
+4. Dedupe the page against every permanent public person for the company and against the search's prior grants.
+5. Persist genuinely new public people and provenance before allocating them.
+6. If the provider yields only duplicates or no usable people, return **“No more people were found.”** without another provider loop.
+
+#### Durable ingestion, invalidation, and concurrency
+
+`DiscoverPublicKnowledgeService.appendProviderPeople` is the provider-write choke point. Every runtime Apify result follows:
+
+```text
+normalize → sanitize → attach canonical company → stable identity dedupe
+→ upsert permanent public person → upsert provider batch
+→ link ordered batch membership → increment Redis company version
+→ materialize tenant-private allocation
+```
+
+Result keys use the logical shape
+`discover:people:<schema-version>:<company-hash>:<company-version>:<intent-hash>`.
+Writes increment `discover:company-version:<canonical-company-key>`, so old exact-result keys become unreachable and expire naturally; request paths never use Redis `SCAN` or wildcard deletion. A short distributed intent lock coalesces simultaneous first searches. Waiters recheck Redis/Postgres after obtaining the lock and reuse the winner's durable result. If Redis locking is unavailable, Postgres remains authoritative and the request still proceeds.
+
+#### Migration and rollout
+
+Migration `20260920173000_discover_durable_public_knowledge` is additive. It creates the three durable shared models, adds `ProspectSearch.publicProviderBatchId`/`publicIntentHash`, migrates useful legacy shared rows, and promotes historical allocations only when the owning search has trustworthy provider evidence (`resultSource = PROVIDER`, `apifyRunId`, or `apifyDatasetId`). Historical provider order and timestamps are retained. Manual/private contacts are not promoted.
+
+The old `DiscoverSearchCache` and `DiscoverSearchCachePerson` tables remain temporarily for rollback and legacy maintenance tools, but production service composition no longer instantiates their runtime service. Do not restore people TTL logic or run an age-based cleanup against the new durable tables. Apply the migration before deploying this application version; after rollout, verify durable counts and search behavior before scheduling a later drop of the deprecated tables.
 
 ### Finder — `/finder`
 
@@ -304,7 +375,7 @@ Reply sync runs against connected Gmail senders on cron ticks and surfaces on se
 | Web app | Next.js 15 + React 19 | App Router pages, server components, route handlers |
 | Language | TypeScript | Shared types across UI, services, and libs |
 | Database | PostgreSQL + Prisma | Sequences, imports, templates, senders, replies, ledger, prospects |
-| Redis | ioredis | OTP challenges, rate limits, pacing windows, send reservations, Discover quota and locks |
+| Redis | ioredis | OTP challenges, rate limits, pacing windows, send reservations, and Discover result acceleration/quota/locks |
 | Queues | BullMQ | Background worker path (the cron processor is the live send path) |
 | Auth | JWT session cookie + bcrypt + Google OAuth + HMAC email OTP | Password accounts, verified signup/password changes, Google login, Gmail sender connection |
 | Sending | Gmail API via OAuth2 + Nodemailer MIME building | Send from the user's own mailbox |
@@ -447,8 +518,10 @@ All operator endpoints require an authenticated, eligible, unrestricted session;
 | `ProspectCompanyPosition` | Role-category node under a company |
 | `ProspectPerson` | Discovered professional with an inferred (never verified) business email |
 | `ProspectSearch` | One Discover request and its pipeline status |
-| `ProspectSearchPerson` | Per-search allocation grant — the ownership boundary between the shared cache and what a user receives |
-| `DiscoverSearchCache` / `DiscoverSearchExpansion` | Shared cross-user result cache and "Add 10 more" expansion records |
+| `ProspectSearchPerson` | Per-search allocation grant — the ownership boundary between shared public knowledge and what a user receives |
+| `DiscoverPublicPerson` / `DiscoverProviderBatch` / `DiscoverProviderBatchPerson` | Permanent sanitized public people plus exact provider-intent provenance (no people TTL) |
+| `DiscoverSearchExpansion` | Private, idempotent "Add 10 more" action record |
+| `DiscoverSearchCache*` | Deprecated rollout tables; runtime caching is Redis-only |
 | `ProspectTitleClassification` | Global cache of AI title → category classifications |
 | `RateLimitWindow` | Legacy table; active rate limiting is Redis-backed |
 
@@ -614,8 +687,8 @@ Both fall back to `SESSION_SECRET` in development. Never prefix either with `NEX
 | `DISCOVER_RESULTS_PER_SEARCH` | Optional | Fixed people per processed search. Default `10` |
 | `DISCOVER_DAILY_SEARCH_LIMIT` | Optional | Processed searches per user per UTC day. Default `4` |
 | `DISCOVER_QUOTA_EXEMPT_EMAILS` | Optional | Server-only allowlist exempt from the **daily** quota only. Resolved from the session, never a request body |
-| `DISCOVER_SHARED_CACHE_TTL_DAYS` | Optional | Freshness window for the shared result cache. Default `30` |
-| `DISCOVER_SHARED_CACHE_VERSION` | Optional | Cache schema version in the fingerprint. Default `v1` |
+| `DISCOVER_SHARED_CACHE_VERSION` | Optional | Discover intent/result schema version. Default `v1` |
+| `DISCOVER_REDIS_RESULT_TTL_SECONDS` | Optional | TTL for sanitized Redis result acceleration only. Default `900`; does not affect Postgres people |
 | `DISCOVER_ROLE_VECTOR_ENABLED` | Optional | Enables pgvector role matching and safe provider-title expansion. Default `false` |
 | `DISCOVER_ROLE_EMBEDDING_MODEL` | Optional | Title embedding model. Default `text-embedding-3-small` |
 | `DISCOVER_ROLE_EMBEDDING_DIMENSIONS` | Optional | Must match the migration's `vector(1536)` column. Default `1536` |
@@ -623,7 +696,7 @@ Both fall back to `SESSION_SECRET` in development. Never prefix either with `NEX
 | `DISCOVER_ROLE_MAX_APIFY_TITLES` | Optional | Maximum exact + expanded provider titles per requested role. Default `5`, hard max `8` |
 | `DISCOVER_ROLE_MAX_APIFY_TITLES_TOTAL` | Optional | Maximum titles in one Apify actor input across all requested roles. Default `8`, hard max `20` |
 | `DISCOVER_EXPANSION_BATCH_SIZE` | Optional | New people per "Add 10 more". Default `10` |
-| `DISCOVER_EXPANSION_MAX_PROVIDER_PAGES` | Optional | Provider continuation pages per expansion. Default `5` |
+| `DISCOVER_EXPANSION_MAX_PROVIDER_PAGES` | Optional | Provider continuation safety switch; each Add More action fetches at most one page |
 | `PROSPECT_EMAIL_DISCOVERY_PROVIDER` | Optional | `openai_web_search` (default) or `none` |
 | `PROSPECT_EMAIL_FORMAT_WEB_SEARCH_ENABLED` | Optional | Master switch for AI web search. Default `true` |
 | `PROSPECT_EMAIL_FORMAT_MAX_WEB_RESULTS` | Optional | Public results weighed per company. Default `5` |
