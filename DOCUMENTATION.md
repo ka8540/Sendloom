@@ -753,6 +753,7 @@ Notable field-level changes in this revision:
 | `20260704200000_canonical_company_email_format` | `ProspectCompany.canonicalKey`, `emailFormatAuthority`, new unique key. | Collapses duplicate company rows and protects email-format evidence. |
 | `20260706003000_fresh_discover_email_format_status` | Typed email-format discovery status/reason/timestamps on company and cache. | Stops empty discoveries from being stamped as fresh, which previously produced "Ready but unavailable" formats. |
 | `20260707120000_attachment_assets` | `AttachmentAsset` table, unique dedupe index, user index, cascade FK. | Per-user content-addressed attachment deduplication. |
+| `20260920173000_discover_durable_public_knowledge` | `DiscoverPublicPerson`, `DiscoverProviderBatch`, `DiscoverProviderBatchPerson`, durable search provenance columns, indexes, foreign keys, and legacy/provider-history backfill. | Makes Postgres permanent Discover knowledge, makes Redis the only cache, and stops public people from expiring because of cache age. |
 
 ## 10. Gmail Sending System
 
@@ -1451,6 +1452,8 @@ Secrets rotation:
 | Gmail rate limit despite pacing | Run pauses or recipients retry with Gmail rate-limit metadata. | Gmail returned throttle/quota/temporary error anyway. | `RecipientJob.metadata.lastInternalError`, logs `[campaign-send] Gmail send failed`. | Let backoff/auto-resume run. Consider lower `GMAIL_SENDS_PER_MINUTE`. |
 | Sender disconnected | Launch fails or queued jobs fail with reconnect message. | Google refresh token revoked/expired or missing scopes. | `SenderProfile.oauthRefreshToken`, `lastError`, user-facing Gmail reconnect errors. | User reconnects Gmail through `/api/auth/google/connect`. |
 | Redis down | OTP start/verify/resend fails; rate limits fail in production; scheduler locks/reservations fail. | Redis outage or bad `REDIS_URL`. | `/admin/system-health`, generic auth error plus server log prefix `[auth-otp]`, Redis provider status. | Restore Redis. Pending verification cannot safely fall back to process memory or PostgreSQL. |
+| Discover Redis result miss/outage | Discover result-cache events show misses or Redis errors, but durable people still return. First-time concurrent requests may lose coalescing while Redis is unavailable. | Result key expired/flushed, malformed cached JSON, network timeout, or Redis outage. | `DISCOVER_REDIS_MISS`, `DISCOVER_DATABASE_HIT`/`ZERO`, Postgres durable batch/person counts, Redis provider status. | Restore Redis for acceleration. Do not rebuild public people or call Apify merely to warm Redis; Postgres fallback is the correctness path and repopulates result payloads when Redis recovers. |
+| Discover unexpectedly calls Apify | A normal search records provider discovery despite expected reusable data. | Permanent Postgres lookup returned zero because canonical identity or strict non-exact role/location evidence did not match; migration may not have run. Redis alone is never sufficient evidence. | `DISCOVER_DATABASE_ZERO`, canonical company key/domain/LinkedIn slug, normalized intent, durable batch membership, migration status. | Verify `20260920173000_discover_durable_public_knowledge` ran, compare strong identity and normalized intent, and inspect aggregate diagnostics. Never weaken tenant isolation or merge conflicting domains. |
 | Verification code never arrives | Signup/password form stays at OTP entry, while resend may also fail. | Missing/invalid `RESEND_API_KEY`, unverified `DEFAULT_FROM_EMAIL`, provider rejection, or recipient filtering. | Resend delivery dashboard and safe `[auth-email]` server logs; never log the code or full provider response. | Correct Resend credentials/sender verification, then restart the flow. A delivery failure deletes the challenge. |
 | Verification code rejected or expired | Verify returns incorrect, exhausted, or expired copy. | Wrong code, old code after resend, 10-minute TTL elapsed, five failed attempts, wrong purpose/user, or already-consumed challenge. | Route status (`400`, `410`, or `429`), Redis challenge existence/TTL, audit action without OTP contents. | Use the newest code; resend after cooldown when allowed, otherwise restart. Never recover or reveal the stored digest. |
 | R2 upload failure | Import or attachment upload fails. | Missing R2 env, bad bucket/token, storage outage. | `/admin/system-health`, storage env vars, R2 dashboard, route response. | Fix R2 credentials/buckets; retry upload. Local mode can be used only where filesystem persistence is acceptable. |
@@ -1794,6 +1797,37 @@ Postgres/Neon is permanent Discover knowledge; Redis is the only cache.
 `DiscoverProviderBatchPerson` preserves exact membership and provider ordering.
 None has `expiresAt`, `staleAt`, a 30-day people TTL, or age-based cleanup.
 
+This is a storage responsibility boundary, not merely a lookup preference:
+
+| Concern | Owner | May expire? | Used for correctness? |
+| --- | --- | --- | --- |
+| Sanitized public professional identity/title/location | Postgres `DiscoverPublicPerson` | No | Yes |
+| Exact provider intent, run/dataset ids, continuation and ordering | Postgres `DiscoverProviderBatch*` | No | Yes |
+| Which people a user/search received | Private Postgres `ProspectSearchPerson` | No, except normal owner-driven deletion | Yes |
+| Exact-intent reusable result payload | Redis | Yes | No; Postgres rebuilds it |
+| Company invalidation generation | Redis | Yes | No; a missing generation starts at `0` and Postgres remains authoritative |
+| Provider request coalescing | Short Redis lock | Yes | No; it reduces duplicate paid calls but never replaces durable checks |
+| Email-domain/pattern freshness | `ProspectCompany` email-format lifecycle | Yes, under its own policy | Separate from people durability |
+
+The durable schemas intentionally keep public and private data apart:
+
+- `DiscoverPublicPerson` is keyed by strong provider identity within a canonical
+  company (`companyCanonicalKey + sourceProfileId`) and also dedupes normalized
+  LinkedIn profile URLs within that company. It records first/last seen time for
+  provenance and maintenance, not expiry. Public name/title/location fields are
+  allowed; inferred email and tenant state are structurally absent.
+- `DiscoverProviderBatch.intentHash` identifies the canonical company plus the
+  normalized role/location/result-limit/schema-version request. The batch keeps
+  provider/run/dataset references, next-page state, pages fetched, exhaustion,
+  and last provider-fetch time. Those timestamps describe provenance; they do
+  not make people stale.
+- `DiscoverProviderBatchPerson` is unique on `(batchId, publicPersonId)` and
+  stores `providerSortIndex`, preserving stable provider order without copying
+  the same public person into every intent.
+- `ProspectSearch.publicProviderBatchId` and `publicIntentHash` link a private
+  search to reusable provenance without exposing the batch or another user's
+  history through GraphQL.
+
 - **Company identity.** Official domain → trusted LinkedIn company slug only
   without a domain → normalized-name fallback. Matching trusted domains prove
   equivalence between a historical `linkedin:*` identity and a new `domain:*`
@@ -1835,6 +1869,62 @@ None has `expiresAt`, `staleAt`, a 30-day people TTL, or age-based cleanup.
   rows and provider-backed historical allocations into the durable models. Email
   format freshness remains separate on company/email-format state.
 
+#### Redis payload and invalidation contract
+
+The Redis exact-result payload is deliberately self-contained and sanitized: it
+contains matched public people, matched canonical company evidence, source
+normalized roles/locations, the durable batch id when present, and whether a
+provider-backed empty result is definitive. It contains no generated email,
+requester id, selection/export state, raw provider response, or token. Payloads
+are schema-checked on read; malformed JSON or an invalid person shape is treated
+as a miss.
+
+The key is logically:
+
+```text
+discover:people:<DISCOVER_SHARED_CACHE_VERSION>:<company-key-hash>:<company-version>:<intent-fingerprint>
+```
+
+The fingerprint is deterministic over canonical company key, normalized/sorted
+roles, normalized/sorted locations, fixed result limit, and semantic cache
+version. Redis stores the raw canonical company key only in the separate version
+key:
+
+```text
+discover:company-version:<canonical-company-key>
+```
+
+After a durable provider write, `INCR` advances that company generation. Old
+keys are not synchronously deleted; they become unreachable and expire under
+`DISCOVER_REDIS_RESULT_TTL_SECONDS` (default 900 seconds). This avoids `KEYS`,
+`SCAN`, wildcard deletion, and company-wide N+1 invalidation on request paths.
+If Redis is unavailable during a durable write, Postgres is still authoritative;
+the next Redis miss reads the new Postgres state.
+
+#### Central provider-ingestion contract
+
+Every normal-search or Add More Apify result enters through
+`DiscoverPublicKnowledgeService.appendProviderPeople`. The required ordering is:
+
+1. Normalize provider profiles and discard unsupported private/raw fields.
+2. Attach the already-resolved canonical company identity.
+3. Dedupe the incoming page by stable source profile id and normalized LinkedIn
+   URL.
+4. Upsert permanent public people, updating `lastSeenAt` without replacing
+   `firstSeenAt`.
+5. Upsert the provider batch with exact normalized intent, run/dataset ids,
+   continuation state, and exhaustion state.
+6. Insert missing ordered batch/person links without duplicating existing
+   membership.
+7. Advance the Redis company generation and write a sanitized reusable exact
+   result when Redis is available.
+8. Materialize only the selected results into the requesting user's own
+   `ProspectCompany`, `ProspectPerson`, and `ProspectSearchPerson` rows.
+
+No production Apify caller may bypass this path. This prevents a provider result
+from surviving only inside one tenant's `ProspectPerson` records and makes later
+cross-user reuse independent of the original requester.
+
 ### 23.2.3.1 Database-first reuse ladder
 
 Every normal request applies this ladder:
@@ -1853,6 +1943,29 @@ Add More uses the same first three rungs after excluding current-search grants.
 Any non-zero unused DB count ends that action. Only a later action at unused DB
 zero reaches one provider page. This order survives Redis flush/unavailability.
 
+Concrete outcomes:
+
+| Request state | Result | Provider calls |
+| --- | --- | --- |
+| Valid exact Redis payload with 10 people | Materialize up to 10; no public-person Postgres query | 0 |
+| Redis miss, Postgres has 10 compatible people | Return 10 and repopulate Redis | 0 |
+| Redis miss, Postgres has 3 compatible people | Return 3; do not top up | 0 |
+| Redis miss, Postgres has a 365-day-old compatible person | Return it; age is irrelevant | 0 |
+| Redis miss/unavailable, Postgres zero | Acquire intent lock, recheck, then run Apify once if still zero | 1 maximum |
+| Apify returns 4 usable people | Persist 4, allocate 4, cache 4 | 1 |
+| Apify returns zero | Persist provider-backed exhaustion/empty provenance and return `NO_RESULTS` | 1, with no loop |
+| Add More, user has 10 of 50 matching durable people | Allocate next unused database people | 0 |
+| Add More, only 4 unused durable people remain | Allocate 4 and end the action | 0 |
+| Next Add More, unused durable count is zero | Fetch one continuation page | 1 maximum |
+| Add More provider page contains only known identities | Allocate none and return “No more people were found.” | 1, with no loop |
+
+For simultaneous first searches, the intent lock serializes provider ownership.
+Each waiter rechecks Redis and Postgres after it obtains the lock, so the first
+successful durable ingestion becomes reusable by the others. The lock has a
+short TTL and release is best-effort. A Redis lock failure cannot make stored
+people inaccessible; requests still use Postgres, and database uniqueness
+constraints converge duplicate public-person or membership writes safely.
+
 ### 23.2.3.2 Semantic role intelligence (pgvector)
 
 Migration `20260820130000_discover_role_semantics` additively enables the
@@ -1861,9 +1974,11 @@ Migration `20260820130000_discover_role_semantics` additively enables the
 policy version. It never adds vectors to `ProspectPerson` or
 `DiscoverSearchCachePerson`, and it does not rewrite any existing row.
 
-The database-first order remains: exact fingerprint → durable same-company pool
-→ exact location guard → hybrid role ranking → same-user people → database miss.
-Existing category classification remains authoritative.
+The database-first order remains: Redis exact intent → durable exact provider
+intent → durable same-company pool → exact location guard → hybrid role ranking
+→ permanent database zero. Production lookup never scans another user's private
+people as a shared fallback. Existing category classification remains
+authoritative.
 Specialty/breadth policy rejects incompatible categories before vector ranking,
 keeps iOS, Forward Deployed, DevOps, management, and CTO intent narrow, and uses
 cosine similarity only as a ranking/acceptance signal inside that deterministic
@@ -1876,8 +1991,8 @@ role family.
 When **Add 10 more** explicitly reaches the provider, exact requested titles are
 preserved first, expansions are added round-robin under both per-role and total
 caps, and the complete array is sent in **one** Apify actor request. Provider results are normalized, company
-validated, identity-deduped, classified, and role-authorized again before shared
-cache persistence. Add More uses the same plan while continuing the saved page;
+validated, identity-deduped, classified, and role-authorized again before durable
+public-person persistence. Add More uses the same plan while continuing the saved page;
 it never restarts pagination or runs one actor per alias.
 
 `DISCOVER_ROLE_VECTOR_ENABLED=false` performs no embedding or vector query and
@@ -1893,11 +2008,12 @@ npx tsx scripts/backfill-discover-role-semantics.ts --dry-run
 npx tsx scripts/backfill-discover-role-semantics.ts --apply --batch-size 100 --limit 1000
 ```
 
-It reads distinct normalized titles only from the shared cache/title
-classification cache, batches missing embeddings, and upserts only semantic
-rows. It never prints or writes person identity, ownership, email, search,
-allocation, or provider payload data. Do not run `--apply` automatically in
-production.
+The current helper reads distinct normalized titles from the deprecated legacy
+shared table and the title-classification cache, batches missing embeddings, and
+upserts only semantic rows. It is optional migration tooling, not a production
+people lookup. It never prints or writes person identity, ownership, email,
+search, allocation, or provider payload data. Do not run `--apply`
+automatically in production.
 
 No-downtime deployment order: apply the additive migration; deploy with the
 feature flag off; verify current Discover; run the dry-run; optionally approve a
@@ -1928,6 +2044,47 @@ suppression, notes, or raw provider payload. Stable allocation order becomes
 provider sort order, and historical timestamps remain historical. The old cache
 tables are retained and marked deprecated for rollback; runtime no longer uses
 them and a later migration may drop them after rollout verification.
+
+Deployment order for this migration:
+
+1. Back up/confirm normal Neon recovery controls and record legacy cache/person
+   counts.
+2. Apply Prisma migration
+   `20260920173000_discover_durable_public_knowledge` before starting the new
+   application code.
+3. Deploy the application with Redis configured. Redis may be empty; do not
+   prewarm it with Apify.
+4. Verify legacy shared rows and provider-backed historical searches produced
+   durable people, batches, and memberships.
+5. Run production-shaped searches with Redis empty: known intents must report a
+   Postgres hit and `providerCalled=false`.
+6. Verify a truly unseen intent calls Apify once and writes durable rows before
+   private allocation.
+7. Keep the old tables read-only/deprecated through the observation window.
+   Drop them only in a separate reviewed migration after counts and behavior are
+   confirmed.
+
+Safe aggregate verification queries (no personal fields):
+
+```sql
+SELECT COUNT(*) AS public_people FROM "DiscoverPublicPerson";
+SELECT COUNT(*) AS provider_batches FROM "DiscoverProviderBatch";
+SELECT COUNT(*) AS batch_memberships FROM "DiscoverProviderBatchPerson";
+
+SELECT COUNT(*) AS linked_provider_searches
+FROM "ProspectSearch"
+WHERE "publicProviderBatchId" IS NOT NULL;
+
+SELECT COUNT(*) AS provider_backed_unlinked_searches
+FROM "ProspectSearch"
+WHERE ("resultSource" = 'PROVIDER' OR "apifyRunId" IS NOT NULL OR "apifyDatasetId" IS NOT NULL)
+  AND "publicProviderBatchId" IS NULL;
+```
+
+The final query is a review signal, not an automatic deletion/repair command:
+some historical searches may legitimately lack enough trustworthy allocation
+data. Never promote arbitrary `ProspectPerson` rows merely to make that count
+zero.
 
 ### 23.2.3.4 User-specific allocation and the grouped company dashboard
 
@@ -2137,7 +2294,7 @@ New Prisma models (migration
 | `ProspectCompanyPosition` | One node per position category under a company. Unique per `(companyId, category)`. |
 | `ProspectPerson` | A discovered professional, assigned to one position node, with inferred-email metadata. Unique per `(userId, sourceProfileId)`. |
 | `ProspectSearch` | A discovery request, its status, Apify run references, and counts. |
-| `ProspectSearchPerson` | The allocation grant of one person to one user-owned search (order + source). Unique per `(searchId, personId)`; the boundary between the shared cache pool and what a user's search actually received (see 23.2.3.4). |
+| `ProspectSearchPerson` | The allocation grant of one person to one user-owned search (order + source). Unique per `(searchId, personId)`; the boundary between the permanent shared public pool and what a user's search actually received (see 23.2.3.4). |
 | `DiscoverPublicPerson` | Permanent sanitized public professional facts. No inferred email, tenant state, or people TTL. |
 | `DiscoverProviderBatch` | Permanent canonical company + normalized provider-intent/run/continuation provenance. |
 | `DiscoverProviderBatchPerson` | Ordered durable membership linking provider batches to public people. |
@@ -2165,7 +2322,7 @@ src/services/prospects/          provider + business logic (no resolver calls pr
   discover-cache-reuse.ts        strong company-identity predicates for shared reuse
   discover-expansion-service.ts  grant-backed Redis/Postgres-first Add More; one provider page after DB exhaustion
   discover-role-intelligence-service.ts deterministic + pgvector role authorization/ranking
-  discover-legacy-cache-backfill.ts historical provider-result cache promotion
+  discover-legacy-cache-backfill.ts deprecated legacy-table repair tooling (not production runtime)
   apify-profile-search.ts        Apify actor wrapper + profile normalization
   company-resolution-service.ts  AI task 1
   role-classification-service.ts deterministic map + cache + AI task 2
@@ -2179,14 +2336,16 @@ src/app/api/graphql/route.ts     POST /api/graphql (Yoga), feature-flagged
 ### 23.6 Security and compliance
 
 Every operation requires a valid Sendloom session (reuses `getSessionUser()` plus
-the REST API restriction/verification checks). All data is user-scoped, so
-cross-user access is impossible. Mutations are CSRF-protected by the existing
-global middleware. Depth/complexity limits, a max page size of 100, and a hard
-feature flag (returns 404 when disabled) apply; introspection is disabled in
-production. Only professional fields are stored — photos, phone numbers, personal
-emails, education, full employment history, biographies, posts, and connections
-are discarded at ingestion. No email is ever sent and no sequence is created in
-this phase.
+the REST API restriction/verification checks). Every API read/write and
+user-visible allocation is user-scoped. The durable public tables are internal
+service storage only and are never exposed as another user's search, ownership,
+selection, export, suppression, email, or notes. Mutations are CSRF-protected by
+the existing global middleware. Depth/complexity limits, a max page size of 100,
+and a hard feature flag (returns 404 when disabled) apply; introspection is
+disabled in production. Only professional fields are stored — photos, phone
+numbers, personal emails, education, full employment history, biographies,
+posts, and connections are discarded at ingestion. No email is ever sent and no
+sequence is created in this phase.
 
 ### 23.7 Testing
 
@@ -2204,6 +2363,43 @@ failures). The GraphQL layer covers authentication, depth limits, pagination
 bounds, cross-user isolation, DataLoader batching, and disabled-feature
 rejection. Use `npm run prospect:test` for a live
 end-to-end smoke test against the real providers.
+
+The durable-knowledge regression suite additionally proves:
+
+- a Redis exact-intent hit skips the public-person Postgres lookup and Apify;
+- Redis miss/flush/unavailability falls back to Postgres and repopulates Redis;
+- 1–9 matching database people return without provider top-up;
+- a 365-day-old public person remains reusable;
+- domain-first identity reuses a legacy `linkedin:*` batch when trusted domains
+  agree, while conflicting domains never merge;
+- exact provider intent accepts incomplete candidate geography, while a narrower
+  geography or different role remains strict;
+- an unseen normal intent calls Apify exactly once, durably persists results,
+  and does not loop when the provider returns fewer than 10 or zero;
+- Citadel-shaped historical provider data and Wealthfront-shaped legacy identity
+  data are reusable across users without private-row access;
+- Add More returns every unused durable candidate first, including a partial
+  remainder, and calls one provider page only on a subsequent exhausted action;
+- duplicate-only Add More provider output creates no duplicate allocation and
+  returns “No more people were found.”;
+- the SQL migration creates non-expiring durable tables, copies legacy shared
+  rows, and promotes only provider-backed historical allocations; and
+- concurrent first searches recheck after the intent lock and coalesce provider
+  discovery.
+
+Repository verification for this architecture is:
+
+```bash
+npm run typecheck --if-present
+npx prisma validate
+npx prisma generate
+npm test -- --run
+```
+
+The implementation commit was verified with all 190 Vitest files and 2,767
+tests passing. The repository's `next lint` script currently opens the initial
+interactive ESLint setup because no ESLint configuration exists; do not create a
+new lint policy as an incidental Discover deployment change.
 
 ### 23.8 Frontend surface — "Discover"
 

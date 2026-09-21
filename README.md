@@ -99,7 +99,7 @@ flowchart TD
     Services --> Lib["Shared helpers in src/lib"]
     Services --> Prisma["Prisma ORM"]
     Prisma --> Postgres["PostgreSQL"]
-    Services --> Redis["Redis: OTP challenges, rate limits, pacing windows, send reservations, Discover quota/locks"]
+    Services --> Redis["Redis: OTP challenges, rate limits, pacing windows, send reservations, Discover result acceleration/quota/locks"]
     Redis --> Workers["BullMQ workers and scheduler"]
     Services --> Storage["Object storage helper (src/lib/storage.ts)"]
     Storage --> Local["Local uploads directory (development)"]
@@ -235,6 +235,73 @@ Discover company identity is domain-first everywhere: normalized official domain
 
 The durable-public-knowledge migration promotes useful legacy `DiscoverSearchCache*` rows and provider-backed historical allocations without copying tenant ownership, inferred email, saved state, or private notes. The old cache tables are deprecated rollout artifacts and production runtime no longer reads or writes them. Email-format TTL/freshness remains separate on company/email-format state. See [the Discover backend reference](./DOCUMENTATION.md#23-prospect-graph-backend-local-graphql-prototype) for the lookup, backfill, concurrency, and tenancy invariants.
 
+#### Discover storage responsibilities
+
+| Layer | Responsibility | Durability and failure behavior |
+| --- | --- | --- |
+| Redis | Sanitized exact-intent result payloads, company-version counters, daily quota state, and short provider/expansion locks | Acceleration and coordination only. Exact-result entries expire after `DISCOVER_REDIS_RESULT_TTL_SECONDS` (default 900 seconds). A miss, flush, malformed payload, timeout, or outage falls through to Postgres for people-search correctness. |
+| Postgres / Neon | `DiscoverPublicPerson`, `DiscoverProviderBatch`, `DiscoverProviderBatchPerson`, private `ProspectSearch`/`ProspectPerson`/`ProspectSearchPerson`, and provider continuation metadata | Permanent source of truth. Public people do not expire because of `createdAt`, `firstSeenAt`, `lastSeenAt`, cache age, or the old shared-cache TTL. |
+| Apify | External discovery for a previously unseen compatible intent, or a later Add More request after every unused durable candidate has been allocated | Called at most once per normal search or Add More action. It is never used merely to fill a partial batch. |
+
+The public/private boundary is intentional. Shared durable rows contain public profile identity, public title/location, normalized company evidence, and provider provenance. They never contain a requester `userId`, inferred/generated email, saved/selected/export state, suppression state, manual corrections, notes, or another user's history. Reused people are copied into the requesting user's own tenant-scoped company/person/allocation records before they are returned.
+
+#### Normal Discover request
+
+```mermaid
+flowchart TD
+    A[Resolve canonical company and normalize role/location] --> B{Valid Redis exact-intent payload?}
+    B -- Yes --> C[Materialize this user's private allocation]
+    B -- No / unavailable --> D{Permanent Postgres knowledge has compatible people?}
+    D -- Yes: any count --> E[Return up to normal limit and repopulate Redis]
+    D -- No --> F[Acquire short intent lock]
+    F --> G[Recheck Redis and Postgres]
+    G -- Another request persisted people --> C
+    G -- Still zero --> H[Call Apify once]
+    H --> I[Normalize, sanitize, dedupe, durably persist batch and people]
+    I --> J[Increment company version and cache sanitized result]
+    J --> C
+```
+
+Important consequences:
+
+- A Redis hit performs no public-person Postgres lookup and makes no Apify call.
+- A Postgres result of 1, 3, 7, or 10 people returns that count; the service does not buy more data to reach 10.
+- A true Redis miss plus permanent-DB zero automatically invokes Apify once, so a first-time search does not require the user to click Add More.
+- Apify returning 4 produces 4 durable people and 4 results. Returning zero produces `NO_RESULTS`. The same request never loops the provider to force a full batch.
+- An exact stored provider intent is authoritative provenance. For example, an exact `Software Engineer + United States` batch can safely reuse a provider-returned person with incomplete per-person geography. A narrower or different request still needs strict candidate evidence.
+
+#### Add More / Find More
+
+Add More computes identities already granted to the selected user-owned search, then looks for compatible public people the search has not received:
+
+1. Reuse unused Redis/Postgres candidates first.
+2. If any unused durable people remain, return up to the batch limit and stop—even if only one or four remain.
+3. Only a later Add More action with zero unused durable people may request one provider continuation page.
+4. Dedupe the page against every permanent public person for the company and against the search's prior grants.
+5. Persist genuinely new public people and provenance before allocating them.
+6. If the provider yields only duplicates or no usable people, return **“No more people were found.”** without another provider loop.
+
+#### Durable ingestion, invalidation, and concurrency
+
+`DiscoverPublicKnowledgeService.appendProviderPeople` is the provider-write choke point. Every runtime Apify result follows:
+
+```text
+normalize → sanitize → attach canonical company → stable identity dedupe
+→ upsert permanent public person → upsert provider batch
+→ link ordered batch membership → increment Redis company version
+→ materialize tenant-private allocation
+```
+
+Result keys use the logical shape
+`discover:people:<schema-version>:<company-hash>:<company-version>:<intent-hash>`.
+Writes increment `discover:company-version:<canonical-company-key>`, so old exact-result keys become unreachable and expire naturally; request paths never use Redis `SCAN` or wildcard deletion. A short distributed intent lock coalesces simultaneous first searches. Waiters recheck Redis/Postgres after obtaining the lock and reuse the winner's durable result. If Redis locking is unavailable, Postgres remains authoritative and the request still proceeds.
+
+#### Migration and rollout
+
+Migration `20260920173000_discover_durable_public_knowledge` is additive. It creates the three durable shared models, adds `ProspectSearch.publicProviderBatchId`/`publicIntentHash`, migrates useful legacy shared rows, and promotes historical allocations only when the owning search has trustworthy provider evidence (`resultSource = PROVIDER`, `apifyRunId`, or `apifyDatasetId`). Historical provider order and timestamps are retained. Manual/private contacts are not promoted.
+
+The old `DiscoverSearchCache` and `DiscoverSearchCachePerson` tables remain temporarily for rollback and legacy maintenance tools, but production service composition no longer instantiates their runtime service. Do not restore people TTL logic or run an age-based cleanup against the new durable tables. Apply the migration before deploying this application version; after rollout, verify durable counts and search behavior before scheduling a later drop of the deprecated tables.
+
 ### Finder — `/finder`
 
 Hunter email finder, domain search, per-user encrypted key storage, and saved domain-search history.
@@ -308,7 +375,7 @@ Reply sync runs against connected Gmail senders on cron ticks and surfaces on se
 | Web app | Next.js 15 + React 19 | App Router pages, server components, route handlers |
 | Language | TypeScript | Shared types across UI, services, and libs |
 | Database | PostgreSQL + Prisma | Sequences, imports, templates, senders, replies, ledger, prospects |
-| Redis | ioredis | OTP challenges, rate limits, pacing windows, send reservations, Discover quota and locks |
+| Redis | ioredis | OTP challenges, rate limits, pacing windows, send reservations, and Discover result acceleration/quota/locks |
 | Queues | BullMQ | Background worker path (the cron processor is the live send path) |
 | Auth | JWT session cookie + bcrypt + Google OAuth + HMAC email OTP | Password accounts, verified signup/password changes, Google login, Gmail sender connection |
 | Sending | Gmail API via OAuth2 + Nodemailer MIME building | Send from the user's own mailbox |
