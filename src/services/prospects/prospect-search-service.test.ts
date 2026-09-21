@@ -35,6 +35,7 @@ import {
   PrismaDiscoverLegacyCacheBackfillStore,
   runDiscoverLegacyCacheBackfill
 } from "@/services/prospects/discover-legacy-cache-backfill";
+import { DiscoverPublicKnowledgeService } from "@/services/prospects/discover-public-knowledge-service";
 import { createFakePrisma, type FakePrisma } from "@/services/prospects/__test-utils__/fake-prisma";
 import { createMockAi } from "@/services/prospects/__test-utils__/mock-ai";
 import { createAiBudget } from "@/services/prospects/prospect-ai";
@@ -67,6 +68,18 @@ function makeFakeCacheLock(): DiscoverCacheLock {
       }
     }
   };
+}
+
+class TestDiscoverRedis {
+  readonly values = new Map<string, string>();
+  async get(key: string) { return this.values.get(key) ?? null; }
+  async set(key: string, value: string) { this.values.set(key, value); return "OK"; }
+  async incr(key: string) {
+    const next = Number(this.values.get(key) ?? "0") + 1;
+    this.values.set(key, String(next));
+    return next;
+  }
+  clear() { this.values.clear(); }
 }
 
 const QUOTA_RESET = new Date("2026-06-20T00:00:00.000Z");
@@ -323,6 +336,7 @@ function buildService(
     roleClassifier: new RoleClassificationService(prisma as unknown as PrismaClient, ai.client),
     roleIntelligence,
     emailDomain: new EmailDomainService(prisma as unknown as PrismaClient, ai.client, evidenceProvider),
+    emailFormatRateLimiter: async () => ({ allowed: true, retryAfterSeconds: 0 }),
     discoverQuota,
     discoverCache: resolvedCache,
     audit
@@ -1739,7 +1753,7 @@ describe("Discover shared cache integration", () => {
 
     expect(result.status).toBe("READY");
     expect(result.resultSource).toBe("CACHE");
-    expect(result.sharedCacheId).toBe("cache_1");
+    expect(result.publicProviderBatchId).toBe("cache_1");
     expect(runner.run).not.toHaveBeenCalled();
     expect(quota.consumed.size).toBe(1);
   });
@@ -4269,6 +4283,189 @@ describe("Search this company (same-company role/location search)", () => {
       })
     ).rejects.toMatchObject({ code: "DISCOVER_DAILY_LIMIT_REACHED" });
     expect(prisma._state.searches).toHaveLength(2);
+  });
+});
+
+describe("durable public Discover production flow", () => {
+  function publicPerson(id: string, company = "Apple"): ResolvedCachePerson {
+    return {
+      sourceProfileId: id,
+      firstName: "Person",
+      lastName: id,
+      fullName: `Person ${id}`,
+      currentTitle: "Software Engineer",
+      normalizedTitle: "software engineer",
+      positionCategory: "SOFTWARE_ENGINEERING",
+      location: "United States",
+      country: "United States",
+      state: null,
+      city: null,
+      linkedinUrl: `https://www.linkedin.com/in/${company.toLowerCase()}-${id}`,
+      inferredEmail: null,
+      emailStatus: "UNAVAILABLE",
+      emailConfidence: "UNAVAILABLE",
+      emailPattern: null,
+      emailSource: null
+    };
+  }
+
+  function knowledge(redis = new TestDiscoverRedis()) {
+    return {
+      redis,
+      service: new DiscoverPublicKnowledgeService({
+        prisma: prisma as unknown as PrismaClient,
+        redis,
+        lock: makeFakeCacheLock(),
+        waitTimeoutMs: 500,
+        pollIntervalMs: 1
+      })
+    };
+  }
+
+  const oneRoleApple: ValidatedCreateProspectSearch = {
+    companyName: "Apple",
+    companyDomain: "apple.com",
+    companyLinkedinUrl: null,
+    jobTitles: ["Software Engineer"],
+    locations: ["United States"],
+    maxResults: 10
+  };
+
+  it("automatically calls Apify exactly once on a true Redis/Postgres zero and durably ingests results", async () => {
+    const run = vi.fn<ApifyRunner["run"]>(async () => ({
+      runId: "new-run",
+      datasetId: "new-dataset",
+      items: [targetedCompanyProfile("new-1", "Software Engineer", "Apple")]
+    }));
+    const durable = knowledge();
+    const { service } = buildService(
+      prisma,
+      { run } as ApifyRunner,
+      AI_RESPONSES,
+      undefined,
+      allowAllQuota,
+      durable.service
+    );
+
+    const search = await service.createSearch("first-user", oneRoleApple);
+    const result = await service.processSearch("first-user", search.id);
+
+    expect(result).toMatchObject({ status: "READY", totalProcessed: 1, resultSource: "PROVIDER" });
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(prisma._state.discoverPublicPeople).toHaveLength(1);
+    expect(prisma._state.discoverProviderBatches).toHaveLength(1);
+    expect(prisma._state.discoverProviderBatchPeople).toHaveLength(1);
+    expect(prisma._state.discoverPublicPeople[0]).not.toHaveProperty("userId");
+    expect(prisma._state.discoverPublicPeople[0]).not.toHaveProperty("inferredEmail");
+  });
+
+  it("returns NO_RESULTS after one provider call and reuses the provider-backed empty result", async () => {
+    const run = vi.fn<ApifyRunner["run"]>(async () => ({
+      runId: "empty-run",
+      datasetId: "empty-dataset",
+      items: []
+    }));
+    const durable = knowledge();
+    const { service } = buildService(
+      prisma,
+      { run } as ApifyRunner,
+      AI_RESPONSES,
+      undefined,
+      allowAllQuota,
+      durable.service
+    );
+
+    const first = await service.createSearch("empty-user-a", oneRoleApple);
+    expect((await service.processSearch("empty-user-a", first.id)).status).toBe("NO_RESULTS");
+    const second = await service.createSearch("empty-user-b", oneRoleApple);
+    expect((await service.processSearch("empty-user-b", second.id)).status).toBe("NO_RESULTS");
+
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it("reuses a Citadel-shaped 50-person permanent dataset after a Redis flush with zero Apify calls", async () => {
+    const durable = knowledge();
+    await durable.service.appendProviderPeople({
+      fingerprint: "historical-citadel-provider-intent",
+      fingerprintInput: {
+        companyKey: "domain:citadel.com",
+        roles: ["software engineer"],
+        locations: ["united states"],
+        resultLimit: 10,
+        cacheVersion: "v1"
+      },
+      company: { name: "Citadel LLC", domain: "citadel.com", linkedinUrl: null },
+      emailFormat: {
+        emailDomain: null,
+        emailDomainConfidence: "UNAVAILABLE",
+        emailDomainEvidence: null,
+        emailPattern: null,
+        patternConfidence: "UNAVAILABLE",
+        patternEvidence: null,
+        emailFormatReason: null
+      },
+      people: Array.from({ length: 50 }, (_, index) => publicPerson(`citadel-${index}`, "Citadel")),
+      nextPage: 3,
+      pagesFetched: 2,
+      exhausted: false,
+      providerRunId: "ca8dFSzs5DmqXzxYJ",
+      providerDatasetId: "d3xNjstlWecvJaVXn"
+    });
+    durable.redis.clear();
+    const run = vi.fn<ApifyRunner["run"]>();
+    const { service } = buildService(
+      prisma,
+      { run } as ApifyRunner,
+      AI_RESPONSES,
+      undefined,
+      allowAllQuota,
+      durable.service
+    );
+    const input: ValidatedCreateProspectSearch = {
+      ...oneRoleApple,
+      companyName: "Citadel LLC",
+      companyDomain: "citadel.com"
+    };
+
+    const search = await service.createSearch("citadel-user-b", input);
+    const result = await service.processSearch("citadel-user-b", search.id);
+
+    expect(result).toMatchObject({ status: "READY", totalProcessed: 10, resultSource: "CACHE" });
+    expect(run).not.toHaveBeenCalled();
+    expect(prisma._state.searchPeople).toHaveLength(10);
+  });
+
+  it("coalesces concurrent first searches for the same unseen intent", async () => {
+    const run = vi.fn<ApifyRunner["run"]>(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      return {
+        runId: "coalesced-run",
+        datasetId: "coalesced-dataset",
+        items: [targetedCompanyProfile("coalesced-1", "Software Engineer", "Apple")]
+      };
+    });
+    const durable = knowledge();
+    const { service } = buildService(
+      prisma,
+      { run } as ApifyRunner,
+      AI_RESPONSES,
+      undefined,
+      allowAllQuota,
+      durable.service
+    );
+    const [searchA, searchB] = await Promise.all([
+      service.createSearch("concurrent-a", oneRoleApple),
+      service.createSearch("concurrent-b", oneRoleApple)
+    ]);
+
+    const [resultA, resultB] = await Promise.all([
+      service.processSearch("concurrent-a", searchA.id),
+      service.processSearch("concurrent-b", searchB.id)
+    ]);
+
+    expect(resultA.status).toBe("READY");
+    expect(resultB.status).toBe("READY");
+    expect(run).toHaveBeenCalledTimes(1);
   });
 });
 

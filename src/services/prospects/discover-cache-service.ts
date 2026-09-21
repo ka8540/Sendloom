@@ -132,6 +132,10 @@ export type DiscoverCacheResult = {
   legacyIdentityMatch?: boolean;
   /** True when the source entry itself proves the exact normalized intent. */
   exactIntentReuse?: boolean;
+  /** Physical lookup tier used by the durable architecture. */
+  storageHitType?: "REDIS" | "DATABASE_EXACT" | "DATABASE_POOL" | null;
+  /** A cached provider-backed empty result, not merely a transient DB miss. */
+  definitiveEmpty?: boolean;
 };
 
 export type DiscoverCacheLookupDiagnostics = {
@@ -215,6 +219,10 @@ export type AppendProviderPeopleParams = {
   pagesFetched: number;
   /** Whether the provider confirmed it has no further pages / unique results. */
   exhausted: boolean;
+  /** Durable provider provenance. */
+  provider?: string;
+  providerRunId?: string | null;
+  providerDatasetId?: string | null;
 };
 
 /**

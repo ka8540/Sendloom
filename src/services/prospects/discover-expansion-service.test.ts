@@ -5,8 +5,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApifyProfileSearchService, type ApifyRunner } from "@/services/prospects/apify-profile-search";
 import {
   DiscoverSearchCacheService,
-  type DiscoverCacheLock
+  type DiscoverCacheExpansionPort,
+  type DiscoverCacheLock,
+  type DiscoverCachePort,
+  type ResolvedCachePerson
 } from "@/services/prospects/discover-cache-service";
+import { DiscoverPublicKnowledgeService } from "@/services/prospects/discover-public-knowledge-service";
 import { computeDiscoverFingerprint } from "@/services/prospects/discover-cache-fingerprint";
 import {
   DiscoverRoleIntelligenceService,
@@ -92,6 +96,18 @@ function makeFakeLock(): DiscoverCacheLock {
       }
     }
   };
+}
+
+class TestRedis {
+  readonly values = new Map<string, string>();
+  async get(key: string) { return this.values.get(key) ?? null; }
+  async set(key: string, value: string) { this.values.set(key, value); return "OK"; }
+  async incr(key: string) {
+    const next = Number(this.values.get(key) ?? "0") + 1;
+    this.values.set(key, String(next));
+    return next;
+  }
+  clear() { this.values.clear(); }
 }
 
 // A role classifier stub that never calls AI: everything is Software Engineering.
@@ -553,7 +569,7 @@ function cachePeople(prefix: string, count: number) {
 function buildService(opts: {
   runner?: ApifyRunner;
   quota?: ReturnType<typeof makeQuotaReserver>;
-  cache?: DiscoverSearchCacheService;
+  cache?: DiscoverCacheExpansionPort & Partial<DiscoverCachePort>;
   expansionLock?: DiscoverCacheLock;
   batchSize?: number;
   maxProviderPages?: number;
@@ -585,6 +601,98 @@ beforeEach(() => {
 });
 
 describe("DiscoverExpansionService.addMorePeople", () => {
+  it("uses a partial permanent-DB remainder first, then allows one provider page on the next Add More", async () => {
+    seedCompany();
+    seedSearch();
+    seedExistingPeople(10);
+    for (let index = 1; index <= 10; index += 1) {
+      prisma._state.searchPeople.push({
+        id: `initial_grant_${index}`,
+        searchId: SEARCH_ID,
+        personId: `person_${index}`,
+        userId: USER_ID,
+        allocationOrder: index - 1,
+        allocationSource: "PROVIDER",
+        allocatedAt: new Date()
+      });
+    }
+    const redis = new TestRedis();
+    const durable = new DiscoverPublicKnowledgeService({
+      prisma: prisma as unknown as PrismaClient,
+      redis,
+      lock: makeFakeLock()
+    });
+    const { input, fingerprint } = fingerprintFor();
+    const durablePeople: ResolvedCachePerson[] = Array.from({ length: 14 }, (_, index) => {
+      const number = index + 1;
+      return {
+        sourceProfileId: `init_${number}`,
+        firstName: "Init",
+        lastName: `User${number}`,
+        fullName: `Init User${number}`,
+        currentTitle: "Software Engineer",
+        normalizedTitle: "software engineer",
+        positionCategory: "SOFTWARE_ENGINEERING",
+        location: "United States",
+        country: "United States",
+        state: null,
+        city: null,
+        linkedinUrl: `https://www.linkedin.com/in/init_${number}`,
+        inferredEmail: null,
+        emailStatus: "UNAVAILABLE",
+        emailConfidence: "UNAVAILABLE",
+        emailPattern: null,
+        emailSource: null
+      };
+    });
+    await durable.appendProviderPeople({
+      fingerprint,
+      fingerprintInput: input,
+      company: { name: "Apple", domain: "apple.com", linkedinUrl: null },
+      emailFormat: {
+        emailDomain: null,
+        emailDomainConfidence: "UNAVAILABLE",
+        emailDomainEvidence: null,
+        emailPattern: null,
+        patternConfidence: "UNAVAILABLE",
+        patternEvidence: null,
+        emailFormatReason: null
+      },
+      people: durablePeople,
+      nextPage: 2,
+      pagesFetched: 1,
+      exhausted: false
+    });
+    redis.clear();
+    const run = vi.fn<ApifyRunner["run"]>(async () => ({
+      runId: "next-run",
+      datasetId: "next-dataset",
+      items: Array.from({ length: 3 }, (_, index) =>
+        rawProfile(`provider-next-${index + 1}`, "Provider", `Next${index + 1}`)
+      )
+    }));
+    const { service } = buildService({ cache: durable, runner: { run } as ApifyRunner });
+
+    const databaseAction = await service.addMorePeople({
+      userId: USER_ID,
+      actorEmail: "user@example.com",
+      searchId: SEARCH_ID,
+      idempotencyKey: "durable-partial"
+    });
+    expect(databaseAction.addedCount).toBe(4);
+    expect(run).not.toHaveBeenCalled();
+
+    const providerAction = await service.addMorePeople({
+      userId: USER_ID,
+      actorEmail: "user@example.com",
+      searchId: SEARCH_ID,
+      idempotencyKey: "durable-exhausted"
+    });
+    expect(providerAction.addedCount).toBe(3);
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(prisma._state.discoverPublicPeople).toHaveLength(17);
+  });
+
   it("lets an explicit zero-result search start the provider at page 1", async () => {
     seedCompany();
     seedSearch({ status: "NO_RESULTS", totalProcessed: 0, totalFound: 0 });
@@ -615,7 +723,7 @@ describe("DiscoverExpansionService.addMorePeople", () => {
     expect(prisma._state.searches[0]).toMatchObject({ status: "READY", totalProcessed: 10 });
   });
 
-  it("uses partial unused same-user people before explicitly fetching the remainder", async () => {
+  it("returns partial unused same-user people without a provider top-up", async () => {
     seedCompany();
     seedSearch();
     seedExistingPeople(14);
@@ -652,9 +760,9 @@ describe("DiscoverExpansionService.addMorePeople", () => {
       idempotencyKey: "partial-local-first"
     });
 
-    expect(result).toMatchObject({ addedCount: 10 });
-    expect(startPages).toEqual([1]);
-    expect(prisma._state.expansions[0]).toMatchObject({ cacheCount: 4, providerCount: 6 });
+    expect(result).toMatchObject({ addedCount: 4 });
+    expect(startPages).toEqual([]);
+    expect(prisma._state.expansions[0]).toMatchObject({ cacheCount: 4, providerCount: 0 });
   });
 
   it("materializes 10 unused cached people without calling Apify and consumes one slot (#1, #4, #5, #9, #10)", async () => {
@@ -689,7 +797,7 @@ describe("DiscoverExpansionService.addMorePeople", () => {
     expect(prisma._state.positions.some((p) => p.category === "SOFTWARE_ENGINEERING")).toBe(true);
   });
 
-  it("continues the provider from the saved page (not page 1) when the cache is short (#11, #14, #15)", async () => {
+  it("returns a short durable batch and leaves provider continuation untouched", async () => {
     seedCompany();
     seedSearch();
     const cached = cachePeople("cache", 15);
@@ -721,12 +829,12 @@ describe("DiscoverExpansionService.addMorePeople", () => {
       idempotencyKey: "key-2"
     });
 
-    expect(result.addedCount).toBe(10); // 5 cached + 5 provider
-    expect(startPages).toEqual([2]); // never restarts at page 1 (#14)
-    expect(jobTitleInputs).toEqual([["Software Engineer", "Software Developer", "Backend Software Engineer"]]);
-    // The saved continuation page advanced after a valid fetch (#15).
+    expect(result.addedCount).toBe(5);
+    expect(startPages).toEqual([]);
+    expect(jobTitleInputs).toEqual([]);
+    // A partial DB action does not consume the saved provider continuation.
     const cacheRow = prisma._state.discoverCache.find((r) => r.id === "cache_seed");
-    expect(cacheRow?.providerNextPage).toBe(3);
+    expect(cacheRow?.providerNextPage).toBe(2);
   });
 
   it("keeps all 10 valid RTX Software Engineer-family results with semantic intelligence enabled (35 -> 45)", async () => {
@@ -798,7 +906,7 @@ describe("DiscoverExpansionService.addMorePeople", () => {
       duplicateCount: 0,
       collectedCount: 10,
       page: 2,
-      providerExhausted: false
+      providerExhausted: true
     });
     const completedEvent = auditEvents.find((event) => event.action === "DISCOVER_EXPANSION_COMPLETED");
     expect(completedEvent?.metadata).toMatchObject({
@@ -809,7 +917,7 @@ describe("DiscoverExpansionService.addMorePeople", () => {
     });
   });
 
-  it("continues past true duplicates until it fills the requested batch (#12, #13)", async () => {
+  it("does not call another provider page merely to fill past duplicates", async () => {
     seedCompany();
     seedSearch();
     seedExistingPeople(10);
@@ -849,16 +957,16 @@ describe("DiscoverExpansionService.addMorePeople", () => {
       idempotencyKey: "key-3"
     });
 
-    expect(result.addedCount).toBe(10);
-    expect(startPages).toEqual([2, 3]);
+    expect(result.addedCount).toBe(8);
+    expect(startPages).toEqual([2]);
     expect(prisma._state.people.filter((p) => p.sourceProfileId.startsWith("init_"))).toHaveLength(10);
-    expect(prisma._state.people.filter((p) => p.sourceProfileId.startsWith("new_"))).toHaveLength(10);
+    expect(prisma._state.people.filter((p) => p.sourceProfileId.startsWith("new_"))).toHaveLength(8);
   });
 
   it.each([
     ["same-company derived", 0],
     ["historical backfill", 0]
-  ])("continues a %s cache from page 1 through duplicate legacy results", async (_source, providerPagesFetched) => {
+  ])("stops a %s provider action after one duplicate-only page", async (_source, providerPagesFetched) => {
     seedCompany();
     seedSearch();
     seedExistingPeople(10);
@@ -894,9 +1002,10 @@ describe("DiscoverExpansionService.addMorePeople", () => {
       idempotencyKey: `legacy-${_source}`
     });
 
-    expect(result.addedCount).toBe(10);
-    expect(startPages).toEqual([1, 2]);
-    expect(prisma._state.discoverCache.find((row) => row.id === "cache_seed")?.providerNextPage).toBe(3);
+    expect(result.addedCount).toBe(0);
+    expect(result.message).toBe("No more people were found.");
+    expect(startPages).toEqual([1]);
+    expect(prisma._state.discoverCache.find((row) => row.id === "cache_seed")?.providerNextPage).toBe(2);
   });
 
   it("retrying the same expansion consumes no extra slot and adds no extra people (#6, #22)", async () => {

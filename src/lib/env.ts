@@ -161,15 +161,14 @@ const envSchema = z
     // Safety cap on provider continuation pages fetched in a single expansion so
     // a sparse query can never trigger an unbounded/expensive provider loop.
     DISCOVER_EXPANSION_MAX_PROVIDER_PAGES: z.coerce.number().int().positive().max(20).default(5),
-    // --- Shared Discover result cache ---
-    // Stored people are durable and are never invalidated by age. This version
-    // remains part of the fingerprint for intentional schema/semantic changes.
-    // Bumping the cache schema version invalidates every existing entry (it is
-    // part of the fingerprint). Absent/blank falls back to "v1".
+    // --- Discover public knowledge / Redis acceleration ---
+    // This semantic version remains part of exact-intent keys. Public people
+    // live permanently in Postgres; only Redis result payloads expire.
     DISCOVER_SHARED_CACHE_VERSION: z.preprocess(
       (value) => (value === undefined || value === "" ? "v1" : String(value).trim()),
       z.string().min(1)
     ),
+    DISCOVER_REDIS_RESULT_TTL_SECONDS: z.coerce.number().int().positive().max(86_400).default(900),
     // --- Discover semantic role intelligence (pgvector) ---
     // Off by default for a no-behavior-change deployment. The embedding
     // dimensions are intentionally pinned to the migration's vector(1536)

@@ -711,8 +711,10 @@ The app shell also blocks compact touch devices for the dashboard with a desktop
 | `HunterDomainSearch` | Saved Hunter domain search history. | Belongs to `User`. | Unique by `(userId, domain)` and stores result JSON. Code handles missing table gracefully. |
 | `AttachmentAsset` | One row per unique attachment file a user has uploaded. | Belongs to `User` (`onDelete: Cascade`). | Unique on `(userId, sha256, sizeBytes, contentType)`; indexed on `(userId, createdAt)`. `storageKey` is content-addressed. Dedupe is per user and never cross-user. Campaign snapshots reference `storageKey`, so many sequences can share one object. |
 | `IncidentReport` | Privacy-preserving error and manual issue reports. | Referenced by admin triage. | Reporter identity is stored as an HMAC pseudonym plus an encrypted internal reference; diagnostics are allow-listed and redacted. See [§25](#25-error-recovery-and-incident-reporting). |
-| `ProspectSearchPerson` | The per-search allocation grant: one row per person granted to one user-owned search action. | Belongs to `ProspectSearch` and `ProspectPerson`. | Unique on `(searchId, personId)`. This is the ownership boundary between the shared cross-user cache and what a user actually receives; every user-facing count derives from these rows, never from cache pool size. `allocationSource` records `CACHE`, `PROVIDER`, `ADD_MORE_CACHE`, `ADD_MORE_PROVIDER`, or `BACKFILL`. |
-| `DiscoverSearchCache` | Shared, cross-user cache of normalized Discover provider results. | Keyed by a canonical search fingerprint. | Stores no requester identity. Carries its own email-format discovery status/TTL fields so people-cache freshness never suppresses a format retry. |
+| `ProspectSearchPerson` | The per-search allocation grant: one row per person granted to one user-owned search action. | Belongs to `ProspectSearch` and `ProspectPerson`. | Unique on `(searchId, personId)`. This is the ownership boundary between shared public knowledge and what a user actually receives. |
+| `DiscoverPublicPerson` | Permanent sanitized public professional knowledge. | Linked to provider batches. | Strong company/profile and normalized-LinkedIn uniqueness; no user, email, or expiry fields. |
+| `DiscoverProviderBatch` / `DiscoverProviderBatchPerson` | Permanent provider intent/run provenance and ordered membership. | Company + normalized role/location intent. | Exact intent is authoritative; continuation metadata is durable, not cache freshness. |
+| `DiscoverSearchCache*` | Deprecated rollout tables. | No production runtime dependency. | Migrated to durable public models; Redis is the only cache. |
 | `DiscoverSearchExpansion` | One "Add 10 more" request against a READY search. | Belongs to `ProspectSearch` and `User`. | Idempotent per client-supplied key, so a retry never consumes a second daily slot. |
 
 Notable field-level changes in this revision:
@@ -723,7 +725,7 @@ Notable field-level changes in this revision:
 | `ProspectCompany` | `canonicalKey` | Tenant-local canonical identity. Resolved official domains are authoritative; trusted LinkedIn company slugs are the fallback when no domain exists, followed by normalized name. Replaces `(userId, normalizedName)` as the unique key; `normalizedName` remains indexed. |
 | `ProspectCompany` | `emailFormatAuthority` | `MANUAL`, `SOURCE`, `AI`, `SHARED_CACHE`, or `UNRESOLVED`. Prevents a lower-authority update from erasing stronger evidence. |
 | `ProspectCompany` | `emailFormatDiscoveryStatus` / `...Reason` / `...At` | Typed outcome of the most recent discovery attempt, so provider, config, and parser failures stay distinct from genuine no-evidence. |
-| `DiscoverSearchCache` | `emailFormatDiscoveryStatus` / `...Reason` / `...At` / `...ExpiresAt` | Independent email-format discovery state and TTL, indexed on status. |
+| `ProspectCompany` | `emailFormatDiscoveryStatus` / `...Reason` / `...At` | Email-format freshness is separate from permanent public people. |
 | `ProspectPerson` | `allocations` | Relation to `ProspectSearchPerson`. |
 | `CampaignRun` | `progressSnapshot.bounceMonitor` | Automatic bounce-monitoring cadence checkpoint. Schema-free JSON slot shared with the daily-limit pause info; every writer spread-merges so the keys coexist. |
 
@@ -1542,15 +1544,18 @@ company graph cleanup (see 23.8).
 
 ### 23.2 Pipeline
 
-`createProspectSearch` → resolve company website identity → read durable people
-from the exact shared fingerprint → read the strongly matched same-company pool
-→ reuse exact source intents directly or apply role/location guards to differing
-intents → read the requester's existing company people → apply stable-identity
-de-duplication → materialize up to 10 matches → resolve the
-email format independently when people exist → mark the search `READY` or
-`NO_RESULTS`. Ordinary processing, retry, refresh, navigation, and role
-selection never call Apify. A partial database result is returned as-is and is
-not automatically topped up.
+`createProspectSearch` → resolve the domain-first company identity → normalize
+role/location intent → read a sanitized exact-intent Redis payload → on miss,
+query permanent `DiscoverPublicPerson`/provider-batch knowledge → reuse exact
+provider intent directly or apply strict role/location guards to non-exact
+company-pool candidates → materialize up to 10 matches. Any Postgres result
+(including 1–9 people) returns immediately and is cached in Redis; Apify is not
+used to top it up. Only a Redis miss plus **zero** compatible permanent people
+automatically runs Apify once, durably ingests the returned public people and
+provider provenance, advances the Redis company version, and materializes the
+requesting user's private allocation. A zero-result provider run becomes
+`NO_RESULTS` without a retry loop. Email-format discovery remains an independent
+company-scoped lifecycle.
 Ownership/not-found errors throw;
 provider/AI failures are persisted as a structured `FAILED` search (with
 `errorCode`) rather than crashing the request. A timeout bounds the synchronous
@@ -1564,11 +1569,13 @@ run.
 `DiscoverExpansionService` runs the workflow (the resolver stays thin): load +
 own the search → confirm READY/NO_RESULTS with canonical company/roles/locations → create an
 idempotent `DiscoverSearchExpansion` record → reserve **one** daily Discover slot
-(the existing quota service, idempotent on the expansion id) → materialize unused
-people from the shared cache and the user's existing company people **before** any provider call → if still short and not
-exhausted, continue Apify from the saved `providerNextPage` → dedupe → add only
-new people to the same search → extend the shared cache → update the search People
-count. Order, idempotency, and concurrency guarantees:
+(idempotent on the expansion id) → read Redis/permanent Postgres → exclude people
+already granted to this search. If any unused DB people exist, return up to the
+batch size and end the action—even when only one or four remain. Only when the
+unused durable count is zero may Add More fetch one Apify continuation page,
+dedupe against all permanent people and this user's grants, persist net-new
+people/provenance, invalidate Redis by company-version bump, and allocate them.
+Order, idempotency, and concurrency guarantees:
 
 - **No new history row.** It extends the selected search; existing people,
   selections, and pagination (10/page) are untouched — new people land on later
@@ -1576,20 +1583,20 @@ count. Order, idempotency, and concurrency guarantees:
 - **Quota.** One slot per request (cached or not). Retries reuse the expansion id
   so they never double-charge; a failed expansion can be retried without another
   charge. The internal/unlimited exemption is unchanged.
-- **Provider continuation.** This explicit action is the only people-provider
-  entry point. Continuation state (`providerNextPage`,
-  `providerPagesFetched`, `providerExhausted`, `lastProviderFetchAt`) lives on the
-  shared `DiscoverSearchCache` entry. It resumes the saved page when state exists
-  and starts at page 1 when the ordinary database search had no exact entry; a
-  `DISCOVER_EXPANSION_MAX_PROVIDER_PAGES` (5) cap bounds one expansion. Provider
-  people are appended to the cache (not capped at 10) for reuse by other users.
+- **Provider continuation.** Normal search is also a provider entry point, but
+  only after true permanent-DB zero. Add More resumes the durable
+  `DiscoverProviderBatch.providerNextPage` (or page 1 without prior provenance)
+  only after unused DB zero and fetches at most one page per action. It never
+  loops to force 10 results. A duplicate-only page returns “No more people were
+  found.”
 - **Identity / dedupe.** Stable identity is the normalized provider profile id,
   then the normalized LinkedIn URL (never the name), enforced server-side by the
   `ProspectPerson (userId, sourceProfileId)` unique key.
 - **Concurrency.** A per-search lock (`discover:expansion:{searchId}`) allows one
-  active expansion per search; the existing per-fingerprint shared-cache lock
-  ensures at most one provider continuation runs for an identical canonical query,
-  and the cache is re-checked after the lock is acquired.
+  active expansion per search. A short Redis distributed provider lock
+  coalesces identical unseen intents for both normal search and Add More; after
+  acquiring it, the service rechecks Redis/Postgres. Lock/Redis failure is not a
+  permanent correctness dependency.
 - **Exhaustion.** When the provider confirms no further pages/unique results,
   `providerExhausted` is persisted; the search reports `exhausted: true` and the
   UI hides Add 10 more. New people use the existing role classification and the
@@ -1781,108 +1788,70 @@ runs alongside) normal API rate limiting:
 
 ### 23.2.3 Durable shared people knowledge
 
-To avoid paying Apify for people already discovered, canonical Discover searches
-share an internal cross-user durable people store
-(`DiscoverSearchCache` + `DiscoverSearchCachePerson`,
-`src/services/prospects/discover-cache-service.ts`).
+Postgres/Neon is permanent Discover knowledge; Redis is the only cache.
+`DiscoverPublicPerson` stores sanitized public professional facts,
+`DiscoverProviderBatch` stores provider intent/run/continuation provenance, and
+`DiscoverProviderBatchPerson` preserves exact membership and provider ordering.
+None has `expiresAt`, `staleAt`, a 30-day people TTL, or age-based cleanup.
 
-- **Canonical fingerprint** (`discover-cache-fingerprint.ts`). The cache key is a
-  SHA-256 of `{ companyKey, roles, locations, resultLimit, cacheVersion }`.
-  `companyKey` prefers the normalized official domain, then a trusted LinkedIn
-  company slug only when no official domain exists, then the normalized name —
-  so "Apple"/"Apple Inc."/"APPLE" share an
-  entry once resolution confirms the same identity, but similarly-named different
-  companies never merge. Roles use the same `normalizeTitle` normalization used
-  elsewhere; locations are trimmed/casefolded; both are de-duplicated and sorted
-  before hashing, so order and duplicates never split entries. `resultLimit` (10)
-  and `cacheVersion` (`DISCOVER_SHARED_CACHE_VERSION`, default `v1`) are part of
-  the key. The fingerprint fast path is exact: a different company, role, or
-  location — including `California` vs `United States` — is a different entry.
-  Secondary database reuse is deliberately separate and must pass the strong
-  company, location, and role guards in 23.2.3.1; no broad fuzzy company or
-  geographic equivalence is applied.
-- **Legacy identity compatibility.** Domain-first fingerprints do not strand
-  historical `linkedin:*` rows. The same-company pool recognizes an old row when
-  its normalized trusted `companyDomain` matches the request's newly resolved
-  official domain. LinkedIn-only equivalence is allowed only without a
-  contradictory trusted domain; display name alone never merges companies.
-- **Exact source-intent provenance.** A shared entry's normalized roles and
-  locations record the exact intent sent to the paid provider. When both sets
-  equal the new request, the same-company pool reuses that entry's stored people
-  directly and does not re-run role classification, embeddings, semantic title
-  matching, or per-person cache-location filtering. If either set differs, the
-  normal strict person-level policy still runs; Recruiter cannot inherit a
-  Software Engineer entry and San Francisco cannot inherit United States source
-  provenance. This affects runtime reuse only; cache fingerprints remain exact.
-- **Lifecycle.** `lookupReusableDataset` is read-only and deliberately accepts
-  no provider callback. A non-empty entry remains reusable regardless of
-  `fetchedAt`, legacy `expiresAt`, or legacy refresh status. Cleanup may remove
-  only old abandoned empty `FAILED`/`REFRESHING` markers; it never deletes a
-  stored person because of age.
-- **Provider ownership and locking.** Ordinary searches do not acquire a
-  provider lock or wait for a refresh. Only explicit **Add 10 more** may run
-  Apify, using the per-fingerprint Redis lock to serialize continuation and
-  rechecking stored candidates inside the lock.
-- **Atomic append.** Expansion appends stable-identity-deduplicated people and
-  advances continuation state transactionally. A provider failure preserves all
-  existing people and continuation data.
-- **Privacy / tenancy.** The shared rows hold only normalized public people data
-  and evidence-backed company email-format metadata — no requester user id, no
-  search history, selections, exports, imports, manual overrides, or suppression.
-  On every ordinary search the resolved database dataset is **materialized**
-  into the requesting user's own `ProspectCompany`/`ProspectCompanyPosition`/
-  `ProspectPerson` records (deduped by the existing `userId + sourceProfileId`
-  rule), and the user's `ProspectSearch` records the provenance
-  (`resultSource = CACHE | PROVIDER`, `sharedCacheId`, `cacheFingerprint`,
-  `cacheFetchedAt` — internal, never in the GraphQL schema). Per-user suppression
-  continues to be applied at export time, so one user's suppression never affects
-  another's cached result.
-- **Quota.** The daily quota slot is reserved in `processSearch` **before** the
-  database lookup, so a database hit or miss consumes exactly one slot; retrying
-  the same search id stays idempotent (it never
-  consumes another). The cache cannot be used to get a free search.
-- **Observability.** `processProspectSearch` emits structured, privacy-safe logs
-  (`DISCOVER_CACHE_HIT`, `DISCOVER_COMPANY_POOL_HIT`,
-  `DISCOVER_LOCAL_PERSON_HIT`, `DISCOVER_DATABASE_MISS`, and
-  `DISCOVER_DATABASE_LOOKUP_FAILED`) with only
-  safe metadata (search id, user id, fingerprint-hash prefix, requested/matched
-  company identity, normalized source/request intent, `exactIntentReuse`,
-  candidate/match counts, `cacheHit`, `cacheAgeDays`, `resultCount`,
-  `providerCalled`, latency) — never people lists, generated emails, provider
-  payloads, the requester email, or prompts.
+- **Company identity.** Official domain → trusted LinkedIn company slug only
+  without a domain → normalized-name fallback. Matching trusted domains prove
+  equivalence between a historical `linkedin:*` identity and a new `domain:*`
+  identity. Conflicting domains never merge, and display-name similarity is not
+  evidence.
+- **Exact provider intent.** Normalized provider roles/locations are durable
+  provenance. An identical company/role/location request may reuse every linked
+  person directly, including a person whose returned title is a provider-valid
+  variant or whose individual location metadata is incomplete. It does not rerun
+  role AI, embeddings, semantic classification, or strict per-person geography.
+  A different role or geography uses the existing strict filters.
+- **Central ingestion.** Every runtime Apify result passes through
+  `DiscoverPublicKnowledgeService.appendProviderPeople`: sanitize → canonical
+  company attach → stable-id/LinkedIn dedupe → public-person upsert → provider
+  batch upsert → membership link → Redis company-version increment. New provider
+  people therefore cannot exist only in one user's `ProspectPerson` rows.
+- **Redis keys.** Logical result keys are
+  `discover:people:<schema-version>:<company-hash>:<company-version>:<intent-hash>`.
+  The intent hash covers canonical company, normalized roles, normalized
+  locations, result limit, and semantic version. New durable writes increment
+  `discover:company-version:<canonical-company-key>`; old result keys become
+  unreachable and expire naturally without `SCAN`/wildcard deletion. Malformed,
+  missing, timed-out, or flushed Redis data falls through to Postgres.
+- **Privacy / tenancy.** Shared durable rows contain public profile identity,
+  public title/location, and provider provenance only—never user id, inferred
+  email, selections, exports, suppression, manual edits, notes, or another
+  user's search history. Results are materialized into the requesting user's own
+  company/person/allocation rows. `ProspectSearch.publicProviderBatchId` and
+  `publicIntentHash` record internal durable provenance.
+- **Observability.** Safe events distinguish `DISCOVER_REDIS_HIT`,
+  `DISCOVER_REDIS_MISS`, `DISCOVER_DATABASE_HIT`, `DISCOVER_DATABASE_ZERO`,
+  provider discovery/no-results, Add More DB hit/exhaustion, and public-person
+  upsert. Fields are canonical identity, normalized intent, aggregate candidate
+  counts, and provider-called/new-unique counts—never emails, tokens, private
+  payloads, or another user's state.
+- **Legacy rollout.** `DiscoverSearchCache*` remains temporarily for rollback
+  but production service composition performs no reads or writes against it.
+  Migration `20260920173000_discover_durable_public_knowledge` promotes those
+  rows and provider-backed historical allocations into the durable models. Email
+  format freshness remains separate on company/email-format state.
 
 ### 23.2.3.1 Database-first reuse ladder
 
-An exact fingerprint miss is not permission to call the paid provider. Every
-ordinary search applies this database-only ladder:
+Every normal request applies this ladder:
 
-1. **Exact shared entry.** Reuse any non-empty entry for the canonical
-   fingerprint, regardless of age or legacy status metadata. Exact normalized
-   source intent is provider-backed provenance and bypasses per-person
-   reclassification.
-2. **Same-company shared pool.** Query durable entries only under a strong,
-   internally consistent company identity (official domain or trusted LinkedIn
-   fallback). A source entry whose normalized role and location sets
-   exactly equal the request is reused directly. Differing intents apply exact
-   location compatibility plus the deterministic/semantic role guard. This is
-   what lets an Apple "Software Developer" search consider an earlier Apple
-   "Software Engineer" pool while refusing a recruiter-only or wrong-location
-   pool. Entry and person reads are bounded; no fuzzy company-name scan is used.
-3. **Same-user materialized people.** If shared reuse still misses, read only
-   the requester's `ProspectPerson` rows for the already-resolved user-owned
-   company, convert them to the common candidate shape in memory, and apply the
-   same role/location authorization. These tenant rows are never copied into
-   `DiscoverSearchCache` by the live lookup and another user's rows are never
-   read.
-4. **Database miss.** Return `NO_RESULTS` with zero provider calls. A partial
-   result is materialized as-is. The user may explicitly choose **Add 10 more**
-   to search externally after unused database candidates are exhausted.
+1. **Redis exact intent.** Use a valid sanitized payload and materialize private
+   allocation; Apify = 0.
+2. **Postgres exact provider intent.** Reuse durable batch membership directly;
+   age is irrelevant; Apify = 0.
+3. **Postgres compatible company pool.** Strong company identity plus strict
+   role/location compatibility; return any non-zero count as-is; Apify = 0.
+4. **Permanent DB zero.** Acquire the short intent lock, recheck Redis/Postgres,
+   then call Apify exactly once if still zero. Persist before allocating. Return
+   whatever unique usable count the provider produced, including zero.
 
-All three reuse paths are reported as `resultSource = CACHE`, with an internal
-hit type of `EXACT`, `COMPANY_POOL`, or `LOCAL_PERSON`. Privacy-safe diagnostics
-record only candidate-entry/person/match counts. A legacy failed/refreshing
-status or old timestamp never hides stored people; an empty exact entry does not
-block the later database rungs.
+Add More uses the same first three rungs after excluding current-search grants.
+Any non-zero unused DB count ends that action. Only a later action at unused DB
+zero reaches one provider page. This order survives Redis flush/unavailability.
 
 ### 23.2.3.2 Semantic role intelligence (pgvector)
 
@@ -1942,38 +1911,30 @@ SELECT COUNT(*) AS semantic_title_count FROM "ProspectRoleSemantic";
 
 ### 23.2.3.3 Historical provider-result promotion
 
-Searches created before the shared cache existed can still prevent future paid
-provider calls. `scripts/backfill-discover-shared-cache.ts` reconstructs exact
-fingerprints from historical searches that have explicit provider provenance,
-a strong canonical company identity, any provider-backed completion timestamp, and
-eligible `ProspectSearchPerson` allocations:
+Migration `20260920173000_discover_durable_public_knowledge` performs two safe,
+idempotent promotions in the deployment transaction:
 
-```bash
-npx tsx scripts/backfill-discover-shared-cache.ts --dry-run
-npx tsx scripts/backfill-discover-shared-cache.ts --dry-run --batch-size 100 --limit 1000
-npx tsx scripts/backfill-discover-shared-cache.ts --apply --batch-size 100 --limit 1000
-```
+1. Every useful `DiscoverSearchCache`/`DiscoverSearchCachePerson` intent and
+   person becomes a durable batch/public-person/membership row, canonicalized
+   domain-first while retaining LinkedIn slug evidence.
+2. Historical `ProspectSearchPerson` allocations are promoted only when their
+   owned search has trustworthy provider provenance (`resultSource = PROVIDER`,
+   `apifyRunId`, or `apifyDatasetId`). This includes safely traced Add More/cache
+   allocations under that provider-backed search. Arbitrary/manual private
+   contacts are excluded.
 
-Dry-run is the default; `--apply` is explicit, batching is keyset-based and
-bounded (`--batch-size` maximum 500), and reruns are idempotent. The backfill
-creates or merges only sanitized public-person cache rows, preserves stable
-allocation order, deduplicates normalized provider identities, and keeps the
-contributing provider timestamp instead of making historical data appear new.
-Existing cache status, continuation state, and email-format evidence remain
-authoritative. It never invokes Apify, OpenAI, web search, or an email provider;
-never writes user-owned people/search/allocation rows; and emits aggregate-only
-statistics with no names, profile URLs, emails, user ids, or raw payloads.
-
-Run the dry-run after deployment, review the skipped/created/merged counts, then
-approve a bounded `--apply`. This operational backfill is independent of the
-optional role-vector backfill in 23.2.3.2.
+The backfill copies no inferred email, user ownership, selection/export state,
+suppression, notes, or raw provider payload. Stable allocation order becomes
+provider sort order, and historical timestamps remain historical. The old cache
+tables are retained and marked deprecated for rollback; runtime no longer uses
+them and a later migration may drop them after rollout verification.
 
 ### 23.2.3.4 User-specific allocation and the grouped company dashboard
 
 Four concepts are deliberately separate:
 
-- **Shared candidate cache** — the internal cross-user pool above
-  (`DiscoverSearchCache*`). It is a cost-saving store only and may hold far more
+- **Shared permanent knowledge** — the internal cross-user public models above
+  (`DiscoverPublicPerson`/`DiscoverProviderBatch*`). They may hold far more
   candidates for a company/role/location than any one user is entitled to
   (other users' "Add 10 more" expansions accumulate there). It is never exposed
   through GraphQL, pagination, counts, export, or Imports.
@@ -2018,14 +1979,12 @@ allocated people include that category (`ProspectSearch.positionCategories`);
 dialog — the backend always receives one owned search id and never fans a batch
 out to every role search.
 
-Expansion is cache-first and grant-backed. It removes identities already
-granted to the target search (normalized provider id/LinkedIn identity), takes
-unused authorized candidates from the shared pool, and only then continues
-Apify from the cache's saved page. Provider continuation is bounded to five
-25-profile pages by default and never restarts page 1. Valid net-new people from
-each page are appended to the shared pool even when the same page also contains
-duplicates, rejected roles, or unusable records; the loop continues until the
-10-person batch is filled, the page cap is reached, or the provider is exhausted.
+Expansion is Redis/Postgres-first and grant-backed. It removes identities already
+granted to the target search and takes unused authorized durable candidates. Any
+non-zero DB remainder ends the action, including a partial batch. Only when none
+remain does it continue Apify from the durable batch's saved page; exactly one
+provider page is processed per Add More action, and the service never loops to
+force 10. Valid net-new people are durably ingested before allocation.
 An existing user-owned person can therefore receive a new grant for this target
 search without duplicating the person row. `addedCount` counts genuinely new
 `ProspectSearchPerson` grants, while `totalPeopleCount`, the search's
@@ -2045,17 +2004,17 @@ never touches the shared cache or another user.
 
 ### 23.2.4 Retrying a failed search and safe error handling
 
-A `FAILED` Discover search can be **retried**, and a retry runs the database-only
+A `FAILED` Discover search can be **retried**, and a retry runs the complete
 backend pipeline again against the **same** user-owned `ProspectSearch` record
 — it never re-renders the old failure, never creates a duplicate Search History
 row, and never creates a duplicate company/person.
 
-- **A retry is a real database run.** `FAILED` is deliberately *not* terminal,
-  so `processSearch` re-runs company resolution and the complete reuse ladder.
-  It never calls Apify because a row is missing, empty, old, or marked failed.
-- **Old status does not hide people.** Any stored people remain candidates; an
-  empty database result becomes `NO_RESULTS`. The explicit **Add 10 more** action
-  owns provider continuation for both `READY` and `NO_RESULTS` searches.
+- **A retry is a real search run.** `FAILED` is deliberately *not* terminal, so
+  `processSearch` re-runs company resolution and the complete Redis/Postgres
+  ladder. It may call Apify once only if permanent knowledge is still truly zero;
+  age or Redis loss never causes a call when Postgres has compatible people.
+- **Old status does not hide people.** Any durable people remain candidates. A
+  provider-backed empty result becomes `NO_RESULTS` without repeated calls.
 - **Processing is synchronous.** There is no people-cache refresh wait or queue
   job in ordinary processing, so retry cannot hang behind a provider lock.
 - **Processing attempts + idempotency.** Each run is a tracked attempt on the
@@ -2179,6 +2138,9 @@ New Prisma models (migration
 | `ProspectPerson` | A discovered professional, assigned to one position node, with inferred-email metadata. Unique per `(userId, sourceProfileId)`. |
 | `ProspectSearch` | A discovery request, its status, Apify run references, and counts. |
 | `ProspectSearchPerson` | The allocation grant of one person to one user-owned search (order + source). Unique per `(searchId, personId)`; the boundary between the shared cache pool and what a user's search actually received (see 23.2.3.4). |
+| `DiscoverPublicPerson` | Permanent sanitized public professional facts. No inferred email, tenant state, or people TTL. |
+| `DiscoverProviderBatch` | Permanent canonical company + normalized provider-intent/run/continuation provenance. |
+| `DiscoverProviderBatchPerson` | Ordered durable membership linking provider batches to public people. |
 | `ProspectTitleClassification` | Global cache of title→category classifications. |
 | `ProspectRoleSemantic` | Global deduplicated normalized-title semantic cache (`vector(1536)`), versioned by embedding model/dimensions/policy. |
 
@@ -2198,9 +2160,10 @@ src/graphql/                     GraphQL layer
   resolvers/                     company / person / prospect-search / scalars
 src/services/prospects/          provider + business logic (no resolver calls providers directly)
   prospect-search-service.ts     pipeline orchestrator
-  discover-cache-service.ts      durable exact/company/local reuse + expansion continuation lock
+  discover-public-knowledge-service.ts Redis acceleration + permanent Postgres lookup + provider ingestion
+  discover-cache-service.ts      deprecated rollout implementation and shared type contracts
   discover-cache-reuse.ts        strong company-identity predicates for shared reuse
-  discover-expansion-service.ts  grant-backed cache-first Add 10 more continuation
+  discover-expansion-service.ts  grant-backed Redis/Postgres-first Add More; one provider page after DB exhaustion
   discover-role-intelligence-service.ts deterministic + pgvector role authorization/ranking
   discover-legacy-cache-backfill.ts historical provider-result cache promotion
   apify-profile-search.ts        Apify actor wrapper + profile normalization

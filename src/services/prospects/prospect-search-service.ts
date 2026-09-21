@@ -44,14 +44,18 @@ import {
   type CompanyEmailFormatRecord
 } from "@/services/prospects/company-email-format";
 import {
-  DiscoverSearchCacheService,
   resolveEmailFormatDiscoveryExpiry,
   resolveSharedCacheVersion,
   type DiscoverCachePort,
+  type DiscoverCacheResult,
   type DiscoverLocalPersonLookupResult,
   type ResolvedCachePerson,
   type ResolvedDataset
 } from "@/services/prospects/discover-cache-service";
+import {
+  DiscoverPublicKnowledgeService,
+  isDiscoverPublicKnowledgePort
+} from "@/services/prospects/discover-public-knowledge-service";
 import { computeDiscoverFingerprint } from "@/services/prospects/discover-cache-fingerprint";
 import {
   createDiscoverRoleIntelligenceService,
@@ -284,6 +288,10 @@ type ProviderFunnelDiagnostics = ApifyIngestionDiagnostics & {
 type ProviderDatasetResult = {
   dataset: ResolvedDataset;
   diagnostics: ProviderFunnelDiagnostics;
+  providerRunId: string | null;
+  providerDatasetId: string | null;
+  providerTotalFound: number;
+  providerResultCount: number;
 };
 
 export class ProspectSearchService {
@@ -312,7 +320,8 @@ export class ProspectSearchService {
     this.pipelineTimeoutMs = deps.pipelineTimeoutMs ?? DEFAULT_PIPELINE_TIMEOUT_MS;
     this.emailFormatRateLimiter = deps.emailFormatRateLimiter ?? defaultEmailFormatRateLimiter;
     this.discoverQuota = deps.discoverQuota ?? reserveDiscoverSearchSlot;
-    this.discoverCache = deps.discoverCache ?? new DiscoverSearchCacheService({ prisma: deps.prisma });
+    this.discoverCache =
+      deps.discoverCache ?? new DiscoverPublicKnowledgeService({ prisma: deps.prisma });
     this.audit = deps.audit ?? noopAudit;
     this.notifyCompleted = deps.notifyCompleted ?? noopDiscoverCompletionNotification;
     this.now = deps.now ?? (() => new Date());
@@ -722,40 +731,43 @@ export class ProspectSearchService {
       cacheVersion: resolveSharedCacheVersion()
     });
 
-    // 3) Read durable database knowledge only. This boundary has no provider
-    // callback, so an ordinary search, retry, page load, or role selection can
-    // never turn a stale/missing people row into an Apify call. The only normal
-    // provider owner is the explicit Add More expansion service.
+    // 3) Redis is acceleration only. The knowledge service falls through to
+    // permanent Postgres, and only a true durable-data zero is permission for
+    // this normal search to call Apify once.
     const startedAt = Date.now();
-    let cacheResult;
-    try {
-      cacheResult = await this.discoverCache.lookupReusableDataset({
-        fingerprint,
-        fingerprintInput,
-        company: {
-          name: resolution.officialName,
-          domain: resolution.officialWebsiteDomain ?? resolution.officialDomain,
-          linkedinUrl: resolution.linkedinCompanyUrl
-        },
-        filterCompanyPoolPeople: async (people, source) => {
-          const requestedTitles = this.asStringArray(search.requestedTitles);
-          return this.roleIntelligence.filterAndRankPeople({
-            people,
-            requestedTitles,
-            requestedLocations: this.asStringArray(search.requestedLocations),
-            sourceRequestedLocations: source.normalizedLocations,
-            context: "CACHE",
-            options: { budget, searchId: search.id }
-          });
-        },
-        lookupLocalPeople: () =>
-          this.findReusableLocalPeople({
-            userId,
-            search,
-            company,
-            budget
+    const resolvedCompany = {
+      name: resolution.officialName,
+      domain: resolution.officialWebsiteDomain ?? resolution.officialDomain,
+      linkedinUrl: resolution.linkedinCompanyUrl
+    };
+    const lookupParams = {
+      fingerprint,
+      fingerprintInput,
+      company: resolvedCompany,
+      filterCompanyPoolPeople: async (people: ResolvedCachePerson[], source: { normalizedLocations: string[] }) => {
+        const requestedTitles = this.asStringArray(search.requestedTitles);
+        return this.roleIntelligence.filterAndRankPeople({
+          people,
+          requestedTitles,
+          requestedLocations: this.asStringArray(search.requestedLocations),
+          sourceRequestedLocations: source.normalizedLocations,
+          context: "CACHE" as const,
+          options: { budget, searchId: search.id }
+        });
+      },
+      // The durable architecture never depends on another user's private rows.
+      // Keep the same-user fallback only for injected legacy adapters during
+      // rollout/tests; production uses DiscoverPublicKnowledgeService.
+      ...(isDiscoverPublicKnowledgePort(this.discoverCache)
+        ? {}
+        : {
+            lookupLocalPeople: () =>
+              this.findReusableLocalPeople({ userId, search, company, budget })
           })
-      });
+    };
+    let cacheResult: DiscoverCacheResult;
+    try {
+      cacheResult = await this.discoverCache.lookupReusableDataset(lookupParams);
     } catch (error) {
       logDiscoverCacheEvent({
         event: "DISCOVER_DATABASE_LOOKUP_FAILED",
@@ -785,12 +797,81 @@ export class ProspectSearchService {
     }
 
     const cacheHit = cacheResult.dataset.people.length > 0;
+    let providerCalled = false;
 
-    // 4) A database miss is a valid zero-result state. Do not top up to ten and
-    // do not run people or email-format providers. The user may explicitly use
-    // Add More to request new candidates.
+    if (
+      cacheResult.dataset.people.length === 0 &&
+      !cacheResult.definitiveEmpty &&
+      isDiscoverPublicKnowledgePort(this.discoverCache)
+    ) {
+      const durableKnowledge = this.discoverCache;
+      cacheResult = await durableKnowledge.runWithProviderLock(fingerprint, async () => {
+        // Another request may have completed discovery while this one waited.
+        const afterLock = await durableKnowledge.lookupReusableDataset(lookupParams);
+        if (afterLock.dataset.people.length > 0 || afterLock.definitiveEmpty) {
+          return afterLock;
+        }
+        providerCalled = true;
+        logDiscoverKnowledgeEvent("DISCOVER_PROVIDER_DISCOVERY", {
+          canonicalCompanyKey: fingerprintInput.companyKey,
+          normalizedRoles: fingerprintInput.roles,
+          normalizedLocations: fingerprintInput.locations,
+          databaseCandidateCount: 0,
+          providerCalled: true
+        });
+        const provider = await this.runProviderDataset(userId, search, company, resolution, budget);
+        const state = await durableKnowledge.appendProviderPeople({
+          fingerprint,
+          fingerprintInput,
+          company: resolvedCompany,
+          emailFormat: provider.dataset.emailFormat,
+          people: provider.dataset.people,
+          nextPage: 2,
+          pagesFetched: 1,
+          exhausted:
+            provider.dataset.people.length === 0 ||
+            provider.providerResultCount === 0 ||
+            provider.providerTotalFound <= provider.providerResultCount,
+          provider: "APIFY",
+          providerRunId: provider.providerRunId,
+          providerDatasetId: provider.providerDatasetId
+        });
+        if (state.people.length === 0) {
+          logDiscoverKnowledgeEvent("DISCOVER_PROVIDER_NO_RESULTS", {
+            canonicalCompanyKey: fingerprintInput.companyKey,
+            normalizedRoles: fingerprintInput.roles,
+            normalizedLocations: fingerprintInput.locations,
+            providerCalled: true,
+            providerNewUniqueCount: 0
+          });
+        }
+        return {
+          dataset: { ...provider.dataset, people: state.people },
+          source: "PROVIDER",
+          cacheId: state.cacheId,
+          fetchedAt: this.now(),
+          refreshedStale: false,
+          cacheHitType: null,
+          storageHitType: null,
+          matchedCacheCompanyKey: fingerprintInput.companyKey,
+          matchedCompanyDomain: normalizeDomain(resolvedCompany.domain),
+          sourceNormalizedRoles: fingerprintInput.roles,
+          sourceNormalizedLocations: fingerprintInput.locations,
+          exactIntentReuse: true,
+          definitiveEmpty: state.people.length === 0 && state.providerExhausted,
+          lookupDiagnostics: {
+            candidateEntryCount: 0,
+            candidatePersonCount: provider.providerResultCount,
+            matchingPersonCount: state.people.length
+          }
+        } satisfies DiscoverCacheResult;
+      });
+    }
+
+    // 4) A provider-backed zero is terminal for this request. Never loop the
+    // provider trying to force a full batch.
     if (cacheResult.dataset.people.length === 0) {
-      logDiscoverZeroResultEvent(search.id, userId);
+      logDiscoverZeroResultEvent(search.id, userId, providerCalled);
       const updated = await this.prisma.prospectSearch.update({
         where: { id: search.id },
         data: {
@@ -799,10 +880,9 @@ export class ProspectSearchService {
           completedAt: new Date(),
           errorCode: null,
           errorMessage: null,
-          resultSource: cacheResult.source,
-          sharedCacheId: cacheResult.cacheId,
-          cacheFingerprint: fingerprint,
-          cacheFetchedAt: cacheResult.fetchedAt
+          resultSource: providerCalled ? "PROVIDER" : "CACHE",
+          publicProviderBatchId: cacheResult.cacheId,
+          publicIntentHash: fingerprint
         }
       });
       logDiscoverCacheEvent({
@@ -813,7 +893,7 @@ export class ProspectSearchService {
         cacheHit,
         cacheAgeDays: discoverCacheAgeDays(cacheResult.fetchedAt, startedAt),
         resultCount: 0,
-        providerCalled: false,
+        providerCalled,
         processingLatencyMs: Date.now() - startedAt,
         cacheHitType: cacheResult.cacheHitType ?? (cacheHit ? "EXACT" : null),
         candidateEntryCount: cacheResult.lookupDiagnostics?.candidateEntryCount ?? 0,
@@ -829,7 +909,7 @@ export class ProspectSearchService {
         legacyIdentityMatch: cacheResult.legacyIdentityMatch ?? false,
         exactIntentReuse: cacheResult.exactIntentReuse ?? false
       });
-      return { search: updated, providerCalled: false, resultCount: 0, cacheHit };
+      return { search: updated, providerCalled, resultCount: 0, cacheHit };
     }
 
     // 5) Resolve email format independently from the people cache. A cache hit
@@ -858,7 +938,7 @@ export class ProspectSearchService {
       search,
       company,
       resolvedDataset,
-      cacheResult.source === "CACHE" ? "CACHE" : "PROVIDER"
+      providerCalled || cacheResult.source === "PROVIDER" ? "PROVIDER" : "CACHE"
     );
     const finalProcessed = Math.max(0, processed);
     const finalStatus = finalProcessed > 0 ? "READY" : "NO_RESULTS";
@@ -871,7 +951,7 @@ export class ProspectSearchService {
       cacheHit,
       cacheAgeDays: discoverCacheAgeDays(cacheResult.fetchedAt, startedAt),
       resultCount: finalProcessed,
-      providerCalled: false,
+      providerCalled,
       processingLatencyMs: Date.now() - startedAt,
       cacheHitType: cacheResult.cacheHitType ?? (cacheHit ? "EXACT" : null),
       candidateEntryCount: cacheResult.lookupDiagnostics?.candidateEntryCount ?? 0,
@@ -900,7 +980,7 @@ export class ProspectSearchService {
     // last guard against a future materialization path rejecting every
     // candidate after the dataset-level zero-result check above.
     if (finalStatus === "NO_RESULTS") {
-      logDiscoverZeroResultEvent(search.id, userId);
+      logDiscoverZeroResultEvent(search.id, userId, providerCalled);
     }
     const updated = await this.prisma.prospectSearch.update({
       where: { id: search.id },
@@ -910,13 +990,12 @@ export class ProspectSearchService {
         completedAt: new Date(),
         errorCode: null,
         errorMessage: null,
-        resultSource: cacheResult.source,
-        sharedCacheId: cacheResult.cacheId,
-        cacheFingerprint: fingerprint,
-        cacheFetchedAt: cacheResult.fetchedAt
+        resultSource: providerCalled || cacheResult.source === "PROVIDER" ? "PROVIDER" : "CACHE",
+        publicProviderBatchId: cacheResult.cacheId,
+        publicIntentHash: fingerprint
       }
     });
-    return { search: updated, providerCalled: false, resultCount: finalProcessed, cacheHit };
+    return { search: updated, providerCalled, resultCount: finalProcessed, cacheHit };
   }
 
   /**
@@ -1068,6 +1147,10 @@ export class ProspectSearchService {
 
     return {
       dataset: { emailFormat, people: roleFilteredPeople },
+      providerRunId: searchResult.runId,
+      providerDatasetId: searchResult.datasetId,
+      providerTotalFound: searchResult.totalFound,
+      providerResultCount: searchResult.profiles.length,
       diagnostics: {
         ...searchResult.diagnostics,
         semanticInputCount: people.length,
@@ -2137,16 +2220,21 @@ function logDiscoverProcessingEvent(event: DiscoverProcessingLogEvent): void {
  * stage because there is nobody in durable database knowledge to return. No
  * people provider or email-format AI tokens are spent. Silent in tests.
  */
-function logDiscoverZeroResultEvent(searchId: string, userId: string): void {
+function logDiscoverZeroResultEvent(searchId: string, userId: string, providerCalled: boolean): void {
   if (process.env.NODE_ENV === "test") {
     return;
   }
   console.info(`[discover] database lookup returned 0 people ${JSON.stringify({
     searchId,
     userId,
-    providerCalled: false,
+    providerCalled,
     explicitExpansion: false
   })}`);
+}
+
+function logDiscoverKnowledgeEvent(event: string, fields: Record<string, unknown>): void {
+  if (process.env.NODE_ENV === "test") return;
+  console.info(`[discover-knowledge] ${JSON.stringify({ event, ...fields })}`);
 }
 
 type DiscoverIngestionLogEvent = ApifyIngestionDiagnostics & {

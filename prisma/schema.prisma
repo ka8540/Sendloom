@@ -916,31 +916,31 @@ model ProspectCompanyPosition {
 }
 
 model ProspectPerson {
-  id              String   @id @default(cuid())
-  userId          String
-  companyId       String
-  positionId      String
-  sourceProfileId String
-  firstName       String
-  lastName        String
-  fullName        String
+  id                String   @id @default(cuid())
+  userId            String
+  companyId         String
+  positionId        String
+  sourceProfileId   String
+  firstName         String
+  lastName          String
+  fullName          String
   // Original name and versioned validated canonical snapshot; never exposed via GraphQL.
-  sourceName String?
+  sourceName        String?
   nameNormalization String?
-  currentTitle    String?
-  normalizedTitle String?
-  location        String?
-  country         String?
-  state           String?
-  city            String?
-  linkedinUrl     String
-  inferredEmail   String?
-  emailStatus     String   @default("UNAVAILABLE")
-  emailConfidence String   @default("UNAVAILABLE")
-  emailPattern    String?
-  emailSource     String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  currentTitle      String?
+  normalizedTitle   String?
+  location          String?
+  country           String?
+  state             String?
+  city              String?
+  linkedinUrl       String
+  inferredEmail     String?
+  emailStatus       String   @default("UNAVAILABLE")
+  emailConfidence   String   @default("UNAVAILABLE")
+  emailPattern      String?
+  emailSource       String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   user        User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
   company     ProspectCompany         @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -1003,6 +1003,11 @@ model ProspectSearch {
   sharedCacheId          String?
   cacheFingerprint       String?
   cacheFetchedAt         DateTime?
+  // Durable shared-public provenance used by the current architecture. The
+  // legacy sharedCacheId/cacheFingerprint/cacheFetchedAt columns above remain
+  // only for rollout compatibility and are no longer written by runtime code.
+  publicProviderBatchId  String?
+  publicIntentHash       String?
   // Processing-attempt instrumentation. A user-triggered retry starts a NEW
   // attempt (attemptCount increments, lastAttemptId rotates); a network replay of
   // the same client idempotency key reuses the current attempt so it is never
@@ -1015,13 +1020,105 @@ model ProspectSearch {
   updatedAt              DateTime  @updatedAt
   completedAt            DateTime?
 
-  user        User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  company     ProspectCompany?          @relation(fields: [companyId], references: [id], onDelete: SetNull)
-  expansions  DiscoverSearchExpansion[]
-  allocations ProspectSearchPerson[]
+  user                User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company             ProspectCompany?          @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  expansions          DiscoverSearchExpansion[]
+  allocations         ProspectSearchPerson[]
+  publicProviderBatch DiscoverProviderBatch?    @relation(fields: [publicProviderBatchId], references: [id], onDelete: SetNull)
 
   @@index([userId, createdAt])
   @@index([status])
+  @@index([publicProviderBatchId])
+}
+
+// Permanent, sanitized, cross-user Discover knowledge. These rows are public
+// professional facts learned from a trusted provider pipeline; they have no
+// requester identity, private state, inferred email, or expiry/freshness field.
+model DiscoverPublicPerson {
+  id                    String   @id @default(cuid())
+  companyCanonicalKey   String
+  companyDomain         String?
+  companyLinkedinSlug   String?
+  sourceProfileId       String
+  linkedinUrl           String
+  normalizedLinkedinUrl String?
+  firstName             String
+  lastName              String
+  fullName              String
+  sourceName            String?
+  nameNormalization     String?
+  currentTitle          String?
+  normalizedTitle       String?
+  positionCategory      String?
+  location              String?
+  country               String?
+  state                 String?
+  city                  String?
+  firstSeenAt           DateTime @default(now())
+  lastSeenAt            DateTime @default(now())
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  batches DiscoverProviderBatchPerson[]
+
+  @@unique([companyCanonicalKey, sourceProfileId])
+  @@unique([companyCanonicalKey, normalizedLinkedinUrl])
+  @@index([companyCanonicalKey, positionCategory])
+  @@index([companyCanonicalKey, normalizedTitle])
+  @@index([companyDomain])
+  @@index([companyLinkedinSlug])
+  @@index([country, state, city])
+}
+
+// Durable provenance for one canonical provider intent. This is not a cache:
+// it has no TTL and remains queryable after Redis loss. Continuation metadata
+// records where a later explicit Add More request should resume.
+model DiscoverProviderBatch {
+  id                   String    @id @default(cuid())
+  intentHash           String    @unique
+  companyCanonicalKey  String
+  companyName          String
+  companyDomain        String?
+  companyLinkedinSlug  String?
+  normalizedRoles      Json
+  normalizedLocations  Json
+  provider             String    @default("APIFY")
+  providerRunId        String?
+  providerDatasetId    String?
+  providerNextPage     Int       @default(1)
+  providerPagesFetched Int       @default(0)
+  providerExhausted    Boolean   @default(false)
+  lastProviderFetchAt  DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  people   DiscoverProviderBatchPerson[]
+  searches ProspectSearch[]
+
+  @@index([companyCanonicalKey, createdAt])
+  @@index([companyDomain])
+  @@index([companyLinkedinSlug])
+  @@index([providerRunId])
+  @@index([providerDatasetId])
+}
+
+// Stable provider ordering and exact-intent membership for durable public
+// people. A provider-constrained batch may legitimately contain detailed titles
+// or incomplete per-person geography, so this provenance is authoritative for
+// an identical normalized request.
+model DiscoverProviderBatchPerson {
+  id                String   @id @default(cuid())
+  batchId           String
+  publicPersonId    String
+  providerSortIndex Int      @default(0)
+  createdAt         DateTime @default(now())
+
+  batch        DiscoverProviderBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  publicPerson DiscoverPublicPerson  @relation(fields: [publicPersonId], references: [id], onDelete: Cascade)
+
+  @@unique([batchId, publicPersonId])
+  @@index([batchId, providerSortIndex])
+  @@index([publicPersonId])
 }
 
 // One "Add 10 more" request against a READY ProspectSearch. This is the durable
@@ -1058,15 +1155,10 @@ model DiscoverSearchExpansion {
   @@index([searchId, createdAt])
 }
 
-// Shared, cross-user durable knowledge store of normalized Discover provider
-// results. This is INTERNAL — never a public search-history surface.
-// It stores only the normalized public professional dataset and evidence-backed
-// company email-format metadata required to reuse a search without calling Apify
-// again. It deliberately holds NO requester identity (no userId), no user
-// selections/exports/imports, and no raw provider payloads. Each requesting user
-// still gets their own user-owned ProspectCompany/Person/Search materialized
-// from this data. Match is by an exact canonical fingerprint (see
-// discover-cache-fingerprint).
+// DEPRECATED rollout/rollback table. Production Discover runtime no longer
+// reads or writes it: permanent people/provenance live in DiscoverPublicPerson
+// and DiscoverProviderBatch*, while Redis is the only cache. Keep temporarily
+// until the durable-knowledge migration has been verified in production.
 model DiscoverSearchCache {
   id                            String    @id @default(cuid())
   fingerprint                   String    @unique
@@ -1121,36 +1213,35 @@ model DiscoverSearchCache {
   @@index([emailFormatDiscoveryStatus])
 }
 
-// One normalized, public professional record inside a shared cache entry. No
-// userId, no requester identity, no raw biography/photo/phone/personal email.
+// DEPRECATED child of DiscoverSearchCache. Runtime uses DiscoverPublicPerson.
 model DiscoverSearchCachePerson {
-  id               String   @id @default(cuid())
-  cacheId          String
+  id                String   @id @default(cuid())
+  cacheId           String
   // Deterministic provider order within the entry (page 1 first, then each
   // appended continuation page). Drives stable "first 10 / next 10" batching.
-  sortIndex        Int      @default(0)
-  sourceProfileId  String
-  firstName        String
-  lastName         String
-  fullName         String
+  sortIndex         Int      @default(0)
+  sourceProfileId   String
+  firstName         String
+  lastName          String
+  fullName          String
   // Original name and versioned validated canonical snapshot; never exposed via GraphQL.
-  sourceName String?
+  sourceName        String?
   nameNormalization String?
-  currentTitle     String?
-  normalizedTitle  String?
-  positionCategory String?
-  location         String?
-  country          String?
-  state            String?
-  city             String?
-  linkedinUrl      String
-  inferredEmail    String?
-  emailStatus      String   @default("UNAVAILABLE")
-  emailConfidence  String   @default("UNAVAILABLE")
-  emailPattern     String?
-  emailSource      String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  currentTitle      String?
+  normalizedTitle   String?
+  positionCategory  String?
+  location          String?
+  country           String?
+  state             String?
+  city              String?
+  linkedinUrl       String
+  inferredEmail     String?
+  emailStatus       String   @default("UNAVAILABLE")
+  emailConfidence   String   @default("UNAVAILABLE")
+  emailPattern      String?
+  emailSource       String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   cache DiscoverSearchCache @relation(fields: [cacheId], references: [id], onDelete: Cascade)
 

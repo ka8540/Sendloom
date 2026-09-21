@@ -58,6 +58,9 @@ export function createFakePrisma() {
   const titleCache: Row[] = [];
   const discoverCache: Row[] = [];
   const discoverCachePeople: Row[] = [];
+  const discoverPublicPeople: Row[] = [];
+  const discoverProviderBatches: Row[] = [];
+  const discoverProviderBatchPeople: Row[] = [];
   const expansions: Row[] = [];
   const suppressions: Row[] = [];
   const searchPeople: Row[] = [];
@@ -134,7 +137,21 @@ export function createFakePrisma() {
 
   const client = {
     // Direct access for assertions in tests.
-    _state: { companies, positions, people, searches, titleCache, discoverCache, discoverCachePeople, expansions, suppressions, searchPeople },
+    _state: {
+      companies,
+      positions,
+      people,
+      searches,
+      titleCache,
+      discoverCache,
+      discoverCachePeople,
+      discoverPublicPeople,
+      discoverProviderBatches,
+      discoverProviderBatchPeople,
+      expansions,
+      suppressions,
+      searchPeople
+    },
 
     // Minimal user-scoped suppression reads (the Discover overlay loader only
     // issues findMany with { userId, email: { in: [...] } }).
@@ -149,6 +166,67 @@ export function createFakePrisma() {
     // passing the same client back gives the same all-or-nothing visibility the
     // cache service relies on for atomic refreshes.
     $transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => fn(client),
+
+    discoverPublicPerson: {
+      create: async ({ data }: { data: Row }) => {
+        const row = { id: nextId("public_person"), createdAt: now(), updatedAt: now(), ...data };
+        discoverPublicPeople.push(row);
+        return { ...row };
+      },
+      update: async ({ where, data }: { where: Row; data: Row }) => {
+        const row = discoverPublicPeople.find((candidate) => candidate.id === where.id);
+        Object.assign(row!, data, { updatedAt: now() });
+        return { ...row };
+      },
+      findMany: async ({ where }: { where?: Row } = {}) =>
+        discoverPublicPeople.filter((row) => matchGeneric(row, where ?? {})).map((row) => ({ ...row })),
+      count: async ({ where }: { where?: Row } = {}) =>
+        discoverPublicPeople.filter((row) => matchGeneric(row, where ?? {})).length
+    },
+
+    discoverProviderBatch: {
+      findUnique: async ({ where }: { where: Row }) => {
+        const row = where.intentHash
+          ? discoverProviderBatches.find((candidate) => candidate.intentHash === where.intentHash)
+          : discoverProviderBatches.find((candidate) => candidate.id === where.id);
+        return row ? { ...row } : null;
+      },
+      findMany: async ({ where }: { where?: Row } = {}) =>
+        discoverProviderBatches.filter((row) => matchGeneric(row, where ?? {})).map((row) => ({ ...row })),
+      upsert: async ({ where, create, update }: { where: Row; create: Row; update: Row }) => {
+        let row = discoverProviderBatches.find((candidate) => candidate.intentHash === where.intentHash);
+        if (row) {
+          Object.assign(row, update, { updatedAt: now() });
+        } else {
+          row = { id: nextId("provider_batch"), createdAt: now(), updatedAt: now(), ...create };
+          discoverProviderBatches.push(row);
+        }
+        return { ...row };
+      },
+      update: async ({ where, data }: { where: Row; data: Row }) => {
+        const row = where.intentHash
+          ? discoverProviderBatches.find((candidate) => candidate.intentHash === where.intentHash)
+          : discoverProviderBatches.find((candidate) => candidate.id === where.id);
+        Object.assign(row!, data, { updatedAt: now() });
+        return { ...row };
+      },
+      count: async ({ where }: { where?: Row } = {}) =>
+        discoverProviderBatches.filter((row) => matchGeneric(row, where ?? {})).length
+    },
+
+    discoverProviderBatchPerson: {
+      create: async ({ data }: { data: Row }) => {
+        const row = { id: nextId("batch_person"), createdAt: now(), ...data };
+        discoverProviderBatchPeople.push(row);
+        return { ...row };
+      },
+      findMany: async ({ where }: { where?: Row } = {}) =>
+        discoverProviderBatchPeople
+          .filter((row) => matchGeneric(row, where ?? {}))
+          .map((row) => ({ ...row })),
+      count: async ({ where }: { where?: Row } = {}) =>
+        discoverProviderBatchPeople.filter((row) => matchGeneric(row, where ?? {})).length
+    },
 
     discoverSearchCache: {
       findUnique: async ({ where }: { where: Row }) => {
