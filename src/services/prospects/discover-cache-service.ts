@@ -201,6 +201,12 @@ export type DiscoverCacheExpansionState = {
   providerNextPage: number;
   providerPagesFetched: number;
   providerExhausted: boolean;
+  brightNextPage?: number;
+  brightPagesFetched?: number;
+  brightExhausted?: boolean;
+  apifyNextPage?: number;
+  apifyPagesFetched?: number;
+  apifyExhausted?: boolean;
   /** The shared evidence-backed email format stored on the entry. */
   emailFormat: ResolvedEmailFormat;
   people: ResolvedCachePerson[];
@@ -235,7 +241,7 @@ export interface DiscoverCacheExpansionPort {
   /** Atomically append net-new cached people and advance continuation state. */
   appendProviderPeople(params: AppendProviderPeopleParams): Promise<DiscoverCacheExpansionState>;
   /** Persist provider exhaustion so future expansions stop calling the provider. */
-  markProviderExhausted(fingerprint: string): Promise<void>;
+  markProviderExhausted(fingerprint: string, provider?: "BRIGHTDATA_GOOGLE" | "APIFY"): Promise<void>;
   /**
    * Run `fn` while holding the per-fingerprint stampede lock so at most one
    * provider continuation runs for an identical canonical query at a time. The

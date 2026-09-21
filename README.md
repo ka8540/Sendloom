@@ -227,7 +227,7 @@ Library plus create/edit wizard, with format switching, sanitized preview, merge
 
 `/prospects` is the Search History list (one row per company). `/prospects/[searchId]` is the detail workspace: company summary, email-format editor, role groups, people table, inline "Search this company", **Add 10 more**, and XLSX export. Feature-flagged by `PROSPECT_GRAPH_ENABLED` (legacy naming retained for deployment compatibility).
 
-The people pipeline is **Redis → permanent Postgres knowledge → Apify**. Redis caches sanitized exact-intent result payloads and is never required for correctness. `DiscoverPublicPerson`, `DiscoverProviderBatch`, and `DiscoverProviderBatchPerson` keep public provider-backed people and their exact role/location provenance permanently; age never makes a person unusable. A normal search returns any matching Postgres people as-is (even 1–9) with zero Apify calls. Only a true Redis miss plus Postgres zero automatically calls Apify once, persists the result through the central durable-ingestion path, and caches the reusable payload in Redis.
+The people pipeline is **Redis → permanent Postgres knowledge → Bright Data Google SERP → Apify fallback**. Redis caches sanitized exact-intent result payloads and is never required for correctness. `DiscoverPublicPerson`, `DiscoverProviderBatch`, and `DiscoverProviderBatchPerson` keep public provider-backed people and their exact role/location/provider provenance permanently; age never makes a person unusable. A normal search returns any matching Postgres people as-is (even 1–9) with zero external calls. Only a true Redis miss plus Postgres zero starts external discovery. Three or more valid unique Bright results suppress Apify; zero, one, or two trigger one Apify fallback and the valid Bright people are retained and merged first.
 
 **Add 10 more** follows the same order and excludes people already granted to that search. Any unused permanent DB people—even a partial remainder—end that action without an Apify top-up. A later Add More may call one provider page only after unused matching Postgres people reach zero. `ProspectSearchPerson` grants remain the private source of truth for user-visible counts and deduplication.
 
@@ -241,7 +241,8 @@ The durable-public-knowledge migration promotes useful legacy `DiscoverSearchCac
 | --- | --- | --- |
 | Redis | Sanitized exact-intent result payloads, company-version counters, daily quota state, and short provider/expansion locks | Acceleration and coordination only. Exact-result entries expire after `DISCOVER_REDIS_RESULT_TTL_SECONDS` (default 900 seconds). A miss, flush, malformed payload, timeout, or outage falls through to Postgres for people-search correctness. |
 | Postgres / Neon | `DiscoverPublicPerson`, `DiscoverProviderBatch`, `DiscoverProviderBatchPerson`, private `ProspectSearch`/`ProspectPerson`/`ProspectSearchPerson`, and provider continuation metadata | Permanent source of truth. Public people do not expire because of `createdAt`, `firstSeenAt`, `lastSeenAt`, cache age, or the old shared-cache TTL. |
-| Apify | External discovery for a previously unseen compatible intent, or a later Add More request after every unused durable candidate has been allocated | Called at most once per normal search or Add More action. It is never used merely to fill a partial batch. |
+| Bright Data / Google SERP | First external public-people discovery after a true permanent-DB zero | Uses public Google result evidence only. Location is persisted only when supported by public evidence (with the strict single-country fallback); enrichment is bounded. |
+| Apify | Trusted fallback when Bright yields 0–2 valid unique people or Bright is unavailable | Called at most once per normal search or Add More action. It is never used merely to fill a partial DB batch or when Bright yields 3+. |
 
 The public/private boundary is intentional. Shared durable rows contain public profile identity, public title/location, normalized company evidence, and provider provenance. They never contain a requester `userId`, inferred/generated email, saved/selected/export state, suppression state, manual corrections, notes, or another user's history. Reused people are copied into the requesting user's own tenant-scoped company/person/allocation records before they are returned.
 
@@ -256,18 +257,22 @@ flowchart TD
     D -- No --> F[Acquire short intent lock]
     F --> G[Recheck Redis and Postgres]
     G -- Another request persisted people --> C
-    G -- Still zero --> H[Call Apify once]
-    H --> I[Normalize, sanitize, dedupe, durably persist batch and people]
-    I --> J[Increment company version and cache sanitized result]
+    G -- Still zero --> H[Call Bright Data Google SERP]
+    H --> I{3+ valid unique?}
+    I -- Yes --> M[Persist Bright people]
+    I -- No: 0-2 --> K[Keep Bright people and call Apify once]
+    K --> L[Merge, dedupe, persist both sources]
+    M --> J[Increment company version and cache sanitized result]
+    L --> J
     J --> C
 ```
 
 Important consequences:
 
-- A Redis hit performs no public-person Postgres lookup and makes no Apify call.
+- A Redis hit performs no public-person Postgres lookup and makes no external provider call.
 - A Postgres result of 1, 3, 7, or 10 people returns that count; the service does not buy more data to reach 10.
-- A true Redis miss plus permanent-DB zero automatically invokes Apify once, so a first-time search does not require the user to click Add More.
-- Apify returning 4 produces 4 durable people and 4 results. Returning zero produces `NO_RESULTS`. The same request never loops the provider to force a full batch.
+- A true Redis miss plus permanent-DB zero starts Bright Data. Bright 3+ stops there; Bright 0–2 retains those people and invokes Apify once.
+- Any final count is returned as-is. The same request never loops either provider to force a full batch.
 - An exact stored provider intent is authoritative provenance. For example, an exact `Software Engineer + United States` batch can safely reuse a provider-returned person with incomplete per-person geography. A narrower or different request still needs strict candidate evidence.
 
 #### Add More / Find More
@@ -281,9 +286,22 @@ Add More computes identities already granted to the selected user-owned search, 
 5. Persist genuinely new public people and provenance before allocating them.
 6. If the provider yields only duplicates or no usable people, return **“No more people were found.”** without another provider loop.
 
+#### Optional live-provider smoke check
+
+After applying the migration in a non-production environment, set
+`DISCOVER_BRIGHTDATA_ENABLED=true`, `BRIGHTDATA_API_KEY`, and
+`BRIGHTDATA_SERP_ZONE`, then run one narrowly scoped Discover search with a
+company, one role, and one location. Confirm the safe logs show Bright starting
+first; `3+` valid unique Bright people must produce no Apify fallback, while
+`0–2` must produce exactly one fallback and retain any valid Bright people ahead
+of Apify results. Repeat **Add 10 more** only after the stored candidates are
+consumed and confirm that each provider resumes its own saved page. Inspect only
+aggregate events and the sanitized durable rows—never print credentials or raw
+provider payloads.
+
 #### Durable ingestion, invalidation, and concurrency
 
-`DiscoverPublicKnowledgeService.appendProviderPeople` is the provider-write choke point. Every runtime Apify result follows:
+`DiscoverPublicKnowledgeService.appendProviderPeople` is the provider-write choke point. Every runtime Bright Data or Apify result follows:
 
 ```text
 normalize → sanitize → attach canonical company → stable identity dedupe
@@ -666,6 +684,10 @@ With `OBJECT_STORAGE_MODE=r2`, the five required `CLOUDFLARE_R2_*` values must b
 | `HUNTER_KEY_ENCRYPTION_SECRET` | Production | Encrypts stored Hunter API keys. Must differ from `SESSION_SECRET` |
 | `APIFY_API_TOKEN` | For Discover | Apify LinkedIn profile-search actor token |
 | `APIFY_PROSPECT_ACTOR_ID` | Optional | Actor id/slug. Default `harvestapi/linkedin-profile-search` |
+| `DISCOVER_BRIGHTDATA_ENABLED` | Optional | Enables Bright Data public-people discovery before Apify. Default `false` |
+| `BRIGHTDATA_API_KEY` / `BRIGHTDATA_SERP_ZONE` | With Bright enabled | Server-only Bright Data credentials and SERP zone |
+| `DISCOVER_BRIGHTDATA_MAX_PAGES` | Optional | Independent Bright continuation ceiling. Default `3` |
+| `DISCOVER_BRIGHTDATA_LOCATION_ENRICHMENT_LIMIT` | Optional | Maximum bounded public Google location-enrichment calls per action. Default `2` |
 
 ### Incident reporting
 

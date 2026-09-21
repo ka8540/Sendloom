@@ -62,6 +62,13 @@ type ProviderBatchRow = {
   providerNextPage: number;
   providerPagesFetched: number;
   providerExhausted: boolean;
+  provider?: string;
+  brightNextPage?: number;
+  brightPagesFetched?: number;
+  brightExhausted?: boolean;
+  apifyNextPage?: number;
+  apifyPagesFetched?: number;
+  apifyExhausted?: boolean;
   createdAt: Date | string;
   updatedAt: Date | string;
 };
@@ -70,6 +77,7 @@ type BatchPersonRow = {
   batchId: string;
   publicPersonId: string;
   providerSortIndex: number;
+  provider?: string;
 };
 
 type RedisPayload = {
@@ -183,6 +191,12 @@ export class DiscoverPublicKnowledgeService implements DiscoverPublicKnowledgePo
       providerNextPage: batch.providerNextPage,
       providerPagesFetched: batch.providerPagesFetched,
       providerExhausted: batch.providerExhausted,
+      brightNextPage: batch.brightNextPage ?? 1,
+      brightPagesFetched: batch.brightPagesFetched ?? 0,
+      brightExhausted: batch.brightExhausted ?? false,
+      apifyNextPage: batch.apifyNextPage ?? batch.providerNextPage,
+      apifyPagesFetched: batch.apifyPagesFetched ?? batch.providerPagesFetched,
+      apifyExhausted: batch.apifyExhausted ?? batch.providerExhausted,
       emailFormat: emptyEmailFormat(),
       people
     };
@@ -200,12 +214,23 @@ export class DiscoverPublicKnowledgeService implements DiscoverPublicKnowledgePo
     const companyDomain = normalizeDomain(params.company.domain);
     const companyLinkedinSlug = normalizeLinkedinCompanySlug(params.company.linkedinUrl);
     const canonicalKey = params.fingerprintInput.companyKey;
+    const provider = params.provider ?? "APIFY";
     const dedupe = new PersonIdentitySet();
     const people = params.people.filter((person) => dedupe.addIfNew(person)).map(sanitizePerson);
 
     const existingBatch = (await prisma.discoverProviderBatch.findUnique({
       where: { intentHash: params.fingerprint }
     })) as ProviderBatchRow | null;
+    const brightExhausted = provider === "BRIGHTDATA_GOOGLE"
+      ? params.exhausted
+      : existingBatch?.brightExhausted ?? false;
+    const apifyExhausted = provider === "APIFY"
+      ? params.exhausted
+      : existingBatch?.apifyExhausted ?? existingBatch?.providerExhausted ?? false;
+    const hasBrightAttempt = provider === "BRIGHTDATA_GOOGLE" || (existingBatch?.brightPagesFetched ?? 0) > 0;
+    const allAttemptedProvidersExhausted = hasBrightAttempt
+      ? brightExhausted && apifyExhausted
+      : apifyExhausted;
     const batch = (await prisma.discoverProviderBatch.upsert({
       where: { intentHash: params.fingerprint },
       create: {
@@ -216,12 +241,18 @@ export class DiscoverPublicKnowledgeService implements DiscoverPublicKnowledgePo
         companyLinkedinSlug,
         normalizedRoles: params.fingerprintInput.roles,
         normalizedLocations: params.fingerprintInput.locations,
-        provider: params.provider ?? "APIFY",
+        provider,
         providerRunId: params.providerRunId ?? null,
         providerDatasetId: params.providerDatasetId ?? null,
         providerNextPage: params.nextPage,
         providerPagesFetched: params.pagesFetched,
-        providerExhausted: params.exhausted,
+        providerExhausted: allAttemptedProvidersExhausted,
+        brightNextPage: provider === "BRIGHTDATA_GOOGLE" ? params.nextPage : 1,
+        brightPagesFetched: provider === "BRIGHTDATA_GOOGLE" ? params.pagesFetched : 0,
+        brightExhausted: provider === "BRIGHTDATA_GOOGLE" ? params.exhausted : false,
+        apifyNextPage: provider === "APIFY" ? params.nextPage : 1,
+        apifyPagesFetched: provider === "APIFY" ? params.pagesFetched : 0,
+        apifyExhausted: provider === "APIFY" ? params.exhausted : false,
         lastProviderFetchAt: now
       },
       update: {
@@ -231,12 +262,23 @@ export class DiscoverPublicKnowledgeService implements DiscoverPublicKnowledgePo
         companyLinkedinSlug,
         normalizedRoles: params.fingerprintInput.roles,
         normalizedLocations: params.fingerprintInput.locations,
-        provider: params.provider ?? "APIFY",
+        provider: existingBatch?.provider && existingBatch.provider !== provider ? "MIXED" : provider,
         providerRunId: params.providerRunId ?? undefined,
         providerDatasetId: params.providerDatasetId ?? undefined,
         providerNextPage: params.nextPage,
         providerPagesFetched: (existingBatch?.providerPagesFetched ?? 0) + params.pagesFetched,
-        providerExhausted: params.exhausted,
+        providerExhausted: allAttemptedProvidersExhausted,
+        ...(provider === "BRIGHTDATA_GOOGLE"
+          ? {
+              brightNextPage: params.nextPage,
+              brightPagesFetched: (existingBatch?.brightPagesFetched ?? 0) + params.pagesFetched,
+              brightExhausted: params.exhausted
+            }
+          : {
+              apifyNextPage: params.nextPage,
+              apifyPagesFetched: (existingBatch?.apifyPagesFetched ?? existingBatch?.providerPagesFetched ?? 0) + params.pagesFetched,
+              apifyExhausted: params.exhausted
+            }),
         lastProviderFetchAt: now
       }
     })) as ProviderBatchRow;
@@ -301,7 +343,7 @@ export class DiscoverPublicKnowledgeService implements DiscoverPublicKnowledgePo
     for (const person of persisted) {
       if (linked.has(person.id)) continue;
       await prisma.discoverProviderBatchPerson.create({
-        data: { batchId: batch.id, publicPersonId: person.id, providerSortIndex: sortIndex }
+        data: { batchId: batch.id, publicPersonId: person.id, providerSortIndex: sortIndex, provider }
       });
       linked.add(person.id);
       sortIndex += 1;
@@ -336,11 +378,15 @@ export class DiscoverPublicKnowledgeService implements DiscoverPublicKnowledgePo
     return state;
   }
 
-  async markProviderExhausted(fingerprint: string): Promise<void> {
+  async markProviderExhausted(fingerprint: string, provider: "BRIGHTDATA_GOOGLE" | "APIFY" = "APIFY"): Promise<void> {
     const prisma = this.prisma as any;
     await prisma.discoverProviderBatch.update({
       where: { intentHash: fingerprint },
-      data: { providerExhausted: true, lastProviderFetchAt: this.now() }
+      data: {
+        providerExhausted: true,
+        ...(provider === "BRIGHTDATA_GOOGLE" ? { brightExhausted: true } : { apifyExhausted: true }),
+        lastProviderFetchAt: this.now()
+      }
     });
   }
 

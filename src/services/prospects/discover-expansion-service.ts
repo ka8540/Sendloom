@@ -14,7 +14,8 @@ import {
 } from "@/lib/discover-quota";
 import { env } from "@/lib/env";
 import { coercePositionCategory, displayNameForCategory, type PositionCategory } from "@/lib/prospect-enums";
-import { ApifyProfileSearchService, type NormalizedProfile } from "@/services/prospects/apify-profile-search";
+import { ApifyProfileSearchService } from "@/services/prospects/apify-profile-search";
+import { normalizeLinkedinCompanySlug } from "@/services/prospects/canonical-company";
 import {
   createRedisCacheLock,
   resolveSharedCacheVersion,
@@ -35,11 +36,10 @@ import {
   type DiscoverRoleIntelligencePort
 } from "@/services/prospects/discover-role-intelligence-service";
 import { PersonIdentitySet } from "@/services/prospects/discover-person-identity";
-import { resolveCandidateEmail } from "@/services/prospects/email-generation-service";
-import { AiCallBudget, createAiBudget } from "@/services/prospects/prospect-ai";
-import { combinedEmailConfidence } from "@/services/prospects/prospect-email-confidence";
-import { normalizeTitle } from "@/services/prospects/prospect-normalization";
+import { DiscoverPeopleProviderOrchestrator } from "@/services/prospects/discover-people-provider-orchestrator";
+import { createAiBudget } from "@/services/prospects/prospect-ai";
 import { resolveProspectPersonEmail } from "@/services/prospects/prospect-person-email";
+import { normalizeDomain } from "@/services/prospects/prospect-normalization";
 import { ProspectError } from "@/services/prospects/prospect-search-service";
 import { RoleClassificationService } from "@/services/prospects/role-classification-service";
 
@@ -73,12 +73,6 @@ export type AddMorePeopleInput = {
 
 export type ExpansionAuditFn = (args: RecordAuditEventArgs) => Promise<void> | void;
 
-type ProviderPeopleBuild = {
-  people: ResolvedCachePerson[];
-  identityResolvedCount: number;
-  classifiedCount: number;
-};
-
 export type DiscoverExpansionServiceDeps = {
   prisma: PrismaClient;
   apify: ApifyProfileSearchService;
@@ -97,6 +91,7 @@ export type DiscoverExpansionServiceDeps = {
   audit?: ExpansionAuditFn;
   batchSize?: number;
   maxProviderPages?: number;
+  providerOrchestrator?: DiscoverPeopleProviderOrchestrator;
   /** Fallback resolver for incomplete person names; see the search service. */
 };
 
@@ -131,8 +126,6 @@ export function resolveExpansionMaxProviderPages(): number {
  */
 export class DiscoverExpansionService {
   private readonly prisma: PrismaClient;
-  private readonly apify: ApifyProfileSearchService;
-  private readonly roleClassifier: RoleClassificationService;
   private readonly roleIntelligence: DiscoverRoleIntelligencePort;
   private readonly cache: DiscoverCacheExpansionPort & Partial<DiscoverCachePort>;
   private readonly discoverQuota: DiscoverQuotaReserver;
@@ -142,11 +135,10 @@ export class DiscoverExpansionService {
   private readonly audit: ExpansionAuditFn;
   private readonly batchSize: number;
   private readonly maxProviderPages: number;
+  private readonly providerOrchestrator: DiscoverPeopleProviderOrchestrator;
 
   constructor(deps: DiscoverExpansionServiceDeps) {
     this.prisma = deps.prisma;
-    this.apify = deps.apify;
-    this.roleClassifier = deps.roleClassifier;
     this.roleIntelligence =
       deps.roleIntelligence ?? createDiscoverRoleIntelligenceService(deps.prisma, deps.roleClassifier);
     this.cache = deps.cache ?? new DiscoverPublicKnowledgeService({ prisma: deps.prisma });
@@ -157,6 +149,11 @@ export class DiscoverExpansionService {
     this.audit = deps.audit ?? recordAuditEvent;
     this.batchSize = deps.batchSize ?? resolveExpansionBatchSize();
     this.maxProviderPages = deps.maxProviderPages ?? resolveExpansionMaxProviderPages();
+    this.providerOrchestrator = deps.providerOrchestrator ?? new DiscoverPeopleProviderOrchestrator({
+      apify: deps.apify,
+      roleClassifier: deps.roleClassifier,
+      roleIntelligence: this.roleIntelligence
+    });
   }
 
   async addMorePeople(input: AddMorePeopleInput): Promise<DiscoverExpansionResult> {
@@ -270,7 +267,9 @@ export class DiscoverExpansionService {
       const unusedCached = [...cacheCandidates, ...localCandidates].filter(
         (person) => !identities.has(person) && databaseIdentities.addIfNew(person)
       );
-      const providerExhausted = cacheState?.providerExhausted ?? false;
+      const providerExhausted =
+        (!this.providerOrchestrator.brightConfigured || (cacheState?.brightExhausted ?? false)) &&
+        (cacheState?.apifyExhausted ?? cacheState?.providerExhausted ?? false);
       await this.safeAudit(
         unusedCached.length > 0
           ? "DISCOVER_ADD_MORE_DATABASE_HIT"
@@ -556,10 +555,6 @@ export class DiscoverExpansionService {
     // this explicit action; never loop merely to force a full batch.
     if (!exhausted && this.maxProviderPages > 0) {
       const budget = createAiBudget();
-      const providerTitles = await this.roleIntelligence.buildProviderTitlePlan(params.roles, {
-        budget,
-        searchId: params.search.id
-      });
       await this.cache.runWithProviderLock(params.fingerprint, async () => {
         // Re-check under the lock: another holder may have appended results while
         // we waited. Reuse anything newly available before fetching.
@@ -593,61 +588,54 @@ export class DiscoverExpansionService {
         // A database-only initial search may have no exact continuation row. In
         // that case this explicit user action starts at page 1. When metadata
         // exists, always honor its saved next page (including old cache rows).
-        const page = rechecked?.providerNextPage ?? 1;
+        const brightPage = rechecked?.brightNextPage ?? 1;
+        const apifyPage = rechecked?.apifyNextPage ?? rechecked?.providerNextPage ?? 1;
         const cachedPeopleCount = rechecked?.people.length ?? 0;
         await this.safeAudit("DISCOVER_EXPANSION_PROVIDER_FETCH", params.userId, params.actorEmail, params.search.id, {
-          page,
+          brightPage,
+          apifyPage,
           providerCalled: true,
           explicitExpansion: true,
           reason: "DATABASE_EXHAUSTED"
         });
-        const pageResult = await this.apify.searchProfiles({
+        const providerExcluded = await this.loadProviderExcludedIdentities(
+          params.userId,
+          params.search.id,
+          params.fingerprintInput.companyKey,
+          params.company.officialWebsiteDomain ?? params.company.officialDomain,
+          params.company.linkedinUrl
+        );
+        const chain = await this.providerOrchestrator.discover({
           companyName: params.company.officialName ?? params.company.name,
           companyLinkedinUrl: params.company.linkedinUrl,
-          ...(params.company.linkedinUrl
-            ? { companyTargeting: { mode: "LINKEDIN_CURRENT_COMPANY", trusted: true } as const }
-            : {}),
-          jobTitles: providerTitles,
-          locations: params.locations,
+          requestedTitles: params.roles,
+          requestedLocations: params.locations,
           maxResults: PROVIDER_PAGE_SIZE,
-          startPage: page
-        });
-        const nextPage = page + 1;
-        const built = await this.buildProviderPeople(
-          pageResult.profiles,
-          params.cacheEmailFormat,
-          params.search.id,
+          brightStartPage: brightPage,
+          apifyStartPage: apifyPage,
+          brightExhausted: rechecked?.brightExhausted ?? false,
+          apifyExhausted: rechecked?.apifyExhausted ?? rechecked?.providerExhausted ?? false,
+          excluded: providerExcluded,
           budget,
-          {
-            companyName: params.company.officialName ?? params.company.name,
-            companyDomain: params.company.emailDomain ?? null
-          }
-        );
-        let pagePeople = built.people;
-        if (this.roleIntelligence.enabled) {
-          pagePeople = await this.roleIntelligence.filterAndRankPeople({
-            people: built.people,
-            requestedTitles: params.roles,
-            requestedLocations: params.locations,
-            context: "PROVIDER",
-            options: { budget, searchId: params.search.id }
+          searchId: params.search.id
+        });
+        let updated = rechecked;
+        for (const contribution of chain.contributions) {
+          updated = await this.cache.appendProviderPeople({
+            fingerprint: params.fingerprint,
+            fingerprintInput: params.fingerprintInput,
+            company: params.cacheCompany,
+            emailFormat: params.cacheEmailFormat,
+            people: contribution.people,
+            nextPage: contribution.nextPage,
+            pagesFetched: contribution.pagesFetched,
+            exhausted: contribution.exhausted,
+            provider: contribution.provider,
+            providerRunId: contribution.providerRunId,
+            providerDatasetId: contribution.providerDatasetId
           });
         }
-        let pageExhausted =
-          pageResult.totalFound === 0 || pageResult.profiles.length < PROVIDER_PAGE_SIZE;
-        const updated = await this.cache.appendProviderPeople({
-          fingerprint: params.fingerprint,
-          fingerprintInput: params.fingerprintInput,
-          company: params.cacheCompany,
-          emailFormat: params.cacheEmailFormat,
-          people: pagePeople,
-          nextPage,
-          pagesFetched: 1,
-          exhausted: pageExhausted,
-          provider: "APIFY",
-          providerRunId: pageResult.runId,
-          providerDatasetId: pageResult.datasetId
-        });
+        if (!updated) return;
         const cacheAppendedCount = Math.max(0, updated.people.length - cachedPeopleCount);
         const collectedBeforePage = collected.length;
         for (const person of updated.people) {
@@ -658,106 +646,69 @@ export class DiscoverExpansionService {
           }
         }
         const collectedCount = collected.length - collectedBeforePage;
-        // A duplicate-only/filtered-only page is exhausted for this action and
-        // must not trigger another paid loop.
-        if (collectedCount === 0) pageExhausted = true;
-        exhausted = pageExhausted;
+        const brightExhausted = !this.providerOrchestrator.brightConfigured || (updated.brightExhausted ?? false);
+        const apifyExhausted = updated.apifyExhausted ?? updated.providerExhausted;
+        exhausted = brightExhausted && apifyExhausted;
+        const apifyContribution = chain.contributions.find((entry) => entry.provider === "APIFY");
         await this.safeAudit("DISCOVER_EXPANSION_PROVIDER_PAGE_PROCESSED", params.userId, params.actorEmail, params.search.id, {
-          page,
-          rawProviderCount: pageResult.diagnostics.itemsReturned,
-          parsedCandidates: pageResult.diagnostics.parsedCandidates,
-          rejectedBySchema: pageResult.diagnostics.rejectedBySchema,
-          providerDuplicateItems: pageResult.diagnostics.duplicateItems,
-          companyMatched: pageResult.diagnostics.companyMatched,
-          rejectedByCompany: pageResult.diagnostics.rejectedByCompany,
-          normalizedProviderCount: pageResult.profiles.length,
-          identityResolvedCount: built.identityResolvedCount,
-          classifiedCount: built.classifiedCount,
-          semanticAcceptedCount: pagePeople.length,
-          semanticRejectedCount: built.people.length - pagePeople.length,
+          page: apifyPage,
+          brightPage,
+          apifyPage,
+          rawProviderCount: apifyContribution?.providerTotalFound ?? 0,
+          normalizedProviderCount: apifyContribution?.providerResultCount ?? 0,
+          identityResolvedCount: apifyContribution?.providerResultCount ?? 0,
+          classifiedCount: apifyContribution?.providerResultCount ?? 0,
+          semanticAcceptedCount: apifyContribution?.people.length ?? 0,
+          semanticRejectedCount: Math.max(
+            0,
+            (apifyContribution?.providerResultCount ?? 0) - (apifyContribution?.people.length ?? 0)
+          ),
+          rawBrightResults: chain.diagnostics.bright?.rawBrightResults ?? 0,
+          linkedInCandidates: chain.diagnostics.bright?.linkedInCandidates ?? 0,
+          brightValidUnique: chain.diagnostics.brightValidUnique,
+          apifyFallbackCalled: chain.diagnostics.apifyFallbackCalled,
+          apifyNewUnique: chain.diagnostics.apifyNewUnique,
           cacheAppendedCount,
-          duplicateCount:
-            pageResult.diagnostics.duplicateItems + Math.max(0, pagePeople.length - cacheAppendedCount),
+          duplicateCount: Math.max(0, chain.people.length - cacheAppendedCount),
           collectedCount,
-          providerExhausted: pageExhausted
+          providerExhausted: exhausted
         });
-
-        if (exhausted) {
-          await this.cache.markProviderExhausted(params.fingerprint);
-        }
       });
     }
 
     return { people: collected, cacheCount, providerCount, exhausted };
   }
 
-  /**
-   * Classify titles (role groups) and build normalized cache people for a freshly
-   * fetched provider page. Emails use the shared evidence-backed format (never a
-   * per-user manual override, which must never enter the shared cache). The
-   * email-format AI is never re-run here.
-   */
-  private async buildProviderPeople(
-    rawProfiles: NormalizedProfile[],
-    emailFormat: ResolvedEmailFormat,
+  private async loadProviderExcludedIdentities(
+    userId: string,
     searchId: string,
-    budget: AiCallBudget,
-    company: { companyName: string; companyDomain: string | null }
-  ): Promise<ProviderPeopleBuild> {
-    // An expansion page gets exactly the same identity treatment as the initial
-    // search, so "Add 10 more" can never be the path that reintroduces a
-    // malformed name into the shared cache.
-    const profiles = await normalizeDiscoverPersonNames(rawProfiles, {
-      companyName: company.companyName,
-      budget
-    });
-
-    // 24. New people go through the existing role-classification process.
-    const rawTitles = profiles
-      .map((profile) => profile.currentTitle)
-      .filter((title): title is string => Boolean(title));
-    const classifications = await this.roleClassifier.classify(rawTitles, { budget, searchId });
-
-    const allowLowConfidence = env.PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS;
-    const candidateConfidence = combinedEmailConfidence(emailFormat.emailDomainConfidence, emailFormat.patternConfidence);
-
-    const people = profiles.map((profile) => {
-      const category = categoryForProfile(profile, classifications);
-      const candidate = resolveCandidateEmail({
-        firstName: profile.firstName,
-        lastName: profile.lastName,
-        ...nameStateFields(profile),
-        domain: emailFormat.emailDomain,
-        pattern: emailFormat.emailPattern,
-        patternConfidence: candidateConfidence,
-        allowLowConfidence
-      });
-      return {
-        sourceProfileId: profile.sourceProfileId,
-        firstName: profile.firstName,
-        lastName: profile.lastName,
-        fullName: profile.fullName,
-        ...nameStateFields(profile),
-        currentTitle: profile.currentTitle,
-        normalizedTitle: profile.normalizedTitle,
-        positionCategory: category,
-        location: profile.location,
-        country: profile.country,
-        state: profile.state,
-        city: profile.city,
-        linkedinUrl: profile.linkedinUrl,
-        inferredEmail: candidate.email,
-        emailStatus: candidate.status,
-        emailConfidence: candidate.confidence,
-        emailPattern: candidate.email ? emailFormat.emailPattern : null,
-        emailSource: candidate.email ? "PATTERN" : null
-      };
-    });
-    return {
-      people,
-      identityResolvedCount: profiles.length,
-      classifiedCount: people.length
-    };
+    companyCanonicalKey: string,
+    companyDomainInput: string | null,
+    companyLinkedinUrl: string | null
+  ): Promise<PersonIdentitySet> {
+    const prisma = this.prisma as any;
+    const companyDomain = normalizeDomain(companyDomainInput);
+    const companyLinkedinSlug = normalizeLinkedinCompanySlug(companyLinkedinUrl);
+    const [publicPeople, allocations] = await Promise.all([
+      prisma.discoverPublicPerson.findMany({
+        where: {
+          OR: [
+            { companyCanonicalKey },
+            ...(companyDomain ? [{ companyDomain }] : []),
+            ...(companyLinkedinSlug ? [{ companyLinkedinSlug }] : [])
+          ]
+        },
+        select: { sourceProfileId: true, linkedinUrl: true }
+      }),
+      this.prisma.prospectSearchPerson.findMany({ where: { searchId }, select: { personId: true } })
+    ]);
+    const allocatedPeople = allocations.length
+      ? await this.prisma.prospectPerson.findMany({
+          where: { userId, id: { in: allocations.map((row) => row.personId) } },
+          select: { sourceProfileId: true, linkedinUrl: true }
+        })
+      : [];
+    return new PersonIdentitySet([...publicPeople, ...allocatedPeople]);
   }
 
   /**
@@ -995,15 +946,6 @@ export function expansionMessage(addedCount: number, batchSize: number, exhauste
     return `${addedCount} new people were added. No more unique people are available for this search.`;
   }
   return `${addedCount} new people were added. No other unique matches were available in this batch.`;
-}
-
-function categoryForProfile(
-  profile: NormalizedProfile,
-  classifications: Map<string, { category: PositionCategory }>
-): PositionCategory {
-  const normalized = profile.normalizedTitle ?? (profile.currentTitle ? normalizeTitle(profile.currentTitle) : "");
-  const classification = normalized ? classifications.get(normalized) : undefined;
-  return classification ? coercePositionCategory(classification.category) : "OTHER";
 }
 
 function asStringArray(value: unknown): string[] {

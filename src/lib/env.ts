@@ -103,6 +103,11 @@ const envSchema = z
     // --- Prospect graph backend (local-first prototype) ---
     APIFY_API_TOKEN: z.string().min(1).optional(),
     APIFY_PROSPECT_ACTOR_ID: z.string().min(1).default("harvestapi/linkedin-profile-search"),
+    DISCOVER_BRIGHTDATA_ENABLED: booleanFlag(false),
+    BRIGHTDATA_API_KEY: z.string().min(1).optional(),
+    BRIGHTDATA_SERP_ZONE: z.string().min(1).optional(),
+    DISCOVER_BRIGHTDATA_MAX_PAGES: z.coerce.number().int().positive().max(10).default(3),
+    DISCOVER_BRIGHTDATA_LOCATION_ENRICHMENT_LIMIT: z.coerce.number().int().nonnegative().max(5).default(2),
     WEB_SEARCH_PROVIDER: z.preprocess(
       (value) => (value === "" || value === undefined ? "none" : String(value).trim().toLowerCase()),
       z.enum(["none", "serper", "brave"]).default("none")
@@ -293,6 +298,11 @@ function readRawEnv() {
     GMAIL_SENDER_CONCURRENCY: process.env.GMAIL_SENDER_CONCURRENCY,
     APIFY_API_TOKEN: process.env.APIFY_API_TOKEN,
     APIFY_PROSPECT_ACTOR_ID: process.env.APIFY_PROSPECT_ACTOR_ID,
+    DISCOVER_BRIGHTDATA_ENABLED: process.env.DISCOVER_BRIGHTDATA_ENABLED,
+    BRIGHTDATA_API_KEY: process.env.BRIGHTDATA_API_KEY,
+    BRIGHTDATA_SERP_ZONE: process.env.BRIGHTDATA_SERP_ZONE,
+    DISCOVER_BRIGHTDATA_MAX_PAGES: process.env.DISCOVER_BRIGHTDATA_MAX_PAGES,
+    DISCOVER_BRIGHTDATA_LOCATION_ENRICHMENT_LIMIT: process.env.DISCOVER_BRIGHTDATA_LOCATION_ENRICHMENT_LIMIT,
     WEB_SEARCH_PROVIDER: process.env.WEB_SEARCH_PROVIDER,
     SERPER_API_KEY: process.env.SERPER_API_KEY,
     BRAVE_SEARCH_API_KEY: process.env.BRAVE_SEARCH_API_KEY,

@@ -1088,6 +1088,12 @@ model DiscoverProviderBatch {
   providerNextPage     Int       @default(1)
   providerPagesFetched Int       @default(0)
   providerExhausted    Boolean   @default(false)
+  brightNextPage       Int       @default(1)
+  brightPagesFetched   Int       @default(0)
+  brightExhausted      Boolean   @default(false)
+  apifyNextPage        Int       @default(1)
+  apifyPagesFetched    Int       @default(0)
+  apifyExhausted       Boolean   @default(false)
   lastProviderFetchAt  DateTime?
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
@@ -1111,6 +1117,7 @@ model DiscoverProviderBatchPerson {
   batchId           String
   publicPersonId    String
   providerSortIndex Int      @default(0)
+  provider          String   @default("APIFY")
   createdAt         DateTime @default(now())
 
   batch        DiscoverProviderBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
@@ -1118,6 +1125,7 @@ model DiscoverProviderBatchPerson {
 
   @@unique([batchId, publicPersonId])
   @@index([batchId, providerSortIndex])
+  @@index([batchId, provider, providerSortIndex])
   @@index([publicPersonId])
 }
 

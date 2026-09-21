@@ -318,4 +318,45 @@ describe("DiscoverPublicKnowledgeService", () => {
     expect(result.dataset.people).toHaveLength(0);
     expect(result.definitiveEmpty).toBe(true);
   });
+
+  it("keeps mixed provider provenance and continuation independently", async () => {
+    const base = {
+      fingerprint: request().fingerprint,
+      fingerprintInput: request().fingerprintInput,
+      company: request().company,
+      emailFormat: emptyFormat,
+      pagesFetched: 1
+    };
+    await service.appendProviderPeople({
+      ...base,
+      people: [person("bright-1"), person("bright-2")],
+      nextPage: 2,
+      exhausted: false,
+      provider: "BRIGHTDATA_GOOGLE"
+    });
+    const state = await service.appendProviderPeople({
+      ...base,
+      people: [person("apify-1")],
+      nextPage: 4,
+      exhausted: true,
+      provider: "APIFY",
+      providerRunId: "run-mixed",
+      providerDatasetId: "dataset-mixed"
+    });
+
+    expect(state).toMatchObject({
+      brightNextPage: 2,
+      brightPagesFetched: 1,
+      brightExhausted: false,
+      apifyNextPage: 4,
+      apifyPagesFetched: 1,
+      apifyExhausted: true
+    });
+    expect(prisma._state.discoverProviderBatches[0].provider).toBe("MIXED");
+    expect(prisma._state.discoverProviderBatchPeople.map((row) => row.provider)).toEqual([
+      "BRIGHTDATA_GOOGLE",
+      "BRIGHTDATA_GOOGLE",
+      "APIFY"
+    ]);
+  });
 });

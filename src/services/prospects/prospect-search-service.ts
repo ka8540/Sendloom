@@ -35,7 +35,10 @@ import {
   type NormalizedProfile
 } from "@/services/prospects/apify-profile-search";
 import { CompanyResolutionService, type CompanyResolution } from "@/services/prospects/company-resolution-service";
-import { getCanonicalCompanyKey } from "@/services/prospects/canonical-company";
+import {
+  getCanonicalCompanyKey,
+  normalizeLinkedinCompanySlug
+} from "@/services/prospects/canonical-company";
 import {
   companyEmailFormatData,
   hasUsableCompanyEmailFormat,
@@ -56,6 +59,12 @@ import {
   DiscoverPublicKnowledgeService,
   isDiscoverPublicKnowledgePort
 } from "@/services/prospects/discover-public-knowledge-service";
+import {
+  DiscoverPeopleProviderOrchestrator,
+  type ProviderChainDiagnostics,
+  type ProviderContribution
+} from "@/services/prospects/discover-people-provider-orchestrator";
+import { PersonIdentitySet } from "@/services/prospects/discover-person-identity";
 import { computeDiscoverFingerprint } from "@/services/prospects/discover-cache-fingerprint";
 import {
   createDiscoverRoleIntelligenceService,
@@ -256,6 +265,8 @@ export type ProspectSearchServiceDeps = {
    */
   /** Injectable clock for deterministic attempt timestamps in tests. */
   now?: () => Date;
+  /** Shared Bright-first provider policy; injectable for provider-chain tests. */
+  providerOrchestrator?: DiscoverPeopleProviderOrchestrator;
 };
 
 /** Options for processSearch — the actor email is resolved from the session. */
@@ -279,15 +290,10 @@ type RunPipelineResult = {
   cacheHit: boolean;
 };
 
-type ProviderFunnelDiagnostics = ApifyIngestionDiagnostics & {
-  semanticInputCount: number;
-  semanticAcceptedCount: number;
-  semanticRejectedCount: number;
-};
-
 type ProviderDatasetResult = {
   dataset: ResolvedDataset;
-  diagnostics: ProviderFunnelDiagnostics;
+  diagnostics: ProviderChainDiagnostics;
+  contributions: ProviderContribution[];
   providerRunId: string | null;
   providerDatasetId: string | null;
   providerTotalFound: number;
@@ -308,6 +314,7 @@ export class ProspectSearchService {
   private readonly audit: ProspectAuditFn;
   private readonly notifyCompleted: DiscoverCompletionNotificationFn;
   private readonly now: () => Date;
+  private readonly providerOrchestrator: DiscoverPeopleProviderOrchestrator;
 
   constructor(deps: ProspectSearchServiceDeps) {
     this.prisma = deps.prisma;
@@ -325,6 +332,11 @@ export class ProspectSearchService {
     this.audit = deps.audit ?? noopAudit;
     this.notifyCompleted = deps.notifyCompleted ?? noopDiscoverCompletionNotification;
     this.now = deps.now ?? (() => new Date());
+    this.providerOrchestrator = deps.providerOrchestrator ?? new DiscoverPeopleProviderOrchestrator({
+      apify: deps.apify,
+      roleClassifier: deps.roleClassifier,
+      roleIntelligence: this.roleIntelligence
+    });
   }
 
   async createSearch(userId: string, input: ValidatedCreateProspectSearch): Promise<ProspectSearch> {
@@ -819,23 +831,31 @@ export class ProspectSearchService {
           databaseCandidateCount: 0,
           providerCalled: true
         });
-        const provider = await this.runProviderDataset(userId, search, company, resolution, budget);
-        const state = await durableKnowledge.appendProviderPeople({
-          fingerprint,
-          fingerprintInput,
-          company: resolvedCompany,
-          emailFormat: provider.dataset.emailFormat,
-          people: provider.dataset.people,
-          nextPage: 2,
-          pagesFetched: 1,
-          exhausted:
-            provider.dataset.people.length === 0 ||
-            provider.providerResultCount === 0 ||
-            provider.providerTotalFound <= provider.providerResultCount,
-          provider: "APIFY",
-          providerRunId: provider.providerRunId,
-          providerDatasetId: provider.providerDatasetId
+        const excluded = await this.loadPermanentPublicIdentities({
+          companyCanonicalKey: fingerprintInput.companyKey,
+          companyDomain: resolution.officialWebsiteDomain ?? resolution.officialDomain,
+          companyLinkedinUrl: resolution.linkedinCompanyUrl
         });
+        let state = await durableKnowledge.getExpansionState(fingerprint);
+        const provider = await this.runProviderDataset(userId, search, company, resolution, budget, excluded, state);
+        for (const contribution of provider.contributions) {
+          state = await durableKnowledge.appendProviderPeople({
+            fingerprint,
+            fingerprintInput,
+            company: resolvedCompany,
+            emailFormat: provider.dataset.emailFormat,
+            people: contribution.people,
+            nextPage: contribution.nextPage,
+            pagesFetched: contribution.pagesFetched,
+            exhausted: contribution.exhausted,
+            provider: contribution.provider,
+            providerRunId: contribution.providerRunId,
+            providerDatasetId: contribution.providerDatasetId
+          });
+        }
+        if (!state) {
+          throw new ProspectError("PROVIDER_ERROR", "Public people discovery did not produce durable state.");
+        }
         if (state.people.length === 0) {
           logDiscoverKnowledgeEvent("DISCOVER_PROVIDER_NO_RESULTS", {
             canonicalCompanyKey: fingerprintInput.companyKey,
@@ -1064,36 +1084,41 @@ export class ProspectSearchService {
     search: ProspectSearch,
     company: ProspectCompany,
     resolution: CompanyResolution,
-    budget: AiCallBudget
+    budget: AiCallBudget,
+    excluded: PersonIdentitySet,
+    continuation: Awaited<ReturnType<DiscoverPublicKnowledgeService["getExpansionState"]>>
   ): Promise<ProviderDatasetResult> {
-    // Discover people via Apify. The result count is always the server-fixed
-    // value (never search.maxResults).
+    // Bright Data public Google discovery runs first. Only 0-2 valid unique
+    // Bright people permit the single bounded Apify fallback.
     await this.setStatus(search.id, "SEARCHING_PEOPLE");
     const resultLimit = resolveResultsPerSearch();
     const candidateLimit = Math.max(resultLimit, PROVIDER_CANDIDATE_LIMIT);
     const requestedTitles = this.asStringArray(search.requestedTitles);
-    const providerTitles = await this.roleIntelligence.buildProviderTitlePlan(requestedTitles, {
-      budget,
-      searchId: search.id
-    });
-    const searchResult = await this.apify.searchProfiles({
+    const chain = await this.providerOrchestrator.discover({
       companyName: resolution.officialName,
       companyLinkedinUrl: resolution.linkedinCompanyUrl,
-      ...(resolution.linkedinCompanyUrl
-        ? { companyTargeting: { mode: "LINKEDIN_CURRENT_COMPANY", trusted: true } as const }
-        : {}),
-      // One actor run receives the entire bounded semantic title plan.
-      jobTitles: providerTitles,
-      locations: this.asStringArray(search.requestedLocations),
-      maxResults: candidateLimit
+      requestedTitles,
+      requestedLocations: this.asStringArray(search.requestedLocations),
+      maxResults: candidateLimit,
+      brightStartPage: continuation?.brightNextPage ?? 1,
+      apifyStartPage: continuation?.apifyNextPage ?? continuation?.providerNextPage ?? 1,
+      brightExhausted: continuation?.brightExhausted ?? false,
+      apifyExhausted: continuation?.apifyExhausted ?? continuation?.providerExhausted ?? false,
+      excluded,
+      budget,
+      searchId: search.id,
+      onProfilesDiscovered: () => this.setStatus(search.id, "CLASSIFYING_POSITIONS")
     });
+
+    const apifyContribution = chain.contributions.find((entry) => entry.provider === "APIFY");
+    const providerTotalFound = chain.contributions.reduce((sum, entry) => sum + entry.providerTotalFound, 0);
 
     await this.prisma.prospectSearch.update({
       where: { id: search.id },
       data: {
-        apifyRunId: searchResult.runId,
-        apifyDatasetId: searchResult.datasetId,
-        totalFound: searchResult.totalFound
+        apifyRunId: apifyContribution?.providerRunId ?? null,
+        apifyDatasetId: apifyContribution?.providerDatasetId ?? null,
+        totalFound: providerTotalFound
       }
     });
 
@@ -1103,24 +1128,26 @@ export class ProspectSearchService {
       searchId: search.id,
       userId,
       source: "PROVIDER",
-      ...searchResult.diagnostics,
-      eligiblePeople: searchResult.profiles.length
+      itemsReturned:
+        (chain.diagnostics.bright?.rawBrightResults ?? 0) +
+        (chain.diagnostics.apify?.itemsReturned ?? 0),
+      parsedCandidates:
+        (chain.diagnostics.bright?.linkedInCandidates ?? 0) +
+        (chain.diagnostics.apify?.parsedCandidates ?? 0),
+      rejectedBySchema: chain.diagnostics.apify?.rejectedBySchema ?? 0,
+      duplicateItems:
+        (chain.diagnostics.bright?.duplicateRejected ?? 0) +
+        (chain.diagnostics.apify?.duplicateItems ?? 0),
+      companyMatched:
+        (chain.diagnostics.bright?.currentEmploymentAccepted ?? 0) +
+        (chain.diagnostics.apify?.companyMatched ?? 0),
+      rejectedByCompany:
+        (chain.diagnostics.bright?.formerEmployeeRejected ?? 0) +
+        (chain.diagnostics.bright?.companyContradictionRejected ?? 0) +
+        (chain.diagnostics.bright?.companyInsufficientRejected ?? 0) +
+        (chain.diagnostics.apify?.rejectedByCompany ?? 0),
+      eligiblePeople: chain.people.length
     });
-
-    // Complete the identities deterministic parsing could not ("Jared C.").
-    // Clean names never reach the model, and an unresolved person simply keeps
-    // no email rather than receiving a guessed one.
-    const profiles = await normalizeDiscoverPersonNames(searchResult.profiles, {
-      companyName: resolution.officialName,
-      budget
-    });
-
-    // Classify unique titles (the global title-classification cache is reused).
-    await this.setStatus(search.id, "CLASSIFYING_POSITIONS");
-    const rawTitles = profiles
-      .map((profile) => profile.currentTitle)
-      .filter((title): title is string => Boolean(title));
-    const classifications = await this.roleClassifier.classify(rawTitles, { budget, searchId: search.id });
 
     // People retrieval/classification and email-format discovery have separate
     // cache lifecycles. Seed the provider dataset with only an already-valid
@@ -1130,34 +1157,37 @@ export class ProspectSearchService {
 
     // Build the normalized people dataset. Candidate emails are regenerated
     // against the final persisted format during materialization.
-    const people = this.buildDatasetPeople(profiles, classifications, emailFormat);
-
-    // With the feature off this method returns the exact current provider
-    // behavior. With it on, expanded provider matches are authorized again by
-    // category/specialty policy before they enter shared knowledge.
-    const roleFilteredPeople = this.roleIntelligence.enabled
-      ? await this.roleIntelligence.filterAndRankPeople({
-          people,
-          requestedTitles,
-          requestedLocations: this.asStringArray(search.requestedLocations),
-          context: "PROVIDER",
-          options: { budget, searchId: search.id }
-        })
-      : people;
 
     return {
-      dataset: { emailFormat, people: roleFilteredPeople },
-      providerRunId: searchResult.runId,
-      providerDatasetId: searchResult.datasetId,
-      providerTotalFound: searchResult.totalFound,
-      providerResultCount: searchResult.profiles.length,
-      diagnostics: {
-        ...searchResult.diagnostics,
-        semanticInputCount: people.length,
-        semanticAcceptedCount: roleFilteredPeople.length,
-        semanticRejectedCount: people.length - roleFilteredPeople.length
-      }
+      dataset: { emailFormat, people: chain.people },
+      contributions: chain.contributions,
+      providerRunId: apifyContribution?.providerRunId ?? null,
+      providerDatasetId: apifyContribution?.providerDatasetId ?? null,
+      providerTotalFound,
+      providerResultCount: chain.people.length,
+      diagnostics: chain.diagnostics
     };
+  }
+
+  private async loadPermanentPublicIdentities(input: {
+    companyCanonicalKey: string;
+    companyDomain: string | null;
+    companyLinkedinUrl: string | null;
+  }): Promise<PersonIdentitySet> {
+    const prisma = this.prisma as any;
+    const companyDomain = normalizeDomain(input.companyDomain);
+    const companyLinkedinSlug = normalizeLinkedinCompanySlug(input.companyLinkedinUrl);
+    const rows = await prisma.discoverPublicPerson.findMany({
+      where: {
+        OR: [
+          { companyCanonicalKey: input.companyCanonicalKey },
+          ...(companyDomain ? [{ companyDomain }] : []),
+          ...(companyLinkedinSlug ? [{ companyLinkedinSlug }] : [])
+        ]
+      },
+      select: { sourceProfileId: true, linkedinUrl: true }
+    });
+    return new PersonIdentitySet(rows);
   }
 
   private companyResolvedEmailFormat(company: ProspectCompany): ResolvedDataset["emailFormat"] {
@@ -2262,24 +2292,6 @@ function logDiscoverIngestionEvent(event: DiscoverIngestionLogEvent): void {
   } else {
     console.info(line);
   }
-}
-
-type DiscoverProviderFunnelLogEvent = ProviderFunnelDiagnostics & {
-  searchId: string;
-  userId: string;
-  cachePeopleCount: number;
-  allocatedPeopleCount: number;
-};
-
-/**
- * End-to-end provider funnel diagnostics. Counts only: no names, emails,
- * profile/company URLs, provider payloads, prompts, or credentials.
- */
-function logDiscoverProviderFunnelEvent(event: DiscoverProviderFunnelLogEvent): void {
-  if (process.env.NODE_ENV === "test") {
-    return;
-  }
-  console.info(`[discover-provider-funnel] ${JSON.stringify(event)}`);
 }
 
 type DiscoverEmailFormatLogEvent = {

@@ -1839,10 +1839,20 @@ The durable schemas intentionally keep public and private data apart:
   variant or whose individual location metadata is incomplete. It does not rerun
   role AI, embeddings, semantic classification, or strict per-person geography.
   A different role or geography uses the existing strict filters.
-- **Central ingestion.** Every runtime Apify result passes through
+- **Provider order.** External discovery runs only after Redis and permanent
+  Postgres both yield zero compatible people. Bright Data Google SERP runs
+  first. `0–2` valid unique Bright people are retained and followed by one
+  Apify fallback; `3+` prevents Apify. Provider failures fall through to Apify.
+- **Location evidence.** Bright location/city/state/country fields come only
+  from sanitized public SERP title/snippet/display/rich metadata. Missing
+  evidence may use the requested geography only when it is exactly one country;
+  requested cities/states are never fabricated. Enrichment uses bounded public
+  Google queries and never fetches authenticated LinkedIn pages.
+- **Central ingestion.** Every runtime Bright Data or Apify result passes through
   `DiscoverPublicKnowledgeService.appendProviderPeople`: sanitize → canonical
   company attach → stable-id/LinkedIn dedupe → public-person upsert → provider
-  batch upsert → membership link → Redis company-version increment. New provider
+  batch upsert → provider-labelled membership link → Redis company-version increment. Bright and
+  Apify continuation cursors/exhaustion are stored independently. New provider
   people therefore cannot exist only in one user's `ProspectPerson` rows.
 - **Redis keys.** Logical result keys are
   `discover:people:<schema-version>:<company-hash>:<company-version>:<intent-hash>`.
@@ -1859,10 +1869,15 @@ The durable schemas intentionally keep public and private data apart:
   `publicIntentHash` record internal durable provenance.
 - **Observability.** Safe events distinguish `DISCOVER_REDIS_HIT`,
   `DISCOVER_REDIS_MISS`, `DISCOVER_DATABASE_HIT`, `DISCOVER_DATABASE_ZERO`,
-  provider discovery/no-results, Add More DB hit/exhaustion, and public-person
-  upsert. Fields are canonical identity, normalized intent, aggregate candidate
-  counts, and provider-called/new-unique counts—never emails, tokens, private
-  payloads, or another user's state.
+  `DISCOVER_BRIGHTDATA_STARTED`, Bright results/location enrichment,
+  Bright-to-Apify fallback or Bright sufficiency, Apify fallback results,
+  Add More DB hit/exhaustion, and public-person upsert. Bright outcome counters
+  explicitly distinguish zero raw results, rejected results, configuration,
+  timeout, and provider failures (including safe handling of authentication,
+  rate-limit, and malformed-response failures). Fields are
+  canonical identity, normalized intent, aggregate candidate counts, and
+  provider-called/new-unique counts—never emails, tokens, private payloads, or
+  another user's state.
 - **Legacy rollout.** `DiscoverSearchCache*` remains temporarily for rollback
   but production service composition performs no reads or writes against it.
   Migration `20260920173000_discover_durable_public_knowledge` promotes those
@@ -1903,7 +1918,7 @@ the next Redis miss reads the new Postgres state.
 
 #### Central provider-ingestion contract
 
-Every normal-search or Add More Apify result enters through
+Every normal-search or Add More Bright Data/Apify result enters through
 `DiscoverPublicKnowledgeService.appendProviderPeople`. The required ordering is:
 
 1. Normalize provider profiles and discard unsupported private/raw fields.
