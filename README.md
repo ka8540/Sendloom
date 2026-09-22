@@ -687,7 +687,7 @@ With `OBJECT_STORAGE_MODE=r2`, the five required `CLOUDFLARE_R2_*` values must b
 | `DISCOVER_BRIGHTDATA_ENABLED` | Optional | Enables Bright Data public-people discovery before Apify. Default `false` |
 | `BRIGHTDATA_API_KEY` / `BRIGHTDATA_SERP_ZONE` | With Bright enabled | Server-only Bright Data credentials and SERP zone |
 | `DISCOVER_BRIGHTDATA_TIMEOUT_MS` | Optional | Bounded timeout for each Bright Data SERP request. Default `60000`, maximum `120000` |
-| `DISCOVER_BRIGHTDATA_MAX_PAGES` | Optional | Independent Bright continuation ceiling. Default `3` |
+| `DISCOVER_BRIGHTDATA_MAX_PAGES` | Optional | Independent Bright continuation ceiling. Default `10`; each action stops early when its valid-person target is reached |
 | `DISCOVER_BRIGHTDATA_LOCATION_ENRICHMENT_LIMIT` | Optional | Maximum bounded public Google location-enrichment calls per action. Default `2` |
 
 ### Incident reporting
@@ -719,7 +719,7 @@ Both fall back to `SESSION_SECRET` in development. Never prefix either with `NEX
 | `DISCOVER_ROLE_MAX_APIFY_TITLES` | Optional | Maximum exact + expanded provider titles per requested role. Default `5`, hard max `8` |
 | `DISCOVER_ROLE_MAX_APIFY_TITLES_TOTAL` | Optional | Maximum titles in one Apify actor input across all requested roles. Default `8`, hard max `20` |
 | `DISCOVER_EXPANSION_BATCH_SIZE` | Optional | New people per "Add 10 more". Default `10` |
-| `DISCOVER_EXPANSION_MAX_PROVIDER_PAGES` | Optional | Provider continuation safety switch; each Add More action fetches at most one page |
+| `DISCOVER_EXPANSION_MAX_PROVIDER_PAGES` | Optional | Maximum Bright continuation pages within one Add More action. Default `5` |
 | `PROSPECT_EMAIL_DISCOVERY_PROVIDER` | Optional | `openai_web_search` (default) or `none` |
 | `PROSPECT_EMAIL_FORMAT_WEB_SEARCH_ENABLED` | Optional | Master switch for AI web search. Default `true` |
 | `PROSPECT_EMAIL_FORMAT_MAX_WEB_RESULTS` | Optional | Public results weighed per company. Default `5` |

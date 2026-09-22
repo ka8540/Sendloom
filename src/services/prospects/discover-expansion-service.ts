@@ -51,6 +51,7 @@ import { RoleClassificationService } from "@/services/prospects/role-classificat
 // shared cache accumulates every normalized public result the provider returns
 // (never restricted to the 10 a single expansion materializes).
 const PROVIDER_PAGE_SIZE = 25;
+const PROVIDER_ACTION_TIMEOUT_MS = 120_000;
 
 export type ExpansionStatus = "PENDING" | "PROCESSING" | "READY" | "FAILED";
 
@@ -558,8 +559,9 @@ export class DiscoverExpansionService {
       return { people: collected, cacheCount, providerCount: 0, exhausted };
     }
 
-    // 11. No unused database people remain. Fetch at most one provider page for
-    // this explicit action; never loop merely to force a full batch.
+    // 11. No unused database people remain. Run one bounded provider action:
+    // Bright may advance through multiple saved SERP pages until this batch is
+    // full, then Apify may run once only when Bright finishes with 0-2 people.
     if (!exhausted && this.maxProviderPages > 0) {
       const budget = createAiBudget();
       await this.cache.runWithProviderLock(params.fingerprint, async () => {
@@ -612,22 +614,44 @@ export class DiscoverExpansionService {
           params.company.officialWebsiteDomain ?? params.company.officialDomain,
           params.company.linkedinUrl
         );
+        let updated = rechecked;
+        const providerActionStartedAt = Date.now();
+        const providerSignal = AbortSignal.timeout(PROVIDER_ACTION_TIMEOUT_MS);
         const chain = await this.providerOrchestrator.discover({
           companyName: params.company.officialName ?? params.company.name,
           companyLinkedinUrl: params.company.linkedinUrl,
           requestedTitles: params.roles,
           requestedLocations: params.locations,
           maxResults: PROVIDER_PAGE_SIZE,
+          desiredCount: this.batchSize,
           brightStartPage: brightPage,
           apifyStartPage: apifyPage,
           canonicalCompanyKey: params.fingerprintInput.companyKey,
           brightPagesFetched: rechecked?.brightPagesFetched ?? 0,
           apifyPagesFetched: rechecked?.apifyPagesFetched ?? rechecked?.providerPagesFetched ?? 0,
+          brightPageAttemptLimit: this.maxProviderPages,
+          signal: providerSignal,
+          deadlineAtMs: providerActionStartedAt + PROVIDER_ACTION_TIMEOUT_MS,
           brightExhausted: rechecked?.brightExhausted ?? false,
           apifyExhausted: rechecked?.apifyExhausted ?? rechecked?.providerExhausted ?? false,
           excluded: providerExcluded,
           budget,
           searchId: params.search.id,
+          onBrightPage: async (contribution) => {
+            updated = await this.cache.appendProviderPeople({
+              fingerprint: params.fingerprint,
+              fingerprintInput: params.fingerprintInput,
+              company: params.cacheCompany,
+              emailFormat: params.cacheEmailFormat,
+              people: contribution.people,
+              nextPage: contribution.nextPage,
+              pagesFetched: contribution.pagesFetched,
+              exhausted: contribution.exhausted,
+              provider: contribution.provider,
+              providerRunId: contribution.providerRunId,
+              providerDatasetId: contribution.providerDatasetId
+            });
+          },
           resolveCompanyLinkedinUrl: () => this.resolveAndPersistCompanyLinkedinUrl(
             params.company,
             params.search.id,
@@ -638,8 +662,7 @@ export class DiscoverExpansionService {
         // persisted URL into the durable public-knowledge row as well, while
         // retaining the domain-based fingerprint/canonical company identity.
         params.cacheCompany.linkedinUrl = params.company.linkedinUrl;
-        let updated = rechecked;
-        for (const contribution of chain.contributions) {
+        for (const contribution of chain.contributions.filter((entry) => entry.provider !== "BRIGHTDATA_GOOGLE")) {
           updated = await this.cache.appendProviderPeople({
             fingerprint: params.fingerprint,
             fingerprintInput: params.fingerprintInput,

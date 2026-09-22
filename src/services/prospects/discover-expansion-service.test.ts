@@ -2,7 +2,12 @@ import { withRaeNameAI } from "./__test-utils__/mock-name-ai";
 import type { PrismaClient } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ApifyProfileSearchService, type ApifyRunner } from "@/services/prospects/apify-profile-search";
+import {
+  ApifyProfileSearchService,
+  normalizeProfile,
+  type ApifyRunner
+} from "@/services/prospects/apify-profile-search";
+import type { BrightProfileSearchProvider } from "@/services/prospects/brightdata-public-profile-search";
 import {
   DiscoverSearchCacheService,
   type DiscoverCacheExpansionPort,
@@ -22,6 +27,7 @@ import {
   expansionMessage,
   type ExpansionAuditFn
 } from "@/services/prospects/discover-expansion-service";
+import { DiscoverPeopleProviderOrchestrator } from "@/services/prospects/discover-people-provider-orchestrator";
 import { RoleClassificationService } from "@/services/prospects/role-classification-service";
 import type { RoleEmbeddingPort } from "@/services/prospects/role-embedding-service";
 import type { RoleSemanticStorePort } from "@/services/prospects/role-semantic-store";
@@ -574,6 +580,7 @@ function buildService(opts: {
   batchSize?: number;
   maxProviderPages?: number;
   roleIntelligence?: DiscoverRoleIntelligencePort;
+  providerOrchestrator?: DiscoverPeopleProviderOrchestrator;
   audit?: ExpansionAuditFn;
 } = {}) {
   const runner: ApifyRunner = opts.runner ?? { run: vi.fn(async () => ({ runId: null, datasetId: null, items: [] })) };
@@ -591,7 +598,8 @@ function buildService(opts: {
     expansionLock: opts.expansionLock ?? makeFakeLock(),
     audit: opts.audit ?? (() => undefined),
     batchSize: opts.batchSize ?? 10,
-    maxProviderPages: opts.maxProviderPages ?? 5
+    maxProviderPages: opts.maxProviderPages ?? 5,
+    providerOrchestrator: opts.providerOrchestrator
   });
   return { service, runner, quota };
 }
@@ -721,6 +729,119 @@ describe("DiscoverExpansionService.addMorePeople", () => {
     expect(result.addedCount).toBe(10);
     expect(startPages).toEqual([1]);
     expect(prisma._state.searches[0]).toMatchObject({ status: "READY", totalProcessed: 10 });
+  });
+
+  it("resumes Add More from stored brightNextPage and can fill the batch across the Bright action", async () => {
+    seedCompany();
+    seedSearch();
+    seedExistingPeople(10);
+    for (let index = 1; index <= 10; index += 1) {
+      prisma._state.searchPeople.push({
+        id: `bright_resume_grant_${index}`,
+        searchId: SEARCH_ID,
+        personId: `person_${index}`,
+        userId: USER_ID,
+        allocationOrder: index - 1,
+        allocationSource: "PROVIDER",
+        allocatedAt: new Date()
+      });
+    }
+    const durable = new DiscoverPublicKnowledgeService({
+      prisma: prisma as unknown as PrismaClient,
+      redis: new TestRedis(),
+      lock: makeFakeLock()
+    });
+    const { input, fingerprint } = fingerprintFor();
+    await durable.appendProviderPeople({
+      fingerprint,
+      fingerprintInput: input,
+      company: { name: "Apple", domain: "apple.com", linkedinUrl: "https://www.linkedin.com/company/apple" },
+      emailFormat: {
+        emailDomain: "apple.com",
+        emailDomainConfidence: "HIGH",
+        emailDomainEvidence: [],
+        emailPattern: "flast",
+        patternConfidence: "HIGH",
+        patternEvidence: [],
+        emailFormatReason: null
+      },
+      people: [],
+      nextPage: 4,
+      pagesFetched: 3,
+      exhausted: false,
+      provider: "BRIGHTDATA_GOOGLE"
+    });
+    const startPages: number[] = [];
+    const bright: BrightProfileSearchProvider = {
+      configured: true,
+      searchProfiles: vi.fn(async (request) => {
+        startPages.push(request.startPage ?? 1);
+        const count = (request.startPage ?? 1) === 4 ? 6 : 4;
+        const profiles = Array.from({ length: count }, (_, index) => normalizeProfile({
+          id: `bright-resume-${request.startPage}-${index + 1}`,
+          linkedinUrl: `https://www.linkedin.com/in/bright-resume-${request.startPage}-${index + 1}`,
+          fullName: `Bright Resume${request.startPage}${index + 1}`,
+          currentTitle: "Software Engineer",
+          currentCompany: "Apple",
+          location: "United States"
+        })!);
+        return {
+          profiles,
+          nextPage: (request.startPage ?? 1) + 1,
+          exhausted: false,
+          diagnostics: {
+            rawBrightResults: 10,
+            linkedInCandidates: 10,
+            currentEmploymentAccepted: count,
+            formerEmployeeRejected: 0,
+            companyContradictionRejected: 0,
+            companyInsufficientRejected: 10 - count,
+            locationAccepted: count,
+            locationMissing: 0,
+            locationContradictionRejected: 0,
+            duplicateRejected: 0,
+            enrichmentCalls: 0
+          }
+        };
+      })
+    };
+    const runner: ApifyRunner = { run: vi.fn(async () => ({ runId: null, datasetId: null, items: [] })) };
+    const apify = new ApifyProfileSearchService({ token: "t", actorId: "actor", runner });
+    const roleIntelligence = {
+      enabled: false,
+      buildProviderTitlePlan: vi.fn(async (titles: readonly string[]) => [...titles]),
+      filterAndRankPeople: vi.fn(async ({ people }: { people: ResolvedCachePerson[] }) => people),
+      persistTitleKnowledge: vi.fn(async () => ({ existing: 0, created: 0, failed: false }))
+    } as unknown as DiscoverRoleIntelligencePort;
+    const providerOrchestrator = new DiscoverPeopleProviderOrchestrator({
+      bright,
+      apify,
+      roleClassifier: roleClassifierStub,
+      roleIntelligence,
+      brightMaxPages: 10
+    });
+    const { service } = buildService({
+      cache: durable,
+      runner,
+      roleIntelligence,
+      providerOrchestrator
+    });
+
+    const result = await service.addMorePeople({
+      userId: USER_ID,
+      actorEmail: "user@example.com",
+      searchId: SEARCH_ID,
+      idempotencyKey: "resume-bright-page-four"
+    });
+
+    expect(result.addedCount).toBe(10);
+    expect(startPages).toEqual([4, 5]);
+    expect(runner.run).not.toHaveBeenCalled();
+    await expect(durable.getExpansionState(fingerprint)).resolves.toMatchObject({
+      brightNextPage: 6,
+      brightPagesFetched: 5,
+      brightExhausted: false
+    });
   });
 
   it("returns partial unused same-user people without a provider top-up", async () => {

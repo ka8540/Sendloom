@@ -107,7 +107,7 @@ const envSchema = z
     BRIGHTDATA_API_KEY: z.string().min(1).optional(),
     BRIGHTDATA_SERP_ZONE: z.string().min(1).optional(),
     DISCOVER_BRIGHTDATA_TIMEOUT_MS: z.coerce.number().int().min(10_000).max(120_000).default(60_000),
-    DISCOVER_BRIGHTDATA_MAX_PAGES: z.coerce.number().int().positive().max(10).default(3),
+    DISCOVER_BRIGHTDATA_MAX_PAGES: z.coerce.number().int().positive().max(10).default(10),
     DISCOVER_BRIGHTDATA_LOCATION_ENRICHMENT_LIMIT: z.coerce.number().int().nonnegative().max(5).default(2),
     WEB_SEARCH_PROVIDER: z.preprocess(
       (value) => (value === "" || value === undefined ? "none" : String(value).trim().toLowerCase()),

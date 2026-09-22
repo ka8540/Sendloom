@@ -78,4 +78,28 @@ describe("BrightDataGoogleSearchProvider", () => {
     expect((await provider.search("query", { page: 3, requestedLocations: [] })).exhausted).toBe(true);
     expect((await provider.search("query", { page: 2, requestedLocations: [] })).exhausted).toBe(true);
   });
+
+  it("uses real Google start offsets for successive SERP pages", async () => {
+    const starts: string[] = [];
+    const fetcher = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const request = JSON.parse(String(init?.body));
+      starts.push(new URL(request.url).searchParams.get("start") ?? "");
+      return new Response(JSON.stringify({
+        organic: [{ title: "Jane Doe | LinkedIn", link: "https://linkedin.com/in/jane" }]
+      }), { status: 200 });
+    });
+    const provider = new BrightDataGoogleSearchProvider({
+      enabled: true,
+      apiKey: "secret",
+      zone: "zone",
+      maxPages: 10,
+      fetcher: fetcher as typeof fetch
+    });
+
+    await provider.search("query", { page: 1, requestedLocations: [] });
+    await provider.search("query", { page: 2, requestedLocations: [] });
+    await provider.search("query", { page: 3, requestedLocations: [] });
+
+    expect(starts).toEqual(["0", "10", "20"]);
+  });
 });

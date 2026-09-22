@@ -518,12 +518,20 @@ export class ProspectSearchService {
     });
 
     const budget = createAiBudget();
+    const pipelineAbort = new AbortController();
+    const pipelineDeadlineAtMs = Date.now() + this.pipelineTimeoutMs;
 
     try {
       const outcome = await withTimeout(
-        this.runPipeline(userId, search, budget),
+        this.runPipeline(userId, search, budget, {
+          signal: pipelineAbort.signal,
+          deadlineAtMs: pipelineDeadlineAtMs
+        }),
         this.pipelineTimeoutMs,
-        () => new ProspectError("PROVIDER_TIMEOUT", "The profile search timed out. Try again in a moment.")
+        () => {
+          pipelineAbort.abort(new DOMException("The prospect pipeline deadline was reached.", "TimeoutError"));
+          return new ProspectError("PROVIDER_TIMEOUT", "The profile search timed out. Try again in a moment.");
+        }
       );
       const completed = await this.prisma.prospectSearch.update({
         where: { id: search.id },
@@ -707,7 +715,12 @@ export class ProspectSearchService {
     await this.prisma.prospectSearch.update({ where: { id: searchId }, data: { status, ...data } });
   }
 
-  private async runPipeline(userId: string, search: ProspectSearch, budget: AiCallBudget): Promise<RunPipelineResult> {
+  private async runPipeline(
+    userId: string,
+    search: ProspectSearch,
+    budget: AiCallBudget,
+    request: { signal: AbortSignal; deadlineAtMs: number }
+  ): Promise<RunPipelineResult> {
     // 1) Resolve the company. This runs before the cache check because the
     // canonical fingerprint is keyed on the RESOLVED company identity (so
     // "Apple"/"Apple Inc." share a cache entry) — not the raw typed name.
@@ -839,9 +852,33 @@ export class ProspectSearchService {
           companyLinkedinUrl: resolution.linkedinCompanyUrl
         });
         let state = await durableKnowledge.getExpansionState(fingerprint);
-        const provider = await this.runProviderDataset(userId, search, company, resolution, budget, excluded, state);
+        const provider = await this.runProviderDataset(
+          userId,
+          search,
+          company,
+          resolution,
+          budget,
+          excluded,
+          state,
+          request,
+          async (contribution) => {
+            state = await durableKnowledge.appendProviderPeople({
+              fingerprint,
+              fingerprintInput,
+              company: resolvedCompany,
+              emailFormat: this.companyResolvedEmailFormat(company),
+              people: contribution.people,
+              nextPage: contribution.nextPage,
+              pagesFetched: contribution.pagesFetched,
+              exhausted: contribution.exhausted,
+              provider: contribution.provider,
+              providerRunId: contribution.providerRunId,
+              providerDatasetId: contribution.providerDatasetId
+            });
+          }
+        );
         resolvedCompany.linkedinUrl = resolution.linkedinCompanyUrl;
-        for (const contribution of provider.contributions) {
+        for (const contribution of provider.contributions.filter((entry) => entry.provider !== "BRIGHTDATA_GOOGLE")) {
           state = await durableKnowledge.appendProviderPeople({
             fingerprint,
             fingerprintInput,
@@ -1089,7 +1126,9 @@ export class ProspectSearchService {
     resolution: CompanyResolution,
     budget: AiCallBudget,
     excluded: PersonIdentitySet,
-    continuation: Awaited<ReturnType<DiscoverPublicKnowledgeService["getExpansionState"]>>
+    continuation: Awaited<ReturnType<DiscoverPublicKnowledgeService["getExpansionState"]>>,
+    request?: { signal: AbortSignal; deadlineAtMs: number },
+    persistBrightPage?: (contribution: ProviderContribution) => Promise<void>
   ): Promise<ProviderDatasetResult> {
     // Bright Data public Google discovery runs first. Only 0-2 valid unique
     // Bright people permit the single bounded Apify fallback.
@@ -1103,6 +1142,7 @@ export class ProspectSearchService {
       requestedTitles,
       requestedLocations: this.asStringArray(search.requestedLocations),
       maxResults: candidateLimit,
+      desiredCount: resultLimit,
       brightStartPage: continuation?.brightNextPage ?? 1,
       apifyStartPage: continuation?.apifyNextPage ?? continuation?.providerNextPage ?? 1,
       canonicalCompanyKey: getCanonicalCompanyKey({
@@ -1113,12 +1153,15 @@ export class ProspectSearchService {
       }),
       brightPagesFetched: continuation?.brightPagesFetched ?? 0,
       apifyPagesFetched: continuation?.apifyPagesFetched ?? continuation?.providerPagesFetched ?? 0,
+      signal: request?.signal,
+      deadlineAtMs: request?.deadlineAtMs,
       brightExhausted: continuation?.brightExhausted ?? false,
       apifyExhausted: continuation?.apifyExhausted ?? continuation?.providerExhausted ?? false,
       excluded,
       budget,
       searchId: search.id,
       onProfilesDiscovered: () => this.setStatus(search.id, "CLASSIFYING_POSITIONS"),
+      onBrightPage: persistBrightPage,
       resolveCompanyLinkedinUrl: async () => {
         const linkedinUrl = await this.resolveAndPersistCompanyLinkedinUrl(userId, company, search.id, budget);
         if (linkedinUrl) resolution.linkedinCompanyUrl = linkedinUrl;

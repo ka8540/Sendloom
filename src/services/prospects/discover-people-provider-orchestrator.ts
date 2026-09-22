@@ -1,4 +1,5 @@
 import { coercePositionCategory } from "@/lib/prospect-enums";
+import { env } from "@/lib/env";
 import {
   ApifyCompanyTargetingError,
   type ApifyIngestionDiagnostics,
@@ -25,6 +26,16 @@ import type { RoleClassificationService } from "@/services/prospects/role-classi
 
 export const BRIGHT_APIFY_FALLBACK_THRESHOLD = 3;
 
+export type BrightStopReason =
+  | "TARGET_REACHED"
+  | "EMPTY_PAGE"
+  | "MAX_PAGES"
+  | "TIMEOUT"
+  | "PROVIDER_ERROR"
+  | "PARENT_DEADLINE"
+  | "DISABLED"
+  | "ALREADY_EXHAUSTED";
+
 export type ProviderContribution = {
   provider: "BRIGHTDATA_GOOGLE" | "APIFY";
   people: ResolvedCachePerson[];
@@ -49,6 +60,12 @@ export type ProviderChainDiagnostics = {
   apifyCompanyTargeted: boolean;
   apifyNewUnique: number;
   finalUniqueCount: number;
+  brightStartPage: number;
+  brightEndPage: number;
+  brightPagesAttempted: number;
+  brightPagesSucceeded: number;
+  desiredCount: number;
+  stopReason: BrightStopReason;
 };
 
 export type ProviderChainResult = {
@@ -63,15 +80,46 @@ export type DiscoverPeopleProviderOrchestratorDeps = {
   roleClassifier: RoleClassificationService;
   roleIntelligence: DiscoverRoleIntelligencePort;
   fallbackThreshold?: number;
+  brightMaxPages?: number;
+  minimumRemainingBudgetMs?: number;
 };
+
+function emptyBrightDiagnostics(): BrightProfileDiagnostics {
+  return {
+    rawBrightResults: 0,
+    linkedInCandidates: 0,
+    currentEmploymentAccepted: 0,
+    formerEmployeeRejected: 0,
+    companyContradictionRejected: 0,
+    companyInsufficientRejected: 0,
+    locationAccepted: 0,
+    locationMissing: 0,
+    locationContradictionRejected: 0,
+    duplicateRejected: 0,
+    enrichmentCalls: 0
+  };
+}
+
+function addBrightDiagnostics(
+  total: BrightProfileDiagnostics,
+  page: BrightProfileDiagnostics
+): void {
+  for (const key of Object.keys(total) as Array<keyof BrightProfileDiagnostics>) {
+    total[key] += page[key];
+  }
+}
 
 export class DiscoverPeopleProviderOrchestrator {
   private readonly bright: BrightProfileSearchProvider;
   private readonly fallbackThreshold: number;
+  private readonly brightMaxPages: number;
+  private readonly minimumRemainingBudgetMs: number;
 
   constructor(private readonly deps: DiscoverPeopleProviderOrchestratorDeps) {
     this.bright = deps.bright ?? new BrightDataPublicProfileSearchService();
     this.fallbackThreshold = deps.fallbackThreshold ?? BRIGHT_APIFY_FALLBACK_THRESHOLD;
+    this.brightMaxPages = deps.brightMaxPages ?? env.DISCOVER_BRIGHTDATA_MAX_PAGES;
+    this.minimumRemainingBudgetMs = deps.minimumRemainingBudgetMs ?? 5_000;
   }
 
   get brightConfigured(): boolean {
@@ -84,6 +132,8 @@ export class DiscoverPeopleProviderOrchestrator {
     requestedTitles: string[];
     requestedLocations: string[];
     maxResults: number;
+    /** Valid unique people this action should try to collect before stopping Bright. */
+    desiredCount?: number;
     brightStartPage?: number;
     apifyStartPage?: number;
     brightExhausted?: boolean;
@@ -94,7 +144,12 @@ export class DiscoverPeopleProviderOrchestrator {
     canonicalCompanyKey?: string;
     brightPagesFetched?: number;
     apifyPagesFetched?: number;
+    brightPageAttemptLimit?: number;
+    signal?: AbortSignal;
+    deadlineAtMs?: number;
     onProfilesDiscovered?: () => Promise<void> | void;
+    /** Durable boundary invoked after each successful Bright page, before the next page starts. */
+    onBrightPage?: (contribution: ProviderContribution) => Promise<void>;
     resolveCompanyLinkedinUrl?: () => Promise<string | null>;
   }): Promise<ProviderChainResult> {
     const titles = await this.deps.roleIntelligence.buildProviderTitlePlan(input.requestedTitles, {
@@ -103,17 +158,37 @@ export class DiscoverPeopleProviderOrchestrator {
     });
     const identities = input.excluded ?? new PersonIdentitySet();
     const contributions: ProviderContribution[] = [];
-    let brightPeople: ResolvedCachePerson[] = [];
+    const brightPeople: ResolvedCachePerson[] = [];
+    const aggregateBrightDiagnostics = emptyBrightDiagnostics();
     let brightDiagnostics: BrightProfileDiagnostics | null = null;
     let brightStatus: ProviderChainDiagnostics["brightStatus"] = this.bright.configured ? "ZERO_RESULTS" : "DISABLED";
     let failureEvent: ReturnType<typeof brightFailureEvent> | null = null;
     let brightRequestCompleted = false;
     let brightTimedOut = false;
     let companyLinkedinUrl = canonicalizeLinkedinCompanyUrl(input.companyLinkedinUrl);
-    const brightStartPage = input.brightStartPage ?? 1;
+    const brightStartPage = Math.max(1, Math.floor(input.brightStartPage ?? 1));
     const brightPagesFetched = input.brightPagesFetched ?? 0;
     const apifyStartPage = input.apifyStartPage ?? 1;
     const apifyPagesFetched = input.apifyPagesFetched ?? 0;
+    const desiredCount = Math.max(1, Math.floor(input.desiredCount ?? input.maxResults));
+    const brightPageAttemptLimit = Math.max(
+      1,
+      Math.floor(input.brightPageAttemptLimit ?? this.brightMaxPages)
+    );
+    let brightEndPage = brightStartPage;
+    let brightPagesAttempted = 0;
+    let brightPagesSucceeded = 0;
+    let remainingLocationEnrichmentCalls = env.DISCOVER_BRIGHTDATA_LOCATION_ENRICHMENT_LIMIT;
+    let stopReason: BrightStopReason = this.bright.configured
+      ? input.brightExhausted
+        ? "ALREADY_EXHAUSTED"
+        : "MAX_PAGES"
+      : "DISABLED";
+    let page = brightStartPage;
+    const parentDeadlineReached = () =>
+      Boolean(input.signal?.aborted) ||
+      (typeof input.deadlineAtMs === "number" &&
+        input.deadlineAtMs - Date.now() <= this.minimumRemainingBudgetMs);
 
     if (this.bright.configured && !input.brightExhausted) {
       safeEvent("DISCOVER_BRIGHTDATA_STARTED", {
@@ -124,96 +199,176 @@ export class DiscoverPeopleProviderOrchestrator {
         brightStartPage,
         brightNextPage: brightStartPage,
         brightPagesFetched,
-        brightExhausted: false
+        brightExhausted: false,
+        desiredCount
       });
-      try {
-        const result = await this.bright.searchProfiles({
-          companyName: input.companyName,
-          companyLinkedinUrl,
-          jobTitles: titles,
-          locations: input.requestedLocations,
-          maxResults: input.maxResults,
-          startPage: brightStartPage
-        });
+
+      while (
+        brightPeople.length < desiredCount &&
+        page <= this.brightMaxPages &&
+        brightPagesAttempted < brightPageAttemptLimit
+      ) {
+        if (parentDeadlineReached()) {
+          stopReason = "PARENT_DEADLINE";
+          break;
+        }
+
+        brightPagesAttempted += 1;
+        brightEndPage = page;
+        let result: Awaited<ReturnType<BrightProfileSearchProvider["searchProfiles"]>>;
+        try {
+          result = await this.bright.searchProfiles({
+            companyName: input.companyName,
+            companyLinkedinUrl,
+            jobTitles: titles,
+            locations: input.requestedLocations,
+            maxResults: input.maxResults,
+            startPage: page,
+            signal: input.signal,
+            locationEnrichmentLimit: remainingLocationEnrichmentCalls
+          });
+        } catch (error) {
+          if (parentDeadlineReached()) {
+            stopReason = "PARENT_DEADLINE";
+          } else {
+            failureEvent = brightFailureEvent(error);
+            brightTimedOut = failureEvent === "BRIGHT_TIMEOUT";
+            stopReason = brightTimedOut ? "TIMEOUT" : "PROVIDER_ERROR";
+          }
+          brightStatus = "FAILED";
+          safeEvent(failureEvent ?? "BRIGHT_PARENT_DEADLINE", {
+            searchId: input.searchId,
+            canonicalCompanyKey: input.canonicalCompanyKey ?? null,
+            companyLinkedinResolved: Boolean(companyLinkedinUrl),
+            brightConfigured: true,
+            brightStartPage,
+            brightEndPage,
+            brightNextPage: page,
+            brightPagesAttempted,
+            brightPagesSucceeded,
+            brightPagesFetched: brightPagesFetched + brightPagesSucceeded,
+            brightExhausted: false,
+            brightRequestCompleted,
+            brightTimedOut,
+            totalRawBrightResults: aggregateBrightDiagnostics.rawBrightResults,
+            totalBrightValidUnique: brightPeople.length,
+            desiredCount,
+            stopReason
+          });
+          break;
+        }
+
+        brightPagesSucceeded += 1;
         brightRequestCompleted = true;
-        brightDiagnostics = result.diagnostics;
+        addBrightDiagnostics(aggregateBrightDiagnostics, result.diagnostics);
+        remainingLocationEnrichmentCalls = Math.max(
+          0,
+          remainingLocationEnrichmentCalls - result.diagnostics.enrichmentCalls
+        );
+        brightDiagnostics = aggregateBrightDiagnostics;
         if (result.profiles.length > 0) await input.onProfilesDiscovered?.();
-        brightPeople = await this.buildPeople(result.profiles, input, "CACHE");
-        brightPeople = brightPeople.filter((person) => identities.addIfNew(person));
-        brightStatus = brightPeople.length >= this.fallbackThreshold
-          ? "SUFFICIENT"
-          : brightPeople.length > 0
-            ? "PARTIAL"
-            : result.diagnostics.rawBrightResults > 0
-              ? "RESULTS_REJECTED"
-              : "ZERO_RESULTS";
-        contributions.push({
+        const processedPage = await this.buildPeople(result.profiles, input, "CACHE");
+        const uniquePage = processedPage.filter((person) => identities.addIfNew(person));
+        aggregateBrightDiagnostics.duplicateRejected += processedPage.length - uniquePage.length;
+        brightPeople.push(...uniquePage);
+        const reachedPageCap = page >= this.brightMaxPages;
+        const contribution: ProviderContribution = {
           provider: "BRIGHTDATA_GOOGLE",
-          people: brightPeople,
-          nextPage: result.nextPage,
+          people: uniquePage,
+          nextPage: Math.max(page + 1, result.nextPage),
           pagesFetched: 1,
-          exhausted: result.exhausted,
+          exhausted: result.exhausted || reachedPageCap,
           providerRunId: null,
           providerDatasetId: null,
           providerTotalFound: result.diagnostics.rawBrightResults,
           providerResultCount: result.profiles.length
-        });
+        };
+        contributions.push(contribution);
+        await input.onBrightPage?.(contribution);
         if (result.diagnostics.enrichmentCalls > 0) {
           safeEvent("DISCOVER_BRIGHTDATA_LOCATION_ENRICHMENT", {
             searchId: input.searchId,
+            page,
             enrichmentCalls: result.diagnostics.enrichmentCalls,
             locationAccepted: result.diagnostics.locationAccepted,
             locationMissing: result.diagnostics.locationMissing,
             locationContradictionRejected: result.diagnostics.locationContradictionRejected
           });
         }
-        safeEvent(brightPeople.length >= this.fallbackThreshold ? "DISCOVER_BRIGHTDATA_SUFFICIENT" : "DISCOVER_BRIGHTDATA_RESULTS", {
+        safeEvent("DISCOVER_BRIGHTDATA_PAGE_RESULTS", {
           searchId: input.searchId,
           canonicalCompanyKey: input.canonicalCompanyKey ?? null,
           companyLinkedinResolved: Boolean(companyLinkedinUrl),
-          brightConfigured: true,
-          brightStartPage,
-          brightNextPage: result.nextPage,
-          brightPagesFetched: brightPagesFetched + 1,
-          brightExhausted: result.exhausted,
-          brightRequestCompleted: true,
-          brightTimedOut: false,
+          page,
+          brightNextPage: contribution.nextPage,
+          brightPagesFetched: brightPagesFetched + brightPagesSucceeded,
+          brightExhausted: contribution.exhausted,
           ...result.diagnostics,
-          roleAccepted: brightPeople.length,
-          brightValidUnique: brightPeople.length,
-          outcome:
-            brightStatus === "ZERO_RESULTS"
-              ? "BRIGHT_ZERO_RESULTS"
-              : brightStatus === "RESULTS_REJECTED"
-                ? "BRIGHT_RESULTS_REJECTED"
-                : "BRIGHT_RESULTS_ACCEPTED"
+          pageBrightValidUnique: uniquePage.length,
+          totalBrightValidUnique: brightPeople.length,
+          desiredCount
         });
-      } catch (error) {
-        brightStatus = "FAILED";
-        failureEvent = brightFailureEvent(error);
-        brightTimedOut = failureEvent === "BRIGHT_TIMEOUT";
-        safeEvent(failureEvent, {
-          searchId: input.searchId,
-          canonicalCompanyKey: input.canonicalCompanyKey ?? null,
-          companyLinkedinResolved: Boolean(companyLinkedinUrl),
-          brightConfigured: true,
-          brightStartPage,
-          brightNextPage: brightStartPage,
-          brightPagesFetched,
-          brightExhausted: false,
-          brightRequestCompleted: false,
-          brightTimedOut,
-          rawBrightResults: 0,
-          brightValidUnique: 0
-        });
+
+        if (brightPeople.length >= desiredCount) {
+          stopReason = "TARGET_REACHED";
+          break;
+        }
+        if (result.diagnostics.rawBrightResults === 0) {
+          stopReason = "EMPTY_PAGE";
+          break;
+        }
+        if (contribution.exhausted) {
+          stopReason = "MAX_PAGES";
+          break;
+        }
+        page = contribution.nextPage;
       }
+
+      if (
+        brightPeople.length < desiredCount &&
+        (page > this.brightMaxPages || brightPagesAttempted >= brightPageAttemptLimit)
+      ) stopReason = "MAX_PAGES";
+      if (!failureEvent && stopReason !== "PARENT_DEADLINE") {
+        brightStatus = brightPeople.length >= this.fallbackThreshold
+          ? "SUFFICIENT"
+          : brightPeople.length > 0
+            ? "PARTIAL"
+            : aggregateBrightDiagnostics.rawBrightResults > 0
+              ? "RESULTS_REJECTED"
+              : "ZERO_RESULTS";
+      }
+      safeEvent(brightPeople.length >= this.fallbackThreshold ? "DISCOVER_BRIGHTDATA_SUFFICIENT" : "DISCOVER_BRIGHTDATA_RESULTS", {
+        searchId: input.searchId,
+        canonicalCompanyKey: input.canonicalCompanyKey ?? null,
+        companyLinkedinResolved: Boolean(companyLinkedinUrl),
+        brightConfigured: true,
+        brightStartPage,
+        brightEndPage,
+        brightPagesAttempted,
+        brightPagesSucceeded,
+        brightNextPage: contributions.at(-1)?.nextPage ?? brightStartPage,
+        brightPagesFetched: brightPagesFetched + brightPagesSucceeded,
+        brightExhausted: contributions.at(-1)?.exhausted ?? false,
+        brightRequestCompleted,
+        brightTimedOut,
+        totalRawBrightResults: aggregateBrightDiagnostics.rawBrightResults,
+        totalLinkedInCandidates: aggregateBrightDiagnostics.linkedInCandidates,
+        totalCurrentEmploymentAccepted: aggregateBrightDiagnostics.currentEmploymentAccepted,
+        totalLocationAccepted: aggregateBrightDiagnostics.locationAccepted,
+        totalDuplicateRejected: aggregateBrightDiagnostics.duplicateRejected,
+        totalBrightValidUnique: brightPeople.length,
+        desiredCount,
+        stopReason
+      });
     }
 
-    const apifyFallbackNeeded = brightPeople.length < this.fallbackThreshold && !input.apifyExhausted;
-    const brightContribution = contributions.find((entry) => entry.provider === "BRIGHTDATA_GOOGLE");
-    const observedBrightNextPage = brightContribution?.nextPage ?? brightStartPage;
-    const observedBrightPagesFetched = brightPagesFetched + (brightRequestCompleted ? 1 : 0);
-    const observedBrightExhausted = brightContribution?.exhausted ?? (input.brightExhausted ?? false);
+    if (parentDeadlineReached()) stopReason = "PARENT_DEADLINE";
+    const parentBudgetSpent = stopReason === "PARENT_DEADLINE";
+    const apifyFallbackNeeded = !parentBudgetSpent && brightPeople.length < this.fallbackThreshold && !input.apifyExhausted;
+    const lastBrightContribution = contributions.filter((entry) => entry.provider === "BRIGHTDATA_GOOGLE").at(-1);
+    const observedBrightNextPage = lastBrightContribution?.nextPage ?? brightStartPage;
+    const observedBrightPagesFetched = brightPagesFetched + brightPagesSucceeded;
+    const observedBrightExhausted = lastBrightContribution?.exhausted ?? (input.brightExhausted ?? false);
     const rawBrightResults = brightDiagnostics?.rawBrightResults ?? 0;
     let apifyPeople: ResolvedCachePerson[] = [];
     let apifyDiagnostics: ApifyIngestionDiagnostics | null = null;
@@ -237,8 +392,14 @@ export class DiscoverPeopleProviderOrchestrator {
         brightExhausted: observedBrightExhausted,
         brightRequestCompleted,
         brightTimedOut,
-        rawBrightResults,
-        brightValidUnique: brightPeople.length,
+        totalRawBrightResults: rawBrightResults,
+        totalLinkedInCandidates: brightDiagnostics?.linkedInCandidates ?? 0,
+        totalCurrentEmploymentAccepted: brightDiagnostics?.currentEmploymentAccepted ?? 0,
+        totalLocationAccepted: brightDiagnostics?.locationAccepted ?? 0,
+        totalDuplicateRejected: brightDiagnostics?.duplicateRejected ?? 0,
+        totalBrightValidUnique: brightPeople.length,
+        desiredCount,
+        stopReason,
         apifyFallbackCalled: shouldCallApify,
         apifyCompanyTargeted: Boolean(companyLinkedinUrl),
         apifyStartPage,
@@ -287,8 +448,14 @@ export class DiscoverPeopleProviderOrchestrator {
         brightExhausted: observedBrightExhausted,
         brightRequestCompleted,
         brightTimedOut,
-        rawBrightResults,
-        brightValidUnique: brightPeople.length,
+        totalRawBrightResults: rawBrightResults,
+        totalLinkedInCandidates: brightDiagnostics?.linkedInCandidates ?? 0,
+        totalCurrentEmploymentAccepted: brightDiagnostics?.currentEmploymentAccepted ?? 0,
+        totalLocationAccepted: brightDiagnostics?.locationAccepted ?? 0,
+        totalDuplicateRejected: brightDiagnostics?.duplicateRejected ?? 0,
+        totalBrightValidUnique: brightPeople.length,
+        desiredCount,
+        stopReason,
         apifyFallbackCalled: true,
         apifyCompanyTargeted: true,
         apifyStartPage,
@@ -300,7 +467,7 @@ export class DiscoverPeopleProviderOrchestrator {
       });
     }
 
-    const people = [...brightPeople, ...apifyPeople].slice(0, input.maxResults);
+    const people = [...brightPeople, ...apifyPeople].slice(0, desiredCount);
     return {
       people,
       contributions,
@@ -315,7 +482,13 @@ export class DiscoverPeopleProviderOrchestrator {
         apifyFallbackCalled: shouldCallApify,
         apifyCompanyTargeted: shouldCallApify,
         apifyNewUnique: apifyPeople.length,
-        finalUniqueCount: people.length
+        finalUniqueCount: people.length,
+        brightStartPage,
+        brightEndPage,
+        brightPagesAttempted,
+        brightPagesSucceeded,
+        desiredCount,
+        stopReason
       }
     };
   }

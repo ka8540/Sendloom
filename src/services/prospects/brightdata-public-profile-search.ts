@@ -36,7 +36,9 @@ export type BrightProfileSearchResult = {
 
 export interface BrightProfileSearchProvider {
   readonly configured: boolean;
-  searchProfiles(input: ApifyProfileSearchInput & { signal?: AbortSignal }): Promise<BrightProfileSearchResult>;
+  searchProfiles(
+    input: ApifyProfileSearchInput & { signal?: AbortSignal; locationEnrichmentLimit?: number }
+  ): Promise<BrightProfileSearchResult>;
 }
 
 function counters(): BrightProfileDiagnostics {
@@ -78,7 +80,9 @@ export class BrightDataPublicProfileSearchService implements BrightProfileSearch
     this.configured = provider.configured;
   }
 
-  async searchProfiles(input: ApifyProfileSearchInput & { signal?: AbortSignal }): Promise<BrightProfileSearchResult> {
+  async searchProfiles(
+    input: ApifyProfileSearchInput & { signal?: AbortSignal; locationEnrichmentLimit?: number }
+  ): Promise<BrightProfileSearchResult> {
     const diagnostics = counters();
     const page = Math.max(1, Math.floor(input.startPage ?? 1));
     const query = buildPublicPeopleRoleUnionQuery({
@@ -118,9 +122,13 @@ export class BrightDataPublicProfileSearchService implements BrightProfileSearch
 
     const profiles: NormalizedProfile[] = [];
     let enrichmentCalls = 0;
+    const enrichmentLimit = Math.max(
+      0,
+      Math.min(this.enrichmentLimit, input.locationEnrichmentLimit ?? this.enrichmentLimit)
+    );
     for (const candidate of accepted) {
       let evidence = extractPublicLocationEvidence(evidenceFor(candidate.result), input.companyName);
-      if (!evidence && enrichmentCalls < this.enrichmentLimit) {
+      if (!evidence && enrichmentCalls < enrichmentLimit) {
         enrichmentCalls += 1;
         diagnostics.enrichmentCalls += 1;
         const enriched = await this.provider.search(enrichmentQuery(candidate.profile, input.companyName, input.locations), {
