@@ -15,7 +15,11 @@ import {
 import { env } from "@/lib/env";
 import { coercePositionCategory, displayNameForCategory, type PositionCategory } from "@/lib/prospect-enums";
 import { ApifyProfileSearchService } from "@/services/prospects/apify-profile-search";
-import { normalizeLinkedinCompanySlug } from "@/services/prospects/canonical-company";
+import {
+  canonicalizeLinkedinCompanyUrl,
+  normalizeLinkedinCompanySlug
+} from "@/services/prospects/canonical-company";
+import { CompanyResolutionService } from "@/services/prospects/company-resolution-service";
 import {
   createRedisCacheLock,
   resolveSharedCacheVersion,
@@ -77,6 +81,7 @@ export type DiscoverExpansionServiceDeps = {
   prisma: PrismaClient;
   apify: ApifyProfileSearchService;
   roleClassifier: RoleClassificationService;
+  companyResolution?: CompanyResolutionService;
   roleIntelligence?: DiscoverRoleIntelligencePort;
   /** Defaults to the durable shared people store (provides continuation state). */
   cache?: DiscoverCacheExpansionPort & Partial<DiscoverCachePort>;
@@ -136,6 +141,7 @@ export class DiscoverExpansionService {
   private readonly batchSize: number;
   private readonly maxProviderPages: number;
   private readonly providerOrchestrator: DiscoverPeopleProviderOrchestrator;
+  private readonly companyResolution?: CompanyResolutionService;
 
   constructor(deps: DiscoverExpansionServiceDeps) {
     this.prisma = deps.prisma;
@@ -149,6 +155,7 @@ export class DiscoverExpansionService {
     this.audit = deps.audit ?? recordAuditEvent;
     this.batchSize = deps.batchSize ?? resolveExpansionBatchSize();
     this.maxProviderPages = deps.maxProviderPages ?? resolveExpansionMaxProviderPages();
+    this.companyResolution = deps.companyResolution;
     this.providerOrchestrator = deps.providerOrchestrator ?? new DiscoverPeopleProviderOrchestrator({
       apify: deps.apify,
       roleClassifier: deps.roleClassifier,
@@ -613,12 +620,24 @@ export class DiscoverExpansionService {
           maxResults: PROVIDER_PAGE_SIZE,
           brightStartPage: brightPage,
           apifyStartPage: apifyPage,
+          canonicalCompanyKey: params.fingerprintInput.companyKey,
+          brightPagesFetched: rechecked?.brightPagesFetched ?? 0,
+          apifyPagesFetched: rechecked?.apifyPagesFetched ?? rechecked?.providerPagesFetched ?? 0,
           brightExhausted: rechecked?.brightExhausted ?? false,
           apifyExhausted: rechecked?.apifyExhausted ?? rechecked?.providerExhausted ?? false,
           excluded: providerExcluded,
           budget,
-          searchId: params.search.id
+          searchId: params.search.id,
+          resolveCompanyLinkedinUrl: () => this.resolveAndPersistCompanyLinkedinUrl(
+            params.company,
+            params.search.id,
+            budget
+          )
         });
+        // Resolution can happen lazily immediately before Apify. Carry the
+        // persisted URL into the durable public-knowledge row as well, while
+        // retaining the domain-based fingerprint/canonical company identity.
+        params.cacheCompany.linkedinUrl = params.company.linkedinUrl;
         let updated = rechecked;
         for (const contribution of chain.contributions) {
           updated = await this.cache.appendProviderPeople({
@@ -709,6 +728,31 @@ export class DiscoverExpansionService {
         })
       : [];
     return new PersonIdentitySet([...publicPeople, ...allocatedPeople]);
+  }
+
+  private async resolveAndPersistCompanyLinkedinUrl(
+    company: ProspectCompany,
+    searchId: string,
+    budget: ReturnType<typeof createAiBudget>
+  ): Promise<string | null> {
+    const existing = canonicalizeLinkedinCompanyUrl(company.linkedinUrl);
+    if (existing) return existing;
+    if (!this.companyResolution) return null;
+    const resolved = await this.companyResolution.resolve({
+      companyName: company.officialName ?? company.name,
+      providedDomain: company.officialWebsiteDomain ?? company.officialDomain,
+      providedLinkedinUrl: null,
+      budget,
+      searchId
+    });
+    const linkedinUrl = canonicalizeLinkedinCompanyUrl(resolved.linkedinCompanyUrl);
+    if (!linkedinUrl) return null;
+    await this.prisma.prospectCompany.update({
+      where: { id: company.id },
+      data: { linkedinUrl }
+    });
+    company.linkedinUrl = linkedinUrl;
+    return linkedinUrl;
   }
 
   /**

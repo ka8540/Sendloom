@@ -26,6 +26,7 @@ describe("BrightDataPublicProfileSearchService", () => {
       configured: true,
       search: vi.fn(async () => ({
         results: [row("valid"), row("wrong", "Software Engineer at Acme", "London, United Kingdom")],
+        rawOrganicResults: 2,
         page: 1,
         exhausted: true
       }))
@@ -45,6 +46,7 @@ describe("BrightDataPublicProfileSearchService", () => {
   it("uses one bounded enrichment request when the primary card has no location", async () => {
     const search = vi.fn(async (_query: string, options: { page: number }) => ({
       results: search.mock.calls.length === 1 ? [row("jane", "Software Engineer at Acme", "")] : [row("jane")],
+      rawOrganicResults: 1,
       page: options.page,
       exhausted: true
     }));
@@ -59,6 +61,7 @@ describe("BrightDataPublicProfileSearchService", () => {
       configured: true,
       search: vi.fn(async () => ({
         results: [row("missing", "Software Engineer at Acme", ""), row("former", "Former Software Engineer at Acme")],
+        rawOrganicResults: 2,
         page: 1,
         exhausted: true
       }))
@@ -75,7 +78,7 @@ describe("BrightDataPublicProfileSearchService", () => {
     contradictory.evidence = [contradictory.snippet];
     const provider: BrightDataPeopleSearchProvider = {
       configured: true,
-      search: vi.fn(async () => ({ results: [contradictory], page: 1, exhausted: true }))
+      search: vi.fn(async () => ({ results: [contradictory], rawOrganicResults: 1, page: 1, exhausted: true }))
     };
     const result = await new BrightDataPublicProfileSearchService(provider, 0).searchProfiles(input);
     expect(result.profiles).toEqual([]);
@@ -85,7 +88,7 @@ describe("BrightDataPublicProfileSearchService", () => {
   it("allows country-only provenance when no public evidence contradicts it", async () => {
     const provider: BrightDataPeopleSearchProvider = {
       configured: true,
-      search: vi.fn(async () => ({ results: [row("country", "Software Engineer at Acme", "")], page: 1, exhausted: true }))
+      search: vi.fn(async () => ({ results: [row("country", "Software Engineer at Acme", "")], rawOrganicResults: 1, page: 1, exhausted: true }))
     };
     const result = await new BrightDataPublicProfileSearchService(provider, 0).searchProfiles({ ...input, locations: ["United States"] });
     expect(result.profiles[0]).toMatchObject({ location: "United States", city: null, state: null, country: "United States" });
@@ -108,6 +111,7 @@ describe("BrightDataPublicProfileSearchService", () => {
           row("wrong-location-1", "Software Engineer at Acme", "London, United Kingdom"),
           row("wrong-location-2", "Software Engineer at Acme", "Paris, France")
         ],
+        rawOrganicResults: 10,
         page: 1,
         exhausted: true
       }))

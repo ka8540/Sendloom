@@ -106,6 +106,7 @@ const envSchema = z
     DISCOVER_BRIGHTDATA_ENABLED: booleanFlag(false),
     BRIGHTDATA_API_KEY: z.string().min(1).optional(),
     BRIGHTDATA_SERP_ZONE: z.string().min(1).optional(),
+    DISCOVER_BRIGHTDATA_TIMEOUT_MS: z.coerce.number().int().min(10_000).max(120_000).default(60_000),
     DISCOVER_BRIGHTDATA_MAX_PAGES: z.coerce.number().int().positive().max(10).default(3),
     DISCOVER_BRIGHTDATA_LOCATION_ENRICHMENT_LIMIT: z.coerce.number().int().nonnegative().max(5).default(2),
     WEB_SEARCH_PROVIDER: z.preprocess(
@@ -301,6 +302,7 @@ function readRawEnv() {
     DISCOVER_BRIGHTDATA_ENABLED: process.env.DISCOVER_BRIGHTDATA_ENABLED,
     BRIGHTDATA_API_KEY: process.env.BRIGHTDATA_API_KEY,
     BRIGHTDATA_SERP_ZONE: process.env.BRIGHTDATA_SERP_ZONE,
+    DISCOVER_BRIGHTDATA_TIMEOUT_MS: process.env.DISCOVER_BRIGHTDATA_TIMEOUT_MS,
     DISCOVER_BRIGHTDATA_MAX_PAGES: process.env.DISCOVER_BRIGHTDATA_MAX_PAGES,
     DISCOVER_BRIGHTDATA_LOCATION_ENRICHMENT_LIMIT: process.env.DISCOVER_BRIGHTDATA_LOCATION_ENRICHMENT_LIMIT,
     WEB_SEARCH_PROVIDER: process.env.WEB_SEARCH_PROVIDER,

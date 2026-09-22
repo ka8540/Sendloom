@@ -9,17 +9,47 @@ function budget() {
 }
 
 describe("CompanyResolutionService", () => {
-  it("resolves deterministically from a provided domain without calling AI", async () => {
+  it("reuses a provided domain and trusted LinkedIn company URL without calling AI", async () => {
     const ai = createMockAi();
     const service = new CompanyResolutionService(ai.client);
 
-    const result = await service.resolve({ companyName: "Apple", providedDomain: "apple.com", budget: budget() });
+    const result = await service.resolve({
+      companyName: "Apple",
+      providedDomain: "apple.com",
+      providedLinkedinUrl: "https://www.linkedin.com/company/apple/",
+      budget: budget()
+    });
 
     expect(ai.calls).toHaveLength(0);
     expect(result.officialDomain).toBe("apple.com");
     expect(result.officialWebsiteDomain).toBe("apple.com");
     expect(result.domainConfidence).toBe("HIGH");
     expect(result.normalizedName).toBe("apple");
+    expect(result.linkedinCompanyUrl).toBe("https://www.linkedin.com/company/apple");
+  });
+
+  it("enriches a supplied domain with a validated LinkedIn company URL", async () => {
+    const ai = createMockAi({
+      responses: {
+        company_resolution: {
+          officialName: "Confluent, Inc.",
+          normalizedName: "confluent",
+          officialWebsiteDomain: "confluent.io",
+          officialWebsite: "https://www.confluent.io",
+          linkedinCompanyUrl: "https://www.linkedin.com/company/confluent/",
+          confidence: "HIGH",
+          requiresConfirmation: false,
+          evidence: [{ sourceUrl: "https://www.linkedin.com/company/confluent/", sourceName: "public search", claim: "Official LinkedIn company page" }]
+        }
+      }
+    });
+    const service = new CompanyResolutionService(ai.client);
+
+    const result = await service.resolve({ companyName: "Confluent, Inc.", providedDomain: "confluent.io", budget: budget() });
+    expect(ai.callsOfType("company_resolution")).toHaveLength(1);
+    expect(result.officialWebsiteDomain).toBe("confluent.io");
+    expect(result.domainConfidence).toBe("HIGH");
+    expect(result.linkedinCompanyUrl).toBe("https://www.linkedin.com/company/confluent");
   });
 
   it("uses AI to resolve a domain when none is provided", async () => {
@@ -43,7 +73,7 @@ describe("CompanyResolutionService", () => {
     expect(ai.callsOfType("company_resolution")).toHaveLength(1);
     expect(result.officialDomain).toBe("apple.com");
     expect(result.officialWebsiteDomain).toBe("apple.com");
-    expect(result.linkedinCompanyUrl).toBe("https://www.linkedin.com/company/apple/");
+    expect(result.linkedinCompanyUrl).toBe("https://www.linkedin.com/company/apple");
   });
 
   it("never accepts a personal email domain from AI", async () => {

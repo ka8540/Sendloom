@@ -93,7 +93,7 @@ export class BrightDataPublicProfileSearchService implements BrightProfileSearch
       requestedLocations: input.locations,
       signal: input.signal
     });
-    diagnostics.rawBrightResults = response.results.length;
+    diagnostics.rawBrightResults = response.rawOrganicResults;
     const accepted: Array<{ profile: NormalizedProfile; result: BrightOrganicResult }> = [];
     const seen = new PersonIdentitySet();
 

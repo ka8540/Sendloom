@@ -1,9 +1,13 @@
 import { coercePositionCategory } from "@/lib/prospect-enums";
-import type {
-  ApifyIngestionDiagnostics,
-  ApifyProfileSearchService,
-  NormalizedProfile
+import {
+  ApifyCompanyTargetingError,
+  type ApifyIngestionDiagnostics,
+  type ApifyProfileSearchService,
+  type NormalizedProfile
 } from "@/services/prospects/apify-profile-search";
+import {
+  canonicalizeLinkedinCompanyUrl
+} from "@/services/prospects/canonical-company";
 import {
   BrightDataPublicProfileSearchService,
   brightFailureEvent,
@@ -39,7 +43,10 @@ export type ProviderChainDiagnostics = {
   bright: BrightProfileDiagnostics | null;
   apify: ApifyIngestionDiagnostics | null;
   brightValidUnique: number;
+  brightRequestCompleted: boolean;
+  brightTimedOut: boolean;
   apifyFallbackCalled: boolean;
+  apifyCompanyTargeted: boolean;
   apifyNewUnique: number;
   finalUniqueCount: number;
 };
@@ -84,7 +91,11 @@ export class DiscoverPeopleProviderOrchestrator {
     excluded?: PersonIdentitySet;
     budget: AiCallBudget;
     searchId: string;
+    canonicalCompanyKey?: string;
+    brightPagesFetched?: number;
+    apifyPagesFetched?: number;
     onProfilesDiscovered?: () => Promise<void> | void;
+    resolveCompanyLinkedinUrl?: () => Promise<string | null>;
   }): Promise<ProviderChainResult> {
     const titles = await this.deps.roleIntelligence.buildProviderTitlePlan(input.requestedTitles, {
       budget: input.budget,
@@ -96,18 +107,35 @@ export class DiscoverPeopleProviderOrchestrator {
     let brightDiagnostics: BrightProfileDiagnostics | null = null;
     let brightStatus: ProviderChainDiagnostics["brightStatus"] = this.bright.configured ? "ZERO_RESULTS" : "DISABLED";
     let failureEvent: ReturnType<typeof brightFailureEvent> | null = null;
+    let brightRequestCompleted = false;
+    let brightTimedOut = false;
+    let companyLinkedinUrl = canonicalizeLinkedinCompanyUrl(input.companyLinkedinUrl);
+    const brightStartPage = input.brightStartPage ?? 1;
+    const brightPagesFetched = input.brightPagesFetched ?? 0;
+    const apifyStartPage = input.apifyStartPage ?? 1;
+    const apifyPagesFetched = input.apifyPagesFetched ?? 0;
 
     if (this.bright.configured && !input.brightExhausted) {
-      safeEvent("DISCOVER_BRIGHTDATA_STARTED", { searchId: input.searchId, page: input.brightStartPage ?? 1 });
+      safeEvent("DISCOVER_BRIGHTDATA_STARTED", {
+        searchId: input.searchId,
+        canonicalCompanyKey: input.canonicalCompanyKey ?? null,
+        companyLinkedinResolved: Boolean(companyLinkedinUrl),
+        brightConfigured: true,
+        brightStartPage,
+        brightNextPage: brightStartPage,
+        brightPagesFetched,
+        brightExhausted: false
+      });
       try {
         const result = await this.bright.searchProfiles({
           companyName: input.companyName,
-          companyLinkedinUrl: input.companyLinkedinUrl,
+          companyLinkedinUrl,
           jobTitles: titles,
           locations: input.requestedLocations,
           maxResults: input.maxResults,
-          startPage: input.brightStartPage ?? 1
+          startPage: brightStartPage
         });
+        brightRequestCompleted = true;
         brightDiagnostics = result.diagnostics;
         if (result.profiles.length > 0) await input.onProfilesDiscovered?.();
         brightPeople = await this.buildPeople(result.profiles, input, "CACHE");
@@ -141,6 +169,15 @@ export class DiscoverPeopleProviderOrchestrator {
         }
         safeEvent(brightPeople.length >= this.fallbackThreshold ? "DISCOVER_BRIGHTDATA_SUFFICIENT" : "DISCOVER_BRIGHTDATA_RESULTS", {
           searchId: input.searchId,
+          canonicalCompanyKey: input.canonicalCompanyKey ?? null,
+          companyLinkedinResolved: Boolean(companyLinkedinUrl),
+          brightConfigured: true,
+          brightStartPage,
+          brightNextPage: result.nextPage,
+          brightPagesFetched: brightPagesFetched + 1,
+          brightExhausted: result.exhausted,
+          brightRequestCompleted: true,
+          brightTimedOut: false,
           ...result.diagnostics,
           roleAccepted: brightPeople.length,
           brightValidUnique: brightPeople.length,
@@ -154,30 +191,75 @@ export class DiscoverPeopleProviderOrchestrator {
       } catch (error) {
         brightStatus = "FAILED";
         failureEvent = brightFailureEvent(error);
-        safeEvent(failureEvent, { searchId: input.searchId });
+        brightTimedOut = failureEvent === "BRIGHT_TIMEOUT";
+        safeEvent(failureEvent, {
+          searchId: input.searchId,
+          canonicalCompanyKey: input.canonicalCompanyKey ?? null,
+          companyLinkedinResolved: Boolean(companyLinkedinUrl),
+          brightConfigured: true,
+          brightStartPage,
+          brightNextPage: brightStartPage,
+          brightPagesFetched,
+          brightExhausted: false,
+          brightRequestCompleted: false,
+          brightTimedOut,
+          rawBrightResults: 0,
+          brightValidUnique: 0
+        });
       }
     }
 
-    const shouldCallApify = brightPeople.length < this.fallbackThreshold && !input.apifyExhausted;
+    const apifyFallbackNeeded = brightPeople.length < this.fallbackThreshold && !input.apifyExhausted;
+    const brightContribution = contributions.find((entry) => entry.provider === "BRIGHTDATA_GOOGLE");
+    const observedBrightNextPage = brightContribution?.nextPage ?? brightStartPage;
+    const observedBrightPagesFetched = brightPagesFetched + (brightRequestCompleted ? 1 : 0);
+    const observedBrightExhausted = brightContribution?.exhausted ?? (input.brightExhausted ?? false);
+    const rawBrightResults = brightDiagnostics?.rawBrightResults ?? 0;
     let apifyPeople: ResolvedCachePerson[] = [];
     let apifyDiagnostics: ApifyIngestionDiagnostics | null = null;
-    if (shouldCallApify) {
+    if (apifyFallbackNeeded && !companyLinkedinUrl && input.resolveCompanyLinkedinUrl) {
+      try {
+        companyLinkedinUrl = canonicalizeLinkedinCompanyUrl(await input.resolveCompanyLinkedinUrl());
+      } catch {
+        companyLinkedinUrl = null;
+      }
+    }
+    const shouldCallApify = apifyFallbackNeeded && Boolean(companyLinkedinUrl);
+    if (apifyFallbackNeeded) {
       safeEvent("DISCOVER_BRIGHTDATA_FALLBACK_TO_APIFY", {
         searchId: input.searchId,
+        canonicalCompanyKey: input.canonicalCompanyKey ?? null,
+        companyLinkedinResolved: Boolean(companyLinkedinUrl),
+        brightConfigured: this.bright.configured,
+        brightStartPage,
+        brightNextPage: observedBrightNextPage,
+        brightPagesFetched: observedBrightPagesFetched,
+        brightExhausted: observedBrightExhausted,
+        brightRequestCompleted,
+        brightTimedOut,
+        rawBrightResults,
         brightValidUnique: brightPeople.length,
-        apifyFallbackCalled: true,
+        apifyFallbackCalled: shouldCallApify,
+        apifyCompanyTargeted: Boolean(companyLinkedinUrl),
+        apifyStartPage,
+        apifyNextPage: apifyStartPage,
+        apifyPagesFetched,
+        apifyExhausted: input.apifyExhausted ?? false,
         reason: brightStatus
       });
+    }
+    if (apifyFallbackNeeded && !companyLinkedinUrl && brightPeople.length === 0) {
+      throw new ApifyCompanyTargetingError();
+    }
+    if (shouldCallApify) {
       const apify = await this.deps.apify.searchProfiles({
         companyName: input.companyName,
-        companyLinkedinUrl: input.companyLinkedinUrl,
-        ...(input.companyLinkedinUrl
-          ? { companyTargeting: { mode: "LINKEDIN_CURRENT_COMPANY", trusted: true } as const }
-          : {}),
+        companyLinkedinUrl,
+        companyTargeting: { mode: "LINKEDIN_CURRENT_COMPANY", trusted: true },
         jobTitles: titles,
         locations: input.requestedLocations,
         maxResults: input.maxResults,
-        startPage: input.apifyStartPage ?? 1
+        startPage: apifyStartPage
       });
       apifyDiagnostics = apify.diagnostics;
       if (apify.profiles.length > 0) await input.onProfilesDiscovered?.();
@@ -186,7 +268,7 @@ export class DiscoverPeopleProviderOrchestrator {
       contributions.push({
         provider: "APIFY",
         people: apifyPeople,
-        nextPage: (input.apifyStartPage ?? 1) + 1,
+        nextPage: apifyStartPage + 1,
         pagesFetched: 1,
         exhausted: apify.profiles.length === 0 || apify.totalFound < input.maxResults,
         providerRunId: apify.runId,
@@ -196,8 +278,23 @@ export class DiscoverPeopleProviderOrchestrator {
       });
       safeEvent("DISCOVER_APIFY_FALLBACK_RESULTS", {
         searchId: input.searchId,
+        canonicalCompanyKey: input.canonicalCompanyKey ?? null,
+        companyLinkedinResolved: true,
+        brightConfigured: this.bright.configured,
+        brightStartPage,
+        brightNextPage: observedBrightNextPage,
+        brightPagesFetched: observedBrightPagesFetched,
+        brightExhausted: observedBrightExhausted,
+        brightRequestCompleted,
+        brightTimedOut,
+        rawBrightResults,
         brightValidUnique: brightPeople.length,
         apifyFallbackCalled: true,
+        apifyCompanyTargeted: true,
+        apifyStartPage,
+        apifyNextPage: apifyStartPage + 1,
+        apifyPagesFetched: apifyPagesFetched + 1,
+        apifyExhausted: apify.profiles.length === 0 || apify.totalFound < input.maxResults,
         apifyNewUnique: apifyPeople.length,
         finalUniqueCount: brightPeople.length + apifyPeople.length
       });
@@ -213,7 +310,10 @@ export class DiscoverPeopleProviderOrchestrator {
         bright: brightDiagnostics,
         apify: apifyDiagnostics,
         brightValidUnique: brightPeople.length,
+        brightRequestCompleted,
+        brightTimedOut,
         apifyFallbackCalled: shouldCallApify,
+        apifyCompanyTargeted: shouldCallApify,
         apifyNewUnique: apifyPeople.length,
         finalUniqueCount: people.length
       }

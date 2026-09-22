@@ -2,8 +2,8 @@ import { z } from "zod";
 
 import { CONFIDENCE_LEVELS, type ConfidenceLevel, coerceConfidenceLevel } from "@/lib/prospect-enums";
 import { type AiCallBudget, type AiClient } from "@/services/prospects/prospect-ai";
+import { canonicalizeLinkedinCompanyUrl } from "@/services/prospects/canonical-company";
 import {
-  isLinkedInCompanyUrl,
   isPersonalEmailDomain,
   normalizeCompanyName,
   normalizeDomain
@@ -99,6 +99,7 @@ const INSTRUCTIONS = [
   "Return the official company name, public website domain, official website URL, and LinkedIn company URL.",
   "The public website domain is not necessarily the employee email domain. Do not infer employee email domains here.",
   "Never invent a website domain you are not confident about. If you lack sufficient evidence, set confidence to LOW or UNAVAILABLE and requiresConfirmation to true, and leave officialWebsiteDomain null.",
+  "Never guess a LinkedIn URL from the company name or website slug. Return linkedinCompanyUrl only when the supplied evidence supports an official LinkedIn company, school, or showcase page; otherwise leave it null.",
   "Never return a personal mailbox domain (gmail.com, outlook.com, etc.) as a company website domain.",
   "Confidence must be one of HIGH, MEDIUM, LOW, UNAVAILABLE."
 ].join(" ");
@@ -109,9 +110,8 @@ function websiteFromDomain(domain: string): string {
 
 function pickLinkedInCompanyUrl(...candidates: Array<string | null | undefined>): string | null {
   for (const candidate of candidates) {
-    if (isLinkedInCompanyUrl(candidate)) {
-      return candidate!.trim();
-    }
+    const canonical = canonicalizeLinkedinCompanyUrl(candidate);
+    if (canonical) return canonical;
   }
   return null;
 }
@@ -125,10 +125,19 @@ export class CompanyResolutionService {
     const providedDomain = normalizeDomain(input.providedDomain);
     const safeProvidedDomain = providedDomain && !isPersonalEmailDomain(providedDomain) ? providedDomain : null;
     const providedLinkedin = pickLinkedInCompanyUrl(input.providedLinkedinUrl);
+    const providedDomainEvidence: CompanyEvidence[] = safeProvidedDomain
+      ? [{
+          sourceUrl: null,
+          sourceName: "user-provided website domain",
+          claim: `Website domain ${safeProvidedDomain} was supplied with the request.`
+        }]
+      : [];
 
-    // Deterministic path: a valid company domain was supplied, so no AI is
-    // needed. This is HIGH confidence and never consumes the AI budget.
-    if (safeProvidedDomain) {
+    // A supplied domain remains the canonical HIGH-confidence identity. When a
+    // trusted LinkedIn URL is already known there is nothing else to resolve.
+    // If it is missing, continue into the bounded company-resolution call so
+    // downstream Apify targeting never silently degrades into a global search.
+    if (safeProvidedDomain && (providedLinkedin || !this.ai.enabled || !input.budget.canCall("company_resolution"))) {
       return {
         officialName: companyName,
         normalizedName,
@@ -138,17 +147,12 @@ export class CompanyResolutionService {
         linkedinCompanyUrl: providedLinkedin,
         domainConfidence: "HIGH",
         requiresConfirmation: false,
-        evidence: [
-          {
-            sourceUrl: null,
-            sourceName: "user-provided website domain",
-            claim: `Website domain ${safeProvidedDomain} was supplied with the request.`
-          }
-        ]
+        evidence: providedDomainEvidence
       };
     }
 
-    // AI path: resolve the domain when one was not supplied.
+    // AI path: resolve a missing domain and/or enrich a trusted domain with a
+    // validated LinkedIn company URL. This remains one budgeted call.
     if (this.ai.enabled && input.budget.canCall("company_resolution")) {
       input.budget.record("company_resolution");
       try {
@@ -157,7 +161,7 @@ export class CompanyResolutionService {
           instructions: INSTRUCTIONS,
           input: JSON.stringify({
             requestedCompany: companyName,
-            providedDomain: null,
+            providedDomain: safeProvidedDomain,
             providedLinkedinUrl: input.providedLinkedinUrl ?? null,
             searchEvidence: []
           }),
@@ -171,35 +175,40 @@ export class CompanyResolutionService {
         const parsed = aiCompanyResolutionSchema.parse(raw);
         const aiDomain = normalizeDomain(parsed.officialWebsiteDomain);
         const safeAiDomain = aiDomain && !isPersonalEmailDomain(aiDomain) ? aiDomain : null;
+        const resolvedDomain = safeProvidedDomain ?? safeAiDomain;
         let confidence = coerceConfidenceLevel(parsed.confidence);
 
         // Guard: the model must not assert a HIGH-confidence domain without any
         // evidence. With no supporting evidence we cap at MEDIUM.
-        if (safeAiDomain && parsed.evidence.length === 0 && confidence === "HIGH") {
+        if (!safeProvidedDomain && safeAiDomain && parsed.evidence.length === 0 && confidence === "HIGH") {
           confidence = "MEDIUM";
         }
 
         // Without a usable domain there is nothing to be confident about.
-        const domainConfidence: ConfidenceLevel = safeAiDomain ? confidence : "UNAVAILABLE";
-        const requiresConfirmation = parsed.requiresConfirmation || !safeAiDomain || domainConfidence === "LOW";
+        const domainConfidence: ConfidenceLevel = safeProvidedDomain ? "HIGH" : safeAiDomain ? confidence : "UNAVAILABLE";
+        const requiresConfirmation = safeProvidedDomain
+          ? false
+          : parsed.requiresConfirmation || !safeAiDomain || domainConfidence === "LOW";
 
         const aiWebsite = parsed.officialWebsite?.trim();
-        const officialWebsite = aiWebsite && /^https?:\/\//i.test(aiWebsite)
-          ? aiWebsite
-          : safeAiDomain
+        const officialWebsite = safeProvidedDomain
+          ? websiteFromDomain(safeProvidedDomain)
+          : aiWebsite && /^https?:\/\//i.test(aiWebsite)
+            ? aiWebsite
+            : safeAiDomain
             ? websiteFromDomain(safeAiDomain)
             : null;
 
         return {
           officialName: parsed.officialName.trim() || companyName,
           normalizedName,
-          officialWebsiteDomain: safeAiDomain,
-          officialDomain: safeAiDomain,
+          officialWebsiteDomain: resolvedDomain,
+          officialDomain: resolvedDomain,
           officialWebsite,
           linkedinCompanyUrl: providedLinkedin ?? pickLinkedInCompanyUrl(parsed.linkedinCompanyUrl),
           domainConfidence,
           requiresConfirmation,
-          evidence: parsed.evidence
+          evidence: [...providedDomainEvidence, ...parsed.evidence]
         };
       } catch (error) {
         // Fall through to the deterministic low-confidence fallback below.
@@ -207,17 +216,18 @@ export class CompanyResolutionService {
       }
     }
 
-    // Deterministic fallback: no domain, no AI. Requires user confirmation.
+    // Deterministic fallback. A supplied domain remains usable even when URL
+    // enrichment fails; the provider layer will fail closed before Apify.
     return {
       officialName: companyName,
       normalizedName,
-      officialWebsiteDomain: null,
-      officialDomain: null,
-      officialWebsite: null,
+      officialWebsiteDomain: safeProvidedDomain,
+      officialDomain: safeProvidedDomain,
+      officialWebsite: safeProvidedDomain ? websiteFromDomain(safeProvidedDomain) : null,
       linkedinCompanyUrl: providedLinkedin,
-      domainConfidence: "UNAVAILABLE",
-      requiresConfirmation: true,
-      evidence: []
+      domainConfidence: safeProvidedDomain ? "HIGH" : "UNAVAILABLE",
+      requiresConfirmation: !safeProvidedDomain,
+      evidence: providedDomainEvidence
     };
   }
 }

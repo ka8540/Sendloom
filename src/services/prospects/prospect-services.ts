@@ -61,6 +61,7 @@ export function createProspectServices(prisma: PrismaClient, aiClient?: AiClient
   const discoverExpansion = new DiscoverExpansionService({
     prisma,
     apify,
+    companyResolution,
     roleClassifier,
     roleIntelligence,
     cache: discoverKnowledge

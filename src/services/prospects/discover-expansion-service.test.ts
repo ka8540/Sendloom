@@ -190,7 +190,7 @@ function seedCompany() {
     officialName: "Apple",
     officialDomain: "apple.com",
     officialWebsiteDomain: "apple.com",
-    linkedinUrl: null,
+    linkedinUrl: "https://www.linkedin.com/company/apple/",
     emailDomain: "apple.com",
     emailDomainConfidence: "HIGH",
     emailPattern: "flast",

@@ -686,6 +686,7 @@ With `OBJECT_STORAGE_MODE=r2`, the five required `CLOUDFLARE_R2_*` values must b
 | `APIFY_PROSPECT_ACTOR_ID` | Optional | Actor id/slug. Default `harvestapi/linkedin-profile-search` |
 | `DISCOVER_BRIGHTDATA_ENABLED` | Optional | Enables Bright Data public-people discovery before Apify. Default `false` |
 | `BRIGHTDATA_API_KEY` / `BRIGHTDATA_SERP_ZONE` | With Bright enabled | Server-only Bright Data credentials and SERP zone |
+| `DISCOVER_BRIGHTDATA_TIMEOUT_MS` | Optional | Bounded timeout for each Bright Data SERP request. Default `60000`, maximum `120000` |
 | `DISCOVER_BRIGHTDATA_MAX_PAGES` | Optional | Independent Bright continuation ceiling. Default `3` |
 | `DISCOVER_BRIGHTDATA_LOCATION_ENRICHMENT_LIMIT` | Optional | Maximum bounded public Google location-enrichment calls per action. Default `2` |
 

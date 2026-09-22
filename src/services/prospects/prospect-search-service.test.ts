@@ -134,7 +134,7 @@ const USER_ID = "user_1";
 const VALIDATED: ValidatedCreateProspectSearch = {
   companyName: "Apple",
   companyDomain: "apple.com", // deterministic resolution -> no company AI call
-  companyLinkedinUrl: null,
+  companyLinkedinUrl: "https://www.linkedin.com/company/apple/",
   jobTitles: ["Software Engineer", "Backend Engineer", "Technical Recruiter", "Data Analyst", "Quantum Mechanic"],
   locations: ["United States"],
   maxResults: 25
@@ -143,7 +143,7 @@ const VALIDATED: ValidatedCreateProspectSearch = {
 const APPLIED_MATERIALS: ValidatedCreateProspectSearch = {
   companyName: "Applied Materials",
   companyDomain: "appliedmaterials.com",
-  companyLinkedinUrl: null,
+  companyLinkedinUrl: "https://www.linkedin.com/company/applied-materials/",
   jobTitles: ["Software Engineer"],
   locations: ["United States"],
   maxResults: 10
@@ -152,7 +152,7 @@ const APPLIED_MATERIALS: ValidatedCreateProspectSearch = {
 const ESRI: ValidatedCreateProspectSearch = {
   companyName: "Esri",
   companyDomain: "esri.com",
-  companyLinkedinUrl: null,
+  companyLinkedinUrl: "https://www.linkedin.com/company/esri/",
   jobTitles: ["Software Engineer"],
   locations: ["United States"],
   maxResults: 10
@@ -435,6 +435,56 @@ describe("ProspectSearchService pipeline", () => {
 
     expect(created.requestedTitles).toEqual(["Software Engineer", "Recruiter"]);
     expect(created.requestedLocations).toEqual(["United States"]);
+  });
+
+  it("resolves, persists, and targets Confluent's LinkedIn company URL without changing domain identity", async () => {
+    const run = vi.fn<ApifyRunner["run"]>(async () => ({
+      runId: "run-confluent",
+      datasetId: "ds-confluent",
+      items: [targetedCompanyProfile(
+        "confluent-recruiter",
+        "Recruiter",
+        "Confluent, Inc.",
+        "https://www.linkedin.com/company/confluent"
+      )]
+    }));
+    const { service, ai } = buildService(prisma, { run } as ApifyRunner, {
+      responses: {
+        company_resolution: {
+          officialName: "Confluent, Inc.",
+          normalizedName: "confluent",
+          officialWebsiteDomain: "confluent.io",
+          officialWebsite: "https://www.confluent.io",
+          linkedinCompanyUrl: "https://www.linkedin.com/company/confluent/",
+          confidence: "HIGH",
+          requiresConfirmation: false,
+          evidence: [{ sourceUrl: "https://www.linkedin.com/company/confluent/", sourceName: "LinkedIn", claim: "Official company page" }]
+        },
+        role_classification: { classifications: [] }
+      }
+    });
+    const created = await service.createSearch(USER_ID, {
+      companyName: "Confluent, Inc.",
+      companyDomain: "confluent.io",
+      companyLinkedinUrl: null,
+      jobTitles: ["Recruiter"],
+      locations: ["United States"],
+      maxResults: 10
+    });
+
+    const result = await service.processSearch(USER_ID, created.id);
+
+    expect(result.status).toBe("READY");
+    expect(ai.callsOfType("company_resolution")).toHaveLength(1);
+    expect(run).toHaveBeenCalledWith("actor", expect.objectContaining({
+      currentCompanies: ["https://www.linkedin.com/company/confluent"],
+      currentJobTitles: expect.arrayContaining(["Recruiter"]),
+      locations: ["United States"]
+    }));
+    expect(prisma._state.companies).toContainEqual(expect.objectContaining({
+      canonicalKey: "domain:confluent.io",
+      linkedinUrl: "https://www.linkedin.com/company/confluent"
+    }));
   });
 
   it("blocks a polluted legacy draft before quota, cache, or provider work", async () => {
@@ -3361,7 +3411,12 @@ describe("zero-result searches (provider succeeded, nobody found)", () => {
   it("marks the search NO_RESULTS when every provider item is filtered out (#zero-2)", async () => {
     // The provider returned people, but none belong to the requested company —
     // ingestion filters them all, which is still a no-result outcome.
-    const items = [profile("other1", "Alex", "Chen", "Software Engineer", "Totally Different Corp")];
+    const items = [targetedCompanyProfile(
+      "other1",
+      "Software Engineer",
+      "Totally Different Corp",
+      "https://www.linkedin.com/company/totally-different-corp"
+    )];
     const run = vi.fn<ApifyRunner["run"]>(async () => ({ runId: "run-f", datasetId: "ds-f", items }));
     const findEvidence = vi.fn(async () => ({ domainEvidence: [], patternEvidence: [] }));
     const { service, ai } = buildService(prisma, { run } as ApifyRunner, ZERO_AI, zeroEvidence(findEvidence));
@@ -4086,7 +4141,12 @@ describe("Search this company (same-company role/location search)", () => {
           runId: "run-human-zero",
           datasetId: "ds-human-zero",
           // Raw result exists, but strict company matching must reject it.
-          items: [profile("wrong-company", "Alex", "Chen", "Human Resources", "Different Company")]
+          items: [targetedCompanyProfile(
+            "wrong-company",
+            "Human Resources",
+            "Different Company",
+            "https://www.linkedin.com/company/different-company"
+          )]
         };
       }
       return {
@@ -4325,7 +4385,7 @@ describe("durable public Discover production flow", () => {
   const oneRoleApple: ValidatedCreateProspectSearch = {
     companyName: "Apple",
     companyDomain: "apple.com",
-    companyLinkedinUrl: null,
+    companyLinkedinUrl: "https://www.linkedin.com/company/apple/",
     jobTitles: ["Software Engineer"],
     locations: ["United States"],
     maxResults: 10

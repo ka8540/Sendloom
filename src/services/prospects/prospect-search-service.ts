@@ -36,6 +36,7 @@ import {
 } from "@/services/prospects/apify-profile-search";
 import { CompanyResolutionService, type CompanyResolution } from "@/services/prospects/company-resolution-service";
 import {
+  canonicalizeLinkedinCompanyUrl,
   getCanonicalCompanyKey,
   normalizeLinkedinCompanySlug
 } from "@/services/prospects/canonical-company";
@@ -711,10 +712,11 @@ export class ProspectSearchService {
     // canonical fingerprint is keyed on the RESOLVED company identity (so
     // "Apple"/"Apple Inc." share a cache entry) — not the raw typed name.
     await this.setStatus(search.id, "RESOLVING_COMPANY", { errorCode: null, errorMessage: null });
+    const knownLinkedinCompanyUrl = await this.findKnownCompanyLinkedinUrl(userId, search);
     const resolution = await this.companyResolution.resolve({
       companyName: search.requestedCompany,
       providedDomain: search.requestedDomain,
-      providedLinkedinUrl: search.requestedLinkedin,
+      providedLinkedinUrl: knownLinkedinCompanyUrl,
       budget,
       searchId: search.id
     });
@@ -838,6 +840,7 @@ export class ProspectSearchService {
         });
         let state = await durableKnowledge.getExpansionState(fingerprint);
         const provider = await this.runProviderDataset(userId, search, company, resolution, budget, excluded, state);
+        resolvedCompany.linkedinUrl = resolution.linkedinCompanyUrl;
         for (const contribution of provider.contributions) {
           state = await durableKnowledge.appendProviderPeople({
             fingerprint,
@@ -1102,12 +1105,25 @@ export class ProspectSearchService {
       maxResults: candidateLimit,
       brightStartPage: continuation?.brightNextPage ?? 1,
       apifyStartPage: continuation?.apifyNextPage ?? continuation?.providerNextPage ?? 1,
+      canonicalCompanyKey: getCanonicalCompanyKey({
+        linkedinCompanyUrl: resolution.linkedinCompanyUrl,
+        officialWebsiteDomain: resolution.officialWebsiteDomain,
+        officialDomain: resolution.officialDomain,
+        normalizedName: resolution.normalizedName
+      }),
+      brightPagesFetched: continuation?.brightPagesFetched ?? 0,
+      apifyPagesFetched: continuation?.apifyPagesFetched ?? continuation?.providerPagesFetched ?? 0,
       brightExhausted: continuation?.brightExhausted ?? false,
       apifyExhausted: continuation?.apifyExhausted ?? continuation?.providerExhausted ?? false,
       excluded,
       budget,
       searchId: search.id,
-      onProfilesDiscovered: () => this.setStatus(search.id, "CLASSIFYING_POSITIONS")
+      onProfilesDiscovered: () => this.setStatus(search.id, "CLASSIFYING_POSITIONS"),
+      resolveCompanyLinkedinUrl: async () => {
+        const linkedinUrl = await this.resolveAndPersistCompanyLinkedinUrl(userId, company, search.id, budget);
+        if (linkedinUrl) resolution.linkedinCompanyUrl = linkedinUrl;
+        return linkedinUrl;
+      }
     });
 
     const apifyContribution = chain.contributions.find((entry) => entry.provider === "APIFY");
@@ -1188,6 +1204,48 @@ export class ProspectSearchService {
       select: { sourceProfileId: true, linkedinUrl: true }
     });
     return new PersonIdentitySet(rows);
+  }
+
+  private async findKnownCompanyLinkedinUrl(userId: string, search: ProspectSearch): Promise<string | null> {
+    const requested = canonicalizeLinkedinCompanyUrl(search.requestedLinkedin);
+    if (requested) return requested;
+    if (search.companyId) {
+      const linked = await this.prisma.prospectCompany.findFirst({
+        where: { id: search.companyId, userId },
+        select: { linkedinUrl: true }
+      });
+      const known = canonicalizeLinkedinCompanyUrl(linked?.linkedinUrl);
+      if (known) return known;
+    }
+    const domain = normalizeDomain(search.requestedDomain);
+    if (!domain) return null;
+    const linked = await this.prisma.prospectCompany.findFirst({
+      where: { userId, canonicalKey: `domain:${domain}` },
+      select: { linkedinUrl: true }
+    });
+    return canonicalizeLinkedinCompanyUrl(linked?.linkedinUrl);
+  }
+
+  private async resolveAndPersistCompanyLinkedinUrl(
+    userId: string,
+    company: ProspectCompany,
+    searchId: string,
+    budget: AiCallBudget
+  ): Promise<string | null> {
+    const existing = canonicalizeLinkedinCompanyUrl(company.linkedinUrl);
+    if (existing) return existing;
+    const resolved = await this.companyResolution.resolve({
+      companyName: company.officialName ?? company.name,
+      providedDomain: company.officialWebsiteDomain ?? company.officialDomain,
+      providedLinkedinUrl: null,
+      budget,
+      searchId
+    });
+    const linkedinUrl = canonicalizeLinkedinCompanyUrl(resolved.linkedinCompanyUrl);
+    if (!linkedinUrl) return null;
+    await this.prisma.prospectCompany.update({ where: { id: company.id }, data: { linkedinUrl } });
+    company.linkedinUrl = linkedinUrl;
+    return linkedinUrl;
   }
 
   private companyResolvedEmailFormat(company: ProspectCompany): ResolvedDataset["emailFormat"] {

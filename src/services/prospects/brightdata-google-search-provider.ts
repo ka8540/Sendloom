@@ -22,6 +22,8 @@ export type BrightOrganicResult = {
 
 export type BrightDataPage = {
   results: BrightOrganicResult[];
+  /** Count before row sanitization, used for terminal-page decisions. */
+  rawOrganicResults: number;
   page: number;
   exhausted: boolean;
 };
@@ -46,7 +48,6 @@ const EVIDENCE_FIELDS = [
   "richSnippet"
 ] as const;
 const PAGE_SIZE = 10;
-const TIMEOUT_MS = 30_000;
 
 function textField(row: Record<string, unknown>, fields: readonly string[]): string | null {
   for (const field of fields) {
@@ -147,6 +148,7 @@ export class BrightDataGoogleSearchProvider implements BrightDataPeopleSearchPro
       zone?: string;
       fetcher?: typeof fetch;
       maxPages?: number;
+      timeoutMs?: number;
       enabled?: boolean;
     } = {}
   ) {
@@ -164,7 +166,7 @@ export class BrightDataGoogleSearchProvider implements BrightDataPeopleSearchPro
     if (!this.configured) throw new BrightDataSearchError("CONFIGURATION");
     const maxPages = this.options.maxPages ?? env.DISCOVER_BRIGHTDATA_MAX_PAGES;
     if (!Number.isInteger(options.page) || options.page < 1 || options.page > maxPages) {
-      return { results: [], page: options.page, exhausted: true };
+      return { results: [], rawOrganicResults: 0, page: options.page, exhausted: true };
     }
     const googleUrl = new URL("https://www.google.com/search");
     googleUrl.search = new URLSearchParams({
@@ -177,7 +179,7 @@ export class BrightDataGoogleSearchProvider implements BrightDataPeopleSearchPro
       start: String((options.page - 1) * PAGE_SIZE)
     }).toString();
     try {
-      const timeout = AbortSignal.timeout(TIMEOUT_MS);
+      const timeout = AbortSignal.timeout(this.options.timeoutMs ?? env.DISCOVER_BRIGHTDATA_TIMEOUT_MS);
       const response = await (this.options.fetcher ?? fetch)("https://api.brightdata.com/request", {
         method: "POST",
         headers: {
@@ -203,7 +205,12 @@ export class BrightDataGoogleSearchProvider implements BrightDataPeopleSearchPro
       const rows = organicRows(payload);
       if (!rows) throw new BrightDataSearchError("MALFORMED_RESPONSE");
       const results = mapRows(rows);
-      return { results, page: options.page, exhausted: rows.length < PAGE_SIZE };
+      return {
+        results,
+        rawOrganicResults: rows.length,
+        page: options.page,
+        exhausted: rows.length === 0 || options.page >= maxPages
+      };
     } catch (error) {
       if (error instanceof BrightDataSearchError) throw error;
       if (error instanceof DOMException && error.name === "TimeoutError") throw new BrightDataSearchError("TIMEOUT");

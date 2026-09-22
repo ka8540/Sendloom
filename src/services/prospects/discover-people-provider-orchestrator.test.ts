@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { normalizeProfile, type ApifyProfileSearchService, type NormalizedProfile } from "./apify-profile-search";
+import { BrightDataSearchError } from "./brightdata-google-search-provider";
 import type { BrightProfileSearchProvider } from "./brightdata-public-profile-search";
 import { DiscoverPeopleProviderOrchestrator } from "./discover-people-provider-orchestrator";
 import { PersonIdentitySet } from "./discover-person-identity";
@@ -67,6 +68,7 @@ function build(brightProfiles: NormalizedProfile[], apifyProfiles: NormalizedPro
     filterAndRankPeople: vi.fn(async ({ people }: { people: unknown[] }) => people)
   };
   return {
+    bright,
     apify,
     orchestrator: new DiscoverPeopleProviderOrchestrator({
       bright,
@@ -127,5 +129,69 @@ describe("DiscoverPeopleProviderOrchestrator", () => {
     expect(apify.searchProfiles).toHaveBeenCalledTimes(1);
     expect(result.people.map((person) => person.sourceProfileId)).toEqual(["fallback"]);
     expect(result.diagnostics).toMatchObject({ brightStatus: "FAILED", apifyFallbackCalled: true });
+  });
+
+  it("does not advance or exhaust Bright after a timeout and calls only company-targeted Apify", async () => {
+    const { orchestrator, apify } = build([], [profile("fallback")], new BrightDataSearchError("TIMEOUT"));
+    const result = await orchestrator.discover({ ...request, brightStartPage: 2, brightPagesFetched: 1 });
+
+    expect(result.contributions.map((entry) => entry.provider)).toEqual(["APIFY"]);
+    expect(result.diagnostics).toMatchObject({
+      brightRequestCompleted: false,
+      brightTimedOut: true,
+      apifyFallbackCalled: true,
+      apifyCompanyTargeted: true
+    });
+    expect(apify.searchProfiles).toHaveBeenCalledWith(expect.objectContaining({
+      companyLinkedinUrl: "https://www.linkedin.com/company/acme",
+      companyTargeting: { mode: "LINKEDIN_CURRENT_COMPANY", trusted: true }
+    }));
+  });
+
+  it("retries the same Bright page after transient timeouts", async () => {
+    const { orchestrator, bright } = build([], [profile("fallback")], new BrightDataSearchError("TIMEOUT"));
+
+    await orchestrator.discover({ ...request, brightStartPage: 2, brightPagesFetched: 1 });
+    await orchestrator.discover({ ...request, brightStartPage: 2, brightPagesFetched: 1 });
+
+    expect(vi.mocked(bright.searchProfiles).mock.calls.map(([input]) => input.startPage)).toEqual([2, 2]);
+  });
+
+  it("resolves a missing company URL before Apify and sends current-company targeting", async () => {
+    const { orchestrator, apify } = build([], [profile("fallback")]);
+    const resolveCompanyLinkedinUrl = vi.fn(async () => "https://www.linkedin.com/company/confluent/");
+    await orchestrator.discover({
+      ...request,
+      companyName: "Confluent, Inc.",
+      companyLinkedinUrl: null,
+      resolveCompanyLinkedinUrl
+    });
+    expect(resolveCompanyLinkedinUrl).toHaveBeenCalledTimes(1);
+    expect(apify.searchProfiles).toHaveBeenCalledWith(expect.objectContaining({
+      companyLinkedinUrl: "https://www.linkedin.com/company/confluent",
+      companyTargeting: { mode: "LINKEDIN_CURRENT_COMPANY", trusted: true }
+    }));
+  });
+
+  it("never calls Apify globally when company URL resolution fails", async () => {
+    const { orchestrator, apify } = build([], [profile("must-not-run")]);
+    await expect(orchestrator.discover({
+      ...request,
+      companyLinkedinUrl: null,
+      resolveCompanyLinkedinUrl: vi.fn(async () => null)
+    })).rejects.toThrow(/trusted LinkedIn company URL/i);
+    expect(apify.searchProfiles).not.toHaveBeenCalled();
+  });
+
+  it("preserves one or two Bright people when targeting cannot be resolved", async () => {
+    const { orchestrator, apify } = build([profile("b0"), profile("b1")], [profile("must-not-run")]);
+    const result = await orchestrator.discover({
+      ...request,
+      companyLinkedinUrl: null,
+      resolveCompanyLinkedinUrl: vi.fn(async () => null)
+    });
+    expect(result.people.map((person) => person.sourceProfileId)).toEqual(["b0", "b1"]);
+    expect(result.diagnostics.apifyFallbackCalled).toBe(false);
+    expect(apify.searchProfiles).not.toHaveBeenCalled();
   });
 });
