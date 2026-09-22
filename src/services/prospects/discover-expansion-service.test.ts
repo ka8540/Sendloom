@@ -844,10 +844,10 @@ describe("DiscoverExpansionService.addMorePeople", () => {
     });
   });
 
-  it("returns partial unused same-user people without a provider top-up", async () => {
+  it("returns the only two unused DB people without a provider top-up", async () => {
     seedCompany();
     seedSearch();
-    seedExistingPeople(14);
+    seedExistingPeople(12);
     for (let index = 1; index <= 10; index += 1) {
       prisma._state.searchPeople.push({
         id: `grant_initial_${index}`,
@@ -881,9 +881,121 @@ describe("DiscoverExpansionService.addMorePeople", () => {
       idempotencyKey: "partial-local-first"
     });
 
-    expect(result).toMatchObject({ addedCount: 4 });
+    expect(result).toMatchObject({ addedCount: 2 });
     expect(startPages).toEqual([]);
-    expect(prisma._state.expansions[0]).toMatchObject({ cacheCount: 4, providerCount: 0 });
+    expect(prisma._state.expansions[0]).toMatchObject({ cacheCount: 2, providerCount: 0 });
+  });
+
+  it("returns the next 10 from 63 DB people after 10 allocations with no provider", async () => {
+    seedCompany();
+    seedSearch();
+    const cached = cachePeople("durable-63", 63);
+    seedExistingFromCache(cached.slice(0, 10));
+    seedCache(cached);
+    const runner: ApifyRunner = {
+      run: vi.fn(async () => ({ runId: "must-not-run", datasetId: "must-not-run", items: [] }))
+    };
+    const { service } = buildService({ runner });
+
+    const result = await service.addMorePeople({
+      userId: USER_ID,
+      actorEmail: "user@example.com",
+      searchId: SEARCH_ID,
+      idempotencyKey: "database-63"
+    });
+
+    expect(result.addedCount).toBe(10);
+    expect(runner.run).not.toHaveBeenCalled();
+    expect(prisma._state.expansions[0]).toMatchObject({ cacheCount: 10, providerCount: 0 });
+  });
+
+  it("persists 18 Bright people, allocates 10, then serves the remaining 8 from DB", async () => {
+    seedCompany();
+    seedSearch();
+    seedExistingPeople(10);
+    for (let index = 1; index <= 10; index += 1) {
+      prisma._state.searchPeople.push({
+        id: `bright-eighteen-grant-${index}`,
+        searchId: SEARCH_ID,
+        personId: `person_${index}`,
+        userId: USER_ID,
+        allocationOrder: index - 1,
+        allocationSource: "PROVIDER",
+        allocatedAt: new Date()
+      });
+    }
+    const durable = new DiscoverPublicKnowledgeService({
+      prisma: prisma as unknown as PrismaClient,
+      redis: new TestRedis(),
+      lock: makeFakeLock()
+    });
+    const brightProfiles = Array.from({ length: 18 }, (_, index) => normalizeProfile({
+      id: `bright-eighteen-${index + 1}`,
+      linkedinUrl: `https://www.linkedin.com/in/bright-eighteen-${index + 1}`,
+      fullName: `Bright Person${index + 1}`,
+      currentTitle: "Software Engineer",
+      currentCompany: "Apple",
+      location: "United States"
+    })!);
+    const bright: BrightProfileSearchProvider = {
+      configured: true,
+      searchProfiles: vi.fn(async () => ({
+        profiles: brightProfiles,
+        nextPage: 2,
+        exhausted: false,
+        diagnostics: {
+          rawBrightResults: 18,
+          linkedInCandidates: 18,
+          currentEmploymentAccepted: 18,
+          formerEmployeeRejected: 0,
+          companyContradictionRejected: 0,
+          companyInsufficientRejected: 0,
+          locationAccepted: 18,
+          locationMissing: 0,
+          locationContradictionRejected: 0,
+          duplicateRejected: 0,
+          enrichmentCalls: 0
+        }
+      }))
+    };
+    const runner: ApifyRunner = {
+      run: vi.fn(async () => ({ runId: "must-not-run", datasetId: "must-not-run", items: [] }))
+    };
+    const apify = new ApifyProfileSearchService({ token: "t", actorId: "actor", runner });
+    const roleIntelligence = {
+      enabled: false,
+      buildProviderTitlePlan: vi.fn(async (titles: readonly string[]) => [...titles]),
+      filterAndRankPeople: vi.fn(async ({ people }: { people: ResolvedCachePerson[] }) => people),
+      persistTitleKnowledge: vi.fn(async () => ({ existing: 0, created: 0, failed: false }))
+    } as unknown as DiscoverRoleIntelligencePort;
+    const providerOrchestrator = new DiscoverPeopleProviderOrchestrator({
+      bright,
+      apify,
+      roleClassifier: roleClassifierStub,
+      roleIntelligence
+    });
+    const { service } = buildService({ cache: durable, runner, roleIntelligence, providerOrchestrator });
+
+    const first = await service.addMorePeople({
+      userId: USER_ID,
+      actorEmail: "user@example.com",
+      searchId: SEARCH_ID,
+      idempotencyKey: "bright-eighteen-first"
+    });
+    expect(first.addedCount).toBe(10);
+    expect(prisma._state.discoverPublicPeople).toHaveLength(18);
+    expect(bright.searchProfiles).toHaveBeenCalledTimes(1);
+    expect(runner.run).not.toHaveBeenCalled();
+
+    const second = await service.addMorePeople({
+      userId: USER_ID,
+      actorEmail: "user@example.com",
+      searchId: SEARCH_ID,
+      idempotencyKey: "bright-eighteen-second"
+    });
+    expect(second.addedCount).toBe(8);
+    expect(bright.searchProfiles).toHaveBeenCalledTimes(1);
+    expect(runner.run).not.toHaveBeenCalled();
   });
 
   it("materializes 10 unused cached people without calling Apify and consumes one slot (#1, #4, #5, #9, #10)", async () => {

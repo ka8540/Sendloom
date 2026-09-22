@@ -242,7 +242,7 @@ The durable-public-knowledge migration promotes useful legacy `DiscoverSearchCac
 | Redis | Sanitized exact-intent result payloads, company-version counters, daily quota state, and short provider/expansion locks | Acceleration and coordination only. Exact-result entries expire after `DISCOVER_REDIS_RESULT_TTL_SECONDS` (default 900 seconds). A miss, flush, malformed payload, timeout, or outage falls through to Postgres for people-search correctness. |
 | Postgres / Neon | `DiscoverPublicPerson`, `DiscoverProviderBatch`, `DiscoverProviderBatchPerson`, private `ProspectSearch`/`ProspectPerson`/`ProspectSearchPerson`, and provider continuation metadata | Permanent source of truth. Public people do not expire because of `createdAt`, `firstSeenAt`, `lastSeenAt`, cache age, or the old shared-cache TTL. |
 | Bright Data / Google SERP | First external public-people discovery after a true permanent-DB zero | Uses public Google result evidence only. Location is persisted only when supported by public evidence (with the strict single-country fallback); enrichment is bounded. |
-| Apify | Trusted fallback when Bright yields 0–2 valid unique people or Bright is unavailable | Called at most once per normal search or Add More action. It is never used merely to fill a partial DB batch or when Bright yields 3+. |
+| Apify | Trusted continuation after Bright is truly exhausted, or temporary availability fallback when Bright fails | Called at most once per normal search or Add More action. It is never selected by a Bright result-count threshold and never fills a partial DB batch. |
 
 The public/private boundary is intentional. Shared durable rows contain public profile identity, public title/location, normalized company evidence, and provider provenance. They never contain a requester `userId`, inferred/generated email, saved/selected/export state, suppression state, manual corrections, notes, or another user's history. Reused people are copied into the requesting user's own tenant-scoped company/person/allocation records before they are returned.
 
@@ -258,10 +258,11 @@ flowchart TD
     F --> G[Recheck Redis and Postgres]
     G -- Another request persisted people --> C
     G -- Still zero --> H[Call Bright Data Google SERP]
-    H --> I{3+ valid unique?}
-    I -- Yes --> M[Persist Bright people]
-    I -- No: 0-2 --> K[Keep Bright people and call Apify once]
-    K --> L[Merge, dedupe, persist both sources]
+    H --> I{Bright outcome}
+    I -- Any valid people --> M[Persist all Bright people and return requested subset]
+    I -- Truly exhausted with no people --> K[Call company-targeted Apify once]
+    I -- API failure --> K
+    K --> L[Persist all valid Apify people and return requested subset]
     M --> J[Increment company version and cache sanitized result]
     L --> J
     J --> C
@@ -271,8 +272,10 @@ Important consequences:
 
 - A Redis hit performs no public-person Postgres lookup and makes no external provider call.
 - A Postgres result of 1, 3, 7, or 10 people returns that count; the service does not buy more data to reach 10.
-- A true Redis miss plus permanent-DB zero starts Bright Data. Bright 3+ stops there; Bright 0–2 retains those people and invokes Apify once.
-- Any final count is returned as-is. The same request never loops either provider to force a full batch.
+- A true Redis miss plus permanent-DB zero starts Bright Data. Any valid Bright count—including one or two—stops the action without Apify.
+- Bright may scan several bounded saved pages, including pages with raw rows but zero valid people. Only a true empty page, the configured hard page limit, or a reliable provider end signal marks it exhausted.
+- Apify runs only after persisted Bright exhaustion with no newly discovered Bright people, or as a temporary fallback for a classified Bright timeout/auth/provider/malformed-response failure. A failure never advances or exhausts Bright, so a future action retries the same Bright page.
+- Any final count is returned as-is. Provider results beyond the display limit are all persisted for later DB-first reuse.
 - An exact stored provider intent is authoritative provenance. For example, an exact `Software Engineer + United States` batch can safely reuse a provider-returned person with incomplete per-person geography. A narrower or different request still needs strict candidate evidence.
 
 #### Add More / Find More
@@ -281,7 +284,7 @@ Add More computes identities already granted to the selected user-owned search, 
 
 1. Reuse unused Redis/Postgres candidates first.
 2. If any unused durable people remain, return up to the batch limit and stop—even if only one or four remain.
-3. Only a later Add More action with zero unused durable people may request one provider continuation page.
+3. Only a later Add More action with zero unused durable people may continue Bright from `brightNextPage`; Apify continues from `apifyNextPage` only after Bright exhaustion or for the current action's Bright failure.
 4. Dedupe the page against every permanent public person for the company and against the search's prior grants.
 5. Persist genuinely new public people and provenance before allocating them.
 6. If the provider yields only duplicates or no usable people, return **“No more people were found.”** without another provider loop.
@@ -292,10 +295,11 @@ After applying the migration in a non-production environment, set
 `DISCOVER_BRIGHTDATA_ENABLED=true`, `BRIGHTDATA_API_KEY`, and
 `BRIGHTDATA_SERP_ZONE`, then run one narrowly scoped Discover search with a
 company, one role, and one location. Confirm the safe logs show Bright starting
-first; `3+` valid unique Bright people must produce no Apify fallback, while
-`0–2` must produce exactly one fallback and retain any valid Bright people ahead
-of Apify results. Repeat **Add 10 more** only after the stored candidates are
-consumed and confirm that each provider resumes its own saved page. Inspect only
+first; every positive valid Bright count must produce no Apify fallback. Confirm
+that a true empty Bright page allows company-targeted Apify, while a transient
+Bright failure allows Apify only for that action and leaves the Bright page
+unchanged. Repeat **Add 10 more** only after the stored candidates are consumed
+and confirm that each provider resumes its own saved page. Inspect only
 aggregate events and the sanitized durable rows—never print credentials or raw
 provider payloads.
 

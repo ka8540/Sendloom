@@ -24,8 +24,6 @@ import type { AiCallBudget } from "@/services/prospects/prospect-ai";
 import { normalizeTitle } from "@/services/prospects/prospect-normalization";
 import type { RoleClassificationService } from "@/services/prospects/role-classification-service";
 
-export const BRIGHT_APIFY_FALLBACK_THRESHOLD = 3;
-
 export type BrightStopReason =
   | "TARGET_REACHED"
   | "EMPTY_PAGE"
@@ -35,6 +33,13 @@ export type BrightStopReason =
   | "PARENT_DEADLINE"
   | "DISABLED"
   | "ALREADY_EXHAUSTED";
+
+export type ApifyFallbackReason =
+  | "BRIGHT_EXHAUSTED"
+  | "BRIGHT_TIMEOUT"
+  | "BRIGHT_PROVIDER_ERROR"
+  | "BRIGHT_AUTH_ERROR"
+  | "BRIGHT_MALFORMED_RESPONSE";
 
 export type ProviderContribution = {
   provider: "BRIGHTDATA_GOOGLE" | "APIFY";
@@ -49,7 +54,7 @@ export type ProviderContribution = {
 };
 
 export type ProviderChainDiagnostics = {
-  brightStatus: "DISABLED" | "SUFFICIENT" | "ZERO_RESULTS" | "RESULTS_REJECTED" | "PARTIAL" | "FAILED";
+  brightStatus: "DISABLED" | "RESULTS" | "ZERO_RESULTS" | "RESULTS_REJECTED" | "FAILED";
   brightFailureEvent: ReturnType<typeof brightFailureEvent> | null;
   bright: BrightProfileDiagnostics | null;
   apify: ApifyIngestionDiagnostics | null;
@@ -64,8 +69,15 @@ export type ProviderChainDiagnostics = {
   brightEndPage: number;
   brightPagesAttempted: number;
   brightPagesSucceeded: number;
+  brightNextPage: number;
+  brightPagesFetched: number;
+  brightExhausted: boolean;
+  brightRawResults: number;
+  brightPeoplePersisted: number;
+  unusedDurableCount: number;
   desiredCount: number;
   stopReason: BrightStopReason;
+  apifyFallbackReason: ApifyFallbackReason | null;
 };
 
 export type ProviderChainResult = {
@@ -79,7 +91,6 @@ export type DiscoverPeopleProviderOrchestratorDeps = {
   apify: ApifyProfileSearchService;
   roleClassifier: RoleClassificationService;
   roleIntelligence: DiscoverRoleIntelligencePort;
-  fallbackThreshold?: number;
   brightMaxPages?: number;
   minimumRemainingBudgetMs?: number;
 };
@@ -111,13 +122,11 @@ function addBrightDiagnostics(
 
 export class DiscoverPeopleProviderOrchestrator {
   private readonly bright: BrightProfileSearchProvider;
-  private readonly fallbackThreshold: number;
   private readonly brightMaxPages: number;
   private readonly minimumRemainingBudgetMs: number;
 
   constructor(private readonly deps: DiscoverPeopleProviderOrchestratorDeps) {
     this.bright = deps.bright ?? new BrightDataPublicProfileSearchService();
-    this.fallbackThreshold = deps.fallbackThreshold ?? BRIGHT_APIFY_FALLBACK_THRESHOLD;
     this.brightMaxPages = deps.brightMaxPages ?? env.DISCOVER_BRIGHTDATA_MAX_PAGES;
     this.minimumRemainingBudgetMs = deps.minimumRemainingBudgetMs ?? 5_000;
   }
@@ -145,6 +154,8 @@ export class DiscoverPeopleProviderOrchestrator {
     brightPagesFetched?: number;
     apifyPagesFetched?: number;
     brightPageAttemptLimit?: number;
+    /** Number of unused durable matches observed before this provider action. */
+    unusedDurableCount?: number;
     signal?: AbortSignal;
     deadlineAtMs?: number;
     onProfilesDiscovered?: () => Promise<void> | void;
@@ -178,6 +189,7 @@ export class DiscoverPeopleProviderOrchestrator {
     let brightEndPage = brightStartPage;
     let brightPagesAttempted = 0;
     let brightPagesSucceeded = 0;
+    let brightPeoplePersisted = 0;
     let remainingLocationEnrichmentCalls = env.DISCOVER_BRIGHTDATA_LOCATION_ENRICHMENT_LIMIT;
     let stopReason: BrightStopReason = this.bright.configured
       ? input.brightExhausted
@@ -190,6 +202,11 @@ export class DiscoverPeopleProviderOrchestrator {
       (typeof input.deadlineAtMs === "number" &&
         input.deadlineAtMs - Date.now() <= this.minimumRemainingBudgetMs);
 
+    // A disabled/misconfigured Bright client is an availability failure, not
+    // exhaustion. Apify may cover this action, while no Bright continuation is
+    // advanced or permanently exhausted.
+    if (!this.bright.configured) failureEvent = "BRIGHT_AUTH_ERROR";
+
     if (this.bright.configured && !input.brightExhausted) {
       safeEvent("DISCOVER_BRIGHTDATA_STARTED", {
         searchId: input.searchId,
@@ -200,6 +217,7 @@ export class DiscoverPeopleProviderOrchestrator {
         brightNextPage: brightStartPage,
         brightPagesFetched,
         brightExhausted: false,
+        unusedDurableCount: input.unusedDurableCount ?? 0,
         desiredCount
       });
 
@@ -252,6 +270,8 @@ export class DiscoverPeopleProviderOrchestrator {
             brightTimedOut,
             totalRawBrightResults: aggregateBrightDiagnostics.rawBrightResults,
             totalBrightValidUnique: brightPeople.length,
+            brightPeoplePersisted,
+            unusedDurableCount: input.unusedDurableCount ?? 0,
             desiredCount,
             stopReason
           });
@@ -284,7 +304,10 @@ export class DiscoverPeopleProviderOrchestrator {
           providerResultCount: result.profiles.length
         };
         contributions.push(contribution);
-        await input.onBrightPage?.(contribution);
+        if (input.onBrightPage) {
+          await input.onBrightPage(contribution);
+          brightPeoplePersisted += contribution.people.length;
+        }
         if (result.diagnostics.enrichmentCalls > 0) {
           safeEvent("DISCOVER_BRIGHTDATA_LOCATION_ENRICHMENT", {
             searchId: input.searchId,
@@ -306,6 +329,8 @@ export class DiscoverPeopleProviderOrchestrator {
           ...result.diagnostics,
           pageBrightValidUnique: uniquePage.length,
           totalBrightValidUnique: brightPeople.length,
+          brightPeoplePersisted,
+          unusedDurableCount: input.unusedDurableCount ?? 0,
           desiredCount
         });
 
@@ -329,15 +354,13 @@ export class DiscoverPeopleProviderOrchestrator {
         (page > this.brightMaxPages || brightPagesAttempted >= brightPageAttemptLimit)
       ) stopReason = "MAX_PAGES";
       if (!failureEvent && stopReason !== "PARENT_DEADLINE") {
-        brightStatus = brightPeople.length >= this.fallbackThreshold
-          ? "SUFFICIENT"
-          : brightPeople.length > 0
-            ? "PARTIAL"
-            : aggregateBrightDiagnostics.rawBrightResults > 0
-              ? "RESULTS_REJECTED"
-              : "ZERO_RESULTS";
+        brightStatus = brightPeople.length > 0
+          ? "RESULTS"
+          : aggregateBrightDiagnostics.rawBrightResults > 0
+            ? "RESULTS_REJECTED"
+            : "ZERO_RESULTS";
       }
-      safeEvent(brightPeople.length >= this.fallbackThreshold ? "DISCOVER_BRIGHTDATA_SUFFICIENT" : "DISCOVER_BRIGHTDATA_RESULTS", {
+      safeEvent("DISCOVER_BRIGHTDATA_RESULTS", {
         searchId: input.searchId,
         canonicalCompanyKey: input.canonicalCompanyKey ?? null,
         companyLinkedinResolved: Boolean(companyLinkedinUrl),
@@ -357,6 +380,8 @@ export class DiscoverPeopleProviderOrchestrator {
         totalLocationAccepted: aggregateBrightDiagnostics.locationAccepted,
         totalDuplicateRejected: aggregateBrightDiagnostics.duplicateRejected,
         totalBrightValidUnique: brightPeople.length,
+        brightPeoplePersisted,
+        unusedDurableCount: input.unusedDurableCount ?? 0,
         desiredCount,
         stopReason
       });
@@ -364,12 +389,21 @@ export class DiscoverPeopleProviderOrchestrator {
 
     if (parentDeadlineReached()) stopReason = "PARENT_DEADLINE";
     const parentBudgetSpent = stopReason === "PARENT_DEADLINE";
-    const apifyFallbackNeeded = !parentBudgetSpent && brightPeople.length < this.fallbackThreshold && !input.apifyExhausted;
     const lastBrightContribution = contributions.filter((entry) => entry.provider === "BRIGHTDATA_GOOGLE").at(-1);
     const observedBrightNextPage = lastBrightContribution?.nextPage ?? brightStartPage;
     const observedBrightPagesFetched = brightPagesFetched + brightPagesSucceeded;
     const observedBrightExhausted = lastBrightContribution?.exhausted ?? (input.brightExhausted ?? false);
     const rawBrightResults = brightDiagnostics?.rawBrightResults ?? 0;
+    // Provider routing is state/event driven. A successful Bright action that
+    // produced any valid people ends this action even if that same action also
+    // proved exhaustion; those people are consumed before the next provider
+    // opportunity. Failures are the sole exception and may use Apify now.
+    const apifyFallbackReason: ApifyFallbackReason | null = failureEvent
+      ? failureEvent
+      : observedBrightExhausted && brightPeople.length === 0
+        ? "BRIGHT_EXHAUSTED"
+        : null;
+    const apifyFallbackNeeded = !parentBudgetSpent && Boolean(apifyFallbackReason) && !input.apifyExhausted;
     let apifyPeople: ResolvedCachePerson[] = [];
     let apifyDiagnostics: ApifyIngestionDiagnostics | null = null;
     if (apifyFallbackNeeded && !companyLinkedinUrl && input.resolveCompanyLinkedinUrl) {
@@ -380,6 +414,22 @@ export class DiscoverPeopleProviderOrchestrator {
       }
     }
     const shouldCallApify = apifyFallbackNeeded && Boolean(companyLinkedinUrl);
+    safeEvent("DISCOVER_PROVIDER_DECISION", {
+      searchId: input.searchId,
+      canonicalCompanyKey: input.canonicalCompanyKey ?? null,
+      unusedDurableCount: input.unusedDurableCount ?? 0,
+      brightStartPage,
+      brightNextPage: observedBrightNextPage,
+      brightPagesFetched: observedBrightPagesFetched,
+      brightExhausted: observedBrightExhausted,
+      brightRequestCompleted,
+      brightFailure: failureEvent,
+      brightRawResults: rawBrightResults,
+      brightValidUnique: brightPeople.length,
+      brightPeoplePersisted,
+      apifyFallbackCalled: shouldCallApify,
+      apifyFallbackReason
+    });
     if (apifyFallbackNeeded) {
       safeEvent("DISCOVER_BRIGHTDATA_FALLBACK_TO_APIFY", {
         searchId: input.searchId,
@@ -406,7 +456,11 @@ export class DiscoverPeopleProviderOrchestrator {
         apifyNextPage: apifyStartPage,
         apifyPagesFetched,
         apifyExhausted: input.apifyExhausted ?? false,
-        reason: brightStatus
+        unusedDurableCount: input.unusedDurableCount ?? 0,
+        brightRawResults: rawBrightResults,
+        brightValidUnique: brightPeople.length,
+        brightPeoplePersisted,
+        apifyFallbackReason
       });
     }
     if (apifyFallbackNeeded && !companyLinkedinUrl && brightPeople.length === 0) {
@@ -463,7 +517,11 @@ export class DiscoverPeopleProviderOrchestrator {
         apifyPagesFetched: apifyPagesFetched + 1,
         apifyExhausted: apify.profiles.length === 0 || apify.totalFound < input.maxResults,
         apifyNewUnique: apifyPeople.length,
-        finalUniqueCount: brightPeople.length + apifyPeople.length
+        finalUniqueCount: brightPeople.length + apifyPeople.length,
+        unusedDurableCount: input.unusedDurableCount ?? 0,
+        brightRawResults: rawBrightResults,
+        brightPeoplePersisted,
+        apifyFallbackReason
       });
     }
 
@@ -487,8 +545,15 @@ export class DiscoverPeopleProviderOrchestrator {
         brightEndPage,
         brightPagesAttempted,
         brightPagesSucceeded,
+        brightNextPage: observedBrightNextPage,
+        brightPagesFetched: observedBrightPagesFetched,
+        brightExhausted: observedBrightExhausted,
+        brightRawResults: rawBrightResults,
+        brightPeoplePersisted,
+        unusedDurableCount: input.unusedDurableCount ?? 0,
         desiredCount,
-        stopReason
+        stopReason,
+        apifyFallbackReason
       }
     };
   }

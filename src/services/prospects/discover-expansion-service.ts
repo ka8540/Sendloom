@@ -290,6 +290,7 @@ export class DiscoverExpansionService {
           normalizedRoles: fingerprintInput.roles,
           normalizedLocations: fingerprintInput.locations,
           unusedCandidateCount: unusedCached.length,
+          unusedDurableCount: unusedCached.length,
           providerCalled: false
         }
       );
@@ -560,8 +561,8 @@ export class DiscoverExpansionService {
     }
 
     // 11. No unused database people remain. Run one bounded provider action:
-    // Bright may advance through multiple saved SERP pages until this batch is
-    // full, then Apify may run once only when Bright finishes with 0-2 people.
+    // Bright advances from its saved SERP page. Apify is eligible only after
+    // true Bright exhaustion or as a temporary Bright-failure fallback.
     if (!exhausted && this.maxProviderPages > 0) {
       const budget = createAiBudget();
       await this.cache.runWithProviderLock(params.fingerprint, async () => {
@@ -603,6 +604,7 @@ export class DiscoverExpansionService {
         await this.safeAudit("DISCOVER_EXPANSION_PROVIDER_FETCH", params.userId, params.actorEmail, params.search.id, {
           brightPage,
           apifyPage,
+          unusedDurableCount: 0,
           providerCalled: true,
           explicitExpansion: true,
           reason: "DATABASE_EXHAUSTED"
@@ -630,6 +632,7 @@ export class DiscoverExpansionService {
           brightPagesFetched: rechecked?.brightPagesFetched ?? 0,
           apifyPagesFetched: rechecked?.apifyPagesFetched ?? rechecked?.providerPagesFetched ?? 0,
           brightPageAttemptLimit: this.maxProviderPages,
+          unusedDurableCount: 0,
           signal: providerSignal,
           deadlineAtMs: providerActionStartedAt + PROVIDER_ACTION_TIMEOUT_MS,
           brightExhausted: rechecked?.brightExhausted ?? false,

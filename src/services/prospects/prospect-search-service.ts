@@ -1130,8 +1130,8 @@ export class ProspectSearchService {
     request?: { signal: AbortSignal; deadlineAtMs: number },
     persistBrightPage?: (contribution: ProviderContribution) => Promise<void>
   ): Promise<ProviderDatasetResult> {
-    // Bright Data public Google discovery runs first. Only 0-2 valid unique
-    // Bright people permit the single bounded Apify fallback.
+    // Bright Data public Google discovery runs first. Apify is eligible only
+    // after true Bright exhaustion or as a temporary Bright-failure fallback.
     await this.setStatus(search.id, "SEARCHING_PEOPLE");
     const resultLimit = resolveResultsPerSearch();
     const candidateLimit = Math.max(resultLimit, PROVIDER_CANDIDATE_LIMIT);
@@ -1153,6 +1153,7 @@ export class ProspectSearchService {
       }),
       brightPagesFetched: continuation?.brightPagesFetched ?? 0,
       apifyPagesFetched: continuation?.apifyPagesFetched ?? continuation?.providerPagesFetched ?? 0,
+      unusedDurableCount: 0,
       signal: request?.signal,
       deadlineAtMs: request?.deadlineAtMs,
       brightExhausted: continuation?.brightExhausted ?? false,

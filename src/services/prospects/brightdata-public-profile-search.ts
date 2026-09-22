@@ -164,11 +164,13 @@ export class BrightDataPublicProfileSearchService implements BrightProfileSearch
 }
 
 export function brightFailureEvent(error: unknown):
-  | "BRIGHT_CONFIGURATION_ERROR"
+  | "BRIGHT_AUTH_ERROR"
   | "BRIGHT_TIMEOUT"
-  | "BRIGHT_PROVIDER_ERROR" {
+  | "BRIGHT_PROVIDER_ERROR"
+  | "BRIGHT_MALFORMED_RESPONSE" {
   const kind = (error as { kind?: BrightDataFailure })?.kind;
-  if (kind === "CONFIGURATION") return "BRIGHT_CONFIGURATION_ERROR";
+  if (kind === "CONFIGURATION" || kind === "AUTHENTICATION") return "BRIGHT_AUTH_ERROR";
   if (kind === "TIMEOUT") return "BRIGHT_TIMEOUT";
+  if (kind === "MALFORMED_RESPONSE") return "BRIGHT_MALFORMED_RESPONSE";
   return "BRIGHT_PROVIDER_ERROR";
 }

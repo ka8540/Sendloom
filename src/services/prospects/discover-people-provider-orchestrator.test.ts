@@ -165,7 +165,7 @@ const request = {
 };
 
 describe("DiscoverPeopleProviderOrchestrator", () => {
-  it("collects across Bright pages until the desired count instead of stopping at the fallback threshold", async () => {
+  it("collects across Bright pages until the desired count", async () => {
     const { orchestrator, bright, apify } = buildPages([
       { profiles: Array.from({ length: 6 }, (_, index) => profile(`p1-${index}`)), raw: 10 },
       { profiles: Array.from({ length: 5 }, (_, index) => profile(`p2-${index}`)), raw: 10 }
@@ -186,7 +186,7 @@ describe("DiscoverPeopleProviderOrchestrator", () => {
     expect(apify.searchProfiles).not.toHaveBeenCalled();
   });
 
-  it("returns all Bright people at the configured page cap without using Apify when at least three exist", async () => {
+  it("returns all Bright people at the configured page cap without using Apify", async () => {
     const { orchestrator, bright, apify } = buildPages([
       { profiles: Array.from({ length: 4 }, (_, index) => profile(`cap1-${index}`)), raw: 10 },
       { profiles: Array.from({ length: 3 }, (_, index) => profile(`cap2-${index}`)), raw: 10 },
@@ -202,7 +202,7 @@ describe("DiscoverPeopleProviderOrchestrator", () => {
     expect(apify.searchProfiles).not.toHaveBeenCalled();
   });
 
-  it("retains two Bright people through an empty page then calls targeted Apify once", async () => {
+  it("returns Bright people without Apify after later proving Bright exhaustion", async () => {
     const { orchestrator, bright, apify } = buildPages([
       { profiles: [profile("partial-1")], raw: 10 },
       { profiles: [profile("partial-2")], raw: 10 },
@@ -212,9 +212,20 @@ describe("DiscoverPeopleProviderOrchestrator", () => {
     const result = await orchestrator.discover({ ...request, desiredCount: 10 });
 
     expect(vi.mocked(bright.searchProfiles)).toHaveBeenCalledTimes(3);
-    expect(result.people.map((person) => person.sourceProfileId)).toEqual(["partial-1", "partial-2", "apify"]);
+    expect(result.people.map((person) => person.sourceProfileId)).toEqual(["partial-1", "partial-2"]);
     expect(result.diagnostics.stopReason).toBe("EMPTY_PAGE");
-    expect(apify.searchProfiles).toHaveBeenCalledTimes(1);
+    expect(result.diagnostics).toMatchObject({ brightExhausted: true, apifyFallbackReason: null });
+    expect(apify.searchProfiles).not.toHaveBeenCalled();
+  });
+
+  it("uses targeted Apify on the next provider opportunity after Bright is exhausted", async () => {
+    const { orchestrator, bright, apify } = buildPages([], [profile("apify")]);
+
+    const result = await orchestrator.discover({ ...request, brightExhausted: true });
+
+    expect(bright.searchProfiles).not.toHaveBeenCalled();
+    expect(result.people.map((person) => person.sourceProfileId)).toEqual(["apify"]);
+    expect(result.diagnostics.apifyFallbackReason).toBe("BRIGHT_EXHAUSTED");
     expect(apify.searchProfiles).toHaveBeenCalledWith(expect.objectContaining({
       companyTargeting: { mode: "LINKEDIN_CURRENT_COMPANY", trusted: true }
     }));
@@ -247,9 +258,10 @@ describe("DiscoverPeopleProviderOrchestrator", () => {
     expect(onBrightPage).toHaveBeenCalledTimes(1);
     expect(onBrightPage).toHaveBeenCalledWith(expect.objectContaining({ nextPage: 2, pagesFetched: 1, exhausted: false }));
     expect(result.people).toHaveLength(4);
-    expect(result.contributions).toHaveLength(1);
+    expect(result.contributions.map((entry) => entry.provider)).toEqual(["BRIGHTDATA_GOOGLE", "APIFY"]);
     expect(result.diagnostics).toMatchObject({ stopReason: "TIMEOUT", brightPagesAttempted: 2, brightPagesSucceeded: 1 });
-    expect(apify.searchProfiles).not.toHaveBeenCalled();
+    expect(result.diagnostics.apifyFallbackReason).toBe("BRIGHT_TIMEOUT");
+    expect(apify.searchProfiles).toHaveBeenCalledTimes(1);
   });
 
   it("does not count canonical LinkedIn duplicates across Bright pages toward the target", async () => {
@@ -305,7 +317,7 @@ describe("DiscoverPeopleProviderOrchestrator", () => {
     expect(vi.mocked(bright.searchProfiles).mock.calls.map(([input]) => input.locationEnrichmentLimit)).toEqual([2, 0]);
   });
 
-  it.each([3, 5])("does not call Apify when Bright has %i valid unique people", async (count) => {
+  it.each([1, 2, 3, 5])("does not call Apify when Bright has %i valid unique people", async (count) => {
     const { orchestrator, apify } = build(Array.from({ length: count }, (_, index) => profile(`b${index}`)));
     const result = await orchestrator.discover(request);
     expect(result.people).toHaveLength(count);
@@ -313,20 +325,22 @@ describe("DiscoverPeopleProviderOrchestrator", () => {
     expect(result.diagnostics).toMatchObject({ brightValidUnique: count, apifyFallbackCalled: false });
   });
 
-  it.each([0, 1, 2])("calls Apify once and preserves %i Bright people", async (count) => {
-    const bright = Array.from({ length: count }, (_, index) => profile(`b${index}`));
-    const { orchestrator, apify } = build(bright, [profile("a0"), profile("a1")]);
+  it("calls Apify once after a truly empty Bright page", async () => {
+    const { orchestrator, apify } = build([], [profile("a0"), profile("a1")]);
     const result = await orchestrator.discover(request);
     expect(apify.searchProfiles).toHaveBeenCalledTimes(1);
-    expect(result.people.map((person) => person.sourceProfileId)).toEqual([
-      ...bright.map((person) => person.sourceProfileId),
-      "a0",
-      "a1"
-    ]);
+    expect(result.people.map((person) => person.sourceProfileId)).toEqual(["a0", "a1"]);
+    expect(result.diagnostics).toMatchObject({
+      brightExhausted: true,
+      apifyFallbackReason: "BRIGHT_EXHAUSTED"
+    });
   });
 
-  it("deduplicates Apify against Bright and permanent identities while preserving Bright order", async () => {
-    const { orchestrator } = build([profile("bright"), profile("existing")], [profile("bright"), profile("apify")]);
+  it("deduplicates a failure-fallback Apify page against Bright and permanent identities", async () => {
+    const { orchestrator } = buildPages([
+      { profiles: [profile("bright"), profile("existing")], raw: 2 },
+      { error: new BrightDataSearchError("PROVIDER") }
+    ], [profile("bright"), profile("apify")]);
     const result = await orchestrator.discover({
       ...request,
       excluded: new PersonIdentitySet([{ sourceProfileId: "existing", linkedinUrl: "https://linkedin.com/in/existing" }])
@@ -338,12 +352,73 @@ describe("DiscoverPeopleProviderOrchestrator", () => {
     ]);
   });
 
+  it("persists all 18 valid Bright people while returning only the requested 10", async () => {
+    const discovered = Array.from({ length: 18 }, (_, index) => profile(`bright-all-${index}`));
+    const onBrightPage = vi.fn(async () => undefined);
+    const { orchestrator, apify } = build(discovered);
+
+    const result = await orchestrator.discover({ ...request, desiredCount: 10, onBrightPage });
+
+    expect(result.people).toHaveLength(10);
+    expect(result.contributions[0].people).toHaveLength(18);
+    expect(onBrightPage).toHaveBeenCalledWith(expect.objectContaining({ people: expect.arrayContaining(discovered.map((item) => expect.objectContaining({ sourceProfileId: item.sourceProfileId }))) }));
+    expect(result.diagnostics.brightPeoplePersisted).toBe(18);
+    expect(apify.searchProfiles).not.toHaveBeenCalled();
+  });
+
+  it("keeps all 22 Apify people in the contribution while returning only 10", async () => {
+    const discovered = Array.from({ length: 22 }, (_, index) => profile(`apify-all-${index}`));
+    const { orchestrator } = build([], discovered);
+
+    const result = await orchestrator.discover({ ...request, desiredCount: 10, brightExhausted: true });
+
+    expect(result.people).toHaveLength(10);
+    expect(result.contributions).toHaveLength(1);
+    expect(result.contributions[0]).toMatchObject({ provider: "APIFY" });
+    expect(result.contributions[0].people).toHaveLength(22);
+  });
+
   it("falls back to Apify after a Bright provider failure", async () => {
     const { orchestrator, apify } = build([], [profile("fallback")], new Error("private provider payload"));
     const result = await orchestrator.discover(request);
     expect(apify.searchProfiles).toHaveBeenCalledTimes(1);
     expect(result.people.map((person) => person.sourceProfileId)).toEqual(["fallback"]);
     expect(result.diagnostics).toMatchObject({ brightStatus: "FAILED", apifyFallbackCalled: true });
+  });
+
+  it.each<[
+    "AUTHENTICATION" | "MALFORMED_RESPONSE",
+    "BRIGHT_AUTH_ERROR" | "BRIGHT_MALFORMED_RESPONSE"
+  ]>([
+    ["AUTHENTICATION", "BRIGHT_AUTH_ERROR"],
+    ["MALFORMED_RESPONSE", "BRIGHT_MALFORMED_RESPONSE"]
+  ])("classifies a Bright %s failure before the temporary Apify fallback", async (kind, reason) => {
+    const { orchestrator, apify } = build([], [profile("fallback")], new BrightDataSearchError(kind));
+
+    const result = await orchestrator.discover(request);
+
+    expect(apify.searchProfiles).toHaveBeenCalledTimes(1);
+    expect(result.diagnostics).toMatchObject({
+      brightExhausted: false,
+      brightFailureEvent: reason,
+      apifyFallbackReason: reason,
+      apifyFallbackCalled: true
+    });
+  });
+
+  it("treats an unconfigured Bright client as an auth availability fallback without exhaustion", async () => {
+    const { orchestrator, bright, apify } = build([], [profile("fallback")]);
+    Object.defineProperty(bright, "configured", { value: false });
+
+    const result = await orchestrator.discover(request);
+
+    expect(bright.searchProfiles).not.toHaveBeenCalled();
+    expect(apify.searchProfiles).toHaveBeenCalledTimes(1);
+    expect(result.diagnostics).toMatchObject({
+      brightStatus: "DISABLED",
+      brightExhausted: false,
+      apifyFallbackReason: "BRIGHT_AUTH_ERROR"
+    });
   });
 
   it("does not advance or exhaust Bright after a timeout and calls only company-targeted Apify", async () => {
