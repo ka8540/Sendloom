@@ -31,7 +31,11 @@ const REGENERATABLE_STATUSES = new Set([
   "UNAVAILABLE",
   "INFERRED_HIGH",
   "INFERRED_MEDIUM",
-  "INFERRED_LOW"
+  "INFERRED_LOW",
+  // INVALID can be either a legacy stored candidate state or an address-level
+  // suppression overlay that an older repair path persisted. In both cases a
+  // PATTERN-owned candidate must be allowed to follow a new company format.
+  "INVALID"
 ]);
 
 /**
