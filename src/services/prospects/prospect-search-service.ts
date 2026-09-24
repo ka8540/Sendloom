@@ -1,5 +1,11 @@
 import type { ProspectPerson } from "@prisma/client";
 import { protectNameRepairSuppressions } from "@/services/prospects/discover-person-name-repair";
+import {
+  addEmailFormatRegenerationStats,
+  emptyEmailFormatRegenerationStats,
+  protectFormatChangeSuppressions,
+  type EmailFormatRegenerationStats
+} from "@/services/prospects/discover-person-format-change";
 import { normalizeDiscoverPersonNames } from "@/services/prospects/discover-person-name-normalization";
 import { nameStateFields } from "@/services/prospects/discover-name-contract";
 import { randomUUID } from "node:crypto";
@@ -1943,7 +1949,7 @@ export class ProspectSearchService {
     const nameSnapshots = new Map(originals.map((original, i) => [original.id, { original, normalized: normalized[i] }]));
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
-        return await this.prisma.$transaction(
+        const outcome = await this.prisma.$transaction(
           async (tx) => {
             const target = await tx.prospectCompany.findFirst({ where: { id: companyId, userId } });
             if (!target) {
@@ -1982,17 +1988,38 @@ export class ProspectSearchService {
             const data = companyEmailFormatData(resolvedForWrite) as Prisma.ProspectCompanyUpdateInput;
 
             let updatedTarget: ProspectCompany | null = null;
+            let formatChanged = false;
+            let regenerationStats = emptyEmailFormatRegenerationStats();
             for (const row of family) {
               const updated = await tx.prospectCompany.update({ where: { id: row.id }, data });
-              await this.regenerateCompanyEmails(userId, updated, tx, nameSnapshots);
+              const rowFormatChanged =
+                normalizeDomain(row.emailDomain) !== normalizeDomain(updated.emailDomain) ||
+                row.emailPattern !== updated.emailPattern ||
+                row.emailDomainConfidence !== updated.emailDomainConfidence ||
+                row.patternConfidence !== updated.patternConfidence;
+              if (rowFormatChanged) {
+                formatChanged = true;
+                regenerationStats = addEmailFormatRegenerationStats(
+                  regenerationStats,
+                  await this.regenerateCompanyEmails(userId, updated, tx, nameSnapshots)
+                );
+              }
               if (updated.id === companyId) {
                 updatedTarget = updated;
               }
             }
-            return updatedTarget ?? target;
+            return { company: updatedTarget ?? target, formatChanged, regenerationStats };
           },
           { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
         );
+        if (outcome.formatChanged) {
+          logDiscoverEmailFormatRegeneration({
+            companyId,
+            action: authority === "SOURCE" ? "SOURCE_URL" : authority,
+            ...outcome.regenerationStats
+          });
+        }
+        return outcome.company;
       } catch (error) {
         if (
           attempt < 2 &&
@@ -2016,7 +2043,7 @@ export class ProspectSearchService {
     updatedCompany: ProspectCompany,
     db: Pick<Prisma.TransactionClient, "prospectPerson" | "suppression"> = this.prisma,
     snapshots?: Map<string, { original: ProspectPerson; normalized: ProspectPerson }>
-  ): Promise<void> {
+  ): Promise<EmailFormatRegenerationStats> {
     const people = await db.prospectPerson.findMany({ where: { companyId: updatedCompany.id, userId } });
     if (!snapshots) {
       const normalized = await normalizeDiscoverPersonNames(people, { companyName: updatedCompany.officialName ?? updatedCompany.name });
@@ -2037,7 +2064,7 @@ export class ProspectSearchService {
     const corrected = canonical.map(person => ({ ...person, ...resolveProspectPersonEmail(person, updatedCompany, {
       allowLowConfidence: env.PROSPECT_ALLOW_LOW_CONFIDENCE_EMAILS, regenerateExistingInferred: true
     }) }));
-    const protectedPeople = await protectNameRepairSuppressions(db, userId, people, corrected);
+    const { people: protectedPeople, stats } = await protectFormatChangeSuppressions(db, userId, people, corrected);
     for (const person of protectedPeople) {
       await db.prospectPerson.update({ where: { id: person.id }, data: {
         firstName: person.firstName, lastName: person.lastName, fullName: person.fullName, ...nameStateFields(person),
@@ -2045,6 +2072,7 @@ export class ProspectSearchService {
         emailPattern: person.emailPattern, emailSource: person.emailSource
       } });
     }
+    return stats;
   }
 
   private logEmailFormatStage(input: {
@@ -2313,4 +2341,17 @@ function logDiscoverEmailFormatEvent(event: DiscoverEmailFormatLogEvent): void {
   } else {
     console.info(line);
   }
+}
+
+type DiscoverEmailFormatRegenerationLogEvent = EmailFormatRegenerationStats & {
+  companyId: string;
+  action: "MANUAL" | "AI" | "SOURCE_URL" | "SHARED_CACHE";
+};
+
+/** Privacy-safe transaction outcome for canonical format propagation. */
+function logDiscoverEmailFormatRegeneration(event: DiscoverEmailFormatRegenerationLogEvent): void {
+  if (process.env.NODE_ENV === "test") {
+    return;
+  }
+  console.info(`[DISCOVER_EMAIL_FORMAT_REGENERATION] ${JSON.stringify(event)}`);
 }

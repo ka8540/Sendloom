@@ -39,6 +39,7 @@ import { DiscoverPublicKnowledgeService } from "@/services/prospects/discover-pu
 import { createFakePrisma, type FakePrisma } from "@/services/prospects/__test-utils__/fake-prisma";
 import { createMockAi } from "@/services/prospects/__test-utils__/mock-ai";
 import { createAiBudget } from "@/services/prospects/prospect-ai";
+import { overlayEmailCandidateStatus } from "@/lib/prospect-enums";
 
 // Marker used by legacy provider-normalization tests. buildService replaces it
 // with a test-only seeded-dataset adapter; the production lookup contract has
@@ -1089,6 +1090,114 @@ describe("ProspectSearchService AI email-format discovery", () => {
       emailStatus: "INFERRED_HIGH"
     });
     expect(prisma._state.people[0].emailStatus).not.toBe("VERIFIED");
+  });
+
+  it("repairs invalid PATTERN rows across the canonical family without bypassing safety suppressions", async () => {
+    const oldFormat = {
+      name: "Flexport, Inc.",
+      normalizedName: "flexport",
+      officialName: "Flexport, Inc.",
+      officialDomain: "flexport.com",
+      officialWebsiteDomain: "flexport.com",
+      emailDomain: "flexport.com",
+      emailDomainConfidence: "HIGH",
+      emailPattern: "first",
+      patternConfidence: "HIGH",
+      emailFormatAuthority: "AI"
+    };
+    const company = seedDiscoverCompany(prisma, { id: "flexport_primary", ...oldFormat });
+    const legacyCompany = seedDiscoverCompany(prisma, { id: "flexport_legacy", ...oldFormat });
+    const otherCompany = seedDiscoverCompany(prisma, { id: "flexport_other", userId: "user_B", ...oldFormat });
+
+    const seedGenerated = (
+      ownerCompanyId: string,
+      id: string,
+      firstName: string,
+      lastName: string,
+      overrides: Record<string, unknown> = {}
+    ) => {
+      seedPerson(prisma, ownerCompanyId, id, firstName, lastName);
+      const row = prisma._state.people.find((person) => person.id === id)!;
+      Object.assign(row, {
+        inferredEmail: `${firstName.toLowerCase()}@flexport.com`,
+        emailStatus: "INFERRED_HIGH",
+        emailConfidence: "HIGH",
+        emailPattern: "first",
+        emailSource: "PATTERN",
+        ...overrides
+      });
+      return row;
+    };
+
+    const tommy = seedGenerated(company.id, "tommy", "Tommy", "Kumar", { emailStatus: "INVALID" });
+    const ivan = seedGenerated(company.id, "ivan", "Ivan", "Norris", { emailStatus: "INVALID" });
+    const unsubscribed = seedGenerated(company.id, "unsub", "Uma", "Sub");
+    const complained = seedGenerated(company.id, "complaint", "Cora", "Plaint");
+    const blocked = seedGenerated(company.id, "blocked", "Manny", "Block");
+    const newBounce = seedGenerated(company.id, "new_bounce", "Nina", "Bounce");
+    const trusted = seedGenerated(company.id, "trusted", "Tara", "Trusted", {
+      inferredEmail: "tara.external@flexport.com",
+      emailStatus: "VERIFIED",
+      emailSource: "PUBLIC_PROFILE",
+      emailPattern: null
+    });
+    seedPerson(prisma, company.id, "unavailable", "Abby", "Stankus");
+    const legacy = seedGenerated(legacyCompany.id, "legacy", "Leah", "Legacy");
+    const otherUser = seedGenerated(otherCompany.id, "other_user", "Oscar", "Other");
+    otherUser.userId = "user_B";
+
+    prisma._state.suppressions.push(
+      { id: "s_hard", userId: USER_ID, email: tommy.inferredEmail, reason: "HARD_BOUNCE", source: "gmail-dsn" },
+      { id: "s_invalid", userId: USER_ID, email: ivan.inferredEmail, reason: "INVALID_EMAIL", source: "validation" },
+      { id: "s_unsub", userId: USER_ID, email: unsubscribed.inferredEmail, reason: "UNSUBSCRIBED", source: "link" },
+      { id: "s_complaint", userId: USER_ID, email: complained.inferredEmail, reason: "COMPLAINT", source: "provider" },
+      { id: "s_block", userId: USER_ID, email: blocked.inferredEmail, reason: "MANUAL_BLOCK", source: "manual" },
+      { id: "s_new", userId: USER_ID, email: "nbounce@flexport.com", reason: "HARD_BOUNCE", source: "gmail-dsn" }
+    );
+    const suppressionSnapshot = prisma._state.suppressions.map((row) => ({ ...row }));
+    const { service } = buildDiscoverService(prisma);
+
+    await service.setCompanyEmailInferenceOverride(USER_ID, {
+      companyId: company.id,
+      emailDomain: "flexport.com",
+      emailPattern: "flast",
+      confidence: "HIGH"
+    });
+
+    expect(tommy).toMatchObject({ inferredEmail: "tkumar@flexport.com", emailStatus: "INFERRED_HIGH", emailPattern: "flast" });
+    expect(ivan).toMatchObject({ inferredEmail: "inorris@flexport.com", emailStatus: "INFERRED_HIGH", emailPattern: "flast" });
+    expect(newBounce).toMatchObject({ inferredEmail: "nbounce@flexport.com", emailStatus: "INFERRED_HIGH" });
+    expect(overlayEmailCandidateStatus(newBounce.emailStatus, "HARD_BOUNCE")).toBe("INVALID");
+    expect(unsubscribed).toMatchObject({ inferredEmail: "uma@flexport.com", emailStatus: "UNSUBSCRIBED" });
+    expect(complained).toMatchObject({ inferredEmail: "cora@flexport.com", emailStatus: "SUPPRESSED" });
+    expect(blocked).toMatchObject({ inferredEmail: "manny@flexport.com", emailStatus: "SUPPRESSED" });
+    expect(trusted).toMatchObject({ inferredEmail: "tara.external@flexport.com", emailStatus: "VERIFIED", emailSource: "PUBLIC_PROFILE" });
+    expect(prisma._state.people.find((person) => person.id === "unavailable")).toMatchObject({
+      inferredEmail: "astankus@flexport.com",
+      emailStatus: "INFERRED_HIGH",
+      emailSource: "PATTERN"
+    });
+    expect(legacy).toMatchObject({ inferredEmail: "llegacy@flexport.com", emailPattern: "flast" });
+    expect(otherUser).toMatchObject({ inferredEmail: "oscar@flexport.com", emailPattern: "first" });
+    expect(prisma._state.companies.find((row) => row.id === legacyCompany.id)).toMatchObject({
+      emailPattern: "flast",
+      emailFormatAuthority: "MANUAL"
+    });
+    expect(prisma._state.companies.find((row) => row.id === otherCompany.id)?.emailPattern).toBe("first");
+    expect(prisma._state.suppressions).toEqual(suppressionSnapshot);
+
+    // Switching back proves the historical failure stayed address-scoped: the
+    // candidate is persisted again, then the live suppression overlay makes it
+    // INVALID without poisoning the person permanently.
+    await service.setCompanyEmailInferenceOverride(USER_ID, {
+      companyId: company.id,
+      emailDomain: "flexport.com",
+      emailPattern: "first",
+      confidence: "HIGH"
+    });
+    expect(tommy).toMatchObject({ inferredEmail: "tommy@flexport.com", emailStatus: "INFERRED_HIGH" });
+    expect(overlayEmailCandidateStatus(tommy.emailStatus, "HARD_BOUNCE")).toBe("INVALID");
+    expect(prisma._state.suppressions).toEqual(suppressionSnapshot);
   });
 
   it("rejects a platform domain for an unrelated company and still rejects free mailboxes", async () => {

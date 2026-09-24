@@ -68,6 +68,29 @@ describe("resolveProspectPersonEmail", () => {
     });
   });
 
+  it("regenerates a PATTERN-owned row whose invalid state was persisted", () => {
+    const existing = person({
+      inferredEmail: "tommy@walmart.com",
+      emailStatus: "INVALID",
+      emailConfidence: "HIGH",
+      emailPattern: "first",
+      emailSource: "PATTERN",
+      firstName: "Tommy",
+      lastName: "Kumar"
+    });
+    expect(
+      resolveProspectPersonEmail(existing, { ...company, emailPattern: "flast" }, {
+        allowLowConfidence: false,
+        regenerateExistingInferred: true
+      })
+    ).toMatchObject({
+      inferredEmail: "tkumar@walmart.com",
+      emailStatus: "INFERRED_HIGH",
+      emailPattern: "flast",
+      emailSource: "PATTERN"
+    });
+  });
+
   it("regenerates the SAME address when the format is switched back", () => {
     // The failure record lives on the address, so returning to the pattern that
     // produced it reproduces it exactly — and the read-time overlay marks it

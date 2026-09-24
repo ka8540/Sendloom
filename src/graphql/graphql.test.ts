@@ -262,7 +262,9 @@ describe("Company emailStatusCounts aggregate (Discover detail dashboard)", () =
     const counts = Object.fromEntries(rows.map((row) => [row.status, row.count]));
     // Legacy rows with no persisted address are repaired from the current
     // company format; the weakest company confidence is MEDIUM.
-    expect(counts).toEqual({ INFERRED_MEDIUM: 4, SUPPRESSED: 1, INVALID: 1 });
+    // A legacy PATTERN-owned INVALID row is reconsidered from the canonical
+    // format; INVALID is an address outcome, not a permanent person state.
+    expect(counts).toEqual({ INFERRED_MEDIUM: 5, SUPPRESSED: 1 });
   });
 
   it("coerces an unknown stored status to UNAVAILABLE instead of breaking the enum", async () => {
@@ -403,6 +405,80 @@ describe("Discover delivery-failure overlay (suppression-aware statuses)", () =>
       (edge) => edge.node.emailStatus
     );
     expect(statuses).toEqual(["INFERRED_HIGH"]);
+  });
+
+  it("a fresh request overlays only the regenerated current address in both People and Results Quality", async () => {
+    const prisma = createFakePrisma();
+    seedCompany(prisma, {
+      id: "comp_A",
+      userId: "user_A",
+      name: "Flexport, Inc.",
+      normalizedName: "flexport",
+      officialName: "Flexport, Inc.",
+      officialDomain: "flexport.com",
+      officialWebsiteDomain: "flexport.com",
+      emailDomain: "flexport.com",
+      emailDomainConfidence: "HIGH",
+      emailPattern: "flast",
+      patternConfidence: "HIGH"
+    });
+    prisma._state.people.push({
+      id: "tommy",
+      userId: "user_A",
+      companyId: "comp_A",
+      positionId: "pos_1",
+      firstName: "Tommy",
+      lastName: "Kumar",
+      fullName: "Tommy Kumar",
+      linkedinUrl: "https://www.linkedin.com/in/tommy",
+      inferredEmail: "tkumar@flexport.com",
+      emailStatus: "INFERRED_HIGH",
+      emailConfidence: "HIGH",
+      emailPattern: "flast",
+      emailSource: "PATTERN",
+      createdAt: new Date()
+    });
+    prisma._state.suppressions.push({
+      id: "old_bounce",
+      userId: "user_A",
+      email: "tommy@flexport.com",
+      reason: "HARD_BOUNCE",
+      source: "gmail-dsn"
+    });
+    const query = `{
+      company(id: "comp_A") { emailStatusCounts { status count } }
+      people(companyId: "comp_A", first: 10) { edges { node { inferredEmail emailStatus } } }
+    }`;
+
+    const afterRepair = await graphql({
+      schema: prospectSchema,
+      source: query,
+      contextValue: makeContext({ user: FAKE_USER, prisma, userId: "user_A" })
+    });
+    expect(afterRepair.errors).toBeUndefined();
+    expect(afterRepair.data?.people).toEqual({
+      edges: [{ node: { inferredEmail: "tkumar@flexport.com", emailStatus: "INFERRED_HIGH" } }]
+    });
+    expect(afterRepair.data?.company).toEqual({ emailStatusCounts: [{ status: "INFERRED_HIGH", count: 1 }] });
+
+    // A suppression for the replacement itself is observed by a wholly new
+    // loader/context and changes both surfaces together.
+    prisma._state.suppressions.push({
+      id: "new_bounce",
+      userId: "user_A",
+      email: "tkumar@flexport.com",
+      reason: "HARD_BOUNCE",
+      source: "gmail-dsn"
+    });
+    const afterNewBounce = await graphql({
+      schema: prospectSchema,
+      source: query,
+      contextValue: makeContext({ user: FAKE_USER, prisma, userId: "user_A" })
+    });
+    expect(afterNewBounce.data?.people).toEqual({
+      edges: [{ node: { inferredEmail: "tkumar@flexport.com", emailStatus: "INVALID" } }]
+    });
+    expect(afterNewBounce.data?.company).toEqual({ emailStatusCounts: [{ status: "INVALID", count: 1 }] });
   });
 });
 

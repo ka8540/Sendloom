@@ -287,7 +287,7 @@ describe("prospect export selection resolution", () => {
     expect(resolved.rows.map((row) => row.email)).toEqual(["india_backend_engineer@esri.com"]);
   });
 
-  it("repairs stale unavailable rows while skipping suppressed, invalid, and duplicate emails", async () => {
+  it("repairs stale unavailable and PATTERN-invalid rows while skipping suppressed and duplicate emails", async () => {
     const { prisma, suppressions } = makePrisma();
     seedCompany(prisma);
     seedPerson(prisma, { id: "ok", inferredEmail: "ok@esri.com" });
@@ -306,9 +306,12 @@ describe("prospect export selection resolution", () => {
     expect(resolved.review).toMatchObject({
       selectedCount: 6,
       exportableCount: 2,
-      unavailableEmailCount: 1,
+      // The PATTERN-owned INVALID row is regenerated from the canonical
+      // format. It produces Ada's same candidate and is counted as a duplicate,
+      // not frozen forever as unavailable.
+      unavailableEmailCount: 0,
       suppressedCount: 2,
-      duplicateEmailCount: 1
+      duplicateEmailCount: 2
     });
     expect(resolved.rows.map((row) => row.email)).toEqual(["ok@esri.com", "ada.lovelace@esri.com"]);
   });
