@@ -8,6 +8,7 @@ import {
   type ApifyRunner
 } from "@/services/prospects/apify-profile-search";
 import type { BrightProfileSearchProvider } from "@/services/prospects/brightdata-public-profile-search";
+import type { TavilyProfileSearchProvider } from "@/services/prospects/tavily-public-profile-search";
 import {
   DiscoverSearchCacheService,
   type DiscoverCacheExpansionPort,
@@ -841,6 +842,118 @@ describe("DiscoverExpansionService.addMorePeople", () => {
       brightNextPage: 6,
       brightPagesFetched: 5,
       brightExhausted: false
+    });
+  });
+
+  it("resumes Tavily from the stored query index before Bright on Add More", async () => {
+    seedCompany();
+    seedSearch();
+    seedExistingPeople(10);
+    for (let index = 1; index <= 10; index += 1) {
+      prisma._state.searchPeople.push({
+        id: `tavily_resume_grant_${index}`,
+        searchId: SEARCH_ID,
+        personId: `person_${index}`,
+        userId: USER_ID,
+        allocationOrder: index - 1,
+        allocationSource: "PROVIDER",
+        allocatedAt: new Date()
+      });
+    }
+    const durable = new DiscoverPublicKnowledgeService({
+      prisma: prisma as unknown as PrismaClient,
+      redis: new TestRedis(),
+      lock: makeFakeLock()
+    });
+    const { input, fingerprint } = fingerprintFor();
+    await durable.appendProviderPeople({
+      fingerprint,
+      fingerprintInput: input,
+      company: { name: "Apple", domain: "apple.com", linkedinUrl: "https://www.linkedin.com/company/apple" },
+      emailFormat: {
+        emailDomain: null,
+        emailDomainConfidence: "UNAVAILABLE",
+        emailDomainEvidence: null,
+        emailPattern: null,
+        patternConfidence: "UNAVAILABLE",
+        patternEvidence: null,
+        emailFormatReason: null
+      },
+      people: [],
+      nextPage: 2,
+      pagesFetched: 2,
+      exhausted: false,
+      provider: "TAVILY"
+    });
+    const queries: string[] = [];
+    const tavily: TavilyProfileSearchProvider = {
+      configured: true,
+      searchProfiles: vi.fn(async ({ query }) => {
+        queries.push(query);
+        const profiles = Array.from({ length: 10 }, (_, index) => normalizeProfile({
+          id: `tavily-resume-${index + 1}`,
+          linkedinUrl: `https://www.linkedin.com/in/tavily-resume-${index + 1}`,
+          fullName: `Tavily Resume${index + 1}`,
+          currentTitle: "Backend Engineer",
+          currentCompany: "Apple",
+          location: "United States"
+        })!);
+        return {
+          profiles,
+          diagnostics: {
+            rawTavilyResults: 10,
+            linkedInCandidates: 10,
+            currentEmploymentAccepted: 10,
+            formerEmployeeRejected: 0,
+            companyContradictionRejected: 0,
+            companyInsufficientRejected: 0,
+            locationAccepted: 10,
+            locationMissing: 0,
+            locationContradictionRejected: 0,
+            roleRejected: 0,
+            duplicateRejected: 0,
+            creditsUsed: 1
+          }
+        };
+      })
+    };
+    const bright: BrightProfileSearchProvider = {
+      configured: true,
+      searchProfiles: vi.fn(async () => { throw new Error("Bright must not run"); })
+    };
+    const runner: ApifyRunner = { run: vi.fn(async () => ({ runId: null, datasetId: null, items: [] })) };
+    const apify = new ApifyProfileSearchService({ token: "t", actorId: "actor", runner });
+    const roleIntelligence = {
+      enabled: false,
+      buildProviderTitlePlan: vi.fn(async () => ["Software Engineer", "Software Developer", "Backend Engineer"]),
+      filterAndRankPeople: vi.fn(async ({ people }: { people: ResolvedCachePerson[] }) => people),
+      persistTitleKnowledge: vi.fn(async () => ({ existing: 0, created: 0, failed: false }))
+    } as unknown as DiscoverRoleIntelligencePort;
+    const providerOrchestrator = new DiscoverPeopleProviderOrchestrator({
+      tavily,
+      bright,
+      apify,
+      roleClassifier: roleClassifierStub,
+      roleIntelligence,
+      tavilyMaxQueries: 4
+    });
+    const { service } = buildService({ cache: durable, runner, roleIntelligence, providerOrchestrator });
+
+    const result = await service.addMorePeople({
+      userId: USER_ID,
+      actorEmail: "user@example.com",
+      searchId: SEARCH_ID,
+      idempotencyKey: "resume-tavily-query-two"
+    });
+
+    expect(result.addedCount).toBe(10);
+    expect(queries).toHaveLength(1);
+    expect(queries[0]).toContain('("Software Developer")');
+    expect(bright.searchProfiles).not.toHaveBeenCalled();
+    await expect(durable.getExpansionState(fingerprint)).resolves.toMatchObject({
+      tavilyNextQueryIndex: 3,
+      tavilyQueriesFetched: 3,
+      tavilyExhausted: false
     });
   });
 

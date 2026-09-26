@@ -276,6 +276,7 @@ export class DiscoverExpansionService {
         (person) => !identities.has(person) && databaseIdentities.addIfNew(person)
       );
       const providerExhausted =
+        (!this.providerOrchestrator.tavilyConfigured || (cacheState?.tavilyExhausted ?? false)) &&
         (!this.providerOrchestrator.brightConfigured || (cacheState?.brightExhausted ?? false)) &&
         (cacheState?.apifyExhausted ?? cacheState?.providerExhausted ?? false);
       await this.safeAudit(
@@ -598,10 +599,12 @@ export class DiscoverExpansionService {
         // A database-only initial search may have no exact continuation row. In
         // that case this explicit user action starts at page 1. When metadata
         // exists, always honor its saved next page (including old cache rows).
+        const tavilyQueryIndex = rechecked?.tavilyNextQueryIndex ?? 0;
         const brightPage = rechecked?.brightNextPage ?? 1;
         const apifyPage = rechecked?.apifyNextPage ?? rechecked?.providerNextPage ?? 1;
         const cachedPeopleCount = rechecked?.people.length ?? 0;
         await this.safeAudit("DISCOVER_EXPANSION_PROVIDER_FETCH", params.userId, params.actorEmail, params.search.id, {
+          tavilyQueryIndex,
           brightPage,
           apifyPage,
           unusedDurableCount: 0,
@@ -626,20 +629,38 @@ export class DiscoverExpansionService {
           requestedLocations: params.locations,
           maxResults: PROVIDER_PAGE_SIZE,
           desiredCount: this.batchSize,
+          tavilyStartQueryIndex: tavilyQueryIndex,
           brightStartPage: brightPage,
           apifyStartPage: apifyPage,
           canonicalCompanyKey: params.fingerprintInput.companyKey,
+          tavilyQueriesFetched: rechecked?.tavilyQueriesFetched ?? 0,
           brightPagesFetched: rechecked?.brightPagesFetched ?? 0,
           apifyPagesFetched: rechecked?.apifyPagesFetched ?? rechecked?.providerPagesFetched ?? 0,
           brightPageAttemptLimit: this.maxProviderPages,
           unusedDurableCount: 0,
           signal: providerSignal,
           deadlineAtMs: providerActionStartedAt + PROVIDER_ACTION_TIMEOUT_MS,
+          tavilyExhausted: rechecked?.tavilyExhausted ?? false,
           brightExhausted: rechecked?.brightExhausted ?? false,
           apifyExhausted: rechecked?.apifyExhausted ?? rechecked?.providerExhausted ?? false,
           excluded: providerExcluded,
           budget,
           searchId: params.search.id,
+          onTavilyQuery: async (contribution) => {
+            updated = await this.cache.appendProviderPeople({
+              fingerprint: params.fingerprint,
+              fingerprintInput: params.fingerprintInput,
+              company: params.cacheCompany,
+              emailFormat: params.cacheEmailFormat,
+              people: contribution.people,
+              nextPage: contribution.nextPage,
+              pagesFetched: contribution.pagesFetched,
+              exhausted: contribution.exhausted,
+              provider: contribution.provider,
+              providerRunId: contribution.providerRunId,
+              providerDatasetId: contribution.providerDatasetId
+            });
+          },
           onBrightPage: async (contribution) => {
             updated = await this.cache.appendProviderPeople({
               fingerprint: params.fingerprint,
@@ -665,7 +686,9 @@ export class DiscoverExpansionService {
         // persisted URL into the durable public-knowledge row as well, while
         // retaining the domain-based fingerprint/canonical company identity.
         params.cacheCompany.linkedinUrl = params.company.linkedinUrl;
-        for (const contribution of chain.contributions.filter((entry) => entry.provider !== "BRIGHTDATA_GOOGLE")) {
+        for (const contribution of chain.contributions.filter(
+          (entry) => entry.provider !== "TAVILY" && entry.provider !== "BRIGHTDATA_GOOGLE"
+        )) {
           updated = await this.cache.appendProviderPeople({
             fingerprint: params.fingerprint,
             fingerprintInput: params.fingerprintInput,
@@ -691,12 +714,14 @@ export class DiscoverExpansionService {
           }
         }
         const collectedCount = collected.length - collectedBeforePage;
+        const tavilyExhausted = !this.providerOrchestrator.tavilyConfigured || (updated.tavilyExhausted ?? false);
         const brightExhausted = !this.providerOrchestrator.brightConfigured || (updated.brightExhausted ?? false);
         const apifyExhausted = updated.apifyExhausted ?? updated.providerExhausted;
-        exhausted = brightExhausted && apifyExhausted;
+        exhausted = tavilyExhausted && brightExhausted && apifyExhausted;
         const apifyContribution = chain.contributions.find((entry) => entry.provider === "APIFY");
         await this.safeAudit("DISCOVER_EXPANSION_PROVIDER_PAGE_PROCESSED", params.userId, params.actorEmail, params.search.id, {
           page: apifyPage,
+          tavilyQueryIndex,
           brightPage,
           apifyPage,
           rawProviderCount: apifyContribution?.providerTotalFound ?? 0,
@@ -708,6 +733,8 @@ export class DiscoverExpansionService {
             0,
             (apifyContribution?.providerResultCount ?? 0) - (apifyContribution?.people.length ?? 0)
           ),
+          rawTavilyResults: chain.diagnostics.tavily?.rawTavilyResults ?? 0,
+          tavilyValidUnique: chain.diagnostics.tavilyValidUnique,
           rawBrightResults: chain.diagnostics.bright?.rawBrightResults ?? 0,
           linkedInCandidates: chain.diagnostics.bright?.linkedInCandidates ?? 0,
           brightValidUnique: chain.diagnostics.brightValidUnique,

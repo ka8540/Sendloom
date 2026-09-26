@@ -23,6 +23,13 @@ import { normalizeDiscoverPersonNames } from "@/services/prospects/discover-pers
 import type { AiCallBudget } from "@/services/prospects/prospect-ai";
 import { normalizeTitle } from "@/services/prospects/prospect-normalization";
 import type { RoleClassificationService } from "@/services/prospects/role-classification-service";
+import { buildTavilyPeopleQueryPlan } from "@/services/prospects/public-people-query-builder";
+import {
+  TavilyPublicProfileSearchService,
+  type TavilyProfileDiagnostics,
+  type TavilyProfileSearchProvider
+} from "@/services/prospects/tavily-public-profile-search";
+import { tavilyFailureEvent } from "@/services/prospects/tavily-search-provider";
 
 export type BrightStopReason =
   | "TARGET_REACHED"
@@ -42,7 +49,7 @@ export type ApifyFallbackReason =
   | "BRIGHT_MALFORMED_RESPONSE";
 
 export type ProviderContribution = {
-  provider: "BRIGHTDATA_GOOGLE" | "APIFY";
+  provider: "TAVILY" | "BRIGHTDATA_GOOGLE" | "APIFY";
   people: ResolvedCachePerson[];
   nextPage: number;
   pagesFetched: number;
@@ -54,6 +61,18 @@ export type ProviderContribution = {
 };
 
 export type ProviderChainDiagnostics = {
+  tavilyStatus: "DISABLED" | "RESULTS" | "ZERO_RESULTS" | "RESULTS_REJECTED" | "FAILED";
+  tavilyFailureEvent: ReturnType<typeof tavilyFailureEvent> | null;
+  tavily: TavilyProfileDiagnostics | null;
+  tavilyValidUnique: number;
+  tavilyStartQueryIndex: number;
+  tavilyEndQueryIndex: number;
+  tavilyQueriesAttempted: number;
+  tavilyQueriesSucceeded: number;
+  tavilyNextQueryIndex: number;
+  tavilyQueriesFetched: number;
+  tavilyExhausted: boolean;
+  tavilyPeoplePersisted: number;
   brightStatus: "DISABLED" | "RESULTS" | "ZERO_RESULTS" | "RESULTS_REJECTED" | "FAILED";
   brightFailureEvent: ReturnType<typeof brightFailureEvent> | null;
   bright: BrightProfileDiagnostics | null;
@@ -87,11 +106,14 @@ export type ProviderChainResult = {
 };
 
 export type DiscoverPeopleProviderOrchestratorDeps = {
+  tavily?: TavilyProfileSearchProvider;
   bright?: BrightProfileSearchProvider;
   apify: ApifyProfileSearchService;
   roleClassifier: RoleClassificationService;
   roleIntelligence: DiscoverRoleIntelligencePort;
   brightMaxPages?: number;
+  tavilyMaxQueries?: number;
+  tavilyMaxQueriesPerAction?: number;
   minimumRemainingBudgetMs?: number;
 };
 
@@ -111,6 +133,27 @@ function emptyBrightDiagnostics(): BrightProfileDiagnostics {
   };
 }
 
+function emptyTavilyDiagnostics(): TavilyProfileDiagnostics {
+  return {
+    rawTavilyResults: 0,
+    linkedInCandidates: 0,
+    currentEmploymentAccepted: 0,
+    formerEmployeeRejected: 0,
+    companyContradictionRejected: 0,
+    companyInsufficientRejected: 0,
+    locationAccepted: 0,
+    locationMissing: 0,
+    locationContradictionRejected: 0,
+    roleRejected: 0,
+    duplicateRejected: 0,
+    creditsUsed: 0
+  };
+}
+
+function addTavilyDiagnostics(total: TavilyProfileDiagnostics, query: TavilyProfileDiagnostics): void {
+  for (const key of Object.keys(total) as Array<keyof TavilyProfileDiagnostics>) total[key] += query[key];
+}
+
 function addBrightDiagnostics(
   total: BrightProfileDiagnostics,
   page: BrightProfileDiagnostics
@@ -121,11 +164,17 @@ function addBrightDiagnostics(
 }
 
 export class DiscoverPeopleProviderOrchestrator {
+  private readonly tavily: TavilyProfileSearchProvider;
+  private readonly tavilyMaxQueries: number;
+  private readonly tavilyMaxQueriesPerAction: number;
   private readonly bright: BrightProfileSearchProvider;
   private readonly brightMaxPages: number;
   private readonly minimumRemainingBudgetMs: number;
 
   constructor(private readonly deps: DiscoverPeopleProviderOrchestratorDeps) {
+    this.tavily = deps.tavily ?? new TavilyPublicProfileSearchService();
+    this.tavilyMaxQueries = deps.tavilyMaxQueries ?? env.DISCOVER_TAVILY_MAX_QUERIES;
+    this.tavilyMaxQueriesPerAction = deps.tavilyMaxQueriesPerAction ?? env.DISCOVER_TAVILY_MAX_QUERIES_PER_ACTION;
     this.bright = deps.bright ?? new BrightDataPublicProfileSearchService();
     this.brightMaxPages = deps.brightMaxPages ?? env.DISCOVER_BRIGHTDATA_MAX_PAGES;
     this.minimumRemainingBudgetMs = deps.minimumRemainingBudgetMs ?? 5_000;
@@ -133,6 +182,10 @@ export class DiscoverPeopleProviderOrchestrator {
 
   get brightConfigured(): boolean {
     return this.bright.configured;
+  }
+
+  get tavilyConfigured(): boolean {
+    return this.tavily.configured;
   }
 
   async discover(input: {
@@ -143,17 +196,21 @@ export class DiscoverPeopleProviderOrchestrator {
     maxResults: number;
     /** Valid unique people this action should try to collect before stopping Bright. */
     desiredCount?: number;
+    tavilyStartQueryIndex?: number;
     brightStartPage?: number;
     apifyStartPage?: number;
     brightExhausted?: boolean;
+    tavilyExhausted?: boolean;
     apifyExhausted?: boolean;
     excluded?: PersonIdentitySet;
     budget: AiCallBudget;
     searchId: string;
     canonicalCompanyKey?: string;
     brightPagesFetched?: number;
+    tavilyQueriesFetched?: number;
     apifyPagesFetched?: number;
     brightPageAttemptLimit?: number;
+    tavilyQueryAttemptLimit?: number;
     /** Number of unused durable matches observed before this provider action. */
     unusedDurableCount?: number;
     signal?: AbortSignal;
@@ -161,6 +218,8 @@ export class DiscoverPeopleProviderOrchestrator {
     onProfilesDiscovered?: () => Promise<void> | void;
     /** Durable boundary invoked after each successful Bright page, before the next page starts. */
     onBrightPage?: (contribution: ProviderContribution) => Promise<void>;
+    /** Durable boundary invoked after each successful Tavily query. */
+    onTavilyQuery?: (contribution: ProviderContribution) => Promise<void>;
     resolveCompanyLinkedinUrl?: () => Promise<string | null>;
   }): Promise<ProviderChainResult> {
     const titles = await this.deps.roleIntelligence.buildProviderTitlePlan(input.requestedTitles, {
@@ -169,7 +228,12 @@ export class DiscoverPeopleProviderOrchestrator {
     });
     const identities = input.excluded ?? new PersonIdentitySet();
     const contributions: ProviderContribution[] = [];
+    const tavilyPeople: ResolvedCachePerson[] = [];
     const brightPeople: ResolvedCachePerson[] = [];
+    const aggregateTavilyDiagnostics = emptyTavilyDiagnostics();
+    let tavilyDiagnostics: TavilyProfileDiagnostics | null = null;
+    let tavilyStatus: ProviderChainDiagnostics["tavilyStatus"] = this.tavily.configured ? "ZERO_RESULTS" : "DISABLED";
+    let tavilyFailure: ReturnType<typeof tavilyFailureEvent> | null = null;
     const aggregateBrightDiagnostics = emptyBrightDiagnostics();
     let brightDiagnostics: BrightProfileDiagnostics | null = null;
     let brightStatus: ProviderChainDiagnostics["brightStatus"] = this.bright.configured ? "ZERO_RESULTS" : "DISABLED";
@@ -182,6 +246,24 @@ export class DiscoverPeopleProviderOrchestrator {
     const apifyStartPage = input.apifyStartPage ?? 1;
     const apifyPagesFetched = input.apifyPagesFetched ?? 0;
     const desiredCount = Math.max(1, Math.floor(input.desiredCount ?? input.maxResults));
+    const tavilyPlan = buildTavilyPeopleQueryPlan({
+      companyName: input.companyName,
+      providerTitles: titles,
+      locations: input.requestedLocations,
+      maxQueries: this.tavilyMaxQueries
+    });
+    const tavilyStartQueryIndex = Math.max(0, Math.floor(input.tavilyStartQueryIndex ?? 0));
+    const tavilyQueriesFetched = input.tavilyQueriesFetched ?? 0;
+    const tavilyQueryAttemptLimit = Math.max(
+      1,
+      Math.floor(input.tavilyQueryAttemptLimit ?? this.tavilyMaxQueriesPerAction)
+    );
+    let tavilyEndQueryIndex = tavilyStartQueryIndex;
+    let tavilyQueriesAttempted = 0;
+    let tavilyQueriesSucceeded = 0;
+    let tavilyPeoplePersisted = 0;
+    let tavilyNextQueryIndex = tavilyStartQueryIndex;
+    let tavilyExhausted = (input.tavilyExhausted ?? false) || tavilyStartQueryIndex >= tavilyPlan.length;
     const brightPageAttemptLimit = Math.max(
       1,
       Math.floor(input.brightPageAttemptLimit ?? this.brightMaxPages)
@@ -202,12 +284,129 @@ export class DiscoverPeopleProviderOrchestrator {
       (typeof input.deadlineAtMs === "number" &&
         input.deadlineAtMs - Date.now() <= this.minimumRemainingBudgetMs);
 
+    if (!this.tavily.configured && !tavilyExhausted) tavilyFailure = "TAVILY_AUTH_ERROR";
+    if (this.tavily.configured && !tavilyExhausted) {
+      safeEvent("DISCOVER_TAVILY_STARTED", {
+        searchId: input.searchId,
+        canonicalCompanyKey: input.canonicalCompanyKey ?? null,
+        tavilyStartQueryIndex,
+        tavilyQueriesFetched,
+        tavilyExhausted: false,
+        desiredCount,
+        unusedDurableCount: input.unusedDurableCount ?? 0
+      });
+      while (
+        tavilyPeople.length < desiredCount &&
+        tavilyNextQueryIndex < tavilyPlan.length &&
+        tavilyQueriesAttempted < tavilyQueryAttemptLimit
+      ) {
+        if (parentDeadlineReached()) break;
+        const queryIndex = tavilyNextQueryIndex;
+        tavilyEndQueryIndex = queryIndex;
+        tavilyQueriesAttempted += 1;
+        let result: Awaited<ReturnType<TavilyProfileSearchProvider["searchProfiles"]>>;
+        try {
+          result = await this.tavily.searchProfiles({
+            companyName: input.companyName,
+            locations: input.requestedLocations,
+            query: tavilyPlan[queryIndex],
+            signal: input.signal
+          });
+        } catch (error) {
+          if (!parentDeadlineReached()) tavilyFailure = tavilyFailureEvent(error);
+          tavilyStatus = "FAILED";
+          break;
+        }
+        tavilyQueriesSucceeded += 1;
+        addTavilyDiagnostics(aggregateTavilyDiagnostics, result.diagnostics);
+        tavilyDiagnostics = aggregateTavilyDiagnostics;
+        if (result.profiles.length > 0) await input.onProfilesDiscovered?.();
+        const processed = await this.buildPeople(result.profiles, input, "CACHE");
+        const roleRejected = Math.max(0, result.profiles.length - processed.length);
+        aggregateTavilyDiagnostics.roleRejected += roleRejected;
+        const unique = processed.filter((person) => identities.addIfNew(person));
+        aggregateTavilyDiagnostics.duplicateRejected += processed.length - unique.length;
+        tavilyPeople.push(...unique);
+        tavilyNextQueryIndex = queryIndex + 1;
+        tavilyExhausted = tavilyNextQueryIndex >= tavilyPlan.length;
+        const contribution: ProviderContribution = {
+          provider: "TAVILY",
+          people: unique,
+          nextPage: tavilyNextQueryIndex,
+          pagesFetched: 1,
+          exhausted: tavilyExhausted,
+          providerRunId: null,
+          providerDatasetId: null,
+          providerTotalFound: result.diagnostics.rawTavilyResults,
+          providerResultCount: result.profiles.length
+        };
+        contributions.push(contribution);
+        if (input.onTavilyQuery) {
+          await input.onTavilyQuery(contribution);
+          tavilyPeoplePersisted += unique.length;
+        }
+        safeEvent("DISCOVER_TAVILY_QUERY_RESULTS", {
+          searchId: input.searchId,
+          canonicalCompanyKey: input.canonicalCompanyKey ?? null,
+          queryIndex,
+          tavilyNextQueryIndex,
+          tavilyQueriesFetched: tavilyQueriesFetched + tavilyQueriesSucceeded,
+          tavilyExhausted,
+          ...result.diagnostics,
+          roleRejected,
+          tavilyValidUnique: unique.length,
+          totalTavilyValidUnique: tavilyPeople.length,
+          tavilyPeoplePersisted,
+          desiredCount
+        });
+      }
+      if (!tavilyFailure && !parentDeadlineReached()) {
+        tavilyStatus = tavilyPeople.length > 0
+          ? "RESULTS"
+          : aggregateTavilyDiagnostics.rawTavilyResults > 0
+            ? "RESULTS_REJECTED"
+            : "ZERO_RESULTS";
+      }
+      safeEvent("DISCOVER_TAVILY_RESULTS", {
+        searchId: input.searchId,
+        canonicalCompanyKey: input.canonicalCompanyKey ?? null,
+        tavilyStartQueryIndex,
+        tavilyEndQueryIndex,
+        tavilyQueriesAttempted,
+        tavilyQueriesSucceeded,
+        tavilyNextQueryIndex,
+        tavilyQueriesFetched: tavilyQueriesFetched + tavilyQueriesSucceeded,
+        tavilyExhausted,
+        rawTavilyResults: aggregateTavilyDiagnostics.rawTavilyResults,
+        tavilyValidUnique: tavilyPeople.length,
+        tavilyPeoplePersisted,
+        desiredCount
+      });
+    }
+
+    const tavilyParentBudgetSpent = parentDeadlineReached();
+    const brightEligible = !tavilyParentBudgetSpent && (
+      Boolean(tavilyFailure) || (tavilyExhausted && tavilyPeople.length === 0)
+    );
+    const brightDesiredCount = Math.max(1, desiredCount - tavilyPeople.length);
+    if (brightEligible) {
+      safeEvent("DISCOVER_TAVILY_FALLBACK_TO_BRIGHT", {
+        searchId: input.searchId,
+        canonicalCompanyKey: input.canonicalCompanyKey ?? null,
+        tavilyFailure,
+        tavilyNextQueryIndex,
+        tavilyQueriesFetched: tavilyQueriesFetched + tavilyQueriesSucceeded,
+        tavilyExhausted,
+        tavilyValidUnique: tavilyPeople.length
+      });
+    }
+
     // A disabled/misconfigured Bright client is an availability failure, not
     // exhaustion. Apify may cover this action, while no Bright continuation is
     // advanced or permanently exhausted.
-    if (!this.bright.configured) failureEvent = "BRIGHT_AUTH_ERROR";
+    if (brightEligible && !this.bright.configured) failureEvent = "BRIGHT_AUTH_ERROR";
 
-    if (this.bright.configured && !input.brightExhausted) {
+    if (brightEligible && this.bright.configured && !input.brightExhausted) {
       safeEvent("DISCOVER_BRIGHTDATA_STARTED", {
         searchId: input.searchId,
         canonicalCompanyKey: input.canonicalCompanyKey ?? null,
@@ -222,7 +421,7 @@ export class DiscoverPeopleProviderOrchestrator {
       });
 
       while (
-        brightPeople.length < desiredCount &&
+        brightPeople.length < brightDesiredCount &&
         page <= this.brightMaxPages &&
         brightPagesAttempted < brightPageAttemptLimit
       ) {
@@ -334,7 +533,7 @@ export class DiscoverPeopleProviderOrchestrator {
           desiredCount
         });
 
-        if (brightPeople.length >= desiredCount) {
+        if (brightPeople.length >= brightDesiredCount) {
           stopReason = "TARGET_REACHED";
           break;
         }
@@ -350,7 +549,7 @@ export class DiscoverPeopleProviderOrchestrator {
       }
 
       if (
-        brightPeople.length < desiredCount &&
+        brightPeople.length < brightDesiredCount &&
         (page > this.brightMaxPages || brightPagesAttempted >= brightPageAttemptLimit)
       ) stopReason = "MAX_PAGES";
       if (!failureEvent && stopReason !== "PARENT_DEADLINE") {
@@ -398,11 +597,13 @@ export class DiscoverPeopleProviderOrchestrator {
     // produced any valid people ends this action even if that same action also
     // proved exhaustion; those people are consumed before the next provider
     // opportunity. Failures are the sole exception and may use Apify now.
-    const apifyFallbackReason: ApifyFallbackReason | null = failureEvent
+    const apifyFallbackReason: ApifyFallbackReason | null = brightEligible
       ? failureEvent
-      : observedBrightExhausted && brightPeople.length === 0
-        ? "BRIGHT_EXHAUSTED"
-        : null;
+        ? failureEvent
+        : observedBrightExhausted && brightPeople.length === 0
+          ? "BRIGHT_EXHAUSTED"
+          : null
+      : null;
     const apifyFallbackNeeded = !parentBudgetSpent && Boolean(apifyFallbackReason) && !input.apifyExhausted;
     let apifyPeople: ResolvedCachePerson[] = [];
     let apifyDiagnostics: ApifyIngestionDiagnostics | null = null;
@@ -413,11 +614,18 @@ export class DiscoverPeopleProviderOrchestrator {
         companyLinkedinUrl = null;
       }
     }
-    const shouldCallApify = apifyFallbackNeeded && Boolean(companyLinkedinUrl);
+    const shouldCallApify = apifyFallbackNeeded && !parentDeadlineReached() && Boolean(companyLinkedinUrl);
     safeEvent("DISCOVER_PROVIDER_DECISION", {
       searchId: input.searchId,
       canonicalCompanyKey: input.canonicalCompanyKey ?? null,
       unusedDurableCount: input.unusedDurableCount ?? 0,
+      tavilyStartQueryIndex,
+      tavilyNextQueryIndex,
+      tavilyQueriesFetched: tavilyQueriesFetched + tavilyQueriesSucceeded,
+      tavilyExhausted,
+      tavilyFailure,
+      tavilyValidUnique: tavilyPeople.length,
+      tavilyPeoplePersisted,
       brightStartPage,
       brightNextPage: observedBrightNextPage,
       brightPagesFetched: observedBrightPagesFetched,
@@ -463,7 +671,7 @@ export class DiscoverPeopleProviderOrchestrator {
         apifyFallbackReason
       });
     }
-    if (apifyFallbackNeeded && !companyLinkedinUrl && brightPeople.length === 0) {
+    if (apifyFallbackNeeded && !parentDeadlineReached() && !companyLinkedinUrl && brightPeople.length === 0) {
       throw new ApifyCompanyTargetingError();
     }
     if (shouldCallApify) {
@@ -517,7 +725,7 @@ export class DiscoverPeopleProviderOrchestrator {
         apifyPagesFetched: apifyPagesFetched + 1,
         apifyExhausted: apify.profiles.length === 0 || apify.totalFound < input.maxResults,
         apifyNewUnique: apifyPeople.length,
-        finalUniqueCount: brightPeople.length + apifyPeople.length,
+        finalUniqueCount: tavilyPeople.length + brightPeople.length + apifyPeople.length,
         unusedDurableCount: input.unusedDurableCount ?? 0,
         brightRawResults: rawBrightResults,
         brightPeoplePersisted,
@@ -525,11 +733,23 @@ export class DiscoverPeopleProviderOrchestrator {
       });
     }
 
-    const people = [...brightPeople, ...apifyPeople].slice(0, desiredCount);
+    const people = [...tavilyPeople, ...brightPeople, ...apifyPeople].slice(0, desiredCount);
     return {
       people,
       contributions,
       diagnostics: {
+        tavilyStatus,
+        tavilyFailureEvent: tavilyFailure,
+        tavily: tavilyDiagnostics,
+        tavilyValidUnique: tavilyPeople.length,
+        tavilyStartQueryIndex,
+        tavilyEndQueryIndex,
+        tavilyQueriesAttempted,
+        tavilyQueriesSucceeded,
+        tavilyNextQueryIndex,
+        tavilyQueriesFetched: tavilyQueriesFetched + tavilyQueriesSucceeded,
+        tavilyExhausted,
+        tavilyPeoplePersisted,
         brightStatus,
         brightFailureEvent: failureEvent,
         bright: brightDiagnostics,

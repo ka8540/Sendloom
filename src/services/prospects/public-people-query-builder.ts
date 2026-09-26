@@ -50,3 +50,30 @@ export function buildPublicPeopleRoleUnionQuery(input: {
     ...(locations.length ? [`(${locations.map(quote).join(" OR ")})`] : [])
   ].join(" ");
 }
+
+/** Deterministic Tavily continuation plan: one broad union, then strongest titles individually. */
+export function buildTavilyPeopleQueryPlan(input: {
+  companyName: string;
+  providerTitles: readonly string[];
+  locations?: readonly string[];
+  maxQueries: number;
+}): string[] {
+  const limit = Math.max(1, Math.floor(input.maxQueries));
+  const seen = new Set<string>();
+  const titles = input.providerTitles.map((title) => title.normalize("NFC").replace(/\s+/g, " ").trim())
+    .filter((title) => {
+      const key = normalizeTitle(title);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  const combined = buildPublicPeopleRoleUnionQuery(input);
+  if (!combined) return [];
+  const plan = [combined];
+  for (const title of titles) {
+    if (plan.length >= limit) break;
+    const query = buildPublicPeopleRoleUnionQuery({ ...input, providerTitles: [title] });
+    if (query && !plan.includes(query)) plan.push(query);
+  }
+  return plan.slice(0, limit);
+}

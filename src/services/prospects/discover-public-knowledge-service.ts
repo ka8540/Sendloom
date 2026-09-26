@@ -26,6 +26,7 @@ import {
   sameNormalizedIntent
 } from "@/services/prospects/discover-cache-fingerprint";
 import { PersonIdentitySet } from "@/services/prospects/discover-person-identity";
+import { canonicalizeLinkedInProfileUrl } from "@/services/prospects/linkedin-profile-url";
 import { normalizeDomain } from "@/services/prospects/prospect-normalization";
 
 const RESULT_KEY_PREFIX = "discover:people";
@@ -63,6 +64,9 @@ type ProviderBatchRow = {
   providerPagesFetched: number;
   providerExhausted: boolean;
   provider?: string;
+  tavilyNextQueryIndex?: number;
+  tavilyQueriesFetched?: number;
+  tavilyExhausted?: boolean;
   brightNextPage?: number;
   brightPagesFetched?: number;
   brightExhausted?: boolean;
@@ -191,6 +195,9 @@ export class DiscoverPublicKnowledgeService implements DiscoverPublicKnowledgePo
       providerNextPage: batch.providerNextPage,
       providerPagesFetched: batch.providerPagesFetched,
       providerExhausted: batch.providerExhausted,
+      tavilyNextQueryIndex: batch.tavilyNextQueryIndex ?? 0,
+      tavilyQueriesFetched: batch.tavilyQueriesFetched ?? 0,
+      tavilyExhausted: batch.tavilyExhausted ?? false,
       brightNextPage: batch.brightNextPage ?? 1,
       brightPagesFetched: batch.brightPagesFetched ?? 0,
       brightExhausted: batch.brightExhausted ?? false,
@@ -221,16 +228,16 @@ export class DiscoverPublicKnowledgeService implements DiscoverPublicKnowledgePo
     const existingBatch = (await prisma.discoverProviderBatch.findUnique({
       where: { intentHash: params.fingerprint }
     })) as ProviderBatchRow | null;
+    const tavilyExhausted = provider === "TAVILY"
+      ? params.exhausted
+      : existingBatch?.tavilyExhausted ?? false;
     const brightExhausted = provider === "BRIGHTDATA_GOOGLE"
       ? params.exhausted
       : existingBatch?.brightExhausted ?? false;
     const apifyExhausted = provider === "APIFY"
       ? params.exhausted
       : existingBatch?.apifyExhausted ?? existingBatch?.providerExhausted ?? false;
-    const hasBrightAttempt = provider === "BRIGHTDATA_GOOGLE" || (existingBatch?.brightPagesFetched ?? 0) > 0;
-    const allAttemptedProvidersExhausted = hasBrightAttempt
-      ? brightExhausted && apifyExhausted
-      : apifyExhausted;
+    const allAttemptedProvidersExhausted = tavilyExhausted && brightExhausted && apifyExhausted;
     const batch = (await prisma.discoverProviderBatch.upsert({
       where: { intentHash: params.fingerprint },
       create: {
@@ -247,6 +254,9 @@ export class DiscoverPublicKnowledgeService implements DiscoverPublicKnowledgePo
         providerNextPage: params.nextPage,
         providerPagesFetched: params.pagesFetched,
         providerExhausted: allAttemptedProvidersExhausted,
+        tavilyNextQueryIndex: provider === "TAVILY" ? params.nextPage : 0,
+        tavilyQueriesFetched: provider === "TAVILY" ? params.pagesFetched : 0,
+        tavilyExhausted: provider === "TAVILY" ? params.exhausted : false,
         brightNextPage: provider === "BRIGHTDATA_GOOGLE" ? params.nextPage : 1,
         brightPagesFetched: provider === "BRIGHTDATA_GOOGLE" ? params.pagesFetched : 0,
         brightExhausted: provider === "BRIGHTDATA_GOOGLE" ? params.exhausted : false,
@@ -268,7 +278,13 @@ export class DiscoverPublicKnowledgeService implements DiscoverPublicKnowledgePo
         providerNextPage: params.nextPage,
         providerPagesFetched: (existingBatch?.providerPagesFetched ?? 0) + params.pagesFetched,
         providerExhausted: allAttemptedProvidersExhausted,
-        ...(provider === "BRIGHTDATA_GOOGLE"
+        ...(provider === "TAVILY"
+          ? {
+              tavilyNextQueryIndex: params.nextPage,
+              tavilyQueriesFetched: (existingBatch?.tavilyQueriesFetched ?? 0) + params.pagesFetched,
+              tavilyExhausted: params.exhausted
+            }
+          : provider === "BRIGHTDATA_GOOGLE"
           ? {
               brightNextPage: params.nextPage,
               brightPagesFetched: (existingBatch?.brightPagesFetched ?? 0) + params.pagesFetched,
@@ -378,13 +394,17 @@ export class DiscoverPublicKnowledgeService implements DiscoverPublicKnowledgePo
     return state;
   }
 
-  async markProviderExhausted(fingerprint: string, provider: "BRIGHTDATA_GOOGLE" | "APIFY" = "APIFY"): Promise<void> {
+  async markProviderExhausted(fingerprint: string, provider: "TAVILY" | "BRIGHTDATA_GOOGLE" | "APIFY" = "APIFY"): Promise<void> {
     const prisma = this.prisma as any;
     await prisma.discoverProviderBatch.update({
       where: { intentHash: fingerprint },
       data: {
         providerExhausted: true,
-        ...(provider === "BRIGHTDATA_GOOGLE" ? { brightExhausted: true } : { apifyExhausted: true }),
+        ...(provider === "TAVILY"
+          ? { tavilyExhausted: true }
+          : provider === "BRIGHTDATA_GOOGLE"
+            ? { brightExhausted: true }
+            : { apifyExhausted: true }),
         lastProviderFetchAt: this.now()
       }
     });
@@ -804,7 +824,8 @@ function strings(value: unknown): string[] {
 }
 
 function normalizeLinkedinProfileUrl(value: string): string {
-  return value.trim().toLowerCase().replace(/[?#].*$/, "").replace(/\/$/, "");
+  return canonicalizeLinkedInProfileUrl(value)?.linkedinUrl
+    ?? value.trim().toLowerCase().replace(/[?#].*$/, "").replace(/\/$/, "");
 }
 
 function intersects(left: Set<string>, right: Set<string>): boolean {

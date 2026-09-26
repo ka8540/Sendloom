@@ -878,7 +878,9 @@ export class ProspectSearchService {
           }
         );
         resolvedCompany.linkedinUrl = resolution.linkedinCompanyUrl;
-        for (const contribution of provider.contributions.filter((entry) => entry.provider !== "BRIGHTDATA_GOOGLE")) {
+        for (const contribution of provider.contributions.filter(
+          (entry) => entry.provider !== "TAVILY" && entry.provider !== "BRIGHTDATA_GOOGLE"
+        )) {
           state = await durableKnowledge.appendProviderPeople({
             fingerprint,
             fingerprintInput,
@@ -1128,10 +1130,10 @@ export class ProspectSearchService {
     excluded: PersonIdentitySet,
     continuation: Awaited<ReturnType<DiscoverPublicKnowledgeService["getExpansionState"]>>,
     request?: { signal: AbortSignal; deadlineAtMs: number },
-    persistBrightPage?: (contribution: ProviderContribution) => Promise<void>
+    persistIncrementalContribution?: (contribution: ProviderContribution) => Promise<void>
   ): Promise<ProviderDatasetResult> {
-    // Bright Data public Google discovery runs first. Apify is eligible only
-    // after true Bright exhaustion or as a temporary Bright-failure fallback.
+    // Tavily runs first using deterministic query-index continuation. Bright
+    // and then Apify are eligible only on true exhaustion or temporary failure.
     await this.setStatus(search.id, "SEARCHING_PEOPLE");
     const resultLimit = resolveResultsPerSearch();
     const candidateLimit = Math.max(resultLimit, PROVIDER_CANDIDATE_LIMIT);
@@ -1143,6 +1145,7 @@ export class ProspectSearchService {
       requestedLocations: this.asStringArray(search.requestedLocations),
       maxResults: candidateLimit,
       desiredCount: resultLimit,
+      tavilyStartQueryIndex: continuation?.tavilyNextQueryIndex ?? 0,
       brightStartPage: continuation?.brightNextPage ?? 1,
       apifyStartPage: continuation?.apifyNextPage ?? continuation?.providerNextPage ?? 1,
       canonicalCompanyKey: getCanonicalCompanyKey({
@@ -1151,18 +1154,21 @@ export class ProspectSearchService {
         officialDomain: resolution.officialDomain,
         normalizedName: resolution.normalizedName
       }),
+      tavilyQueriesFetched: continuation?.tavilyQueriesFetched ?? 0,
       brightPagesFetched: continuation?.brightPagesFetched ?? 0,
       apifyPagesFetched: continuation?.apifyPagesFetched ?? continuation?.providerPagesFetched ?? 0,
       unusedDurableCount: 0,
       signal: request?.signal,
       deadlineAtMs: request?.deadlineAtMs,
+      tavilyExhausted: continuation?.tavilyExhausted ?? false,
       brightExhausted: continuation?.brightExhausted ?? false,
       apifyExhausted: continuation?.apifyExhausted ?? continuation?.providerExhausted ?? false,
       excluded,
       budget,
       searchId: search.id,
       onProfilesDiscovered: () => this.setStatus(search.id, "CLASSIFYING_POSITIONS"),
-      onBrightPage: persistBrightPage,
+      onTavilyQuery: persistIncrementalContribution,
+      onBrightPage: persistIncrementalContribution,
       resolveCompanyLinkedinUrl: async () => {
         const linkedinUrl = await this.resolveAndPersistCompanyLinkedinUrl(userId, company, search.id, budget);
         if (linkedinUrl) resolution.linkedinCompanyUrl = linkedinUrl;
@@ -1189,19 +1195,26 @@ export class ProspectSearchService {
       userId,
       source: "PROVIDER",
       itemsReturned:
+        (chain.diagnostics.tavily?.rawTavilyResults ?? 0) +
         (chain.diagnostics.bright?.rawBrightResults ?? 0) +
         (chain.diagnostics.apify?.itemsReturned ?? 0),
       parsedCandidates:
+        (chain.diagnostics.tavily?.linkedInCandidates ?? 0) +
         (chain.diagnostics.bright?.linkedInCandidates ?? 0) +
         (chain.diagnostics.apify?.parsedCandidates ?? 0),
       rejectedBySchema: chain.diagnostics.apify?.rejectedBySchema ?? 0,
       duplicateItems:
+        (chain.diagnostics.tavily?.duplicateRejected ?? 0) +
         (chain.diagnostics.bright?.duplicateRejected ?? 0) +
         (chain.diagnostics.apify?.duplicateItems ?? 0),
       companyMatched:
+        (chain.diagnostics.tavily?.currentEmploymentAccepted ?? 0) +
         (chain.diagnostics.bright?.currentEmploymentAccepted ?? 0) +
         (chain.diagnostics.apify?.companyMatched ?? 0),
       rejectedByCompany:
+        (chain.diagnostics.tavily?.formerEmployeeRejected ?? 0) +
+        (chain.diagnostics.tavily?.companyContradictionRejected ?? 0) +
+        (chain.diagnostics.tavily?.companyInsufficientRejected ?? 0) +
         (chain.diagnostics.bright?.formerEmployeeRejected ?? 0) +
         (chain.diagnostics.bright?.companyContradictionRejected ?? 0) +
         (chain.diagnostics.bright?.companyInsufficientRejected ?? 0) +
