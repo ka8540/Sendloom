@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { normalizeProfile, type ApifyProfileSearchService, type NormalizedProfile } from "./apify-profile-search";
+import { BrightDataSearchError } from "./brightdata-google-search-provider";
 import type { BrightProfileSearchProvider } from "./brightdata-public-profile-search";
 import { DiscoverPeopleProviderOrchestrator } from "./discover-people-provider-orchestrator";
 import { createAiBudget } from "./prospect-ai";
@@ -38,7 +39,7 @@ function counts(profiles: NormalizedProfile[], raw = profiles.length): TavilyPro
 
 function setup(
   tavilyPages: Array<{ profiles?: NormalizedProfile[]; raw?: number; error?: Error }>,
-  options: { maxQueries?: number; perAction?: number; brightProfiles?: NormalizedProfile[] } = {}
+  options: { maxQueries?: number; perAction?: number; brightProfiles?: NormalizedProfile[]; brightError?: Error } = {}
 ) {
   let index = 0;
   const tavily: TavilyProfileSearchProvider = {
@@ -53,24 +54,27 @@ function setup(
   const brightProfiles = options.brightProfiles ?? [];
   const bright: BrightProfileSearchProvider = {
     configured: true,
-    searchProfiles: vi.fn(async (input) => ({
-      profiles: brightProfiles,
-      nextPage: (input.startPage ?? 1) + 1,
-      exhausted: true,
-      diagnostics: {
-        rawBrightResults: brightProfiles.length,
-        linkedInCandidates: brightProfiles.length,
-        currentEmploymentAccepted: brightProfiles.length,
-        formerEmployeeRejected: 0,
-        companyContradictionRejected: 0,
-        companyInsufficientRejected: 0,
-        locationAccepted: brightProfiles.length,
-        locationMissing: 0,
-        locationContradictionRejected: 0,
-        duplicateRejected: 0,
-        enrichmentCalls: 0
-      }
-    }))
+    searchProfiles: vi.fn(async (input) => {
+      if (options.brightError) throw options.brightError;
+      return {
+        profiles: brightProfiles,
+        nextPage: (input.startPage ?? 1) + 1,
+        exhausted: true,
+        diagnostics: {
+          rawBrightResults: brightProfiles.length,
+          linkedInCandidates: brightProfiles.length,
+          currentEmploymentAccepted: brightProfiles.length,
+          formerEmployeeRejected: 0,
+          companyContradictionRejected: 0,
+          companyInsufficientRejected: 0,
+          locationAccepted: brightProfiles.length,
+          locationMissing: 0,
+          locationContradictionRejected: 0,
+          duplicateRejected: 0,
+          enrichmentCalls: 0
+        }
+      };
+    })
   };
   const apify = {
     searchProfiles: vi.fn(async () => ({
@@ -231,6 +235,46 @@ describe("Tavily-first provider chain", () => {
     const firstCall = vi.mocked(retried.tavily.searchProfiles).mock.calls[0][0];
     expect(firstCall.query).toContain('("Software Developer")');
     expect(result.diagnostics).toMatchObject({ tavilyNextQueryIndex: 3, tavilyQueriesFetched: 3 });
+  });
+
+  it("never logs Tavily continuation state as Bright state after a failed Bright page", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    try {
+      const { orchestrator, bright } = setup(
+        Array.from({ length: 6 }, () => ({ profiles: [], raw: 0 })),
+        {
+          maxQueries: 6,
+          perAction: 6,
+          brightError: new BrightDataSearchError("MALFORMED_RESPONSE", { status: 200, stage: "ORGANIC_ARRAY_MISSING" })
+        }
+      );
+      const result = await orchestrator.discover(request);
+      expect(bright.searchProfiles).toHaveBeenCalledTimes(1);
+      expect(result.contributions.filter((entry) => entry.provider === "TAVILY").at(-1))
+        .toMatchObject({ nextPage: 6, exhausted: true });
+      expect(result.contributions.some((entry) => entry.provider === "BRIGHTDATA_GOOGLE")).toBe(false);
+      const events = info.mock.calls
+        .map((call) => String(call[0]))
+        .filter((line) => line.startsWith("{"))
+        .map((line) => JSON.parse(line) as Record<string, unknown>);
+      const logged = events.find((entry) => entry.event === "DISCOVER_BRIGHTDATA_RESULTS");
+      expect(logged).toMatchObject({
+        brightStartPage: 1,
+        brightPagesAttempted: 1,
+        brightPagesSucceeded: 0,
+        brightNextPage: 1,
+        brightExhausted: false
+      });
+      expect(result.diagnostics).toMatchObject({
+        brightFailureEvent: "BRIGHT_MALFORMED_RESPONSE",
+        brightNextPage: 1,
+        brightExhausted: false
+      });
+    } finally {
+      info.mockRestore();
+      vi.unstubAllEnvs();
+    }
   });
 
   it("does not escalate after parent deadline", async () => {

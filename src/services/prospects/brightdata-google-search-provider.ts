@@ -3,11 +3,31 @@ import { inspectGoogleResultRedirect } from "@/services/prospects/linkedin-profi
 
 export type BrightDataFailure = "CONFIGURATION" | "AUTHENTICATION" | "TIMEOUT" | "PROVIDER" | "MALFORMED_RESPONSE";
 
+/** Safe parsing/transport stage for diagnostics; never carries provider content. */
+export type BrightDataFailureStage = "HTTP_ERROR" | "JSON_PARSE" | "ORGANIC_ARRAY_MISSING" | "NETWORK" | "TIMEOUT";
+
 export class BrightDataSearchError extends Error {
-  constructor(readonly kind: BrightDataFailure) {
+  readonly status: number | null;
+  readonly stage: BrightDataFailureStage | null;
+
+  constructor(
+    readonly kind: BrightDataFailure,
+    details: { status?: number | null; stage?: BrightDataFailureStage } = {}
+  ) {
     super("Bright Data public search failed.");
     this.name = "BrightDataSearchError";
+    this.status = details.status ?? null;
+    this.stage = details.stage ?? null;
   }
+}
+
+function logRequestFailed(error: BrightDataSearchError): void {
+  console.info(JSON.stringify({
+    event: "BRIGHT_REQUEST_FAILED",
+    status: error.status,
+    kind: error.kind,
+    ...(error.stage ? { stage: error.stage } : {})
+  }));
 }
 
 export type BrightOrganicResult = {
@@ -163,7 +183,11 @@ export class BrightDataGoogleSearchProvider implements BrightDataPeopleSearchPro
     query: string,
     options: { page: number; requestedLocations: readonly string[]; signal?: AbortSignal }
   ): Promise<BrightDataPage> {
-    if (!this.configured) throw new BrightDataSearchError("CONFIGURATION");
+    if (!this.configured) {
+      const error = new BrightDataSearchError("CONFIGURATION");
+      logRequestFailed(error);
+      throw error;
+    }
     const maxPages = this.options.maxPages ?? env.DISCOVER_BRIGHTDATA_MAX_PAGES;
     if (!Number.isInteger(options.page) || options.page < 1 || options.page > maxPages) {
       return { results: [], rawOrganicResults: 0, page: options.page, exhausted: true };
@@ -175,7 +199,7 @@ export class BrightDataGoogleSearchProvider implements BrightDataPeopleSearchPro
       gl: requestedCountryCode(options.requestedLocations) ?? "us",
       pws: "0",
       udm: "14",
-      brd_json: "json",
+      brd_json: "1",
       start: String((options.page - 1) * PAGE_SIZE)
     }).toString();
     try {
@@ -194,16 +218,21 @@ export class BrightDataGoogleSearchProvider implements BrightDataPeopleSearchPro
         signal: options.signal ? AbortSignal.any([timeout, options.signal]) : timeout
       });
       if (!response.ok) {
-        throw new BrightDataSearchError(response.status === 401 || response.status === 403 ? "AUTHENTICATION" : "PROVIDER");
+        throw new BrightDataSearchError(
+          response.status === 401 || response.status === 403 ? "AUTHENTICATION" : "PROVIDER",
+          { status: response.status, stage: "HTTP_ERROR" }
+        );
       }
       let payload: unknown;
       try {
         payload = await response.json();
       } catch {
-        throw new BrightDataSearchError("MALFORMED_RESPONSE");
+        throw new BrightDataSearchError("MALFORMED_RESPONSE", { status: response.status, stage: "JSON_PARSE" });
       }
       const rows = organicRows(payload);
-      if (!rows) throw new BrightDataSearchError("MALFORMED_RESPONSE");
+      if (!rows) {
+        throw new BrightDataSearchError("MALFORMED_RESPONSE", { status: response.status, stage: "ORGANIC_ARRAY_MISSING" });
+      }
       const results = mapRows(rows);
       return {
         results,
@@ -212,9 +241,18 @@ export class BrightDataGoogleSearchProvider implements BrightDataPeopleSearchPro
         exhausted: rows.length === 0 || options.page >= maxPages
       };
     } catch (error) {
-      if (error instanceof BrightDataSearchError) throw error;
-      if (error instanceof DOMException && error.name === "TimeoutError") throw new BrightDataSearchError("TIMEOUT");
-      throw new BrightDataSearchError("PROVIDER");
+      if (error instanceof BrightDataSearchError) {
+        logRequestFailed(error);
+        throw error;
+      }
+      if (error instanceof DOMException && error.name === "TimeoutError") {
+        const timeoutError = new BrightDataSearchError("TIMEOUT", { stage: "TIMEOUT" });
+        logRequestFailed(timeoutError);
+        throw timeoutError;
+      }
+      const networkError = new BrightDataSearchError("PROVIDER", { stage: "NETWORK" });
+      logRequestFailed(networkError);
+      throw networkError;
     }
   }
 }

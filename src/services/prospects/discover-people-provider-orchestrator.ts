@@ -559,6 +559,11 @@ export class DiscoverPeopleProviderOrchestrator {
             ? "RESULTS_REJECTED"
             : "ZERO_RESULTS";
       }
+      // Bright state must come from the last Bright contribution only; a Tavily
+      // or Apify contribution at the tail would leak foreign continuation state.
+      const lastBrightLogContribution = contributions
+        .filter((entry) => entry.provider === "BRIGHTDATA_GOOGLE")
+        .at(-1);
       safeEvent("DISCOVER_BRIGHTDATA_RESULTS", {
         searchId: input.searchId,
         canonicalCompanyKey: input.canonicalCompanyKey ?? null,
@@ -568,9 +573,9 @@ export class DiscoverPeopleProviderOrchestrator {
         brightEndPage,
         brightPagesAttempted,
         brightPagesSucceeded,
-        brightNextPage: contributions.at(-1)?.nextPage ?? brightStartPage,
+        brightNextPage: lastBrightLogContribution?.nextPage ?? brightStartPage,
         brightPagesFetched: brightPagesFetched + brightPagesSucceeded,
-        brightExhausted: contributions.at(-1)?.exhausted ?? false,
+        brightExhausted: lastBrightLogContribution?.exhausted ?? (input.brightExhausted ?? false),
         brightRequestCompleted,
         brightTimedOut,
         totalRawBrightResults: aggregateBrightDiagnostics.rawBrightResults,
