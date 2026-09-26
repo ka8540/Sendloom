@@ -134,6 +134,127 @@ describe("BrightDataGoogleSearchProvider", () => {
     expect(logs).not.toContain("private search query");
   });
 
+  it("emits only safe structural metadata when a 200 JSON response has no organic", async () => {
+    const apiKey = "super-private-api-key";
+    const provider = new BrightDataGoogleSearchProvider({
+      enabled: true,
+      apiKey,
+      zone: "secret-zone",
+      fetcher: vi.fn(async () => new Response(JSON.stringify({
+        general: { query: "private query echo" },
+        pagination: {},
+        error: { message: "provider said private things" },
+        secret_weird_field: "THIS MUST NEVER APPEAR IN LOGS",
+        body: "<html>raw provider html https://linkedin.com/in/jane Jane Doe</html>"
+      }), { status: 200 })) as typeof fetch
+    });
+
+    await expect(provider.search("private search query", { page: 1, requestedLocations: [] }))
+      .rejects.toMatchObject({ kind: "MALFORMED_RESPONSE", status: 200, stage: "ORGANIC_ARRAY_MISSING" });
+
+    const logged = info.mock.calls
+      .map((call) => String(call[0]))
+      .filter((line) => line.startsWith("{"))
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(logged.find((entry) => entry.event === "BRIGHT_RESPONSE_SHAPE")).toMatchObject({
+      status: 200,
+      stage: "ORGANIC_ARRAY_MISSING",
+      topLevelType: "object",
+      topLevelKeyCount: 5,
+      knownKeys: ["general", "pagination", "error", "body"],
+      hasOrganic: false,
+      organicType: null,
+      hasResult: false,
+      resultType: null,
+      resultHasOrganic: false,
+      resultOrganicType: null,
+      hasBody: true,
+      bodyType: "string",
+      bodyJsonParsed: false,
+      bodyJsonHasOrganic: false,
+      hasPagination: true,
+      hasGeneral: true,
+      hasError: true,
+      hasStatus: false
+    });
+    expect(info).toHaveBeenCalledWith(JSON.stringify({
+      event: "BRIGHT_REQUEST_FAILED",
+      status: 200,
+      kind: "MALFORMED_RESPONSE",
+      stage: "ORGANIC_ARRAY_MISSING"
+    }));
+    expect(logged.findIndex((entry) => entry.event === "BRIGHT_RESPONSE_SHAPE"))
+      .toBeLessThan(logged.findIndex((entry) => entry.event === "BRIGHT_REQUEST_FAILED"));
+    const logs = info.mock.calls.flat().join(" ");
+    expect(logs).not.toContain(apiKey);
+    expect(logs).not.toContain("secret-zone");
+    expect(logs).not.toContain("private search query");
+    expect(logs).not.toContain("THIS MUST NEVER APPEAR IN LOGS");
+    expect(logs).not.toContain("secret_weird_field");
+    expect(logs).not.toContain("provider said private things");
+    expect(logs).not.toContain("private query echo");
+    expect(logs).not.toContain("raw provider html");
+    expect(logs).not.toContain("linkedin.com");
+    expect(logs).not.toContain("Jane Doe");
+    expect(logs).not.toContain("google.com");
+    expect(logs).not.toContain("api.brightdata.com");
+  });
+
+  it("inspects a JSON string body structurally without logging its contents", async () => {
+    const provider = new BrightDataGoogleSearchProvider({
+      enabled: true,
+      apiKey: "secret",
+      zone: "zone",
+      fetcher: vi.fn(async () => new Response(JSON.stringify({
+        body: JSON.stringify({ general: { query: "echo" }, nested_secret: "NEVER LOG THIS" })
+      }), { status: 200 })) as typeof fetch
+    });
+
+    await expect(provider.search("query", { page: 1, requestedLocations: [] }))
+      .rejects.toMatchObject({ kind: "MALFORMED_RESPONSE", stage: "ORGANIC_ARRAY_MISSING" });
+    const shape = info.mock.calls
+      .map((call) => String(call[0]))
+      .filter((line) => line.startsWith("{"))
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .find((entry) => entry.event === "BRIGHT_RESPONSE_SHAPE");
+    expect(shape).toMatchObject({
+      hasBody: true,
+      bodyType: "string",
+      bodyJsonParsed: true,
+      bodyJsonHasOrganic: false
+    });
+    const logs = info.mock.calls.flat().join(" ");
+    expect(logs).not.toContain("NEVER LOG THIS");
+    expect(logs).not.toContain("nested_secret");
+    expect(logs).not.toContain("echo");
+  });
+
+  it("reports result-object shape flags when the nested organic is missing", async () => {
+    const provider = new BrightDataGoogleSearchProvider({
+      enabled: true,
+      apiKey: "secret",
+      zone: "zone",
+      fetcher: vi.fn(async () => new Response(JSON.stringify({
+        result: { unexpected: "private nested value" }
+      }), { status: 200 })) as typeof fetch
+    });
+
+    await expect(provider.search("query", { page: 1, requestedLocations: [] }))
+      .rejects.toMatchObject({ kind: "MALFORMED_RESPONSE", stage: "ORGANIC_ARRAY_MISSING" });
+    const shape = info.mock.calls
+      .map((call) => String(call[0]))
+      .filter((line) => line.startsWith("{"))
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .find((entry) => entry.event === "BRIGHT_RESPONSE_SHAPE");
+    expect(shape).toMatchObject({
+      hasResult: true,
+      resultType: "object",
+      resultHasOrganic: false,
+      resultOrganicType: null
+    });
+    expect(info.mock.calls.flat().join(" ")).not.toContain("private nested value");
+  });
+
   it("classifies an invalid JSON body as a JSON_PARSE stage failure", async () => {
     const provider = new BrightDataGoogleSearchProvider({
       enabled: true,

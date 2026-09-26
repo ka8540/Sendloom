@@ -122,6 +122,85 @@ function organicRows(payload: unknown): unknown[] | null {
   return null;
 }
 
+const SHAPE_KEY_ALLOWLIST = new Set([
+  "organic",
+  "result",
+  "body",
+  "pagination",
+  "general",
+  "error",
+  "status",
+  "html",
+  "knowledge",
+  "images",
+  "videos",
+  "news",
+  "related",
+  "related_searches",
+  "local",
+  "shopping"
+]);
+
+function safeType(value: unknown): string {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
+  return typeof value;
+}
+
+/** Structural metadata only: types, counts, allowlisted key names. Never provider values. */
+function describeBrightResponseShape(payload: unknown): Record<string, unknown> {
+  const shape: Record<string, unknown> = {
+    topLevelType: payload === undefined ? "undefined" : safeType(payload),
+    topLevelKeyCount: 0,
+    knownKeys: [],
+    hasOrganic: false,
+    organicType: null,
+    hasResult: false,
+    resultType: null,
+    resultHasOrganic: false,
+    resultOrganicType: null,
+    hasBody: false,
+    bodyType: null,
+    bodyJsonParsed: false,
+    bodyJsonHasOrganic: false,
+    hasPagination: false,
+    hasGeneral: false,
+    hasError: false,
+    hasStatus: false
+  };
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return shape;
+  const record = payload as Record<string, unknown>;
+  const keys = Object.keys(record);
+  shape.topLevelKeyCount = keys.length;
+  shape.knownKeys = keys.filter((key) => SHAPE_KEY_ALLOWLIST.has(key));
+  const has = (key: string): boolean => record[key] !== undefined;
+  shape.hasOrganic = has("organic");
+  shape.organicType = shape.hasOrganic ? safeType(record.organic) : null;
+  shape.hasResult = has("result");
+  shape.resultType = shape.hasResult ? safeType(record.result) : null;
+  if (record.result && typeof record.result === "object" && !Array.isArray(record.result)) {
+    const result = record.result as Record<string, unknown>;
+    shape.resultHasOrganic = result.organic !== undefined;
+    shape.resultOrganicType = shape.resultHasOrganic ? safeType(result.organic) : null;
+  }
+  shape.hasBody = has("body");
+  shape.bodyType = shape.hasBody ? safeType(record.body) : null;
+  if (typeof record.body === "string") {
+    try {
+      const parsed: unknown = JSON.parse(record.body);
+      shape.bodyJsonParsed = true;
+      shape.bodyJsonHasOrganic = Boolean(parsed && typeof parsed === "object" && (parsed as Record<string, unknown>).organic !== undefined);
+    } catch {
+      shape.bodyJsonParsed = false;
+    }
+  }
+  shape.hasPagination = has("pagination");
+  shape.hasGeneral = has("general");
+  shape.hasError = has("error");
+  shape.hasStatus = has("status");
+  return shape;
+}
+
 function mapRows(rows: unknown[]): BrightOrganicResult[] {
   const results: BrightOrganicResult[] = [];
   for (const row of rows.slice(0, PAGE_SIZE)) {
@@ -231,6 +310,12 @@ export class BrightDataGoogleSearchProvider implements BrightDataPeopleSearchPro
       }
       const rows = organicRows(payload);
       if (!rows) {
+        console.info(JSON.stringify({
+          event: "BRIGHT_RESPONSE_SHAPE",
+          status: response.status,
+          stage: "ORGANIC_ARRAY_MISSING",
+          ...describeBrightResponseShape(payload)
+        }));
         throw new BrightDataSearchError("MALFORMED_RESPONSE", { status: response.status, stage: "ORGANIC_ARRAY_MISSING" });
       }
       const results = mapRows(rows);
