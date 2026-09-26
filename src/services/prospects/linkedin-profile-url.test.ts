@@ -17,6 +17,7 @@ describe("LinkedIn public profile identity", () => {
     "https://linkedin.com/company/sendloom",
     "https://linkedin.com/jobs/view/1",
     "https://linkedin.com/posts/jane_1",
+    "https://linkedin.com/feed",
     "https://linkedin.com/search/results/people",
     "https://example.com/in/jane"
   ])("rejects non-person URL %s", (url) => {

@@ -211,7 +211,7 @@ export class TavilySearchProvider implements TavilyPeopleSearchProvider {
           include_answer: false,
           include_raw_content: false,
           include_images: false,
-          include_domains: ["linkedin.com/in"],
+          include_domains: ["linkedin.com"],
           include_domains_mode: "restrict",
           include_usage: true
         }),
