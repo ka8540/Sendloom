@@ -42,6 +42,55 @@ describe("TavilyPublicProfileSearchService", () => {
     });
   });
 
+  it.each([
+    "https://www.linkedin.com/jobs/view/1",
+    "https://www.linkedin.com/company/acme"
+  ])("rejects non-person LinkedIn URL %s", async (url) => {
+    const provider: TavilyPeopleSearchProvider = {
+      configured: true,
+      search: vi.fn(async () => ({
+        rawResultCount: 1,
+        responseTimeSeconds: 1,
+        creditsUsed: 1,
+        results: [result("Jane Doe - Engineer at Acme | LinkedIn", url, "Engineer at Acme · United States")]
+      }))
+    };
+
+    const response = await new TavilyPublicProfileSearchService(provider).searchProfiles({
+      query: "query",
+      companyName: "Acme",
+      locations: ["United States"]
+    });
+
+    expect(response.profiles).toEqual([]);
+    expect(response.diagnostics.linkedInCandidates).toBe(0);
+  });
+
+  it("accepts a strict linkedin.com/in person URL", async () => {
+    const provider: TavilyPeopleSearchProvider = {
+      configured: true,
+      search: vi.fn(async () => ({
+        rawResultCount: 1,
+        responseTimeSeconds: 1,
+        creditsUsed: 1,
+        results: [result(
+          "Jane Doe - Engineer at Acme | LinkedIn",
+          "https://www.linkedin.com/in/jane-doe",
+          "Engineer at Acme · United States"
+        )]
+      }))
+    };
+
+    const response = await new TavilyPublicProfileSearchService(provider).searchProfiles({
+      query: "query",
+      companyName: "Acme",
+      locations: ["United States"]
+    });
+
+    expect(response.profiles).toHaveLength(1);
+    expect(response.profiles[0]?.sourceProfileId).toBe("jane-doe");
+  });
+
   it("deduplicates canonical LinkedIn identities", async () => {
     const provider: TavilyPeopleSearchProvider = {
       configured: true,
