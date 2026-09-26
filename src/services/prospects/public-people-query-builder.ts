@@ -28,27 +28,58 @@ function companyClause(companyName: string): string {
 
 export const MAX_PUBLIC_ROLE_TERMS = 5;
 
-/** One bounded role-union query. Requested location is always retained. */
-export function buildPublicPeopleRoleUnionQuery(input: {
+/** Tavily guidance: keep search queries under roughly 400 characters. */
+export const MAX_TAVILY_QUERY_LENGTH = 380;
+
+type PeopleQueryInput = {
   companyName: string;
   providerTitles: readonly string[];
   locations?: readonly string[];
-}): string | null {
+};
+
+function dedupeTitles(providerTitles: readonly string[]): string[] {
   const seen = new Set<string>();
-  const titles = input.providerTitles.filter((title) => {
+  return providerTitles.filter((title) => {
     const key = normalizeTitle(title);
     if (!key || seen.has(key)) return false;
     seen.add(key);
     return true;
   }).slice(0, MAX_PUBLIC_ROLE_TERMS);
+}
+
+function locationClause(locations?: readonly string[]): string | null {
+  const unique = [...new Set((locations ?? []).map((value) => value.trim()).filter(Boolean))].slice(0, 3);
+  return unique.length ? `(${unique.map(quote).join(" OR ")})` : null;
+}
+
+function assemblePeopleQuery(company: string, roles: readonly string[], location: string | null): string {
+  return [company, `(${roles.join(" OR ")})`, ...(location ? [location] : [])].join(" ");
+}
+
+/** One bounded role-union query for Google/Bright SERP. Requested location is always retained. */
+export function buildPublicPeopleRoleUnionQuery(input: PeopleQueryInput): string | null {
+  const titles = dedupeTitles(input.providerTitles);
   if (!titles.length) return null;
-  const locations = [...new Set((input.locations ?? []).map((value) => value.trim()).filter(Boolean))].slice(0, 3);
   return [
     "site:linkedin.com/in",
-    companyClause(input.companyName),
-    `(${titles.map(quote).join(" OR ")})`,
-    ...(locations.length ? [`(${locations.map(quote).join(" OR ")})`] : [])
+    assemblePeopleQuery(companyClause(input.companyName), titles.map(quote), locationClause(input.locations))
   ].join(" ");
+}
+
+/** Tavily-safe query: no Google operators; include_domains already restricts to linkedin.com. */
+export function buildTavilyPeopleQuery(input: PeopleQueryInput): string | null {
+  const titles = dedupeTitles(input.providerTitles);
+  if (!titles.length) return null;
+  const company = companyClause(input.companyName);
+  const location = locationClause(input.locations);
+  // ponytail: drop role variants once the safe length limit would be exceeded; the first role is always kept.
+  const roles: string[] = [];
+  for (const title of titles) {
+    const candidate = quote(title);
+    if (roles.length > 0 && assemblePeopleQuery(company, [...roles, candidate], location).length > MAX_TAVILY_QUERY_LENGTH) break;
+    roles.push(candidate);
+  }
+  return assemblePeopleQuery(company, roles, location);
 }
 
 /** Deterministic Tavily continuation plan: one broad union, then strongest titles individually. */
@@ -67,12 +98,12 @@ export function buildTavilyPeopleQueryPlan(input: {
       seen.add(key);
       return true;
     });
-  const combined = buildPublicPeopleRoleUnionQuery(input);
+  const combined = buildTavilyPeopleQuery(input);
   if (!combined) return [];
   const plan = [combined];
   for (const title of titles) {
     if (plan.length >= limit) break;
-    const query = buildPublicPeopleRoleUnionQuery({ ...input, providerTitles: [title] });
+    const query = buildTavilyPeopleQuery({ ...input, providerTitles: [title] });
     if (query && !plan.includes(query)) plan.push(query);
   }
   return plan.slice(0, limit);
