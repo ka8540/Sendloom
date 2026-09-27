@@ -442,6 +442,7 @@ export class DiscoverPeopleProviderOrchestrator {
             maxResults: input.maxResults,
             startPage: page,
             signal: input.signal,
+            deadlineAtMs: input.deadlineAtMs,
             locationEnrichmentLimit: remainingLocationEnrichmentCalls
           });
         } catch (error) {

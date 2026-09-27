@@ -15,8 +15,10 @@ export type BrightResponseBodyClassification =
   | "UNKNOWN";
 
 type BrightTransientBodyReason = "HTML_BODY" | "EMPTY_BODY" | "INVALID_JSON" | "NON_JSON_BODY";
+type BrightRetryReason = BrightTransientBodyReason | "TIMEOUT";
 
 export const MAX_BRIGHT_TRANSIENT_ATTEMPTS_PER_PAGE = 2;
+const MIN_BRIGHT_RETRY_REMAINING_BUDGET_MS = 5_000;
 
 export class BrightDataSearchError extends Error {
   readonly status: number | null;
@@ -43,10 +45,10 @@ function logRequestFailed(error: BrightDataSearchError): void {
 }
 
 function logRequestRetry(input: {
-  status: number;
+  status: number | null;
   page: number;
   attempt: number;
-  reason: BrightTransientBodyReason;
+  reason: BrightRetryReason;
 }): void {
   console.info(JSON.stringify({ event: "BRIGHT_REQUEST_RETRY", ...input }));
 }
@@ -71,7 +73,12 @@ export type BrightDataPage = {
 
 export interface BrightDataPeopleSearchProvider {
   readonly configured: boolean;
-  search(query: string, options: { page: number; requestedLocations: readonly string[]; signal?: AbortSignal }): Promise<BrightDataPage>;
+  search(query: string, options: {
+    page: number;
+    requestedLocations: readonly string[];
+    signal?: AbortSignal;
+    deadlineAtMs?: number;
+  }): Promise<BrightDataPage>;
 }
 
 const ORGANIC_URL_FIELDS = ["link", "url", "href", "target_url"] as const;
@@ -331,7 +338,12 @@ export class BrightDataGoogleSearchProvider implements BrightDataPeopleSearchPro
 
   async search(
     query: string,
-    options: { page: number; requestedLocations: readonly string[]; signal?: AbortSignal }
+    options: {
+      page: number;
+      requestedLocations: readonly string[];
+      signal?: AbortSignal;
+      deadlineAtMs?: number;
+    }
   ): Promise<BrightDataPage> {
     if (!this.configured) {
       const error = new BrightDataSearchError("CONFIGURATION");
@@ -352,10 +364,14 @@ export class BrightDataGoogleSearchProvider implements BrightDataPeopleSearchPro
       brd_json: "1",
       start: String((options.page - 1) * PAGE_SIZE)
     }).toString();
+    const configuredTimeoutMs = this.options.timeoutMs ?? env.DISCOVER_BRIGHTDATA_TIMEOUT_MS;
+    const retryBudgetAvailable = () =>
+      !options.signal?.aborted &&
+      (typeof options.deadlineAtMs !== "number" ||
+        options.deadlineAtMs - Date.now() > MIN_BRIGHT_RETRY_REMAINING_BUDGET_MS);
+
     try {
-      const timeout = AbortSignal.timeout(this.options.timeoutMs ?? env.DISCOVER_BRIGHTDATA_TIMEOUT_MS);
-      const requestSignal = options.signal ? AbortSignal.any([timeout, options.signal]) : timeout;
-      const requestInit: RequestInit = {
+      const requestInit: Omit<RequestInit, "signal"> = {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -365,61 +381,89 @@ export class BrightDataGoogleSearchProvider implements BrightDataPeopleSearchPro
           zone: this.options.zone ?? env.BRIGHTDATA_SERP_ZONE,
           url: googleUrl.toString(),
           format: "raw"
-        }),
-        signal: requestSignal
+        })
       };
 
       for (let attempt = 1; attempt <= MAX_BRIGHT_TRANSIENT_ATTEMPTS_PER_PAGE; attempt += 1) {
+        if (options.signal?.aborted) options.signal.throwIfAborted();
+        const attemptTimeout = AbortSignal.timeout(configuredTimeoutMs);
+        const requestSignal = options.signal
+          ? AbortSignal.any([attemptTimeout, options.signal])
+          : attemptTimeout;
         requestSignal.throwIfAborted();
-        const response = await (this.options.fetcher ?? fetch)("https://api.brightdata.com/request", requestInit);
-        if (!response.ok) {
-          throw new BrightDataSearchError(
-            response.status === 401 || response.status === 403 ? "AUTHENTICATION" : "PROVIDER",
-            { status: response.status, stage: "HTTP_ERROR" }
-          );
-        }
+        try {
+          const response = await (this.options.fetcher ?? fetch)("https://api.brightdata.com/request", {
+            ...requestInit,
+            signal: requestSignal
+          });
+          if (options.signal?.aborted) options.signal.throwIfAborted();
+          if (!response.ok) {
+            throw new BrightDataSearchError(
+              response.status === 401 || response.status === 403 ? "AUTHENTICATION" : "PROVIDER",
+              { status: response.status, stage: "HTTP_ERROR" }
+            );
+          }
 
-        const bodyText = await response.text();
-        const classification = classifyBrightResponseBody(bodyText, response.headers.get("content-type"));
-        if (classification !== "JSON") {
-          if (attempt < MAX_BRIGHT_TRANSIENT_ATTEMPTS_PER_PAGE) {
-            if (requestSignal.aborted) requestSignal.throwIfAborted();
-            logRequestRetry({
+          const bodyText = await response.text();
+          if (options.signal?.aborted) options.signal.throwIfAborted();
+          const classification = classifyBrightResponseBody(bodyText, response.headers.get("content-type"));
+          if (classification !== "JSON") {
+            if (attempt < MAX_BRIGHT_TRANSIENT_ATTEMPTS_PER_PAGE && retryBudgetAvailable()) {
+              logRequestRetry({
+                status: response.status,
+                page: options.page,
+                attempt,
+                reason: transientBodyReason(classification)
+              });
+              continue;
+            }
+            throw new BrightDataSearchError("MALFORMED_RESPONSE", {
               status: response.status,
+              stage: "JSON_PARSE"
+            });
+          }
+
+          const payload: unknown = JSON.parse(bodyText);
+          const rows = organicRows(payload);
+          if (!rows) {
+            console.info(JSON.stringify({
+              event: "BRIGHT_RESPONSE_SHAPE",
+              status: response.status,
+              stage: "ORGANIC_ARRAY_MISSING",
+              ...describeBrightResponseShape(payload)
+            }));
+            throw new BrightDataSearchError("MALFORMED_RESPONSE", { status: response.status, stage: "ORGANIC_ARRAY_MISSING" });
+          }
+          const results = mapRows(rows);
+          return {
+            results,
+            rawOrganicResults: rows.length,
+            page: options.page,
+            exhausted: rows.length === 0 || options.page >= maxPages
+          };
+        } catch (error) {
+          if (options.signal?.aborted) options.signal.throwIfAborted();
+          const attemptTimedOut = attemptTimeout.aborted ||
+            (error instanceof DOMException && error.name === "TimeoutError");
+          if (!attemptTimedOut) throw error;
+
+          const timeoutError = new BrightDataSearchError("TIMEOUT", { stage: "TIMEOUT" });
+          if (attempt < MAX_BRIGHT_TRANSIENT_ATTEMPTS_PER_PAGE && retryBudgetAvailable()) {
+            logRequestRetry({
+              status: null,
               page: options.page,
               attempt,
-              reason: transientBodyReason(classification)
+              reason: "TIMEOUT"
             });
             continue;
           }
-          throw new BrightDataSearchError("MALFORMED_RESPONSE", {
-            status: response.status,
-            stage: "JSON_PARSE"
-          });
+          throw timeoutError;
         }
-
-        const payload: unknown = JSON.parse(bodyText);
-        const rows = organicRows(payload);
-        if (!rows) {
-          console.info(JSON.stringify({
-            event: "BRIGHT_RESPONSE_SHAPE",
-            status: response.status,
-            stage: "ORGANIC_ARRAY_MISSING",
-            ...describeBrightResponseShape(payload)
-          }));
-          throw new BrightDataSearchError("MALFORMED_RESPONSE", { status: response.status, stage: "ORGANIC_ARRAY_MISSING" });
-        }
-        const results = mapRows(rows);
-        return {
-          results,
-          rawOrganicResults: rows.length,
-          page: options.page,
-          exhausted: rows.length === 0 || options.page >= maxPages
-        };
       }
 
       throw new BrightDataSearchError("MALFORMED_RESPONSE", { stage: "JSON_PARSE" });
     } catch (error) {
+      if (options.signal?.aborted) options.signal.throwIfAborted();
       if (error instanceof BrightDataSearchError) {
         logRequestFailed(error);
         throw error;

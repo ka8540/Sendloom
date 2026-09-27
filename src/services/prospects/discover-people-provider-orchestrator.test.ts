@@ -154,13 +154,17 @@ function buildPages(
   };
 }
 
-function buildWithBrightResponses(responses: Response[], apifyProfiles: NormalizedProfile[] = []) {
-  const fetcher = vi.fn(async () => responses.shift() ?? new Response("", { status: 200 }));
+function buildWithBrightFetcher(
+  fetcher: ReturnType<typeof vi.fn>,
+  apifyProfiles: NormalizedProfile[] = [],
+  timeoutMs?: number
+) {
   const bright = new BrightDataPublicProfileSearchService(new BrightDataGoogleSearchProvider({
     enabled: true,
     apiKey: "secret",
     zone: "zone",
     maxPages: 10,
+    timeoutMs,
     fetcher: fetcher as typeof fetch
   }), 0);
   const apify = {
@@ -199,6 +203,11 @@ function buildWithBrightResponses(responses: Response[], apifyProfiles: Normaliz
   };
 }
 
+function buildWithBrightResponses(responses: Response[], apifyProfiles: NormalizedProfile[] = []) {
+  const fetcher = vi.fn(async () => responses.shift() ?? new Response("", { status: 200 }));
+  return buildWithBrightFetcher(fetcher, apifyProfiles);
+}
+
 const request = {
   companyName: "Acme",
   companyLinkedinUrl: "https://linkedin.com/company/acme",
@@ -210,6 +219,97 @@ const request = {
 };
 
 describe("DiscoverPeopleProviderOrchestrator", () => {
+  it("counts a successful same-page Bright timeout retry once and avoids Apify", async () => {
+    const onBrightPage = vi.fn(async () => undefined);
+    let attempt = 0;
+    const fetcher = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      attempt += 1;
+      if (attempt === 1) {
+        return new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+          if (!signal) throw new Error("Expected an attempt signal.");
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        });
+      }
+      return new Response(JSON.stringify({
+        organic: [{
+          title: "Jane Timeout Retry - Software Engineer at Acme | LinkedIn",
+          link: "https://www.linkedin.com/in/jane-timeout-retry",
+          description: "Software Engineer at Acme · United States"
+        }]
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    });
+    const { orchestrator, apify } = buildWithBrightFetcher(
+      fetcher,
+      [profile("apify-must-not-run")],
+      5
+    );
+
+    const result = await orchestrator.discover({
+      ...request,
+      requestedLocations: ["United States"],
+      desiredCount: 1,
+      tavilyExhausted: true,
+      brightStartPage: 2,
+      brightPagesFetched: 1,
+      onBrightPage
+    });
+
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(result.people.map((person) => person.sourceProfileId)).toEqual(["jane-timeout-retry"]);
+    expect(onBrightPage).toHaveBeenCalledTimes(1);
+    expect(onBrightPage).toHaveBeenCalledWith(expect.objectContaining({
+      nextPage: 3,
+      pagesFetched: 1,
+      exhausted: false
+    }));
+    expect(result.diagnostics).toMatchObject({
+      brightPagesAttempted: 1,
+      brightPagesSucceeded: 1,
+      brightNextPage: 3,
+      brightPagesFetched: 2,
+      brightExhausted: false,
+      apifyFallbackCalled: false
+    });
+    expect(apify.searchProfiles).not.toHaveBeenCalled();
+  });
+
+  it("preserves Bright continuation and calls Apify only after two timeout attempts", async () => {
+    const onBrightPage = vi.fn(async () => undefined);
+    const fetcher = vi.fn(async (_url: string | URL | Request, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal;
+        if (!signal) throw new Error("Expected an attempt signal.");
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      })
+    );
+    const { orchestrator, apify } = buildWithBrightFetcher(fetcher, [profile("apify-after-timeouts")], 5);
+
+    const result = await orchestrator.discover({
+      ...request,
+      desiredCount: 1,
+      tavilyExhausted: true,
+      brightStartPage: 3,
+      brightPagesFetched: 2,
+      onBrightPage
+    });
+
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(onBrightPage).not.toHaveBeenCalled();
+    expect(result.people.map((person) => person.sourceProfileId)).toEqual(["apify-after-timeouts"]);
+    expect(result.diagnostics).toMatchObject({
+      brightPagesAttempted: 1,
+      brightPagesSucceeded: 0,
+      brightNextPage: 3,
+      brightPagesFetched: 2,
+      brightExhausted: false,
+      brightTimedOut: true,
+      apifyFallbackCalled: true,
+      apifyFallbackReason: "BRIGHT_TIMEOUT"
+    });
+    expect(apify.searchProfiles).toHaveBeenCalledTimes(1);
+  });
+
   it("counts a successful same-page Bright retry once and avoids Apify", async () => {
     const onBrightPage = vi.fn(async () => undefined);
     const { orchestrator, fetcher, apify } = buildWithBrightResponses([

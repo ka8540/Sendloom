@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { DEFAULT_DISCOVER_BRIGHTDATA_TIMEOUT_MS } from "@/lib/env";
 import {
   BrightDataGoogleSearchProvider,
   classifyBrightResponseBody,
@@ -15,6 +16,28 @@ describe("BrightDataGoogleSearchProvider", () => {
 
   afterEach(() => {
     info.mockRestore();
+  });
+
+  it("defaults each Bright attempt to a 90-second timeout", () => {
+    expect(DEFAULT_DISCOVER_BRIGHTDATA_TIMEOUT_MS).toBe(90_000);
+  });
+
+  it("returns a first-attempt success without retrying", async () => {
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ organic: [] }), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    }));
+    const provider = new BrightDataGoogleSearchProvider({
+      enabled: true,
+      apiKey: "secret",
+      zone: "zone",
+      fetcher: fetcher as typeof fetch
+    });
+
+    await expect(provider.search("query", { page: 1, requestedLocations: [] }))
+      .resolves.toMatchObject({ page: 1, rawOrganicResults: 0, exhausted: true });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(info.mock.calls.flat().join(" ")).not.toContain("BRIGHT_REQUEST_RETRY");
   });
 
   it("classifies response bodies structurally without retaining their contents", () => {
@@ -165,6 +188,7 @@ describe("BrightDataGoogleSearchProvider", () => {
   it.each([
     [401, "AUTHENTICATION"],
     [403, "AUTHENTICATION"],
+    [429, "PROVIDER"],
     [500, "PROVIDER"]
   ] as const)("classifies HTTP %i safely with stage diagnostics", async (status, kind) => {
     const apiKey = `super-private-api-key-${status}`;
@@ -190,6 +214,25 @@ describe("BrightDataGoogleSearchProvider", () => {
     expect(logs).not.toContain("private search query");
     expect(logs).not.toContain("linkedin.com");
     expect(logs).not.toContain("private body");
+  });
+
+  it("fails configuration without making or retrying a request", async () => {
+    const fetcher = vi.fn();
+    const provider = new BrightDataGoogleSearchProvider({
+      enabled: false,
+      apiKey: "secret",
+      zone: "zone",
+      fetcher: fetcher as typeof fetch
+    });
+
+    await expect(provider.search("query", { page: 1, requestedLocations: [] }))
+      .rejects.toMatchObject({ kind: "CONFIGURATION", status: null, stage: null });
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(info).toHaveBeenCalledWith(JSON.stringify({
+      event: "BRIGHT_REQUEST_FAILED",
+      status: null,
+      kind: "CONFIGURATION"
+    }));
   });
 
   it("maps sanitized organic evidence and derives Google geography", async () => {
@@ -406,10 +449,69 @@ describe("BrightDataGoogleSearchProvider", () => {
     expect(logs).not.toContain("fetch failed");
   });
 
-  it("uses a bounded configurable timeout and classifies it as transient", async () => {
+  it("retries a timed-out page once with a fresh signal and succeeds on the same page", async () => {
+    const signals: AbortSignal[] = [];
+    const starts: string[] = [];
+    const fetcher = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const signal = init?.signal;
+      if (!signal) throw new Error("Expected an attempt signal.");
+      signals.push(signal);
+      const body = JSON.parse(String(init?.body));
+      starts.push(new URL(body.url).searchParams.get("start") ?? "");
+      if (signals.length === 1) {
+        return new Promise<Response>((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        });
+      }
+      return new Response(JSON.stringify({
+        organic: [{ title: "Private Profile | LinkedIn", link: "https://linkedin.com/in/private-profile" }]
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    });
+    const provider = new BrightDataGoogleSearchProvider({
+      enabled: true,
+      apiKey: "super-private-api-key",
+      zone: "secret-zone",
+      timeoutMs: 5,
+      fetcher: fetcher as typeof fetch
+    });
+
+    const result = await provider.search("private search query Private Company", {
+      page: 3,
+      requestedLocations: ["Private Location"]
+    });
+
+    expect(result).toMatchObject({ page: 3, rawOrganicResults: 1, exhausted: false });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(starts).toEqual(["20", "20"]);
+    expect(signals).toHaveLength(2);
+    expect(signals[0]).not.toBe(signals[1]);
+    expect(info).toHaveBeenCalledWith(JSON.stringify({
+      event: "BRIGHT_REQUEST_RETRY",
+      status: null,
+      page: 3,
+      attempt: 1,
+      reason: "TIMEOUT"
+    }));
+    const logs = info.mock.calls.flat().join(" ");
+    expect(logs).not.toContain("super-private-api-key");
+    expect(logs).not.toContain("secret-zone");
+    expect(logs).not.toContain("private search query");
+    expect(logs).not.toContain("Private Company");
+    expect(logs).not.toContain("Private Location");
+    expect(logs).not.toContain("linkedin.com");
+    expect(logs).not.toContain("Private Profile");
+    expect(logs).not.toContain("google.com");
+    expect(logs).not.toContain("api.brightdata.com");
+  });
+
+  it("classifies a second timeout after exactly two bounded attempts", async () => {
+    const signals: AbortSignal[] = [];
     const fetcher = vi.fn(async (_url: string | URL | Request, init?: RequestInit) =>
       new Promise<Response>((_resolve, reject) => {
-        init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+        const signal = init?.signal;
+        if (!signal) throw new Error("Expected an attempt signal.");
+        signals.push(signal);
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
       })
     );
     const provider = new BrightDataGoogleSearchProvider({
@@ -427,18 +529,82 @@ describe("BrightDataGoogleSearchProvider", () => {
       kind: "TIMEOUT",
       stage: "TIMEOUT"
     }));
+    expect(info).toHaveBeenCalledWith(JSON.stringify({
+      event: "BRIGHT_REQUEST_RETRY",
+      status: null,
+      page: 1,
+      attempt: 1,
+      reason: "TIMEOUT"
+    }));
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(signals).toHaveLength(2);
+    expect(signals[0]).not.toBe(signals[1]);
+  });
+
+  it("reports the second attempt's invalid JSON after a first-attempt timeout", async () => {
+    let attempt = 0;
+    const fetcher = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      attempt += 1;
+      if (attempt === 1) {
+        return new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+          if (!signal) throw new Error("Expected an attempt signal.");
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        });
+      }
+      return new Response('{"organic":[', {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    });
+    const provider = new BrightDataGoogleSearchProvider({
+      enabled: true,
+      apiKey: "secret",
+      zone: "zone",
+      timeoutMs: 5,
+      fetcher: fetcher as typeof fetch
+    });
+
+    await expect(provider.search("query", { page: 2, requestedLocations: [] }))
+      .rejects.toMatchObject({ kind: "MALFORMED_RESPONSE", status: 200, stage: "JSON_PARSE" });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(info).toHaveBeenCalledWith(JSON.stringify({
+      event: "BRIGHT_REQUEST_FAILED",
+      status: 200,
+      kind: "MALFORMED_RESPONSE",
+      stage: "JSON_PARSE"
+    }));
+  });
+
+  it("does not start a timeout retry when the parent deadline has too little budget", async () => {
+    const fetcher = vi.fn(async () => {
+      throw new DOMException("Timed out", "TimeoutError");
+    });
+    const provider = new BrightDataGoogleSearchProvider({
+      enabled: true,
+      apiKey: "secret",
+      zone: "zone",
+      timeoutMs: 90_000,
+      fetcher: fetcher as typeof fetch
+    });
+
+    await expect(provider.search("query", {
+      page: 2,
+      requestedLocations: [],
+      deadlineAtMs: Date.now() + 1_000
+    })).rejects.toMatchObject({ kind: "TIMEOUT", stage: "TIMEOUT" });
     expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(info.mock.calls.flat().join(" ")).not.toContain("BRIGHT_REQUEST_RETRY");
   });
 
   it("does not retry after the parent AbortSignal fires", async () => {
     const controller = new AbortController();
-    const fetcher = vi.fn(async () => {
-      controller.abort();
-      return new Response("<html>private provider page</html>", {
-        status: 200,
-        headers: { "content-type": "text/html" }
-      });
-    });
+    const abortReason = new DOMException("Private user cancellation", "AbortError");
+    const fetcher = vi.fn(async (_url: string | URL | Request, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+      })
+    );
     const provider = new BrightDataGoogleSearchProvider({
       enabled: true,
       apiKey: "secret",
@@ -446,13 +612,19 @@ describe("BrightDataGoogleSearchProvider", () => {
       fetcher: fetcher as typeof fetch
     });
 
-    await expect(provider.search("private query", {
+    const pending = provider.search("private query", {
       page: 2,
       requestedLocations: [],
       signal: controller.signal
-    })).rejects.toBeDefined();
+    });
+    controller.abort(abortReason);
+
+    await expect(pending).rejects.toBe(abortReason);
     expect(fetcher).toHaveBeenCalledTimes(1);
-    expect(info.mock.calls.flat().join(" ")).not.toContain("BRIGHT_REQUEST_RETRY");
+    const logs = info.mock.calls.flat().join(" ");
+    expect(logs).not.toContain("BRIGHT_REQUEST_RETRY");
+    expect(logs).not.toContain("BRIGHT_REQUEST_FAILED");
+    expect(logs).not.toContain("Private user cancellation");
   });
 
   it("only exhausts on zero raw rows or the configured maximum page", async () => {

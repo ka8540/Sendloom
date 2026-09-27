@@ -37,7 +37,11 @@ export type BrightProfileSearchResult = {
 export interface BrightProfileSearchProvider {
   readonly configured: boolean;
   searchProfiles(
-    input: ApifyProfileSearchInput & { signal?: AbortSignal; locationEnrichmentLimit?: number }
+    input: ApifyProfileSearchInput & {
+      signal?: AbortSignal;
+      deadlineAtMs?: number;
+      locationEnrichmentLimit?: number;
+    }
   ): Promise<BrightProfileSearchResult>;
 }
 
@@ -81,7 +85,11 @@ export class BrightDataPublicProfileSearchService implements BrightProfileSearch
   }
 
   async searchProfiles(
-    input: ApifyProfileSearchInput & { signal?: AbortSignal; locationEnrichmentLimit?: number }
+    input: ApifyProfileSearchInput & {
+      signal?: AbortSignal;
+      deadlineAtMs?: number;
+      locationEnrichmentLimit?: number;
+    }
   ): Promise<BrightProfileSearchResult> {
     const diagnostics = counters();
     const page = Math.max(1, Math.floor(input.startPage ?? 1));
@@ -95,7 +103,8 @@ export class BrightDataPublicProfileSearchService implements BrightProfileSearch
     const response = await this.provider.search(query, {
       page,
       requestedLocations: input.locations,
-      signal: input.signal
+      signal: input.signal,
+      deadlineAtMs: input.deadlineAtMs
     });
     diagnostics.rawBrightResults = response.rawOrganicResults;
     const accepted: Array<{ profile: NormalizedProfile; result: BrightOrganicResult }> = [];
@@ -134,7 +143,8 @@ export class BrightDataPublicProfileSearchService implements BrightProfileSearch
         const enriched = await this.provider.search(enrichmentQuery(candidate.profile, input.companyName, input.locations), {
           page: 1,
           requestedLocations: input.locations,
-          signal: input.signal
+          signal: input.signal,
+          deadlineAtMs: input.deadlineAtMs
         });
         const identity = canonicalizeLinkedInProfileUrl(candidate.profile.linkedinUrl);
         const matching = enriched.results.find((row) => {
