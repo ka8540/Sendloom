@@ -6,6 +6,18 @@ export type BrightDataFailure = "CONFIGURATION" | "AUTHENTICATION" | "TIMEOUT" |
 /** Safe parsing/transport stage for diagnostics; never carries provider content. */
 export type BrightDataFailureStage = "HTTP_ERROR" | "JSON_PARSE" | "ORGANIC_ARRAY_MISSING" | "NETWORK" | "TIMEOUT";
 
+export type BrightResponseBodyClassification =
+  | "JSON"
+  | "HTML"
+  | "EMPTY"
+  | "JSON_LOOKING_INVALID"
+  | "TEXT"
+  | "UNKNOWN";
+
+type BrightTransientBodyReason = "HTML_BODY" | "EMPTY_BODY" | "INVALID_JSON" | "NON_JSON_BODY";
+
+export const MAX_BRIGHT_TRANSIENT_ATTEMPTS_PER_PAGE = 2;
+
 export class BrightDataSearchError extends Error {
   readonly status: number | null;
   readonly stage: BrightDataFailureStage | null;
@@ -28,6 +40,15 @@ function logRequestFailed(error: BrightDataSearchError): void {
     kind: error.kind,
     ...(error.stage ? { stage: error.stage } : {})
   }));
+}
+
+function logRequestRetry(input: {
+  status: number;
+  page: number;
+  attempt: number;
+  reason: BrightTransientBodyReason;
+}): void {
+  console.info(JSON.stringify({ event: "BRIGHT_REQUEST_RETRY", ...input }));
 }
 
 export type BrightOrganicResult = {
@@ -68,6 +89,56 @@ const EVIDENCE_FIELDS = [
   "richSnippet"
 ] as const;
 const PAGE_SIZE = 10;
+
+export function classifyBrightResponseBody(
+  text: string,
+  contentType: string | null
+): BrightResponseBodyClassification {
+  const trimmed = text.trim();
+  if (!trimmed) return "EMPTY";
+
+  const prefix = trimmed.slice(0, 512).toLowerCase();
+  if (trimmed.startsWith("<")) return "HTML";
+
+  const jsonLooking = trimmed.startsWith("{") || trimmed.startsWith("[");
+  if (jsonLooking) {
+    try {
+      JSON.parse(trimmed);
+      return "JSON";
+    } catch {
+      return "JSON_LOOKING_INVALID";
+    }
+  }
+
+  if (
+    prefix.includes("<!doctype html") ||
+    prefix.includes("<html") ||
+    prefix.includes("<head") ||
+    prefix.includes("<body")
+  ) {
+    return "HTML";
+  }
+
+  const declaredJson = contentType?.toLowerCase().includes("json") ?? false;
+  if (declaredJson) {
+    try {
+      JSON.parse(trimmed);
+      return "JSON";
+    } catch {
+      return "JSON_LOOKING_INVALID";
+    }
+  }
+
+  if (contentType?.toLowerCase().startsWith("text/")) return "TEXT";
+  return "UNKNOWN";
+}
+
+function transientBodyReason(classification: Exclude<BrightResponseBodyClassification, "JSON">): BrightTransientBodyReason {
+  if (classification === "HTML") return "HTML_BODY";
+  if (classification === "EMPTY") return "EMPTY_BODY";
+  if (classification === "JSON_LOOKING_INVALID") return "INVALID_JSON";
+  return "NON_JSON_BODY";
+}
 
 function textField(row: Record<string, unknown>, fields: readonly string[]): string | null {
   for (const field of fields) {
@@ -283,7 +354,8 @@ export class BrightDataGoogleSearchProvider implements BrightDataPeopleSearchPro
     }).toString();
     try {
       const timeout = AbortSignal.timeout(this.options.timeoutMs ?? env.DISCOVER_BRIGHTDATA_TIMEOUT_MS);
-      const response = await (this.options.fetcher ?? fetch)("https://api.brightdata.com/request", {
+      const requestSignal = options.signal ? AbortSignal.any([timeout, options.signal]) : timeout;
+      const requestInit: RequestInit = {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -294,37 +366,59 @@ export class BrightDataGoogleSearchProvider implements BrightDataPeopleSearchPro
           url: googleUrl.toString(),
           format: "raw"
         }),
-        signal: options.signal ? AbortSignal.any([timeout, options.signal]) : timeout
-      });
-      if (!response.ok) {
-        throw new BrightDataSearchError(
-          response.status === 401 || response.status === 403 ? "AUTHENTICATION" : "PROVIDER",
-          { status: response.status, stage: "HTTP_ERROR" }
-        );
-      }
-      let payload: unknown;
-      try {
-        payload = await response.json();
-      } catch {
-        throw new BrightDataSearchError("MALFORMED_RESPONSE", { status: response.status, stage: "JSON_PARSE" });
-      }
-      const rows = organicRows(payload);
-      if (!rows) {
-        console.info(JSON.stringify({
-          event: "BRIGHT_RESPONSE_SHAPE",
-          status: response.status,
-          stage: "ORGANIC_ARRAY_MISSING",
-          ...describeBrightResponseShape(payload)
-        }));
-        throw new BrightDataSearchError("MALFORMED_RESPONSE", { status: response.status, stage: "ORGANIC_ARRAY_MISSING" });
-      }
-      const results = mapRows(rows);
-      return {
-        results,
-        rawOrganicResults: rows.length,
-        page: options.page,
-        exhausted: rows.length === 0 || options.page >= maxPages
+        signal: requestSignal
       };
+
+      for (let attempt = 1; attempt <= MAX_BRIGHT_TRANSIENT_ATTEMPTS_PER_PAGE; attempt += 1) {
+        requestSignal.throwIfAborted();
+        const response = await (this.options.fetcher ?? fetch)("https://api.brightdata.com/request", requestInit);
+        if (!response.ok) {
+          throw new BrightDataSearchError(
+            response.status === 401 || response.status === 403 ? "AUTHENTICATION" : "PROVIDER",
+            { status: response.status, stage: "HTTP_ERROR" }
+          );
+        }
+
+        const bodyText = await response.text();
+        const classification = classifyBrightResponseBody(bodyText, response.headers.get("content-type"));
+        if (classification !== "JSON") {
+          if (attempt < MAX_BRIGHT_TRANSIENT_ATTEMPTS_PER_PAGE) {
+            if (requestSignal.aborted) requestSignal.throwIfAborted();
+            logRequestRetry({
+              status: response.status,
+              page: options.page,
+              attempt,
+              reason: transientBodyReason(classification)
+            });
+            continue;
+          }
+          throw new BrightDataSearchError("MALFORMED_RESPONSE", {
+            status: response.status,
+            stage: "JSON_PARSE"
+          });
+        }
+
+        const payload: unknown = JSON.parse(bodyText);
+        const rows = organicRows(payload);
+        if (!rows) {
+          console.info(JSON.stringify({
+            event: "BRIGHT_RESPONSE_SHAPE",
+            status: response.status,
+            stage: "ORGANIC_ARRAY_MISSING",
+            ...describeBrightResponseShape(payload)
+          }));
+          throw new BrightDataSearchError("MALFORMED_RESPONSE", { status: response.status, stage: "ORGANIC_ARRAY_MISSING" });
+        }
+        const results = mapRows(rows);
+        return {
+          results,
+          rawOrganicResults: rows.length,
+          page: options.page,
+          exhausted: rows.length === 0 || options.page >= maxPages
+        };
+      }
+
+      throw new BrightDataSearchError("MALFORMED_RESPONSE", { stage: "JSON_PARSE" });
     } catch (error) {
       if (error instanceof BrightDataSearchError) {
         logRequestFailed(error);

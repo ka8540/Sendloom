@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { normalizeProfile, type ApifyProfileSearchService, type NormalizedProfile } from "./apify-profile-search";
-import { BrightDataSearchError } from "./brightdata-google-search-provider";
-import type { BrightProfileSearchProvider } from "./brightdata-public-profile-search";
+import { BrightDataGoogleSearchProvider, BrightDataSearchError } from "./brightdata-google-search-provider";
+import { BrightDataPublicProfileSearchService, type BrightProfileSearchProvider } from "./brightdata-public-profile-search";
 import { DiscoverPeopleProviderOrchestrator } from "./discover-people-provider-orchestrator";
 import { PersonIdentitySet } from "./discover-person-identity";
 import { createAiBudget } from "./prospect-ai";
@@ -154,6 +154,51 @@ function buildPages(
   };
 }
 
+function buildWithBrightResponses(responses: Response[], apifyProfiles: NormalizedProfile[] = []) {
+  const fetcher = vi.fn(async () => responses.shift() ?? new Response("", { status: 200 }));
+  const bright = new BrightDataPublicProfileSearchService(new BrightDataGoogleSearchProvider({
+    enabled: true,
+    apiKey: "secret",
+    zone: "zone",
+    maxPages: 10,
+    fetcher: fetcher as typeof fetch
+  }), 0);
+  const apify = {
+    searchProfiles: vi.fn(async () => ({
+      profiles: apifyProfiles,
+      runId: "run",
+      datasetId: "dataset",
+      totalFound: apifyProfiles.length,
+      diagnostics: {
+        itemsReturned: apifyProfiles.length,
+        parsedCandidates: apifyProfiles.length,
+        rejectedBySchema: 0,
+        duplicateItems: 0,
+        companyMatched: apifyProfiles.length,
+        rejectedByCompany: 0
+      }
+    }))
+  } as unknown as ApifyProfileSearchService;
+  const roleClassifier = {
+    classify: vi.fn(async (titles: string[]) => new Map(titles.map((title) => [title.toLowerCase(), { category: "SOFTWARE_ENGINEERING" }])))
+  };
+  const roleIntelligence = {
+    enabled: false,
+    buildProviderTitlePlan: vi.fn(async (titles: readonly string[]) => [...titles]),
+    filterAndRankPeople: vi.fn(async ({ people }: { people: unknown[] }) => people)
+  };
+  return {
+    fetcher,
+    apify,
+    orchestrator: new DiscoverPeopleProviderOrchestrator({
+      bright,
+      apify,
+      roleClassifier: roleClassifier as never,
+      roleIntelligence: roleIntelligence as never
+    })
+  };
+}
+
 const request = {
   companyName: "Acme",
   companyLinkedinUrl: "https://linkedin.com/company/acme",
@@ -165,6 +210,80 @@ const request = {
 };
 
 describe("DiscoverPeopleProviderOrchestrator", () => {
+  it("counts a successful same-page Bright retry once and avoids Apify", async () => {
+    const onBrightPage = vi.fn(async () => undefined);
+    const { orchestrator, fetcher, apify } = buildWithBrightResponses([
+      new Response("<html>temporary provider page</html>", {
+        status: 200,
+        headers: { "content-type": "text/html" }
+      }),
+      new Response(JSON.stringify({
+        organic: [{
+          title: "Jane Retry - Software Engineer at Acme | LinkedIn",
+          link: "https://www.linkedin.com/in/jane-retry",
+          description: "Software Engineer at Acme · United States"
+        }]
+      }), { status: 200, headers: { "content-type": "application/json" } })
+    ], [profile("apify-must-not-run")]);
+
+    const result = await orchestrator.discover({
+      ...request,
+      requestedLocations: ["United States"],
+      desiredCount: 1,
+      tavilyExhausted: true,
+      brightStartPage: 2,
+      onBrightPage
+    });
+
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(result.people.map((person) => person.sourceProfileId)).toEqual(["jane-retry"]);
+    expect(onBrightPage).toHaveBeenCalledTimes(1);
+    expect(onBrightPage).toHaveBeenCalledWith(expect.objectContaining({
+      nextPage: 3,
+      pagesFetched: 1,
+      exhausted: false
+    }));
+    expect(result.diagnostics).toMatchObject({
+      brightPagesAttempted: 1,
+      brightPagesSucceeded: 1,
+      brightNextPage: 3,
+      brightExhausted: false,
+      apifyFallbackCalled: false
+    });
+    expect(apify.searchProfiles).not.toHaveBeenCalled();
+  });
+
+  it("keeps the Bright page unchanged and uses existing Apify fallback after both retry attempts fail", async () => {
+    const onBrightPage = vi.fn(async () => undefined);
+    const { orchestrator, fetcher, apify } = buildWithBrightResponses([
+      new Response("<html>temporary provider page one</html>", { status: 200 }),
+      new Response("<html>temporary provider page two</html>", { status: 200 })
+    ], [profile("apify-after-retry")]);
+
+    const result = await orchestrator.discover({
+      ...request,
+      desiredCount: 1,
+      tavilyExhausted: true,
+      brightStartPage: 2,
+      brightPagesFetched: 1,
+      onBrightPage
+    });
+
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(onBrightPage).not.toHaveBeenCalled();
+    expect(result.people.map((person) => person.sourceProfileId)).toEqual(["apify-after-retry"]);
+    expect(result.diagnostics).toMatchObject({
+      brightPagesAttempted: 1,
+      brightPagesSucceeded: 0,
+      brightNextPage: 2,
+      brightPagesFetched: 1,
+      brightExhausted: false,
+      apifyFallbackCalled: true,
+      apifyFallbackReason: "BRIGHT_MALFORMED_RESPONSE"
+    });
+    expect(apify.searchProfiles).toHaveBeenCalledTimes(1);
+  });
+
   it("collects across Bright pages until the desired count", async () => {
     const { orchestrator, bright, apify } = buildPages([
       { profiles: Array.from({ length: 6 }, (_, index) => profile(`p1-${index}`)), raw: 10 },

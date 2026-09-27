@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { BrightDataGoogleSearchProvider } from "./brightdata-google-search-provider";
+import {
+  BrightDataGoogleSearchProvider,
+  classifyBrightResponseBody,
+  MAX_BRIGHT_TRANSIENT_ATTEMPTS_PER_PAGE
+} from "./brightdata-google-search-provider";
 
 describe("BrightDataGoogleSearchProvider", () => {
   let info: ReturnType<typeof vi.spyOn>;
@@ -11,6 +15,15 @@ describe("BrightDataGoogleSearchProvider", () => {
 
   afterEach(() => {
     info.mockRestore();
+  });
+
+  it("classifies response bodies structurally without retaining their contents", () => {
+    expect(classifyBrightResponseBody(JSON.stringify({ organic: [] }), "application/json")).toBe("JSON");
+    expect(classifyBrightResponseBody("<html>provider page</html>", "text/html")).toBe("HTML");
+    expect(classifyBrightResponseBody("   ", "text/plain")).toBe("EMPTY");
+    expect(classifyBrightResponseBody('{"organic":[', "application/json")).toBe("JSON_LOOKING_INVALID");
+    expect(classifyBrightResponseBody("provider text", "text/plain")).toBe("TEXT");
+    expect(classifyBrightResponseBody("provider bytes", "application/octet-stream")).toBe("UNKNOWN");
   });
 
   it("requests parsed SERP JSON with brd_json=1 and keeps stable Google parameters", async () => {
@@ -42,6 +55,98 @@ describe("BrightDataGoogleSearchProvider", () => {
   });
 
   it.each([
+    ["HTML_BODY", "<html>private provider page</html>", "text/html"],
+    ["INVALID_JSON", '{"organic":[', "application/json"],
+    ["EMPTY_BODY", "", "text/plain"],
+    ["NON_JSON_BODY", "private provider text", "text/plain"]
+  ] as const)("retries page 2 once on %s and succeeds on the same page", async (reason, firstBody, contentType) => {
+    const starts: string[] = [];
+    const responses = [
+      new Response(firstBody, { status: 200, headers: { "content-type": contentType } }),
+      new Response(JSON.stringify({
+        organic: [{ title: "Jane Doe | LinkedIn", link: "https://linkedin.com/in/jane" }]
+      }), { status: 200, headers: { "content-type": "application/json" } })
+    ];
+    const fetcher = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const request = JSON.parse(String(init?.body));
+      starts.push(new URL(request.url).searchParams.get("start") ?? "");
+      return responses.shift()!;
+    });
+    const provider = new BrightDataGoogleSearchProvider({
+      enabled: true,
+      apiKey: "super-private-api-key",
+      zone: "secret-zone",
+      maxPages: 10,
+      fetcher: fetcher as typeof fetch
+    });
+
+    const result = await provider.search("private search query", {
+      page: 2,
+      requestedLocations: ["United States"]
+    });
+
+    expect(MAX_BRIGHT_TRANSIENT_ATTEMPTS_PER_PAGE).toBe(2);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(starts).toEqual(["10", "10"]);
+    expect(result).toMatchObject({ page: 2, rawOrganicResults: 1, exhausted: false });
+    expect(info).toHaveBeenCalledWith(JSON.stringify({
+      event: "BRIGHT_REQUEST_RETRY",
+      status: 200,
+      page: 2,
+      attempt: 1,
+      reason
+    }));
+    const logs = info.mock.calls.flat().join(" ");
+    expect(logs).not.toContain("super-private-api-key");
+    expect(logs).not.toContain("secret-zone");
+    expect(logs).not.toContain("private search query");
+    expect(logs).not.toContain("private provider");
+    expect(logs).not.toContain("linkedin.com");
+    expect(logs).not.toContain("Jane Doe");
+    expect(logs).not.toContain("google.com");
+    expect(logs).not.toContain("api.brightdata.com");
+  });
+
+  it.each([
+    ["HTML_BODY", "<html>private provider page</html>", "text/html"],
+    ["INVALID_JSON", '{"organic":[', "application/json"]
+  ] as const)("fails safely after both bounded attempts return %s", async (reason, body, contentType) => {
+    const fetcher = vi.fn(async () => new Response(body, {
+      status: 200,
+      headers: { "content-type": contentType }
+    }));
+    const provider = new BrightDataGoogleSearchProvider({
+      enabled: true,
+      apiKey: "super-private-api-key",
+      zone: "secret-zone",
+      fetcher: fetcher as typeof fetch
+    });
+
+    await expect(provider.search("private search query", { page: 2, requestedLocations: [] }))
+      .rejects.toMatchObject({ kind: "MALFORMED_RESPONSE", status: 200, stage: "JSON_PARSE" });
+
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(info).toHaveBeenCalledWith(JSON.stringify({
+      event: "BRIGHT_REQUEST_RETRY",
+      status: 200,
+      page: 2,
+      attempt: 1,
+      reason
+    }));
+    expect(info).toHaveBeenCalledWith(JSON.stringify({
+      event: "BRIGHT_REQUEST_FAILED",
+      status: 200,
+      kind: "MALFORMED_RESPONSE",
+      stage: "JSON_PARSE"
+    }));
+    const logs = info.mock.calls.flat().join(" ");
+    expect(logs).not.toContain("super-private-api-key");
+    expect(logs).not.toContain("secret-zone");
+    expect(logs).not.toContain("private search query");
+    expect(logs).not.toContain("private provider page");
+  });
+
+  it.each([
     ["organic", { organic: [{ title: "Jane Doe | LinkedIn", link: "https://linkedin.com/in/jane" }] }],
     ["result.organic", { result: { organic: [{ title: "Jane Doe | LinkedIn", link: "https://linkedin.com/in/jane" }] } }],
     ["body JSON", { body: JSON.stringify({ organic: [{ title: "Jane Doe | LinkedIn", link: "https://linkedin.com/in/jane" }] }) }]
@@ -63,11 +168,12 @@ describe("BrightDataGoogleSearchProvider", () => {
     [500, "PROVIDER"]
   ] as const)("classifies HTTP %i safely with stage diagnostics", async (status, kind) => {
     const apiKey = `super-private-api-key-${status}`;
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ detail: "private body https://linkedin.com/in/jane" }), { status }));
     const provider = new BrightDataGoogleSearchProvider({
       enabled: true,
       apiKey,
       zone: "zone",
-      fetcher: vi.fn(async () => new Response(JSON.stringify({ detail: "private body https://linkedin.com/in/jane" }), { status })) as typeof fetch
+      fetcher: fetcher as typeof fetch
     });
 
     await expect(provider.search("private search query", { page: 1, requestedLocations: [] }))
@@ -78,6 +184,7 @@ describe("BrightDataGoogleSearchProvider", () => {
       kind,
       stage: "HTTP_ERROR"
     }));
+    expect(fetcher).toHaveBeenCalledTimes(1);
     const logs = info.mock.calls.flat().join(" ");
     expect(logs).not.toContain(apiKey);
     expect(logs).not.toContain("private search query");
@@ -255,12 +362,13 @@ describe("BrightDataGoogleSearchProvider", () => {
     expect(info.mock.calls.flat().join(" ")).not.toContain("private nested value");
   });
 
-  it("classifies an invalid JSON body as a JSON_PARSE stage failure", async () => {
+  it("classifies a repeated invalid JSON body as a JSON_PARSE stage failure", async () => {
+    const fetcher = vi.fn(async () => new Response("<html>not json</html>", { status: 200 }));
     const provider = new BrightDataGoogleSearchProvider({
       enabled: true,
       apiKey: "secret",
       zone: "zone",
-      fetcher: vi.fn(async () => new Response("<html>not json</html>", { status: 200 })) as typeof fetch
+      fetcher: fetcher as typeof fetch
     });
     await expect(provider.search("query", { page: 1, requestedLocations: [] }))
       .rejects.toMatchObject({ kind: "MALFORMED_RESPONSE", status: 200, stage: "JSON_PARSE" });
@@ -270,6 +378,7 @@ describe("BrightDataGoogleSearchProvider", () => {
       kind: "MALFORMED_RESPONSE",
       stage: "JSON_PARSE"
     }));
+    expect(fetcher).toHaveBeenCalledTimes(2);
     expect(info.mock.calls.flat().join(" ")).not.toContain("not json");
   });
 
@@ -318,6 +427,32 @@ describe("BrightDataGoogleSearchProvider", () => {
       kind: "TIMEOUT",
       stage: "TIMEOUT"
     }));
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retry after the parent AbortSignal fires", async () => {
+    const controller = new AbortController();
+    const fetcher = vi.fn(async () => {
+      controller.abort();
+      return new Response("<html>private provider page</html>", {
+        status: 200,
+        headers: { "content-type": "text/html" }
+      });
+    });
+    const provider = new BrightDataGoogleSearchProvider({
+      enabled: true,
+      apiKey: "secret",
+      zone: "zone",
+      fetcher: fetcher as typeof fetch
+    });
+
+    await expect(provider.search("private query", {
+      page: 2,
+      requestedLocations: [],
+      signal: controller.signal
+    })).rejects.toBeDefined();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(info.mock.calls.flat().join(" ")).not.toContain("BRIGHT_REQUEST_RETRY");
   });
 
   it("only exhausts on zero raw rows or the configured maximum page", async () => {
